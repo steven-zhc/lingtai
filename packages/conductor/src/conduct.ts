@@ -235,7 +235,7 @@ import {
   type Worked,
   bodiesFor,
 } from './attempt-steps.ts'
-import { armForState, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
+import { armForState, conflictLandedOf, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
 import { createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
 import { claimTicket, continueTicket, releaseTicket, type SplitChildState } from './claim.ts'
@@ -1271,6 +1271,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          */
         diffBaseSha: diffBaseShaOf(runEvents),
         landedOnBase: landedOnBaseOf(runEvents),
+        // A conflict round's resolution no review has read (#1120); finished with git below.
+        conflictLanded: conflictLandedOf(runEvents),
       }
     })
 
@@ -2154,8 +2156,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // next attempt would be handed the base's whole delta as its own diff. The resolution
           // is lost and the next conflict round merges again.
           if (conflictMergeStood) {
-            const standing = yield* gitAskedEffect(['rev-parse', '-q', '--verify', 'MERGE_HEAD'])
-            if (Result.isSuccess(standing)) {
+            const standing = yield* mergeHeadState()
+            // Unknown is not absent: committing over a merge nobody could see is the WIP above.
+            if (standing.state === 'unknown') {
+              wipFailure = `MERGE_HEAD could not be read before the keep — ${standing.detail}`
+              runLog.note('push', wipFailure)
+              return
+            }
+            if (standing.state === 'standing') {
               const aborted = yield* gitAskedEffect(['merge', '--abort'])
               if (Result.isFailure(aborted)) {
                 wipFailure = `the standing merge could not be aborted before the keep — ${aborted.failure.detail}`
@@ -3349,6 +3357,27 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       let conflictMergeStood = false
       /**
+       * Whether a merge stands. `rev-parse -q --verify` exits 1 for a ref that is not there and
+       * says nothing; any other failure (a killed git, a locked index, a spawn that failed) is
+       * **unknown, never absent** (#1120).
+       */
+      const mergeHeadState = (): Effect.Effect<
+        { state: 'standing' } | { state: 'absent' } | { state: 'unknown'; detail: string }
+      > =>
+        Effect.gen(function* () {
+          const got = yield* gitAskedEffect(['rev-parse', '-q', '--verify', 'MERGE_HEAD'])
+          if (Result.isSuccess(got)) return { state: 'standing' } as const
+          return got.failure.exitCode === 1
+            ? ({ state: 'absent' } as const)
+            : ({ state: 'unknown', detail: got.failure.detail } as const)
+        })
+      /** Paths git names across a range, NUL-delimited so a quoted name is never used as a path. `null` when the read failed. */
+      const pathsBetween = (range: string): Effect.Effect<string[] | null> =>
+        Effect.gen(function* () {
+          const got = yield* gitAskedEffect(['diff', '--name-only', '-z', range])
+          return Result.isSuccess(got) ? got.success.split('\0').filter((p) => p !== '') : null
+        })
+      /**
        * **The conflict round's pre-merge** (#1120): `git merge --no-commit --no-ff <baseSha>` in
        * this attempt's own worktree, so the fixer stands in the conflict the lane proved. No
        * fetch: the worktree shares the mirror's objects, and `baseSha` is what the lane read
@@ -3363,9 +3392,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         Effect.gen(function* () {
           const abort = () => gitAskedEffect(['merge', '--abort'])
           // An earlier uncommitted resolution was never built or reviewed. A failed read of
-          // `MERGE_HEAD` is *absent*: exit 1 is how git says the ref is missing.
-          const standing = yield* gitAskedEffect(['rev-parse', '-q', '--verify', 'MERGE_HEAD'])
-          if (Result.isSuccess(standing)) {
+          // `MERGE_HEAD` is *absent* only on exit 1; any other failure is unknown and `failed`.
+          const standing = yield* mergeHeadState()
+          if (standing.state === 'unknown') {
+            return { failed: `MERGE_HEAD could not be read: ${standing.detail}` }
+          }
+          if (standing.state === 'standing') {
             const aborted = yield* abort()
             if (Result.isFailure(aborted)) {
               return { failed: `a merge already stands and could not be aborted: ${aborted.failure.detail}` }
@@ -3388,10 +3420,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             return { failed: `the common ancestor with ${baseSha.slice(0, 7)} could not be read` }
           }
           const merged = yield* gitAskedEffect(['merge', '--no-commit', '--no-ff', baseSha])
-          const head = yield* gitAskedEffect(['rev-parse', 'HEAD'])
-          const at = Result.isSuccess(head) ? head.success.trim().slice(0, 7) : 'unknown'
           if (Result.isSuccess(merged)) {
             yield* abort()
+            const head = yield* gitAskedEffect(['rev-parse', 'HEAD'])
+            const at = Result.isSuccess(head) ? head.success.trim().slice(0, 7) : 'unreadable'
             return {
               failed: `the lane's conflict did not reproduce in the worktree (HEAD ${at}, base ${baseSha.slice(0, 7)})`,
             }
@@ -3406,21 +3438,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 : `the merge of ${baseSha.slice(0, 7)} failed with no conflicted path: ${merged.failure.detail}`,
             }
           }
-          conflictMergeStood = true
           // The overlap `BaseMoved` uses: what the base changed, within what the branch changed.
-          const onBase = yield* gitAskedEffect(['diff', '--name-only', `${fromSha}..${baseSha}`])
-          const onBranch = yield* gitAskedEffect(['diff', '--name-only', `${fromSha}..HEAD`])
-          const lines = (r: typeof onBase) =>
-            Result.isSuccess(r) ? r.success.split('\n').filter((p) => p.trim() !== '') : null
-          const theirs = lines(onBase)
-          const mine = lines(onBranch)
-          return {
-            conflicted: {
-              paths,
-              fromSha,
-              ...(theirs === null || mine === null ? {} : { overlap: theirs.filter((p) => mine.includes(p)) }),
-            },
+          // NUL-delimited, so a name git would quote is still a path. An unreadable side is
+          // `failed`, with the merge put back: a round briefed on an overlap nobody read would
+          // be reviewed against a lost-changes question with nothing under it.
+          const theirs = yield* pathsBetween(`${fromSha}..${baseSha}`)
+          const mine = yield* pathsBetween(`${fromSha}..HEAD`)
+          if (theirs === null || mine === null) {
+            yield* abort()
+            return {
+              failed: `what the base and the branch each changed since ${fromSha.slice(0, 7)} could not be read`,
+            }
           }
+          conflictMergeStood = true
+          return { conflicted: { paths, fromSha, overlap: theirs.filter((p) => mine.includes(p)) } }
         })
 
       /**
@@ -4733,6 +4764,36 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         } satisfies RunOnceResult
       }
 
+      // **A held conflict round's review evidence, rebuilt** (#1120): the log has the lane's
+      // conflict, not the fork commit or the overlap, so they are read from the tree that now
+      // stands. Anything unreadable leaves the evidence out and says so; it is never guessed.
+      const resumedConflict = yield* Effect.gen(function* () {
+        const held = continuation?.landedOnBase === null ? continuation.conflictLanded : null
+        if (held === null || held === undefined) return null
+        if (held.headSha === null) {
+          runLog.note(
+            'review',
+            'the held conflict round names no lane head; its review is not told what the merge brought',
+          )
+          return null
+        }
+        const fork = yield* gitAskedEffect(['merge-base', held.headSha, held.baseSha])
+        const fromSha = Result.isSuccess(fork) ? fork.success.trim() : ''
+        const theirs = fromSha === '' ? null : yield* pathsBetween(`${fromSha}..${held.baseSha}`)
+        const mine = fromSha === '' ? null : yield* pathsBetween(`${fromSha}..${held.headSha}`)
+        if (theirs === null || mine === null) {
+          runLog.note('review', 'the held conflict round’s fork commit or overlap could not be read')
+          return null
+        }
+        const overlap = theirs.filter((p) => mine.includes(p))
+        return {
+          paths: [...new Set([...overlap, ...held.paths])],
+          conflicted: held.paths,
+          fromSha,
+          toSha: held.baseSha,
+        }
+      })
+
       const pass = yield* runAttemptEffect({
         recipe,
         context: passContext,
@@ -4756,7 +4817,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 waive: continuation.waive,
                 ...(continuation.readClipped === undefined ? {} : { readClipped: continuation.readClipped }),
                 roundsSpent: continuation.roundsSpent,
-                ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
+                ...(continuation.landedOnBase !== null
+                  ? { landedOnBase: continuation.landedOnBase }
+                  : resumedConflict !== null
+                    ? { landedOnBase: resumedConflict }
+                    : {}),
                 ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                 ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
                 ...(continuation.grant && continuation.conflict !== undefined

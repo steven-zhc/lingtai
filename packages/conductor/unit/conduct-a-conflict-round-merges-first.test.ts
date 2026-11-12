@@ -135,4 +135,32 @@ describe('a conflict round', () => {
     expect(fixPrompts).toHaveLength(0)
     expect(did.some((d) => d.startsWith('git merge --no-commit'))).toBe(false)
   })
+
+  it('goes to a person, after aborting, when the overlap cannot be read', async () => {
+    const { did, fixPrompts } = await conflictRound({
+      conflicts: ['src/fix.ts'],
+      ancestor: true,
+      failing: '--name-only -z',
+    })
+
+    expect(fixPrompts).toHaveLength(0)
+    expect(did).toContain('git merge --abort')
+  })
+
+  it('goes to a person, merging nothing, when MERGE_HEAD cannot be read', async () => {
+    const { did, fixPrompts } = await conflictRound({
+      conflicts: ['src/fix.ts'],
+      ancestor: true,
+      failing: 'MERGE_HEAD',
+    })
+
+    expect(fixPrompts).toHaveLength(0)
+    expect(did.some((d) => d.startsWith('git merge --no-commit'))).toBe(false)
+  })
+
+  it('reads the overlap NUL-delimited, so a name git would quote stays a path', async () => {
+    const { did } = await conflictRound({ conflicts: ['src/fix.ts'], ancestor: true })
+
+    expect(did.some((d) => d.startsWith('git diff --name-only -z ') && d.includes('..'))).toBe(true)
+  })
 })

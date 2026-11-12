@@ -756,7 +756,7 @@ export interface FakeTree {
    * `diff --diff-filter=U -z` answers the paths NUL-joined, and `merge-base --is-ancestor`
    * fails when `ancestor` is false. Also makes `did` record each call's full arguments.
    */
-  inTree?: { conflicts: string[]; ancestor: boolean }
+  inTree?: { conflicts: string[]; ancestor: boolean; failing?: string }
 }
 
 export function fakePorts(
@@ -789,8 +789,8 @@ export function fakePorts(
       remove: (o) => Effect.sync(() => void did.push(`remove ${o.runId}`)),
       git: (args) =>
         Effect.suspend(() => {
-          const refuse = (detail: string) =>
-            Effect.fail(new RepoFailed({ operation: `git ${args[0]}`, detail, command: args, exitCode: 1 }))
+          const refuse = (detail: string, exitCode = 1) =>
+            Effect.fail(new RepoFailed({ operation: `git ${args[0]}`, detail, command: args, exitCode }))
           const inTree = tree.inTree
           // The refspecs too, for a push and only for a push: *which refs* is
           // the whole of what the restart path needs from it, since the branch
@@ -805,6 +805,8 @@ export function fakePorts(
                 : `git ${args[0]}`,
           )
           if (inTree !== undefined) {
+            // A read that fails for a reason other than the answer being no (exit 128, not 1).
+            if (inTree.failing !== undefined && args.join(' ').includes(inTree.failing)) return refuse('injected', 128)
             if (args[0] === 'merge' && args[1] === '--abort') {
               standing = false
               return Effect.succeed('')
@@ -823,6 +825,8 @@ export function fakePorts(
             if (args[0] === 'diff' && args.includes('--diff-filter=U') && args.includes('-z')) {
               return Effect.succeed(inTree.conflicts.join('\0'))
             }
+            if (args[0] === 'diff' && args.includes('--name-only') && args.includes('-z'))
+              return Effect.succeed('src/fix.ts\0')
             if (args[0] === 'merge-base' && args[1] === '--is-ancestor') {
               return inTree.ancestor ? Effect.succeed('') : refuse('not an ancestor')
             }

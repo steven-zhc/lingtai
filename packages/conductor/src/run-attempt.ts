@@ -987,7 +987,12 @@ export interface AttemptOptions {
      */
     readonly roundsSpent?: number
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
-    readonly landedOnBase?: { readonly paths: readonly string[]; readonly fromSha: string; readonly toSha: string }
+    readonly landedOnBase?: {
+      readonly paths: readonly string[]
+      readonly fromSha: string
+      readonly toSha: string
+      readonly conflicted?: readonly string[]
+    }
     /**
      * A granted conflict round's proof (#1120): the base the lane found conflicting. Absent
      * on an old wait, which keeps the brief that tells the agent to merge. On that
