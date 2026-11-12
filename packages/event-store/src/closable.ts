@@ -7,6 +7,8 @@
  * the opener, and a test hands it a fake with a counted `close`.
  */
 
+import { Deferred, Effect } from 'effect'
+
 /** Raised by anything that asks for the process log after it was closed. */
 export class ProcessLogClosedError extends Error {
   constructor() {
@@ -20,10 +22,79 @@ export interface Closable {
 }
 
 export interface ClosableOnce<T extends Closable> {
-  /** Open on first use, memoised on the promise so racing first callers open once. */
+  /** Open on first use; racing first callers share one open. */
   get(): Promise<T>
   /** Close what was opened, once; with nothing opened, only refuse from now on. */
   close(): Promise<void>
+}
+
+/** The Effect form: `get` and `close` are methods that return Effects, run when asked. */
+export interface ClosableOnceEffect<T> {
+  /** Open on first use, memoised in a `Deferred` so racing first callers open once. */
+  get(): Effect.Effect<T>
+  /** Close what was opened, once; with nothing opened, only refuse from now on. */
+  close(): Effect.Effect<void>
+}
+
+/**
+ * Nothing is allocated or run when this is called — it is built at module scope.
+ * The memo cells are made inside the first `get`/`close` to run, in the same
+ * synchronous step as the check, so two first callers cannot both open. Both
+ * methods are masked from the start: the first caller's open always fills the
+ * cell, and only the waiting is interruptible. A failed open is remembered.
+ */
+export function closableOnceEffect<T>(
+  open: Effect.Effect<T>,
+  close: (t: T) => Effect.Effect<void>,
+  /** The refusal a `get` after `close` gets; the process log's own by default. */
+  refuse: () => Error = () => new ProcessLogClosedError(),
+): ClosableOnceEffect<T> {
+  let opening: Deferred.Deferred<T> | null = null
+  let closing: Deferred.Deferred<void> | null = null
+  let closed = false
+  return {
+    get: () =>
+      Effect.uninterruptibleMask((restore) =>
+        Effect.suspend(() => {
+          if (closed) return Effect.die(refuse())
+          if (opening) return restore(Deferred.await(opening))
+          const cell = (opening = Deferred.makeUnsafe<T>())
+          return Effect.exit(open).pipe(
+            Effect.flatMap((exit) => Deferred.done(cell, exit)),
+            Effect.andThen(restore(Deferred.await(cell))),
+          )
+        }),
+      ),
+    close: () =>
+      Effect.uninterruptibleMask((restore) =>
+        Effect.suspend(() => {
+          closed = true
+          if (closing) return restore(Deferred.await(closing))
+          const cell = (closing = Deferred.makeUnsafe<void>())
+          const opened = opening
+          // An open that failed left nothing to close, and its error was already
+          // reported by the command that asked.
+          const work: Effect.Effect<void> = opened
+            ? Effect.flatMap(Effect.exit(Deferred.await(opened)), (opened) =>
+                opened._tag === 'Success' ? close(opened.value) : Effect.void,
+              )
+            : Effect.void
+          return Effect.exit(work).pipe(
+            Effect.flatMap((exit) => Deferred.done(cell, exit)),
+            Effect.andThen(restore(Deferred.await(cell))),
+          )
+        }),
+      ),
+  }
+}
+
+/** Held until the projector's shared store holds a `closableOnceEffect` (#790). */
+export function closableGetFace<T>(c: ClosableOnceEffect<T>): Promise<T> {
+  return Effect.runPromise(c.get())
+}
+
+export function closableCloseFace<T>(c: ClosableOnceEffect<T>): Promise<void> {
+  return Effect.runPromise(c.close())
 }
 
 export function closableOnce<T extends Closable>(
@@ -31,23 +102,6 @@ export function closableOnce<T extends Closable>(
   /** The refusal a `get` after `close` gets; the process log's own by default. */
   refuse: () => Error = () => new ProcessLogClosedError(),
 ): ClosableOnce<T> {
-  let opening: Promise<T> | null = null
-  let closing: Promise<void> | null = null
-  let closed = false
-  return {
-    get() {
-      if (closed) return Promise.reject(refuse())
-      return (opening ??= open())
-    },
-    close() {
-      closed = true
-      return (closing ??= (async () => {
-        if (!opening) return
-        // An open that failed left nothing to close, and its error was already
-        // reported by the command that asked.
-        const opened = await opening.catch(() => null)
-        await opened?.close()
-      })())
-    },
-  }
+  const c = closableOnceEffect(Effect.promise(open), (t: T) => Effect.promise(() => t.close()), refuse)
+  return { get: () => closableGetFace(c), close: () => closableCloseFace(c) }
 }

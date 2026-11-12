@@ -423,18 +423,23 @@ export function makePostgresEvents(client: Db): EventsPort {
       // turned into a failure — inside the promise, before it can be one.
       // Uninterruptible: an interrupted caller waits for the commit or the
       // rollback rather than leaving with the transaction undecided.
+      const context = yield* Effect.context()
       const outcome = yield* Effect.uninterruptible(
         Effect.promise(() =>
           client
-            .transaction(async (tx) => {
-              const written: Envelope[] = []
+            .transaction((tx) =>
               // Sequentially, not in parallel: the versions inside a batch are
-              // ordered, and one transaction has one connection anyway.
-              for (const row of rows) {
-                written.push(toEnvelope((await tx.orm.public.Event.create(row)) as EventRow))
-              }
-              return written
-            })
+              // ordered, and one transaction has one connection anyway. Run with
+              // the caller's own context, so a span reaches the row writes.
+              Effect.runPromiseWith(context)(
+                Effect.forEach(rows, (row) =>
+                  Effect.map(
+                    Effect.promise(() => tx.orm.public.Event.create(row)),
+                    (created) => toEnvelope(created as EventRow),
+                  ),
+                ),
+              ),
+            )
             .then(
               (written): Effect.Effect<Envelope[], ConcurrencyError> => Effect.succeed(written),
               (err): Effect.Effect<Envelope[], ConcurrencyError> => {
