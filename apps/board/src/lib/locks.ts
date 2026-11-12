@@ -10,43 +10,121 @@
  * paused", which is the silence #77 was about.
  */
 import { loadProjects } from '@lingtai/conductor/projects'
-import { pauseProject, resumeProject } from '@lingtai/daemon/control'
+import { pauseProject, raiseDayCeiling, readControl, resumeProject } from '@lingtai/daemon/control'
 import {
+  RAISE_REFUSALS,
+  ceilingFacts,
   isRegistered,
   lockSentence,
   locksOn,
   projectStream,
   reduceProject,
+  type CeilingFacts,
   type Envelope,
   type Lock,
 } from '@lingtai/domain'
+import { machineDayCeiling } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { cache } from 'react'
 
 import type { ActionResult } from './diff.ts'
+import { boardWriterOrNone } from './snapshot-writer.ts'
 
 /** The registered projects, read once however many places of one render ask. */
 export const readRegistered = cache(() => loadProjects())
 
+/**
+ * `ctl-conductor`, read once however many places of one render ask (#1006).
+ * Not caught: a caller that cannot say what it failed to read must not draw
+ * "nothing holds" from it (#77). `readProjectLocks` catches it for itself.
+ */
+export const readControlOnce = cache(async () => readControl(undefined, 0, { writer: await boardWriterOrNone() }))
+
 export type HeldProject = { project: string; locks: readonly Lock[] }
-export type ProjectLocks = { ok: true; held: readonly HeldProject[] } | { ok: false; problem: string }
+export type ProjectLocks =
+  | {
+      ok: true
+      held: readonly HeldProject[]
+      /** Today's ceiling as every reader says it; undefined when the control read failed or nothing is set. */
+      ceiling: CeilingFacts | undefined
+      /** Set when the control stream could not be read: the banner says so rather than drawing no ceiling. */
+      controlProblem?: string
+    }
+  | { ok: false; problem: string }
+
+const problemOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
+/** The configured figure, or undefined when it cannot be read: that must never take the control read down. */
+function configuredCeiling(): number | undefined {
+  try {
+    return machineDayCeiling()
+  } catch {
+    return undefined
+  }
+}
 
 /** Every registered project that something holds, ordered by name. Never `[]` for a failure. */
 export const readProjectLocks = cache(async (): Promise<ProjectLocks> => {
   try {
-    const projects = await readRegistered()
+    const [projects, control] = await Promise.all([
+      readRegistered(),
+      readControlOnce().then(
+        (state) => ({ state }),
+        (err: unknown) => ({ problem: problemOf(err) }),
+      ),
+    ])
+    const state = 'state' in control ? control.state : undefined
     const held: HeldProject[] = []
-    for (const state of projects) {
-      const locks = locksOn({ project: state })
-      if (state.project !== null && locks.length > 0) held.push({ project: state.project, locks })
+    for (const project of projects) {
+      const locks = locksOn({ project, control: state })
+      if (project.project !== null && locks.length > 0) held.push({ project: project.project, locks })
     }
     held.sort((a, b) => (a.project < b.project ? -1 : a.project > b.project ? 1 : 0))
-    return { ok: true, held }
+    return {
+      ok: true,
+      held,
+      ceiling: state === undefined ? undefined : ceilingFacts(state, new Date(), configuredCeiling()),
+      ...('problem' in control ? { controlProblem: control.problem } : {}),
+    }
   } catch (err) {
-    return { ok: false, problem: err instanceof Error ? err.message : String(err) }
+    return { ok: false, problem: problemOf(err) }
   }
 })
+
+export type BannerRow =
+  | { kind: 'ceiling'; facts: NonNullable<CeilingFacts['reached']> }
+  | { kind: 'control-unread'; problem: string }
+  | { kind: 'paused'; project: string; by: string; since: Date }
+
+/**
+ * The banner's rows in 0126 §8's order: the ceiling once (it holds every
+ * project, so it is one row however many projects are held), the could-not-read
+ * row, then each paused project in scope. Pure. #1010 adds the account rows
+ * after the ceiling.
+ */
+export function bannerRows(
+  read: { held: readonly HeldProject[]; ceiling: CeilingFacts | undefined; controlProblem?: string },
+  scope: string | undefined,
+): readonly BannerRow[] {
+  const rows: BannerRow[] = []
+  if (read.ceiling?.reached) rows.push({ kind: 'ceiling', facts: read.ceiling.reached })
+  if (read.controlProblem !== undefined) rows.push({ kind: 'control-unread', problem: read.controlProblem })
+  for (const h of inScope(read.held, scope)) {
+    for (const lock of h.locks) {
+      if (lock.kind === 'paused') rows.push({ kind: 'paused', project: h.project, by: lock.by, since: lock.since })
+    }
+  }
+  return rows
+}
+
+/**
+ * The figure offered for *continue today*: a quarter over the larger of the
+ * ceiling that was reached and what was spent, in whole dollars. $200 → $250.
+ */
+export function suggestedRaise(reachedUsd: number, spentUsd: number): number {
+  return Math.ceil((Math.round(Math.max(reachedUsd, spentUsd) * 100) * 1.25) / 100)
+}
 
 /** All of them for *all projects*, and only that project's row for one. */
 export function inScope(held: readonly HeldProject[], project: string | undefined): readonly HeldProject[] {
@@ -119,3 +197,47 @@ export function askRefusal(project: string, read: readonly Envelope[] | Error): 
   const sentence = lockSentence(project, locksOn({ project: reduceProject(read) }))
   return sentence === null ? null : `${sentence} — resume it, then ask`
 }
+
+/**
+ * A person raises today's ceiling from the board (#1006, 0126 §7).
+ *
+ * The figure is the person's and is never adjusted: one that is not a finite
+ * positive number is refused before anything is read. Today's spend comes from
+ * `readSpend` (`readDayReading` in production); if it cannot be read nothing
+ * is raised. **The board does not check that the `spend` projection is stalled
+ * or being rebuilt**, as `lingtai ceiling raise` does: the rebuild hold is the
+ * conductor process's own memory and cannot be seen from here. That is safe
+ * because the guard compares the raised figure with its own trusted spend before
+ * every claim (#1004): a raise accepted against a stale, low spend that is
+ * below the true spend is locked again at the guard's next look, with a
+ * `DayCeilingReached` naming that figure, and nothing was spent past it.
+ */
+export const continueTodayWith = (input: {
+  store: EventStore
+  toUsd: number
+  by: string
+  now?: Date
+  readSpend: () => Promise<{ day: { reportedCents: number; estimatedCents: number } | null }>
+}) =>
+  Effect.gen(function* () {
+    const { toUsd } = input
+    if (typeof toUsd !== 'number' || !Number.isFinite(toUsd) || toUsd <= 0) {
+      return {
+        ok: false,
+        detail: 'the figure must be a positive number of dollars — nothing raised',
+      } satisfies ActionResult
+    }
+    const { day } = yield* Effect.tryPromise(() => input.readSpend())
+    if (day === null) {
+      return { ok: false, detail: "today's spend could not be read — nothing raised" } satisfies ActionResult
+    }
+    const raising = yield* raiseDayCeiling({
+      toUsd,
+      by: input.by,
+      spentCents: day.reportedCents + day.estimatedCents,
+      store: input.store,
+      now: input.now,
+    })
+    if (!raising.raised) return { ok: false, detail: RAISE_REFUSALS[raising.refused] } satisfies ActionResult
+    return { ok: true, detail: `today's ceiling raised to $${toUsd}` } satisfies ActionResult
+  })

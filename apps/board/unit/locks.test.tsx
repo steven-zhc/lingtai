@@ -21,11 +21,13 @@ const row = (project: string, by = 'human:steven', since = new Date(2026, 10, 11
 
 describe('LockRows', () => {
   it('renders nothing with no rows', () => {
-    expect(renderToStaticMarkup(<LockRows locks={{ ok: true, held: [] }} now={now} />)).toBe('')
+    expect(renderToStaticMarkup(<LockRows locks={{ ok: true, held: [], ceiling: undefined }} now={now} />)).toBe('')
   })
 
   it('draws one paused project: name linked, who, since, the note and a resume button', () => {
-    const html = renderToStaticMarkup(<LockRows locks={{ ok: true, held: [row('lingtai')] }} now={now} />)
+    const html = renderToStaticMarkup(
+      <LockRows locks={{ ok: true, held: [row('lingtai')], ceiling: undefined }} now={now} />,
+    )
     expect(html).toContain('Paused')
     expect(html).toContain('href="/?project=lingtai"')
     expect(html).toContain('title="show only lingtai"')
@@ -37,7 +39,7 @@ describe('LockRows', () => {
 
   it('keeps the order it is given by project name', () => {
     const held = [row('alpha'), row('beta')]
-    const html = renderToStaticMarkup(<LockRows locks={{ ok: true, held }} now={now} />)
+    const html = renderToStaticMarkup(<LockRows locks={{ ok: true, held, ceiling: undefined }} now={now} />)
     expect(html.indexOf('alpha')).toBeLessThan(html.indexOf('beta'))
   })
 
@@ -119,7 +121,9 @@ describe('setProjectPaused', () => {
 
 describe('the banner row layout', () => {
   it('puts an expanding spacer before the resume button', () => {
-    const html = renderToStaticMarkup(<LockRows locks={{ ok: true, held: [row('lingtai')] }} now={now} />)
+    const html = renderToStaticMarkup(
+      <LockRows locks={{ ok: true, held: [row('lingtai')], ceiling: undefined }} now={now} />,
+    )
     expect(html.indexOf('class="grow"')).toBeGreaterThan(html.indexOf('an attempt in flight'))
     expect(html.indexOf('class="grow"')).toBeLessThan(html.indexOf('<button'))
   })

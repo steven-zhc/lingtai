@@ -8,7 +8,7 @@
  * that is stalled or rebuilding, is a refusal by name and never a raise.
  */
 import { raiseDayCeiling } from '@lingtai/daemon'
-import type { RaiseRefusal } from '@lingtai/domain'
+import { RAISE_REFUSALS } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 
@@ -22,13 +22,6 @@ export interface CeilingRaiseOptions extends TrustedDaySpendPorts {
 }
 
 const usd = (n: number): string => `$${n.toFixed(2)}`
-
-const REFUSALS: Record<RaiseRefusal, string> = {
-  'not-reached':
-    "today's ceiling has not been reached — nothing to raise; to change the figure for every day, edit limits.day_usd",
-  'not-above-spend': "that is not above today's spend — raise it to more than has been spent",
-  'not-above-ceiling': 'that is not above the ceiling that was reached — raise it to a higher figure',
-}
 
 /** Exit code: 0 raised, 1 refused or unreadable. */
 export const ceilingRaise = (o: CeilingRaiseOptions): Effect.Effect<0 | 1> =>
@@ -55,7 +48,7 @@ export const ceilingRaise = (o: CeilingRaiseOptions): Effect.Effect<0 | 1> =>
       return 1 as const
     }
     if (!result.raised) {
-      o.log(REFUSALS[result.refused])
+      o.log(RAISE_REFUSALS[result.refused])
       return 1 as const
     }
     const configured = spend.configuredUsd

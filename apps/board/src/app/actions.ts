@@ -73,10 +73,11 @@ import { revalidatePath } from 'next/cache'
 // Who is acting — next door for the same reason, and so a test can hold the
 // CLI's actor to this one rather than to a copy.
 import { actor } from '@/lib/actor'
+import { readDayReading } from '@/lib/day-spend'
 // A "use server" module may only export async functions, so the shapes and the
 // limit live next door.
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
-import { askRefusal, setProjectPaused } from '@/lib/locks'
+import { askRefusal, continueTodayWith, setProjectPaused } from '@/lib/locks'
 import type { SaveRecipeState } from '@/lib/recipe-edit'
 import { runSplit, splitInstance } from '@/lib/split-instance'
 
@@ -551,6 +552,22 @@ export async function pauseProjectNow(input: { project: string }): Promise<Actio
 
 export async function resumeProjectNow(input: { project: string }): Promise<ActionResult> {
   return projectLock('resume', input.project)
+}
+
+/**
+ * A person raises today's ceiling to `toUsd` (#1006). The core, and why the
+ * stall check is not made here, are `continueTodayWith`'s.
+ */
+export async function continueToday(input: { toUsd: number }): Promise<ActionResult> {
+  try {
+    const result = await Effect.runPromise(
+      continueTodayWith({ store: eventStore, toUsd: input.toUsd, by: actor(), readSpend: () => readDayReading() }),
+    )
+    revalidatePath('/', 'layout')
+    return result
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
 }
 
 /**

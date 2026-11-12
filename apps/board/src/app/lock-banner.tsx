@@ -1,5 +1,6 @@
 /**
- * The row under the bar for each paused project in scope (#994, 0126 §8).
+ * The rows under the bar: the day's ceiling, then each paused project in scope
+ * (#994, #1006, 0126 §8).
  *
  * Absent when nothing holds the scope. A failed read is a row of its own and
  * never an absence: "nothing is paused" drawn from a read that failed is the
@@ -11,30 +12,69 @@
  */
 import Link from 'next/link'
 
-import { inScope, readProjectLocks, sinceLabel, type HeldProject, type ProjectLocks } from '@/lib/locks.ts'
+import { isPaused } from '@/lib/lock-marks.ts'
+import {
+  bannerRows,
+  inScope,
+  readProjectLocks,
+  sinceLabel,
+  suggestedRaise,
+  type BannerRow,
+  type ProjectLocks,
+} from '@/lib/locks.ts'
 
 import { withProject } from './bar.tsx'
+import { ContinueToday } from './continue-today.tsx'
 import { PauseButton, ResumeButton } from './pause-button.tsx'
 
 export async function LockBanner({ project }: { project: string | undefined }) {
   const read = await readProjectLocks()
-  const locks: ProjectLocks = read.ok ? { ok: true, held: inScope(read.held, project) } : read
-  return <LockRows locks={locks} now={new Date()} />
+  return <LockRows locks={read} scope={project} now={new Date()} />
 }
 
 /**
  * The bar's `pause` slot for `project`: nothing for *all projects*, nothing
  * when the read failed (the banner's row already says why), otherwise the
- * button in the state the locks give.
+ * button in the state the project's own pause gives. The ceiling is in every
+ * project's locks and is not this button's to resume.
  */
 export async function pauseSlot(project: string | undefined) {
   if (project === undefined) return undefined
   const read = await readProjectLocks()
   if (!read.ok) return undefined
-  return <PauseButton project={project} paused={inScope(read.held, project).length > 0} />
+  return <PauseButton project={project} paused={isPaused(inScope(read.held, project)[0]?.locks)} />
 }
 
-export function LockRows({ locks, now }: { locks: ProjectLocks; now: Date }) {
+const usd = (n: number): string => `$${n.toFixed(2)}`
+const whole = (n: number): string => (Number.isInteger(n) ? `$${n}` : usd(n))
+
+function CeilingRow({ facts, now }: { facts: Extract<BannerRow, { kind: 'ceiling' }>['facts']; now: Date }) {
+  if (facts.passed) {
+    return (
+      <div className="pbrow passed">
+        <b className="lab">Spend ceiling</b>
+        <span className="what">
+          reached on {facts.day}
+          <span className="sub"> · passed, lifts when the conductor next looks</span>
+        </span>
+      </div>
+    )
+  }
+  const title = `${usd(facts.reportedUsd)} reported + ~${usd(facts.estimatedUsd)} estimated at ${sinceLabel(facts.since, now)}`
+  return (
+    <div className="pbrow">
+      <b className="lab">Spend ceiling</b>
+      <span className="what" title={title}>
+        today's spend reached {whole(facts.ceilingUsd)}
+        <span className="sub"> · nothing starts until midnight</span>
+      </span>
+      <span className="grow" />
+      <ContinueToday suggested={suggestedRaise(facts.ceilingUsd, facts.reportedUsd + facts.estimatedUsd)} />
+    </div>
+  )
+}
+
+export function LockRows({ locks, scope, now }: { locks: ProjectLocks; scope?: string | undefined; now: Date }) {
   if (!locks.ok) {
     return (
       <div className="pbanner">
@@ -45,28 +85,38 @@ export function LockRows({ locks, now }: { locks: ProjectLocks; now: Date }) {
       </div>
     )
   }
-  if (locks.held.length === 0) return null
+  const rows = bannerRows(locks, scope)
+  if (rows.length === 0) return null
   return (
     <div className="pbanner">
-      {locks.held.map((row: HeldProject) =>
-        row.locks.map((lock) =>
-          // The ceiling is drawn by #1006/#1007; the board reads no `control` here yet.
-          lock.kind !== 'paused' ? null : (
-            <div className="pbrow" key={`${row.project}:${lock.kind}`}>
-              <b className="lab">Paused</b>
-              <span className="what">
-                <Link href={withProject('/', row.project)} title={`show only ${row.project}`}>
-                  {row.project}
-                </Link>{' '}
-                · <span className="person">by {lock.by}</span> since {sinceLabel(lock.since, now)}
-              </span>
-              <small className="sub">an attempt in flight finishes</small>
-              <span className="grow" />
-              <ResumeButton project={row.project} />
-            </div>
-          ),
-        ),
-      )}
+      {rows.map((row) => {
+        switch (row.kind) {
+          case 'ceiling':
+            return <CeilingRow key="ceiling" facts={row.facts} now={now} />
+          case 'control-unread':
+            return (
+              <div className="pbrow" key="control-unread">
+                <b className="lab">Spend ceiling</b>
+                <span className="what">could not read whether today's ceiling holds — {row.problem}</span>
+              </div>
+            )
+          case 'paused':
+            return (
+              <div className="pbrow" key={`paused:${row.project}`}>
+                <b className="lab">Paused</b>
+                <span className="what">
+                  <Link href={withProject('/', row.project)} title={`show only ${row.project}`}>
+                    {row.project}
+                  </Link>{' '}
+                  · <span className="person">by {row.by}</span> since {sinceLabel(row.since, now)}
+                </span>
+                <small className="sub">an attempt in flight finishes</small>
+                <span className="grow" />
+                <ResumeButton project={row.project} />
+              </div>
+            )
+        }
+      })}
     </div>
   )
 }

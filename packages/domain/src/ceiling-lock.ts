@@ -132,6 +132,14 @@ export function ceilingCheck(input: {
 
 export type RaiseRefusal = 'not-reached' | 'not-above-spend' | 'not-above-ceiling'
 
+/** The sentence for each refusal, said the same by `lingtai ceiling raise` and the board (#1006). */
+export const RAISE_REFUSALS: Record<RaiseRefusal, string> = {
+  'not-reached':
+    "today's ceiling has not been reached — nothing to raise; to change the figure for every day, edit limits.day_usd",
+  'not-above-spend': "that is not above today's spend — raise it to more than has been spent",
+  'not-above-ceiling': 'that is not above the ceiling that was reached — raise it to a higher figure',
+}
+
 /** The lift a person's raise appends, or the refusal that says why not (0126 §7). */
 export function raiseTransition(input: {
   state: ControlState
