@@ -894,7 +894,7 @@ repo: { base: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
 # Named, so resolving the recipe never asks which runtimes are signed in on the
-# machine running the test: with no `runtime.agent` it detects, and CI has none.
+# machine running the test: with no runtime.agent it detects, and CI has none.
 runtime:
   agent: claude-code
 steps:
