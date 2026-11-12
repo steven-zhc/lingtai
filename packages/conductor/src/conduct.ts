@@ -220,7 +220,6 @@ import {
   mirrorWrite,
   retryUnreachable,
   type RepoFailed,
-  withMirrorWrite,
   worktreePath,
   type TokenSource,
   type Worktree,
@@ -328,29 +327,30 @@ function splitClosedComment(waitId: string, children: readonly SplitChildState[]
  * (a larger diff, never a smaller one); a merge-base that cannot be read is
  * `fallback`, and each is noted. Never throws.
  */
-export const ownChangeStart = async (port: {
-  git: (args: string[]) => Promise<Result.Result<string, { detail: string }>>
+export const ownChangeStart = (port: {
+  git: (args: string[]) => Effect.Effect<Result.Result<string, { detail: string }>>
   note: (line: string) => void
   base: string
   fallback: string
-}): Promise<string> => {
-  const { git, note, base, fallback } = port
-  const fetched = await git(['fetch', 'origin', `refs/heads/${base}`])
-  const fetchOk = Result.isSuccess(fetched)
-  if (!fetchOk) note(`fetching ${base} failed, using the local ref: ${fetched.failure.detail}`)
-  const got = await git(['merge-base', fetchOk ? 'FETCH_HEAD' : `refs/heads/${base}`, 'HEAD'])
-  if (Result.isFailure(got)) {
-    note(`merge-base with ${base} failed, measuring from ${fallback}: ${got.failure.detail}`)
-    return fallback
-  }
-  const lines = got.success.split('\n').filter((l) => l.trim() !== '')
-  const sha = lines.length === 1 ? lines[0]!.trim() : ''
-  if (!/^[0-9a-f]{40}$/.test(sha)) {
-    note(`merge-base with ${base} printed ${lines.length} lines, measuring from ${fallback}`)
-    return fallback
-  }
-  return sha
-}
+}): Effect.Effect<string> =>
+  Effect.gen(function* () {
+    const { git, note, base, fallback } = port
+    const fetched = yield* git(['fetch', 'origin', `refs/heads/${base}`])
+    const fetchOk = Result.isSuccess(fetched)
+    if (!fetchOk) note(`fetching ${base} failed, using the local ref: ${fetched.failure.detail}`)
+    const got = yield* git(['merge-base', fetchOk ? 'FETCH_HEAD' : `refs/heads/${base}`, 'HEAD'])
+    if (Result.isFailure(got)) {
+      note(`merge-base with ${base} failed, measuring from ${fallback}: ${got.failure.detail}`)
+      return fallback
+    }
+    const lines = got.success.split('\n').filter((l) => l.trim() !== '')
+    const sha = lines.length === 1 ? lines[0]!.trim() : ''
+    if (!/^[0-9a-f]{40}$/.test(sha)) {
+      note(`merge-base with ${base} printed ${lines.length} lines, measuring from ${fallback}`)
+      return fallback
+    }
+    return sha
+  })
 
 export const changedFilesArgs = (baseSha: string): string[] => [
   'diff',
@@ -1842,8 +1842,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const gitHere = (args: string[]) => repo.git(args, { token: options.token, env: options.gitEnv, cwd })
       /** …as an Effect: a failure here is a defect, not a verdict. */
       const gitOrDieEffect = (args: string[]) => Effect.orDie(gitHere(args))
-      /** …as a promise, for the ports not yet Effects. */
-      const gitOrDie = (args: string[]) => Effect.runPromise(gitOrDieEffect(args))
       /**
        * `retry` is the waits for a command that may not reach origin (#1029): the same single
        * run, with `retryUnreachable` inside it.
@@ -1862,7 +1860,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           : gitHere(args)
         return Effect.result(retry ? retryUnreachable(once, retry) : once)
       }
-      /** …as a promise, for the ports not yet Effects. */
+      /** …as a promise, for `kept-run-port.ts` alone (CONDUCT-5). */
       const gitAsked = (
         args: string[],
         retry?: readonly Duration.Input[],
@@ -1875,7 +1873,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `fetch origin refs/heads/<base>` with no destination, so they write
        * the worktree's own `FETCH_HEAD` and objects and are not held.
        */
-      const gitAskedMirror = (args: string[]) => withMirrorWrite(mirrorPathFor(project, home), () => gitAsked(args))
+      const gitAskedMirror = (args: string[]) => mirrorWrite(mirrorPathFor(project, home), gitAskedEffect(args))
 
       /**
        * `git diff <DIFF_FLAGS> from...HEAD`, the one spelling the reviewer, the
@@ -1885,16 +1883,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * cannot be resolved the diff still runs as it always did and carries no shas,
        * so its prompt writes it out.
        */
-      const diffBetween = (from: string): Promise<DiffRead> => {
-        const shaOf = (rev: string): Promise<string | null> =>
-          gitAsked(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`]).then((got) =>
+      const diffBetween = (from: string): Effect.Effect<DiffRead> => {
+        const shaOf = (rev: string): Effect.Effect<string | null> =>
+          Effect.map(gitAskedEffect(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`]), (got) =>
             Result.isFailure(got) ? null : got.success.trim() || null,
           )
-        return Promise.all([shaOf(from), shaOf('HEAD')]).then(([a, b]) =>
-          a !== null && b !== null
-            ? gitOrDie(['diff', ...DIFF_FLAGS, `${a}...${b}`]).then((text) => ({ text, from: a, to: b }))
-            : gitOrDie(['diff', ...DIFF_FLAGS, `${from}...HEAD`]).then((text) => ({ text, from: null, to: null })),
-        )
+        return Effect.gen(function* () {
+          const [a, b] = yield* Effect.all([shaOf(from), shaOf('HEAD')], { concurrency: 2 })
+          if (a !== null && b !== null) {
+            const text = yield* gitOrDieEffect(['diff', ...DIFF_FLAGS, `${a}...${b}`])
+            return { text, from: a, to: b }
+          }
+          const text = yield* gitOrDieEffect(['diff', ...DIFF_FLAGS, `${from}...HEAD`])
+          return { text, from: null, to: null }
+        })
       }
 
       /**
@@ -1916,21 +1918,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * (`keepUncommittedWork`, `#468`).
        */
       const changeStart = (fallback: string = baseShaOr('HEAD')) =>
-        ownChangeStart({ git: gitAsked, note: (l) => runLog.note('base', l), base, fallback })
+        ownChangeStart({ git: gitAskedEffect, note: (l) => runLog.note('base', l), base, fallback })
 
-      const numstat = async (from?: string, to = 'HEAD') => {
-        from ??= await changeStart()
-        const stat = await gitOrDie(['diff', '--numstat', `${from}..${to}`]).catch(() => '')
-        const rows = stat
-          .split('\n')
-          .filter(Boolean)
-          .map((l) => l.split('\t'))
-        return {
-          files: rows.length,
-          insertions: rows.reduce((n, r) => n + (Number(r[0]) || 0), 0),
-          deletions: rows.reduce((n, r) => n + (Number(r[1]) || 0), 0),
-        }
-      }
+      const numstat = (from?: string, to = 'HEAD') =>
+        Effect.gen(function* () {
+          from ??= yield* changeStart()
+          const stat = yield* gitOrDieEffect(['diff', '--numstat', `${from}..${to}`]).pipe(
+            Effect.catchDefect(() => Effect.succeed('')),
+          )
+          const rows = stat
+            .split('\n')
+            .filter(Boolean)
+            .map((l) => l.split('\t'))
+          return {
+            files: rows.length,
+            insertions: rows.reduce((n, r) => n + (Number(r[0]) || 0), 0),
+            deletions: rows.reduce((n, r) => n + (Number(r[1]) || 0), 0),
+          }
+        })
 
       /**
        * What origin last had for this branch, as far as this pass knows. Starts
@@ -1980,22 +1985,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * records it as `kept`. Never throws (`noteRefs`' own reason, below):
        * the publish has to finish whether or not the ref lands.
        */
-      const keepHead = async (head: string): Promise<void> => {
-        const wrote = await gitAskedMirror(['update-ref', keptRef, head])
-        if (Result.isFailure(wrote)) {
-          runLog.note('push', `${head.slice(0, 7)} was not kept at ${keptRef} — ${wrote.failure.detail}`)
-          return
-        }
-        kept = { _tag: 'Mirror', ref: keptRef, sha: head, arm: `refs/heads/${arm}` }
-      }
+      const keepHead = (head: string): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          const wrote = yield* gitAskedMirror(['update-ref', keptRef, head])
+          if (Result.isFailure(wrote)) {
+            runLog.note('push', `${head.slice(0, 7)} was not kept at ${keptRef} — ${wrote.failure.detail}`)
+            return
+          }
+          kept = { _tag: 'Mirror', ref: keptRef, sha: head, arm: `refs/heads/${arm}` }
+        })
       /** Deletes `keptRef`, where the commits it pointed at reached origin another way. */
-      const dropKept = async (): Promise<void> => {
-        const dropped = await gitAskedMirror(['update-ref', '-d', keptRef])
-        if (Result.isFailure(dropped)) {
-          runLog.note('push', `${keptRef} was not dropped — ${dropped.failure.detail}`)
-        }
-        kept = null
-      }
+      const dropKept = (): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          const dropped = yield* gitAskedMirror(['update-ref', '-d', keptRef])
+          if (Result.isFailure(dropped)) {
+            runLog.note('push', `${keptRef} was not dropped — ${dropped.failure.detail}`)
+          }
+          kept = null
+        })
       /**
        * **The dirty tree a stopped agent left, kept as its own commit** (`#468`).
        *
@@ -2048,27 +2055,35 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `RunProducedDiff` below, and a ref nobody will fetch is worse than a
        * missing explanation of a ref that is there.
        */
-      const noteRefs = async (
+      /** An append that never rejects: `null` when it landed, the refusal when it did not. */
+      const appendTo = (events: readonly ToAppend[]): Effect.Effect<{ refused: unknown } | null> =>
+        Effect.promise(() =>
+          appendAt(runId, events).then(
+            () => null,
+            (refused: unknown) => ({ refused }),
+          ),
+        )
+      const noteRefs = (
         outcome: 'published' | 'nothing-committed' | 'already-published' | 'arm-only' | 'refused' | 'unrecorded',
         headSha: string | null,
         detail: string | null,
         branchCarries?: boolean,
         armSha?: string,
-      ): Promise<void> => {
-        try {
-          await appendAt(runId, [
+      ): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          const failed = yield* appendTo([
             {
               type: 'RunRefsPublished',
               actor: 'conductor',
               data: parsePayload('RunRefsPublished', { branch, arm, headSha, outcome, detail, branchCarries, armSha }),
             },
           ])
-        } catch (defect) {
-          const why = whyOf(defect)
-          runLog.note('push', `the account of ${outcome} was not appended — ${why}`)
-          log(`RunRefsPublished (${outcome}) was refused by the store: ${why}`)
-        }
-      }
+          if (failed !== null) {
+            const why = whyOf(failed.refused)
+            runLog.note('push', `the account of ${outcome} was not appended — ${why}`)
+            log(`RunRefsPublished (${outcome}) was refused by the store: ${why}`)
+          }
+        })
 
       /**
        * The counts, against the ref that actually holds them — so the next
@@ -2081,35 +2096,34 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * it works — a finalizer that will not finish holds the worktree, and with
        * it the commits, against every later attempt.
        */
-      const recordDiff = async (ref: string, head: string): Promise<void> => {
-        if (recordedDiff === producedKey(ref, head)) return
-        // `head` rather than the implicit `HEAD`: once a WIP commit exists,
-        // `branch`'s own head is the agent's last commit and `HEAD` is the
-        // WIP on top of it (`keepUncommittedWork`, `#468`) — two different
-        // counts, and this one is asked for the ref it is actually about.
-        const counted = await numstat(undefined, head)
-        const row: ToAppend = {
-          type: 'RunProducedDiff',
-          actor: 'conductor',
-          data: parsePayload('RunProducedDiff', { branch: ref, headSha: head, ...counted }),
-        }
-        try {
-          await appendAt(runId, [row])
-        } catch (first) {
-          try {
-            await appendAt(runId, [row])
-          } catch (again) {
-            const why = `${whyOf(first)}, and again — ${whyOf(again)}`
-            runLog.note('push', `${ref} at ${head.slice(0, 7)} is on origin and was not recorded — ${why}`)
-            log(`RunProducedDiff (${ref}) was refused by the store twice: ${why}`)
-            await noteRefs('unrecorded', head, `${ref} — ${why}`)
-            return
+      const recordDiff = (ref: string, head: string): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          if (recordedDiff === producedKey(ref, head)) return
+          // `head` rather than the implicit `HEAD`: once a WIP commit exists,
+          // `branch`'s own head is the agent's last commit and `HEAD` is the
+          // WIP on top of it (`keepUncommittedWork`, `#468`) — two different
+          // counts, and this one is asked for the ref it is actually about.
+          const counted = yield* numstat(undefined, head)
+          const row: ToAppend = {
+            type: 'RunProducedDiff',
+            actor: 'conductor',
+            data: parsePayload('RunProducedDiff', { branch: ref, headSha: head, ...counted }),
           }
-        }
-        // After the append and never before it (`#251`): a key set in advance
-        // marks the answer given by the append that did not give it.
-        recordedDiff = producedKey(ref, head)
-      }
+          const first = yield* appendTo([row])
+          if (first !== null) {
+            const again = yield* appendTo([row])
+            if (again !== null) {
+              const why = `${whyOf(first.refused)}, and again — ${whyOf(again.refused)}`
+              runLog.note('push', `${ref} at ${head.slice(0, 7)} is on origin and was not recorded — ${why}`)
+              log(`RunProducedDiff (${ref}) was refused by the store twice: ${why}`)
+              yield* noteRefs('unrecorded', head, `${ref} — ${why}`)
+              return
+            }
+          }
+          // After the append and never before it (`#251`): a key set in advance
+          // marks the answer given by the append that did not give it.
+          recordedDiff = producedKey(ref, head)
+        })
 
       /**
        * **A stopped agent's dirty tree, kept as its own commit before the
@@ -2137,65 +2151,76 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * of the real commits below it, which is `noteRefs`' own rule read for
        * this row.
        */
-      const keepUncommittedWork = async (): Promise<void> => {
-        if (stoppedBy === null || wip !== null || wipParent !== null) return
-        // A failed keep leaves `wipParent` null, so a retried call reaches
-        // here too (`#468`) — cleared before this attempt's own outcome
-        // overwrites it, so a keep that fails once and then succeeds does not
-        // go on telling later `RunRefsPublished` rows the tree was not kept.
-        wipFailure = null
-        const dirty = await gitAsked(['status', '--porcelain'])
-        if (Result.isFailure(dirty)) {
-          wipFailure = `the dirty tree could not be checked — ${dirty.failure.detail}`
-          runLog.note('push', wipFailure)
-          return
-        }
-        if (dirty.success.trim() === '') return
-        // **Dirt that is only the planted env file is not agent work to
-        // keep** (`#468`) — a porcelain line for it alone must read the same
-        // as a clean tree, not send `git add`/`git commit` at a tree with
-        // nothing else for them to touch. Porcelain's own format is two
-        // status characters, a space, then the path.
-        if (onlyThePlantedFileIsDirty(dirty.success, recipe.env.plantAt)) return
-        const parent = await gitAsked(['rev-parse', 'HEAD'])
-        if (Result.isFailure(parent)) {
-          wipFailure = `the dirty tree was not kept — its parent could not be read: ${parent.failure.detail}`
-          runLog.note('push', wipFailure)
-          return
-        }
-        // `kept-run-port.ts`'s `commitWipExceptPlanted` stages everything and
-        // then unstages the planted env file by name, rather than excluding
-        // it from the `add` — a `:(exclude)` pathspec exits 1 whenever the
-        // repository's own `.gitignore` already covers the path, even though
-        // it staged everything else (`#470`).
-        const kept = await commitWipExceptPlanted(
-          gitAsked,
-          recipe.env.plantAt,
-          // `runId` is always `attemptStream`'s (its one constructor, above),
-          // which `WIP_COMMIT_PREFIX` already carries — `attemptIdOf` strips it
-          // back off here so the message reads `wip: run-<uuid> stopped by …`
-          // rather than doubling it.
-          `${WIP_COMMIT_PREFIX}${attemptIdOf(runId)} stopped by ${stoppedBy}`,
-        )
-        if ('failed' in kept) {
-          wipFailure = `the dirty tree was not kept — ${kept.failed}`
-          runLog.note('push', wipFailure)
-          return
-        }
-        // The commit moved `HEAD` whether or not the read below can confirm its
-        // own sha, so the WIP's existence is recorded here rather than after
-        // it (`#468`) — `wip` itself is filled in from `wipParent` by
-        // `publishWhatIsCommitted`'s own `rev-parse HEAD`, the read that
-        // already has to succeed for anything past it to run.
-        wipParent = { parent: parent.success, stoppedBy }
-        const after = await gitAsked(['rev-parse', 'HEAD'])
-        runLog.note(
-          'push',
-          Result.isSuccess(after)
-            ? `kept the dirty tree as ${after.success.slice(0, 7)} on ${arm}, stopped by ${stoppedBy}`
-            : `kept the dirty tree on ${arm}, stopped by ${stoppedBy} — its own sha could not be confirmed: ${after.failure.detail}`,
-        )
-      }
+      const keepUncommittedWork = (): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          if (stoppedBy === null || wip !== null || wipParent !== null) return
+          // A failed keep leaves `wipParent` null, so a retried call reaches
+          // here too (`#468`) — cleared before this attempt's own outcome
+          // overwrites it, so a keep that fails once and then succeeds does not
+          // go on telling later `RunRefsPublished` rows the tree was not kept.
+          wipFailure = null
+          const dirty = yield* gitAskedEffect(['status', '--porcelain'])
+          if (Result.isFailure(dirty)) {
+            wipFailure = `the dirty tree could not be checked — ${dirty.failure.detail}`
+            runLog.note('push', wipFailure)
+            return
+          }
+          if (dirty.success.trim() === '') return
+          // **Dirt that is only the planted env file is not agent work to
+          // keep** (`#468`) — a porcelain line for it alone must read the same
+          // as a clean tree, not send `git add`/`git commit` at a tree with
+          // nothing else for them to touch. Porcelain's own format is two
+          // status characters, a space, then the path.
+          if (onlyThePlantedFileIsDirty(dirty.success, recipe.env.plantAt)) return
+          const parent = yield* gitAskedEffect(['rev-parse', 'HEAD'])
+          if (Result.isFailure(parent)) {
+            wipFailure = `the dirty tree was not kept — its parent could not be read: ${parent.failure.detail}`
+            runLog.note('push', wipFailure)
+            return
+          }
+          // `kept-run-port.ts`'s `commitWipExceptPlanted` stages everything and
+          // then unstages the planted env file by name, rather than excluding
+          // it from the `add` — a `:(exclude)` pathspec exits 1 whenever the
+          // repository's own `.gitignore` already covers the path, even though
+          // it staged everything else (`#470`).
+          // The commit and the assignment of `wipParent` are one uninterruptible
+          // region (#468): `HEAD` has moved the moment the commit succeeds.
+          const stopper = stoppedBy
+          const kept = yield* Effect.uninterruptible(
+            Effect.gen(function* () {
+              const made = yield* Effect.promise(() =>
+                commitWipExceptPlanted(
+                  gitAsked,
+                  recipe.env.plantAt,
+                  // `runId` is always `attemptStream`'s (its one constructor, above),
+                  // which `WIP_COMMIT_PREFIX` already carries — `attemptIdOf` strips it
+                  // back off here so the message reads `wip: run-<uuid> stopped by …`
+                  // rather than doubling it.
+                  `${WIP_COMMIT_PREFIX}${attemptIdOf(runId)} stopped by ${stopper}`,
+                ),
+              )
+              if (!('failed' in made)) wipParent = { parent: parent.success, stoppedBy: stopper }
+              return made
+            }),
+          )
+          if ('failed' in kept) {
+            wipFailure = `the dirty tree was not kept — ${kept.failed}`
+            runLog.note('push', wipFailure)
+            return
+          }
+          // The commit moved `HEAD` whether or not the read below can confirm its
+          // own sha, so the WIP's existence is recorded here rather than after
+          // it (`#468`) — `wip` itself is filled in from `wipParent` by
+          // `publishWhatIsCommitted`'s own `rev-parse HEAD`, the read that
+          // already has to succeed for anything past it to run.
+          const after = yield* gitAskedEffect(['rev-parse', 'HEAD'])
+          runLog.note(
+            'push',
+            Result.isSuccess(after)
+              ? `kept the dirty tree as ${after.success.slice(0, 7)} on ${arm}, stopped by ${stoppedBy}`
+              : `kept the dirty tree on ${arm}, stopped by ${stoppedBy} — its own sha could not be confirmed: ${after.failure.detail}`,
+          )
+        })
 
       /**
        * The sha `noteKept` has already recorded, so a second call for the same
@@ -2212,11 +2237,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * a sha named on the log must be fetchable. Counted `parent..sha`, which
        * is the WIP alone and not the whole of what the arm carries.
        */
-      const noteKept = async (made: NonNullable<typeof wip>): Promise<void> => {
-        if (notedKept === made.sha) return
-        const counted = await numstat(made.parent, made.sha)
-        try {
-          await appendAt(runId, [
+      const noteKept = (made: NonNullable<typeof wip>): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          if (notedKept === made.sha) return
+          const counted = yield* numstat(made.parent, made.sha)
+          const failed = yield* appendTo([
             {
               type: 'RunKeptUncommitted',
               actor: 'conductor',
@@ -2229,16 +2254,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               }),
             },
           ])
-          // After the append and never before it (`#251`'s own rule, read for
-          // this row): a key set in advance marks the answer given by the
-          // append that did not give it.
-          notedKept = made.sha
-        } catch (defect) {
-          const why = whyOf(defect)
-          runLog.note('push', `${made.sha.slice(0, 7)} is on ${arm} and was not recorded — ${why}`)
-          log(`RunKeptUncommitted was refused by the store: ${why}`)
-        }
-      }
+          if (failed === null) {
+            // After the append and never before it (`#251`'s own rule, read for
+            // this row): a key set in advance marks the answer given by the
+            // append that did not give it.
+            notedKept = made.sha
+          } else {
+            const why = whyOf(failed.refused)
+            runLog.note('push', `${made.sha.slice(0, 7)} is on ${arm} and was not recorded — ${why}`)
+            log(`RunKeptUncommitted was refused by the store: ${why}`)
+          }
+        })
 
       /**
        * **What this claim leaves behind, whatever ending it had** (0062 §1).
@@ -2249,238 +2275,244 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * owns. **An ending with no commits publishes nothing** — a ref to an empty
        * branch is a worse lie than the absence.
        */
-      const publishWhatIsCommitted = async (): Promise<string | null> => {
-        // Where this run's tree was really cut (#607) — `tree.baseSha` alone is
-        // the approved head on a continuation, so a lane refusal with no new
-        // commit read as "nothing committed" over a head already published.
-        // See `baseShaOr`.
-        if (worktree === null) return null
-        const tree = worktree
-        const cutBase = continuation?.diffBaseSha ?? tree.baseSha
-        // Hoisted out of the `try`, so the `catch` below can still name the
-        // head a defect struck after (`#421`) — `head` itself is a `const`
-        // the `try`'s own scope would otherwise keep from it.
-        let headRead: string | null = null
-        try {
-          await keepUncommittedWork()
-          const at = await gitAsked(['rev-parse', 'HEAD'])
-          if (Result.isFailure(at)) {
-            runLog.note('push', `${branch} was not pushed — ${at.failure.detail}`)
-            // `wipFailure`, not `withWipFailure` (not yet in scope — that
-            // closure reads `head`, which this call never got to): the keep
-            // may have failed for its own reason before this read did for a
-            // different one, and both deserve a line on the durable row.
-            await noteRefs(
-              'refused',
-              null,
-              wipFailure === null ? at.failure.detail : `${at.failure.detail}; ${wipFailure}`,
+      const publishWhatIsCommitted: Effect.Effect<string | null> = Effect.uninterruptible(
+        Effect.gen(function* () {
+          // Where this run's tree was really cut (#607) — `tree.baseSha` alone is
+          // the approved head on a continuation, so a lane refusal with no new
+          // commit read as "nothing committed" over a head already published.
+          // See `baseShaOr`.
+          if (worktree === null) return null
+          const tree = worktree
+          const cutBase = continuation?.diffBaseSha ?? tree.baseSha
+          // Hoisted out of the `try`, so the `catch` below can still name the
+          // head a defect struck after (`#421`) — `head` itself is a `const`
+          // the `try`'s own scope would otherwise keep from it.
+          let headRead: string | null = null
+          return yield* Effect.gen(function* () {
+            yield* keepUncommittedWork()
+            const at = yield* gitAskedEffect(['rev-parse', 'HEAD'])
+            if (Result.isFailure(at)) {
+              runLog.note('push', `${branch} was not pushed — ${at.failure.detail}`)
+              // `wipFailure`, not `withWipFailure` (not yet in scope — that
+              // closure reads `head`, which this call never got to): the keep
+              // may have failed for its own reason before this read did for a
+              // different one, and both deserve a line on the durable row.
+              yield* noteRefs(
+                'refused',
+                null,
+                wipFailure === null ? at.failure.detail : `${at.failure.detail}; ${wipFailure}`,
+              )
+              return at.failure.detail
+            }
+            const head = at.success
+            headRead = head
+            headNow = head
+            // **`wip.sha` is this read, not `keepUncommittedWork`'s own** (`#468`).
+            // `wipParent` is set the moment `git commit` succeeds there, before
+            // its own `rev-parse HEAD` is attempted — so a flaky read on that one
+            // extra call can never leave `wip` null with `HEAD` already moved
+            // onto the commit it made. This read already has to succeed for
+            // anything past it to run, which is what makes it the one `wip.sha`
+            // trusts.
+            if (wipParent !== null && wip === null) {
+              wip = { sha: head, parent: wipParent.parent, stoppedBy: wipParent.stoppedBy }
+            }
+            // **Why a keep found nothing to publish, when it did not** (`#468`):
+            // reduced into whichever `RunRefsPublished` row this call ends up
+            // writing, so a failed `git add` or `git commit` reaches somewhere
+            // durable and not only `runLog.note` (0034 §8 — a trace, never a
+            // record).
+            const withWipFailure = (detail: string | null): string | null =>
+              wipFailure === null ? detail : detail === null ? wipFailure : `${detail}; ${wipFailure}`
+            /**
+             * **What `branch` carries, as opposed to the arm** (`#468`).
+             *
+             * Unchanged by a WIP when there is no WIP: `wip === null` on every
+             * ending this file already had, so `branchHead` is `head` and
+             * everything below reads exactly as it did. Where a WIP exists it is
+             * never `branch`'s — `wip.parent` is, the agent's own last commit —
+             * and `null` where that parent is the base itself: the agent made no
+             * commit of its own, the WIP is the whole of what this claim has, and
+             * `agent/<n>` is left alone entirely rather than asked to carry it.
+             */
+            const branchHead: string | null = wip === null ? head : wip.parent === cutBase ? null : wip.parent
+            if (head === cutBase) {
+              runLog.note('push', `nothing to push — ${branch} is still at the base`)
+              yield* noteRefs('nothing-committed', null, withWipFailure(null))
+              return null
+            }
+            /**
+             * **Both refs, because the row says both and a restart names the
+             * second** (0062 §2, `#251`).
+             *
+             * `published` alone was the condition, and `land` sets it without the
+             * arm: it pushes `HEAD:refs/heads/<branch>` on its own, because the
+             * lane is about to merge that ref and an arm written for a landing is
+             * one 0062 §4's sweep would take straight back off. So on every
+             * ending that reached the merge lane and was refused there —
+             * `conflict`, `no-commits`, `pending-migration`, `dirty-base` — this
+             * short-circuited as `already-published`, pushed nothing, and wrote a
+             * row naming an `arm` that is on no remote. The person requeues, the
+             * next attempt's `--force-with-lease` matches and overwrites
+             * `agent/<n>` from a fresh base, and the commits the live
+             * `signoff` named are unreachable — which is the loss the
+             * arm ref exists to prevent, under a log row asserting it was
+             * prevented.
+             *
+             * Asking for both means the push below runs on that ending: the
+             * branch's refspec is a no-op at a head origin already has, and the
+             * forced arm is the whole point of the second trip.
+             */
+            if (branchHead === published && head === armPublished) {
+              // The commits are on origin under one of the two refs this ending
+              // names, so the mirror keeps nothing for them (`#421`) — a no-op
+              // unless an earlier call on this claim wrote a `Mirror` ref.
+              yield* dropKept()
+              // `headSha` is `head` (the arm's own) only where `branchCarries`
+              // is `false` (`doc/design/468.md`) — a typed field, not a
+              // sentence reduced into `detail` for the reader to guess the same
+              // thing from. `withWipFailure` reduces in a failed keep too, though
+              // the two never coincide: a WIP failure leaves `branchHead` at
+              // `head`, so `branchCarries` is `true` there.
+              //
+              // **`armSha` only where it differs from `headSha`** (`#468`): a
+              // kept WIP sits on the arm one commit ahead of what `branch`
+              // carries, and the history line must say so rather than naming
+              // both refs at the one sha `branch` actually has.
+              yield* noteRefs(
+                'already-published',
+                branchHead ?? head,
+                withWipFailure(null),
+                branchHead !== null,
+                wip !== null ? head : undefined,
+              )
+              // And the record is asked for again (`#251`): a store that was down
+              // for the earlier attempts may be up by the time the scope unwinds.
+              // **Never for the arm alone** (`#468`): `RunProducedDiff` is read by
+              // `approve()`/`waive()` through `AttemptState.headSha`, and a WIP with
+              // no commit of the agent's own has nothing there to record.
+              if (branchHead !== null) yield* recordDiff(branch, branchHead)
+              // `noteKept` is asked for again too, and for the same reason as
+              // `recordDiff` above (`#251`, `#468`): `notedKept` is still null
+              // when the earlier attempt's append found the store down, and this
+              // branch is reached on every WIP ending's second call — the one
+              // call left to ask it from.
+              if (wip !== null) yield* noteKept(wip)
+              return null
+            }
+            const pushed = yield* gitAskedEffect([
+              'push',
+              // No lease at all where there is nothing for `branch` to carry:
+              // a `--force-with-lease` protecting a refspec this push does not
+              // make is a command refused for a ref it was never going to touch.
+              ...(branchHead === null ? [] : [`--force-with-lease=refs/heads/${branch}:${lease ?? ''}`]),
+              'origin',
+              // `HEAD` where a WIP never moved it past what `branch` is meant to
+              // carry — every ending this file already had — and the explicit
+              // sha where it did: `HEAD` by then names the WIP, and `branch`
+              // must never.
+              ...(branchHead === null ? [] : [`${wip === null ? 'HEAD' : branchHead}:refs/heads/${branch}`]),
+              `+HEAD:refs/heads/${arm}`,
+            ])
+            if (Result.isFailure(pushed)) {
+              // **One exit code for two refspecs, so a failure is asked which**
+              // (`#251`). `git push` is not atomic: origin takes the forced arm,
+              // rejects the leased `agent/<n>`, and exits non-zero with the commits
+              // on origin. Forced and at the same head, this second push is a no-op
+              // where the arm already went and fails again where the transport broke.
+              const armAlone = yield* gitAskedEffect(['push', 'origin', `+HEAD:refs/heads/${arm}`])
+              if (Result.isSuccess(armAlone)) {
+                runLog.note(
+                  'push',
+                  `${branch} was not pushed — ${pushed.failure.detail}; ${arm} at ${head.slice(0, 7)} is on origin`,
+                )
+                // The arm is up even though the command exited non-zero, which is
+                // the whole point of asking it separately.
+                armPublished = head
+                // The commits are on origin as the arm, not the mirror (`#421`)
+                // — `dropKept` clears a `Mirror` ref an earlier call on this
+                // claim may have written, and `kept` is then set to `Arm`
+                // directly: there is nothing in the mirror to point at.
+                yield* dropKept()
+                kept = { _tag: 'Arm', ref: `refs/heads/${arm}`, sha: head }
+                yield* noteRefs('arm-only', head, withWipFailure(pushed.failure.detail))
+                // Only where there is a real commit for the arm to carry —
+                // `RunKeptUncommitted`, not this, is the account of a WIP — and
+                // `branchHead`, never `head`: once a WIP exists `head` is the WIP
+                // sha, and counting `base..head` would count the uncommitted
+                // edits as though they were reviewed (`#468`).
+                if (branchHead !== null) yield* recordDiff(arm, branchHead)
+                if (wip !== null) yield* noteKept(wip)
+                return pushed.failure.detail
+              }
+              // **Kept before the account is written, not after** (`#421`) —
+              // the worktree holding these commits is removed when the pass
+              // ends, so the ref has to exist before anything describes where
+              // the work went.
+              yield* keepHead(head)
+              runLog.note('push', `${branch} was not pushed — ${pushed.failure.detail}`)
+              // `branchHead`, never `head`: once a WIP exists `head` is the WIP
+              // sha, which was never pushed anywhere — neither push attempt
+              // above landed it on `branch` or `arm` — and naming it here is
+              // the sha a person rescuing by hand would push onto `branch`
+              // itself, landing the WIP commit on the one ref the merge lane
+              // reads (`#468`).
+              yield* noteRefs('refused', branchHead, withWipFailure(pushed.failure.detail))
+              return pushed.failure.detail
+            }
+            if (branchHead !== null) {
+              lease = branchHead
+              published = branchHead
+            }
+            armPublished = head
+            // The commits just reached origin, so the mirror keeps nothing for
+            // them (`#421`) — a no-op unless an earlier call wrote a ref.
+            yield* dropKept()
+            runLog.note(
+              'push',
+              branchHead === null
+                ? `only a WIP was committed — ${arm} at ${head.slice(0, 7)}, ${branch} left alone`
+                : wip === null
+                  ? `${branch} and ${arm} at ${head.slice(0, 7)}`
+                  : `${branch} at ${branchHead.slice(0, 7)} and ${arm} at ${head.slice(0, 7)}`,
             )
-            return at.failure.detail
-          }
-          const head = at.success
-          headRead = head
-          headNow = head
-          // **`wip.sha` is this read, not `keepUncommittedWork`'s own** (`#468`).
-          // `wipParent` is set the moment `git commit` succeeds there, before
-          // its own `rev-parse HEAD` is attempted — so a flaky read on that one
-          // extra call can never leave `wip` null with `HEAD` already moved
-          // onto the commit it made. This read already has to succeed for
-          // anything past it to run, which is what makes it the one `wip.sha`
-          // trusts.
-          if (wipParent !== null && wip === null) {
-            wip = { sha: head, parent: wipParent.parent, stoppedBy: wipParent.stoppedBy }
-          }
-          // **Why a keep found nothing to publish, when it did not** (`#468`):
-          // reduced into whichever `RunRefsPublished` row this call ends up
-          // writing, so a failed `git add` or `git commit` reaches somewhere
-          // durable and not only `runLog.note` (0034 §8 — a trace, never a
-          // record).
-          const withWipFailure = (detail: string | null): string | null =>
-            wipFailure === null ? detail : detail === null ? wipFailure : `${detail}; ${wipFailure}`
-          /**
-           * **What `branch` carries, as opposed to the arm** (`#468`).
-           *
-           * Unchanged by a WIP when there is no WIP: `wip === null` on every
-           * ending this file already had, so `branchHead` is `head` and
-           * everything below reads exactly as it did. Where a WIP exists it is
-           * never `branch`'s — `wip.parent` is, the agent's own last commit —
-           * and `null` where that parent is the base itself: the agent made no
-           * commit of its own, the WIP is the whole of what this claim has, and
-           * `agent/<n>` is left alone entirely rather than asked to carry it.
-           */
-          const branchHead: string | null = wip === null ? head : wip.parent === cutBase ? null : wip.parent
-          if (head === cutBase) {
-            runLog.note('push', `nothing to push — ${branch} is still at the base`)
-            await noteRefs('nothing-committed', null, withWipFailure(null))
-            return null
-          }
-          /**
-           * **Both refs, because the row says both and a restart names the
-           * second** (0062 §2, `#251`).
-           *
-           * `published` alone was the condition, and `land` sets it without the
-           * arm: it pushes `HEAD:refs/heads/<branch>` on its own, because the
-           * lane is about to merge that ref and an arm written for a landing is
-           * one 0062 §4's sweep would take straight back off. So on every
-           * ending that reached the merge lane and was refused there —
-           * `conflict`, `no-commits`, `pending-migration`, `dirty-base` — this
-           * short-circuited as `already-published`, pushed nothing, and wrote a
-           * row naming an `arm` that is on no remote. The person requeues, the
-           * next attempt's `--force-with-lease` matches and overwrites
-           * `agent/<n>` from a fresh base, and the commits the live
-           * `signoff` named are unreachable — which is the loss the
-           * arm ref exists to prevent, under a log row asserting it was
-           * prevented.
-           *
-           * Asking for both means the push below runs on that ending: the
-           * branch's refspec is a no-op at a head origin already has, and the
-           * forced arm is the whole point of the second trip.
-           */
-          if (branchHead === published && head === armPublished) {
-            // The commits are on origin under one of the two refs this ending
-            // names, so the mirror keeps nothing for them (`#421`) — a no-op
-            // unless an earlier call on this claim wrote a `Mirror` ref.
-            await dropKept()
-            // `headSha` is `head` (the arm's own) only where `branchCarries`
-            // is `false` (`doc/design/468.md`) — a typed field, not a
-            // sentence reduced into `detail` for the reader to guess the same
-            // thing from. `withWipFailure` reduces in a failed keep too, though
-            // the two never coincide: a WIP failure leaves `branchHead` at
-            // `head`, so `branchCarries` is `true` there.
-            //
-            // **`armSha` only where it differs from `headSha`** (`#468`): a
-            // kept WIP sits on the arm one commit ahead of what `branch`
-            // carries, and the history line must say so rather than naming
-            // both refs at the one sha `branch` actually has.
-            await noteRefs(
-              'already-published',
+            // Same call as the `already-published` branch above, and for the
+            // same reason: `branch`'s absence is `branchCarries: false`, never
+            // silently behind a `headSha` that is actually the arm's own
+            // (`#468`). `armSha` is passed for the same reason as there too.
+            yield* noteRefs(
+              'published',
               branchHead ?? head,
               withWipFailure(null),
               branchHead !== null,
               wip !== null ? head : undefined,
             )
-            // And the record is asked for again (`#251`): a store that was down
-            // for the earlier attempts may be up by the time the scope unwinds.
-            // **Never for the arm alone** (`#468`): `RunProducedDiff` is read by
-            // `approve()`/`waive()` through `AttemptState.headSha`, and a WIP with
-            // no commit of the agent's own has nothing there to record.
-            if (branchHead !== null) await recordDiff(branch, branchHead)
-            // `noteKept` is asked for again too, and for the same reason as
-            // `recordDiff` above (`#251`, `#468`): `notedKept` is still null
-            // when the earlier attempt's append found the store down, and this
-            // branch is reached on every WIP ending's second call — the one
-            // call left to ask it from.
-            if (wip !== null) await noteKept(wip)
+            // Never for the arm alone (`#468`) — see the `already-published`
+            // branch above for why.
+            if (branchHead !== null) yield* recordDiff(branch, branchHead)
+            if (wip !== null) yield* noteKept(wip)
             return null
-          }
-          const pushed = await gitAsked([
-            'push',
-            // No lease at all where there is nothing for `branch` to carry:
-            // a `--force-with-lease` protecting a refspec this push does not
-            // make is a command refused for a ref it was never going to touch.
-            ...(branchHead === null ? [] : [`--force-with-lease=refs/heads/${branch}:${lease ?? ''}`]),
-            'origin',
-            // `HEAD` where a WIP never moved it past what `branch` is meant to
-            // carry — every ending this file already had — and the explicit
-            // sha where it did: `HEAD` by then names the WIP, and `branch`
-            // must never.
-            ...(branchHead === null ? [] : [`${wip === null ? 'HEAD' : branchHead}:refs/heads/${branch}`]),
-            `+HEAD:refs/heads/${arm}`,
-          ])
-          if (Result.isFailure(pushed)) {
-            // **One exit code for two refspecs, so a failure is asked which**
-            // (`#251`). `git push` is not atomic: origin takes the forced arm,
-            // rejects the leased `agent/<n>`, and exits non-zero with the commits
-            // on origin. Forced and at the same head, this second push is a no-op
-            // where the arm already went and fails again where the transport broke.
-            const armAlone = await gitAsked(['push', 'origin', `+HEAD:refs/heads/${arm}`])
-            if (Result.isSuccess(armAlone)) {
-              runLog.note(
-                'push',
-                `${branch} was not pushed — ${pushed.failure.detail}; ${arm} at ${head.slice(0, 7)} is on origin`,
-              )
-              // The arm is up even though the command exited non-zero, which is
-              // the whole point of asking it separately.
-              armPublished = head
-              // The commits are on origin as the arm, not the mirror (`#421`)
-              // — `dropKept` clears a `Mirror` ref an earlier call on this
-              // claim may have written, and `kept` is then set to `Arm`
-              // directly: there is nothing in the mirror to point at.
-              await dropKept()
-              kept = { _tag: 'Arm', ref: `refs/heads/${arm}`, sha: head }
-              await noteRefs('arm-only', head, withWipFailure(pushed.failure.detail))
-              // Only where there is a real commit for the arm to carry —
-              // `RunKeptUncommitted`, not this, is the account of a WIP — and
-              // `branchHead`, never `head`: once a WIP exists `head` is the WIP
-              // sha, and counting `base..head` would count the uncommitted
-              // edits as though they were reviewed (`#468`).
-              if (branchHead !== null) await recordDiff(arm, branchHead)
-              if (wip !== null) await noteKept(wip)
-              return pushed.failure.detail
-            }
-            // **Kept before the account is written, not after** (`#421`) —
-            // the worktree holding these commits is removed when the pass
-            // ends, so the ref has to exist before anything describes where
-            // the work went.
-            await keepHead(head)
-            runLog.note('push', `${branch} was not pushed — ${pushed.failure.detail}`)
-            // `branchHead`, never `head`: once a WIP exists `head` is the WIP
-            // sha, which was never pushed anywhere — neither push attempt
-            // above landed it on `branch` or `arm` — and naming it here is
-            // the sha a person rescuing by hand would push onto `branch`
-            // itself, landing the WIP commit on the one ref the merge lane
-            // reads (`#468`).
-            await noteRefs('refused', branchHead, withWipFailure(pushed.failure.detail))
-            return pushed.failure.detail
-          }
-          if (branchHead !== null) {
-            lease = branchHead
-            published = branchHead
-          }
-          armPublished = head
-          // The commits just reached origin, so the mirror keeps nothing for
-          // them (`#421`) — a no-op unless an earlier call wrote a ref.
-          await dropKept()
-          runLog.note(
-            'push',
-            branchHead === null
-              ? `only a WIP was committed — ${arm} at ${head.slice(0, 7)}, ${branch} left alone`
-              : wip === null
-                ? `${branch} and ${arm} at ${head.slice(0, 7)}`
-                : `${branch} at ${branchHead.slice(0, 7)} and ${arm} at ${head.slice(0, 7)}`,
+          }).pipe(
+            Effect.catchDefect((defect) =>
+              Effect.gen(function* () {
+                const why = whyOf(defect)
+                // **Only where `head` was read and never reached origin** (`#421`)
+                // — `headRead === armPublished` is the `armPublished` guard: a
+                // defect thrown *after* a successful push (inside `recordDiff`, say)
+                // must not write a `Mirror` ref for work that is already up.
+                if (headRead !== null && headRead !== cutBase && headRead !== armPublished) {
+                  yield* keepHead(headRead)
+                }
+                runLog.note('push', `the publish itself failed — ${why}`)
+                yield* noteRefs('refused', null, why)
+                return why
+              }),
+            ),
           )
-          // Same call as the `already-published` branch above, and for the
-          // same reason: `branch`'s absence is `branchCarries: false`, never
-          // silently behind a `headSha` that is actually the arm's own
-          // (`#468`). `armSha` is passed for the same reason as there too.
-          await noteRefs(
-            'published',
-            branchHead ?? head,
-            withWipFailure(null),
-            branchHead !== null,
-            wip !== null ? head : undefined,
-          )
-          // Never for the arm alone (`#468`) — see the `already-published`
-          // branch above for why.
-          if (branchHead !== null) await recordDiff(branch, branchHead)
-          if (wip !== null) await noteKept(wip)
-          return null
-        } catch (defect) {
-          const why = whyOf(defect)
-          // **Only where `head` was read and never reached origin** (`#421`)
-          // — `headRead === armPublished` is the `armPublished` guard: a
-          // defect thrown *after* a successful push (inside `recordDiff`, say)
-          // must not write a `Mirror` ref for work that is already up.
-          if (headRead !== null && headRead !== cutBase && headRead !== armPublished) {
-            await keepHead(headRead)
-          }
-          runLog.note('push', `the publish itself failed — ${why}`)
-          await noteRefs('refused', null, why)
-          return why
-        }
-      }
+        }),
+      )
 
-      yield* Effect.addFinalizer(() => (didLand ? Effect.void : Effect.promise(publishWhatIsCommitted)))
+      yield* Effect.addFinalizer(() => (didLand ? Effect.void : publishWhatIsCommitted))
 
       /**
        * **A landing that finished is recorded even when the pass was interrupted
@@ -3476,13 +3508,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `task_view.head_sha` names this commit, and `RunProposedCompletion` so a
        * later attempt's `headOf` reads the same head.
        */
+      // `kept-run-port.ts` is CONDUCT-5's and still hands back a promise, so its one call into an Effect
+      // here carries the pass's own services into a run of its own.
+      const detachedRecord = Effect.runPromiseWith(yield* Effect.context())
       const restoreReview = restoreAfterReview({ git: gitAsked, plantAt: recipe.env.plantAt })
       const { clean, keep: keepRun } = keptRunPort({
         git: gitAsked,
         plantAt: recipe.env.plantAt,
         issue: String(options.issue),
         recordCompletion: async (head) => {
-          await recordDiff(branch, head)
+          await detachedRecord(recordDiff(branch, head))
           await appendNow(runId, [
             {
               type: 'RunProposedCompletion',
@@ -3558,10 +3593,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           issue,
           // Counted from the stream read at claim, so a second pass sees the first's ask (`#649`).
           designAsks: designAsksFromState(reduced),
-          // `diffBetween` and `changeStart` are still promises (CONDUCT-4), so lifted.
           diff: (from?: string) =>
-            (from === undefined ? Effect.promise(() => changeStart()) : Effect.succeed(from)).pipe(
-              Effect.flatMap((start) => Effect.promise(() => diffBetween(start))),
+            (from === undefined ? changeStart() : Effect.succeed(from)).pipe(
+              Effect.flatMap((start) => diffBetween(start)),
             ),
           // One call per path, so no `diff --git` header has to be parsed back
           // into paths. A diff that cannot be read is text, not a dead review.
@@ -3608,7 +3642,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         watch: {
           changedFiles: () =>
             Effect.gen(function* () {
-              const start = yield* Effect.promise(() => changeStart())
+              const start = yield* changeStart()
               const names = yield* gitOrDieEffect(changedFilesArgs(start))
               return names.split('\n').filter(Boolean)
             }),
@@ -4205,7 +4239,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
           // A receipt, so `interrupted` stands for nothing any more.
           stoppedBy = null
-          yield* Effect.promise(() => recordDiff(branch, head))
+          yield* recordDiff(branch, head)
           yield* Effect.promise(() =>
             appendNow(runId, [
               {
@@ -4277,8 +4311,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // there is a continuation — see `baseShaOr`'s own comment.
           // The reviewer's own spelling (`DIFF_FLAGS`), as `fixBrief`'s doc says the
           // two should be looking at the same change, and the two shas it ran between.
-          const underReview = yield* Effect.promise(() =>
-            changeStart(continuation?.diffBaseSha ?? tree.baseSha).then((start) => diffBetween(start)),
+          const underReview = yield* changeStart(continuation?.diffBaseSha ?? tree.baseSha).pipe(
+            Effect.flatMap((start) => diffBetween(start)),
           )
           // The same flag `firstDispatch` sets before its own dispatch, and for
           // the same reason (`#468`): an agent is running, and nothing has
@@ -4429,7 +4463,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           if (fixed.failure && walled !== null) {
             yield* standDownAccount({ of: 'mid-run', step: 'implement' }, walled, fixed.failure.detail)
           }
-          yield* Effect.promise(() => recordDiff(branch, after))
+          yield* recordDiff(branch, after)
           return { committed: after }
         })
 
@@ -4752,7 +4786,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * and it travels onto the card rather than being swallowed — the person is
        * still owed the question, and is told the branch is not there.
        */
-      const notPushed = outcome === 'landed' ? null : yield* Effect.promise(publishWhatIsCommitted)
+      const notPushed = outcome === 'landed' ? null : yield* publishWhatIsCommitted
       const unpushed = notPushed === null ? '' : ` (and ${branch} was not pushed: ${said(notPushed, 120)})`
       /**
        * **What a person can be asked to merge: the head this pass put on origin
@@ -4915,8 +4949,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // still exists (`repo.remove` is a finalizer, above) and the publish
         // finalizer is skipped on this path (`didLand` below), so nothing
         // else reaches here afterwards.
-        yield* Effect.promise(async () => {
-          const refsHere = await gitAsked([
+        yield* Effect.gen(function* () {
+          const refsHere = yield* gitAskedEffect([
             'for-each-ref',
             '--format=%(refname)',
             `refs/lingtai/unpushed/${options.issue}/`,
@@ -4929,7 +4963,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             return
           }
           for (const ref of refsHere.success.split('\n').filter(Boolean)) {
-            const dropped = await gitAskedMirror(['update-ref', '-d', ref])
+            const dropped = yield* gitAskedMirror(['update-ref', '-d', ref])
             if (Result.isFailure(dropped))
               runLog.note('push', `${ref} was not dropped on landing — ${dropped.failure.detail}`)
           }
