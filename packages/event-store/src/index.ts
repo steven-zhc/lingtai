@@ -114,6 +114,6 @@ export {
   promiseSnapshots,
   promiseStore,
 } from './store-face.ts'
-export { subscribe, type SubscribeOptions, type Subscription } from './subscribe.ts'
+export { follow, type FollowOptions, subscribe, type SubscribeOptions, type Subscription } from './subscribe.ts'
 export { CHANNEL, type WakeListener, type WakeSession, type Waker } from './wake.ts'
 export { parseTimestamptz } from './timestamptz.ts'

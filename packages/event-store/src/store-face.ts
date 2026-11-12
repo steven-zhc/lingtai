@@ -14,7 +14,7 @@
  * `fromPromiseStore` is for the memory store and for test fakes.
  */
 import type { Envelope, EventType, ToAppend } from '@lingtai/domain'
-import { Cause, Effect, Exit } from 'effect'
+import { Cause, Deferred, Effect, Exit } from 'effect'
 
 import {
   ConcurrencyError,
@@ -31,6 +31,7 @@ import {
   type SnapshotsPort,
   type SnapshotStore,
 } from './snapshots.ts'
+import { follow, type FollowCell, type FollowOptions, type SubscribeOptions } from './subscribe.ts'
 import type { LogSqlPort, TicketSql } from './ticket-sql.ts'
 import type { WakeListener, Waker, WakerPort } from './wake.ts'
 
@@ -271,4 +272,53 @@ export function promiseWaker(port: WakerPort): Waker {
       }
     },
   }
+}
+
+/**
+ * A promise `Waker` as a `WakerPort`, the inverse of `promiseWaker`. Only the
+ * session's construction is in the acquire, never the wait for `ready`: an
+ * acquire is uninterruptible, and closing the scope must not wait for a connect
+ * that may never answer. A `ready` that rejects, or a `lost(error)`, is a defect.
+ */
+export function fromPromiseWaker(waker: Waker): WakerPort {
+  return {
+    open: (nudge) =>
+      Effect.gen(function* () {
+        const lost = Deferred.makeUnsafe<void>()
+        const session = yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            waker.open({
+              nudge,
+              lost: (err) => {
+                Deferred.doneUnsafe(lost, err === undefined ? Effect.void : Effect.die(err))
+              },
+            }),
+          ),
+          (s) => Effect.sync(() => s.close()),
+        )
+        yield* Effect.promise(() => session.ready)
+        return { lost: Deferred.await(lost) }
+      }),
+  }
+}
+
+/** The promise `SubscribeOptions` as Effect ones: promise handlers, store and waker lifted. */
+function lift(options: SubscribeOptions): FollowOptions {
+  const base = {
+    fromSeq: options.fromSeq,
+    events: fromPromiseStore(options.store),
+    waker: fromPromiseWaker(options.waker),
+    batchSize: options.batchSize,
+    onError: options.onError,
+    backoff: options.backoff,
+  }
+  const { onEvent, onBatch } = options
+  if (onBatch) {
+    return { ...base, onBatch: (es) => Effect.tryPromise({ try: () => Promise.resolve(onBatch(es)), catch: (e) => e }) }
+  }
+  return { ...base, onEvent: (e) => Effect.tryPromise({ try: () => Promise.resolve(onEvent(e)), catch: (e) => e }) }
+}
+
+export function followFace(options: SubscribeOptions, cell: FollowCell, signal: AbortSignal) {
+  return Effect.runPromise(follow(lift(options), cell), { signal })
 }

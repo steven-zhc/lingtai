@@ -48,7 +48,12 @@ describe('a runner stopped while a nudge-triggered batch is in flight', () => {
           },
         },
       })
-      await runner.start()
+      // Not awaited: drains are serial now (#1049), so the catch-up drain is the
+      // one in the handler and `start()` resolves only when it returns.
+      const starting = runner.start().then(
+        () => {},
+        () => {},
+      )
       await inApply
       let stopped = false
       const stopping = runner.stop().then(() => void (stopped = true))
@@ -56,6 +61,7 @@ describe('a runner stopped while a nudge-triggered batch is in flight', () => {
       expect(stopped).toBe(false)
       release()
       await stopping
+      await starting
       expect(applied).toEqual([1n])
     } finally {
       db.close()
