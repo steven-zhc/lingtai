@@ -40,6 +40,8 @@ const VIEW: QueuedView = {
   notOffered: null,
   runnableAt: null,
   paused: false,
+  project: 'lingtai',
+  locks: [],
   dependenciesUnread: null,
   plan: null,
   kind: 'bug',
@@ -78,10 +80,18 @@ describe('queuedChip and queuedSentence', () => {
     expect(queuedSentence(out, null)).toContain('GitHub is not offering it')
     const paused = { ...VIEW, position: null, paused: true }
     expect(queuedChip(paused, null)).toBe('paused')
-    expect(queuedSentence(paused, null)).toBe('paused — nothing will start')
+    expect(queuedSentence(paused, null)).toBe('paused until the setup is fixed — nothing will start')
     const off = { ...VIEW, position: null, runnableAt: new Date(Date.now() + 600_000).toISOString() }
     expect(queuedChip(off, null)).toBe('backing off')
     expect(queuedSentence(off, null)).toMatch(/back/i)
+  })
+  it('a stop outranks the place in line', () => {
+    const since = new Date('2026-11-11T10:00:00Z')
+    const held = { ...at(1), locks: [{ kind: 'paused', by: 'human:x', since } as const] }
+    expect(queuedChip(held, null)).toBe('paused')
+    expect(queuedChip({ ...at(1), locks: null }, null)).toBe('unknown')
+    expect(queuedChip({ ...at(1), paused: true }, null)).toBe('paused')
+    expect(queuedChip(at(1), null)).toBe('1st of 11')
   })
   it('a problem', () => {
     const bad = { ...VIEW, position: null, problem: 'rate limited' }
@@ -121,7 +131,7 @@ describe('queuedFor', () => {
       { taskId: 't5', issue: '5', title: 'five', kind: 'feature' },
     ] as never)
   })
-  const ask = (issue: string) => queuedFor({ project: 'p', issue, own: [], paused: false })
+  const ask = (issue: string) => queuedFor({ project: 'p', issue, own: [], paused: false, locks: [] })
 
   it('carries the kind, the order and what is behind it', async () => {
     const view = await ask('7')

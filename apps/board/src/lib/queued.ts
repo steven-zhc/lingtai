@@ -34,10 +34,12 @@ import { held as heldBy } from '@lingtai/daemon/control'
  * a recipe that will not parse and a GitHub that will not answer all render as
  * *no queue position*, and only the reason tells them apart (#76).
  */
-import { reduceTicket, STEPS, type Envelope } from '@lingtai/domain'
+import { reduceTicket, STEPS, type Envelope, type Lock } from '@lingtai/domain'
 import { plannedAt } from '@lingtai/recipe/defaults'
 import type { TurnLimit } from '@lingtai/recipe/duration'
 import { ceilingOf, queueOf } from '@lingtai/recipe/settings'
+
+import { lockStanding } from './lock-marks.ts'
 
 /** One of the ten steps, and what the recipe runs there. */
 export interface PlannedStep {
@@ -151,7 +153,8 @@ export interface QueuedView {
    */
   runnableAt: string | null
   /**
-   * Whether the conductor has been told to take nothing.
+   * Whether the setup's pause stands: a recipe asks for a tier its runtime
+   * cannot provide, and the conductor takes nothing until it is fixed and resumed.
    *
    * **A pause outranks a backoff**, the same reading `queuedStanding` makes for
    * the card: an item whose backoff lifts in a minute still does not move while
@@ -159,6 +162,13 @@ export interface QueuedView {
    * two answers and the wrong one.
    */
   paused: boolean
+  /** The project's name, for the sentence that names the lock. */
+  project: string
+  /**
+   * The project's locks (#994's `readProjectLocks`). **Null is a read that
+   * failed, `[]` is nothing holding it** — unknown is not free (#77).
+   */
+  locks: readonly Lock[] | null
   /**
    * `runnableNow`'s sentence when some listed issues were not checked for a
    * blocker, and null when every one was.
@@ -235,8 +245,16 @@ function pickBehind(r: { issue: string; title: string; kind: string }): NonNulla
   return { issue: r.issue, title: r.title, kind: r.kind }
 }
 
-export function refused(problem: string, plan: PlanView | null, paused: boolean): QueuedView {
+export function refused(
+  problem: string,
+  plan: PlanView | null,
+  paused: boolean,
+  project: string,
+  locks: readonly Lock[] | null,
+): QueuedView {
   return {
+    project,
+    locks,
     position: null,
     inLine: 0,
     notOffered: null,
@@ -267,15 +285,17 @@ export async function queuedFor(input: {
   /** The item's own events, for the backoff. Empty for one that has never run. */
   own: readonly Envelope[]
   paused: boolean
+  /** The project's locks; null when they could not be read. */
+  locks: readonly Lock[] | null
 }): Promise<QueuedView> {
-  const { project, issue, paused } = input
+  const { project, issue, paused, locks } = input
 
   const state = await loadProject(project).catch(() => null)
-  if (!state) return refused(`${project} is not a registered project`, null, paused)
+  if (!state) return refused(`${project} is not a registered project`, null, paused, project, locks)
 
   const filter = await projectFilter(state)
   if (!filter.ok) {
-    return refused(`the recipe could not be read: ${filter.problem}`, null, paused)
+    return refused(`the recipe could not be read: ${filter.problem}`, null, paused, project, locks)
   }
 
   // The plan survives a GitHub that will not answer. Losing *what will happen*
@@ -323,6 +343,8 @@ export async function queuedFor(input: {
           : 'GitHub is not listing it among the open issues',
       runnableAt: until === null ? null : until.toISOString(),
       paused,
+      project,
+      locks,
       dependenciesUnread: offered.dependenciesUnread,
       plan,
       kind: offered.runnable.find((o) => o.ref === issue)?.kind ?? null,
@@ -336,7 +358,7 @@ export async function queuedFor(input: {
     // revoked installation. Named rather than dropped, and the plan and the
     // backoff are kept, because neither of them needed the answer.
     return {
-      ...refused((err as Error).message, plan, paused),
+      ...refused((err as Error).message, plan, paused, project, locks),
       runnableAt: until === null ? null : until.toISOString(),
     }
   }
@@ -357,17 +379,22 @@ export async function queuedFor(input: {
  *    one `selectRunnable` subtracts, so `Run it now` would append a request
  *    that matches nothing and expires unread — that is the fact to say, and it
  *    survives a resume and a backoff lifting.
- * 2. **A pause outranks a backoff**, exactly as `queuedStanding` reads it: an
- *    item whose backoff lifts in a minute still does not move while the
- *    conductor is taking nothing, so promising a time would be the more precise
- *    of two answers and the wrong one.
+ * 2. **The setup's pause outranks a lock, and a lock outranks a backoff**,
+ *    exactly as `queuedStanding` reads it: an item whose backoff lifts in a
+ *    minute still does not move while something holds the project, so promising
+ *    a time would be the more precise of two answers and the wrong one. A lock
+ *    read that failed is said, never read as *nothing holds it*. The lock's
+ *    words are `lockStanding`'s, the card's own.
  * 3. **The backoff, with its time on it.** `backingOff` is `lingtai status`'s
  *    own phrase, from the package that owns the rule, so the three places this
  *    is asked cannot come to word it differently again.
  */
 export function holding(view: QueuedView, now: number = Date.now()): string | null {
   if (view.notOffered !== null) return `GitHub is not offering it — ${view.notOffered}`
-  if (view.paused) return 'paused — nothing will start'
+  if (view.paused) return 'paused until the setup is fixed — nothing will start'
+  if (view.locks === null) return `could not read whether ${view.project} is held`
+  const lock = lockStanding(view.project, view.locks, new Date(now))
+  if (lock !== null) return lock.text
   if (view.runnableAt !== null) return backingOff(new Date(view.runnableAt), now)
   return null
 }
@@ -376,10 +403,13 @@ export function holding(view: QueuedView, now: number = Date.now()): string | nu
  * What the Run-now click does under each hold, in `holding`'s order — null when
  * nothing holds it. `holding` states the hold once; this says the click's effect.
  */
-export function runNowCaption(view: QueuedView): string | null {
+export function runNowCaption(view: QueuedView, now: number = Date.now()): string | null {
   if (view.problem !== null) return null
   if (view.notOffered !== null) return 'GitHub is not offering it, so a request now would match nothing'
-  if (view.paused) return 'the request waits until the conductor is resumed'
+  if (view.paused) return 'the request waits until the setup is fixed and the conductor resumed'
+  if (view.locks === null) return 'whether the request would wait could not be read'
+  const lock = lockStanding(view.project, view.locks, new Date(now))
+  if (lock !== null) return `the request waits until ${lock.waitsFor}`
   if (view.runnableAt !== null) return 'skips the backoff'
   return null
 }
@@ -450,9 +480,14 @@ export function inFlightOf(
 /** The panel's chip: the place without *in line*, or what holds it. */
 export function queuedChip(view: QueuedView, _inFlight: InFlight | null, now: number = Date.now()): string {
   if (view.problem !== null) return 'unknown'
+  // A stop outranks the place: selectRunnable does not filter project locks, so a
+  // held ticket still has a position, and "1st of N" would hide what holds it.
+  if (view.paused) return 'paused'
+  if (view.locks === null) return 'unknown'
+  const lock = lockStanding(view.project, view.locks, new Date(now))
+  if (lock !== null) return lock.kind
   if (view.position !== null) return `${ordinal(view.position)} of ${view.inLine}`
   if (view.notOffered !== null) return 'not offered'
-  if (view.paused) return 'paused'
   if (view.runnableAt !== null && holding(view, now) !== null) return 'backing off'
   return 'unknown'
 }

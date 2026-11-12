@@ -283,7 +283,7 @@ describe('what a Queued card says about whether it will come back', () => {
   it('says nothing will start while the conductor is paused', () => {
     const said = queuedStanding(card('74', 'bug'), true, now)
     expect(said?.state).toBe('paused')
-    expect(said?.text).toBe('paused — nothing will start')
+    expect(said?.text).toBe('paused until the setup is fixed — nothing will start')
   })
 
   describe("a project's own pause (#995)", () => {
@@ -300,7 +300,9 @@ describe('what a Queued card says about whether it will come back', () => {
     })
 
     it('is outranked by the conductor-wide pause', () => {
-      expect(queuedStanding(card('74', 'bug'), true, now, lock)?.text).toBe('paused — nothing will start')
+      expect(queuedStanding(card('74', 'bug'), true, now, lock)?.text).toBe(
+        'paused until the setup is fixed — nothing will start',
+      )
     })
   })
 
@@ -342,7 +344,7 @@ describe('runNowCaption', () => {
       'GitHub is not offering it, so a request now would match nothing',
     )
     expect(runNowCaption({ ...none, paused: true, runnableAt: '2026-10-31T00:00:00Z' })).toBe(
-      'the request waits until the conductor is resumed',
+      'the request waits until the setup is fixed and the conductor resumed',
     )
     expect(runNowCaption({ ...none, runnableAt: '2026-10-31T00:00:00Z' })).toBe('skips the backoff')
     expect(runNowCaption(none)).toBeNull()
@@ -375,7 +377,9 @@ describe('queuedStanding: the ceiling (#1007)', () => {
   })
 
   it('lets the conductor-wide pause outrank it', () => {
-    expect(queuedStanding(card, true, now.getTime(), [ceiling('2026-11-11')])?.text).toBe('paused — nothing will start')
+    expect(queuedStanding(card, true, now.getTime(), [ceiling('2026-11-11')])?.text).toBe(
+      'paused until the setup is fixed — nothing will start',
+    )
   })
 
   it("says nothing of yesterday's ceiling", () => {
@@ -405,6 +409,6 @@ describe('queuedStanding: a runtime at its usage limit (#1010)', () => {
 
   it('is outranked by the conductor-wide pause', () => {
     const s = queuedStanding(card, true, now.getTime(), [limit(new Date(2026, 10, 11, 23, 0))])
-    expect(s?.text).toBe('paused — nothing will start')
+    expect(s?.text).toBe('paused until the setup is fixed — nothing will start')
   })
 })

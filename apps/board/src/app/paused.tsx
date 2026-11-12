@@ -1,7 +1,11 @@
 'use client'
 
 /**
- * What the board says when the conductor has been told to take nothing.
+ * What the board says while the setup's pause stands: a project's recipe asks
+ * for a tier one of its runtimes cannot provide, so every project stops until
+ * the recipe is fixed and somebody resumes (until the 0.14.0 security epic makes
+ * that a refused recipe, #676). Every other stop is a project's lock, shown by
+ * the banner (#994).
  *
  * The health dot next door answers *is what I am looking at current?* and it was
  * answering correctly for four days while nothing moved (`#77`): the
@@ -16,9 +20,8 @@
  * bar's ordinary state does not draw this at all, and when it does draw it the
  * pause is the news.
  *
- * It names who and why because a pause nobody can attribute is one nobody can
- * lift confidently — the same reason `lingtai pause` refuses a pause with no
- * reason.
+ * It shows the reason as the conductor gave it; that already names the project,
+ * the runtime and the tier. Who is not shown: it is always `lingtai`.
  *
  * **Resume is an append, like Approve.** It does not start a daemon and does
  * not reach into a running pass; it records the decision, and whatever is
@@ -29,23 +32,25 @@ import { useState, useTransition } from 'react'
 
 import { resumeWork } from './actions.ts'
 
-export function Paused({ by, reason }: { by: string | null; reason: string | null }) {
+export function Paused({ reason }: { by?: string | null; reason: string | null }) {
   const [asking, setAsking] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
-  const said = `paused by ${by ?? 'somebody'}${reason ? ` — ${reason}` : ''}`
+  const said = reason ?? 'the setup is paused'
 
   return (
     <>
       {/* Held, not failed: nothing is broken, and a red chip here would send
           somebody looking for the fault instead of reading the sentence. */}
-      <span className="chip held" title="the conductor is taking no new work; an attempt already in flight finishes">
-        paused
+      <span
+        className="chip held"
+        title="the recipe asks for a tier its runtime cannot provide; nothing starts until it is fixed and resumed — an attempt already in flight finishes"
+      >
+        setup paused
       </span>
       <span className="why" title={said}>
-        by {by ?? 'somebody'}
-        {reason ? ` — ${reason}` : ''}
+        {reason}
       </span>
       {asking ? (
         <span className="btnrow">
@@ -66,7 +71,7 @@ export function Paused({ by, reason }: { by: string | null; reason: string | nul
               })
             }}
           >
-            {pending ? '…' : 'Resume — sure?'}
+            {pending ? '…' : 'Resume every project — fix the recipe first?'}
           </button>
           <button className="btn" disabled={pending} onClick={() => setAsking(false)}>
             Cancel

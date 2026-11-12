@@ -6,7 +6,7 @@
  * component, and `locks.ts` reaches the store. Only `paused` is drawn here; the
  * ceiling and account kinds add a case beside `isPaused`, never a new parameter.
  */
-import { type Lock, localDay } from '@lingtai/domain'
+import { type Lock, localDay, whenLabel } from '@lingtai/domain'
 
 import type { ProjectLocks } from './locks.ts'
 
@@ -67,4 +67,50 @@ export function pausedNames(map: LockMap, project: string | undefined): string[]
 /** Every registered project is paused — false for an empty register. */
 export function everyPaused(map: LockMap, registered: readonly string[]): boolean {
   return registered.length > 0 && registered.every((p) => isPaused(map.get(p)))
+}
+
+/** A project's standing under the first lock that holds it: the card's words and the panel's. */
+export interface LockStanding {
+  /** The short word the panel's chip uses. */
+  kind: 'ceiling' | 'usage limit' | 'paused'
+  text: string
+  title: string
+  /** What the request waits for, as a clause after *until*. */
+  waitsFor: string
+}
+
+/**
+ * The one place a lock is worded for a queued ticket: the home page's card
+ * (`queuedStanding`) and the task page's Queued panel (`holding`) both read it,
+ * so they cannot drift. Order: today's ceiling, the first account limit, the
+ * project's own pause. Null when nothing holds.
+ */
+export function lockStanding(project: string, locks: readonly Lock[] | undefined, now: Date): LockStanding | null {
+  if (ceilingToday(locks, now) !== null) {
+    return {
+      kind: 'ceiling',
+      text: "today's spend reached the ceiling — nothing will start",
+      title: 'no new work starts until midnight or until today’s ceiling is raised; this card keeps its place',
+      waitsFor: 'midnight, or until today’s ceiling is raised',
+    }
+  }
+  const limit = accountsHolding(locks, now)[0]
+  if (limit !== undefined) {
+    const until = whenLabel(limit.until, now)
+    return {
+      kind: 'usage limit',
+      text: `${limit.runtime} is at its usage limit until ${until} — nothing will start`,
+      title: `${project}'s recipe uses ${limit.runtime}; this card keeps its place`,
+      waitsFor: `${limit.runtime}'s limit passes (${until})`,
+    }
+  }
+  if (isPaused(locks)) {
+    return {
+      kind: 'paused',
+      text: `${project} is paused — nothing will start`,
+      title: `${project} takes no new work until it is resumed; this card keeps its place`,
+      waitsFor: `${project} is resumed`,
+    }
+  }
+  return null
 }

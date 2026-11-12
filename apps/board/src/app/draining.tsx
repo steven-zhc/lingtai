@@ -3,7 +3,7 @@
  *
  * Its own fact, and independent is the whole reason it is its own chip. The
  * health dot answers *is what I am looking at current?* and *is the thing that
- * moves it the code we merged?* (`health.tsx`), `paused.tsx` answers *is
+ * moves it the code we merged?* (`health.tsx`), `paused.tsx` (the setup's pause) answers *is
  * anything going to move?* — and a daemon that has been told to stop is
  * current, unpaused and up to date while it finishes the last pass it will ever
  * run. Reducing that into `up` is the same mistake #77 made with `paused`: one
