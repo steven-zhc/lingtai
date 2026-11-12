@@ -448,7 +448,7 @@ describe('the home bar in page.tsx (#904)', () => {
   // The bar's markup and the rail's late parts, which stream in `RailTail`.
   const bar =
     page.slice(page.search(/<Bar\s/), page.indexOf('<div className="cols">')) +
-    page.slice(page.indexOf('async function RailTail'), page.indexOf('async function BannerPart'))
+    page.slice(page.indexOf('async function PausedPart'), page.indexOf('async function BannerPart'))
   expect(bar.length).toBeGreaterThan(0)
 
   it('has no queued segment and no quiet headline', () => {
@@ -458,7 +458,7 @@ describe('the home bar in page.tsx (#904)', () => {
   })
 
   it('links the headline to the Waiting column, only while something waits', () => {
-    expect(bar).toMatch(/v\.waiting > 0 \? \(\s*<a className="head sig" href="#waiting"/)
+    expect(bar).toMatch(/waiting > 0 \? \(\s*<a className="head sig" href="#waiting"/)
     expect(page).toContain("id={col.id === 'waiting' ? 'waiting' : undefined}")
   })
 })
