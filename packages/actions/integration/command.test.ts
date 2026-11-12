@@ -15,7 +15,7 @@ import { join } from 'node:path'
 
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { type CommandOutcome, runCommand, startCommand } from '../src/index.ts'
+import { runCommand } from '../src/index.ts'
 
 const env = { PATH: process.env['PATH'] ?? '' }
 let cwd: string
@@ -143,89 +143,6 @@ describe('LINGTAI_RESULT', () => {
     expect(outcome.result).toEqual({ verdict: 'passed' })
     // stdout is still evidence, unchanged.
     expect(outcome.evidence).toContain('nope')
-  })
-})
-
-describe('a command the core does not wait for', () => {
-  const started = (options: Parameters<typeof startCommand>[0]) => {
-    let report: (outcome: CommandOutcome) => void
-    const outcome = new Promise<CommandOutcome>((resolve) => (report = resolve))
-    startCommand(options, (o) => report(o))
-    return outcome
-  }
-
-  it('returns before the command does', async () => {
-    const marker = join(cwd, 'late.txt')
-    const outcome = started({
-      run: `sleep 0.3; touch "${marker}"`,
-      timeoutMs: 10_000,
-      cwd,
-      env,
-    })
-
-    // The call has already returned — the file the command will write does not
-    // exist yet. That is the whole difference from `runCommand`.
-    await expect(readFile(marker, 'utf8')).rejects.toThrow()
-    expect((await outcome).ok).toBe(true)
-  })
-
-  /**
-   * 0037 §6: an ignored failure and a bounded one are different guarantees, and
-   * only the second keeps the loop moving. Not waiting does not mean not
-   * looking: nothing reads a subscriber's exit code, so this callback is the
-   * only place a `PluginFailed` about it could come from.
-   */
-  it('still enforces the timeout, and reports it', async () => {
-    const outcome = await started({
-      run: 'sleep 30',
-      timeoutMs: 150,
-      timeoutLabel: '150ms',
-      cwd,
-      env,
-    })
-
-    expect(outcome.timedOut).toBe(true)
-    expect(outcome.ok).toBe(false)
-    expect(outcome.evidence).toContain('timed out after 150ms')
-  })
-
-  it('reports a non-zero exit rather than swallowing it', async () => {
-    const outcome = await started({ run: 'echo bad >&2; exit 3', timeoutMs: 10_000, cwd, env })
-
-    expect(outcome.ok).toBe(false)
-    expect(outcome.exitCode).toBe(3)
-    expect(outcome.evidence).toContain('bad')
-  })
-
-  /**
-   * The outcome arrives in a `close` handler and in a timer, so a `report` that
-   * throws throws into neither caller's `try` — it is an uncaught exception in
-   * whichever process started the command, and for a subscriber that is the one
-   * that follows the log. Held here rather than trusted to every caller, which
-   * is the call `work-loop.ts`'s `deliver` already makes for the in-process
-   * subscribers.
-   *
-   * The assertion is that this file finishes: an escaped throw or rejection
-   * fails the run as an unhandled error, whichever line it is reported against.
-   */
-  it('holds a report that throws, and one that rejects', async () => {
-    // Each callback says it was reached *before* it fails, so awaiting these
-    // two proves the failing line ran rather than hoping it had time to.
-    const called = (fail: () => Promise<void>) =>
-      new Promise<void>((reached) => {
-        startCommand({ run: 'exit 1', timeoutMs: 10_000, cwd, env }, () => {
-          reached()
-          return fail()
-        })
-      })
-
-    await called(() => {
-      throw new Error("the subscriber's own bug")
-    })
-    await called(() => Promise.reject(new Error('PluginFailed could not be appended')))
-
-    // Both failures are already spent by here; the run finishing is the claim.
-    expect((await run({ run: 'exit 0' })).ok).toBe(true)
   })
 })
 

@@ -13,9 +13,10 @@
  * verdict about a commit", which is the part that is genuinely about actions.
  */
 import { parseDuration } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
-import type { Action, ActionContext, ActionResult } from './action.ts'
-import { runCommand } from './command.ts'
+import { promiseAction, type Action, type ActionContext, type ActionPort } from './action.ts'
+import { commandEffect } from './command.ts'
 
 // Re-exported because they were part of this module's surface before the
 // extraction, and moving a file should not move someone's import.
@@ -48,7 +49,7 @@ export interface ProcessActionSpec {
   env: Record<string, string>
 }
 
-export function createProcessAction(spec: ProcessActionSpec): Action {
+export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
   const timeoutLabel = spec.timeout ?? '15m'
   const timeoutMs = parseDuration(timeoutLabel)
 
@@ -57,22 +58,31 @@ export function createProcessAction(spec: ProcessActionSpec): Action {
     kind: 'run',
     yields: 'verdict',
 
-    async run(context: ActionContext): Promise<ActionResult> {
-      const outcome = await runCommand({
-        run: spec.run,
-        timeoutMs,
-        timeoutLabel,
-        cwd: context.cwd,
-        // `spec.env`, deliberately, and not `context.env`: the context carries
-        // the agent's environment and this is not the agent. See ProcessActionSpec.
-        env: spec.env,
-        signal: context.signal,
-      })
+    run: (context: ActionContext) =>
+      Effect.gen(function* () {
+        const outcome = yield* commandEffect({
+          run: spec.run,
+          timeoutMs,
+          timeoutLabel,
+          cwd: context.cwd,
+          // `spec.env`, deliberately, and not `context.env`: the context carries
+          // the agent's environment and this is not the agent. See ProcessActionSpec.
+          env: spec.env,
+          signal: context.signal,
+        })
 
-      // A process action finds nothing structured — that is what the agent action is
-      // for (#18). Its evidence is the log, which is what someone acting on the
-      // card actually needs.
-      return { verdict: outcome.ok ? 'passed' : 'failed', evidence: outcome.evidence, findings: [] }
-    },
+        // A process action finds nothing structured — that is what the agent action is
+        // for (#18). Its evidence is the log, which is what someone acting on the
+        // card actually needs.
+        return {
+          verdict: outcome.ok ? ('passed' as const) : ('failed' as const),
+          evidence: outcome.evidence,
+          findings: [],
+        }
+      }),
   }
+}
+
+export function createProcessAction(spec: ProcessActionSpec): Action {
+  return promiseAction(makeProcessAction(spec))
 }

@@ -19,7 +19,14 @@ export {
   type SentBack,
   type TheDesign,
 } from './action.ts'
-export { createProcessAction, EVIDENCE_BYTES, EVIDENCE_LINES, tail, type ProcessActionSpec } from './process-action.ts'
+export {
+  createProcessAction,
+  makeProcessAction,
+  EVIDENCE_BYTES,
+  EVIDENCE_LINES,
+  tail,
+  type ProcessActionSpec,
+} from './process-action.ts'
 export {
   buildDesignPrompt,
   buildReviewPrompt,
@@ -111,9 +118,20 @@ export {
   type WorktreeActionSpec,
 } from './worktree-action.ts'
 export { actionsFromRecipe, ActionUnavailableError, type ActionDeps } from './from-recipe.ts'
-export { boundedEvidence, runCommand, startCommand, type CommandOutcome, type RunCommandOptions } from './command.ts'
+export {
+  boundedEvidence,
+  commandEffect,
+  parseResult,
+  readResultEffect,
+  runCommand,
+  type CommandOutcome,
+  type RunCommandOptions,
+} from './command.ts'
 export {
   createSubscriber,
+  deliverFace,
+  makeSubscriber,
+  SubscriberFailed,
   subjectOf,
   SUBSCRIBER_COMMAND_TIMEOUT,
   SUBSCRIBER_COMMAND_TIMEOUT_MS,
@@ -121,4 +139,6 @@ export {
   type Subscriber,
   type SubscriberOptions,
   type SubscriberPayload,
+  type SubscriberPort,
+  type SubscriberPortOptions,
 } from './subscriber.ts'
