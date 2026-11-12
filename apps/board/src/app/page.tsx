@@ -23,6 +23,7 @@ import {
   selectedProject,
   columnSkeletonCount,
   queuedSkeletonCount,
+  recordQueuedOffered,
   skeletonCount,
   type BoardCard,
   type GithubQueue,
@@ -1001,7 +1002,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // awaited from both boundaries; two calls would be two fan-outs to GitHub.
   const queue: Promise<GithubQueue> = ctx.reads.board
     .then((board) =>
-      measure(() => timed('board.queue', () => githubQueue(board.askable, board.known)), { label: '/ queue' }),
+      measure(() => timed('board.queue', () => githubQueue(board.askable, board.known)), { label: '/ queue' }).then(
+        (answered) => {
+          recordQueuedOffered(param, board.askable)
+          return answered
+        },
+      ),
     )
     .then(([github]) => github)
   const app = hasGitHubAuth()

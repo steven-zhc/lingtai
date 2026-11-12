@@ -1134,6 +1134,7 @@ const lastOffered = new Map<string, number>()
 export function forgetSkeletonCounts(): void {
   lastOffered.clear()
   lastColumnCounts.clear()
+  lastScopeOffered.clear()
 }
 
 /**
@@ -1142,6 +1143,12 @@ export function forgetSkeletonCounts(): void {
  * a sum. Per process: a restart forgets it and the skeleton says 2 again.
  */
 const lastColumnCounts = new Map<string, number>()
+
+/**
+ * What GitHub offered in total at the last answer for each scope (`''` is *all
+ * projects*), so one scope's Queued fallback never reads another's.
+ */
+const lastScopeOffered = new Map<string, number>()
 
 /** The most skeletons the column draws, and what it draws before any answer. */
 const SKELETON_MOST = 3
@@ -1185,18 +1192,29 @@ export function columnSkeletonCount(project: string | undefined, columnId: strin
 /**
  * The Queued column waits twice — on the log, then on GitHub — so its first
  * fallback is sized for both halves: the log's last count plus what GitHub last
- * offered, capped. For *all projects*, GitHub's half is every offer seen.
+ * offered for this same scope, capped.
  */
 export function queuedSkeletonCount(project: string | undefined): number {
   const log = lastColumnCounts.get(`${project ?? ''}/queued`)
-  let offered: number | undefined
-  if (project === undefined || project === '') {
-    for (const n of lastOffered.values()) offered = (offered ?? 0) + n
-  } else {
-    offered = lastOffered.get(project)
-  }
+  const offered = lastScopeOffered.get(project ?? '')
   if (log === undefined && offered === undefined) return SKELETON_UNKNOWN
   return Math.min((log ?? 0) + (offered ?? 0), SKELETON_MOST)
+}
+
+/**
+ * Records what GitHub offered for a scope, once its queue has answered: the sum
+ * of the offers of the projects that scope asked, written under its own key.
+ */
+export function recordQueuedOffered(project: string | undefined, askable: readonly AskableFilter[]): void {
+  let sum = 0
+  let seen = false
+  for (const f of askable) {
+    const n = lastOffered.get(f.project)
+    if (n === undefined) continue
+    seen = true
+    sum += n
+  }
+  if (seen) lastScopeOffered.set(project ?? '', sum)
 }
 
 export interface HeldTicket {

@@ -24,6 +24,7 @@ import {
   columnSkeletonCount,
   queuedSkeletonCount,
   recordColumnCounts,
+  recordQueuedOffered,
   forgetKindColors,
   forgetSkeletonCounts,
   skeletonCount,
@@ -358,9 +359,21 @@ describe('the skeletons each column waits in on a switch (#1038)', () => {
     recordColumnCounts('lingtai', [col('queued', 1)])
     expect(queuedSkeletonCount('lingtai')).toBe(1)
     await githubQueue([resolvedFilter('lingtai', ['bug'])], new Set(), async (f) => listed(f, ['1'], {}))
+    recordQueuedOffered('lingtai', [resolvedFilter('lingtai', ['bug'])])
     expect(queuedSkeletonCount('lingtai')).toBe(2)
     await githubQueue([resolvedFilter('lingtai', ['bug'])], new Set(), async (f) => listed(f, ['1', '2', '3', '4'], {}))
+    recordQueuedOffered('lingtai', [resolvedFilter('lingtai', ['bug'])])
     expect(queuedSkeletonCount('lingtai')).toBe(3)
+    forgetSkeletonCounts()
+  })
+
+  it('keeps all projects independent of the named projects', async () => {
+    forgetSkeletonCounts()
+    const f = resolvedFilter('lingtai', ['bug'])
+    await githubQueue([f], new Set(), async (x) => listed(x, ['1', '2', '3', '4', '5'], {}))
+    recordQueuedOffered('lingtai', [f])
+    expect(queuedSkeletonCount('lingtai')).toBe(3)
+    expect(queuedSkeletonCount(undefined)).toBe(2)
     forgetSkeletonCounts()
   })
 })
