@@ -644,7 +644,7 @@ export interface StepWork<S extends Step = Step> {
   readonly emit: (event: ActionEvent) => Promise<void> | void
 }
 
-export type StepBody<S extends Step = Step> = (work: StepWork<S>) => Promise<EndingAt<S>>
+export type StepBody<S extends Step = Step> = (work: StepWork<S>) => Effect.Effect<EndingAt<S>>
 
 /**
  * All ten, and all ten required.
@@ -657,7 +657,7 @@ export type StepBody<S extends Step = Step> = (work: StepWork<S>) => Promise<End
 export type StepBodies = { readonly [S in Step]: StepBody<S> }
 
 /** The body of a step whose own work is nothing beyond its plugins. */
-const nothingBeyondThePlugins = async (): Promise<StepPassed> => ({ ending: 'passed' })
+const nothingBeyondThePlugins = (): Effect.Effect<StepPassed> => Effect.succeed<StepPassed>({ ending: 'passed' })
 
 /**
  * The ten bodies, empty — and each one says what will be in it.
@@ -717,7 +717,7 @@ export const NOT_BUILT_YET: StepBodies = {
    * absent `AttemptOptions.judge` as `noJudge`, falls back to `BUILT_IN_FOR`
    * where that answers, and lands on a person where neither does.
    */
-  proposed: async () => ({ ending: 'passed' }),
+  proposed: nothingBeyondThePlugins,
   /**
    * **Refuses**, and reports a `reason` and a `detail` rather than deciding —
    * the lane is `bodiesFor`'s port, and over the whole log it has refused 32
@@ -741,22 +741,23 @@ export const NOT_BUILT_YET: StepBodies = {
    * ([`attempt-steps.ts`](attempt-steps.ts)), and it makes exactly the call this throw
    * names.
    */
-  end: async ({ actions, outcome }) => {
-    if (actions.length === 0) return { ending: 'passed' }
-    throw new Error(
-      `the \`end\` step has ${actions.length} effect(s) declared — ${actions
-        .map((a) => `"${a.name}"`)
-        .join(', ')} — and this attempt has no body to carry them out. ` +
-        // The outcome is quoted into the call the body will make, because it is
-        // the argument a body had no value for until `StepWork` carried one:
-        // the effects are filtered by `when:`, and a body that cannot read the
-        // outcome can only run every cell or none, which is `#61` either way.
-        `\`resolveEndActions(events, end, "${outcome}")\` resolves them onto the item's own stream ` +
-        'and `tell.ts` does them; ' +
-        'throwing rather than passing, because a step that was configured and did not run must not ' +
-        'look like one that was empty (0016 §4, #61).',
-    )
-  },
+  end: ({ actions, outcome }) =>
+    Effect.sync((): StepPassed => {
+      if (actions.length === 0) return { ending: 'passed' }
+      throw new Error(
+        `the \`end\` step has ${actions.length} effect(s) declared — ${actions
+          .map((a) => `"${a.name}"`)
+          .join(', ')} — and this attempt has no body to carry them out. ` +
+          // The outcome is quoted into the call the body will make, because it is
+          // the argument a body had no value for until `StepWork` carried one:
+          // the effects are filtered by `when:`, and a body that cannot read the
+          // outcome can only run every cell or none, which is `#61` either way.
+          `\`resolveEndActions(events, end, "${outcome}")\` resolves them onto the item's own stream ` +
+          'and `tell.ts` does them; ' +
+          'throwing rather than passing, because a step that was configured and did not run must not ' +
+          'look like one that was empty (0016 §4, #61).',
+      )
+    }),
 }
 
 // ---------------------------------------------------------- what is on offer ----
@@ -2161,22 +2162,19 @@ function runVisit(
     // back is checked by `theWorkflowsToSay` on the line below rather than by
     // the compiler.
     const body = bodies[spec.step] as StepBody<Step>
-    // A step's body stays a promise (`StepBody`) until STEPS-1.
-    const ending = yield* Effect.promise(() =>
-      body({
-        step: spec.step,
-        actions,
-        refuses: spec.refuses,
-        reached,
-        // `StepWork<Step>`'s one conditional field distributes over the whole
-        // union, so it widens to both of its branches — `TerminalOutcome |
-        // null` — and `Reaching` carries a field assignable to it, so it needs
-        // no cast.
-        outcome: reaching.outcome,
-        context: reaching.context,
-        emit: (event) => Promise.resolve(options.emit(event)).then(() => undefined),
-      }),
-    )
+    const ending = yield* body({
+      step: spec.step,
+      actions,
+      refuses: spec.refuses,
+      reached,
+      // `StepWork<Step>`'s one conditional field distributes over the whole
+      // union, so it widens to both of its branches — `TerminalOutcome |
+      // null` — and `Reaching` carries a field assignable to it, so it needs
+      // no cast.
+      outcome: reaching.outcome,
+      context: reaching.context,
+      emit: (event) => Promise.resolve(options.emit(event)).then(() => undefined),
+    })
     return {
       step: spec.step,
       ending: theWorkflowsToSay(spec, { ...leftTheTreeAt, ...wroteTheDesign, ...ending }),

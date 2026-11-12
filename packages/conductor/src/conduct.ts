@@ -2999,7 +2999,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /** `end` — the work item's own stream, read this late on purpose. */
-      const readEnd = (stream: string) => store.read(stream)
+      const readEnd = (stream: string) => Effect.promise(() => store.read(stream))
 
       /**
        * `end` — what the step resolved, held for the append that makes its
@@ -3018,9 +3018,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * this reads the stream for itself, which is the same optimistic check one
        * step further on.
        */
-      const recordEnd = async (_stream: string, _at: number, plan: readonly ToAppend[]) => {
-        endPlan = plan
-      }
+      const recordEnd = (_stream: string, _at: number, plan: readonly ToAppend[]) =>
+        Effect.sync(() => {
+          endPlan = plan
+        })
 
       /**
        * `merge` — the branch on the remote, then the lane.
