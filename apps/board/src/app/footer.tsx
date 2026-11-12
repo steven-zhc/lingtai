@@ -68,6 +68,12 @@ export function Footer({
   home: { path: string; shown: string }
 }) {
   const d = day.day
+  const c = day.ceiling
+  const known = c !== undefined && !('unread' in c) ? c : null
+  const atCeiling = known?.reached != null && !known.reached.passed
+  const raised = known?.raised ?? null
+  const unreadTitle =
+    c !== undefined && 'unread' in c ? "whether today's ceiling was raised or reached could not be read" : undefined
 
   let figures: ReactNode
   if (d === null) {
@@ -76,8 +82,25 @@ export function Footer({
     figures = (
       <>
         <b>{day.figure}</b> + ~<b>{dollars(d.estimatedCents)}</b>
-        {day.ceilingUsd !== undefined ? ` of $${day.ceilingUsd}` : null}
+        {day.ceilingUsd !== undefined ? (
+          <>
+            {' '}
+            <span className="of" title={unreadTitle}>
+              of ${day.ceilingUsd}
+            </span>
+          </>
+        ) : null}
         {d.unknown > 0 ? ` + ${d.unknown} unknown` : null}
+        {atCeiling ? ' · reached the ceiling' : null}
+        {raised === null ? null : (
+          <>
+            {' '}
+            <span className="raised">
+              today only, raised{raised.fromUsd === undefined ? '' : ` from $${raised.fromUsd}`} by {raised.byShown} at{' '}
+              {raised.at}
+            </span>
+          </>
+        )}
       </>
     )
   }
@@ -86,7 +109,7 @@ export function Footer({
 
   return (
     <footer className="footer">
-      <span className="spend">
+      <span className={atCeiling && d !== null ? 'spend at-ceiling' : 'spend'}>
         <span>Today</span>
         <DayMeter day={day} />
         <span className="figures" title={hasMeter ? undefined : day.text}>

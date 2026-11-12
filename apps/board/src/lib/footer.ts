@@ -11,6 +11,7 @@ import type { ProjectionLag } from '@lingtai/projector'
 
 import { type DaySpendReading, readDayReading } from './day-spend.ts'
 import { theHome } from './home.ts'
+import { readControlOnce } from './locks.ts'
 import { measure, timed } from './timing.ts'
 
 /** The four projections. A copy of `PROJECTION_NAMES` in `apps/cli/src/commands.ts`, held equal by a test. */
@@ -43,7 +44,15 @@ export async function loadFooter(): Promise<FooterReading> {
   const [[day, lags]] = await measure(
     () =>
       Promise.all([
-        timed('footer.day', () => readDayReading()),
+        timed('footer.day', async () =>
+          readDayReading(
+            undefined,
+            await readControlOnce().then(
+              (state) => state,
+              (err: unknown) => ({ unread: err instanceof Error ? err.message : String(err) }),
+            ),
+          ),
+        ),
         timed('footer.lags', () => projectionLag()).then(footerLags, () => null),
       ]),
     { label: '/api/footer' },

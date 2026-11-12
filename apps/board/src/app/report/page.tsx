@@ -16,7 +16,7 @@ import { report as buildReport, type Report } from '@lingtai/conductor/report'
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
 import { readDayReading } from '@/lib/day-spend'
-import { readRegistered } from '@/lib/locks.ts'
+import { readControlOnce, readRegistered } from '@/lib/locks.ts'
 import {
   currentReport,
   kindsOf,
@@ -66,7 +66,12 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   let failure: string | null = null
   let timings: readonly Timing[] = []
   // Never throws, and outside the try: a failed report read leaves the day's figure, and the reverse.
-  const dayReading = readDayReading()
+  const dayReading = readControlOnce()
+    .then(
+      (state) => state,
+      (err: unknown) => ({ unread: err instanceof Error ? err.message : String(err) }),
+    )
+    .then((control) => readDayReading(undefined, control))
   const projects = await readRegistered().catch(() => [])
   try {
     const [data, measured] = await measure(
