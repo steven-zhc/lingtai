@@ -180,6 +180,18 @@
     "why": "apps/cli (conduct, run, ticket) and `packages/daemon/src/converge.ts:187`"
   },
   {
+    "file": "packages/daemon/src/failure-recorder.ts",
+    "fn": "recordFailureFace",
+    "until": "#790",
+    "why": "`deliver`'s promise callbacks in `packages/daemon/src/work-loop.ts`, which hold the CLI's `EventSubscriber.deliver`, until that is an Effect (apps/cli row)"
+  },
+  {
+    "file": "packages/daemon/src/in-flight.ts",
+    "fn": "inFlightSettledFace",
+    "until": "#790",
+    "why": "`work-loop.ts`'s promise `stop`, until DAEMON-1b, which deletes it"
+  },
+  {
     "file": "packages/event-store/src/choose.ts",
     "fn": "closeProcessLog",
     "until": "#790",
