@@ -18,6 +18,7 @@ export function Bar({
   here,
   registered = false,
   pause,
+  actions,
   children,
 }: {
   /** The project in view, carried on the way home and on Report; none on `all`. */
@@ -28,6 +29,11 @@ export function Bar({
   registered?: boolean
   /** *Pause* / *Paused · resume*, built by the page that read the locks; drawn only beside a registered project's Recipe. */
   pause?: ReactNode
+  /**
+   * The selected project's actions, already built — the home page's, which
+   * streams them. When given it replaces `registered` and `pause`.
+   */
+  actions?: ReactNode
   children?: ReactNode
 }) {
   return (
@@ -41,21 +47,10 @@ export function Bar({
       </Link>
       {children}
       <nav className="topnav">
-        {project !== undefined && registered ? (
-          <>
-            {/* A selected project's actions: Recipe, then Pause (#994). */}
-            <span className="pacts">
-              <Link
-                className={here === 'recipe' ? 'navlink on' : 'navlink'}
-                href={`/recipe/${encodeURIComponent(project)}`}
-                aria-current={here === 'recipe' ? 'page' : undefined}
-              >
-                Recipe
-              </Link>
-              {pause}
-            </span>
-            <span className="vsep" aria-hidden="true" />
-          </>
+        {actions !== undefined ? (
+          actions
+        ) : project !== undefined && registered ? (
+          <BarActions project={project} here={here} pause={pause} />
         ) : null}
         <Link
           className={here === 'report' ? 'navlink on' : 'navlink'}
@@ -66,5 +61,32 @@ export function Bar({
         </Link>
       </nav>
     </div>
+  )
+}
+
+/** A selected project's actions: Recipe, then Pause (#994), and the rule after them. */
+export function BarActions({
+  project,
+  here,
+  pause,
+}: {
+  project: string
+  here?: 'report' | 'recipe'
+  pause?: ReactNode
+}) {
+  return (
+    <>
+      <span className="pacts">
+        <Link
+          className={here === 'recipe' ? 'navlink on' : 'navlink'}
+          href={`/recipe/${encodeURIComponent(project)}`}
+          aria-current={here === 'recipe' ? 'page' : undefined}
+        >
+          Recipe
+        </Link>
+        {pause}
+      </span>
+      <span className="vsep" aria-hidden="true" />
+    </>
   )
 }

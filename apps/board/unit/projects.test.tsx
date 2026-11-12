@@ -118,12 +118,13 @@ describe('which object on the row this is', () => {
 
   it('is handed any GitHub auth, so a gh machine is not sent to create an App (#713)', () => {
     const src = read('../src/app/page.tsx')
-    expect(src).toContain('app={hasGitHubAuth()}')
+    expect(src).toContain('const app = hasGitHubAuth()')
+    expect(src).toContain('app={app}')
     expect(src).not.toContain('hasGitHubApp')
   })
 
   const page = read('../src/app/page.tsx')
-  const bar = page.slice(page.indexOf('<Bar project={only}'), page.indexOf('<div className="cols">'))
+  const bar = page.slice(page.search(/<Bar\s/), page.indexOf('<div className="cols">'))
   expect(bar.length).toBeGreaterThan(0)
 
   /**
@@ -133,12 +134,12 @@ describe('which object on the row this is', () => {
    * tab in a list that was already a list of tabs.
    */
   it('is mounted left of the rail, which keeps the objects it was cut to', () => {
-    expect(bar.indexOf('<Projects')).toBeGreaterThan(-1)
-    expect(bar.indexOf('<Projects')).toBeLessThan(bar.indexOf('className="rail"'))
+    expect(bar.indexOf('<FilterSlot')).toBeGreaterThan(-1)
+    expect(bar.indexOf('<FilterSlot')).toBeLessThan(bar.indexOf('className="rail"'))
     // Nothing new inside the rail: the health dot, the
     // paused/draining chip and the headline, as #134 left them.
     const rail = bar.slice(bar.indexOf('className="rail"'))
-    for (const object of ['<Projects', '/setup/repository', '/setup/github-app']) {
+    for (const object of ['<FilterSlot', '<FilterMenu', '<AddProject', '/setup/repository', '/setup/github-app']) {
       expect(rail).not.toContain(object)
     }
   })
@@ -157,13 +158,14 @@ describe('which object on the row this is', () => {
    */
   it('names the objects the bar actually renders, in the code', () => {
     const said = (src: string) => src.replace(/[\s*]+/g, ' ')
-    const bar = page.slice(page.indexOf('<Bar project={only}'), page.indexOf('<div className="cols">'))
+    const bar = page.slice(page.search(/<Bar\s/), page.indexOf('<div className="cols">'))
     expect(bar.length).toBeGreaterThan(0)
     // What the bar draws, read off its markup rather than off its comments.
     const rendered = [
-      ['filter', bar.includes('<Projects')],
+      ['filter', bar.includes('<FilterSlot')],
       ['health', bar.includes('<Health')],
-      ['headline', bar.includes('className="head sig"')],
+      // The headline streams with the rail's other late parts (`RailTail`), so it is read off the page.
+      ['headline', page.includes('className="head sig"')],
     ]
       .filter(([, present]) => present)
       .map(([name]) => name)

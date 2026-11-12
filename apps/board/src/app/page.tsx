@@ -15,6 +15,7 @@ import { type BoardHalf } from '@/lib/blocker-state'
 import {
   emptyHeld,
   emptyNote,
+  COLUMNS,
   githubQueue,
   issueUrl,
   loadBoard,
@@ -35,25 +36,27 @@ import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.t
 import { elapsed } from '@/lib/progress'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText } from '@/lib/spend'
-import { measure, timed } from '@/lib/timing'
+import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
-import { Bar } from './bar.tsx'
+import { Bar, BarActions } from './bar.tsx'
 // Both halves of the sequence, in the file the task page reads them from too
 // (#189): one rail, two surfaces, and never a copy.
 import { codeSpans } from './code-spans.tsx'
 import { Close, TriageMove } from './decide.tsx'
 import { Draining } from './draining.tsx'
-import { Footer, landedCount } from './footer.tsx'
+import { FilterMenu } from './filter-menu.tsx'
+import { Footer, FooterPending, landedCount } from './footer.tsx'
 import { Health } from './health.tsx'
 import { HomeFrame } from './home-frame.tsx'
-import { LockBanner, pauseSlot } from './lock-banner.tsx'
+import { LockRows, pauseSlot } from './lock-banner.tsx'
 import { NotSetUp } from './not-set-up.tsx'
 import { Paused } from './paused.tsx'
 import { Pending } from './pending.tsx'
-import { Projects } from './projects.tsx'
+import { AddProject, filterSummary, ProjectRows, Projects } from './projects.tsx'
 import { QueuedAnswered, QueuedCountAnswered, QueuedCountPending, QueuedFallback } from './queued-stream.tsx'
 import { Rail, Segs } from './rail.tsx'
+import { Skeleton } from './skeleton.tsx'
 
 /**
  * The board is not a status page. It is where the backlog gets worked, and the
@@ -621,58 +624,48 @@ async function AwaitedCount({ queue, logCards }: { queue: Promise<GithubQueue>; 
  * same markup. Held in component state it would instead have been thrown away
  * by the first event from the project you had just stopped looking at.
  */
-export default async function Page({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
-  const param = (await searchParams).project
-  // Before any read of the log: a refused store makes `loadBoard` throw the
-  // same sentence, and Next would show that as its default error page. The
-  // screen below says it instead, and mounts no `Live` — there is no log to
-  // follow (#767).
-  const choice = storeChoice()
-  if ('refused' in choice) return <NotSetUp home={theHome()} choice={choice} nothing={homeNotSetUp(choice)} />
-  // Three reads waiting together rather than in a row. None of them is an
-  // argument to another, and this route is re-rendered on every append to the
-  // log (#112) — so a round trip spent waiting for the one before it is spent
-  // again every time a card moves a column.
-  //
-  // `registered` is the register, and only for the owners a ticket link is
-  // built from: which projects the bar can offer is `loadBoard`'s answer and
-  // not this one. `readControlOnce` is not caught — a control read that failed
-  // would render as "nothing is paused", which is the exact silence #77 is
-  // about; and it reads the same database `loadBoard` reads, so it fails when
-  // the board fails and not otherwise.
-  // `today` follows `loadBoard` and is not in the `Promise.all`: `loadBoard`'s
-  // `currentSpend` reduces the spend projection to the head, and `readDayReading`
-  // reads that projection without refreshing it, so run beside it the day's
-  // total could be read before today's `RunSpent` events were projected.
-  const [
-    [
-      { columns, queueOrder, ticketSources, projects: filters, pending, askable, known },
-      registered,
-      control,
-      today,
-      lags,
-    ],
-    timings,
-  ] = await measure(
-    async () => {
-      const [board, projects, control] = await Promise.all([
-        loadBoard(param),
-        timed('projects.read', () => readRegistered()).catch(() => []),
-        timed('events.control', () => readControlOnce()),
-      ])
-      const [day, lags] = await Promise.all([
-        timed('spend.day', () => readDayReading(undefined, control), { failed: (r) => r.day === null }),
-        timed('projections.lag', () => projectionLag()).then(footerLags, () => null),
-      ])
-      return [board, projects, control, day, lags] as const
-    },
-    { label: '/' },
-  )
+type Read = Awaited<ReturnType<typeof readAll>>
+
+/**
+ * The reads `/` waits for, together and not in a row (#112) — and once: this is
+ * the only `loadBoard` call in a render. `today` follows `loadBoard` and is not
+ * in the first `Promise.all`: `loadBoard`'s `currentSpend` reduces the spend
+ * projection to the head, and `readDayReading` reads that projection without
+ * refreshing it, so run beside it the day's total could be read before today's
+ * `RunSpent` events were projected.
+ *
+ * `registered` is the register, and only for the owners a ticket link is built
+ * from. `readControlOnce` is not caught — a control read that failed would
+ * render as "nothing is paused", which is the exact silence #77 is about.
+ */
+async function readAll(param: string | undefined) {
+  const [board, projects, control] = await Promise.all([
+    loadBoard(param),
+    timed('projects.read', () => readRegistered()).catch(() => []),
+    timed('events.control', () => readControlOnce()),
+  ])
+  const [day, lags] = await Promise.all([
+    timed('spend.day', () => readDayReading(undefined, control), { failed: (r) => r.day === null }),
+    timed('projections.lag', () => projectionLag()).then(footerLags, () => null),
+  ])
+  return [board, projects, control, day, lags] as const
+}
+
+/**
+ * Everything the parts below share, derived once from the reads and the locks.
+ * Almost every part needs several of these (a card needs `control.paused`,
+ * `projectLocks` and `ticket`), so each part awaits this and none recomputes it.
+ */
+function derive(
+  [[board, registered, control, today, lags], timings]: readonly [Read, readonly Timing[]],
+  lockRead: Awaited<ReturnType<typeof readProjectLocks>>,
+  param: string | undefined,
+) {
+  const { columns, queueOrder, ticketSources, projects: filters, pending, askable, known } = board
   // The selection: the URL's choice, else the only project there is (#993).
   const only = selectedProject(param, filters)
   // What holds each project, read once for the filter, the cards and the empty
   // Running line (#995); a failed read is the empty map, and C1's banner says why.
-  const lockRead = await readProjectLocks()
   const projectLocks = lockMap(lockRead)
   // An unread control stream leaves the ceiling unknown: no one is claimed to take work.
   const uses =
@@ -682,14 +675,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   const registeredNames = registered.map((p) => p.project).filter((p): p is string => p !== null)
   const locksInScope: LockMap = new Map([...projectLocks].filter(([p]) => only === undefined || p === only))
   const allPaused = only === undefined && everyPaused(projectLocks, registeredNames)
-  // GitHub's half of the Queued column, asked only now (#884): the page's own
-  // `measure` has returned, so these timings are not in the meta tag already
-  // sent — started inside it they would land in an array that has been
-  // serialised, and be lost silently. Started once and awaited from both
-  // boundaries below; two calls would be two fan-outs to GitHub.
-  const queue: Promise<GithubQueue> = measure(() => timed('board.queue', () => githubQueue(askable, known)), {
-    label: '/ queue',
-  }).then(([github]) => github)
   // What the *cards* say, not what is registered: a card can outlive its
   // project, and it is the cards that have to be told apart.
   const onBoard = new Set(columns.flatMap((c) => c.cards.map((card) => card.project)))
@@ -707,47 +692,336 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
       askable.flatMap((f) => (f.links === null ? [] : [[f.project, `${f.links.owner}/${f.links.repo}`] as const])),
     ),
   }
-
   // The one number an operator acts on *in the next minute*: how many need me.
   // What it has cost is the other number #81 wanted, and it is a click away on
   // `/report` — a running total on a rail glanced at every few seconds is one
   // you learn to stop seeing (`the-bar.md`).
   const waiting = columns.find((c) => c.id === 'waiting')?.cards.length ?? 0
-  const queuedColumn = columns.find((c) => c.id === 'queued')
-
   // Where each card's ticket lives, from the owners already loaded — a lookup,
   // not a request per card.
   const owners = new Map(registered.map((p) => [p.project, p.owner]))
   const ticket = (card: BoardCard) =>
     issueUrl(owners.get(card.project) ?? null, card.project, card.ref, ticketSources.get(card.project) ?? null)
 
+  return {
+    columns,
+    queueOrder,
+    ticketSources,
+    filters,
+    pending,
+    askable,
+    known,
+    control,
+    today,
+    lags,
+    timings,
+    only,
+    lockRead,
+    projectLocks,
+    uses,
+    registeredNames,
+    locksInScope,
+    allPaused,
+    onBoard,
+    boardHalf,
+    waiting,
+    owners,
+    ticket,
+  }
+}
+
+type View = ReturnType<typeof derive>
+
+/** What every keyed part awaits. */
+type Parts = { view: Promise<View> }
+
+/** The loading mark: a pulse, never a figure, a tone or an absence that reads as a claim. */
+const Pulse = () => <span className="ct-pulse" aria-hidden="true" />
+
+/** A column's count while the log is being read: the pulse alone, as the number is not known. */
+const CountPending = () => (
+  <span className="ct">
+    <Pulse />
+  </span>
+)
+
+function rowsFor(v: View, col: { id: string }) {
+  return v.columns.find((c) => c.id === col.id)
+}
+
+async function MenuRows({ view, app }: Parts & { app: boolean }) {
+  const v = await view
+  return (
+    <ProjectRows filters={v.filters} only={v.only} app={app} registered={v.registeredNames} locks={v.projectLocks} />
+  )
+}
+
+async function FilterSlot({ view, app }: Parts & { app: boolean }) {
+  const v = await view
+  return <Projects filters={v.filters} only={v.only} app={app} registered={v.registeredNames} locks={v.projectLocks} />
+}
+
+async function ActionsPart({ view }: Parts) {
+  const v = await view
+  if (v.only === undefined || !v.owners.has(v.only)) return null
+  return <BarActions project={v.only} pause={await pauseSlot(v.only)} />
+}
+
+async function RailTail({ view }: Parts) {
+  const v = await view
+  return (
+    <>
+      {/* And whether anything is going to move, which is neither the health nor
+        the count: the projection can be at the head of the log while the
+        conductor is under the setup's pause, which is what the board showed for
+        four days without a word for it (#77). Draws nothing when it is not
+        paused — and, while it is not known, the pulse and not nothing. */}
+      {v.control.paused ? (
+        <>
+          <span className="sep" />
+          <Paused by={v.control.by} reason={v.control.reason} />
+        </>
+      ) : null}
+      {/* And whether it is on its way out (0030). Draws nothing when it is not. */}
+      <Draining />
+      {/* **The headline, and the last thing on the row.** It is the only
+        reason to look up: the only column that is asking for a person, and the
+        only amber on the bar. With nothing waiting there is no headline at all. */}
+      {v.waiting > 0 ? (
+        <a className="head sig" href="#waiting" title="tickets that will not move until you decide">
+          {`${v.waiting} waiting on you`}
+        </a>
+      ) : null}
+    </>
+  )
+}
+
+async function BannerPart({ view }: Parts) {
+  const v = await view
+  return (
+    <>
+      <LockRows locks={v.lockRead} scope={v.only} now={new Date()} />
+      {/* Repositories that are recorded and not yet conducted (#163). Above
+        the lanes because it is not work, and absent entirely when there are none. */}
+      <Pending projects={v.pending} />
+    </>
+  )
+}
+
+async function TimingPart({ view }: Parts) {
+  return <TimingMeta timings={(await view).timings} />
+}
+
+async function FooterPart({ view }: Parts) {
+  const v = await view
+  return (
+    <Footer
+      day={v.today}
+      lags={v.lags}
+      landed={landedCount(v.columns.find((c) => c.id === 'landed')?.cards ?? [])}
+      home={theHome()}
+    />
+  )
+}
+
+async function CountPart({
+  id,
+  view,
+  queue,
+  projectKey,
+}: Parts & { id: string; queue: Promise<GithubQueue>; projectKey: string }) {
+  const v = await view
+  const col = rowsFor(v, { id })
+  if (col === undefined) return null
+  if (col.id === 'queued') {
+    return (
+      <Suspense key={`queued-count:${projectKey}`} fallback={<QueuedCountPending logCount={col.cards.length} />}>
+        <AwaitedCount queue={queue} logCards={col.cards} />
+      </Suspense>
+    )
+  }
+  if (col.id === 'landed') return <LandedCount count={col.cards.length} only={v.only} />
+  return <span className="ct">{col.cards.length}</span>
+}
+
+async function CardsPart({
+  id,
+  view,
+  queue,
+  projectKey,
+}: Parts & { id: string; queue: Promise<GithubQueue>; projectKey: string }) {
+  const v = await view
+  const col = rowsFor(v, { id })
+  if (col === undefined) return null
+  const { control, projectLocks, only, ticket, onBoard } = v
+  const queuedColumn = col.id === 'queued' ? col : undefined
+  const list = (
+    card: BoardCard,
+    showProject: boolean,
+    next?: ComponentProps<typeof Card>['next'],
+    arrive?: boolean,
+  ) => (
+    <Card
+      card={card}
+      showProject={showProject}
+      issue={ticket(card)}
+      paused={control.paused}
+      projectLocks={projectLocks.get(card.project) ?? []}
+      next={next}
+      arrive={arrive}
+    />
+  )
+  // **An empty column and an unanswerable one are different facts.** They
+  // rendered identically until #76: a recipe that would not parse took every
+  // issue out of Queued, and the column read exactly like a repository with
+  // nothing to do. Three cases, and they are three: the queue could not be
+  // listed (#76), the lane is empty because somebody stopped the conductor
+  // (#77), and the lane is simply empty. Only the last one means what it says.
+  if (queuedColumn !== undefined) {
+    // **GitHub's half streams in after the rest** (#884). The fallback is what
+    // the log already says, and the answer is the whole column again.
+    return (
+      <Suspense
+        key={`queued-cards:${projectKey}`}
+        fallback={
+          <QueuedFallback
+            unreadable={queuedColumn.problems ?? []}
+            logCards={queuedColumn.cards}
+            onBoard={onBoard}
+            count={skeletonCount(v.askable.map((f) => f.project))}
+            order={v.queueOrder}
+            list={list}
+          />
+        }
+      >
+        <AwaitedQueued
+          queue={queue}
+          unreadable={queuedColumn.problems ?? []}
+          logCards={queuedColumn.cards}
+          onBoard={onBoard}
+          order={v.queueOrder}
+          epicHref={(project, ref) =>
+            issueUrl(v.owners.get(project) ?? null, project, String(ref), v.ticketSources.get(project) ?? null)
+          }
+          list={list}
+          board={v.boardHalf}
+          empty={<p className="empty">{emptyNote(col.id, control.paused, only)}</p>}
+        />
+      </Suspense>
+    )
+  }
+  if (col.cards.length === 0) {
+    return (
+      <p
+        className={`empty${emptyHeld(col.id, control.paused, only, v.locksInScope, v.allPaused, new Date(), v.uses) ? ' held' : ''}`}
+      >
+        {emptyNote(col.id, control.paused, only, v.locksInScope, v.allPaused, new Date(), v.uses)}
+      </p>
+    )
+  }
+  if (col.id === 'landed') return <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
+  return (
+    <>
+      {col.cards.map((card) => (
+        <Card
+          key={card.taskId}
+          card={card}
+          showProject={onBoard.size > 1}
+          issue={ticket(card)}
+          paused={control.paused}
+          projectLocks={projectLocks.get(card.project) ?? []}
+        />
+      ))}
+    </>
+  )
+}
+
+export default async function Page({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
+  const param = (await searchParams).project
+  // Before any read of the log: a refused store makes `loadBoard` throw the
+  // same sentence, and Next would show that as its default error page. The
+  // screen below says it instead, and mounts no `Live` — there is no log to
+  // follow (#767).
+  const choice = storeChoice()
+  if ('refused' in choice) return <NotSetUp home={theHome()} choice={choice} nothing={homeNotSetUp(choice)} />
+
+  // **A boundary around a read is keyed, and its key contains `projectKey`**
+  // (#1037). Choosing another project is a navigation to this same route: an
+  // unkeyed boundary that already revealed its content is not hidden again, so
+  // it holds the whole switch until its read resolves and the page looks as it
+  // did before. A live re-render of the same project keeps the key, and so
+  // shows no fallback. Siblings need distinct keys, hence the prefix. `Live`
+  // is never inside one: a remount closes the `EventSource`.
+  const projectKey = param ?? ''
+  const key = (part: string) => `${part}:${projectKey}`
+
+  // The reads start here, once each, and the parts below only await them. The
+  // page awaits nothing past this line, so the frame is drawn at once.
+  const measured = measure(() => readAll(param), { label: '/' })
+  const view = Promise.all([measured, readProjectLocks()]).then(([[read, timings], locks]) =>
+    derive([read, timings], locks, param),
+  )
+  // GitHub's half of the Queued column, asked only once `measured` has
+  // returned (#884): the page's own `measure` is then over, so these timings are
+  // not in the meta tag already sent — started inside it they would land in an
+  // array that has been serialised, and be lost silently. Started once and
+  // awaited from both boundaries; two calls would be two fan-outs to GitHub.
+  const queue: Promise<GithubQueue> = measured
+    .then(([[board]]) =>
+      measure(() => timed('board.queue', () => githubQueue(board.askable, board.known)), { label: '/ queue' }),
+    )
+    .then(([github]) => github)
+  const app = hasGitHubAuth()
+
   return (
     <HomeFrame
       footer={
-        <Footer
-          day={today}
-          lags={lags}
-          landed={landedCount(columns.find((c) => c.id === 'landed')?.cards ?? [])}
-          home={theHome()}
-        />
+        <Suspense key={key('footer')} fallback={<FooterPending home={theHome()} />}>
+          <FooterPart view={view} />
+        </Suspense>
       }
     >
       <>
-        <TimingMeta timings={timings} />
-        <Bar project={only} registered={only !== undefined && owners.has(only)} pause={await pauseSlot(only)}>
+        <Suspense key={key('timing')} fallback={null}>
+          <TimingPart view={view} />
+        </Suspense>
+        <Bar
+          project={param}
+          actions={
+            <Suspense key={key('actions')} fallback={null}>
+              <ActionsPart view={view} />
+            </Suspense>
+          }
+        >
           <span className="sep" />
           {/* The projects, and the way to add one — `projects.tsx`, which is
-            where that argument is made. In short: the filter is one of the
-            objects the rule below names, it has been a list of tabs since #81,
-            and a list gaining an action at its end is that object rather than
-            a fifth one (#216). */}
-          <Projects
-            filters={filters}
-            only={only}
-            app={hasGitHubAuth()}
-            registered={registeredNames}
-            locks={projectLocks}
-          />
+            where that argument is made. The filter is one of the objects the
+            rule below names, a list gaining an action at its end is that object
+            rather than a fifth one (#216). With a `project` in the URL the
+            summary is the shell's and only the rows stream; without one, the
+            selection needs `filters` (#993), so the whole slot waits and says
+            nothing it could have to take back. */}
+          {param !== undefined ? (
+            <>
+              <FilterMenu className="filter" summary={filterSummary(param)}>
+                <Suspense key={key('menu')} fallback={null}>
+                  <MenuRows view={view} app={app} />
+                </Suspense>
+              </FilterMenu>
+              <AddProject app={app} />
+            </>
+          ) : (
+            <Suspense
+              key={key('filter')}
+              fallback={
+                <FilterMenu className="filter" summary={filterSummary(<Pulse />)}>
+                  {null}
+                </FilterMenu>
+              }
+            >
+              <FilterSlot view={view} app={app} />
+            </Suspense>
+          )}
           <span className="sep" />
           {/* Everything from here is the right rail, and it is a rail rather than
             more children of `.bar` so that a narrow window breaks between
@@ -762,43 +1036,19 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               real, and two boxes for one question is two things to learn to
               read. Green and silent when both are true, and a sentence with the
               action in it when either is not. Never amber — that is the
-              headline's, below. */}
+              headline's, below. Outside every keyed boundary: it holds the
+              subscription. */}
             <Health
-              near={nearCeiling(today.day, today.ceilingUsd)}
+              projectKey={projectKey}
+              near={view.then((v) => nearCeiling(v.today.day, v.today.ceilingUsd))}
               runnable={queue.then(
                 (q) => q.runnable,
                 () => null,
               )}
             />
-            {/* And whether anything is going to move, which is neither of those:
-              the projection can be at the head of the log while the conductor
-              is under the setup's pause, which is what the board showed for
-              four days without a word for it (#77). Draws nothing when it is
-              not paused, which is why it costs the quiet row nothing. */}
-            {control.paused ? (
-              <>
-                <span className="sep" />
-                <Paused by={control.by} reason={control.reason} />
-              </>
-            ) : null}
-            {/* And whether it is on its way out, which is none of the above: a
-              draining daemon is current, unpaused and finishing the last pass it
-              will run (0030). Draws nothing when it is not. */}
-            <Draining />
-            {/* **The headline, and the last thing on the row.** It is the only
-              reason to look up: the only column that is asking for a person,
-              and the only amber on the bar. Amber for the same reason the lane
-              is amber — it is reserved for "a human is the thing being waited
-              on" — and it is the *only* one, because a second amber dilutes the
-              first, which is the entire reason the palette carries the rule.
-              With nothing waiting there is no headline at all: the Waiting
-              column's own empty line says so, and a bar where everything is
-              emphasised is a bar where nothing is. */}
-            {waiting > 0 ? (
-              <a className="head sig" href="#waiting" title="tickets that will not move until you decide">
-                {`${waiting} waiting on you`}
-              </a>
-            ) : null}
+            <Suspense key={key('rail')} fallback={<Pulse />}>
+              <RailTail view={view} />
+            </Suspense>
             {/* **A chip is not free, and the row is the unit.**
               [the-bar.md](../../../../doc/design/the-bar.md)
 
@@ -826,17 +1076,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               and not a fourth one. A fourth object is still argued for here. */}
           </span>
         </Bar>
-        <LockBanner project={only} />
-
-        {/* Repositories that are recorded and not yet conducted (#163). Above
-          the lanes because it is not work — `loadProjects()` does not return
-          one and nothing will take a ticket from it — and absent entirely
-          when there are none, which is nearly always: this costs the ordinary
-          board no room at all. */}
-        <Pending projects={pending} />
+        <Suspense key={key('banner')} fallback={null}>
+          <BannerPart view={view} />
+        </Suspense>
 
         <div className="cols">
-          {columns.map((col) => (
+          {COLUMNS.map((col) => (
             // `quiet` is the width half of the same decision the rows below are
             // the weight half of: Landed is a list of one-line rows and does not
             // need a card's column, and what it gives back goes to the lanes
@@ -848,100 +1093,19 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             >
               <header className="col-h">
                 <ColumnLabel label={col.label} />
-                {col.id === 'queued' ? (
-                  <Suspense fallback={<QueuedCountPending logCount={col.cards.length} />}>
-                    <AwaitedCount queue={queue} logCards={col.cards} />
-                  </Suspense>
-                ) : col.id === 'landed' ? (
-                  <LandedCount count={col.cards.length} only={only} />
-                ) : (
-                  <span className="ct">{col.cards.length}</span>
-                )}
+                <Suspense key={key(`count-${col.id}`)} fallback={<CountPending />}>
+                  <CountPart id={col.id} view={view} queue={queue} projectKey={projectKey} />
+                </Suspense>
               </header>
               <div className="cards">
-                {/* **An empty column and an unanswerable one are different facts.**
-                  They rendered identically until #76: a recipe that would not
-                  parse took every issue out of Queued, and the column read
-                  exactly like a repository with nothing to do. So the reason
-                  goes here, where somebody is already looking, and the "nothing
-                  here yet" line is kept for the case that actually means it.
-
-                  Three cases now, and they are three: the queue could not be
-                  listed (#76), the lane is empty because somebody stopped the
-                  conductor (#77), and the lane is simply empty. Only the last
-                  one means what it says. */}
-                {col.id === 'queued' ? (
-                  // **GitHub's half streams in after the rest** (#884). The
-                  // fallback is what the log already says, and the answer is
-                  // the whole column again: one grouping and one *taken first*
-                  // over the log's cards and GitHub's, as before.
-                  <Suspense
-                    fallback={
-                      <QueuedFallback
-                        unreadable={col.problems ?? []}
-                        logCards={col.cards}
-                        onBoard={onBoard}
-                        count={skeletonCount(askable.map((f) => f.project))}
-                        order={queueOrder}
-                        list={(card, showProject, next, arrive) => (
-                          <Card
-                            card={card}
-                            showProject={showProject}
-                            issue={ticket(card)}
-                            paused={control.paused}
-                            projectLocks={projectLocks.get(card.project) ?? []}
-                            next={next}
-                            arrive={arrive}
-                          />
-                        )}
-                      />
-                    }
-                  >
-                    <AwaitedQueued
-                      queue={queue}
-                      unreadable={queuedColumn?.problems ?? []}
-                      logCards={col.cards}
-                      onBoard={onBoard}
-                      order={queueOrder}
-                      epicHref={(project, ref) =>
-                        issueUrl(owners.get(project) ?? null, project, String(ref), ticketSources.get(project) ?? null)
-                      }
-                      list={(card, showProject, next, arrive) => (
-                        <Card
-                          card={card}
-                          showProject={showProject}
-                          issue={ticket(card)}
-                          paused={control.paused}
-                          projectLocks={projectLocks.get(card.project) ?? []}
-                          next={next}
-                          arrive={arrive}
-                        />
-                      )}
-                      board={boardHalf}
-                      empty={<p className="empty">{emptyNote(col.id, control.paused, only)}</p>}
-                    />
-                  </Suspense>
-                ) : null}
-                {col.id === 'queued' ? null : col.cards.length === 0 ? (
-                  <p
-                    className={`empty${emptyHeld(col.id, control.paused, only, locksInScope, allPaused, new Date(), uses) ? ' held' : ''}`}
-                  >
-                    {emptyNote(col.id, control.paused, only, locksInScope, allPaused, new Date(), uses)}
-                  </p>
-                ) : col.id === 'landed' ? (
-                  <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
-                ) : (
-                  col.cards.map((card) => (
-                    <Card
-                      key={card.taskId}
-                      card={card}
-                      showProject={onBoard.size > 1}
-                      issue={ticket(card)}
-                      paused={control.paused}
-                      projectLocks={projectLocks.get(card.project) ?? []}
-                    />
-                  ))
-                )}
+                <Suspense
+                  key={key(`cards-${col.id}`)}
+                  fallback={
+                    <Skeleton shape={col.id === 'landed' ? 'lines' : 'card'} count={2} label="reading the log…" />
+                  }
+                >
+                  <CardsPart id={col.id} view={view} queue={queue} projectKey={projectKey} />
+                </Suspense>
               </div>
             </section>
           ))}

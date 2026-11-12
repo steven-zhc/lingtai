@@ -88,6 +88,19 @@ async function news(): Promise<CodeNews | null> {
   }
 }
 
-export async function Health({ near, runnable }: { near: string | null; runnable: Promise<number | null> }) {
-  return <Live code={await news()} near={near} runnable={runnable} />
+/**
+ * Not `async`, and `code` is a promise: `Live` stays mounted across a project
+ * switch and reads it under its own boundary. An async component here would
+ * block the shell on git.
+ */
+export function Health({
+  near,
+  runnable,
+  projectKey,
+}: {
+  near: Promise<string | null>
+  runnable: Promise<number | null>
+  projectKey: string
+}) {
+  return <Live code={news()} near={near} runnable={runnable} projectKey={projectKey} />
 }
