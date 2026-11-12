@@ -52,7 +52,7 @@ describe('a publish whose pass is interrupted while the push is pending', () => 
     const pushes: string[] = []
     const completed: string[] = []
     const inner = ports.repo.git
-    const gate = Deferred.makeUnsafe<void>()
+    const held = Deferred.makeUnsafe<void>()
     let entered!: () => void
     const reached = new Promise<void>((resolve) => (entered = resolve))
     ports.repo.git = (args, o) => {
@@ -60,7 +60,7 @@ describe('a publish whose pass is interrupted while the push is pending', () => 
       pushes.push(args.join(' '))
       if (pushes.length > 1) return Effect.succeed('')
       return Effect.sync(entered).pipe(
-        Effect.andThen(Deferred.await(gate)),
+        Effect.andThen(Deferred.await(held)),
         Effect.tap(() => Effect.sync(() => completed.push(args.join(' ')))),
         Effect.as(''),
       )
@@ -86,7 +86,7 @@ describe('a publish whose pass is interrupted while the push is pending', () => 
         yield* Effect.promise(() => reached)
         const interrupter = yield* Effect.forkChild(Fiber.interrupt(pass))
         for (let i = 0; i < 20; i++) yield* Effect.yieldNow
-        yield* Deferred.succeed(gate, undefined)
+        yield* Deferred.succeed(held, undefined)
         yield* Fiber.join(interrupter)
       }),
     )
