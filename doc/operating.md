@@ -1083,9 +1083,10 @@ row, at level `info`.
 the ceiling and the account limit — are checked when work is about to start:
 at a start, after every attempt, on a control event and on a five-minute sweep.
 So a passed midnight, a passed `until` or an edited ceiling takes effect at the
-next look, at most five minutes late and only when there is work to take it
-from; the banner does not clear by itself while the queue is idle. A raise and
-a lift append at once (0126 §4, §7).
+next look, at most five minutes late, whether or not the project has work
+queued: the sweep looks at every registered project, so an expired lock is
+lifted and its banner clears even while the queue is empty. A raise and a lift
+append at once (0126 §4, §7).
 
 **The setup's pause is not one of the three.** A recipe that asks for a tier one
 of its runtimes cannot provide makes the pass append `DispatchRefused` and one
@@ -1551,10 +1552,11 @@ so the copy KeepAlive or `Restart=always` brings back after the drained daemon
 exits never sees the request and takes the next ticket at once. To keep the
 service down, `service shutdown`, which unloads it. `service start`, `service
 restart`, and `service install` over a job the supervisor does not have, refuse
-and exit 1 without starting anything while a shutdown request stands — not
-because the daemon they started would exit on it, since it would not, but
-because it would take work over a stop somebody asked for, and lifting that is
-theirs, and only a start ends it. A `service restart` that finds one landed during its own
+and exit 1 without starting anything while a shutdown request somebody else
+asked for stands — not because the daemon they started would exit on it, since
+it would not, but because it would take work over a stop somebody asked for,
+and lifting that is theirs, and only a start ends it. The drain you asked for
+yourself is the exception: your own `service start` ends it and says so. A `service restart` that finds one landed during its own
 wait has already unloaded the service, and leaves it so.
 (`install` still writes the file; it is `service start` that loads it, and
 that start ends the drain.)
@@ -2421,16 +2423,22 @@ recipes and the environment files are all untouched.
 ## Upgrade notes
 
 **#1013 — a stop is a lock, and an old pause stops nothing after the restart.**
-Before restarting onto it, run `lingtai doctor` on the daemon that is still
-running. If its `daemon: liveness` row says `paused by …` and the pause is not
-the setup's, run bare `lingtai resume`, and then `lingtai pause <project>` for
-each stop that is still wanted — in that order, because a bare resume run after
-the pause would unlock the project again. The reason: after the restart only
-`cause: 'setup'`, or a `holdsAcrossStarts` pause with no cause, still reduces to
-a pause (`isSetupPause`, `packages/domain/src/control.ts:173-179`); a person's,
-the ceiling's or an account limit's old `ConductorPaused` reduces to nothing
-([0126](decisions/0126-a-stop-is-a-lock-and-an-unlock.md), *Upgrading*). A
-setup pause standing is unaffected.
+After the restart only `cause: 'setup'`, or a `holdsAcrossStarts` pause with no
+cause, still reduces to a pause (`isSetupPause`,
+`packages/domain/src/control.ts:173-179`); a person's, the ceiling's or an
+account limit's old `ConductorPaused` reduces to nothing
+([0126](decisions/0126-a-stop-is-a-lock-and-an-unlock.md), *Upgrading*). A setup
+pause standing is unaffected. `lingtai doctor` reads the control stream with
+the checkout's own code, so it can name an old pause only **before** the
+checkout is updated to #1013; once it is, the doctor answers as the new reducer
+does and shows no pause for a legacy one, which is not evidence there was none.
+So, before updating, run `lingtai doctor` and note any `daemon: liveness` row
+that says `paused by …` for a pause that is not the setup's. Then, after the
+restart, run `lingtai pause <project>` for each project whose stop is still
+wanted. If the checkout is already updated and you did not look, do not infer
+from the doctor: re-pause every project you meant to be stopped. Bare
+`lingtai resume` appends no conductor resume for a legacy pause and unlocks
+every project's pause, so run it before the pauses and never after.
 
 **#679 — `spend` stores each run's estimate and its ticket's kind.** The table
 has new columns (`estimated_usd`, `estimate_fetched`, `kind`), so `lingtai
