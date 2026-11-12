@@ -3511,9 +3511,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /** …as the Effect the action holds; `readWhatAFileKept` is still a promise (row 8). */
       const readPort = (spec: Parameters<typeof read>[0]) => Effect.promise(() => read(spec))
 
-      /** `implement`'s dispatch, lifted until `work` is an Effect (CONDUCT-3). */
+      /** `implement`'s dispatch, in the action's own fiber. An arrow: `dispatch` is declared below. */
       const workPort: WorkPortDeps = {
-        work: (spec: WorkDispatch, context: ActionContext) => Effect.promise(() => dispatch(spec, context)),
+        work: (spec: WorkDispatch, context: ActionContext) => dispatch(spec, context),
       }
 
       /**
@@ -3913,57 +3913,57 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const alsoText = (extra: string): string => `\n\n## Also for this project\n\n${extra}\n`
 
-      const firstDispatch = async (brief: Brief, spec: WorkDispatch): Promise<Worked> => {
-        const tree = cutTree()
-        /**
-         * **Where this agent found the tree** — and the whole of what the receipt
-         * below is measured against (`#265`).
-         *
-         * It was `tree.baseSha`, which is the same commit for as long as `implement`
-         * is the first step that may write one. `design` may since `agentPlugin`
-         * declared it: a recipe's drafting agent runs in *this* worktree, unhooked
-         * and writable, and a document it committed there would move `HEAD` past the
-         * base before this is called. `tree.baseSha` then reads *something was
-         * committed* for a run that committed nothing, which is 0057 §2's one guard
-         * answering about the wrong agent — and the pass would go to `build` and
-         * `review` on a branch holding a design note and no implementation, with
-         * `RunProposedCompletion` naming the drafting agent's commit as this run's.
-         *
-         * So it is asked rather than assumed, which is what `fixRound` already does
-         * one function down: it compares against `brief.context.onSha`, *the head
-         * this round is about*, for this reason a round earlier. The prompt telling a
-         * design agent not to commit stays where it is and is not what makes this
-         * true: prose in a prompt is not a guard, and the agent that ignores it is
-         * exactly the one the guard is for.
-         */
-        const startedAt = await gitOrDie(['rev-parse', 'HEAD'])
-        const wired = await Effect.runPromise(Effect.result(host.wire({ runId, hookBinary: options.hookBinary, home })))
-        if (Result.isFailure(wired)) return { stopped: `the hook was not wired: ${wired.failure.detail}` }
-        const wiring = wired.success
+      const firstDispatch = (brief: Brief, spec: WorkDispatch): Effect.Effect<Worked> =>
+        Effect.gen(function* () {
+          const tree = cutTree()
+          /**
+           * **Where this agent found the tree** — and the whole of what the receipt
+           * below is measured against (`#265`).
+           *
+           * It was `tree.baseSha`, which is the same commit for as long as `implement`
+           * is the first step that may write one. `design` may since `agentPlugin`
+           * declared it: a recipe's drafting agent runs in *this* worktree, unhooked
+           * and writable, and a document it committed there would move `HEAD` past the
+           * base before this is called. `tree.baseSha` then reads *something was
+           * committed* for a run that committed nothing, which is 0057 §2's one guard
+           * answering about the wrong agent — and the pass would go to `build` and
+           * `review` on a branch holding a design note and no implementation, with
+           * `RunProposedCompletion` naming the drafting agent's commit as this run's.
+           *
+           * So it is asked rather than assumed, which is what `fixRound` already does
+           * one function down: it compares against `brief.context.onSha`, *the head
+           * this round is about*, for this reason a round earlier. The prompt telling a
+           * design agent not to commit stays where it is and is not what makes this
+           * true: prose in a prompt is not a guard, and the agent that ignores it is
+           * exactly the one the guard is for.
+           */
+          const startedAt = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+          const wired = yield* Effect.result(host.wire({ runId, hookBinary: options.hookBinary, home }))
+          if (Result.isFailure(wired)) return { stopped: `the hook was not wired: ${wired.failure.detail}` }
+          const wiring = wired.success
 
-        const smoke = await Effect.runPromise(Effect.result(host.smokeTest(options.hookBinary, runBinary)))
-        if (Result.isFailure(smoke)) {
-          return { stopped: `the hook's smoke test did not run: ${smoke.failure.detail}` }
-        }
-        if (!smoke.success.ok) return { stopped: `the hook did not fail closed: ${smoke.success.detail}` }
+          const smoke = yield* Effect.result(host.smokeTest(options.hookBinary, runBinary))
+          if (Result.isFailure(smoke)) {
+            return { stopped: `the hook's smoke test did not run: ${smoke.failure.detail}` }
+          }
+          if (!smoke.success.ok) return { stopped: `the hook did not fail closed: ${smoke.success.detail}` }
 
-        // The action's own bound where it declared one (`#314`). A fix round is
-        // this same `implement` entry again, so a narrowed `implement` bounds the
-        // rounds too — which is what makes `attemptCeiling`'s *then N round(s)*
-        // arithmetic true of the narrowed figure rather than of the ceiling.
-        const spend = spendFor(spec.limits)
-        const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id)
-        const agentEnv = runnableEnv({ ...env.values, ...wiring.env })
-        const spawned = dispatched.invocation?.({
-          runId,
-          cwd: tree.path,
-          settingsPath: wiring.settingsPath,
-          env: agentEnv,
-          limits: spend,
-        })
+          // The action's own bound where it declared one (`#314`). A fix round is
+          // this same `implement` entry again, so a narrowed `implement` bounds the
+          // rounds too — which is what makes `attemptCeiling`'s *then N round(s)*
+          // arithmetic true of the narrowed figure rather than of the ceiling.
+          const spend = spendFor(spec.limits)
+          const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id)
+          const agentEnv = runnableEnv({ ...env.values, ...wiring.env })
+          const spawned = dispatched.invocation?.({
+            runId,
+            cwd: tree.path,
+            settingsPath: wiring.settingsPath,
+            env: agentEnv,
+            limits: spend,
+          })
 
-        const ran = await Effect.runPromise(
-          Effect.result(
+          const ran = yield* Effect.result(
             Effect.scoped(
               Effect.gen(function* () {
                 const server = yield* host.serve({
@@ -4071,13 +4071,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 )
 
                 yield* Effect.acquireRelease(
-                  Effect.promise(async () => server.register(runId, (await store.read(runId)).length)),
+                  Effect.promise(() => store.read(runId).then((events) => server.register(runId, events.length))),
                   () => Effect.sync(() => void server.unregister(runId)),
-                )
-
-                const abort = yield* Effect.acquireRelease(
-                  Effect.sync(() => new AbortController()),
-                  (controller) => Effect.sync(() => controller.abort()),
                 )
 
                 // **An agent is running, and nothing else has judged the tree
@@ -4087,137 +4082,141 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 // still keeps a dirty tree rather than losing it with the
                 // worktree.
                 stoppedBy = 'interrupted'
-                const outcome = yield* Effect.promise(() =>
-                  dispatched.run({
-                    runId,
-                    cwd: tree.path,
-                    prompt: implementerParts.map((part) => (typeof part === 'string' ? part : part.text)).join(''),
-                    ...(spec.model === undefined ? {} : { model: spec.model }),
-                    settingsPath: wiring.settingsPath,
-                    log: runLog,
-                    env: agentEnv,
-                    limits: spend,
-                    signal: abort.signal,
-                  }),
-                )
+                // The dispatch aborts the run on interruption and waits for it
+                // to settle before the socket's scope closes (#1043).
+                const outcome = yield* dispatchRuntime(dispatched, brief.context.signal, {
+                  runId,
+                  cwd: tree.path,
+                  prompt: implementerParts.map((part) => (typeof part === 'string' ? part : part.text)).join(''),
+                  ...(spec.model === undefined ? {} : { model: spec.model }),
+                  settingsPath: wiring.settingsPath,
+                  log: runLog,
+                  env: agentEnv,
+                  limits: spend,
+                })
                 yield* Effect.promise(() => server.flush(runId).catch(() => {}))
                 return { outcome, version: server.get(runId)?.version ?? 1 }
               }),
             ),
-          ),
-        )
-        if (Result.isFailure(ran)) {
-          return { stopped: `the hook socket was not served: ${ran.failure.detail}` }
-        }
-        const { outcome, version } = ran.success
+          )
+          if (Result.isFailure(ran)) {
+            return { stopped: `the hook socket was not served: ${ran.failure.detail}` }
+          }
+          const { outcome, version } = ran.success
 
-        if (outcome.failure) {
-          runLog.note('run', `failed — ${outcome.failure.kind}: ${outcome.failure.detail}`)
-          // **Both, for a run stopped at a ceiling, whose receipt is its spend.**
-          // A `RunFinished` there is not a contradiction: turns were taken and
-          // money was spent, and the ending is what `RunFailed` says. True of
-          // `out-of-usd` for the same reason it is of `out-of-turns` (`#370`).
-          const receipt: ToAppend[] =
-            outcome.failure.kind === 'out-of-turns' || outcome.failure.kind === 'out-of-usd'
-              ? [
-                  {
-                    type: 'RunFinished',
-                    actor: 'conductor',
-                    data: parsePayload('RunFinished', {
-                      exitCode: outcome.exitCode ?? 1,
-                      turns: outcome.turns,
-                      durationMs: outcome.durationMs,
-                      costUsd: outcome.costUsd,
-                      ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
-                    }),
-                  },
-                ]
-              : []
-          await appendFrom(runId, version, [
-            ...receipt,
-            {
-              type: 'RunFailed',
-              actor: 'conductor',
-              data: parsePayload('RunFailed', outcome.failure),
-            },
-            runSpentFrom(
-              outcome,
-              { _tag: 'Action', step: 'implement', name: spec.name, round: 0 },
-              dispatched.capabilities.id,
-            ),
-          ])
-          if (outcome.failure.kind === 'never-started') {
-            // That agent touched nothing, so there is nothing in the worktree
-            // it could have left dirty — `interrupted` does not stand for it.
-            stoppedBy = null
+          if (outcome.failure) {
+            runLog.note('run', `failed — ${outcome.failure.kind}: ${outcome.failure.detail}`)
+            // **Both, for a run stopped at a ceiling, whose receipt is its spend.**
+            // A `RunFinished` there is not a contradiction: turns were taken and
+            // money was spent, and the ending is what `RunFailed` says. True of
+            // `out-of-usd` for the same reason it is of `out-of-turns` (`#370`).
+            const receipt: ToAppend[] =
+              outcome.failure.kind === 'out-of-turns' || outcome.failure.kind === 'out-of-usd'
+                ? [
+                    {
+                      type: 'RunFinished',
+                      actor: 'conductor',
+                      data: parsePayload('RunFinished', {
+                        exitCode: outcome.exitCode ?? 1,
+                        turns: outcome.turns,
+                        durationMs: outcome.durationMs,
+                        costUsd: outcome.costUsd,
+                        ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
+                      }),
+                    },
+                  ]
+                : []
+            yield* Effect.promise(() =>
+              appendFrom(runId, version, [
+                ...receipt,
+                {
+                  type: 'RunFailed',
+                  actor: 'conductor',
+                  data: parsePayload('RunFailed', outcome.failure),
+                },
+                runSpentFrom(
+                  outcome,
+                  { _tag: 'Action', step: 'implement', name: spec.name, round: 0 },
+                  dispatched.capabilities.id,
+                ),
+              ]),
+            )
+            if (outcome.failure.kind === 'never-started') {
+              // That agent touched nothing, so there is nothing in the worktree
+              // it could have left dirty — `interrupted` does not stand for it.
+              stoppedBy = null
+              return {
+                neverStarted: {
+                  agent: dispatched.capabilities.id,
+                  detail: outcome.failure.detail,
+                },
+              }
+            }
+            // Every other failure kind is an agent that was running and stopped
+            // mid-run (`#468`): `interrupted`, set before the dispatch above, is
+            // replaced with the runtime's own word for why.
+            stoppedBy = outcome.failure.kind
+            const cause = outcome.failure.kind
             return {
-              neverStarted: {
-                agent: dispatched.capabilities.id,
-                detail: outcome.failure.detail,
-              },
+              stopped: `${outcome.failure.kind}: ${outcome.failure.detail}`,
+              // Neither word is one this dispatch's own runtime ever reports
+              // (`no-commits` is `head === startedAt`'s own check, two lines
+              // down; `no-structured-answer` is the reviewer's flag, never
+              // this agent's), so excluding them costs nothing and keeps the
+              // field typed to `#466`'s five.
+              ...(cause === 'no-commits' || cause === 'no-structured-answer' ? {} : { interrupted: cause }),
             }
           }
-          // Every other failure kind is an agent that was running and stopped
-          // mid-run (`#468`): `interrupted`, set before the dispatch above, is
-          // replaced with the runtime's own word for why.
-          stoppedBy = outcome.failure.kind
-          const cause = outcome.failure.kind
-          return {
-            stopped: `${outcome.failure.kind}: ${outcome.failure.detail}`,
-            // Neither word is one this dispatch's own runtime ever reports
-            // (`no-commits` is `head === startedAt`'s own check, two lines
-            // down; `no-structured-answer` is the reviewer's flag, never
-            // this agent's), so excluding them costs nothing and keeps the
-            // field typed to `#466`'s five.
-            ...(cause === 'no-commits' || cause === 'no-structured-answer' ? {} : { interrupted: cause }),
+
+          yield* Effect.promise(() =>
+            appendFrom(runId, version, [
+              {
+                type: 'RunFinished',
+                actor: 'conductor',
+                data: parsePayload('RunFinished', {
+                  exitCode: outcome.exitCode ?? 0,
+                  turns: outcome.turns,
+                  durationMs: outcome.durationMs,
+                  costUsd: outcome.costUsd,
+                  ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
+                }),
+              },
+              runSpentFrom(
+                outcome,
+                { _tag: 'Action', step: 'implement', name: spec.name, round: 0 },
+                dispatched.capabilities.id,
+              ),
+            ]),
+          )
+          log(`run finished: ${outcome.turns} turns, ${spentWords(outcome.costUsd)}`)
+          runLog.note('run', `finished: ${outcome.turns} turns, ${spentWords(outcome.costUsd)}`)
+
+          const head = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+          // **The commit is the receipt** (0057 §2), and it is *this* agent's commit:
+          // `startedAt` and not `tree.baseSha`, so a step before this one that left a
+          // commit of its own cannot stand in for one. An agent that ran and committed
+          // nothing left no receipt, and the pass stops rather than buying a round to
+          // fix a diff that does not exist.
+          if (head === startedAt) {
+            // `StepDidNotFinish` at `implement`, named for itself (`#468`): the
+            // ticket's own second case, and the one `#237` was.
+            stoppedBy = 'no-commits'
+            return { stopped: 'the agent produced no commits', committedNothing: true }
           }
-        }
-
-        await appendFrom(runId, version, [
-          {
-            type: 'RunFinished',
-            actor: 'conductor',
-            data: parsePayload('RunFinished', {
-              exitCode: outcome.exitCode ?? 0,
-              turns: outcome.turns,
-              durationMs: outcome.durationMs,
-              costUsd: outcome.costUsd,
-              ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
-            }),
-          },
-          runSpentFrom(
-            outcome,
-            { _tag: 'Action', step: 'implement', name: spec.name, round: 0 },
-            dispatched.capabilities.id,
-          ),
-        ])
-        log(`run finished: ${outcome.turns} turns, ${spentWords(outcome.costUsd)}`)
-        runLog.note('run', `finished: ${outcome.turns} turns, ${spentWords(outcome.costUsd)}`)
-
-        const head = await gitOrDie(['rev-parse', 'HEAD'])
-        // **The commit is the receipt** (0057 §2), and it is *this* agent's commit:
-        // `startedAt` and not `tree.baseSha`, so a step before this one that left a
-        // commit of its own cannot stand in for one. An agent that ran and committed
-        // nothing left no receipt, and the pass stops rather than buying a round to
-        // fix a diff that does not exist.
-        if (head === startedAt) {
-          // `StepDidNotFinish` at `implement`, named for itself (`#468`): the
-          // ticket's own second case, and the one `#237` was.
-          stoppedBy = 'no-commits'
-          return { stopped: 'the agent produced no commits', committedNothing: true }
-        }
-        // A receipt, so `interrupted` stands for nothing any more.
-        stoppedBy = null
-        await recordDiff(branch, head)
-        await appendNow(runId, [
-          {
-            type: 'RunProposedCompletion',
-            actor: 'conductor',
-            data: parsePayload('RunProposedCompletion', { headSha: head }),
-          },
-        ])
-        return { committed: head }
-      }
+          // A receipt, so `interrupted` stands for nothing any more.
+          stoppedBy = null
+          yield* Effect.promise(() => recordDiff(branch, head))
+          yield* Effect.promise(() =>
+            appendNow(runId, [
+              {
+                type: 'RunProposedCompletion',
+                actor: 'conductor',
+                data: parsePayload('RunProposedCompletion', { headSha: head }),
+              },
+            ]),
+          )
+          return { committed: head }
+        })
 
       /**
        * `implement`, a second time — **and the round was already bought.**
@@ -4236,216 +4235,203 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `from`/`round` already — a second event naming the same decision
        * would be the round's own fact told twice.
        */
-      const fixRound = async (
-        brief: Brief,
-        again: NonNullable<Brief['again']>,
-        spec: WorkDispatch,
-      ): Promise<Worked> => {
-        // The same entry's runtime and bound as the run it is a round of: a fix
-        // is `implement` again, and buying it from a different agent than the one
-        // that wrote the code would be a warm review's mistake spelled backwards.
-        const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id)
-        const tree = cutTree()
-        const round = brief.context.round ?? 1
-        const findings = brief.context.recheck ?? []
-        const from = again.printed?.step ?? 'proposed'
-        const said = again.printed?.detail ?? again.asked ?? again.why
-        const refusal =
-          findings.length > 0
-            ? ({ on: 'findings', findings } as const)
-            : from === 'merge'
-              ? ({
-                  on: 'conflict',
-                  base,
-                  paths: said,
-                } as const)
-              : ({ on: 'output', output: said } as const)
+      const fixRound = (brief: Brief, again: NonNullable<Brief['again']>, spec: WorkDispatch): Effect.Effect<Worked> =>
+        Effect.gen(function* () {
+          // The same entry's runtime and bound as the run it is a round of: a fix
+          // is `implement` again, and buying it from a different agent than the one
+          // that wrote the code would be a warm review's mistake spelled backwards.
+          const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id)
+          const tree = cutTree()
+          const round = brief.context.round ?? 1
+          const findings = brief.context.recheck ?? []
+          const from = again.printed?.step ?? 'proposed'
+          const said = again.printed?.detail ?? again.asked ?? again.why
+          const refusal =
+            findings.length > 0
+              ? ({ on: 'findings', findings } as const)
+              : from === 'merge'
+                ? ({
+                    on: 'conflict',
+                    base,
+                    paths: said,
+                  } as const)
+                : ({ on: 'output', output: said } as const)
 
-        // Keyed on where the fix came from and not on `refusal`: a passing review's
-        // minor findings ride on `recheck`, which makes `refusal.on` 'findings'.
-        const fixId =
-          from === 'merge'
-            ? `${runId}:fix:${round}:merge:${continuation?.resumedWaitId ?? 'start'}:${++conflictFixes}`
-            : `${runId}:fix:${round}`
+          // Keyed on where the fix came from and not on `refusal`: a passing review's
+          // minor findings ride on `recheck`, which makes `refusal.on` 'findings'.
+          const fixId =
+            from === 'merge'
+              ? `${runId}:fix:${round}:merge:${continuation?.resumedWaitId ?? 'start'}:${++conflictFixes}`
+              : `${runId}:fix:${round}`
 
-        log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
-        runLog.note('fix', `round ${round} for ${from}`)
+          log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
+          runLog.note('fix', `round ${round} for ${from}`)
 
-        const settings = await Effect.runPromise(
-          Effect.result(host.unhookedSettings({ runId, label: `fix-${round}`, home })),
-        )
-        if (Result.isFailure(settings)) {
-          return { stopped: `the fixing agent had no settings: ${settings.failure.detail}` }
-        }
+          const settings = yield* Effect.result(host.unhookedSettings({ runId, label: `fix-${round}`, home }))
+          if (Result.isFailure(settings)) {
+            return { stopped: `the fixing agent had no settings: ${settings.failure.detail}` }
+          }
 
-        // The merge-base with the base, so a base merge anybody made is not the
-        // ticket's change (#937). The fallback is never `tree.baseSha` alone once
-        // there is a continuation — see `baseShaOr`'s own comment.
-        // The reviewer's own spelling (`DIFF_FLAGS`), as `fixBrief`'s doc says the
-        // two should be looking at the same change, and the two shas it ran between.
-        const underReview = await diffBetween(await changeStart(continuation?.diffBaseSha ?? tree.baseSha))
-        // The same flag `firstDispatch` sets before its own dispatch, and for
-        // the same reason (`#468`): an agent is running, and nothing has
-        // judged what it leaves in the worktree if it is interrupted here.
-        stoppedBy = 'interrupted'
-        // The brief and the `for`, built once: each is recorded before the dispatch
-        // and then handed to it / to the `RunSpent` below (#923).
-        const fixParts: RecordPart[] = [
-          ...fixBriefParts({
-            refusal,
-            round,
-            of: ceiling.rounds,
-            action: from,
-            diff: underReview.text,
-            ...(underReview.from === null || underReview.to === null
-              ? {}
-              : { diffAt: { from: underReview.from, to: underReview.to } }),
-            diffBytes: recipe.runtime.budget.diff,
-            checks: buildCommands(recipe.steps),
-            ticket: {
-              title: brief.ticket.title,
-              body: brief.ticket.body,
-              ...(took?.claimVersion === undefined || took.ticket !== brief.ticket
+          // The merge-base with the base, so a base merge anybody made is not the
+          // ticket's change (#937). The fallback is never `tree.baseSha` alone once
+          // there is a continuation — see `baseShaOr`'s own comment.
+          // The reviewer's own spelling (`DIFF_FLAGS`), as `fixBrief`'s doc says the
+          // two should be looking at the same change, and the two shas it ran between.
+          const underReview = yield* Effect.promise(() =>
+            changeStart(continuation?.diffBaseSha ?? tree.baseSha).then((start) => diffBetween(start)),
+          )
+          // The same flag `firstDispatch` sets before its own dispatch, and for
+          // the same reason (`#468`): an agent is running, and nothing has
+          // judged what it leaves in the worktree if it is interrupted here.
+          stoppedBy = 'interrupted'
+          // The brief and the `for`, built once: each is recorded before the dispatch
+          // and then handed to it / to the `RunSpent` below (#923).
+          const fixParts: RecordPart[] = [
+            ...fixBriefParts({
+              refusal,
+              round,
+              of: ceiling.rounds,
+              action: from,
+              diff: underReview.text,
+              ...(underReview.from === null || underReview.to === null
                 ? {}
-                : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
-            },
-            ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
-            ...(continuation?.declined === undefined ? {} : { declined: continuation.declined }),
-          }),
-          // Appended as a part, never to the finished string, so no recorded offset
-          // depends on where the text before it happened to end.
-          ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
-        ]
-        const fixPrompt = fixParts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
-        const fixFor: SpentFor = {
-          _tag: 'Action',
-          step: 'implement',
-          name: spec.name,
-          round,
-          // The lap a person's grant paid for is capped at one round
-          // (`runAttempt`'s `roundLimit`), so this is that round.
-          ...(continuation?.grant ? { grant: continuation.resumedWaitId } : {}),
-        }
-        const fixEnv = runnableEnv(env.values)
-        await recordPrompt(
-          store,
-          runId,
-          {
-            for: fixFor,
-            promptVersion: `fix@${fixPrompt.length}`,
-            runtimeVersion: await runtimeVersionOf(dispatched, fixEnv, tree.path),
-            prompt: fixParts,
-          },
-          log,
-        )
-        const fixed = await Effect.runPromise(
-          Effect.scoped(
-            Effect.gen(function* () {
-              const abort = yield* Effect.acquireRelease(
-                Effect.sync(() => new AbortController()),
-                (controller) => Effect.sync(() => controller.abort()),
-              )
-              return yield* Effect.promise(() =>
-                dispatched
-                  .run({
-                    runId: fixId,
-                    cwd: tree.path,
-                    prompt: fixPrompt,
-                    ...(spec.model === undefined ? {} : { model: spec.model }),
-                    settingsPath: settings.success,
-                    log: taggedTrace(runLog, `fix:${round}`),
-                    traceTools: true,
-                    env: fixEnv,
-                    limits: spendFor(spec.limits),
-                    signal: abort.signal,
-                  })
-                  .catch((err) => ({
-                    exitCode: null,
-                    turns: 0,
-                    durationMs: 0,
-                    costUsd: null,
-                    failure: { kind: 'crash' as const, detail: (err as Error).message },
-                    text: null,
-                    sessionId: '',
-                    usage: undefined,
-                  })),
-              )
+                : { diffAt: { from: underReview.from, to: underReview.to } }),
+              diffBytes: recipe.runtime.budget.diff,
+              checks: buildCommands(recipe.steps),
+              ticket: {
+                title: brief.ticket.title,
+                body: brief.ticket.body,
+                ...(took?.claimVersion === undefined || took.ticket !== brief.ticket
+                  ? {}
+                  : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
+              },
+              ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
+              ...(continuation?.declined === undefined ? {} : { declined: continuation.declined }),
             }),
-          ),
-        )
-
-        const after = await gitOrDie(['rev-parse', 'HEAD'])
-        const committed = after !== brief.context.onSha
-
-        // A judge or a person reads this verdict, not a transcript — bounded the
-        // same way claude-code.ts clips a crash's `detail`. Carried as `stopped`
-        // below on a decline, so the fixer's own words reach `StepEnded`'s
-        // evidence directly: `FixApplied.said` was the only place they used to
-        // land, and `#502` drops that event.
-        const FIX_SAID_MAX_CHARS = 500
-        const fixSaid = fixed.text === null ? null : fixed.text.slice(0, FIX_SAID_MAX_CHARS)
-
-        // **`FixApplied` is gone (#502): `StepEnded`'s own outcome carries the
-        // round's commit and evidence now** — `runStep`'s wrapper around this
-        // dispatch writes it once the pipeline reads `fixed` back through
-        // `actionOf`/`outcomeOf`. `RunSpent` is still this dispatch's own, since
-        // spend is never reduced into a step's own outcome (0110).
-        await appendNow(runId, [runSpentFrom(fixed, fixFor, dispatched.capabilities.id)])
-        runLog.note(
-          'fix',
-          `round ${round}: ${committed ? after.slice(0, 7) : 'no commit'}` +
-            ` · ${fixed.turns} turns, ${fixed.costUsd ?? 'unknown'} usd` +
-            (fixed.failure ? ` · ${fixed.failure.kind}` : ''),
-        )
-
-        if (fixed.failure?.kind === 'never-started') {
-          // Whose wall it was, for the sentence the pause carries (`fixWall`).
-          fixWall = { action: from, round }
-          // That agent touched nothing either, for `firstDispatch`'s own reason.
-          stoppedBy = null
-          return {
-            neverStarted: { agent: dispatched.capabilities.id, detail: fixed.failure.detail },
+            // Appended as a part, never to the finished string, so no recorded offset
+            // depends on where the text before it happened to end.
+            ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
+          ]
+          const fixPrompt = fixParts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
+          const fixFor: SpentFor = {
+            _tag: 'Action',
+            step: 'implement',
+            name: spec.name,
+            round,
+            // The lap a person's grant paid for is capped at one round
+            // (`runAttempt`'s `roundLimit`), so this is that round.
+            ...(continuation?.grant ? { grant: continuation.resumedWaitId } : {}),
           }
-        }
-        if (!committed) {
-          // A decline judged the findings or the refusal rather than being cut
-          // off mid-run, so `interrupted` does not stand for it either; a
-          // crash or a wall does, in the runtime's own word for it (`#468`).
+          const fixEnv = runnableEnv(env.values)
+          yield* Effect.promise(() =>
+            runtimeVersionOf(dispatched, fixEnv, tree.path).then((runtimeVersion) =>
+              recordPrompt(
+                store,
+                runId,
+                { for: fixFor, promptVersion: `fix@${fixPrompt.length}`, runtimeVersion, prompt: fixParts },
+                log,
+              ),
+            ),
+          )
+          // Only a defect is the made-up crash outcome; an interruption stays one.
+          // The dispatch aborts the run and waits for it to settle before it continues.
+          const fixed = yield* dispatchRuntime(dispatched, brief.context.signal, {
+            runId: fixId,
+            cwd: tree.path,
+            prompt: fixPrompt,
+            ...(spec.model === undefined ? {} : { model: spec.model }),
+            settingsPath: settings.success,
+            log: taggedTrace(runLog, `fix:${round}`),
+            traceTools: true,
+            env: fixEnv,
+            limits: spendFor(spec.limits),
+          }).pipe(
+            Effect.catchDefect((err) =>
+              Effect.succeed({
+                exitCode: null,
+                turns: 0,
+                durationMs: 0,
+                costUsd: null,
+                failure: { kind: 'crash' as const, detail: (err as Error).message },
+                text: null,
+                sessionId: '',
+                usage: undefined,
+              }),
+            ),
+          )
+
+          const after = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+          const committed = after !== brief.context.onSha
+
+          // A judge or a person reads this verdict, not a transcript — bounded the
+          // same way claude-code.ts clips a crash's `detail`. Carried as `stopped`
+          // below on a decline, so the fixer's own words reach `StepEnded`'s
+          // evidence directly: `FixApplied.said` was the only place they used to
+          // land, and `#502` drops that event.
+          const FIX_SAID_MAX_CHARS = 500
+          const fixSaid = fixed.text === null ? null : fixed.text.slice(0, FIX_SAID_MAX_CHARS)
+
+          // **`FixApplied` is gone (#502): `StepEnded`'s own outcome carries the
+          // round's commit and evidence now** — `runStep`'s wrapper around this
+          // dispatch writes it once the pipeline reads `fixed` back through
+          // `actionOf`/`outcomeOf`. `RunSpent` is still this dispatch's own, since
+          // spend is never reduced into a step's own outcome (0110).
+          yield* Effect.promise(() => appendNow(runId, [runSpentFrom(fixed, fixFor, dispatched.capabilities.id)]))
+          runLog.note(
+            'fix',
+            `round ${round}: ${committed ? after.slice(0, 7) : 'no commit'}` +
+              ` · ${fixed.turns} turns, ${fixed.costUsd ?? 'unknown'} usd` +
+              (fixed.failure ? ` · ${fixed.failure.kind}` : ''),
+          )
+
+          if (fixed.failure?.kind === 'never-started') {
+            // Whose wall it was, for the sentence the pause carries (`fixWall`).
+            fixWall = { action: from, round }
+            // That agent touched nothing either, for `firstDispatch`'s own reason.
+            stoppedBy = null
+            return {
+              neverStarted: { agent: dispatched.capabilities.id, detail: fixed.failure.detail },
+            }
+          }
+          if (!committed) {
+            // A decline judged the findings or the refusal rather than being cut
+            // off mid-run, so `interrupted` does not stand for it either; a
+            // crash or a wall does, in the runtime's own word for it (`#468`).
+            stoppedBy = fixed.failure ? fixed.failure.kind : null
+            const cause = fixed.failure?.kind
+            return {
+              stopped: fixed.failure
+                ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
+                  'so there is nothing new for the review to read'
+                : (fixSaid ?? 'the fixing agent committed nothing, so there is nothing new for the review to read'),
+              // **`committed` false and no `failure`** is the fixer reading the
+              // findings and declining, not crashing — the `commit
+              // Completed{head: null, question: null}` cell rather than
+              // `Interrupted`. `never-started` cannot reach here (handled
+              // above), and `no-commits`/`no-structured-answer` are never this
+              // agent's own failure kind.
+              ...(cause === undefined
+                ? { committedNothing: true }
+                : cause === 'no-commits' || cause === 'no-structured-answer'
+                  ? {}
+                  : { interrupted: cause }),
+            }
+          }
+          // A commit clears `interrupted`, but not a failure that still ended
+          // the round (`#468`): a fixer that committed half the fix and then hit
+          // `out-of-turns` left the rest in the worktree, and `stoppedBy` is what
+          // tells `keepUncommittedWork` to look — null only where the dispatch
+          // itself reports none.
           stoppedBy = fixed.failure ? fixed.failure.kind : null
-          const cause = fixed.failure?.kind
-          return {
-            stopped: fixed.failure
-              ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
-                'so there is nothing new for the review to read'
-              : (fixSaid ?? 'the fixing agent committed nothing, so there is nothing new for the review to read'),
-            // **`committed` false and no `failure`** is the fixer reading the
-            // findings and declining, not crashing — the `commit
-            // Completed{head: null, question: null}` cell rather than
-            // `Interrupted`. `never-started` cannot reach here (handled
-            // above), and `no-commits`/`no-structured-answer` are never this
-            // agent's own failure kind.
-            ...(cause === undefined
-              ? { committedNothing: true }
-              : cause === 'no-commits' || cause === 'no-structured-answer'
-                ? {}
-                : { interrupted: cause }),
+          // #655: `committed` below drops the failure, so the blocked branch never sees
+          // the account's wall a fixer met after it had committed. Lock the account here instead.
+          const walled = fixed.failure?.kind === 'crash' ? accountWallOf(fixed.failure.detail) : null
+          if (fixed.failure && walled !== null) {
+            yield* standDownAccount({ of: 'mid-run', step: 'implement' }, walled, fixed.failure.detail)
           }
-        }
-        // A commit clears `interrupted`, but not a failure that still ended
-        // the round (`#468`): a fixer that committed half the fix and then hit
-        // `out-of-turns` left the rest in the worktree, and `stoppedBy` is what
-        // tells `keepUncommittedWork` to look — null only where the dispatch
-        // itself reports none.
-        stoppedBy = fixed.failure ? fixed.failure.kind : null
-        // #655: `committed` below drops the failure, so the blocked branch never sees
-        // the account's wall a fixer met after it had committed. Lock the account here instead.
-        const walled = fixed.failure?.kind === 'crash' ? accountWallOf(fixed.failure.detail) : null
-        if (fixed.failure && walled !== null) {
-          await Effect.runPromise(standDownAccount({ of: 'mid-run', step: 'implement' }, walled, fixed.failure.detail))
-        }
-        await recordDiff(branch, after)
-        return { committed: after }
-      }
+          yield* Effect.promise(() => recordDiff(branch, after))
+          return { committed: after }
+        })
 
       /**
        * **What the `agent:` at `implement` wraps** (`#266`) — and the brief is
@@ -4467,12 +4453,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * so no item here is the pass's own bookkeeping gone wrong. The pipeline
        * turns it into this action's verdict and the pass still reaches `end`.
        */
-      const dispatch = async (spec: WorkDispatch, context: ActionContext): Promise<Worked> => {
+      const dispatch = (spec: WorkDispatch, context: ActionContext): Effect.Effect<Worked> => {
         if (took === null) {
-          throw new Error(
-            'the `implement` step has no item — the step that makes it did not run, ' +
-              "and the spine says it did. This is the attempt's own bookkeeping and not a " +
-              'judgement about the change.',
+          return Effect.die(
+            new Error(
+              'the `implement` step has no item — the step that makes it did not run, ' +
+                "and the spine says it did. This is the attempt's own bookkeeping and not a " +
+                'judgement about the change.',
+            ),
           )
         }
         const brief: Brief = {
