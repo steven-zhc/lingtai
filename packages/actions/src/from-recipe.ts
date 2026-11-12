@@ -222,12 +222,14 @@ function dispatchDeps(
   action: { agent: RuntimeId; limits?: { turns?: number; wall?: string } },
 ): AgentActionDeps {
   const base = deps.agent
-  return {
+  // Every key of `AgentActionDeps`, optional ones included, must be written here.
+  const narrowed: { [K in keyof Required<AgentActionDeps>]: AgentActionDeps[K] } = {
     runtime: deps.runtimeFor === undefined ? base.runtime : deps.runtimeFor(action.agent),
     issue: base.issue,
     designAsks: base.designAsks,
     diff: base.diff,
     restore: base.restore,
+    landed: base.landed,
     get settingsPath() {
       return base.settingsPath
     },
@@ -240,6 +242,7 @@ function dispatchDeps(
       }
     },
   }
+  return narrowed
 }
 
 export function actionsFromRecipe(step: Step, actions: readonly StepAction[], deps: ActionDeps = {}): Action[] {
