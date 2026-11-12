@@ -102,33 +102,24 @@ const RESOLUTION_LABELS = [
   'Close the ticket',
 ]
 
+// Shell variants and chaff repeat what a reader only needs once, so prose is
+// counted without code blocks.
+const proseOf = (text: string) =>
+  text
+    .replace(/```[\s\S]*?```/g, '')
+    .trim()
+    .split(/\s+/).length
+
 describe('the tutorial stays a first-run path', () => {
-  it('keeps the beginner path short and in order', async () => {
+  it('keeps the beginner path to init, one ticket and start', async () => {
     const body = await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')
-    // Shell variants repeat commands a reader only needs to read once.
-    // Bound the narrative separately, and still cap the whole page.
-    const proseOf = (text: string) =>
-      text
-        .replace(/```[\s\S]*?```/g, '')
-        .trim()
-        .split(/\s+/).length
-    // Part 1 is the first-run path and Part 2 the move to GitHub that #596
-    // added on purpose, so each is held to its own length: one cap over both
-    // turned red the day Part 2 arrived, while the beginner path had room.
-    const part2 = body.indexOf('\n## Part 2')
-    expect(part2, 'Part 2 starts the GitHub half').toBeGreaterThan(0)
-    // The optional refusal step (#611) is its own slice with its own cap, for
-    // the same reason: it must not eat the first-run path's room.
-    const optional = body.indexOf('\n## Optional')
-    expect(optional, 'the optional step sits between Step 4 and Part 2').toBeGreaterThan(0)
-    expect(optional).toBeLessThan(part2)
-    const words = body.trim().split(/\s+/).length
-    expect(proseOf(body.slice(0, optional)), 'the first-run path has become a reference manual again').toBeLessThan(
-      1300, // #959: the README's per-stack rules and `VISUAL` paragraph moved into Steps 1-2
-    )
-    expect(proseOf(body.slice(optional, part2)), 'the optional step has become a manual').toBeLessThan(350)
-    expect(proseOf(body.slice(part2)), 'the GitHub half has become a reference manual').toBeLessThan(600)
-    expect(words, 'the tutorial has too many command variants').toBeLessThan(2250) // #959: see the first-run cap above
+    // #1061: a fact that is not on the first-run path goes to tutorial-more.md.
+    expect(proseOf(body), 'the first-run path has become a reference manual again').toBeLessThan(400)
+    expect(body).not.toContain('<details>')
+    expect(body).not.toContain('CHAPTER_GARDEN_DIR')
+    expect(body).not.toContain('$VISUAL')
+    expect(body).not.toContain('--land hold')
+    expect(body).toContain('(tutorial-more.md)')
     expect(
       headingsOf(body)
         .filter((h) => h.depth === 2)
@@ -137,12 +128,41 @@ describe('the tutorial stays a first-run path', () => {
       'Before you start',
       'Step 1 — Set up this machine',
       'Step 2 — Open one ticket',
-      'Step 3 — Run the agent and checks',
-      'Step 4 — Approve and confirm',
-      'Optional — Watch a check refuse',
-      'Part 2 — Move the project to GitHub',
+      'Step 3 — Start',
       'Next',
     ])
+  })
+
+  it('keeps the options, the hold, the refusal and GitHub on the second page', async () => {
+    const body = await readFile(path.join(docRoot, 'tutorial-more.md'), 'utf8')
+    expect(body).not.toContain('<details')
+    expect(body).not.toContain('CHAPTER_GARDEN_DIR')
+    expect(await servable()).toContain('tutorial-more.md')
+    const hold = body.indexOf('\n## Hold every attempt')
+    const refusal = body.indexOf('\n## Watch a check refuse')
+    const github = body.indexOf('\n## Part 2')
+    expect(hold).toBeGreaterThan(0)
+    expect(refusal).toBeGreaterThan(hold)
+    expect(github).toBeGreaterThan(refusal)
+    expect(proseOf(body.slice(hold, refusal)), 'the hold has become a manual').toBeLessThan(400) // #1061
+    expect(proseOf(body.slice(refusal, github)), 'the refusal step has become a manual').toBeLessThan(350)
+    expect(proseOf(body.slice(github)), 'the GitHub half has become a reference manual').toBeLessThan(600)
+    expect(
+      headingsOf(body)
+        .filter((h) => h.depth === 2)
+        .map((h) => h.text),
+    ).toEqual([
+      'What each init option means',
+      'Hold every attempt for approval',
+      'Watch a check refuse',
+      'Part 2 — Move the project to GitHub',
+    ])
+  })
+
+  it('keeps the repository-detection list on the recipe page, with no disclosure', async () => {
+    const body = await readFile(path.join(docRoot, 'recipe.md'), 'utf8')
+    expect(body).toContain('Using your own repository?')
+    expect(body).not.toContain('<details')
   })
 })
 
@@ -174,12 +194,17 @@ describe('what a document says it is', () => {
 
 describe('where a link inside a document goes', () => {
   const isPublished = (file: string) =>
-    ['tutorial.md', 'decisions-archive/0022-the-seams.md', 'decisions-archive/0016-the-settled-model.md'].includes(file)
+    [
+      'tutorial.md',
+      'tutorial-more.md',
+      'decisions-archive/0022-the-seams.md',
+      'decisions-archive/0016-the-settled-model.md',
+    ].includes(file)
 
   it('opens the tutorial diagram from the same site build as the page', async () => {
-    const tutorial = await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')
-    expect(tutorial).toContain('[Open the diagram at full size](img/recipe.svg)')
-    expect(resolveHref('tutorial.md', 'img/recipe.svg', isPublished)).toBe('/img/docs/recipe.svg')
+    const more = await readFile(path.join(docRoot, 'tutorial-more.md'), 'utf8')
+    expect(more).toContain('[Open the diagram at full size](img/recipe.svg)')
+    expect(resolveHref('tutorial-more.md', 'img/recipe.svg', isPublished)).toBe('/img/docs/recipe.svg')
   })
 
   it('sends a link between two projected documents to its route here', () => {

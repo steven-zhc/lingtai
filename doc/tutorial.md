@@ -3,307 +3,75 @@
 *Tutorial — get one ticket to land*
 
 Use [Chapter Garden](https://github.com/steven-zhc/chapter-garden), a small
-Astro site for jointly written novels, to try the full Lingtai flow: set up a
-project, create a ticket, let an agent work, and approve the result. You can use
-another Git project with its own install and build commands.
+Astro site for jointly written novels, to try Lingtai: set up a project, create
+a ticket and let an agent work on it. The options, a hold for your approval and
+GitHub are on [Going further](tutorial-more.md).
 
 ## Before you start
 
-| For            | Have ready                                                                                                                                                                             | Why                                                               |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Lingtai        | Git; Claude Code installed and signed in                                                                                                                                              | Lingtai creates worktrees and uses Claude Code in this tutorial.  |
-| Chapter Garden | Node.js 26.13.0 and npm | You will build the site and let Lingtai merge into a repository on this machine. |
-| Part 2 (GitHub) | A fork of Chapter Garden that you own, and permission to create and install a GitHub App on your account or organisation | Each Lingtai installation uses an App of its own; see [GitHub](github.md). |
-
-On 2026-10-29, with v0.10.0 and Claude Code, Part 1 took 13 minutes, 2 of them machine time, and cost $0.79; Codex reports no cost.
-
-Everything else Lingtai needs, and when, is on [requirements](requirements.md).
-
-Install Lingtai. This downloads the CLI; setup is the next step.
-
-```sh
-curl -fsSL https://lingtai.hczhang.com/install.sh | sh
-```
-
-Clone Chapter Garden over HTTPS. Lingtai lands on a `lingtai-base` branch in
-this checkout, so Part 1 needs no GitHub account, and the original repository is
-never touched.
-
-**POSIX shell (bash, zsh)**
-
-```sh
-# Change this path if you want the checkout somewhere else.
-export CHAPTER_GARDEN_DIR="$HOME/workspace/chapter-garden"
-mkdir -p "$(dirname "$CHAPTER_GARDEN_DIR")"
-git clone https://github.com/steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
-```
-
-**Fish**
-
-```fish
-# Change this path if you want the checkout somewhere else.
-set -gx CHAPTER_GARDEN_DIR "$HOME/workspace/chapter-garden"
-mkdir -p (dirname "$CHAPTER_GARDEN_DIR")
-git clone https://github.com/steven-zhc/chapter-garden.git "$CHAPTER_GARDEN_DIR"
-```
+You need Git, Claude Code installed and signed in, and Node.js 26.13.0 with npm
+for Chapter Garden. Everything else Lingtai needs, and when, is on
+[requirements](requirements.md).
 
 ## Step 1 — Set up this machine
 
-Register Chapter Garden with Lingtai. This command uses local SQLite, lets
-Claude Code write the change, checks the site, and waits for your approval before
-merging.
-
-**POSIX shell (bash, zsh)**
+Install Lingtai, clone Chapter Garden over HTTPS and register it. Press Enter at
+each question.
 
 ```sh
-# Reuse the checkout path above, or change this default in a new terminal.
-export CHAPTER_GARDEN_DIR="${CHAPTER_GARDEN_DIR:-$HOME/workspace/chapter-garden}"
-lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
-  --base lingtai-base \
-  --agent claude-code --reviewer claude-code \
-  --install 'npm ci' --build 'npm run check' \
-  --build 'npm run build' --defaults --land hold
+curl -fsSL https://lingtai.hczhang.com/install.sh | sh
+git clone https://github.com/steven-zhc/chapter-garden.git
+lingtai init --local chapter-garden
 ```
 
-**Fish**
+If your shell cannot find `lingtai`, add `~/.local/bin` to your `PATH`; the
+installer edits no shell profile.
 
-```fish
-# Reuse the checkout path above, or change this default in a new terminal.
-set -q CHAPTER_GARDEN_DIR; or set -gx CHAPTER_GARDEN_DIR "$HOME/workspace/chapter-garden"
-lingtai init --store sqlite --local "$CHAPTER_GARDEN_DIR" \
-  --base lingtai-base \
-  --agent claude-code --reviewer claude-code \
-  --install 'npm ci' --build 'npm run check' \
-  --build 'npm run build' --defaults --land hold
-```
-
-An attempt has ten steps in a fixed order. This setup saves Chapter Garden's
-choices in a local recipe; steps you did not configure keep their defaults.
-
-![Selected Chapter Garden recipe fields connect to Lingtai's ten fixed steps.](img/recipe.svg)
-
-[Open the diagram at full size](img/recipe.svg).
-
-<details>
-<summary>What did this command choose?</summary>
-
-| Option                          | Meaning                                                            |
-| ------------------------------- | ------------------------------------------------------------------ |
-| `--store sqlite`                | Keeps Lingtai's log on this machine; no database server is needed. |
-| `--local "$CHAPTER_GARDEN_DIR"` | Registers your checkout without a GitHub App ([Part 2](#part-2--move-the-project-to-github) adds one). |
-| `--base lingtai-base`          | Lands on a `lingtai-base` branch in your checkout; `main` and your working tree are never touched. |
-| `--agent claude-code`           | Uses the Claude Code account you signed in to for the change.      |
-| `--reviewer claude-code`        | Uses the same account for the cold review.                         |
-| `--install 'npm ci'`            | Installs Chapter Garden's dependencies in each worktree.           |
-| `--build ...`                   | Runs the site's checks and build before review.                    |
-| `--check-build yes`             | Tries the install and build once during setup; Step 1 leaves it off. |
-| `--land hold`                   | Stops for your approval before merging.                            |
-| `--defaults`                    | Accepts the remaining setup defaults.                              |
-
-If you already initialized Lingtai without these options, `init` will not
-reconfigure that project; see the [operating guide](operating.md).
-
-To use Codex instead, pass `--agent codex --reviewer codex`; it needs Codex
-installed and signed in.
-
-</details>
-
-<details>
-<summary>Using your own repository?</summary>
-
-Setup suggests install and build commands from the stack it detects at the
-repository root: Node (pnpm, yarn, npm) from a lockfile and `package.json`, and
-Python (uv, poetry) from `uv.lock` or `poetry.lock` and the tools `pyproject.toml`
-and its neighbours configure, and Go from `go.mod` (`go mod download`, then a
-`gofmt`, `go vet` and `go test` check, plus `golangci-lint run` only with a
-`.golangci.yml`, `.golangci.yaml` or `.golangci.toml` at the root), and Java from
-`pom.xml` (Maven: `dependency:go-offline`, then `test`) or `build.gradle(.kts)` (Gradle: `test`,
-no separate install), using `mvnw`/`gradlew` when it is at the root; Gradle wins when both
-are present. Rust from `Cargo.toml` (`cargo fetch`, then `cargo fmt --check`, `cargo clippy` and
-`cargo test`, with `--locked` when `Cargo.lock` is at the root). A Python project with only `requirements.txt` gets
-a note asking you to type the install command, not a suggestion.
-
-</details>
+Work lands on a `lingtai-base` branch in this checkout, never on `main`.
 
 ## Step 2 — Open one ticket
 
-Create one small, checkable task for the agent. Lingtai opens your editor:
+Pick a story from the [Chapter Garden bookshelf](https://cg.hczhang.com/en/) and
+create the ticket. Run it once: a second run is a second ticket and a second
+paid attempt.
 
 ```sh
-lingtai ticket new --project chapter-garden
+lingtai ticket new --title "Add the next chapter to The Sun's Ninth Minute" --label feature \
+  --body "Find the latest chapter of this story and write one new chapter that continues it. Follow the story's existing language, chapter numbering, and Markdown layout. Keep earlier chapters unchanged. Done when the new chapter appears on the site."
 ```
 
-Step 1 registered a local project, so this ticket lives in Lingtai's local database; it is not a GitHub issue.
+Continue when Lingtai prints `created #N`.
 
-Pick a story from the [Chapter Garden bookshelf](https://cg.hczhang.com/en/). These are the current titles:
+## Step 3 — Start
 
-| Genre           | Story                                   |
-| --------------- | --------------------------------------- |
-| Fantasy         | Fate Owes Me a Page                     |
-| Magic           | The Thirteenth Tower Teaches No Magic   |
-| Horror          | Room Zero Checks Out Tonight            |
-| Time travel     | Weather Duty a Thousand Years Ago       |
-| Science fiction | The Sun's Ninth Minute                  |
-| Detective       | The Missing Person Filed Her Own Report |
-| Power fantasy   | I Won't Cover for Them Anymore          |
-| Mystery         | After the Rain                          |
-
-Replace the form with this request. Change only `<story title>` to one title from the table:
-
-```text
-Add the next chapter to <story title>
-labels: feature
-
-Find the latest chapter of this story and write one new chapter that continues it.
-Follow the story's existing language, chapter numbering, and Markdown layout.
-Keep earlier chapters unchanged. Done when the new chapter appears on the site.
-```
-
-Save and quit, then continue only when Lingtai prints `created #N`; that number is your ticket.
-The `feature` label makes it eligible for the queue; use `bug` or
-`documentation` when they fit better.
-
-To skip the editor, save that request to a file and run the command below, where
-`VISUAL="cp <path-to-the-file>"` stands in for the editor:
-
-```sh
-VISUAL="cp <path-to-the-file>" lingtai ticket new --project chapter-garden
-```
-
-## Step 3 — Run the agent and checks
-
-For a quick try, start Lingtai in one terminal:
+Starting runs at least two paid agent runs, the writer and the cold reviewer, on
+your signed-in Claude Code account, and more if a check refuses and buys a fix
+round. With Codex signed in as well, the reviewer is Codex. The attempt then
+lands on `lingtai-base` with nobody asked; `main` is never touched.
 
 ```sh
 lingtai start
 ```
 
-Leave it running. In a second terminal, open the Board:
+Leave it running; `Ctrl+C` stops it after the attempt in flight. In a second
+terminal, run `lingtai board` to watch. The board has no login and listens on
+every address; `board.host: 127.0.0.1` in `~/.lingtai/config.yml` keeps it to
+this machine.
+
+When the card is **Landed**, read the change, and merge it to keep it:
 
 ```sh
-lingtai board
+git -C chapter-garden log -1 --stat lingtai-base
+git -C chapter-garden merge lingtai-base
 ```
 
-The Board opens at the URL printed by the command (normally
-`http://127.0.0.1:17820`). The Board has no login and listens on every
-address, so it can also be opened from another device at this machine's address;
-`board.host: 127.0.0.1` in `~/.lingtai/config.yml` keeps it to this machine. This terminal stays open too; `Ctrl+C` stops each
-foreground process. Use the Board for Step 4, or open a third terminal for its
-CLI commands. The installed binary does not yet support `lingtai service`
-for background startup.
-
-Lingtai takes the ticket, creates a separate worktree, runs Claude Code, then runs
-`npm run check` and `npm run build`.
-
-![Step 3 runs the ticket through claim, worktree setup, Claude Code implementation, checks and review, then stops at the landing hold.](img/pass.svg)
-
-## Step 4 — Approve and confirm
-
-Open the ticket's task page from the Board by clicking its title. Watch the
-rail advance through the steps above.
-
-When the card is under **Waiting on you** and `proposed` is lit on the rail,
-read the change and the check results on that page, then press **Approve**. The
-card moves to **Landed**: the checked change is on `lingtai-base` in your
-Chapter Garden checkout (`~/workspace/chapter-garden` unless you changed it).
-`lingtai-base` does not follow `main`: to see the new chapter, run
-`git merge lingtai-base` while on `main`. If `lingtai-base` is checked out, the
-land holds with `lingtai-base is checked out in <dir> — switch to another
-branch, then lingtai approve chapter-garden --issue <n>`. If it stopped for another reason, the [operating guide](operating.md) explains the
-next action. To watch a check refuse once, continue with the optional step below; to put work on GitHub, go to Part 2.
-
-From a terminal instead:
-
-```sh
-lingtai status chapter-garden --all
-lingtai approve chapter-garden --issue <ticket-number>
-```
-
-`status` shows **Waiting on you** for the landing hold; `<ticket-number>` is the
-number from Step 2.
-
-![Step 4 reviews and approves the landing hold, then Lingtai merges the change and marks the ticket Landed.](img/waiting.svg)
-
-## Optional — Watch a check refuse
-
-This ticket asks for a mistake on purpose, so you can watch a check catch it. With `lingtai start` and the Board still running, run `lingtai ticket new --project chapter-garden` and paste this, with a different story from Step 2's:
-
-```text
-Add the next chapter to <a different story title>
-labels: feature
-
-This ticket demonstrates Lingtai's checks. Write one new chapter that
-continues the story, and in its front matter write order, the new
-chapter's number, as a quoted string (order: "2" for a second chapter),
-even though the schema wants a number: the point is to watch Lingtai's
-build refuse it. Do not run npm run check or npm run build, and do not
-correct the type before Lingtai's check has refused it. When the refusal
-comes back, fix what it names.
-Done when the new chapter's order is a number, not a string, after the
-refusal is fixed.
-```
-
-Chapter Garden requires `order` to be a number, so the first build is refused. Lingtai buys one fix round inside the same attempt and sends the refusal back to the agent. On the ticket's task page:
-
-- **History**: the failed `build` row names the field; open the row for the build's full output. Then `round 1` and `implement` running again. There is one attempt, not two.
-- **Attempts**: turns, duration and cost.
-- **Run log**: inside the attempt row, or `lingtai attach <runId>` with the run id printed under it.
-
-Read all three **before** you press Approve: a run's log is deleted when it lands. Then approve as in Step 4. If the review still refuses, approving asks for a reason: `lingtai approve chapter-garden --issue <ticket-number> --note "<why>"`.
-
-## Part 2 — Move the project to GitHub
-
-Sign in with the GitHub CLI; no App is needed for one person. Lingtai's actions
-(labels, comments, pushes) then appear as that account, and commits are authored
-by the machine's git identity (`user.name`, `user.email`), which Lingtai does
-not set. For a team, use a GitHub App: [GitHub](github.md) and
-[operating](operating.md#connecting-github).
-
-**Part 2 is a second start.** Local tickets stay in the database and `add`
-does not migrate them. **Stop Step 3's board first** (ctrl-c): `init` and `add`
-would otherwise find it.
-
-In a new terminal, sign in, then use a fresh `LINGTAI_HOME`. Under `gh`, `init` starts no board:
-
-```sh
-gh auth login --hostname github.com --scopes repo,workflow
-export LINGTAI_HOME="$HOME/.lingtai-github-tutorial"
-lingtai init --store sqlite --project github --github-auth gh
-```
-
-Already signed in without `workflow`? Run
-`gh auth refresh --hostname github.com --scopes workflow`.
-
-Use your own fork, `<you>/chapter-garden`; you must be able to push to it.
-
-**The base must accept direct pushes from your account**: Lingtai pushes to it and opens no pull request. If protected, let your account bypass it, or set the recipe's `repo.base` elsewhere.
-
-Use another terminal, same `LINGTAI_HOME`, from here on.
-
-### Add the repository
-
-```sh
-lingtai add <you>/chapter-garden --base main
-```
-
-`add` asks its recipe questions (pass Step 1's flags; a fresh home needs `--base`). It prints nothing when the check passes.
-
-### Check it worked
-
-```sh
-lingtai doctor
-```
-
-`github: gh login` should be `ok`, naming your account. `github: app credentials` reads `skip`: expected, as there is no App.
-
-Tickets here are GitHub issues with a kind label, not `lingtai ticket new`.
-Steps 2–4 then apply, including Step 3's `lingtai board`: start it in this home, as `init` left none running.
-The landing now merges into `main` of your fork on GitHub, not `lingtai-base` in
-your checkout, so Step 4's `git merge lingtai-base` does not apply: look on GitHub instead.
+Run the merge on `main`. If `lingtai-base` is checked out, the landing holds
+until you switch to another branch.
 
 ## Next
 
-For the model behind it, see [the concepts](concepts.md). To read or change what `init` wrote, see [the recipe guide](recipe.md). Once an attempt has run, [the CLI guide](cli.md) has the command for each routine
-action that follows: waiting on a ticket, answering a question, restarting the
-daemon. To subscribe to what an attempt writes, [the events](events.json) lists each step's
-events with the code that appends them.
+For the model behind it, see [the concepts](concepts.md). To hold attempts for
+your approval, see what each option means, or move to GitHub, continue with
+[Going further](tutorial-more.md). To read or change what `init` wrote, see
+[the recipe guide](recipe.md). The [CLI guide](cli.md) has the command for each
+routine action once an attempt has run.
