@@ -2436,8 +2436,12 @@ So, before updating, run `lingtai doctor` and note any `daemon: liveness` row
 that says `paused by …` for a pause that is not the setup's. **Pause before the
 new daemon starts, never after:** the new daemon takes queued work the moment it
 starts, and a pause appended afterwards does not stop an attempt already begun.
-Drain the old daemon (`lingtai shutdown`, or `lingtai service shutdown`),
-update the checkout, and with no daemon running run `lingtai pause <project>`
+Stop the old daemon so that nothing restarts it: where a supervisor (launchd
+KeepAlive, systemd `Restart=always`) keeps it, `lingtai service shutdown`,
+which unloads the service — a bare `lingtai shutdown` only drains, and the
+supervisor starts the new checkout's daemon on its own during the restart delay,
+before any pause. Where none does, `lingtai shutdown`. Update the checkout, and
+with the service unloaded or the daemon gone, run `lingtai pause <project>`
 for each project whose stop is still wanted — the CLI appends without one, and
 the daemon you then start reads the lock at its start. Only then start it
 (`lingtai daemon`, or `lingtai service start`), rather than `lingtai restart`,
