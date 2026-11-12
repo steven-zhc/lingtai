@@ -355,9 +355,9 @@ body {
 .col.hot { min-width: min(100%, 440px); }
 .col.hot .col-h { padding: 1px 4px 11px; text-transform: uppercase; letter-spacing: 0.08em; }
 .col.hot .col-h .ct { font-size: 22px; font-weight: 500; line-height: 1; letter-spacing: 0; }
-.col.hot .cards { gap: 9px; }
+.col.hot .cards, .col.hot .cards-in { gap: 9px; }
 
-.cards { display: flex; flex-direction: column; gap: 7px; }
+.cards, .cards-in { display: flex; flex-direction: column; gap: 7px; }
 .empty {
   padding: 14px 4px; font-size: 12px; color: var(--muted); line-height: 1.6;
 }

@@ -21,6 +21,9 @@ import {
   loadBoard,
   queuedStanding,
   selectedProject,
+  columnSkeletonCount,
+  queuedSkeletonCount,
+  recordQueuedOffered,
   skeletonCount,
   type BoardCard,
   type GithubQueue,
@@ -999,7 +1002,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // awaited from both boundaries; two calls would be two fan-outs to GitHub.
   const queue: Promise<GithubQueue> = ctx.reads.board
     .then((board) =>
-      measure(() => timed('board.queue', () => githubQueue(board.askable, board.known)), { label: '/ queue' }),
+      measure(() => timed('board.queue', () => githubQueue(board.askable, board.known)), { label: '/ queue' }).then(
+        (answered) => {
+          recordQueuedOffered(param, board.askable, answered[0].problems)
+          return answered
+        },
+      ),
     )
     .then(([github]) => github)
   const app = hasGitHubAuth()
@@ -1134,10 +1142,21 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                 <Suspense
                   key={key(`cards-${col.id}`)}
                   fallback={
-                    <Skeleton shape={col.id === 'landed' ? 'lines' : 'card'} count={2} label="reading the log…" />
+                    <Skeleton
+                      shape={col.id === 'landed' ? 'lines' : 'card'}
+                      count={
+                        col.id === 'queued' ? queuedSkeletonCount(ctx.param) : columnSkeletonCount(ctx.param, col.id)
+                      }
+                      label="reading the log…"
+                    />
                   }
                 >
-                  <CardsPart id={col.id} ctx={ctx} queue={queue} projectKey={projectKey} />
+                  {/* Fade on mount, never on render: the boundary is keyed by
+                      project, so this element mounts once per switch and a
+                      live re-render of the same project replays nothing. */}
+                  <div className="cards-in arrive">
+                    <CardsPart id={col.id} ctx={ctx} queue={queue} projectKey={projectKey} />
+                  </div>
                 </Suspense>
               </div>
             </section>
