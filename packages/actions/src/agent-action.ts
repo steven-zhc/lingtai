@@ -52,7 +52,7 @@
  * outcome*, rather than *is that sentence still in my output*. See
  * `recheckBlock`.
  */
-import { runtimeVersionOf, type RunOutcome, type RunRequest, type Runtime } from '@lingtai/agent'
+import { runtimeVersionOfEffect, type RunOutcome, type RunRequest, type Runtime } from '@lingtai/agent'
 import type { RunTrace } from '@lingtai/agent/run-log'
 import type { RuntimeId } from '@lingtai/domain'
 import {
@@ -892,7 +892,7 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
                   const prompt = composed.handed
                   // Before the dispatch, so a reviewer that crashes still has its prompt on the log (#923).
                   if (context.prompted !== undefined) {
-                    const version = yield* liftPromise(() => runtimeVersionOf(deps.runtime, context.env, context.cwd))
+                    const version = yield* runtimeVersionOfEffect(deps.runtime, context.env, context.cwd)
                     yield* liftPromise(() => context.prompted?.(`review@${prompt.length}`, composed, version))
                   }
                   return yield* dispatchRuntime(deps.runtime, context.signal, {
@@ -1546,7 +1546,7 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
         const prompt = composed.handed
         // The body is a reference where the claim it came from is known (#928).
         if (context.prompted !== undefined) {
-          const version = yield* liftPromise(() => runtimeVersionOf(deps.runtime, context.env, context.cwd))
+          const version = yield* runtimeVersionOfEffect(deps.runtime, context.env, context.cwd)
           yield* liftPromise(() => context.prompted?.(`design@${prompt.length}`, composed, version))
         }
         const outcome = yield* dispatchRuntime(deps.runtime, context.signal, {

@@ -62,7 +62,7 @@ import { mergeTokenCounts } from '@lingtai/domain'
 import { Effect, FiberSet } from 'effect'
 import { parse as parseToml } from 'smol-toml'
 
-import { codexAuth, runtimeVersion } from './auth.ts'
+import { codexAuth, runtimeVersionEffect } from './auth.ts'
 import { clip, lineReader, PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from './claude-code.ts'
 import { NO_RUN_LOG } from './run-log.ts'
 import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
@@ -1388,8 +1388,8 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
     capabilities: CODEX_CAPABILITIES,
 
     /** `codex --version` (#929), in the env `run` is given, without the process marker a probe has no use for. */
-    version(env: Record<string, string>, cwd?: string): Promise<string | null> {
-      return runtimeVersion(binary, env, spawnChild, cwd)
+    version(env: Record<string, string>, cwd?: string) {
+      return runtimeVersionEffect(binary, env, spawnChild, cwd)
     },
 
     /** `codex login status` — `auth.ts`. */

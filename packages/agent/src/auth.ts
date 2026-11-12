@@ -153,16 +153,6 @@ export const runtimeVersionEffect = Effect.fn('agent.version')(function* (
   return reportedVersion(end)
 })
 
-/** The Effect above, as the promise `Runtime.version` still is (a listed face, #790). */
-export function runtimeVersion(
-  binary: string,
-  env: Record<string, string>,
-  spawnChild?: typeof spawn,
-  cwd?: string,
-): Promise<string | null> {
-  return Effect.runPromise(runtimeVersionEffect(binary, env, spawnChild, cwd))
-}
-
 /**
  * `claude auth status`, in the environment a run would actually get.
  *

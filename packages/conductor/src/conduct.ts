@@ -32,7 +32,7 @@ import {
   type Runtime,
   createRuntime,
   missingForTier,
-  runtimeVersionOf,
+  runtimeVersionOfEffect,
   taggedTrace,
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, renderEnvFile, runnableEnv } from '@lingtai/agent-env'
@@ -2981,9 +2981,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const judgeParts = judgePromptParts(on)
           const judgePromptText = judgePrompt(on)
           const judgeEnv = runnableEnv(env.values)
-          const runtimeVersion = yield* Effect.promise(() =>
-            runtimeVersionOf(dispatched, judgeEnv, worktree?.path ?? home),
-          )
+          const runtimeVersion = yield* runtimeVersionOfEffect(dispatched, judgeEnv, worktree?.path ?? home)
           yield* Effect.promise(() =>
             recordPrompt(
               store,
@@ -4084,14 +4082,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   name: spec.name,
                   round: 0,
                 }
+                const implementerVersion = yield* runtimeVersionOfEffect(dispatched, agentEnv, tree.path)
                 yield* Effect.promise(() =>
-                  runtimeVersionOf(dispatched, agentEnv, tree.path).then((runtimeVersion) =>
-                    recordPrompt(
-                      store,
-                      runId,
-                      { for: implementerFor, promptVersion, runtimeVersion, prompt: implementerParts },
-                      log,
-                    ),
+                  recordPrompt(
+                    store,
+                    runId,
+                    {
+                      for: implementerFor,
+                      promptVersion,
+                      runtimeVersion: implementerVersion,
+                      prompt: implementerParts,
+                    },
+                    log,
                   ),
                 )
 
@@ -4348,14 +4350,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             ...(continuation?.grant ? { grant: continuation.resumedWaitId } : {}),
           }
           const fixEnv = runnableEnv(env.values)
+          const fixVersion = yield* runtimeVersionOfEffect(dispatched, fixEnv, tree.path)
           yield* Effect.promise(() =>
-            runtimeVersionOf(dispatched, fixEnv, tree.path).then((runtimeVersion) =>
-              recordPrompt(
-                store,
-                runId,
-                { for: fixFor, promptVersion: `fix@${fixPrompt.length}`, runtimeVersion, prompt: fixParts },
-                log,
-              ),
+            recordPrompt(
+              store,
+              runId,
+              { for: fixFor, promptVersion: `fix@${fixPrompt.length}`, runtimeVersion: fixVersion, prompt: fixParts },
+              log,
             ),
           )
           // Only a defect is the made-up crash outcome; an interruption stays one.
