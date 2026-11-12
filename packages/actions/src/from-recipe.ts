@@ -17,18 +17,39 @@ import {
   whyNoKindAt,
 } from '@lingtai/recipe'
 
-import type { Action } from './action.ts'
-import { type AgentActionDeps, createAgentAction, createDraftAction } from './agent-action.ts'
-import { createFileAction, type FileActionDeps } from './file-action.ts'
-import { createFileBriefAction, type FileBriefActionDeps } from './file-brief-action.ts'
-import { createHumanAction } from './human-action.ts'
-import { createKeptRunAction, type KeptRunActionDeps } from './kept-run-action.ts'
-import { createMergeAction, type MergeActionDeps } from './merge-action.ts'
-import { createProcessAction } from './process-action.ts'
-import { createQueueAction, type QueueActionDeps } from './queue-action.ts'
-import { createWatchAction, type WatchActionDeps } from './watch-action.ts'
-import { type WorkActionDeps, createWorkAction } from './work-action.ts'
-import { createWorktreeAction, type WorktreeActionDeps } from './worktree-action.ts'
+import { type Action, type ActionPort, promiseAction } from './action.ts'
+import {
+  type AgentActionDeps,
+  type AgentPortDeps,
+  agentPortDepsFrom,
+  makeAgentAction,
+  makeDraftAction,
+} from './agent-action.ts'
+import { makeFileAction, filePortDepsFrom, type FileActionDeps, type FilePortDeps } from './file-action.ts'
+import {
+  makeFileBriefAction,
+  fileBriefPortDepsFrom,
+  type FileBriefActionDeps,
+  type FileBriefPortDeps,
+} from './file-brief-action.ts'
+import { makeHumanAction } from './human-action.ts'
+import {
+  makeKeptRunAction,
+  keptRunPortDepsFrom,
+  type KeptRunActionDeps,
+  type KeptRunPortDeps,
+} from './kept-run-action.ts'
+import { makeMergeAction, mergePortDepsFrom, type MergeActionDeps, type MergePortDeps } from './merge-action.ts'
+import { makeProcessAction } from './process-action.ts'
+import { makeQueueAction, queuePortDepsFrom, type QueueActionDeps, type QueuePortDeps } from './queue-action.ts'
+import { makeWatchAction, watchPortDepsFrom, type WatchActionDeps, type WatchPortDeps } from './watch-action.ts'
+import { type WorkActionDeps, type WorkPortDeps, makeWorkAction, workPortDepsFrom } from './work-action.ts'
+import {
+  makeWorktreeAction,
+  worktreePortDepsFrom,
+  type WorktreeActionDeps,
+  type WorktreePortDeps,
+} from './worktree-action.ts'
 
 /**
  * What the actions that are not pure processes need from the caller.
@@ -149,6 +170,47 @@ export interface ActionDeps {
   keptRun?: KeptRunActionDeps
 }
 
+/**
+ * `ActionDeps` over Effect ports (#1043): each kind's own port deps in place of
+ * its promise deps, `runtimeFor` and `env` unchanged. Every key is documented on
+ * `ActionDeps`.
+ */
+export interface ActionPortDeps {
+  agent?: AgentPortDeps
+  runtimeFor?: ActionDeps['runtimeFor']
+  work?: WorkPortDeps
+  watch?: WatchPortDeps
+  worktree?: WorktreePortDeps
+  merge?: MergePortDeps
+  queue?: QueuePortDeps
+  file?: FilePortDeps
+  fileBrief?: FileBriefPortDeps
+  env?: ActionDeps['env']
+  keptRun?: KeptRunPortDeps
+}
+
+/**
+ * Lifts each present key with its kind's lift; an absent key stays absent, which
+ * is what makes `actionPortsFromRecipe` refuse by name. Every key is written out
+ * (never a spread), and a new key on `ActionDeps` fails to compile here.
+ */
+export const actionPortDepsFrom = (deps: ActionDeps): ActionPortDeps => {
+  const lifted: { [K in keyof Required<ActionDeps>]: ActionPortDeps[K] } = {
+    agent: deps.agent === undefined ? undefined : agentPortDepsFrom(deps.agent),
+    runtimeFor: deps.runtimeFor,
+    work: deps.work === undefined ? undefined : workPortDepsFrom(deps.work),
+    watch: deps.watch === undefined ? undefined : watchPortDepsFrom(deps.watch),
+    worktree: deps.worktree === undefined ? undefined : worktreePortDepsFrom(deps.worktree),
+    merge: deps.merge === undefined ? undefined : mergePortDepsFrom(deps.merge),
+    queue: deps.queue === undefined ? undefined : queuePortDepsFrom(deps.queue),
+    file: deps.file === undefined ? undefined : filePortDepsFrom(deps.file),
+    fileBrief: deps.fileBrief === undefined ? undefined : fileBriefPortDepsFrom(deps.fileBrief),
+    env: deps.env,
+    keptRun: deps.keptRun === undefined ? undefined : keptRunPortDepsFrom(deps.keptRun),
+  }
+  return lifted
+}
+
 export class ActionUnavailableError extends Error {
   override readonly name = 'ActionUnavailableError'
   readonly kind: string
@@ -218,12 +280,12 @@ export class ActionUnavailableError extends Error {
  * is never asked about it here either.
  */
 function dispatchDeps(
-  deps: ActionDeps & { agent: AgentActionDeps },
+  deps: ActionPortDeps & { agent: AgentPortDeps },
   action: { agent: RuntimeId; limits?: { turns?: number; wall?: string } },
-): AgentActionDeps {
+): AgentPortDeps {
   const base = deps.agent
   // Every key of `AgentActionDeps`, optional ones included, must be written here.
-  const narrowed: { [K in keyof Required<AgentActionDeps>]: AgentActionDeps[K] } = {
+  const narrowed: { [K in keyof Required<AgentActionDeps>]: AgentPortDeps[K] } = {
     runtime: deps.runtimeFor === undefined ? base.runtime : deps.runtimeFor(action.agent),
     issue: base.issue,
     designAsks: base.designAsks,
@@ -245,8 +307,17 @@ function dispatchDeps(
   return narrowed
 }
 
+/** The promise shape of `actionPortsFromRecipe`: the same actions, each through `promiseAction`. */
 export function actionsFromRecipe(step: Step, actions: readonly StepAction[], deps: ActionDeps = {}): Action[] {
-  return actions.flatMap((action) => {
+  return actionPortsFromRecipe(step, actions, actionPortDepsFrom(deps)).map(promiseAction)
+}
+
+export function actionPortsFromRecipe(
+  step: Step,
+  actions: readonly StepAction[],
+  deps: ActionPortDeps = {},
+): ActionPort[] {
+  return actions.flatMap((action): ActionPort[] => {
     const kind = kindOfAction(action)
 
     // The step's own answer first: "there is no diff at `prepared`" is a
@@ -268,7 +339,7 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
         // and read as a broken build rather than as an action built wrong.
         throw new ActionUnavailableError(action.name, kind, 'no environment resolver was supplied to actionsFromRecipe')
       }
-      const inner = createProcessAction({
+      const inner = makeProcessAction({
         name: action.name,
         run: action.run,
         timeout: action.timeout,
@@ -280,11 +351,11 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
       // there may not refuse (`REFUSING_STEPS`, `packages/conductor/src/run-attempt.ts`),
       // and what commits what it changed is `createKeptRunAction`, not the
       // plain process action every other step runs unwrapped.
-      if (step !== 'implement') return inner
+      if (step !== 'implement') return [inner]
       if (!deps.keptRun) {
         throw new ActionUnavailableError(action.name, kind, 'no git port was supplied to actionsFromRecipe')
       }
-      return createKeptRunAction(action.name, inner, deps.keptRun)
+      return [makeKeptRunAction(action.name, inner, deps.keptRun)]
     }
 
     if ('agent' in action) {
@@ -325,27 +396,29 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
         // The dispatch is the conductor's, so `implement` hands the two names on
         // rather than resolving them: `runtimeNamed` and `spendFor` live where
         // the hook is wired and the receipt is measured.
-        return createWorkAction(
-          {
-            ...agent,
-            agent: action.agent,
-            ...(action.limits === undefined ? {} : { limits: action.limits }),
-          },
-          deps.work,
-        )
+        return [
+          makeWorkAction(
+            {
+              ...agent,
+              agent: action.agent,
+              ...(action.limits === undefined ? {} : { limits: action.limits }),
+            },
+            deps.work,
+          ),
+        ]
       }
       if (!deps.agent) {
         throw new ActionUnavailableError(action.name, kind, 'no reviewer was supplied to actionsFromRecipe')
       }
       const reviewing = dispatchDeps({ ...deps, agent: deps.agent }, action)
-      return step === 'design' ? createDraftAction(agent, reviewing) : createAgentAction(agent, reviewing)
+      return [step === 'design' ? makeDraftAction(agent, reviewing) : makeAgentAction(agent, reviewing)]
     }
 
     if ('file' in action) {
       if (!deps.file) {
         throw new ActionUnavailableError(action.name, kind, 'no keep was supplied to actionsFromRecipe')
       }
-      return createFileAction({ name: action.name, path: action.file }, deps.file)
+      return [makeFileAction({ name: action.name, path: action.file }, deps.file)]
     }
 
     if ('file-brief' in action) {
@@ -355,7 +428,7 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
       // No field to pass on: what it reads is the locator the `design` step
       // produced, which arrives on `ActionContext.design` rather than out of the
       // recipe (`fileBriefPlugin` in `@lingtai/recipe` is where that is argued).
-      return createFileBriefAction({ name: action.name }, deps.fileBrief)
+      return [makeFileBriefAction({ name: action.name }, deps.fileBrief)]
     }
 
     if ('watch' in action) {
@@ -364,7 +437,7 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
       }
       // Compiles the globs here, so a bad pattern refuses at configuration time
       // rather than becoming a watch that quietly matches nothing.
-      return createWatchAction({ name: action.name, watch: action.watch, then: action.then }, deps.watch)
+      return [makeWatchAction({ name: action.name, watch: action.watch, then: action.then }, deps.watch)]
     }
 
     if ('worktree' in action) {
@@ -375,10 +448,12 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
       // `worktreePlugin`'s schema rather than defaulted there: a block that
       // named only the base would otherwise cut a tree with empty submodule
       // directories and read as the agent breaking the tests (`#268`).
-      return createWorktreeAction(
-        { name: action.name, base: action.worktree.base, submodules: action.worktree.submodules },
-        deps.worktree,
-      )
+      return [
+        makeWorktreeAction(
+          { name: action.name, base: action.worktree.base, submodules: action.worktree.submodules },
+          deps.worktree,
+        ),
+      ]
     }
 
     if ('merge' in action) {
@@ -389,7 +464,7 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
       // the base is one value that flows, and a `merge:` block carrying one of
       // its own would manufacture a disagreement between what the pass cut and
       // what it lands (0061 §4, `mergePlugin` in `@lingtai/recipe`).
-      return createMergeAction({ name: action.name, strategy: action.merge.strategy }, deps.merge)
+      return [makeMergeAction({ name: action.name, strategy: action.merge.strategy }, deps.merge)]
     }
 
     if ('queue' in action) {
@@ -399,13 +474,13 @@ export function actionsFromRecipe(step: Step, actions: readonly StepAction[], de
       // All four fields, and the far side re-reads none of them: a `claim` that
       // selected over the recipe while the board drew the action's block would be
       // the ticket taken not being the ticket a reading says was taken (`#269`).
-      return createQueueAction({ name: action.name, ...action.queue }, deps.queue)
+      return [makeQueueAction({ name: action.name, ...action.queue }, deps.queue)]
     }
 
     if ('human' in action) {
       // Needs nothing: it asks, and the answer arrives later on the same
       // stream. The question is the action's own string.
-      return createHumanAction({ name: action.name, question: action.human })
+      return [makeHumanAction({ name: action.name, question: action.human })]
     }
 
     // `close` and `labels` are effects, not verdicts. The check above refuses
