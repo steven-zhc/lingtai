@@ -1,5 +1,47 @@
 [
   {
+    "file": "packages/agent/src/auth.ts",
+    "fn": "askEveryRuntime",
+    "until": "#790",
+    "why": "packages/setup/src/runtimes.ts awaits it until the setup row"
+  },
+  {
+    "file": "packages/agent/src/auth.ts",
+    "fn": "claudeCodeAuth",
+    "until": "#790",
+    "why": "Runtime.checkAuth callers (apps/cli doctor, packages/conductor projects.ts) await it until the apps/cli row"
+  },
+  {
+    "file": "packages/agent/src/auth.ts",
+    "fn": "codexAuth",
+    "until": "#790",
+    "why": "Runtime.checkAuth callers and apps/board/src/lib/recipe.ts await it; 0101 §7 lets the board keep a promise face"
+  },
+  {
+    "file": "packages/agent/src/auth.ts",
+    "fn": "runtimeVersion",
+    "until": "#790",
+    "why": "Runtime.version callers (conductor, actions, apps/cli discuss.ts and triage.ts) await it until the actions row"
+  },
+  {
+    "file": "packages/agent/src/claude-code.ts",
+    "fn": "runClaudeCode",
+    "until": "#790",
+    "why": "the Runtime.run callers (conductor conduct.ts, actions agent-action.ts, apps/cli discuss.ts and triage.ts) await it until the actions row makes Runtime.run an Effect"
+  },
+  {
+    "file": "packages/agent/src/codex-text.ts",
+    "fn": "runCodexText",
+    "until": "#790",
+    "why": "the Runtime.run callers (conductor conduct.ts, actions agent-action.ts, apps/cli discuss.ts and triage.ts) await it until the actions row makes Runtime.run an Effect"
+  },
+  {
+    "file": "packages/agent/src/codex.ts",
+    "fn": "runCodex",
+    "until": "#790",
+    "why": "the Runtime.run callers (conductor conduct.ts, actions agent-action.ts, apps/cli discuss.ts and triage.ts) await it until the actions row makes Runtime.run an Effect"
+  },
+  {
     "file": "packages/agent/src/run-log.ts",
     "fn": "openRunLog",
     "until": "#790",

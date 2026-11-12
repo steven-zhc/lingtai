@@ -11,6 +11,7 @@
 import { spawn } from 'node:child_process'
 
 import { RuntimeId } from '@lingtai/domain'
+import { Effect } from 'effect'
 
 import type { AuthState, AuthStatus } from './runtime.ts'
 
@@ -77,15 +78,18 @@ export function classifyCodexLogin(end: ProbeEnd): AuthStatus {
   return status('did-not-start', detail)
 }
 
-/** Spawn `binary args`, and resolve with what happened — the first thing to settle wins. */
+/**
+ * Spawn `binary args`, and finish with what happened — the first thing to
+ * settle wins. Interrupting it kills the child and clears the timer.
+ */
 function probe(
   binary: string,
   args: string[],
   env: Record<string, string>,
   how: { readonly timeoutMs?: number; readonly spawn?: typeof spawn; readonly cwd?: string } = {},
-): Promise<ProbeEnd> {
+): Effect.Effect<ProbeEnd> {
   const spawnChild = how.spawn ?? spawn
-  return new Promise<ProbeEnd>((resolve) => {
+  return Effect.callback<ProbeEnd>((resume) => {
     const child = spawnChild(binary, args, {
       ...(how.cwd === undefined ? {} : { cwd: how.cwd }),
       // Cast for a compiler that widens `ProcessEnv` — Next's does, and the
@@ -102,17 +106,22 @@ function probe(
     // A hung probe must not hang the doctor.
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
-      resolve({ kind: 'timeout' })
+      resume(Effect.succeed({ kind: 'timeout' }))
     }, how.timeoutMs ?? 20_000)
 
     child.on('error', (e: NodeJS.ErrnoException) => {
       clearTimeout(timer)
-      resolve({ kind: 'spawn-error', code: e.code, message: e.message })
+      resume(Effect.succeed({ kind: 'spawn-error', code: e.code, message: e.message }))
     })
 
     child.on('close', (code, signal) => {
       clearTimeout(timer)
-      resolve({ kind: 'exited', code, signal, out, err })
+      resume(Effect.succeed({ kind: 'exited', code, signal, out, err }))
+    })
+
+    return Effect.sync(() => {
+      clearTimeout(timer)
+      child.kill('SIGKILL')
     })
   })
 }
@@ -130,17 +139,28 @@ export function reportedVersion(end: ProbeEnd): string | null {
 }
 
 /** `binary --version`, as the binary printed it, in `env`. Asked per call; never cached. */
+export const runtimeVersionEffect = Effect.fn('agent.version')(function* (
+  binary: string,
+  env: Record<string, string>,
+  spawnChild?: typeof spawn,
+  cwd?: string,
+) {
+  const end = yield* probe(binary, ['--version'], env, {
+    timeoutMs: 5_000,
+    ...(spawnChild ? { spawn: spawnChild } : {}),
+    ...(cwd === undefined ? {} : { cwd }),
+  })
+  return reportedVersion(end)
+})
+
+/** The Effect above, as the promise `Runtime.version` still is (a listed face, #790). */
 export function runtimeVersion(
   binary: string,
   env: Record<string, string>,
   spawnChild?: typeof spawn,
   cwd?: string,
 ): Promise<string | null> {
-  return probe(binary, ['--version'], env, {
-    timeoutMs: 5_000,
-    ...(spawnChild ? { spawn: spawnChild } : {}),
-    ...(cwd === undefined ? {} : { cwd }),
-  }).then(reportedVersion)
+  return Effect.runPromise(runtimeVersionEffect(binary, env, spawnChild, cwd))
 }
 
 /**
@@ -155,8 +175,13 @@ export function runtimeVersion(
  * code is not. Reading the code would have made this check pass in exactly
  * the situation it exists to catch.
  */
-export async function claudeCodeAuth(binary: string, env: Record<string, string>): Promise<AuthStatus> {
-  return classifyClaudeAuth(await probe(binary, ['auth', 'status'], env))
+export const claudeCodeAuthEffect = Effect.fn('agent.auth')(function* (binary: string, env: Record<string, string>) {
+  return classifyClaudeAuth(yield* probe(binary, ['auth', 'status'], env))
+})
+
+/** The Effect above, as the promise `Runtime.checkAuth` still is (a listed face, #790). */
+export function claudeCodeAuth(binary: string, env: Record<string, string>): Promise<AuthStatus> {
+  return Effect.runPromise(claudeCodeAuthEffect(binary, env))
 }
 
 /**
@@ -168,8 +193,13 @@ export async function claudeCodeAuth(binary: string, env: Record<string, string>
  * exit code is the answer — 0 `Logged in using …`, 1 `Not logged in` — but
  * only together with the output (see `classifyCodexLogin`).
  */
-export async function codexAuth(binary: string, env: Record<string, string>): Promise<AuthStatus> {
-  return classifyCodexLogin(await probe(binary, ['login', 'status'], env))
+export const codexAuthEffect = Effect.fn('agent.auth')(function* (binary: string, env: Record<string, string>) {
+  return classifyCodexLogin(yield* probe(binary, ['login', 'status'], env))
+})
+
+/** The Effect above, as the promise `Runtime.checkAuth` and the board still await (a listed face, #790). */
+export function codexAuth(binary: string, env: Record<string, string>): Promise<AuthStatus> {
+  return Effect.runPromise(codexAuthEffect(binary, env))
 }
 
 /**
@@ -193,12 +223,18 @@ export async function codexAuth(binary: string, env: Record<string, string>): Pr
  * indexed positionally against a written-out list of ids, which is one careless
  * insertion away from reporting Codex's answer under Claude Code's name.
  */
-export const AUTH_PROBES: Record<RuntimeId, (env: Record<string, string>) => Promise<AuthStatus>> = {
-  'claude-code': (env) => claudeCodeAuth('claude', env),
-  codex: (env) => codexAuth('codex', env),
+export const AUTH_PROBES: Record<RuntimeId, (env: Record<string, string>) => Effect.Effect<AuthStatus>> = {
+  'claude-code': (env) => claudeCodeAuthEffect('claude', env),
+  codex: (env) => codexAuthEffect('codex', env),
 }
 
 /** In the enum's own order, so a caller's list is never written by hand. */
+export const askEveryRuntimeEffect = (env: Record<string, string>) =>
+  Effect.forEach(RuntimeId.options, (id) => AUTH_PROBES[id](env).pipe(Effect.map((status) => ({ id, status }))), {
+    concurrency: 'unbounded',
+  })
+
+/** The Effect above, as the promise `packages/setup` still awaits (a listed face, #790). */
 export function askEveryRuntime(env: Record<string, string>): Promise<{ id: RuntimeId; status: AuthStatus }[]> {
-  return Promise.all(RuntimeId.options.map(async (id) => ({ id, status: await AUTH_PROBES[id](env) })))
+  return Effect.runPromise(askEveryRuntimeEffect(env))
 }

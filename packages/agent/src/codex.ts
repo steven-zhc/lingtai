@@ -59,6 +59,7 @@ import { StringDecoder } from 'node:string_decoder'
 
 import type { TokenCounts, Usage } from '@lingtai/domain'
 import { mergeTokenCounts } from '@lingtai/domain'
+import { Effect, FiberSet } from 'effect'
 import { parse as parseToml } from 'smol-toml'
 
 import { codexAuth, runtimeVersion } from './auth.ts'
@@ -133,28 +134,47 @@ function processesWith(identity: string): number[] {
  * inherited per-run environment value where the host shows one, and by having
  * been seen as the CLI's descendants where it does not.
  */
-async function stopRunProcesses(marker: string, seen: Seen): Promise<void> {
-  if (process.platform === 'win32') return
-  const identity = `LINGTAI_CODEX_PROCESS_MARKER=${marker}`
-  for (;;) {
-    const rows = listProcesses()
-    // A zombie is already dead and SIGKILL cannot reap it (a PID 1 that does
-    // not wait() leaves it); counting it as live would loop here forever.
-    const zombies = new Set(rows.filter((row) => row.zombie).map((row) => row.pid))
-    const live = new Map(rows.filter((row) => !row.zombie).map((row) => [row.pid, row.command]))
-    const pids = new Set(processesWith(identity).filter((pid) => !zombies.has(pid)))
-    for (const [pid, command] of seen) if (live.get(pid) === command) pids.add(pid)
-    if (pids.size === 0) return
-    for (const pid of pids) {
-      try {
-        process.kill(pid, 'SIGKILL')
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
-      }
+const STOP_SCAN_DEADLINE = '10 seconds'
+
+const stopRunProcesses = (marker: string, seen: Seen): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    if (process.platform === 'win32') return
+    const identity = `LINGTAI_CODEX_PROCESS_MARKER=${marker}`
+    for (;;) {
+      // One scan, and the kill of what it found. `true` once nothing is left.
+      const clear = yield* Effect.try({
+        try: (): boolean => {
+          const rows = listProcesses()
+          // A zombie is already dead and SIGKILL cannot reap it (a PID 1 that does
+          // not wait() leaves it); counting it as live would loop here forever.
+          const zombies = new Set(rows.filter((row) => row.zombie).map((row) => row.pid))
+          const live = new Map(rows.filter((row) => !row.zombie).map((row) => [row.pid, row.command]))
+          const pids = new Set(processesWith(identity).filter((pid) => !zombies.has(pid)))
+          for (const [pid, command] of seen) if (live.get(pid) === command) pids.add(pid)
+          if (pids.size === 0) return true
+          for (const pid of pids) {
+            try {
+              process.kill(pid, 'SIGKILL')
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+            }
+          }
+          return false
+        },
+        catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+      })
+      if (clear) return
+      yield* Effect.sleep('50 millis')
     }
-    await new Promise((resolve) => setTimeout(resolve, 50))
-  }
-}
+  }).pipe(
+    // A descendant in uninterruptible I/O survives SIGKILL and is not a zombie:
+    // without a deadline the scan, and the interruption waiting on it, never end.
+    // The failure is the "process cleanup incomplete" crash the callers already report.
+    Effect.timeoutOrElse({
+      duration: STOP_SCAN_DEADLINE,
+      orElse: () => Effect.fail(new Error(`processes of the run were still alive ${STOP_SCAN_DEADLINE} after SIGKILL`)),
+    }),
+  )
 
 export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   id: 'codex',
@@ -256,7 +276,7 @@ export interface CodexOptions {
   /** Extra arguments, for a project that needs one. Never used to widen the sandbox. */
   extraArgs?: readonly string[]
   /** Replaces the scan that stops a run's leftover processes; a test makes it throw. */
-  stopProcesses?: (marker: string, seen: Map<number, string>) => Promise<void>
+  stopProcesses?: (marker: string, seen: Map<number, string>) => Effect.Effect<void, Error>
 }
 
 /** One line of `codex exec --json`. Every field here was read off a real stream. */
@@ -1362,7 +1382,6 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
   const binary = options.binary ?? 'codex'
   const sandbox: CodexSandbox = options.sandbox ?? 'workspace-write'
   const extraArgs = options.extraArgs ?? []
-  const stopProcesses = options.stopProcesses ?? stopRunProcesses
   const spawnChild = options.spawn ?? spawn
 
   return {
@@ -1395,77 +1414,95 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
       }
     },
 
-    async run(request: RunRequest): Promise<RunOutcome> {
-      const started = Date.now()
-      // A run with no log writes to the one that is not there, so there is no
-      // `?.` on the hot path (0034 §1).
-      const trace = request.log ?? NO_RUN_LOG
+    run: (request: RunRequest): Promise<RunOutcome> => runCodex(options, request),
+  }
+}
 
-      const wiring = hookWiringAt(request.settingsPath)
-      if (wiring === null) {
-        // Before the spawn, and an event rather than a throw. A Codex run with
-        // no hook produces no events and looks exactly like one that produced
-        // all of them, which is the failure `smokeTestFailClosed` exists for one
-        // layer down.
-        const detail =
-          `the hook wiring at ${request.settingsPath} could not be read, so nothing would have ` +
-          "recorded this run's tool calls or stopped it when the conductor went away"
-        trace.note('codex', detail)
-        return {
-          exitCode: null,
-          turns: 0,
-          durationMs: Date.now() - started,
-          costUsd: null,
-          text: null,
-          failure: { kind: 'crash', detail },
-          sessionId: '',
-        }
-      }
+/**
+ * One run, as an Effect (#1023). Interrupting it does what aborting
+ * `request.signal` does, and the interruption completes only once the
+ * run's processes are gone: the cleanup waits on `finish`. The scans
+ * run on a `FiberSet` owned by the run's own scope.
+ */
+export const codexRun = Effect.fn('agent.run')(function* (options: CodexOptions, request: RunRequest) {
+  const binary = options.binary ?? 'codex'
+  const sandbox: CodexSandbox = options.sandbox ?? 'workspace-write'
+  const extraArgs = options.extraArgs ?? []
+  const stopProcesses = options.stopProcesses ?? stopRunProcesses
+  const spawnChild = options.spawn ?? spawn
+  const started = Date.now()
+  // A run with no log writes to the one that is not there, so there is no
+  // `?.` on the hot path (0034 §1).
+  const trace = request.log ?? NO_RUN_LOG
 
-      const writable = writableFor(sandbox, request.cwd)
-      const permissions = userPermissionsAt(request.env, request.cwd)
-      if (permissions.kind === 'kept' || permissions.kind === 'unreadable') {
-        trace.note('codex', `the user's Codex permission profile did not narrow this run: ${permissions.why}`)
-      } else if (permissions.kind === 'denies') {
-        const covered = denyCoveringRoot(permissions.paths, [...writable, request.cwd], request.env.HOME, request.cwd)
-        if (covered) {
-          const detail =
-            `the user's Codex permission profile denies ${covered.path}, which covers ${covered.root}; ` +
-            "Codex lets Lingtai's more specific write grant beat it, so the run is refused rather than launched exposed"
-          trace.note('codex', detail)
-          return {
-            exitCode: null,
-            turns: 0,
-            durationMs: Date.now() - started,
-            costUsd: null,
-            text: null,
-            failure: { kind: 'crash', detail },
-            sessionId: '',
-          }
-        }
-      }
+  const wiring = hookWiringAt(request.settingsPath)
+  if (wiring === null) {
+    // Before the spawn, and an event rather than a throw. A Codex run with
+    // no hook produces no events and looks exactly like one that produced
+    // all of them, which is the failure `smokeTestFailClosed` exists for one
+    // layer down.
+    const detail =
+      `the hook wiring at ${request.settingsPath} could not be read, so nothing would have ` +
+      "recorded this run's tool calls or stopped it when the conductor went away"
+    trace.note('codex', detail)
+    return {
+      exitCode: null,
+      turns: 0,
+      durationMs: Date.now() - started,
+      costUsd: null,
+      text: null,
+      failure: { kind: 'crash', detail },
+      sessionId: '',
+    } satisfies RunOutcome
+  }
 
-      // Written just ahead of the argv that names it, and removed in `finish`
-      // on every ending (`#369`). An agent that could overwrite its own answer
-      // schema has no schema, so this lives in `os.tmpdir()` rather than the
-      // worktree — `outputSchemaPathFor`'s reason.
-      const outputSchemaPath = request.outputSchema ? outputSchemaPathFor(request.runId) : undefined
-      if (outputSchemaPath) writeFileSync(outputSchemaPath, JSON.stringify(request.outputSchema))
+  const writable = writableFor(sandbox, request.cwd)
+  const permissions = userPermissionsAt(request.env, request.cwd)
+  if (permissions.kind === 'kept' || permissions.kind === 'unreadable') {
+    trace.note('codex', `the user's Codex permission profile did not narrow this run: ${permissions.why}`)
+  } else if (permissions.kind === 'denies') {
+    const covered = denyCoveringRoot(permissions.paths, [...writable, request.cwd], request.env.HOME, request.cwd)
+    if (covered) {
+      const detail =
+        `the user's Codex permission profile denies ${covered.path}, which covers ${covered.root}; ` +
+        "Codex lets Lingtai's more specific write grant beat it, so the run is refused rather than launched exposed"
+      trace.note('codex', detail)
+      return {
+        exitCode: null,
+        turns: 0,
+        durationMs: Date.now() - started,
+        costUsd: null,
+        text: null,
+        failure: { kind: 'crash', detail },
+        sessionId: '',
+      } satisfies RunOutcome
+    }
+  }
 
-      // What the entry says the model was. Never flows into the argv: it is
-      // recorded, not requested.
-      const recorded = request.model ? { model: request.model } : configModelFor(request.env, request.cwd, trace)
+  // Written just ahead of the argv that names it, and removed in `finish`
+  // on every ending (`#369`). An agent that could overwrite its own answer
+  // schema has no schema, so this lives in `os.tmpdir()` rather than the
+  // worktree — `outputSchemaPathFor`'s reason.
+  const outputSchemaPath = request.outputSchema ? outputSchemaPathFor(request.runId) : undefined
+  if (outputSchemaPath) writeFileSync(outputSchemaPath, JSON.stringify(request.outputSchema))
 
-      const args = codexArgv(request, request.prompt, {
-        settings: wiring,
-        sandbox,
-        writable,
-        outputSchemaPath,
-        extraArgs,
-        ...deniesOf(permissions),
-      })
+  // What the entry says the model was. Never flows into the argv: it is
+  // recorded, not requested.
+  const recorded = request.model ? { model: request.model } : configModelFor(request.env, request.cwd, trace)
 
-      return new Promise<RunOutcome>((resolve) => {
+  const args = codexArgv(request, request.prompt, {
+    settings: wiring,
+    sandbox,
+    writable,
+    outputSchemaPath,
+    extraArgs,
+    ...deniesOf(permissions),
+  })
+
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const runFork = yield* FiberSet.makeRuntime<never, void, never>()
+      return yield* Effect.callback<RunOutcome>((resume) => {
         const processMarker = randomUUID()
         const seen: Seen = new Map()
         const child = spawnChild(binary, args, {
@@ -1512,6 +1549,7 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         let stdoutTail = ''
         let stderr = ''
         let settled = false
+        let onSettled: (() => void) | undefined
         let stopped: RunOutcome | null = null
         let hard: ReturnType<typeof setTimeout> | null = null
 
@@ -1560,7 +1598,8 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
               // started — either way there is nothing left to clean up.
             }
           }
-          resolve(outcome)
+          resume(Effect.succeed(outcome))
+          onSettled?.()
         }
 
         const signalGroup = (signal: NodeJS.Signals) => {
@@ -1607,16 +1646,20 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             hard = null
             // A scan that could not complete is not a clean stop: say so,
             // rather than let the caller delete a checkout still in use.
-            stopProcesses(processMarker, seen).then(
-              () => finish(stopped!),
-              (error: unknown) =>
-                finish({
-                  ...stopped!,
-                  failure: {
-                    kind: 'crash',
-                    detail: `${stopped!.failure?.detail ?? 'stopped'}; process cleanup incomplete: ${(error as Error).message}`,
-                  },
+            runFork(
+              stopProcesses(processMarker, seen).pipe(
+                Effect.match({
+                  onSuccess: () => finish(stopped!),
+                  onFailure: (error) =>
+                    finish({
+                      ...stopped!,
+                      failure: {
+                        kind: 'crash',
+                        detail: `${stopped!.failure?.detail ?? 'stopped'}; process cleanup incomplete: ${error.message}`,
+                      },
+                    }),
                 }),
+              ),
             )
           }, 5_000)
         }
@@ -1651,22 +1694,34 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
           signalGroup('SIGKILL')
           // `close` scans again and decides the outcome; this one only has to
           // leave a trace if the scan itself fails.
-          stopProcesses(processMarker, seen).catch((error: unknown) =>
-            trace.note('cleanup', `process scan failed on exit: ${(error as Error).message}`),
+          runFork(
+            stopProcesses(processMarker, seen).pipe(
+              Effect.match({
+                onSuccess: () => undefined,
+                onFailure: (error) => trace.note('cleanup', `process scan failed on exit: ${error.message}`),
+              }),
+            ),
           )
         })
 
-        child.on('close', async (code) => {
+        child.on('close', (code) => {
           if (stopped !== null) return
           // A CLI that exited while a tool left a same-group subprocess behind
           // must not hand its checkout back with that subprocess still running.
           signalGroup('SIGKILL')
-          let cleanupFailure: string | null = null
-          try {
-            await stopProcesses(processMarker, seen)
-          } catch (error) {
-            cleanupFailure = (error as Error).message
-          }
+          // The scan, then the decision, in a fiber the run's scope owns.
+          runFork(
+            stopProcesses(processMarker, seen).pipe(
+              Effect.match({
+                onSuccess: (): string | null => null,
+                onFailure: (error): string | null => error.message,
+              }),
+              Effect.map((cleanupFailure) => decide(code, cleanupFailure)),
+            ),
+          )
+        })
+
+        const decide = (code: number | null, cleanupFailure: string | null) => {
           // The wall timer or an abort may have fired while the scan ran: its
           // outcome is the answer, and its hard stop is what publishes it.
           if (stopped !== null || settled) return
@@ -1716,8 +1771,23 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
             usage: codexUsage(receipt.tokens, recorded),
             ...(structured !== undefined ? { structured } : {}),
           })
+        }
+
+        // Interruption kills as an abort does, and waits for `finish`: every
+        // process of the run gone, or the scan's deadline.
+        return Effect.suspend(() => {
+          onAbort()
+          if (settled) return Effect.void
+          return Effect.callback<void>((done) => {
+            onSettled = () => done(Effect.void)
+          })
         })
       })
-    },
-  }
+    }),
+  )
+})
+
+/** The Effect above, as the promise `Runtime.run` still is (a listed face, #790). */
+export function runCodex(options: CodexOptions, request: RunRequest): Promise<RunOutcome> {
+  return Effect.runPromise(codexRun(options, request))
 }
