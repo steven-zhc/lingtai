@@ -232,6 +232,7 @@ describe("the bar's amber", () => {
       // The banner's rows and the Pause button (#994): held, never `--signal`.
       read('lock-banner.tsx'),
       read('pause-button.tsx'),
+      read('continue-today.tsx'),
       read('recipe/[project]/recipe-bar.tsx'),
     ]
     const names = new Set<string>()

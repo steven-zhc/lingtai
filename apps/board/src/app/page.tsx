@@ -2,7 +2,6 @@ import { inWords } from '@lingtai/conductor/queue'
 // The subpath, not the barrel: the board reads the control stream and hosts
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
 // behind it — the same reason the actions import `@lingtai/conductor/decide`.
-import { readControl } from '@lingtai/daemon/control'
 import type { Lock } from '@lingtai/domain'
 // Whether there is an App at all, which is where the bar's add-a-repository
 // lands: the picker once it exists, step 0 before. Read here and handed down
@@ -32,14 +31,13 @@ import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
 import { landedLink } from '@/lib/landed'
 import { everyPaused, lockMap, pausedNames } from '@/lib/lock-marks.ts'
-import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
+import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { elapsed } from '@/lib/progress'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { billHasAny, billText } from '@/lib/spend'
 import { measure, timed } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
-import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
 import { Bar } from './bar.tsx'
 // Both halves of the sequence, in the file the task page reads them from too
 // (#189): one rail, two surfaces, and never a copy.
@@ -638,7 +636,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   //
   // `registered` is the register, and only for the owners a ticket link is
   // built from: which projects the bar can offer is `loadBoard`'s answer and
-  // not this one. `readControl` is not caught — a control read that failed
+  // not this one. `readControlOnce` is not caught — a control read that failed
   // would render as "nothing is paused", which is the exact silence #77 is
   // about; and it reads the same database `loadBoard` reads, so it fails when
   // the board fails and not otherwise.
@@ -660,7 +658,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
       const [board, projects, control] = await Promise.all([
         loadBoard(param),
         timed('projects.read', () => readRegistered()).catch(() => []),
-        timed('events.control', async () => readControl(undefined, 0, { writer: await boardWriterOrNone() })),
+        timed('events.control', () => readControlOnce()),
       ])
       const [day, lags] = await Promise.all([
         timed('spend.day', () => readDayReading(), { failed: (r) => r.day === null }),
