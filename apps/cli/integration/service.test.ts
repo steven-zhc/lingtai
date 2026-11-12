@@ -53,12 +53,26 @@ const NODE = '/usr/bin/node'
 /** Where `boardPort`'s default puts it, and what `service` is told to look for. */
 const BOARD_URL = 'http://127.0.0.1:17820'
 
-/** A supervisor that answers by the first matching prefix, and remembers what it was asked. */
+/**
+ * A supervisor that answers by the first matching prefix, and remembers what it was asked.
+ *
+ * It refuses to be asked without end. The harness passes `sleep: async () => {}`, so
+ * a restart that waits for launchd to report the service gone, against a fake whose
+ * `launchctl print` always says `running`, asks until the heap is full and the worker
+ * dies — and a dead worker reports no file at all (#1036). Every fake that lets a
+ * restart through must answer *gone* after `bootout`; one that does not fails here,
+ * as one named test, in milliseconds.
+ */
 function supervisor(answers: [string, { status: number; out: string } | (() => { status: number; out: string })][]) {
   const calls: string[] = []
   const exec: Exec = (call) => {
     const line = call.join(' ')
     calls.push(line)
+    if (calls.length > 10_000) {
+      throw new Error(
+        `the supervisor was asked ${calls.length} times: an answer never changed — report the job gone after bootout`,
+      )
+    }
     const hit = answers.find(([prefix]) => line.startsWith(prefix))
     if (!hit) return { status: 0, out: '' }
     return typeof hit[1] === 'function' ? hit[1]() : hit[1]
@@ -394,8 +408,7 @@ describe('restart on macOS', () => {
     expect(s.calls).toEqual([])
     const said = err.join('\n')
     expect(said).toContain('a shutdown request stands — asked by steven (pick up #NN)')
-    expect(said).toContain('pnpm lingtai resume')
-    expect(said).toContain('a daemon started now would not read it')
+    expect(said).toContain('starting a conductor (lingtai daemon) ends it')
     expect(said).not.toContain('exits again')
     expect(out.join('\n')).not.toContain('shutdown "why"` first')
   })
@@ -426,38 +439,39 @@ describe('restart on macOS', () => {
     expect(err.join('\n')).toContain('a shutdown request stands — asked by steven (the database is moving)')
   })
 
-  it('restarts when whether a shutdown stands could not be read, and says what that would mean', async () => {
-    let prints = 0
-    const s = supervisor([
-      [
-        'launchctl print',
-        () =>
-          ++prints <= 1 ? { status: 0, out: '\tstate = running\n' } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: '' },
-      ],
-    ])
-    const { go, out } = command('darwin', s.exec, {
+  it('refuses when whether a shutdown stands could not be read, and starts nothing', async () => {
+    const s = supervisor([['launchctl print', { status: 0, out: '\tstate = running\n' }]])
+    const { go, err } = command('darwin', s.exec, {
       shutdown: async () => {
         throw new Error('connect ECONNREFUSED')
       },
     })
     await launchdFile()
-    expect(await go('restart')).toBe(0)
-    expect(s.calls.some((c) => c.startsWith('launchctl bootstrap'))).toBe(true)
-    expect(out.join('\n')).toContain('could not read whether a shutdown request stands — connect ECONNREFUSED')
+    expect(await go('restart')).toBe(1)
+    expect(s.calls).toEqual([])
+    expect(err.join('\n')).toContain('could not read whether a shutdown request stands — connect ECONNREFUSED')
   })
 
-  it('refuses a standing request under its own name too — lingtai restart and lingtai shutdown ask as human:$USER as well', async () => {
-    const s = supervisor([['launchctl print', { status: 0, out: '\tstate = running\n' }]])
+  it('adopts a standing request under its own name — lingtai restart asks as human:$USER, and this start ends it', async () => {
+    // The fake reports the job gone after bootout; a fixed `running` would make
+    // the restart wait for launchd until the heap was full (#1036).
+    let loaded = true
+    const s = supervisor([
+      [
+        'launchctl print',
+        () => (loaded ? { status: 0, out: '\tstate = running\n' } : { status: LAUNCHCTL_NO_SUCH_SERVICE, out: '' }),
+      ],
+      ['launchctl bootout', () => ((loaded = false), { status: 0, out: '' })],
+    ])
     const d = quietDrain()
-    const { go, err } = command('darwin', s.exec, {
+    const { go, out } = command('darwin', s.exec, {
       drain: d.drain,
       shutdown: async () => ({ by: 'human:lingtai', reason: 'restarting: deploy' }),
     })
     await launchdFile()
-    expect(await go('restart')).toBe(1)
-    expect(s.calls).toEqual([])
-    expect(d.said).toEqual([])
-    expect(err.join('\n')).toContain('a shutdown request stands — asked by human:lingtai (restarting: deploy)')
+    expect(await go('restart')).toBe(0)
+    expect(out.join('\n')).toContain('your drain stands (restarting: deploy); this start ends it')
+    expect(s.calls.some((c) => c.startsWith('launchctl bootstrap'))).toBe(true)
   })
 })
 
@@ -771,21 +785,30 @@ describe('shutdown', () => {
     expect(err.join('\n')).toContain('a job nothing can name')
   })
 
-  it("refuses a request already standing — anybody's, its own name included — and stops nothing", async () => {
-    for (const by of ['human:ops', 'human:lingtai']) {
-      const w = world(2)
-      await requestShutdownUnlessStanding(by, 'migrating the database', null, w.store)
-      const { go, err } = command('darwin', w.s.exec, { drain: w.drain })
-      await launchdFile()
-      expect(await go('shutdown')).toBe(1)
-      expect(w.s.calls.some((c) => c.startsWith('launchctl bootout'))).toBe(false)
-      expect((await readControl(w.store)).shutdown?.by).toBe(by)
-      expect(w.lock.holder).toBe('daemon 1')
-      expect(w.lock.queue).toEqual([])
-      expect(err.join('\n')).toContain(
-        `a shutdown asked by ${by} (migrating the database) is already standing. Nothing was stopped`,
-      )
-    }
+  it("refuses a request already standing under somebody else's name, and stops nothing", async () => {
+    const by = 'human:ops'
+    const w = world(2)
+    await requestShutdownUnlessStanding(by, 'migrating the database', null, w.store)
+    const { go, err } = command('darwin', w.s.exec, { drain: w.drain })
+    await launchdFile()
+    expect(await go('shutdown')).toBe(1)
+    expect(w.s.calls.some((c) => c.startsWith('launchctl bootout'))).toBe(false)
+    expect((await readControl(w.store)).shutdown?.by).toBe(by)
+    expect(w.lock.holder).toBe('daemon 1')
+    expect(w.lock.queue).toEqual([])
+    expect(err.join('\n')).toContain(
+      `a shutdown asked by ${by} (migrating the database) is already standing. Nothing was stopped`,
+    )
+  })
+
+  it('adopts a request already standing under its own name, and waits on it', async () => {
+    const w = world(2)
+    await requestShutdownUnlessStanding('human:lingtai', 'migrating the database', null, w.store)
+    const { go, out } = command('darwin', w.s.exec, { drain: w.drain })
+    await launchdFile()
+    expect(await go('shutdown')).toBe(0)
+    expect(out.join('\n')).toContain('a shutdown you asked for is already standing (migrating the database)')
+    expect((await readControl(w.store)).shutdown?.by).toBe('human:lingtai')
   })
 
   it("does not say nothing was stopped when a request landing during restart's wait refuses the start after the unload", async () => {
@@ -986,7 +1009,7 @@ describe('start on Linux', () => {
     await writeFile(join(home, '.config/systemd/user/lingtai.service'), '')
     expect(await go('start')).toBe(1)
     expect(s.calls).toEqual([])
-    expect(err.join('\n')).toContain('pnpm lingtai resume')
+    expect(err.join('\n')).toContain('starting a conductor (lingtai daemon) ends it')
   })
 })
 
@@ -1764,12 +1787,12 @@ describe('two jobs', () => {
   it("start over a standing shutdown request starts no board job either, and its exit is the conductor's 1", async () => {
     const s = supervisor([['launchctl print', { status: LAUNCHCTL_NO_SUCH_SERVICE, out: 'Could not find service' }]])
     const { go, out, err, boardCalls } = command('darwin', s.exec, {
-      shutdown: async () => ({ by: 'human:lingtai', reason: 'moving the database' }),
+      shutdown: async () => ({ by: 'steven', reason: 'moving the database' }),
     })
     await launchdFile()
     await writeFile(BOARD_PLIST(), '')
     expect(await go('start')).toBe(1)
-    expect(err.join('\n')).toContain('a shutdown request stands — asked by human:lingtai (moving the database)')
+    expect(err.join('\n')).toContain('a shutdown request stands — asked by steven (moving the database)')
     expect(err.join('\n')).toContain('Nothing was started or stopped.')
     // Neither job was bootstrapped, and the supervisor was not even asked about
     // the board's — the sentence above is the whole of what happened.
