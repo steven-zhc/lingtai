@@ -15,7 +15,7 @@ import { promisify } from 'node:util'
  * this fix.
  */
 import { WIP_COMMIT_PREFIX } from '@lingtai/domain'
-import { Result } from 'effect'
+import { Effect, Result } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { commitWipExceptPlanted, type GitHere, keptRunPort, restoreAfterReview } from '../src/kept-run-port.ts'
@@ -25,14 +25,15 @@ const PLANT = '.env.local'
 const MESSAGE = `${WIP_COMMIT_PREFIX}test stopped by out-of-turns`
 
 function gitHere(cwd: string): GitHere {
-  return async (args) => {
-    try {
-      const { stdout } = await exec('git', args, { cwd })
-      return Result.succeed(stdout.trim())
-    } catch (error) {
-      return Result.fail({ detail: (error as Error).message })
-    }
-  }
+  return (args) =>
+    Effect.promise(async () => {
+      try {
+        const { stdout } = await exec('git', args, { cwd })
+        return Result.succeed(stdout.trim())
+      } catch (error) {
+        return Result.fail({ detail: (error as Error).message })
+      }
+    })
 }
 
 /**
@@ -82,7 +83,7 @@ describe('commitWipExceptPlanted, against a real git repository', () => {
     await writeFile(join(dir, 'a.txt'), 'x\n')
     await writeFile(join(dir, PLANT), 's\n')
 
-    const result = await commitWipExceptPlanted(gitHere(dir), PLANT, MESSAGE)
+    const result = await Effect.runPromise(commitWipExceptPlanted(gitHere(dir), PLANT, MESSAGE))
     expect(result).toEqual({ ok: true })
     expect(await filesInHead(dir)).toEqual(['a.txt'])
     expect(await subjectOf(dir)).toBe(MESSAGE)
@@ -95,7 +96,7 @@ describe('commitWipExceptPlanted, against a real git repository', () => {
     await writeFile(join(dir, PLANT), 's\n')
     await exec('git', ['-C', dir, 'add', PLANT, 'a.txt'])
 
-    const result = await commitWipExceptPlanted(gitHere(dir), PLANT, MESSAGE)
+    const result = await Effect.runPromise(commitWipExceptPlanted(gitHere(dir), PLANT, MESSAGE))
     expect(result).toEqual({ ok: true })
     expect(await filesInHead(dir)).toEqual(['a.txt'])
   })
@@ -115,14 +116,14 @@ describe('keptRunPort.keep, against a real git repository', () => {
       git: gitHere(dir),
       plantAt: PLANT,
       issue: '470',
-      recordCompletion: async () => {},
+      recordCompletion: () => Effect.void,
     })
-    const result = await port.keep('format')
+    const result = await Effect.runPromise(port.keep('format'))
     expect('committed' in result).toBe(true)
     expect(await filesInHead(dir)).toEqual(['a.txt'])
 
     await writeFile(join(dir, PLANT), 'changed again\n')
-    const second = await port.keep('format')
+    const second = await Effect.runPromise(port.keep('format'))
     expect(second).toEqual({ nothing: true })
   })
 })
@@ -144,7 +145,7 @@ describe('restoreAfterReview, against a real git repository (#587)', () => {
     await writeFile(join(dir, 'README.md'), 'edited again\n')
     await writeFile(join(dir, 'scratch.md'), 'x\n')
 
-    const answer = await restoreAfterReview({ git: gitHere(dir), plantAt: PLANT })(onSha)
+    const answer = await Effect.runPromise(restoreAfterReview({ git: gitHere(dir), plantAt: PLANT })(onSha))
 
     expect(answer).toMatchObject({ restored: expect.stringContaining('scratch.md') })
     expect(await headOf(dir)).toBe(onSha)
@@ -163,7 +164,7 @@ describe('restoreAfterReview, against a real git repository (#587)', () => {
     await exec('git', ['-C', dir, 'add', '-A'])
     await exec('git', ['-C', dir, 'commit', '-q', '-m', 'the reviewer committed the planted file'])
 
-    const answer = await restoreAfterReview({ git: gitHere(dir), plantAt: PLANT })(onSha)
+    const answer = await Effect.runPromise(restoreAfterReview({ git: gitHere(dir), plantAt: PLANT })(onSha))
 
     expect(answer).toMatchObject({ restored: expect.any(String) })
     expect(await headOf(dir)).toBe(onSha)
@@ -179,6 +180,8 @@ describe('restoreAfterReview, against a real git repository (#587)', () => {
     await exec('git', ['-C', dir, 'checkout', '-q', '--detach'])
     await writeFile(join(dir, PLANT), 's\n')
 
-    expect(await restoreAfterReview({ git: gitHere(dir), plantAt: PLANT })(onSha)).toEqual({ untouched: true })
+    expect(await Effect.runPromise(restoreAfterReview({ git: gitHere(dir), plantAt: PLANT })(onSha))).toEqual({
+      untouched: true,
+    })
   })
 })

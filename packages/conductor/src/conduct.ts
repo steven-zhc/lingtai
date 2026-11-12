@@ -17,7 +17,6 @@ import {
   type WorkPortDeps,
   actionPortsFromRecipe,
   dispatchRuntime,
-  keptRunPortDepsFrom,
   makeHumanAction,
   makeMergeAction,
   makeQueueAction,
@@ -1860,12 +1859,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           : gitHere(args)
         return Effect.result(retry ? retryUnreachable(once, retry) : once)
       }
-      /** …as a promise, for `kept-run-port.ts` alone (CONDUCT-5). */
-      const gitAsked = (
-        args: string[],
-        retry?: readonly Duration.Input[],
-        recover?: (err: RepoFailed) => Effect.Effect<string, RepoFailed>,
-      ) => Effect.runPromise(gitAskedEffect(args, retry, recover))
       /**
        * …for a command that writes the mirror's refs or worktree metadata,
        * which a worktree shares with it: one at a time per mirror, for that
@@ -1980,7 +1973,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /** `refs/lingtai/unpushed/<n>/<runId>` — the mirror ref a refused push's head is kept at. */
       const keptRef = `refs/lingtai/unpushed/${options.issue}/${runId}`
       /**
-       * Writes `head` to `keptRef` in the mirror — `gitAsked` runs in the
+       * Writes `head` to `keptRef` in the mirror — `gitAskedEffect` runs in the
        * worktree, which shares the mirror's refs (`worktree.ts:187`) — and
        * records it as `kept`. Never throws (`noteRefs`' own reason, below):
        * the publish has to finish whether or not the ref lands.
@@ -2147,7 +2140,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * asks.
        *
        * Every git call here is asked rather than died on
-       * (`gitAsked`, not `gitOrDie`): a failed WIP must never cost the publish
+       * (`gitAskedEffect`, not `gitOrDie`): a failed WIP must never cost the publish
        * of the real commits below it, which is `noteRefs`' own rule read for
        * this row.
        */
@@ -2188,16 +2181,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const stopper = stoppedBy
           const kept = yield* Effect.uninterruptible(
             Effect.gen(function* () {
-              const made = yield* Effect.promise(() =>
-                commitWipExceptPlanted(
-                  gitAsked,
-                  recipe.env.plantAt,
-                  // `runId` is always `attemptStream`'s (its one constructor, above),
-                  // which `WIP_COMMIT_PREFIX` already carries — `attemptIdOf` strips it
-                  // back off here so the message reads `wip: run-<uuid> stopped by …`
-                  // rather than doubling it.
-                  `${WIP_COMMIT_PREFIX}${attemptIdOf(runId)} stopped by ${stopper}`,
-                ),
+              const made = yield* commitWipExceptPlanted(
+                gitAskedEffect,
+                recipe.env.plantAt,
+                // `runId` is always `attemptStream`'s (its one constructor, above),
+                // which `WIP_COMMIT_PREFIX` already carries — `attemptIdOf` strips it
+                // back off here so the message reads `wip: run-<uuid> stopped by …`
+                // rather than doubling it.
+                `${WIP_COMMIT_PREFIX}${attemptIdOf(runId)} stopped by ${stopper}`,
               )
               if (!('failed' in made)) wipParent = { parent: parent.success, stoppedBy: stopper }
               return made
@@ -3508,24 +3499,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `task_view.head_sha` names this commit, and `RunProposedCompletion` so a
        * later attempt's `headOf` reads the same head.
        */
-      // `kept-run-port.ts` is CONDUCT-5's and still hands back a promise, so its one call into an Effect
-      // here carries the pass's own services into a run of its own.
-      const detachedRecord = Effect.runPromiseWith(yield* Effect.context())
-      const restoreReview = restoreAfterReview({ git: gitAsked, plantAt: recipe.env.plantAt })
+      const restoreReview = restoreAfterReview({ git: gitAskedEffect, plantAt: recipe.env.plantAt })
       const { clean, keep: keepRun } = keptRunPort({
-        git: gitAsked,
+        git: gitAskedEffect,
         plantAt: recipe.env.plantAt,
         issue: String(options.issue),
-        recordCompletion: async (head) => {
-          await detachedRecord(recordDiff(branch, head))
-          await appendNow(runId, [
-            {
-              type: 'RunProposedCompletion',
-              actor: 'conductor',
-              data: parsePayload('RunProposedCompletion', { headSha: head }),
-            },
-          ])
-        },
+        recordCompletion: (head) =>
+          Effect.gen(function* () {
+            yield* recordDiff(branch, head)
+            yield* Effect.promise(() =>
+              appendNow(runId, [
+                {
+                  type: 'RunProposedCompletion',
+                  actor: 'conductor',
+                  data: parsePayload('RunProposedCompletion', { headSha: head }),
+                },
+              ]),
+            )
+          }),
       })
 
       /**
@@ -3612,7 +3603,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 }),
               { concurrency: 'unbounded' },
             ),
-          restore: (onSha: string) => Effect.promise(() => restoreReview(onSha)),
+          restore: restoreReview,
           // A getter, because `admit` is what writes it: `createAgentAction` and
           // `createDraftAction` read `deps.settingsPath` when the action *runs*,
           // which is at `design`, `review`, `proposed` or `merge` — so always
@@ -3688,7 +3679,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // what failed or passed — see `clean` and `keepRun` above for why
         // neither reads the tree before acting on it. No `defaultsAt` row,
         // because an unconfigured `implement` runs no command at all.
-        keptRun: keptRunPortDepsFrom({ clean, keep: keepRun }),
+        keptRun: { clean, keep: keepRun },
       }
 
       /**
