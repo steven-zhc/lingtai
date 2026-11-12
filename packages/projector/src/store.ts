@@ -77,7 +77,7 @@ export class CheckpointRewoundError extends Error {
  * **It lives here rather than in `shape.ts` because the twins have to raise
  * it.** `shape.ts` reaches a store through `choose.ts`, which names
  * `postgres.ts`; a read path importing it from there would make `sqlite.ts`
- * load `pg`. This file imports nothing at runtime, so both twins can. The
+ * load `pg`. This file imports only `effect` at runtime, never `pg`, so both twins can. The
  * names are still exported from `shape.ts`, where every reader of them looks.
  */
 export class ProjectionShapeError extends Error {

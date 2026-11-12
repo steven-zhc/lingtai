@@ -268,28 +268,42 @@ export function makePostgresProjections(options: PostgresProjectionStoreOptions 
 
   return {
     transact: <A, E>(fn: (ctx: ProjectionContextPort) => Effect.Effect<A, E>) =>
-      Effect.acquireUseRelease(
-        Effect.promise(() => pool.connect()),
-        (client) =>
-          Effect.gen(function* () {
-            yield* Effect.promise(() => client.query('begin'))
-            const result = yield* fn(ctxFor(client))
-            yield* Effect.promise(() => client.query('commit'))
-            return result
-          }),
-        (client, exit) =>
-          (Exit.isSuccess(exit)
-            ? Effect.void
-            : Effect.promise(() =>
-                client.query('rollback').then(
-                  () => undefined,
-                  () => {
-                    // The connection is already gone; the transaction died with it.
-                  },
+      Effect.suspend(() => {
+        // Set once COMMIT has been acknowledged: a rollback after that would run
+        // outside any transaction.
+        let committed = false
+        return Effect.acquireUseRelease(
+          Effect.promise(() => pool.connect()),
+          (client) =>
+            Effect.gen(function* () {
+              yield* Effect.promise(() => client.query('begin'))
+              const result = yield* fn(ctxFor(client))
+              // Uninterruptible: an interruption waits for the commit's
+              // acknowledgment rather than abandoning it and queueing a ROLLBACK
+              // behind a COMMIT that has already been dispatched.
+              yield* Effect.uninterruptible(
+                Effect.promise(() =>
+                  client.query('commit').then(() => {
+                    committed = true
+                  }),
                 ),
               )
-          ).pipe(Effect.ensuring(Effect.sync(() => client.release()))),
-      ).pipe(Effect.withSpan('Projections.transact')),
+              return result
+            }),
+          (client, exit) =>
+            (Exit.isSuccess(exit) || committed
+              ? Effect.void
+              : Effect.promise(() =>
+                  client.query('rollback').then(
+                    () => undefined,
+                    () => {
+                      // The connection is already gone; the transaction died with it.
+                    },
+                  ),
+                )
+            ).pipe(Effect.ensuring(Effect.sync(() => client.release()))),
+        )
+      }).pipe(Effect.withSpan('Projections.transact')),
 
     checkpoint: Effect.fn('Projections.checkpoint')(function* (name: string) {
       const r = yield* rows('select last_seq::text as last_seq from checkpoints where name = $1', [name])

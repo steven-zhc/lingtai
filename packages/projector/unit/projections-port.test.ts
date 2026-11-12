@@ -59,6 +59,7 @@ describe('Projections over SQLite', () => {
     // The face over the very port interrupted, so one permit is what is checked.
     const store = promiseProjectionStore(port)
     await store.transact((ctx) => ctx.query(ddl))
+    let finalised = false
     const run = Effect.gen(function* () {
       const started = yield* Deferred.make<void>()
       const fiber = yield* Effect.forkChild(
@@ -68,7 +69,14 @@ describe('Projections over SQLite', () => {
             yield* Deferred.succeed(started, undefined)
             yield* Effect.never.pipe(
               // A finalizer that is asynchronous still runs inside the transaction.
-              Effect.ensuring(Effect.andThen(Effect.sleep(20), ctx.query('insert into t values (5)'))),
+              Effect.ensuring(
+                Effect.andThen(
+                  Effect.andThen(Effect.sleep(20), ctx.query('insert into t values (5)')),
+                  Effect.sync(() => {
+                    finalised = true
+                  }),
+                ),
+              ),
             )
           }),
         ),
@@ -78,6 +86,8 @@ describe('Projections over SQLite', () => {
     })
     const exit = await Effect.runPromise(Effect.exit(run))
     expect(Exit.isSuccess(exit)).toBe(true)
+    // The interrupt waited for the callback's asynchronous finalizer, which wrote row 5.
+    expect(finalised).toBe(true)
     await store.transact((ctx) => ctx.query('insert into t values (4)'))
     expect(await store.transact((ctx) => ctx.query<{ id: number }>('select id from t'))).toEqual([{ id: 4 }]) // rows 3 and 5 are gone
   })
