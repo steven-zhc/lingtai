@@ -270,6 +270,15 @@ function deferredWakerPort(open: Effect.Effect<WakerPort>): WakerPort {
 }
 
 /**
+ * The process's waker as Effects: its session opens once the log has, and a
+ * machine that chose nothing is refused as a defect, as for `processEvents`.
+ * `name` is the poll's label, as for `Log.waker`.
+ */
+export function processWaker(name?: string): WakerPort {
+  return deferredWakerPort(Effect.map(process_.get(), (o) => o.wake(name)))
+}
+
+/**
  * The whole log, deferred: the store, the questions and the waker (#221).
  *
  * `store`, `queries` and `snapshots` are the process's, read through
@@ -281,6 +290,6 @@ export function deferredLog(): Log {
     store: promiseStore(deferredEvents(processEvents)),
     queries: promiseQueries(deferredQueries(processQueries)),
     snapshots: promiseSnapshots(deferredSnapshotsPort(processSnapshots)),
-    waker: (name) => promiseWaker(deferredWakerPort(Effect.map(process_.get(), (o) => o.wake(name)))),
+    waker: (name) => promiseWaker(processWaker(name)),
   }
 }

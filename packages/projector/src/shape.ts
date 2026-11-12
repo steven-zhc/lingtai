@@ -35,7 +35,7 @@ import { Effect } from 'effect'
 
 import { withStoreEffect } from './choose.ts'
 import { describeDrift } from './store.ts'
-import type { Projection, ProjectionContextPort, ProjectionDrift, ProjectionsPort, ProjectionStore } from './store.ts'
+import type { Projection, ProjectionContextPort, ProjectionDrift, ProjectionsPort } from './store.ts'
 
 /**
  * Drift — what it is, how it is said, and the error that carries it — is
@@ -207,11 +207,6 @@ export function shapeIn(
     }
     return { projection: projection.name, matched, absent, drift }
   })
-}
-
-/** `shapeIn` over a promise store, for the promise runner (`projection.ts`) until the runner ticket. */
-export function shapeInFace(projection: Projection, store: ProjectionStore) {
-  return Effect.runPromise(shapeIn(projection, { columnsOf: (t) => Effect.promise(() => store.columnsOf(t)) }))
 }
 
 /**

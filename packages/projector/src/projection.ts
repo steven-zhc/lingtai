@@ -24,23 +24,32 @@
  * selected.
  */
 import type { Envelope } from '@lingtai/domain'
+import {
+  closableOnceEffect,
+  type EventsPort,
+  follow,
+  fromPromiseStore,
+  fromPromiseWaker,
+  processEvents,
+  processWaker,
+} from '@lingtai/event-store'
 import type { Log } from '@lingtai/event-store/log'
-// The two submodules rather than the barrel, and that is #157's argument one
-// package over: importing `@lingtai/event-store` used to construct the
-// process-wide client as a side effect, so a runner handed both a log and a
-// projection store would still have needed a Postgres to exist. #179 made that
-// client lazy, and the split stays for the reason it was made: `subscribe` and
-// `wake` build nothing at import, and the process-wide log is reached for only
-// when nobody supplied one.
 import type { EventStore } from '@lingtai/event-store/store'
-import { type Subscription, subscribe } from '@lingtai/event-store/subscribe'
-import type { Waker } from '@lingtai/event-store/wake'
-import { Effect } from 'effect'
+import type { FollowCell } from '@lingtai/event-store/subscribe'
+import type { Waker, WakerPort } from '@lingtai/event-store/wake'
+import { Deferred, Effect, Exit, Scope } from 'effect'
 
-import { projectionStore, withStoreEffect } from './choose.ts'
-import { ProjectionShapeError, type ProjectionShape, shapeInFace } from './shape.ts'
-import { createFace, reduceFace, resetFace } from './store-face.ts'
-import type { Projection, ProjectionContext, ProjectionLag, ProjectionStore } from './store.ts'
+import { openProjections, withStoreEffect } from './choose.ts'
+import {
+  runnerCloseFace,
+  runnerLagFace,
+  runnerRebuildFace,
+  runnerShapeFace,
+  runnerStartFace,
+  runnerStopFace,
+} from './runner-face.ts'
+import { ProjectionShapeError, type ProjectionShape, shapeIn } from './shape.ts'
+import type { Projection, ProjectionLag, ProjectionsPort } from './store.ts'
 
 export type { Projection, ProjectionContext, ProjectionLag, ProjectionStore } from './store.ts'
 
@@ -113,7 +122,7 @@ export interface ProjectionRunnerOptions {
    * built and leaves one it was handed, for the reason a pool passed in is the
    * caller's to end.
    */
-  into?: ProjectionStore
+  into?: ProjectionsPort
   /**
    * A Postgres connection for the store this machine chose, **refining it and
    * never replacing it** — see `ProjectionStoreOptions.url`. Ignored where the
@@ -130,165 +139,241 @@ export interface ProjectionRunnerOptions {
   onError?: (error: unknown, phase: 'connection' | 'handler') => void
 }
 
-export function createProjectionRunner(options: ProjectionRunnerOptions): ProjectionRunner {
-  const { projection } = options
-  const mine = options.into === undefined
+/**
+ * The runner as Effects: what `makeRunner` builds and the promise
+ * `ProjectionRunner` is a face over (0101 §7, #1051). A caller that has moved
+ * holds this and not the promise one, so a batch has the parent fiber, span and
+ * interruption of whatever started it.
+ */
+export interface ProjectionRunnerPort<R = never> {
+  readonly name: string
+  readonly failure: unknown
+  readonly running: boolean
   /**
-   * Where the reducer lands: the caller's store, or the one this machine wrote
-   * down — **opened at first use and not at construction**.
-   *
-   * Lazily because reading the choice is asynchronous (`choose.ts` reaches the
-   * SQLite half through a dynamic import) and a runner is built synchronously.
-   * Nothing opened at construction before this either: the pool it used to
-   * build connected on its first query.
+   * Fails with `ProjectionShapeError` on drift, and with the stop if the first
+   * batch poisons. The `follow` fiber is owned by the fiber that ran `start`,
+   * so interrupting that fiber stops it.
    */
-  let opened: Promise<ProjectionStore> | null = options.into === undefined ? null : Promise.resolve(options.into)
-  const landing = (): Promise<ProjectionStore> =>
-    (opened ??= projectionStore(options.url === undefined ? {} : { url: options.url }))
+  start(): Effect.Effect<void, unknown, R>
+  stop(): Effect.Effect<void>
+  rebuild(): Effect.Effect<void, unknown, R>
+  lag(): Effect.Effect<ProjectionLag>
+  shape(): Effect.Effect<ProjectionShape>
+  close(): Effect.Effect<void>
+}
 
-  let subscription: Subscription | null = null
-  let failure: unknown = null
-
+/**
+ * One mutable record rather than `Ref`s: `failure` and `running` are read
+ * synchronously by the daemon (`daemon.ts`), as `FollowCell` is read by
+ * `follow`'s own callers.
+ */
+interface RunnerState {
+  failure: unknown
   /** Where this runner's follow began, then the last batch it committed: the fence for `advance`. */
-  let cursor = 0n
+  cursor: bigint
+  cell: FollowCell | null
+  /** What owns the `follow` fiber. `stop` closes it. */
+  scope: Scope.Closeable | null
+}
 
-  async function commitBatch(events: readonly Envelope[]): Promise<void> {
+export function makeRunner(
+  options: ProjectionRunnerOptions,
+  { detached = false }: { detached?: boolean } = {},
+): ProjectionRunnerPort {
+  const { projection } = options
+  const state: RunnerState = { failure: null, cursor: 0n, cell: null, scope: null }
+
+  /**
+   * Where the reducer lands: the caller's port, or the one this machine wrote
+   * down — **opened at first use and not at construction** (#179), and closed
+   * by `close()` only if this runner opened it. Racing first callers open once.
+   */
+  const mine =
+    options.into === undefined
+      ? closableOnceEffect(
+          openProjections(options.url === undefined ? {} : { url: options.url }),
+          (p) => p.close(),
+          () => new Error(`the projection runner for ${projection.name} was closed`),
+        )
+      : null
+  const landing: Effect.Effect<ProjectionsPort> = mine ? mine.get() : Effect.succeed(options.into!)
+
+  const commitBatch = Effect.fn('projector.commitBatch')(function* (events: readonly Envelope[]) {
     const last = events[events.length - 1]
     if (!last) return
-    const store = await landing()
-    await store.transact(async (ctx: ProjectionContext) => {
-      await reduceFace(projection, events, ctx)
-      // The whole point: this is not a separate write. Fenced on `cursor`, so a
-      // rebuild in any process that rewound the checkpoint refuses this batch
-      // rather than have it carried to the head past unfolded history.
-      await store.advance(ctx, projection.name, last.seq, cursor)
-    })
-    cursor = last.seq
-  }
+    const p = yield* landing
+    // The whole point: the advance is not a separate write. Fenced on `cursor`,
+    // so a rebuild in any process that rewound the checkpoint refuses this batch
+    // rather than have it carried to the head past unfolded history.
+    yield* p.transact((ctx) =>
+      Effect.gen(function* () {
+        yield* projection.reduce(events, ctx)
+        yield* p.advance(ctx, projection.name, last.seq, state.cursor)
+      }),
+    )
+    state.cursor = last.seq
+  })
 
-  /**
-   * The batches this follow has in flight. A nudge-triggered drain runs beside
-   * `start()` and `close()` and neither waits for it, so `stop()` stops taking
-   * new ones and waits for these: a stopped runner has committed everything it will.
-   */
-  let pending: { open: boolean; inflight: Set<Promise<void>> } | null = null
+  // The store and the waker come off one log unless the caller named them, and
+  // the process's own is reached for only if one is missing (`#157`). A port the
+  // caller passed as a promise is lifted; the process's own never is.
+  const eventsPort: Effect.Effect<EventsPort> =
+    options.store !== undefined
+      ? Effect.succeed(fromPromiseStore(options.store))
+      : options.log !== undefined
+        ? Effect.succeed(fromPromiseStore(options.log.store))
+        : processEvents
+  const wakerPort: WakerPort =
+    options.waker !== undefined
+      ? fromPromiseWaker(options.waker)
+      : options.log !== undefined
+        ? fromPromiseWaker(options.log.waker(`lingtai-projection-${projection.name}`))
+        : processWaker(`lingtai-projection-${projection.name}`)
 
-  async function follow(): Promise<void> {
-    const mine = { open: true, inflight: new Set<Promise<void>>() }
-    pending = mine
-    const guarded = (events: readonly Envelope[]): Promise<void> => {
-      if (!mine.open) return Promise.resolve()
-      const commit = commitBatch(events)
-      mine.inflight.add(commit)
-      return commit.finally(() => mine.inflight.delete(commit))
-    }
+  const startFollowing = Effect.gen(function* () {
+    const p = yield* landing
+    const events = yield* eventsPort
+    const fromSeq = yield* p.checkpoint(projection.name)
+    state.cursor = fromSeq
 
-    // The store and the waker come off one log unless the caller named them,
-    // and the log is reached for only if one of them is missing — so a runner
-    // handed both still opens no client (`#157`).
-    let store = options.store
-    let waker = options.waker
-    if (store === undefined || waker === undefined) {
-      const from: Log = options.log ?? (await import('@lingtai/event-store')).log
-      store ??= from.store
-      waker ??= from.waker(`lingtai-projection-${projection.name}`)
-    }
-
-    const fromSeq = await (await landing()).checkpoint(projection.name)
-    cursor = fromSeq
-    const sub = subscribe({
-      fromSeq,
-      store,
-      waker,
-      onBatch: guarded,
-      batchSize: options.batchSize ?? 500,
-      onError: (error, phase) => {
-        if (phase === 'handler') failure = error
-        options.onError?.(error, phase)
+    const caughtUp = Deferred.makeUnsafe<void, unknown>()
+    const cell: FollowCell = {
+      lastSeq: fromSeq,
+      stopped: false,
+      caughtUp: {
+        resolve: () => Deferred.doneUnsafe(caughtUp, Effect.void),
+        reject: (error) => Deferred.doneUnsafe(caughtUp, Effect.fail(error)),
       },
-    })
-    subscription = sub
-    await sub.caughtUp()
-  }
+    }
+    // A scope of the runner's own. Unless the caller is a promise face, which
+    // has no fiber to outlive, the fiber that started the runner owns it: a
+    // child watcher closes it when that fiber ends, whatever scope it ran in.
+    const scope = Scope.makeUnsafe()
+    state.cell = cell
+    state.scope = scope
+    yield* Effect.forkIn(
+      follow(
+        {
+          fromSeq,
+          events,
+          waker: wakerPort,
+          onBatch: commitBatch,
+          batchSize: options.batchSize ?? 500,
+          onError: (error, phase) => {
+            if (phase === 'handler') state.failure = error
+            options.onError?.(error, phase)
+          },
+        },
+        cell,
+      ),
+      scope,
+    )
+    if (!detached) yield* Effect.forkChild(Effect.never.pipe(Effect.ensuring(Scope.close(scope, Exit.void))))
+    // A start that never caught up leaves no fiber behind.
+    yield* Deferred.await(caughtUp).pipe(
+      Effect.onError(() =>
+        Effect.suspend(() => {
+          if (state.scope === scope) state.scope = null
+          return Scope.close(scope, Exit.void)
+        }),
+      ),
+    )
+  })
 
-  return {
-    name: projection.name,
+  const stop = Effect.suspend(() => {
+    const scope = state.scope
+    state.scope = null
+    // Interrupts `follow` once the batch in flight has committed (#860).
+    return scope ? Scope.close(scope, Exit.void) : Effect.void
+  })
 
-    get failure() {
-      return failure
-    },
-    get running() {
-      return subscription !== null && !subscription.stopped
-    },
+  const shape = Effect.flatMap(landing, (p) => shapeIn(projection, p))
 
-    async start() {
-      failure = null
-      const store = await landing()
-      await store.transact(async (ctx) => {
-        await createFace(projection, ctx)
-        await store.register(ctx, projection.name)
-      })
+  const start = Effect.fn('projector.start')(function* () {
+    state.failure = null
+    const p = yield* landing
+    yield* p.transact((ctx) =>
+      Effect.gen(function* () {
+        yield* projection.create(ctx)
+        yield* p.register(ctx, projection.name)
+      }),
+    )
 
-      // After `create`, so a fresh database has just been given the current
-      // shape and cannot be reported as drifted; before `follow`, because the
-      // alternative is what #90 records — the projection follows happily until
-      // the first event that needs the column that is not there, and then the
-      // handler throws and takes the daemon with it, hours later and with a run
-      // in flight. Refusing here costs the same board and no orphan.
-      const shape = await this.shape()
-      if (shape.drift.length > 0) throw new ProjectionShapeError(projection.name, shape.drift)
+    // After `create`, so a fresh database has just been given the current
+    // shape and cannot be reported as drifted; before `follow`, because the
+    // alternative is what #90 records — the projection follows happily until
+    // the first event that needs the column that is not there, and then the
+    // handler dies and takes the daemon with it, hours later and with a run
+    // in flight. Refusing here costs the same board and no orphan.
+    const drifted = yield* shape
+    if (drifted.drift.length > 0) return yield* Effect.fail(new ProjectionShapeError(projection.name, drifted.drift))
 
-      await follow()
-    },
+    yield* startFollowing
+  })
 
-    async stop() {
-      const sub = subscription
-      const mine = pending
-      subscription = null
-      pending = null
-      if (mine) mine.open = false
-      await sub?.close()
-      if (mine) await Promise.allSettled(mine.inflight)
-    },
-
-    async rebuild() {
-      // Stop first. A runner still applying events into a table being dropped
-      // would produce a result that depends on timing, which is the one thing a
-      // rebuild must not do.
-      await this.stop()
-
-      const store = await landing()
-      await store.transact(async (ctx) => {
+  const rebuild = Effect.fn('projector.rebuild')(function* () {
+    // Stop first. A runner still applying events into a table being dropped
+    // would produce a result that depends on timing, which is the one thing a
+    // rebuild must not do.
+    yield* stop
+    const p = yield* landing
+    yield* p.transact((ctx) =>
+      Effect.gen(function* () {
         // Remove first, then recreate. The other order drops what was just
         // built and leaves nothing behind.
-        await resetFace(projection, ctx)
-        await createFace(projection, ctx)
+        yield* projection.reset(ctx)
+        yield* projection.create(ctx)
         // Zeroed rather than deleted: the projection still exists and is still
         // being run, and a missing row would make it look like one nobody had
         // ever started.
-        await store.rewind(ctx, projection.name)
-      })
+        yield* p.rewind(ctx, projection.name)
+      }),
+    )
+    state.failure = null
+    yield* startFollowing
+  })
 
-      failure = null
-      await follow()
+  return {
+    name: projection.name,
+    get failure() {
+      return state.failure
     },
-
-    async close() {
-      await this.stop()
-      // `opened` and not `landing()`: a runner closed without ever having been
-      // started opened nothing, and opening a store in order to close it would
-      // refuse on a machine that has written no choice.
-      if (mine && opened !== null) await (await opened).close()
+    get running() {
+      return state.cell !== null && !state.cell.stopped
     },
-
-    async shape() {
-      return shapeInFace(projection, await landing())
-    },
-
-    async lag() {
-      return (await landing()).lag(projection.name)
-    },
+    start,
+    stop: () => stop,
+    rebuild,
+    lag: () => Effect.flatMap(landing, (p) => p.lag(projection.name)),
+    shape: () => shape,
+    // `mine` and not `landing`: a runner closed without ever having been
+    // started opened nothing, and opening a store in order to close it would
+    // refuse on a machine that has written no choice.
+    close: () => Effect.andThen(stop, mine ? mine.close() : Effect.void),
   }
+}
+
+/** The promise `ProjectionRunner` over `makeRunner`'s, for the daemon and the CLI until rows 9 and 11+ (#790). */
+export function promiseRunner(r: ProjectionRunnerPort<never>): ProjectionRunner {
+  return {
+    name: r.name,
+    get failure() {
+      return r.failure
+    },
+    get running() {
+      return r.running
+    },
+    start: () => runnerStartFace(r),
+    stop: () => runnerStopFace(r),
+    rebuild: () => runnerRebuildFace(r),
+    lag: () => runnerLagFace(r),
+    shape: () => runnerShapeFace(r),
+    close: () => runnerCloseFace(r),
+  }
+}
+
+export function createProjectionRunner(options: ProjectionRunnerOptions): ProjectionRunner {
+  return promiseRunner(makeRunner(options, { detached: true }))
 }
 
 /**

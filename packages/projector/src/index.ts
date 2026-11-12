@@ -61,7 +61,6 @@ export {
   describeShape,
   projectionShape,
   projectionShapeEffect,
-  shapeInFace,
   type ProjectionDrift,
   type ProjectionShape,
 } from './shape.ts'

@@ -3,7 +3,7 @@
     "file": "packages/actions/src/action.ts",
     "fn": "actionRunFace",
     "until": "#790",
-    "why": "every promise `Action` holder \u2014 `runActionPipeline`'s callers through `fromPromiseAction` when a hand-written action is in the list, and the tests in packages/actions and packages/conductor that call `action.run` \u2014 until row 7 builds ports"
+    "why": "every promise `Action` holder — `runActionPipeline`'s callers through `fromPromiseAction` when a hand-written action is in the list, and the tests in packages/actions and packages/conductor that call `action.run` — until row 7 builds ports"
   },
   {
     "file": "packages/actions/src/action.ts",
@@ -39,7 +39,7 @@
     "file": "packages/agent/src/auth.ts",
     "fn": "codexAuth",
     "until": "#790",
-    "why": "Runtime.checkAuth callers and apps/board/src/lib/recipe.ts await it; 0101 \u00a77 lets the board keep a promise face"
+    "why": "Runtime.checkAuth callers and apps/board/src/lib/recipe.ts await it; 0101 §7 lets the board keep a promise face"
   },
   {
     "file": "packages/agent/src/auth.ts",
@@ -273,7 +273,7 @@
     "file": "packages/projector/src/backlog.ts",
     "fn": "readBacklog",
     "until": "#790",
-    "why": "the board (0101 \u00a77), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
   },
   {
     "file": "packages/projector/src/choose.ts",
@@ -285,31 +285,67 @@
     "file": "packages/projector/src/choose.ts",
     "fn": "projectionStore",
     "until": "#790",
-    "why": "the runner (projection.ts) and packages/daemon/integration/the-written-choice.test.ts"
+    "why": "`packages/daemon/integration/the-written-choice.test.ts`"
   },
   {
     "file": "packages/projector/src/projection.ts",
     "fn": "projectionLag",
     "until": "#790",
-    "why": "the board (0101 \u00a77), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
   },
   {
     "file": "packages/projector/src/projection.ts",
     "fn": "readLag",
     "until": "#790",
-    "why": "the board (0101 \u00a77), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
   },
   {
     "file": "packages/projector/src/read-landed.ts",
     "fn": "readLanded",
     "until": "#790",
-    "why": "the board (0101 \u00a77), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
   },
   {
     "file": "packages/projector/src/read-ticket-report.ts",
     "fn": "readTicketReport",
     "until": "#790",
-    "why": "the board (0101 \u00a77), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+  },
+  {
+    "file": "packages/projector/src/runner-face.ts",
+    "fn": "runnerCloseFace",
+    "until": "#790",
+    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
+  },
+  {
+    "file": "packages/projector/src/runner-face.ts",
+    "fn": "runnerLagFace",
+    "until": "#790",
+    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
+  },
+  {
+    "file": "packages/projector/src/runner-face.ts",
+    "fn": "runnerRebuildFace",
+    "until": "#790",
+    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
+  },
+  {
+    "file": "packages/projector/src/runner-face.ts",
+    "fn": "runnerShapeFace",
+    "until": "#790",
+    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
+  },
+  {
+    "file": "packages/projector/src/runner-face.ts",
+    "fn": "runnerStartFace",
+    "until": "#790",
+    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
+  },
+  {
+    "file": "packages/projector/src/runner-face.ts",
+    "fn": "runnerStopFace",
+    "until": "#790",
+    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
   },
   {
     "file": "packages/projector/src/shape.ts",
@@ -318,16 +354,10 @@
     "why": "apps/cli doctor.ts awaits it until its row"
   },
   {
-    "file": "packages/projector/src/shape.ts",
-    "fn": "shapeInFace",
-    "until": "#790",
-    "why": "the promise runner's `start`/`shape` (`projection.ts`) until the runner ticket"
-  },
-  {
     "file": "packages/projector/src/spend.ts",
     "fn": "readSpend",
     "until": "#790",
-    "why": "the board (0101 \u00a77), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
   },
   {
     "file": "packages/projector/src/store-face.ts",
@@ -363,7 +393,7 @@
     "file": "packages/projector/src/store-face.ts",
     "fn": "createFace",
     "until": "#790",
-    "why": "the promise runner (`projection.ts`) until the runner ticket; the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "why": "the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
   },
   {
     "file": "packages/projector/src/store-face.ts",
@@ -393,7 +423,7 @@
     "file": "packages/projector/src/store-face.ts",
     "fn": "reduceFace",
     "until": "#790",
-    "why": "the promise runner (`projection.ts`) until the runner ticket; the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "why": "the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
   },
   {
     "file": "packages/projector/src/store-face.ts",
@@ -405,7 +435,7 @@
     "file": "packages/projector/src/store-face.ts",
     "fn": "resetFace",
     "until": "#790",
-    "why": "the promise runner (`projection.ts`) until the runner ticket; the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "why": "the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
   },
   {
     "file": "packages/projector/src/store-face.ts",
@@ -447,61 +477,61 @@
     "file": "packages/projector/src/task-view.ts",
     "fn": "readTaskProjects",
     "until": "#790",
-    "why": "the board (0101 \u00a77), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
   },
   {
     "file": "packages/projector/src/task-view.ts",
     "fn": "readTasks",
     "until": "#790",
-    "why": "the board (0101 \u00a77), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
   },
   {
     "file": "packages/recipe/src/files.ts",
     "fn": "readFileFace",
     "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
   },
   {
     "file": "packages/recipe/src/files.ts",
     "fn": "replaceFileFace",
     "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
   },
   {
     "file": "packages/recipe/src/local.ts",
     "fn": "resolveLocalRecipe",
     "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
   },
   {
     "file": "packages/recipe/src/resolve.ts",
     "fn": "resolveRecipe",
     "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
   },
   {
     "file": "packages/recipe/src/write.ts",
     "fn": "readRecipeKey",
     "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
   },
   {
     "file": "packages/recipe/src/write.ts",
     "fn": "saveRecipeText",
     "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
   },
   {
     "file": "packages/recipe/src/write.ts",
     "fn": "setRecipe",
     "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 \u00a77 lets keep a face; the tests that pass a promise port"
+    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
   },
   {
     "file": "packages/repo/src/git.ts",
     "fn": "git",
     "until": "#790",
-    "why": "apps/board (actions, expand-prompts) keeps it by 0101 \u00a77; apps/cli (doctor, triage-checkout), packages/conductor git-refs and packages/daemon currency call it as a promise"
+    "why": "apps/board (actions, expand-prompts) keeps it by 0101 §7; apps/cli (doctor, triage-checkout), packages/conductor git-refs and packages/daemon currency call it as a promise"
   },
   {
     "file": "packages/repo/src/mirror.ts",

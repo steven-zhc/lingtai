@@ -30,7 +30,8 @@ import { createSqliteLog, openSqliteLog } from '@lingtai/event-store/sqlite'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { createProjectionRunner } from '../src/projection.ts'
-import { createSqliteProjectionStore, openSqliteProjections } from '../src/sqlite.ts'
+import { makeSqliteProjections, openSqliteProjections } from '../src/sqlite.ts'
+import { promiseProjectionStore } from '../src/store-face.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
 const dirs: string[] = []
@@ -60,13 +61,14 @@ describe('a projection on a machine with no Postgres', () => {
     // 25ms rather than `POLL_MS`, so a test does not wait on the real interval.
     // It is the same waker; only the timer is shortened.
     const log = createSqliteLog({ db: logDb, path, intervalMs: 25 })
-    const into = createSqliteProjectionStore(openSqliteProjections(path))
+    const port = makeSqliteProjections(openSqliteProjections(path))
+    const into = promiseProjectionStore(port)
     const project = `esctest${crypto.randomUUID().slice(0, 6)}`
 
     // A log and a place to reduce into. Nothing names a waker, and nothing names
     // a store: if the choice were still made beside the log, this would be a
     // `LISTEN` against nothing.
-    const runner = createProjectionRunner({ projection: taskViewProjection, log, into })
+    const runner = createProjectionRunner({ projection: taskViewProjection, log, into: port })
 
     try {
       await runner.start()

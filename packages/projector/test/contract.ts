@@ -35,7 +35,7 @@ import { backlogProjection } from '../src/backlog.ts'
 import { createProjectionRunner } from '../src/projection.ts'
 import { spendProjection } from '../src/spend.ts'
 import { createFace, reduceFace, resetFace } from '../src/store-face.ts'
-import type { Projection, ProjectionStore } from '../src/store.ts'
+import type { Projection, ProjectionsPort, ProjectionStore } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
 
 /**
@@ -113,8 +113,10 @@ export const IDLE_WAKER: Waker = {
 export interface ProjectionFixture {
   /** The store under test. */
   store: ProjectionStore
+  /** The port `store` is a face over: what a runner's `into` takes. */
+  port: ProjectionsPort
   /** A second store over the same tables — what "two clients" means. */
-  another(): Promise<ProjectionStore>
+  another(): Promise<{ store: ProjectionStore; port: ProjectionsPort }>
   /** The log the reducer reads. Whatever log the fixture's store shares a database with. */
   events: EventStore
   /**
@@ -450,7 +452,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         const runner = createProjectionRunner({
           projection: contractProjection,
           store: f.events,
-          into: f.store,
+          into: f.port,
           waker: IDLE_WAKER,
         })
         await runner.start()
@@ -848,7 +850,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
           await f.store.register(ctx, CONTRACT_TABLE)
         })
 
-        const runners = [f.store, second].map((into) =>
+        const runners = [f.port, second.port].map((into) =>
           createProjectionRunner({
             projection: contractProjection,
             store: f.events,
@@ -861,11 +863,11 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         // Once each, not twice: both projectors read the same events and one of
         // them applied every one of them a second time.
         expect((await touches(f, run)).map((r) => r.path)).toEqual(['x.ts', 'y.ts', 'z.ts'])
-        expect(await f.store.checkpoint(CONTRACT_TABLE)).toBe(await second.checkpoint(CONTRACT_TABLE))
+        expect(await f.store.checkpoint(CONTRACT_TABLE)).toBe(await second.store.checkpoint(CONTRACT_TABLE))
 
         await Promise.all(runners.map((r) => r.close()))
       } finally {
-        // Not `second.close()`: `another()` is the fixture's to open and the
+        // Not `second.store.close()`: `another()` is the fixture's to open and the
         // fixture's to close.
         await f.close()
       }
