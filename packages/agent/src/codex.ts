@@ -134,6 +134,8 @@ function processesWith(identity: string): number[] {
  * inherited per-run environment value where the host shows one, and by having
  * been seen as the CLI's descendants where it does not.
  */
+const STOP_SCAN_DEADLINE = '10 seconds'
+
 const stopRunProcesses = (marker: string, seen: Seen): Effect.Effect<void, Error> =>
   Effect.gen(function* () {
     if (process.platform === 'win32') return
@@ -164,7 +166,15 @@ const stopRunProcesses = (marker: string, seen: Seen): Effect.Effect<void, Error
       if (clear) return
       yield* Effect.sleep('50 millis')
     }
-  })
+  }).pipe(
+    // A descendant in uninterruptible I/O survives SIGKILL and is not a zombie:
+    // without a deadline the scan, and the interruption waiting on it, never end.
+    // The failure is the "process cleanup incomplete" crash the callers already report.
+    Effect.timeoutOrElse({
+      duration: STOP_SCAN_DEADLINE,
+      orElse: () => Effect.fail(new Error(`processes of the run were still alive ${STOP_SCAN_DEADLINE} after SIGKILL`)),
+    }),
+  )
 
 export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   id: 'codex',
@@ -1764,7 +1774,7 @@ export const codexRun = Effect.fn('agent.run')(function* (options: CodexOptions,
         }
 
         // Interruption kills as an abort does, and waits for `finish`: every
-        // process of the run gone, or the bounded stop.
+        // process of the run gone, or the scan's deadline.
         return Effect.suspend(() => {
           onAbort()
           if (settled) return Effect.void
