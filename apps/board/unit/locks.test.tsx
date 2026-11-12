@@ -1,3 +1,4 @@
+import { reachAccountLimit } from '@lingtai/conductor'
 /**
  * #994. The banner under the bar, the lock read's scope, and the two actions'
  * core on the memory store.
@@ -10,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Bar } from '../src/app/bar.tsx'
 import { LockRows } from '../src/app/lock-banner.tsx'
-import { inScope, setProjectPaused, sinceLabel, type HeldProject } from '../src/lib/locks.ts'
+import { inScope, liftAccountWith, setProjectPaused, sinceLabel, type HeldProject } from '../src/lib/locks.ts'
 
 const now = new Date(2026, 10, 11, 18, 0)
 const lock = (by: string, since: Date) => ({ kind: 'paused' as const, by, since })
@@ -126,5 +127,92 @@ describe('the banner row layout', () => {
     )
     expect(html.indexOf('class="grow"')).toBeGreaterThan(html.indexOf('an attempt in flight'))
     expect(html.indexOf('class="grow"')).toBeLessThan(html.indexOf('<button'))
+  })
+})
+
+describe('the account row (#1010)', () => {
+  const account = (runtime: 'claude-code' | 'codex', until: Date) => ({
+    kind: 'account' as const,
+    runtime,
+    by: 'lingtai' as const,
+    since: new Date(2026, 10, 11, 17, 0),
+    until,
+    untilFrom: 'message' as const,
+    said: 'limit reached',
+  })
+  const tonight = new Date(2026, 10, 11, 23, 0)
+  const uses = new Map<string, readonly ('claude-code' | 'codex')[]>([
+    ['lingtai', ['claude-code']],
+    ['other', ['claude-code']],
+    ['chapter-garden', ['codex']],
+  ])
+  const read = (held: HeldProject[]) => ({ ok: true as const, held, uses, ceiling: undefined })
+
+  it('is one row per runtime for all projects, naming who waits and who takes work', () => {
+    const held = [
+      { project: 'lingtai', locks: [account('claude-code', tonight)] },
+      { project: 'other', locks: [account('claude-code', tonight)] },
+    ]
+    const html = renderToStaticMarkup(<LockRows locks={read(held)} now={now} />)
+    expect(html.match(/claude-code limit/g)).toHaveLength(1)
+    expect(html).toContain('until 23:00')
+    expect(html).toContain('lingtai and other wait')
+    expect(html).toContain('chapter-garden runs on codex and still takes work')
+    expect(html).toContain('>lift</button>')
+  })
+
+  it('says why a selected project waits, and draws no row for one that does not use it', () => {
+    const held = [{ project: 'lingtai', locks: [account('claude-code', tonight)] }]
+    expect(renderToStaticMarkup(<LockRows locks={read(held)} scope="lingtai" now={now} />)).toContain(
+      'lingtai&#x27;s recipe uses claude-code, so it waits',
+    )
+    expect(renderToStaticMarkup(<LockRows locks={read(held)} scope="chapter-garden" now={now} />)).toBe('')
+  })
+
+  it('greys a passed limit and keeps lift', () => {
+    const held = [{ project: 'lingtai', locks: [account('claude-code', new Date(2026, 10, 11, 17, 30))] }]
+    const html = renderToStaticMarkup(<LockRows locks={read(held)} now={now} />)
+    expect(html).toContain('pbrow passed')
+    expect(html).toContain('passed · lifts when the conductor next looks')
+    expect(html).toContain('>lift</button>')
+  })
+
+  it('does not claim a project takes work when the control stream could not be read', () => {
+    const held = [{ project: 'lingtai', locks: [account('claude-code', tonight)] }]
+    const html = renderToStaticMarkup(<LockRows locks={{ ...read(held), controlProblem: 'boom' }} now={now} />)
+    expect(html).toContain('could not read whether today')
+    expect(html).not.toContain('still takes work')
+  })
+
+  it('goes before a pause', () => {
+    const held = [{ project: 'lingtai', locks: [account('claude-code', tonight), lock('human:x', now)] }]
+    const html = renderToStaticMarkup(<LockRows locks={read(held)} now={now} />)
+    expect(html.indexOf('claude-code limit')).toBeLessThan(html.indexOf('Paused'))
+  })
+})
+
+describe('liftAccountWith', () => {
+  it('lifts after a reach, answers not limited when nothing stands, and refuses a non-runtime', async () => {
+    const store = createMemoryEventStore()
+    await Effect.runPromise(
+      reachAccountLimit(store, 'claude-code', {
+        until: new Date(2026, 10, 11, 23, 0).toISOString(),
+        untilFrom: 'message',
+        said: 'x',
+      }),
+    )
+    const lifted = await Effect.runPromise(liftAccountWith(store, 'claude-code', 'human:steven'))
+    expect(lifted.ok).toBe(true)
+    const events = await store.read('acct-claude-code')
+    expect(events.filter((e) => e.type === 'AccountLimitLifted')).toHaveLength(1)
+    expect(events.find((e) => e.type === 'AccountLimitLifted')?.data).toMatchObject({
+      runtime: 'claude-code',
+      by: 'human:steven',
+    })
+    const again = await Effect.runPromise(liftAccountWith(store, 'claude-code', 'human:steven'))
+    expect(again.detail).toContain('not at its usage limit')
+    expect((await store.read('acct-claude-code')).filter((e) => e.type === 'AccountLimitLifted')).toHaveLength(1)
+    const refused = await Effect.runPromise(liftAccountWith(store, 'claude', 'human:steven'))
+    expect(refused).toEqual({ ok: false, detail: 'unknown runtime "claude" — runtimes: claude-code, codex' })
   })
 })

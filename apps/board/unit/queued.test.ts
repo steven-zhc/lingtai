@@ -382,3 +382,29 @@ describe('queuedStanding: the ceiling (#1007)', () => {
     expect(queuedStanding(card, false, now.getTime(), [ceiling('2026-11-10')])).toBeNull()
   })
 })
+
+describe('queuedStanding: a runtime at its usage limit (#1010)', () => {
+  const now = new Date(2026, 10, 11, 18, 0)
+  const card = { column: 'queued', runnableAt: null, project: 'lingtai' } as const
+  const limit = (until: Date): Lock => ({
+    kind: 'account',
+    runtime: 'claude-code',
+    by: 'lingtai',
+    since: new Date(2026, 10, 11, 17, 0),
+    until,
+    untilFrom: 'message',
+    said: 'limit reached',
+  })
+
+  it('marks a Queued card before until, and not after it', () => {
+    const s = queuedStanding(card, false, now.getTime(), [limit(new Date(2026, 10, 11, 23, 0))])
+    expect(s?.state).toBe('paused')
+    expect(s?.text).toBe('claude-code is at its usage limit until 23:00 — nothing will start')
+    expect(queuedStanding(card, false, now.getTime(), [limit(new Date(2026, 10, 11, 17, 30))])).toBeNull()
+  })
+
+  it('is outranked by the conductor-wide pause', () => {
+    const s = queuedStanding(card, true, now.getTime(), [limit(new Date(2026, 10, 11, 23, 0))])
+    expect(s?.text).toBe('paused — nothing will start')
+  })
+})

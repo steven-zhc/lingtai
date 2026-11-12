@@ -11,7 +11,9 @@ import {
   type BlockDiagnosis,
   type Lock,
   type ProjectState,
+  type RuntimeId,
   type WaitId,
+  whenLabel,
   agentBranchOf,
   isPending,
   isRegistered,
@@ -67,7 +69,15 @@ import type { ResolvedRecipe } from '@lingtai/recipe'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { Effect } from 'effect'
 
-import { anyCeilingToday, ceilingToday, isPaused, type LockMap, pausedNames } from './lock-marks.ts'
+import {
+  accountsHolding,
+  anyCeilingToday,
+  ceilingToday,
+  isPaused,
+  joinNames,
+  type LockMap,
+  pausedNames,
+} from './lock-marks.ts'
 import { describeHeld, progressOf, spentOf, type Granted, type AttemptProgress } from './progress.ts'
 import { savedFixWorkFromState } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
@@ -527,6 +537,7 @@ export function emptyNote(
   locksInScope: LockMap = new Map(),
   everyProjectPaused = false,
   now: Date = new Date(),
+  uses: ReadonlyMap<string, readonly RuntimeId[]> = new Map(),
 ): string {
   if (column === 'running' && paused) return 'Paused — nothing will start.'
   const ceiling = column === 'running' ? anyCeilingToday(locksInScope, now) : null
@@ -534,6 +545,10 @@ export function emptyNote(
     return `Nothing here yet. Today's spend reached the $${ceiling.ceilingUsd} ceiling — see the banner.`
   }
   const pausedInScope = pausedNames(locksInScope, undefined)
+  if (column === 'running') {
+    const accounts = accountWaits(locksInScope, now)
+    if (accounts.size > 0) return accountNote(accounts, pausedInScope, project, uses, locksInScope, now)
+  }
   if (column === 'running' && pausedInScope.length > 0) {
     if (project !== undefined) return `Nothing here yet. ${project} is paused.`
     if (everyProjectPaused) return 'Nothing here yet. Every project is paused.'
@@ -548,6 +563,55 @@ export function emptyNote(
   return project === undefined ? 'Nothing here yet.' : `Nothing here for ${project}.`
 }
 
+/** Each runtime whose limit still holds a project in scope → the names it holds, alphabetical (#1010). */
+function accountWaits(locks: LockMap, now: Date): Map<RuntimeId, string[]> {
+  const waits = new Map<RuntimeId, string[]>()
+  for (const [name, ls] of [...locks].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    for (const l of accountsHolding(ls, now)) waits.set(l.runtime, [...(waits.get(l.runtime) ?? []), name])
+  }
+  return new Map([...waits].sort(([a], [b]) => (a < b ? -1 : 1)))
+}
+
+/** The projects that use some runtime and are held by nothing at `now`. */
+function takingWork(locks: LockMap, uses: ReadonlyMap<string, readonly RuntimeId[]>, now: Date): string[] {
+  return [...uses.keys()]
+    .filter((n) => !isPaused(locks.get(n)) && ceilingToday(locks.get(n), now) === null)
+    .filter((n) => accountsHolding(locks.get(n), now).length === 0)
+    .sort()
+}
+
+function accountNote(
+  waits: Map<RuntimeId, string[]>,
+  pausedInScope: readonly string[],
+  project: string | undefined,
+  uses: ReadonlyMap<string, readonly RuntimeId[]>,
+  locks: LockMap,
+  now: Date,
+): string {
+  const until = (runtime: RuntimeId): string => {
+    const l = [...locks.values()].flatMap((ls) => accountsHolding(ls, now)).find((x) => x.runtime === runtime)
+    return l === undefined ? '' : whenLabel(l.until, now)
+  }
+  const clauses = [...waits].map(
+    ([runtime, names]) =>
+      `${joinNames(names)} ${names.length === 1 ? 'waits' : 'wait'} for ${runtime} (limit until ${until(runtime)})`,
+  )
+  if (pausedInScope.length > 0) {
+    clauses.push(`${joinNames(pausedInScope)} ${pausedInScope.length === 1 ? 'is' : 'are'} paused`)
+  }
+  if (project === undefined) {
+    const working = takingWork(locks, uses, now).filter((n) => uses.has(n))
+    const full = [...uses].filter(([n]) => working.includes(n))
+    if (full.length > 0) {
+      const runtimes = [...new Set(full.flatMap(([, r]) => r))]
+      clauses.push(
+        `${joinNames(working)} ${working.length === 1 ? 'runs' : 'run'} on ${joinNames(runtimes)} and ${working.length === 1 ? 'is' : 'are'} taking work`,
+      )
+    }
+  }
+  return `Nothing here yet. ${clauses.join('; ')}.`
+}
+
 /** Whether the empty line is drawn in the hold colour: all but "some are paused, the others work". */
 export function emptyHeld(
   column: ColumnId,
@@ -556,10 +620,14 @@ export function emptyHeld(
   locksInScope: LockMap,
   everyProjectPaused: boolean,
   now: Date = new Date(),
+  uses: ReadonlyMap<string, readonly RuntimeId[]> = new Map(),
 ): boolean {
   if (column !== 'running') return false
   if (paused) return true
   if (anyCeilingToday(locksInScope, now) !== null) return true
+  if (accountWaits(locksInScope, now).size > 0) {
+    return project !== undefined || takingWork(locksInScope, uses, now).length === 0
+  }
   const pausedInScope = pausedNames(locksInScope, undefined)
   return pausedInScope.length > 0 && (project !== undefined || everyProjectPaused)
 }
@@ -1781,6 +1849,16 @@ export function queuedStanding(
       state: 'paused',
       text: "today's spend reached the ceiling — nothing will start",
       title: 'no new work starts until midnight or until today’s ceiling is raised; this card keeps its place',
+    }
+  }
+  // A runtime at its usage limit (#1010): after the ceiling, before a person's
+  // pause. A passed `until` marks nothing; the first by runtime when there are two.
+  const limit = accountsHolding(projectLocks, new Date(now))[0]
+  if (limit !== undefined) {
+    return {
+      state: 'paused',
+      text: `${limit.runtime} is at its usage limit until ${whenLabel(limit.until, new Date(now))} — nothing will start`,
+      title: `${card.project}'s recipe uses ${limit.runtime}; this card keeps its place`,
     }
   }
   // The project's own pause (#995): after the ceiling, before a backoff.
