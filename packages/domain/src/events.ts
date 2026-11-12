@@ -1531,7 +1531,7 @@ export type PauseCause = z.infer<typeof PauseCause>
  * fails the log's admission test — is this worth remembering later — and would
  * bury everything that is.
  *
- * @summary The conductor paused itself because a recipe asks for a tier one of its runtimes cannot provide; it takes no new work until a person resumes it. Pauses written before 0126 for a person, the day's ceiling or an account limit stop nothing now.
+ * @summary The conductor paused itself over a tier a runtime cannot provide, and takes no new work until a person resumes it.
  */
 export const ConductorPaused = z.object({
   by: z.string(),
