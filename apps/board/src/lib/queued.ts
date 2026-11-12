@@ -480,12 +480,14 @@ export function inFlightOf(
 /** The panel's chip: the place without *in line*, or what holds it. */
 export function queuedChip(view: QueuedView, _inFlight: InFlight | null, now: number = Date.now()): string {
   if (view.problem !== null) return 'unknown'
-  if (view.position !== null) return `${ordinal(view.position)} of ${view.inLine}`
-  if (view.notOffered !== null) return 'not offered'
+  // A stop outranks the place: selectRunnable does not filter project locks, so a
+  // held ticket still has a position, and "1st of N" would hide what holds it.
   if (view.paused) return 'paused'
   if (view.locks === null) return 'unknown'
   const lock = lockStanding(view.project, view.locks, new Date(now))
   if (lock !== null) return lock.kind
+  if (view.position !== null) return `${ordinal(view.position)} of ${view.inLine}`
+  if (view.notOffered !== null) return 'not offered'
   if (view.runnableAt !== null && holding(view, now) !== null) return 'backing off'
   return 'unknown'
 }

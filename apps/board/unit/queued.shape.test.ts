@@ -85,6 +85,14 @@ describe('queuedChip and queuedSentence', () => {
     expect(queuedChip(off, null)).toBe('backing off')
     expect(queuedSentence(off, null)).toMatch(/back/i)
   })
+  it('a stop outranks the place in line', () => {
+    const since = new Date('2026-11-11T10:00:00Z')
+    const held = { ...at(1), locks: [{ kind: 'paused', by: 'human:x', since } as const] }
+    expect(queuedChip(held, null)).toBe('paused')
+    expect(queuedChip({ ...at(1), locks: null }, null)).toBe('unknown')
+    expect(queuedChip({ ...at(1), paused: true }, null)).toBe('paused')
+    expect(queuedChip(at(1), null)).toBe('1st of 11')
+  })
   it('a problem', () => {
     const bad = { ...VIEW, position: null, problem: 'rate limited' }
     expect(queuedChip(bad, null)).toBe('unknown')
