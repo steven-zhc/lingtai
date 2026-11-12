@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { createLandingLane } from '../src/landing-lane.ts'
 
 const noWait = { onWait: () => Effect.void }
-const open = (gate: Deferred.Deferred<void>) => Deferred.succeed(gate, undefined)
+const open = (latch: Deferred.Deferred<void>) => Deferred.succeed(latch, undefined)
 const settle = Effect.gen(function* () {
   for (let i = 0; i < 20; i++) yield* Effect.yieldNow
 })
