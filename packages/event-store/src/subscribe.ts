@@ -247,9 +247,15 @@ export function follow(options: FollowOptions, cell: FollowCell): Effect.Effect<
         Effect.as('reconnect' as const),
         // Defects first: the reporters below are outside it, so an `onError` that
         // throws is not read as a connection failure and retried.
-        Effect.catchDefect((defect) =>
-          Effect.sync(() => options.onError?.(defect, 'connection')).pipe(Effect.as('reconnect' as const)),
-        ),
+        // A handler failure recorded in the batch wins over any defect that arrives
+        // with it, such as the waker's scope cleanup dying after the session body
+        // had already decided: the scope closes after the session's own checks.
+        Effect.catchDefect((defect) => {
+          const failed = handlerFailure.value
+          if (failed)
+            return Effect.sync(() => options.onError?.(failed.cause, 'handler')).pipe(Effect.as('stop' as const))
+          return Effect.sync(() => options.onError?.(defect, 'connection')).pipe(Effect.as('reconnect' as const))
+        }),
         Effect.catchTag('HandlerFailed', (failed) =>
           Effect.sync(() => options.onError?.(failed.cause, 'handler')).pipe(Effect.as('stop' as const)),
         ),

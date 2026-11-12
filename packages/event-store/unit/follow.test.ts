@@ -322,3 +322,45 @@ describe('follow, handler failures and reporters', () => {
 function promiseWakerOver(port: WakerPort): Waker {
   return promiseWaker(port)
 }
+
+describe('follow, cleanup defects', () => {
+  it("a waker whose cleanup dies after the handler failed does not mask the handler's failure", async () => {
+    const store = createMemoryEventStore()
+    const lostOf: Deferred.Deferred<void>[] = []
+    const nudges: (() => void)[] = []
+    const port: WakerPort = {
+      open: (nudge) =>
+        Effect.gen(function* () {
+          yield* Effect.addFinalizer(() => Effect.die(new Error('cleanup')))
+          const lost = Deferred.makeUnsafe<void>()
+          lostOf.push(lost)
+          nudges.push(nudge)
+          return { lost: Deferred.await(lost) }
+        }),
+    }
+    const errors: [unknown, string][] = []
+    const boom = new Error('db down')
+    const cell = { lastSeq: 0n, stopped: false, caughtUp: { resolve() {}, reject() {} } }
+    const run = Effect.runPromise(
+      follow(
+        {
+          fromSeq: 0n,
+          events: fromPromiseStore(store),
+          waker: port,
+          backoff: { baseMs: 1, capMs: 1 },
+          onError: (e, phase) => errors.push([e, phase]),
+          onEvent: () => Effect.promise(() => flush(20)).pipe(Effect.andThen(Effect.fail(boom))),
+        },
+        cell,
+      ),
+    )
+    await flush()
+    await append(store, 'a')
+    nudges[0]!()
+    await flush(5)
+    Deferred.doneUnsafe(lostOf[0]!, Effect.die(new Error('socket')))
+    await run
+    expect(errors).toEqual([[boom, 'handler']])
+    expect(lostOf).toHaveLength(1)
+  })
+})
