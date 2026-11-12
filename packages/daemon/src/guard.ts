@@ -87,7 +87,7 @@ const projectPause: Check = ({ store }, project) =>
 const dayCeiling: Check = ({ store, snapshots, ceiling, now }) =>
   Effect.gen(function* () {
     const readState = (): Effect.Effect<ControlState, Error> =>
-      Effect.tryPromise({ try: () => readControl(store, 0, { snapshots }), catch: asError })
+      Effect.tryPromise({ try: () => readControl(store, { snapshots }), catch: asError })
     if (ceiling === 'not-the-holder') return locksOn({ control: yield* readState(), accounts: NO_ACCOUNTS })
 
     const at = (now ?? (() => new Date()))()

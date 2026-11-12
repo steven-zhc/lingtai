@@ -1408,8 +1408,9 @@ const late_everyControlEvent = stamp(
   (() => {
     const c = controlStream
     return [
-      c('ConductorPaused', { ...pause('2026-08-03T00:00:00.000Z', true), cause: 'day-ceiling' }),
-      c('ConductorPaused', pause(HOLDING_UNTIL)),
+      // The setup's pause is the one that counts (#1013); the ceiling's reduces to nothing.
+      c('ConductorPaused', { ...pause('2026-08-03T00:00:00.000Z'), cause: 'day-ceiling' }),
+      c('ConductorPaused', { ...pause(null, true), cause: 'setup' }),
       c('ConductorShutdownRequested', { by: 'steven', reason: 'restart', timeoutMs: 60_000, force: false }),
       c('ConductorShutdownWithdrawn', { by: 'steven', version: 4, reason: 'changed my mind', handoff: null }),
       c('ConductorShutdownRequested', { by: 'steven', reason: 'for real', timeoutMs: null, force: true }),

@@ -129,7 +129,6 @@ const refuse = (detail: string) => new Refused({ detail })
 class Paused extends Data.TaggedError('Paused')<{
   readonly by: string | null
   readonly reason: string | null
-  readonly until: Date | null
 }> {}
 
 /**
@@ -156,9 +155,7 @@ const heedThePause = (store: EventStore | undefined) =>
     catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
   }).pipe(
     Effect.flatMap((control) =>
-      control.paused
-        ? Effect.fail(new Paused({ by: control.by, reason: control.reason, until: control.until }))
-        : Effect.void,
+      control.paused ? Effect.fail(new Paused({ by: control.by, reason: control.reason })) : Effect.void,
     ),
   )
 
@@ -188,8 +185,8 @@ const heedTheLock = (
   })
 
 /** Who paused it and why, in the one form both refusals print. */
-const saidPaused = (p: { by: string | null; reason: string | null; until: Date | null }) =>
-  `paused by ${p.by ?? 'somebody'}${p.until ? ` until ${p.until.toISOString()}` : ''} — ${p.reason ?? 'no reason given'}`
+const saidPaused = (p: { by: string | null; reason: string | null }) =>
+  `paused by ${p.by ?? 'somebody'} — ${p.reason ?? 'no reason given'}`
 
 /**
  * The same read, between tickets — for `runQueue`, which stops on a sentence.

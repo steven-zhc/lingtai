@@ -1,3 +1,4 @@
+import { readControl } from '@lingtai/daemon/control'
 /**
  * `lingtai run` is a conductor, and a pause stops conductors (#166).
  *
@@ -13,27 +14,36 @@
  * asserts it does not. A pause heard *between* tickets is `runQueue`'s, and is
  * held in `packages/conductor` (`unit/schedule-pause.test.ts`).
  */
-import { readControl } from '@lingtai/daemon/control'
+import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
+import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
 import { daemonLiveness } from '../src/doctor.ts'
 import { commandHelp } from '../src/help.ts'
-import { pauseCommand } from '../src/pause.ts'
 import { RUN_UNDER_A_PAUSE, run } from '../src/run.ts'
 
+/** The setup's pause, the one pause that stops the conductor, planted the way `pauseConductorOnce` appends it. */
+async function plantSetupPause(store: EventStore, reason: string): Promise<void> {
+  await store.append(CONTROL_STREAM, await store.head(CONTROL_STREAM), [
+    {
+      type: 'ConductorPaused',
+      actor: 'conductor',
+      data: parsePayload('ConductorPaused', {
+        by: 'lingtai',
+        reason,
+        until: null,
+        cause: 'setup',
+        holdsAcrossStarts: true,
+      }),
+    },
+  ])
+}
+
 describe('lingtai run under a standing pause', () => {
-  it('is refused as lingtai pause says it will be, and never reaches the lock', async () => {
+  it('is refused, and never reaches the lock', async () => {
     const store = createMemoryEventStore()
-    const printed: string[] = []
-    // The command itself, not the constant: what a person reads after pausing.
-    await pauseCommand('human:ops', 'migrating the database', { store, log: (l) => printed.push(l) })
-    const told = printed.join('\n')
-    expect(told).toContain('paused by human:ops — migrating the database')
-    // Spelled out rather than compared with `RUN_UNDER_A_PAUSE`, so a sentence
-    // edited into saying something else fails here.
-    expect(told).toContain('lingtai run takes no ticket while it stands, daemon or none')
-    expect(told).toContain('one already working finishes the ticket in hand and takes no other')
+    await plantSetupPause(store, 'migrating the database')
 
     const lines: string[] = []
     const code = await run({ project: 'esctest-never-looked-up', lockKey: 'lingtai:test:paused', store }, (l) =>
@@ -43,7 +53,7 @@ describe('lingtai run under a standing pause', () => {
 
     // Exit 0: a person decided this, and nothing went wrong.
     expect(code).toBe(0)
-    expect(said).toContain('paused by human:ops — migrating the database')
+    expect(said).toContain('paused by lingtai — migrating the database')
     expect(said).toContain(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
     // Every one of these is a stage past the pause. Their absence is the claim.
     expect(said).not.toContain('conductor lock')
@@ -61,23 +71,13 @@ describe('lingtai run under a standing pause', () => {
 
   it('is what lingtai doctor reports beside the pause', async () => {
     const store = createMemoryEventStore()
-    await pauseCommand('human:ops', 'migrating the database', { store, log: () => {} })
+    await plantSetupPause(store, 'migrating the database')
 
     const liveness = await daemonLiveness(
       async () => null,
       () => readControl(store),
     )
-    expect(liveness.detail).toContain('paused by human:ops (migrating the database)')
+    expect(liveness.detail).toContain('paused by lingtai (migrating the database)')
     expect(liveness.detail).toContain(RUN_UNDER_A_PAUSE)
-  })
-})
-
-describe('lingtai pause prints one verdict', () => {
-  it('is a verdict line over the sentences it always said', async () => {
-    const printed: string[] = []
-    await pauseCommand('human:ops', 'reviewing', { store: createMemoryEventStore(), log: (l) => printed.push(l) })
-    expect(printed[0]).toContain('✓ paused')
-    expect(printed.join('\n')).toContain('paused by human:ops — reviewing')
-    expect(printed.join('\n')).toContain(`${RUN_UNDER_A_PAUSE}.`)
   })
 })

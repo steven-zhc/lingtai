@@ -110,7 +110,7 @@ describe('the histories reduce', () => {
     it(`finding.${h.name}`, () => void reduceFinding(h.events))
   }
   for (const h of singles.filter((s) => s.kind === 'control')) {
-    it(`control.${h.name}`, () => void reduceControl(h.events, NOW))
+    it(`control.${h.name}`, () => void reduceControl(h.events))
   }
 })
 

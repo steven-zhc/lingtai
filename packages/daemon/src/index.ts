@@ -48,7 +48,6 @@ export {
   held,
   inFlight,
   lastBeat,
-  pauseConductor,
   pauseProject,
   resumeProject,
   type ProjectPauseAnswer,

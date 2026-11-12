@@ -15,7 +15,6 @@ import { decodeControl, encodeControl } from './control-codec.ts'
  * that appends to the stream still goes through the commands there.
  */
 import type { Envelope } from './envelope.ts'
-import { PauseCause } from './events.ts'
 import type { EventType } from './events.ts'
 import { reduceAll, type Reducer } from './reducer.ts'
 
@@ -74,30 +73,6 @@ export interface ControlState {
   by: string | null
   reason: string | null
   /**
-   * When this pause lifts by itself, or null.
-   *
-   * Non-null only while such a pause is actually holding: once the instant has
-   * passed the reducer reports the conductor as unpaused, which is what makes the
-   * resume automatic rather than something a person has to remember (0031 §5).
-   */
-  until: Date | null
-  /**
-   * Whether this pause holds across a daemon restart, whatever its watermark
-   * (`#405`). Sticky: a person pausing on top of a setup pause does not make
-   * the setup pause forgettable, because the setup is still wrong. Cleared
-   * only by `ConductorResumed`, same as `paused` itself.
-   */
-  holdsAcrossStarts: boolean
-  /** Whose pause is standing. Null when none is, or when the pause predates `cause`. */
-  cause: PauseCause | null
-  /**
-   * The `until` of the last day-ceiling pause that a person resumed while it
-   * stood, or null. Cleared by the next day-ceiling pause, and by
-   * `evaluateControl` once `now` reaches it. Null too when that pause's
-   * `until` did not parse.
-   */
-  ceilingWaivedUntil: Date | null
-  /**
    * Who asked it to stop and why, when somebody has.
    *
    * Separate from `paused` because they are separate facts: a paused conductor
@@ -110,13 +85,6 @@ export interface ControlState {
    * nor the exit it is asking for.
    */
   shutdown: ShutdownRequest | null
-  /**
-   * The version of the `ConductorPaused` that is standing, or null when none is.
-   * Set with `paused`, cleared wherever `paused` becomes false — resume and
-   * expiry. It is what lets `scopeControl` ask whether the pause came after a
-   * watermark (#874).
-   */
-  pausedAt: number | null
   /** Tasks somebody asked for by hand, oldest first, not yet taken. */
   requested: { project: string; issue: string; by: string }[]
   /**
@@ -174,12 +142,7 @@ export const emptyControl: ControlState = {
   paused: false,
   by: null,
   reason: null,
-  until: null,
-  holdsAcrossStarts: false,
-  cause: null,
-  ceilingWaivedUntil: null,
   shutdown: null,
-  pausedAt: null,
   requested: [],
   continuing: [],
   discussions: [],
@@ -207,6 +170,16 @@ export function decodeShutdownRequest(e: Envelope): ShutdownRequest {
 }
 
 /**
+ * Whether a `ConductorPaused` payload is the setup's: `cause: 'setup'`, or a
+ * pause written before `cause` existed that holds across starts (only the setup
+ * ever did). Any other `cause`, or none without `holdsAcrossStarts`, is not.
+ */
+export function isSetupPause(d: Record<string, unknown>): boolean {
+  if (d['cause'] === 'setup') return true
+  return d['cause'] === undefined && d['holdsAcrossStarts'] === true
+}
+
+/**
  * One event reduced into the state. Pure, reads no clock, and never mutates its
  * argument (0124 §2).
  */
@@ -214,29 +187,12 @@ export function reduceControlEvent(state: ControlState, e: Envelope): ControlSta
   const d = (e.data ?? {}) as Record<string, unknown>
   const str = (k: string): string | null => (typeof d[k] === 'string' ? (d[k] as string) : null)
   switch (e.type) {
-    case 'ConductorPaused': {
-      // Absent on every pause written before 0031, and null on every pause a
-      // person makes. An unparseable one is the same answer as none: a pause
-      // nothing can prove ends holds until somebody lifts it.
-      const until = str('until')
-      const at = until === null ? Number.NaN : Date.parse(until)
-      // Absent, or a value outside the enum, is nobody's in particular (0100 §4).
-      const parsed = PauseCause.safeParse(d['cause'])
-      const cause = parsed.success ? parsed.data : null
-      return {
-        ...state,
-        paused: true,
-        pausedAt: e.version,
-        by: str('by'),
-        reason: str('reason'),
-        until: Number.isNaN(at) ? null : new Date(at),
-        // Sticky: a person's pause landing on top of a setup pause must not
-        // make the setup pause forgettable.
-        holdsAcrossStarts: state.holdsAcrossStarts || d['holdsAcrossStarts'] === true,
-        cause,
-        ceilingWaivedUntil: cause === 'day-ceiling' ? null : state.ceilingWaivedUntil,
-      }
-    }
+    case 'ConductorPaused':
+      // The setup's pause is the only one that stops the conductor (0126): the
+      // person's, the ceiling's and an account limit's are locks on their own
+      // streams, so an old event of theirs reduces to nothing.
+      if (!isSetupPause(d)) return state
+      return { ...state, paused: true, by: str('by'), reason: str('reason') }
     case 'ConductorShutdownRequested':
       return { ...state, shutdown: decodeShutdownRequest(e) }
     case 'ConductorStarted':
@@ -257,25 +213,8 @@ export function reduceControlEvent(state: ControlState, e: Envelope): ControlSta
       // what was appended after it started, so it never saw one (0048).
       return { ...state, shutdown: null }
     }
-    case 'ConductorResumed': {
-      // A person's resume of the ceiling's pause waives it until that pause's
-      // midnight. A resume by `lingtai` is the ceiling lifting its own pause.
-      const waived =
-        state.paused && state.cause === 'day-ceiling' && str('by') !== 'lingtai'
-          ? state.until
-          : state.ceilingWaivedUntil
-      return {
-        ...state,
-        paused: false,
-        pausedAt: null,
-        by: null,
-        reason: null,
-        until: null,
-        holdsAcrossStarts: false,
-        cause: null,
-        ceilingWaivedUntil: waived,
-      }
-    }
+    case 'ConductorResumed':
+      return { ...state, paused: false, by: null, reason: null }
     case 'DayCeilingReached': {
       const { day, reportedUsd, estimatedUsd, ceilingUsd } = d
       // An unparseable one is the same answer as none.
@@ -354,61 +293,14 @@ export function reduceControlEvent(state: ControlState, e: Envelope): ControlSta
 }
 
 /**
- * What depends on the clock: the pause that ends by itself, ending, and a
- * ceiling waiver that has run out. Nothing is appended when it does: an expiry
- * that had to be written down would be a second thing that can be missed, and
- * the event that set it already says everything a reader needs. Returns the
- * state it was given when nothing lapses.
- */
-export function evaluateControl(state: ControlState, now: Date): ControlState {
-  const t = now.getTime()
-  let next = state
-  if (next.paused && next.until !== null && next.until.getTime() <= t) {
-    next = {
-      ...next,
-      paused: false,
-      pausedAt: null,
-      by: null,
-      reason: null,
-      until: null,
-      holdsAcrossStarts: false,
-      cause: null,
-    }
-  }
-  if (next.ceilingWaivedUntil !== null && next.ceilingWaivedUntil.getTime() <= t) {
-    next = { ...next, ceilingWaivedUntil: null }
-  }
-  return next
-}
-
-/**
- * The whole-stream state, scoped to what a daemon started at `since` is told
- * (#159, #405, #874). A pause is kept when it was appended after `since` or
- * holds across starts. A shutdown is not scoped here: it is the whole stream's,
- * and a `ConductorStarted` ends it (`reduceControlEvent`).
- * Pure. Returns its argument when nothing is cleared, so `since <= 0` is the
- * identity (versions start at 1). Evaluate for the clock before scoping.
- */
-export function scopeControl(state: ControlState, since: number): ControlState {
-  const keepPause = !state.paused || state.holdsAcrossStarts || (state.pausedAt !== null && state.pausedAt > since)
-  if (keepPause) return state
-  return { ...state, paused: false, pausedAt: null, by: null, reason: null, until: null, cause: null }
-}
-
-/**
  * The control stream, as the state it describes.
  *
  * Reads only `CONTROL_FOLD_TYPES`; a caller that has a choice reads just those.
- *
- * `now` is a parameter because one of the answers depends on the clock — a
- * pause that carries an expiry is over when the expiry is past, and the reducer is
- * where that is decided (`evaluateControl`). It is decided here rather than by
- * whoever pauses because nothing else runs at the moment the limit lifts: the
- * alternative to reading it at reduce time is a timer somebody has to still be
- * holding.
+ * The reducer reads no clock: the one pause left is the setup's, and only a
+ * person's resume ends it.
  */
-export function reduceControl(events: readonly Envelope[], now: Date = new Date()): ControlState {
-  return evaluateControl(reduceAll(controlReducer, events), now)
+export function reduceControl(events: readonly Envelope[]): ControlState {
+  return reduceAll(controlReducer, events)
 }
 
 /**
@@ -417,7 +309,7 @@ export function reduceControl(events: readonly Envelope[], now: Date = new Date(
  */
 export const controlReducer: Reducer<ControlState> = {
   name: 'control',
-  version: 6,
+  version: 7,
   initial: emptyControl,
   reduceEvent: reduceControlEvent,
   encode: encodeControl,

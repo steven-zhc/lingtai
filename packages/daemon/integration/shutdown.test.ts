@@ -289,7 +289,7 @@ describe('a signal belongs to the daemon it was sent to', () => {
 
   it('is obeyed by the daemon that was running when it was sent', async () => {
     // Watermark 0: nothing had been said before this one started.
-    const state = await readControl(storeOf([shutdown]), 0)
+    const state = await readControl(storeOf([shutdown]))
 
     expect(state.shutdown).not.toBeNull()
     expect(state.shutdown?.reason).toBe('stopping for the day')
@@ -300,26 +300,28 @@ describe('a signal belongs to the daemon it was sent to', () => {
       type: 'ConductorStarted',
       data: { by: 'daemon', reason: null, sha: null, dirty: false, worker: 'w', handoff: null },
     }
-    expect((await readControl(storeOf([shutdown, started]), 1)).shutdown).toBeNull()
-    expect((await readControl(storeOf([shutdown]), 1)).shutdown?.reason).toBe('stopping for the day')
+    expect((await readControl(storeOf([shutdown, started]))).shutdown).toBeNull()
+    expect((await readControl(storeOf([shutdown]))).shutdown?.reason).toBe('stopping for the day')
   })
 
-  it('does not carry a pause across a restart either', async () => {
-    // The same rule, and the one that made `restart` useless against a pause:
-    // it withdraws its own request by version and deliberately never resumes,
-    // so a pause survived every restart and only `resume` lifted it.
-    const state = await readControl(storeOf([pause]), 1)
-
-    expect(state.paused).toBe(false)
+  it("reads a person's old pause as nothing, and the setup's as a pause that holds", async () => {
+    // The person's pause is a lock on its own stream now (0126); only the setup's
+    // `ConductorPaused` stops the conductor, and it holds across every start.
+    expect((await readControl(storeOf([pause]))).paused).toBe(false)
+    const setup = {
+      type: 'ConductorPaused',
+      data: { by: 'lingtai', reason: 'no tier', cause: 'setup', holdsAcrossStarts: true },
+    }
+    expect((await readControl(storeOf([setup]))).paused).toBe(true)
   })
 
   it('still reaches a daemon told to stop after it started', async () => {
     // The half that must keep working: one event was there when it started,
     // and the request came after.
-    const state = await readControl(storeOf([pause, shutdown]), 1)
+    const state = await readControl(storeOf([pause, shutdown]))
 
     expect(state.shutdown?.reason).toBe('stopping for the day')
-    // And the pause from before is still not this daemon's.
+    // And a person's old pause stops nothing.
     expect(state.paused).toBe(false)
   })
 

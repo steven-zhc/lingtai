@@ -42,14 +42,12 @@
  * `event-store/test/contract.ts` be passed unchanged by a store written months
  * later (#178).
  */
-import { CONTROL_STREAM } from '@lingtai/domain'
+import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
 import { describe, expect, it } from 'vitest'
 
 import {
-  controlWatermark,
   startBeacon,
-  pauseConductor,
   readControl,
   recordStart,
   requestShutdownUnlessStanding,
@@ -294,44 +292,51 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
     })
   })
 
+  // The setup's pause, appended the way `pauseConductorOnce` does: the only pause that stops the conductor.
+  async function setupPause(events: EventStore, reason: string): Promise<void> {
+    const head = await events.head(CONTROL_STREAM)
+    await events.append(CONTROL_STREAM, head, [
+      {
+        type: 'ConductorPaused',
+        actor: 'conductor',
+        data: parsePayload('ConductorPaused', {
+          by: 'lingtai',
+          reason,
+          until: null,
+          cause: 'setup',
+          holdsAcrossStarts: true,
+        }),
+      },
+    ])
+  }
+
   describe(`${name}: the log the control stream lives in`, () => {
-    it('holds a pause until somebody lifts it', async () => {
+    it('holds the setup pause until somebody lifts it', async () => {
       await withStore(async ({ store }) => {
-        await pauseConductor('human:ada', 'the queue is wrong', store.events)
+        await setupPause(store.events, 'the recipe asks for a tier nobody provides')
         const paused = await readControl(store.events)
         expect(paused.paused).toBe(true)
-        expect(paused.by).toBe('human:ada')
-        expect(paused.reason).toBe('the queue is wrong')
-        expect(paused.cause).toBe('person')
-        const stored = (await store.events.read(CONTROL_STREAM)).at(-1)!
-        expect((stored.data as { cause?: string }).cause).toBe('person')
+        expect(paused.by).toBe('lingtai')
+        expect(paused.reason).toBe('the recipe asks for a tier nobody provides')
 
         await resumeConductor('human:ada', store.events)
         expect((await readControl(store.events)).paused).toBe(false)
       })
     })
 
-    it('hides what was said before the watermark from the daemon that read it', async () => {
+    it("reads a person's old pause as nothing", async () => {
       await withStore(async ({ store }) => {
-        // A drain somebody asked of the *previous* daemon.
-        await pauseConductor('human:ada', 'before this process', store.events)
-
-        // What a daemon reads once, before the lock, and keeps (#159).
-        const since = await controlWatermark(store.events)
-
-        // Its own view: nothing was said to *it*.
-        expect((await readControl(store.events, since)).paused).toBe(false)
-        // Everybody else's — the board, `doctor`, `status` — is the whole
-        // stream, and there the pause is plainly standing.
-        expect((await readControl(store.events)).paused).toBe(true)
-
-        // And a pause appended after the watermark is this daemon's to obey.
-        await pauseConductor('human:bob', 'and this one is mine', store.events)
-        const mine = await readControl(store.events, since)
-        expect(mine.paused).toBe(true)
-        expect(mine.by).toBe('human:bob')
-
-        await resumeConductor('human:bob', store.events)
+        const head = await store.events.head(CONTROL_STREAM)
+        await store.events.append(CONTROL_STREAM, head, [
+          {
+            type: 'ConductorPaused',
+            actor: 'human:ada',
+            data: parsePayload('ConductorPaused', { by: 'human:ada', reason: 'old', until: null, cause: 'person' }),
+          },
+        ])
+        expect((await readControl(store.events)).paused).toBe(false)
+        // Nothing stands, so there is nothing for the quiesce to lift either.
+        await resumeConductor('human:ada', store.events)
       })
     })
 
@@ -368,7 +373,7 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
       // So what is asserted here is the repair `withStore` runs before every
       // assertion — a start for the drain and a resume for the pause.
       await withStore(async ({ store }) => {
-        await pauseConductor('human:ada', 'and then the process was killed', store.events)
+        await setupPause(store.events, 'and then the process was killed')
         await requestShutdownUnlessStanding('human:ada', 'restarting', null, store.events)
 
         await quiesceControl(store.events)

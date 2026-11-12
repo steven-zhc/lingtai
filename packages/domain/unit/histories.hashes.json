@@ -71,7 +71,7 @@
   "scenario.askAfterRelease": "b3075cca328e551e8b1ba83105bbeee8290cb567cf7ae3cf3e07f39bfd5e4bce",
   "scenario.closeAfterRelease": "debdc4ec830e60e922faace28229f10989c64b54526ba921336f7393a4554504",
   "scenario.requeueOfRunWait": "37f4677f6066febd73ca116a8b3a790507f32117ad15569e7e7836204a36f9de",
-  "control.everyControlEvent": "88a7454ab0d777e6589790848798a79df980ff6cb1c083d3aa3e325a447c34e5",
+  "control.everyControlEvent": "b2b4929de41b16066d39554c38237ff66c12bc3ff764c0a27c714b61675c2c14",
   "ticket.everyTicketType": "b0df2e91bb03fc3af677b5b980b1d53f4e5ae422604bad295b353413d638586b",
   "attempt.everyAttemptEvent": "896c5454d69948c5b1ca87ab424000aa00fe4dcbe31c9e4d433b468fcecbc1b6"
 }

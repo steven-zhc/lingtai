@@ -98,12 +98,11 @@ describe('a refused dispatch pauses the conductor rather than emptying the queue
     expect(did).toEqual([])
   })
 
-  it('appends no second pause while paused, and leaves a pause a person made exactly as it was', async () => {
+  const refusedOver = async (standing: { actor: string; data: Record<string, unknown> }) => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
-    const personsPause = { by: 'a person', reason: 'looking at something else', until: null, holdsAcrossStarts: false }
-    await store.append('ctl-conductor', 0, [{ type: 'ConductorPaused', actor: 'a person', data: personsPause }])
+    await store.append('ctl-conductor', 0, [{ type: 'ConductorPaused', ...standing } as never])
 
     const result = await once(
       {
@@ -119,19 +118,39 @@ describe('a refused dispatch pauses the conductor rather than emptying the queue
       },
       fakePorts(did, store),
     )
-
     expect(result).toMatchObject({ ok: false, stage: 'dispatch' })
 
-    // The refusal itself is still recorded on the item …
+    // The refusal itself is recorded on the item either way.
     const item = await store.read(`ticket-${PROJECT}-7`)
     expect(item.filter((e) => e.type === 'DispatchRefused')).toHaveLength(1)
+    return (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
+  }
 
-    // … but the control stream is byte-identical: no second `ConductorPaused`,
-    // and the person's own pause untouched.
-    const control = await store.read('ctl-conductor')
-    const paused = control.filter((e) => e.type === 'ConductorPaused')
+  it('appends no second pause while the setup is paused, and leaves it exactly as it was', async () => {
+    const setupsPause = {
+      by: 'lingtai',
+      reason: 'a recipe asks for a tier nobody provides',
+      until: null,
+      holdsAcrossStarts: true,
+      cause: 'setup',
+    }
+    const paused = await refusedOver({ actor: 'conductor', data: setupsPause })
     expect(paused).toHaveLength(1)
+    expect(paused[0]!.data).toEqual(setupsPause)
+  })
+
+  it("is not stopped by a person's old pause, which stops nothing: the setup's is appended over it", async () => {
+    const personsPause = {
+      by: 'a person',
+      reason: 'looking at something else',
+      until: null,
+      holdsAcrossStarts: false,
+      cause: 'person',
+    }
+    const paused = await refusedOver({ actor: 'a person', data: personsPause })
+    expect(paused).toHaveLength(2)
     expect(paused[0]!.data).toEqual(personsPause)
+    expect(paused[1]!.data).toMatchObject({ cause: 'setup', holdsAcrossStarts: true })
   })
 })
 

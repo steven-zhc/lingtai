@@ -14,8 +14,6 @@ import {
   resumeTransition,
   type ToAppend,
   decodeShutdownRequest,
-  evaluateControl,
-  scopeControl,
   type ShutdownRequest,
   parsePayload,
 } from '@lingtai/domain'
@@ -67,19 +65,11 @@ import {
  * withdrawal already in the log lifts the request it names, but nothing writes
  * it any more.
  *
- * ## The one pause nobody has to lift
- *
- * A run that never started is an account-wide condition, so it stops the
- * conductor rather than backing off the item that met it
- * ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) §3). That
- * pause is the only one that carries an expiry, and the expiry is reduced rather
- * than acted on: `reduceControl` reports the conductor as unpaused once it is
- * past, so the resume needs no timer, no second event, and nobody awake.
- *
- * The loop asks `paused` before every pass and sweeps every `SWEEP_MS` even
- * when nothing is appending, so the lag between the limit lifting and work
- * being taken is bounded by the sweep. That is the number 0031 is replacing:
- * the limit lifted at 23:00 and the queue was still idle at 23:12.
+ * ## The one pause left
+
+Control holds the drain, the requests and the setup's pause: a recipe that asks
+for a tier one of its runtimes cannot provide stops every project until a person
+runs `lingtai resume`. Every other stop is a lock on its own stream (0126).
  */
 import { ConcurrencyError, type EventStore, eventStore, log, type SnapshotStore } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
@@ -106,34 +96,17 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
 /**
  * Reduces the control stream. Cheap: it is a handful of events, not a history.
  *
- * **`since` is what scopes a signal to one daemon** (`#159`). A conductor reads
- * the stream from where it was when the conductor started, so a pause appended
- * before it began is not its to obey. **A shutdown is not scoped by `since`**
- * (0126): it is the whole stream's and a `ConductorStarted` ends it, so a drain
- * does not outlive the process it was aimed at — the next start ends it, and
- * `recordStart` is what decides, by `since`, whether a request is that start's
- * to obey. A reader that wants a request from before a start gone must read
- * after the start is recorded, never rely on `since` to hide it.
- *
- * Every other caller — the board, `doctor`, `status` — passes nothing and reduces
- * the whole stream, because they are answering *what is standing now* rather
- * than *what am I being told*.
- *
- * **One pause ignores `since`** (`#405`, 0102 §3's narrowing). A refusal the
- * conductor appends over a missing tier is about the setup, not about the
- * daemon that happened to be running when it found that out — a restart loads
- * the same setup, so the new daemon must meet the same pause rather than take
- * work until it refuses the same ticket again. `holdsAcrossStarts` marks
- * exactly that pause (and only that one: an account's limit is not a pause). The answer is the whole-stream state, read through the snapshot, scoped
- * by version (`scopeControl`): a pause is kept when it came after `since` or
- * holds across starts. A shutdown is returned as the whole stream has it.
- * `requested`, `continuing`, `discussions`, `holdsAcrossStarts`,
- * `ceilingWaivedUntil` and `pausedAt` are the whole stream's values; no caller
- * with `since > 0` reads them (#874).
+ * The answer is the whole stream's, read through the snapshot. **A shutdown is
+ * the whole stream's** (0126): a `ConductorStarted` ends it, and `recordStart`
+ * is what decides, by its watermark, whether a request is that start's to obey.
+ * **The one pause holds across starts**: a refusal over a missing tier is about
+ * the setup, not about the daemon that found it out, so a restart meets the
+ * same pause rather than taking work until it refuses the same ticket again.
+ * Every caller — the conductor, the board, `doctor`, `status` — reads the same
+ * state.
  */
 export async function readControl(
   store?: EventStore,
-  since = 0,
   cache: { snapshots?: SnapshotStore; writer?: Pick<SnapshotWriter, 'offer'> } = {},
 ): Promise<ControlState> {
   const events = store ?? eventStore
@@ -143,8 +116,7 @@ export async function readControl(
     snapshots,
     writer: cache.writer,
   })
-  const whole = evaluateControl(state, new Date())
-  return since <= 0 ? whole : scopeControl(whole, since)
+  return state
 }
 
 /**
@@ -164,24 +136,6 @@ async function append(type: string, data: unknown, store: EventStore, at?: numbe
     { type, actor: (data as { by: string }).by, data: parsePayload(type as never, data) },
   ])
   return expected + 1
-}
-
-/**
- * Stop taking work.
- *
- * `until` is null for everything a person asks for, and that is the decision
- * rather than the default (0031 §5): a pause somebody made holds until they
- * lift it. The conductor's own — the one a run that never started appends — is
- * the only kind that carries a time, and it carries it so that nobody has to
- * be awake at 23:00 to type `lingtai resume`.
- */
-export async function pauseConductor(
-  by: string,
-  reason: string,
-  store: EventStore = eventStore,
-  until: Date | null = null,
-): Promise<void> {
-  await append('ConductorPaused', { by, reason, until: until?.toISOString() ?? null, cause: 'person' }, store)
 }
 
 export async function resumeConductor(by: string, store: EventStore = eventStore, at?: number): Promise<void> {
@@ -210,7 +164,7 @@ export const raiseDayCeiling = (input: {
   const attempt = Effect.gen(function* () {
     const at = yield* Effect.tryPromise({ try: () => store.head(CONTROL_STREAM), catch: (e) => e })
     const state = yield* Effect.tryPromise({
-      try: () => readControl(store, 0, { snapshots: store === eventStore ? log.snapshots : undefined }),
+      try: () => readControl(store, { snapshots: store === eventStore ? log.snapshots : undefined }),
       catch: (e) => e,
     })
     const verdict = raiseTransition({
@@ -277,7 +231,7 @@ export async function requestShutdownUnlessStanding(
 ): Promise<Asking> {
   for (let attempt = 0; ; attempt++) {
     const at = await store.head(CONTROL_STREAM)
-    const standing = (await readControl(store, 0, { snapshots: store === eventStore ? log.snapshots : undefined }))
+    const standing = (await readControl(store, { snapshots: store === eventStore ? log.snapshots : undefined }))
       .shutdown
     if (standing !== null) return { asked: false, standing }
     try {
@@ -322,7 +276,7 @@ export async function recordStart(
 ): Promise<{ recorded: true } | { recorded: false; standing: ShutdownRequest }> {
   for (let attempt = 0; ; attempt++) {
     const at = await store.head(CONTROL_STREAM)
-    const standing = (await readControl(store, 0, { snapshots: store === eventStore ? log.snapshots : undefined }))
+    const standing = (await readControl(store, { snapshots: store === eventStore ? log.snapshots : undefined }))
       .shutdown
     if (standing !== null && standing.version > since) return { recorded: false, standing }
     try {

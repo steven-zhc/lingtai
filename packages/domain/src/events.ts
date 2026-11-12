@@ -1531,7 +1531,7 @@ export type PauseCause = z.infer<typeof PauseCause>
  * fails the log's admission test — is this worth remembering later — and would
  * bury everything that is.
  *
- * @summary A person, or the conductor itself, paused the conductor so it takes no new work.
+ * @summary The conductor paused itself over a tier a runtime cannot provide, and takes no new work until a person resumes it.
  */
 export const ConductorPaused = z.object({
   by: z.string(),
@@ -1575,7 +1575,7 @@ export const ConductorPaused = z.object({
   cause: PauseCause.optional(),
 })
 
-/** @summary The conductor was resumed, by a person or by itself when the daily spending limit was lifted. */
+/** @summary A person resumed the conductor after the setup's pause. */
 export const ConductorResumed = z.object({ by: z.string() })
 
 /** @summary Today's spend reached the daily ceiling; no new work starts until it is lifted. */

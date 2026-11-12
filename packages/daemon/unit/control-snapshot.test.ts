@@ -2,18 +2,11 @@
  * A whole-stream control read starts from the latest usable snapshot (0124 §6, #871)
  * and gives the answer reducing from version 1 gives.
  */
-import {
-  CONTROL_STREAM,
-  type ControlState,
-  controlReducer,
-  isRetiredEventType,
-  reduceAll,
-  reduceControl,
-} from '@lingtai/domain'
+import { CONTROL_STREAM, controlReducer, isRetiredEventType, reduceAll, reduceControl } from '@lingtai/domain'
 import { histories, lateHistories } from '@lingtai/domain/test/histories'
 import type { Snapshot } from '@lingtai/event-store'
 import { createMemoryEventStore, createMemorySnapshotStore } from '@lingtai/event-store/memory'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { readControl } from '../src/control.ts'
 
@@ -64,15 +57,15 @@ describe('readControl through a snapshot equals reducing from version 1', () => 
       it(`history ${n}, prefix ${len}`, async () => {
         const { store, snapshots, at } = await build(history.slice(0, len))
         const want = await readControl(store)
-        expect(await readControl(store, 0, { snapshots })).toEqual(want)
+        expect(await readControl(store, { snapshots })).toEqual(want)
         for (let k = 1; k <= len; k++) {
           snapshots.plant(at(k))
-          expect(await readControl(store, 0, { snapshots })).toEqual(want)
+          expect(await readControl(store, { snapshots })).toEqual(want)
         }
         snapshots.plant({ ...at(len), lastSeq: 999999n }) // void anchor
-        expect(await readControl(store, 0, { snapshots })).toEqual(want)
+        expect(await readControl(store, { snapshots })).toEqual(want)
         snapshots.plant(at(len, 'not json {'))
-        expect(await readControl(store, 0, { snapshots })).toEqual(want)
+        expect(await readControl(store, { snapshots })).toEqual(want)
       })
     }
   }
@@ -83,13 +76,13 @@ describe('readControl offers', () => {
     Array.from({ length: n }, (_, i) => ({
       type: i % 2 === 0 ? 'ConductorPaused' : 'ConductorResumed',
       actor: 'human:steven',
-      data: i % 2 === 0 ? { by: 'steven', reason: 'r', until: null } : { by: 'steven' },
+      data: i % 2 === 0 ? { by: 'steven', reason: 'r', cause: 'setup', holdsAcrossStarts: true } : { by: 'steven' },
     }))
 
   it('offers one snapshot anchored on the last envelope when the tail crosses', async () => {
     const { store, stored, snapshots } = await build(pauses(6))
     const offer = vi.fn()
-    await readControl(store, 0, { snapshots, writer: { offer } })
+    await readControl(store, { snapshots, writer: { offer } })
     expect(offer).toHaveBeenCalledTimes(1)
     const s = offer.mock.calls[0]![0] as Snapshot
     const last = stored[stored.length - 1]!
@@ -100,9 +93,9 @@ describe('readControl offers', () => {
   it('offers nothing when the tail does not cross, or there is none', async () => {
     const { store, snapshots, at } = await build(pauses(4))
     const offer = vi.fn()
-    await readControl(store, 0, { snapshots, writer: { offer } })
+    await readControl(store, { snapshots, writer: { offer } })
     snapshots.plant(at(4))
-    await readControl(store, 0, { snapshots, writer: { offer } })
+    await readControl(store, { snapshots, writer: { offer } })
     expect(offer).not.toHaveBeenCalled()
   })
 
@@ -110,7 +103,7 @@ describe('readControl offers', () => {
     const { store, snapshots, at } = await build(pauses(9))
     snapshots.plant(at(6, 'not json {'))
     const offer = vi.fn()
-    await readControl(store, 0, { snapshots, writer: { offer } })
+    await readControl(store, { snapshots, writer: { offer } })
     expect(offer).toHaveBeenCalledTimes(1)
   })
 
@@ -124,7 +117,7 @@ describe('readControl offers', () => {
       latest: (k: Parameters<typeof real>[0]) => (++calls > 1 ? Promise.resolve(null) : real(k)),
     }
     const want = await readControl(store)
-    expect(await readControl(store, 0, { snapshots: reset as never })).toEqual(want)
+    expect(await readControl(store, { snapshots: reset as never })).toEqual(want)
   })
 
   it('never touches the process log when a store is passed with no snapshots', async () => {
@@ -133,62 +126,16 @@ describe('readControl offers', () => {
   })
 })
 
-// Today's two-reduce algorithm for `since > 0`, kept as the reference (#874). The pause is scoped by the
-// watermark; a shutdown is not — it is the whole stream's, ended by a `ConductorStarted` (0126).
-function reference(stored: Parameters<typeof reduceControl>[0], since: number, now: Date): ControlState {
-  const events = stored
-  const whole = reduceControl(events, now)
-  const scoped = {
-    ...reduceControl(
-      events.filter((e) => e.version > since),
-      now,
-    ),
-    shutdown: whole.shutdown,
-  }
-  if (scoped.paused) return scoped
-  if (!whole.paused || !whole.holdsAcrossStarts) return scoped
-  return { ...scoped, paused: true, by: whole.by, reason: whole.reason, until: whole.until, cause: whole.cause }
-}
-
-const pick = (s: ControlState) => ({
-  paused: s.paused,
-  by: s.by,
-  reason: s.reason,
-  until: s.until,
-  cause: s.cause,
-  shutdown: s.shutdown,
-})
-
-describe('readControl(store, since) equals the two-reduce reference', () => {
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
+describe('readControl equals the whole-stream reduce, with or without a snapshot', () => {
   for (const [n, history] of all.entries()) {
     for (let len = 1; len <= history.length; len++) {
       it(`history ${n}, prefix ${len}`, async () => {
         const { store, stored, snapshots, at } = await build(history.slice(0, len))
-        const untils = stored
-          .map((e) => (e.data as { until?: unknown } | null)?.until)
-          .filter((u): u is string => typeof u === 'string')
-          .map((u) => Date.parse(u))
-          .filter((t) => !Number.isNaN(t))
-        const nows = [new Date('2026-01-01T00:00:00Z'), ...untils.flatMap((t) => [new Date(t - 1), new Date(t + 1)])]
-        vi.useFakeTimers({ toFake: ['Date'] })
-        const check = async (cache: { snapshots?: typeof snapshots }) => {
-          for (const now of nows) {
-            vi.setSystemTime(now)
-            for (let since = 0; since <= len; since++) {
-              const got = await readControl(store, since, cache)
-              const want = since === 0 ? reduceControl(stored, now) : reference(stored, since, now)
-              expect(pick(got), `since ${since} now ${now.toISOString()}`).toEqual(pick(want))
-            }
-          }
-        }
-        await check({})
+        const want = reduceControl(stored)
+        expect(await readControl(store)).toEqual(want)
         for (let k = 1; k <= len; k++) {
           snapshots.plant(at(k))
-          await check({ snapshots })
+          expect(await readControl(store, { snapshots })).toEqual(want)
         }
       })
     }

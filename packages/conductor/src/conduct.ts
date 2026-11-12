@@ -47,7 +47,6 @@ import {
   CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
   controlReducer,
-  evaluateControl,
   type ReleaseCause,
   type AttemptState,
   type RuntimeId,
@@ -1016,9 +1015,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const state = yield* readThroughSnapshot(store, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
           snapshots: controlSnapshots,
         }).pipe(Effect.orDie)
-        const control = evaluateControl(state, new Date())
-        if (control.paused) {
-          return { kind: 'already-paused' as const, reason: control.reason }
+        if (state.paused) {
+          return { kind: 'already-paused' as const, reason: state.reason }
         }
         yield* Effect.promise(() =>
           store.append(CONTROL_STREAM, head, [

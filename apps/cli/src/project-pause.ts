@@ -112,7 +112,7 @@ export const resumeProjects = (name: string | undefined, by: string, options: Pr
 
     if (name === undefined) {
       // Read and append at the head the read was taken at: a pause that lands in
-      // between (the ceiling's, say) fails the append and is read again, so what
+      // between (the setup's, say) fails the append and is read again, so what
       // is printed is what this resume lifted and not what it saw a moment before.
       const store = options.store ?? eventStore
       const lift = (attempt: number): Effect.Effect<ControlState | null, unknown> =>
@@ -137,12 +137,7 @@ export const resumeProjects = (name: string | undefined, by: string, options: Pr
       if (lifted !== null) {
         const control = lifted
         did += 1
-        if (control.paused) log(`lifted the conductor-wide pause (cause ${control.cause ?? 'unknown'})`)
-        // A person's resume of the ceiling's pause waives it until that pause's midnight.
-        if (control.paused && control.cause === 'day-ceiling') {
-          const until = control.until ? ` until ${control.until.toISOString()}` : ' until midnight'
-          log(`also lifted today's spend ceiling${until} — it is not checked again today`)
-        }
+        log(`lifted the setup's pause — ${control.reason ?? 'no reason given'}`)
       }
       if (did === 0) log('nothing to resume')
     }
