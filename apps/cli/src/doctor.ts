@@ -1171,6 +1171,8 @@ export interface DoctorReach {
   /** `gh`'s runner for the `github: gh login` row, injectable so a unit test spawns nothing. */
   gh?: GhRun
   spend?: () => Promise<{ day: DaySpend; ceilingUsd: number | undefined }>
+  /** The `account: <runtime>` rows, injectable so a unit test reads no store (#1009). */
+  accounts?: () => Promise<CheckResult[]>
   /** Model-only Codex configuration, injectable so doctor tests never read machine credentials. */
   codexText?: () => CodexTextConfig | undefined
   /**
@@ -1374,7 +1376,7 @@ export function accountLimits(
   })
   return runEffect(rows).catch((err: unknown): CheckResult[] => [
     {
-      name: 'account limits',
+      name: 'daemon: account limits',
       status: 'warn',
       detail: `could not be read — ${err instanceof Error ? err.message : String(err)}`,
     },
@@ -3358,7 +3360,9 @@ export async function runDoctor(
     await step('the daemon', async () => results.push(await daemonLiveness(reach.status, reach.pause)))
     await step('daemon currency', async () => results.push(await daemonCurrency(reach.status)))
     await step('paused projects', () => pausedProjects(load).then((r) => void results.push(...r)))
-    await step('account limits', () => accountLimits(undefined, load).then((r) => void results.push(...r)))
+    await step('account limits', () =>
+      (reach.accounts ?? (() => accountLimits(undefined, load)))().then((r) => void results.push(...r)),
+    )
     await step('spend', async () =>
       results.push(
         await spendToday(
@@ -3543,7 +3547,7 @@ const OTHER = 'Other'
 const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
   ['Machine', ['node', 'packages load under Node', 'release']],
   ['Store and log', ['store', 'environment', 'postgres', 'schema', 'log', 'projections', 'snapshots']],
-  ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers', 'spend', 'rates']],
+  ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers', 'spend', 'rates', 'account']],
   ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],
   ['GitHub', ['github']],
   ['Runtimes', ['runtime']],
