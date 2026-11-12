@@ -36,7 +36,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { DatabaseSync } from 'node:sqlite'
 
 import type { TriageResult } from '@lingtai/domain/wait'
-import { Effect, Exit, Semaphore } from 'effect'
+import { Effect, Exit, Fiber, Semaphore } from 'effect'
 
 import type { BacklogEntry } from './backlog.ts'
 import { grantOfFor, type SpendRow } from './spend.ts'
@@ -542,11 +542,13 @@ export function makeSqliteProjections(db: DatabaseSync): ProjectionsPort {
                 })
                 // Named, so that a read reaching this store while the reducer is open
                 // can tell *the reducer itself is asking* from *somebody else is*. The
-                // signal is what lets an interruption reach a suspended `fn`.
-                const exit = yield* Effect.promise((signal) =>
-                  inside.run(Symbol('transaction'), () => Effect.runPromiseExitWith(context)(fn(ctx), { signal })),
-                )
-                const result = yield* exit
+                // callback runs as a fiber of its own, so that an interruption waits
+                // for it to finish, its finalizers included, before the rollback and
+                // the permit: nothing it does can land after either.
+                const result = yield* Effect.suspend(() => {
+                  const fiber = inside.run(Symbol('transaction'), () => Effect.runForkWith(context)(fn(ctx)))
+                  return Fiber.join(fiber).pipe(Effect.onInterrupt(() => Fiber.interrupt(fiber)))
+                })
                 yield* Effect.sync(() => {
                   db.exec('COMMIT')
                   // Latched **after** the commit, and that is the whole of it: SQLite's

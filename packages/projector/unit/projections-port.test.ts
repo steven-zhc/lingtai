@@ -56,7 +56,8 @@ describe('Projections over SQLite', () => {
   it('rolls back and frees the permit when interrupted while fn is suspended', async () => {
     const db = openSqliteProjections(':memory:')
     const port = makeSqliteProjections(db)
-    const store = createSqliteProjectionStore(db)
+    // The face over the very port interrupted, so one permit is what is checked.
+    const store = promiseProjectionStore(port)
     await store.transact((ctx) => ctx.query(ddl))
     const run = Effect.gen(function* () {
       const started = yield* Deferred.make<void>()
@@ -65,7 +66,10 @@ describe('Projections over SQLite', () => {
           Effect.gen(function* () {
             yield* ctx.query('insert into t values (3)')
             yield* Deferred.succeed(started, undefined)
-            yield* Effect.never
+            yield* Effect.never.pipe(
+              // A finalizer that is asynchronous still runs inside the transaction.
+              Effect.ensuring(Effect.andThen(Effect.sleep(20), ctx.query('insert into t values (5)'))),
+            )
           }),
         ),
       )
@@ -75,6 +79,6 @@ describe('Projections over SQLite', () => {
     const exit = await Effect.runPromise(Effect.exit(run))
     expect(Exit.isSuccess(exit)).toBe(true)
     await store.transact((ctx) => ctx.query('insert into t values (4)'))
-    expect(await store.transact((ctx) => ctx.query<{ id: number }>('select id from t'))).toEqual([{ id: 4 }])
+    expect(await store.transact((ctx) => ctx.query<{ id: number }>('select id from t'))).toEqual([{ id: 4 }]) // rows 3 and 5 are gone
   })
 })
