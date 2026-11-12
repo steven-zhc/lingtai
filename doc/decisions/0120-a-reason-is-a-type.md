@@ -420,7 +420,7 @@ const routeNext: (
   including a conflict or a red re-verify at `merge`, for the agent to fix on
   the new base; a restart from the base, for `ReviewFindings` only; a person,
   always.
-- **`MergeConflict`'s `fix-lines` draws from `conflict-rounds`, not `rounds`** (#653): at most `CONFLICT_ROUNDS_LIMIT = 2` per attempt, its `FixRound` carries `conflict` and leaves `round` at what `rounds` was.
+- **`MergeConflict`'s `fix-lines` draws from `conflict-rounds`, not `rounds`** (#653): at most `CONFLICT_ROUNDS_LIMIT = 2` per attempt, its `FixRound` carries `conflict` and leaves `round` at what `rounds` was. Before that round's agent starts, whether the round was bought or granted, the conductor merges the lane's `baseSha` into the attempt's worktree with `--no-commit`. A merge that does not conflict there goes to a person. A round that commits without `baseSha` in its history goes to a person too. The `review` after it is shown `fromSha..baseSha` and asked whether the resolution lost any of it.
 - **`merge-base` is the one candidate that sends `merge` back to `build`, and
   it spends no round** (#593). A `BaseMoved` is offered `merge-base`
   (`MergeBase{toSha, merge}`) and a person. Choosing it merges `toSha` into
@@ -439,10 +439,9 @@ const routeNext: (
   the overlapping paths (`fromSha..toSha`, capped at 400 lines, with the cut and
   left-out paths named) and its own diff is taken against `toSha` (#594); the
   next fix round drops that section.
-- **No other candidate sends `merge` back to `build`.** `onOffer` offers it today
-  for "a conflict an agent resolved" (`run-attempt.ts`), and nothing resolves
-  conflicts: an unchanged branch goes green again and meets the same conflict.
-  A conflict-resolving plugin can add it back (principle 8).
+- **No other candidate sends `merge` back to `build`.** A conflict is resolved by
+  `fix-lines`' round on a base the conductor has already merged in (above), and
+  reaches `build` through `implement`.
 - **No criterion, no judge.** For `ReviewEmpty`; for a `ReviewFindings` where
   no finding carries a failure scenario; and for a `BuildRed` or `VerifyRed`
   with no output — every paid candidate is `unavailable` with `NoCriterion`.

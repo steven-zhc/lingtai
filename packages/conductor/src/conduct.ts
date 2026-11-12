@@ -3385,7 +3385,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const fork = yield* gitAskedEffect(['merge-base', 'HEAD', baseSha])
           const fromSha = Result.isSuccess(fork) ? fork.success.trim() : ''
           if (fromSha === '') {
-            return { failed: `the fork point with ${baseSha.slice(0, 7)} could not be read` }
+            return { failed: `the common ancestor with ${baseSha.slice(0, 7)} could not be read` }
           }
           const merged = yield* gitAskedEffect(['merge', '--no-commit', '--no-ff', baseSha])
           const head = yield* gitAskedEffect(['rev-parse', 'HEAD'])
