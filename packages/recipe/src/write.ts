@@ -1,5 +1,3 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
 /**
  * Writing a project's recipe down (#395) — the part `editRecipe` (#162) does
  * not do: finding the file, creating it when there is none, checking the
@@ -12,11 +10,13 @@ import { dirname } from 'node:path'
  */
 import { isDeepStrictEqual } from 'node:util'
 
+import { Cause, Effect } from 'effect'
 import { isNode, parse as parseYaml, parseDocument } from 'yaml'
 import { z } from 'zod'
 
 import { commentWritten, orderSteps, type RecipeChange, type Said, editRecipe } from './emit.ts'
-import { recipePath, resolveLocalRecipe, type SignedIn } from './local.ts'
+import { filesEffect, messageOf, plainWhen } from './files.ts'
+import { isRefusal, recipePath, resolveLocalRecipeEffect, type SignedIn } from './local.ts'
 import { RECIPE_VERSION } from './recipe.ts'
 import { RecipeInvalidError, resolveSource } from './resolve.ts'
 
@@ -30,31 +30,6 @@ export interface RecipeFiles {
    * answers as `RecipeChange[]` rather than as text (#968's `applySetup`).
    */
   recorded?: (changes: readonly RecipeChange[]) => void
-}
-
-async function readIfThere(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf8')
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw err
-  }
-}
-
-/**
- * Beside, then renamed over: an interruption mid-write leaves the old file or
- * the new one, never half of either (`apps/cli/src/init.ts`'s `writeConfig`).
- * The default mode, not `0600` — a recipe carries no credential the way
- * `config.yml`'s database URL does.
- */
-export const diskFiles: RecipeFiles = {
-  read: readIfThere,
-  replace: async (path, text) => {
-    await mkdir(dirname(path), { recursive: true })
-    const partial = `${path}.${process.pid}.partial`
-    await writeFile(partial, text)
-    await rename(partial, path)
-  },
 }
 
 export interface SetRecipeResult {
@@ -184,28 +159,37 @@ function widenStepsIfNeeded(
  * once the file exists — 0104 §14 governs an edit to it from then on, and a
  * comment there is not protected.
  */
-export async function setRecipe(
+export const setRecipeEffect = Effect.fn('recipe.set')(function* (
   project: string,
   changes: readonly RecipeChange[],
   options?: { home?: string; files?: RecipeFiles; said?: Said },
-): Promise<SetRecipeResult> {
-  const files = options?.files ?? diskFiles
+) {
+  const files = filesEffect(options?.files)
   const path = recipePath(project, options?.home)
-  const existing = await files.read(path)
-  const widened = widenStepsIfNeeded(existing, changes, path)
-  let text = editedText(existing, widened, path)
+  const existing = yield* files.read(path)
+  const widened = yield* plainWhen(() => widenStepsIfNeeded(existing, changes, path), isRefusal)
+  let text = yield* plainWhen(() => editedText(existing, widened, path), isRefusal)
 
   if (existing === null) text = orderSteps(text)
   if (existing === null && options?.said !== undefined) {
     text = commentWritten(text, options.said)
   }
 
-  resolveSource(text, refFor(text, path), path)
+  const final = text
+  yield* plainWhen(() => resolveSource(final, refFor(final, path), path), isRefusal)
 
-  files.recorded?.(changes)
-  if (existing !== null && text === existing) return { path, text, written: false }
-  await files.replace(path, text)
-  return { path, text, written: true }
+  files.recorded(changes)
+  if (existing !== null && text === existing) return { path, text, written: false } satisfies SetRecipeResult
+  yield* files.replace(path, text)
+  return { path, text, written: true } satisfies SetRecipeResult
+})
+
+export function setRecipe(
+  project: string,
+  changes: readonly RecipeChange[],
+  options?: { home?: string; files?: RecipeFiles; said?: Said },
+) {
+  return Effect.runPromise(setRecipeEffect(project, changes, options))
 }
 
 /**
@@ -217,17 +201,25 @@ export async function setRecipe(
  * *current value as the default*, pressing enter on a null must not write the
  * preset's value into the file as though the file had chosen it.
  */
-export async function readRecipeKey(
+export const readRecipeKeyEffect = Effect.fn('recipe.read-key')(function* (
+  project: string,
+  path: readonly (string | number)[],
+  options?: { home?: string; files?: RecipeFiles },
+) {
+  const files = filesEffect(options?.files)
+  const recipeFilePath = recipePath(project, options?.home)
+  const text = yield* files.read(recipeFilePath)
+  if (text === null) return null
+  const value = parseDocument(text).getIn(path)
+  return value === undefined ? null : isNode(value) ? value.toJSON() : value
+})
+
+export function readRecipeKey(
   project: string,
   path: readonly (string | number)[],
   options?: { home?: string; files?: RecipeFiles },
 ): Promise<unknown | null> {
-  const files = options?.files ?? diskFiles
-  const recipeFilePath = recipePath(project, options?.home)
-  const text = await files.read(recipeFilePath)
-  if (text === null) return null
-  const value = parseDocument(text).getIn(path)
-  return value === undefined ? null : isNode(value) ? value.toJSON() : value
+  return Effect.runPromise(readRecipeKeyEffect(project, path, options))
 }
 
 export type SaveRecipeTextResult =
@@ -247,34 +239,59 @@ export type SaveRecipeTextResult =
  * here re-serialises. Doctor's `agentRefusal` row lives in `apps/cli` and is not
  * carried over. No lock: the board is one person's local app (0111).
  */
-export async function saveRecipeText(
+export const saveRecipeTextEffect = Effect.fn('recipe.save-text')(function* (
   project: string,
   input: { loaded: string; text: string },
   options: { home?: string; files?: RecipeFiles; base?: string | null; signedIn: SignedIn },
-): Promise<SaveRecipeTextResult> {
-  const files = options.files ?? diskFiles
+) {
+  const files = filesEffect(options.files)
   const path = recipePath(project, options.home)
-  const current = await files.read(path)
-  if (current === null) return { ok: false, reason: 'missing', message: `no recipe at ${path}` }
+  const current = yield* files.read(path)
+  if (current === null) return { ok: false, reason: 'missing', message: `no recipe at ${path}` } as SaveRecipeTextResult
   // `loaded` is carried exactly (the form JSON-encodes it), so this is byte for byte.
   if (current !== input.loaded) {
-    return { ok: false, reason: 'stale', message: `${path} changed on disk since this page loaded — reload it` }
+    return {
+      ok: false,
+      reason: 'stale',
+      message: `${path} changed on disk since this page loaded — reload it`,
+    } as SaveRecipeTextResult
   }
   // A textarea's value and multipart transport rewrite line endings, so the typed text arrives
   // LF or CRLF whatever the file held; give it CRLF only if every line ending in the file is one.
   const crlfOnly = current.includes('\r\n') && !/(^|[^\r])\n/.test(current)
   const text = input.text.replace(/\r\n?/g, '\n').replaceAll('\n', crlfOnly ? '\r\n' : '\n')
-  try {
-    await resolveLocalRecipe(project, {
+  // Any failure of the resolve, a bug included, is `invalid` with its message —
+  // as the `catch` it replaces was. An interruption is not one.
+  const resolved = yield* resolveLocalRecipeEffect(
+    project,
+    {
       ...(options.home === undefined ? {} : { home: options.home }),
       base: options.base ?? null,
       signedIn: options.signedIn,
-      read: async (p) => (p === path ? text : files.read(p)),
-    })
-  } catch (err) {
-    return { ok: false, reason: 'invalid', message: err instanceof Error ? err.message : String(err) }
-  }
-  if (text === current) return { ok: true, path, written: false, content: current }
-  await files.replace(path, text)
-  return { ok: true, path, written: true, content: text }
+    },
+    (p) => (p === path ? Effect.succeed(text) : files.read(p)),
+  ).pipe(
+    Effect.map(() => null),
+    Effect.catchCause((cause) =>
+      Cause.hasInterrupts(cause)
+        ? Effect.failCause(cause)
+        : Effect.succeed({
+            ok: false,
+            reason: 'invalid',
+            message: messageOf(Cause.squash(cause)),
+          } as SaveRecipeTextResult),
+    ),
+  )
+  if (resolved !== null) return resolved
+  if (text === current) return { ok: true, path, written: false, content: current } as SaveRecipeTextResult
+  yield* files.replace(path, text)
+  return { ok: true, path, written: true, content: text } as SaveRecipeTextResult
+})
+
+export function saveRecipeText(
+  project: string,
+  input: { loaded: string; text: string },
+  options: { home?: string; files?: RecipeFiles; base?: string | null; signedIn: SignedIn },
+): Promise<SaveRecipeTextResult> {
+  return Effect.runPromise(saveRecipeTextEffect(project, input, options))
 }

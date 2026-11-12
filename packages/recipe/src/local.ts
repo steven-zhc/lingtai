@@ -24,16 +24,17 @@
  * it (0016 §4), and `steps` in the machine file is the one that matters: a step
  * that reads as declared and holds nothing is a way to weaken a gate quietly.
  */
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { RuntimeId } from '@lingtai/domain'
 import { stateDir } from '@lingtai/env'
+import { Effect } from 'effect'
 import { parse as parseYaml } from 'yaml'
 
+import { type RecipeFailed, failed, plainWhen, readRecipeFile } from './files.ts'
 import { PRESETS } from './presets.ts'
 import { LIMIT_DEFAULTS } from './recipe.ts'
-import { RecipeMissingError, type ResolvedRecipe, resolveSource } from './resolve.ts'
+import { RecipeInvalidError, RecipeMissingError, resolveSource } from './resolve.ts'
 import { assigneeOf, backoffOf, baseOf, ceilingOf, excludeOf, kindsOf } from './settings.ts'
 
 /** A project's recipe, under `stateDir()`. */
@@ -77,6 +78,15 @@ export class MachineConfigInvalidError extends Error {
 export class AgentUnresolvedError extends Error {
   override readonly name = 'AgentUnresolvedError'
 }
+
+/** The four errors a caller decides on by class: a failure, where anything else thrown is a bug. */
+export type Refusal = RecipeInvalidError | RecipeMissingError | MachineConfigInvalidError | AgentUnresolvedError
+
+export const isRefusal = (e: unknown): e is Refusal =>
+  e instanceof RecipeInvalidError ||
+  e instanceof RecipeMissingError ||
+  e instanceof MachineConfigInvalidError ||
+  e instanceof AgentUnresolvedError
 
 /**
  * **The live name, and only it, since `#247`.**
@@ -169,26 +179,31 @@ export function checkMachineConfig(text: string | null, path: string, project: s
  * Detected is a default, not a replacement for being told: the refusal for
  * two says exactly what to write, so the answer is then written down.
  */
-export async function resolveAgent(
+export const resolveAgent = (
   named: { agent: RuntimeId; from: string } | null,
   signedIn: SignedIn,
   path: string,
-): Promise<{ agent: RuntimeId; from: string }> {
-  if (named) return named
-  const detected = [...new Set(await signedIn())]
-  if (detected.length === 1) return { agent: detected[0]!, from: 'detected — the only runtime signed in' }
-  if (detected.length > 1) {
-    throw new AgentUnresolvedError(
-      `${detected.join(' and ')} are all signed in on this machine, and ${path} names no runtime.agent — ` +
-        `which one should run? Write \`runtime:\\n  agent: <${detected.join('|')}>\` in ${path} — the attempt's own ` +
-        "runtime, which a step's `agent:` overrides but does not replace; Lingtai does not pick one silently",
+): Effect.Effect<{ agent: RuntimeId; from: string }, RecipeFailed | AgentUnresolvedError> =>
+  Effect.gen(function* () {
+    if (named) return named
+    const detected = [...new Set(yield* Effect.tryPromise({ try: () => signedIn(), catch: failed('signed-in') }))]
+    if (detected.length === 1) return { agent: detected[0]!, from: 'detected — the only runtime signed in' }
+    if (detected.length > 1) {
+      return yield* Effect.fail(
+        new AgentUnresolvedError(
+          `${detected.join(' and ')} are all signed in on this machine, and ${path} names no runtime.agent — ` +
+            `which one should run? Write \`runtime:\\n  agent: <${detected.join('|')}>\` in ${path} — the attempt's own ` +
+            "runtime, which a step's `agent:` overrides but does not replace; Lingtai does not pick one silently",
+        ),
+      )
+    }
+    return yield* Effect.fail(
+      new AgentUnresolvedError(
+        `no agent runtime is signed in on this machine, and ${path} names no runtime.agent — ` +
+          "`lingtai doctor`'s `runtime: signed in` says what is missing",
+      ),
     )
-  }
-  throw new AgentUnresolvedError(
-    `no agent runtime is signed in on this machine, and ${path} names no runtime.agent — ` +
-      "`lingtai doctor`'s `runtime: signed in` says what is missing",
-  )
-}
+  })
 
 /**
  * How a provenance entry joins its value to where the value came from.
@@ -280,61 +295,71 @@ export interface LocalRecipeOptions {
   read?: (path: string) => Promise<string | null>
 }
 
-async function readIfThere(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf8')
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw err
-  }
-}
-
 /**
  * The recipe governing this project's next run, from this machine.
  *
- * Throws, like `resolveRecipe`, for the same reason: every caller's correct
- * response to an unreadable recipe is to stop.
+ * Fails, like `resolveRecipe`, for the same reason: every caller's correct
+ * response to an unreadable recipe is to stop. `read` is the Effect-side reader
+ * a caller inside the package may hand in; it wins over `options.read`.
  */
-export async function resolveLocalRecipe(project: string, options: LocalRecipeOptions): Promise<ResolvedRecipe> {
+export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(function* (
+  project: string,
+  options: LocalRecipeOptions,
+  readWith?: (path: string) => Effect.Effect<string | null, RecipeFailed>,
+) {
   const home = options.home ?? stateDir()
-  const read = options.read ?? readIfThere
+  const optionRead = options.read
+  const read =
+    readWith ??
+    (optionRead === undefined
+      ? readRecipeFile
+      : (p: string): Effect.Effect<string | null, RecipeFailed> =>
+          Effect.tryPromise({ try: () => optionRead(p), catch: failed('read') }))
   const path = recipePath(project, home)
   const machineFile = machinePath(home)
 
-  const source = await read(path)
+  const source = yield* read(path)
   if (source === null) {
-    throw new RecipeMissingError(
-      options.base ?? path,
-      `no recipe at ${path}. The recipe is yours and lives on this machine (0046 §3) — ` +
-        'nothing is read from the repository, and nothing needs committing to it',
+    return yield* Effect.fail(
+      new RecipeMissingError(
+        options.base ?? path,
+        `no recipe at ${path}. The recipe is yours and lives on this machine (0046 §3) — ` +
+          'nothing is read from the repository, and nothing needs committing to it',
+      ),
     )
   }
 
   // Read for its refusals: the machine file names nothing a resolve uses.
-  checkMachineConfig(await read(machineFile), machineFile, project, home)
+  const machine = yield* read(machineFile)
+  yield* plainWhen(() => checkMachineConfig(machine, machineFile, project, home), isRefusal)
 
   // The recipe's own `runtime.agent`, read off the file before anything is
   // merged: a preset carries none (it is about commands, not preference), and
   // the schema's default must never stand in for a choice nobody wrote down.
-  const written = namedIn(source, path)
+  const written = yield* plainWhen(() => namedIn(source, path), isRefusal)
   // A value written that is not a runtime is kept for the schema to refuse by
   // path — never replaced by what happens to be signed in.
   let agent: { agent: RuntimeId; from: string } | null = null
   if (written !== 'not a runtime') {
-    try {
-      agent = await resolveAgent(written, options.signedIn, path)
-    } catch (err) {
+    agent = yield* resolveAgent(written, options.signedIn, path).pipe(
       // **The recipe's own fault first.** A file that is wrong for some other
       // reason is reported as that, not as a missing agent: resolved once with
       // a placeholder so the schema speaks, and only a file that passes is
-      // refused for its agent.
-      if (!(err instanceof AgentUnresolvedError)) throw err
-      resolveSource(source, options.base ?? path, path, (raw) => {
-        raw['runtime'] = { ...asRecord(raw['runtime']), agent: SCHEMA_PROBE_AGENT }
-        return []
-      })
-      throw err
-    }
+      // refused for its agent. Anything else (a signed-in probe that rejected)
+      // passes through without the probe.
+      Effect.catchIf(
+        (e): e is AgentUnresolvedError => e instanceof AgentUnresolvedError,
+        (err) =>
+          plainWhen(
+            () =>
+              resolveSource(source, options.base ?? path, path, (raw) => {
+                raw['runtime'] = { ...asRecord(raw['runtime']), agent: SCHEMA_PROBE_AGENT }
+                return []
+              }),
+            isRefusal,
+          ).pipe(Effect.andThen(Effect.fail(err))),
+      ),
+    )
   }
 
   const provenance: Record<string, string> = {}
@@ -350,12 +375,16 @@ export async function resolveLocalRecipe(project: string, options: LocalRecipeOp
   // underneath afterwards.
   let wrote: unknown = {}
 
-  const resolved = resolveSource(source, options.base ?? path, path, (raw) => {
-    wrote = structuredClone(raw)
-    const own = asRecord(raw['runtime']) ?? {}
-    if (agent !== null && !('agent' in own)) raw['runtime'] = { ...own, agent: agent.agent }
-    return []
-  })
+  const resolved = yield* plainWhen(
+    () =>
+      resolveSource(source, options.base ?? path, path, (raw) => {
+        wrote = structuredClone(raw)
+        const own = asRecord(raw['runtime']) ?? {}
+        if (agent !== null && !('agent' in own)) raw['runtime'] = { ...own, agent: agent.agent }
+        return []
+      }),
+    isRefusal,
+  )
 
   // What stays the repository's facts, from the recipe file — said with its
   // value, so the doctor prints the resolved recipe rather than a list of names.
@@ -448,6 +477,10 @@ export async function resolveLocalRecipe(project: string, options: LocalRecipeOp
     `${rule?.login ?? '(none)'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.login')}`
 
   return { ...resolved, ref: options.base ?? baseOf(resolved.recipe), provenance }
+})
+
+export function resolveLocalRecipe(project: string, options: LocalRecipeOptions) {
+  return Effect.runPromise(resolveLocalRecipeEffect(project, options))
 }
 
 /**
