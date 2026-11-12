@@ -66,7 +66,7 @@ import {
   designAsksFromState,
   ticketStream,
 } from '@lingtai/domain'
-import type { PauseCause, ProjectState } from '@lingtai/domain'
+import type { ProjectState } from '@lingtai/domain'
 import {
   continuationOf,
   grantCriterion,
@@ -190,10 +190,10 @@ import { type EventStore, eventStore, log as theLog, readThroughSnapshot, type S
  * the four outcomes was reached (`outcomeOf`) and never writes it; the three
  * blocks below are where it is written, once each.
  *
- * **And one ending stops the conductor rather than the item.** A `never-ran` met
+ * **And one ending locks the account rather than backing the item off.** A `never-ran` met
  * something account-wide ([0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md)),
- * so the item is released like any other failure and `ctl-conductor` is told to
- * take nothing at all until the limit lifts — per-item backoff answering an
+ * so the item is released like any other failure and `acct-{runtime}` is told to
+ * lock that runtime's projects until the limit lifts — per-item backoff answering an
  * account-wide condition is what eighty events in ninety-two seconds looked like.
  */
 import {
@@ -223,6 +223,7 @@ import {
 } from '@lingtai/repo'
 import { type Duration, Effect, Result } from 'effect'
 
+import { reachAccountLimit } from './account.ts'
 import { armsOnOrigin } from './arms.ts'
 import {
   type Brief,
@@ -247,7 +248,7 @@ import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
-import { metTheAccountWall, type NeverStarted, standDown } from './never-started.ts'
+import { accountWallOf, type NeverStarted, standDown } from './never-started.ts'
 import { AgentHost, Repo } from './ports.ts'
 import { currentRecipe } from './projects.ts'
 import { signedInHere } from './projects.ts'
@@ -987,32 +988,25 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     }
 
     /**
-     * Append `ConductorPaused`, once, and never over a pause already holding
-     * (0031 §3, §5) — the part of `standDownConductor` (below, past the claim)
-     * that is not about *why*.
+     * Append the setup's `ConductorPaused`, once, and never over a pause
+     * already holding (0031 §3, §5): a recipe whose tier one of its runtimes
+     * cannot provide. It is conductor-wide until the 0.14.0 security epic takes
+     * #676, and lifted only by `lingtai resume`, so it is
+     * `{until: null, holdsAcrossStarts: true, cause: 'setup'}` on every call.
+     * An account's wall is not this: it locks one runtime (`standDownAccount`).
      *
      * Declared here, above section 3, so a refusal found before the claim can
-     * call it too: `standDownConductor` is a `const` further down this
-     * generator, and a call to it from here would hit its temporal dead zone
-     * before ever reaching the check this lifts out.
+     * call it: it is a `const` and a call from further down would be fine, but
+     * one from here to something below would hit its temporal dead zone.
      *
      * The three-way answer is so a caller can say what happened without a
      * second read of `CONTROL_STREAM`: `'appended'` is the pause this call
      * made, `'already-paused'` is a pause — anybody's — already holding, and
      * `'failed'` is an append this already logged, so nothing else about it is
      * said twice.
-     *
-     * `holdsAcrossStarts` marks a pause a daemon must obey however far behind
-     * its own watermark it sits (`readControl`'s merge, `packages/daemon/src/
-     * control.ts`) — true below, for the setup refusal a restart does nothing
-     * to fix, and false from `standDownConductor`, whose pause a restart's
-     * fresh watermark is meant to leave behind (0102 §3).
      */
     const pauseConductorOnce = (input: {
-      until: string | null
       reason: string
-      holdsAcrossStarts: boolean
-      cause: Extract<PauseCause, 'setup' | 'account-limit'>
     }): Effect.Effect<{ kind: 'appended' } | { kind: 'already-paused'; reason: string | null } | { kind: 'failed' }> =>
       Effect.gen(function* () {
         // Head first, then the state, then the append at that head: an event landing between
@@ -1034,9 +1028,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               data: parsePayload('ConductorPaused', {
                 by: 'lingtai',
                 reason: input.reason,
-                until: input.until,
-                holdsAcrossStarts: input.holdsAcrossStarts,
-                cause: input.cause,
+                until: null,
+                holdsAcrossStarts: true,
+                cause: 'setup',
               }),
             },
           ]),
@@ -1107,12 +1101,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * the same wrong setup.
        */
       const pausedSentence = `${base} Every queued item would meet the same thing, so the conductor is taking no work until the setup is fixed — run \`lingtai resume\` once it is.`
-      const outcome = yield* pauseConductorOnce({
-        until: null,
-        reason: pausedSentence,
-        holdsAcrossStarts: true,
-        cause: 'setup',
-      })
+      const outcome = yield* pauseConductorOnce({ reason: pausedSentence })
       if (outcome.kind === 'appended') {
         log(`dispatch refused — conductor paused until the setup is fixed: ${pausedSentence}`)
       } else if (outcome.kind === 'already-paused') {
@@ -1539,14 +1528,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       })
 
     /**
-     * The conductor stops, because the item backing off is the wrong instrument
-     * (0031 §3).
+     * The account stops, because the item backing off is the wrong instrument
+     * (0031 §3): the attempt that met the wall appends `AccountLimitReached` to
+     * `acct-{runtime}` where it learned of it (0126 §2), and nothing to
+     * `ctl-conductor`. Projects whose recipe uses `runtime` start nothing new
+     * until the guard lifts it at `until`; every other project keeps taking work.
      *
-     * **Once, not once per item.** A pause already holding is left exactly as it
-     * is, which is also what keeps this from overwriting a pause a person made: a
-     * person's pause has no expiry (0031 §5).
+     * **Once, not once per item.** A limit already standing answers `already` and
+     * appends nothing, so the first `until` stands. A failed append is logged and
+     * swallowed: it must not replace the reason the run ended.
      */
-    const standDownConductor = (what: NeverStarted, detail: string): Effect.Effect<void> =>
+    const standDownAccount = (what: NeverStarted, runtime: RuntimeId, detail: string): Effect.Effect<void> =>
       Effect.gen(function* () {
         const it =
           what.of === 'run'
@@ -1554,31 +1546,26 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             : what.of === 'step' || what.of === 'draft' || what.of === 'mid-run'
               ? `the ${what.step} step's agent`
               : `the fixing agent for ${what.action}`
-        const { until, reason } = standDown({
+        const { until, untilFrom, said, reason } = standDown({
           detail,
           what,
+          runtime,
           backoffMs: parseDuration(backoffOf(recipe)),
         })
-        // `holdsAcrossStarts: false` — a restart's fresh watermark is meant to
-        // leave this pause behind (0102 §3); unlike the setup refusal above,
-        // restarting is itself a reasonable response to a run that never started.
-        const outcome = yield* pauseConductorOnce({
+        const answer = yield* reachAccountLimit(store, runtime, {
           until: until.toISOString(),
-          reason,
-          holdsAcrossStarts: false,
-          cause: 'account-limit',
+          untilFrom,
+          said,
         })
-        if (outcome.kind === 'appended') {
-          log(
-            `${it} ${what.of === 'mid-run' ? 'met the account limit' : 'never started'} — conductor paused until ${until.toISOString()}`,
-          )
-        } else if (outcome.kind === 'already-paused') {
-          log(
-            `${it} ${what.of === 'mid-run' ? 'met the account limit' : 'never started'}; the conductor is already paused — ${outcome.reason ?? 'no reason given'}`,
-          )
+        const met = what.of === 'mid-run' ? 'met the account limit' : 'never started'
+        if (answer.kind === 'appended') {
+          log(`${it} ${met} — ${runtime} locked until ${until.toISOString()}: ${reason}`)
+        } else {
+          log(`${it} ${met}; ${runtime} is already locked until ${answer.until.toISOString()}`)
         }
-        // 'failed': `pauseConductorOnce` has already logged why.
-      })
+      }).pipe(
+        Effect.catch((error) => Effect.sync(() => log(`could not lock the ${runtime} account: ${error.message}`))),
+      )
 
     /**
      * The outermost scope, and it is the log's (0034 §4).
@@ -1708,11 +1695,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * The pass has one `implement` step and this file dispatches two different
        * agents at it — the implementer on the way through, and the agent a round
        * bought on the way back — and `StepNeverRan` carries the runtime's id, not
-       * which of the two it was. Left unrecorded, a fix round that met the wall
+       * which of the two it was (its `at` is the action's name). Left unrecorded, a fix round that met the wall
        * was reported to `standDown` as `{of: "run"}`, whose sentence is *a run
        * ended without ever starting — no turns taken, nothing spent*: written
-       * into `ConductorPaused.reason`, which is what the board's pause chip and
-       * `lingtai doctor` print, about a pass whose implementer ran, took its turns
+       * into the log line, about a pass whose implementer ran, took its turns
        * and was paid. That is the false sentence `#133` is against and `0041` §3
        * gave `NeverStarted` a third case for — `{of: "fix"}`, which nothing
        * constructed.
@@ -2921,8 +2907,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           await appendNow(runId, [runSpentFrom(outcome, judgeFor, runtime)])
         }
         /**
-         * **A quota wall is the account's, so it stops the conductor rather than
-         * this item** (0031 §3) — the third depth that wall is met at, after the
+         * **A quota wall is the account's, so it locks that account rather than
+         * backing off this item** (0031 §3) — the third depth that wall is met at, after the
          * step's own agent and the agent a refusal bought.
          *
          * `never-started` is the adapter's classification and is not re-derived
@@ -2936,15 +2922,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             neverStarted: {
               agent: runtime,
               // The runtime's own words, whole: `standDown` reads a reset time out
-              // of them (0031 §4) and the pause chip shows them as what they are.
+              // of them (0031 §4) and the log line shows them as what they are.
               detail: outcome.failure.detail,
             },
           }
         }
         if (outcome.failure) {
-          // #655: the judge's crash is the ticket's wait, and the account's wall is the conductor's.
-          if (outcome.failure.kind === 'crash' && metTheAccountWall(outcome.failure.detail)) {
-            await Effect.runPromise(standDownConductor({ of: 'mid-run', step: 'proposed' }, outcome.failure.detail))
+          // #655: the judge's crash is the ticket's wait, and the account's wall locks the runtime that said it.
+          const walled = outcome.failure.kind === 'crash' ? accountWallOf(outcome.failure.detail) : null
+          if (walled !== null) {
+            await Effect.runPromise(
+              standDownAccount({ of: 'mid-run', step: 'proposed' }, walled, outcome.failure.detail),
+            )
           }
           return held(
             `the "${named}" judge did not answer (${outcome.failure.kind}): ` +
@@ -3996,7 +3985,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             stoppedBy = null
             return {
               neverStarted: {
-                agent: options.runtime.capabilities.id,
+                agent: dispatched.capabilities.id,
                 detail: outcome.failure.detail,
               },
             }
@@ -4282,9 +4271,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // itself reports none.
         stoppedBy = fixed.failure ? fixed.failure.kind : null
         // #655: `committed` below drops the failure, so the blocked branch never sees
-        // the account's wall a fixer met after it had committed. Pause here instead.
-        if (fixed.failure?.kind === 'crash' && metTheAccountWall(fixed.failure.detail)) {
-          await Effect.runPromise(standDownConductor({ of: 'mid-run', step: 'implement' }, fixed.failure.detail))
+        // the account's wall a fixer met after it had committed. Lock the account here instead.
+        const walled = fixed.failure?.kind === 'crash' ? accountWallOf(fixed.failure.detail) : null
+        if (fixed.failure && walled !== null) {
+          await Effect.runPromise(standDownAccount({ of: 'mid-run', step: 'implement' }, walled, fixed.failure.detail))
         }
         await recordDiff(branch, after)
         return { committed: after }
@@ -5024,9 +5014,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }),
         )
         // #655: a run that started and met the account's limit. The wait above is
-        // the ticket's and is already written; this only stops the conductor.
-        if (reason._tag === 'AgentCrashed' && reason.cause === 'crash' && metTheAccountWall(reason.detail)) {
-          yield* standDownConductor({ of: 'mid-run', step: reason.step }, reason.detail)
+        // the ticket's and is already written; this only locks the account.
+        const walled = reason._tag === 'AgentCrashed' && reason.cause === 'crash' ? accountWallOf(reason.detail) : null
+        if (reason._tag === 'AgentCrashed' && walled !== null) {
+          yield* standDownAccount({ of: 'mid-run', step: reason.step }, walled, reason.detail)
         }
         log(`held at ${headSha.slice(0, 7) || 'the base'} — ${question}`)
         return {
@@ -5040,14 +5031,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       // ---- failed: the item goes back to the queue -----------------------------
-      // **And one ending stops the conductor rather than the item** (0031 §3). A
-      // `never-ran` met something account-wide, so every queued item would meet it
+      // **And one ending locks the account rather than backing the item off** (0031 §3). A
+      // `never-ran` met something account-wide, so every queued item on that runtime would meet it
       // identically: the item is released like any other failure and nothing else
-      // is taken until the pause lifts.
+      // on that runtime is taken until the lock lifts.
       if (stopped?.ending.ending === 'never-ran') {
         const at = stopped.ending.at
         const round = wallMetBy()
-        yield* standDownConductor(
+        yield* standDownAccount(
           // A `never-ran` at `implement` is the *run's* wall — **unless the agent
           // there was a round's rather than the implementer's**, which is the one
           // thing `StepNeverRan` cannot say and `fixWall` is recorded for. At any
@@ -5059,7 +5050,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // stand-down*; the stand-down is `createWorkAction`'s now, and it is the
           // same wall met by the same runtime on the same brief — so `{of: "run"}`
           // is still what a person is owed, and `at` is the action's name rather
-          // than the runtime's, which this branch has never read.
+          // than the runtime's, which this branch has never read — the runtime is
+          // `stopped.ending.runtime`, taken from the result that never ran.
           //
           // **`design` was beside `implement` on the `{of: "run"}` line until
           // `#265`, on the premise this comment stated: that it had no cell open.**
@@ -5075,6 +5067,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               : stopped.step === 'design'
                 ? { of: 'draft', step: `design:${at ?? 'agent'}` }
                 : { of: 'step', step: `${stopped.step}:${at ?? 'agent'}` },
+          stopped.ending.runtime,
           stopped.ending.detail,
         )
       }

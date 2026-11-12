@@ -43,14 +43,18 @@
  * fragment so a reader is pointed at it rather than away from it.
  *
  * **One reading here is a verdict, and it is safe for the same reason** (#655).
- * `metTheAccountWall` decides whether a run that *did* start ended on the
- * runtime's own account-limit sentence, and the one thing that decides is a
- * pause. A false match idles the conductor until a person resumes it; a miss is
+ * `accountWallOf` decides whether a run that *did* start ended on the
+ * runtime's own account-limit sentence, and which runtime's, and the one thing
+ * that decides is a lock on that account. A false match idles the projects using it until `until`; a miss is
  * the behaviour from before it existed. It never touches the ticket's wait.
  *
  * Nothing here does I/O and nothing here appends. `conduct.ts` is where the
- * pause is written, and it is one call.
+ * lock is written, and it is one call.
  */
+import type { PayloadOf, RuntimeId } from '@lingtai/domain'
+
+/** Which of `standDown`'s four sources the `until` came from; `AccountLimitReached`'s own field. */
+export type UntilFrom = PayloadOf<'AccountLimitReached'>['untilFrom']
 
 /**
  * Whether a failure's detail is a runtime's own account-limit sentence.
@@ -59,16 +63,18 @@
  * a test's output and in an agent's prose (#655). The sentence is looked for as
  * a substring, because a fix round and a drafting agent wrap it in their own.
  */
-const ACCOUNT_WALLS: readonly RegExp[] = [
+const ACCOUNT_WALLS: readonly { readonly runtime: RuntimeId; readonly pattern: RegExp }[] = [
+  // Codex, first: it says `You've hit your usage limit` as well as `You have hit …`,
+  // and Claude Code's looser pattern below would claim the first form.
+  { runtime: 'codex', pattern: /\bYou(?:(?:'|\u2019)ve| have) hit your usage limit\b/i },
   // Claude Code: `You've hit your monthly spend limit`, `…session limit`, `…weekly limit`.
-  /\bYou(?:'|\u2019)ve hit your [a-z ]{0,30}limit\b/i,
-  /\byour session limit resets\b/i,
-  // Codex.
-  /\bYou have hit your usage limit\b/i,
+  { runtime: 'claude-code', pattern: /\bYou(?:'|\u2019)ve hit your (?!usage limit)[a-z ]{0,30}limit\b/i },
+  { runtime: 'claude-code', pattern: /\byour session limit resets\b/i },
 ]
 
-export function metTheAccountWall(detail: string): boolean {
-  return ACCOUNT_WALLS.some((wall) => wall.test(detail))
+/** The runtime whose own account-limit sentence `detail` holds, or null (#1011). */
+export function accountWallOf(detail: string): RuntimeId | null {
+  return ACCOUNT_WALLS.find((wall) => wall.pattern.test(detail))?.runtime ?? null
 }
 
 /**
@@ -293,7 +299,7 @@ export type NeverStarted =
   /**
    * An agent that **started** and met the account's limit part-way (#655). Unlike
    * every other variant the run is not released: the ticket keeps its crash
-   * wait, and this only stops the conductor.
+   * wait, and this only locks the account.
    */
   | { readonly of: 'mid-run'; readonly step: string }
 
@@ -338,10 +344,9 @@ function subject(what: NeverStarted): { opening: string; whose: string } {
 }
 
 /**
- * When the conductor takes work again, and the sentence saying why.
+ * When the locked account's projects take work again, and the sentence saying why.
  *
- * The sentence is what the board's pause chip shows (#77) and what
- * `lingtai doctor` prints, so it has to carry three things a person woken by it
+ * The sentence is what the run's log line carries, so it has to carry three things a person woken by it
  * would ask: what happened, until when, and where the time came from. The
  * runtime's own words are quoted rather than summarised — they are the evidence
  * the classification refused to read, and dropping them here would leave the
@@ -356,10 +361,12 @@ export function standDown(input: {
   /** `source.backoff` in milliseconds, for when the message named no time. */
   backoffMs: number
   what: NeverStarted
+  /** The runtime that met the wall: the account the sentence says is locked. */
+  runtime: RuntimeId
   now?: Date
   /** The zone a wall clock with no zone of its own is read in. Tests only — production leaves it to `hostZone()`. */
   zone?: string
-}): { until: Date; reason: string } {
+}): { until: Date; untilFrom: UntilFrom; said: string; reason: string } {
   const now = input.now ?? new Date()
   const reset = readReset(input.detail, now, input.zone)
   const until = reset !== null && 'at' in reset ? reset.at : new Date(now.getTime() + input.backoffMs)
@@ -368,6 +375,14 @@ export function standDown(input: {
   // read is a fault in `parseResetAt`, not a fact about the account, and it is
   // said as one — quoting the fragment, so the reader is sent to the string
   // rather than told there is nothing to look for.
+  const untilFrom: UntilFrom =
+    reset === null
+      ? 'backoff'
+      : 'at' in reset
+        ? reset.guessedLatest
+          ? 'message-latest'
+          : 'message'
+        : 'backoff-unreadable'
   const from =
     reset === null
       ? "it named no reset time, so this is the recipe's backoff"
@@ -381,10 +396,12 @@ export function standDown(input: {
   const { opening, whose } = subject(input.what)
   return {
     until,
+    untilFrom,
+    said,
     reason:
       `${opening}. ` +
-      `Every queued item would meet the same thing, so the conductor is taking no work ` +
-      `until ${until.toISOString()} (${from}). ${whose}: ${said || 'nothing at all'}`,
+      `Every queued item would meet the same thing, so every project whose recipe uses ${input.runtime} ` +
+      `takes no new work until ${until.toISOString()} (${from}). ${whose}: ${said || 'nothing at all'}`,
   }
 }
 

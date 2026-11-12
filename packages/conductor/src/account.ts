@@ -1,7 +1,7 @@
 /**
  * The writers of `acct-{runtime}`: each reads the stream, asks the pure
  * transition (`@lingtai/domain`'s `account.ts`) and appends on the transition
- * only (0126 §3). Nothing calls `reachAccountLimit` yet — #1011 does.
+ * only (0126 §3). `standDownAccount` in `conduct.ts` calls `reachAccountLimit` (#1011).
  */
 import {
   type AccountState,

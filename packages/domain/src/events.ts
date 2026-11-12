@@ -1558,9 +1558,10 @@ export const ConductorPaused = z.object({
    * `readControl` in `packages/daemon/src/control.ts`).
    *
    * `since`-scoped reads (0102 §3) exist so a signal aimed at one daemon is not
-   * the next one's to obey — true of every pause a person or `standDownConductor`
-   * makes, because a restart starts fresh and that pause's reason no longer
-   * applies. It is false of a refused dispatch: the setup a restart just loaded
+   * the next one's to obey — true of a pause a person makes, because a restart
+   * starts fresh and that pause's reason no longer applies. (An account's limit
+   * is not a pause: `standDownAccount` locks `acct-{runtime}`, which a restart
+   * does not lift.) It is false of a refused dispatch: the setup a restart just loaded
    * is the same setup that could not provide the tier, so the new daemon must
    * not take work either. Defaulted, so every pause written before this field
    * existed is read as not holding across a start, which is what it was.

@@ -116,6 +116,7 @@ import {
   type StepOutcome,
   type WaitId,
 } from '@lingtai/domain'
+import type { RuntimeId } from '@lingtai/domain'
 import type { AttemptRef } from '@lingtai/domain/wait'
 import { kindOfAction, type Recipe, type StepAction } from '@lingtai/recipe'
 
@@ -461,6 +462,8 @@ export { NEEDS_INPUT, NO_DESIGN, type SentBack, type TheDesign }
 export interface StepNeverRan extends LeftTheTreeAt {
   readonly ending: 'never-ran'
   readonly at: string
+  /** The runtime that was dispatched and met the wall (#1011); `at` is the action's name, or the judge's runtime. */
+  readonly runtime: RuntimeId
   readonly detail: string
 }
 
@@ -1401,6 +1404,7 @@ export async function runAttempt(options: AttemptOptions): Promise<AttemptOver> 
       const ending: StepNeverRan = {
         ending: 'never-ran',
         at: reply.neverStarted.agent,
+        runtime: reply.neverStarted.agent,
         detail: reply.neverStarted.detail,
       }
       record({ step: 'proposed', ending, results: [] })
@@ -2113,7 +2117,12 @@ function threw(spec: StepSpec, error: unknown): StepDidNotFinish {
  */
 function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
   if (result.neverRanAt !== null) {
-    return { ending: 'never-ran', at: result.neverRanAt.action, detail: result.neverRanAt.detail }
+    return {
+      ending: 'never-ran',
+      at: result.neverRanAt.action,
+      runtime: result.neverRanAt.runtime,
+      detail: result.neverRanAt.detail,
+    }
   }
   // **Asked before did-not-finish, and neither reads a string** (`#296`). The
   // pipeline compares `NEEDS_INPUT` once, in the file that defines it, and what

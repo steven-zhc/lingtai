@@ -183,7 +183,9 @@ describe('keeping the document the step made', () => {
  * 0066 §5 unbuildable.
  */
 describe("the step's own list hands a document forward", () => {
-  const drafting = (result: Partial<ActionResult> & { verdict: ActionResult['verdict'] }): Action => ({
+  const drafting = (
+    result: Partial<ActionResult> & { verdict: Exclude<ActionResult['verdict'], 'never-ran'> },
+  ): Action => ({
     name: 'shape it',
     kind: 'agent',
     yields: 'design',
@@ -229,7 +231,7 @@ describe("the step's own list hands a document forward", () => {
    */
   it("advances the pair together, so a second destination sees the first's locator", async () => {
     const seen: (TheDesign | undefined)[] = []
-    const watching = (name: string, answer: Partial<ActionResult>): Action => ({
+    const watching = (name: string, answer: { document?: string; locator?: string }): Action => ({
       name,
       kind: 'file',
       yields: 'design',

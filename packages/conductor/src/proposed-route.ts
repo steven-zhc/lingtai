@@ -27,6 +27,7 @@ import {
   type RouteDecision,
   type RouteOffer,
   type RoutingPolicy,
+  type RuntimeId,
   type Spent,
 } from '@lingtai/domain'
 import type { AttemptRef } from '@lingtai/domain/wait'
@@ -148,7 +149,7 @@ export async function replyFor(
   offer: RouteOffer,
   arrived: { readonly findings: readonly ActionFinding[]; readonly evidence: string },
   judge: ((on: Judging) => Promise<Judged>) | undefined,
-): Promise<JudgeReply | { readonly neverStarted: { readonly agent: string; readonly detail: string } }> {
+): Promise<JudgeReply | { readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string } }> {
   if (offer.available.length < 2) return { _tag: 'NotAsked' }
 
   const when = whenOf(offer.proposal)

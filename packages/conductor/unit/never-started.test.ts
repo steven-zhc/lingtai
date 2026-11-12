@@ -19,7 +19,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { metTheAccountWall, parseResetAt, standDown } from '../src/never-started.ts'
+import { accountWallOf, parseResetAt, standDown } from '../src/never-started.ts'
 
 /** What the log actually held, six times, on the night 0031 is about. */
 const QUOTA = "You've hit your session limit · resets 11pm (America/Chicago)"
@@ -186,7 +186,13 @@ describe('standDown', () => {
   const now = new Date('2026-09-09T08:44:14Z')
 
   it('waits for the time the message named', () => {
-    const { until, reason } = standDown({ detail: QUOTA, backoffMs: 3_600_000, what: { of: 'run' }, now })
+    const { until, reason } = standDown({
+      runtime: 'claude-code',
+      detail: QUOTA,
+      backoffMs: 3_600_000,
+      what: { of: 'run' },
+      now,
+    })
 
     expect(until.toISOString()).toBe('2026-09-10T04:00:00.000Z')
     // The prose is on the chip, because the classification refused to read it
@@ -201,6 +207,7 @@ describe('standDown', () => {
    */
   it("falls back to the recipe's backoff, and says that is what it did", () => {
     const { until, reason } = standDown({
+      runtime: 'claude-code',
       detail: "You're out of usage credits",
       backoffMs: 3_600_000,
       what: { of: 'run' },
@@ -224,6 +231,7 @@ describe('standDown', () => {
    */
   it('says which agent never started, and does not say a paid run spent nothing', () => {
     const { until, reason } = standDown({
+      runtime: 'claude-code',
       detail: QUOTA,
       backoffMs: 3_600_000,
       what: { of: 'step', step: 'proposed:review' },
@@ -245,6 +253,7 @@ describe('standDown', () => {
   /** The weekly wall, stood down for until it lifts rather than for an hour (#210). */
   it('stands down until the weekly limit lifts', () => {
     const { until, reason } = standDown({
+      runtime: 'claude-code',
       detail: WEEKLY,
       backoffMs: 3_600_000,
       what: { of: 'run' },
@@ -267,6 +276,7 @@ describe('standDown', () => {
    */
   it("waits for Codex's named reset time rather than the recipe's backoff", () => {
     const { until, reason } = standDown({
+      runtime: 'claude-code',
       detail: CODEX_USAGE,
       backoffMs: 3_600_000,
       what: { of: 'step', step: 'review:review' },
@@ -290,6 +300,7 @@ describe('standDown', () => {
   it("waits at the latest instant an unzoned date could mean, when this host's own guess has passed", () => {
     const now = new Date('2026-09-30T13:00:00Z')
     const { until, reason } = standDown({
+      runtime: 'claude-code',
       detail: CODEX_USAGE,
       backoffMs: 3_600_000,
       what: { of: 'step', step: 'review:review' },
@@ -339,7 +350,13 @@ describe('standDown', () => {
       // is not read here, but it is not *no* time either.
       ['You have hit your usage limit. Try again in 3 hours.', now],
     ] as const) {
-      const { until, reason } = standDown({ detail, backoffMs: 3_600_000, what: { of: 'run' }, now: at })
+      const { until, reason } = standDown({
+        runtime: 'claude-code',
+        detail,
+        backoffMs: 3_600_000,
+        what: { of: 'run' },
+        now: at,
+      })
       expect(until.getTime(), detail).toBe(at.getTime() + 3_600_000)
       expect(reason, detail).toContain('named a reset time')
       expect(reason, detail).toContain('could not read')
@@ -349,6 +366,7 @@ describe('standDown', () => {
 
     // And the fragment is quoted, so the reader is pointed at it.
     const { reason } = standDown({
+      runtime: 'claude-code',
       detail: WEEKLY,
       backoffMs: 3_600_000,
       what: { of: 'run' },
@@ -360,6 +378,7 @@ describe('standDown', () => {
   /** And a message that named nothing still says so, and nothing more. */
   it('still says no reset was named when none was', () => {
     const { reason } = standDown({
+      runtime: 'claude-code',
       detail: 'Not logged in · Please run /login',
       backoffMs: 3_600_000,
       what: { of: 'run' },
@@ -372,6 +391,7 @@ describe('standDown', () => {
   /** The run's own sentence, unchanged — 0031 §3 is not being restated. */
   it("keeps 0031's sentence for a run that never started", () => {
     const { reason } = standDown({
+      runtime: 'claude-code',
       detail: QUOTA,
       backoffMs: 3_600_000,
       what: { of: 'run' },
@@ -383,14 +403,46 @@ describe('standDown', () => {
   })
 })
 
-/** #655: a run that started and met the account's limit pauses the conductor, and nothing looser does. */
-describe('metTheAccountWall', () => {
+/** #1011: `standDown` says which source its `until` came from, and what the runtime said. */
+describe('standDown: untilFrom and said', () => {
+  const run = (detail: string, now: Date, zone?: string) =>
+    standDown({
+      runtime: 'claude-code',
+      detail,
+      backoffMs: 3_600_000,
+      what: { of: 'run' },
+      now,
+      ...(zone ? { zone } : {}),
+    })
+
+  it('returns each untilFrom for its branch', () => {
+    expect(run(QUOTA, new Date('2026-09-09T09:44:14Z'), 'America/Chicago').untilFrom).toBe('message')
+    expect(run("You're out of usage credits", new Date('2026-09-09T09:44:14Z')).untilFrom).toBe('backoff')
+    expect(run(CODEX_USAGE, new Date('2026-09-30T13:00:00Z')).untilFrom).toBe('message-latest')
+    expect(run(WEEKLY, new Date('2026-09-19T15:00:00Z')).untilFrom).toBe('backoff-unreadable')
+  })
+
+  it('says the runtime, and carries the collapsed words', () => {
+    const out = run(`${QUOTA}\n   again`, new Date('2026-09-09T09:44:14Z'), 'America/Chicago')
+    expect(out.said).toBe(`${QUOTA} again`)
+    expect(out.reason).toContain('every project whose recipe uses claude-code')
+    expect(out.reason).not.toContain('the conductor is taking no work')
+  })
+})
+
+/** #655: a run that started and met the account's limit locks its runtime's account, and nothing looser does. */
+describe('accountWallOf', () => {
+  it("names Codex for Codex's own `You've hit your usage limit` form", () => {
+    expect(accountWallOf(CODEX_USAGE)).toBe('codex')
+  })
+
   const MONTHLY =
     "You've hit your monthly spend limit · raise it at https://claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 12:50pm (America/Chicago)"
 
   it("pauses until the reset #637's message names", () => {
-    expect(metTheAccountWall(MONTHLY)).toBe(true)
+    expect(accountWallOf(MONTHLY)).toBe('claude-code')
     const { until, reason } = standDown({
+      runtime: 'claude-code',
       detail: MONTHLY,
       backoffMs: 3_600_000,
       what: { of: 'mid-run', step: 'implement' },
@@ -403,14 +455,20 @@ describe('metTheAccountWall', () => {
   })
 
   it("matches the sentence inside a fix round's own wrapping", () => {
-    expect(metTheAccountWall(`the fixing agent did not finish (crash: ${MONTHLY}), so …`)).toBe(true)
+    expect(accountWallOf(`the fixing agent did not finish (crash: ${MONTHLY}), so …`)).toBe('claude-code')
   })
 
   it("falls back to the backoff for Codex's sentence, which names no reset", () => {
     const detail = 'You have hit your usage limit.'
-    expect(metTheAccountWall(detail)).toBe(true)
+    expect(accountWallOf(detail)).toBe('codex')
     const now = new Date('2026-10-26T17:33:31Z')
-    const { until } = standDown({ detail, backoffMs: 3_600_000, what: { of: 'mid-run', step: 'review' }, now })
+    const { until } = standDown({
+      runtime: 'claude-code',
+      detail,
+      backoffMs: 3_600_000,
+      what: { of: 'mid-run', step: 'review' },
+      now,
+    })
     expect(until.getTime()).toBe(now.getTime() + 3_600_000)
   })
 
@@ -421,7 +479,7 @@ describe('metTheAccountWall', () => {
       'AssertionError: expected the limit to be 3',
       'the agent hit the turn limit',
     ]) {
-      expect(metTheAccountWall(detail)).toBe(false)
+      expect(accountWallOf(detail)).toBeNull()
     }
   })
 })

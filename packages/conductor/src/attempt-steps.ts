@@ -127,7 +127,7 @@
  * the ending happened, and neither does this file's failure to resolve them.
  */
 import type { ActionContext, ActionFinding, InterruptedCause, TheDesign } from '@lingtai/actions'
-import type { Envelope, ToAppend } from '@lingtai/domain'
+import type { Envelope, RuntimeId, ToAppend } from '@lingtai/domain'
 import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 // Type-only, and the shape is imported rather than redeclared for the reason
 // `ports.ts` gives: a worktree's path and base sha are data, and a second
@@ -278,7 +278,7 @@ export interface Stopped {
  * `agent` is which runtime refused, because 0041 §3 asks for it by name.
  */
 export interface NeverStarted {
-  readonly neverStarted: { readonly agent: string; readonly detail: string }
+  readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string }
 }
 
 // ----------------------------------------------------------- the ports ----
@@ -445,7 +445,7 @@ export type Judged =
    * the next ticket into the same wall — `80` events in `92` seconds is what 0031
    * §3 was written about.
    */
-  | { readonly neverStarted: { readonly agent: string; readonly detail: string } }
+  | { readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string } }
   | { readonly noJudge: true }
   /**
    * **The judge answered, and the machine could not read it** (`#462`,

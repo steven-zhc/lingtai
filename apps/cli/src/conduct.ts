@@ -755,8 +755,9 @@ export interface ProjectsOptions {
   log: (line: string) => void
   /**
    * Asked before each project, and a sentence back ends the pass there (#210).
-   * A pause one project's run appended stands for every project after it: the
-   * wall it met is the account's, not the repository's.
+   * The setup's pause stands for every project after it. An account's wall is
+   * not this: it locks one runtime, and reaches the next project through
+   * `locked`, which reads `acct-` fresh for each.
    */
   paused?: () => Promise<string | null>
   /** Asked after `paused`; a sentence skips this project and carries on to the next. */

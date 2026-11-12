@@ -55,7 +55,7 @@ export type WorkedAnswer =
   /** What it wants answered, in words a person reads (0043) and a judge routes on. */
   | { readonly asked: string }
   /** 0031 §1's `never-started`: zero turns, zero cost, and about the account. */
-  | { readonly neverStarted: { readonly agent: string; readonly detail: string } }
+  | { readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string } }
   /**
    * It started and left no receipt — a crash, a spent turn budget, no commit.
    *
@@ -172,12 +172,14 @@ export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Ac
       }
       if ('neverStarted' in answer) {
         // The wall's own words and nothing added, exactly as `createDraftAction`
-        // reports the same wall: `standDownConductor` writes the sentence a person
-        // reads, and this is the detail it quotes. Which runtime met it is the
-        // conductor's — one conductor dispatches one — so a name spliced in here
-        // would be the second place it is said.
+        // reports the same wall: `standDownAccount` writes the sentence a person
+        // reads, and this is the detail it quotes. The runtime rides beside it, as
+        // `spent.runtime` does for an agent action: since #314 a step names its own
+        // runtime, so which one met the wall is the dispatch's to say, not a
+        // default of the conductor's.
         return {
           verdict: 'never-ran',
+          runtime: answer.neverStarted.agent,
           evidence: boundedEvidence(answer.neverStarted.detail),
           findings: [],
         }

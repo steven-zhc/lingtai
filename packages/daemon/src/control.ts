@@ -124,8 +124,7 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * daemon that happened to be running when it found that out — a restart loads
  * the same setup, so the new daemon must meet the same pause rather than take
  * work until it refuses the same ticket again. `holdsAcrossStarts` marks
- * exactly that pause (and only that one; `standDownConductor`'s does not carry
- * it). The answer is the whole-stream state, read through the snapshot, scoped
+ * exactly that pause (and only that one: an account's limit is not a pause). The answer is the whole-stream state, read through the snapshot, scoped
  * by version (`scopeControl`): a pause is kept when it came after `since` or
  * holds across starts. A shutdown is returned as the whole stream has it.
  * `requested`, `continuing`, `discussions`, `holdsAcrossStarts`,

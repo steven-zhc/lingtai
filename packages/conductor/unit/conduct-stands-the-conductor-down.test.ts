@@ -26,7 +26,7 @@
  * time (`#251`).
  */
 import type { Runtime } from '@lingtai/agent'
-import { waitWords, routesOf, type PayloadOf } from '@lingtai/domain'
+import { waitWords, routesOf, type PayloadOf, type RuntimeId } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -35,6 +35,7 @@ import {
   PROJECT,
   RECIPE,
   REVIEWED,
+  TWO_RUNTIMES,
   JUDGED_BY_AN_AGENT,
   designerAtTheWall,
   fakeGitHub,
@@ -63,11 +64,23 @@ import {
 const wallHourIn = (zone: string, at: string) =>
   new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', hour: '2-digit' }).format(new Date(at))
 
+/**
+ * **#1011: the wall locks the account that met it and pauses nobody.** One
+ * `AccountLimitReached` on `acct-<runtime>`, and nothing on `ctl-conductor`.
+ */
+const lockOn = async (store: ReturnType<typeof memoryStore>, runtime: RuntimeId) => {
+  const reached = (await store.read(`acct-${runtime}`)).filter((e) => e.type === 'AccountLimitReached')
+  expect(reached).toHaveLength(1)
+  expect(await store.read('ctl-conductor')).toEqual([])
+  return reached[0]!.data as PayloadOf<'AccountLimitReached'>
+}
+
 describe('when a run never starts', () => {
   it('pauses the conductor once, however many runs never start', async () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
+    const logged: string[] = []
 
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const result = await once(
@@ -81,6 +94,7 @@ describe('when a run never starts', () => {
           merge: false,
           home: '/tmp/fake-home',
           store,
+          log: (line) => logged.push(line),
         },
         fakePorts(did, store),
       )
@@ -127,22 +141,18 @@ describe('when a run never starts', () => {
     // And which step met it, because the release is read beside nine others.
     expect(reason).toContain('implement')
 
-    // And the account-wide answer was given exactly once.
-    const control = await store.read('ctl-conductor')
-    const paused = control.filter((e) => e.type === 'ConductorPaused')
-    expect(paused).toHaveLength(1)
-
-    const d = paused[0]!.data as { by: string; reason: string; until: string }
-    // `lingtai` and not a person: a pause with nobody's name on it would read as a
-    // bug rather than as a decision.
-    expect(d.by).toBe('lingtai')
-    expect((d as { cause?: string }).cause).toBe('account-limit')
+    // And the account was locked exactly once, however many runs met the wall:
+    // the first `until` stands, and the conductor was paused by nobody.
+    const d = await lockOn(store, 'claude-code')
+    expect(d.untilFrom).toBe('message')
     // Read out of the message, not guessed at: 11pm in Chicago, as an instant —
     // and asked back in Chicago, because that is where the message said it.
     expect(wallHourIn('America/Chicago', d.until)).toBe('23')
-    // The evidence is on the pause, because this is the only place a person can
-    // learn what actually stopped the queue.
-    expect(d.reason).toContain("You've hit your session limit")
+    // The runtime's own words are on the lock, because this is the only place a
+    // person can learn what actually stopped it.
+    expect(d.said).toContain("You've hit your session limit")
+    expect(logged.filter((line) => line.includes('claude-code locked until'))).toHaveLength(1)
+    expect(logged.filter((line) => line.includes('already locked'))).toHaveLength(5)
 
     // **Nothing was spent, and nothing was left half done.** Six worktrees cut and
     // six removed — the finalizer is unconditional, so a pass that stopped at the
@@ -175,6 +185,7 @@ describe('when a run never starts', () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
+    const logged: string[] = []
     const closing = RECIPE.replace('steps: {}', 'steps:\n  end:\n    - { name: close it, when: failed, close: true }')
 
     const result = await once(
@@ -188,6 +199,7 @@ describe('when a run never starts', () => {
         merge: false,
         home: '/tmp/fake-home',
         store,
+        log: (line) => logged.push(line),
       },
       fakePorts(did, store),
     )
@@ -241,6 +253,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
+    const logged: string[] = []
 
     const result = await once(
       {
@@ -253,6 +266,7 @@ describe('when an agent inside the pass produces no verdict', () => {
         merge: false,
         home: '/tmp/fake-home',
         store,
+        log: (line) => logged.push(line),
       },
       fakePorts(did, store),
     )
@@ -274,9 +288,8 @@ describe('when an agent inside the pass produces no verdict', () => {
     const review = (ended.data as PayloadOf<'StepEnded'>).outcome.actions.find((a) => a.name === 'review')!
     expect(review.result._tag).toBe('NeverStarted')
 
-    const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
-    expect(paused).toHaveLength(1)
-    const reason = (paused[0]!.data as { reason: string }).reason
+    await lockOn(store, 'claude-code')
+    const reason = logged.join('\n')
     // Which agent, by name, and where it was declared.
     expect(reason).toContain("the proposed:review step's agent never started")
     expect(reason).toContain('the run that reached it did start, and was paid for')
@@ -288,6 +301,54 @@ describe('when an agent inside the pass produces no verdict', () => {
 
     // The item keeps its place, as any failed run's does.
     expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).toContain('TicketReleased')
+  })
+
+  /**
+   * **#1011: the account locked is the one the dispatched agent ran on**, not the
+   * pass's own. A review declared on `agent: codex` that never starts locks
+   * `acct-codex`; a default to the pass's runtime would lock `claude-code`, which
+   * the implementer had just used without trouble.
+   */
+  it("locks the runtime a step named, and not the pass's own", async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const logged: string[] = []
+    const codexAtTheWall: Runtime = {
+      capabilities: { ...runtime.capabilities, id: 'codex' },
+      run: async () => ({
+        exitCode: 1,
+        turns: 0,
+        durationMs: 8_000,
+        costUsd: 0,
+        failure: { kind: 'never-started', detail: 'You have hit your usage limit.' },
+        text: null,
+        sessionId: 'sess-review',
+      }),
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], TWO_RUNTIMES),
+        runtime,
+        runtimeFor: () => codexAtTheWall,
+        signedIn: async () => ['codex'],
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+        log: (line) => logged.push(line),
+      },
+      fakePorts(did, store),
+    )
+    expect(result).toMatchObject({ ok: false })
+
+    const d = await lockOn(store, 'codex')
+    expect(d.untilFrom).toBe('backoff')
+    expect(await store.read('acct-claude-code')).toEqual([])
+    expect(logged.join('\n')).toContain('codex locked until')
   })
 
   /**
@@ -313,6 +374,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
+    const logged: string[] = []
 
     const result = await once(
       {
@@ -325,6 +387,7 @@ describe('when an agent inside the pass produces no verdict', () => {
         merge: false,
         home: '/tmp/fake-home',
         store,
+        log: (line) => logged.push(line),
       },
       fakePorts(did, store),
     )
@@ -345,9 +408,8 @@ describe('when an agent inside the pass produces no verdict', () => {
     expect(run.map((e) => e.type)).not.toContain('RunFinished')
     expect(did).not.toContain('wire')
 
-    const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
-    expect(paused).toHaveLength(1)
-    const reason = (paused[0]!.data as { reason: string }).reason
+    await lockOn(store, 'claude-code')
+    const reason = logged.join('\n')
     // Which agent, by name, and what did not happen because of it.
     expect(reason).toContain("the design:draft step's agent never started")
     expect(reason).toContain('nothing drafted the design')
@@ -388,6 +450,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
+    const logged: string[] = []
     const ports = fakePorts(did, store)
     // The lane refuses with the one reason a round is bought for.
     ports.repo.integrate = () =>
@@ -436,6 +499,7 @@ describe('when an agent inside the pass produces no verdict', () => {
         merge: true,
         home: '/tmp/fake-home',
         store,
+        log: (line) => logged.push(line),
       },
       ports,
     )
@@ -473,9 +537,8 @@ describe('when an agent inside the pass produces no verdict', () => {
     expect(run.find((e) => e.type === 'RunFinished')!.data).toMatchObject({ turns: 3 })
     expect(run.find((e) => e.type === 'RunSpent')!.data).toMatchObject({ costUsd: 0.42 })
 
-    const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
-    expect(paused).toHaveLength(1)
-    const reason = (paused[0]!.data as { reason: string }).reason
+    await lockOn(store, 'claude-code')
+    const reason = logged.join('\n')
     // The fixing agent, by name, and what it was bought to answer.
     expect(reason).toContain('the agent bought to fix merge (round 1) never started')
     expect(reason).toContain('the run that reached it did start, and was paid for')
@@ -512,6 +575,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
+    const logged: string[] = []
     const ports = fakePorts(did, store)
 
     /** Everything runs and is paid for; only the judge meets the wall. */
@@ -547,6 +611,7 @@ describe('when an agent inside the pass produces no verdict', () => {
         merge: false,
         home: '/tmp/fake-home',
         store,
+        log: (line) => logged.push(line),
       },
       ports,
     )
@@ -558,9 +623,8 @@ describe('when an agent inside the pass produces no verdict', () => {
     // answers `ok: "held"` and leaves the item for a person.
     expect(result).toMatchObject({ ok: false, stage: 'proposed' })
 
-    const paused = (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
-    expect(paused).toHaveLength(1)
-    const reason = (paused[0]!.data as { reason: string }).reason
+    await lockOn(store, 'claude-code')
+    const reason = logged.join('\n')
     // The step whose agent met it, and the clause that is the point of §3.
     expect(reason).toContain('proposed')
     expect(reason).toContain('Every queued item would meet the same thing')
@@ -587,6 +651,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
+    const logged: string[] = []
     const tried = { n: 0 }
 
     const result = await once(
@@ -600,6 +665,7 @@ describe('when an agent inside the pass produces no verdict', () => {
         merge: false,
         home: '/tmp/fake-home',
         store,
+        log: (line) => logged.push(line),
       },
       fakePorts(did, store),
     )
