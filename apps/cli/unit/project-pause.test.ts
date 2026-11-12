@@ -223,6 +223,26 @@ describe('lingtai doctor: account limits (#1009)', () => {
     expect(rows[0]!.detail).toContain('lingtai account lift claude-code once it is over')
   })
 
+  it('does not list a paused project, or one held by another limited account, as taking work', async () => {
+    const w = await world(['lingtai', 'other', 'third'])
+    await limit(w.options.store!)
+    await Effect.runPromise(pauseProjects('other', 'human:a', w.options))
+    const rows = await accountLimits(w.options.store!, w.projects, recipeFor, () => new Date(2026, 10, 11, 20, 0))
+    expect(rows[0]!.detail).toContain('takes work: third')
+    expect(rows[0]!.detail).not.toContain('takes work: other')
+    expect(rows[0]!.detail).not.toMatch(/takes work:.*other/)
+    // codex limited too: the project that uses only codex waits as well.
+    await w.options.store!.append(accountStream('codex'), 0, [
+      {
+        type: 'AccountLimitReached',
+        actor: 'conductor',
+        data: { runtime: 'codex', until: until.toISOString(), untilFrom: 'message', said: 'limit' },
+      },
+    ])
+    const both = await accountLimits(w.options.store!, w.projects, recipeFor, () => new Date(2026, 10, 11, 20, 0))
+    expect(both.find((r) => r.name === 'account: claude-code')!.detail).toContain('takes work: none')
+  })
+
   it('says a passed limit lifts when the conductor next looks', async () => {
     const w = await world()
     await limit(w.options.store!)

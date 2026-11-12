@@ -79,6 +79,7 @@ import {
   RuntimeId,
   ceilingFacts,
   isEventType,
+  locksOn,
   untilFromWords,
   whenLabel,
   todaysCeiling,
@@ -1353,9 +1354,17 @@ export function accountLimits(
     const projects = (yield* Effect.tryPromise({ try: () => load(), catch: (e) => e })).filter(
       (p) => p.project !== null,
     )
+    const control = yield* Effect.tryPromise({ try: () => readControl(store), catch: (e) => e })
     const uses = yield* Effect.forEach(projects, (p) =>
       Effect.tryPromise({ try: () => recipeFor(p), catch: (e) => e }).pipe(
-        Effect.map((resolved) => ({ project: p.project!, runtimes: runtimesOf(resolved.recipe) }) as const),
+        Effect.map((resolved) => {
+          const runtimes = runtimesOf(resolved.recipe)
+          const accounts = new Map(limited.filter(([r]) => runtimes.includes(r)))
+          // Takes work only where the guard would answer no lock at all: a pause, the ceiling
+          // or another limited account holds a project too.
+          const free = locksOn({ project: p, control, accounts }).length === 0
+          return { project: p.project!, runtimes, free } as const
+        }),
         Effect.catch(() => Effect.succeed(null)),
       ),
     )
@@ -1367,7 +1376,7 @@ export function accountLimits(
       const passed = limit.until.getTime() <= at.getTime()
       const list = (names: string[]) => (names.length === 0 ? 'none' : names.join(', '))
       const waits = resolved.filter((u) => u.runtimes.includes(runtime)).map((u) => u.project)
-      const takes = resolved.filter((u) => !u.runtimes.includes(runtime)).map((u) => u.project)
+      const takes = resolved.filter((u) => u.free).map((u) => u.project)
       const detail = passed
         ? `until ${until} — passed; lifts when the conductor next looks`
         : `at its usage limit until ${until} (${untilFromWords(limit.untilFrom)}), since ${whenLabel(limit.since, at)} — lingtai waits: ${list(waits)}; takes work: ${list(takes)} — lingtai account lift ${runtime} once it is over`

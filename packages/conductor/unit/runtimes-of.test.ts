@@ -18,6 +18,10 @@ describe('runtimesOf', () => {
     ).toEqual(['claude-code', 'codex'])
   })
 
+  it('lists a runtime only a non-built-in judge uses', () => {
+    expect(runtimesOf(recipe('claude-code', { proposed: [{ judge: 'codex' }] }))).toEqual(['claude-code', 'codex'])
+  })
+
   it('puts the steps first-seen order after runtime.agent', () => {
     expect(runtimesOf(recipe('codex', { build: [{ agent: 'claude-code' }] }))).toEqual(['codex', 'claude-code'])
   })
