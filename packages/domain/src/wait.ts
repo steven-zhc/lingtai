@@ -367,7 +367,13 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
 export function grantCriterion(
   reason: WaitReason,
   refusal?: { readonly key: string; readonly findings: readonly Finding[] } | null,
-): { printed: { step: Step; detail: string; because?: string }; findings: Finding[]; declined?: string } | null {
+): {
+  printed: { step: Step; detail: string; because?: string }
+  findings: Finding[]
+  declined?: string
+  /** A conflict wait's proof (#1120): the base the lane found conflicting. Absent on an old wait. */
+  conflict?: { baseSha: string; paths: string[] }
+} | null {
   if (reason._tag === 'AgentCrashed' && reason.standing !== undefined)
     return grantCriterion(reason.standing.reason, refusal)
   // A fixer declined: the criterion is the review findings it declined (the
@@ -436,6 +442,7 @@ export function grantCriterion(
       return {
         printed: { step: 'merge', detail: (proposal.paths ?? []).join('\n'), because: 'conflict' },
         findings: [],
+        ...(proposal.baseSha === null ? {} : { conflict: { baseSha: proposal.baseSha, paths: proposal.paths ?? [] } }),
       }
     default:
       return null

@@ -31,6 +31,7 @@ import {
   attemptBrief,
   attemptOutcome,
   clamp,
+  conflictResolvedOf,
   diffBaseShaOf,
   priorAttempts,
   promptVersionFor,
@@ -845,5 +846,36 @@ describe('promptVersionFor', () => {
     expect(promptVersionFor('ticket@1932', 'the build refused')).toBe(
       promptVersionFor('ticket@1932', 'the build refused'),
     )
+  })
+})
+
+describe('conflictResolvedOf (#1120)', () => {
+  const BASE = 'b'.repeat(40)
+  const act = (yields: Action['yields'], result: unknown, plugin = 'x'): Action =>
+    ({ plugin, name: plugin, onSha: 'sha-1', evidence: '', yields, result }) as Action
+  const step = (e: ReturnType<typeof stream>, step: PayloadOf<'StepStarted'>['step'], actions: Action[]) => [
+    e('StepStarted', started('r', step)),
+    e('StepEnded', { runId: 'r', outcome: { step, round: 0, actions } }),
+  ]
+  const conflicted = act(
+    'merge',
+    {
+      _tag: 'Completed',
+      integration: { _tag: 'Conflicted', paths: ['a.ts'], baseSha: BASE, headSha: 'h'.repeat(40) },
+    },
+    'merge',
+  )
+
+  it('is still owed when every reviewer was not reached after a clipped diff', () => {
+    const e = stream('r')
+    const events = [
+      ...step(e, 'merge', [conflicted]),
+      ...step(e, 'implement', [act('commit', { _tag: 'Completed', head: 'c'.repeat(40), question: null })]),
+      ...step(e, 'review', [
+        act('verdict', { _tag: 'DiffTooLarge', size: 9, limit: 1 }),
+        act('verdict', { _tag: 'NotReached' }),
+      ]),
+    ]
+    expect(conflictResolvedOf(events)).toEqual({ baseSha: BASE, paths: ['a.ts'] })
   })
 })

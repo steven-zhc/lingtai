@@ -132,6 +132,22 @@ describe('allowedResolutions', () => {
     expect(criterion?.printed.detail).toContain('lint failed')
   })
 
+  it('grantCriterion: a merge conflict carries the base sha it was found on, and none when the wait has none (#1120)', () => {
+    const wait = (baseSha: string | null) =>
+      grantCriterion(
+        parseReason({
+          _tag: 'ProposedEscalated',
+          run,
+          proposal: { _tag: 'MergeConflict', output: 'x', paths: ['src/a.ts'], baseSha, headSha: null },
+          because: { _tag: 'NotAsked' },
+        }),
+      )
+
+    expect(wait('b'.repeat(40))?.conflict).toEqual({ baseSha: 'b'.repeat(40), paths: ['src/a.ts'] })
+    expect(wait(null)).not.toHaveProperty('conflict')
+    expect(wait(null)?.printed.because).toBe('conflict')
+  })
+
   describe('ProposedEscalated, by Proposal tag', () => {
     const because = { _tag: 'NotAsked' as const }
 

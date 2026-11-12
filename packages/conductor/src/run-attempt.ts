@@ -987,7 +987,23 @@ export interface AttemptOptions {
      */
     readonly roundsSpent?: number
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
-    readonly landedOnBase?: { readonly paths: readonly string[]; readonly fromSha: string; readonly toSha: string }
+    readonly landedOnBase?: {
+      readonly paths: readonly string[]
+      readonly fromSha: string
+      readonly toSha: string
+      readonly conflicted?: readonly string[]
+    }
+    /**
+     * A granted conflict round's proof (#1120): the base the lane found conflicting. Absent
+     * on an old wait, which keeps the brief that tells the agent to merge. On that
+     * continuation's first `implement` visit the conductor merges it in first.
+     */
+    readonly conflict?: { readonly baseSha: string; readonly paths: readonly string[] }
+    /**
+     * A conflict round's merge that no review has seen yet, read off the log (#1120): a
+     * continuation that resumes the review is still owed the conflict block and question.
+     */
+    readonly conflictResolved?: { readonly baseSha: string; readonly paths: readonly string[] }
     /** A prior human grant caps automatic fix routing across later continuations. */
     readonly roundLimit?: number
     /** One fix dispatch authorized by the wait resolution, consumed on the first implement visit. */
@@ -998,6 +1014,20 @@ export interface AttemptOptions {
 
 /** What `AttemptOptions.mergeBase` answers. */
 type MergeBaseAnswer = { readonly head: string } | { readonly failed: string }
+/**
+ * What `AttemptPortOptions.mergeForConflict` answers (#1120): the merge is standing in
+ * the worktree with these paths marked, or it could not be made to. `overlap` is the
+ * files both sides changed since `fromSha`; absent, the marked paths stand for it.
+ */
+export type ConflictMergeAnswer =
+  | {
+      readonly conflicted: {
+        readonly paths: readonly string[]
+        readonly fromSha: string
+        readonly overlap?: readonly string[]
+      }
+    }
+  | { readonly failed: string }
 /** What `AttemptOptions.baseIsRed` is asked, and what it answers. */
 type BaseIsRedAsked = Parameters<NonNullable<AttemptOptions['baseIsRed']>>[0]
 type BaseIsRedAnswer = Awaited<ReturnType<NonNullable<AttemptOptions['baseIsRed']>>>
@@ -1020,6 +1050,15 @@ export interface AttemptPortOptions {
   readonly actionsAt: (step: Step, actions: readonly StepAction[]) => readonly ActionPort[]
   readonly judge?: (on: Judging) => Effect.Effect<Judged>
   readonly mergeBase?: (toSha: string) => Effect.Effect<MergeBaseAnswer>
+  /**
+   * Starts the merge of the lane's `baseSha` in the attempt's own worktree, with `--no-commit`,
+   * before a conflict round's agent does (#1120). Effect-only: it is not on `AttemptOptions`.
+   */
+  readonly mergeForConflict?: (baseSha: string) => Effect.Effect<ConflictMergeAnswer>
+  /** Rebuilds a committed conflict merge's fork point and overlap for a resumed review (#1120). */
+  readonly conflictEvidence?: (
+    baseSha: string,
+  ) => Effect.Effect<{ readonly fromSha: string; readonly overlap: readonly string[] } | null>
   readonly baseIsRed?: (asked: BaseIsRedAsked) => Effect.Effect<BaseIsRedAnswer>
 }
 
@@ -1324,8 +1363,14 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     let onSha = options.context.onSha
     let recheck: readonly ActionFinding[] = options.from?.findings ?? options.context.recheck ?? []
     /** What landed on the base, for the review after a `base-moved` merge (#594); cleared by the first fix round after a review has seen it. */
-    let landedOnBase: { paths: readonly string[]; fromSha: string; toSha: string } | null =
-      options.from?.landedOnBase ?? null
+    let landedOnBase: {
+      paths: readonly string[]
+      fromSha: string
+      toSha: string
+      conflicted?: readonly string[]
+    } | null = options.from?.landedOnBase ?? null
+    /** The merge standing in the worktree for the conflict round in flight (#1120); cleared by the next fix round or base merge. */
+    let conflictMerge: { baseSha: string; fromSha: string; paths: readonly string[] } | null = null
     /** The commit the last base merge brought in; kept for the rest of the pass, so later reviews diff against it (#594). */
     let mergedOnto: string | null = options.from?.landedOnBase?.toSha ?? null
     /**
@@ -1366,6 +1411,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       round: roundsSpent,
       recheck,
       ...(landedOnBase === null ? {} : { landedOnBase }),
+      ...(conflictMerge === null ? {} : { conflictMerge }),
       ...(mergedOnto === null ? {} : { mergedOnto }),
       ...(reviewedSha === null ? {} : { reviewedSha }),
     })
@@ -1387,6 +1433,39 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     // child: it is `ERROR` by that action alone, like any step.
     const routing = (...args: Parameters<typeof routeProposal>): Effect.Effect<boolean> =>
       inStepSpan('step proposed', contextFor().round ?? 0, routeProposal(...args))
+    /**
+     * What a conflict round's pre-merge changes in the walk (#1120): the review after
+     * the round is shown the base's changes on the overlap and asked what the
+     * resolution lost, and is of the whole head (`reviewedSha` null: a delta since
+     * the last review would show the base's commits as the fix's).
+     */
+    const applyConflictMerge = (
+      baseSha: string,
+      got: Extract<ConflictMergeAnswer, { conflicted: unknown }>['conflicted'],
+    ) => {
+      const paths = got.paths
+      landedOnBase = {
+        paths: [...new Set([...(got.overlap ?? []), ...paths])],
+        conflicted: paths,
+        fromSha: got.fromSha,
+        toSha: baseSha,
+      }
+      mergedOnto = baseSha
+      reviewedSha = null
+      approvedAt = null
+      conflictMerge = { baseSha, fromSha: got.fromSha, paths }
+    }
+    /** A conflict round that cannot be started is a person's, through the router's own shape. */
+    const conflictNotStarted = (proposal: Proposal, why: string): AttemptEnd => ({
+      _tag: 'WaitOnPerson',
+      reason: {
+        _tag: 'ProposedEscalated',
+        run: { runId: options.context.runId },
+        proposal,
+        because: { _tag: 'JudgeHandedOver', why: `the conflict round could not be started: ${why}` },
+      },
+    })
+
     /**
      * **`proposed`'s route, built from a `Propose` — the one place `offerFor`,
      * `replyFor`, `decideRoute` and `routeNext` (`@lingtai/domain`, through
@@ -1486,6 +1565,18 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               ? { failed: 'this attempt was handed no way to merge the base in' }
               : yield* options.mergeBase(next.toSha)
         }
+        // **The fourth** (#1120): a bought conflict round starts with the lane's base merged
+        // in, `--no-commit`, so the fixer stands in the conflict the lane proved. Before
+        // `record` as `merged` is, and applied in the `FixRound` case below.
+        let conflictAnswer: ConflictMergeAnswer | null = null
+        if (next._tag === 'FixRound' && next.conflict !== undefined && offer.proposal._tag === 'MergeConflict') {
+          conflictAnswer =
+            offer.proposal.baseSha === null
+              ? { failed: 'the lane named no base sha to merge' }
+              : options.mergeForConflict === undefined
+                ? { failed: 'this attempt was handed no way to merge the base in' }
+                : yield* options.mergeForConflict(offer.proposal.baseSha)
+        }
         // Read before `record` moves `onSha` to the merge commit (#671).
         const approvedHeadStands = approvedAt !== null && onSha === approvedAt
         record({
@@ -1533,6 +1624,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             // Nothing to diff without the fork point and the paths: the review then
             // falls back to the ordinary prompt. A second merge replaces the value.
             mergedOnto = next.toSha
+            conflictMerge = null
             // Only a person's approval of the head the merge started from keeps the
             // earlier read; any other base move is a full review.
             reviewedSha = approvedHeadStands ? approvedAt : null
@@ -1552,6 +1644,20 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             // reached the review, which is still owed the section.
             if (steps.slice(lapStart).some((v) => v.step === 'review')) landedOnBase = null
             lapStart = steps.length
+            // The merge standing for the last round is not this round's (#1120).
+            conflictMerge = null
+            if (conflictAnswer !== null) {
+              if ('failed' in conflictAnswer) {
+                stopped = reported
+                end = conflictNotStarted(offer.proposal, conflictAnswer.failed)
+                return false
+              }
+              // `offer.proposal` is a `MergeConflict` with a base sha, or the answer is `failed`.
+              applyConflictMerge(
+                offer.proposal._tag === 'MergeConflict' ? (offer.proposal.baseSha ?? '') : '',
+                conflictAnswer.conflicted,
+              )
+            }
             // A conflict round has its own counter and leaves `rounds` where it was (#653).
             if (next.conflict === undefined) roundsSpent = next.round
             else conflictRoundsSpent = next.conflict
@@ -1576,8 +1682,75 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         }
       })
 
+    let grantedConflictMerged = false
+    let conflictEvidenceRead = false
     while (at !== null && at !== 'end') {
       const spec = SPEC[at]
+      // **A resumed review is owed the conflict evidence** (#1120), rebuilt from the committed
+      // merge. Read on the first visit past `admit` and `prepared`: until `admit`'s cut has
+      // recreated the worktree there is no tree for `conflictEvidence` to ask git about.
+      if (!conflictEvidenceRead && at !== 'admit' && at !== 'prepared') {
+        conflictEvidenceRead = true
+        if (
+          options.from?.conflictResolved !== undefined &&
+          options.from.landedOnBase === undefined &&
+          options.from.conflict === undefined &&
+          options.conflictEvidence !== undefined
+        ) {
+          const asked = options.from.conflictResolved
+          const found = yield* options.conflictEvidence(asked.baseSha)
+          // Evidence that cannot be rebuilt is not evidence that nothing is owed: a review
+          // without the lost-changes question is a person's to decide.
+          if (found === null) {
+            stopped = null
+            end = conflictNotStarted(
+              {
+                _tag: 'MergeConflict',
+                output: '',
+                paths: [...asked.paths],
+                baseSha: asked.baseSha,
+                headSha: null,
+              },
+              `the committed merge of ${asked.baseSha.slice(0, 7)} could not be found in the history, so the review cannot be asked what it lost`,
+            )
+            break
+          } else {
+            landedOnBase = {
+              paths: [...new Set([...found.overlap, ...asked.paths])],
+              conflicted: asked.paths,
+              fromSha: found.fromSha,
+              toSha: asked.baseSha,
+            }
+            mergedOnto = asked.baseSha
+          }
+        }
+      }
+      // **A granted conflict round gets the same pre-merge** (#1120), once, before the
+      // continuation's first `implement`. An old wait without a base sha keeps the brief
+      // that tells the agent to merge.
+      if (at === 'implement' && options.from?.conflict !== undefined && !grantedConflictMerged) {
+        grantedConflictMerged = true
+        const asked = options.from.conflict
+        const got: ConflictMergeAnswer =
+          options.mergeForConflict === undefined
+            ? { failed: 'this attempt was handed no way to merge the base in' }
+            : yield* options.mergeForConflict(asked.baseSha)
+        if ('failed' in got) {
+          stopped = null
+          end = conflictNotStarted(
+            {
+              _tag: 'MergeConflict',
+              output: '',
+              paths: [...asked.paths],
+              baseSha: asked.baseSha,
+              headSha: null,
+            },
+            got.failed,
+          )
+          break
+        }
+        applyConflictMerge(asked.baseSha, got.conflicted)
+      }
       const visitContext = contextFor()
       /**
        * **Once per spine visit, before the pipeline runs** (0120 §1,

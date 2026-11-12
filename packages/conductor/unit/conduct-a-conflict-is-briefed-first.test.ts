@@ -72,12 +72,14 @@ describe('a conflict round after a review that passed with a minor', () => {
         at: 'a'.repeat(40),
         implementerCommits: true,
         conflicts: { paths: ['src/fix.ts'], baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40) },
+        // The conductor merges the base in first (#1120), so the tree has to conflict too.
+        inTree: { conflicts: ['src/fix.ts'], ancestor: true },
       }),
     )
 
     expect(fixPrompts.length).toBeGreaterThan(0)
     const first = fixPrompts[0]!
-    const merge = first.indexOf('run git merge `main`')
+    const merge = first.indexOf('`MERGE_HEAD` and the')
     const open = first.indexOf('## Also open from the last review')
     const minor = first.indexOf(MINOR)
     expect(merge).toBeGreaterThan(-1)

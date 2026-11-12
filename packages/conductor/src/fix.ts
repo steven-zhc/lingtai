@@ -481,7 +481,14 @@ export function fixBriefParts(input: {
   refusal:
     | { on: 'findings'; findings: readonly ActionFinding[] }
     | { on: 'output'; output: string }
-    | { on: 'conflict'; base: string; paths: string; findings: readonly ActionFinding[] }
+    | {
+        on: 'conflict'
+        base: string
+        paths: string
+        findings: readonly ActionFinding[]
+        /** The merge the conductor already started in this tree (#1120); absent renders the brief that tells the agent to merge. */
+        merged?: { readonly baseSha: string; readonly fromSha: string; readonly paths: readonly string[] }
+      }
   round: number
   of: number
   /** The refusing action's name, so the prompt can say who refused. */
@@ -541,7 +548,9 @@ export function fixBriefParts(input: {
     input.refusal.on === 'findings'
       ? findingsHalf(input.refusal.findings, input.action)
       : input.refusal.on === 'conflict'
-        ? conflictHalf(input.refusal.base, input.refusal.paths)
+        ? input.refusal.merged === undefined
+          ? conflictHalf(input.refusal.base, input.refusal.paths)
+          : mergedConflictHalf(input.refusal.base, input.refusal.merged)
         : outputHalf(input.refusal.output, input.action)
 
   return [
@@ -840,6 +849,57 @@ So:
   deleting the conflicting hunk. Read what each side was doing.
 - \`git add\` the resolved files and \`git commit\` the merge. Do not
   \`git merge --abort\`: that throws away the merge you just ran.
+${STOP_AND_ASK}- Change nothing the conflict did not force you to. The diff is about to be read
+  again by a reviewer who last saw it without this merge in it.
+
+The base can move again while you work. If it does, this comes back around —
+that is ordinary, and it is bounded by the rounds above.`,
+  }
+}
+
+/**
+ * A conflict round whose merge the conductor already started (#1120). The tree the
+ * agent stands in holds `MERGE_HEAD` and the markers, so there is nothing to run
+ * and the one thing it must not do is throw the merge away. What counts as done
+ * stays `conflictHalf`'s, and so do the `--ours`/`--theirs` and ask-first rules.
+ */
+function mergedConflictHalf(
+  base: string,
+  merged: { readonly baseSha: string; readonly fromSha: string; readonly paths: readonly string[] },
+): { evidence: string; criterion: string } {
+  const files =
+    merged.paths.length === 0 ? '(git named no files; `git status` names what is unmerged)' : merged.paths.join('\n')
+  return {
+    evidence: `\`${base}\` moved while this change was being worked on, and this branch does
+not merge into it cleanly. The conductor already ran
+\`git merge --no-commit --no-ff ${merged.baseSha}\` in this worktree: \`MERGE_HEAD\` and the
+conflict markers are standing now. Do not run \`git merge --abort\` and do not merge
+again; resolve what is in front of you.
+
+What landed on the base is \`${merged.fromSha.slice(0, 7)}..${merged.baseSha.slice(0, 7)}\`
+(\`git log ${merged.fromSha.slice(0, 7)}..${merged.baseSha.slice(0, 7)}\` and \`git diff ${merged.fromSha.slice(0, 7)} ${merged.baseSha.slice(0, 7)}\` show it).
+
+## What conflicts
+
+\`\`\`
+${files}
+\`\`\``,
+    criterion: `## What counts as done
+
+Resolve the markers and commit the merge. \`MERGE_HEAD\` is standing, so a plain
+\`git commit\` makes the merge commit. Then \`build\` and then \`review\` run again on
+what you committed — **both have to pass**, and the review is asked whether the
+resolution lost any of what the base changed. A commit that does not have
+\`${merged.baseSha.slice(0, 7)}\` in its history is not the merge and goes to a person.
+
+So:
+
+- Keep both intentions. The other change landed for a reason and yours was
+  asked for; a resolution that quietly drops either is a wrong answer that
+  merges cleanly.
+- **\`--ours\` and \`--theirs\` wholesale are not a resolution.** Neither is
+  deleting the conflicting hunk. Read what each side was doing.
+- \`git add\` the resolved files and \`git commit\` the merge.
 ${STOP_AND_ASK}- Change nothing the conflict did not force you to. The diff is about to be read
   again by a reviewer who last saw it without this merge in it.
 
