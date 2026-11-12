@@ -34,6 +34,10 @@ export {
   type DiffRead,
   createAgentAction,
   createDraftAction,
+  makeAgentAction,
+  makeDraftAction,
+  agentPortDepsFrom,
+  type AgentPortDeps,
   parseDraft,
   parseFindings,
   verdictFor,
@@ -117,7 +121,14 @@ export {
   type WorktreeActionDeps,
   type WorktreeActionSpec,
 } from './worktree-action.ts'
-export { actionsFromRecipe, ActionUnavailableError, type ActionDeps } from './from-recipe.ts'
+export {
+  actionsFromRecipe,
+  actionPortsFromRecipe,
+  actionPortDepsFrom,
+  ActionUnavailableError,
+  type ActionDeps,
+  type ActionPortDeps,
+} from './from-recipe.ts'
 export {
   boundedEvidence,
   commandEffect,

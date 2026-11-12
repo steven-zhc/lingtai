@@ -45,25 +45,25 @@
     "file": "packages/agent/src/auth.ts",
     "fn": "runtimeVersion",
     "until": "#790",
-    "why": "Runtime.version callers (conductor, actions, apps/cli discuss.ts and triage.ts) await it until the actions row"
+    "why": "Runtime.version callers await it: packages/conductor/src/conduct.ts (judge, firstDispatch, fixRound), apps/cli/src/discuss.ts and triage.ts, and packages/actions' review and draft through Effect.promise; until Runtime.version is an Effect, after the conductor's pass-loop row"
   },
   {
     "file": "packages/agent/src/claude-code.ts",
     "fn": "runClaudeCode",
     "until": "#790",
-    "why": "the Runtime.run callers (conductor conduct.ts, actions agent-action.ts, apps/cli discuss.ts and triage.ts) await it until the actions row makes Runtime.run an Effect"
+    "why": "Runtime.run callers await it: packages/conductor/src/conduct.ts (judge, firstDispatch, fixRound), apps/cli/src/discuss.ts and triage.ts, and packages/actions' review and draft through Effect.promise; until Runtime.run is an Effect, after the conductor's pass-loop row"
   },
   {
     "file": "packages/agent/src/codex-text.ts",
     "fn": "runCodexText",
     "until": "#790",
-    "why": "the Runtime.run callers (conductor conduct.ts, actions agent-action.ts, apps/cli discuss.ts and triage.ts) await it until the actions row makes Runtime.run an Effect"
+    "why": "Runtime.run callers await it: packages/conductor/src/conduct.ts (judge, firstDispatch, fixRound), apps/cli/src/discuss.ts and triage.ts, and packages/actions' review and draft through Effect.promise; until Runtime.run is an Effect, after the conductor's pass-loop row"
   },
   {
     "file": "packages/agent/src/codex.ts",
     "fn": "runCodex",
     "until": "#790",
-    "why": "the Runtime.run callers (conductor conduct.ts, actions agent-action.ts, apps/cli discuss.ts and triage.ts) await it until the actions row makes Runtime.run an Effect"
+    "why": "Runtime.run callers await it: packages/conductor/src/conduct.ts (judge, firstDispatch, fixRound), apps/cli/src/discuss.ts and triage.ts, and packages/actions' review and draft through Effect.promise; until Runtime.run is an Effect, after the conductor's pass-loop row"
   },
   {
     "file": "packages/agent/src/run-log.ts",
