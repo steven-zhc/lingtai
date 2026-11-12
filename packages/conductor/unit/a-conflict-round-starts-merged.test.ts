@@ -56,6 +56,7 @@ async function walk(options: {
   lane: readonly ActionResult[]
   port?: (baseSha: string) => Effect.Effect<ConflictMergeAnswer>
   from?: AttemptOptions['from']
+  evidence?: () => Effect.Effect<{ fromSha: string; overlap: readonly string[] } | null>
 }) {
   const order: string[] = []
   const implementSaw: ActionContext[] = []
@@ -72,7 +73,17 @@ async function walk(options: {
         },
       ]
     if (step === 'admit')
-      return [{ name: 'cut', kind: 'worktree', yields: 'worktree', run: async (c) => ({ ...PASSED, head: c.onSha }) }]
+      return [
+        {
+          name: 'cut',
+          kind: 'worktree',
+          yields: 'worktree',
+          run: async (c) => {
+            order.push('admit')
+            return { ...PASSED, head: c.onSha }
+          },
+        },
+      ]
     if (step === 'implement')
       return [
         {
@@ -114,6 +125,15 @@ async function walk(options: {
   const result = await Effect.runPromise(
     runAttemptEffect({
       ...ports,
+      ...(options.evidence === undefined
+        ? {}
+        : {
+            conflictEvidence: () =>
+              Effect.suspend(() => {
+                order.push('evidence')
+                return options.evidence!()
+              }),
+          }),
       ...(options.port === undefined
         ? {}
         : {
@@ -222,8 +242,7 @@ describe('a granted conflict round', () => {
       },
     })
 
-    expect(order[0]).toBe(`port ${BASE}`)
-    expect(order[1]).toBe('implement')
+    expect(order.filter((o) => o !== 'admit').slice(0, 2)).toEqual([`port ${BASE}`, 'implement'])
     expect(implementSaw[0]?.conflictMerge).toEqual({ baseSha: BASE, fromSha: FORK, paths: ['src/fix.ts'] })
     expect(implementSaw[0]?.landedOnBase?.conflicted).toEqual(['src/fix.ts'])
   })
@@ -248,5 +267,18 @@ describe('a granted conflict round', () => {
 
     expect(order.some((o) => o.startsWith('port'))).toBe(false)
     expect(implementSaw[0] && 'conflictMerge' in implementSaw[0]).toBe(false)
+  })
+})
+
+describe('a resumed review after a conflict round', () => {
+  it('reads the conflict evidence only once the worktree is cut, and hands it to the review', async () => {
+    const { order, reviewSaw } = await walk({
+      lane: [],
+      evidence: () => Effect.succeed({ fromSha: FORK, overlap: ['src/other.ts'] }),
+      from: { step: 'review', waive: [], conflictResolved: { baseSha: BASE, paths: ['src/fix.ts'] } },
+    })
+
+    expect(order.indexOf('evidence')).toBeGreaterThan(order.indexOf('admit'))
+    expect(reviewSaw[0]?.landedOnBase).toMatchObject({ conflicted: ['src/fix.ts'], toSha: BASE, fromSha: FORK })
   })
 })

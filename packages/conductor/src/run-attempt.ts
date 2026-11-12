@@ -1683,27 +1683,33 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       })
 
     let grantedConflictMerged = false
-    // **A resumed review is owed the conflict evidence** (#1120): rebuilt from the committed merge.
-    if (
-      options.from?.conflictResolved !== undefined &&
-      options.from.landedOnBase === undefined &&
-      options.from.conflict === undefined &&
-      options.conflictEvidence !== undefined
-    ) {
-      const asked = options.from.conflictResolved
-      const found = yield* options.conflictEvidence(asked.baseSha)
-      if (found !== null) {
-        landedOnBase = {
-          paths: [...new Set([...found.overlap, ...asked.paths])],
-          conflicted: asked.paths,
-          fromSha: found.fromSha,
-          toSha: asked.baseSha,
-        }
-        mergedOnto = asked.baseSha
-      }
-    }
+    let conflictEvidenceRead = false
     while (at !== null && at !== 'end') {
       const spec = SPEC[at]
+      // **A resumed review is owed the conflict evidence** (#1120), rebuilt from the committed
+      // merge. Read on the first visit past `admit` and `prepared`: until `admit`'s cut has
+      // recreated the worktree there is no tree for `conflictEvidence` to ask git about.
+      if (!conflictEvidenceRead && at !== 'admit' && at !== 'prepared') {
+        conflictEvidenceRead = true
+        if (
+          options.from?.conflictResolved !== undefined &&
+          options.from.landedOnBase === undefined &&
+          options.from.conflict === undefined &&
+          options.conflictEvidence !== undefined
+        ) {
+          const asked = options.from.conflictResolved
+          const found = yield* options.conflictEvidence(asked.baseSha)
+          if (found !== null) {
+            landedOnBase = {
+              paths: [...new Set([...found.overlap, ...asked.paths])],
+              conflicted: asked.paths,
+              fromSha: found.fromSha,
+              toSha: asked.baseSha,
+            }
+            mergedOnto = asked.baseSha
+          }
+        }
+      }
       // **A granted conflict round gets the same pre-merge** (#1120), once, before the
       // continuation's first `implement`. An old wait without a base sha keeps the brief
       // that tells the agent to merge.

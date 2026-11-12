@@ -295,9 +295,17 @@ export function conflictResolvedOf(runEvents: readonly Envelope[]): { baseSha: s
   const at = outcomes.findLastIndex((o) => o.step === 'merge' && conflictedIn(o) !== null)
   if (at < 0) return null
   const after = outcomes.slice(at + 1)
-  if (after.some((o) => o.step === 'review')) return null
+  // A review visit is not a review: a clipped diff (`DiffTooLarge`) or a reviewer that never
+  // started recorded the step and showed nobody the merge (#1120).
+  if (after.some((o) => o.step === 'review' && reviewerRanIn(o))) return null
   if (!after.some((o) => o.step === 'implement')) return null
   return conflictedIn(outcomes[at]!)
+}
+
+function reviewerRanIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
+  return outcome.actions.some(
+    (a) => a.yields === 'verdict' && a.result._tag !== 'DiffTooLarge' && a.result._tag !== 'NeverStarted',
+  )
 }
 
 function conflictedIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
