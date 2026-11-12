@@ -2433,12 +2433,19 @@ the checkout's own code, so it can name an old pause only **before** the
 checkout is updated to #1013; once it is, the doctor answers as the new reducer
 does and shows no pause for a legacy one, which is not evidence there was none.
 So, before updating, run `lingtai doctor` and note any `daemon: liveness` row
-that says `paused by …` for a pause that is not the setup's. Then, after the
-restart, run `lingtai pause <project>` for each project whose stop is still
-wanted. If the checkout is already updated and you did not look, do not infer
-from the doctor: re-pause every project you meant to be stopped. Bare
-`lingtai resume` appends no conductor resume for a legacy pause and unlocks
-every project's pause, so run it before the pauses and never after.
+that says `paused by …` for a pause that is not the setup's. **Pause before the
+new daemon starts, never after:** the new daemon takes queued work the moment it
+starts, and a pause appended afterwards does not stop an attempt already begun.
+Drain the old daemon (`lingtai shutdown`, or `lingtai service shutdown`),
+update the checkout, and with no daemon running run `lingtai pause <project>`
+for each project whose stop is still wanted — the CLI appends without one, and
+the daemon you then start reads the lock at its start. Only then start it
+(`lingtai daemon`, or `lingtai service start`), rather than `lingtai restart`,
+which starts one at once. If the checkout is already updated and you did not
+look, do not infer from the doctor: pause every project you meant to be stopped
+before starting. Bare `lingtai resume` appends no conductor resume for a legacy
+pause and unlocks every project's pause, so run it before the pauses and never
+after.
 
 **#679 — `spend` stores each run's estimate and its ticket's kind.** The table
 has new columns (`estimated_usd`, `estimate_fetched`, `kind`), so `lingtai
