@@ -21,6 +21,8 @@ import {
   loadBoard,
   queuedStanding,
   selectedProject,
+  columnSkeletonCount,
+  queuedSkeletonCount,
   skeletonCount,
   type BoardCard,
   type GithubQueue,
@@ -1134,10 +1136,21 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                 <Suspense
                   key={key(`cards-${col.id}`)}
                   fallback={
-                    <Skeleton shape={col.id === 'landed' ? 'lines' : 'card'} count={2} label="reading the log…" />
+                    <Skeleton
+                      shape={col.id === 'landed' ? 'lines' : 'card'}
+                      count={
+                        col.id === 'queued' ? queuedSkeletonCount(ctx.param) : columnSkeletonCount(ctx.param, col.id)
+                      }
+                      label="reading the log…"
+                    />
                   }
                 >
-                  <CardsPart id={col.id} ctx={ctx} queue={queue} projectKey={projectKey} />
+                  {/* Fade on mount, never on render: the boundary is keyed by
+                      project, so this element mounts once per switch and a
+                      live re-render of the same project replays nothing. */}
+                  <div className="cards-in arrive">
+                    <CardsPart id={col.id} ctx={ctx} queue={queue} projectKey={projectKey} />
+                  </div>
                 </Suspense>
               </div>
             </section>

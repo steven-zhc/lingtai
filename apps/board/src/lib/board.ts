@@ -1133,7 +1133,15 @@ const lastOffered = new Map<string, number>()
 /** Forgets every count, so a test can start from *no answer seen*. */
 export function forgetSkeletonCounts(): void {
   lastOffered.clear()
+  lastColumnCounts.clear()
 }
+
+/**
+ * How many cards each column held at its last render (#1038), keyed
+ * `${project ?? ''}/${columnId}` — `''` is *all projects*, its own scope and not
+ * a sum. Per process: a restart forgets it and the skeleton says 2 again.
+ */
+const lastColumnCounts = new Map<string, number>()
 
 /** The most skeletons the column draws, and what it draws before any answer. */
 const SKELETON_MOST = 3
@@ -1153,6 +1161,42 @@ export function skeletonCount(projects: readonly string[]): number {
     sum += n
   }
   return seen ? Math.min(sum, SKELETON_MOST) : SKELETON_UNKNOWN
+}
+
+/** Records what each column held, once per finished render. */
+export function recordColumnCounts(
+  project: string | undefined,
+  columns: readonly { id: string; cards: readonly unknown[] }[],
+): void {
+  for (const c of columns) lastColumnCounts.set(`${project ?? ''}/${c.id}`, c.cards.length)
+}
+
+/**
+ * How many skeletons a column draws on a switch: what it held last time for
+ * this scope, capped (Landed at the rows it opens; the rest at 3), 0 meaning the
+ * label alone; 2 when this scope has never been rendered.
+ */
+export function columnSkeletonCount(project: string | undefined, columnId: string): number {
+  const n = lastColumnCounts.get(`${project ?? ''}/${columnId}`)
+  if (n === undefined) return SKELETON_UNKNOWN
+  return Math.min(n, columnId === 'landed' ? LANDED_OPEN : SKELETON_MOST)
+}
+
+/**
+ * The Queued column waits twice — on the log, then on GitHub — so its first
+ * fallback is sized for both halves: the log's last count plus what GitHub last
+ * offered, capped. For *all projects*, GitHub's half is every offer seen.
+ */
+export function queuedSkeletonCount(project: string | undefined): number {
+  const log = lastColumnCounts.get(`${project ?? ''}/queued`)
+  let offered: number | undefined
+  if (project === undefined || project === '') {
+    for (const n of lastOffered.values()) offered = (offered ?? 0) + n
+  } else {
+    offered = lastOffered.get(project)
+  }
+  if (log === undefined && offered === undefined) return SKELETON_UNKNOWN
+  return Math.min((log ?? 0) + (offered ?? 0), SKELETON_MOST)
 }
 
 export interface HeldTicket {
@@ -1624,8 +1668,11 @@ export async function loadBoard(project?: string): Promise<Board> {
   // `githubQueue` applies that with this set (#884).
   const known = new Set(fromLog.map((c) => c.taskId))
 
+  const columns = toColumns(fromLog, queued.problems)
+  recordColumnCounts(project, columns)
+
   return {
-    columns: toColumns(fromLog, queued.problems),
+    columns,
     askable: queued.askable,
     known,
     queueOrder: queued.kindOrder,

@@ -21,6 +21,9 @@ import type { ProjectState } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
 import {
+  columnSkeletonCount,
+  queuedSkeletonCount,
+  recordColumnCounts,
   forgetKindColors,
   forgetSkeletonCounts,
   skeletonCount,
@@ -330,6 +333,34 @@ describe('the skeletons the Queued column waits in', () => {
     // Nothing offered: the label alone.
     await githubQueue([resolvedFilter('lingtai', ['bug'])], new Set(), async (f) => listed(f, [], {}))
     expect(skeletonCount(['lingtai'])).toBe(0)
+    forgetSkeletonCounts()
+  })
+})
+
+describe('the skeletons each column waits in on a switch (#1038)', () => {
+  const col = (id: string, n: number) => ({ id, cards: Array.from({ length: n }, () => ({})) })
+
+  it('are the last count capped, zero as the label alone, two when never seen, and per scope', () => {
+    forgetSkeletonCounts()
+    expect(columnSkeletonCount('lingtai', 'running')).toBe(2)
+    recordColumnCounts('lingtai', [col('running', 5), col('waiting', 0), col('landed', 7)])
+    expect(columnSkeletonCount('lingtai', 'running')).toBe(3)
+    expect(columnSkeletonCount('lingtai', 'waiting')).toBe(0)
+    expect(columnSkeletonCount('lingtai', 'landed')).toBe(3)
+    expect(columnSkeletonCount('other', 'running')).toBe(2)
+    expect(columnSkeletonCount(undefined, 'running')).toBe(2)
+    forgetSkeletonCounts()
+  })
+
+  it('size Queued for the log and GitHub together', async () => {
+    forgetSkeletonCounts()
+    expect(queuedSkeletonCount('lingtai')).toBe(2)
+    recordColumnCounts('lingtai', [col('queued', 1)])
+    expect(queuedSkeletonCount('lingtai')).toBe(1)
+    await githubQueue([resolvedFilter('lingtai', ['bug'])], new Set(), async (f) => listed(f, ['1'], {}))
+    expect(queuedSkeletonCount('lingtai')).toBe(2)
+    await githubQueue([resolvedFilter('lingtai', ['bug'])], new Set(), async (f) => listed(f, ['1', '2', '3', '4'], {}))
+    expect(queuedSkeletonCount('lingtai')).toBe(3)
     forgetSkeletonCounts()
   })
 })
