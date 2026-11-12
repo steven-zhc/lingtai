@@ -893,6 +893,10 @@ version: 2
 repo: { base: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
+# Named, so resolving the recipe never asks which runtimes are signed in on the
+# machine running the test: with no `runtime.agent` it detects, and CI has none.
+runtime:
+  agent: claude-code
 steps:
   proposed:
     - { name: build, run: "true" }
@@ -943,8 +947,9 @@ steps:
         load,
         // The sixth too: this machine has no `claude` binary on it, and the test
         // builds the machine it reports on (#242). The stub carries the id the
-        // recipe's default agent resolves to, so the per-project row finds it
-        // as well as the machine's `runtime: signed in`.
+        // recipe names (`runtime.agent`, which keeps resolution from detecting),
+        // so the per-project row finds it as well as the machine's
+        // `runtime: signed in`.
         { sea: probeSeaBuild, runtimes: () => signedInRuntimes },
       )
 
