@@ -6,9 +6,10 @@
  */
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
 import type { TicketSql } from '@lingtai/event-store/ticket-sql'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type DbTickets, dbTickets, ensureTicketTables } from '../src/db-tickets.ts'
+import { type DbTickets, dbTickets, ensureTicketTablesEffect } from '../src/db-tickets.ts'
 import { describeTicketsContract } from '../test/tickets-contract.ts'
 
 function freshStore(): TicketSql {
@@ -37,7 +38,7 @@ async function columns(sql: TicketSql, table: string): Promise<TicketColumn[]> {
 describe('ensureTicketTables on SQLite', () => {
   it('creates both tables, with the columns, types, defaults and primary key the ticket asks for', async () => {
     const sql = freshStore()
-    await ensureTicketTables(sql)
+    await Effect.runPromise(ensureTicketTablesEffect(sql))
 
     expect(await columns(sql, 'tickets')).toEqual([
       { name: 'project', type: 'TEXT', notnull: 1, dflt_value: null, pk: 1 },
@@ -61,7 +62,7 @@ describe('ensureTicketTables on SQLite', () => {
 
   it('refuses a second ticket for the same project and number', async () => {
     const sql = freshStore()
-    await ensureTicketTables(sql)
+    await Effect.runPromise(ensureTicketTablesEffect(sql))
 
     const now = new Date().toISOString()
     const insert = () =>
@@ -77,7 +78,7 @@ describe('ensureTicketTables on SQLite', () => {
 
   it('running it twice leaves a row already written untouched', async () => {
     const sql = freshStore()
-    await ensureTicketTables(sql)
+    await Effect.runPromise(ensureTicketTablesEffect(sql))
 
     const now = new Date().toISOString()
     await sql.query(
@@ -95,7 +96,7 @@ describe('ensureTicketTables on SQLite', () => {
     // The second run is the thing #379 asks for: it must not throw, and — the
     // actual evidence a non-throwing run is not enough on its own — the row
     // written before it ran has to still be there afterwards.
-    await ensureTicketTables(sql)
+    await Effect.runPromise(ensureTicketTablesEffect(sql))
 
     const tickets = await sql.query<{ project: string; number: number; title: string }>(
       'SELECT project, number, title FROM tickets',
@@ -150,7 +151,7 @@ describe('dbTickets, beyond the shared contract', () => {
    */
   async function realSqliteDuplicateError(): Promise<unknown> {
     const sql = freshStore()
-    await ensureTicketTables(sql)
+    await Effect.runPromise(ensureTicketTablesEffect(sql))
     const now = new Date().toISOString()
     const insert = () =>
       sql.query(
