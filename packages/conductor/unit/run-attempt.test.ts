@@ -2916,7 +2916,7 @@ describe('the pass has one caller, and it is `conduct.ts`', () => {
     const wiring = readFileSync(src, 'utf8')
     expect(wiring).toMatch(/from ["']\.\/run-attempt\.ts["']/)
     expect(wiring).toMatch(/from ["']\.\/attempt-steps\.ts["']/)
-    expect(wiring).toContain('runAttempt({')
+    expect(wiring).toContain('runAttemptEffect({')
   })
 })
 

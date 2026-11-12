@@ -2,12 +2,11 @@ import { SpanStatusCode, context, createContextKey, trace } from '@opentelemetry
 import { Effect } from 'effect'
 
 /**
- * The step and action spans of a pass (#791), made through `@opentelemetry/api`.
- * `inSpan` is for a promise body (`runAttempt`'s steps and the judge); the action
- * span is started from an Effect body by `inSpanEffect`. 0101 §6 wants
- * `Effect.withSpan` here, but a fiber a promise face starts has no bridged tracer
- * and would export nothing, so that waits for the conductor's pass loop (row 7),
- * keeping the span names.
+ * The action spans of a pass (#791), made through `@opentelemetry/api`. A step's
+ * span is an `Effect.withSpan` since #1053. `inSpan` is for a promise body (the
+ * judge, and the `end` step's actions); the action span is started from an Effect
+ * body by `inSpanEffect`. 0101 §6 wants `Effect.withSpan` here too, but that waits
+ * for the action ports, keeping the span names.
  *
  * With no provider registered the api hands out non-recording spans, so this is
  * a no-op until a host that has `telemetry.otlp_endpoint` installs one.
