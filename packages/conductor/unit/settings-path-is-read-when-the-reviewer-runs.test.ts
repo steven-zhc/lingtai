@@ -101,5 +101,13 @@ describe('the deps the reviewer is built over', () => {
       [],
     )
     expect(text.match(/actionPortsFromRecipe\(step, actions, stepDeps\)/g)).toHaveLength(1)
+    // The body of `actionsAt` itself: it builds the list over `stepDeps` as it
+    // stands and nothing derived from it — no alias, no copy, no snapshot — so a
+    // reviewer built before `cut` still reads the getter when it runs.
+    const start = text.indexOf('const actionsAt = (step: Step')
+    const body = text.slice(start, text.indexOf('\n      }\n', start)).replace(/\/\/.*$/gm, '')
+    expect(body).toMatch(/actionPortsFromRecipe\(step, actions, stepDeps\)/)
+    expect(body).not.toMatch(/Object\.assign|structuredClone|JSON\.parse|\.\.\.|=\s*stepDeps\b|\bsettingsPath\b/)
+    expect(text.replace(/\/\/.*$/gm, '').match(/=\s*stepDeps\b/g) ?? []).toEqual([])
   })
 })

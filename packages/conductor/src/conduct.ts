@@ -1364,6 +1364,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * is never given back with a `TicketReleased`, whatever ended the pass (#1056).
      */
     let recordMergedWork: (() => Effect.Effect<boolean>) | null = null
+    /** Set when a landing exists and the store refused every try at recording it. */
+    let unrecordedLanding = false
     /**
      * **The stream `end` resolves onto**, or null where this pass is about no item
      * (`#269`).
@@ -1477,7 +1479,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (released) return Effect.void
         const recording = onStream === null ? null : (recordMergedWork?.() ?? null)
         if (recording !== null) {
-          return recording.pipe(Effect.flatMap((merged) => (merged ? Effect.void : releaseUnmerged(reason, cause))))
+          return recording.pipe(
+            Effect.flatMap((merged) =>
+              merged || (unrecordedLanding && reason === 'the run was interrupted')
+                ? Effect.void
+                : releaseUnmerged(reason, cause),
+            ),
+          )
         }
         return releaseUnmerged(reason, cause)
       })
@@ -2511,12 +2519,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               }),
             ),
             // Recorded: the item is landed. Not recorded (the store refuses it on
-            // every try): nothing says it landed, so the ordinary release below
-            // answers, exactly as it does for a landing that was never reached.
+            // every try): the work is on the base all the same, so an interrupted
+            // pass does not give it back (`release`); a pass that died of the
+            // refusal itself still releases, as it always has.
             Effect.as(true),
             Effect.catchCause(() =>
               Effect.sync(() => {
                 log(`could not record the landing of ${ticketId} at ${merged}`)
+                unrecordedLanding = true
                 return false
               }),
             ),
