@@ -34,10 +34,12 @@ import {
   renderDoctor,
   runDoctor,
 } from '../src/doctor.ts'
+import type { DoctorReach } from '../src/doctor.ts'
 // The count `lingtai restart` gates on, asked of this report rather than
 // restated: a row that stops a restart is the half of #179's refusal a status
 // alone does not show (0042).
 import { gatingFailures } from '../src/restart.ts'
+import { probeSeaBuild } from '../src/sea-build.ts'
 
 const POOLED = 'postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true'
 const DIRECT = 'postgresql://u:p@db.example.com:5432/postgres'
@@ -912,7 +914,6 @@ steps:
       home = await mkdtemp(join(tmpdir(), 'lingtai-doctor-green-'))
       await mkdir(join(home, OWN))
       await writeFile(join(home, OWN, 'recipe.yml'), RECIPE)
-      await writeFile(join(home, 'config.yml'), 'runtime:\n  agent: claude-code\n')
       saved = process.env['LINGTAI_HOME']
       process.env['LINGTAI_HOME'] = home
     })
@@ -922,6 +923,13 @@ steps:
       else process.env['LINGTAI_HOME'] = saved
       await rm(home, { recursive: true, force: true })
     })
+
+    const signedInRuntimes = [
+      {
+        capabilities: CLAUDE_CODE_CAPABILITIES,
+        checkAuth: async () => ({ state: 'signed-in', loggedIn: true, method: null, detail: 'ok' }),
+      },
+    ] as unknown as ReturnType<NonNullable<DoctorReach['runtimes']>>
 
     const reportOf = () =>
       runDoctor(
@@ -933,6 +941,11 @@ steps:
         undefined,
         undefined,
         load,
+        // The sixth too: this machine has no `claude` binary on it, and the test
+        // builds the machine it reports on (#242). The stub carries the id the
+        // recipe's default agent resolves to, so the per-project row finds it
+        // as well as the machine's `runtime: signed in`.
+        { sea: probeSeaBuild, runtimes: () => signedInRuntimes },
       )
 
     it('is green', async () => {
@@ -967,6 +980,11 @@ steps:
       expect(find(report.results, `recipe: ${OWN}`).status).toBe('ok')
       expect(find(report.results, `env: ${OWN}`).status).toBe('ok')
       expect(find(report.results, `base: ${OWN}`).status).toBe('ok')
+
+      // The stub is asked, not skipped past: a stub with the wrong id would
+      // pass as a `skip` and prove nothing.
+      expect(find(report.results, 'runtime: signed in').status).toBe('ok')
+      expect(find(report.results, `runtime: ${OWN} signed in`).status).toBe('ok')
     }, 60_000)
 
     /**
