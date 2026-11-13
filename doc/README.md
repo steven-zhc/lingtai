@@ -110,6 +110,7 @@ replaces.
 | [0124](decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md) | **Snapshots** — a stream's reducer saved every fifth event by the daemon or the board, read as snapshot plus tail, void when the reducer's version changes or its anchor event is not in the log; events only gain optional fields | accepted |
 | [0125](decisions/0125-setup-is-one-module-two-inputs.md) | **Setup** — one module, `@lingtai/setup`; `lingtai add` and the board are two inputs to it, and an existing project is changed by editing its recipe | accepted; not yet built |
 | [0126](decisions/0126-a-stop-is-a-lock-and-an-unlock.md) | **Stops** — a person's pause, the day's ceiling and a runtime's usage limit are each a lock and an unlock on the stream of what they stop; a guard checked before work is taken writes the system's, one function answers every gate and reader, and the board's project filter scopes the banner that says why | accepted; not yet built |
+| [0127](decisions/0127-what-an-agent-can-reach.md) | **Reach** — one boundary, `srt`, with a policy Lingtai writes: an allowlist of hosts per project, a deny list of paths, and a login an agent never holds; the recipe's `sandbox` block owns containment and there is no tier | accepted; not yet built |
 
 ## Experiments
 

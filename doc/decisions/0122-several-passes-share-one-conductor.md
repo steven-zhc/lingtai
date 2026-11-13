@@ -174,7 +174,7 @@ and the dollar ceiling lands before any N > 1.
    fetches into one repository can fail to lock a ref.
 
 7. **Every stop that exists today is marked *per project* or *stays
-   installation-wide*.** Each stop that is a lock is [0126](0126-a-stop-is-a-lock-and-an-unlock.md)'s; #675 builds them, and #676 the missing tier with the security work of 0.14.0.
+   installation-wide*.** Each stop that is a lock is [0126](0126-a-stop-is-a-lock-and-an-unlock.md)'s; #675 builds them, and the removal of the missing-tier pause is 0127 §10's.
 
    **What fails for one project fails only for that project.** A recipe that
    cannot be read or resolved, a project stream that cannot be read, a refusal:
@@ -186,7 +186,7 @@ and the dollar ceiling lands before any N > 1.
    | Stop | Where today | Becomes | Lifted by |
    | --- | --- | --- | --- |
    | A person's pause | `CONTROL_STREAM`, `packages/domain/src/control.ts` | Per project only: `ProjectPaused` on `prj-{project}` (0126 §2) | `lingtai resume [project]`, or the board |
-   | The pause over a tier the setup cannot provide (#405) | `conduct.ts` | A refused recipe, per project (0126, *A tier no runtime can provide*); until #676 lands in 0.14.0 it stays installation-wide | Fixing the recipe; until then `lingtai resume` |
+   | The pause over a tier the setup cannot provide (#405) | `conduct.ts` | A refused recipe, per project (0126, *A required sandbox the host cannot provide*); until the tier is removed (0127 §10) it stays installation-wide | Fixing the recipe; until then `lingtai resume` |
    | The pause after a run that never started, or met the account's limit | `packages/conductor/src/never-started.ts`, [0108](0108-a-refusal-buys-a-round.md) §11 | Per runtime: `AccountLimitReached` on `acct-{runtime}`, holding every project whose recipe uses it (0126 §2) | The guard, once `until` has passed, or a person (0126 §7) |
    | The daily ceiling | §5 | Stays installation-wide: `DayCeilingReached` (0126 §2) | Midnight, a higher figure in the configuration, or a person raising today's |
    | Shutdown and drain | [0102](0102-one-conductor-holds-the-lock.md) §8 | Stays installation-wide | The next start (0126, *Shutdown and drain*) |

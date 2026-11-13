@@ -1,6 +1,6 @@
 # 0106 — Agents and runtimes: the recipe picks the runtime for each role, and the role keeps its powers whichever runtime it gets
 
-**Status** accepted · 2026-10-01
+**Status** accepted · 2026-10-01 · amended 2026-11-13: containment is 0127's
 
 Lingtai drives two coding-agent CLIs, Claude Code and Codex, behind one
 `Runtime` port. The recipe names which runtime does each piece of work. The
@@ -54,18 +54,15 @@ on that path is paid for thousands of times per run.
    wired. The hook settings are rendered outside the worktree, because an agent
    that can edit its own hook configuration has none.
 
-4. **Containment is Lingtai's job, and a tier is never downgraded.**
-   `runtime.tier` is `open`, `guarded` (the default) or `sandboxed`, and applies
-   to the whole attempt. `guarded` means the runtime stops the run when the
-   `UserPromptSubmit` hook refuses (`canFailClosed`). `sandboxed` adds a
-   filesystem boundary that the runtime enforces itself. `meetsTier` checks
-   both conditions. When the recipe resolves, every runtime it names is asked
-   whether it meets the tier. If one cannot, the recipe is refused for that
-   project, naming the runtime and what it lacks, as any recipe in error is
-   ([0126](0126-a-stop-is-a-lock-and-an-unlock.md), *A tier no runtime can
-   provide*). The real boundaries
-   are the filtered environment, the disposable worktree and, where one exists,
-   the runtime's sandbox. **A hook is not a security boundary**: a model can
+4. **Containment is Lingtai's, and it is [0127](0127-what-an-agent-can-reach.md)'s.**
+   The recipe carries no tier. Every runtime that runs tools must be able to
+   fail closed: the runtime stops the run when the `UserPromptSubmit` hook
+   refuses (`canFailClosed`). A model-only runtime has nothing to fail and is
+   exempt. A recipe that names a runtime that cannot fail closed is refused for
+   that project when the recipe resolves, as any recipe in error is
+   ([0126](0126-a-stop-is-a-lock-and-an-unlock.md), *A required sandbox the
+   host cannot provide*). The real boundaries are the filtered environment, the
+   disposable worktree and the sandbox of 0127 §1. **A hook is not a security boundary**: a model can
    script around any pattern match.
    The role sets the runtime's baseline permissions, and a user's own runtime
    configuration may narrow them, never widen them.
@@ -194,7 +191,7 @@ on that path is paid for thousands of times per run.
   which `init` writes.
 - A discussion can run only on a runtime that can be given no tools, which
   today means Claude Code alone.
-- Every limit or tier a runtime cannot honour shows up as a refusal before the
+- Every limit a runtime cannot honour shows up as a refusal before the
   claim, not as an overspend found afterwards.
 
 ## Not built yet
@@ -204,8 +201,8 @@ on that path is paid for thousands of times per run.
   cannot change the work it is judging. Today the cold reviewer runs in the
   attempt's development worktree (`context.cwd` in `packages/actions/src/agent-action.ts`).
   Only its session is separate.
-- **A `prompt:` on `judge:`** is deliberately left open, and **per-step
-  `tier`** is not offered.
+- **A `prompt:` on `judge:`** is deliberately left open.
+- **Removing the tier from the code** (0127 §10) is not built.
 
 ---
 *Replaces archived 0007, 0011, 0033, 0053, 0054, 0070 in [decisions-archive](../decisions-archive/).*
