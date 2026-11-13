@@ -122,7 +122,7 @@ import {
 import type { RuntimeId } from '@lingtai/domain'
 import type { AttemptRef } from '@lingtai/domain/wait'
 import { kindOfAction, type Recipe, type StepAction } from '@lingtai/recipe'
-import { Cause, Effect, Exit } from 'effect'
+import { Cause, type Context, Effect, Exit } from 'effect'
 
 // `whatArrived`, `Judging`, `Judged`: `attempt-steps.ts` still holds them, and
 // this closes an ESM cycle with the module that imports values from this one
@@ -1038,14 +1038,16 @@ type BaseIsRedAnswer = Awaited<ReturnType<NonNullable<AttemptOptions['baseIsRed'
 /**
  * `AttemptOptions` with the ports that are Effects (#1053): the judge, the base
  * merge and the base check, and `actionsAt` answering `ActionPort`s. **Each error
- * channel is `never`, and a port's failure is a defect.** `emit`, `recordPrompt`,
- * `bodies` and `ceilings` are the same as on `AttemptOptions`: `emit` stays a
- * promise, so a refused append rejects and leaves the pipeline as a defect.
+ * channel is `never`, and a port's failure is a defect.** `recordPrompt`,
+ * `bodies` and `ceilings` are the same as on `AttemptOptions`. **`emit` is an
+ * Effect the pass yields** (#1081), so a refused append is a defect in it and
+ * leaves the pipeline as one; `AttemptOptions.emit`, the faces' port, stays a
+ * promise and is lifted once, by `attemptPortsFrom`.
  */
 export interface AttemptPortOptions {
   readonly recipe: AttemptOptions['recipe']
   readonly context: AttemptOptions['context']
-  readonly emit: AttemptOptions['emit']
+  readonly emit: (event: AttemptEvent) => Effect.Effect<number | void>
   readonly recordPrompt?: AttemptOptions['recordPrompt']
   readonly bodies?: AttemptOptions['bodies']
   readonly ceilings?: AttemptOptions['ceilings']
@@ -1068,6 +1070,18 @@ export interface AttemptPortOptions {
 }
 
 /**
+ * `emit` as the promise port the actions pipeline and a body's `StepWork` take
+ * (\`ActionEvent\` → \`Promise<void>\`), run with the services of the fiber that
+ * built it. Never \`Effect.runPromise\`: that would drop the pass's span (#1081).
+ */
+function emitAsPromiseWith(
+  emit: AttemptPortOptions['emit'],
+  services: Context.Context<never>,
+): (event: AttemptEvent) => Promise<void> {
+  return (event) => Effect.runPromiseWith(services)(emit(event)).then(() => undefined)
+}
+
+/**
  * The promise ports lifted to Effects with `Effect.promise`, the rest copied key
  * by key (never spread: an `undefined` key would read as present).
  */
@@ -1076,7 +1090,8 @@ export function attemptPortsFrom(options: AttemptOptions): AttemptPortOptions {
   return {
     recipe: options.recipe,
     context: options.context,
-    emit: options.emit,
+    // `resolve(emit(event))` so a synchronous `number | void` is accepted as a promise is.
+    emit: (event) => Effect.promise(() => new Promise<number | void>((resolve) => resolve(options.emit(event)))),
     ...(options.recordPrompt === undefined ? {} : { recordPrompt: options.recordPrompt }),
     ...(options.bodies === undefined ? {} : { bodies: options.bodies }),
     ...(options.ceilings === undefined ? {} : { ceilings: options.ceilings }),
@@ -1794,19 +1809,13 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         (visit) =>
           Effect.gen(function* () {
             const recorded = record(visit)
-            const version = yield* Effect.promise(
-              () =>
-                new Promise<number | void>((resolve) =>
-                  resolve(
-                    recorded.outcome === undefined
-                      ? undefined
-                      : options.emit({
-                          type: 'StepEnded',
-                          data: { runId: options.context.runId, outcome: recorded.outcome },
-                        }),
-                  ),
-                ),
-            )
+            const version =
+              recorded.outcome === undefined
+                ? undefined
+                : yield* options.emit({
+                    type: 'StepEnded',
+                    data: { runId: options.context.runId, outcome: recorded.outcome },
+                  })
             endedAt.version = typeof version === 'number' ? version : null
             return recorded
           }),
@@ -1814,17 +1823,10 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // store that is slow to take it or refuses it is the step's time and
         // the step's failure (#791).
         Effect.asVoid(
-          Effect.promise(
-            () =>
-              new Promise<unknown>((resolve) =>
-                resolve(
-                  options.emit({
-                    type: 'StepStarted',
-                    data: { runId: options.context.runId, step: visiting, round: visitContext.round ?? 0 },
-                  }),
-                ),
-              ),
-          ),
+          options.emit({
+            type: 'StepStarted',
+            data: { runId: options.context.runId, step: visiting, round: visitContext.round ?? 0 },
+          }),
         ),
       )
       // Only a review that was actually read: an unreadable answer, a reviewer
@@ -2269,6 +2271,9 @@ function runVisit(
   // Declared outside the generator, so the catch below reports what the step had
   // already learned (`outcome` above all) when the body then threw.
   const visit = Effect.gen(function* () {
+    // The fiber's services, taken here so the actions' promise port runs in this
+    // step's span (#791). `runPromiseWith` is not counted by the ratchet.
+    const emitAsPromise = emitAsPromiseWith(options.emit, yield* Effect.context<never>())
     // Every visit `runStep` runs is a spine visit since `#462` — a routing
     // visit is built directly by `runAttempt` and never reaches here.
     if (spec.plugins === 'verdicts') {
@@ -2319,7 +2324,7 @@ function runVisit(
               ? options.from.grant
               : sentBackTo(spec.step, reached),
         },
-        emit: (event) => Promise.resolve(options.emit(event)).then(() => undefined),
+        emit: emitAsPromise,
         ...(options.recordPrompt === undefined ? {} : { recordPrompt: options.recordPrompt }),
       })
       // Carried out whatever the step then did, because the verdicts are what a
@@ -2365,7 +2370,7 @@ function runVisit(
       // no cast.
       outcome: reaching.outcome,
       context: reaching.context,
-      emit: (event) => Promise.resolve(options.emit(event)).then(() => undefined),
+      emit: emitAsPromise,
     })
     return {
       step: spec.step,
