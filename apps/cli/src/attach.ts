@@ -81,6 +81,7 @@ export const attach = (options: AttachOptions): Effect.Effect<number> =>
     for (const line of attachHeader(found)) out(line)
 
     let ended = false
+    let failed = false
     yield* (options.follow ?? followRunLogStream)({
       path: found.path,
       ...(options.signal ? { signal: options.signal } : {}),
@@ -100,11 +101,16 @@ export const attach = (options: AttachOptions): Effect.Effect<number> =>
           )
         }),
       ),
-      // A read that failed is the viewer's trouble, said once and not fatal to the exit status.
+      // A read that failed leaves the log incomplete: said once, and the exit status is not 0.
       Effect.catch((cause) =>
-        Effect.sync(() => err(`${symbol.fail()} could not read ${found.path}: ${String(cause)}`)),
+        Effect.sync(() => {
+          failed = true
+          err(`${symbol.fail()} could not read ${found.path}: ${String(cause)}`)
+        }),
       ),
     )
+
+    if (failed) return 1
 
     // Only reachable without an ending through the signal. Said out loud
     // because a `tail` that simply stops looks the same as a run that simply

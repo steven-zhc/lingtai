@@ -40,3 +40,13 @@ describe('attach over a fake follow', () => {
     expect(out.at(-1)).toBe(`— detached. The run is still going; its log is at ${found.path}`)
   })
 })
+
+describe('attach over a follow that fails', () => {
+  it('reports the failure and returns 1, not a detach', async () => {
+    const follow = (() => Stream.make({ line: 'hello' }).pipe(Stream.concat(Stream.fail('boom')))) as never
+    const { code, out, err } = await run(follow)
+    expect(code).toBe(1)
+    expect(err.join('\n')).toContain('could not read')
+    expect(out.some((l) => l.includes('detached'))).toBe(false)
+  })
+})

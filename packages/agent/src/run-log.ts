@@ -416,18 +416,18 @@ export const followRunLogStream = (options: FollowRunLogOptions): Stream.Stream<
     )
   }
 
+  // The open is the acquire itself, which cannot be interrupted: an interruption
+  // that lands while it is pending still gets the handle released.
   const followed = Stream.unwrap(
-    Effect.tryPromise({ try: () => open(path, 'r'), catch: failed }).pipe(
+    Effect.acquireRelease(
       // Not there to begin with. `findRunLog` is how a caller tells this apart
       // from a run id nobody has heard of; here it is simply an ending.
-      Effect.map((handle): Stream.Stream<RunLogFollowed, RunLogFollowFailed> => {
-        return Stream.unwrap(
-          Effect.acquireRelease(Effect.succeed(handle), (h) => Effect.promise(() => h.close().catch(() => {}))).pipe(
-            Effect.map(followHandle),
-          ),
-        )
-      }),
-      Effect.catch(() => Effect.succeed(Stream.make<RunLogFollowed[]>({ ended: 'removed' }))),
+      Effect.promise((): Promise<FileHandle | null> => open(path, 'r').catch(() => null)),
+      (handle) => (handle === null ? Effect.void : Effect.promise(() => handle.close().catch(() => {}))),
+    ).pipe(
+      Effect.map((handle): Stream.Stream<RunLogFollowed, RunLogFollowFailed> =>
+        handle === null ? Stream.make<RunLogFollowed[]>({ ended: 'removed' }) : followHandle(handle),
+      ),
     ),
   )
 
