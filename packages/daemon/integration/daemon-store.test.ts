@@ -11,6 +11,7 @@
  */
 import { directPostgresUrl } from '@lingtai/env'
 import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
+import { Effect } from 'effect'
 import pg from 'pg'
 import { afterAll, describe } from 'vitest'
 
@@ -72,7 +73,7 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
         return id
       },
       async close() {
-        await store.close()
+        await Effect.runPromise(store.close())
       },
     }
   })
