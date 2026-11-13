@@ -1,4 +1,5 @@
 import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
 /** The shape of `lingtai doctor`: the text, the `--json` document, and the command through `@effect/cli` (#619). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -392,7 +393,7 @@ describe('lingtai doctor through @effect/cli', () => {
     vi.resetModules()
     vi.doMock('../src/doctor.ts', async (orig) => ({
       ...(await orig<typeof import('../src/doctor.ts')>()),
-      doctorReport: read,
+      doctorReportEffect: () => Effect.promise(() => read()),
     }))
     // The real one asks GitHub.
     vi.doMock('../src/install.ts', async (orig) => ({

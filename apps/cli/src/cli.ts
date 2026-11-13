@@ -91,12 +91,12 @@ const doctor = Command.make(
     Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       // Loaded here, for the reason `status` gives.
-      const { doctorReport, doctorJson, renderDoctor, tally } = yield* lift(() => import('./doctor.ts'))
+      const { doctorReportEffect, doctorJson, renderDoctor, tally } = yield* lift(() => import('./doctor.ts'))
       const { releaseCheck } = yield* lift(() => import('./install.ts'))
       const { doctorProgress } = yield* lift(() => import('./steps.ts'))
       const progress = doctorProgress({ stdout: process.stdout, stderr: process.stderr, json: args.json })
       const report = yield* Effect.gen(function* () {
-        const report = yield* lift(() => doctorReport({ onProgress: progress.onProgress }))
+        const report = yield* doctorReportEffect({ onProgress: progress.onProgress })
         // Here and not in `runDoctor`, which `lingtai restart` gates on: the one
         // outbound request this tool makes is asked by `doctor` and `upgrade` (#184),
         // and a restart is neither. Timed here, since `runDoctor` never sees it.
