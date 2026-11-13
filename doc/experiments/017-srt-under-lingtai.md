@@ -114,7 +114,8 @@ in the worktree. That is decision 1 in 0.14.md.
   After that outside run refreshed the token, every run inside succeeded. So a
   sandboxed Claude Code may not be able to refresh its own token, and a daemon
   whose only Claude Code runs are sandboxed may lose its login after the token
-  expires. This was not reproduced on purpose. It has to be, before S4 lands.
+  expires. It was reproduced the same day and explained (below, *Claude
+  Code's token inside srt*).
 - With `--debug`, Claude Code inside srt reached `api.anthropic.com` and
   `mcp-proxy.anthropic.com`. It was refused `mcp.*` hosts for the operator's
   own connectors and a Datadog intake host. The run still succeeded.
@@ -242,6 +243,56 @@ the build gate, or a Lingtai that runs inside a sandboxed step. So the
 product's wrap has to be applied after the environment is filtered, with srt's
 variables added by the wrap. The policy module (S3) must hold that order.
 
+## Claude Code's token inside srt
+
+Measured 2026-11-12 on foundry, Claude Code 2.1.312, credentials in
+`~/.claude/.credentials.json`. Each case ran on a copy of the credentials in
+its own `CLAUDE_CONFIG_DIR`, with the copy's `expiresAt` set an hour in the
+past, so that Claude Code would try to refresh. Only expiry times and the
+first 8 hex digits of each token's SHA-256 were printed.
+
+| Case | Result |
+|---|---|
+| A: expired copy, inside srt, today's allowlist | answered OK on the still-valid access token; the refresh was **refused**: `Connection blocked to platform.claude.com:443`; the copy was unchanged |
+| B: the same, with `claude.com` and `*.claude.com` allowed | refreshed inside srt: the copy got a new access and refresh token, valid 480 min |
+| C: after B, a fresh expired copy of the **real** file, outside srt | `OAuth session expired and could not be refreshed` |
+| the real login, outside srt, 213 min of its access token left | **the same failure**, and Claude Code then cleared the tokens from the real file |
+| D: a copy holding only the access token (no refresh token), inside srt, no `claude.com` | OK |
+| E: D, marked expired | OK. With no refresh token there is nothing to try, and the access token was still valid |
+| F: `claude auth status` on an expired full copy, outside srt | `"loggedIn": true`, and the copy got new tokens. It is **a refresh with no model call** |
+
+**What this establishes.**
+
+- **The 401 seen earlier was a refused refresh.** Refreshing needs
+  `platform.claude.com`, and the allowlist had `claude.ai` and
+  `*.anthropic.com` but not `claude.com`.
+- **A refresh rotates the refresh token and revokes the old access token.**
+  After B, the operator's own login failed at once, though its access token
+  had more than three hours left. So **a run that refreshes in a directory of
+  its own logs the operator out**, and every other run sharing that login
+  with them. Writing the new tokens back afterwards cannot be done
+  atomically: any session that used the old token in between has already
+  failed. B did break foundry's real login. It was restored by writing B's
+  tokens into the real file, and the real login answered OK again.
+- **A run does not need the refresh token.** With only the access token
+  (D), Claude Code works inside srt. Tokens here last 480 min, and a run's
+  wall limit is 60 min.
+- **The refresh can happen outside, for free.** `claude auth status`
+  refreshes an expired token without a model call (F).
+
+So decision 8 becomes: **before each Claude Code run, Lingtai refreshes the
+operator's own login outside the sandbox if it expires within the run's wall
+limit plus a margin, using `claude auth status` against the operator's own
+configuration. Then it copies only the access token into the run's
+directory.** A run can neither rotate the operator's login nor carry away a
+long-lived refresh token, and `claude.com` stays off the allowlist.
+
+**Not measured.** The macOS Keychain, where an interactive Mac keeps these
+credentials. Over SSH foundry uses the file, so how Lingtai reads the access
+token from the Keychain, and whether `claude auth status` refreshes it there,
+is open. Linux was not measured either: harbor's Claude Code is 2.1.278, older
+than the one measured here.
+
 ## What this changes in 0.14.md
 
 1. **The hook socket on Linux needs `allowAllUnixSockets`.** seccomp cannot
@@ -258,8 +309,9 @@ variables added by the wrap. The policy module (S3) must hold that order.
 4. **Codex on macOS needs `enableWeakerNetworkIsolation`.** This is a decision.
 5. **S8 records refused connections only.** That works on both platforms.
    File refusals are not reported on Linux and not attributed on macOS.
-6. **Claude Code's token refresh inside srt** has to be reproduced and fixed,
-   or it has to be proved that the refresh happens outside srt.
+6. **A run never refreshes Claude Code's token.** Lingtai refreshes the
+   operator's login outside srt when it is close to expiry
+   (`claude auth status`), and gives the run only the access token.
 7. **The build gate needs the package stores writable**, and Lingtai's own
    `pnpm test` must be green inside srt before Lingtai opts in. The one test
    that is not is a test bug: it spawns the real runtimes (above). It is fixed
