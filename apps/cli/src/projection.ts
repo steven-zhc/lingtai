@@ -11,17 +11,18 @@ import {
   type Locker,
   type LockResult,
 } from '@lingtai/daemon'
-import { logPredatesHold } from '@lingtai/event-store'
-import type { LogQueries } from '@lingtai/event-store/queries'
+import { logPredatesHoldEffect, type QueriesPort } from '@lingtai/event-store'
 import {
   backlogProjection,
   spendProjection,
   taskViewProjection,
   ticketReportProjection,
   type ProjectionLag,
-  type ProjectionRunner,
+  type ProjectionRunnerPort,
 } from '@lingtai/projector'
+import { Effect } from 'effect'
 
+import { lift, recovering } from './exit.ts'
 import { heading, symbol, table } from './output.ts'
 
 /**
@@ -66,9 +67,12 @@ export function projectionLagJson(lags: readonly ProjectionLag[]): Record<string
 
 export interface RebuildProjectionOptions {
   name: string
-  queries: Pick<LogQueries, 'rowsOfType' | 'typeCounts'>
-  /** Builds the runner. A seam so a test can hand in a fake and assert `rebuild` was never called (#451). */
-  runnerFor: () => ProjectionRunner
+  queries: Pick<QueriesPort, 'typeCounts'>
+  /**
+   * Builds the runner. A seam so a test can hand in a fake and assert `rebuild` was never called (#451).
+   * **Detached** (`makeRunner`'s option) wherever a caller's fiber ends before the runner should.
+   */
+  runnerFor: () => ProjectionRunnerPort
   log?: (line: string) => void
   error?: (line: string) => void
 }
@@ -78,29 +82,32 @@ export interface RebuildProjectionOptions {
  * drops the table and resets the checkpoint before it replays, and a refusal
  * partway through that leaves a person with no board rather than a stale one.
  */
-export async function rebuildProjection(options: RebuildProjectionOptions): Promise<number> {
-  const log = options.log ?? ((line: string) => console.log(line))
-  const error = options.error ?? ((line: string) => console.error(line))
+export const rebuildProjection = (options: RebuildProjectionOptions): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const log = options.log ?? ((line: string) => console.log(line))
+    const error = options.error ?? ((line: string) => console.error(line))
 
-  const predates = await logPredatesHold(options.queries)
-  if (predates) {
-    error(`${symbol.fail()} ${predates.message}`)
-    return 1
-  }
+    const predates = yield* logPredatesHoldEffect(options.queries)
+    if (predates) {
+      error(`${symbol.fail()} ${predates.message}`)
+      return 1
+    }
 
-  const runner = options.runnerFor()
-  try {
-    await runner.rebuild()
-    const lag = await runner.lag()
-    const behind = lag.lag !== 0n
-    log(
-      `${behind ? symbol.fail() : symbol.pass()} ${options.name} rebuilt — at ${lag.lastSeq}/${lag.headSeq}, ${lag.lag} behind`,
+    return yield* Effect.acquireUseRelease(
+      Effect.sync(options.runnerFor),
+      (runner) =>
+        Effect.gen(function* () {
+          yield* runner.rebuild()
+          const lag = yield* runner.lag()
+          const behind = lag.lag !== 0n
+          log(
+            `${behind ? symbol.fail() : symbol.pass()} ${options.name} rebuilt — at ${lag.lastSeq}/${lag.headSeq}, ${lag.lag} behind`,
+          )
+          return behind ? 1 : 0
+        }),
+      (runner) => runner.close(),
     )
-    return behind ? 1 : 0
-  } finally {
-    await runner.close()
-  }
-}
+  })
 
 /** Stands in for the real locker where `acquire` is replaced and never reads it. */
 const NO_LOCKER: Locker = {
@@ -109,7 +116,7 @@ const NO_LOCKER: Locker = {
 
 export interface RebuildUnderLockOptions extends RebuildProjectionOptions {
   /** Takes the conductor lock. A seam so a test needs no real lock file; when replaced, no real locker is built either (#273). */
-  acquire?: (options: AcquireDaemonLockOptions) => Promise<LockResult>
+  acquire?: (options: AcquireDaemonLockOptions) => Effect.Effect<LockResult, unknown>
 }
 
 /**
@@ -123,32 +130,38 @@ export interface RebuildUnderLockOptions extends RebuildProjectionOptions {
  * `lingtai run`, which already hold the lock, and a second `tryLock` there
  * would be refused every time (the price-triggered rebuild, #680).
  *
- * The lock is released in a `finally`, and a lock that cannot be asked about
+ * The lock is released by `acquireUseRelease`, on every exit, and a lock that cannot be asked about
  * is a refusal that touches nothing.
  */
-export async function rebuildUnderLock(options: RebuildUnderLockOptions): Promise<number> {
-  const error = options.error ?? ((line: string) => console.error(line))
-  let held: LockResult
-  try {
-    held = await (options.acquire ?? acquireDaemonLock)({
-      name: 'lingtai projection rebuild',
-      locker: options.acquire ? NO_LOCKER : createFileLocker(),
-    })
-  } catch (err) {
-    error(
-      `${symbol.fail()} could not take the conductor lock (${err instanceof Error ? err.message : String(err)}) — nothing was rebuilt; lingtai doctor says who holds it`,
+export const rebuildUnderLock = (options: RebuildUnderLockOptions): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const error = options.error ?? ((line: string) => console.error(line))
+    const acquire = options.acquire ?? ((o: AcquireDaemonLockOptions) => lift(() => acquireDaemonLock(o)))
+    const taken = yield* Effect.suspend(() =>
+      acquire({
+        name: 'lingtai projection rebuild',
+        locker: options.acquire ? NO_LOCKER : createFileLocker(),
+      }),
+    ).pipe(
+      Effect.map((held) => ({ held })),
+      recovering((err) => Effect.succeed({ failure: err })),
     )
-    return 1
-  }
-  if (!held.ok) {
-    error(
-      `${symbol.fail()} ${held.holder ?? 'another process'} holds the conductor lock and is the only writer of ${options.name} — lingtai shutdown "…" first (lingtai service shutdown where the supervisor keeps it), then rebuild`,
+    if ('failure' in taken) {
+      error(
+        `${symbol.fail()} could not take the conductor lock (${taken.failure instanceof Error ? taken.failure.message : String(taken.failure)}) — nothing was rebuilt; lingtai doctor says who holds it`,
+      )
+      return 1
+    }
+    const held = taken.held
+    if (!held.ok) {
+      error(
+        `${symbol.fail()} ${held.holder ?? 'another process'} holds the conductor lock and is the only writer of ${options.name} — lingtai shutdown "…" first (lingtai service shutdown where the supervisor keeps it), then rebuild`,
+      )
+      return 1
+    }
+    return yield* Effect.acquireUseRelease(
+      Effect.succeed(held.lock),
+      () => rebuildProjection(options),
+      (lock) => Effect.promise(() => lock.release()),
     )
-    return 1
-  }
-  try {
-    return await rebuildProjection(options)
-  } finally {
-    await held.lock.release()
-  }
-}
+  })

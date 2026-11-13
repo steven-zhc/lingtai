@@ -14,18 +14,19 @@
  * event loop alive**, and `run` returns early on four paths, so it is a
  * `Scope` resource below and not a start at the top and a close at the bottom.
  */
-import { logPredatesHold, type LogPredatesHoldError, processLog } from '@lingtai/event-store'
+import { logPredatesHoldEffect, type LogPredatesHoldError, processQueries } from '@lingtai/event-store'
 import {
   backlogProjection,
-  createProjectionRunner,
+  makeRunner,
   type Projection,
-  type ProjectionRunner,
+  type ProjectionRunnerPort,
   spendProjection,
   ticketReportProjection,
   taskViewProjection,
 } from '@lingtai/projector'
 import { Context, Effect, Layer } from 'effect'
 
+import { recovering } from './exit.ts'
 import { releaseLive, startLive } from './live-spend.ts'
 
 /**
@@ -39,9 +40,8 @@ import { releaseLive, startLive } from './live-spend.ts'
  * built, turns that hang into the same one-line refusal the other three
  * callers already give.
  */
-async function defaultPredatesHold(): Promise<LogPredatesHoldError | null> {
-  return logPredatesHold((await processLog()).queries)
-}
+const defaultPredatesHold = (): Effect.Effect<LogPredatesHoldError | null> =>
+  Effect.flatMap(processQueries, logPredatesHoldEffect)
 
 /**
  * The backlog and `spend` follow too (`#137`, `#498`): a passing review's
@@ -55,40 +55,43 @@ async function defaultPredatesHold(): Promise<LogPredatesHoldError | null> {
  * each has its own checkpoint. Its failure is reported and never fatal, for
  * the reason the board's is not: the log is intact either way.
  */
-async function followSecondary(
+const followSecondary = (
   projection: Projection,
   log: (line: string) => void,
   predates: LogPredatesHoldError | null,
-  runnerFor: (projection: Projection) => ProjectionRunner,
-): Promise<ProjectionRunner | null> {
-  if (predates) {
-    log(`${projection.name} will not follow this run: ${predates.message}`)
-    return null
-  }
-  const runner = runnerFor(projection)
-  try {
-    await startLive(projection, runner)
-    return runner
-  } catch (err) {
-    log(`${projection.name} will not follow this run: ${(err as Error).message}`)
-    await runner.close().catch(() => {})
-    return null
-  }
-}
+  runnerFor: (projection: Projection) => ProjectionRunnerPort,
+): Effect.Effect<ProjectionRunnerPort | null> =>
+  Effect.gen(function* () {
+    if (predates) {
+      log(`${projection.name} will not follow this run: ${predates.message}`)
+      return null
+    }
+    const runner = runnerFor(projection)
+    return yield* startLive(projection, runner).pipe(
+      Effect.as<ProjectionRunnerPort | null>(runner),
+      recovering((err) =>
+        Effect.gen(function* () {
+          log(`${projection.name} will not follow this run: ${err.message}`)
+          yield* runner.close()
+          return null
+        }),
+      ),
+    )
+  })
 
-async function releaseSecondary(
+const releaseSecondary = (
   name: string,
-  runner: ProjectionRunner | null,
+  runner: ProjectionRunnerPort | null,
   log: (line: string) => void,
-): Promise<void> {
-  if (!runner) return
-  const closed = releaseLive(runner)
-  if (runner.failure) {
-    log(`the ${name} projection stopped during this run: ${String(runner.failure)}`)
-    log(`${name} is behind until it is rebuilt — lingtai projection rebuild ${name}`)
-  }
-  await closed
-}
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    if (!runner) return
+    if (runner.failure) {
+      log(`the ${name} projection stopped during this run: ${String(runner.failure)}`)
+      log(`${name} is behind until it is rebuilt — lingtai projection rebuild ${name}`)
+    }
+    yield* releaseLive(runner)
+  })
 
 /**
  * `run`'s projectors, as a resource with a lifetime.
@@ -110,20 +113,21 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
   Layer.effect(
     Projector,
     Effect.acquireRelease(
-      Effect.promise(async () => {
-        let predates: LogPredatesHoldError | null = null
-        try {
-          predates = await defaultPredatesHold()
-        } catch (err) {
-          // The guard reaches the
-          // store too, and `Effect.promise`'s contract is a promise that
-          // never rejects, so this must report rather than throw.
-          log(`the board will not follow this run: ${(err as Error).message}`)
-          log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
-        }
-        const runnerFor = (projection: Projection) => createProjectionRunner({ projection })
+      Effect.gen(function* () {
+        const predates = yield* defaultPredatesHold().pipe(
+          // The guard reaches the store too; a failure is reported and the run goes on.
+          recovering((err) =>
+            Effect.sync(() => {
+              log(`the board will not follow this run: ${err.message}`)
+              log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
+              return null
+            }),
+          ),
+        )
+        // **Detached**: the release closes each one, and the lock holder's runners outlive the fiber that started them.
+        const runnerFor = (projection: Projection) => makeRunner({ projection }, { detached: true })
 
-        let runner: ProjectionRunner | null = null
+        let runner: ProjectionRunnerPort | null = null
         let following = false
         if (predates) {
           // The generic remedy
@@ -132,29 +136,35 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
           log(`the board will not follow this run: ${predates.message}`)
         } else {
           runner = runnerFor(taskViewProjection)
-          try {
-            await runner.start()
-            following = true
-          } catch (err) {
-            log(`the board will not follow this run: ${(err as Error).message}`)
-            log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
-          }
+          yield* runner.start().pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                following = true
+              }),
+            ),
+            recovering((err) =>
+              Effect.sync(() => {
+                log(`the board will not follow this run: ${err.message}`)
+                log('the log is intact; a daemon catches up from the checkpoint — lingtai daemon --no-conduct')
+              }),
+            ),
+          )
         }
-        const backlog = await followSecondary(backlogProjection, log, predates, runnerFor)
-        const spend = await followSecondary(spendProjection, log, predates, runnerFor)
-        const report = await followSecondary(ticketReportProjection, log, predates, runnerFor)
+        const backlog = yield* followSecondary(backlogProjection, log, predates, runnerFor)
+        const spend = yield* followSecondary(spendProjection, log, predates, runnerFor)
+        const report = yield* followSecondary(ticketReportProjection, log, predates, runnerFor)
         return { runner, following, backlog, spend, report }
       }),
       ({ runner, following, backlog, spend, report }) =>
-        Effect.promise(async () => {
+        Effect.gen(function* () {
           if (following && runner?.failure) {
             log(`the projection stopped during this run: ${String(runner.failure)}`)
             log('the board is behind until it is rebuilt — lingtai projection rebuild task_view')
           }
-          await runner?.close().catch(() => {})
-          await releaseSecondary(backlogProjection.name, backlog, log)
-          await releaseSecondary(spendProjection.name, spend, log)
-          await releaseSecondary(ticketReportProjection.name, report, log)
+          if (runner) yield* runner.close()
+          yield* releaseSecondary(backlogProjection.name, backlog, log)
+          yield* releaseSecondary(spendProjection.name, spend, log)
+          yield* releaseSecondary(ticketReportProjection.name, report, log)
         }),
     ).pipe(Effect.map((held) => ({ following: held.following, failure: held.runner?.failure ?? null }))),
   )

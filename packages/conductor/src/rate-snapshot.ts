@@ -72,7 +72,7 @@ export function newlyPriced(before: readonly RateRow[], after: readonly RateRow[
 
 export interface RatePorts {
   /** The models some run priced without a figure, with the runtime that ran them. */
-  wanted: () => Promise<{ model: string; runtime: string }[]>
+  wanted: () => Effect.Effect<{ model: string; runtime: string }[], unknown>
   /** LiteLLM's table, parsed. Fails on a failed fetch or invalid JSON. */
   table: () => Effect.Effect<unknown, unknown>
   read: () => RateRow[]
@@ -81,9 +81,9 @@ export interface RatePorts {
   now: () => Date
   /**
    * Re-reduces the projections that store estimates, after the snapshot is
-   * written (#680). Resolves to a short outcome for the note; may throw.
+   * written (#680). Succeeds with a short outcome for the note; a failure or a defect is a line in it.
    */
-  rebuild?: (priced: string[]) => Promise<string>
+  rebuild?: (priced: string[]) => Effect.Effect<string, unknown>
 }
 
 export const realRatePorts = (
@@ -152,9 +152,7 @@ export function refreshRatesEffect(ports: RatePorts): Effect.Effect<void> {
     }
   }
   return Effect.gen(function* () {
-    const wanted = (yield* Effect.tryPromise({ try: () => ports.wanted(), catch: (error) => error })).filter(
-      (w) => !shipped(w.model),
-    )
+    const wanted = (yield* ports.wanted()).filter((w) => !shipped(w.model))
     if (wanted.length === 0) return
     const table = yield* ports.table()
     const day = ports.now().toISOString().slice(0, 10)
@@ -167,9 +165,14 @@ export function refreshRatesEffect(ports: RatePorts): Effect.Effect<void> {
     let rebuilt: string | undefined
     if (priced.length > 0 && ports.rebuild !== undefined) {
       const rebuild = ports.rebuild
-      rebuilt = yield* Effect.tryPromise({ try: () => rebuild(priced), catch: (error) => error }).pipe(
-        // The write stood, so this is not `ok: false`.
-        Effect.catch((err) => Effect.succeed(`rebuild failed: ${(err as Error).message}`)),
+      rebuilt = yield* Effect.suspend(() => rebuild(priced)).pipe(
+        // The write stood, so this is not `ok: false`. A store failure is a defect (0101 §6), so
+        // `catch` would let it through to the note below; an interruption is not a failed rebuild.
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause as Cause.Cause<never>)
+            : Effect.succeed(`rebuild failed: ${(Cause.squash(cause) as Error).message}`),
+        ),
       )
     }
     ports.note({

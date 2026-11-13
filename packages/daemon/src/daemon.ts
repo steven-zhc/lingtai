@@ -38,8 +38,8 @@
  */
 import { paint } from '@lingtai/env/colour'
 import { type LogPredatesHoldError, logPredatesHoldEffect, processQueries } from '@lingtai/event-store'
-import type { Projection, ProjectionRunner, ProjectionRunnerOptions, ProjectionRunnerPort } from '@lingtai/projector'
-import { ProjectionShapeError, makeRunner, promiseRunner } from '@lingtai/projector'
+import type { Projection, ProjectionRunnerOptions, ProjectionRunnerPort } from '@lingtai/projector'
+import { ProjectionShapeError, makeRunner } from '@lingtai/projector'
 import { Cause, Deferred, Effect, Exit, Fiber } from 'effect'
 
 import { controlWatermark } from './control.ts'
@@ -72,7 +72,7 @@ export interface DaemonOptions {
    */
   predatesHold?: () => Promise<LogPredatesHoldError | null>
   /** Told of each runner as it starts, so the process can stand one down around a rebuild (#680). */
-  onRunner?: (projection: Projection, runner: ProjectionRunner) => void
+  onRunner?: (projection: Projection, runner: ProjectionRunnerPort) => void
   /** `defaultRunnerFor`. Replaceable so a reducer that throws can be staged without a database (#839). */
   runnerFor?: (projection: Projection, onError: (error: unknown, phase: string) => void) => ProjectionRunnerPort
 }
@@ -287,9 +287,7 @@ export function startDaemonEffect(options: DaemonOptions): Effect.Effect<DaemonS
           recordStopped(projection.name, () => port, error)
         }
         port = (options.runnerFor ?? defaultRunnerFor)(projection, onError)
-        // One face per port, handed to `onRunner` on both paths: a caller that
-        // keeps runners in a set looks them up by identity.
-        const face: ProjectionRunner = promiseRunner(port)
+        // The port is handed to `onRunner` on both paths: a caller that keeps runners in a set looks them up by identity.
         runners.push(port)
         const outcome = yield* port.start().pipe(
           Effect.as('followed' as const),
@@ -316,7 +314,7 @@ export function startDaemonEffect(options: DaemonOptions): Effect.Effect<DaemonS
           // A start that fails here is a start that fails: the face rejects with the original.
           Effect.orDie,
         )
-        options.onRunner?.(projection, face)
+        options.onRunner?.(projection, port)
         if (outcome === 'stopped') continue
         const lag = yield* port.lag()
         // Chrome: a name and two sequence numbers. Dim, so that the refusal above

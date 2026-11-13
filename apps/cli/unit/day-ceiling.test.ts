@@ -33,10 +33,13 @@ const spendUnchecked = (
       ),
   )
 
-const ports = (lags: () => Promise<readonly ProjectionLag[]>, ceiling: () => number | undefined = () => 10) => ({
+const ports = (
+  lags: () => Effect.Effect<readonly ProjectionLag[], unknown>,
+  ceiling: () => number | undefined = () => 10,
+) => ({
   ceiling,
   lags,
-  rows: async () => [],
+  rows: () => Effect.succeed([]),
   now: () => now,
 })
 
@@ -44,7 +47,7 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
   it('takes no work when spend is behind and has been quiet for minutes', async () => {
     const stop = await spendUnchecked(
       createMemoryEventStore(),
-      ports(async () => [spend(3n, 5 * 60_000)]),
+      ports(() => Effect.succeed([spend(3n, 5 * 60_000)])),
     )
     expect(stop).toBe(
       'could not check the daily ceiling: the spend projection is 3 behind and last moved 5m ago — taking no work',
@@ -55,7 +58,7 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
     expect(
       await spendUnchecked(
         createMemoryEventStore(),
-        ports(async () => [spend(1n, 2000)]),
+        ports(() => Effect.succeed([spend(1n, 2000)])),
       ),
     ).toBeNull()
   })
@@ -77,7 +80,7 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
         data: { for: { _tag: 'Discussion' }, runtime: 'claude-code', turns: 1, durationMs: 1, costUsd: 1, usage: [] },
       },
     ])
-    const stop = await spendUnchecked(store, { ...ports(async () => []), now: () => new Date() }, new Date())
+    const stop = await spendUnchecked(store, { ...ports(() => Effect.succeed([])), now: () => new Date() }, new Date())
     expect(stop).toMatch(/^could not check the daily ceiling: the spend projection has never checkpointed/)
   })
 
@@ -85,7 +88,7 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
     expect(
       await spendUnchecked(
         createMemoryEventStore(),
-        ports(async () => []),
+        ports(() => Effect.succeed([])),
       ),
     ).toBeNull()
   })
@@ -97,9 +100,7 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
       ceiling: ceilingPort(
         store,
         ports(
-          async () => {
-            throw new Error('read')
-          },
+          () => Effect.die(new Error('read')),
           () => undefined,
         ),
       ),
@@ -110,9 +111,8 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
   it('takes no work when the lag cannot be read', async () => {
     const stop = await spendUnchecked(
       createMemoryEventStore(),
-      ports(async () => {
-        throw new Error('store unreachable')
-      }),
+      // A store failure is a defect (0101 §6).
+      ports(() => Effect.die(new Error('store unreachable'))),
     )
     expect(stop).toBe('could not check the daily ceiling: store unreachable — taking no work')
   })
@@ -121,7 +121,7 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
 describe('the daily ceiling while spend is rebuilt (#680)', () => {
   it('takes no work even when the half-built table reads under the ceiling', async () => {
     const stop = await spendUnchecked(createMemoryEventStore(), {
-      ...ports(async () => [spend(5n, 1000)]),
+      ...ports(() => Effect.succeed([spend(5n, 1000)])),
       rebuilding: () => 'the spend projection is being rebuilt after a model was priced',
     })
     expect(stop).toBe(
@@ -132,11 +132,12 @@ describe('the daily ceiling while spend is rebuilt (#680)', () => {
   it('discards a read when a rebuild began while it was awaited', async () => {
     let began = 0
     const stop = await spendUnchecked(createMemoryEventStore(), {
-      ...ports(async () => [spend(0n, 1000)]),
-      rows: async () => {
-        began += 1
-        return []
-      },
+      ...ports(() => Effect.succeed([spend(0n, 1000)])),
+      rows: () =>
+        Effect.sync(() => {
+          began += 1
+          return []
+        }),
       rebuilding: () => null,
       rebuilds: () => began,
     })

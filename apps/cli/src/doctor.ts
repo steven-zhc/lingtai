@@ -2116,8 +2116,7 @@ function endStepRow(
  * where the figure is malformed.
  */
 export function spendToday(
-  read: () => Effect.Effect<{ day: DaySpend; ceilingUsd: number | undefined }, unknown> = () =>
-    lift(() => readDaySpend()),
+  read: () => Effect.Effect<{ day: DaySpend; ceilingUsd: number | undefined }, unknown> = () => readDaySpend(),
   /** The control stream, failing where it cannot be read. No default: a unit test must not read the machine's store. */
   control: () => Effect.Effect<ControlState, unknown> = () =>
     Effect.fail(new Error('the control stream was not offered')),

@@ -22,7 +22,7 @@ function ports(over: Partial<RatePorts> = {}) {
   let stored: RateRow[] = []
   const log = { fetches: 0, writes: 0, notes: [] as FetchNote[] }
   const p: RatePorts = {
-    wanted: async () => [{ model: 'gpt-6-astra', runtime: 'codex' }],
+    wanted: () => Effect.succeed([{ model: 'gpt-6-astra', runtime: 'codex' }]),
     table: () =>
       Effect.sync(() => {
         log.fetches += 1
@@ -83,7 +83,7 @@ describe('refreshRates', () => {
   })
 
   it('does not fetch for a model the shipped card prices', async () => {
-    const { p, log } = ports({ wanted: async () => [{ model: 'claude-sonnet-5', runtime: 'claude-code' }] })
+    const { p, log } = ports({ wanted: () => Effect.succeed([{ model: 'claude-sonnet-5', runtime: 'claude-code' }]) })
     await refreshRates(p)
     expect(log.fetches).toBe(0)
   })
@@ -102,10 +102,11 @@ describe('a model that gains its first price (#680)', () => {
     const order: string[] = []
     const { p, log } = ports({
       write: () => order.push('write'),
-      rebuild: async (priced) => {
-        order.push(`rebuild ${priced.join(',')}`)
-        return 'spend rebuilt'
-      },
+      rebuild: (priced) =>
+        Effect.sync(() => {
+          order.push(`rebuild ${priced.join(',')}`)
+          return 'spend rebuilt'
+        }),
     })
     await refreshRates(p)
     expect(order).toEqual(['write', 'rebuild gpt-6-astra'])
@@ -115,10 +116,11 @@ describe('a model that gains its first price (#680)', () => {
   it('does not rebuild when only a known model’s price changes', async () => {
     let rebuilds = 0
     const { p } = ports({
-      rebuild: async () => {
-        rebuilds += 1
-        return ''
-      },
+      rebuild: () =>
+        Effect.sync(() => {
+          rebuilds += 1
+          return ''
+        }),
     })
     await refreshRates(p)
     expect(rebuilds).toBe(1)
@@ -131,21 +133,24 @@ describe('a model that gains its first price (#680)', () => {
     let rebuilds = 0
     const { p } = ports({
       table: () => Effect.fail(new Error('HTTP 503')),
-      rebuild: async () => {
-        rebuilds += 1
-        return ''
-      },
+      rebuild: () =>
+        Effect.sync(() => {
+          rebuilds += 1
+          return ''
+        }),
     })
     await refreshRates(p)
     expect(rebuilds).toBe(0)
   })
 
-  it('a rebuild that throws is an outcome on an ok note', async () => {
-    const { p, log } = ports({
-      rebuild: async () => {
-        throw new Error('boom')
-      },
-    })
+  it('a rebuild that fails is an outcome on an ok note', async () => {
+    const { p, log } = ports({ rebuild: () => Effect.fail(new Error('boom')) })
+    await refreshRates(p)
+    expect(log.notes[0]).toMatchObject({ ok: true, rebuilt: 'rebuild failed: boom' })
+  })
+
+  it('a rebuild that dies is the same outcome: a store failure is a defect (0101 §6)', async () => {
+    const { p, log } = ports({ rebuild: () => Effect.die(new Error('boom')) })
     await refreshRates(p)
     expect(log.notes[0]).toMatchObject({ ok: true, rebuilt: 'rebuild failed: boom' })
   })
@@ -165,7 +170,7 @@ describe('the snapshot file', () => {
     writeFileSync(file, '{"rows":[]}\n')
     const before = readFileSync(file)
     // The real ports, aimed at this directory: only the fetch is faked.
-    const real = realRatePorts(async () => [{ model: 'gpt-6-astra', runtime: 'codex' }], env)
+    const real = realRatePorts(() => Effect.succeed([{ model: 'gpt-6-astra', runtime: 'codex' }]), env)
     await refreshRates({
       ...real,
       table: () => Effect.fail(new Error('boom')),

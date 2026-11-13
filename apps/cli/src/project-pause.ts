@@ -19,7 +19,7 @@ import {
 } from '@lingtai/daemon'
 import { CONTROL_STREAM, type ProjectState, lockSentence } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
-import { Context, Effect } from 'effect'
+import { Effect } from 'effect'
 
 export interface ProjectPauseOptions {
   /** The suite passes a memory store and a collector; nothing else should set them. */
@@ -55,9 +55,6 @@ function select(
   log(`no project named "${name}" — registered: ${names === '' ? '(none)' : names}`)
   return null
 }
-
-/** The run the ratchet does not count (see `first-project.ts`'s `runEffect`). */
-export const runEffect = Effect.runPromiseWith(Context.empty())
 
 export const IN_FLIGHT_FINISHES = 'an attempt already in flight finishes; nothing new starts'
 

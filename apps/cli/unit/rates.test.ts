@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs'
+
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { modelsInRecipe, spendRebuildHold } from '../src/rates.ts'
+
+const run = <A>(e: Effect.Effect<A, unknown>) => Effect.runPromise(e)
 
 describe('modelsInRecipe', () => {
   it('a judge that is a runtime names that runtime, whatever runtime.agent is', () => {
@@ -26,14 +31,17 @@ describe('holdLiveSpend (#680)', () => {
     const runner = (name: string) =>
       ({
         running: true,
-        stop: async () => void calls.push(`stop ${name}`),
-        start: async () => void calls.push(`start ${name}`),
+        stop: () => Effect.sync(() => void calls.push(`stop ${name}`)),
+        start: () => Effect.sync(() => void calls.push(`start ${name}`)),
+        close: () => Effect.sync(() => void calls.push(`close ${name}`)),
       }) as never
     trackLiveSpend(spendProjection, runner('spend'))
     trackLiveSpend({ name: 'task_view' } as never, runner('task_view'))
-    const resume = await holdLiveSpend()
+    const resume = await run(holdLiveSpend())
     expect(calls).toEqual(['stop spend'])
-    await resume()
+    await run(resume)
+    // Restarted and never closed by the rebuild: the runner outlives the fiber that held it, and a
+    // `spend` that stopped following here would be stale under the ceiling guard (#650).
     expect(calls).toEqual(['stop spend', 'start spend'])
   })
 })
@@ -50,28 +58,29 @@ describe('a runner still starting when a rebuild holds the live runners (#860)',
         return running
       },
       start: () =>
-        new Promise<void>((resolve) => {
+        Effect.callback<void>((resume) => {
           calls.push('slow:start')
-          if (calls.filter((c) => c === 'slow:start').length > 1) return resolve()
+          if (calls.filter((c) => c === 'slow:start').length > 1) return resume(Effect.void)
           finishStart = () => {
             running = true
-            resolve()
+            resume(Effect.void)
           }
         }),
-      stop: async () => {
-        running = false
-        calls.push('slow:stop')
-      },
+      stop: () =>
+        Effect.sync(() => {
+          running = false
+          calls.push('slow:stop')
+        }),
     } as never
     const late = {
       running: false,
-      start: async () => void calls.push('late:start'),
-      stop: async () => {},
+      start: () => Effect.sync(() => void calls.push('late:start')),
+      stop: () => Effect.void,
     } as never
 
-    const starting = startLive(spendProjection, slow)
-    const held = holdLiveSpend()
-    const lateStart = startLive(spendProjection, late)
+    const starting = run(startLive(spendProjection, slow))
+    const held = run(holdLiveSpend())
+    const lateStart = run(startLive(spendProjection, late))
     await new Promise((r) => setTimeout(r, 10))
     expect(calls).toEqual(['slow:start'])
     finishStart()
@@ -80,7 +89,7 @@ describe('a runner still starting when a rebuild holds the live runners (#860)',
     expect(calls).toEqual(['slow:start', 'slow:stop'])
     await new Promise((r) => setTimeout(r, 10))
     expect(calls).not.toContain('late:start')
-    await resume()
+    await run(resume)
     await lateStart
     expect(calls).toContain('late:start')
   })
@@ -94,20 +103,20 @@ describe('a runner being released when a rebuild holds the live runners (#860)',
     let closed = false
     const runner = {
       running: true,
-      start: async () => {},
-      stop: async () => {},
+      start: () => Effect.void,
+      stop: () => Effect.void,
       close: () =>
-        new Promise<void>((resolve) => {
+        Effect.callback<void>((resume) => {
           finishClose = () => {
             closed = true
-            resolve()
+            resume(Effect.void)
           }
         }),
     } as never
-    await startLive(spendProjection, runner)
-    const releasing = releaseLive(runner)
+    await run(startLive(spendProjection, runner))
+    const releasing = run(releaseLive(runner))
     let held = false
-    const hold = holdLiveSpend().then((resume) => {
+    const hold = run(holdLiveSpend()).then((resume) => {
       held = true
       return resume
     })
@@ -117,7 +126,7 @@ describe('a runner being released when a rebuild holds the live runners (#860)',
     await releasing
     const resume = await hold
     expect(closed).toBe(true)
-    await resume()
+    await run(resume)
   })
 })
 
@@ -129,26 +138,26 @@ describe('a runner released while a rebuild is already waiting to hold (#860)', 
     let finishClose: () => void = () => {}
     const slow = {
       running: false,
-      start: () => new Promise<void>((resolve) => (finishStart = resolve)),
-      stop: async () => {},
-      close: async () => {},
+      start: () => Effect.callback<void>((resume) => void (finishStart = () => resume(Effect.void))),
+      stop: () => Effect.void,
+      close: () => Effect.void,
     } as never
     const other = {
       running: true,
-      start: async () => {},
-      stop: async () => {},
-      close: () => new Promise<void>((resolve) => (finishClose = resolve)),
+      start: () => Effect.void,
+      stop: () => Effect.void,
+      close: () => Effect.callback<void>((resume) => void (finishClose = () => resume(Effect.void))),
     } as never
-    await startLive(spendProjection, other)
-    const starting = startLive(spendProjection, slow)
+    await run(startLive(spendProjection, other))
+    const starting = run(startLive(spendProjection, slow))
     let held = false
-    const hold = holdLiveSpend().then((resume) => {
+    const hold = run(holdLiveSpend()).then((resume) => {
       held = true
       return resume
     })
     await new Promise((r) => setTimeout(r, 10))
     // The hold is parked on `starting`; now the other runner is released.
-    const releasing = releaseLive(other)
+    const releasing = run(releaseLive(other))
     finishStart()
     await starting
     await new Promise((r) => setTimeout(r, 10))
@@ -156,6 +165,18 @@ describe('a runner released while a rebuild is already waiting to hold (#860)', 
     finishClose()
     await releasing
     const resume = await hold
-    await resume()
+    await run(resume)
+  })
+})
+
+describe('every runner this side builds is detached (#1104)', () => {
+  // A runner the starting fiber owns is closed with that fiber. `rebuildEstimates` restarts the
+  // live `spend` runners from inside a refresh's fiber, which ends with the refresh, and nothing
+  // fails when `spend` stops following: only the ceiling guard's totals go stale.
+  it.each(['rates.ts', 'projector.ts'])('%s passes { detached: true } to makeRunner', (file) => {
+    const source = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')
+    const calls = source.match(/makeRunner\([^)]*\)/g) ?? []
+    expect(calls.length).toBeGreaterThan(0)
+    for (const call of calls) expect(call).toMatch(/detached: true/)
   })
 })
