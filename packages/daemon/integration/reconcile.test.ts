@@ -20,7 +20,7 @@ import { createProjectionRunner } from '@lingtai/projector/test/promise-runner'
 import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { existsEffect, findOrphanLogs, findOrphans, reconcile } from '../src/index.ts'
+import { existsEffect, findOrphanLogsEffect, findOrphansEffect, reconcileEffect } from '../src/index.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 const created = new Set<string>()
@@ -101,7 +101,7 @@ describe('reconciliation', () => {
     await plant(dead)
     await plant(live)
 
-    const found = await reconcile({ home, store, worker: ME })
+    const found = await Effect.runPromise(reconcileEffect({ home, store, worker: ME }))
 
     expect(found.map((f) => f.stream)).toEqual([dead])
     expect(found[0]!.action).toBe('removed')
@@ -126,14 +126,18 @@ describe('reconciliation', () => {
 
     // Nothing about the claim itself says it is dead — the claim check works
     // that out from the lock and hands the answer over.
-    expect((await findOrphans({ home, store, dryRun: true })).map((f) => f.stream)).not.toContain(stale)
+    expect(
+      (await Effect.runPromise(findOrphansEffect({ home, store, dryRun: true }))).map((f) => f.stream),
+    ).not.toContain(stale)
 
-    const found = await findOrphans({
-      home,
-      store,
-      dryRun: true,
-      abandoned: new Set([staleTask]),
-    })
+    const found = await Effect.runPromise(
+      findOrphansEffect({
+        home,
+        store,
+        dryRun: true,
+        abandoned: new Set([staleTask]),
+      }),
+    )
     expect(found.map((f) => f.stream)).toContain(stale)
     // Still there: dryRun reports, it does not act. A doctor that changed what
     // it was checking would describe a state that no longer exists.
@@ -148,7 +152,7 @@ describe('reconciliation', () => {
     const nameless = `pass-${PROJECT}-nameless`
     await plant(nameless)
 
-    const found = await reconcile({ home, store, worker: ME })
+    const found = await Effect.runPromise(reconcileEffect({ home, store, worker: ME }))
     const it_ = found.find((f) => f.stream === nameless)
 
     expect(it_?.action).toBe('reported')
@@ -157,7 +161,7 @@ describe('reconciliation', () => {
     // A second start finds the same mystery and appends nothing for it.
     const reconciled = async () => (await store.readTypes('ctl-conductor', ['Reconciled'])).length
     const before = await reconciled()
-    const again = await reconcile({ home, store, worker: ME })
+    const again = await Effect.runPromise(reconcileEffect({ home, store, worker: ME }))
     expect(again.find((f) => f.stream === nameless)).toBeUndefined()
     expect(await reconciled()).toBe(before)
   })
@@ -210,10 +214,10 @@ describe('reconciliation', () => {
 
     // Reported before anything is touched, so a `lingtai doctor` reading the
     // same function says what would happen without making it happen.
-    const dry = await findOrphanLogs({ home, store, dryRun: true })
+    const dry = await Effect.runPromise(findOrphanLogsEffect({ home, store, dryRun: true }))
     expect(dry.find((f) => f.stream === landed)?.action).toBe('reported')
 
-    const found = await reconcile({ home, store, worker: ME })
+    const found = await Effect.runPromise(reconcileEffect({ home, store, worker: ME }))
 
     expect(found.find((f) => f.stream === landed)?.action).toBe('removed')
     expect(await Effect.runPromise(existsEffect(rl(landed)))).toBe(false)
@@ -231,7 +235,7 @@ describe('reconciliation', () => {
     const quiet = await mkdtemp(join(tmpdir(), 'lingtai-quiet-'))
     const before = (await store.read('ctl-conductor')).length
 
-    const found = await reconcile({ home: quiet, store, worker: ME })
+    const found = await Effect.runPromise(reconcileEffect({ home: quiet, store, worker: ME }))
 
     expect(found).toEqual([])
     // An empty Reconciled on every startup would be noise in the one place
@@ -309,7 +313,7 @@ describe('a conductor that replaces a dead one', () => {
 
     // The new conductor starts. It holds the lock, so it is the only conductor,
     // so `local:22222` is dead — whatever any timestamp says.
-    const found = await reconcile({ home: quiet, store, worker: ME, projects })
+    const found = await Effect.runPromise(reconcileEffect({ home: quiet, store, worker: ME, projects }))
 
     const release = found.find((f) => f.stream === taskId)
     expect(release?.action).toBe('released')
@@ -353,7 +357,7 @@ describe('a conductor that replaces a dead one', () => {
     created.add(taskId)
     await store.append(taskId, 0, [claim(`pass-${project}-mine`, ME)])
 
-    const found = await reconcile({ home: quiet, store, worker: ME, projects })
+    const found = await Effect.runPromise(reconcileEffect({ home: quiet, store, worker: ME, projects }))
 
     expect(found.find((f) => f.stream === taskId)).toBeUndefined()
     expect((await store.read(taskId)).map((e) => e.type)).toEqual(['TicketClaimed'])

@@ -10,11 +10,9 @@ import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
-import { requeueHolding } from '../src/approve.ts'
-import { editBodyAndRequeueHolding } from '../src/edit-body.ts'
-import { resolveWaitHolding } from '../src/resolve-wait.ts'
 import type { IssueChannel } from '../src/tell.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
+import { editBodyAndRequeueHolding, requeueHolding, resolveWaitHolding } from '../test/promise-faces.ts'
 
 const PROJECT = 'lingtai'
 const ISSUE = 1

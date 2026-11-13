@@ -12,7 +12,8 @@ import { taskViewProjection } from '@lingtai/projector'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { acquireDaemonLock, createFileLocker, startDaemon } from '../src/index.ts'
+import { acquireDaemonLock, createFileLocker } from '../src/index.ts'
+import { startDaemon } from '../test/promise-faces.ts'
 
 const locker = createFileLocker()
 const key = () => `lingtai:test:${crypto.randomUUID().slice(0, 8)}`

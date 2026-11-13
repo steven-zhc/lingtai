@@ -16,7 +16,7 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { resolveWaitHolding } from '../src/resolve-wait.ts'
+import { resolveWaitHoldingEffect } from '../src/resolve-wait.ts'
 import { fakeGitHub, fakePorts, memoryStore, once, project, runtime, PROJECT } from '../test/one-attempt.ts'
 
 const APPROVAL_AT_PROPOSED = `
@@ -77,17 +77,19 @@ describe('an approved continuation refused at the lane', () => {
     expect(['published', 'already-published']).toContain(published.at(-1)!.outcome)
 
     const conflictWait = waitsOf(await store.read(ticketId)).at(-1)!
-    const granted = await resolveWaitHolding(
-      {
+    const granted = await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId,
+          issue: 7,
+          waitId: conflictWait.waitId,
+          resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+          by: 'human:steven',
+          client: { refSha: async () => onSha },
+          store,
+        },
         ticketId,
-        issue: 7,
-        waitId: conflictWait.waitId,
-        resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
-        by: 'human:steven',
-        client: { refSha: async () => onSha },
-        store,
-      },
-      ticketId,
+      ),
     )
     expect(granted).toMatchObject({ ok: true })
   })

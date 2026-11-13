@@ -14,7 +14,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import type { Asking, LockPlace, RecordedStart } from '@lingtai/daemon'
-import { controlWatermark, readControl, requestShutdown, requestShutdownUnlessStanding } from '@lingtai/daemon/control'
+import {
+  controlWatermarkEffect,
+  readControl,
+  requestShutdownEffect,
+  requestShutdownUnlessStandingEffect,
+} from '@lingtai/daemon/control'
 import { repoRoot } from '@lingtai/env'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
@@ -605,7 +610,7 @@ describe('shutdown', () => {
       if (loaded && !daemons.some((x) => x.running)) {
         const d: Daemon = {
           name: `daemon ${daemons.length + 1}`,
-          since: await controlWatermark(store),
+          since: await Effect.runPromise(controlWatermarkEffect(store)),
           running: true,
           pass: 'none',
           polls: 0,
@@ -665,7 +670,7 @@ describe('shutdown', () => {
       }
     }
     const drain: ServiceDrain = {
-      ask: (by, reason) => requestShutdownUnlessStanding(by, reason, null, store),
+      ask: (by, reason) => Effect.runPromise(requestShutdownUnlessStandingEffect(by, reason, null, store)),
       holding: async () => (first.pass === 'in flight' ? '1 in flight: lingtai#174' : 'nothing in flight'),
       queue: () =>
         queueForTheLock({
@@ -849,7 +854,7 @@ describe('shutdown', () => {
   it("refuses a request already standing under somebody else's name, and stops nothing", async () => {
     const by = 'human:ops'
     const w = world(2)
-    await requestShutdownUnlessStanding(by, 'migrating the database', null, w.store)
+    await Effect.runPromise(requestShutdownUnlessStandingEffect(by, 'migrating the database', null, w.store))
     const { go, err } = command('darwin', w.s.exec, { drain: w.drain })
     await launchdFile()
     expect(await go('shutdown')).toBe(1)
@@ -864,7 +869,9 @@ describe('shutdown', () => {
 
   it('adopts a request already standing under its own name, and waits on it', async () => {
     const w = world(2)
-    await requestShutdownUnlessStanding('human:lingtai', 'migrating the database', null, w.store)
+    await Effect.runPromise(
+      requestShutdownUnlessStandingEffect('human:lingtai', 'migrating the database', null, w.store),
+    )
     const { go, out } = command('darwin', w.s.exec, { drain: w.drain })
     await launchdFile()
     expect(await go('shutdown')).toBe(0)
@@ -875,7 +882,7 @@ describe('shutdown', () => {
   it("does not say nothing was stopped when a request landing during restart's wait refuses the start after the unload", async () => {
     const w = world(3, async (poll, store) => {
       // Another person's `lingtai shutdown`, which appends whatever stands.
-      if (poll === 2) await requestShutdown('human:ops', 'maintenance', null, store)
+      if (poll === 2) await Effect.runPromise(requestShutdownEffect('human:ops', 'maintenance', null, store))
     })
     const { go, err } = command('darwin', w.s.exec, {
       drain: w.drain,
@@ -1497,7 +1504,7 @@ describe('one command to stop, one to start', () => {
       ['launchctl bootstrap', () => ((loaded = true), { status: 0, out: '' })],
     ])
     const drain: ServiceDrain = {
-      ask: (by, reason) => requestShutdownUnlessStanding(by, reason, null, store),
+      ask: (by, reason) => Effect.runPromise(requestShutdownUnlessStandingEffect(by, reason, null, store)),
       holding: async () => 'nothing in flight',
       queue: () =>
         Effect.succeed({
@@ -1510,13 +1517,13 @@ describe('one command to stop, one to start', () => {
       drain,
       shutdown: async () => (await readControl(store)).shutdown,
       started: {
-        watermark: () => controlWatermark(store),
+        watermark: () => Effect.runPromise(controlWatermarkEffect(store)),
         // The daemon launchd starts reads where the stream is, and records itself.
         after: async (v) => {
-          const { recordStartEffect, startAfter } = await import('@lingtai/daemon/control')
-          if ((await startAfter(v, store)) === null)
+          const { recordStartEffect, startAfterEffect } = await import('@lingtai/daemon/control')
+          if ((await Effect.runPromise(startAfterEffect(v, store))) === null)
             await Effect.runPromise(recordStartEffect('daemon', null, { sha: RECORDED.sha, dirty: false }, v, store))
-          return startAfter(v, store)
+          return Effect.runPromise(startAfterEffect(v, store))
         },
       },
     })

@@ -42,7 +42,7 @@ import type { Projection, ProjectionRunnerOptions, ProjectionRunnerPort } from '
 import { ProjectionShapeError, makeRunner } from '@lingtai/projector'
 import { Cause, Deferred, Effect, Exit, Fiber } from 'effect'
 
-import { controlWatermark } from './control.ts'
+import { controlWatermarkEffect } from './control.ts'
 import {
   type AcquireDaemonLockOptions,
   type DaemonLock,
@@ -196,7 +196,7 @@ export function startDaemonEffect(options: DaemonOptions): Effect.Effect<DaemonS
     // a request appended in the instant before the lock is obeyed by this daemon
     // too — and that request was asked while this one was starting, so it is
     // this one's.
-    const since = yield* Effect.promise(options.watermark ?? (() => controlWatermark()))
+    const since = yield* options.watermark ? Effect.promise(options.watermark) : controlWatermarkEffect()
 
     const held = yield* Effect.promise(() =>
       (options.acquire ?? acquireDaemonLock)({
@@ -347,35 +347,4 @@ export function startDaemonEffect(options: DaemonOptions): Effect.Effect<DaemonS
       },
     } as const
   })
-}
-
-/** `startDaemonEffect`'s arm with the promise `Daemon` over its port. */
-function startDaemonFaced(options: DaemonOptions): Effect.Effect<DaemonStart> {
-  return Effect.map(startDaemonEffect(options), (started): DaemonStart => {
-    if (!started.ok) return started
-    const port = started.daemon
-    return {
-      ok: true,
-      since: started.since,
-      daemon: {
-        stopped: daemonStoppedFace(port),
-        stop: () => void daemonStopFace(port),
-        get stoppedProjections() {
-          return port.stoppedProjections
-        },
-      },
-    }
-  })
-}
-
-export function daemonStopFace(port: DaemonPort) {
-  return Effect.runPromise(port.stop())
-}
-
-export function daemonStoppedFace(port: DaemonPort) {
-  return Effect.runPromise(port.stopped())
-}
-
-export function startDaemon(options: DaemonOptions) {
-  return Effect.runPromise(startDaemonFaced(options))
 }

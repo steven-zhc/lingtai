@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { CLAUDE_CODE_CAPABILITIES } from '@lingtai/agent'
-import { beat, createStatusTableEffect } from '@lingtai/daemon'
+import { createStatusTableEffect } from '@lingtai/daemon'
+import { beatEffect } from '@lingtai/daemon/control'
 import { SUBSCRIBER_STREAM, emptyProject } from '@lingtai/domain'
 import type { StoreChoice } from '@lingtai/env'
 /**
@@ -1036,7 +1037,7 @@ steps:
     await Effect.runPromise(createStatusTableEffect())
     // What startup now writes before it begins the slow half — a fresh row
     // whose word is `starting`.
-    await beat('starting')
+    await Effect.runPromise(beatEffect('starting'))
 
     try {
       const report = await runDoctor(

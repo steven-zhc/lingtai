@@ -10,7 +10,8 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { DaemonStore } from '../src/store.ts'
-import { COMPLETION_EVENTS, createWorkLoop, DISCUSSION_EVENTS, TRIAGE_EVENTS } from '../src/work-loop.ts'
+import { COMPLETION_EVENTS, DISCUSSION_EVENTS, TRIAGE_EVENTS } from '../src/work-loop.ts'
+import { createWorkLoop } from '../test/promise-faces.ts'
 
 /** The work loop's `pass` is an Effect; these fakes are written as promises. */
 const asEffect =

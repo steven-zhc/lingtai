@@ -15,7 +15,7 @@ import { eventStore, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { createWorkLoop } from '../src/index.ts'
+import { createWorkLoop } from '../test/promise-faces.ts'
 
 /** The work loop's `pass` is an Effect; these fakes are written as promises. */
 const asEffect =

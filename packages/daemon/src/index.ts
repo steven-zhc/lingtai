@@ -13,7 +13,6 @@ export {
   type LockResult,
 } from './lock.ts'
 export {
-  startDaemon,
   startDaemonEffect,
   notTakingWork,
   type Daemon,
@@ -28,7 +27,6 @@ export {
   DISCUSSION_EVENTS,
   TRIAGE_EVENTS,
   SUBSCRIBER_TIMEOUT_MS,
-  createWorkLoop,
   makeWorkLoop,
   type EventSubscriber,
   type TurnReason,
@@ -41,13 +39,12 @@ export {
 // `@lingtai/daemon/sqlite`, which is how a barrel import still never loads
 // `node:sqlite` on a Postgres install. `choose.ts` is the one file that names
 // both, and `unit/one-store.test.ts` is what keeps it the only one (#179).
-export { processDaemonStore, withDaemonStore, type DaemonStoreOptions } from './choose.ts'
+export { processDaemonStoreEffect, withDaemonStore, type DaemonStoreOptions } from './choose.ts'
 export { type Beat, type DaemonStore, type StoppedProjection, type StreamQuery } from './store.ts'
 export {
   CONTROL_STREAM,
   HEARTBEAT_MS,
   STALE_AFTER_MS,
-  beat,
   createStatusTableEffect,
   describeInFlight,
   held,
@@ -56,7 +53,6 @@ export {
   pauseProject,
   resumeProject,
   type ProjectPauseAnswer,
-  controlWatermark,
   controlWatermarkEffect,
   inFlightEffect,
   readControl,
@@ -66,13 +62,10 @@ export {
   recordStartEffect,
   requestShutdownEffect,
   requestShutdownUnlessStandingEffect,
-  startAfter,
   startAfterEffect,
   requestsBetween,
   type RecordedStart,
   requestRun,
-  requestShutdown,
-  requestShutdownUnlessStanding,
   type Asking,
   resumeConductor,
   raiseDayCeiling,
@@ -89,7 +82,6 @@ export {
 export {
   codeCurrency,
   codeCurrencyEffect,
-  codeIdentity,
   codeIdentityEffect,
   codeRoot,
   describeCurrency,
@@ -104,12 +96,9 @@ export {
 export {
   existsEffect,
   findLaggingProjectionsEffect,
-  findOrphanLogs,
   findOrphanLogsEffect,
-  findOrphans,
   findOrphansEffect,
   killWorkerEffect,
-  reconcile,
   reconcileEffect,
   releaseForeignClaimsEffect,
   type Action,
@@ -117,7 +106,6 @@ export {
   type ReconcileOptions,
 } from './reconcile.ts'
 export {
-  clientsForProjects,
   clientsForProjectsEffect,
   convergeIssuesEffect,
   findIssueDriftEffect,

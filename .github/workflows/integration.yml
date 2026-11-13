@@ -75,7 +75,7 @@ jobs:
         if: matrix.store == 'postgres'
         run: echo "LINGTAI_TEST_DATABASE_URL=postgres://postgres:lingtai-ci@127.0.0.1:5432/lingtai_test" >> "$GITHUB_ENV"
       # A fresh container holds an empty database and nothing in the suite makes
-      # the tables: `createSchema` is `lingtai init`'s (`apps/cli/src/init.ts`),
+      # the tables: `createSchemaEffect` is `lingtai init`'s (`apps/cli/src/init.ts`),
       # which this workflow never runs. Teardown's `disable rule` needs them too.
       - name: create the schema in the container
         if: matrix.store == 'postgres'
@@ -83,10 +83,11 @@ jobs:
         run: |
           node --input-type=module -e "
           import pg from 'pg'
-          import { createSchema } from '@lingtai/event-store/schema'
+          import { Effect } from 'effect'
+          import { createSchemaEffect } from '@lingtai/event-store/schema'
           const c = new pg.Client({ connectionString: process.env.LINGTAI_TEST_DATABASE_URL })
           await c.connect()
-          try { console.log(await createSchema(c)) } finally { await c.end() }
+          try { console.log(await Effect.runPromise(createSchemaEffect(c))) } finally { await c.end() }
           "
       - name: test
         run: pnpm test:integration --reporter=default --reporter=json --outputFile.json=integration-${{ matrix.store }}.json

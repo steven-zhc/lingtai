@@ -12,6 +12,28 @@
   },
 
   "rules": {
+    // Type-aware linting (#1136) is on for `typescript/await-thenable` alone: an
+    // `await` of an Effect compiles and does nothing, which `tsc` cannot see. The
+    // `correctness` category also holds fourteen other type-aware rules, which
+    // `--type-aware` would switch on; they are off by name because turning any of
+    // them on is a ticket of its own. This list is bound to oxlint 1.86: a later
+    // oxlint that adds a type-aware rule to `correctness` enables it with no diff.
+    "typescript/await-thenable": "warn",
+    "typescript/no-array-delete": "off",
+    "typescript/no-base-to-string": "off",
+    "typescript/no-duplicate-type-constituents": "off",
+    "typescript/no-floating-promises": "off",
+    "typescript/no-for-in-array": "off",
+    "typescript/no-implied-eval": "off",
+    "typescript/no-meaningless-void-operator": "off",
+    "typescript/no-misused-spread": "off",
+    "typescript/no-redundant-type-constituents": "off",
+    "typescript/no-unsafe-unary-minus": "off",
+    "typescript/no-useless-default-assignment": "off",
+    "typescript/require-array-sort-compare": "off",
+    "typescript/restrict-template-expressions": "off",
+    "typescript/unbound-method": "off",
+
     // `then:` is a real field of the `watch` plugin, declared as
     // `then: z.enum(["request-approval", "fail"])` in packages/recipe/src/recipe.ts.
     // Renaming it would change the schema every machine's `recipe.yml` is

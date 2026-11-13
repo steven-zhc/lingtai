@@ -59,22 +59,14 @@ import { agentBranch, armPrefix } from '@lingtai/conductor/branches'
 // Subpaths, never the barrel. `@lingtai/conductor`'s index pulls in the gate
 // pipeline and its child-process types, and the board imports this package —
 // so a barrel import here is a compile error three packages away.
-import {
-  clientForSeam,
-  recipeForSeam,
-  ticketsOfSeam,
-  type ClientFor,
-  type ClientForEffect,
-  type RecipeFor,
-  type RecipeForEffect,
-} from '@lingtai/conductor/filter'
+import { recipeForSeam, type ClientForEffect, type RecipeForEffect } from '@lingtai/conductor/filter'
 import { foreignLabels, labelsFor } from '@lingtai/conductor/labels'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { loadProjectsEffect } from '@lingtai/conductor/projects'
 // One wording for *what a part-way sweep had already deleted*, shared rather
 // than written twice: the inline sweep and this one record the same row.
 import { sweepFailure, type RefChannel } from '@lingtai/conductor/tell'
-import { ticketedClientOf, ticketsForEffect, type ticketsFor, type Tickets } from '@lingtai/conductor/ticket-store'
+import { ticketedClientOf, ticketsForEffect, type Tickets } from '@lingtai/conductor/ticket-store'
 import {
   parseTicketStream,
   parsePayload,
@@ -210,34 +202,6 @@ export function clientsForProjectsEffect(
     }
     return { clients, unresolved }
   })
-}
-
-/** `clientsForProjectsEffect` over promise seams (a listed face, #790). */
-export function clientsForProjects(
-  projects: readonly ProjectState[],
-  options: {
-    hasAuth?: () => boolean
-    clientFor?: ClientFor
-    recipeFor?: RecipeFor
-    ticketsOf?: typeof ticketsFor
-  } = {},
-): Promise<ProjectClients> {
-  return Effect.runPromise(clientsForProjectsEffect(projects, effectSeams(options)))
-}
-
-/** Each promise seam a test handed in, lifted once; one it did not is left to the Effect's own default. */
-function effectSeams(options: {
-  hasAuth?: () => boolean
-  clientFor?: ClientFor
-  recipeFor?: RecipeFor
-  ticketsOf?: typeof ticketsFor
-}): Parameters<typeof clientsForProjectsEffect>[1] {
-  return {
-    ...(options.hasAuth === undefined ? {} : { hasAuth: options.hasAuth }),
-    ...(options.clientFor === undefined ? {} : { clientFor: clientForSeam(options.clientFor) }),
-    ...(options.recipeFor === undefined ? {} : { recipeFor: recipeForSeam(options.recipeFor) }),
-    ...(options.ticketsOf === undefined ? {} : { ticketsOf: ticketsOfSeam(options.ticketsOf) }),
-  }
 }
 
 /** A promise as an Effect whose failure is the rejection itself, unwrapped — what the `catch` below reads `.message` off. */

@@ -33,7 +33,7 @@ import {
   findRunLog,
   findRunLogEffect,
   followRunLogStream,
-  listRunLogs,
+  listRunLogsEffect,
   runLogEnd,
   runLogPath,
   runLogQuiet,
@@ -84,7 +84,7 @@ describe('finding the log for a run id', () => {
 
   it('is null on a machine no run has ever left a log on', async () => {
     expect(await findRunLog('pass-7', home)).toBeNull()
-    expect(await listRunLogs(home)).toEqual([])
+    expect(await Effect.runPromise(listRunLogsEffect(home))).toEqual([])
   })
 
   it('lists the logs, newest first, and never the settings directory', async () => {
@@ -99,7 +99,7 @@ describe('finding the log for a run id', () => {
     await new Promise((r) => setTimeout(r, 10))
     await writeFile(join(home, 'runs', 'lingtai', 'pass-new.log'), '')
 
-    expect((await listRunLogs(home)).map((l) => l.runId)).toEqual(['pass-new', 'pass-old'])
+    expect((await Effect.runPromise(listRunLogsEffect(home))).map((l) => l.runId)).toEqual(['pass-new', 'pass-old'])
   })
 })
 
@@ -281,6 +281,6 @@ describe('following one', () => {
 
   it('answers null and [] over a home with no runs/', async () => {
     await expect(Effect.runPromise(findRunLogEffect('pass-nothing', home))).resolves.toBeNull()
-    await expect(listRunLogs(home)).resolves.toEqual([])
+    await expect(Effect.runPromise(listRunLogsEffect(home))).resolves.toEqual([])
   })
 })

@@ -22,7 +22,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
   codeCurrency,
-  codeIdentity,
+  codeIdentityEffect,
   describeCurrency,
   identityRefusals,
   readCodeVersionEffect,
@@ -191,7 +191,7 @@ describe('whether a start could be accounted for afterwards', () => {
   })
 
   it('lets a commit the remote has through, and says nothing about it', async () => {
-    const id = await codeIdentity({ cwd: local, base: 'origin/main' })
+    const id = await Effect.runPromise(codeIdentityEffect({ cwd: local, base: 'origin/main' }))
 
     expect(id.pushed).toBe(true)
     expect(id.dirty).toBe(false)
@@ -204,7 +204,7 @@ describe('whether a start could be accounted for afterwards', () => {
     await git(['commit', '-qam', 'local only'], local)
     const head = (await git(['rev-parse', 'HEAD'], local)).stdout.trim()
 
-    const id = await codeIdentity({ cwd: local, base: 'origin/main' })
+    const id = await Effect.runPromise(codeIdentityEffect({ cwd: local, base: 'origin/main' }))
     expect(id.pushed).toBe(false)
 
     const said = identityRefusals(id)[0]?.line
@@ -226,7 +226,7 @@ describe('whether a start could be accounted for afterwards', () => {
     await git(['push', '-q', 'origin', 'main'], local)
     await git(['reset', '-q', '--hard', 'HEAD~1'], local)
 
-    const id = await codeIdentity({ cwd: local, base: 'origin/main' })
+    const id = await Effect.runPromise(codeIdentityEffect({ cwd: local, base: 'origin/main' }))
     expect(id.pushed).toBe(true)
     expect(identityRefusals(id)).toEqual([])
   })
@@ -234,7 +234,7 @@ describe('whether a start could be accounted for afterwards', () => {
   it('names a dirty worktree beside whatever else is wrong, in one refusal', async () => {
     await writeFile(join(local, 'scratch.txt'), 'uncommitted\n')
     try {
-      const clean = await codeIdentity({ cwd: local, base: 'origin/main' })
+      const clean = await Effect.runPromise(codeIdentityEffect({ cwd: local, base: 'origin/main' }))
       expect(clean.dirty).toBe(true)
       expect(identityRefusals(clean)).toHaveLength(1)
       expect(identityRefusals(clean)[0]?.line).toContain('uncommitted changes')
@@ -244,7 +244,7 @@ describe('whether a start could be accounted for afterwards', () => {
       await git(['commit', '-qm', 'unpushed too'], local)
       await writeFile(join(local, 'scratch.txt'), 'and dirty again\n')
 
-      const both = await codeIdentity({ cwd: local, base: 'origin/main' })
+      const both = await Effect.runPromise(codeIdentityEffect({ cwd: local, base: 'origin/main' }))
       expect(identityRefusals(both)).toHaveLength(2)
     } finally {
       await git(['reset', '-q', '--hard', 'origin/main'], local)
@@ -258,7 +258,7 @@ describe('whether a start could be accounted for afterwards', () => {
    * fetches on your behalf — so the refusal says so.
    */
   it('refuses when it could not be established, rather than assuming it was fine', async () => {
-    const id = await codeIdentity({ cwd: local, base: 'origin/no-such-branch' })
+    const id = await Effect.runPromise(codeIdentityEffect({ cwd: local, base: 'origin/no-such-branch' }))
 
     expect(id.unknown).not.toBeNull()
     expect(id.pushed).toBeNull()
@@ -270,7 +270,9 @@ describe('whether a start could be accounted for afterwards', () => {
    * and never `pushed: true` (#1073).
    */
   it('answers unknown, never pushed, when git cannot be run in the directory', async () => {
-    const id = await codeIdentity({ cwd: join(root, 'no-such-directory'), base: 'origin/main' })
+    const id = await Effect.runPromise(
+      codeIdentityEffect({ cwd: join(root, 'no-such-directory'), base: 'origin/main' }),
+    )
 
     expect(id.pushed).toBeNull()
     expect(id.unknown).not.toBeNull()

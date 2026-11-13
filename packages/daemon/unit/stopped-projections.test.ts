@@ -9,7 +9,8 @@ import { ProjectionShapeError } from '@lingtai/projector'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { notTakingWork, startDaemon } from '../src/daemon.ts'
+import { notTakingWork } from '../src/daemon.ts'
+import { startDaemon } from '../test/promise-faces.ts'
 
 const base = {
   predatesHold: async () => null,
@@ -145,6 +146,6 @@ describe('a stopped projection', () => {
     })
     if (!result.ok) throw new Error('the daemon should have come up')
     expect(result.daemon.stoppedProjections.map((s) => s.name)).toEqual(['spend'])
-    await result.daemon.stop()
+    result.daemon.stop()
   })
 })

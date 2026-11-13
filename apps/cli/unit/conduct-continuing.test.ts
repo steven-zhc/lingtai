@@ -121,7 +121,7 @@ describe('conductWork: a continuing row that has gone stale', () => {
         throw new Error('not reached — no owner')
       },
       currentRecipe: async () => resolved,
-      ticketsFor: async () => tickets,
+      ticketsFor: () => Effect.succeed(tickets),
       selectRunnable: async ({ offered }) =>
         offered.map((o) => ({ taskId: `t-${o.ref}`, issue: o.ref, title: o.title, kind: o.kind })),
       runOnce: () => {
@@ -168,7 +168,7 @@ describe('conductWork: a continuing row declined at claim', () => {
         throw new Error('not reached — no owner')
       },
       currentRecipe: async () => resolved,
-      ticketsFor: async () => tickets,
+      ticketsFor: () => Effect.succeed(tickets),
       selectRunnable: async ({ offered }) =>
         offered.map((o) => ({ taskId: `t-${o.ref}`, issue: o.ref, title: o.title, kind: o.kind })),
       runOnce: (options) => {
@@ -221,7 +221,7 @@ describe('conductWork: two continuing rows for the same project', () => {
         throw new Error('not reached — no owner')
       },
       currentRecipe: async () => resolved,
-      ticketsFor: async () => tickets,
+      ticketsFor: () => Effect.succeed(tickets),
       selectRunnable: async ({ offered }) =>
         offered.map((o) => ({ taskId: `t-${o.ref}`, issue: o.ref, title: o.title, kind: o.kind })),
       runOnce: (options) => {
@@ -272,7 +272,7 @@ function worldRunning(
       throw new Error('not reached — no owner')
     },
     currentRecipe: async () => resolved,
-    ticketsFor: async () => tickets,
+    ticketsFor: () => Effect.succeed(tickets),
     selectRunnable: async () => [],
     runOnce: run,
     runQueue: () => Effect.succeed({ ran: [], stopped: 'empty', attempted: [] }),

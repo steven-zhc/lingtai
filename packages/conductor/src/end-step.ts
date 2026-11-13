@@ -255,8 +255,3 @@ export function endedWithoutEndActionsEffect(queries?: LogQueries): Effect.Effec
     })
   })
 }
-
-/** `endedWithoutEndActionsEffect` as a promise, for `lingtai end` and `lingtai doctor` until their rows of #790. */
-export function endedWithoutEndActions(queries?: LogQueries): Promise<UnresolvedEnd[]> {
-  return Effect.runPromise(endedWithoutEndActionsEffect(queries))
-}

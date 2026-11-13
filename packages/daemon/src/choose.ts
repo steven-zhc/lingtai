@@ -72,11 +72,6 @@ export const processDaemonStoreEffect = (options: DaemonStoreOptions = {}): Effe
     )
   })
 
-/** The promise face of `processDaemonStoreEffect`, for a spawned script. */
-export function processDaemonStore(options: DaemonStoreOptions = {}): Promise<DaemonStore> {
-  return Effect.runPromise(processDaemonStoreEffect(options))
-}
-
 /** Runs `use` on the given store (never closed — it is the caller's), or on one opened here and closed on every exit. */
 export const withDaemonStore = <A, E>(
   given: DaemonStore | undefined,

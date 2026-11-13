@@ -11,7 +11,7 @@
 import { LogPredatesHoldError } from '@lingtai/event-store'
 import { describe, expect, it } from 'vitest'
 
-import { startDaemon } from '../src/daemon.ts'
+import { startDaemon } from '../test/promise-faces.ts'
 
 /** Every test here replaces `predatesHold` — left to its default, it opens the process log, which no unit test has. */
 const clearToStart = async () => null

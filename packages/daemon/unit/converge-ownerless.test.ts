@@ -20,8 +20,9 @@ import { describe, expect, it } from 'vitest'
  * Unit, by 0060 §1: a memory log, a `memoryTickets()` store, and a
  * `clientFor` this test never expects to be called.
  */
-import { clientsForProjects, convergeIssuesEffect } from '../src/converge.ts'
+import { convergeIssuesEffect } from '../src/converge.ts'
 import type { DaemonStore } from '../src/store.ts'
+import { clientsForProjects } from '../test/promise-faces.ts'
 
 const convergeIssues = (options: Parameters<typeof convergeIssuesEffect>[0]) =>
   Effect.runPromise(convergeIssuesEffect(options))

@@ -13,10 +13,11 @@ import type { WaitReason } from '@lingtai/domain/wait'
  */
 import { log } from '@lingtai/event-store'
 import { createMemoryEventStore, createMemorySnapshotStore, type MemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { tallyTurn } from '../src/index.ts'
 import type { RunOnceResult } from '../src/index.ts'
+import { tallyTurnEffect } from '../src/schedule.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 const created = new Set<string>()
@@ -103,19 +104,19 @@ beforeAll(async () => {
 describe('tallyPass', () => {
   it('counts an item that landed after the run that held it', async () => {
     // What the process saw. What the log says is that it landed.
-    expect(await tallyTurn([held(1)], store)).toEqual({ landed: 1, held: 0, stopped: 0 })
+    expect(await Effect.runPromise(tallyTurnEffect([held(1)], store))).toEqual({ landed: 1, held: 0, stopped: 0 })
   })
 
   it('counts a merge this run performed', async () => {
     const merged: RunOnceResult = { ok: true, ticketId: wi(2), runId: runId(2), mergeCommit: 'abc1234' }
-    expect(await tallyTurn([merged], store)).toEqual({ landed: 1, held: 0, stopped: 0 })
+    expect(await Effect.runPromise(tallyTurnEffect([merged], store))).toEqual({ landed: 1, held: 0, stopped: 0 })
   })
 
   it('counts a question a person now holds as held, however the run ended', async () => {
     // A gate hold and an integrator refusal both leave the item blocked, and
     // the board puts both in "Waiting on you". The run's own `ok` disagrees
     // about the second one, and the board is the one that is right.
-    expect(await tallyTurn([held(3), failed(4, 'integrate')], store)).toEqual({
+    expect(await Effect.runPromise(tallyTurnEffect([held(3), failed(4, 'integrate')], store))).toEqual({
       landed: 0,
       held: 2,
       stopped: 0,
@@ -123,21 +124,29 @@ describe('tallyPass', () => {
   })
 
   it('counts a released item as stopped', async () => {
-    expect(await tallyTurn([failed(5, 'agent')], store)).toEqual({ landed: 0, held: 0, stopped: 1 })
+    expect(await Effect.runPromise(tallyTurnEffect([failed(5, 'agent')], store))).toEqual({
+      landed: 0,
+      held: 0,
+      stopped: 1,
+    })
   })
 
   it('counts a refusal with no work item as stopped', async () => {
     const noItem: RunOnceResult = { ok: false, ticketId: null, runId: null, stage: 'recipe', detail: 'no recipe' }
-    expect(await tallyTurn([noItem], store)).toEqual({ landed: 0, held: 0, stopped: 1 })
+    expect(await Effect.runPromise(tallyTurnEffect([noItem], store))).toEqual({ landed: 0, held: 0, stopped: 1 })
   })
 
   it('counts a block released with no unblock as stopped, not held', async () => {
-    expect(await tallyTurn([failed(6, 'integrate')], store)).toEqual({ landed: 0, held: 0, stopped: 1 })
+    expect(await Effect.runPromise(tallyTurnEffect([failed(6, 'integrate')], store))).toEqual({
+      landed: 0,
+      held: 0,
+      stopped: 1,
+    })
   })
 
   it('counts a whole pass', async () => {
     const pass = [held(1), held(3), failed(4, 'integrate'), failed(5, 'agent')]
-    expect(await tallyTurn(pass, store)).toEqual({ landed: 1, held: 2, stopped: 1 })
+    expect(await Effect.runPromise(tallyTurnEffect(pass, store))).toEqual({ landed: 1, held: 2, stopped: 1 })
   })
 })
 
@@ -156,7 +165,11 @@ describe('tallyTurn reads through the ticket snapshot', () => {
       state: ticketReducer.encode(reduceAll(ticketReducer, stored.slice(0, 1))),
     })
     const latest = vi.spyOn(snapshots, 'latest')
-    expect(await tallyTurn([held(1)], store, snapshots)).toEqual({ landed: 1, held: 0, stopped: 0 })
+    expect(await Effect.runPromise(tallyTurnEffect([held(1)], store, snapshots))).toEqual({
+      landed: 1,
+      held: 0,
+      stopped: 0,
+    })
     expect(latest).toHaveBeenCalled()
   })
 
@@ -165,7 +178,7 @@ describe('tallyTurn reads through the ticket snapshot', () => {
       throw new Error('the process log was touched')
     })
     try {
-      expect(await tallyTurn([held(1)], store)).toEqual({ landed: 1, held: 0, stopped: 0 })
+      expect(await Effect.runPromise(tallyTurnEffect([held(1)], store))).toEqual({ landed: 1, held: 0, stopped: 0 })
       expect(latest).not.toHaveBeenCalled()
     } finally {
       latest.mockRestore()

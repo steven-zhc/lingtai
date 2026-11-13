@@ -135,7 +135,7 @@ async function drive(
     loadProject: async () => PROJECT,
     createGitHubClient: notReached,
     currentRecipe: async () => resolved,
-    ticketsFor: async () => TICKETS,
+    ticketsFor: () => Effect.succeed(TICKETS),
     readHookBinary: async () => Buffer.from(''),
     readPrompt: async () => 'go',
     runOnce: (options) => {
@@ -159,7 +159,7 @@ async function drive(
       order.push('queue')
       return Effect.succeed({ ran: [], stopped: 'empty', attempted: [] })
     },
-    tallyPass: async () => ({ landed: 0, held: 0, stopped: 0 }),
+    tallyPass: () => Effect.succeed({ landed: 0, held: 0, stopped: 0 }),
     lock: FAKE_LOCK,
     projector: FAKE_PROJECTOR,
     ports: FAKE_PORTS,
@@ -291,7 +291,7 @@ describe('run continues what a person approved (#747)', () => {
       loadProject: async () => PROJECT,
       createGitHubClient: notReached,
       currentRecipe: async () => resolved,
-      ticketsFor: async () => TICKETS,
+      ticketsFor: () => Effect.succeed(TICKETS),
       readHookBinary: async () => Buffer.from(''),
       readPrompt: async () => 'go',
       runOnce: (options) => {
@@ -303,7 +303,7 @@ describe('run continues what a person approved (#747)', () => {
         queues.push(options)
         return Effect.succeed({ ran: [], stopped: 'empty', attempted: [] })
       },
-      tallyPass: async () => ({ landed: 1, held: 0, stopped: 0 }),
+      tallyPass: () => Effect.succeed({ landed: 1, held: 0, stopped: 0 }),
       lock: FAKE_LOCK,
       projector: FAKE_PROJECTOR,
       ports: FAKE_PORTS,

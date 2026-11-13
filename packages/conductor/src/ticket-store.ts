@@ -222,6 +222,14 @@ export class TicketSourceConflict extends Error {
   }
 }
 
+/** The promise shape of `ticketsForEffect`, for a seam a test or a host fills with its own. */
+export type TicketsFor = (
+  state: ProjectState,
+  recipe: Recipe,
+  client: Tickets,
+  options?: TicketsForOptions,
+) => Promise<Tickets>
+
 export interface TicketsForOptions {
   /** Defaults to this process's own ticket tables, opened on first use. */
   sql?: TicketSql
@@ -283,16 +291,6 @@ export function ticketsForEffect(
 
     return promiseDbTickets(tickets)
   })
-}
-
-/** `ticketsForEffect` as the promise every caller outside the package holds. */
-export function ticketsFor(
-  state: ProjectState,
-  recipe: Recipe,
-  client: Tickets,
-  options: TicketsForOptions = {},
-): Promise<Tickets> {
-  return Effect.runPromise(ticketsForEffect(state, recipe, client, options))
 }
 
 /**

@@ -30,7 +30,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { agentBranch, armBranch } from '../src/branches.ts'
-import { type IssueChannel, type RefChannel, sweepRefsEffect, tellGitHubAbout } from '../src/tell.ts'
+import { type IssueChannel, type RefChannel, sweepRefsEffect, tellGitHubAboutEffect } from '../src/tell.ts'
 
 /** A remote's ref list, and what a sweep did to it. */
 function fakeRefs(refs: readonly string[], opts: { fail?: boolean; refuseFrom?: string } = {}) {
@@ -285,17 +285,19 @@ describe("the order the end point's effects are carried out in", () => {
     const store = createMemoryEventStore()
     const world = fakeChannels([HEADS(BRANCH), HEADS(armBranch(BRANCH, 1))])
 
-    await tellGitHubAbout({
-      store,
-      github: world.github,
-      ticketId: 'ticket-lingtai-240',
-      appended: [
-        resolved([
-          { name: 'sweep', refs: true, branch: false },
-          { name: 'label', labels: ['lingtai:done'] },
-        ]),
-      ],
-    })
+    await Effect.runPromise(
+      tellGitHubAboutEffect({
+        store,
+        github: world.github,
+        ticketId: 'ticket-lingtai-240',
+        appended: [
+          resolved([
+            { name: 'sweep', refs: true, branch: false },
+            { name: 'label', labels: ['lingtai:done'] },
+          ]),
+        ],
+      }),
+    )
 
     expect(world.calls).toEqual(['setLabels lingtai:done', `deleteRef ${HEADS(armBranch(BRANCH, 1))}`])
   })
@@ -309,18 +311,20 @@ describe("the order the end point's effects are carried out in", () => {
     const store = createMemoryEventStore()
     const world = fakeChannels([HEADS(armBranch(BRANCH, 1))])
 
-    await tellGitHubAbout({
-      store,
-      github: world.github,
-      ticketId: 'ticket-lingtai-240',
-      appended: [
-        resolved([
-          { name: 'sweep', refs: true, branch: false },
-          { name: 'label', labels: ['lingtai:done'] },
-          { name: 'close', close: true },
-        ]),
-      ],
-    })
+    await Effect.runPromise(
+      tellGitHubAboutEffect({
+        store,
+        github: world.github,
+        ticketId: 'ticket-lingtai-240',
+        appended: [
+          resolved([
+            { name: 'sweep', refs: true, branch: false },
+            { name: 'label', labels: ['lingtai:done'] },
+            { name: 'close', close: true },
+          ]),
+        ],
+      }),
+    )
 
     expect(world.calls).toEqual(['setLabels lingtai:done', 'close', `deleteRef ${HEADS(armBranch(BRANCH, 1))}`])
   })

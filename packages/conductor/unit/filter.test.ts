@@ -1,3 +1,8 @@
+import type { ProjectState } from '@lingtai/domain'
+import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
+import type { TicketSql } from '@lingtai/event-store/ticket-sql'
+import type { GitHubClient } from '@lingtai/github'
+import { LIMIT_DEFAULTS, parseDuration, resolveRecipe } from '@lingtai/recipe'
 /**
  * What a project will take, said in one wording — and what it says when it
  * cannot say.
@@ -11,11 +16,6 @@
  * stopped parsing and every issue in the project vanished from the queue with
  * nothing anywhere saying why.
  */
-import type { ProjectState } from '@lingtai/domain'
-import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
-import type { TicketSql } from '@lingtai/event-store/ticket-sql'
-import type { GitHubClient } from '@lingtai/github'
-import { LIMIT_DEFAULTS, parseDuration, resolveRecipe } from '@lingtai/recipe'
 import { describe, expect, it, vi } from 'vitest'
 
 import { dbTickets } from '../src/db-tickets.ts'
@@ -28,7 +28,7 @@ import {
   projectClient,
   projectFilter,
 } from '../src/filter.ts'
-import type { ticketsFor } from '../src/ticket-store.ts'
+import type { TicketsFor } from '../src/ticket-store.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
 import { fakeGitHub, project as onePassProject, PROJECT } from '../test/one-attempt.ts'
 
@@ -260,7 +260,7 @@ describe('projectFilter, for a project with no owner', () => {
 
   it('resolves with no client built, and its tickets taken from the fourth argument', async () => {
     const tickets = memoryTickets()
-    const ticketsOf = vi.fn<typeof ticketsFor>(async () => tickets)
+    const ticketsOf = vi.fn<TicketsFor>(async () => tickets)
 
     const filter = await projectFilter(ownerlessState, clientFor, recipeOf(RECIPE_OWNERLESS), ticketsOf)
 

@@ -245,11 +245,6 @@ export const codeIdentityEffect = (options: CurrencyOptions = {}): Effect.Effect
     )
   })
 
-/** `codeIdentityEffect` as a promise (a listed face, #790). */
-export function codeIdentity(options: CurrencyOptions = {}): Promise<Identity> {
-  return Effect.runPromise(codeIdentityEffect(options))
-}
-
 /** One reason a process started from here could not be accounted for later. */
 export interface IdentityRefusal {
   /**

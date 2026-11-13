@@ -279,12 +279,12 @@ describe('lingtai rollback', () => {
     expect(await upgrade({ despiteDoctor: false }, world())).toBe(0)
     expect(shimSays()).toBe('lingtai 1.0.1')
 
-    expect(await rollback({}, world())).toBe(0)
+    expect(rollback({}, world())).toBe(0)
     expect(shimSays()).toBe('lingtai 1.0.0')
     expect(existsSync(join(installPaths({ HOME: home }).versions, '1.0.1', 'lingtai'))).toBe(true)
 
     lines = []
-    expect(await rollback({}, world())).toBe(1)
+    expect(rollback({}, world())).toBe(1)
     expect(lines.join('\n')).toContain('nothing older than 1.0.0')
   })
 
@@ -292,7 +292,7 @@ describe('lingtai rollback', () => {
     const shim = installPaths({ HOME: home }).shim
     mkdirSync(join(home, '.local', 'bin'), { recursive: true })
     writeFileSync(shim, '#!/bin/sh\n')
-    expect(await rollback({}, world())).toBe(1)
+    expect(rollback({}, world())).toBe(1)
     expect(lines.join('\n')).toContain("not Lingtai's to replace")
     expect(readFileSync(shim, 'utf8')).toBe('#!/bin/sh\n')
   })
@@ -307,7 +307,7 @@ describe('lingtai rollback, among prereleases', () => {
       chmodSync(join(paths.versions, v, 'lingtai'), 0o755)
     }
     pointShim(paths, '1.0.0-rc.10')
-    expect(await rollback({}, world())).toBe(0)
+    expect(rollback({}, world())).toBe(0)
     expect(shimSays()).toBe('lingtai 1.0.0-rc.2')
   })
 })
@@ -728,7 +728,7 @@ describe('install.sh', () => {
     expect(upgrade.said).toContain('now runs 1.0.1 (was 1.0.0')
     expect(shimSays()).toBe('lingtai 1.0.1')
 
-    expect(await rollback({}, world())).toBe(0)
+    expect(rollback({}, world())).toBe(0)
     expect(shimSays()).toBe('lingtai 1.0.0')
   })
 })

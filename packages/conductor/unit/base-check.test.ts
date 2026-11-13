@@ -55,7 +55,7 @@ function setup(run?: (o: RunCommandOptions) => Promise<CommandOutcome>) {
     store,
     run: (o: RunCommandOptions) => {
       calls.push(o.run)
-      return runner(o)
+      return Effect.promise(() => runner(o))
     },
     worktreePath: (p: string, sha7: string, runId: string) => `/wt/${p}/base-${sha7}-${runId}`,
     note: vi.fn(),

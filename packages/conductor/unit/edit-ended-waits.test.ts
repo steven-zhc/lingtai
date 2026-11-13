@@ -1,3 +1,5 @@
+import { type ToAppend, parsePayload } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 /**
  * **A waiting comment is rewritten into its outcome when the wait ends** (#750).
  *
@@ -5,11 +7,10 @@
  * properties held here are the ticket's — one comment per wait, edited at most
  * once, never answered with a second comment, and only by the caller that asks.
  */
-import { type ToAppend, parsePayload } from '@lingtai/domain'
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type RefChannel, tellGitHubAbout } from '../src/tell.ts'
+import { type RefChannel, tellGitHubAboutEffect } from '../src/tell.ts'
 import { ticketedClientOf } from '../src/ticket-store.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
 
@@ -39,7 +40,7 @@ async function world() {
     data: { waitId, by, resolution, note: '' } as never,
   })
   const hold = (waitId: string, question = QUESTION) =>
-    tellGitHubAbout({ store, github, ticketId, question, waitId, editEnded: true })
+    Effect.runPromise(tellGitHubAboutEffect({ store, github, ticketId, question, waitId, editEnded: true }))
   const events = async (type: string) => (await store.read(ticketId)).filter((e) => e.type === type)
   return { store, tickets, github, add, wait, resolve, hold, events }
 }
@@ -53,7 +54,7 @@ describe('the waiting comment becomes its outcome', () => {
       w.resolve('w1', { _tag: 'Approve', onSha: 'x' }),
       { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'ab5848a1234', base: 'main' } },
     ])
-    await tellGitHubAbout({ store: w.store, github: w.github, ticketId, editEnded: true })
+    await Effect.runPromise(tellGitHubAboutEffect({ store: w.store, github: w.github, ticketId, editEnded: true }))
     expect(w.tickets.commentBodies(1)).toEqual([`**Landed on \`main\` in \`ab5848a\`.**\n\n> ${QUESTION}`])
     const edited = (await w.events('IssueUpdated')).filter(
       (e) => (e.data as { change: string }).change === 'comment-edited',
@@ -80,7 +81,7 @@ describe('the waiting comment becomes its outcome', () => {
       w.resolve('w2', { _tag: 'Approve', onSha: 'y' }),
       { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'ab5848a1234', base: 'main' } },
     ])
-    await tellGitHubAbout({ store: w.store, github: w.github, ticketId, editEnded: true })
+    await Effect.runPromise(tellGitHubAboutEffect({ store: w.store, github: w.github, ticketId, editEnded: true }))
     expect(w.tickets.commentBodies(1)).toEqual([
       '**Approved by steven.**\n\n> first?',
       '**Landed on `main` in `ab5848a`.**\n\n> second?',
@@ -109,7 +110,7 @@ describe('the waiting comment becomes its outcome', () => {
     await w.add([w.wait('w1')])
     await w.hold('w1')
     await w.add([w.resolve('w1', resolution)])
-    await tellGitHubAbout({ store: w.store, github: w.github, ticketId, editEnded: true })
+    await Effect.runPromise(tellGitHubAboutEffect({ store: w.store, github: w.github, ticketId, editEnded: true }))
     expect(w.tickets.commentBodies(1)).toEqual([`${line}\n\n> ${QUESTION}`])
   })
 
@@ -118,7 +119,7 @@ describe('the waiting comment becomes its outcome', () => {
     await w.add([w.wait('w1')])
     await w.hold('w1')
     await w.add([{ type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: '', base: 'main' } }])
-    await tellGitHubAbout({ store: w.store, github: w.github, ticketId, editEnded: true })
+    await Effect.runPromise(tellGitHubAboutEffect({ store: w.store, github: w.github, ticketId, editEnded: true }))
     expect(w.tickets.commentBodies(1)[0]).toMatch(/^\*\*Landed on `main`\.\*\*/)
   })
 
@@ -127,7 +128,7 @@ describe('the waiting comment becomes its outcome', () => {
     await w.add([w.wait('w1')])
     await w.hold('w1')
     await w.add([w.resolve('w1', { _tag: 'Approve', onSha: 'x' }, '')])
-    await tellGitHubAbout({ store: w.store, github: w.github, ticketId, editEnded: true })
+    await Effect.runPromise(tellGitHubAboutEffect({ store: w.store, github: w.github, ticketId, editEnded: true }))
     expect(w.tickets.commentBodies(1)[0]).toMatch(/^\*\*Approved\.\*\*/)
   })
 
@@ -136,7 +137,7 @@ describe('the waiting comment becomes its outcome', () => {
     await w.add([w.wait('w1')])
     await w.hold('w1')
     await w.add([w.resolve('w1', { _tag: 'Approve', onSha: 'x' })])
-    await tellGitHubAbout({ store: w.store, github: w.github, ticketId })
+    await Effect.runPromise(tellGitHubAboutEffect({ store: w.store, github: w.github, ticketId }))
     expect(w.tickets.commentBodies(1)[0]).toMatch(/^\*\*Lingtai is waiting on you/)
     expect(
       (await w.events('IssueUpdated')).some((e) => (e.data as { change: string }).change === 'comment-edited'),
@@ -160,13 +161,15 @@ describe('the waiting comment becomes its outcome', () => {
         return w.github.editComment(n, id, b)
       },
     }
-    await tellGitHubAbout({ store: w.store, github, ticketId, question: 'second?', waitId: 'w2', editEnded: true })
+    await Effect.runPromise(
+      tellGitHubAboutEffect({ store: w.store, github, ticketId, question: 'second?', waitId: 'w2', editEnded: true }),
+    )
     expect(calls).toEqual(['edit', 'comment'])
     const bodies = w.tickets.commentBodies(1)
     expect(bodies).toHaveLength(2)
     expect(bodies[0]).toBe(`**Approved by steven.**\n\n> ${QUESTION}`)
     expect(bodies[1]).toMatch(/waiting on you/)
-    await tellGitHubAbout({ store: w.store, github, ticketId, editEnded: true })
+    await Effect.runPromise(tellGitHubAboutEffect({ store: w.store, github, ticketId, editEnded: true }))
     expect(calls).toEqual(['edit', 'comment'])
     expect(w.tickets.commentBodies(1)[1]).toMatch(/waiting on you/)
   })
@@ -184,8 +187,8 @@ describe('the waiting comment becomes its outcome', () => {
         throw new Error('404')
       },
     }
-    await tellGitHubAbout({ store: w.store, github, ticketId, editEnded: true })
-    await tellGitHubAbout({ store: w.store, github, ticketId, editEnded: true })
+    await Effect.runPromise(tellGitHubAboutEffect({ store: w.store, github, ticketId, editEnded: true }))
+    await Effect.runPromise(tellGitHubAboutEffect({ store: w.store, github, ticketId, editEnded: true }))
     expect(tries).toBe(1)
     expect(w.tickets.commentBodies(1)).toHaveLength(1)
     const failed = await w.events('IssueUpdateFailed')
@@ -205,7 +208,7 @@ describe('the waiting comment becomes its outcome', () => {
       },
       w.resolve('w1', { _tag: 'Approve', onSha: 'x' }),
     ])
-    await tellGitHubAbout({ store: w.store, github: w.github, ticketId, editEnded: true })
+    await Effect.runPromise(tellGitHubAboutEffect({ store: w.store, github: w.github, ticketId, editEnded: true }))
     expect(w.tickets.commentBodies(1)).toEqual(['**Lingtai is waiting on you.**'])
   })
 })

@@ -1,6 +1,6 @@
 import { makeGuard } from '@lingtai/daemon'
 /** `lingtai pause` / `resume` / `now` over a memory store (#992). */
-import { readControl, requestShutdown } from '@lingtai/daemon/control'
+import { readControl, requestShutdownEffect } from '@lingtai/daemon/control'
 import {
   type ProjectState,
   CONTROL_STREAM,
@@ -143,7 +143,7 @@ describe('lingtai resume [project]', () => {
     const real = w.store.head.bind(w.store)
     let raced = false
     // A drain stands, and the setup's pause lands before the first read: the append at the stale head is retried.
-    await requestShutdown('human:a', 'x', null, w.store)
+    await Effect.runPromise(requestShutdownEffect('human:a', 'x', null, w.store))
     const store = Object.assign(Object.create(w.store), {
       head: async (s: string) => {
         const h = await real(s)
@@ -175,7 +175,7 @@ describe('lingtai resume [project]', () => {
 
   it('appends nothing and says so when only a shutdown request stands', async () => {
     const w = await world()
-    await requestShutdown('human:a', 'x', null, w.store)
+    await Effect.runPromise(requestShutdownEffect('human:a', 'x', null, w.store))
     const before = await w.store.read(CONTROL_STREAM)
     await Effect.runPromise(resumeProjects(undefined, 'human:a', w.options))
     expect((await w.store.read(CONTROL_STREAM)).length).toBe(before.length)

@@ -2,9 +2,10 @@ import type { Envelope } from '@lingtai/domain'
 import { SUBSCRIBER_STREAM } from '@lingtai/domain'
 /** #1069: a subscriber's failure is recorded serially, and never rejects or dies. */
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
-import { makeFailureRecorder, recordFailureFace } from '../src/failure-recorder.ts'
+import { makeFailureRecorder } from '../src/failure-recorder.ts'
 
 const event = { type: 'TicketOpened', streamId: 'ticket-x', data: {} } as unknown as Envelope
 
@@ -15,7 +16,7 @@ describe('failure recorder', () => {
     const tell = vi.fn()
     const store = { append, read } as never
     const recorder = makeFailureRecorder({ store, tell })
-    await expect(recordFailureFace(recorder, 'n', event, 'why', 'p')).resolves.toBeUndefined()
+    await expect(Effect.runPromise(recorder.record('n', event, 'why', 'p'))).resolves.toBeUndefined()
     expect(append).toHaveBeenCalledTimes(3)
     expect(read).toHaveBeenCalledTimes(3)
     expect(tell).toHaveBeenCalledTimes(1)
@@ -33,7 +34,7 @@ describe('failure recorder', () => {
         throw new Error('tell broke')
       },
     })
-    await expect(recordFailureFace(recorder, 'n', event, 'why', 'p')).resolves.toBeUndefined()
+    await expect(Effect.runPromise(recorder.record('n', event, 'why', 'p'))).resolves.toBeUndefined()
   })
 
   it('appends two records of one tick at consecutive versions', async () => {
@@ -41,8 +42,8 @@ describe('failure recorder', () => {
     const tell = vi.fn()
     const recorder = makeFailureRecorder({ store, tell })
     await Promise.all([
-      recordFailureFace(recorder, 'a', event, 'r', 'p'),
-      recordFailureFace(recorder, 'b', event, 'r', 'p'),
+      Effect.runPromise(recorder.record('a', event, 'r', 'p')),
+      Effect.runPromise(recorder.record('b', event, 'r', 'p')),
     ])
     const written = await store.read(SUBSCRIBER_STREAM)
     expect(written.map((e) => [e.type, e.version])).toEqual([
@@ -56,7 +57,7 @@ describe('failure recorder', () => {
     const append = vi.fn()
     const read = vi.fn()
     const recorder = makeFailureRecorder({ store: { append, read } as never, tell: vi.fn() })
-    await recordFailureFace(recorder, 'n', { ...event, type: 'PluginFailed' } as Envelope, 'r', 'p')
+    await Effect.runPromise(recorder.record('n', { ...event, type: 'PluginFailed' } as Envelope, 'r', 'p'))
     expect(append).not.toHaveBeenCalled()
     expect(read).not.toHaveBeenCalled()
   })

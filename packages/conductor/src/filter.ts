@@ -41,7 +41,7 @@ import { currentRecipeEffect } from './projects.ts'
 import {
   ticketedClientOf,
   ticketsForEffect,
-  type ticketsFor,
+  type TicketsFor,
   type Tickets,
   type TicketedClient,
   type TicketsForOptions,
@@ -242,7 +242,7 @@ export const recipeForSeam = (recipeFor: RecipeFor | undefined): RecipeForEffect
     ? (state, client) => currentRecipeEffect(state, client)
     : (state, client) => Effect.tryPromise({ try: () => recipeFor(state, client), catch: asFailure })
 
-export const ticketsOfSeam = (ticketsOf: typeof ticketsFor | undefined): typeof ticketsForEffect =>
+export const ticketsOfSeam = (ticketsOf: TicketsFor | undefined): typeof ticketsForEffect =>
   ticketsOf === undefined
     ? ticketsForEffect
     : (state, recipe, client, options) =>
@@ -450,7 +450,7 @@ export function projectFilter(
   state: ProjectState,
   clientFor?: ClientFor,
   recipeFor?: RecipeFor,
-  ticketsOf?: typeof ticketsFor,
+  ticketsOf?: TicketsFor,
 ): Promise<ProjectFilter> {
   return Effect.runPromise(
     projectFilterEffect(state, clientForSeam(clientFor), recipeForSeam(recipeFor), ticketsOfSeam(ticketsOf)),
@@ -463,15 +463,6 @@ export function projectFiltersEffect(
   recipeFor: RecipeForEffect = (s, c) => currentRecipeEffect(s, c),
 ): Effect.Effect<ProjectFilter[]> {
   return Effect.forEach(projects, (p) => projectFilterEffect(p, clientFor, recipeFor), { concurrency: 'unbounded' })
-}
-
-/** `projectFiltersEffect` over promise seams, as a promise (a listed face, #790). */
-export function projectFilters(
-  projects: readonly ProjectState[],
-  clientFor?: ClientFor,
-  recipeFor?: RecipeFor,
-): Promise<ProjectFilter[]> {
-  return Effect.runPromise(projectFiltersEffect(projects, clientForSeam(clientFor), recipeForSeam(recipeFor)))
 }
 
 /**
