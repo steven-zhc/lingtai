@@ -48,7 +48,7 @@ const RECIPE = {
 
 /** The one stream this pass is to consider — `candidates()`' only job. */
 function oneStream(streamId: string): DaemonStore {
-  return { streams: async () => [streamId] } as unknown as DaemonStore
+  return { streams: () => Effect.succeed([streamId]) } as unknown as DaemonStore
 }
 
 describe('reconcile, a project with no owner', () => {

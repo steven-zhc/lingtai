@@ -11,12 +11,13 @@ describe('the beacon chain', () => {
     const delays = [30, 20, 10, 5]
     let calls = 0
     const store = {
-      beat: async (b: Beat) => {
-        const ms = delays[calls++] ?? 1
-        await new Promise((r) => setTimeout(r, ms))
-        landed.push(b.state)
-      },
-      close: async () => {},
+      beat: (b: Beat) =>
+        Effect.promise(async () => {
+          const ms = delays[calls++] ?? 1
+          await new Promise((r) => setTimeout(r, ms))
+          landed.push(b.state)
+        }),
+      close: () => Effect.void,
     } as unknown as DaemonStore
     const beacon = startBeacon('starting', { store, every: 3_600_000 })
     void beacon.say('up')
@@ -29,11 +30,12 @@ describe('the beacon chain', () => {
     const beats: Beat[] = []
     let failures = 1
     const store = {
-      beat: async (b: Beat) => {
-        beats.push(b)
-        if (failures-- > 0) throw 'gone'
-      },
-      close: async () => {},
+      beat: (b: Beat) =>
+        Effect.sync(() => {
+          beats.push(b)
+          if (failures-- > 0) throw 'gone'
+        }),
+      close: () => Effect.void,
     } as unknown as DaemonStore
     const beacon = startBeacon('starting', { store, every: 3_600_000 })
     await expect(beacon.say('up')).resolves.toBeUndefined()

@@ -44,6 +44,7 @@
  */
 import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -139,7 +140,7 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
   async function withStore<T>(fn: (f: DaemonFixture) => Promise<T>): Promise<T> {
     const fixture = await open()
     try {
-      await fixture.store.create()
+      await Effect.runPromise(fixture.store.create())
       // Every assertion starts where a fresh machine does: the table exists,
       // nothing has beaten, and nothing is being said to the conductor.
       // Postgres shares both the row and `ctl-conductor` with the rest of the
@@ -161,15 +162,15 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
   describe(`${name}: the beacon`, () => {
     it('has no row until something beats, and says so rather than guessing', async () => {
       await withStore(async ({ store }) => {
-        expect(await store.status()).toBeNull()
+        expect(await Effect.runPromise(store.status())).toBeNull()
       })
     })
 
     it('lands a beat that a later read sees, and reads as up', async () => {
       await withStore(async ({ store }) => {
-        await store.beat(beating({ state: 'starting', currentRunId: 'pass-1', codeSha: 'abc1234' }))
+        await Effect.runPromise(store.beat(beating({ state: 'starting', currentRunId: 'pass-1', codeSha: 'abc1234' })))
 
-        const status = await store.status()
+        const status = await Effect.runPromise(store.status())
         expect(status).not.toBeNull()
         expect(status!.pid).toBe(4242)
         expect(status!.host).toBe('contract-host')
@@ -189,11 +190,11 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
       // `code_sha` is null on every daemon older than #98. Both are read by
       // `daemon: currency` to decide whether a restart is owed.
       await withStore(async ({ store }) => {
-        await store.beat(beating({ codeSha: 'def5678', codeDirty: true }))
-        expect((await store.status())!.codeDirty).toBe(true)
+        await Effect.runPromise(store.beat(beating({ codeSha: 'def5678', codeDirty: true })))
+        expect((await Effect.runPromise(store.status()))!.codeDirty).toBe(true)
 
-        await store.beat(beating({ codeSha: null, codeDirty: false }))
-        const later = await store.status()
+        await Effect.runPromise(store.beat(beating({ codeSha: null, codeDirty: false })))
+        const later = await Effect.runPromise(store.status())
         expect(later!.codeSha).toBeNull()
         expect(later!.codeDirty).toBe(false)
       })
@@ -202,22 +203,24 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
     it('keeps the last word, whichever process wrote it, and one row for all of them', async () => {
       await withStore(async (fixture) => {
         const { store } = fixture
-        await store.beat(beating({ state: 'starting' }))
-        const first = await store.status()
+        await Effect.runPromise(store.beat(beating({ state: 'starting' })))
+        const first = await Effect.runPromise(store.status())
 
         // Past the clock's resolution, so "replaced" and "kept" read differently.
         await new Promise((resolve) => setTimeout(resolve, 25))
         const second = await fixture.another()
         try {
-          await second.beat(beating({ state: 'draining', pid: 9999, currentRunId: 'pass-2', fresh: true }))
+          await Effect.runPromise(
+            second.beat(beating({ state: 'draining', pid: 9999, currentRunId: 'pass-2', fresh: true })),
+          )
         } finally {
-          await second.close()
+          await Effect.runPromise(second.close())
         }
 
         // One row: the second process did not add a beacon of its own, it
         // overwrote the one there is. Two daemons cannot both be up — the
         // conductor lock sees to that — so a second row would be a lie.
-        const status = await store.status()
+        const status = await Effect.runPromise(store.status())
         expect(status!.state).toBe('draining')
         expect(status!.pid).toBe(9999)
         expect(status!.currentRunId).toBe('pass-2')
@@ -226,8 +229,8 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         expect(status!.startedAt.getTime()).toBeGreaterThan(first!.startedAt.getTime())
         const begun = status!.startedAt.getTime()
         // And a beat that is not fresh leaves it where it is.
-        await store.beat(beating({ state: 'up' }))
-        expect((await store.status())!.startedAt.getTime()).toBe(begun)
+        await Effect.runPromise(store.beat(beating({ state: 'up' })))
+        expect((await Effect.runPromise(store.status()))!.startedAt.getTime()).toBe(begun)
         // Beating moves, because that is the only field liveness is read from.
         expect(status!.lastSeenAt.getTime()).toBeGreaterThanOrEqual(first!.lastSeenAt.getTime())
       })
@@ -237,13 +240,13 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
       await withStore(async ({ store }) => {
         // Never started: no row at all, and a reader says "no daemon has run —
         // lingtai run works by hand".
-        expect(await store.status()).toBeNull()
+        expect(await Effect.runPromise(store.status())).toBeNull()
 
         // Stopped: a row, holding the word the process last said, and stale.
         // The clock is the reader's, so this needs no wait — what the contract
         // asserts is that the *row* carries enough to decide it.
-        await store.beat(beating({ state: 'stopping' }))
-        const status = await store.status()
+        await Effect.runPromise(store.beat(beating({ state: 'stopping' })))
+        const status = await Effect.runPromise(store.status())
         expect(status).not.toBeNull()
 
         const later = status!.lastSeenAt.getTime() + STALE_AFTER_MS + 1
@@ -265,13 +268,13 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         const beacon = startBeacon('up', { store, every: 50 })
         await beacon.stop('stopping')
 
-        const stopped = await store.status()
+        const stopped = await Effect.runPromise(store.status())
         expect(stopped!.state).toBe('stopping')
 
         // Two ticks' worth of the period it was started with. Nothing writes,
         // because the timer went with the process.
         await new Promise((resolve) => setTimeout(resolve, 200))
-        const later = await store.status()
+        const later = await Effect.runPromise(store.status())
         expect(later!.lastSeenAt.getTime()).toBe(stopped!.lastSeenAt.getTime())
         expect(later!.state).toBe('stopping')
 
@@ -285,9 +288,9 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
       // Called at every daemon start, so it has to be idempotent in the way
       // that matters: a start must not wipe what the last daemon said.
       await withStore(async ({ store }) => {
-        await store.beat(beating({ state: 'up' }))
-        await store.create()
-        expect((await store.status())!.state).toBe('up')
+        await Effect.runPromise(store.beat(beating({ state: 'up' })))
+        await Effect.runPromise(store.create())
+        expect((await Effect.runPromise(store.status()))!.state).toBe('up')
       })
     })
   })
@@ -392,12 +395,12 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
     it('reports a head that has moved past everything appended', async () => {
       await withStore(async (fixture) => {
         const { store } = fixture
-        const before = await store.head()
+        const before = await Effect.runPromise(store.head())
 
         const written = await store.events.append(fixture.stream(1), 0, [claimed('pass-a')])
         const seq = written.at(-1)!.seq
 
-        const after = await store.head()
+        const after = await Effect.runPromise(store.head())
         expect(after).toBeGreaterThan(before)
         // The log's end, which is where a starting daemon subscribes from: an
         // answer below this would replay, and one above it would skip.
@@ -415,10 +418,12 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
           { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'abc1234', base: 'main' } },
         ])
 
-        const found = await store.streams({
-          prefixes: [fixture.prefix],
-          types: ['TicketClaimed'],
-        })
+        const found = await Effect.runPromise(
+          store.streams({
+            prefixes: [fixture.prefix],
+            types: ['TicketClaimed'],
+          }),
+        )
         expect(found).toContain(claimedStream)
         expect(found).not.toContain(landedStream)
 
@@ -438,12 +443,16 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         const id = fixture.stream(4)
         await store.events.append(id, 0, [claimed('pass-c')])
 
-        expect(await store.streams({ prefixes: [fixture.prefix], types: ['TicketClaimed'] })).toContain(id)
         expect(
-          await store.streams({
-            prefixes: [fixture.prefix.toUpperCase()],
-            types: ['TicketClaimed'],
-          }),
+          await Effect.runPromise(store.streams({ prefixes: [fixture.prefix], types: ['TicketClaimed'] })),
+        ).toContain(id)
+        expect(
+          await Effect.runPromise(
+            store.streams({
+              prefixes: [fixture.prefix.toUpperCase()],
+              types: ['TicketClaimed'],
+            }),
+          ),
         ).toEqual([])
       })
     })
@@ -453,8 +462,8 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
       // `type = any('{}')` matches nothing — so the empty answer is returned
       // rather than paid for.
       await withStore(async ({ store }) => {
-        expect(await store.streams({ prefixes: [], types: ['TicketClaimed'] })).toEqual([])
-        expect(await store.streams({ prefixes: ['ticket-%'], types: [] })).toEqual([])
+        expect(await Effect.runPromise(store.streams({ prefixes: [], types: ['TicketClaimed'] }))).toEqual([])
+        expect(await Effect.runPromise(store.streams({ prefixes: ['ticket-%'], types: [] }))).toEqual([])
       })
     })
   })

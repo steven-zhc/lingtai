@@ -31,6 +31,7 @@ import type { DatabaseSync } from 'node:sqlite'
 
 import { createSqliteEventStore, openSqliteLog } from '@lingtai/event-store/sqlite'
 import type { EventStore } from '@lingtai/event-store/store'
+import { Effect } from 'effect'
 
 import {
   type Beat,
@@ -143,17 +144,20 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
     // the same system's.
     events: events ?? createSqliteEventStore(db),
 
-    async create() {
-      db.exec(SCHEMA)
-      widen(db)
+    create() {
+      return Effect.sync(() => {
+        db.exec(SCHEMA)
+        widen(db)
+      })
     },
 
-    async beat(beat: Beat) {
-      // `started_at` moves only on a `fresh` beat, exactly as it does in
-      // Postgres: a beat moves `last_seen_at` and leaves the moment this row
-      // began where it is, and a process's first beat begins it again.
-      db.prepare(
-        `INSERT INTO daemon_status
+    beat(beat: Beat) {
+      return Effect.sync(() => {
+        // `started_at` moves only on a `fresh` beat, exactly as it does in
+        // Postgres: a beat moves `last_seen_at` and leaves the moment this row
+        // began where it is, and a process's first beat begins it again.
+        db.prepare(
+          `INSERT INTO daemon_status
            (id, pid, host, started_at, last_seen_at, state, current_run_id, code_sha, code_dirty, stopped_projections)
          VALUES (1, ?, ?, coalesce(?, ${NOW}), ${NOW}, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE
@@ -166,65 +170,72 @@ export function createSqliteDaemonStore(db: DatabaseSync, events?: EventStore): 
                code_sha = excluded.code_sha,
                code_dirty = excluded.code_dirty,
                stopped_projections = excluded.stopped_projections`,
-      ).run(
-        beat.pid,
-        beat.host,
-        beat.startedAt?.toISOString() ?? null,
-        beat.state,
-        beat.currentRunId,
-        beat.codeSha,
-        beat.codeDirty ? 1 : 0,
-        encodeStopped(beat.stoppedProjections ?? []),
-        beat.fresh ? 1 : 0,
-      )
+        ).run(
+          beat.pid,
+          beat.host,
+          beat.startedAt?.toISOString() ?? null,
+          beat.state,
+          beat.currentRunId,
+          beat.codeSha,
+          beat.codeDirty ? 1 : 0,
+          encodeStopped(beat.stoppedProjections ?? []),
+          beat.fresh ? 1 : 0,
+        )
+      })
     },
 
-    async status(): Promise<DaemonStatus | null> {
-      let row: StatusRow | undefined
-      try {
-        row = db.prepare('SELECT * FROM daemon_status WHERE id = 1').get() as StatusRow | undefined
-      } catch (err) {
-        // No table means no daemon has ever started, which is a state the
-        // system can be in and not an error to show a person.
-        if (isMissingTable(err)) return null
-        throw err
-      }
-      if (!row) return null
-      return {
-        pid: Number(row.pid),
-        host: row.host,
-        startedAt: at(row.started_at, 'started_at'),
-        lastSeenAt: at(row.last_seen_at, 'last_seen_at'),
-        state: row.state,
-        currentRunId: row.current_run_id ?? null,
-        codeSha: row.code_sha ?? null,
-        codeDirty: !!row.code_dirty,
-        stoppedProjections: decodeStopped(row.stopped_projections),
-      }
+    status(): Effect.Effect<DaemonStatus | null> {
+      return Effect.sync(() => {
+        let row: StatusRow | undefined
+        try {
+          row = db.prepare('SELECT * FROM daemon_status WHERE id = 1').get() as StatusRow | undefined
+        } catch (err) {
+          // No table means no daemon has ever started, which is a state the
+          // system can be in and not an error to show a person.
+          if (isMissingTable(err)) return null
+          throw err
+        }
+        if (!row) return null
+        return {
+          pid: Number(row.pid),
+          host: row.host,
+          startedAt: at(row.started_at, 'started_at'),
+          lastSeenAt: at(row.last_seen_at, 'last_seen_at'),
+          state: row.state,
+          currentRunId: row.current_run_id ?? null,
+          codeSha: row.code_sha ?? null,
+          codeDirty: !!row.code_dirty,
+          stoppedProjections: decodeStopped(row.stopped_projections),
+        }
+      })
     },
 
-    async head(): Promise<bigint> {
-      const statement = db.prepare('SELECT coalesce(max(seq), 0) AS head FROM events')
-      statement.setReadBigInts(true)
-      return (statement.get() as { head: bigint }).head
+    head(): Effect.Effect<bigint> {
+      return Effect.sync(() => {
+        const statement = db.prepare('SELECT coalesce(max(seq), 0) AS head FROM events')
+        statement.setReadBigInts(true)
+        return (statement.get() as { head: bigint }).head
+      })
     },
 
-    async streams(query: StreamQuery): Promise<string[]> {
-      if (query.prefixes.length === 0 || query.types.length === 0) return []
-      const types = query.types.map(() => '?').join(', ')
-      const like = query.prefixes.map(() => 'stream_id LIKE ?').join(' OR ')
-      const rows = db
-        .prepare(
-          `SELECT DISTINCT stream_id FROM events
+    streams(query: StreamQuery): Effect.Effect<string[]> {
+      if (query.prefixes.length === 0 || query.types.length === 0) return Effect.succeed([])
+      return Effect.sync(() => {
+        const types = query.types.map(() => '?').join(', ')
+        const like = query.prefixes.map(() => 'stream_id LIKE ?').join(' OR ')
+        const rows = db
+          .prepare(
+            `SELECT DISTINCT stream_id FROM events
             WHERE type IN (${types}) AND (${like})
             ORDER BY stream_id`,
-        )
-        .all(...query.types, ...query.prefixes) as { stream_id: string }[]
-      return rows.map((r) => r.stream_id)
+          )
+          .all(...query.types, ...query.prefixes) as { stream_id: string }[]
+        return rows.map((r) => r.stream_id)
+      })
     },
 
-    async close() {
-      db.close()
+    close() {
+      return Effect.sync(() => db.close())
     },
   }
 }

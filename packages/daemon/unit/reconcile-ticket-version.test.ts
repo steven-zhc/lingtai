@@ -11,6 +11,7 @@ import { aClaim } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { reconcile } from '../src/reconcile.ts'
@@ -35,7 +36,7 @@ describe('reconcile releases at the version it read', () => {
     const store = createMemoryEventStore()
     const item = makeStream(STREAM)
     await store.append(STREAM, 0, aClaim(item, 'r1', 'elsewhere:4242'))
-    const daemonStore = { streams: async () => [STREAM] } as unknown as DaemonStore
+    const daemonStore = { streams: () => Effect.succeed([STREAM]) } as unknown as DaemonStore
     return { store, daemonStore, item }
   }
   const run = (store: EventStore, daemonStore: DaemonStore) =>

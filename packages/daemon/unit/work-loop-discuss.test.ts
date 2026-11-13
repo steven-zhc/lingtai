@@ -6,6 +6,7 @@
  */
 import type { Log } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { DaemonStore } from '../src/store.ts'
@@ -39,7 +40,7 @@ describe('the loop delivers to discuss', () => {
     const loop = createWorkLoop({
       sweepMs: 0,
       eventLog: log,
-      daemonStore: { head: async () => 0n } as unknown as DaemonStore,
+      daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
       pass: async () => {},
       discuss: async (e) => {
         seen.push(e.type)
@@ -70,7 +71,7 @@ describe('the loop delivers to triage', () => {
     const loop = createWorkLoop({
       sweepMs: 0,
       eventLog: log,
-      daemonStore: { head: async () => 0n } as unknown as DaemonStore,
+      daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
       pass: async () => {},
       triage: async (e) => {
         seen.push(e.type)

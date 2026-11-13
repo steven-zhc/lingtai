@@ -104,19 +104,20 @@ async function appendBuilt(
 function daemonStoreOver(store: MemoryEventStore): DaemonStore {
   return {
     events: store,
-    async streams(query: StreamQuery): Promise<string[]> {
-      const byStream = new Map<string, Set<string>>()
-      for (const e of store.all()) {
-        const types = byStream.get(e.streamId) ?? new Set<string>()
-        types.add(e.type)
-        byStream.set(e.streamId, types)
-      }
-      const prefixes = query.prefixes.map((p) => p.replace(/%$/, ''))
-      return [...byStream]
-        .filter(([id, types]) => prefixes.some((p) => id.startsWith(p)) && query.types.some((t) => types.has(t)))
-        .map(([id]) => id)
-        .sort()
-    },
+    streams: (query: StreamQuery) =>
+      Effect.sync(() => {
+        const byStream = new Map<string, Set<string>>()
+        for (const e of store.all()) {
+          const types = byStream.get(e.streamId) ?? new Set<string>()
+          types.add(e.type)
+          byStream.set(e.streamId, types)
+        }
+        const prefixes = query.prefixes.map((p) => p.replace(/%$/, ''))
+        return [...byStream]
+          .filter(([id, types]) => prefixes.some((p) => id.startsWith(p)) && query.types.some((t) => types.has(t)))
+          .map(([id]) => id)
+          .sort()
+      }),
   } as unknown as DaemonStore
 }
 

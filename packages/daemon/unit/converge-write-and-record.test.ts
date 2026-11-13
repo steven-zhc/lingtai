@@ -38,7 +38,7 @@ const project: ProjectState = {
 }
 
 /** Every stream the pass is to consider. */
-const streamsOf = (...ids: string[]): DaemonStore => ({ streams: async () => ids }) as unknown as DaemonStore
+const streamsOf = (...ids: string[]): DaemonStore => ({ streams: () => Effect.succeed(ids) }) as unknown as DaemonStore
 
 /** A stream whose end step asked GitHub to close its issue and was refused. */
 async function seedRefusedClose(store: EventStore, stream: string, issue: number): Promise<void> {

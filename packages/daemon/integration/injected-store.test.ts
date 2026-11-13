@@ -70,26 +70,23 @@ function recordingStore(events: EventStore, ids: string[]) {
   const asked: StreamQuery[] = []
   const store: DaemonStore = {
     events,
-    async create() {},
-    async beat() {},
-    async status() {
-      return null
-    },
-    async head() {
-      return 0n
-    },
-    async streams(query) {
-      asked.push(query)
-      // Only the claim query has an answer (the claim and its continuation, #683):
-      // `converge`'s asks for more types under `ticket-%`, and this log holds
-      // nothing it would change.
-      return query.types.length === 2 &&
-        query.types.includes('TicketClaimed') &&
-        query.types.includes('TicketContinued')
-        ? [...ids]
-        : []
-    },
-    async close() {},
+    create: () => Effect.void,
+    beat: () => Effect.void,
+    status: () => Effect.succeed(null),
+    head: () => Effect.succeed(0n),
+    streams: (query) =>
+      Effect.sync(() => {
+        asked.push(query)
+        // Only the claim query has an answer (the claim and its continuation, #683):
+        // `converge`'s asks for more types under `ticket-%`, and this log holds
+        // nothing it would change.
+        return query.types.length === 2 &&
+          query.types.includes('TicketClaimed') &&
+          query.types.includes('TicketContinued')
+          ? [...ids]
+          : []
+      }),
+    close: () => Effect.void,
   }
   return { store, asked }
 }

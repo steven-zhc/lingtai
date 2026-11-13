@@ -6,6 +6,7 @@ import type { Log } from '@lingtai/event-store'
  * `pnpm test` holds it.
  */
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { notTakingWork } from '../src/daemon.ts'
@@ -29,7 +30,7 @@ describe('the work loop drain', () => {
     const loop = createWorkLoop({
       sweepMs: 0,
       eventLog: log,
-      daemonStore: { head: async () => 0n } as unknown as DaemonStore,
+      daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
       pass: async (_reason, started) => {
         for (let i = 0; i < 2; i++) started?.(new Promise<void>((r) => releases.push(r)))
       },
@@ -58,7 +59,7 @@ describe('the work loop drain', () => {
     const loop = createWorkLoop({
       sweepMs: 0,
       eventLog: log,
-      daemonStore: { head: async () => 0n } as unknown as DaemonStore,
+      daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
       pass: async (reason, started) => {
         reasons.push(reason)
         if (reasons.length === 1) started?.(new Promise<boolean>((r) => releases.push(r)))
@@ -81,7 +82,7 @@ describe('the work loop drain', () => {
     const loop = createWorkLoop({
       sweepMs: 0,
       eventLog: log,
-      daemonStore: { head: async () => 0n } as unknown as DaemonStore,
+      daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
       pass: async (reason, started) => {
         reasons.push(reason)
         started?.(new Promise<boolean>((r) => releases.push(r)))
@@ -102,7 +103,7 @@ describe('the work loop drain', () => {
     const loop = createWorkLoop({
       sweepMs: 0,
       eventLog: log,
-      daemonStore: { head: async () => 0n } as unknown as DaemonStore,
+      daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
       paused: async () => notTakingWork(stopped),
       pass: async (reason) => {
         reasons.push(reason)

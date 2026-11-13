@@ -53,7 +53,7 @@ const project: ProjectState = {
 
 /** The one stream this pass is to consider — `candidates()`' only job here. */
 function oneStream(): DaemonStore {
-  return { streams: async () => [STREAM] } as unknown as DaemonStore
+  return { streams: () => Effect.succeed([STREAM]) } as unknown as DaemonStore
 }
 
 /**

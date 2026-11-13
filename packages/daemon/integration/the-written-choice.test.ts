@@ -215,7 +215,7 @@ describe('a machine that wrote postgres', () => {
 
       const { processLog } = await import(${EVENT_STORE});
       const { projectionStore } = await import(${PROJECTOR});
-      const { processDaemonStore } = await import(${DAEMON});
+      const { processDaemonStore, readStatus } = await import(${DAEMON});
 
       const log = await processLog();
       const projections = await projectionStore();
@@ -228,7 +228,7 @@ describe('a machine that wrote postgres', () => {
         try { await session.ready; } finally { session.close(); }
       });
       const reduce = await at(() => projections.lags());
-      const beacon = await at(() => daemon.status());
+      const beacon = await at(() => readStatus(daemon));
       await projections.close().catch(() => {});
 
       console.log(JSON.stringify({
