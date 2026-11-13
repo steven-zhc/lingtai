@@ -49,7 +49,7 @@ export function spun<T>(world: { spin?: QuestionWorld['spin'] }, label: string, 
 
 /**
  * `spun` for an Effect: the effect itself where the world has no `spin`; otherwise it runs inside `spin`'s
- * promise, carrying the caller's services in (`Effect.runPromiseWith`, which the ratchet does not count). That
+ * promise, carrying the caller's services in (`Effect.runPromiseWith`). That
  * inner run starts and ends inside `fn`, so `liveSpin`'s `finally` clears the spinner after it and nothing
  * outlives it. A rejection comes out as the error it was — the squashed cause of the inner run.
  */

@@ -73,7 +73,7 @@ export function followApproval(
   return Effect.gen(function* () {
     const bound = world.bound ?? boundReal
     // The read runs in the caller's own services, not an empty set: `runPromiseWith` is the
-    // run the ratchet does not count, and it hands `bound` the promise it settles against.
+    // run that carries the caller's services, and it hands `bound` the promise it settles against.
     const run = Effect.runPromiseWith(yield* Effect.context<never>())
     const deadline = world.now() + WAIT_MS
     const status = `lingtai status says when it lands`

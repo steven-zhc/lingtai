@@ -8,7 +8,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { pauseProject, resumeProject } from '../src/control.ts'
-import { lockedBy, makeGuard } from '../src/guard.ts'
+import { lockedEffect, makeGuard } from '../src/guard.ts'
 
 async function configured() {
   const store = createMemoryEventStore()
@@ -36,17 +36,17 @@ describe('the guard', () => {
     expect(await Effect.runPromise(guard.locksFor('lingtai'))).toEqual([])
   })
 
-  it('lockedBy answers a sentence for a lock, null for none, and a sentence for a failed read', async () => {
+  it('lockedEffect answers a sentence for a lock, null for none, and a sentence for a failed read', async () => {
     const store = await configured()
-    const locked = lockedBy(makeGuard({ store, ceiling: 'not-the-holder' }))
+    const locked = (p: string) => Effect.runPromise(lockedEffect(makeGuard({ store, ceiling: 'not-the-holder' }))(p))
     expect(await locked('lingtai')).toBeNull()
     await Effect.runPromise(pauseProject('lingtai', 'human:a', store))
     expect(await locked('lingtai')).toMatch(/^lingtai is paused by human:a since /)
 
     const broken = { ...store, read: async () => Promise.reject(new Error('db down')) } as EventStore
-    expect(await lockedBy(makeGuard({ store: broken, ceiling: 'not-the-holder' }))('lingtai')).toBe(
-      'could not read whether lingtai is paused — db down',
-    )
+    expect(
+      await Effect.runPromise(lockedEffect(makeGuard({ store: broken, ceiling: 'not-the-holder' }))('lingtai')),
+    ).toBe('could not read whether lingtai is paused — db down')
   })
 })
 

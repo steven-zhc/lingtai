@@ -3,7 +3,7 @@
  * the same fakes `conduct-a-whole-attempt.test.ts` uses and an in-memory exporter.
  *
  * Unit by 0060 §1: nothing here opens a socket. The exporter is injected into
- * `installTracing`, so the provider, the batch processor, the context manager and
+ * `installTracingEffect`, so the provider, the batch processor, the context manager and
  * the Effect tracer are the production ones.
  */
 import type { RunOutcome } from '@lingtai/agent'
@@ -14,7 +14,7 @@ import { InMemorySpanExporter, type ReadableSpan } from '@opentelemetry/sdk-trac
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { installTracing, type Tracing } from '../src/telemetry.ts'
+import { installTracingEffect, type Tracing } from '../src/telemetry.ts'
 import { tellGitHubAbout } from '../src/tell.ts'
 import {
   HUMAN_BEFORE_THE_LANE,
@@ -35,7 +35,7 @@ const on = { LINGTAI_TELEMETRY_OTLP_ENDPOINT: 'http://collector:4318/v1/traces' 
 
 describe('without an endpoint', () => {
   it('installs nothing, and a span is not recording', async () => {
-    expect(await installTracing({} as NodeJS.ProcessEnv, none)).toBeUndefined()
+    expect(await Effect.runPromise(installTracingEffect({} as NodeJS.ProcessEnv, none))).toBeUndefined()
     expect(trace.getTracer('lingtai-conductor').startSpan('x').isRecording()).toBe(false)
   })
 
@@ -52,7 +52,7 @@ describe('with an endpoint', () => {
   let tracing: Tracing
 
   beforeAll(async () => {
-    tracing = (await installTracing(on, none, exporter))!
+    tracing = (await Effect.runPromise(installTracingEffect(on, none, exporter)))!
   })
   afterAll(() => {
     trace.disable()

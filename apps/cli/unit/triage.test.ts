@@ -6,6 +6,9 @@ import { TRIAGE_ANSWER_JSON_SCHEMA, type WaitReason } from '@lingtai/domain/wait
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Triage, triageCallFor } from '@lingtai/recipe'
+
+const enqueueTriage = (...args: Parameters<typeof enqueueTriageEffect>): boolean =>
+  Effect.runSync(enqueueTriageEffect(...args)).added
 /**
  * `waitTriage` (`#428`): one held wait, triaged — checked against
  * `createMemoryEventStore()` and a stand-in `Runtime`, so no database, no
@@ -15,7 +18,7 @@ import { Effect, Fiber } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
-  enqueueTriage,
+  enqueueTriage as enqueueTriageEffect,
   waitTriage as waitTriageEffect,
   type TriagePorts,
   type WaitTriageRequest,

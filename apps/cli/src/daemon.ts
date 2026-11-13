@@ -395,7 +395,7 @@ export function daemonCommand(
   return Effect.gen(function* () {
     const controlRead = daemonControlRead(writer)
     const trace = verbose ? (line: string) => console.log(line) : () => {}
-    yield* Effect.promise(() => startTracing())
+    yield* startTracing()
     // The lock, the status table, the code this process loaded, and — for a
     // restart — the refusals only a started daemon can be asked. One function for
     // all of it, so the terminal restart's side of `RESTART_GUARDS` is the code
@@ -836,7 +836,7 @@ export function daemonCommand(
 
     yield* started.daemon.stopped()
     // After a drain and not on `stopNow`, which promised to stop now (#791).
-    yield* Effect.promise(() => flushTracing())
+    yield* flushTracing
     yield* Effect.promise(() => ratesSettled())
     console.log('stopped')
     return 0

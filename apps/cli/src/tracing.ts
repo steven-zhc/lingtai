@@ -1,6 +1,6 @@
 import { PortsLive } from '@lingtai/conductor'
 import type { Tracing } from '@lingtai/conductor/telemetry'
-import { Layer } from 'effect'
+import { Effect, Layer } from 'effect'
 
 /**
  * Tracing for the two hosts that conduct a pass, `lingtai run` and the daemon
@@ -14,23 +14,25 @@ import { Layer } from 'effect'
  */
 let installed: Tracing | undefined
 let started = false
-// Promise chains and not `async`: 0101 §6's ratchet (#792) counts the keyword.
 
-export function startTracing(from: NodeJS.ProcessEnv = process.env): Promise<void> {
-  if (started) return Promise.resolve()
-  started = true
-  return import('@lingtai/conductor/telemetry')
-    .then((telemetry) => telemetry.installTracing(from))
-    .then(
-      (tracing) => {
+/** Installs once per process and never fails: a trace is never worth a pass. */
+export const startTracing = (from: NodeJS.ProcessEnv = process.env): Effect.Effect<void> =>
+  Effect.suspend(() => {
+    if (started) return Effect.void
+    started = true
+    return Effect.tryPromise(() => import('@lingtai/conductor/telemetry')).pipe(
+      Effect.flatMap((telemetry) => telemetry.installTracingEffect(from)),
+      Effect.map((tracing) => {
         installed = tracing
-      },
-      // A trace is never worth a pass: an SDK that would not load installs nothing.
-      () => {
-        installed = undefined
-      },
+      }),
+      // An SDK that would not load installs nothing.
+      Effect.catchCause(() =>
+        Effect.sync(() => {
+          installed = undefined
+        }),
+      ),
     )
-}
+  })
 
 /** `PortsLive`, and the tracer where one was installed — read when the layer is built. */
 export const tracedPorts: typeof PortsLive = Layer.suspend(() =>
@@ -38,6 +40,8 @@ export const tracedPorts: typeof PortsLive = Layer.suspend(() =>
 ) as typeof PortsLive
 
 /** Bounded; a flush that times out is dropped and never holds an exit. */
-export function flushTracing(): Promise<void> {
-  return installed === undefined ? Promise.resolve() : installed.flush().then(() => installed!.shutdown())
-}
+export const flushTracing: Effect.Effect<void> = Effect.suspend(() => {
+  const tracing = installed
+  if (tracing === undefined) return Effect.void
+  return Effect.promise(() => tracing.flush()).pipe(Effect.andThen(Effect.promise(() => tracing.shutdown())))
+})

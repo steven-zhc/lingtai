@@ -126,7 +126,6 @@ export {
 } from './converge.ts'
 export {
   CeilingUnchecked,
-  lockedBy,
   lockedEffect,
   lockFailure,
   makeGuard,

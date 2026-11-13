@@ -7,7 +7,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type CeilingPort, CeilingUnchecked, lockedBy, makeGuard } from '../src/guard.ts'
+import { type CeilingPort, CeilingUnchecked, lockedEffect, makeGuard } from '../src/guard.ts'
 
 const noon = new Date(2026, 10, 10, 12, 0, 0)
 const nextDay = new Date(2026, 10, 11, 9, 0, 0)
@@ -93,7 +93,7 @@ describe('the ceiling check in the guard', () => {
     const exit = await Effect.runPromise(Effect.flip(broken.locksFor('lingtai')))
     expect(exit).toBeInstanceOf(CeilingUnchecked)
     expect(await g.types()).toEqual(['DayCeilingReached'])
-    expect(await lockedBy(broken)('lingtai')).toBe(
+    expect(await Effect.runPromise(lockedEffect(broken)('lingtai'))).toBe(
       'could not check the daily ceiling: the spend is stalled — taking no work',
     )
   })
@@ -110,7 +110,7 @@ describe('the ceiling check in the guard', () => {
         },
       },
     })
-    expect(await lockedBy(bad)('lingtai')).toBe(
+    expect(await Effect.runPromise(lockedEffect(bad)('lingtai'))).toBe(
       'could not check the daily ceiling: limits.day_usd must be a positive number — taking no work',
     )
     expect(await g.types()).toEqual(['DayCeilingReached'])

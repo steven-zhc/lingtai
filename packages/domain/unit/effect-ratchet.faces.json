@@ -324,12 +324,6 @@
     "why": "apps/board/unit/split-instance.test.ts calls it with the lock out of the way"
   },
   {
-    "file": "packages/conductor/src/telemetry.ts",
-    "fn": "installTracing",
-    "until": "#790",
-    "why": "`apps/cli/src/tracing.ts` awaits it, and `trace-an-attempt.test.ts` and `status-flows-up-through-bridged-spans.test.ts` call it, until the apps/cli row"
-  },
-  {
     "file": "packages/conductor/src/tell.ts",
     "fn": "tellGitHubAbout",
     "until": "#790",
