@@ -13,3 +13,6 @@ allowBuilds:
   esbuild: true
   msgpackr-extract: true
   workerd: true
+
+minimumReleaseAgeExclude:
+  - '@anthropic-ai/sandbox-runtime@0.0.83'

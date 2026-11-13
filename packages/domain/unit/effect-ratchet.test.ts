@@ -46,6 +46,7 @@ const PACKAGES = [
   'packages/daemon',
   'packages/setup',
   'packages/recipe',
+  'packages/sandbox',
 ] as const
 
 /**
