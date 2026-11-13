@@ -178,9 +178,11 @@ turn limit, so every idiom it adopts is paid for again on every run.
    actions call backend Effects with `Effect.runPromise` at their edge, and its
    own read spans are `@opentelemetry/api` (#775). A package that a host calls
    may keep a promise face beside its Effect one. A face is an exported function
-   whose whole body is `return Effect.runPromise(<call>)`, or the generic
-   `return Effect.runPromise(<parameter>, { signal })` that passes its own
-   Effect parameter and optionally its own abort signal
+   whose whole body is `return Effect.runPromise(<call>)` or
+   `return Effect.runPromise(<call>, { signal })` — the call being a concrete
+   Effect (`wakeSessionFace`, `followFace` in
+   `packages/event-store/src/store-face.ts`, which take the caller's
+   `AbortSignal`) or the face's own Effect parameter
    (`packages/github/src/app.ts`, `packages/conductor/src/port-face.ts`) — one
    implementation, never two — and each is listed in `packages/domain/unit/effect-ratchet.faces.json`
    with `until: "0101 §7"` and a `why` naming the host or the host's test that
