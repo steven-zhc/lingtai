@@ -93,7 +93,7 @@ VK 的需求因此分成两类：
 4. **看板没有登录验证。** 看板默认监听 `0.0.0.0:17820`，而且没有认证（[0111](../decisions/0111-the-board-is-a-local-app.md) §2）：能访问它的人，就能以这台机器的身份批准、重新排队、回答问题。放到 VPS 上必须配反向代理和认证，或者走 VPN / SSH 隧道。这一条要在文档里写在最显眼的位置。
 5. **git 和 GitHub 的凭证**：GitHub App 的私钥，以及推送用的凭证，都要用 secret 传进容器。
 
-**反过来，Docker 对 Lingtai 还有一个额外的好处：安全。** [safety.md](../safety.md) 写明，默认情况下 Claude Code 能读你能读的任何文件，包括 `~/.ssh`，Lingtai 不提供文件系统沙箱。放进容器后，agent 能看到的就只有挂进去的东西。这正好补上了 safety.md 里说的"agent 出不去的沙箱"（#339）还没做完的那块。本机场景该用什么沙箱，另见 [agent-sandbox-options.md](agent-sandbox-options.md)。
+**反过来，Docker 对 Lingtai 还有一个额外的好处：安全。** [safety.md](../safety.md) 写明，默认情况下 Claude Code 能读你能读的任何文件，包括 `~/.ssh`，Lingtai 不提供文件系统沙箱。放进容器后，agent 能看到的就只有挂进去的东西。这正好补上了 safety.md 里说的"agent 出不去的沙箱"（#339）还没做完的那块。本机场景该用什么沙箱，另见 [agent-sandbox-options.md](../milestone/0.14.0/agent-sandbox-options.md)。
 
 ### 判断
 
@@ -226,7 +226,7 @@ VK 的需求因此分成两类：
 | VK 迁移 | 低到中 | 中，用户在找去处 | 先写概念对照，等依赖做完再做导入 | 0.16.0 |
 | Docker | 低 | 中，还能隔离 agent | 先写部署文档，再发布镜像 | 不在 0.14.0–0.16.0 之内 |
 
-版本安排：0.14.0 是安全（见 [agent-sandbox-options.md](agent-sandbox-options.md)），0.15.0 是本地可靠交付（见 [roadmap-reliable-agent-delivery.md](roadmap-reliable-agent-delivery.md)），0.16.0 是承接 VK 用户。VK 最热的三样（只在本地用、GitLab、任务依赖）在 0.15.0 就齐了，所以引流可以从 0.15.0 开始，0.16.0 再补 ACP、导入和看板拖拽。
+版本安排：0.14.0 是安全（见 [agent-sandbox-options.md](../milestone/0.14.0/agent-sandbox-options.md)），0.15.0 是本地可靠交付（见 [roadmap-reliable-agent-delivery.md](roadmap-reliable-agent-delivery.md)），0.16.0 是承接 VK 用户。VK 最热的三样（只在本地用、GitLab、任务依赖）在 0.15.0 就齐了，所以引流可以从 0.15.0 开始，0.16.0 再补 ACP、导入和看板拖拽。
 
 另外两项也放进 0.16.0：看板拖拽映射成已有操作（拖到"已落地"是批准，拖回"排队"是重新排队，拖到一边是挂起），以及官网的"从 Vibe Kanban 过来"页面。
 

@@ -33,9 +33,9 @@
 
 Lingtai 的几个特点让这个问题比"自己开个 Claude Code 写代码"更严重：
 
-1. **agent 以你的身份、在你的机器上运行**（[safety.md](../safety.md) 第一句）。它能做的事，就是你的账号能做的事。
+1. **agent 以你的身份、在你的机器上运行**（[safety.md](../../safety.md) 第一句）。它能做的事，就是你的账号能做的事。
 2. **Lingtai 关掉了 Claude Code 的逐次授权。** 启动时用的是 `--permission-mode bypassPermissions`（`packages/agent/src/claude-code.ts:255-268`）。原因是无人值守时没人能点"允许"：曾经有一次运行花了 45 轮、$3.35，一个文件都没能写成。代码注释说得很直白：放开之后，agent 写到 worktree 外面，Lingtai 的 hook 也不会拦。
-3. **Lingtai 自己不拦任何工具调用。** [0016](../decisions-archive/0016-the-settled-model.md) §6 把原来的拦截规则整个删了，理由是工具限制应由运行时自己的配置负责。hook 现在只做记录，以及"连不上就让运行失败"（`packages/agent/src/hook-socket.ts:268-283`）。
+3. **Lingtai 自己不拦任何工具调用。** [0016](../../decisions-archive/0016-the-settled-model.md) §6 把原来的拦截规则整个删了，理由是工具限制应由运行时自己的配置负责。hook 现在只做记录，以及"连不上就让运行失败"（`packages/agent/src/hook-socket.ts:268-283`）。
 4. **无人值守，没人看着每条命令。**
 5. **agent 读到的东西来自外部。** issue 正文会直接成为 agent 的 prompt，能提 issue 的人就能往 prompt 里写东西。依赖包、网页也一样。这就是提示注入的入口。
 
@@ -110,7 +110,7 @@ Lingtai 跑 agent 的方式决定了沙箱要满足哪些约束：
 - **hook 通过本机 Unix socket 回报**（`packages/agent/src/hook-socket.ts`）。沙箱必须让这个 socket 通。
 - **agent 用的是你本机已登录的账号。** 沙箱要放行 `~/.claude` 或 Codex 的登录状态，以及模型服务的域名。
 - **每次运行都会生成一个 settings 文件**（`RunRequest.settingsPath`），这是打开 Claude Code 自带沙箱的现成入口。
-- **分发方式是一个不依赖 Node 的单文件二进制**（[0113](../decisions/0113-distribution-is-a-versioned-binary.md)）。多一个常驻服务或运行时依赖，就破坏这一点。
+- **分发方式是一个不依赖 Node 的单文件二进制**（[0113](../../decisions/0113-distribution-is-a-versioned-binary.md)）。多一个常驻服务或运行时依赖，就破坏这一点。
 
 ---
 
@@ -133,7 +133,7 @@ Lingtai 跑 agent 的方式决定了沙箱要满足哪些约束：
 1. **多出两个运行依赖：Python 服务和 Docker**，和单文件二进制的分发方式冲突。
 2. **两个运行时适配器要大改。** agent 不再是本机子进程，而要经 `execd` 的 API 执行。hook socket 要挂进容器，agent 的登录状态也要带进去，日志读取和超限终止都得重写。
 3. **macOS 上收益有限。** 容器跑在 Docker Desktop 的虚拟机里，更强的 gVisor、Firecracker 基本只在 Linux 上可用。
-4. **它的强项用不上。** 批量创建、资源池、K8s、给强化学习和评测用的大量并发沙箱，这些都是为多租户、大规模准备的。Lingtai 默认一次只跑一个任务，[路线图](../roadmap.md)也说并发会放在最后做。
+4. **它的强项用不上。** 批量创建、资源池、K8s、给强化学习和评测用的大量并发沙箱，这些都是为多租户、大规模准备的。Lingtai 默认一次只跑一个任务，[路线图](../../roadmap.md)也说并发会放在最后做。
 
 ### 什么时候值得再看
 
@@ -171,13 +171,13 @@ Codex 这边已经有自带的 `workspace-write` 沙箱。加上 srt 之后，�
 
 - srt 自己标着"研究预览"，API 可能变。
 - 被包住的进程得放行 `api.anthropic.com` 和 `~/.claude`，也得放行 Lingtai 的 hook socket。Unix socket 能否放行要实测。
-- Linux 上需要 bubblewrap，还要 socat 和 ripgrep。缺了要明确拒绝运行，不能悄悄退回到没有沙箱的状态：[0007](../decisions-archive/0007-dual-runtime.md) 关于档位的规则是"满足不了就拒绝，从不悄悄降级"。
+- Linux 上需要 bubblewrap，还要 socat 和 ripgrep。缺了要明确拒绝运行，不能悄悄退回到没有沙箱的状态：[0007](../../decisions-archive/0007-dual-runtime.md) 关于档位的规则是"满足不了就拒绝，从不悄悄降级"。
 
 ---
 
 ## 候选三：Lingtai 自己的 Docker 镜像（服务器场景）
 
-[vibe-kanban-demand-vs-lingtai.md](vibe-kanban-demand-vs-lingtai.md) 的 Docker 专题已经讨论过：把整个 Lingtai 连同 agent 放进一个容器部署到服务器。
+[vibe-kanban-demand-vs-lingtai.md](../../research/vibe-kanban-demand-vs-lingtai.md) 的 Docker 专题已经讨论过：把整个 Lingtai 连同 agent 放进一个容器部署到服务器。
 
 - 容器本身就是边界：agent 看不到宿主机，只看得到挂进去的目录。这一层不需要 OpenSandbox。
 - 想在容器里再对每次运行做隔离会比较麻烦：bubblewrap 在没有特权的容器里经常起不来。所以服务器场景先只靠容器这一层就够了。
@@ -228,5 +228,5 @@ E2B、Daytona、Modal 之类把 agent 放到别人的云上跑。这和 Lingtai"
 
 ## 相关
 
-- [safety.md](../safety.md)：今天每个运行时能读什么、能写什么，以及 #339 之前的状态。
-- [vibe-kanban-demand-vs-lingtai.md](vibe-kanban-demand-vs-lingtai.md)：Docker 专题里提到"放进容器能顺带隔离 agent"，本文把这条展开。
+- [safety.md](../../safety.md)：今天每个运行时能读什么、能写什么，以及 #339 之前的状态。
+- [vibe-kanban-demand-vs-lingtai.md](../../research/vibe-kanban-demand-vs-lingtai.md)：Docker 专题里提到"放进容器能顺带隔离 agent"，本文把这条展开。

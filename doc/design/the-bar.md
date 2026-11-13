@@ -123,7 +123,7 @@ argued against the three objects that are there, not against the empty space
 beside them, which is the argument none of the six tickets above was asked to
 make. The frame is held to the same rule.
 
-**One exception, from 0.14 (S9c, [0.14.md](0.14.md)).** The sandbox's state is
+**One exception, from 0.14 (S9c, [0.14.md](../milestone/0.14.0/0.14.md)).** The sandbox's state is
 an icon beside `Report`, with no text: the selected project's state, or the
 worst across all projects. It earns its place on the question health already
 answers, *is the system doing what I configured it to*, and it costs one

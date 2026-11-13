@@ -2,7 +2,7 @@
 
 **Run** 2026-11-12 (Codex on Linux re-run the same day, after a fresh login) · **Result** yes, with five things to build around and three
 for the operator to decide. This is the measurement
-[0.14.md](../design/0.14.md) puts first (S1). It was made by hand, before any
+[0.14.md](0.14.md) puts first (S1). It was made by hand, before any
 ticket, on two machines. Nothing in the product changed.
 
 | | harbor | foundry |
