@@ -1,13 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { connect } from 'node:net'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 
 import { boardPort, boardReachHost, nothingSetUp, shownHome, stateDir, storeChoice } from '@lingtai/env'
 import { createFileLocker } from '@lingtai/env/lock'
+import { Effect } from 'effect'
 
-import { boardAt, serveBoard, type BoardWorld } from './board.ts'
+import { boardAtEffect, serveBoardEffect, socketAnswers, type BoardWorld } from './board.ts'
 import { configPath } from './init.ts'
 import { BOARD_JOB, keeper } from './service.ts'
 
@@ -24,16 +24,8 @@ export function liveBoardWorld(host: string): BoardWorld {
     hostname: hostname(),
     home: { path: stateDir(), shown: shownHome() },
     notSetUp: () => nothingSetUp(storeChoice(), existsSync(join(stateDir(), 'config.yml'))),
-    answering: (port) => boardAt(port, reach),
-    bound: (port) =>
-      new Promise<boolean>((resolve) => {
-        const socket = connect(port, reach)
-        socket.once('connect', () => {
-          socket.destroy()
-          resolve(true)
-        })
-        socket.once('error', () => resolve(false))
-      }),
+    answering: (port) => boardAtEffect(port, reach),
+    bound: (port) => socketAnswers(reach, port),
     locker: createFileLocker(),
     // The supervisor's job is `lingtai board start --no-open` with no `--port`
     // (`BOARD_JOB.argv`), so the board it keeps is on `boardPort()` and on no
@@ -56,15 +48,15 @@ export function liveBoardWorld(host: string): BoardWorld {
       if (r.error) return { status: 127, out: r.error.message }
       return { status: r.status ?? 1, out: `${r.stdout ?? ''}${r.stderr ?? ''}` }
     },
-    serve: serveBoard,
+    serve: serveBoardEffect,
     open: (url) =>
-      new Promise((resolve) => {
+      Effect.callback<boolean>((resume) => {
         const opener = process.platform === 'darwin' ? 'open' : 'xdg-open'
         const child = spawn(opener, [url], { stdio: 'ignore', detached: true })
-        child.once('error', () => resolve(false))
+        child.once('error', () => resume(Effect.succeed(false)))
         child.once('spawn', () => {
           child.unref()
-          resolve(true)
+          resume(Effect.succeed(true))
         })
       }),
     // `kill` with no signal would only ask whether it exists; SIGTERM is the
@@ -77,7 +69,7 @@ export function liveBoardWorld(host: string): BoardWorld {
         return false
       }
     },
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    sleep: (ms) => Effect.sleep(ms),
     now: () => Date.now(),
     whereThePortIsSet: `board.port in ${configPath(process.env)}, or --port for this one run`,
     log: (line) => console.log(line),

@@ -7,7 +7,9 @@ import { constants, Script } from 'node:vm'
 
 import { boardHost, boardOrigin, boardPort, boardReachHost, machineOtlpEndpoint, repoRoot } from '@lingtai/env'
 import type { FileLocker, HeldLock } from '@lingtai/env/lock'
+import { Cause, Effect, Option } from 'effect'
 
+import { lift } from './exit.ts'
 import { symbol, keyValues, heading } from './output.ts'
 import { BOARD_JOB, BOARD_WAIT_MS, UNLOAD_WAIT_MS, type Exec, type Keeper } from './service.ts'
 
@@ -35,14 +37,18 @@ export function boardEntry(dir: string): string {
  * mistaken for it (#394 reuses this for `lingtai add`, which starts no board
  * of its own and must find one already running or refuse by name).
  */
-export async function boardAt(port: number, reach: string): Promise<string | null> {
+export const boardAtEffect = (port: number, reach: string): Effect.Effect<string | null> => {
   const url = boardOrigin(reach, port)
-  try {
-    const res = await fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) })
-    return (await res.text()).includes('<title>Lingtai</title>') ? url : null
-  } catch {
-    return null
-  }
+  return Effect.tryPromise(() =>
+    fetch(`${url}/setup/github-app`, { signal: AbortSignal.timeout(5000) })
+      .then((res) => res.text())
+      .then((body) => (body.includes('<title>Lingtai</title>') ? url : null)),
+  ).pipe(Effect.orElseSucceed(() => null))
+}
+
+/** `boardAtEffect`, for the callers that are still promises. */
+export function boardAt(port: number, reach: string): Promise<string | null> {
+  return Effect.runPromise(boardAtEffect(port, reach))
 }
 
 /**
@@ -97,7 +103,24 @@ export interface BoardOptions {
   port: number
   host: string
   /** Lets go of the board lock; the caller holds it, so the caller supplies this. */
+  release: Effect.Effect<void>
+}
+
+/** `BoardOptions` for `serveBoard`, whose callers still hold the lock in a promise. */
+export interface BoardOptionsPromise extends Omit<BoardOptions, 'release'> {
   release: () => Promise<void>
+}
+
+const toError = (e: unknown): Error => (e instanceof Error ? e : new Error(String(e)))
+
+/** What `serveBoardWith` does IO through — a record so a unit test can fail one step. */
+export interface ServeDeps {
+  exists: (path: string) => boolean
+  checkTelemetry: () => void
+  portIsFree: (host: string, port: number) => Effect.Effect<void, Error>
+  importFile: (url: string) => Effect.Effect<unknown, Error>
+  listening: (host: string, port: number) => Effect.Effect<void, Error>
+  installStopOnSignal: (release: () => Promise<void>) => void
 }
 
 /**
@@ -123,30 +146,39 @@ export interface BoardOptions {
  * listening, since git, agents and a managed project's own `next` inherit this
  * process's environment and would otherwise install no handler either.
  */
-export async function serveBoard(options: BoardOptions): Promise<void> {
-  const entry = boardEntry(options.dir)
-  if (!existsSync(entry)) {
-    throw new Error(
-      `no built board at ${entry}. pnpm build writes one into dist/; from the source, pnpm --filter @lingtai/board dev`,
-    )
-  }
-  // A bad telemetry endpoint is refused by name before anything is loaded (#775).
-  machineOtlpEndpoint()
-  await portIsFree(options.host, options.port)
-  const reach = boardReachHost(options.host)
-  process.env['PORT'] = String(options.port)
-  process.env['HOSTNAME'] = options.host
-  process.env['NEXT_MANUAL_SIG_HANDLE'] = '1'
-  try {
-    await importFile(pathToFileURL(entry).href)
-    await listening(reach, options.port)
-  } finally {
-    delete process.env['NEXT_MANUAL_SIG_HANDLE']
-  }
-  // Installed only once the board is up: on a failure the caller releases the
-  // lock itself, and before that Node's default ends the process.
-  installStopOnSignal(options.release)
-}
+export const serveBoardWith =
+  (deps: ServeDeps) =>
+  (options: BoardOptions): Effect.Effect<void, Error> =>
+    Effect.gen(function* () {
+      // The handler runs from a Node signal callback, so it carries this fiber's services.
+      const context = yield* Effect.context()
+      const entry = boardEntry(options.dir)
+      if (!deps.exists(entry)) {
+        return yield* Effect.fail(
+          new Error(
+            `no built board at ${entry}. pnpm build writes one into dist/; from the source, pnpm --filter @lingtai/board dev`,
+          ),
+        )
+      }
+      // A bad telemetry endpoint is refused by name before anything is loaded (#775).
+      yield* Effect.try({ try: deps.checkTelemetry, catch: toError })
+      yield* deps.portIsFree(options.host, options.port)
+      const reach = boardReachHost(options.host)
+      process.env['PORT'] = String(options.port)
+      process.env['HOSTNAME'] = options.host
+      process.env['NEXT_MANUAL_SIG_HANDLE'] = '1'
+      yield* deps.importFile(pathToFileURL(entry).href).pipe(
+        Effect.andThen(deps.listening(reach, options.port)),
+        Effect.ensuring(
+          Effect.sync(() => {
+            delete process.env['NEXT_MANUAL_SIG_HANDLE']
+          }),
+        ),
+      )
+      // Installed only once the board is up: on a failure the caller releases the
+      // lock itself, and before that Node's default ends the process.
+      deps.installStopOnSignal(() => Effect.runPromiseWith(context)(options.release))
+    })
 
 /** A release that hangs must not break the two seconds `board stop` allows. */
 const RELEASE_BUDGET_MS = 1000
@@ -220,38 +252,68 @@ function importFile(url: string): Promise<unknown> {
   return load(url)
 }
 
-function portIsFree(host: string, port: number): Promise<void> {
-  return new Promise((resolve, reject) => {
+function portIsFree(host: string, port: number): Effect.Effect<void, Error> {
+  return Effect.callback<void, Error>((resume) => {
     const probe = createServer()
     probe.once('error', (err: NodeJS.ErrnoException) => {
-      reject(
-        new Error(
-          err.code === 'EADDRINUSE'
-            ? `${host}:${port} is already in use; lingtai board --port <n> picks another`
-            : `cannot listen on ${host}:${port}: ${err.message}`,
+      resume(
+        Effect.fail(
+          new Error(
+            err.code === 'EADDRINUSE'
+              ? `${host}:${port} is already in use; lingtai board --port <n> picks another`
+              : `cannot listen on ${host}:${port}: ${err.message}`,
+          ),
         ),
       )
     })
-    probe.listen(port, host, () => probe.close(() => resolve()))
+    probe.listen(port, host, () => probe.close(() => resume(Effect.void)))
+    return Effect.sync(() => {
+      probe.close()
+    })
   })
 }
 
-/** Until `host:port` answers. A server that fails to start exits the process. */
-async function listening(host: string, port: number): Promise<void> {
-  const deadline = Date.now() + 60_000
-  for (;;) {
-    const up = await new Promise<boolean>((resolve) => {
-      const socket = connect(port, host)
-      socket.once('connect', () => {
-        socket.destroy()
-        resolve(true)
-      })
-      socket.once('error', () => resolve(false))
+/** Whether anything accepts a connection on `host:port`. Never fails. */
+export const socketAnswers = (host: string, port: number): Effect.Effect<boolean> =>
+  Effect.callback<boolean>((resume) => {
+    const socket = connect(port, host)
+    socket.once('connect', () => {
+      socket.destroy()
+      resume(Effect.succeed(true))
     })
-    if (up) return
-    if (Date.now() > deadline) throw new Error(`the board never listened on ${host}:${port}`)
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
+    socket.once('error', () => resume(Effect.succeed(false)))
+    return Effect.sync(() => {
+      socket.destroy()
+    })
+  })
+
+/** Until `host:port` answers. A server that fails to start exits the process. */
+const listening = (host: string, port: number): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    const deadline = Date.now() + 60_000
+    for (;;) {
+      if (yield* socketAnswers(host, port)) return
+      if (Date.now() > deadline) return yield* Effect.fail(new Error(`the board never listened on ${host}:${port}`))
+      yield* Effect.sleep(100)
+    }
+  })
+
+const liveServeDeps: ServeDeps = {
+  exists: existsSync,
+  checkTelemetry: () => {
+    machineOtlpEndpoint()
+  },
+  portIsFree,
+  importFile: (url) => Effect.tryPromise({ try: () => importFile(url), catch: toError }),
+  listening,
+  installStopOnSignal,
+}
+
+export const serveBoardEffect: (options: BoardOptions) => Effect.Effect<void, Error> = serveBoardWith(liveServeDeps)
+
+/** `serveBoardEffect`, for the callers that are still promises. */
+export function serveBoard(options: BoardOptionsPromise): Promise<void> {
+  return Effect.runPromise(serveBoardEffect({ ...options, release: Effect.promise(options.release) }))
 }
 
 // ---------------------------------------------------------- the lifecycle --
@@ -385,9 +447,9 @@ export interface BoardWorld {
   /** This machine's name, as the lock records it — so a holder elsewhere is not signalled here. */
   hostname: string
   /** Whether a Lingtai board answers on this port — its URL, or null. Never "is the port bound". */
-  answering: (port: number) => Promise<string | null>
+  answering: (port: number) => Effect.Effect<string | null>
   /** Whether *anything* holds the port, which a board that is still starting also does. */
-  bound: (port: number) => Promise<boolean>
+  bound: (port: number) => Effect.Effect<boolean>
   locker: Pick<FileLocker, 'tryLock' | 'holder'>
   /**
    * Whether a supervisor keeps a board **on this port** — `keeper(…,
@@ -402,11 +464,11 @@ export interface BoardWorld {
    */
   keeper: (port: number) => Keeper
   exec: Exec
-  serve: (options: BoardOptions) => Promise<void>
-  open: (url: string) => Promise<boolean>
+  serve: (options: BoardOptions) => Effect.Effect<void, Error>
+  open: (url: string) => Effect.Effect<boolean>
   /** SIGTERM to `pid`. False when there is no such process to signal. */
   signal: (pid: number) => boolean
-  sleep: (ms: number) => Promise<void>
+  sleep: (ms: number) => Effect.Effect<void>
   /**
    * The clock a wait is measured against, beside the `sleep` it is spent in.
    * `restart`'s wait for an answer needs both — see `ANSWER_WAIT_MS`.
@@ -446,30 +508,45 @@ export interface BoardStatus {
   supervisor: Keeper
 }
 
-export async function readBoardStatus(command: Pick<BoardCommand, 'port'>, world: BoardWorld): Promise<BoardStatus> {
-  // Three facts, none concluded from another: who serves it, whether a board
-  // answers, and whether anything would start one again by itself.
-  let serving: BoardStatus['serving']
-  try {
-    serving = { holder: await world.locker.holder(boardLock(command.port)) }
-  } catch (err) {
-    serving = { unread: (err as Error).message }
-  }
-  let answering: BoardStatus['answering']
-  try {
-    answering = { url: await world.answering(command.port) }
-  } catch (err) {
-    answering = { unread: (err as Error).message }
-  }
-  return {
-    port: command.port,
-    url: boardOrigin(world.reach, command.port),
-    portSetIn: world.whereThePortIsSet,
-    serving,
-    answering,
-    supervisor: world.keeper(command.port),
-  }
-}
+/** An outcome with its failure kept: a typed error or a defect is `{ ok: false }`, an interruption passes through. */
+type Attempt<A> = { ok: true; value: A } | { ok: false; error: unknown }
+
+const attempt = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<Attempt<A>, never, R> =>
+  Effect.catchCause(
+    Effect.map(self, (value): Attempt<A> => ({ ok: true, value })),
+    (cause): Effect.Effect<Attempt<A>> => {
+      // An interruption is not a failure: it is not answered as one.
+      if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause as Cause.Cause<never>)
+      const typed = Cause.findErrorOption(cause)
+      return Effect.succeed({ ok: false, error: Option.isSome(typed) ? typed.value : Cause.squash(cause) })
+    },
+  )
+
+/** A probe whose failure, of any kind, is "no answer". */
+const orNull = <A, E, R>(self: Effect.Effect<A | null, E, R>): Effect.Effect<A | null, never, R> =>
+  Effect.map(attempt(self), (r) => (r.ok ? r.value : null))
+
+export const readBoardStatus = (command: Pick<BoardCommand, 'port'>, world: BoardWorld): Effect.Effect<BoardStatus> =>
+  Effect.gen(function* () {
+    // Three facts, none concluded from another: who serves it, whether a board
+    // answers, and whether anything would start one again by itself.
+    const held_ = yield* attempt(lift(() => world.locker.holder(boardLock(command.port))))
+    const serving: BoardStatus['serving'] = held_.ok
+      ? { holder: held_.value }
+      : { unread: (held_.error as Error).message }
+    const asked = yield* attempt(world.answering(command.port))
+    const answering: BoardStatus['answering'] = asked.ok
+      ? { url: asked.value }
+      : { unread: (asked.error as Error).message }
+    return {
+      port: command.port,
+      url: boardOrigin(world.reach, command.port),
+      portSetIn: world.whereThePortIsSet,
+      serving,
+      answering,
+      supervisor: world.keeper(command.port),
+    }
+  })
 
 export function renderBoardStatus(s: BoardStatus): string[] {
   const serving =
@@ -522,236 +599,250 @@ export function boardStatusJson(s: BoardStatus): Record<string, unknown> {
   }
 }
 
-export async function boardCommand(command: BoardCommand, world: BoardWorld): Promise<number> {
-  const { log } = world
-  // The first line of a refusal carries the mark; the lines that explain it follow plainly.
-  let refused = false
-  const error = (line: string): void => {
-    world.error(refused ? line : `${symbol.fail()} ${line}`)
-    refused = true
-  }
-  const url = boardOrigin(world.reach, command.port)
-
-  /** Where the port is set, said at every refusal the port causes. */
-  const sayWhereThePortIsSet = (): void => error(`the port is ${world.whereThePortIsSet}`)
-
-  /** Whoever holds the board lock, or null. Throws are the caller's: *unread* is not *nobody*. */
-  const holder = (): Promise<string | null> => world.locker.holder(boardLock(command.port))
-
-  const start = async (): Promise<number> => {
-    const taken = await world.locker.tryLock(boardLock(command.port), `board on ${command.port}`)
-    if (!taken.ok) {
-      // The sentence the ticket asked for, and the holder beside it: a second
-      // board on this machine is the ordinary case, not a bare EADDRINUSE.
-      error(`a board is already on ${command.port} — ${url}`)
-      error(`  held by ${taken.holder ?? 'a holder that has not named itself'}`)
-      sayWhereThePortIsSet()
-      return 1
+export const boardCommand = (command: BoardCommand, world: BoardWorld): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const { log } = world
+    // The first line of a refusal carries the mark; the lines that explain it follow plainly.
+    let refused = false
+    const error = (line: string): void => {
+      world.error(refused ? line : `${symbol.fail()} ${line}`)
+      refused = true
     }
-    held = taken.lock
-    // The lock says nothing about the port: something that is not a board of
-    // this machine's can hold it, and Next would exit(1) on its own EADDRINUSE
-    // long after `serveBoard` resolved.
-    if (await world.bound(command.port)) {
-      const answers = await world.answering(command.port).catch(() => null)
-      error(
-        answers === null
-          ? `${world.reach}:${command.port} is held by something that is not a Lingtai board — nothing was started`
-          : `a board is already on ${command.port} — ${answers}. It is not this machine's, since no lock names it`,
-      )
-      sayWhereThePortIsSet()
-      await held.release()
-      held = null
-      return 1
-    }
-    try {
-      await world.serve({
-        dir: command.dir,
-        port: command.port,
-        host: world.host,
-        release: async () => {
-          await held?.release()
+    const url = boardOrigin(world.reach, command.port)
+
+    /** Where the port is set, said at every refusal the port causes. */
+    const sayWhereThePortIsSet = (): void => error(`the port is ${world.whereThePortIsSet}`)
+
+    /** Whoever holds the board lock, or null. Failures are the caller's: *unread* is not *nobody*. */
+    const holder = (): Effect.Effect<string | null, unknown> => lift(() => world.locker.holder(boardLock(command.port)))
+
+    const start = (): Effect.Effect<number, unknown> =>
+      Effect.gen(function* () {
+        const taken = yield* lift(() => world.locker.tryLock(boardLock(command.port), `board on ${command.port}`))
+        if (!taken.ok) {
+          // The sentence the ticket asked for, and the holder beside it: a second
+          // board on this machine is the ordinary case, not a bare EADDRINUSE.
+          error(`a board is already on ${command.port} — ${url}`)
+          error(`  held by ${taken.holder ?? 'a holder that has not named itself'}`)
+          sayWhereThePortIsSet()
+          return 1
+        }
+        const lock = taken.lock
+        held = lock
+        // The lock says nothing about the port: something that is not a board of
+        // this machine's can hold it, and Next would exit(1) on its own EADDRINUSE
+        // long after `serveBoard` resolved.
+        if (yield* world.bound(command.port)) {
+          const answers_ = yield* orNull(world.answering(command.port))
+          error(
+            answers_ === null
+              ? `${world.reach}:${command.port} is held by something that is not a Lingtai board — nothing was started`
+              : `a board is already on ${command.port} — ${answers_}. It is not this machine's, since no lock names it`,
+          )
+          sayWhereThePortIsSet()
+          yield* lift(() => lock.release())
           held = null
-        },
-      })
-    } catch (err) {
-      await held.release()
-      held = null
-      error((err as Error).message)
-      return 1
-    }
-    log(`${symbol.pass()} board on ${url} · home ${world.home.shown}`)
-    if (world.notSetUp()) {
-      log(`nothing is set up in ${world.home.shown} — the board opens on setup; lingtai init sets it up`)
-    }
-    if (command.open && !(await world.open(url))) log(`no browser could be opened here — open ${url}`)
-    log(BOARD_START_NOTE)
-    return 0
-  }
-
-  /**
-   * The supervisor's own stop or restart, when it keeps the board's job. One
-   * call each, printed first — this file wraps no more of a service manager
-   * than `service.ts` does.
-   */
-  const throughSupervisor = async (
-    kept: Extract<Keeper, { kept: true }>,
-    what: 'stop' | 'restart',
-  ): Promise<number> => {
-    const call =
-      kept.platform === 'launchd'
-        ? what === 'stop'
-          ? ['launchctl', 'bootout', `gui/${kept.uid}/${BOARD_JOB.label}`]
-          : ['launchctl', 'kickstart', '-k', `gui/${kept.uid}/${BOARD_JOB.label}`]
-        : ['systemctl', '--user', what === 'stop' ? 'stop' : 'restart', BOARD_JOB.unit]
-    log(`${kept.platform} keeps the board (${kept.path}), so this is its call and not a signal of ours —`)
-    log(`$ ${call.join(' ')}`)
-    const r = world.exec(call)
-    if (r.status !== 0) {
-      if (r.out.trim()) error(r.out.trim())
-      error(supervisorRefusal(what))
-      return 1
-    }
-    if (what === 'stop') {
-      // The call returning is not the job being gone, and saying so would be
-      // the one thing this verb is asked for.
-      if (!(await gone())) return 1
-      log(`${symbol.pass()} ${BOARD_STOPPED_NOTE}`)
-      return 0
-    }
-    return (await answers()) ? 0 : 1
-  }
-
-  /**
-   * Whether the supervisor has let the board's job go, **waited for rather than
-   * read off the call's own exit**.
-   *
-   * `launchctl bootout` exits 0 once it has asked for the termination, while
-   * the job is still running — `service.ts`'s `unloadJob` polls past exactly
-   * that. Reported without the wait, `stop` said *stopped the board's job* over
-   * a process that still held the port and the board lock: the next `board
-   * status` called it `serving`, and the next `board start` was refused by the
-   * lock the dying process had not dropped yet. (`systemctl --user stop`
-   * blocks, so there the first ask is the answer and this costs one.)
-   */
-  const gone = async (): Promise<boolean> => {
-    const until = world.now() + UNLOAD_WAIT_MS
-    for (let i = 0; i < GONE_POLLS; i++) {
-      if (i > 0 && world.now() >= until) break
-      const kept = world.keeper(command.port)
-      if ('unread' in kept) {
-        error(`the supervisor was asked to stop the board's job, and whether it has could not be read — ${kept.unread}`)
-        return false
-      }
-      if (!kept.kept) return true
-      await world.sleep(GONE_POLL_MS)
-    }
-    error(stillAnsweringNote(UNLOAD_WAIT_MS / 1000))
-    return false
-  }
-
-  /** Whether a board answers again after a restart, waited for rather than assumed. */
-  const answers = async (): Promise<boolean> => {
-    const until = world.now() + ANSWER_WAIT_MS
-    for (let i = 0; i < ANSWER_POLLS; i++) {
-      // The clock beside the count: one ask can cost its own timeout, and a
-      // wait that outlives the seconds it reports looks hung.
-      if (i > 0 && world.now() >= until) break
-      const at = await world.answering(command.port).catch(() => null)
-      if (at !== null) {
-        log(`${symbol.pass()} the board answers on ${at}`)
-        return true
-      }
-      await world.sleep(ANSWER_POLL_MS)
-    }
-    error(noAnswerNote(url, ANSWER_WAIT_MS / 1000))
-    return false
-  }
-
-  const stop = async (): Promise<number> => {
-    const kept = world.keeper(command.port)
-    if ('unread' in kept) {
-      error(`${kept.unread}. Nothing was signalled: a board the supervisor keeps comes back in thirty seconds, and a`)
-      error('signal sent without knowing that leaves two of them racing for the port')
-      return 1
-    }
-    if (kept.kept) return throughSupervisor(kept, 'stop')
-
-    let who: string | null
-    try {
-      who = await holder()
-    } catch (err) {
-      error(`the board lock could not be read — ${(err as Error).message}. Nothing was signalled`)
-      return 1
-    }
-    if (who === null) {
-      const at = await world.answering(command.port).catch(() => null)
-      log(
-        at === null
-          ? "no board of this machine's is running, and nothing answers on the port — there was nothing to stop"
-          : `no board of this machine's is running, and something answers on ${at} — this signalled nothing, since no lock names it`,
-      )
-      return 0
-    }
-    const process_ = holdingProcess(who)
-    if (process_ === null) {
-      error(`the board lock is held by ${who}, which names no pid — this signalled nothing`)
-      return 1
-    }
-    if (process_.host !== world.hostname) {
-      error(`the board lock is held by ${who}, on another machine — a signal from here would reach a different process`)
-      return 1
-    }
-    if (!world.signal(process_.pid)) {
-      error(`pid ${process_.pid} holds the board lock and is not there to signal — ${who}`)
-      return 1
-    }
-    for (let i = 0; i < STOP_POLLS; i++) {
-      let now: string | null
-      try {
-        now = await holder()
-      } catch (err) {
-        error(`signalled pid ${process_.pid}, and the lock could not be read afterwards — ${(err as Error).message}`)
-        return 1
-      }
-      if (now === null) {
-        log(`${symbol.pass()} stopped the board on ${command.port} — pid ${process_.pid}`)
+          return 1
+        }
+        const served = yield* attempt(
+          world.serve({
+            dir: command.dir,
+            port: command.port,
+            host: world.host,
+            release: Effect.gen(function* () {
+              yield* Effect.promise(() => held?.release() ?? Promise.resolve())
+              held = null
+            }),
+          }),
+        )
+        if (!served.ok) {
+          yield* lift(() => lock.release())
+          held = null
+          error((served.error as Error).message)
+          return 1
+        }
+        log(`${symbol.pass()} board on ${url} · home ${world.home.shown}`)
+        if (world.notSetUp()) {
+          log(`nothing is set up in ${world.home.shown} — the board opens on setup; lingtai init sets it up`)
+        }
+        if (command.open && !(yield* world.open(url))) log(`no browser could be opened here — open ${url}`)
+        log(BOARD_START_NOTE)
         return 0
-      }
-      await world.sleep(STOP_POLL_MS)
-    }
-    error(
-      `pid ${process_.pid} still holds the board lock ${(STOP_POLLS * STOP_POLL_MS) / 1000}s after SIGTERM — ` +
-        `kill -9 ${process_.pid} is the blunt way, and it takes the server with it: the board serves in that process`,
-    )
-    return 1
-  }
+      })
 
-  const status = async (): Promise<number> => {
-    for (const line of renderBoardStatus(await readBoardStatus(command, world))) log(line)
-    return 0
-  }
+    /**
+     * The supervisor's own stop or restart, when it keeps the board's job. One
+     * call each, printed first — this file wraps no more of a service manager
+     * than `service.ts` does.
+     */
+    const throughSupervisor = (
+      kept: Extract<Keeper, { kept: true }>,
+      what: 'stop' | 'restart',
+    ): Effect.Effect<number, unknown> =>
+      Effect.gen(function* () {
+        const call =
+          kept.platform === 'launchd'
+            ? what === 'stop'
+              ? ['launchctl', 'bootout', `gui/${kept.uid}/${BOARD_JOB.label}`]
+              : ['launchctl', 'kickstart', '-k', `gui/${kept.uid}/${BOARD_JOB.label}`]
+            : ['systemctl', '--user', what === 'stop' ? 'stop' : 'restart', BOARD_JOB.unit]
+        log(`${kept.platform} keeps the board (${kept.path}), so this is its call and not a signal of ours —`)
+        log(`$ ${call.join(' ')}`)
+        const r = world.exec(call)
+        if (r.status !== 0) {
+          if (r.out.trim()) error(r.out.trim())
+          error(supervisorRefusal(what))
+          return 1
+        }
+        if (what === 'stop') {
+          // The call returning is not the job being gone, and saying so would be
+          // the one thing this verb is asked for.
+          if (!(yield* gone())) return 1
+          log(`${symbol.pass()} ${BOARD_STOPPED_NOTE}`)
+          return 0
+        }
+        return (yield* answers()) ? 0 : 1
+      })
 
-  switch (command.verb) {
-    case 'start':
-      return start()
-    case 'stop':
-      return stop()
-    case 'status':
-      return status()
-    case 'restart': {
-      const kept = world.keeper(command.port)
-      if ('unread' in kept) {
-        error(`${kept.unread}. Nothing was stopped or started`)
+    /**
+     * Whether the supervisor has let the board's job go, **waited for rather than
+     * read off the call's own exit**.
+     *
+     * `launchctl bootout` exits 0 once it has asked for the termination, while
+     * the job is still running — `service.ts`'s `unloadJob` polls past exactly
+     * that. Reported without the wait, `stop` said *stopped the board's job* over
+     * a process that still held the port and the board lock: the next `board
+     * status` called it `serving`, and the next `board start` was refused by the
+     * lock the dying process had not dropped yet. (`systemctl --user stop`
+     * blocks, so there the first ask is the answer and this costs one.)
+     */
+    const gone = (): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        const until = world.now() + UNLOAD_WAIT_MS
+        for (let i = 0; i < GONE_POLLS; i++) {
+          if (i > 0 && world.now() >= until) break
+          const kept = world.keeper(command.port)
+          if ('unread' in kept) {
+            error(
+              `the supervisor was asked to stop the board's job, and whether it has could not be read — ${kept.unread}`,
+            )
+            return false
+          }
+          if (!kept.kept) return true
+          yield* world.sleep(GONE_POLL_MS)
+        }
+        error(stillAnsweringNote(UNLOAD_WAIT_MS / 1000))
+        return false
+      })
+
+    /** Whether a board answers again after a restart, waited for rather than assumed. */
+    const answers = (): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        const until = world.now() + ANSWER_WAIT_MS
+        for (let i = 0; i < ANSWER_POLLS; i++) {
+          // The clock beside the count: one ask can cost its own timeout, and a
+          // wait that outlives the seconds it reports looks hung.
+          if (i > 0 && world.now() >= until) break
+          const at = yield* orNull(world.answering(command.port))
+          if (at !== null) {
+            log(`${symbol.pass()} the board answers on ${at}`)
+            return true
+          }
+          yield* world.sleep(ANSWER_POLL_MS)
+        }
+        error(noAnswerNote(url, ANSWER_WAIT_MS / 1000))
+        return false
+      })
+
+    const stop = (): Effect.Effect<number, unknown> =>
+      Effect.gen(function* () {
+        const kept = world.keeper(command.port)
+        if ('unread' in kept) {
+          error(
+            `${kept.unread}. Nothing was signalled: a board the supervisor keeps comes back in thirty seconds, and a`,
+          )
+          error('signal sent without knowing that leaves two of them racing for the port')
+          return 1
+        }
+        if (kept.kept) return yield* throughSupervisor(kept, 'stop')
+
+        const read = yield* attempt(holder())
+        if (!read.ok) {
+          error(`the board lock could not be read — ${(read.error as Error).message}. Nothing was signalled`)
+          return 1
+        }
+        const who = read.value
+        if (who === null) {
+          const at = yield* orNull(world.answering(command.port))
+          log(
+            at === null
+              ? "no board of this machine's is running, and nothing answers on the port — there was nothing to stop"
+              : `no board of this machine's is running, and something answers on ${at} — this signalled nothing, since no lock names it`,
+          )
+          return 0
+        }
+        const process_ = holdingProcess(who)
+        if (process_ === null) {
+          error(`the board lock is held by ${who}, which names no pid — this signalled nothing`)
+          return 1
+        }
+        if (process_.host !== world.hostname) {
+          error(
+            `the board lock is held by ${who}, on another machine — a signal from here would reach a different process`,
+          )
+          return 1
+        }
+        if (!world.signal(process_.pid)) {
+          error(`pid ${process_.pid} holds the board lock and is not there to signal — ${who}`)
+          return 1
+        }
+        for (let i = 0; i < STOP_POLLS; i++) {
+          const again = yield* attempt(holder())
+          if (!again.ok) {
+            error(
+              `signalled pid ${process_.pid}, and the lock could not be read afterwards — ${(again.error as Error).message}`,
+            )
+            return 1
+          }
+          if (again.value === null) {
+            log(`${symbol.pass()} stopped the board on ${command.port} — pid ${process_.pid}`)
+            return 0
+          }
+          yield* world.sleep(STOP_POLL_MS)
+        }
+        error(
+          `pid ${process_.pid} still holds the board lock ${(STOP_POLLS * STOP_POLL_MS) / 1000}s after SIGTERM — ` +
+            `kill -9 ${process_.pid} is the blunt way, and it takes the server with it: the board serves in that process`,
+        )
         return 1
+      })
+
+    const status = (): Effect.Effect<number> =>
+      Effect.gen(function* () {
+        for (const line of renderBoardStatus(yield* readBoardStatus(command, world))) log(line)
+        return 0
+      })
+
+    switch (command.verb) {
+      case 'start':
+        return yield* start()
+      case 'stop':
+        return yield* stop()
+      case 'status':
+        return yield* status()
+      case 'restart': {
+        const kept = world.keeper(command.port)
+        if ('unread' in kept) {
+          error(`${kept.unread}. Nothing was stopped or started`)
+          return 1
+        }
+        // One call, not stop-then-start: this terminal racing the supervisor's
+        // respawn for the port is how a `board restart` ends with launchd
+        // crash-looping a job behind a board that goes when the terminal closes.
+        if (kept.kept) return yield* throughSupervisor(kept, 'restart')
+        const stopped = yield* stop()
+        if (stopped !== 0) return stopped
+        return yield* start()
       }
-      // One call, not stop-then-start: this terminal racing the supervisor's
-      // respawn for the port is how a `board restart` ends with launchd
-      // crash-looping a job behind a board that goes when the terminal closes.
-      if (kept.kept) return throughSupervisor(kept, 'restart')
-      const stopped = await stop()
-      if (stopped !== 0) return stopped
-      return start()
     }
-  }
-}
+  })
