@@ -14,6 +14,7 @@ import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
 import type { GitHubClient, Issue } from '@lingtai/github'
 import type { BacklogEntry } from '@lingtai/projector'
+import { Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { acceptFinding, declineFinding, proposalFor } from '../src/backlog.ts'
@@ -197,7 +198,7 @@ describe('githubTicketStore', () => {
 
   it('writes the kind and the holds as labels and the key into the body, and answers with the issue number', async () => {
     const gh = fakeGitHub()
-    const ref = await githubTicketStore(gh.client).propose(ticket)
+    const ref = await Effect.runPromise(githubTicketStore(gh.client).propose(ticket))
     expect(ref).toEqual({ externalRef: '212', url: 'https://example/212', created: true })
     expect(gh.issues[0]!.labels.map((l) => l.name)).toEqual(['bug', 'agent:hold'])
     expect(gh.issues[0]!.body).toContain(keyMarker('k1'))
@@ -206,20 +207,48 @@ describe('githubTicketStore', () => {
   it('is idempotent on the key: asked again, it answers with the issue it has', async () => {
     const gh = fakeGitHub()
     const store = githubTicketStore(gh.client)
-    await store.propose(ticket)
-    expect(await store.propose(ticket)).toEqual({ externalRef: '212', url: 'https://example/212', created: false })
+    await Effect.runPromise(store.propose(ticket))
+    expect(await Effect.runPromise(store.propose(ticket))).toEqual({
+      externalRef: '212',
+      url: 'https://example/212',
+      created: false,
+    })
     expect(gh.issues).toHaveLength(1)
     // A different key is a different ticket.
-    await store.propose({ ...ticket, key: 'k2' })
+    await Effect.runPromise(store.propose({ ...ticket, key: 'k2' }))
     expect(gh.issues).toHaveLength(2)
+  })
+
+  it('finishes a create that was interrupted: no duplicate is left open', async () => {
+    let release!: () => void
+    const held = new Promise<void>((r) => (release = r))
+    let first = true
+    const gh = fakeGitHub({
+      beforeCreate: async () => {
+        if (first) {
+          first = false
+          await held
+        }
+      },
+    })
+    const store = githubTicketStore(gh.client)
+    const fiber = Effect.runFork(store.propose(ticket))
+    await new Promise((r) => setTimeout(r, 10))
+    // The interruption waits for the sent create to be reconciled; it does not abandon it.
+    const interrupted = Effect.runPromise(Fiber.interrupt(fiber))
+    const retry = await Effect.runPromise(store.propose(ticket))
+    release()
+    await interrupted
+    expect(gh.open()).toHaveLength(1)
+    expect(retry.externalRef).toBeDefined()
   })
 
   it('converges when two proposes race: the newer issue is closed as a duplicate of the older', async () => {
     const holder: { store?: TicketStore } = {}
     // The second propose runs entirely while the first's POST is in flight.
-    const gh = fakeGitHub({ beforeCreate: async () => void (await holder.store!.propose(ticket)) })
+    const gh = fakeGitHub({ beforeCreate: async () => void (await Effect.runPromise(holder.store!.propose(ticket))) })
     holder.store = githubTicketStore(gh.client)
-    const ref = await holder.store.propose(ticket)
+    const ref = await Effect.runPromise(holder.store.propose(ticket))
     expect(gh.issues).toHaveLength(2)
     expect(gh.open().map((i) => i.number)).toEqual([212])
     expect(ref).toMatchObject({ externalRef: '212', created: false })
@@ -319,10 +348,12 @@ describe('acceptFinding', () => {
     const log = fakeLog()
     const tickets: TicketStore = {
       source: 'fake',
-      propose: async () => {
-        throw new Error('down')
-      },
-      withdraw: async () => {},
+      // A defect, not a failure: the caller must still answer it as a refusal.
+      propose: () =>
+        Effect.sync(() => {
+          throw new Error('down')
+        }),
+      withdraw: () => Effect.void,
     }
     await accept(log, tickets, { kind: 'bug' })
     const r = await accept(log, tickets, { kind: 'feature' })
@@ -374,19 +405,21 @@ describe('acceptFinding', () => {
     const mine: TicketStore & { withdrawn: string[] } = {
       source: 'fake',
       withdrawn: [],
-      async propose() {
-        const ref = { externalRef: String(n), url: null, created: true }
-        if (n === 300) {
-          n++
-          // The other opener, recording #301 while this one's answer is on its way.
-          const other = await accept(log, mine, { kind: undefined })
-          expect(other).toMatchObject({ ok: true, externalRef: '301' })
-        }
-        return ref
-      },
-      async withdraw(ref, kept) {
-        this.withdrawn.push(`${ref}->${kept}`)
-      },
+      propose: () =>
+        Effect.promise(async () => {
+          const ref = { externalRef: String(n), url: null, created: true }
+          if (n === 300) {
+            n++
+            // The other opener, recording #301 while this one's answer is on its way.
+            const other = await accept(log, mine, { kind: undefined })
+            expect(other).toMatchObject({ ok: true, externalRef: '301' })
+          }
+          return ref
+        }),
+      withdraw: (ref, kept) =>
+        Effect.sync(() => {
+          mine.withdrawn.push(`${ref}->${kept}`)
+        }),
     }
     const r = await accept(log, mine)
     expect(r).toMatchObject({ ok: true, externalRef: '301' })

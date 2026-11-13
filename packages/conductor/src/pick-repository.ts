@@ -41,6 +41,7 @@ import {
   parseSlug,
 } from '@lingtai/github'
 import { type Picker, same } from '@lingtai/setup'
+import { Effect } from 'effect'
 
 /** A link that fixes the thing, and what to call it. */
 export interface Fix {
@@ -229,15 +230,20 @@ function settings(installation: Installation, label: string): Fix | null {
  * is never acted on even then — it only says which installation to name first
  * on a screen that lists every one of them anyway.
  */
-export async function verifiedInstallation(reader: AppReader, raw: string | null): Promise<number | null> {
-  if (raw === null || !/^\d+$/.test(raw)) return null
-  try {
-    const installation = await reader.request<{ id: number }>('GET', `/app/installations/${raw}`, 'app')
-    return installation.id
-  } catch (err) {
-    if (err instanceof GitHubFailed && err.status === 404) return null
-    throw err
-  }
+export function verifiedInstallationEffect(
+  reader: AppReader,
+  raw: string | null,
+): Effect.Effect<number | null, unknown> {
+  if (raw === null || !/^\d+$/.test(raw)) return Effect.succeed(null)
+  return Effect.tryPromise({
+    try: () => reader.request<{ id: number }>('GET', `/app/installations/${raw}`, 'app'),
+    catch: (err) => err,
+  }).pipe(
+    Effect.map((installation): number | null => installation.id),
+    Effect.catch((err) =>
+      err instanceof GitHubFailed && err.status === 404 ? Effect.succeed(null) : Effect.fail(err),
+    ),
+  )
 }
 
 /**
@@ -249,21 +255,26 @@ export async function verifiedInstallation(reader: AppReader, raw: string | null
  * organisation owner has been asked, which GitHub reports as
  * `setup_action=request` with no installation to name.
  */
-export async function setupReturn(reader: AppReader, query: URLSearchParams): Promise<string> {
-  const target = new URLSearchParams()
-  if (query.get('setup_action') === 'request') {
-    target.set('requested', '1')
-  } else {
-    let id: number | null = null
-    try {
-      id = await verifiedInstallation(reader, query.get('installation_id'))
-    } catch {
+export function setupReturnEffect(reader: AppReader, query: URLSearchParams): Effect.Effect<string> {
+  return Effect.gen(function* () {
+    const target = new URLSearchParams()
+    if (query.get('setup_action') === 'request') {
+      target.set('requested', '1')
+    } else {
       // GitHub would not answer. Nothing reads `installed` today but a
       // future screen that does would ask again anyway; a hint is not worth
       // failing the return for.
+      const id = yield* verifiedInstallationEffect(reader, query.get('installation_id')).pipe(
+        Effect.catch(() => Effect.succeed(null)),
+      )
+      if (id !== null) target.set('installed', String(id))
     }
-    if (id !== null) target.set('installed', String(id))
-  }
-  const q = target.toString()
-  return `/setup/repository${q === '' ? '' : `?${q}`}`
+    const q = target.toString()
+    return `/setup/repository${q === '' ? '' : `?${q}`}`
+  })
+}
+
+/** `setupReturnEffect` as a promise, for the board's route (0101 §7), until #790. */
+export function setupReturn(reader: AppReader, query: URLSearchParams): Promise<string> {
+  return Effect.runPromise(setupReturnEffect(reader, query))
 }

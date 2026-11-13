@@ -68,7 +68,10 @@ import {
   convertManifest,
   manifestFormAction,
 } from '@lingtai/github'
+import { Deferred, Effect, Semaphore } from 'effect'
 import { isMap, parse as parseYaml, parseDocument } from 'yaml'
+
+import { runPort } from './port-face.ts'
 
 export const APP_ID_VAR = `${PREFIX}GITHUB_APP_ID`
 export const KEY_PATH_VAR = `${PREFIX}GITHUB_APP_PRIVATE_KEY_PATH`
@@ -201,6 +204,13 @@ export interface FinishOptions {
   configFile?: string
   keyPath?: string
   fetch?: typeof fetch
+  /**
+   * The one read `convertAndWrite` makes of the disk before the exchange — the
+   * `config.yml` that `configuration()` asks. A failure that is not absence is
+   * `unreadable`, so the seam fails with the error and answers `null` for a
+   * missing file. Defaults to the live read; a test hands in a fake.
+   */
+  readFile?: (path: string) => Effect.Effect<string | null, Error>
 }
 
 /**
@@ -259,9 +269,9 @@ export function createCreationSession(): CreationSession {
    * state is already being settled joins that settlement rather than starting a
    * second one, and is given its answer.
    */
-  const answered = new Map<string, { startedAtMs: number; outcome: Promise<Outcome> }>()
+  const answered = new Map<string, { startedAtMs: number; outcome: Deferred.Deferred<Outcome> }>()
   /**
-   * The conversions, one at a time.
+   * The conversions, one at a time — a semaphore of one permit.
    *
    * `convertAndWrite` reads what is already configured and then writes it, so
    * two returns converting at once would both read *nothing is configured* and
@@ -269,7 +279,7 @@ export function createCreationSession(): CreationSession {
    * twenty milliseconds. Serialising them is what makes that re-read mean
    * something.
    */
-  let converting: Promise<unknown> = Promise.resolve()
+  const converting = Semaphore.makeUnsafe(1)
   let latest: Attempt | null = null
   let last: Outcome | null = null
   let mint: Mint | null = null
@@ -294,6 +304,64 @@ export function createCreationSession(): CreationSession {
     }
     forgetLapsedAnswers(nowMs)
   }
+
+  /**
+   * **The check and the set of `answered` are one synchronous step**, before the
+   * first suspension, so two returns in the same tick cannot both pass the check
+   * and both exchange the code. The cell is completed with the section's *exit*
+   * and not its success: a disk defect then reaches a reload as the same
+   * rejection rather than as a second exchange. Masked, so an interrupted first
+   * caller still fills the cell its joiners wait on — and so the section
+   * between the exchange and the last write, whose PEM is the only copy GitHub
+   * hands over, is never cut.
+   */
+  const finishEffect = (options: FinishOptions): Effect.Effect<Outcome> =>
+    Effect.uninterruptibleMask((restore) =>
+      Effect.suspend(() => {
+        const now = options.now ?? new Date()
+        forgetLapsedAnswers(now.getTime())
+        const state = options.state
+
+        // A return carrying a state that is already being settled — a reload, or
+        // a browser retrying — is handed the first one's answer. It is the same
+        // code, and there is one exchange in it.
+        const settling = state === null ? undefined : answered.get(state)
+        if (settling !== undefined) return restore(Deferred.await(settling.outcome))
+
+        const attempt = state === null ? undefined : issued.get(state)
+        const cell = Deferred.makeUnsafe<Outcome>()
+        if (state !== null && attempt !== undefined) {
+          answered.set(state, { startedAtMs: attempt.startedAtMs, outcome: cell })
+        }
+        // Everything that reads or writes this session's memory happens inside
+        // the permit, so what `convertAndWrite` is told about the last outcome
+        // is what is true when it runs rather than when it was queued.
+        const section = converting.withPermits(1)(
+          Effect.gen(function* () {
+            const settled = yield* convertAndWriteEffect(options, now, issued, mint)
+            // Either way this attempt is done with: a code is good for one
+            // exchange, and a refused one is not worth a second press against the
+            // same state.
+            if (state !== null) issued.delete(state)
+            if (latest !== null && latest.state === state) latest = null
+            last = settled
+            // A refusal before the conversion carries the earlier App forward in
+            // `minted`; only a new id is a new mint, and only a new mint moves the
+            // time a form has to postdate.
+            if (settled.ok) {
+              mint = { appId: settled.appId, slug: settled.slug, atMs: now.getTime(), finished: true }
+            } else if (settled.minted !== null && settled.minted.appId !== mint?.appId) {
+              mint = { ...settled.minted, atMs: now.getTime(), finished: false }
+            }
+            return settled
+          }),
+        )
+        return Effect.exit(section).pipe(
+          Effect.flatMap((exit) => Deferred.done(cell, exit)),
+          Effect.andThen(Deferred.await(cell)),
+        )
+      }),
+    )
 
   return {
     begin(options) {
@@ -328,48 +396,7 @@ export function createCreationSession(): CreationSession {
       }
     },
 
-    async finish(options) {
-      const now = options.now ?? new Date()
-      forgetLapsedAnswers(now.getTime())
-      const state = options.state
-
-      // A return carrying a state that is already being settled — a reload, or
-      // a browser retrying — is handed the first one's answer. It is the same
-      // code, and there is one exchange in it.
-      const settling = state === null ? undefined : answered.get(state)
-      if (settling !== undefined) return await settling.outcome
-
-      const attempt = state === null ? undefined : issued.get(state)
-      // Everything that reads or writes this session's memory happens inside
-      // the queued section, so what `convertAndWrite` is told about the last
-      // outcome is what is true when it runs rather than when it was queued.
-      const outcome = converting.then(async () => {
-        const settled = await convertAndWrite(options, now, issued, mint)
-        // Either way this attempt is done with: a code is good for one
-        // exchange, and a refused one is not worth a second press against the
-        // same state.
-        if (state !== null) issued.delete(state)
-        if (latest !== null && latest.state === state) latest = null
-        last = settled
-        // A refusal before the conversion carries the earlier App forward in
-        // `minted`; only a new id is a new mint, and only a new mint moves the
-        // time a form has to postdate.
-        if (settled.ok) {
-          mint = { appId: settled.appId, slug: settled.slug, atMs: now.getTime(), finished: true }
-        } else if (settled.minted !== null && settled.minted.appId !== mint?.appId) {
-          mint = { ...settled.minted, atMs: now.getTime(), finished: false }
-        }
-        return settled
-      })
-      converting = outcome.then(
-        () => undefined,
-        () => undefined,
-      )
-      if (state !== null && attempt !== undefined) {
-        answered.set(state, { startedAtMs: attempt.startedAtMs, outcome })
-      }
-      return await outcome
-    },
+    finish: (options) => runPort(finishEffect(options)),
 
     outstanding(now = new Date()) {
       if (latest === null) return null
@@ -419,285 +446,310 @@ export const creation: CreationSession = ((globalThis as WithSession)[SESSION] ?
  * did land, so a half-written credential is a sentence someone can act on
  * rather than a lost key — and never a page offering to mint another.
  */
-async function convertAndWrite(
+/** A promise lifted with its rejection kept as the failure — for every call whose throw is caught. */
+const io = <A>(run: () => Promise<A>): Effect.Effect<A, Error> =>
+  Effect.tryPromise({ try: run, catch: (err) => err as Error })
+
+/** A synchronous step that may throw, with the throw kept as the failure. */
+const sync = <A>(run: () => A): Effect.Effect<A, Error> => Effect.try({ try: run, catch: (err) => err as Error })
+
+/** An effect that may fail, as a value: `ok` with the answer, or the error. */
+const settle = <A>(
+  effect: Effect.Effect<A, Error>,
+): Effect.Effect<{ ok: true; value: A } | { ok: false; error: Error }> =>
+  effect.pipe(
+    Effect.map((value) => ({ ok: true as const, value })),
+    Effect.catch((error) => Effect.succeed({ ok: false as const, error })),
+  )
+
+function convertAndWriteEffect(
   options: FinishOptions,
   now: Date,
   issued: Map<string, Attempt>,
   previous: Mint | null,
-): Promise<Outcome> {
-  const refuse = (refusal: string, minted: { appId: string; slug: string } | null = null): Outcome => ({
-    ok: false,
-    refusal,
-    minted,
-    at: now,
-  })
+): Effect.Effect<Outcome> {
+  return Effect.gen(function* () {
+    const refuse = (refusal: string, minted: { appId: string; slug: string } | null = null): Outcome => ({
+      ok: false,
+      refusal,
+      minted,
+      at: now,
+    })
 
-  if (!options.code) {
-    return refuse(
-      'GitHub sent no code back, so there is nothing to exchange — the App was not created. ' + 'Start again.',
-    )
-  }
-  if (!options.state) {
-    return refuse('that link carries no state, so it did not come from this page. Start again.')
-  }
-
-  const attempt = issued.get(options.state)
-  if (attempt === undefined) {
-    // Deliberately one sentence for "never issued" and "issued by a board that
-    // has since restarted": both mean this process cannot vouch for the code,
-    // and neither is a thing to press through.
-    return refuse(
-      'that state is not one this page issued, so the code was not accepted. Nothing was ' +
-        'written. If GitHub did create an App, it is listed under Settings → Developer settings ' +
-        '→ GitHub Apps, and doc/operating.md finishes it by hand.',
-    )
-  }
-  if (now.getTime() - attempt.startedAtMs > ATTEMPT_WINDOW_MS) {
-    return refuse(
-      `the hour lapsed — the form was posted at ${new Date(attempt.startedAtMs).toISOString()}, ` +
-        "and GitHub's code is good for one hour. Nothing was written — start again.",
-    )
-  }
-
-  const env = options.env ?? process.env
-  const configFile = options.configFile ?? machineConfigPath(env)
-  // **The question the page and `start/route.ts` asked, asked again where the
-  // writing happens.** A `state` is good for a whole hour and neither of those
-  // two checks is one this path makes, so a first tab left on GitHub's naming
-  // screen is live for the rest of that hour: finish it after creating the App
-  // from a second tab and `config.yml`, the key path and the install link are
-  // all rewritten to an App no repository has installed, with the screen saying
-  // *Created* and nothing saying what was replaced. Every GitHub call fails as
-  // not-installed from the next call.
-  //
-  // It refuses **before** the conversion, which is the only place it can: the
-  // App is on GitHub either way — a person minted it there before this redirect
-  // was sent — and credentials for an App that cannot be configured here are
-  // not worth fetching. The refusal says where it is and how to be rid of it.
-  //
-  // **What it asks is whether this process minted one, and never whether that
-  // minting succeeded.** A previous return that converted and then failed every
-  // write — the key, config.yml, and the append that is the only durable
-  // record — comes back `ok: false` with `minted` set and leaves nothing on the
-  // log for `configuration()` to find: read for success alone, this guard waved
-  // the second tab straight through, and a second App was minted beside an
-  // unfinished first whose private key GitHub will never hand over again.
-  //
-  // **An unfinished App refuses only the forms that were issued before it.** A
-  // form posted afterwards came from a page that named the stranded App and
-  // offered creation anyway (#169: *a minted-but-unconfigured App must not
-  // close the door*), so pressing it was a choice made knowing; a form posted
-  // before it is a tab nobody has looked at since.
-  if (previous !== null && (previous.finished || attempt.startedAtMs <= previous.atMs)) {
-    const minted = { appId: previous.appId, slug: previous.slug }
-    const at = new Date(previous.atMs).toISOString()
-    return refuse(
-      previous.finished
-        ? `app ${previous.appId} was created here at ${at}, and is what this ` +
-            'Lingtai is configured with. This return was not applied: nothing was written, and that ' +
-            'configuration is untouched. GitHub did create the App this tab named — it is under ' +
-            'Settings → Developer settings → GitHub Apps, and can be deleted there.'
-        : `app ${previous.appId} was created here at ${at} and its credentials ` +
-            "did not all land — and this tab's form was posted before that, so it was never shown " +
-            'that App. This return was not applied and nothing was written. GitHub did create the ' +
-            'App this tab named as well — it is under Settings → Developer settings → GitHub Apps, ' +
-            'and can be deleted there. The setup page names the unfinished App and how to finish it.',
-      // Carried, not dropped: this refusal becomes the session's last outcome,
-      // and the page reads `minted` off it to name the App.
-      previous.finished ? null : minted,
-    )
-  }
-  const already = await configuration({ env, configFile, store: options.store ?? eventStore })
-  if (already.unreadable !== null) {
-    // **Not the log.** A `config.yml` that will not parse or cannot be opened
-    // is a file somebody can fix in ten seconds, and it may name an App this
-    // process cannot see — so nothing is written over it, and the sentence
-    // names the file rather than sending anyone to debug Postgres.
-    return refuse(
-      `${already.unreadable}. This return was not applied and nothing was written, because that file may ` +
-        'already name an App, and writing a second one over it would leave an id no repository has installed. ' +
-        'GitHub did create the App this tab named — it is under Settings → Developer settings → GitHub Apps, ' +
-        'where it can be deleted, or kept and finished by hand once the file is fixed (doc/operating.md from ' +
-        'step 2, with a private key generated on its own page — the one from this exchange was not fetched).',
-    )
-  }
-  if (already.configured !== null) {
-    return refuse(
-      `a GitHub App is already configured here — app ${already.configured.appId}, ${
-        already.configured.where === 'environment' ? "in this process's environment" : `in ${already.configured.file}`
-      }. This return was not applied: nothing was written, and that App's id, key path and webhook ` +
-        'secret are untouched. GitHub did create the App this tab named — it is under Settings → ' +
-        'Developer settings → GitHub Apps, and can be deleted there. A second App is one nothing ' +
-        'is installed on.',
-    )
-  }
-  if (already.minted !== null && attempt.startedAtMs <= already.minted.at.getTime()) {
-    // The same rule on the log, for a board restarted between the two: an App
-    // minted here after this form was posted is one this tab was never shown.
-    // One minted *before* it was on the page that offered this form, by name.
-    const { appId, slug } = already.minted
-    return refuse(
-      `app ${appId} was created here at ${already.minted.at.toISOString()}, after this tab's form ` +
-        `was posted, and this Lingtai is not configured with it — ${configFile} does not name it. This ` +
-        'return was not applied and nothing was written. GitHub did create the App this tab named ' +
-        'as well — it is under Settings → Developer settings → GitHub Apps, and can be deleted there.',
-      { appId, slug },
-    )
-  }
-  if (already.unanswered !== null) {
-    // **Unknown is not no, here as on the page and in `start`.** The log is what
-    // remembers an App minted here whose writes did not land, so a read that
-    // fails cannot be read as *nothing was created* — that is a second App
-    // minted on a few minutes of unreachable Postgres.
-    return refuse(
-      'Lingtai cannot tell whether an App was already created here: the log could not be read ' +
-        `(${already.unanswered}). This return was not applied and nothing was written, because ` +
-        'writing it over an App this process cannot see would leave config.yml naming an id no ' +
-        'repository has installed. GitHub did create the App this tab named — it is under Settings ' +
-        '→ Developer settings → GitHub Apps, where it can be deleted, or kept and finished by hand ' +
-        'once pnpm lingtai doctor passes (doc/operating.md from step 2, with a private key ' +
-        'generated on its own page — the one from this exchange was not fetched).',
-    )
-  }
-
-  let created
-  try {
-    created = await convertManifest(options.code, options.fetch ? { fetch: options.fetch } : {})
-  } catch (err) {
-    if (err instanceof GitHubFailed && (err.status === 404 || err.status === 422)) {
+    if (!options.code) {
       return refuse(
-        'GitHub would not exchange that code: it is good for one hour and for one exchange, and ' +
-          'this one is spent or lapsed. Nothing was written — start again.',
+        'GitHub sent no code back, so there is nothing to exchange — the App was not created. ' + 'Start again.',
       )
     }
-    return refuse(`GitHub would not exchange the code: ${(err as Error).message}. Nothing was written.`)
-  }
+    if (!options.state) {
+      return refuse('that link carries no state, so it did not come from this page. Start again.')
+    }
 
-  // **The record goes down the moment the App exists, and before either write
-  // that can fail.** Appended after the writes instead, a `config.yml` that
-  // would not take three lines returned a refusal with no record behind it: the
-  // page drew the form again under it, and an operator who read *could not be
-  // written* as a failure and pressed Create was given another App, another
-  // orphan key, and the same refusal — every press. The App exists from here on
-  // whatever else fails, so this is where the fact belongs.
-  //
-  // **What it records is that an App was minted, and never that one is
-  // configured.** Those two are one fact only on the path where nothing went
-  // wrong, and it is the other paths this record exists for: written first, it
-  // is on the log *before* the key file and `config.yml` are, so reading it as
-  // *the credentials are there, this process is merely stale* would report a
-  // creation whose key write failed as an App a restart will pick up. What is
-  // configured is what `config.yml` and the environment say — `configuration()`
-  // asks them and does not ask this — and this says an App of Lingtai's is out
-  // there on GitHub, which is the fact that makes minting a second one wrong.
-  let notRecorded: string | null = null
-  try {
+    const attempt = issued.get(options.state)
+    if (attempt === undefined) {
+      // Deliberately one sentence for "never issued" and "issued by a board that
+      // has since restarted": both mean this process cannot vouch for the code,
+      // and neither is a thing to press through.
+      return refuse(
+        'that state is not one this page issued, so the code was not accepted. Nothing was ' +
+          'written. If GitHub did create an App, it is listed under Settings → Developer settings ' +
+          '→ GitHub Apps, and doc/operating.md finishes it by hand.',
+      )
+    }
+    if (now.getTime() - attempt.startedAtMs > ATTEMPT_WINDOW_MS) {
+      return refuse(
+        `the hour lapsed — the form was posted at ${new Date(attempt.startedAtMs).toISOString()}, ` +
+          "and GitHub's code is good for one hour. Nothing was written — start again.",
+      )
+    }
+
+    const env = options.env ?? process.env
+    const configFile = options.configFile ?? machineConfigPath(env)
+    // **The question the page and `start/route.ts` asked, asked again where the
+    // writing happens.** A `state` is good for a whole hour and neither of those
+    // two checks is one this path makes, so a first tab left on GitHub's naming
+    // screen is live for the rest of that hour: finish it after creating the App
+    // from a second tab and `config.yml`, the key path and the install link are
+    // all rewritten to an App no repository has installed, with the screen saying
+    // *Created* and nothing saying what was replaced. Every GitHub call fails as
+    // not-installed from the next call.
+    //
+    // It refuses **before** the conversion, which is the only place it can: the
+    // App is on GitHub either way — a person minted it there before this redirect
+    // was sent — and credentials for an App that cannot be configured here are
+    // not worth fetching. The refusal says where it is and how to be rid of it.
+    //
+    // **What it asks is whether this process minted one, and never whether that
+    // minting succeeded.** A previous return that converted and then failed every
+    // write — the key, config.yml, and the append that is the only durable
+    // record — comes back `ok: false` with `minted` set and leaves nothing on the
+    // log for `configuration()` to find: read for success alone, this guard waved
+    // the second tab straight through, and a second App was minted beside an
+    // unfinished first whose private key GitHub will never hand over again.
+    //
+    // **An unfinished App refuses only the forms that were issued before it.** A
+    // form posted afterwards came from a page that named the stranded App and
+    // offered creation anyway (#169: *a minted-but-unconfigured App must not
+    // close the door*), so pressing it was a choice made knowing; a form posted
+    // before it is a tab nobody has looked at since.
+    if (previous !== null && (previous.finished || attempt.startedAtMs <= previous.atMs)) {
+      const minted = { appId: previous.appId, slug: previous.slug }
+      const at = new Date(previous.atMs).toISOString()
+      return refuse(
+        previous.finished
+          ? `app ${previous.appId} was created here at ${at}, and is what this ` +
+              'Lingtai is configured with. This return was not applied: nothing was written, and that ' +
+              'configuration is untouched. GitHub did create the App this tab named — it is under ' +
+              'Settings → Developer settings → GitHub Apps, and can be deleted there.'
+          : `app ${previous.appId} was created here at ${at} and its credentials ` +
+              "did not all land — and this tab's form was posted before that, so it was never shown " +
+              'that App. This return was not applied and nothing was written. GitHub did create the ' +
+              'App this tab named as well — it is under Settings → Developer settings → GitHub Apps, ' +
+              'and can be deleted there. The setup page names the unfinished App and how to finish it.',
+        // Carried, not dropped: this refusal becomes the session's last outcome,
+        // and the page reads `minted` off it to name the App.
+        previous.finished ? null : minted,
+      )
+    }
+    const already = yield* configurationEffect({
+      env,
+      configFile,
+      store: options.store ?? eventStore,
+      readFile: options.readFile ?? readOrNullEffect,
+    })
+    if (already.unreadable !== null) {
+      // **Not the log.** A `config.yml` that will not parse or cannot be opened
+      // is a file somebody can fix in ten seconds, and it may name an App this
+      // process cannot see — so nothing is written over it, and the sentence
+      // names the file rather than sending anyone to debug Postgres.
+      return refuse(
+        `${already.unreadable}. This return was not applied and nothing was written, because that file may ` +
+          'already name an App, and writing a second one over it would leave an id no repository has installed. ' +
+          'GitHub did create the App this tab named — it is under Settings → Developer settings → GitHub Apps, ' +
+          'where it can be deleted, or kept and finished by hand once the file is fixed (doc/operating.md from ' +
+          'step 2, with a private key generated on its own page — the one from this exchange was not fetched).',
+      )
+    }
+    if (already.configured !== null) {
+      return refuse(
+        `a GitHub App is already configured here — app ${already.configured.appId}, ${
+          already.configured.where === 'environment' ? "in this process's environment" : `in ${already.configured.file}`
+        }. This return was not applied: nothing was written, and that App's id, key path and webhook ` +
+          'secret are untouched. GitHub did create the App this tab named — it is under Settings → ' +
+          'Developer settings → GitHub Apps, and can be deleted there. A second App is one nothing ' +
+          'is installed on.',
+      )
+    }
+    if (already.minted !== null && attempt.startedAtMs <= already.minted.at.getTime()) {
+      // The same rule on the log, for a board restarted between the two: an App
+      // minted here after this form was posted is one this tab was never shown.
+      // One minted *before* it was on the page that offered this form, by name.
+      const { appId, slug } = already.minted
+      return refuse(
+        `app ${appId} was created here at ${already.minted.at.toISOString()}, after this tab's form ` +
+          `was posted, and this Lingtai is not configured with it — ${configFile} does not name it. This ` +
+          'return was not applied and nothing was written. GitHub did create the App this tab named ' +
+          'as well — it is under Settings → Developer settings → GitHub Apps, and can be deleted there.',
+        { appId, slug },
+      )
+    }
+    if (already.unanswered !== null) {
+      // **Unknown is not no, here as on the page and in `start`.** The log is what
+      // remembers an App minted here whose writes did not land, so a read that
+      // fails cannot be read as *nothing was created* — that is a second App
+      // minted on a few minutes of unreachable Postgres.
+      return refuse(
+        'Lingtai cannot tell whether an App was already created here: the log could not be read ' +
+          `(${already.unanswered}). This return was not applied and nothing was written, because ` +
+          'writing it over an App this process cannot see would leave config.yml naming an id no ' +
+          'repository has installed. GitHub did create the App this tab named — it is under Settings ' +
+          '→ Developer settings → GitHub Apps, where it can be deleted, or kept and finished by hand ' +
+          'once pnpm lingtai doctor passes (doc/operating.md from step 2, with a private key ' +
+          'generated on its own page — the one from this exchange was not fetched).',
+      )
+    }
+
+    const code = options.code
+    const exchange = yield* settle(io(() => convertManifest(code, options.fetch ? { fetch: options.fetch } : {})))
+    if (!exchange.ok) {
+      const err = exchange.error
+      if (err instanceof GitHubFailed && (err.status === 404 || err.status === 422)) {
+        return refuse(
+          'GitHub would not exchange that code: it is good for one hour and for one exchange, and ' +
+            'this one is spent or lapsed. Nothing was written — start again.',
+        )
+      }
+      return refuse(`GitHub would not exchange the code: ${err.message}. Nothing was written.`)
+    }
+    const created = exchange.value
+
+    // **The record goes down the moment the App exists, and before either write
+    // that can fail.** Appended after the writes instead, a `config.yml` that
+    // would not take three lines returned a refusal with no record behind it: the
+    // page drew the form again under it, and an operator who read *could not be
+    // written* as a failure and pressed Create was given another App, another
+    // orphan key, and the same refusal — every press. The App exists from here on
+    // whatever else fails, so this is where the fact belongs.
+    //
+    // **What it records is that an App was minted, and never that one is
+    // configured.** Those two are one fact only on the path where nothing went
+    // wrong, and it is the other paths this record exists for: written first, it
+    // is on the log *before* the key file and `config.yml` are, so reading it as
+    // *the credentials are there, this process is merely stale* would report a
+    // creation whose key write failed as an App a restart will pick up. What is
+    // configured is what `config.yml` and the environment say — `configuration()`
+    // asks them and does not ask this — and this says an App of Lingtai's is out
+    // there on GitHub, which is the fact that makes minting a second one wrong.
     const store = options.store ?? eventStore
-    const existing = await store.read(GITHUB_APP_STREAM)
-    await store.append(GITHUB_APP_STREAM, existing.length, [
-      {
-        type: 'GitHubAppCreated',
-        actor: options.by,
-        // The id and the slug and nothing else. The log is permanent and
-        // `projection rebuild` replays it, so a secret here would be read aloud
-        // for ever — and two of the six values that arrived are secrets.
-        data: parsePayload('GitHubAppCreated', { appId: String(created.id), slug: created.slug }),
-      },
-    ])
-  } catch (err) {
+    const recording = yield* settle(
+      Effect.gen(function* () {
+        const existing = yield* io(() => store.read(GITHUB_APP_STREAM))
+        const data = yield* sync(() =>
+          // The id and the slug and nothing else. The log is permanent and
+          // `projection rebuild` replays it, so a secret here would be read aloud
+          // for ever — and two of the six values that arrived are secrets.
+          parsePayload('GitHubAppCreated', { appId: String(created.id), slug: created.slug }),
+        )
+        yield* io(() =>
+          store.append(GITHUB_APP_STREAM, existing.length, [{ type: 'GitHubAppCreated', actor: options.by, data }]),
+        )
+      }),
+    )
     // Not a refusal on its own: the App is real and the credentials may yet
     // land. What is missing is the record, and the record is what stops this
     // page offering to mint a second App before a restart — so every sentence
     // below says which of the two is true.
-    notRecorded = (err as Error).message
-  }
+    const notRecorded: string | null = recording.ok ? null : recording.error.message
 
-  /** The App this exchange put on GitHub, carried by every refusal below. */
-  const minted = { appId: String(created.id), slug: created.slug }
+    /** The App this exchange put on GitHub, carried by every refusal below. */
+    const minted = { appId: String(created.id), slug: created.slug }
 
-  /**
-   * What a refusal after this point can promise about pressing Create again.
-   *
-   * Two guards and not one, because they fail at different times. This process
-   * remembers `minted` for as long as it runs, whatever the log said; the log
-   * is what survives a restart. So a record that would not go down is a true
-   * thing to say — it is the difference between *this page* and *this
-   * installation* not offering another.
-   */
-  const andTheLog =
-    notRecorded === null
-      ? " It is on Lingtai's log, so the setup page keeps naming it. Creating another is still offered, " +
-        'and this App stays on GitHub either way until it is deleted there.'
-      : ` The log did not record it either (${notRecorded}), so the setup page names it only while ` +
-        `this board keeps running — note app ${created.id} now: it exists on GitHub whatever this page says later.`
+    /**
+     * What a refusal after this point can promise about pressing Create again.
+     *
+     * Two guards and not one, because they fail at different times. This process
+     * remembers `minted` for as long as it runs, whatever the log said; the log
+     * is what survives a restart. So a record that would not go down is a true
+     * thing to say — it is the difference between *this page* and *this
+     * installation* not offering another.
+     */
+    const andTheLog =
+      notRecorded === null
+        ? " It is on Lingtai's log, so the setup page keeps naming it. Creating another is still offered, " +
+          'and this App stays on GitHub either way until it is deleted there.'
+        : ` The log did not record it either (${notRecorded}), so the setup page names it only while ` +
+          `this board keeps running — note app ${created.id} now: it exists on GitHub whatever this page says later.`
 
-  const wanted = options.keyPath ?? KEY_PATH_DEFAULT
+    const wanted = options.keyPath ?? KEY_PATH_DEFAULT
 
-  let keyPath: string
-  try {
-    keyPath = await writeKey(wanted, created.pem, String(created.id))
-  } catch (err) {
-    // The one failure with nothing to hand back: the key exists only in this
-    // function's memory and is about to leave it.
-    return refuse(
-      `the App was created on GitHub — ${created.name} (app ${created.id}) — and its private key ` +
-        `could not be written to ${wanted}: ${(err as Error).message}. The key cannot be fetched ` +
-        "again; generate a new one on the App's own page (Settings → Developer settings → GitHub " +
-        'Apps → General → Private keys) and follow doc/operating.md from step 2.' +
-        andTheLog,
-      minted,
+    const keyWritten = yield* settle(writeKeyEffect(wanted, created.pem, String(created.id)))
+    if (!keyWritten.ok) {
+      const err = keyWritten.error
+      // The one failure with nothing to hand back: the key exists only in this
+      // function's memory and is about to leave it.
+      return refuse(
+        `the App was created on GitHub — ${created.name} (app ${created.id}) — and its private key ` +
+          `could not be written to ${wanted}: ${err.message}. The key cannot be fetched ` +
+          "again; generate a new one on the App's own page (Settings → Developer settings → GitHub " +
+          'Apps → General → Private keys) and follow doc/operating.md from step 2.' +
+          andTheLog,
+        minted,
+      )
+    }
+    const keyPath = keyWritten.value
+
+    const configWritten = yield* settle(
+      writeMachineConfigEffect(configFile, {
+        app_id: String(created.id),
+        app_private_key_path: resolvePath(keyPath),
+        webhook_secret: created.webhookSecret,
+      }),
     )
-  }
+    if (!configWritten.ok) {
+      const err = configWritten.error
+      // Two of the three values can be written by hand from this sentence. The
+      // third cannot: GitHub generates the webhook secret during the conversion
+      // and returns it exactly once, so it is in this frame and nowhere else, and
+      // the frame is about to return. Naming only the two that survive would
+      // leave an App whose deliveries are signed with a secret that no longer
+      // exists anywhere — every POST to /api/webhook refused, and nothing saying
+      // why. So the refusal names it and gives the one remedy there is.
+      return refuse(
+        `the App was created — ${created.name} (app ${created.id}) — and its key is at ${keyPath}, ` +
+          `but ${configFile} could not be written: ${err.message}. Add these two lines under ` +
+          `github: in it by hand: app_id: "${created.id}" and app_private_key_path: ${resolvePath(keyPath)}. ` +
+          'The third value is lost: the webhook secret was generated by GitHub during this exchange and is ' +
+          "handed back once, so it is not in that file and cannot be read off the App's page — and without " +
+          "it every delivery to /api/webhook is refused. Set a new webhook secret on the App's own " +
+          'page (Settings → Developer settings → GitHub Apps → General → Webhook secret), and write ' +
+          'that one there as webhook_secret.' +
+          andTheLog,
+        minted,
+      )
+    }
 
-  try {
-    await writeMachineConfig(configFile, {
-      app_id: String(created.id),
-      app_private_key_path: resolvePath(keyPath),
-      webhook_secret: created.webhookSecret,
-    })
-  } catch (err) {
-    // Two of the three values can be written by hand from this sentence. The
-    // third cannot: GitHub generates the webhook secret during the conversion
-    // and returns it exactly once, so it is in this frame and nowhere else, and
-    // the frame is about to return. Naming only the two that survive would
-    // leave an App whose deliveries are signed with a secret that no longer
-    // exists anywhere — every POST to /api/webhook refused, and nothing saying
-    // why. So the refusal names it and gives the one remedy there is.
-    return refuse(
-      `the App was created — ${created.name} (app ${created.id}) — and its key is at ${keyPath}, ` +
-        `but ${configFile} could not be written: ${(err as Error).message}. Add these two lines under ` +
-        `github: in it by hand: app_id: "${created.id}" and app_private_key_path: ${resolvePath(keyPath)}. ` +
-        'The third value is lost: the webhook secret was generated by GitHub during this exchange and is ' +
-        "handed back once, so it is not in that file and cannot be read off the App's page — and without " +
-        "it every delivery to /api/webhook is refused. Set a new webhook secret on the App's own " +
-        'page (Settings → Developer settings → GitHub Apps → General → Webhook secret), and write ' +
-        'that one there as webhook_secret.' +
-        andTheLog,
-      minted,
-    )
-  }
+    // The credentials are on disk and they work; if the log would not take the
+    // record, that is a true thing which is not a failure — and it is the one
+    // that lets this page offer a second App after a restart, so it is said
+    // rather than swallowed.
+    const warning =
+      notRecorded === null
+        ? null
+        : `the log did not record it (${notRecorded}), so this page may offer to create ` +
+          'another App once this board process stops. Do not — the App exists.'
 
-  // The credentials are on disk and they work; if the log would not take the
-  // record, that is a true thing which is not a failure — and it is the one
-  // that lets this page offer a second App after a restart, so it is said
-  // rather than swallowed.
-  const warning =
-    notRecorded === null
-      ? null
-      : `the log did not record it (${notRecorded}), so this page may offer to create ` +
-        'another App once this board process stops. Do not — the App exists.'
-
-  return {
-    ok: true,
-    appId: String(created.id),
-    slug: created.slug,
-    name: created.name,
-    keyPath,
-    configFile,
-    webhookActive: attempt.webhookUrl !== null,
-    warning,
-    at: now,
-  }
+    return {
+      ok: true,
+      appId: String(created.id),
+      slug: created.slug,
+      name: created.name,
+      keyPath,
+      configFile,
+      webhookActive: attempt.webhookUrl !== null,
+      warning,
+      at: now,
+    }
+  })
 }
 
 /**
@@ -713,32 +765,31 @@ async function convertAndWrite(
  * narrow it on the way, so the mode is asked for outright afterwards: *the key
  * is 0600* is a fact here rather than a hope.
  */
-async function writeKey(wanted: string, pem: string, distinguish: string): Promise<string> {
-  const absolute = resolvePath(wanted)
-  await mkdir(dirname(absolute), { recursive: true, mode: KEY_DIR_MODE })
+function writeKeyEffect(wanted: string, pem: string, distinguish: string): Effect.Effect<string, Error> {
+  return Effect.gen(function* () {
+    const absolute = yield* sync(() => resolvePath(wanted))
+    yield* io(() => mkdir(dirname(absolute), { recursive: true, mode: KEY_DIR_MODE }))
 
-  let path = wanted
-  let target = absolute
-  if (await exists(absolute)) {
-    const ext = extname(absolute)
-    const aside = `${basename(absolute, ext)}.${distinguish}${ext}`
-    path = `${wanted.slice(0, wanted.length - basename(wanted).length)}${aside}`
-    target = join(dirname(absolute), aside)
-  }
+    let path = wanted
+    let target = absolute
+    if (yield* existsEffect(absolute)) {
+      const ext = extname(absolute)
+      const aside = `${basename(absolute, ext)}.${distinguish}${ext}`
+      path = `${wanted.slice(0, wanted.length - basename(wanted).length)}${aside}`
+      target = join(dirname(absolute), aside)
+    }
 
-  await writeFile(target, pem, { mode: KEY_FILE_MODE })
-  await chmod(target, KEY_FILE_MODE)
-  return path
+    yield* io(() => writeFile(target, pem, { mode: KEY_FILE_MODE }))
+    yield* io(() => chmod(target, KEY_FILE_MODE))
+    return path
+  })
 }
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
-  }
-}
+const existsEffect = (path: string): Effect.Effect<boolean> =>
+  Effect.tryPromise({ try: () => stat(path), catch: (err) => err }).pipe(
+    Effect.as(true),
+    Effect.catch(() => Effect.succeed(false)),
+  )
 
 /** `config.yml` for this environment — the file `@lingtai/env` reads the App from. */
 function machineConfigPath(env: NodeJS.ProcessEnv): string {
@@ -774,46 +825,63 @@ function machineConfigPath(env: NodeJS.ProcessEnv): string {
  * absent is created exclusively (`wx`), which a second creator loses.
  *
  * **What makes two returns of this flow safe is not this guard.** It is the
- * `converting` serialisation in `createCreationSession`: one conversion writes
+ * `converting` semaphore in `createCreationSession`: one conversion writes
  * at a time, so the re-read above is never racing another return of Lingtai's
  * own. That serialisation is load-bearing and nothing here makes it redundant.
  */
-async function writeMachineConfig(file: string, values: Record<string, string>): Promise<void> {
-  const before = await readOrNull(file)
-  const created = before === null
-  const refuseKept = (text: string) => {
-    if (fileAppId(text) !== null) {
-      throw new Error(
-        `${file} already names github.app_id — it was written between this page's check and this write, ` +
-          'and replacing it would send Lingtai to a different App',
+function writeMachineConfigEffect(file: string, values: Record<string, string>): Effect.Effect<void, Error> {
+  return Effect.gen(function* () {
+    const before = yield* readOrNullEffect(file)
+    const created = before === null
+    const refuseKept = (text: string) =>
+      sync(() => fileAppId(text)).pipe(
+        Effect.flatMap((id) =>
+          id === null
+            ? Effect.void
+            : Effect.fail(
+                new Error(
+                  `${file} already names github.app_id — it was written between this page's check and this write, ` +
+                    'and replacing it would send Lingtai to a different App',
+                ),
+              ),
+        ),
+      )
+    if (before !== null) yield* refuseKept(before)
+
+    const doc = parseDocument(before ?? '')
+    if (doc.errors.length > 0)
+      return yield* Effect.fail(new Error(`${file} could not be parsed as YAML: ${doc.errors[0]!.message}`))
+    if (doc.contents !== null && !isMap(doc.contents))
+      return yield* Effect.fail(new Error(`${file} is not a YAML mapping`))
+    if (created)
+      doc.commentBefore = " Lingtai's own configuration. The github: section was written by the board's setup page."
+    // Synchronous and able to throw (`github: null` makes `setIn` throw), so it is
+    // lifted into the failure channel where the old `try` caught it.
+    const text = yield* sync(() => {
+      for (const [name, value] of Object.entries(values)) doc.setIn(['github', name], value)
+      return doc.toString()
+    })
+
+    yield* io(() => mkdir(dirname(file), { recursive: true }))
+    // As late as there is anywhere to put it. What arrived in between is
+    // somebody else's line, and rewriting the whole file is how it is lost.
+    const nowOnDisk = yield* readOrNullEffect(file)
+    if (nowOnDisk !== before) {
+      if (nowOnDisk !== null) yield* refuseKept(nowOnDisk)
+      return yield* Effect.fail(
+        new Error(
+          `${file} changed between this write's own read of it and the write itself — nothing was ` +
+            'written, because rewriting the whole file would have lost that change',
+        ),
       )
     }
-  }
-  if (before !== null) refuseKept(before)
-
-  const doc = parseDocument(before ?? '')
-  if (doc.errors.length > 0) throw new Error(`${file} could not be parsed as YAML: ${doc.errors[0]!.message}`)
-  if (doc.contents !== null && !isMap(doc.contents)) throw new Error(`${file} is not a YAML mapping`)
-  if (created)
-    doc.commentBefore = " Lingtai's own configuration. The github: section was written by the board's setup page."
-  for (const [name, value] of Object.entries(values)) doc.setIn(['github', name], value)
-  const text = doc.toString()
-
-  await mkdir(dirname(file), { recursive: true })
-  // As late as there is anywhere to put it. What arrived in between is
-  // somebody else's line, and rewriting the whole file is how it is lost.
-  const nowOnDisk = await readOrNull(file)
-  if (nowOnDisk !== before) {
-    if (nowOnDisk !== null) refuseKept(nowOnDisk)
-    throw new Error(
-      `${file} changed between this write's own read of it and the write itself — nothing was ` +
-        'written, because rewriting the whole file would have lost that change',
+    // `wx` on a file that was not there: two creators race and the second is
+    // refused by the kernel rather than by a check it can outrun.
+    yield* io(() =>
+      writeFile(file, text, created ? { mode: CONFIG_FILE_MODE, flag: 'wx' } : { mode: CONFIG_FILE_MODE }),
     )
-  }
-  // `wx` on a file that was not there: two creators race and the second is
-  // refused by the kernel rather than by a check it can outrun.
-  await writeFile(file, text, created ? { mode: CONFIG_FILE_MODE, flag: 'wx' } : { mode: CONFIG_FILE_MODE })
-  if (created) await chmod(file, CONFIG_FILE_MODE)
+    if (created) yield* io(() => chmod(file, CONFIG_FILE_MODE))
+  })
 }
 
 /** `github.app_id` in a `config.yml`'s text, or null. Throws where the text will not parse. */
@@ -821,30 +889,27 @@ function fileAppId(text: string): string | null {
   return githubSection(yamlProvider(parseYaml(text))).appId ?? null
 }
 
-async function readOrNull(file: string): Promise<string | null> {
-  try {
-    return await readFile(file, 'utf8')
-  } catch (err) {
-    if (absent(err)) return null
-    throw err
-  }
-}
+const readOrNullEffect = (file: string): Effect.Effect<string | null, Error> =>
+  io(() => readFile(file, 'utf8')).pipe(Effect.catch((err) => (absent(err) ? Effect.succeed(null) : Effect.fail(err))))
 
 // ------------------------------------------------------- what to offer ----
 
 /** The App this log knows about, or null. */
-export async function recordedApp(
+export function recordedAppEffect(
   store: EventStore = eventStore,
-): Promise<{ appId: string; slug: string; at: Date } | null> {
-  const events = await store.read(GITHUB_APP_STREAM)
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const event = events[i]!
-    if (event.type === 'GitHubAppCreated') {
-      const data = event.data as { appId: string; slug: string }
-      return { appId: data.appId, slug: data.slug, at: event.at }
-    }
-  }
-  return null
+): Effect.Effect<{ appId: string; slug: string; at: Date } | null, Error> {
+  return io(() => store.read(GITHUB_APP_STREAM)).pipe(
+    Effect.map((events) => {
+      for (let i = events.length - 1; i >= 0; i -= 1) {
+        const event = events[i]!
+        if (event.type === 'GitHubAppCreated') {
+          const data = event.data as { appId: string; slug: string }
+          return { appId: data.appId, slug: data.slug, at: event.at }
+        }
+      }
+      return null
+    }),
+  )
 }
 
 /** An App this installation has the credentials of, and where they are. */
@@ -891,57 +956,68 @@ export interface Configured {
  * would be written. A guard the last of those does not share is a guard a
  * `state` from a forgotten tab walks straight past an hour later.
  */
-async function configuration(options: { env: NodeJS.ProcessEnv; configFile: string; store: EventStore }): Promise<{
+function configurationEffect(options: {
+  env: NodeJS.ProcessEnv
+  configFile: string
+  store: EventStore
+  readFile?: (path: string) => Effect.Effect<string | null, Error>
+}): Effect.Effect<{
   configured: Configured | null
   minted: { appId: string; slug: string; at: Date } | null
   unanswered: string | null
   unreadable: string | null
 }> {
-  let minted: { appId: string; slug: string; at: Date } | null = null
-  let unanswered: string | null = null
-  try {
-    minted = await recordedApp(options.store)
-  } catch (err) {
-    unanswered = (err as Error).message
-  }
+  return Effect.gen(function* () {
+    const recorded = yield* settle(recordedAppEffect(options.store))
+    const minted = recorded.ok ? recorded.value : null
+    const unanswered = recorded.ok ? null : recorded.error.message
 
-  // **The same election `githubApp()` makes** (`electGithubApp`), and not a
-  // second copy of its rule: an exported id answers for the App whether or not
-  // its key is beside it, and otherwise the file's id does. A named id is
-  // enough in the file — this is the file the flow *writes*, and a
-  // half-finished section in it is still a line that would be replaced by a
-  // different App's.
-  const machine: MachineGithub = { path: options.configFile, section: {} }
-  try {
-    const text = await readOrNull(options.configFile)
-    if (text !== null) machine.section = githubSection(yamlProvider(parseYaml(text)))
-  } catch (err) {
-    machine.unreadable = `${options.configFile} could not be read: ${(err as Error).message}`
-  }
-  const elected = electGithubApp(githubSection(environmentProvider(options.env)), machine, dirname(options.configFile))
-  const envAppId = elected.source === 'environment' ? (elected.values.appId ?? null) : null
-  const fileAppIdValue = elected.source === options.configFile ? (elected.values.appId ?? null) : null
-  const unreadable = elected.unreadable ?? null
+    // **The same election `githubApp()` makes** (`electGithubApp`), and not a
+    // second copy of its rule: an exported id answers for the App whether or not
+    // its key is beside it, and otherwise the file's id does. A named id is
+    // enough in the file — this is the file the flow *writes*, and a
+    // half-finished section in it is still a line that would be replaced by a
+    // different App's.
+    const machine: MachineGithub = { path: options.configFile, section: {} }
+    const read = options.readFile ?? readOrNullEffect
+    const section = yield* settle(
+      read(options.configFile).pipe(
+        Effect.flatMap((text) =>
+          text === null ? Effect.succeed(null) : sync(() => githubSection(yamlProvider(parseYaml(text)))),
+        ),
+      ),
+    )
+    if (!section.ok) machine.unreadable = `${options.configFile} could not be read: ${section.error.message}`
+    else if (section.value !== null) machine.section = section.value
+    const elected = electGithubApp(
+      githubSection(environmentProvider(options.env)),
+      machine,
+      dirname(options.configFile),
+    )
+    const envAppId = elected.source === 'environment' ? (elected.values.appId ?? null) : null
+    const fileAppIdValue = elected.source === options.configFile ? (elected.values.appId ?? null) : null
+    const unreadable = elected.unreadable ?? null
 
-  const appId = envAppId ?? fileAppIdValue
-  // **The id is the configuration's and the slug is the log's**, so the slug
-  // describes this App only when the log is about this App. An operator who
-  // minted 111 here and then created 222 by hand, pointing `config.yml` at it,
-  // would otherwise be shown 222's id beside 111's install link — they install
-  // 111, and `lingtai add` answers *not installed* for 222 with nothing saying
-  // the link was for a different App. A name Lingtai does not know is the
-  // honest answer, and `Configured` already has that sentence.
-  const slug = minted !== null && appId !== null && minted.appId === appId ? minted.slug : null
+    const appId = envAppId ?? fileAppIdValue
+    // **The id is the configuration's and the slug is the log's**, so the slug
+    // describes this App only when the log is about this App. An operator who
+    // minted 111 here and then created 222 by hand, pointing `config.yml` at it,
+    // would otherwise be shown 222's id beside 111's install link — they install
+    // 111, and `lingtai add` answers *not installed* for 222 with nothing saying
+    // the link was for a different App. A name Lingtai does not know is the
+    // honest answer, and `Configured` already has that sentence.
+    const slug = minted !== null && appId !== null && minted.appId === appId ? minted.slug : null
 
-  const configured: Configured | null =
-    envAppId !== null
-      ? { appId: envAppId, slug, where: 'environment', file: null }
-      : fileAppIdValue !== null
-        ? { appId: fileAppIdValue, slug, where: 'file', file: options.configFile }
-        : null
-  // An exported App answers whatever the file says, so a broken file does not
-  // stand in its way.
-  return { configured, minted, unanswered, unreadable: envAppId === null ? unreadable : null }
+    const configured: Configured | null =
+      envAppId !== null
+        ? { appId: envAppId, slug, where: 'environment', file: null }
+        : fileAppIdValue !== null
+          ? { appId: fileAppIdValue, slug, where: 'file', file: options.configFile }
+          : null
+    // An exported App answers whatever the file says, so a broken file does not
+    // stand in its way.
+    return { configured, minted, unanswered, unreadable: envAppId === null ? unreadable : null }
+  })
 }
 
 export interface Offer {
@@ -1011,7 +1087,7 @@ export interface Offer {
  * after the conversion carries `minted`: the App exists whether or not the
  * record went down, and the page names it either way.
  */
-export async function offerCreation(
+export function offerCreationEffect(
   options: {
     env?: NodeJS.ProcessEnv
     /** The write target, which is also what `configured` is read from. */
@@ -1020,34 +1096,41 @@ export async function offerCreation(
     session?: CreationSession
     now?: Date
   } = {},
-): Promise<Offer> {
-  const env = options.env ?? process.env
-  const configFile = options.configFile ?? machineConfigPath(env)
-  const session = options.session ?? creation
-  const { configured, minted, unanswered, unreadable } = await configuration({
-    env,
-    configFile,
-    store: options.store ?? eventStore,
-  })
-  const outcome = session.outcome()
-  const mintedHere = session.unfinished() ?? (minted === null ? null : { appId: minted.appId, slug: minted.slug })
+): Effect.Effect<Offer> {
+  return Effect.gen(function* () {
+    const env = options.env ?? process.env
+    const configFile = options.configFile ?? machineConfigPath(env)
+    const session = options.session ?? creation
+    const { configured, minted, unanswered, unreadable } = yield* configurationEffect({
+      env,
+      configFile,
+      store: options.store ?? eventStore,
+    })
+    const outcome = session.outcome()
+    const mintedHere = session.unfinished() ?? (minted === null ? null : { appId: minted.appId, slug: minted.slug })
 
-  return {
-    offered: unanswered === null && unreadable === null && configured === null && outcome?.ok !== true,
-    configured,
-    minted: mintedHere,
-    unanswered,
-    unreadable,
-    // The App the person is being sent to install is the one they are
-    // configured with, and the slug is null unless the log agrees it is that
-    // App — so an unfinished creation's slug is never offered as this one's.
-    installUrl: configured?.slug ? `https://github.com/apps/${configured.slug}/installations/new` : null,
-    keyPath: KEY_PATH_DEFAULT,
-    suggestedName: suggestedName(),
-    permissions: REQUIRED_PERMISSIONS,
-    outstanding: session.outstanding(options.now),
-    outcome,
-  }
+    return {
+      offered: unanswered === null && unreadable === null && configured === null && outcome?.ok !== true,
+      configured,
+      minted: mintedHere,
+      unanswered,
+      unreadable,
+      // The App the person is being sent to install is the one they are
+      // configured with, and the slug is null unless the log agrees it is that
+      // App — so an unfinished creation's slug is never offered as this one's.
+      installUrl: configured?.slug ? `https://github.com/apps/${configured.slug}/installations/new` : null,
+      keyPath: KEY_PATH_DEFAULT,
+      suggestedName: suggestedName(),
+      permissions: REQUIRED_PERMISSIONS,
+      outstanding: session.outstanding(options.now),
+      outcome,
+    }
+  })
+}
+
+/** `offerCreationEffect` as a promise, for the board's pages and routes (0101 §7), until #790. */
+export function offerCreation(...args: Parameters<typeof offerCreationEffect>): Promise<Offer> {
+  return Effect.runPromise(offerCreationEffect(...args))
 }
 
 /**

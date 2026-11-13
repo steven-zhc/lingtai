@@ -10,11 +10,13 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { requeueNote } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { answerOpenMarker } from '../src/body-section.ts'
-import { editBodyAndRequeueHolding, writeSection } from '../src/edit-body.ts'
+import { editBodyAndRequeueHolding } from '../src/edit-body.ts'
 import type { IssueChannel } from '../src/tell.ts'
+import { writeSectionEffect } from '../src/write-section.ts'
 import { memoryTickets, type MemoryTickets } from '../test/memory-tickets.ts'
 
 const PROJECT = 'lingtai'
@@ -309,6 +311,9 @@ describe('editBodyAndRequeueHolding', () => {
     expect(issue.body).toContain('the answer')
   })
 })
+
+const writeSection = (options: Parameters<typeof writeSectionEffect>[0]) =>
+  Effect.runPromise(writeSectionEffect(options))
 
 describe('writeSection', () => {
   it('is idempotent: writing the same text twice leaves one section', async () => {

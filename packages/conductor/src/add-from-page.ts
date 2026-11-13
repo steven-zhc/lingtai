@@ -15,19 +15,17 @@
  * ownerless project whose recipe says `github` — so `localTicketsOf` is where
  * the page overrides it, and #977 deletes that function with the rule.
  *
- * **Written with `.then` chains, not `async`** — this package is at its
- * `effect-ratchet` baseline.
+ * **Every read is an Effect.** The ports `@lingtai/setup` types as promises are
+ * filled with `runPort`, one call per member, until they are Effect ports.
  */
-import { execFile } from 'node:child_process'
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { promisify } from 'node:util'
 
 import type { ProjectState } from '@lingtai/domain'
 import { githubApp, githubClientAuth } from '@lingtai/env'
 import { createFileLocker, type Locker } from '@lingtai/env/lock'
-import { createGitHubClient, GitHubFailed, installationForRepo, type GitHubClient } from '@lingtai/github'
+import { GitHubFailed, makeGitHub, type GitHub } from '@lingtai/github'
 import { baseOf, diskFiles, type RecipeFiles, recipePath, resolveLocalRecipe, resolveSource } from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
 import {
@@ -51,7 +49,8 @@ import {
 } from '@lingtai/setup'
 import { Effect } from 'effect'
 
-import { add, addLocal } from './onboard.ts'
+import { addEffect, addLocalEffect } from './onboard.ts'
+import { asFailure, runPort } from './port-face.ts'
 import { loadAllProjects, signedInHere } from './projects.ts'
 import { liveHistory } from './ticket-history.ts'
 
@@ -71,92 +70,116 @@ export function readLocalTarget(input: string) {
   return readLocalRepository(input, {
     home: homedir(),
     stat: (path) =>
-      Effect.promise(() =>
-        stat(path).then(
-          (s) => (s.isDirectory() ? ('directory' as const) : ('file' as const)),
-          () => 'missing' as const,
-        ),
+      Effect.tryPromise(() => stat(path)).pipe(
+        Effect.match({
+          onSuccess: (s) => (s.isDirectory() ? ('directory' as const) : ('file' as const)),
+          onFailure: () => 'missing' as const,
+        }),
       ),
     git: gitIn,
   })
 }
 
-/** A client over a GitHub repository: the saved `gh` login, or the App's installation on it. */
-function githubClientFor(owner: string, repo: string): Promise<GitHubClient> {
-  const auth = githubClientAuth()
-  if ('kind' in auth && auth.kind === 'gh') return createGitHubClient({ auth: { kind: 'gh' }, owner, repo })
-  const app = githubApp()
-  return installationForRepo(app, owner, repo).then((installation) =>
-    createGitHubClient({ auth: app, owner, repo, installation }),
+/** The Effect client over a GitHub repository: the saved `gh` login, or the App's installation on it. */
+const githubFor = (owner: string, repo: string) =>
+  Effect.try({ try: () => githubClientAuth(), catch: asFailure }).pipe(
+    Effect.flatMap((auth) =>
+      'kind' in auth && auth.kind === 'gh'
+        ? makeGitHub({ auth: { kind: 'gh' }, owner, repo })
+        : Effect.try({ try: () => githubApp(), catch: asFailure }).pipe(
+            Effect.flatMap((app) => makeGitHub({ auth: app, owner, repo })),
+          ),
+    ),
   )
-}
 
 /** Files in a checkout on this machine. */
 const diskReader = (dir: string): SetupReader => ({
   has: (path) =>
-    stat(join(dir, path)).then(
-      () => true,
-      () => false,
+    runPort(
+      Effect.tryPromise(() => stat(join(dir, path))).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      ),
     ),
-  read: (path) => readFile(join(dir, path), 'utf8').catch(() => null),
+  read: (path) =>
+    runPort(
+      Effect.tryPromise(() => readFile(join(dir, path), 'utf8')).pipe(Effect.orElseSucceed((): string | null => null)),
+    ),
 })
 
-/** Files in a GitHub repository at its default branch; a 404 is an absence, anything else is "could not tell". */
-function githubReader(client: Promise<GitHubClient>, owner: string, repo: string): SetupReader {
-  const refOf = client.then((c) => c.defaultBranch())
+/**
+ * Files in a GitHub repository at its default branch; a 404 is an absence,
+ * anything else is "could not tell". `client` and `ref` are cached Effects: one
+ * installation lookup and one default-branch read serve every member call.
+ */
+function githubReader(
+  client: Effect.Effect<GitHub, Error>,
+  ref: Effect.Effect<string, Error>,
+  owner: string,
+  repo: string,
+): SetupReader {
   return {
     has: (path) =>
-      Promise.all([client, refOf]).then(([c, ref]) =>
-        c.request('GET', `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`).then(
-          () => true,
-          (err) => {
-            if (err instanceof GitHubFailed && err.status === 404) return false
-            throw err
-          },
-        ),
+      runPort(
+        Effect.gen(function* () {
+          const g = yield* client
+          const branch = yield* ref
+          return yield* g
+            .request('GET', `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`)
+            .pipe(
+              Effect.as(true),
+              Effect.catchIf(
+                (err) => err instanceof GitHubFailed && err.status === 404,
+                () => Effect.succeed(false),
+              ),
+            )
+        }),
       ),
     read: (path) =>
-      Promise.all([client, refOf]).then(
-        ([c, ref]) => c.fileAt(path, ref).catch(() => null),
-        () => null,
+      runPort(
+        Effect.gen(function* () {
+          const g = yield* client
+          const branch = yield* ref
+          return yield* g.fileAt(path, branch)
+        }).pipe(Effect.orElseSucceed((): string | null => null)),
       ),
   }
 }
 
 /** The readers a proposal reads through, for one target. */
-export function liveReaders(target: SetupTarget): ProposalReaders {
+export function liveReaders(target: SetupTarget): Effect.Effect<ProposalReaders> {
   if (target.kind === 'github') {
-    const client = githubClientFor(target.owner, target.repo)
-    // A rejected promise nobody awaited yet must not surface as unhandled.
-    client.catch(() => undefined)
-    return {
-      setupReader: githubReader(client, target.owner, target.repo),
-      defaultBranch: () => client.then((c) => c.defaultBranch()),
-      runtimes: askRuntimes,
-      history: liveHistory,
-      origin: () => Promise.resolve(null),
-    }
+    const { owner, repo } = target
+    return Effect.gen(function* () {
+      const client = yield* Effect.cached(githubFor(owner, repo))
+      const ref = yield* Effect.cached(Effect.flatMap(client, (g) => g.defaultBranch()))
+      return {
+        setupReader: githubReader(client, ref, owner, repo),
+        defaultBranch: () => runPort(ref),
+        runtimes: askRuntimes,
+        history: liveHistory,
+        origin: () => Promise.resolve(null),
+      }
+    })
   }
-  return {
+  return Effect.succeed({
     setupReader: diskReader(target.path),
     // A directory lands on `lingtai-base`, made from the branch it is on (0104 §15), not on the branch checked out.
     defaultBranch: () => Promise.resolve(LINGTAI_BASE),
     runtimes: askRuntimes,
     history: liveHistory,
     origin: (path) =>
-      promisify(execFile)('git', ['remote', 'get-url', 'origin'], { cwd: path }).then(
-        (r) => (r.stdout.trim() === '' ? null : r.stdout.trim()),
-        () => null,
+      runPort(
+        gitIn(path, ['remote', 'get-url', 'origin']).pipe(Effect.map((r) => (r.ok && r.out !== '' ? r.out : null))),
       ),
-  }
+  })
 }
 
 /** Every line step 2 shows, read once; a failed read is a `known: false` line and not an error. */
-export function proposalFor(
-  target: SetupTarget,
-  readers: ProposalReaders = liveReaders(target),
-): Effect.Effect<Proposal, never> {
-  return proposeSetup(target, readers)
+export function proposalFor(target: SetupTarget, readers?: ProposalReaders): Effect.Effect<Proposal, never> {
+  return readers
+    ? proposeSetup(target, readers)
+    : Effect.flatMap(liveReaders(target), (live) => proposeSetup(target, live))
 }
 
 /**
@@ -286,11 +309,8 @@ export function liveRegister(target: SetupTarget, home?: string): AddPorts['regi
   if (target.kind === 'github') {
     return (form) => {
       const lines: string[] = []
-      return Effect.tryPromise({
-        try: () => add({ slug: `${target.owner}/${target.repo}` }, (line) => lines.push(line)),
-        catch: reasonOf,
-      }).pipe(
-        Effect.mapError((reason) => new Error(reason)),
+      return addEffect({ slug: `${target.owner}/${target.repo}` }, (line) => lines.push(line)).pipe(
+        Effect.mapError((e) => new Error(reasonOf(e))),
         Effect.flatMap((added) =>
           added.ok
             ? Effect.void
@@ -318,21 +338,19 @@ export function liveRegister(target: SetupTarget, home?: string): AddPorts['regi
       }
       const tip = yield* gitIn(dir, ['rev-parse', '--verify', `refs/heads/${form.base}^{commit}`])
       if (!tip.ok) return yield* Effect.fail(new Error(`could not read ${form.base} in ${dir} — ${tip.out}`))
-      yield* Effect.tryPromise({
-        try: () =>
-          resolveLocalRecipe(form.project, { home, signedIn: signedInHere }).then((resolved) =>
-            addLocal(
-              {
-                project: form.project,
-                base: baseOf(resolved.recipe),
-                configHash: resolved.configHash,
-                fromSha: tip.out,
-              },
-              resolved,
-            ),
-          ),
+      const resolved = yield* Effect.tryPromise({
+        try: () => resolveLocalRecipe(form.project, { home, signedIn: signedInHere }),
         catch: (e) => new Error(reasonOf(e)),
       })
+      yield* addLocalEffect(
+        {
+          project: form.project,
+          base: baseOf(resolved.recipe),
+          configHash: resolved.configHash,
+          fromSha: tip.out,
+        },
+        resolved,
+      ).pipe(Effect.mapError((e) => new Error(reasonOf(e))))
     })
 }
 

@@ -47,15 +47,6 @@ run.
    cannot run on tickets it does not trust, so an implementation is chosen by
    whoever runs the machine, like a database driver.
 
-   **Not every write Lingtai makes goes through these eight.**
-   `wizard.ts`'s `holdAll` calls GitHub's additive label write,
-   `client.request('POST', …/labels)`, directly — `setLabels` here replaces
-   the label set, which is the wrong shape for a hold a person is applying one
-   issue at a time (`ticket-store.ts:49-53`, `wizard.ts:189-200`). That write
-   stays on `GitHubClient` and has no equivalent on `Tickets`, so a `db`
-   project's hold-all keeps labelling GitHub issues rather than that
-   project's own tickets.
-
    Two implementations exist. GitHub issues, where `GitHubClient` itself
    satisfies `Tickets` structurally — pinned by a type-only check in
    `unit/tickets.test.ts`. And `dbTickets`

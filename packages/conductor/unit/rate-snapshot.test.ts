@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import type { RateRow } from '@lingtai/domain/rate-card'
 import { LITELLM_FIXTURE } from '@lingtai/domain/test/litellm-fixture'
+import { Deferred, Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -11,6 +12,7 @@ import {
   readRateSnapshot,
   ratesDue,
   realRatePorts,
+  ratesSettled,
   refreshRates,
   type FetchNote,
   type RatePorts,
@@ -21,10 +23,11 @@ function ports(over: Partial<RatePorts> = {}) {
   const log = { fetches: 0, writes: 0, notes: [] as FetchNote[] }
   const p: RatePorts = {
     wanted: async () => [{ model: 'gpt-6-astra', runtime: 'codex' }],
-    table: async () => {
-      log.fetches += 1
-      return LITELLM_FIXTURE
-    },
+    table: () =>
+      Effect.sync(() => {
+        log.fetches += 1
+        return LITELLM_FIXTURE
+      }),
     read: () => stored,
     write: (rows) => {
       log.writes += 1
@@ -44,11 +47,35 @@ describe('refreshRates', () => {
     expect(log).toMatchObject({ fetches: 1, writes: 1 })
   })
 
+  it('two refreshes while the first fetch waits make one fetch and one write, and ratesSettled waits for it', async () => {
+    const release = Deferred.makeUnsafe<void>()
+    const { p, log } = ports()
+    const waiting: RatePorts = {
+      ...p,
+      table: () =>
+        Effect.gen(function* () {
+          yield* Deferred.await(release)
+          return yield* p.table()
+        }),
+    }
+    const first = refreshRates(waiting)
+    const second = refreshRates(waiting)
+    let settled = false
+    const settledP = ratesSettled().then(() => {
+      settled = true
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(settled).toBe(false)
+    expect(log.writes).toBe(0)
+    Effect.runSync(Deferred.succeed(release, undefined))
+    await Promise.all([first, second, settledP])
+    expect(settled).toBe(true)
+    expect(log).toMatchObject({ fetches: 1, writes: 1 })
+  })
+
   it('a failed fetch writes no snapshot and says so in the note', async () => {
     const { p, log } = ports({
-      table: async () => {
-        throw new Error('HTTP 503')
-      },
+      table: () => Effect.fail(new Error('HTTP 503')),
     })
     await refreshRates(p)
     expect(log.writes).toBe(0)
@@ -65,7 +92,7 @@ describe('refreshRates', () => {
     const { p, stored } = ports()
     await refreshRates(p)
     const changed = { 'gpt-6-astra': { ...LITELLM_FIXTURE['gpt-6-astra'], input_cost_per_token: 0.00002 } }
-    await refreshRates({ ...p, table: async () => changed })
+    await refreshRates({ ...p, table: () => Effect.succeed(changed) })
     expect(stored().map((r) => [r.from, r.input])).toEqual([['2026-10-27', 20]])
   })
 })
@@ -96,16 +123,14 @@ describe('a model that gains its first price (#680)', () => {
     await refreshRates(p)
     expect(rebuilds).toBe(1)
     const changed = { 'gpt-6-astra': { ...LITELLM_FIXTURE['gpt-6-astra'], input_cost_per_token: 0.00002 } }
-    await refreshRates({ ...p, table: async () => changed })
+    await refreshRates({ ...p, table: () => Effect.succeed(changed) })
     expect(rebuilds).toBe(1)
   })
 
   it('does not rebuild after a failed fetch', async () => {
     let rebuilds = 0
     const { p } = ports({
-      table: async () => {
-        throw new Error('HTTP 503')
-      },
+      table: () => Effect.fail(new Error('HTTP 503')),
       rebuild: async () => {
         rebuilds += 1
         return ''
@@ -143,9 +168,7 @@ describe('the snapshot file', () => {
     const real = realRatePorts(async () => [{ model: 'gpt-6-astra', runtime: 'codex' }], env)
     await refreshRates({
       ...real,
-      table: async () => {
-        throw new Error('boom')
-      },
+      table: () => Effect.fail(new Error('boom')),
     })
     expect(readFileSync(file).equals(before)).toBe(true)
     expect(JSON.parse(readFileSync(join(dir, 'rates-fetch.json'), 'utf8'))).toMatchObject({ ok: false, error: 'boom' })
@@ -153,9 +176,7 @@ describe('the snapshot file', () => {
 
   it('a note that cannot be written does not reject the refresh', async () => {
     const { p } = ports({
-      table: async () => {
-        throw new Error('boom')
-      },
+      table: () => Effect.fail(new Error('boom')),
       note: () => {
         throw new Error('ENOSPC')
       },

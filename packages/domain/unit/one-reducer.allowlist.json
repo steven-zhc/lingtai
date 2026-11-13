@@ -81,7 +81,7 @@
   },
   {
     "file": "packages/conductor/src/create-app.ts",
-    "function": "recordedApp",
+    "function": "recordedAppEffect",
     "type": "GitHubAppCreated",
     "count": 1,
     "class": "select",
@@ -113,7 +113,7 @@
   },
   {
     "file": "packages/conductor/src/split-ticket.ts",
-    "function": "splitTicketHolding",
+    "function": "splitTicketHoldingEffect",
     "type": "SplitStarted",
     "count": 1,
     "class": "select",
@@ -121,7 +121,7 @@
   },
   {
     "file": "packages/conductor/src/tell.ts",
-    "function": "tellGitHubAbout",
+    "function": "tellGitHubAboutEffect",
     "type": "EndActionsResolved",
     "count": 1,
     "class": "reaction",

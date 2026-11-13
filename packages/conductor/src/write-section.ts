@@ -8,7 +8,7 @@ import { Effect } from 'effect'
 
 import { upsertSection } from './body-section.ts'
 import { asFailure } from './port-face.ts'
-import { record, split, tellGitHub, type IssueChannel } from './tell.ts'
+import { recordEffect, split, tellGitHubEffect, type IssueChannel } from './tell.ts'
 import { BodyChanged } from './ticket-store.ts'
 
 /** `writeSection` tried twice and the section is still not there. */
@@ -43,10 +43,6 @@ function sectionTextFor(key: string, text: string): string {
  * the PATCH committed), and the read-back finds the section anyway — that is
  * found, not retried, with a second `IssueUpdated` saying so.
  */
-export function writeSection(options: WriteSectionOptions): Promise<WriteSectionResult> {
-  return Effect.runPromise(writeSectionEffect(options))
-}
-
 interface WriteSectionOptions {
   store: EventStore
   github: IssueChannel
@@ -97,9 +93,7 @@ export function writeSectionEffect(options: WriteSectionOptions): Effect.Effect<
       // Uninterruptible: the PATCH is a write, and interrupting would hand the
       // decide lock to a second decider while this one is still in flight.
       const told = yield* Effect.uninterruptible(
-        Effect.promise(() =>
-          tellGitHub({ store, github, ticketId, change: { kind: 'body', body: next, ifUnchanged: body } }),
-        ),
+        tellGitHubEffect({ store, github, ticketId, change: { kind: 'body', body: next, ifUnchanged: body } }),
       )
 
       const readBack = yield* bodyOf(github, issue).pipe(
@@ -124,14 +118,12 @@ export function writeSectionEffect(options: WriteSectionOptions): Effect.Effect<
       if (landed) {
         if (told.recorded === 'IssueUpdateFailed') {
           yield* Effect.uninterruptible(
-            Effect.promise(() =>
-              record(store, ticketId, 'IssueUpdated', {
-                project: target.project,
-                issue: String(issue),
-                change: 'body',
-                detail: `found on read-back after: ${errorMessage(told.error)}`,
-              }),
-            ),
+            recordEffect(store, ticketId, 'IssueUpdated', {
+              project: target.project,
+              issue: String(issue),
+              change: 'body',
+              detail: `found on read-back after: ${errorMessage(told.error)}`,
+            }),
           )
         }
         return { written: true }

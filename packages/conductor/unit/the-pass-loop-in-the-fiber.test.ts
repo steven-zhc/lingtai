@@ -22,7 +22,7 @@ describe('the catch in a step', () => {
       runAttemptEffect({
         recipe,
         context,
-        emit: () => {},
+        emit: () => Effect.void,
         actionsAt: () => [],
         bodies: {
           ...NOT_BUILT_YET,
@@ -61,9 +61,10 @@ describe('the catch in a step', () => {
           runAttemptEffect({
             recipe,
             context,
-            emit: (event) => {
-              events.push(event)
-            },
+            emit: (event) =>
+              Effect.sync(() => {
+                events.push(event)
+              }),
             actionsAt: (step) => (step === 'admit' ? [waiting] : []),
           }),
         )

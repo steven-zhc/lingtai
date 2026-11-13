@@ -109,18 +109,20 @@ describe('a build refusal the base shares', () => {
     })
     const tree = { cut: async () => {}, remove: async () => {}, plant: async () => {} }
     const baseIsRed = async () => {
-      const answer = await check.ask({
-        project: 'proj',
-        base: 'main',
-        baseSha: SHA,
-        command: 'pnpm test',
-        prepared: [],
-        env: {},
-        runId: 'pass-1',
-        signal: new AbortController().signal,
-        timeoutMs: 1000,
-        tree,
-      })
+      const answer = await Effect.runPromise(
+        check.ask({
+          project: 'proj',
+          base: 'main',
+          baseSha: SHA,
+          command: 'pnpm test',
+          prepared: [],
+          env: {},
+          runId: 'pass-1',
+          signal: new AbortController().signal,
+          timeoutMs: 1000,
+          tree,
+        }),
+      )
       return answer.verdict === 'red'
         ? { red: { command: 'pnpm test', base: 'main', baseSha: SHA, evidence: answer.evidence } }
         : { notRed: answer.verdict }

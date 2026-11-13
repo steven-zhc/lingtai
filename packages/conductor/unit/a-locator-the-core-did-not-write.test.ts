@@ -170,6 +170,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { TheDesign } from '@lingtai/actions'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { readWhatAFileKept } from '../src/file-port.ts'
@@ -379,7 +380,7 @@ describe('a locator the core did not write', () => {
     })
 
     for (const locator of [A_URL, A_PATH]) {
-      expect(await read({ path: locator })).toEqual({ document: DOCUMENT })
+      expect(await Effect.runPromise(read({ path: locator }))).toEqual({ document: DOCUMENT })
     }
     expect(asked).toEqual([join(NOWHERE, A_URL), join(NOWHERE, A_PATH)])
 
@@ -392,7 +393,7 @@ describe('a locator the core did not write', () => {
     })
 
     for (const locator of [A_URL, A_PATH]) {
-      expect(await broken({ path: locator })).toEqual({
+      expect(await Effect.runPromise(broken({ path: locator }))).toEqual({
         notRead: `ENOENT: no such file or directory, open '${join(NOWHERE, locator)}'`,
       })
     }

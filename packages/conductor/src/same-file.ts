@@ -9,6 +9,7 @@
  * with no `Fix` row, or none naming a file, collides with nothing — what this
  * lets through is caught by the re-review on a moved base.
  */
+import { Effect } from 'effect'
 
 /** A path-ish token: it has a `/` or an extension. `pnpm`, `Fix` and `N=2` have neither. */
 function looksLikeFile(token: string): boolean {
@@ -59,15 +60,22 @@ export function collision(a: readonly string[], b: readonly string[]): { file: s
  * Null is not empty: a ticket whose body is unknown is not known to be safe to
  * run beside another.
  */
-export async function readFixFiles(
+export function readFixFiles(
   source: { getIssue(number: number): Promise<{ body: string }> },
   issue: number,
 ): Promise<string[] | null> {
-  try {
-    return fixFiles((await source.getIssue(issue)).body)
-  } catch {
-    return null
-  }
+  return Effect.runPromise(readFixFilesEffect(source, issue))
+}
+
+/** `readFixFiles` as an Effect: it never fails, and a read that threw is null. */
+export function readFixFilesEffect(
+  source: { getIssue(number: number): Promise<{ body: string }> },
+  issue: number,
+): Effect.Effect<string[] | null> {
+  return Effect.tryPromise({ try: () => source.getIssue(issue), catch: (error) => error }).pipe(
+    Effect.map((found) => fixFiles(found.body)),
+    Effect.catch(() => Effect.succeed(null)),
+  )
 }
 
 /** The sentence for a ticket that must wait for one in flight, or null when it need not. */

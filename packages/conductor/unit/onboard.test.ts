@@ -8,17 +8,18 @@ import { type Installation, NotInstalledError } from '@lingtai/github'
  * decision itself rather than about a command that also talks to GitHub.
  */
 import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
   type AddOptions,
   checkInstallation,
-  governing,
+  governingEffect,
   otherOwner,
   recheck,
   registrationLine,
   resumeOnboarding,
-  warnIfProtected,
+  warnIfProtectedEffect,
 } from '../src/onboard.ts'
 
 const recipe = (base: string) => `
@@ -40,10 +41,8 @@ const SLUG = 'steven-zhc/nextloom-ai-admin'
 
 describe('the base lingtai add records', () => {
   it("is the recipe's, when the branch it was read from agrees", async () => {
-    const found = await governing(
-      reader({ [`develop:${RECIPE_PATH}`]: recipe('develop') }),
-      { ref: 'develop', named: true },
-      SLUG,
+    const found = await Effect.runPromise(
+      governingEffect(reader({ [`develop:${RECIPE_PATH}`]: recipe('develop') }), { ref: 'develop', named: true }, SLUG),
     )
 
     expect(found.ok).toBe(true)
@@ -58,13 +57,15 @@ describe('the base lingtai add records', () => {
    * hash recorded beside the base — is the one on *that* branch.
    */
   it('is adopted from the recipe when nobody named a branch', async () => {
-    const found = await governing(
-      reader({
-        [`main:${RECIPE_PATH}`]: recipe('develop'),
-        [`develop:${RECIPE_PATH}`]: recipe('develop').replace('kinds: [bug]', 'kinds: [bug, tech-debt]'),
-      }),
-      { ref: 'main', named: false },
-      SLUG,
+    const found = await Effect.runPromise(
+      governingEffect(
+        reader({
+          [`main:${RECIPE_PATH}`]: recipe('develop'),
+          [`develop:${RECIPE_PATH}`]: recipe('develop').replace('kinds: [bug]', 'kinds: [bug, tech-debt]'),
+        }),
+        { ref: 'main', named: false },
+        SLUG,
+      ),
     )
 
     expect(found.ok).toBe(true)
@@ -77,13 +78,15 @@ describe('the base lingtai add records', () => {
   })
 
   it('refuses, naming both branches, when a person named one the recipe contradicts', async () => {
-    const found = await governing(
-      reader({
-        [`main:${RECIPE_PATH}`]: recipe('develop'),
-        [`develop:${RECIPE_PATH}`]: recipe('develop'),
-      }),
-      { ref: 'main', named: true },
-      SLUG,
+    const found = await Effect.runPromise(
+      governingEffect(
+        reader({
+          [`main:${RECIPE_PATH}`]: recipe('develop'),
+          [`develop:${RECIPE_PATH}`]: recipe('develop'),
+        }),
+        { ref: 'main', named: true },
+        SLUG,
+      ),
     )
 
     expect(found.ok).toBe(false)
@@ -95,10 +98,8 @@ describe('the base lingtai add records', () => {
   })
 
   it('refuses when the branch the recipe names has no recipe on it', async () => {
-    const found = await governing(
-      reader({ [`main:${RECIPE_PATH}`]: recipe('develop') }),
-      { ref: 'main', named: false },
-      SLUG,
+    const found = await Effect.runPromise(
+      governingEffect(reader({ [`main:${RECIPE_PATH}`]: recipe('develop') }), { ref: 'main', named: false }, SLUG),
     )
 
     expect(found.ok).toBe(false)
@@ -109,14 +110,16 @@ describe('the base lingtai add records', () => {
 
   /** One hop is a bootstrap; two is a recipe disagreeing with the branch it is on. */
   it('refuses rather than following a second hop', async () => {
-    const found = await governing(
-      reader({
-        [`main:${RECIPE_PATH}`]: recipe('develop'),
-        [`develop:${RECIPE_PATH}`]: recipe('release'),
-        [`release:${RECIPE_PATH}`]: recipe('release'),
-      }),
-      { ref: 'main', named: false },
-      SLUG,
+    const found = await Effect.runPromise(
+      governingEffect(
+        reader({
+          [`main:${RECIPE_PATH}`]: recipe('develop'),
+          [`develop:${RECIPE_PATH}`]: recipe('release'),
+          [`release:${RECIPE_PATH}`]: recipe('release'),
+        }),
+        { ref: 'main', named: false },
+        SLUG,
+      ),
     )
 
     expect(found.ok).toBe(false)
@@ -152,13 +155,15 @@ describe('finishing an onboarding the wizard recorded', () => {
    */
   it('adopts the base the recipe declares when review moved it', async () => {
     const options = resumeOnboarding({ owner: 'steven-zhc', project: 'nextloom-ai-admin', base: 'main' })
-    const found = await governing(
-      reader({
-        [`main:${RECIPE_PATH}`]: recipe('develop'),
-        [`develop:${RECIPE_PATH}`]: recipe('develop'),
-      }),
-      options.base!,
-      SLUG,
+    const found = await Effect.runPromise(
+      governingEffect(
+        reader({
+          [`main:${RECIPE_PATH}`]: recipe('develop'),
+          [`develop:${RECIPE_PATH}`]: recipe('develop'),
+        }),
+        options.base!,
+        SLUG,
+      ),
     )
 
     expect(found.ok).toBe(true)
@@ -380,7 +385,7 @@ describe('warnIfProtected', () => {
 
   const run = async (answers: Record<string, unknown>) => {
     const said: string[] = []
-    await warnIfProtected(asked(answers), 'o', 'r', 'main', (line) => said.push(line))
+    await Effect.runPromise(warnIfProtectedEffect(asked(answers), 'o', 'r', 'main', (line: string) => said.push(line)))
     return said.join('\n')
   }
 

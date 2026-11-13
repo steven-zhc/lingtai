@@ -40,6 +40,7 @@ export { BodyChanged }
 
 import { makeDbTickets, promiseDbTickets } from './db-tickets.ts'
 import type { TicketDetail, TicketListing } from './discover.ts'
+import { asFailure } from './port-face.ts'
 
 /**
  * A ticket's detail plus where it lives, if anywhere a person can browse to —
@@ -57,11 +58,9 @@ export type Ticket = TicketDetail & { url: string | null }
  * silently until `pnpm typecheck` next ran.
  *
  * **Not every write Lingtai makes against GitHub goes through a verb here.**
- * `wizard.ts`'s `holdAll` calls `client.request('POST', …/labels)` directly —
- * GitHub's additive label write, which has no typed method on `GitHubClient`
- * and no equivalent here, because this interface's `setLabels` replaces
- * (`wizard.ts:189-200` says why a replace is wrong for that one caller and an
- * untyped union write is right).
+ * GitHub's additive label write is `GitHubClient.addLabels`, and has no
+ * equivalent here, because this interface's `setLabels` replaces, which is
+ * wrong for a caller that must add a label to whatever is already there.
  *
  * `dependencies` on a `Ticket` or a `TicketListing` is `{ blockedBy: number }
  * | null`, same as `GitHubClient`'s — `discover.ts`'s `runnableNow` reads
@@ -131,12 +130,12 @@ export interface TicketStore {
    * about whether a write landed — which is why repeating is how a failure is
    * answered.
    */
-  propose(ticket: ProposedTicket): Promise<ProposedRef>
+  propose(ticket: ProposedTicket): Effect.Effect<ProposedRef, Error>
   /**
    * Withdraw a ticket this store opened and the log did not record, naming the
    * one that is. Only ever called by the call that `created` it.
    */
-  withdraw(externalRef: string, keptRef: string, why: string): Promise<void>
+  withdraw(externalRef: string, keptRef: string, why: string): Effect.Effect<void, Error>
 }
 
 /** How a GitHub issue says which finding it is. Invisible when rendered. */
@@ -160,46 +159,54 @@ export function githubTicketStore(
     created,
   })
 
-  /** The issue a key belongs to: the oldest one carrying it. */
-  async function carrying(key: string, since: Date): Promise<Ticket | undefined> {
-    const marker = keyMarker(key)
-    const found = (await client.listIssuesSince(new Date(since.getTime() - SKEW_MS)))
-      .filter((i) => i.body.includes(marker))
-      .sort((a, b) => a.number - b.number)
-    return found[0]
-  }
+  const lift = <A>(f: () => Promise<A>): Effect.Effect<A, Error> => Effect.tryPromise({ try: f, catch: asFailure })
 
-  async function withdraw(externalRef: string, keptRef: string, why: string): Promise<void> {
-    const n = Number(externalRef)
-    await client.comment(n, `Duplicate of #${keptRef} — ${why}.`)
-    await client.closeIssue(n, 'not_planned')
-  }
+  /** The issue a key belongs to: the oldest one carrying it. */
+  const carrying = (key: string, since: Date): Effect.Effect<Ticket | undefined, Error> =>
+    lift(() => client.listIssuesSince(new Date(since.getTime() - SKEW_MS))).pipe(
+      Effect.map((listed) => {
+        const marker = keyMarker(key)
+        return listed.filter((i) => i.body.includes(marker)).sort((a, b) => a.number - b.number)[0]
+      }),
+    )
+
+  const withdraw = (externalRef: string, keptRef: string, why: string): Effect.Effect<void, Error> =>
+    Effect.gen(function* () {
+      const n = Number(externalRef)
+      yield* lift(() => client.comment(n, `Duplicate of #${keptRef} — ${why}.`))
+      yield* lift(() => client.closeIssue(n, 'not_planned'))
+    })
 
   return {
     source: 'github-issue',
     withdraw,
 
-    async propose(ticket) {
-      const existing = await carrying(ticket.key, ticket.since)
-      if (existing) return ref(existing, false)
+    // Uninterruptible: a create already sent cannot be taken back, so an interruption
+    // that abandoned the reconciliation would leave its duplicate open.
+    propose: (ticket) =>
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const existing = yield* carrying(ticket.key, ticket.since)
+          if (existing) return ref(existing, false)
 
-      const labels = [...new Set([ticket.kind, ...ticket.labels].filter((l) => l.trim() !== ''))]
-      const body = `${ticket.body.trimEnd()}\n\n${keyMarker(ticket.key)}\n`
-      const opened = await client.createIssue({ title: ticket.title, body, labels })
+          const labels = [...new Set([ticket.kind, ...ticket.labels].filter((l) => l.trim() !== ''))]
+          const body = `${ticket.body.trimEnd()}\n\n${keyMarker(ticket.key)}\n`
+          const opened = yield* lift(() => client.createIssue({ title: ticket.title, body, labels }))
 
-      // Look again. A call that raced this one may have opened its own in the
-      // meantime; the older issue is the key's, so the newer withdraws.
-      const first = await carrying(ticket.key, ticket.since)
-      if (first && first.number < opened.number) {
-        await withdraw(
-          String(opened.number),
-          String(first.number),
-          'two accepts of the same finding opened an issue at once, and the older one is kept',
-        )
-        return ref(first, false)
-      }
-      return ref(opened, true)
-    },
+          // Look again. A call that raced this one may have opened its own in the
+          // meantime; the older issue is the key's, so the newer withdraws.
+          const first = yield* carrying(ticket.key, ticket.since)
+          if (first && first.number < opened.number) {
+            yield* withdraw(
+              String(opened.number),
+              String(first.number),
+              'two accepts of the same finding opened an issue at once, and the older one is kept',
+            )
+            return ref(first, false)
+          }
+          return ref(opened, true)
+        }),
+      ),
   }
 }
 

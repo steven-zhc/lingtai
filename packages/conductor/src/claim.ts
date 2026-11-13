@@ -23,9 +23,15 @@ import { parsePayload, ticketReducer, type ReleaseCause } from '@lingtai/domain'
  * (`daemon/reconcile.ts`). Liveness is the lock, which the kernel maintains;
  * exclusion is the constraint. Neither is a number.
  */
-import { ConcurrencyError, type EventStore, eventStore, type SnapshotReadOptions } from '@lingtai/event-store'
+import {
+  ConcurrencyError,
+  type EventStore,
+  eventStore,
+  readThroughSnapshot,
+  type SnapshotReadOptions,
+} from '@lingtai/event-store'
+import { Effect, Result } from 'effect'
 
-import { readState } from './snapshot-state.ts'
 import type { Tickets } from './ticket-store.ts'
 
 export interface ClaimOptions extends SnapshotReadOptions {
@@ -113,76 +119,91 @@ export function conductorWorker(): string {
  * looking at the same queue, and a caller that has to catch an exception to
  * discover it will eventually forget to.
  */
-export async function claimTicket(ticketId: string, options: ClaimOptions): Promise<ClaimResult> {
-  const store = options.store ?? eventStore
-  const worker = options.worker ?? conductorWorker()
+export function claimTicketEffect(ticketId: string, options: ClaimOptions): Effect.Effect<ClaimResult, unknown> {
+  return Effect.gen(function* () {
+    const store = options.store ?? eventStore
+    const worker = options.worker ?? conductorWorker()
 
-  const state = await readState(store, ticketReducer, ticketId, 'all', options)
+    const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options)
 
-  if (state.lifecycle.status === 'claimed') {
-    // Held is held. There is no expiry to fall through to, so the only way past
-    // this is an appended release — which is what a conductor that has just
-    // proved itself alone does at startup.
-    const held = state.lifecycle
-    return { ok: false, refusal: { reason: 'held', by: held.worker, runId: held.runId } }
-  }
-  if (state.lifecycle.status !== 'backlog') {
-    return { ok: false, refusal: { reason: 'not-claimable', status: state.lifecycle.status } }
-  }
+    if (state.lifecycle.status === 'claimed') {
+      // Held is held. There is no expiry to fall through to, so the only way past
+      // this is an appended release — which is what a conductor that has just
+      // proved itself alone does at startup.
+      const held = state.lifecycle
+      return { ok: false, refusal: { reason: 'held', by: held.worker, runId: held.runId } } as const
+    }
+    if (state.lifecycle.status !== 'backlog') {
+      return { ok: false, refusal: { reason: 'not-claimable', status: state.lifecycle.status } } as const
+    }
 
-  if (state.split !== null && options.children !== undefined) {
-    // Exactly the numbers the split recorded — never the body, never GitHub's
-    // sub-issue list, which a person may have added to by hand. A read that
-    // throws is a refusal, not an exception: nothing was appended, so the caller
-    // must not treat the ticket as possibly held — and a partial read must not
-    // pass for *all closed*.
-    const asked = state.split.children.map((c) => c.number)
-    let read
-    try {
-      read = await Promise.all(asked.map((n) => options.children!.getIssue(n)))
-    } catch (error) {
+    if (state.split !== null && options.children !== undefined) {
+      // Exactly the numbers the split recorded — never the body, never GitHub's
+      // sub-issue list, which a person may have added to by hand. A read that
+      // throws is a refusal, not an exception: nothing was appended, so the caller
+      // must not treat the ticket as possibly held — and a partial read must not
+      // pass for *all closed*.
+      const asked = state.split.children.map((c) => c.number)
+      const children = options.children
+      const attempted = yield* Effect.result(
+        Effect.tryPromise({
+          try: () => Promise.all(asked.map((n) => children.getIssue(n))),
+          catch: (error) => error,
+        }),
+      )
+      if (Result.isFailure(attempted)) {
+        const error = attempted.failure
+        return {
+          ok: false,
+          refusal: { reason: 'split-unreadable', detail: error instanceof Error ? error.message : String(error) },
+        } as const
+      }
+      const read = attempted.success
+      const open = read.filter((i) => i.state !== 'closed').map((i) => i.number)
+      if (open.length > 0) return { ok: false, refusal: { reason: 'split-open', open } } as const
       return {
         ok: false,
-        refusal: { reason: 'split-unreadable', detail: error instanceof Error ? error.message : String(error) },
-      }
+        refusal: {
+          reason: 'split-done',
+          version: state.version,
+          waitId: state.split.waitId,
+          children: read.map((i) => ({ number: i.number, stateReason: i.stateReason ?? null })),
+        },
+      } as const
     }
-    const open = read.filter((i) => i.state !== 'closed').map((i) => i.number)
-    if (open.length > 0) return { ok: false, refusal: { reason: 'split-open', open } }
-    return {
-      ok: false,
-      refusal: {
-        reason: 'split-done',
-        version: state.version,
-        waitId: state.split.waitId,
-        children: read.map((i) => ({ number: i.number, stateReason: i.stateReason ?? null })),
-      },
-    }
-  }
 
-  try {
-    const [written] = await store.append(ticketId, state.version, [
-      {
-        type: 'TicketClaimed',
-        actor: 'conductor',
-        data: parsePayload('TicketClaimed', {
-          runId: options.runId,
-          worker,
-          title: options.title ?? null,
-          kind: options.kind ?? null,
-          ...(options.body !== undefined ? { body: options.body } : {}),
-        }),
-      },
-    ])
-    return {
-      ok: true,
-      claim: { ticketId, runId: options.runId, worker, version: written!.version },
+    // Every rejection is the caller's to see as a typed failure — not only the
+    // `ConcurrencyError` this answers. The caller treats *any* failure of this
+    // append as `mayHold`: the write may have committed. A defect would slip past
+    // its `Effect.result` and leave an item held by nobody.
+    const appended = yield* Effect.result(
+      Effect.tryPromise({
+        try: () =>
+          store.append(ticketId, state.version, [
+            {
+              type: 'TicketClaimed',
+              actor: 'conductor',
+              data: parsePayload('TicketClaimed', {
+                runId: options.runId,
+                worker,
+                title: options.title ?? null,
+                kind: options.kind ?? null,
+                ...(options.body !== undefined ? { body: options.body } : {}),
+              }),
+            },
+          ]),
+        catch: (error) => error,
+      }),
+    )
+    if (Result.isFailure(appended)) {
+      // The other claimant appended first. The constraint is the whole of the
+      // mutual exclusion; this is what losing it looks like.
+      if (appended.failure instanceof ConcurrencyError) return { ok: false, refusal: { reason: 'lost-race' } } as const
+      return yield* Effect.fail(appended.failure)
     }
-  } catch (err) {
-    // The other claimant appended first. The constraint is the whole of the
-    // mutual exclusion; this is what losing it looks like.
-    if (err instanceof ConcurrencyError) return { ok: false, refusal: { reason: 'lost-race' } }
-    throw err
-  }
+    const [written] = appended.success
+    return { ok: true, claim: { ticketId, runId: options.runId, worker, version: written!.version } } as const
+  })
 }
 
 export type ContinueRefusal =
@@ -209,40 +230,49 @@ export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: 
  * `not-approved` are read off the state this call itself fetched, for a caller
  * that wants to say *why* before it ever reaches the store.
  */
-export async function continueTicket(
+export function continueTicketEffect(
   ticketId: string,
   runId: string,
   options: { worker?: string; body?: string; store?: EventStore } & SnapshotReadOptions = {},
-): Promise<ContinueResult> {
-  const store = options.store ?? eventStore
-  const worker = options.worker ?? conductorWorker()
+): Effect.Effect<ContinueResult, unknown> {
+  return Effect.gen(function* () {
+    const store = options.store ?? eventStore
+    const worker = options.worker ?? conductorWorker()
 
-  const state = await readState(store, ticketReducer, ticketId, 'all', options)
+    const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options)
 
-  if (state.lifecycle.status !== 'approved') {
-    return { ok: false, refusal: { reason: 'not-approved', status: state.lifecycle.status } }
-  }
-  if (state.lifecycle.runId !== runId) {
-    return { ok: false, refusal: { reason: 'wrong-run', runId: state.lifecycle.runId } }
-  }
+    if (state.lifecycle.status !== 'approved') {
+      return { ok: false, refusal: { reason: 'not-approved', status: state.lifecycle.status } } as const
+    }
+    if (state.lifecycle.runId !== runId) {
+      return { ok: false, refusal: { reason: 'wrong-run', runId: state.lifecycle.runId } } as const
+    }
 
-  try {
-    const [written] = await store.append(ticketId, state.version, [
-      {
-        type: 'TicketContinued',
-        actor: 'conductor',
-        data: parsePayload('TicketContinued', {
-          runId,
-          worker,
-          ...(options.body !== undefined ? { body: options.body } : {}),
-        }),
-      },
-    ])
-    return { ok: true, claim: { ticketId, runId, worker, version: written!.version } }
-  } catch (err) {
-    if (err instanceof ConcurrencyError) return { ok: false, refusal: { reason: 'lost-race' } }
-    throw err
-  }
+    // Typed failures for every rejection, for `claimTicketEffect`'s reason.
+    const appended = yield* Effect.result(
+      Effect.tryPromise({
+        try: () =>
+          store.append(ticketId, state.version, [
+            {
+              type: 'TicketContinued',
+              actor: 'conductor',
+              data: parsePayload('TicketContinued', {
+                runId,
+                worker,
+                ...(options.body !== undefined ? { body: options.body } : {}),
+              }),
+            },
+          ]),
+        catch: (error) => error,
+      }),
+    )
+    if (Result.isFailure(appended)) {
+      if (appended.failure instanceof ConcurrencyError) return { ok: false, refusal: { reason: 'lost-race' } } as const
+      return yield* Effect.fail(appended.failure)
+    }
+    const [written] = appended.success
+    return { ok: true, claim: { ticketId, runId, worker, version: written!.version } } as const
+  })
 }
 
 /**
@@ -253,20 +283,26 @@ export async function continueTicket(
  * choice 4) — and `{_tag: 'Restart', restart}` for `conduct.ts`'s own restart,
  * which calls this directly rather than through a second function.
  */
-export async function releaseTicket(
+export function releaseTicketEffect(
   ticketId: string,
   runId: string,
   reason: string,
   store: EventStore = eventStore,
   cause: ReleaseCause | null = null,
   options: SnapshotReadOptions = {},
-): Promise<void> {
-  const state = await readState(store, ticketReducer, ticketId, 'all', options)
-  await store.append(ticketId, state.version, [
-    {
-      type: 'TicketReleased',
-      actor: 'conductor',
-      data: parsePayload('TicketReleased', { runId, reason, cause }),
-    },
-  ])
+): Effect.Effect<void, unknown> {
+  return Effect.gen(function* () {
+    const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options)
+    yield* Effect.tryPromise({
+      try: () =>
+        store.append(ticketId, state.version, [
+          {
+            type: 'TicketReleased',
+            actor: 'conductor',
+            data: parsePayload('TicketReleased', { runId, reason, cause }),
+          },
+        ]),
+      catch: (error) => error,
+    })
+  })
 }

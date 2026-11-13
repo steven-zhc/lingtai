@@ -25,6 +25,8 @@
  * the two apart; it needs a reset *and* arms left standing, and `refs:` at `end`
  * now sweeps a landed ticket's arms.
  */
+import { Effect } from 'effect'
+
 import { armPrefix } from './branches.ts'
 
 /** The one call this needs of `GitHubClient`, so a test can fake it. */
@@ -49,13 +51,18 @@ export interface ArmsOnOrigin {
  * `[]` for *no arms*, so a throw is never an absence, and null is the caller's
  * cue to say the column is missing and why.
  */
-export async function armsOnOrigin(github: ArmChannel, branch: string): Promise<ArmsOnOrigin | null> {
+export function armsOnOriginEffect(github: ArmChannel, branch: string): Effect.Effect<ArmsOnOrigin | null> {
   const prefix = armPrefix(branch)
-  try {
-    const found = await github.matchingRefs(`heads/${prefix}`)
-    const onOrigin = new Set(found.map((ref) => ref.replace(/^heads\//, '')).filter((name) => name.startsWith(prefix)))
-    return { branch, onOrigin }
-  } catch {
-    return null
-  }
+  return Effect.tryPromise({ try: () => github.matchingRefs(`heads/${prefix}`), catch: (error) => error }).pipe(
+    Effect.map((found): ArmsOnOrigin | null => ({
+      branch,
+      onOrigin: new Set(found.map((ref) => ref.replace(/^heads\//, '')).filter((name) => name.startsWith(prefix))),
+    })),
+    Effect.catch(() => Effect.succeed(null)),
+  )
+}
+
+/** `armsOnOriginEffect` as a promise, for the board (0101 §7), until #790. */
+export function armsOnOrigin(github: ArmChannel, branch: string): Promise<ArmsOnOrigin | null> {
+  return Effect.runPromise(armsOnOriginEffect(github, branch))
 }

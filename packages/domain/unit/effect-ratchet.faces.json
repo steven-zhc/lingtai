@@ -45,7 +45,7 @@
     "file": "packages/agent/src/run-log.ts",
     "fn": "closeRunLogFile",
     "until": "#790",
-    "why": "RunLog.close is a promise method: packages/conductor/src/conduct.ts:1788 and :1823 (lifted until the conductor chain's conduct.ts-holds-no-async ticket) and apps/cli/src/discuss.ts:439 await it; until RunLog.close is an Effect"
+    "why": "RunLog.close is a promise method: packages/conductor/src/conduct.ts hands the inner log's own promise on, and apps/cli/src/discuss.ts:439 awaits it; until RunLog.close is an Effect"
   },
   {
     "file": "packages/agent/src/run-log.ts",
@@ -90,6 +90,12 @@
     "why": "exported for the unit half (#487): `apps/cli/unit/requeue-into-body.test.ts` and `verbs-accept-refuse.test.ts`"
   },
   {
+    "file": "packages/conductor/src/arms.ts",
+    "fn": "armsOnOrigin",
+    "until": "#790",
+    "why": "`apps/board/src/lib/prompt.ts` awaits it; 0101 §7 lets the board keep a promise"
+  },
+  {
     "file": "packages/conductor/src/ask.ts",
     "fn": "answer",
     "until": "#790",
@@ -108,6 +114,18 @@
     "why": "`apps/cli/src/ask.ts` awaits it, until the apps/cli row"
   },
   {
+    "file": "packages/conductor/src/backlog.ts",
+    "fn": "acceptFinding",
+    "until": "#790",
+    "why": "the board's backlog action and `lingtai backlog` (apps/cli/src/backlog.ts)"
+  },
+  {
+    "file": "packages/conductor/src/backlog.ts",
+    "fn": "declineFinding",
+    "until": "#790",
+    "why": "the board's backlog action and `lingtai backlog` (apps/cli/src/backlog.ts)"
+  },
+  {
     "file": "packages/conductor/src/close.ts",
     "fn": "close",
     "until": "#790",
@@ -117,13 +135,31 @@
     "file": "packages/conductor/src/close.ts",
     "fn": "closeHolding",
     "until": "#790",
-    "why": "`apps/cli/unit/verbs-accept-refuse.test.ts` (#487); `conduct.ts` lifts it through `Effect.promise` until CONDUCT8-7"
+    "why": "`apps/cli/unit/verbs-accept-refuse.test.ts` (#487)"
   },
   {
-    "file": "packages/conductor/src/deciding.ts",
-    "fn": "deciding",
+    "file": "packages/conductor/src/create-app.ts",
+    "fn": "offerCreation",
     "until": "#790",
-    "why": "`split-ticket.ts` holds the decide lock through it until CONDUCT8-4"
+    "why": "apps/board's `setup/github-app/page.tsx`, `setup/github-app/start/route.ts` and `setup/repository/page.tsx` await it; 0101 §7 lets the board keep a promise"
+  },
+  {
+    "file": "packages/conductor/src/discover.ts",
+    "fn": "runnableNow",
+    "until": "#790",
+    "why": "apps/board (board.ts, queued.ts), and apps/cli (status.ts, conduct.ts) await it"
+  },
+  {
+    "file": "packages/conductor/src/discuss.ts",
+    "fn": "concludeDiscussion",
+    "until": "#790",
+    "why": "apps/board `actions.ts` awaits it, until the board row"
+  },
+  {
+    "file": "packages/conductor/src/discuss.ts",
+    "fn": "holdDiscussion",
+    "until": "#790",
+    "why": "apps/cli `discuss.ts` and `discuss-ask.test.ts` await it, until the apps/cli row"
   },
   {
     "file": "packages/conductor/src/edit-body.ts",
@@ -136,6 +172,18 @@
     "fn": "editBodyAndRequeueHolding",
     "until": "#790",
     "why": "exported for the unit half (#487): `apps/cli/unit/requeue-into-body.test.ts`"
+  },
+  {
+    "file": "packages/conductor/src/end-step.ts",
+    "fn": "appendEndActions",
+    "until": "#790",
+    "why": "`apps/cli/src/end.ts` awaits it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/end-step.ts",
+    "fn": "endedWithoutEndActions",
+    "until": "#790",
+    "why": "`apps/cli/src/end.ts` and `apps/cli/src/doctor.ts` await it, until the apps/cli row"
   },
   {
     "file": "packages/conductor/src/filter.ts",
@@ -162,22 +210,58 @@
     "why": "apps/cli daemon.ts and doctor.ts await it until the apps/cli rows"
   },
   {
+    "file": "packages/conductor/src/onboard.ts",
+    "fn": "add",
+    "until": "#790",
+    "why": "`apps/cli/src/first-project.ts` (`chooseFirstProject`) awaits it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/onboard.ts",
+    "fn": "addLocal",
+    "until": "#790",
+    "why": "`apps/cli/src/first-project.ts` and `apps/cli/src/init.ts` await it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/onboard.ts",
+    "fn": "checkGhAccess",
+    "until": "#790",
+    "why": "`apps/cli/src/add-github.ts` and `liveAddDeps` await it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/onboard.ts",
+    "fn": "checkInstallation",
+    "until": "#790",
+    "why": "`apps/cli/src/add-github.ts` (the `check` port, typed `typeof checkInstallation`) and `liveAddDeps` await it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/onboard.ts",
+    "fn": "recheck",
+    "until": "#790",
+    "why": "`apps/board/src/app/actions.ts` awaits it; 0101 §7 lets the board keep a promise"
+  },
+  {
     "file": "packages/conductor/src/ownerless.ts",
     "fn": "ownerlessClient",
     "until": "#790",
     "why": "apps/board actions and lib/task, apps/cli (requeue, grant-fix-round, conduct, approve, run) await it until the apps/cli rows"
   },
   {
+    "file": "packages/conductor/src/pick-repository.ts",
+    "fn": "setupReturn",
+    "until": "#790",
+    "why": "apps/board's `setup/repository/installed/route.ts` awaits it; 0101 §7 lets the board keep a promise"
+  },
+  {
     "file": "packages/conductor/src/port-face.ts",
     "fn": "runPort",
     "until": "#790",
-    "why": "the promise members of the `Tickets` this package builds (`dbTickets`), until `Tickets` is an Effect port"
+    "why": "the promise members of the `Tickets` this package builds (`dbTickets`), and the `@lingtai/setup` readers and the `Tracing` flush/shutdown (`add-from-page.ts`, `telemetry.ts`), until those are Effect ports"
   },
   {
     "file": "packages/conductor/src/projects.ts",
     "fn": "currentRecipe",
     "until": "#790",
-    "why": "apps/board (actions, lib/task, lib/recipe, lib/board), apps/cli verbs, `close.ts:176` (CONDUCT8-3) and `conduct.ts:813` (CONDUCT8-7) await it"
+    "why": "apps/board (actions, lib/task, lib/recipe, lib/board), apps/cli verbs, `close.ts:176` (CONDUCT8-3) await it"
   },
   {
     "file": "packages/conductor/src/projects.ts",
@@ -204,6 +288,18 @@
     "why": "`@lingtai/recipe`'s promise `SignedIn` port, through `signedInProbe`"
   },
   {
+    "file": "packages/conductor/src/queue.ts",
+    "fn": "selectRunnable",
+    "until": "#790",
+    "why": "apps/board `queued.ts`, apps/cli `status.ts`, `packages/daemon/integration/reconcile.test.ts` await it"
+  },
+  {
+    "file": "packages/conductor/src/rate-snapshot.ts",
+    "fn": "refreshOnce",
+    "until": "#790",
+    "why": "`refreshRates` keeps the in-flight dedupe over it, and apps/cli `rates.ts` awaits that"
+  },
+  {
     "file": "packages/conductor/src/read-ticket.ts",
     "fn": "readProjectTicket",
     "until": "#790",
@@ -219,7 +315,7 @@
     "file": "packages/conductor/src/resolve-wait.ts",
     "fn": "resolveWaitHolding",
     "until": "#790",
-    "why": "the unit tests that resolve a wait directly (#487's exported-for-the-unit-half reason); `split-ticket.ts` awaits it until CONDUCT8-4"
+    "why": "the unit tests that resolve a wait directly (#487's exported-for-the-unit-half reason)"
   },
   {
     "file": "packages/conductor/src/run-attempt.ts",
@@ -246,10 +342,46 @@
     "why": "apps/cli attach.ts awaits it"
   },
   {
+    "file": "packages/conductor/src/same-file.ts",
+    "fn": "readFixFiles",
+    "until": "#790",
+    "why": "apps/cli `status.ts` and `conduct.ts` await it"
+  },
+  {
+    "file": "packages/conductor/src/schedule.ts",
+    "fn": "tallyTurn",
+    "until": "#790",
+    "why": "apps/cli `run.ts` hands it over as `tallyPass`"
+  },
+  {
     "file": "packages/conductor/src/snapshot-state.ts",
     "fn": "readState",
     "until": "#790",
     "why": "apps/cli (requeue, continuing, subscribers, status, grant-fix-round, triage, approve) and apps/board read a reducer's state as a promise"
+  },
+  {
+    "file": "packages/conductor/src/split-ticket.ts",
+    "fn": "splitTicket",
+    "until": "#790",
+    "why": "the board's split action (apps/board/src/app/actions.ts, 0101 §7)"
+  },
+  {
+    "file": "packages/conductor/src/split-ticket.ts",
+    "fn": "splitTicketHolding",
+    "until": "#790",
+    "why": "apps/board/unit/split-instance.test.ts calls it with the lock out of the way"
+  },
+  {
+    "file": "packages/conductor/src/telemetry.ts",
+    "fn": "installTracing",
+    "until": "#790",
+    "why": "`apps/cli/src/tracing.ts` awaits it, and `trace-an-attempt.test.ts` and `status-flows-up-through-bridged-spans.test.ts` call it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/tell.ts",
+    "fn": "tellGitHubAbout",
+    "until": "#790",
+    "why": "`apps/cli/src/end.ts` awaits it, until the apps/cli row"
   },
   {
     "file": "packages/conductor/src/ticket-history.ts",
@@ -262,12 +394,6 @@
     "fn": "ticketsFor",
     "until": "#790",
     "why": "apps/cli (conduct, run, ticket)"
-  },
-  {
-    "file": "packages/conductor/src/write-section.ts",
-    "fn": "writeSection",
-    "until": "#790",
-    "why": "`discuss.ts` awaits it until CONDUCT8-7"
   },
   {
     "file": "packages/daemon/src/choose.ts",

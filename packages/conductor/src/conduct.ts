@@ -225,10 +225,10 @@ import {
   type Worktree,
 } from '@lingtai/repo'
 import { ticketOfLandingSubject } from '@lingtai/repo/landing-subject'
-import { type Duration, Effect, Exit, Result } from 'effect'
+import { Cause, type Duration, Effect, Exit, Result } from 'effect'
 
 import { reachAccountLimit } from './account.ts'
-import { armsOnOrigin } from './arms.ts'
+import { armsOnOriginEffect } from './arms.ts'
 import {
   type Brief,
   type Claimed,
@@ -241,9 +241,9 @@ import {
 import { armForState, conflictResolvedOf, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
 import { createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
-import { claimTicket, continueTicket, releaseTicket, type SplitChildState } from './claim.ts'
-import { closeHolding } from './close.ts'
-import { runnableNow, type TicketSource } from './discover.ts'
+import { claimTicketEffect, continueTicketEffect, releaseTicketEffect, type SplitChildState } from './claim.ts'
+import { closeHoldingEffect } from './close.ts'
+import { runnableNowEffect, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
 import { fixBriefParts, grantedAdviceFromState } from './fix.ts'
@@ -254,7 +254,7 @@ import { labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { accountWallOf, type NeverStarted, standDown } from './never-started.ts'
 import { AgentHost, Repo } from './ports.ts'
-import { currentRecipe } from './projects.ts'
+import { currentRecipeEffect } from './projects.ts'
 import { signedInHere } from './projects.ts'
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
@@ -276,7 +276,7 @@ import {
 import { RUN_LOG_END, runLogEnd, runLogPath } from './run-log.ts'
 import { runtimesOf } from './runtimes-of.ts'
 import { recordRecipe, stepsResolved } from './steps-resolved.ts'
-import { type RefChannel, editEndedWaits, tellGitHub, tellGitHubAbout } from './tell.ts'
+import { type RefChannel, editEndedWaitsEffect, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
 
 /** A run's cost in words: dollars to the cent, or `cost unknown` — never `$0.00` for a cost nobody reported (0110 §7). */
@@ -742,20 +742,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     /**
      * An append at whatever version the stream is at, and nothing else.
      *
-     * A promise rather than an `Effect`, because the ports below are plain
-     * promises (`attempt-steps.ts`'s *Why a body and the `end` ports are Effects*) and this is what they
-     * append with. **For the callers that answer a refused append themselves**
-     * — the account of the publish, the diff's counts, the release's record of
-     * what `end` resolved — each of which has already decided that losing its
-     * row costs less than losing the ending it is about. Everything else uses
-     * `appendNow`.
+     * An `Effect` over the promise `store`: one read and one append at the
+     * length it read (an expected-version write), with no retry. A store that
+     * refuses is a defect. **For the callers that answer a refused append
+     * themselves** — the account of the publish, the diff's counts, the
+     * release's record of what `end` resolved — each of which has already
+     * decided that losing its row costs less than losing the ending it is
+     * about; they use `Effect.catchDefect`, never a catch that takes an
+     * interrupt too. Everything else uses `appendNow`.
      */
-    const appendAt = async (stream: string, events: readonly ToAppend[]): Promise<number> => {
-      const at = (await store.read(stream)).length
-      const written = await store.append(stream, at, events)
-      // The version of the last event written: what a later event can name (#931).
-      return written.length > 0 ? written[written.length - 1]!.version : at
-    }
+    const appendAt = (stream: string, events: readonly ToAppend[]): Effect.Effect<number> =>
+      Effect.gen(function* () {
+        const at = (yield* Effect.promise(() => store.read(stream))).length
+        const written = yield* Effect.promise(() => store.append(stream, at, events))
+        // The version of the last event written: what a later event can name (#931).
+        return written.length > 0 ? written[written.length - 1]!.version : at
+      })
 
     /**
      * The same append, **remembered when the store refuses it**.
@@ -780,14 +782,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * returns (see `unappended`), rather than having its report believed.
      */
     let unappended: unknown = null
-    const appendNow = async (stream: string, events: readonly ToAppend[]): Promise<number> => {
-      try {
-        return await appendAt(stream, events)
-      } catch (defect) {
-        unappended ??= defect
-        throw defect
-      }
-    }
+    const appendNow = (stream: string, events: readonly ToAppend[]): Effect.Effect<number> =>
+      appendAt(stream, events).pipe(
+        Effect.tapDefect((defect) =>
+          Effect.sync(() => {
+            unappended ??= defect
+          }),
+        ),
+      )
 
     /**
      * The same, at a version the caller already holds rather than one read here.
@@ -799,24 +801,32 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * of these arrives as *the `implement` step threw* unless this says
      * otherwise.
      */
-    const appendFrom = async (stream: string, version: number, events: readonly ToAppend[]): Promise<void> => {
-      try {
-        await store.append(stream, version, events)
-      } catch (defect) {
-        unappended ??= defect
-        throw defect
-      }
-    }
+    const appendFrom = (stream: string, version: number, events: readonly ToAppend[]): Effect.Effect<void> =>
+      Effect.promise(() => store.append(stream, version, events)).pipe(
+        Effect.asVoid,
+        Effect.tapDefect((defect) =>
+          Effect.sync(() => {
+            unappended ??= defect
+          }),
+        ),
+      )
 
     // ---- 1. the recipe, from this machine -----------------------------------
     // `~/.lingtai/<project>/recipe.yml` (0046 §3, #180), the same read every
     // other command that conducts makes.
-    const recipeAt: Result.Result<ResolvedRecipe, string> = yield* Effect.result(
-      Effect.tryPromise({
-        try: () => (options.recipe ?? (() => currentRecipe(options.project, options.client)))(),
-        // An unreadable or non-compliant recipe must stop the run rather than
-        // fall back to a default.
-        catch: (err) => (err as Error).message,
+    //
+    // An unreadable or non-compliant recipe must stop the run rather than fall
+    // back to a default, and **every cause of it stops it the same way**: a
+    // failure and a defect both answer `stage: 'recipe'`, because a daemon
+    // restarted onto a bad recipe takes nothing at all rather than crashing
+    // every pass. `Effect.result` sees only the failure channel; this sees both.
+    const recipeAt: Result.Result<ResolvedRecipe, string> = yield* (
+      options.recipe ? Effect.tryPromise(options.recipe) : currentRecipeEffect(options.project, options.client)
+    ).pipe(
+      Effect.map((found) => Result.succeed(found)),
+      Effect.catchCause((cause) => {
+        const err = Cause.squash(cause)
+        return Effect.succeed(Result.fail(err instanceof Error ? err.message : String(err)))
       }),
     )
     if (Result.isFailure(recipeAt)) {
@@ -1075,19 +1085,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     if (missing.length > 0) {
       // Never silently downgrade. The refusal is an event on the work item so the
       // board can say why nothing ran.
-      yield* Effect.promise(() =>
-        appendNow(ticketId, [
-          {
-            type: 'DispatchRefused',
-            actor: 'conductor',
-            data: parsePayload('DispatchRefused', {
-              requiredTier: tier,
-              runtime: refusedBy?.id ?? options.runtime.capabilities.id,
-              missing,
-            }),
-          },
-        ]),
-      )
+      yield* appendNow(ticketId, [
+        {
+          type: 'DispatchRefused',
+          actor: 'conductor',
+          data: parsePayload('DispatchRefused', {
+            requiredTier: tier,
+            runtime: refusedBy?.id ?? options.runtime.capabilities.id,
+            missing,
+          }),
+        },
+      ])
       /**
        * The project names which recipe is wrong, because the pause below stops
        * every registered project and an operator reading it may have several
@@ -1152,13 +1160,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * below reports as an ordinary `notClaimed` rather than acting on a
      * stale copy.
      */
-    const continuation = yield* Effect.promise(async () => {
+    const continuation = yield* Effect.gen(function* () {
       if (options.continuing === undefined) return null
       if (reduced.lifecycle.status !== 'approved' || reduced.lifecycle.runId !== options.continuing.runId) return null
       const { waitId: approvedWaitId, onSha: approvedOnSha } = reduced.lifecycle
       const reason = waitsFromState(reduced).find((w) => w.waitId === approvedWaitId)?.reason
       if (reason === undefined) return null
-      const runEvents = await store.read(options.continuing.runId)
+      const runEvents = yield* Effect.promise(() => store.read(options.continuing!.runId))
       const runState = reduceAttempt(runEvents)
       const granted = reduced.lifecycle.grantRef !== undefined
       // A crash that stands in for a wait carries that wait's advice (#654).
@@ -1326,7 +1334,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       : null
     // Asked of `origin` and only for a requeued pass (#315): a first attempt has
     // no arm to name and makes no request, which keeps its prompt byte-identical.
-    const arms = previous ? yield* Effect.promise(() => armsOnOrigin(options.client, branch)) : null
+    const arms = previous ? yield* armsOnOriginEffect(options.client, branch) : null
     if (previous && arms === null) {
       log(`could not list ${branch}'s arms on origin — the brief names none`)
     }
@@ -1521,26 +1529,36 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           return Effect.void
         }
         released = true
-        return Effect.tryPromise({
-          try: async () => {
+        // **The whole of it, or none of it.** It was one promise that ran to the end
+        // when the fiber was interrupted; as steps an interrupt between
+        // `TicketReleased` and the end actions would leave the item back in the queue,
+        // its end actions unrecorded and GitHub still saying `working` — and `released`
+        // is already set, so nothing would run it again.
+        return Effect.uninterruptible(
+          Effect.gen(function* () {
             /** Whether the release reached the log — the gate on the append after it. */
             let backInTheQueue = true
-            await releaseTicket(ticketId, runId, reason, store, cause, ticketSnapshots).catch((err: unknown) => {
+            const gave = yield* Effect.result(
+              releaseTicketEffect(ticketId, runId, reason, store, cause, ticketSnapshots),
+            )
+            if (Result.isFailure(gave)) {
               backInTheQueue = false
-              log(`the item was not released: ${whyOf(err)}`)
-            })
+              log(`the item was not released: ${whyOf(gave.failure)}`)
+            }
             if (backInTheQueue && endedAs === 'failed' && endPlan.length > 0) {
-              try {
-                await appendAt(ticketId, endPlan)
-                endResolved = endPlan
-              } catch (defect) {
+              const recorded = yield* Effect.result(
+                appendAt(ticketId, endPlan).pipe(Effect.catchDefect((defect) => Effect.fail(defect))),
+              )
+              if (Result.isFailure(recorded)) {
                 // Said rather than raised: the run has already ended and the item
                 // is already back, and a throw here would replace the reason it
                 // ended with the reason the bookkeeping did.
-                log(`end actions not recorded: ${whyOf(defect)}`)
+                log(`end actions not recorded: ${whyOf(recorded.failure)}`)
+              } else {
+                endResolved = endPlan
               }
             }
-            await tellGitHubAbout({
+            yield* tellGitHubAboutEffect({
               store,
               github: options.client,
               ticketId,
@@ -1549,12 +1567,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               editEnded: true,
               appended: endResolved,
             })
-          },
-          catch: (err) => err,
-        }).pipe(
+          }),
+        ).pipe(
           // A release is the last thing a failing run does, and one that threw
           // would replace the reason the run ended with the reason the cleanup did.
-          Effect.ignore,
+          // Outside the uninterruptible region, so a defect still stops the body.
+          Effect.catchCause(() => Effect.void),
         )
       })
 
@@ -1791,9 +1809,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           if (opened === null) beforeTheOpen.push({ label, detail })
           else opened.note(label, detail)
         },
-        close: async (fate) => {
-          await opened?.close(fate)
-        },
+        // The inner log's own promise, handed on: this adds no IO of its own.
+        close: (fate) => opened?.close(fate) ?? Promise.resolve(),
       }
       /** Called by `claim`'s `queue:` action, and only once it holds the item. */
       const openTheRunLog: Effect.Effect<void> = Effect.gen(function* () {
@@ -1820,13 +1837,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * close and nothing to say.
        */
       yield* Effect.addFinalizer(() =>
-        Effect.promise(async () => {
-          if (opened === null) return
+        Effect.suspend(() => {
+          if (opened === null) return Effect.void
           // The sentence, and the label a reader recognises it by: `#110`
           // follows this from another process and has nothing else to tell *the
           // writer has finished* from *the writer is thinking*.
           runLog.note(RUN_LOG_END, runLogEnd(didLand))
-          await runLog.close(didLand ? 'delete' : 'keep')
+          return Effect.promise(() => runLog.close(didLand ? 'delete' : 'keep'))
         }),
       )
 
@@ -2056,11 +2073,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       /** An append that never rejects: `null` when it landed, the refusal when it did not. */
       const appendTo = (events: readonly ToAppend[]): Effect.Effect<{ refused: unknown } | null> =>
-        Effect.promise(() =>
-          appendAt(runId, events).then(
-            () => null,
-            (refused: unknown) => ({ refused }),
-          ),
+        appendAt(runId, events).pipe(
+          Effect.as(null),
+          Effect.catchDefect((refused: unknown) => Effect.succeed({ refused })),
         )
       const noteRefs = (
         outcome: 'published' | 'nothing-committed' | 'already-published' | 'arm-only' | 'refused' | 'unrecorded',
@@ -2582,15 +2597,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const merged = mergeCommit
           if (merged === null) return Effect.succeed(false)
           if (released) return Effect.succeed(true)
-          return Effect.tryPromise(() =>
-            appendNow(ticketId, [
-              {
-                type: 'TicketLanded',
-                actor: 'conductor',
-                data: parsePayload('TicketLanded', { mergeCommit: merged, base }),
-              },
-            ]),
-          ).pipe(
+          return appendNow(ticketId, [
+            {
+              type: 'TicketLanded',
+              actor: 'conductor',
+              data: parsePayload('TicketLanded', { mergeCommit: merged, base }),
+            },
+          ]).pipe(
+            // A refusal is a defect now; retried as a failure, as it was.
+            Effect.catchDefect((defect) => Effect.fail(defect)),
             Effect.retry({ times: 2 }),
             Effect.tap(() =>
               Effect.sync(() => {
@@ -2655,7 +2670,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const tickets: TicketSource = options.client
           // A read that rejects is a defect here, which the pipeline turns into
           // `queue:`'s `failed` verdict as a rejection did.
-          const found = yield* Effect.promise(() => runnableNow({ client: tickets, queue, only: [options.issue] }))
+          const found = yield* runnableNowEffect({ client: tickets, queue, only: [options.issue] }).pipe(Effect.orDie)
           const runnable = found.runnable.find((r) => r.ref === String(options.issue))
           if (!runnable) {
             return {
@@ -2682,28 +2697,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // `continuation` (above) is what makes this branch `null` rather
               // than acted on wrongly when the request has gone stale.
               const attempting: Effect.Effect<
-                Awaited<ReturnType<typeof claimTicket>> | Awaited<ReturnType<typeof continueTicket>>,
+                | Effect.Success<ReturnType<typeof claimTicketEffect>>
+                | Effect.Success<ReturnType<typeof continueTicketEffect>>,
                 unknown
               > =
                 options.continuing !== undefined && continuation !== null
-                  ? Effect.tryPromise({
-                      try: () => continueTicket(ticketId, runId, { store, ...ticketSnapshots, body: issue.body }),
-                      catch: (error) => error,
-                    })
+                  ? continueTicketEffect(ticketId, runId, { store, ...ticketSnapshots, body: issue.body })
                   : // The claim carries what the task is, because it is now the
                     // only place a title enters the log at all.
-                    Effect.tryPromise({
-                      try: () =>
-                        claimTicket(ticketId, {
-                          runId,
-                          store,
-                          ...ticketSnapshots,
-                          title: runnable.title,
-                          kind: runnable.kind,
-                          body: issue.body,
-                          children: options.client,
-                        }),
-                      catch: (error) => error,
+                    claimTicketEffect(ticketId, {
+                      runId,
+                      store,
+                      ...ticketSnapshots,
+                      title: runnable.title,
+                      kind: runnable.kind,
+                      body: issue.body,
+                      children: options.client,
                     })
               const attempted = yield* Effect.result(attempting)
               if (Result.isFailure(attempted)) {
@@ -2722,46 +2731,39 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 // left to change. Closed here, with no run — `end` is what resolves
                 // the issue, as it does for `lingtai close`.
                 const done = claim.refusal
-                const closed = yield* Effect.promise(() =>
-                  closeHolding(
-                    {
-                      project: options.project.project!,
-                      issue: options.issue,
-                      by: 'conductor',
-                      reason: `every child of split ${done.waitId} is closed: ${splitChildrenWords(done.children)}`,
-                      state: options.project,
-                      client: options.client,
-                      recipe: async () => resolved,
-                      ifVersion: done.version,
-                    },
-                    store,
-                    ticketId,
-                  ),
-                )
+                const closed = yield* closeHoldingEffect(
+                  {
+                    project: options.project.project!,
+                    issue: options.issue,
+                    by: 'conductor',
+                    reason: `every child of split ${done.waitId} is closed: ${splitChildrenWords(done.children)}`,
+                    state: options.project,
+                    client: options.client,
+                    // A value already held, handed over as the thunk `CloseOptions` asks for.
+                    recipe: () => Promise.resolve(resolved),
+                    ifVersion: done.version,
+                  },
+                  store,
+                  ticketId,
+                ).pipe(Effect.orDie)
                 if (closed.ok) {
                   // The split's wait is over (`WaitResolved{Split}` is on the stream).
                   // This path calls `tellGitHub` directly, so it edits here (#750).
-                  yield* Effect.promise(() =>
-                    editEndedWaits({ store, github: options.client, ticketId, ...ticketSnapshots }),
-                  )
+                  yield* editEndedWaitsEffect({ store, github: options.client, ticketId, ...ticketSnapshots })
                   // Said before the close, not after it: the comment has no record of
                   // its own to retry from, and a close that fails here is finished later
                   // by reconciliation — which would close the issue without ever
                   // having said why. A failed comment is `IssueUpdateFailed` on the log.
-                  yield* Effect.promise(() =>
-                    tellGitHub({
-                      store,
-                      github: options.client,
-                      ticketId,
-                      change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
-                    }),
-                  )
+                  yield* tellGitHubEffect({
+                    store,
+                    github: options.client,
+                    ticketId,
+                    change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
+                  })
                   // The recipe's `end` may not close the issue (`end: []`, or a close
                   // restricted to `when: landed`); a terminal event with the issue
                   // still open would be announced and never finished.
-                  yield* Effect.promise(() =>
-                    tellGitHub({ store, github: options.client, ticketId, change: { kind: 'closed' } }),
-                  )
+                  yield* tellGitHubEffect({ store, github: options.client, ticketId, change: { kind: 'closed' } })
                 }
               }
               if (!claim.ok)
@@ -2793,19 +2795,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // The issue says what the log says, from here on. Inline rather than
           // queued (0022): a call that does not land is written down and converged
           // later rather than retried.
-          yield* Effect.promise(() =>
-            tellGitHubAbout({
-              store,
-              github: options.client,
-              ticketId,
-              ...ticketSnapshots,
-              labels: labelsFor('running'),
-              // A continuation is the same work going on: the landing, the next
-              // hold or the release edits that wait's comment with the real
-              // outcome. Editing it here would spend the one edit on *Approved*.
-              editEnded: !(options.continuing !== undefined && continuation !== null),
-            }),
-          )
+          yield* tellGitHubAboutEffect({
+            store,
+            github: options.client,
+            ticketId,
+            ...ticketSnapshots,
+            labels: labelsFor('running'),
+            // A continuation is the same work going on: the landing, the next
+            // hold or the release edits that wait's comment with the real
+            // outcome. Editing it here would spend the one edit on *Approved*.
+            editEnded: !(options.continuing !== undefined && continuation !== null),
+          })
           return { taken: { ticketId, kind: runnable.kind } }
         })
 
@@ -3109,7 +3109,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // can read one, and `RunSpent.turns`/`.costUsd` may never be invented
           // numbers (`events.ts`'s own doc on `RunSpent`).
           if (!threw) {
-            yield* Effect.promise(() => appendNow(runId, [runSpentFrom(outcome, judgeFor, runtime)]))
+            yield* appendNow(runId, [runSpentFrom(outcome, judgeFor, runtime)])
           }
           /**
            * **A quota wall is the account's, so it locks that account rather than
@@ -3335,17 +3335,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           { runId, issue: options.issue },
           {
             onWait: (behind) =>
-              Effect.promise(() =>
-                appendNow(runId, [
-                  {
-                    type: 'MergeLaneWaited',
-                    actor: 'conductor',
-                    data: parsePayload('MergeLaneWaited', {
-                      behind: { runId: behind.runId, issue: String(behind.issue) },
-                    }),
-                  },
-                ]),
-              ).pipe(Effect.asVoid),
+              appendNow(runId, [
+                {
+                  type: 'MergeLaneWaited',
+                  actor: 'conductor',
+                  data: parsePayload('MergeLaneWaited', {
+                    behind: { runId: behind.runId, issue: String(behind.issue) },
+                  }),
+                },
+              ]).pipe(Effect.asVoid),
           },
           landNow(on),
         )
@@ -3675,57 +3673,55 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
           const baseSha = asked.mergedOnto ?? continuation?.diffBaseSha ?? worktree?.baseSha ?? null
           if (baseSha === null) return { notRed: 'no base commit was cut' }
-          const answer = yield* Effect.promise(() =>
-            baseCheckFor(store, log, home).ask({
-              project,
-              base,
-              baseSha,
-              command: action.run,
-              prepared: recipe.steps.prepared.flatMap((a) =>
-                'run' in a ? [{ run: a.run, env: envForExtension(a.env), timeoutMs: parseDuration(a.timeout) }] : [],
-              ),
-              env: envForExtension(action.env),
-              runId,
-              signal: baseAbort.signal,
-              timeoutMs: parseDuration(action.timeout),
-              tree: {
-                cut: (path, sha) =>
-                  detached(
-                    Effect.gen(function* () {
-                      const cut = yield* mirrorWrite(
-                        mirrorPathFor(project, home),
-                        gitAskedEffect(['worktree', 'add', '--force', '--detach', path, sha]),
-                      )
-                      if (Result.isFailure(cut)) return yield* Effect.die(new Error(cut.failure.detail))
-                      if (submodulesOf(recipe)) {
-                        // `worktree add` leaves submodule directories empty, as `provisionWorktree` says.
-                        yield* repo.git(['submodule', 'update', '--init', '--recursive'], {
-                          token: options.token,
-                          env: options.gitEnv,
-                          cwd: path,
-                        })
-                      }
-                    }),
-                  ),
-                remove: (path) =>
-                  detached(
-                    Effect.gen(function* () {
-                      const gone = yield* mirrorWrite(
-                        mirrorPathFor(project, home),
-                        gitAskedEffect(['worktree', 'remove', '--force', path]),
-                      )
-                      if (Result.isFailure(gone)) return yield* Effect.die(new Error(gone.failure.detail))
-                    }),
-                  ),
-                plant: (path) => {
-                  const plantedAt = resolve(path, recipe.env.plantAt)
-                  return mkdir(dirname(plantedAt), { recursive: true }).then(() =>
-                    writeFile(plantedAt, renderEnvFile(env.values), { mode: 0o600 }),
-                  )
-                },
+          const answer = yield* baseCheckFor(store, log, home).ask({
+            project,
+            base,
+            baseSha,
+            command: action.run,
+            prepared: recipe.steps.prepared.flatMap((a) =>
+              'run' in a ? [{ run: a.run, env: envForExtension(a.env), timeoutMs: parseDuration(a.timeout) }] : [],
+            ),
+            env: envForExtension(action.env),
+            runId,
+            signal: baseAbort.signal,
+            timeoutMs: parseDuration(action.timeout),
+            tree: {
+              cut: (path, sha) =>
+                detached(
+                  Effect.gen(function* () {
+                    const cut = yield* mirrorWrite(
+                      mirrorPathFor(project, home),
+                      gitAskedEffect(['worktree', 'add', '--force', '--detach', path, sha]),
+                    )
+                    if (Result.isFailure(cut)) return yield* Effect.die(new Error(cut.failure.detail))
+                    if (submodulesOf(recipe)) {
+                      // `worktree add` leaves submodule directories empty, as `provisionWorktree` says.
+                      yield* repo.git(['submodule', 'update', '--init', '--recursive'], {
+                        token: options.token,
+                        env: options.gitEnv,
+                        cwd: path,
+                      })
+                    }
+                  }),
+                ),
+              remove: (path) =>
+                detached(
+                  Effect.gen(function* () {
+                    const gone = yield* mirrorWrite(
+                      mirrorPathFor(project, home),
+                      gitAskedEffect(['worktree', 'remove', '--force', path]),
+                    )
+                    if (Result.isFailure(gone)) return yield* Effect.die(new Error(gone.failure.detail))
+                  }),
+                ),
+              plant: (path) => {
+                const plantedAt = resolve(path, recipe.env.plantAt)
+                return mkdir(dirname(plantedAt), { recursive: true }).then(() =>
+                  writeFile(plantedAt, renderEnvFile(env.values), { mode: 0o600 }),
+                )
               },
-            }),
-          )
+            },
+          })
           if (answer.verdict === 'red') {
             return { red: { command: action.run, base, baseSha, evidence: answer.evidence } }
           }
@@ -3834,15 +3830,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         recordCompletion: (head) =>
           Effect.gen(function* () {
             yield* recordDiff(branch, head)
-            yield* Effect.promise(() =>
-              appendNow(runId, [
-                {
-                  type: 'RunProposedCompletion',
-                  actor: 'conductor',
-                  data: parsePayload('RunProposedCompletion', { headSha: head }),
-                },
-              ]),
-            )
+            yield* appendNow(runId, [
+              {
+                type: 'RunProposedCompletion',
+                actor: 'conductor',
+                data: parsePayload('RunProposedCompletion', { headSha: head }),
+              },
+            ])
           }),
       })
 
@@ -3861,8 +3855,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * still `readFile` and nothing else.
        */
       const read = readWhatAFileKept(cwd, { read: (at) => readFile(at, 'utf8') })
-      /** …as the Effect the action holds; `readWhatAFileKept` is still a promise (row 8). */
-      const readPort = (spec: Parameters<typeof read>[0]) => Effect.promise(() => read(spec))
+      /** …which is already the Effect the action holds. */
+      const readPort = read
 
       /** `implement`'s dispatch, in the action's own fiber. An arrow: `dispatch` is declared below. */
       const workPort: WorkPortDeps = {
@@ -4204,22 +4198,23 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `PipelineOptions` gives — *an action that ran but whose verdict was never
        * recorded is the failure this design exists to remove.*
        */
-      const emit = async (event: AttemptEvent): Promise<number> => {
-        // An action's dispatch bills through here (`runActionPipeline`), not `runSpentFrom`.
-        if (event.type === 'RunSpent') {
-          const costUsd = (event.data as { costUsd?: number | null }).costUsd
-          if (costUsd === null || costUsd === undefined) spent.unknown += 1
-          else spent.usd += costUsd
-        }
-        // The version it landed at, which is what a `PassRouted` names (#931).
-        return appendNow(runId, [
-          {
-            type: event.type,
-            actor: 'conductor',
-            data: parsePayload(event.type, event.data),
-          } as ToAppend,
-        ])
-      }
+      const emit = (event: AttemptEvent): Effect.Effect<number> =>
+        Effect.suspend(() => {
+          // An action's dispatch bills through here (`runActionPipeline`), not `runSpentFrom`.
+          if (event.type === 'RunSpent') {
+            const costUsd = (event.data as { costUsd?: number | null }).costUsd
+            if (costUsd === null || costUsd === undefined) spent.unknown += 1
+            else spent.usd += costUsd
+          }
+          // The version it landed at, which is what a `PassRouted` names (#931).
+          return appendNow(runId, [
+            {
+              type: event.type,
+              actor: 'conductor',
+              data: parsePayload(event.type, event.data),
+            } as ToAppend,
+          ])
+        })
 
       /**
        * `implement`, the first time — the hook, the agent, and the receipt.
@@ -4313,35 +4308,33 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   onLifecycle: (_r, hook) => runLog.note('hook', hook),
                 })
 
-                yield* Effect.promise(() =>
-                  appendNow(runId, [
-                    {
-                      type: 'RunStarted',
-                      actor: 'conductor',
-                      data: parsePayload('RunStarted', {
-                        ticketId,
-                        // **The runtime that actually ran, not the pass's
-                        // default** (`#314`). This field answers *which runtime
-                        // wrote this*, and a step naming a second one makes the
-                        // default a wrong answer to it. No schema change and no
-                        // upcaster: the field exists and `model` beside it
-                        // already carries the recipe's, or `""`.
-                        runtime: dispatched.capabilities.id,
-                        // The recipe's `model:` where it named one, and the
-                        // runtime's own default where it did not (0063 §2) —
-                        // which is what the empty string has always meant here.
-                        model: spec.model ?? '',
-                        promptVersion,
-                        baseSha: tree.baseSha,
-                        configHash: resolved.configHash,
-                        worktree: tree.path,
-                        invocation: spawned
-                          ? { command: spawned.command, args: [...spawned.args], tier, limits: spend }
-                          : null,
-                      }),
-                    },
-                  ]),
-                )
+                yield* appendNow(runId, [
+                  {
+                    type: 'RunStarted',
+                    actor: 'conductor',
+                    data: parsePayload('RunStarted', {
+                      ticketId,
+                      // **The runtime that actually ran, not the pass's
+                      // default** (`#314`). This field answers *which runtime
+                      // wrote this*, and a step naming a second one makes the
+                      // default a wrong answer to it. No schema change and no
+                      // upcaster: the field exists and `model` beside it
+                      // already carries the recipe's, or `""`.
+                      runtime: dispatched.capabilities.id,
+                      // The recipe's `model:` where it named one, and the
+                      // runtime's own default where it did not (0063 §2) —
+                      // which is what the empty string has always meant here.
+                      model: spec.model ?? '',
+                      promptVersion,
+                      baseSha: tree.baseSha,
+                      configHash: resolved.configHash,
+                      worktree: tree.path,
+                      invocation: spawned
+                        ? { command: spawned.command, args: [...spawned.args], tier, limits: spend }
+                        : null,
+                    }),
+                  },
+                ])
                 // Before the plan that names its hash, and at version 0 (see
                 // `recordRecipe`); only a refusal other than "already there"
                 // is a defect, kept for the handler as `appendNow` keeps one.
@@ -4351,15 +4344,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     throw defect
                   }),
                 )
-                yield* Effect.promise(() =>
-                  appendNow(runId, [
-                    {
-                      type: 'StepsResolved',
-                      actor: 'conductor',
-                      data: parsePayload('StepsResolved', stepsResolved(runId, resolved)),
-                    },
-                  ]),
-                )
+                yield* appendNow(runId, [
+                  {
+                    type: 'StepsResolved',
+                    actor: 'conductor',
+                    data: parsePayload('StepsResolved', stepsResolved(runId, resolved)),
+                  },
+                ])
 
                 // **The implementer's prompt, recorded by the conductor before the
                 // hook server learns the run** (#928, 0100 §14). `register` reads
@@ -4470,21 +4461,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     },
                   ]
                 : []
-            yield* Effect.promise(() =>
-              appendFrom(runId, version, [
-                ...receipt,
-                {
-                  type: 'RunFailed',
-                  actor: 'conductor',
-                  data: parsePayload('RunFailed', outcome.failure),
-                },
-                runSpentFrom(
-                  outcome,
-                  { _tag: 'Action', step: 'implement', name: spec.name, round: 0 },
-                  dispatched.capabilities.id,
-                ),
-              ]),
-            )
+            yield* appendFrom(runId, version, [
+              ...receipt,
+              {
+                type: 'RunFailed',
+                actor: 'conductor',
+                data: parsePayload('RunFailed', outcome.failure),
+              },
+              runSpentFrom(
+                outcome,
+                { _tag: 'Action', step: 'implement', name: spec.name, round: 0 },
+                dispatched.capabilities.id,
+              ),
+            ])
             if (outcome.failure.kind === 'never-started') {
               // That agent touched nothing, so there is nothing in the worktree
               // it could have left dirty — `interrupted` does not stand for it.
@@ -4512,26 +4501,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             }
           }
 
-          yield* Effect.promise(() =>
-            appendFrom(runId, version, [
-              {
-                type: 'RunFinished',
-                actor: 'conductor',
-                data: parsePayload('RunFinished', {
-                  exitCode: outcome.exitCode ?? 0,
-                  turns: outcome.turns,
-                  durationMs: outcome.durationMs,
-                  costUsd: outcome.costUsd,
-                  ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
-                }),
-              },
-              runSpentFrom(
-                outcome,
-                { _tag: 'Action', step: 'implement', name: spec.name, round: 0 },
-                dispatched.capabilities.id,
-              ),
-            ]),
-          )
+          yield* appendFrom(runId, version, [
+            {
+              type: 'RunFinished',
+              actor: 'conductor',
+              data: parsePayload('RunFinished', {
+                exitCode: outcome.exitCode ?? 0,
+                turns: outcome.turns,
+                durationMs: outcome.durationMs,
+                costUsd: outcome.costUsd,
+                ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
+              }),
+            },
+            runSpentFrom(
+              outcome,
+              { _tag: 'Action', step: 'implement', name: spec.name, round: 0 },
+              dispatched.capabilities.id,
+            ),
+          ])
           log(`run finished: ${outcome.turns} turns, ${spentWords(outcome.costUsd)}`)
           runLog.note('run', `finished: ${outcome.turns} turns, ${spentWords(outcome.costUsd)}`)
 
@@ -4550,15 +4537,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // A receipt, so `interrupted` stands for nothing any more.
           stoppedBy = null
           yield* recordDiff(branch, head)
-          yield* Effect.promise(() =>
-            appendNow(runId, [
-              {
-                type: 'RunProposedCompletion',
-                actor: 'conductor',
-                data: parsePayload('RunProposedCompletion', { headSha: head }),
-              },
-            ]),
-          )
+          yield* appendNow(runId, [
+            {
+              type: 'RunProposedCompletion',
+              actor: 'conductor',
+              data: parsePayload('RunProposedCompletion', { headSha: head }),
+            },
+          ])
           return { committed: head }
         })
 
@@ -4747,7 +4732,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // dispatch writes it once the pipeline reads `fixed` back through
           // `actionOf`/`outcomeOf`. `RunSpent` is still this dispatch's own, since
           // spend is never reduced into a step's own outcome (0110).
-          yield* Effect.promise(() => appendNow(runId, [runSpentFrom(fixed, fixFor, dispatched.capabilities.id)]))
+          yield* appendNow(runId, [runSpentFrom(fixed, fixFor, dispatched.capabilities.id)])
           runLog.note(
             'fix',
             `round ${round}: ${committed ? after.slice(0, 7) : 'no commit'}` +
@@ -5075,41 +5060,42 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         runLog.note('route', `${route.from} → ${route.to}: ${route.why}`)
       }
       if (pass.routes.length > 0) {
-        yield* Effect.promise(async () => {
-          try {
-            await appendAt(
+        yield* appendAt(
+          runId,
+          pass.routes.map((route) => ({
+            type: 'ProposalRouted' as const,
+            actor: 'conductor',
+            // `{runId, offer, reply, decision}` (0120 §3, §5; `events.ts`'s
+            // own doc on `ProposalRouted`) — the five derived fields
+            // (`from`/`chose`/`to`/`why`/`ceiling`) stay on `RouteTaken`
+            // for this file's own reading (the run-log line above,
+            // `restartReason`, `nextPrompt`'s brief) but are not stored a
+            // second time; a reader of the event replays `routeNext`.
+            data: parsePayload('ProposalRouted', {
               runId,
-              pass.routes.map((route) => ({
-                type: 'ProposalRouted' as const,
-                actor: 'conductor',
-                // `{runId, offer, reply, decision}` (0120 §3, §5; `events.ts`'s
-                // own doc on `ProposalRouted`) — the five derived fields
-                // (`from`/`chose`/`to`/`why`/`ceiling`) stay on `RouteTaken`
-                // for this file's own reading (the run-log line above,
-                // `restartReason`, `nextPrompt`'s brief) but are not stored a
-                // second time; a reader of the event replays `routeNext`.
-                data: parsePayload('ProposalRouted', {
-                  runId,
-                  // `ended` is the `StepEnded` the proposal was taken from, recorded
-                  // when it was emitted: this batch comes after every lap (#931). The
-                  // findings and output are on it, so a route that names it does not
-                  // repeat them (0100 §14, #932); one that cannot name it keeps them.
-                  offer: {
-                    ...route.offer,
-                    proposal: route.ended === null ? route.offer.proposal : stripEvidence(route.offer.proposal),
-                    ended: route.ended,
-                  },
-                  reply: route.reply,
-                  decision: route.decision,
-                }),
-              })),
-            )
-          } catch (defect) {
-            const why = whyOf(defect)
-            runLog.note('route', `the ${pass.routes.length} route(s) were not appended — ${why}`)
-            log(`ProposalRouted was refused by the store: ${why}`)
-          }
-        })
+              // `ended` is the `StepEnded` the proposal was taken from, recorded
+              // when it was emitted: this batch comes after every lap (#931). The
+              // findings and output are on it, so a route that names it does not
+              // repeat them (0100 §14, #932); one that cannot name it keeps them.
+              offer: {
+                ...route.offer,
+                proposal: route.ended === null ? route.offer.proposal : stripEvidence(route.offer.proposal),
+                ended: route.ended,
+              },
+              reply: route.reply,
+              decision: route.decision,
+            }),
+          })),
+        ).pipe(
+          // A defect and not an interrupt: the pass is still interruptible here.
+          Effect.catchDefect((defect: unknown) =>
+            Effect.sync(() => {
+              const why = whyOf(defect)
+              runLog.note('route', `the ${pass.routes.length} route(s) were not appended — ${why}`)
+              log(`ProposalRouted was refused by the store: ${why}`)
+            }),
+          ),
+        )
       }
 
       const outcome = outcomeOf(pass.end)
@@ -5244,21 +5230,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // ---- landed -------------------------------------------------------------
       const merged = landedAt()
       if (outcome === 'landed' && merged !== null) {
-        yield* Effect.promise(() =>
-          appendNow(ticketId, [
-            {
-              type: 'TicketLanded',
-              actor: 'conductor',
-              data: parsePayload('TicketLanded', { mergeCommit: merged, base }),
-            },
-            // **In the same append as the landing, so the two cannot come apart**
-            // (`end-step.ts`, `endPlan`). The pass resolved this against `landed`
-            // before this line and appended nothing; one transaction is what makes
-            // an `EndActionsResolved{landed}` over an unrecorded landing
-            // unreachable rather than merely unlikely.
-            ...endPlan,
-          ]),
-        )
+        yield* appendNow(ticketId, [
+          {
+            type: 'TicketLanded',
+            actor: 'conductor',
+            data: parsePayload('TicketLanded', { mergeCommit: merged, base }),
+          },
+          // **In the same append as the landing, so the two cannot come apart**
+          // (`end-step.ts`, `endPlan`). The pass resolved this against `landed`
+          // before this line and appended nothing; one transaction is what makes
+          // an `EndActionsResolved{landed}` over an unrecorded landing
+          // unreachable rather than merely unlikely.
+          ...endPlan,
+        ])
         endResolved = endPlan
         // What is left is telling the issue, which reads the plan that was just
         // appended rather than the stream.
@@ -5282,18 +5266,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             .then((events) => reduceTicket(events).runs.indexOf(runId) + 1 || 1)
             .catch(() => 1),
         )
-        yield* Effect.promise(() =>
-          tellGitHubAbout({
-            store,
-            github: options.client,
-            ticketId,
-            ...ticketSnapshots,
-            labels: labelsFor('landed'),
-            editEnded: true,
-            appended: endResolved,
-            landed: { mergeCommit: merged, base, attempt, summary },
-          }),
-        )
+        yield* tellGitHubAboutEffect({
+          store,
+          github: options.client,
+          ticketId,
+          ...ticketSnapshots,
+          labels: labelsFor('landed'),
+          editEnded: true,
+          appended: endResolved,
+          landed: { mergeCommit: merged, base, attempt, summary },
+        })
         log(`landed ${merged.slice(0, 7)} on ${base}`)
         // **Every kept ref for this ticket, not only this run's own** (`#421`)
         // — an earlier run of the same ticket may have left one too, and a
@@ -5503,61 +5485,55 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * the same commit, or a correct approval reads as stale.
          */
         if (!held && judged && onOrigin !== null) {
-          yield* Effect.promise(() =>
-            appendNow(runId, [
-              {
-                type: 'StepEnded',
-                actor: 'conductor',
-                data: parsePayload('StepEnded', {
-                  runId,
-                  outcome: {
-                    step: stopped?.step ?? 'proposed',
-                    round: roundsSpent,
-                    actions: [
-                      {
-                        plugin: 'conductor',
-                        name: stopped?.step === 'merge' ? 'conductor:unfixed' : 'conductor:judge',
-                        onSha: headSha,
-                        evidence: question,
-                        yields: 'signoff',
-                        result: { _tag: 'Completed', requested: { question } },
-                      },
-                    ],
-                  },
-                }),
-              },
-            ]),
-          )
+          yield* appendNow(runId, [
+            {
+              type: 'StepEnded',
+              actor: 'conductor',
+              data: parsePayload('StepEnded', {
+                runId,
+                outcome: {
+                  step: stopped?.step ?? 'proposed',
+                  round: roundsSpent,
+                  actions: [
+                    {
+                      plugin: 'conductor',
+                      name: stopped?.step === 'merge' ? 'conductor:unfixed' : 'conductor:judge',
+                      onSha: headSha,
+                      evidence: question,
+                      yields: 'signoff',
+                      result: { _tag: 'Completed', requested: { question } },
+                    },
+                  ],
+                },
+              }),
+            },
+          ])
         }
         const waitId = crypto.randomUUID()
-        yield* Effect.promise(() =>
-          appendNow(ticketId, [
-            {
-              type: 'WaitStarted',
-              actor: 'conductor',
-              data: parsePayload('WaitStarted', { waitId, reason }),
-            },
-            // In the same append as the block, for the landing's reason: a
-            // `when: blocked` action recorded as carried out for a block the log
-            // does not carry is the same orphan one ending along (`endPlan`).
-            ...endPlan,
-          ]),
-        )
+        yield* appendNow(ticketId, [
+          {
+            type: 'WaitStarted',
+            actor: 'conductor',
+            data: parsePayload('WaitStarted', { waitId, reason }),
+          },
+          // In the same append as the block, for the landing's reason: a
+          // `when: blocked` action recorded as carried out for a block the log
+          // does not carry is the same orphan one ending along (`endPlan`).
+          ...endPlan,
+        ])
         endResolved = endPlan
         released = true
-        yield* Effect.promise(() =>
-          tellGitHubAbout({
-            store,
-            github: options.client,
-            ticketId,
-            ...ticketSnapshots,
-            question,
-            waitId,
-            editEnded: true,
-            labels: labelsFor('waiting'),
-            appended: endResolved,
-          }),
-        )
+        yield* tellGitHubAboutEffect({
+          store,
+          github: options.client,
+          ticketId,
+          ...ticketSnapshots,
+          question,
+          waitId,
+          editEnded: true,
+          labels: labelsFor('waiting'),
+          appended: endResolved,
+        })
         // #655: a run that started and met the account's limit. The wait above is
         // the ticket's and is already written; this only locks the account.
         const walled = reason._tag === 'AgentCrashed' && reason.cause === 'crash' ? accountWallOf(reason.detail) : null

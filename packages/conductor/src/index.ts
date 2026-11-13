@@ -2,9 +2,9 @@ export { readState } from './snapshot-state.ts'
 export { recordPrompt } from './record-prompt.ts'
 export { resolvePromptRefs, type PromptRefPorts } from './prompt-refs.ts'
 export {
-  claimTicket,
+  claimTicketEffect,
   conductorWorker,
-  releaseTicket,
+  releaseTicketEffect,
   type Claim,
   type ClaimOptions,
   type ClaimRefusal,
@@ -107,16 +107,20 @@ export {
 } from './attempts.ts'
 export {
   appendEndActions,
+  appendEndActionsEffect,
   endedWithoutEndActions,
+  endedWithoutEndActionsEffect,
   resolveEndActions,
   type TerminalOutcome,
   type UnresolvedEnd,
 } from './end-step.ts'
 export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor } from './labels.ts'
 export {
-  tellGitHub,
+  tellGitHubEffect,
   tellGitHubAbout,
-  sweepRefs,
+  tellGitHubAboutEffect,
+  sweepRefsEffect,
+  type TellAboutOptions,
   type IssueChange,
   type IssueChannel,
   type IssueWrite,
@@ -143,7 +147,6 @@ export { ANSWER_CLOSE_MARKER, answerOpenMarker, upsertSection } from './body-sec
 export {
   editBodyAndRequeue,
   editBodyAndRequeueHolding,
-  writeSection,
   type EditBodyAndRequeueOptions,
   type EditBodyAndRequeueResult,
   type WriteSectionResult,
