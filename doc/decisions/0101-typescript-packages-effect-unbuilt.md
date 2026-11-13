@@ -105,7 +105,7 @@ turn limit, so every idiom it adopts is paid for again on every run.
    rather than because someone remembered to release it.
    - **What is an Effect**: every function in `apps/cli`, `event-store`,
      `projector`, `github`, `repo`, `agent`, `actions`, `conductor`, `daemon`,
-     `setup` and `recipe` that reads or writes outside the process — the store, a
+     `setup`, `recipe` and `sandbox` that reads or writes outside the process — the store, a
      table, the network, git, a child process, the filesystem, the clock it waits
      on. These are the packages `PACKAGES` names in
      `packages/domain/unit/effect-ratchet.test.ts`, and
