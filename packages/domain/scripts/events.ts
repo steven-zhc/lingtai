@@ -51,13 +51,13 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     event: 'ConductorShutdownRequested',
     why: "type is the call's first argument, a string",
     file: 'packages/daemon/src/control.ts',
-    anchor: "return append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store)",
+    anchor: "append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store)",
   },
   {
     event: 'ConductorShutdownRequested',
     why: "type is the call's first argument, a string",
     file: 'packages/daemon/src/control.ts',
-    anchor: "const version = await append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store, at)",
+    anchor: "return yield* append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store, at)",
   },
   {
     event: 'ConductorStarted',
@@ -69,7 +69,7 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     event: 'RunRequested',
     why: "type is the call's first argument, a string",
     file: 'packages/daemon/src/control.ts',
-    anchor: "await append('RunRequested', { project, issue, by }, store)",
+    anchor: "append('RunRequested', { project, issue, by }, store)",
   },
   {
     event: 'DiscussionAsked',
@@ -136,7 +136,7 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     event: 'ConductorResumed',
     why: "type is a string argument of the module's own `append`",
     file: 'packages/daemon/src/control.ts',
-    anchor: "await append('ConductorResumed', { by }, store, at)",
+    anchor: "append('ConductorResumed', { by }, store, at)",
   },
   {
     event: 'DayCeilingReached',
