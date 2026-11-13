@@ -213,6 +213,7 @@ import {
 import { DEFAULT_ACTION, isBuiltInJudge } from '@lingtai/recipe'
 import {
   UNREACHABLE_WAITS,
+  isRemoteErrorFailure,
   isUnreachableFailure,
   mirrorPathFor,
   mirrorWrite,
@@ -2416,27 +2417,56 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               if (wip !== null) yield* noteKept(wip)
               return null
             }
-            const pushed = yield* gitAskedEffect([
-              'push',
-              // No lease at all where there is nothing for `branch` to carry:
-              // a `--force-with-lease` protecting a refspec this push does not
-              // make is a command refused for a ref it was never going to touch.
-              ...(branchHead === null ? [] : [`--force-with-lease=refs/heads/${branch}:${lease ?? ''}`]),
-              'origin',
-              // `HEAD` where a WIP never moved it past what `branch` is meant to
-              // carry — every ending this file already had — and the explicit
-              // sha where it did: `HEAD` by then names the WIP, and `branch`
-              // must never.
-              ...(branchHead === null ? [] : [`${wip === null ? 'HEAD' : branchHead}:refs/heads/${branch}`]),
-              `+HEAD:refs/heads/${arm}`,
-            ])
+            // Retried while origin cannot be reached or answers a 5xx (#1125). A 5xx that origin
+            // applied leaves the next try's lease stale, so — as `landNow` does — a stale lease
+            // is settled by asking origin what it holds. One command moves two refs and is not
+            // atomic, so neither is inferred from the other: both must be where this push put them.
+            const pushed = yield* gitAskedEffect(
+              [
+                'push',
+                // No lease at all where there is nothing for `branch` to carry:
+                // a `--force-with-lease` protecting a refspec this push does not
+                // make is a command refused for a ref it was never going to touch.
+                ...(branchHead === null ? [] : [`--force-with-lease=refs/heads/${branch}:${lease ?? ''}`]),
+                'origin',
+                // `HEAD` where a WIP never moved it past what `branch` is meant to
+                // carry — every ending this file already had — and the explicit
+                // sha where it did: `HEAD` by then names the WIP, and `branch`
+                // must never.
+                ...(branchHead === null ? [] : [`${wip === null ? 'HEAD' : branchHead}:refs/heads/${branch}`]),
+                `+HEAD:refs/heads/${arm}`,
+              ],
+              options.unreachableWaits ?? UNREACHABLE_WAITS,
+              (err) =>
+                branchHead !== null && /stale info/i.test(err.stderr ?? err.detail)
+                  ? Effect.gen(function* () {
+                      const listed = yield* Effect.result(
+                        gitHere(['ls-remote', 'origin', `refs/heads/${branch}`, `refs/heads/${arm}`]),
+                      )
+                      if (Result.isFailure(listed))
+                        return yield* Effect.fail(isUnreachableFailure(listed.failure) ? listed.failure : err)
+                      const held = new Map(
+                        listed.success
+                          .split('\n')
+                          .map((line) => line.split(/\s+/))
+                          .map(([sha, ref]) => [ref, sha] as const),
+                      )
+                      return held.get(`refs/heads/${branch}`) === branchHead && held.get(`refs/heads/${arm}`) === head
+                        ? ''
+                        : yield* Effect.fail(err)
+                    })
+                  : Effect.fail(err),
+            )
             if (Result.isFailure(pushed)) {
               // **One exit code for two refspecs, so a failure is asked which**
               // (`#251`). `git push` is not atomic: origin takes the forced arm,
               // rejects the leased `agent/<n>`, and exits non-zero with the commits
               // on origin. Forced and at the same head, this second push is a no-op
               // where the arm already went and fails again where the transport broke.
-              const armAlone = yield* gitAskedEffect(['push', 'origin', `+HEAD:refs/heads/${arm}`])
+              const armAlone = yield* gitAskedEffect(
+                ['push', 'origin', `+HEAD:refs/heads/${arm}`],
+                options.unreachableWaits ?? UNREACHABLE_WAITS,
+              )
               if (Result.isSuccess(armAlone)) {
                 runLog.note(
                   'push',
@@ -3243,7 +3273,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           if (Result.isFailure(pushed)) {
             return {
               notMerged: {
-                reason: isUnreachableFailure(pushed.failure) ? 'unreachable' : 'push-rejected',
+                reason: isUnreachableFailure(pushed.failure)
+                  ? 'unreachable'
+                  : isRemoteErrorFailure(pushed.failure)
+                    ? 'remote-error'
+                    : 'push-rejected',
                 detail: pushed.failure.detail,
               },
             }

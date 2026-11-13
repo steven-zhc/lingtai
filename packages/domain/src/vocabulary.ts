@@ -75,6 +75,9 @@ export const RefusalReason = z.enum([
   // Git could not reach origin for the fetch or push, after the lane's own tries —
   // nothing about the branch was judged, and approve re-runs only the land (#1029).
   'unreachable',
+  // GitHub answered the push with a 5xx and kept answering it through the lane's own
+  // tries — nothing about the branch or the base was judged, and approve re-runs only the land (#1125).
+  'remote-error',
 ])
 export type RefusalReason = z.infer<typeof RefusalReason>
 

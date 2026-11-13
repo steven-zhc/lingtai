@@ -142,6 +142,8 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
   'base-checked-out': 'person',
   /** origin did not answer; a network fault, not a verdict on the branch or on a person. */
   unreachable: 'lingtai',
+  /** GitHub answered a push with a server error; a fault on its side, not a verdict on the branch. */
+  'remote-error': 'lingtai',
   /** Lingtai's mirror and origin disagree about the base. Lingtai's mirror. */
   'unpushed-base': 'lingtai',
   /**
@@ -310,6 +312,18 @@ const REFUSAL_READING: Record<
   unreachable: {
     says: ({ branch, base }) =>
       `origin could not be reached while ${branch} was being landed on ${base}, after 3 tries; nothing about ${branch} was judged.`,
+    move: {
+      action: 'approve',
+      why: 'approving re-runs only the land, at the head the steps already passed — a requeue would pay for the work again',
+    },
+  },
+  'remote-error': {
+    says: ({ branch, base, detail }) => {
+      const ref = /->\s+(?:refs\/heads\/)?(\S+)\s+\(/.exec(detail)?.[1]
+      const push = ref === undefined ? 'the push' : ref === base ? `the push of ${base}` : `the push of ${ref}`
+      const tries = /\(after (\d+) tries\)/.exec(detail)?.[1] ?? '3'
+      return `GitHub answered a server error on ${push} while ${branch} was being landed on ${base}, after ${tries} tries; nothing about ${branch} or ${base} is wrong.`
+    },
     move: {
       action: 'approve',
       why: 'approving re-runs only the land, at the head the steps already passed — a requeue would pay for the work again',

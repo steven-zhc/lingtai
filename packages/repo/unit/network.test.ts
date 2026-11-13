@@ -2,7 +2,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { RepoFailed } from '../src/git.ts'
-import { isUnreachable, retryUnreachable } from '../src/network.ts'
+import { isRemoteError, isRemoteErrorFailure, isUnreachable, remoteErrorRef, retryUnreachable } from '../src/network.ts'
 
 describe('isUnreachable', () => {
   it.each([
@@ -72,5 +72,62 @@ describe('retryUnreachable', () => {
   it('reads stderr when present', async () => {
     const f = flaky(1, new RepoFailed({ operation: 'git push', detail: 'Command failed', stderr: 'Connection reset' }))
     await expect(Effect.runPromise(retryUnreachable(f.effect, waits))).resolves.toBe('ok')
+  })
+})
+
+describe('isRemoteError (#1125)', () => {
+  it.each(['Internal Server Error', 'Bad Gateway', 'Service Unavailable', 'Gateway Timeout'])(
+    'is true for a remote rejected line answered %s',
+    (reason) => expect(isRemoteError(` ! [remote rejected]   HEAD -> agent/1068 (${reason})`)).toBe(true),
+  )
+
+  it.each([
+    ' ! [remote rejected]   HEAD -> main (protected branch hook declined)',
+    ' ! [remote rejected]   HEAD -> main (pre-receive hook declined)',
+    ' ! [remote rejected]   HEAD -> main (failed to update ref)',
+    ' ! [rejected]          HEAD -> main (non-fast-forward)',
+    'remote: Internal Server Error',
+    '',
+  ])('is false for %j', (text) => expect(isRemoteError(text)).toBe(false))
+
+  it('reads detail alone after the tries have been appended', () => {
+    const err = new RepoFailed({
+      operation: 'git push',
+      detail:
+        'remote: Internal Server Error\n ! [remote rejected]   HEAD -> agent/1068 (Internal Server Error) (after 3 tries)',
+    })
+    expect(isRemoteErrorFailure(err)).toBe(true)
+  })
+
+  it('names the ref git printed', () => {
+    expect(remoteErrorRef(' ! [remote rejected]   HEAD -> refs/heads/agent/1068 (Bad Gateway)')).toBe('agent/1068')
+    expect(remoteErrorRef('nothing')).toBeNull()
+  })
+
+  const fiveHundred = new RepoFailed({
+    operation: 'git push',
+    detail: ' ! [remote rejected]   HEAD -> agent/1068 (Internal Server Error)',
+  })
+  const flaky = (failures: number) => {
+    let calls = 0
+    return {
+      effect: Effect.suspend(() => (calls++ < failures ? Effect.fail(fiveHundred) : Effect.succeed('ok'))),
+      calls: () => calls,
+    }
+  }
+  const waits = ['0 millis', '0 millis'] as const
+
+  it('retryUnreachable retries it and succeeds within three tries', async () => {
+    const f = flaky(2)
+    await expect(Effect.runPromise(retryUnreachable(f.effect, waits))).resolves.toBe('ok')
+    expect(f.calls()).toBe(3)
+  })
+
+  it('retryUnreachable names the tries when they run out', async () => {
+    const f = flaky(10)
+    const err = await Effect.runPromise(Effect.flip(retryUnreachable(f.effect, waits)))
+    expect(f.calls()).toBe(3)
+    expect(err.detail).toContain('(after 3 tries)')
+    expect(isRemoteErrorFailure(err)).toBe(true)
   })
 })

@@ -74,7 +74,14 @@ import { type Duration, Effect, Result } from 'effect'
 import { type GitRunOptions, RepoFailed, type TokenSource, gitEffect } from './git.ts'
 import { landingSubject } from './landing-subject.ts'
 import { mirrorWrite } from './mirror-lock.ts'
-import { BASE_PROTECTED, PUSH_REJECTED, UNREACHABLE_WAITS, isUnreachableFailure, retryUnreachable } from './network.ts'
+import {
+  BASE_PROTECTED,
+  PUSH_REJECTED,
+  UNREACHABLE_WAITS,
+  isRemoteErrorFailure,
+  isUnreachableFailure,
+  retryUnreachable,
+} from './network.ts'
 import { worktreePath } from './worktree.ts'
 
 export interface IntegrateOptions {
@@ -651,9 +658,28 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // because nothing is wrong with the branch and nobody's judgement is
       // owed. Only a base that beats every one of those pushes becomes an
       // `IntegrationRefused`, at the loop below — see `LostPush`.
-      const pushed = yield* Effect.result(
-        retryUnreachable(at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd), waits),
+      // **A failed try asks origin whether it took the push anyway** (#1125): a 5xx does
+      // not prove the push failed, and a retry after another lane landed on top would be
+      // a non-fast-forward for a merge that is already on the base, then `no-commits`.
+      // The merge is this lane's own `--no-ff` commit, so if it is an ancestor of origin's
+      // base only this push can have put it there. Inside each try, so a read that fails
+      // is another try and the push's own failure is what comes back — never the read's.
+      const landedAlready = at(['fetch', 'origin', `refs/heads/${options.base}`], cwd).pipe(
+        Effect.andThen(at(['merge-base', '--is-ancestor', mergeCommit, 'FETCH_HEAD'], cwd)),
+        Effect.as(true),
+        Effect.catchTag('RepoFailed', (e) => (e.exitCode === 1 ? Effect.succeed(false) : Effect.fail(e))),
       )
+      const pushTry = at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd).pipe(
+        Effect.catchTag('RepoFailed', (err) =>
+          isRemoteErrorFailure(err) || PUSH_REJECTED.test(err.stderr ?? err.detail)
+            ? landedAlready.pipe(
+                Effect.orElseSucceed(() => false),
+                Effect.flatMap((landed) => (landed ? Effect.succeed('') : Effect.fail(err))),
+              )
+            : Effect.fail(err),
+        ),
+      )
+      const pushed = yield* Effect.result(retryUnreachable(pushTry, waits))
       if (Result.isFailure(pushed)) {
         // A push that failed for some other reason is not this lane's business
         // to read, and goes to the unexpected channel at the bottom.
@@ -686,7 +712,9 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         // origin did not answer, after the tries: nothing was judged (#1029).
         isUnreachableFailure(err)
           ? refuse('unreachable', `origin could not be reached: ${err.detail}`)
-          : refuse('unexpected', `the integration failed unexpectedly: ${err.detail}`),
+          : isRemoteErrorFailure(err)
+            ? refuse('remote-error', `GitHub answered a server error on the push: ${err.detail}`)
+            : refuse('unexpected', `the integration failed unexpectedly: ${err.detail}`),
       ),
       // And the defect channel, for what is not a git failure at all. It is the
       // remains of the catch-all rather than the catch-all: everything the type

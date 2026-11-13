@@ -41,12 +41,20 @@ function fakeGit(
     failPush?: string
     /** How many pushes fail before one succeeds; every one when absent. */
     failPushTimes?: number
+    /** Push `i` fails with `pushScript[i]`; one past the end succeeds. Wins over `failPush`. */
+    pushScript?: string[]
     failFetch?: string
     failFetchTimes?: number
+    /**
+     * What `merge-base --is-ancestor <merge> FETCH_HEAD` answers, in order (#1125): `yes` is
+     * exit 0, `no` is exit 1 and `error` is a failed read. Past the end it answers `no`.
+     */
+    ancestry?: Array<'yes' | 'no' | 'error'>
   } = {},
 ) {
   let pushes = 0
   let fetches = 0
+  let asked = 0
   const calls: Call[] = []
   const sha = '1'.repeat(40)
 
@@ -56,6 +64,17 @@ function fakeGit(
   const run = (args: string[], options: { cwd?: string }): Effect.Effect<string, RepoFailed> => {
     calls.push({ args: [...args], cwd: options.cwd ?? '' })
     const [cmd, second] = args
+    if (cmd === 'merge-base' && second === '--is-ancestor') {
+      const answer = opts.ancestry?.[asked++] ?? 'no'
+      if (answer === 'yes') return Effect.succeed('')
+      return Effect.fail(
+        new RepoFailed({
+          operation: 'git merge-base',
+          detail: answer === 'no' ? '' : 'fatal: bad object FETCH_HEAD',
+          exitCode: answer === 'no' ? 1 : 128,
+        }),
+      )
+    }
     if (cmd === 'rev-parse') return Effect.succeed(sha)
     if (cmd === 'rev-list') return Effect.succeed('1')
     if (cmd === 'log') return Effect.succeed((opts.subjects ?? []).join('\n'))
@@ -66,7 +85,16 @@ function fakeGit(
     if (cmd === 'fetch' && opts.failFetch !== undefined && fetches++ < (opts.failFetchTimes ?? Infinity)) {
       return Effect.fail(new RepoFailed({ operation: 'git fetch', detail: opts.failFetch }))
     }
-    if (cmd === 'push' && opts.failPush !== undefined && pushes++ < (opts.failPushTimes ?? Infinity)) {
+    if (cmd === 'push' && opts.pushScript !== undefined) {
+      const detail = opts.pushScript[pushes++]
+      if (detail !== undefined) return Effect.fail(new RepoFailed({ operation: 'git push', detail }))
+    }
+    if (
+      cmd === 'push' &&
+      opts.pushScript === undefined &&
+      opts.failPush !== undefined &&
+      pushes++ < (opts.failPushTimes ?? Infinity)
+    ) {
       return Effect.fail(new RepoFailed({ operation: 'git push', detail: opts.failPush }))
     }
     // The delete half of cleanup (`update-ref -d`) must never be the thing a
@@ -287,6 +315,43 @@ describe('a fetch or push that cannot reach origin is retried in place (#1029)',
     expect(result.reason).toBe('unreachable')
     expect(result.detail).toContain('(after 3 tries)')
     expect(count(fake.calls, 'push')).toBe(3)
+  })
+
+  const ERROR_5XX = ' ! [remote rejected]   HEAD -> main (Internal Server Error)'
+
+  it('lands a base push that 5xx-ed but whose merge is already on origin, never no-commits (#1125)', async () => {
+    const fake = fakeGit({ failPush: ERROR_5XX, failPushTimes: 1, ancestry: ['yes'] })
+    const { result, types } = await run(fake)
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    expect(count(fake.calls, 'push')).toBe(1)
+    expect(types).not.toContain('IntegrationRefused')
+  })
+
+  it('refuses remote-error when every base push 5xxs and origin never has the merge (#1125)', async () => {
+    const fake = fakeGit({ failPush: ERROR_5XX })
+    const { result } = await run(fake)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('remote-error')
+    expect(result.detail).toContain('(after 3 tries)')
+    expect(count(fake.calls, 'push')).toBe(3)
+  })
+
+  it('asks origin after the last 5xx try too, and lands if the merge is there (#1125)', async () => {
+    const fake = fakeGit({ failPush: ERROR_5XX, ancestry: ['no', 'error', 'yes'] })
+    const { result } = await run(fake)
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    expect(count(fake.calls, 'push')).toBe(3)
+  })
+
+  it('a 5xx that was applied, a failed read, then a rejection with the merge on origin lands (#1125)', async () => {
+    const fake = fakeGit({
+      pushScript: [ERROR_5XX, '! [rejected] HEAD -> main (non-fast-forward)'],
+      ancestry: ['error', 'yes'],
+    })
+    const { result, types } = await run(fake)
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    expect(count(fake.calls, 'push')).toBe(2)
+    expect(types).not.toContain('IntegrationRefused')
   })
 
   it('lands a fetch that fails once and then succeeds', async () => {
