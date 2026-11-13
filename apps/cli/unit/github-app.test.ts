@@ -6,7 +6,7 @@
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { APP_WAIT_MS, type AppWaitWorld, askFirstProject, waitForApp, waitForAppEffect } from '../src/github-app.ts'
+import { APP_WAIT_MS, type AppWaitWorld, askFirstProjectEffect, waitForAppEffect } from '../src/github-app.ts'
 import type { QuestionWorld } from '../src/question.ts'
 
 // Same reason as `question.test.ts`: the assertions below read `paint`'s
@@ -19,6 +19,10 @@ afterAll(() => {
   if (before === undefined) delete process.env['NO_COLOR']
   else process.env['NO_COLOR'] = before
 })
+
+const waitForApp = (...args: Parameters<typeof waitForAppEffect>) => Effect.runPromise(waitForAppEffect(...args))
+const askFirstProject = (...args: Parameters<typeof askFirstProjectEffect>) =>
+  Effect.runPromise(askFirstProjectEffect(...args))
 
 function questionWorld(answers: (string | null)[] = []): { world: QuestionWorld; asked: string[] } {
   const queue = [...answers]

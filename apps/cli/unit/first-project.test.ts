@@ -18,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FirstProjectWorld, GitResult, RegisterLocalPayload } from '../src/first-project.ts'
 import { chooseFirstProject, liveFirstProjectWorld } from '../src/first-project.ts'
 import { flagsOf } from '../src/wizard-options.ts'
+import { liftFirstProjectWorld, liftPort, type PromiseFirstProjectWorld } from '../test/first-project-world.ts'
 
 const before = process.env['NO_COLOR']
 beforeAll(() => {
@@ -57,7 +58,7 @@ const project = (name: string, owner: string | null): ProjectState => ({
 
 type GitPlan = Record<string, GitResult>
 
-function fakeGit(plan: GitPlan): FirstProjectWorld['git'] {
+function fakeGit(plan: GitPlan): PromiseFirstProjectWorld['git'] {
   return async (dir, args) => {
     const key = `${dir}::${args.join(' ')}`
     const found = plan[key]
@@ -97,19 +98,19 @@ function harness(options: {
   projects?: ProjectState[]
   files?: Record<string, string>
   signedIn?: string[]
-  setupReader?: FirstProjectWorld['setupReader']
-  exists?: FirstProjectWorld['exists']
-  app?: FirstProjectWorld['github']['app']
+  setupReader?: PromiseFirstProjectWorld['setupReader']
+  exists?: PromiseFirstProjectWorld['exists']
+  app?: PromiseFirstProjectWorld['github']['app']
   boardUrl?: string | null
-  waitForApp?: FirstProjectWorld['github']['waitForApp']
-  picker?: FirstProjectWorld['github']['picker']
-  add?: FirstProjectWorld['github']['add']
+  waitForApp?: PromiseFirstProjectWorld['github']['waitForApp']
+  picker?: PromiseFirstProjectWorld['github']['picker']
+  add?: PromiseFirstProjectWorld['github']['add']
   kept?: string
-  history?: FirstProjectWorld['history']
-  inFlight?: FirstProjectWorld['inFlight']
+  history?: PromiseFirstProjectWorld['history']
+  inFlight?: PromiseFirstProjectWorld['inFlight']
   auth?: () => 'app' | 'gh' | null
-  ghStatus?: FirstProjectWorld['github']['ghStatus']
-  writeAuth?: FirstProjectWorld['github']['writeAuth']
+  ghStatus?: PromiseFirstProjectWorld['github']['ghStatus']
+  writeAuth?: PromiseFirstProjectWorld['github']['writeAuth']
   gh?: GhRun
 }): Harness {
   const answers = [...(options.answers ?? [])]
@@ -121,7 +122,7 @@ function harness(options: {
   const files = mapFiles(options.files ?? {})
   const signedIn = options.signedIn ?? ['claude-code']
 
-  const world: FirstProjectWorld = {
+  const world: PromiseFirstProjectWorld = {
     ask: async (prompt) => {
       asked.push(prompt)
       return answers.length > 0 ? answers.shift()! : null
@@ -162,7 +163,7 @@ function harness(options: {
       add: options.add ?? (async () => ({ ok: false as const })),
     },
   }
-  return { world, asked, logged, registered, files, authWrites, removed }
+  return { world: liftFirstProjectWorld(world), asked, logged, registered, files, authWrites, removed }
 }
 
 /**
@@ -266,7 +267,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       git: {},
     })
     const git = world.git
-    world.git = async (dir, args) => {
+    world.git = (dir, args) => {
       asked.push(`git ${dir}`)
       return git(dir, args)
     }
@@ -447,11 +448,11 @@ describe('chooseFirstProject — the local branch (#394)', () => {
   it('--defaults on a detached HEAD refuses, naming the directory and --base, and makes no branch (#745)', async () => {
     const calls: string[] = []
     const { world, logged } = harness({ git: {} })
-    world.git = async (dir, args) => {
+    world.git = liftPort(async (dir, args) => {
       calls.push(args.join(' '))
       if (args[0] === 'rev-parse' && args[1] === '--show-toplevel') return ok('/repo\n')
       return fail('no')
-    }
+    })
 
     const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
 
@@ -465,7 +466,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const order: string[] = []
     const { world, registered, files } = harness({ answers: [...RECIPE_FLOW_DEFAULTS] })
     let made = false
-    world.git = async (dir, args) => {
+    world.git = liftPort(async (dir, args) => {
       const key = args.join(' ')
       order.push(key)
       if (key === 'rev-parse --show-toplevel') return ok('/repo\n')
@@ -475,7 +476,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       if (key === 'rev-parse --verify refs/heads/lingtai-base^{commit}')
         return made ? ok('aaa111\n') : fail('unknown revision')
       throw new Error(`unplanned git call: ${key}`)
-    }
+    })
     const reader = world.setupReader
     world.setupReader = (top) => (order.push('recipe flow'), reader(top))
 
@@ -491,7 +492,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
   it('a tag named lingtai-base is not the branch: the branch is made and its sha registered (#745)', async () => {
     const { world, registered } = harness({ answers: [...RECIPE_FLOW_DEFAULTS] })
     let made = false
-    world.git = async (dir, args) => {
+    world.git = liftPort(async (dir, args) => {
       const key = args.join(' ')
       if (key === 'rev-parse --show-toplevel') return ok('/repo\n')
       if (key === 'rev-parse --verify lingtai-base^{commit}') return ok('oldtag1\n')
@@ -500,7 +501,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       if (key === 'branch lingtai-base main') return ((made = true), ok(''))
       if (key === 'rev-parse --verify refs/heads/lingtai-base^{commit}') return made ? ok('aaa111\n') : fail('unknown')
       throw new Error(`unplanned git call: ${key}`)
-    }
+    })
 
     const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
 
@@ -515,7 +516,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       git: { ...LOCAL_GIT, '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n') },
     })
     const git = world.git
-    world.git = async (dir, args) => (calls.push(args.join(' ')), git(dir, args))
+    world.git = (dir, args) => (calls.push(args.join(' ')), git(dir, args))
 
     const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
 
@@ -1082,10 +1083,10 @@ describe('runGithubBranch on a gh machine (#708)', () => {
       },
     })
     h.world.github.auth = () => 'gh'
-    h.world.github.boardUrl = async () => {
+    h.world.github.boardUrl = liftPort(async () => {
       calls.board++
       return null
-    }
+    })
     const result = await chooseFirstProject(h.world, { github: 'acme/widgets' })
     expect(result).toEqual({
       ok: true,
@@ -1150,10 +1151,10 @@ describe('chooseFirstProject — how this machine reaches GitHub (#710)', () => 
   it('signed in with both scopes, the default is gh: written, no board, no App question', async () => {
     let boards = 0
     const h = harness({ answers: [''], ghStatus: async () => READY })
-    h.world.github.boardUrl = async () => {
+    h.world.github.boardUrl = liftPort(async () => {
       boards++
       return null
-    }
+    })
     const result = await chooseFirstProject(h.world, { project: 'github' })
     expect(result).toEqual({ ok: true, project: 'github', app: 'already', auth: 'gh' })
     expect(h.authWrites).toEqual(['gh'])

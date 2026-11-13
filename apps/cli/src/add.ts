@@ -12,7 +12,7 @@ import {
   type RepositoryList,
   SetupWriteError,
 } from '@lingtai/setup'
-import { Effect } from 'effect'
+import { Cause, Effect } from 'effect'
 
 /**
  * `lingtai add <owner>/<repo>`, or — since #394 — `lingtai add` with no
@@ -184,7 +184,7 @@ export async function addFlow(
     // goes on is an owner never recorded (`filter.ts`'s "re-run lingtai add <owner>/<repo>"), which asks
     // nothing, writes no recipe and only registers again.
     const repo = slugRepo(slug)
-    const found = repo === null ? undefined : alreadyAdded(await world.project.projects(), repo)
+    const found = repo === null ? undefined : alreadyAdded(await runEffect(world.project.projects()), repo)
     const ownerRepair = found !== undefined && found.owner === null && found.configHash !== null
     if (repo !== null && found !== undefined && !ownerRepair) {
       world.error(alreadyAddedSentence(repo))
@@ -207,7 +207,7 @@ export async function addFlow(
       ? base
       : {
           ...base,
-          github: { ...base.github, add: (opts, log) => runEffect(addWithSetup(base, pending.answers, opts, log)) },
+          github: { ...base.github, add: (opts, log) => addWithSetup(base, pending.answers, opts, log) },
         }
 
   // A bare `lingtai add --agent …` (GitHub named or chosen at the prompt) reaches the picker below:
@@ -329,7 +329,7 @@ function slugRepo(slug: string): string | null {
   }
 }
 
-type Added = Awaited<ReturnType<FirstProjectWorld['github']['add']>>
+type Added = Effect.Success<ReturnType<FirstProjectWorld['github']['add']>>
 
 class Declined extends Error {
   constructor(readonly result: Added) {
@@ -351,19 +351,24 @@ function addWithSetup(
   const path = recipePath(answers.project)
   // Under the lock the board's Add takes, and with *already added* read again inside it: another
   // process may have registered this project since the check above.
-  const guarded = Effect.tryPromise({
-    try: () => world.projects(),
-    catch: (err) => new SetupWriteError(`could not read the projects: ${err instanceof Error ? err.message : err}`),
-  }).pipe(
+  const guarded = world.projects().pipe(
+    // A store failure is a defect (0101 §6), which `Effect.catch` does not see; an interruption is let through.
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.failCause(cause as Cause.Cause<never>)
+        : Effect.fail(
+            new SetupWriteError(
+              `could not read the projects: ${Cause.squash(cause) instanceof Error ? (Cause.squash(cause) as Error).message : Cause.squash(cause)}`,
+            ),
+          ),
+    ),
     Effect.flatMap((projects) =>
       alreadyAdded(projects, answers.project) === undefined
         ? applySetup(
             { files: world.files },
             answers,
-            Effect.tryPromise({
-              try: () => world.github.add(opts, log),
-              catch: (err) => (err instanceof Error ? err : new Error(String(err))),
-            }).pipe(
+            world.github.add(opts, log).pipe(
+              Effect.mapError((err) => (err instanceof Error ? err : new Error(String(err)))),
               Effect.flatMap((result) => (result.ok ? Effect.succeed(result) : Effect.fail(new Declined(result)))),
             ),
           )

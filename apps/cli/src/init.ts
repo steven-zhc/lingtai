@@ -146,6 +146,7 @@ import {
 } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
 import { askRuntimes, runtimeStateSentence, type RuntimeFound } from '@lingtai/setup'
+import { Effect } from 'effect'
 import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
@@ -159,7 +160,7 @@ import {
   type RegisterLocalPayload,
   pathExists,
 } from './first-project.ts'
-import { APP_WAIT_MS, waitForApp } from './github-app.ts'
+import { APP_WAIT_MS, waitForAppEffect } from './github-app.ts'
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
 import { githubInitSteps, type Here, hereSteps, localInitSteps } from './next-steps.ts'
@@ -279,6 +280,12 @@ export function configPath(env: NodeJS.ProcessEnv): string {
 }
 
 /** The machine file as a document, so a write keeps every comment and key it did not choose. */
+/** A promise port as an Effect port: runs nothing, and keeps the rejection as its own failure (never `Effect.promise`, which makes it a defect). */
+const lifted =
+  <Args extends readonly unknown[], A>(f: (...args: Args) => PromiseLike<A>) =>
+  (...args: Args): Effect.Effect<A, unknown> =>
+    Effect.tryPromise({ try: () => f(...args), catch: (e) => e })
+
 function readConfig(path: string, read: InitWorld['machine']['read']): Document | { refused: string } {
   const text = read(path)
   if (text === null) return new Document({})
@@ -584,19 +591,19 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
     const firstProjectWorld: FirstProjectWorld = {
       ask: world.ask,
       log: world.log,
-      git: world.runGit,
-      projects: world.projects,
+      git: lifted(world.runGit),
+      projects: lifted(world.projects),
       locker: world.locker,
       files: world.files,
       home,
       signedIn: world.signedIn,
       // Already probed above, for the "look" lines — a second probe for the
       // same run would ask every runtime whether it is signed in twice.
-      runtimes: async () => runtimes,
+      runtimes: () => Effect.succeed(runtimes),
       setupReader: world.setupReader,
-      exists: world.exists,
-      register: world.registerLocal,
-      history: world.history,
+      exists: lifted(world.exists),
+      register: lifted(world.registerLocal),
+      history: lifted(world.history),
       // The store above is already written by the time this runs — the same
       // reason `askFirstProject` carries this sentence (#394 finding 2).
       kept: storeKept.kept,
@@ -614,25 +621,27 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
           if ('refused' in elected) throw new Error(elected.refused)
           return elected.kind
         },
-        ghStatus: world.ghStatus,
+        ghStatus: lifted(world.ghStatus),
         ...(world.gh === undefined ? {} : { gh: world.gh }),
-        writeAuth: async (kind) => writeGithubAuth(world.machine, path, kind),
+        writeAuth: (kind) => Effect.try({ try: () => writeGithubAuth(world.machine, path, kind), catch: (e) => e }),
         // Already fetched above, for the "the App" line — a second real call
         // (`GET /app`) for the same run would answer the same question twice.
-        app: async () => app,
+        app: () => Effect.succeed(app),
         // The trap: a refused start answers null here, same as no board
         // running at all — `runGithubBranch` turns that into its own
         // sentence, written for `lingtai add`, absurd inside `init`. The
         // check below, after `chooseFirstProject` returns, replaces it with
         // the board's own refusal whenever this was the reason.
-        boardUrl: async () => {
+        boardUrl: lifted(async () => {
           const started = await startBoard()
           return 'url' in started ? started.url : null
-        },
+        }),
         waitForApp: (boardUrl) =>
-          waitForApp({ log: world.log, open: world.open, appeared: world.appeared, pressed: world.pressed }, boardUrl, {
-            waitMs: APP_WAIT_MS,
-          }),
+          waitForAppEffect(
+            { log: world.log, open: world.open, appeared: world.appeared, pressed: world.pressed },
+            boardUrl,
+            { waitMs: APP_WAIT_MS },
+          ),
         // `init` never gives `chooseFirstProject` a slug — `--github` is
         // `lingtai add`'s own flag, refused by `parseArgs` above, so
         // `runGithubBranch`'s `givenSlug` is always null here and returns
