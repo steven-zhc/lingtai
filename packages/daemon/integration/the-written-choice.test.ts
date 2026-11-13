@@ -34,6 +34,8 @@ const PROJECTOR = module_('packages', 'projector', 'src', 'index.ts')
 const DAEMON = module_('packages', 'daemon', 'src', 'index.ts')
 const CONTROL = module_('packages', 'daemon', 'src', 'control.ts')
 const DOMAIN = module_('packages', 'domain', 'src', 'index.ts')
+/** `effect`, as this package resolves it: a spawned `-e` script resolves bare names from its own cwd. */
+const EFFECT = JSON.stringify(import.meta.resolve('effect'))
 
 interface Ran {
   home: string
@@ -100,7 +102,8 @@ describe('a machine that wrote sqlite', () => {
 
       const { eventStore, log } = await import(${EVENT_STORE});
       const { createProjectionRunner, projectionLag, readTasks, taskViewProjection } = await import(${PROJECTOR});
-      const { beat, createStatusTable, readStatus } = await import(${CONTROL});
+      const { beat, createStatusTableEffect, readStatus } = await import(${CONTROL});
+      const { Effect } = await import(${EFFECT});
       const { parsePayload, ticketStream } = await import(${DOMAIN});
 
       const project = "esctest" + Math.random().toString(16).slice(2, 8);
@@ -116,7 +119,7 @@ describe('a machine that wrote sqlite', () => {
       const runner = createProjectionRunner({ projection: taskViewProjection });
       await runner.start();
 
-      await createStatusTable();
+      await Effect.runPromise(createStatusTableEffect());
       await beat("up");
       const status = await readStatus();
 

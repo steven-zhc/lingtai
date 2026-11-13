@@ -14,10 +14,13 @@ export {
 } from './lock.ts'
 export {
   startDaemon,
+  startDaemonEffect,
   notTakingWork,
   type Daemon,
   type DaemonOptions,
+  type DaemonPort,
   type DaemonStart,
+  type DaemonStartPort,
   type StopReason,
 } from './daemon.ts'
 export {
@@ -26,9 +29,11 @@ export {
   TRIAGE_EVENTS,
   SUBSCRIBER_TIMEOUT_MS,
   createWorkLoop,
+  makeWorkLoop,
   type EventSubscriber,
   type TurnReason,
   type WorkLoop,
+  type WorkLoopPort,
   type WorkLoopOptions,
 } from './work-loop.ts'
 // The store this machine wrote down, and neither implementation by name: the
@@ -43,7 +48,7 @@ export {
   HEARTBEAT_MS,
   STALE_AFTER_MS,
   beat,
-  createStatusTable,
+  createStatusTableEffect,
   describeInFlight,
   held,
   inFlight,
@@ -58,7 +63,7 @@ export {
   readControlEffect,
   readStatus,
   readStatusEffect,
-  recordStart,
+  recordStartEffect,
   requestShutdownEffect,
   requestShutdownUnlessStandingEffect,
   startAfter,
@@ -89,7 +94,6 @@ export {
   codeRoot,
   describeCurrency,
   identityRefusals,
-  readCodeVersion,
   readCodeVersionEffect,
   type CodeVersion,
   type Currency,

@@ -651,21 +651,29 @@ async function terminal(scene: Scene, args: RestartArgs = ARGS): Promise<Outcome
   if (!prepared.ok) return outcome(prepared.code)
   w.phase = 'started'
   let stopped = false
-  const opened = await openDaemon(
-    { examined: prepared.examined, by: prepared.by },
-    {
-      start: async () =>
-        scene.runs === null
-          ? { ok: false, reason: 'already-running', holder: 'lingtai run pid 77' }
-          : {
-              ok: true,
-              since: 30,
-              daemon: { stopped: Promise.resolve('asked'), stop: () => void (stopped = true), stoppedProjections: [] },
-            },
-      code: async () => scene.runs ?? prepared.examined,
-      control: promised.control,
-      log,
-    },
+  const opened = await Effect.runPromise(
+    openDaemon(
+      { examined: prepared.examined, by: prepared.by },
+      {
+        start: () =>
+          Effect.succeed(
+            scene.runs === null
+              ? ({ ok: false, reason: 'already-running', holder: 'lingtai run pid 77' } as const)
+              : ({
+                  ok: true,
+                  since: 30,
+                  daemon: {
+                    stopped: () => Effect.succeed('asked' as const),
+                    stop: () => Effect.sync(() => void (stopped = true)),
+                    stoppedProjections: [],
+                  },
+                } as const),
+          ),
+        code: () => Effect.succeed(scene.runs ?? prepared.examined),
+        control: () => lift(promised.control),
+        log,
+      },
+    ),
   )
   if (opened.ok) return outcome(0)
   // A refusal after the lock was taken stops the daemon before it takes anything.

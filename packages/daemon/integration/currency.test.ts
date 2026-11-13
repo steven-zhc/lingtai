@@ -17,9 +17,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { codeCurrency, codeIdentity, describeCurrency, identityRefusals, readCodeVersion } from '../src/currency.ts'
+import {
+  codeCurrency,
+  codeIdentity,
+  describeCurrency,
+  identityRefusals,
+  readCodeVersionEffect,
+} from '../src/currency.ts'
 
 const exec = promisify(execFile)
 const git = (args: string[], cwd: string) =>
@@ -60,6 +67,8 @@ beforeAll(async () => {
 afterAll(async () => {
   await rm(root, { recursive: true, force: true })
 })
+
+const readCodeVersion = (cwd?: string) => Effect.runPromise(readCodeVersionEffect(cwd))
 
 describe('what code a process is running', () => {
   it('reads the commit HEAD points at, and whether the worktree is dirty', async () => {

@@ -23,10 +23,11 @@ vi.mock('../src/daemon.ts', () => ({
       seen.calls.push({ command: verb, options: input })
       return 0
     }),
-  daemonCommand: async (flags: unknown) => {
-    seen.calls.push({ command: 'daemon', options: flags })
-    return 0
-  },
+  daemonCommand: (flags: unknown) =>
+    Effect.sync(() => {
+      seen.calls.push({ command: 'daemon', options: flags })
+      return 0
+    }),
   serviceOptions: () => ({ marker: 'options' }),
 }))
 vi.mock('../src/service.ts', () => ({

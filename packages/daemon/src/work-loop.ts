@@ -199,7 +199,11 @@ export interface EventSubscriber {
    * dash names a project that does not exist. The subscriber already knows.
    */
   readonly project?: string
-  deliver(event: Envelope): Promise<void>
+  /**
+   * An Effect, so a host's subscriber (`makeSubscriber`'s port) satisfies it structurally.
+   * A failure or a defect is a failed delivery, and `deliver` below records it.
+   */
+  deliver(event: Envelope): Effect.Effect<void, unknown>
 }
 
 export interface WorkLoopOptions {
@@ -218,7 +222,7 @@ export interface WorkLoopOptions {
    * change while a run is in flight — the point of a pause is that it lands
    * without a restart.
    */
-  paused?: () => Promise<boolean | string | null>
+  paused?: Effect.Effect<boolean | string | null>
   /**
    * Whether somebody has asked the conductor to stop, and why.
    *
@@ -231,7 +235,7 @@ export interface WorkLoopOptions {
    * the `if (stopped) break` at the top of the loop retires the pending `again`
    * on its own.
    */
-  shutdown?: () => Promise<string | null>
+  shutdown?: Effect.Effect<string | null>
   /**
    * Called once, when the loop has read a shutdown request and stopped taking
    * work. The host is what exits; the loop only stops looping.
@@ -489,8 +493,6 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
 
   const pump = (reason: TurnReason): Effect.Effect<void> => Effect.promise(() => kick(reason))
 
-  const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> => Effect.tryPromise({ try: f, catch: (e) => e })
-
   function drain(reason: TurnReason): Effect.Effect<void> {
     return Effect.gen(function* () {
       do {
@@ -503,7 +505,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
         // A shutdown is asked first, because it is the stronger answer: a
         // conductor that has been told to stop does not need to know whether
         // it was also paused.
-        const why = options.shutdown ? yield* attempt(() => Promise.resolve(options.shutdown?.())) : undefined
+        const why = options.shutdown ? yield* Effect.suspend(() => options.shutdown!) : undefined
         if (why) {
           // Set here, not by the caller. The pending `again` from events that
           // arrived during the pass lapses on the `if (stopped) break` above,
@@ -513,7 +515,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
           options.onShutdown?.(why)
           break
         }
-        const paused = options.paused ? yield* attempt(() => Promise.resolve(options.paused?.())) : undefined
+        const paused = options.paused ? yield* Effect.suspend(() => options.paused!) : undefined
         if (paused) {
           // Nothing is left pending by a pause any more: a run tells GitHub
           // as it goes, so a paused conductor has nothing owed (0022). What
@@ -539,7 +541,13 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
       // Reaching here means the loop's own bookkeeping threw, not the pass —
       // the pass has its own catch. It must still not escape into a caller
       // that is only draining.
-      Effect.catch((err) => Effect.sync(() => tell(`loop failed: ${(err as Error).message}`))),
+      // `catchCause`: the ports are Effects with no error channel, so a failed read arrives as a
+      // defect (0101 §6), and the loop must tell it and take the next kick. An interruption passes.
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause)
+          : Effect.sync(() => tell(`loop failed: ${(Cause.squash(cause) as Error).message}`)),
+      ),
     )
   }
 
@@ -552,7 +560,9 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
     // That is the boundary this file's header is about: what a subscriber
     // does with an event is its own business, and what it does *to the
     // process following the log* is not its business at all.
-    for (const s of subscribers()) deliver(s.name, event, (e) => s.deliver(e), s.project)
+    for (const s of subscribers()) {
+      deliver(s.name, event, (e) => Effect.runPromiseWith(services)(Effect.suspend(() => s.deliver(e))), s.project)
+    }
     // Before the trigger check too, and never through `pump`. See
     // `discuss` above: a question must not wait for a run.
     if ((DISCUSSION_EVENTS as readonly string[]).includes(event.type) && options.discuss) {

@@ -56,7 +56,6 @@ import { type Envelope, ticketStream } from '@lingtai/domain'
 import { parseDuration, type Subscriber as SubscriberSpec } from '@lingtai/recipe'
 import { Data, Effect } from 'effect'
 
-import { liftPromise } from './action.ts'
 import { commandEffect, type CommandOutcome, type RunCommandOptions } from './command.ts'
 
 /**
@@ -114,52 +113,6 @@ export interface SubscriberPayload {
   ticket: EventSubject
   /** Where the board is, so a subscriber can link without knowing the deployment. */
   board: string
-}
-
-/**
- * One built subscriber.
- *
- * `on:` is checked inside `deliver`, before `subject` is asked, and not offered
- * to the caller to check first — for `#120`'s reason: a filter the caller is
- * relied upon to apply holds until somebody writes the second caller.
- */
-export interface Subscriber {
-  /** As the recipe named it. It is what `PluginFailed` records. */
-  readonly name: string
-  /** The project whose recipe declared it. */
-  readonly project: string
-  /** Starts the command, and resolves without one for an event it is not owed. */
-  deliver(event: Envelope): Promise<void>
-}
-
-export interface SubscriberOptions {
-  /** The project whose recipe declared it. It hears about that project and nothing else. */
-  project: string
-  spec: SubscriberSpec
-  /**
-   * Which work item an event is about, or null for one that belongs to no
-   * repository.
-   *
-   * Asked at most once per delivered event, and only after `on:` has already
-   * matched — an answer can cost a read of the run's stream, and paying that
-   * for every append would make following the log more expensive the more
-   * subscribers exist.
-   */
-  subject: (event: Envelope) => Promise<EventSubject | null>
-  /** Where the command runs. There is no worktree for an event, so this is the daemon's own. */
-  cwd: string
-  /**
-   * Every credential it gets — the names declared beside it, plus `runnableEnv`'s six (0037 §1).
-   *
-   * A function when it is to be read per delivery, which is how the daemon
-   * gives it: asked only once `on:` and the project have matched, so a token
-   * put in the env file after startup reaches the next event without a
-   * restart. A rejection rejects `deliver`, and so is a `PluginFailed`.
-   */
-  env: Record<string, string> | (() => Promise<Record<string, string>>)
-  board: string
-  /** The command runner; `commandEffect` unless a test supplies one. */
-  command?: (options: RunCommandOptions) => Effect.Effect<CommandOutcome>
 }
 
 type CommandRunner = (options: RunCommandOptions) => Effect.Effect<CommandOutcome>
@@ -234,29 +187,6 @@ export function makeSubscriber(options: SubscriberPortOptions): SubscriberPort {
         // in the system, and all it does is choose which way to settle.
         if (!outcome.ok) return yield* new SubscriberFailed({ message: outcome.evidence })
       }),
-  }
-}
-
-/** Every promise `Subscriber` holder's way in. */
-export function deliverFace(port: SubscriberPort, event: Envelope): Promise<void> {
-  return Effect.runPromise(port.deliver(event))
-}
-
-export function createSubscriber(options: SubscriberOptions): Subscriber {
-  const { env } = options
-  const port = makeSubscriber({
-    project: options.project,
-    spec: options.spec,
-    subject: (event) => liftPromise(() => options.subject(event)),
-    cwd: options.cwd,
-    env: typeof env === 'function' ? liftPromise(env) : Effect.succeed(env),
-    board: options.board,
-    command: options.command,
-  })
-  return {
-    name: port.name,
-    project: port.project,
-    deliver: (event) => deliverFace(port, event),
   }
 }
 

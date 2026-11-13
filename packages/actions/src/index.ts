@@ -146,16 +146,12 @@ export {
   type RunCommandOptions,
 } from './command.ts'
 export {
-  createSubscriber,
-  deliverFace,
   makeSubscriber,
   SubscriberFailed,
   subjectOf,
   SUBSCRIBER_COMMAND_TIMEOUT,
   SUBSCRIBER_COMMAND_TIMEOUT_MS,
   type EventSubject,
-  type Subscriber,
-  type SubscriberOptions,
   type SubscriberPayload,
   type SubscriberPort,
   type SubscriberPortOptions,

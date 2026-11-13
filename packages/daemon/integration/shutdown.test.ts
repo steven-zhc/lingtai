@@ -21,7 +21,7 @@ import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { readControl, recordStart, requestShutdownUnlessStanding } from '../src/control.ts'
+import { readControl, recordStartEffect, requestShutdownUnlessStanding } from '../src/control.ts'
 import { killWorkerEffect } from '../src/reconcile.ts'
 
 /** Just enough of a store to reduce. `readControl` reads one stream and nothing else. */
@@ -81,6 +81,8 @@ function alive(pid: number): boolean {
     return false
   }
 }
+
+const recordStart = (...args: Parameters<typeof recordStartEffect>) => Effect.runPromise(recordStartEffect(...args))
 
 describe('the control stream, reduced', () => {
   it('holds a shutdown request beside the pause, not instead of it', async () => {

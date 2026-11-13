@@ -1,4 +1,4 @@
-import { readControl } from '@lingtai/daemon'
+import { readControlEffect } from '@lingtai/daemon'
 /**
  * The daemon's control reads go through one reader built from the writer it holds
  * (0124 §5, #875): a tail that crosses a commit point offers exactly one snapshot,
@@ -6,6 +6,7 @@ import { readControl } from '@lingtai/daemon'
  */
 import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
 import { createMemoryEventStore, createMemorySnapshotStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import { daemonControlRead, pausedSentence } from '../src/daemon.ts'
@@ -29,9 +30,9 @@ describe('daemonControlRead', () => {
   it('offers one snapshot anchored on the last envelope reduced', async () => {
     const store = await control(6)
     const snapshots = createMemorySnapshotStore(store)
-    const read: typeof readControl = (_s, cache) => readControl(store, { ...cache, snapshots })
+    const read: typeof readControlEffect = (_s, cache) => readControlEffect(store, { ...cache, snapshots })
     const offer = vi.fn()
-    await daemonControlRead({ offer }, read)()
+    await Effect.runPromise(daemonControlRead({ offer }, read)())
     expect(offer).toHaveBeenCalledTimes(1)
     const last = (await store.read(CONTROL_STREAM)).at(-1)!
     const s = offer.mock.calls[0]![0]
@@ -42,11 +43,11 @@ describe('daemonControlRead', () => {
     const store = await control(6)
     const snapshots = createMemorySnapshotStore(store)
     const seen: unknown[] = []
-    const read: typeof readControl = (s, cache) => {
+    const read: typeof readControlEffect = (s, cache) => {
       seen.push(s, cache)
-      return readControl(store, { ...cache, snapshots })
+      return readControlEffect(store, { ...cache, snapshots })
     }
-    await daemonControlRead(null, read)()
+    await Effect.runPromise(daemonControlRead(null, read)())
     expect(seen).toEqual([undefined, {}])
   })
 })
@@ -58,8 +59,8 @@ describe('the claim obeys a pause written before the daemon started', () => {
       { type: 'ConductorPaused', actor: 'conductor', data: parsePayload('ConductorPaused', data) } as never,
     ])
     // The watermark a daemon starting now would keep: the pause is below it.
-    const read: typeof readControl = (_s, cache) => readControl(store, cache)
-    return pausedSentence({ control: daemonControlRead(null, read) })
+    const read: typeof readControlEffect = (_s, cache) => readControlEffect(store, cache)
+    return Effect.runPromise(pausedSentence({ control: daemonControlRead(null, read) }))
   }
 
   it("answers the setup's pause", async () => {

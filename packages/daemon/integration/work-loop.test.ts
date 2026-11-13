@@ -250,7 +250,7 @@ describe('the work loop', () => {
       sweepMs: 0,
       // Nothing on the first pass, everything after: a daemon that reads the
       // request at startup must run no pass at all.
-      shutdown: async () => (allowed ? null : 'asked by human:steven — picking up #88'),
+      shutdown: Effect.sync(() => (allowed ? null : 'asked by human:steven — picking up #88')),
       onShutdown: (why) => void told.push(why),
       pass: asEffect(async () => void (passes += 1)),
     })
@@ -324,13 +324,11 @@ describe('the work loop', () => {
           name: 'desktop',
           deliver: (event) => {
             seen.push(event.streamId)
-            if (event.streamId === stream('throws')) throw new Error('threw before returning a promise')
-            if (event.streamId === stream('rejects')) {
-              return Promise.reject(new Error('rejected afterwards'))
-            }
+            if (event.streamId === stream('throws')) throw new Error('threw before returning an Effect')
+            if (event.streamId === stream('rejects')) return Effect.fail(new Error('rejected afterwards'))
             // Never settles. Nothing cancels it; the boundary times it out.
-            if (event.streamId === stream('hangs')) return new Promise<void>(() => {})
-            return Promise.resolve()
+            if (event.streamId === stream('hangs')) return Effect.never
+            return Effect.void
           },
         },
       ],
@@ -397,7 +395,7 @@ describe('the work loop', () => {
     created.add(lane)
     created.add(SUBSCRIBER_STREAM)
 
-    const declared: { name: string; project: string; deliver: () => Promise<void> }[] = []
+    const declared: { name: string; project: string; deliver: () => Effect.Effect<void, unknown> }[] = []
     const loop = createWorkLoop({
       sweepMs: 0,
       store,
@@ -410,7 +408,7 @@ describe('the work loop', () => {
       declared.push({
         name: 'desktop',
         project,
-        deliver: () => Promise.reject(new Error('osascript exited 1')),
+        deliver: () => Effect.fail(new Error('osascript exited 1')),
       })
       await store.append(run, 0, [{ type: 'RunAwaitingInput', actor: `agent:${run}`, data: { prompt: 'which base?' } }])
       await store.append(lane, 0, [
@@ -454,7 +452,7 @@ describe('the work loop', () => {
       // sweeps as well, which is what bounds how late the automatic resume can
       // be on a queue that is otherwise silent.
       sweepMs: 0,
-      paused: async () => !lifted,
+      paused: Effect.sync(() => !lifted),
       pass: asEffect(async () => void (passes += 1)),
     })
 

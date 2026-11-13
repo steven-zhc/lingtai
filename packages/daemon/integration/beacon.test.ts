@@ -17,10 +17,18 @@
  */
 import { directPostgresUrl } from '@lingtai/env'
 import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
+import { Effect } from 'effect'
 import pg from 'pg'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { HEARTBEAT_MS, STALE_AFTER_MS, createStatusTable, lastBeat, readStatus, startBeacon } from '../src/control.ts'
+import {
+  HEARTBEAT_MS,
+  STALE_AFTER_MS,
+  createStatusTableEffect,
+  lastBeat,
+  readStatus,
+  startBeacon,
+} from '../src/control.ts'
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -50,7 +58,7 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
 
   describe('the beacon', () => {
     it('keeps the row fresh through a startup slower than three missed beats', async () => {
-      await createStatusTable()
+      await Effect.runPromise(createStatusTableEffect())
       const beacon = startBeacon('starting')
 
       try {
@@ -76,7 +84,7 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
     }, 60_000)
 
     it('changes the word without missing a beat, and the last word wins', async () => {
-      await createStatusTable()
+      await Effect.runPromise(createStatusTableEffect())
       // Faster than production only so that several beats land inside a test;
       // what is being asserted is the ordering, which is not a function of the
       // period.
@@ -101,7 +109,7 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
     })
 
     it('says a last word and then nothing at all', async () => {
-      await createStatusTable()
+      await Effect.runPromise(createStatusTableEffect())
       const beacon = startBeacon('up', { every: 50 })
       await beacon.stop('stopping')
 

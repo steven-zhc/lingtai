@@ -87,7 +87,7 @@ describe('the work loop as Effects', () => {
     port = makeWorkLoop(
       base({
         sweepMs: 60_000,
-        shutdown: async () => 'test',
+        shutdown: Effect.succeed('test'),
         onShutdown: () => {
           stopping = Effect.runPromise(port.stop())
         },
@@ -106,7 +106,7 @@ describe('the work loop as Effects', () => {
       base({
         sweepMs: 60_000,
         eventLog: log,
-        subscribers: [{ name: 's', deliver: async (e) => void delivered.push(e.type) }],
+        subscribers: [{ name: 's', deliver: (e) => Effect.sync(() => void delivered.push(e.type)) }],
       }),
     )
     await Effect.runPromise(port.start())
@@ -139,5 +139,68 @@ describe('a pass that dies', () => {
     expect(told).toContain('turn failed: x')
     expect(passes).toBeGreaterThan(0)
     await Effect.runPromise(port.stop())
+  })
+})
+
+describe('the ports are Effects with no error channel (#1103)', () => {
+  it('a shutdown read that dies is told as `loop failed:`, and the loop survives it', async () => {
+    const told: string[] = []
+    let asked = 0
+    const log = makeLog()
+    const port = makeWorkLoop(
+      base({
+        eventLog: log,
+        tell: (line) => told.push(line),
+        // A control read that fails is a defect (0101 §6), which `Effect.catch` would not see.
+        shutdown: Effect.suspend(() => {
+          asked += 1
+          return Effect.die(new Error('x'))
+        }),
+      }),
+    )
+    await Effect.runPromise(port.start())
+    await ticks()
+    expect(told).toContain('loop failed: x')
+    // The look returned normally: the loop is still there to be stopped, and asked once.
+    expect(asked).toBe(1)
+    await Effect.runPromise(port.stop())
+  })
+
+  it('a pause read that dies is told as `loop failed:` and takes no pass', async () => {
+    const told: string[] = []
+    const reasons: string[] = []
+    const port = makeWorkLoop(
+      base({
+        tell: (line) => told.push(line),
+        paused: Effect.die(new Error('y')),
+        pass: asEffect(async (reason) => void reasons.push(reason)),
+      }),
+    )
+    await Effect.runPromise(port.start())
+    await ticks()
+    expect(told).toContain('loop failed: y')
+    expect(reasons).toEqual([])
+    await Effect.runPromise(port.stop())
+  })
+
+  it('a subscriber whose subject read dies fails the delivery, and PluginFailed names the read', async () => {
+    const log = makeLog()
+    const store = createMemoryEventStore()
+    const port = makeWorkLoop(
+      base({
+        eventLog: log,
+        store,
+        subscribers: [{ name: 'desktop', project: 'p', deliver: () => Effect.die(new Error('log unreadable')) }],
+      }),
+    )
+    await Effect.runPromise(port.start())
+    await log.store.append('ticket-p-1', 0, [
+      { type: COMPLETION_EVENTS[0], actor: 'conductor', data: { mergeCommit: '0'.repeat(40), base: 'main' } },
+    ] as never)
+    await ticks(40)
+    await Effect.runPromise(port.stop())
+    const failures = (await store.read('ext-subscribers')).filter((e) => e.type === 'PluginFailed')
+    expect(failures).toHaveLength(1)
+    expect(JSON.stringify(failures[0]!.data)).toContain('log unreadable')
   })
 })

@@ -1,4 +1,3 @@
-import { integrationStream, type ToAppend, ticketStream } from '@lingtai/domain'
 /**
  * Which project an event is about, against the real log.
  *
@@ -17,9 +16,13 @@ import { integrationStream, type ToAppend, ticketStream } from '@lingtai/domain'
  * have passed for the version that was refused, because the thing it got wrong
  * was what the log actually holds.
  */
+import type { EventSubject } from '@lingtai/actions'
+import { integrationStream, type ToAppend, ticketStream } from '@lingtai/domain'
+import type { Envelope } from '@lingtai/domain'
 import { anAttempt, anOutcome, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { createSubjectResolver } from '../src/subscribers.ts'
@@ -31,7 +34,7 @@ const startless = `pass-${crypto.randomUUID()}`
 const lane = integrationStream(PROJECT, 'main')
 
 let store: EventStore
-let subject: ReturnType<typeof createSubjectResolver>
+let subject: (event: Envelope) => Promise<EventSubject | null>
 
 /** The envelope the resolver is handed, off the log rather than made up. */
 const head = async (streamId: string) => {
@@ -43,7 +46,8 @@ const head = async (streamId: string) => {
 
 beforeAll(async () => {
   store = await processEventStore()
-  subject = createSubjectResolver(store)
+  const resolve = createSubjectResolver(store)
+  subject = (event) => Effect.runPromise(resolve(event))
 
   // A run stream, opened the way `conduct.ts` opens one: `RunStarted` first,
   // carrying the work item, and then the events that carry only a `runId`.
@@ -152,7 +156,7 @@ describe('createSubjectResolver', () => {
         throw new Error('the pool is gone')
       },
     }
-    await expect(createSubjectResolver(broken)(approval)).rejects.toThrow('the pool is gone')
+    await expect(Effect.runPromise(createSubjectResolver(broken)(approval))).rejects.toThrow('the pool is gone')
   })
 
   it('answers null for a stream that belongs to the installation', async () => {

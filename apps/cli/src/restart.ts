@@ -81,7 +81,7 @@ import {
   type Asking,
   type CodeVersion,
   type ControlState,
-  type DaemonStart,
+  type DaemonStartPort,
   type Identity,
   type LockPlace,
   type RecordedStart,
@@ -483,71 +483,78 @@ export function lostTheLock(holder: string | null, log: (line: string) => void):
  * `RESTART_GUARDS` — `lostTheLock` and `startRefusals` — is the code the table
  * test plays, not a copy of it written beside the test (#167).
  */
-export async function openDaemon(
+export function openDaemon(
   /** Who asked for this start and the code their checks examined — when it is a restart. */
   restart: { examined: Pick<CodeVersion, 'sha' | 'dirty'>; by: string } | null,
   how: {
-    start: () => Promise<DaemonStart>
+    start: () => Effect.Effect<DaemonStartPort>
     /** What this process loaded, read once the lock is held. */
-    code: () => Promise<CodeVersion>
+    code: () => Effect.Effect<CodeVersion>
     /** The whole control stream, reduced. */
-    control: () => Promise<Pick<ControlState, 'shutdown'>>
+    control: () => Effect.Effect<Pick<ControlState, 'shutdown'>, unknown>
     log: (line: string) => void
   },
-): Promise<{ ok: false; code: number } | { ok: true; started: Extract<DaemonStart, { ok: true }>; code: CodeVersion }> {
-  const started = await how.start()
-  if (!started.ok) {
-    // Named, and never the quiet `already-running` line below: unlike that
-    // one, this is not known to be fine either way, for a restart or for a
-    // bare `lingtai daemon` — nothing is conducting, and the remedy is a reset
-    // rather than a wait (#451).
-    if (started.reason === 'log-predates-hold') {
-      how.log(paint.fail(started.detail))
-      return { ok: false, code: 1 }
+): Effect.Effect<
+  { ok: false; code: number } | { ok: true; started: Extract<DaemonStartPort, { ok: true }>; code: CodeVersion }
+> {
+  return Effect.gen(function* () {
+    const started = yield* how.start()
+    if (!started.ok) {
+      // Named, and never the quiet `already-running` line below: unlike that
+      // one, this is not known to be fine either way, for a restart or for a
+      // bare `lingtai daemon` — nothing is conducting, and the remedy is a reset
+      // rather than a wait (#451).
+      if (started.reason === 'log-predates-hold') {
+        how.log(paint.fail(started.detail))
+        return { ok: false, code: 1 } as const
+      }
+      if (restart) return { ok: false, code: lostTheLock(started.holder, how.log) } as const
+      // A refusal, and deliberately the quietest line the daemon has. Nothing is
+      // wrong — red here would be the error that teaches people to ignore errors
+      // — and nothing happened, so dim is the honest weight for it.
+      how.log(
+        paint.muted(`another daemon holds the lock${started.holder ? ` (${started.holder})` : ''} — nothing to do`),
+      )
+      return { ok: false, code: 0 } as const
     }
-    if (restart) return { ok: false, code: lostTheLock(started.holder, how.log) }
-    // A refusal, and deliberately the quietest line the daemon has. Nothing is
-    // wrong — red here would be the error that teaches people to ignore errors
-    // — and nothing happened, so dim is the honest weight for it.
-    how.log(paint.muted(`another daemon holds the lock${started.holder ? ` (${started.holder})` : ''} — nothing to do`))
-    return { ok: false, code: 0 }
-  }
 
-  const code = await how.code()
+    const code = yield* how.code()
 
-  // What is on disk now is what `lingtai restart` examined, or nothing starts.
-  // And what it examined is the commit this process *loaded*: its first read,
-  // taken before the doctor and the drain, and required again after the wait
-  // (`planRestart`'s `loaded`). Node imported the conductor, the gates and this
-  // daemon when the command was typed, so a `git pull` during an hour's drain
-  // changes the disk and not the process — and a `ConductorStarted` naming the
-  // disk would be #98 again, with a record saying the opposite.
-  //
-  // And a drain somebody else asked for between the restart's checks and this
-  // daemon's watermark is one it would never read (#159) — so it would take
-  // work over that stop. Both are `startRefusals`, which the supervised restart
-  // asks of the record its daemon leaves (#167).
-  if (restart) {
-    const refused = startRefusals({
-      examined: restart.examined,
-      by: restart.by,
-      running: code,
-      standing: await how.control().then(
-        (c) => c?.shutdown ?? null,
-        (err: unknown) => ({ unread: err instanceof Error ? err.message : String(err) }),
-      ),
-      unreadThrough: started.since,
-    })
-    if (refused.length > 0) {
-      how.log(paint.fail('not starting:'))
-      for (const r of refused) how.log(paint.fail(`  · ${r.line}`))
-      how.log(paint.fail('Nothing started, and no daemon is running: lingtai restart checks again.'))
-      started.daemon.stop()
-      await started.daemon.stopped
-      return { ok: false, code: 1 }
+    // What is on disk now is what `lingtai restart` examined, or nothing starts.
+    // And what it examined is the commit this process *loaded*: its first read,
+    // taken before the doctor and the drain, and required again after the wait
+    // (`planRestart`'s `loaded`). Node imported the conductor, the gates and this
+    // daemon when the command was typed, so a `git pull` during an hour's drain
+    // changes the disk and not the process — and a `ConductorStarted` naming the
+    // disk would be #98 again, with a record saying the opposite.
+    //
+    // And a drain somebody else asked for between the restart's checks and this
+    // daemon's watermark is one it would never read (#159) — so it would take
+    // work over that stop. Both are `startRefusals`, which the supervised restart
+    // asks of the record its daemon leaves (#167).
+    if (restart) {
+      // A control read that fails is a defect (a store failure, 0101 §6): `recovering` maps it, an interruption passes.
+      const standing = yield* recovering(how.control().pipe(Effect.map((c) => c?.shutdown ?? null)), (err) => ({
+        unread: err instanceof Error ? err.message : String(err),
+      }))
+      const refused = startRefusals({
+        examined: restart.examined,
+        by: restart.by,
+        running: code,
+        standing,
+        unreadThrough: started.since,
+      })
+      if (refused.length > 0) {
+        how.log(paint.fail('not starting:'))
+        for (const r of refused) how.log(paint.fail(`  · ${r.line}`))
+        how.log(paint.fail('Nothing started, and no daemon is running: lingtai restart checks again.'))
+        yield* started.daemon.stop()
+        yield* started.daemon.stopped()
+        return { ok: false, code: 1 } as const
+      }
     }
-  }
-  return { ok: true, started, code }
+    return { ok: true, started, code } as const
+  })
 }
 
 // ------------------------------------------------------------ the table ----
