@@ -74,7 +74,6 @@ import {
   inFlightEffect,
   queueForDaemonLock,
   readControlEffect,
-  readStatus,
   readStatusEffect,
   requestShutdownUnlessStandingEffect,
   requestsBetween,
