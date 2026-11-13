@@ -15,8 +15,8 @@
  * accessors that exist rather than to the settings that move is a guard that
  * goes green as the diff it exists to prevent is being written.
  *
- * **And `recipe.` was the required receiver**, so `parsed.data.repo.base` in
- * `wizard.ts` walked past it — a reader of the same setting off a recipe that
+ * **And `recipe.` was the required receiver**, so a read like
+ * `parsed.data.repo.base` walked past it — a reader of the same setting off a recipe that
  * had not been given that name yet. The rule below asks only that the path be
  * *read off something*: an identifier character, a dot, then the setting. That
  * is what tells a reader from the many places these six are named as text — a

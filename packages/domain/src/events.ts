@@ -2131,7 +2131,7 @@ export const PromptEdited = z.object({
  * a verified identity later — recorded now so the line becomes trustworthy
  * without being rewritten.
  *
- * @summary A person began adding a repository, which is recorded but not yet worked.
+ * @summary No longer written: a person began adding a repository, which was recorded but not yet worked.
  */
 export const ProjectOnboardingStarted = z.object({
   /** `owner/repo`, as the wizard was given it. */
@@ -2615,7 +2615,7 @@ export const EVENT_AT = {
   DiscussionAnswered: ['outside'],
   DiscussionHeld: ['outside'],
   PromptEdited: ['outside'],
-  ProjectOnboardingStarted: ['outside'],
+  ProjectOnboardingStarted: [],
   ProjectConfigured: ['outside'],
   ProjectRefused: ['outside'],
   ProjectRecovered: ['outside'],
@@ -2673,6 +2673,7 @@ export const RETIRED: ReadonlySet<EventType> = new Set<EventType>([
   'TicketLinked',
   'PassRouted',
   'ConductorShutdownWithdrawn',
+  'ProjectOnboardingStarted',
 ])
 
 export function isRetiredEventType(t: string): boolean {

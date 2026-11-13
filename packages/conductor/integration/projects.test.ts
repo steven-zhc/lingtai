@@ -18,29 +18,39 @@
  * over `events`, and the thing under test is the whole road from a row to a
  * state.
  */
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { isPending, projectStream } from '@lingtai/domain'
-import { processLog, type EventStore, type Log } from '@lingtai/event-store'
-import { beforeAll, describe, expect, it } from 'vitest'
+import type { EventStore, Log } from '@lingtai/event-store'
+import { createSqliteLog, openSqliteLog } from '@lingtai/event-store/sqlite'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { loadAllProjects, loadProject, loadProjects } from '../src/projects.ts'
 
 const PENDING = `esctest${crypto.randomUUID().slice(0, 6)}`
 const LIVE = `esctest${crypto.randomUUID().slice(0, 6)}`
 
+let dir: string
+let db: ReturnType<typeof openSqliteLog>
 let store: EventStore
 /** The store above and the questions beside it, as one log (#221). */
 let log: Log
 
 beforeAll(async () => {
-  log = await processLog()
+  // A file of its own: `ProjectOnboardingStarted` is retired, so a store refuses
+  // to append it, and the pending row is written under the store, as an old log
+  // holds it.
+  dir = mkdtempSync(join(tmpdir(), 'lingtai-projects-'))
+  const path = join(dir, 'log.db')
+  db = openSqliteLog(path)
+  log = createSqliteLog({ db, path })
   store = log.store
-  await store.append(projectStream(PENDING), 0, [
-    {
-      type: 'ProjectOnboardingStarted',
-      actor: 'human:esctest',
-      data: { slug: `steven-zhc/${PENDING}`, base: 'develop', by: 'human:esctest' },
-    },
-  ])
+  db.prepare(
+    `INSERT INTO events (stream_id, version, type, schema_ver, data, actor, causation)
+     VALUES (?, 1, 'ProjectOnboardingStarted', 1, ?, 'human:esctest', NULL)`,
+  ).run(projectStream(PENDING), JSON.stringify({ slug: `steven-zhc/${PENDING}`, base: 'develop', by: 'human:esctest' }))
   await store.append(projectStream(LIVE), 0, [
     {
       type: 'ProjectConfigured',
@@ -48,6 +58,11 @@ beforeAll(async () => {
       data: { project: LIVE, owner: 'steven-zhc', base: 'main', configHash: 'h', fromSha: 's' },
     },
   ])
+})
+
+afterAll(() => {
+  db.close()
+  rmSync(dir, { recursive: true, force: true })
 })
 
 describe('the projects a conductor may take work from', () => {

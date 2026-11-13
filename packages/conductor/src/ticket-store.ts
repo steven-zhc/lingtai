@@ -58,11 +58,9 @@ export type Ticket = TicketDetail & { url: string | null }
  * silently until `pnpm typecheck` next ran.
  *
  * **Not every write Lingtai makes against GitHub goes through a verb here.**
- * `wizard.ts`'s `holdAll` calls `client.request('POST', …/labels)` directly —
- * GitHub's additive label write, which has no typed method on `GitHubClient`
- * and no equivalent here, because this interface's `setLabels` replaces
- * (`wizard.ts:189-200` says why a replace is wrong for that one caller and an
- * untyped union write is right).
+ * GitHub's additive label write is `GitHubClient.addLabels`, and has no
+ * equivalent here, because this interface's `setLabels` replaces, which is
+ * wrong for a caller that must add a label to whatever is already there.
  *
  * `dependencies` on a `Ticket` or a `TicketListing` is `{ blockedBy: number }
  * | null`, same as `GitHubClient`'s — `discover.ts`'s `runnableNow` reads
