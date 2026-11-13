@@ -1102,7 +1102,7 @@ const pause = Command.make('pause', { project: optionalProject, noColor }, (args
   daemonHandler(args, () =>
     Effect.gen(function* () {
       const { controlCommand } = yield* lift(() => import('./daemon.ts'))
-      return yield* lift(() => controlCommand('pause', { project: given(args.project) }))
+      return yield* controlCommand('pause', { project: given(args.project) })
     }),
   ),
 ).pipe(Command.withDescription(definitionOf('pause').task))
@@ -1111,7 +1111,7 @@ const resume = Command.make('resume', { project: optionalProject, noColor }, (ar
   daemonHandler(args, () =>
     Effect.gen(function* () {
       const { controlCommand } = yield* lift(() => import('./daemon.ts'))
-      return yield* lift(() => controlCommand('resume', { project: given(args.project) }))
+      return yield* controlCommand('resume', { project: given(args.project) })
     }),
   ),
 ).pipe(Command.withDescription(definitionOf('resume').task))
@@ -1181,13 +1181,11 @@ const shutdown = Command.make(
     daemonHandler(args, () =>
       Effect.gen(function* () {
         const { controlCommand } = yield* lift(() => import('./daemon.ts'))
-        return yield* lift(() =>
-          controlCommand('shutdown', {
-            reason: given(args.reason) ?? args.why.join(' '),
-            ...(args.timeout._tag === 'Some' ? { timeout: args.timeout.value } : {}),
-            force: args.force,
-          }),
-        )
+        return yield* controlCommand('shutdown', {
+          reason: given(args.reason) ?? args.why.join(' '),
+          ...(args.timeout._tag === 'Some' ? { timeout: args.timeout.value } : {}),
+          force: args.force,
+        })
       }),
     ),
 ).pipe(Command.withDescription(definitionOf('shutdown').task))
@@ -1218,7 +1216,7 @@ const restart = Command.make(
       daemonHandler(args, () =>
         Effect.gen(function* () {
           const { restartCommand } = yield* lift(() => import('./daemon.ts'))
-          return yield* lift(() => restartCommand(restartArgs!, createSteps(console.log), writer))
+          return yield* restartCommand(restartArgs!, createSteps(console.log), writer)
         }),
       ),
     ),
