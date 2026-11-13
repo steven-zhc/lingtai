@@ -3,15 +3,21 @@ import { anAttemptRef } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { Triage } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
-  catchUpChangedTriage,
+  catchUpChangedTriage as catchUpChanged,
   enqueueTriage,
-  onWaitStarted,
+  onWaitStarted as onStarted,
   type CatchUpTriagePorts,
   type TriageTriggerPorts,
 } from '../src/triage.ts'
+
+/** A promise, lifted lazily with its failure kept as it was. */
+const fx = <A>(f: () => PromiseLike<A>): Effect.Effect<A, unknown> => Effect.tryPromise({ try: f, catch: (e) => e })
+const catchUpChangedTriage = (...args: Parameters<typeof catchUpChanged>) => Effect.runPromise(catchUpChanged(...args))
+const onWaitStarted = (...args: Parameters<typeof onStarted>) => Effect.runPromise(onStarted(...args))
 
 const triage = Triage.parse({})
 const run = anAttemptRef('pass-a')
@@ -32,18 +38,18 @@ function fixture(reason: WaitReason, declared = true) {
   const waitId = 'wait-413' as WaitId
   const started = event('WaitStarted', { waitId, reason })
   let events: Envelope[] = [started]
-  const dispatched = vi.fn(async () => {})
+  const dispatched = vi.fn(async (_request: unknown) => {})
   const deps: TriageTriggerPorts & CatchUpTriagePorts = {
     store: {
       read: async () => events,
       readTypes: async () => [],
       append: async () => [],
     },
-    readTasks: async () => [],
-    baseSha: async () => null,
-    triageFor: async () => (declared ? triage : null),
-    daemonStartedAt: async () => new Date('2026-08-31T11:00:00Z'),
-    run: dispatched,
+    readTasks: () => Effect.succeed([]),
+    baseSha: () => Effect.succeed(null),
+    triageFor: () => Effect.succeed(declared ? triage : null),
+    daemonStartedAt: () => Effect.succeed(new Date('2026-08-31T11:00:00Z')),
+    run: (request) => fx(() => dispatched(request)),
   }
   return {
     started,
@@ -79,9 +85,7 @@ describe('WaitStarted triage trigger', () => {
     const absent = fixture(judgement, false)
     await onWaitStarted(absent.started, absent.deps)
     const unreadable = fixture(failure)
-    unreadable.deps.triageFor = async () => {
-      throw new Error('recipe unreadable')
-    }
+    unreadable.deps.triageFor = () => Effect.fail(new Error('recipe unreadable'))
     await onWaitStarted(unreadable.started, unreadable.deps)
     expect(absent.dispatched).not.toHaveBeenCalled()
     expect(unreadable.dispatched).not.toHaveBeenCalled()
@@ -111,11 +115,13 @@ describe('WaitStarted triage trigger', () => {
   it('drops a duplicate while running and returns before triage settles', async () => {
     const f = fixture(judgement)
     let finish!: () => void
-    f.deps.run = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          finish = resolve
-        }),
+    f.deps.run = vi.fn(() =>
+      fx(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve
+          }),
+      ),
     )
     await onWaitStarted(f.started, f.deps)
     await drained()
@@ -129,10 +135,12 @@ describe('WaitStarted triage trigger', () => {
     let release!: () => void
     enqueueTriage(
       { ticketId: 'ticket-blocker-1', waitId: 'wait-blocker' as WaitId },
-      () =>
-        new Promise<void>((resolve) => {
-          release = resolve
-        }),
+      fx(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve
+          }),
+      ),
     )
     const f = fixture(judgement)
     await onWaitStarted(f.started, f.deps)
@@ -161,16 +169,22 @@ describe('WaitStarted triage trigger', () => {
     })
     const third = vi.fn(async () => {})
     const log = vi.fn()
-    expect(enqueueTriage({ ticketId: 'ticket-a-1', waitId: 'wait-a' as WaitId }, () => first, log)).toBe(true)
-    expect(enqueueTriage({ ticketId: 'ticket-a-2', waitId: 'wait-b' as WaitId }, second, log)).toBe(true)
-    expect(enqueueTriage({ ticketId: 'ticket-a-2', waitId: 'wait-b' as WaitId }, second, log)).toBe(false)
+    expect(
+      enqueueTriage(
+        { ticketId: 'ticket-a-1', waitId: 'wait-a' as WaitId },
+        fx(() => first),
+        log,
+      ),
+    ).toBe(true)
+    expect(enqueueTriage({ ticketId: 'ticket-a-2', waitId: 'wait-b' as WaitId }, fx(second), log)).toBe(true)
+    expect(enqueueTriage({ ticketId: 'ticket-a-2', waitId: 'wait-b' as WaitId }, fx(second), log)).toBe(false)
     await drained()
     expect(second).not.toHaveBeenCalled()
     finish()
     await drained()
     expect(second).toHaveBeenCalledOnce()
     expect(log).toHaveBeenCalledWith('triage wait-b: read failed')
-    expect(enqueueTriage({ ticketId: 'ticket-a-3', waitId: 'wait-c' as WaitId }, third, log)).toBe(true)
+    expect(enqueueTriage({ ticketId: 'ticket-a-3', waitId: 'wait-c' as WaitId }, fx(third), log)).toBe(true)
     await drained()
     expect(third).toHaveBeenCalledOnce()
   })
@@ -179,12 +193,18 @@ describe('WaitStarted triage trigger', () => {
     const key = { ticketId: 'ticket-nullish-1', waitId: 'wait-nullish' as WaitId }
     const next = vi.fn(async () => {})
     const log = vi.fn()
-    expect(enqueueTriage(key, async () => Promise.reject(failure), log)).toBe(true)
-    expect(enqueueTriage({ ticketId: 'ticket-nullish-2', waitId: 'wait-next' as WaitId }, next, log)).toBe(true)
+    expect(
+      enqueueTriage(
+        key,
+        fx(async () => Promise.reject(failure)),
+        log,
+      ),
+    ).toBe(true)
+    expect(enqueueTriage({ ticketId: 'ticket-nullish-2', waitId: 'wait-next' as WaitId }, fx(next), log)).toBe(true)
     await drained()
     expect(log).toHaveBeenCalledWith(`triage wait-nullish: ${String(failure)}`)
     expect(next).toHaveBeenCalledOnce()
-    expect(enqueueTriage(key, next, log)).toBe(true)
+    expect(enqueueTriage(key, fx(next), log)).toBe(true)
     await drained()
     expect(next).toHaveBeenCalledTimes(2)
   })
@@ -196,10 +216,11 @@ describe('a locked project', () => {
     const log = vi.fn()
     f.deps.log = log
     const asked: string[] = []
-    f.deps.locked = async (project) => {
-      asked.push(project)
-      return project === 'lingtai' ? 'paused by steven' : null
-    }
+    f.deps.locked = (project) =>
+      Effect.sync(() => {
+        asked.push(project)
+        return project === 'lingtai' ? 'paused by steven' : null
+      })
     await onWaitStarted(f.started, f.deps)
     await drained()
     expect(f.dispatched).not.toHaveBeenCalled()
@@ -220,9 +241,11 @@ describe('a locked project', () => {
     let calls = 0
     f.deps.locked = () => {
       calls += 1
-      return calls === 1 ? new Promise<string | null>((r) => (release = r)) : Promise.resolve(null)
+      return calls === 1
+        ? fx(() => new Promise<string | null>((r) => (release = r)))
+        : Effect.succeed<string | null>(null)
     }
-    f.deps.readTasks = async () => [{ issue: '413', state: 'waiting' as const }]
+    f.deps.readTasks = () => Effect.succeed([{ issue: '413', state: 'waiting' as const }])
     await onWaitStarted(f.started, f.deps)
     for (let i = 0; i < 50 && calls === 0; i++) await drained()
     expect(calls).toBe(1)
@@ -242,9 +265,7 @@ describe('a locked project', () => {
 
   it('holds the run when the lock read itself rejects', async () => {
     const f = fixture(judgement)
-    f.deps.locked = async () => {
-      throw new Error('read failed')
-    }
+    f.deps.locked = () => Effect.fail(new Error('read failed'))
     await onWaitStarted(f.started, f.deps)
     await drained()
     expect(f.dispatched).not.toHaveBeenCalled()
@@ -261,9 +282,9 @@ describe('a locked project', () => {
     const deps = {
       ...f.deps,
       store,
-      locked: async () => lock,
-      readTasks: async () => [{ issue: 413, state: 'waiting' as const }],
-      baseSha: async () => null,
+      locked: () => Effect.succeed(lock),
+      readTasks: () => Effect.succeed([{ issue: 413, state: 'waiting' as const }]),
+      baseSha: () => Effect.succeed(null),
     } as never as Parameters<typeof catchUpChangedTriage>[3] & Parameters<typeof onWaitStarted>[1]
     const hashes = new Map<string, string>()
     await catchUpChangedTriage('lingtai', triage, hashes, deps)

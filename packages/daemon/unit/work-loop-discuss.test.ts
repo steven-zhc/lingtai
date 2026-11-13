@@ -80,9 +80,10 @@ describe('the loop delivers to triage', () => {
       eventLog: log,
       daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
       pass: asEffect(async () => {}),
-      triage: async (e) => {
-        seen.push(e.type)
-      },
+      triage: (e) =>
+        Effect.sync(() => {
+          seen.push(e.type)
+        }),
     })
     await loop.start()
     for (let i = 0; i < 50 && seen.length === 0; i++) await new Promise((r) => setTimeout(r, 10))

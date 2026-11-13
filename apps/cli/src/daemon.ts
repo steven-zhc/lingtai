@@ -5,7 +5,8 @@
  */
 import { existsSync } from 'node:fs'
 
-import { createSlots, currentRecipe, describeFilters, loadProjectsEffect, projectFilters } from '@lingtai/conductor'
+import { createSlots, describeFilters, loadProjectsEffect, projectFilters } from '@lingtai/conductor'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import {
   clientsForProjectsEffect,
@@ -26,7 +27,6 @@ import {
   HEARTBEAT_MS,
   startBeacon,
   startDaemonEffect,
-  lockedBy,
   lockedEffect,
   makeGuard,
   notTakingWork,
@@ -597,15 +597,13 @@ export function daemonCommand(
     const triageHashes = new Map<string, string>()
     // One `locked`, asked by every gate that starts an agent (0126 §5); it caches nothing.
     const guard = makeGuard({ store: eventStore, ceiling: ceilingPort(undefined, {}) })
-    const locked = lockedBy(guard)
+    const locked = lockedEffect(guard)
     const scanTriage = (project: string, triage: Triage | null): Effect.Effect<void> =>
-      lift(() =>
-        catchUpChangedTriage(
-          project,
-          triage,
-          triageHashes,
-          daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
-        ),
+      catchUpChangedTriage(
+        project,
+        triage,
+        triageHashes,
+        daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
       ).pipe(
         // Said and never fatal; an interruption passes.
         recovering((err) => Effect.sync(() => console.error(`triage catch-up ${project}: ${err.message}`))),
@@ -662,11 +660,12 @@ export function daemonCommand(
         // is spent (0033 §3). Off the pass path: a question must not queue behind
         // a run, and it takes no claim and provisions nothing that would need to.
         discuss: (event) => onDiscussionRequested(event, (line) => console.log(line), lockedEffect(guard)),
+        // A failure is a defect here, which `deliver` reports as it reports a rejection.
         triage: (event) =>
           onWaitStarted(
             event,
             daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
-          ),
+          ).pipe(Effect.orDie),
         // Asked from the log every pass. A pause issued while a run is in flight
         // has to land at the next opportunity without anybody restarting this.
         paused: claiming,
@@ -781,13 +780,11 @@ export function daemonCommand(
         setInterval(() => startRates(), 3_600_000).unref()
         // The subscription is live; a wait made during this scan is delivered by its live handler.
         const projects = yield* loadProjectsEffect()
-        yield* Effect.promise(() =>
-          catchUpRegisteredTriage(
-            projects,
-            (project) => currentRecipe(project).then((resolved) => resolved.recipe.triage ?? null),
-            (project, triage) => Effect.runPromiseWith(services)(scanTriage(project, triage)),
-            (line) => console.error(line),
-          ),
+        yield* catchUpRegisteredTriage(
+          projects,
+          (project) => Effect.map(currentRecipeEffect(project), (resolved) => resolved.recipe.triage ?? null),
+          scanTriage,
+          (line) => console.error(line),
         )
         // A question asked while nothing was listening is waiting in the stream,
         // exactly as a pause is (0013). After `start`, so the subscription is

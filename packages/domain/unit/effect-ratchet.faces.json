@@ -249,7 +249,7 @@
     "file": "packages/conductor/src/projects.ts",
     "fn": "currentRecipe",
     "until": "#790",
-    "why": "apps/board (actions, lib/task, lib/recipe, lib/board), apps/cli verbs and the recipe reader `daemon.ts` hands `catchUpRegisteredTriage` (a promise port until CLI-17), `close.ts:176` (CONDUCT8-3) await it"
+    "why": "apps/board (actions, lib/task, lib/recipe, lib/board), apps/cli verbs and `close.ts:176` (CONDUCT8-3) await it"
   },
   {
     "file": "packages/conductor/src/projects.ts",
@@ -267,7 +267,7 @@
     "file": "packages/conductor/src/projects.ts",
     "fn": "loadProjects",
     "until": "#790",
-    "why": "apps/board (search, landed, locks), apps/cli (rates, status, triage) await it"
+    "why": "apps/board (search, landed, locks), apps/cli (rates, status) await it"
   },
   {
     "file": "packages/conductor/src/projects.ts",
@@ -291,7 +291,7 @@
     "file": "packages/conductor/src/read-ticket.ts",
     "fn": "readProjectTicket",
     "until": "#790",
-    "why": "apps/board lib/task, apps/cli discuss.ts and triage.ts await it; 0101 §7 lets the board keep promises"
+    "why": "apps/board lib/task awaits it; 0101 §7 lets the board keep promises"
   },
   {
     "file": "packages/conductor/src/resolve-wait.ts",
@@ -345,7 +345,7 @@
     "file": "packages/conductor/src/snapshot-state.ts",
     "fn": "readState",
     "until": "#790",
-    "why": "apps/cli (requeue, subscribers, status, grant-fix-round, triage, approve) and apps/board read a reducer's state as a promise"
+    "why": "apps/cli (requeue, subscribers, status, grant-fix-round, triage's `waitTriage`, approve) and apps/board read a reducer's state as a promise"
   },
   {
     "file": "packages/conductor/src/split-ticket.ts",
@@ -495,7 +495,7 @@
     "file": "packages/daemon/src/failure-recorder.ts",
     "fn": "recordFailureFace",
     "until": "#790",
-    "why": "`deliver`'s promise callbacks in `packages/daemon/src/work-loop.ts`, which settle a subscriber's Effect through a promise so its timeout can report without cancelling it (`discuss` and `triage` are still promise ports)"
+    "why": "`deliver`'s promise callbacks in `packages/daemon/src/work-loop.ts`, which settle a subscriber's Effect through a promise so its timeout can report without cancelling it"
   },
   {
     "file": "packages/daemon/src/reconcile.ts",
