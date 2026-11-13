@@ -24,10 +24,15 @@
 import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
 import type { RecipeChange, RecipeFiles } from '@lingtai/recipe'
-import { isBuiltInJudge, readRecipeKey, unboundedTurnsChange } from '@lingtai/recipe'
+import { isBuiltInJudge, readRecipeKeyEffect, unboundedTurnsChange } from '@lingtai/recipe'
 import { defaultAgents, remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from '@lingtai/setup'
+import { Effect } from 'effect'
 
-import { question, type Answered, type QuestionWorld } from './question.ts'
+import { questionEffect, type Answered, type QuestionWorld } from './question.ts'
+
+function readKey(project: string, path: readonly (string | number)[], options: { home?: string; files?: RecipeFiles }) {
+  return Effect.orDie(readRecipeKeyEffect(project, path, options))
+}
 
 /** The phrasing `init.ts`'s look lines already use for a runtime that cannot run. */
 function whyMissing(r: RuntimeFound): string {
@@ -75,15 +80,15 @@ function findAgentAction(list: unknown): { index: number; action: Record<string,
  * and `editedInPlace` names the one action within a step this write edits
  * where it stands.
  */
-async function leftoverRefusal(
+const leftoverRefusal = Effect.fn('agents.leftoverRefusal')(function* (
   at: AskAgentsAt,
   readOpts: { home: string | undefined; files: RecipeFiles | undefined },
   signedInIds: readonly string[],
   world: QuestionWorld,
   editedInPlace: readonly { step: string; index: number }[],
   fullyReplaced: ReadonlySet<string>,
-): Promise<string | null> {
-  const steps = await readRecipeKey(at.project, ['steps'], readOpts)
+): Effect.fn.Return<string | null> {
+  const steps = yield* readKey(at.project, ['steps'], readOpts)
   if (steps === null || typeof steps !== 'object') return null
   for (const [step, list] of Object.entries(steps as Record<string, unknown>)) {
     if (fullyReplaced.has(step) || !Array.isArray(list)) continue
@@ -116,7 +121,7 @@ async function leftoverRefusal(
     }
   }
   return null
-}
+})
 
 export interface AskAgentsAt {
   project: string
@@ -156,7 +161,7 @@ const MODEL_LABELS: Readonly<Record<string, string>> = {
  * one the recipe already names, or another, which asks for its name. A flag
  * answers as it is, `''` included, and never reaches the choice.
  */
-async function askModel(
+const askModel = Effect.fn('agents.askModel')(function* (
   world: QuestionWorld,
   q: {
     name: string
@@ -166,9 +171,9 @@ async function askModel(
     current: string | null
     kept?: string | undefined
   },
-): Promise<Answered> {
-  if (q.given !== null) return question(world, q)
-  const picked = await question(world, {
+): Effect.fn.Return<Answered, unknown> {
+  if (q.given !== null) return yield* questionEffect(world, q)
+  const picked = yield* questionEffect(world, {
     ...q,
     offer: [RUNTIME_DEFAULT, ...(q.current === null ? [] : [q.current]), ANOTHER],
     offerLabels: MODEL_LABELS,
@@ -178,20 +183,20 @@ async function askModel(
   if ('refused' in picked) return picked
   if (picked.answer === RUNTIME_DEFAULT) return { answer: '' }
   if (picked.answer !== ANOTHER) return picked
-  return question(world, {
+  return yield* questionEffect(world, {
     name: q.name,
     flag: q.flag,
     given: null,
     prompt: 'which model — its name',
-    validate: async (a) => (a === '' ? "a model needs a name — or choose the runtime's own default" : null),
+    validate: (a) => Effect.succeed(a === '' ? "a model needs a name — or choose the runtime's own default" : null),
     kept: q.kept,
   })
-}
+})
 
-export async function askAgents(
+export const askAgents = Effect.fn('agents.askAgents')(function* (
   world: QuestionWorld,
   at: AskAgentsAt,
-): Promise<{ changes: RecipeChange[]; modelChanges: RecipeChange[] } | { refused: string }> {
+): Effect.fn.Return<{ changes: RecipeChange[]; modelChanges: RecipeChange[] } | { refused: string }, unknown> {
   const signedIn = at.runtimes.filter((r) => r.signedIn)
   const signedInIds: string[] = signedIn.map((r) => r.id)
   for (const r of at.runtimes) {
@@ -205,27 +210,27 @@ export async function askAgents(
   const offeredRuntimes = RuntimeId.options.filter((id) => signedInIds.includes(id))
   const refuseUnlessOffered =
     (extra = '') =>
-    async (answer: string): Promise<string | null> => {
-      if (signedInIds.includes(answer)) return null
-      if (answer === '') return `no agent is chosen yet — choose one of ${choiceList}${extra}`
+    (answer: string): Effect.Effect<string | null> => {
+      if (signedInIds.includes(answer)) return Effect.succeed(null)
+      if (answer === '') return Effect.succeed(`no agent is chosen yet — choose one of ${choiceList}${extra}`)
       const found = at.runtimes.find((r) => r.id === answer)
-      if (!found) return `${answer} is not a runtime — choose one of ${choiceList}${extra}`
-      return `${whyMissing(found)} — ${remedyFor(found.state)}, or choose one of ${choiceList}${extra}`
+      if (!found) return Effect.succeed(`${answer} is not a runtime — choose one of ${choiceList}${extra}`)
+      return Effect.succeed(`${whyMissing(found)} — ${remedyFor(found.state)}, or choose one of ${choiceList}${extra}`)
     }
 
   const readOpts = { home: at.home, files: at.files }
-  const implementAction = findAgentAction(await readRecipeKey(at.project, ['steps', 'implement'], readOpts))
-  const reviewList = await readRecipeKey(at.project, ['steps', 'review'], readOpts)
+  const implementAction = findAgentAction(yield* readKey(at.project, ['steps', 'implement'], readOpts))
+  const reviewList = yield* readKey(at.project, ['steps', 'review'], readOpts)
   const reviewAction = findAgentAction(reviewList)
 
   const writingAgent = asRuntime(
     implementAction && typeof implementAction.action['agent'] === 'string'
       ? implementAction.action['agent']
-      : await readRecipeKey(at.project, ['runtime', 'agent'], readOpts),
+      : yield* readKey(at.project, ['runtime', 'agent'], readOpts),
   )
   const currentAgent = writingAgent !== null && signedInIds.includes(writingAgent) ? writingAgent : null
 
-  const agentAnswer = await question(world, {
+  const agentAnswer = yield* questionEffect(world, {
     name: 'which agent writes the change',
     flag: `--agent <${choiceList}>`,
     given: at.flags.agent ?? null,
@@ -248,7 +253,7 @@ export async function askAgents(
       ? (implementAction.action['model'] as string)
       : null
 
-  const modelAnswer = await askModel(world, {
+  const modelAnswer = yield* askModel(world, {
     name: 'which model the writer runs on',
     flag: "--model <name>, or --model ''",
     given: at.flags.model ?? null,
@@ -279,7 +284,7 @@ export async function askAgents(
         ? 'none'
         : null
 
-  const reviewerAnswer = await question(world, {
+  const reviewerAnswer = yield* questionEffect(world, {
     name: 'a cold reviewer',
     flag: `--reviewer <${choiceList}|none>`,
     given: at.flags.reviewer ?? null,
@@ -287,7 +292,7 @@ export async function askAgents(
     offer: [...offeredRuntimes, 'none'],
     current: currentReviewer,
     detected: defaultReviewer,
-    validate: async (answer) => (answer === 'none' ? null : refuseUnlessOffered(', or none')(answer)),
+    validate: (answer) => (answer === 'none' ? Effect.succeed(null) : refuseUnlessOffered(', or none')(answer)),
     kept: at.kept,
   })
   if ('refused' in reviewerAnswer) return reviewerAnswer
@@ -315,7 +320,7 @@ export async function askAgents(
   else if (reviewAction) editedInPlace.push({ step: 'review', index: reviewAction.index })
   else fullyReplaced.add('review')
 
-  const leftover = await leftoverRefusal(at, readOpts, signedInIds, world, editedInPlace, fullyReplaced)
+  const leftover = yield* leftoverRefusal(at, readOpts, signedInIds, world, editedInPlace, fullyReplaced)
   if (leftover !== null) return { refused: leftover }
 
   let reviewerModel = ''
@@ -327,7 +332,7 @@ export async function askAgents(
       reviewAction && reviewer === currentReviewer && typeof reviewAction.action['model'] === 'string'
         ? (reviewAction.action['model'] as string)
         : null
-    const reviewerModelAnswer = await askModel(world, {
+    const reviewerModelAnswer = yield* askModel(world, {
       name: "the reviewer's model",
       flag: "--reviewer-model <name>, or --reviewer-model ''",
       given: at.flags.reviewerModel ?? null,
@@ -357,7 +362,7 @@ export async function askAgents(
   if (
     writerCapabilities !== undefined &&
     !writerCapabilities.enforces.includes('turns') &&
-    (await readRecipeKey(at.project, ['runtime', 'limits', 'turns'], readOpts)) === null
+    (yield* readKey(at.project, ['runtime', 'limits', 'turns'], readOpts)) === null
   ) {
     changes.push(unboundedTurnsChange())
   }
@@ -390,4 +395,4 @@ export async function askAgents(
   }
 
   return { changes, modelChanges }
-}
+})

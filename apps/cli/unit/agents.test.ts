@@ -5,10 +5,13 @@
  */
 import { type RecipeFiles, recipePath, resolveLocalRecipe, setRecipe } from '@lingtai/recipe'
 import type { RuntimeFound } from '@lingtai/setup'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { ANOTHER, askAgents, RUNTIME_DEFAULT } from '../src/agents.ts'
+import { ANOTHER, askAgents as askAgentsEffect, RUNTIME_DEFAULT } from '../src/agents.ts'
 import type { QuestionWorld } from '../src/question.ts'
+
+const askAgents = (...args: Parameters<typeof askAgentsEffect>) => Effect.runPromise(askAgentsEffect(...args))
 
 const HOME = '/home/me/.lingtai'
 const PATH = recipePath('app', HOME)

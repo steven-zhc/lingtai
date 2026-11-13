@@ -18,7 +18,7 @@ import {
   type Recipe,
   type RecipeChange,
   type RecipeFiles,
-  readRecipeKey,
+  readRecipeKeyEffect,
   recipePath,
   resolveSource,
   SETUP_KINDS,
@@ -26,8 +26,14 @@ import {
   type TicketSource,
 } from '@lingtai/recipe'
 import { parseKinds, ticketSourceOf } from '@lingtai/setup'
+import { Effect } from 'effect'
 
-import { type QuestionWorld, question } from './question.ts'
+import { lift } from './exit.ts'
+import { type QuestionWorld, questionEffect } from './question.ts'
+
+function readKey(project: string, path: readonly (string | number)[], options: { home?: string; files?: RecipeFiles }) {
+  return Effect.orDie(readRecipeKeyEffect(project, path, options))
+}
 
 export type SourceAnswer = { changes: RecipeChange[] } | { refused: string }
 
@@ -61,20 +67,20 @@ export interface TicketsDeps extends SourceDeps {
  * for the same reason: "unknown" is the only safe reading for a file that
  * is not there yet, or not there on its own.
  */
-async function resolvedRecipe(
+const resolvedRecipe = Effect.fn('source.resolvedRecipe')(function* (
   project: string,
   options: { home?: string; files?: RecipeFiles },
-): Promise<Recipe | null> {
+): Effect.fn.Return<Recipe | null, unknown> {
   const files = options.files ?? diskFiles
   const path = recipePath(project, options.home)
-  const text = await files.read(path)
+  const text = yield* lift(() => files.read(path))
   if (text === null) return null
   try {
     return resolveSource(text, path, path).recipe
   } catch {
     return null
   }
-}
+})
 
 /** Why a project with work items in the log cannot change its ticket source. */
 export const DIFFERENT_SOURCE_CLASH = 'a different source would number its own tickets into those same streams'
@@ -88,19 +94,19 @@ export const DIFFERENT_SOURCE_CLASH = 'a different source would number its own t
  * numbered under one source would collide with a different source's own
  * numbering (`packages/domain/src/streams.ts:14`, #381).
  */
-export async function askTickets(
+export const askTickets = Effect.fn('source.askTickets')(function* (
   world: QuestionWorld,
   project: string,
   local: boolean,
   given: string | null,
   deps: TicketsDeps,
-): Promise<TicketsAnswer> {
+): Effect.fn.Return<TicketsAnswer, unknown> {
   if (given !== null && given !== 'github' && given !== 'db') {
     return { refused: `${given} is not one of github, db` }
   }
 
   const kept = deps.kept ?? 'Nothing was written'
-  const history = await deps.history(project)
+  const history = yield* lift(() => deps.history(project))
   // Read raw rather than through `resolvedRecipe`: a file that does not
   // resolve — `~/.lingtai/<project>/recipe.yml` writing `source.kinds` is
   // missing, say — still has a `source.tickets` worth reading, and
@@ -113,7 +119,7 @@ export async function askTickets(
   // re-read on a second machine or a re-provisioned `~/.lingtai` must not read
   // as `github` merely because the file naming its real source is not here
   // (#432 fix round, finding 1).
-  const rawTickets = await readRecipeKey(project, ['source', 'tickets'], { home: deps.home, files: deps.files })
+  const rawTickets = yield* readKey(project, ['source', 'tickets'], { home: deps.home, files: deps.files })
   const current: TicketSource = ticketSourceOf(rawTickets, history)
 
   if (history.length > 0) {
@@ -144,7 +150,7 @@ export async function askTickets(
     return current === 'db' ? { changes: [], current: 'db' } : { changes: [ticketsChange('db')], current: 'db' }
   }
 
-  const result = await question(world, {
+  const result = yield* questionEffect(world, {
     name: 'the ticket source',
     flag: '--tickets <github|db>',
     given,
@@ -158,20 +164,20 @@ export async function askTickets(
   return decided === current
     ? { changes: [], current: decided }
     : { changes: [ticketsChange(decided)], current: decided }
-}
+})
 
 /**
  * Which labels are work, **in priority order** (#76) — written where
  * `kindsOf` reads: `source.kinds`, or the `queue:` declared at `claim`
  * when the recipe reads from there instead (`kindsChanges`).
  */
-export async function askKinds(
+export const askKinds = Effect.fn('source.askKinds')(function* (
   world: QuestionWorld,
   project: string,
   given: string | null,
   deps: SourceDeps,
-): Promise<SourceAnswer> {
-  const resolved = await resolvedRecipe(project, { home: deps.home, files: deps.files })
+): Effect.fn.Return<SourceAnswer, unknown> {
+  const resolved = yield* resolvedRecipe(project, { home: deps.home, files: deps.files })
   // Read raw rather than through `resolvedRecipe` alone, the same asymmetry
   // `askTickets` above was fixed for: a file that writes `source.kinds` but
   // does not resolve on its own (`env.plantAt` still missing, say) still has
@@ -180,12 +186,12 @@ export async function askKinds(
   // offer `SETUP_KINDS` as the default and let Enter silently replace what
   // was actually written.
   const rawKinds =
-    resolved === null ? await readRecipeKey(project, ['source', 'kinds'], { home: deps.home, files: deps.files }) : null
+    resolved === null ? yield* readKey(project, ['source', 'kinds'], { home: deps.home, files: deps.files }) : null
   const currentKinds =
     resolved !== null ? kindsOf(resolved) : Array.isArray(rawKinds) ? rawKinds.map((k) => String(k)) : null
   const currentDisplay = currentKinds === null ? null : currentKinds.join(', ')
 
-  const result = await question(world, {
+  const result = yield* questionEffect(world, {
     name: 'the kinds',
     flag: '--kinds <a,b,c>',
     given,
@@ -193,9 +199,9 @@ export async function askKinds(
     current: currentDisplay,
     fallback: currentDisplay === null ? (deps.kindsFallback ?? SETUP_KINDS).join(', ') : undefined,
     kept: deps.kept ?? 'Nothing was written',
-    validate: async (answer) => {
+    validate: (answer) => {
       const parsed = parseKinds(answer)
-      return typeof parsed === 'string' ? parsed : null
+      return Effect.succeed(typeof parsed === 'string' ? parsed : null)
     },
   })
   if ('refused' in result) return result
@@ -207,6 +213,6 @@ export async function askKinds(
     currentKinds !== null && currentKinds.length === parsed.length && currentKinds.every((k, i) => k === parsed[i])
   if (unchanged) return { changes: [] }
 
-  const rawClaim = await readRecipeKey(project, ['steps', 'claim'], { home: deps.home, files: deps.files })
+  const rawClaim = yield* readKey(project, ['steps', 'claim'], { home: deps.home, files: deps.files })
   return { changes: kindsChanges(parsed, Array.isArray(rawClaim) ? rawClaim : null) }
-}
+})

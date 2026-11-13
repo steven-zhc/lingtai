@@ -13,6 +13,9 @@
  * caller decides what that answer means to write, and when.
  */
 import { paint } from '@lingtai/env/colour'
+import { Effect } from 'effect'
+
+import { lift } from './exit.ts'
 
 /** What a front end that draws its own prompt needs: the words, the default, and the choices if there are any. */
 export interface AskShape {
@@ -66,7 +69,7 @@ export interface Question {
   /** The words drawn for an `offer` value, where the value is not the words. */
   offerLabels?: Readonly<Record<string, string>>
   /** Null accepts the answer; a string is why not, logged, and asked again at a terminal. */
-  validate?: (answer: string) => Promise<string | null>
+  validate?: (answer: string) => Effect.Effect<string | null, unknown>
   /**
    * The clause after "needs an answer: pass <flag>." — what is still true when
    * this question goes unanswered. Defaults to "Nothing was written", which is
@@ -104,52 +107,72 @@ export function acceptingDefaults(world: QuestionWorld): QuestionWorld {
   return {
     log: world.log,
     ...(world.spin === undefined ? {} : { spin: world.spin }),
-    ask: async (prompt) => {
+    ask: (prompt) => {
       const repeat = prompt === lastPrompt
       lastPrompt = prompt
-      return repeat ? null : ''
+      return Promise.resolve(repeat ? null : '')
     },
   }
 }
 
-async function accept(q: Question, answer: string): Promise<string | null> {
+function accept(q: Question, answer: string): Effect.Effect<string | null, unknown> {
   if (q.choices !== undefined && !q.choices.includes(answer)) {
-    return `${answer} is not one of ${q.choices.join(', ')}`
+    return Effect.succeed(`${answer} is not one of ${q.choices.join(', ')}`)
   }
-  return q.validate === undefined ? null : await q.validate(answer)
+  return q.validate === undefined ? Effect.succeed(null) : q.validate(answer)
 }
 
-export async function question(world: QuestionWorld, q: Question): Promise<Answered> {
-  // A flag cannot be re-asked: it is run through `validate` once, and a
-  // refusal is the answer — even at a terminal, and even when `current`
-  // exists. Re-asking would make a flag a suggestion rather than an answer.
-  if (q.given !== null) {
-    const why = await accept(q, q.given)
-    return why === null ? { answer: q.given } : { refused: why }
-  }
+/** A `Question` as the setup files not yet moved write it: their `validate` still returns a promise. */
+export type PromiseValidated = Omit<Question, 'validate'> & {
+  validate?: (answer: string) => Promise<string | null>
+}
 
-  const fallback = q.fallback ?? ''
-  const defaultValue = q.current ?? q.detected ?? fallback
-  const show = q.show ?? ((value: string) => value)
-  const bracket = defaultValue !== '' ? ` [${show(defaultValue)}]` : ''
-  const prompt = paint.signal(`${q.prompt}${bracket}: `)
+/** Lifts a promise `validate` once; a rejection keeps the error it threw, so it still propagates. */
+function liftValidate(q: PromiseValidated): Question {
+  const { validate, ...rest } = q
+  if (validate === undefined) return rest
+  return { ...rest, validate: (answer) => lift(() => validate(answer)) }
+}
 
-  for (;;) {
-    const typed = await world.ask(prompt, {
-      message: q.prompt,
-      defaultValue,
-      choices: q.choices ?? q.offer,
-      labels: q.offerLabels,
-      kept: q.kept ?? 'Nothing was written',
-      startOver: q.startOver,
-      command: q.command,
-      why: q.why,
-    })
-    if (typed === null)
-      return { refused: `${q.name} needs an answer: pass ${q.flag}. ${q.kept ?? 'Nothing was written'}` }
-    const answer = typed.trim() === '' ? defaultValue : typed.trim()
-    const why = await accept(q, answer)
-    if (why === null) return { answer }
-    world.log(paint.fail(why))
-  }
+export function questionEffect(world: QuestionWorld, q: Question): Effect.Effect<Answered, unknown> {
+  return Effect.gen(function* () {
+    // A flag cannot be re-asked: it is run through `validate` once, and a
+    // refusal is the answer — even at a terminal, and even when `current`
+    // exists. Re-asking would make a flag a suggestion rather than an answer.
+    if (q.given !== null) {
+      const why = yield* accept(q, q.given)
+      return why === null ? { answer: q.given } : { refused: why }
+    }
+
+    const fallback = q.fallback ?? ''
+    const defaultValue = q.current ?? q.detected ?? fallback
+    const show = q.show ?? ((value: string) => value)
+    const bracket = defaultValue !== '' ? ` [${show(defaultValue)}]` : ''
+    const prompt = paint.signal(`${q.prompt}${bracket}: `)
+
+    for (;;) {
+      const typed = yield* lift(() =>
+        world.ask(prompt, {
+          message: q.prompt,
+          defaultValue,
+          choices: q.choices ?? q.offer,
+          labels: q.offerLabels,
+          kept: q.kept ?? 'Nothing was written',
+          startOver: q.startOver,
+          command: q.command,
+          why: q.why,
+        }),
+      )
+      if (typed === null)
+        return { refused: `${q.name} needs an answer: pass ${q.flag}. ${q.kept ?? 'Nothing was written'}` }
+      const answer = typed.trim() === '' ? defaultValue : typed.trim()
+      const why = yield* accept(q, answer)
+      if (why === null) return { answer }
+      world.log(paint.fail(why))
+    }
+  })
+}
+
+export function question(world: QuestionWorld, q: PromiseValidated): Promise<Answered> {
+  return Effect.runPromise(questionEffect(world, liftValidate(q)))
 }

@@ -6,10 +6,14 @@ import { type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
  * underneath this, and no terminal: `world()` below scripts the answers the
  * same way `apps/cli/unit/question.test.ts` does for the seam itself.
  */
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { askLanding, askLimits } from '../src/landing.ts'
+import { askLanding as askLandingEffect, askLimits as askLimitsEffect } from '../src/landing.ts'
 import type { QuestionWorld } from '../src/question.ts'
+
+const askLanding = (...args: Parameters<typeof askLandingEffect>) => Effect.runPromise(askLandingEffect(...args))
+const askLimits = (...args: Parameters<typeof askLimitsEffect>) => Effect.runPromise(askLimitsEffect(...args))
 
 // `paint` reads `FORCE_COLOR` on every call; `NO_COLOR` wins outright ahead of
 // it, so assertions reading `lines`/`asked` as bare strings do not depend on

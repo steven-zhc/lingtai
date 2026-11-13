@@ -35,14 +35,16 @@ import {
   recipePath,
   resolveSource,
   type Said,
-  setRecipe,
+  setRecipeEffect,
 } from '@lingtai/recipe'
 import { type Answers, draftFiles, ENV_PLANT_AT, SAID, type SetupReader } from '@lingtai/setup'
 import type { Proposal, RuntimeFound } from '@lingtai/setup'
+import { Effect } from 'effect'
 
 import { askAgents } from './agents.ts'
+import { lift, recovering } from './exit.ts'
 import { askLanding, askLimits } from './landing.ts'
-import { acceptingDefaults, question, type QuestionWorld } from './question.ts'
+import { acceptingDefaults, questionEffect, type QuestionWorld } from './question.ts'
 import { type AskInstallAndBuildInput, type TrialOutcome, askInstallAndBuild } from './setup-build.ts'
 import { askKinds, askTickets } from './source.ts'
 
@@ -57,10 +59,10 @@ export const ADD_KEPT = 'Nothing was written and nothing was registered'
 export { ENV_PLANT_AT, SAID }
 
 /** Whether `tool` is an existing file in a directory on this process's PATH. */
-async function toolOnPath(tool: string): Promise<boolean> {
+function toolOnPath(tool: string): Promise<boolean> {
   const dirs = (process.env['PATH'] ?? '').split(delimiter).filter((d) => d !== '')
   const names = process.platform === 'win32' ? [tool, `${tool}.exe`, `${tool}.cmd`] : [tool]
-  return dirs.some((dir) => names.some((name) => existsSync(join(dir, name))))
+  return Promise.resolve(dirs.some((dir) => names.some((name) => existsSync(join(dir, name)))))
 }
 
 export interface RecipeAt {
@@ -153,12 +155,12 @@ export function priceHints(models: Summary['models'], snapshot: readonly unknown
 }
 
 /** The file as it stands, read the way the pass will read it — never the answers held in memory. */
-export async function summariseRecipe(
+export const summariseRecipe = Effect.fn('recipe-flow.summariseRecipe')(function* (
   project: string,
   options: { home?: string; files?: RecipeFiles },
-): Promise<Summary | { refused: string }> {
+): Effect.fn.Return<Summary | { refused: string }, unknown> {
   const path = recipePath(project, options.home)
-  const text = await (options.files ?? diskFiles).read(path)
+  const text = yield* lift(() => (options.files ?? diskFiles).read(path))
   if (text === null) return { refused: `no recipe at ${path} to summarise` }
   try {
     const { recipe } = resolveSource(text, path, path)
@@ -180,27 +182,31 @@ export async function summariseRecipe(
   } catch (err) {
     return { refused: (err as Error).message }
   }
-}
+})
 
 /** `setRecipe`, with its throw turned into the same `{refused}` shape every question here returns. */
-async function writeOrRefuse(
+function writeOrRefuse(
   project: string,
   changes: readonly RecipeChange[],
   options: { home?: string; files?: RecipeFiles; said?: Said },
-): Promise<{ ok: true } | { refused: string }> {
-  if (changes.length === 0) return { ok: true }
-  try {
-    await setRecipe(project, changes, options)
-    return { ok: true }
-  } catch (err) {
-    return { refused: (err as Error).message }
-  }
+): Effect.Effect<{ ok: true } | { refused: string }> {
+  if (changes.length === 0) return Effect.succeed({ ok: true })
+  return setRecipeEffect(project, changes, options).pipe(
+    Effect.map((): { ok: true } => ({ ok: true })),
+    recovering((err) => Effect.succeed({ refused: err.message })),
+  )
 }
 
-export async function askRecipe(
+type Recipe = { ok: true; trial: TrialOutcome; hints: string[]; answers: Answers } | { refused: string }
+
+export function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<Recipe> {
+  return Effect.runPromise(askRecipeEffect(world, at))
+}
+
+export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   world: QuestionWorld,
   at: RecipeAt,
-): Promise<{ ok: true; trial: TrialOutcome; hints: string[]; answers: Answers } | { refused: string }> {
+): Effect.fn.Return<Recipe, unknown> {
   const path = recipePath(at.project, at.home)
   // Every answer lands in this draft and nowhere else: `applySetup` (#968) is the one
   // writer of the file, so a refusal anywhere below leaves the disk as it was.
@@ -211,7 +217,7 @@ export async function askRecipe(
   // Asked first, ahead of the existing-file seed write below — nothing is
   // written yet on either path, so a refusal here always says
   // `at.keptBeforeWrite` (#433).
-  const defaults = await question(world, {
+  const defaults = yield* questionEffect(world, {
     name: 'every default',
     flag: '--defaults',
     given: at.flags['defaults'] !== undefined ? 'yes' : null,
@@ -229,11 +235,11 @@ export async function askRecipe(
   // question's own name, not this one's (#433 fix round, findings 1 and 2).
   const askWorld = 'answer' in defaults && defaults.answer === 'yes' ? acceptingDefaults(world) : world
 
-  const existing = await files.read(path)
+  const existing = yield* lift(() => files.read(path))
   const absent = existing === null
 
   if (!absent) {
-    const wroteSeeds = await writeOrRefuse(at.project, at.seeds, fileOptions)
+    const wroteSeeds = yield* writeOrRefuse(at.project, at.seeds, fileOptions)
     if ('refused' in wroteSeeds) return wroteSeeds
   }
 
@@ -243,7 +249,7 @@ export async function askRecipe(
   const askKept = absent ? at.keptBeforeWrite : at.kept
   const collected: RecipeChange[] = []
 
-  const agents = await askAgents(askWorld, {
+  const agents = yield* askAgents(askWorld, {
     project: at.project,
     runtimes: at.runtimes,
     flags: {
@@ -260,31 +266,33 @@ export async function askRecipe(
   if (absent) {
     collected.push(...agents.changes, ...agents.modelChanges)
   } else {
-    const wroteAgentChanges = await writeOrRefuse(at.project, agents.changes, fileOptions)
+    const wroteAgentChanges = yield* writeOrRefuse(at.project, agents.changes, fileOptions)
     if ('refused' in wroteAgentChanges) return wroteAgentChanges
-    const wroteModelChanges = await writeOrRefuse(at.project, agents.modelChanges, fileOptions)
+    const wroteModelChanges = yield* writeOrRefuse(at.project, agents.modelChanges, fileOptions)
     if ('refused' in wroteModelChanges) return wroteModelChanges
   }
 
-  const setup = await askInstallAndBuild(askWorld, {
-    project: at.project,
-    reader: at.reader,
-    ...(at.proposal?.detected.known === true ? { detected: at.proposal.detected.value } : {}),
-    given: {
-      install: at.flags['install'] ?? null,
-      build: at.buildFlags.length === 0 ? null : [...at.buildFlags],
-      // Keyed on the world and not on the flag, so a person who typed `yes` at
-      // "use every default?" is held to it as `--defaults` is: no scripted or
-      // defaulted setup runs minutes of somebody's build (#436).
-      check: (at.flags['check-build'] as 'yes' | 'no' | undefined) ?? (askWorld !== world ? 'no' : null),
-    },
-    tryBuild: typeof at.tryBuild === 'function' ? at.tryBuild(files) : (at.tryBuild ?? null),
-    recipeExisted: !absent,
-    onPath: toolOnPath,
-    home: at.home,
-    files,
-    kept: askKept,
-  })
+  const setup = yield* lift(() =>
+    askInstallAndBuild(askWorld, {
+      project: at.project,
+      reader: at.reader,
+      ...(at.proposal?.detected.known === true ? { detected: at.proposal.detected.value } : {}),
+      given: {
+        install: at.flags['install'] ?? null,
+        build: at.buildFlags.length === 0 ? null : [...at.buildFlags],
+        // Keyed on the world and not on the flag, so a person who typed `yes` at
+        // "use every default?" is held to it as `--defaults` is: no scripted or
+        // defaulted setup runs minutes of somebody's build (#436).
+        check: (at.flags['check-build'] as 'yes' | 'no' | undefined) ?? (askWorld !== world ? 'no' : null),
+      },
+      tryBuild: typeof at.tryBuild === 'function' ? at.tryBuild(files) : (at.tryBuild ?? null),
+      recipeExisted: !absent,
+      onPath: toolOnPath,
+      home: at.home,
+      files,
+      kept: askKept,
+    }),
+  )
   if ('refused' in setup) return setup
   const trial = setup.trial
   // Said only once the write that carries the list has happened, never when it was chosen.
@@ -298,12 +306,12 @@ export async function askRecipe(
   if (absent) {
     collected.push(...setup.changes)
   } else {
-    const wroteSetup = await writeOrRefuse(at.project, setup.changes, fileOptions)
+    const wroteSetup = yield* writeOrRefuse(at.project, setup.changes, fileOptions)
     if ('refused' in wroteSetup) return wroteSetup
     sayKept()
   }
 
-  const tickets = await askTickets(askWorld, at.project, at.local, at.flags['tickets'] ?? null, {
+  const tickets = yield* askTickets(askWorld, at.project, at.local, at.flags['tickets'] ?? null, {
     home: at.home,
     files,
     history: at.history,
@@ -313,11 +321,11 @@ export async function askRecipe(
   if (absent) {
     collected.push(...tickets.changes)
   } else {
-    const wroteTickets = await writeOrRefuse(at.project, tickets.changes, fileOptions)
+    const wroteTickets = yield* writeOrRefuse(at.project, tickets.changes, fileOptions)
     if ('refused' in wroteTickets) return wroteTickets
   }
 
-  const kinds = await askKinds(askWorld, at.project, at.flags['kinds'] ?? null, {
+  const kinds = yield* askKinds(askWorld, at.project, at.flags['kinds'] ?? null, {
     home: at.home,
     files,
     kept: askKept,
@@ -327,7 +335,7 @@ export async function askRecipe(
   if (absent) {
     collected.push(...kinds.changes)
   } else {
-    const wroteKinds = await writeOrRefuse(at.project, kinds.changes, fileOptions)
+    const wroteKinds = yield* writeOrRefuse(at.project, kinds.changes, fileOptions)
     if ('refused' in wroteKinds) return wroteKinds
   }
 
@@ -343,12 +351,12 @@ export async function askRecipe(
     const changes = all.some((c) => c.path.join('.') === 'source.tickets')
       ? all
       : [...all, { path: ['source', 'tickets'], value: tickets.current }]
-    const wrote = await writeOrRefuse(at.project, changes, { ...fileOptions, said: SAID })
+    const wrote = yield* writeOrRefuse(at.project, changes, { ...fileOptions, said: SAID })
     if ('refused' in wrote) return wrote
     sayKept()
   }
 
-  const landed = await askLanding(askWorld, at.project, at.flags['land'] ?? null, {
+  const landed = yield* askLanding(askWorld, at.project, at.flags['land'] ?? null, {
     home: at.home,
     files,
     defaultBranch: at.defaultBranch,
@@ -356,7 +364,7 @@ export async function askRecipe(
   })
   if ('refused' in landed) return landed
 
-  const limited = await askLimits(
+  const limited = yield* askLimits(
     askWorld,
     at.project,
     { rounds: at.flags['rounds'], wall: at.flags['wall'], budget: at.flags['budget'] },
@@ -365,7 +373,7 @@ export async function askRecipe(
   if ('refused' in limited) return limited
 
   // Last, and read back from the file: every registration follows this function (#542).
-  const summary = await summariseRecipe(at.project, fileOptions)
+  const summary = yield* summariseRecipe(at.project, fileOptions)
   if ('refused' in summary) return summary
   const hints = priceHints(summary.models, (at.rates ?? fetchedRates)())
 
@@ -382,7 +390,7 @@ export async function askRecipe(
         : unseenEmptyBuild
           ? 'nothing checks a diff before review'
           : lands
-    const confirmed = await question(world, {
+    const confirmed = yield* questionEffect(world, {
       name: 'registering with these defaults',
       flag: '--defaults, or --build <cmd>|none and --land <branch>|hold to choose explicitly',
       given: at.flags['defaults'] !== undefined ? 'yes' : null,
@@ -400,4 +408,4 @@ export async function askRecipe(
   }
 
   return { ok: true, trial, hints, answers: { project: at.project, changes: draft.changes(), said: SAID } }
-}
+})
