@@ -16,9 +16,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { Identity, RecordedStart, ShutdownRequest } from '@lingtai/daemon'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { describeRefusal } from '../src/doctor.ts'
+import { lift } from '../src/exit.ts'
 import {
   RESTART_GUARDS,
   SUPERVISED_ONLY,
@@ -328,10 +330,12 @@ describe('waiting for the lock', () => {
     let asked = 0
     const lines: string[] = []
 
-    const waited = await waitForTheLock('draining', null, (l) => lines.push(l), {
-      ask: () => answers[Math.min(asked++, answers.length - 1)]!(),
-      pollMs: 1,
-    })
+    const waited = await Effect.runPromise(
+      waitForTheLock('draining', null, (l) => lines.push(l), {
+        ask: Effect.suspend(() => lift(answers[Math.min(asked++, answers.length - 1)]!)),
+        pollMs: 1,
+      }),
+    )
 
     expect(waited).toBe('free')
     // Free only on the answer that said nobody, not on the one that failed.
@@ -340,12 +344,12 @@ describe('waiting for the lock', () => {
   })
 
   it('gives up on its timeout rather than calling a lock it cannot read free', async () => {
-    const waited = await waitForTheLock('draining', 5, () => {}, {
-      ask: async () => {
-        throw new Error('the pooler restarted')
-      },
-      pollMs: 2,
-    })
+    const waited = await Effect.runPromise(
+      waitForTheLock('draining', 5, () => {}, {
+        ask: Effect.fail(new Error('the pooler restarted')),
+        pollMs: 2,
+      }),
+    )
     expect(waited).toBe('gave-up')
   })
 })
@@ -525,6 +529,13 @@ interface Outcome {
   asks: { timeoutMs: number | null; force: boolean }[]
 }
 
+/** `RestartFacts` as promises, for the pieces a scene still hands to promise-shaped code. */
+type Promised = {
+  [K in Exclude<keyof RestartFacts, 'pollMs'>]: (
+    ...args: Parameters<RestartFacts[K]>
+  ) => Promise<Effect.Success<ReturnType<RestartFacts[K]>>>
+} & { pollMs?: number }
+
 function worldOf(scene: Scene) {
   const w = {
     phase: 'before' as 'before' | 'drained' | 'started',
@@ -545,7 +556,7 @@ function worldOf(scene: Scene) {
       ? (scene.after?.shutdown ?? null)
       : (scene.atStart?.standing ?? scene.after?.shutdown ?? null)
   }
-  const facts: RestartFacts = {
+  const promised: Promised = {
     identity: async () => identityNow(),
     doctor: async () => ({
       results: Array.from({ length: scene.doctorFailed ?? 0 }, (_, i) => ({
@@ -592,6 +603,20 @@ function worldOf(scene: Scene) {
     },
     pollMs: 1,
   }
+  // The port is Effects; the promise forms stay for the pieces that are still promises (`openDaemon`, `serviceCommand`).
+  const facts: RestartFacts = {
+    identity: () => lift(promised.identity),
+    doctor: () => lift(promised.doctor),
+    holder: () => lift(promised.holder),
+    daemonUp: () => lift(promised.daemonUp),
+    control: () => lift(promised.control),
+    inFlight: () => lift(promised.inFlight),
+    ask: (by, reason, timeoutMs, force) => lift(() => promised.ask(by, reason, timeoutMs, force)),
+    watermark: () => lift(promised.watermark),
+    startAfter: (version) => lift(() => promised.startAfter(version)),
+    requestsBetween: (from, to) => lift(() => promised.requestsBetween(from, to)),
+    pollMs: 1,
+  }
   const log = (line: string): void => void w.lines.push(line)
   const outcome = (code: number): Outcome => ({
     code,
@@ -599,7 +624,7 @@ function worldOf(scene: Scene) {
     askedToStop: w.askedToStop,
     asks: w.asks,
   })
-  return { w, facts, log, outcome, shutdownNow }
+  return { w, facts, promised, log, outcome, shutdownNow }
 }
 
 let home: string
@@ -621,8 +646,8 @@ afterEach(async () => {
  * the code the scene's.
  */
 async function terminal(scene: Scene, args: RestartArgs = ARGS): Promise<Outcome> {
-  const { w, facts, log, outcome } = worldOf(scene)
-  const prepared = await prepareRestart(args, log, facts)
+  const { w, facts, promised, log, outcome } = worldOf(scene)
+  const prepared = await Effect.runPromise(prepareRestart(args, log, facts))
   if (!prepared.ok) return outcome(prepared.code)
   w.phase = 'started'
   let stopped = false
@@ -638,7 +663,7 @@ async function terminal(scene: Scene, args: RestartArgs = ARGS): Promise<Outcome
               daemon: { stopped: Promise.resolve('asked'), stop: () => void (stopped = true), stoppedProjections: [] },
             },
       code: async () => scene.runs ?? prepared.examined,
-      control: facts.control,
+      control: promised.control,
       log,
     },
   )
@@ -662,7 +687,7 @@ async function supervised(
    */
   board: { wontStop?: boolean; wontAnswer?: boolean } = {},
 ): Promise<Outcome> {
-  const { w, facts, log, outcome, shutdownNow } = worldOf(scene)
+  const { w, facts, promised, log, outcome, shutdownNow } = worldOf(scene)
   let loaded = true
   let boardLoaded = true
   const exec: Exec = (call) => {
@@ -694,20 +719,24 @@ async function supervised(
     }
     return { status: 0, out: '' }
   }
-  const service = (argv: string[], asked: { timeoutMs: number | null; force: boolean }): Promise<number> =>
+  const service = (argv: string[], asked: { timeoutMs: number | null; force: boolean }) =>
     serviceCommand(argv, {
-      liveness: async () => 'up',
-      shutdown: async () => shutdownNow(),
+      liveness: () => Effect.succeed('up'),
+      shutdown: () => lift(async () => shutdownNow()),
       drain: {
-        ask: (by, reason) => facts.ask(by, reason, asked.timeoutMs, asked.force),
-        holding: async () => 'nothing in flight',
-        queue: async () => ({
-          wait: async () => ((w.phase = 'drained'), 'held'),
-          holds: async () => true,
-          leave: async () => {},
-        }),
+        ask: (by, reason) => lift(() => promised.ask(by, reason, asked.timeoutMs, asked.force)),
+        holding: () => Effect.succeed('nothing in flight'),
+        queue: () =>
+          Effect.succeed({
+            wait: () => Effect.sync(() => ((w.phase = 'drained'), 'held' as const)),
+            holds: Effect.succeed(true),
+            leave: Effect.void,
+          }),
       },
-      started: { watermark: facts.watermark, after: facts.startAfter },
+      started: {
+        watermark: () => lift(() => promised.watermark()),
+        after: (version) => lift(() => promised.startAfter(version)),
+      },
       // The board's job answers at once unless the scene says otherwise:
       // `lingtai restart` is about the conductor, and a board that would not
       // come up is `service`'s to report. `heldBy` is null even under
@@ -715,9 +744,9 @@ async function supervised(
       // lock, which is exactly why the job is started over it and exits.
       board: {
         url: 'http://127.0.0.1:17820',
-        answering: async () => (board.wontAnswer ? null : 'http://127.0.0.1:17820'),
+        answering: () => Effect.succeed(board.wontAnswer ? null : 'http://127.0.0.1:17820'),
         missing: () => null,
-        heldBy: async () => null,
+        heldBy: () => Effect.succeed(null),
       },
       by: BY,
       platform: 'darwin',
@@ -727,11 +756,11 @@ async function supervised(
       username: 'lingtai',
       exec,
       which: (bin) => (bin === 'node' ? '/usr/bin/node' : `/usr/bin/${bin}`),
-      sleep: async () => {},
+      sleep: () => Effect.void,
       log,
       error: log,
     })
-  return outcome(await restartSupervised(args, { service, facts, log }))
+  return outcome(await Effect.runPromise(restartSupervised(args, { service, facts, log })))
 }
 
 type Says = string | { terminal: string; supervised: string }

@@ -1,6 +1,11 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+
 /** `env`, `projection`, `upgrade`, `rollback` and `uninstall` through `@effect/cli` and the output module (#625). */
 import type { ProjectEnvListing } from '@lingtai/agent-env'
 import type { ProjectionLag } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runCli, type Runners } from '../src/cli.ts'
@@ -13,6 +18,7 @@ const ESC = String.fromCharCode(27)
 async function capture(
   args: string[],
   runners: Partial<Runners> = {},
+  run: typeof runCli = runCli,
 ): Promise<{ code: number; out: string; err: string }> {
   let out = ''
   let err = ''
@@ -20,7 +26,7 @@ async function capture(
   vi.spyOn(process.stderr, 'write').mockImplementation((t: string | Uint8Array) => ((err += String(t)), true))
   vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void (out += `${a.join(' ')}\n`))
   vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => void (err += `${a.join(' ')}\n`))
-  const code = await runCli(['node', 'lingtai', ...args], runners)
+  const code = await run(['node', 'lingtai', ...args], runners)
   return { code, out, err }
 }
 
@@ -34,9 +40,9 @@ afterEach(() => {
   else process.env['NO_COLOR'] = saved
 })
 
-function recording<T>(): { seen: T[]; run: (request: T) => Promise<number> } {
+function recording<T>(): { seen: T[]; run: (request: T) => Effect.Effect<number> } {
   const seen: T[] = []
-  return { seen, run: async (request) => (seen.push(request), 0) }
+  return { seen, run: (request) => (seen.push(request), Effect.succeed(0)) }
 }
 
 describe('lingtai env', () => {
@@ -71,11 +77,19 @@ describe('lingtai env', () => {
   })
 
   it('answers a read that threw with the error document under --json, exit 1', async () => {
-    const a = await capture(['env', 'list', 'nope', '--json'], {
-      env: async () => {
-        throw new Error('unknown project "nope"')
-      },
-    })
+    // Through the live runner and its `lift`, so the message is the module's own and not the wrapper's.
+    vi.resetModules()
+    vi.doMock('../src/env.ts', async (orig) => ({
+      ...(await orig<typeof import('../src/env.ts')>()),
+      envList: () => Effect.fail(new Error('unknown project "nope"')),
+    }))
+    let a: Awaited<ReturnType<typeof capture>>
+    try {
+      const { runCli: fresh } = await import('../src/cli.ts')
+      a = await capture(['env', 'list', 'nope', '--json'], {}, fresh)
+    } finally {
+      vi.doUnmock('../src/env.ts')
+    }
     expect(a.code).toBe(1)
     expect(JSON.parse(a.out)).toEqual({
       version: 1,
@@ -248,11 +262,11 @@ function world(env: NodeJS.ProcessEnv, log: string[], self = '/checkout/apps/cli
       throw new Error('nothing here may ask the network')
     }) as unknown as typeof fetch,
     log: (line) => void log.push(line),
-    ask: async () => false,
+    ask: () => Effect.succeed(false),
     running: () => [],
-    conducting: async () => null,
-    drain: async () => ({ ok: false, code: 1 }),
-    app: async () => null,
+    conducting: () => Effect.succeed(null),
+    drain: () => Effect.succeed({ ok: false, code: 1 }),
+    app: () => Effect.succeed(null),
     logWhere: () => ({ kind: 'none' }) as ReturnType<World['logWhere']>,
   }
 }
@@ -266,7 +280,7 @@ const NOWHERE = {
 describe('the install commands, laid out', () => {
   it('open with their heading, and refuse with ✗ and the sentence as it was', async () => {
     const up: string[] = []
-    expect(await upgrade({ despiteDoctor: false }, world(NOWHERE, up))).toBe(1)
+    expect(await Effect.runPromise(upgrade({ despiteDoctor: false }, world(NOWHERE, up)))).toBe(1)
     expect(up[0]).toBe('upgrade')
     expect(up[1]).toMatch(
       /^✗ this lingtai is not under \/nonexistent-625\/home\/\.lingtai\/versions — a checkout upgrades/,
@@ -278,7 +292,9 @@ describe('the install commands, laid out', () => {
 
     const un: string[] = []
     expect(
-      await uninstall({ yes: true, nothingConducts: false }, world({ ...NOWHERE, LINGTAI_HOME: NOWHERE.HOME }, un)),
+      await Effect.runPromise(
+        uninstall({ yes: true, nothingConducts: false }, world({ ...NOWHERE, LINGTAI_HOME: NOWHERE.HOME }, un)),
+      ),
     ).toBe(1)
     expect(un[0]).toBe('uninstall')
     expect(un[1]).toMatch(/^✗ not uninstalling: LINGTAI_HOME is \/nonexistent-625\/home, and removing/)
@@ -288,7 +304,9 @@ describe('the install commands, laid out', () => {
     const lines: string[] = []
     const self = '/elsewhere/versions/0.10.0/lingtai'
     expect(
-      await upgrade({ despiteDoctor: false }, world(NOWHERE, lines, self), { form: 'binary', lingtai: '0.10.0' }),
+      await Effect.runPromise(
+        upgrade({ despiteDoctor: false }, world(NOWHERE, lines, self), { form: 'binary', lingtai: '0.10.0' }),
+      ),
     ).toBe(1)
     const refusal = lines[1]!
     expect(refusal).toContain('/elsewhere/versions/0.10.0')
@@ -304,16 +322,58 @@ describe('the install commands, laid out', () => {
       asked++
       return new Response(JSON.stringify({ tag_name: 'v0.11.0', assets: [] }), { status: 200 })
     }) as unknown as typeof fetch
-    const row = await releaseCheck(w, { form: 'binary', lingtai: '0.10.0' })
+    const row = await Effect.runPromise(releaseCheck(w, { form: 'binary', lingtai: '0.10.0' }))
     expect(asked).toBeGreaterThan(0)
     expect(row.name).toBe('release: newest')
     expect(row.status).toBe('warn')
     expect(row.detail).toBe('running 0.10.0, and 0.11.0 is out')
   })
 
+  it('refuses with the fetch error’s own words when GitHub cannot be asked', async () => {
+    const lines: string[] = []
+    const home = mkdtempSync(join(tmpdir(), 'lingtai-enotfound-'))
+    const self = join(home, 'versions', '0.10.0', 'lingtai')
+    mkdirSync(dirname(self), { recursive: true })
+    writeFileSync(self, '')
+    const w = world({ ...NOWHERE, LINGTAI_HOME: home }, lines, self)
+    w.fetch = (async () => {
+      throw new Error('getaddrinfo ENOTFOUND')
+    }) as unknown as typeof fetch
+    const code = await Effect.runPromise(upgrade({ despiteDoctor: false }, w, { form: 'binary', lingtai: '0.10.0' }))
+    expect(code).toBe(1)
+    rmSync(home, { recursive: true, force: true })
+    expect(lines.at(-1)).toContain(
+      'could not ask GitHub Releases which version is newest — getaddrinfo ENOTFOUND. Nothing changed',
+    )
+  })
+
+  it('treats a rejection that is not an Error as a failure, never as an answer', async () => {
+    const lines: string[] = []
+    const home = mkdtempSync(join(tmpdir(), 'lingtai-nonerror-'))
+    const self = join(home, 'versions', '0.10.0', 'lingtai')
+    mkdirSync(dirname(self), { recursive: true })
+    writeFileSync(self, '')
+    const w = world({ ...NOWHERE, LINGTAI_HOME: home }, lines, self)
+    w.fetch = (async () => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw 'down'
+    }) as unknown as typeof fetch
+    const code = await Effect.runPromise(upgrade({ despiteDoctor: false }, w, { form: 'binary', lingtai: '0.10.0' }))
+    expect(code).toBe(1)
+    expect(lines.at(-1)).toContain('could not ask GitHub Releases which version is newest — down. Nothing changed')
+
+    const un: string[] = []
+    const w2 = world({ ...NOWHERE, LINGTAI_HOME: home }, un)
+    w2.conducting = () => Effect.fail(null)
+    const kept = await Effect.runPromise(uninstall({ yes: true, nothingConducts: false }, w2))
+    expect(kept).toBe(1)
+    expect(un.at(-1)).toContain('could not be read')
+    rmSync(home, { recursive: true, force: true })
+  })
+
   it('put ✓ on "nothing is installed", and print no escape code in plain mode', async () => {
     const lines: string[] = []
-    expect(await uninstall({ yes: true, nothingConducts: false }, world(NOWHERE, lines))).toBe(0)
+    expect(await Effect.runPromise(uninstall({ yes: true, nothingConducts: false }, world(NOWHERE, lines)))).toBe(0)
     expect(lines).toEqual([
       'uninstall',
       '✓ nothing is installed: there is no /nonexistent-625/home/.lingtai and no /nonexistent-625/bin/lingtai',

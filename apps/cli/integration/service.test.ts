@@ -13,12 +13,14 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import type { LockPlace, RecordedStart } from '@lingtai/daemon'
+import type { Asking, LockPlace, RecordedStart } from '@lingtai/daemon'
 import { controlWatermark, readControl, requestShutdown, requestShutdownUnlessStanding } from '@lingtai/daemon/control'
 import { repoRoot } from '@lingtai/env'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { lift } from '../src/exit.ts'
 import { queueForTheLock } from '../src/restart.ts'
 import {
   BOARD_JOB,
@@ -34,11 +36,59 @@ import {
   launchdPlist,
   lingering,
   platformFor,
-  serviceCommand,
+  serviceCommand as serviceEffect,
   systemdUnit,
   type Exec,
-  type ServiceDrain,
+  type LockQueue,
+  type ServiceOptions,
 } from '../src/service.ts'
+
+/**
+ * The ports as these scenes write them — promises — and the command run to a
+ * promise. The ports are Effects since #1096; each scene states its facts as
+ * thunks, and this is the one place they are lifted.
+ */
+type ServiceDrain = {
+  ask: (by: string, reason: string) => Promise<Asking>
+  holding: () => Promise<string>
+  queue: () => Effect.Effect<LockQueue, unknown>
+}
+type PromiseOptions = Omit<ServiceOptions, 'liveness' | 'shutdown' | 'drain' | 'started' | 'board' | 'sleep'> & {
+  liveness: () => Promise<string>
+  shutdown: () => Promise<{ by: string; reason: string } | null>
+  drain: ServiceDrain
+  started: { watermark: () => Promise<number>; after: (version: number) => Promise<RecordedStart | null> }
+  board: Omit<ServiceOptions['board'], 'answering' | 'heldBy'> & {
+    answering: () => Promise<string | null>
+    heldBy: () => Promise<string | null>
+  }
+  sleep?: (ms: number) => Promise<void>
+}
+function serviceCommand(args: string[], o: PromiseOptions): Promise<number> {
+  const { sleep, ...rest } = o
+  return Effect.runPromise(
+    serviceEffect(args, {
+      ...rest,
+      liveness: () => lift(o.liveness),
+      shutdown: () => lift(o.shutdown),
+      drain: {
+        ask: (by, reason) => lift(() => o.drain.ask(by, reason)),
+        holding: () => lift(o.drain.holding),
+        queue: o.drain.queue,
+      },
+      started: {
+        watermark: () => lift(o.started.watermark),
+        after: (version) => lift(() => o.started.after(version)),
+      },
+      board: {
+        ...o.board,
+        answering: () => lift(o.board.answering),
+        heldBy: () => lift(o.board.heldBy),
+      },
+      ...(sleep ? { sleep: (ms: number) => lift(() => sleep(ms)).pipe(Effect.orDie) } : {}),
+    }),
+  )
+}
 
 let home: string
 beforeEach(async () => {
@@ -133,10 +183,15 @@ function quietDrain() {
   const drain: ServiceDrain = {
     ask: async (by, reason) => (said.push(`ask ${by} ${reason}`), { asked: true, version: ++version }),
     holding: async () => 'nothing in flight',
-    queue: async () => (
-      said.push('queue'),
-      { wait: async () => (said.push('held'), 'held'), holds: async () => true, leave: async () => {} }
-    ),
+    queue: () =>
+      Effect.sync(() => {
+        said.push('queue')
+        return {
+          wait: () => Effect.sync(() => (said.push('held'), 'held' as const)),
+          holds: Effect.succeed(true),
+          leave: Effect.void,
+        }
+      }),
   }
   return { drain, said }
 }
@@ -681,7 +736,12 @@ describe('shutdown', () => {
     const { go, out } = command('darwin', w.s.exec, {
       drain: {
         ...w.drain,
-        queue: async () => ({ wait: async () => 'interrupted', holds: async () => false, leave: async () => {} }),
+        queue: () =>
+          Effect.succeed({
+            wait: () => Effect.succeed('interrupted' as const),
+            holds: Effect.succeed(false),
+            leave: Effect.void,
+          }),
       },
     })
     await launchdFile()
@@ -702,17 +762,18 @@ describe('shutdown', () => {
     const { go, out } = command('darwin', w.s.exec, {
       drain: {
         ...w.drain,
-        queue: async () => ({
-          wait: async () => (said.push(`wait ${++waits}`), 'held'),
-          holds: async () => {
-            const h = holds.shift()!
-            said.push(
-              `holds ${h} ${w.s.calls.some((c) => c.startsWith('launchctl bootout')) ? 'after' : 'before'} bootout`,
-            )
-            return h
-          },
-          leave: async () => {},
-        }),
+        queue: () =>
+          Effect.succeed({
+            wait: () => Effect.sync(() => (said.push(`wait ${++waits}`), 'held' as const)),
+            holds: Effect.sync(() => {
+              const h = holds.shift()!
+              said.push(
+                `holds ${h} ${w.s.calls.some((c) => c.startsWith('launchctl bootout')) ? 'after' : 'before'} bootout`,
+              )
+              return h
+            }),
+            leave: Effect.void,
+          }),
       },
     })
     await launchdFile()
@@ -882,7 +943,7 @@ describe('shutdown', () => {
       prints = 0
       const drain = {
         ...quietDrain().drain,
-        queue: async () => Promise.reject(new Error('connect ECONNREFUSED 10.0.0.1:5432')),
+        queue: () => Effect.fail(new Error('connect ECONNREFUSED 10.0.0.1:5432')),
       }
       const { go, out } = command('darwin', s.exec, { drain })
       await launchdFile()
@@ -902,7 +963,7 @@ describe('shutdown', () => {
     ])
     const drain = {
       ...quietDrain().drain,
-      queue: async () => Promise.reject(new Error('password authentication failed')),
+      queue: () => Effect.fail(new Error('password authentication failed')),
     }
     const { go } = command('linux', s.exec, { drain })
     await systemdFile()
@@ -912,7 +973,7 @@ describe('shutdown', () => {
 
   it("stops nothing when the lock cannot be queued for and a daemon stays running, and names the supervisor's own stop", async () => {
     const s = supervisor([['launchctl print', { status: 0, out: '\tstate = running\n\tpid = 41\n' }]])
-    const drain = { ...quietDrain().drain, queue: async () => Promise.reject(new Error('connect ETIMEDOUT')) }
+    const drain = { ...quietDrain().drain, queue: () => Effect.fail(new Error('connect ETIMEDOUT')) }
     const { go, err } = command('darwin', s.exec, { drain })
     await launchdFile()
     expect(await go('shutdown')).toBe(1)
@@ -1052,13 +1113,13 @@ describe('the place in the queue for the lock', () => {
       }
     }
     const lines: string[] = []
-    const q = await queueForTheLock({ place, holder: async () => 'copy', pollMs: 0 })
+    const q = await Effect.runPromise(queueForTheLock({ place, holder: async () => 'copy', pollMs: 0 }))
     first = false
-    expect(await q.holds()).toBe(false)
-    expect(await q.wait((l) => lines.push(l))).toBe('held')
+    expect(await Effect.runPromise(q.holds)).toBe(false)
+    expect(await Effect.runPromise(q.wait((l) => lines.push(l)))).toBe('held')
     expect(taken).toBe(2)
     expect(lines.join('\n')).toContain('Connection terminated unexpectedly')
-    expect(await q.holds()).toBe(true)
+    expect(await Effect.runPromise(q.holds)).toBe(true)
   })
 
   it("says what ctrl-c does in service shutdown's wait — the request stands, and the next start ends it", async () => {
@@ -1070,8 +1131,10 @@ describe('the place in the queue for the lock', () => {
       leave: async () => {},
     })
     const lines: string[] = []
-    const q = await queueForTheLock({ place, holder: async () => (asks++, 'daemon 1'), pollMs: 0, sayEveryMs: 0 })
-    expect(await q.wait((l) => lines.push(l))).toBe('held')
+    const q = await Effect.runPromise(
+      queueForTheLock({ place, holder: async () => (asks++, 'daemon 1'), pollMs: 0, sayEveryMs: 0 }),
+    )
+    expect(await Effect.runPromise(q.wait((l) => lines.push(l)))).toBe('held')
     const said = lines.join('\n')
     expect(said).toContain('the request stands')
     expect(said).toContain('the next start ends it')
@@ -1436,7 +1499,12 @@ describe('one command to stop, one to start', () => {
     const drain: ServiceDrain = {
       ask: (by, reason) => requestShutdownUnlessStanding(by, reason, null, store),
       holding: async () => 'nothing in flight',
-      queue: async () => ({ wait: async () => 'held', holds: async () => true, leave: async () => {} }),
+      queue: () =>
+        Effect.succeed({
+          wait: () => Effect.succeed('held' as const),
+          holds: Effect.succeed(true),
+          leave: Effect.void,
+        }),
     }
     const { go, err } = command('darwin', s.exec, {
       drain,

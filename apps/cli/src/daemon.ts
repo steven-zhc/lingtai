@@ -13,15 +13,17 @@ import {
   createWorkLoop,
   describeInFlight,
   inFlight,
+  inFlightEffect,
   readCodeVersion,
   readControl,
   readStatus,
   recordStart,
   reconcile,
-  requestShutdown,
-  requestShutdownUnlessStanding,
-  controlWatermark,
-  startAfter,
+  requestShutdownEffect,
+  requestShutdownUnlessStandingEffect,
+  controlWatermarkEffect,
+  startAfterEffect,
+  readControlEffect,
   HEARTBEAT_MS,
   startBeacon,
   startDaemon,
@@ -39,16 +41,18 @@ import { eventStore } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
+import { Cause, Effect } from 'effect'
 
-import { boardAt, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
+import { boardAtEffect, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
 import { conductorTurn } from './conduct.ts'
 import { ceilingPort } from './day-ceiling.ts'
 import { answerOutstandingQueued, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
+import { lift } from './exit.ts'
 import { configPath } from './init.ts'
 import { trackLiveSpend } from './live-spend.ts'
 import { symbol } from './output.ts'
-import { pauseProjects, resumeProjects, runEffect } from './project-pause.ts'
+import { pauseProjects, resumeProjects } from './project-pause.ts'
 import { PROJECTIONS } from './projection.ts'
 import { startRates } from './rates.ts'
 import type { RestartArgs } from './restart.ts'
@@ -78,23 +82,23 @@ export function serviceOptions(): ServiceOptions {
     // Doctor reduces that into "no daemon has run", and here it would be the
     // one wrong answer this command exists to avoid. It is the only read:
     // a second one could fail where this succeeded.
-    liveness: async () => (await daemonLiveness(() => readStatus())).detail,
-    shutdown: async () => (await readControl()).shutdown,
+    liveness: () => lift(() => daemonLiveness(() => readStatus())).pipe(Effect.map((live) => live.detail)),
+    shutdown: () => readControlEffect().pipe(Effect.map((control) => control.shutdown)),
     // `lingtai shutdown`'s own append and a wait on the lock (#174): the
     // supervisor is told only once this command holds the conductor lock.
     drain: {
-      ask: (by, reason) => requestShutdownUnlessStanding(by, reason),
+      ask: (by, reason) => requestShutdownUnlessStandingEffect(by, reason),
       // Not caught here: a read that failed is not "nothing is in flight", and
       // `service shutdown` says it could not be read.
-      holding: async () => describeInFlight(await inFlight()),
+      holding: () => inFlightEffect().pipe(Effect.map((items) => describeInFlight(items))),
       queue: () => queueForTheLock(),
     },
     // A supervisor's exit code says the job was asked for, not that a daemon
     // won the lock and took work — so a start is confirmed by the record the
     // daemon appends before its first pass (#167).
     started: {
-      watermark: () => controlWatermark(),
-      after: (version) => startAfter(version),
+      watermark: () => controlWatermarkEffect(),
+      after: (version) => startAfterEffect(version),
     },
   }
 }
@@ -121,25 +125,23 @@ export function boardOptions(): ServiceOptions['board'] {
       // default's is where a board would answer once the file reads, and
       // `missing` says in the same breath that nothing is on it.
       url: `http://127.0.0.1:${BOARD_PORT}`,
-      answering: async () => null,
+      answering: () => Effect.succeed(null),
       missing: () => ({
         why,
         remedy: [`the board's port is set in ${configPath(process.env)}, and nothing else here reads it`],
       }),
       // Never reached: every verb asks `missing` first and starts no board.
-      heldBy: async () => {
-        throw new Error(why)
-      },
+      heldBy: () => Effect.fail(new Error(why)),
     }
   }
   const { port, reach } = asked
   return {
     url: boardOrigin(reach, port),
-    answering: () => boardAt(port, reach),
+    answering: () => boardAtEffect(port, reach),
     missing: boardMissing,
     // The key `lingtai board start` takes, read without taking it — so a board
     // in a terminal is not a job the supervisor respawns every thirty seconds.
-    heldBy: () => createFileLocker().holder(boardLock(port)),
+    heldBy: () => lift(() => createFileLocker().holder(boardLock(port))),
   }
 }
 
@@ -777,86 +779,93 @@ export async function daemonCommand(
  * the daemon it addresses is the only writer, and an emergency control must not
  * queue behind a reducer.
  */
-export async function controlCommand(
+export const controlCommand = (
   verb: 'pause' | 'resume' | 'shutdown',
   input: { reason?: string; timeout?: string; force?: boolean; project?: string },
-): Promise<number> {
-  const by = `human:${process.env['USER'] ?? 'operator'}`
+): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const by = `human:${process.env['USER'] ?? 'operator'}`
 
-  // A pause and a resume lock and unlock projects (#992, 0126 §7). Neither
-  // appends `ConductorPaused`; bare `resume` still lifts one that stands.
-  if (verb === 'pause' || verb === 'resume') {
-    const effect = verb === 'pause' ? pauseProjects(input.project, by) : resumeProjects(input.project, by)
-    try {
-      return await runEffect(effect)
-    } catch (err) {
-      console.error(err instanceof Error ? err.message : String(err))
-      return 1
+    // A pause and a resume lock and unlock projects (#992, 0126 §7). Neither
+    // appends `ConductorPaused`; bare `resume` still lifts one that stands.
+    if (verb === 'pause' || verb === 'resume') {
+      const effect = verb === 'pause' ? pauseProjects(input.project, by) : resumeProjects(input.project, by)
+      // A store failure is a defect, so `catchCause`; an interruption is not a failure to print.
+      return yield* effect.pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause as Cause.Cause<never>)
+            : Effect.sync(() => {
+                const err = Cause.squash(cause)
+                console.error(err instanceof Error ? err.message : String(err))
+                return 1
+              }),
+        ),
+      )
     }
-  }
 
-  if (verb === 'shutdown') {
-    // A reason is welcome and not required, unlike a pause's: a pause has to be
-    // lifted by somebody who can tell whether the thing it was waiting for has
-    // happened, and a shutdown is over when the process is.
-    const reason = (input.reason ?? '').trim() || 'no reason given'
+    if (verb === 'shutdown') {
+      // A reason is welcome and not required, unlike a pause's: a pause has to be
+      // lifted by somebody who can tell whether the thing it was waiting for has
+      // happened, and a shutdown is over when the process is.
+      const reason = (input.reason ?? '').trim() || 'no reason given'
 
-    let timeoutMs: number | null = null
-    if (input.timeout !== undefined) {
-      const text = input.timeout
-      try {
-        timeoutMs = parseDuration(text)
-      } catch {
-        console.error(`--timeout takes a duration like 30m or 90s, not "${text}"`)
+      let timeoutMs: number | null = null
+      if (input.timeout !== undefined) {
+        const text = input.timeout
+        try {
+          timeoutMs = parseDuration(text)
+        } catch {
+          console.error(`--timeout takes a duration like 30m or 90s, not "${text}"`)
+          return 2
+        }
+        if (timeoutMs <= 0) {
+          console.error('--timeout takes a positive duration')
+          return 2
+        }
+      }
+
+      // Safe is the default and `--force` is the loud one (`#159`). A command
+      // whose ordinary form throws away a pass in flight is one people learn to
+      // fear; this way the dangerous thing has to be asked for by name.
+      const force = input.force === true
+      if (force && input.timeout !== undefined) {
+        console.error('--timeout is about waiting for the attempt, and --force does not wait. Use one.')
         return 2
       }
-      if (timeoutMs <= 0) {
-        console.error('--timeout takes a positive duration')
-        return 2
+
+      yield* requestShutdownEffect(by, reason, timeoutMs, undefined, force)
+      const asked = paint.held(`shutdown asked by ${by} — ${reason}`)
+
+      // The verdict is only that the request was appended: the daemon finishes the
+      // pass on its own (0030), so nothing here says it stopped.
+      let detail: string
+      if (force) {
+        // What `--timeout` has always done when it tripped, and what a second
+        // Ctrl+C does. The orphan is the point, and it already has an owner.
+        detail = `${asked}\n--force: it stops without finishing the attempt. The agent is left running, and the next conductor kills it and releases the claim.`
+      } else {
+        // Said up front, because the alternative is a command that has returned
+        // and a daemon that looks hung (0030 §6). What is being waited for is the
+        // *pass* — the agent, then the gates, then the merge lane.
+        const held = yield* inFlightEffect()
+        detail = `${asked}\n${
+          timeoutMs === null
+            ? // No "lingtai resume lifts it" any more (`#159`). It was true when the
+              // request outlived the daemon it was aimed at; the next `lingtai start`
+              // now needs nothing lifted, so saying otherwise would send a person to
+              // a command that has nothing to do.
+              `the daemon finishes the attempt in flight first — ${describeInFlight(held)} — which can take as long as ${WALL_LIMIT}.`
+            : `the daemon finishes the attempt in flight — ${describeInFlight(held)} — or gives up after ${Math.round(timeoutMs / 1000)}s and exits with the agent still running, for the next conductor to kill.`
+        }`
       }
+      for (const line of renderVerdict('shutdown asked', { outcome: 'accepted', detail })) console.log(line)
+      return 0
     }
 
-    // Safe is the default and `--force` is the loud one (`#159`). A command
-    // whose ordinary form throws away a pass in flight is one people learn to
-    // fear; this way the dangerous thing has to be asked for by name.
-    const force = input.force === true
-    if (force && input.timeout !== undefined) {
-      console.error('--timeout is about waiting for the attempt, and --force does not wait. Use one.')
-      return 2
-    }
-
-    await requestShutdown(by, reason, timeoutMs, undefined, force)
-    const asked = paint.held(`shutdown asked by ${by} — ${reason}`)
-
-    // The verdict is only that the request was appended: the daemon finishes the
-    // pass on its own (0030), so nothing here says it stopped.
-    let detail: string
-    if (force) {
-      // What `--timeout` has always done when it tripped, and what a second
-      // Ctrl+C does. The orphan is the point, and it already has an owner.
-      detail = `${asked}\n--force: it stops without finishing the attempt. The agent is left running, and the next conductor kills it and releases the claim.`
-    } else {
-      // Said up front, because the alternative is a command that has returned
-      // and a daemon that looks hung (0030 §6). What is being waited for is the
-      // *pass* — the agent, then the gates, then the merge lane.
-      const held = await inFlight().catch(() => [])
-      detail = `${asked}\n${
-        timeoutMs === null
-          ? // No "lingtai resume lifts it" any more (`#159`). It was true when the
-            // request outlived the daemon it was aimed at; the next `lingtai start`
-            // now needs nothing lifted, so saying otherwise would send a person to
-            // a command that has nothing to do.
-            `the daemon finishes the attempt in flight first — ${describeInFlight(held)} — which can take as long as ${WALL_LIMIT}.`
-          : `the daemon finishes the attempt in flight — ${describeInFlight(held)} — or gives up after ${Math.round(timeoutMs / 1000)}s and exits with the agent still running, for the next conductor to kill.`
-      }`
-    }
-    for (const line of renderVerdict('shutdown asked', { outcome: 'accepted', detail })) console.log(line)
-    return 0
-  }
-
-  // `controlCommand` has no other verb: `now` is `@effect/cli`'s since #621.
-  return verb satisfies never
-}
+    // `controlCommand` has no other verb: `now` is `@effect/cli`'s since #621.
+    return verb satisfies never
+  })
 
 /**
  * `lingtai restart`, after the line is parsed and the flags are known to be valid
@@ -865,15 +874,14 @@ export async function controlCommand(
  * and otherwise `prepareRestart` refuses, drains and waits and the start is
  * `lingtai start`'s own.
  */
-export async function restartCommand(
+export const restartCommand = (
   args: RestartArgs,
   steps: Steps,
   writer: Pick<SnapshotWriter, 'offer'> | null = null,
-): Promise<number> {
-  let started = false
-  let code: number
-  try {
-    code = await restartSteps(
+): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    let started = false
+    const code = yield* restartSteps(
       args,
       steps,
       (sha) => {
@@ -882,73 +890,79 @@ export async function restartCommand(
         console.log(`${symbol.pass()} restarted${sha === null ? '' : ` ${paint.muted(sha)}`}`)
       },
       writer,
+    ).pipe(
+      // A refusal or drain returns with a spinner still live, and a throw or an interruption must not leave it animating.
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (!started) steps.end()
+        }),
+      ),
     )
-  } finally {
-    // A refusal or drain returns with a spinner still live, and a throw must not leave it animating.
-    if (!started) steps.end()
-  }
-  // One closing line either way. After the start there is no second verdict: the daemon's own
-  // lines follow, and a failure of the running daemon is not a restart that did not happen.
-  if (!started && code !== 0) console.log(`${symbol.fail()} not restarted`)
-  return code
-}
+    // One closing line either way. After the start there is no second verdict: the daemon's own
+    // lines follow, and a failure of the running daemon is not a restart that did not happen.
+    if (!started && code !== 0) console.log(`${symbol.fail()} not restarted`)
+    return code
+  })
 
-async function restartSteps(
+const restartSteps = (
   args: RestartArgs,
   steps: Steps,
   restarted: (sha: string | null) => void,
   writer: Pick<SnapshotWriter, 'offer'> | null,
-): Promise<number> {
-  // Asked before anything stops, like every other refusal. Under launchd or
-  // systemd the start is the supervisor's: a daemon started here would be a
-  // conductor in a terminal beside the one it keeps (0042 §8).
-  const kept = keeper()
-  if ('unread' in kept) {
-    console.log(paint.fail(`not restarting: ${kept.unread}. Nothing was asked to stop and nothing was stopped.`))
-    return 1
-  }
-  if (kept.kept && (args.noConduct || args.noMerge)) {
-    console.error(
-      `${kept.path} decides how the supervisor starts the daemon, so --no-conduct and --no-merge cannot reach it — ` +
-        'pnpm lingtai service shutdown, then lingtai restart with them, runs one in this terminal instead',
+): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    // Asked before anything stops, like every other refusal. Under launchd or
+    // systemd the start is the supervisor's: a daemon started here would be a
+    // conductor in a terminal beside the one it keeps (0042 §8).
+    const kept = keeper()
+    if ('unread' in kept) {
+      console.log(paint.fail(`not restarting: ${kept.unread}. Nothing was asked to stop and nothing was stopped.`))
+      return 1
+    }
+    if (kept.kept && (args.noConduct || args.noMerge)) {
+      console.error(
+        `${kept.path} decides how the supervisor starts the daemon, so --no-conduct and --no-merge cannot reach it — ` +
+          'pnpm lingtai service shutdown, then lingtai restart with them, runs one in this terminal instead',
+      )
+      return 2
+    }
+    // Where a supervisor keeps the daemon, the drain and the start are
+    // `lingtai service`'s and every refusal is still the restart's — the same
+    // functions as below, and `RESTART_GUARDS` is the table of both (#167).
+    if (kept.kept) {
+      const options = serviceOptions()
+      const code = yield* restartSupervised(args, {
+        steps,
+        service: (argv, asked) =>
+          serviceCommand(argv, {
+            ...options,
+            // The phases are `restartSupervised`'s own labels; the wait inside the drain still
+            // reaches the spinner through `progress`, and `end` clears it.
+            steps: { begin() {}, progress: (line) => steps.progress(line), end: () => steps.end() },
+            drain: {
+              ...options.drain,
+              ask: (by: string, reason: string) =>
+                requestShutdownUnlessStandingEffect(by, reason, asked.timeoutMs, undefined, asked.force),
+            },
+          }),
+      })
+      if (code === 0) restarted(null)
+      return code
+    }
+    // Two halves of one command, and the seam is the only place a daemon is
+    // started. `prepareRestart` refuses, drains and waits; everything after
+    // this line is `lingtai start`.
+    const prepared = yield* prepareRestart(args, console.log, undefined, steps)
+    if (!prepared.ok) return prepared.code
+    const flags: Record<string, string> = {
+      ...(args.noConduct ? { 'no-conduct': '' } : {}),
+      ...(args.noMerge ? { 'no-merge': '' } : {}),
+    }
+    steps.begin('starting')
+    return yield* lift(() =>
+      daemonCommand(flags, prepared, () => restarted(prepared.examined.sha?.slice(0, 7) ?? null), true, writer),
     )
-    return 2
-  }
-  // Where a supervisor keeps the daemon, the drain and the start are
-  // `lingtai service`'s and every refusal is still the restart's — the same
-  // functions as below, and `RESTART_GUARDS` is the table of both (#167).
-  if (kept.kept) {
-    const options = serviceOptions()
-    const code = await restartSupervised(args, {
-      steps,
-      service: (argv, asked) =>
-        serviceCommand(argv, {
-          ...options,
-          // The phases are `restartSupervised`'s own labels; the wait inside the drain still
-          // reaches the spinner through `progress`, and `end` clears it.
-          steps: { begin() {}, progress: (line) => steps.progress(line), end: () => steps.end() },
-          drain: {
-            ...options.drain,
-            ask: (by: string, reason: string) =>
-              requestShutdownUnlessStanding(by, reason, asked.timeoutMs, undefined, asked.force),
-          },
-        }),
-    })
-    if (code === 0) restarted(null)
-    return code
-  }
-  // Two halves of one command, and the seam is the only place a daemon is
-  // started. `prepareRestart` refuses, drains and waits; everything after
-  // this line is `lingtai start`.
-  const prepared = await prepareRestart(args, console.log, undefined, steps)
-  if (!prepared.ok) return prepared.code
-  const flags: Record<string, string> = {
-    ...(args.noConduct ? { 'no-conduct': '' } : {}),
-    ...(args.noMerge ? { 'no-merge': '' } : {}),
-  }
-  steps.begin('starting')
-  return daemonCommand(flags, prepared, () => restarted(prepared.examined.sha?.slice(0, 7) ?? null), true, writer)
-}
+  })
 
 /**
  * What the daemon's `paused` callback answers: the control stream's pause, a

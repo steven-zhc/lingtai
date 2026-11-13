@@ -4,10 +4,20 @@ import type { StoreChoice } from '@lingtai/env'
 import type { LogQueries } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Projection } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { type DoctorProgress, type DoctorReach, type DoctorReport, runDoctor, tally } from '../src/doctor.ts'
+import {
+  type DoctorProgress,
+  type DoctorReach,
+  type DoctorReport,
+  runDoctor as runDoctorEffect,
+  tally,
+} from '../src/doctor.ts'
 import { doctorProgress, type Spinner } from '../src/steps.ts'
+
+// `runDoctor` is an Effect; these tests read the report it yields.
+const runDoctor = (...a: Parameters<typeof runDoctorEffect>) => Effect.runPromise(runDoctorEffect(...a))
 
 const wroteSqlite = (): StoreChoice => ({
   store: 'sqlite',
@@ -50,6 +60,28 @@ const queries: LogQueries = {
 }
 
 describe('runDoctor reports its steps (#716)', () => {
+  it('a check that rejects ends the report with its own error, after a start and no end', async () => {
+    const seen: DoctorProgress[] = []
+    await expect(
+      runDoctor(
+        {},
+        () => undefined,
+        wroteSqlite,
+        queries,
+        async () => [],
+        {
+          ...reach,
+          status: async () => {
+            throw new Error('beacon gone')
+          },
+          onProgress: (p) => seen.push(p),
+        },
+      ),
+    ).rejects.toThrow('beacon gone')
+    const daemon = seen.filter((p) => p.label === 'the daemon')
+    expect(daemon.map((p) => p.phase)).toEqual(['start'])
+  })
+
   it('starts and ends every step in turn, grows `done` by the rows it pushed, and stamps every row', async () => {
     const seen: DoctorProgress[] = []
     const report = await runDoctor(
@@ -158,11 +190,11 @@ describe('lingtai doctor through runCli (#716)', () => {
     vi.resetModules()
     vi.doMock('../src/doctor.ts', async (orig) => ({
       ...(await orig<typeof import('../src/doctor.ts')>()),
-      doctorReport: read,
+      doctorReportEffect: (o?: { onProgress?: (p: DoctorProgress) => void }) => Effect.promise(() => read(o as never)),
     }))
     vi.doMock('../src/install.ts', async (orig) => ({
       ...(await orig<typeof import('../src/install.ts')>()),
-      releaseCheck: async () => ({ name: 'release: newest', status: 'ok' as const, detail: 'current' }),
+      releaseCheck: () => Effect.succeed({ name: 'release: newest', status: 'ok' as const, detail: 'current' }),
     }))
     vi.doMock('../src/steps.ts', async (orig) => ({
       ...(await orig<typeof import('../src/steps.ts')>()),

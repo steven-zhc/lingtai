@@ -1,6 +1,7 @@
 /** The phases of a long command (#622): a spinner on a terminal, the same bytes everywhere else. */
 import { Writable } from 'node:stream'
 
+import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import { waitForTheLock } from '../src/restart.ts'
@@ -160,12 +161,14 @@ describe("Ctrl+C during the drain's wait", () => {
     const had = stdin.setRawMode
     stdin.setRawMode = raw
     try {
-      const waiting = waitForTheLock('draining', null, () => {}, {
-        ask: async () => 'holder',
-        pollMs: 5,
-        sayEveryMs: 1,
-        progress: (line) => steps.progress(line),
-      })
+      const waiting = Effect.runPromise(
+        waitForTheLock('draining', null, () => {}, {
+          ask: Effect.succeed('holder'),
+          pollMs: 5,
+          sayEveryMs: 1,
+          progress: (line) => steps.progress(line),
+        }),
+      )
       await new Promise((r) => setTimeout(r, 30))
       // The wait's own handler is the one extra listener; the spinner adds none.
       expect(process.listenerCount('SIGINT')).toBe(before + 1)

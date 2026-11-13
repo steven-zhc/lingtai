@@ -8,10 +8,7 @@ import { RuntimeId } from '@lingtai/domain'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 
-import { type Outcome, runEffect } from './project-pause.ts'
-
-/** The verb's one run, at the edge (see `project-pause.ts`'s `runEffect`). */
-export const runLiftAccount = (effect: ReturnType<typeof liftAccount>) => runEffect(effect)
+import type { Outcome } from './project-pause.ts'
 
 export interface AccountLiftOptions {
   /** The suite passes a memory store and a collector; nothing else should set them. */

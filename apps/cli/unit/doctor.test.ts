@@ -21,6 +21,7 @@ import type { LogQueries } from '@lingtai/event-store'
 import type { UnconvergedUpdate } from '@lingtai/event-store/queries'
 import type { GhRun } from '@lingtai/github'
 import type { Projection } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -30,7 +31,7 @@ import {
   nodeRow,
   postgresOnlyRows,
   recipeRow,
-  runDoctor,
+  runDoctor as runDoctorEffect,
   schemaChecks,
   seaRow,
   snapshotCensus,
@@ -38,6 +39,9 @@ import {
   unconvergedRow,
 } from '../src/doctor.ts'
 import { gatingFailures } from '../src/restart.ts'
+
+// `runDoctor` is an Effect; these tests read the report it yields.
+const runDoctor = (...a: Parameters<typeof runDoctorEffect>) => Effect.runPromise(runDoctorEffect(...a))
 
 /** `database.store: sqlite`, as `storeChoice()` reads it off a written `config.yml`. */
 const wroteSqlite = (): StoreChoice => ({
@@ -108,7 +112,7 @@ const reach: DoctorReach = {
   },
 }
 
-const find = (results: Awaited<ReturnType<typeof runDoctor>>['results'], name: string) => {
+const find = (results: Effect.Success<ReturnType<typeof runDoctorEffect>>['results'], name: string) => {
   const row = results.find((r) => r.name === name)
   if (!row) throw new Error(`no row named ${name}`)
   return row

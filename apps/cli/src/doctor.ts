@@ -3222,259 +3222,324 @@ export function seaRow(node: string, version: string, probe: SeaProbe): CheckRes
  * about are the caller's to name, and a caller that names them owes the recipes
  * too.
  */
-export async function runDoctor(
+export function runDoctor(
   env: NodeJS.ProcessEnv = process.env,
   machine: () => string | undefined = () => undefined,
   store: () => StoreChoice = () => storeChoice(),
   queries: LogQueries = log.queries,
   load: typeof loadProjects = loadProjects,
   reach: Partial<DoctorReach> & Pick<DoctorReach, 'sea'> = { sea: probeSeaBuild },
-): Promise<DoctorReport> {
-  const results: CheckResult[] = []
-  // Every row goes in inside a step, so each gets the milliseconds of the call that pushed it and
-  // the caller hears which call is in flight. A step that throws stamps nothing and emits no `end`.
-  const step = async <T>(label: string, run: () => T | Promise<T>): Promise<T> => {
-    const from = results.length
-    reach.onProgress?.({ label, phase: 'start', done: from })
-    const t0 = performance.now()
-    const value = await run()
-    const ms = Math.round(performance.now() - t0)
-    for (let i = from; i < results.length; i++) results[i] = timed(results[i]!, ms)
-    reach.onProgress?.({ label, phase: 'end', done: results.length })
-    return value
-  }
-
-  if (isSea()) {
-    // A binary has no checkout beside it to read `.node-version` from, and it
-    // carries the Node that built it — `release.yml` reads that file too, so
-    // the two cannot disagree.
-    await step('Node', () => {
-      results.push({
-        name: 'node: at or above the floor',
-        status: 'ok',
-        detail: `node ${process.version} — the binary carries the Node it was built with`,
+): Effect.Effect<DoctorReport> {
+  return Effect.gen(function* () {
+    const results: CheckResult[] = []
+    const push = (r: CheckResult) => void results.push(r)
+    const pushAll = (rs: readonly CheckResult[]) => void results.push(...rs)
+    // Every row goes in inside a step, so each gets the milliseconds of the call that pushed it and
+    // the caller hears which call is in flight. A step that throws stamps nothing and emits no `end`.
+    const step = <T>(label: string, run: Effect.Effect<T>): Effect.Effect<T> =>
+      Effect.gen(function* () {
+        const from = results.length
+        reach.onProgress?.({ label, phase: 'start', done: from })
+        const t0 = performance.now()
+        const value = yield* run
+        const ms = Math.round(performance.now() - t0)
+        for (let i = from; i < results.length; i++) results[i] = timed(results[i]!, ms)
+        reach.onProgress?.({ label, phase: 'end', done: results.length })
+        return value
       })
-      results.push({
-        name: 'node: can build a single executable',
-        status: 'skip',
-        // `process.execPath` here is the lingtai binary, not a Node to probe —
-        // building a binary is a checkout's job, and a binary never does it to
-        // itself.
-        detail:
-          "this is a binary, not a checkout — building a binary is a checkout's job, not something a binary does to itself",
-      })
-    })
-  } else {
-    await step('Node', async () => {
-      let declaredNode: string | undefined
-      try {
-        declaredNode = (await readFile(join(repoRoot(), '.node-version'), 'utf8')).trim()
-      } catch {
-        declaredNode = undefined
-      }
-      results.push(nodeRow(process.versions.node, declaredNode))
-      results.push(seaRow(process.execPath, process.versions.node, reach.sea()))
-    })
-  }
 
-  await step('packages', () =>
-    results.push({
-      name: 'packages load under Node',
-      status: 'ok',
-      // Not a freebie: to reach this line, Node's type stripping had to load
-      // `@lingtai/domain`, `/recipe`, `/event-store` and everything else this
-      // command imports. A `.js` specifier in a barrel or a constructor parameter
-      // property would have stopped it, and neither `tsc` nor a board build
-      // notices either. See doc/decisions-archive/0010.
-      detail: "every package this command imports loaded under Node's type stripping",
-    }),
-  )
-
-  // Before the connection rows, because it is the question they assume an
-  // answer to: what this machine says it runs.
-  const choice = store()
-  await step('the store', () => results.push(storeRow(choice)))
-
-  // One resolve for the whole report (`#389`) — `recipe:`'s own rows below
-  // and the `unconverged` rows in both store branches read this same value,
-  // rather than each asking every project's recipe again.
-  const filters = await step('recipes', () => projectFiltersOnce(env, load, reach.recipe))
-  const unresolved = unresolvedProblems(filters)
-
-  /**
-   * **A machine that wrote `sqlite` is never asked for a connection string.**
-   *
-   * `environment` is a report on the Postgres pair, and on this machine there
-   * is no pair. Pushed unconditionally, it failed a machine `lingtai init` had
-   * just set up correctly — one that appends, reduces `task_view`, renders the
-   * cards and beats the beacon
-   * (`packages/daemon/integration/the-written-choice.test.ts`) — by the name of a
-   * variable it is right not to have, and named giving a Postgres URL as the
-   * remedy. And a failure carrying no `restartAnswers` gates `lingtai restart`
-   * (`gatingFailures`, 0042), so the working machine could not start a daemon
-   * either: setup said correct, doctor said broken, and the way out it offered
-   * was to abandon the configuration.
-   */
-  const fileBacked = !('refused' in choice) && choice.store === 'sqlite'
-
-  let fromFile: string | undefined
-  let unreadable: string | undefined
-  if (!fileBacked && !env['LINGTAI_DATABASE_URL']) {
-    try {
-      fromFile = machine()
-    } catch (err) {
-      unreadable = (err as Error).message
+    if (isSea()) {
+      // A binary has no checkout beside it to read `.node-version` from, and it
+      // carries the Node that built it — `release.yml` reads that file too, so
+      // the two cannot disagree.
+      yield* step(
+        'Node',
+        Effect.sync(() => {
+          results.push({
+            name: 'node: at or above the floor',
+            status: 'ok',
+            detail: `node ${process.version} — the binary carries the Node it was built with`,
+          })
+          results.push({
+            name: 'node: can build a single executable',
+            status: 'skip',
+            // `process.execPath` here is the lingtai binary, not a Node to probe —
+            // building a binary is a checkout's job, and a binary never does it to
+            // itself.
+            detail:
+              "this is a binary, not a checkout — building a binary is a checkout's job, not something a binary does to itself",
+          })
+        }),
+      )
+    } else {
+      yield* step(
+        'Node',
+        Effect.gen(function* () {
+          // A missing file is a normal answer here, not a throw.
+          const declaredNode = yield* Effect.promise(() =>
+            readFile(join(repoRoot(), '.node-version'), 'utf8').then(
+              (s) => s.trim() as string | undefined,
+              () => undefined,
+            ),
+          )
+          results.push(nodeRow(process.versions.node, declaredNode))
+          results.push(seaRow(process.execPath, process.versions.node, reach.sea()))
+        }),
+      )
     }
-  }
-  const pooled = fileBacked ? undefined : env['LINGTAI_DATABASE_URL'] || fromFile
-  // Absent, the pooled one stands in (#176) — the rule `directPostgresUrl`
-  // follows, so the doctor checks the connection the system will actually use.
-  const standIn = !env['LINGTAI_DIRECT_DATABASE_URL']
-  const direct = fileBacked ? undefined : env['LINGTAI_DIRECT_DATABASE_URL'] || pooled
-  const envResult = fileBacked
-    ? {
-        name: 'environment',
-        status: 'skip' as const,
-        detail:
-          'not read on this machine — it wrote store: sqlite, so there is no connection string to report on, ' +
-          'and the store row above says where the log is',
-      }
-    : unreadable
-      ? unreadableConfigRow(unreadable)
-      : environment(
-          pooled,
-          direct,
-          standIn && Boolean(pooled),
-          fromFile ? '~/.lingtai/config.yml database.url' : undefined,
-        )
-  await step('the environment', () => results.push(envResult))
 
-  if (fileBacked) {
-    // Every row below that is about **a log** rather than about Postgres: each
-    // opens the store this machine chose, so each answers here too. Losing the
-    // projection lag, the shape check, the beacon and the lock along with the
-    // connection rows was the same defect's other half, and losing the
-    // reachability of the log itself along with the pooled connection was the
-    // half that let `0 failed` print for a machine nobody had checked (#214).
-    //
-    // Still nothing written, in the sense the rule at the top of this file
-    // means it: no row appends, and none is a probe. Opening a file-backed
-    // store runs its own `create table if not exists` — `events` and
-    // `daemon_status` — which is how that store is opened at all and how the
-    // very next command would open it; not one row goes in.
-    await step('the log', async () => results.push(await logReachable(choice.path, queries)))
-    await step('projections', async () => results.push(await projections(undefined, reach.lags)))
-    await step('projection shapes', async () => results.push(await projectionShapes(undefined, reach.shapes)))
-    await step('stopped projections', () => stoppedProjections(reach.status).then((r) => void results.push(r)))
-    await step('the daemon', async () => results.push(await daemonLiveness(reach.status, reach.pause)))
-    await step('daemon currency', async () => results.push(await daemonCurrency(reach.status)))
-    await step('paused projects', () => pausedProjects(load).then((r) => void results.push(...r)))
-    await step('account limits', () =>
-      (reach.accounts ?? (() => accountLimits(undefined, load)))().then((r) => void results.push(...r)),
-    )
-    await step('spend', async () =>
-      results.push(
-        await spendToday(
-          reach.spend,
-          reach.pause
-            ? () => reach.pause!().then((c) => c ?? Promise.reject(new Error('the control stream could not be read')))
-            : () => readControl(),
-        ),
+    yield* step(
+      'packages',
+      Effect.sync(() =>
+        results.push({
+          name: 'packages load under Node',
+          status: 'ok',
+          // Not a freebie: to reach this line, Node's type stripping had to load
+          // `@lingtai/domain`, `/recipe`, `/event-store` and everything else this
+          // command imports. A `.js` specifier in a barrel or a constructor parameter
+          // property would have stopped it, and neither `tsc` nor a board build
+          // notices either. See doc/decisions-archive/0010.
+          detail: "every package this command imports loaded under Node's type stripping",
+        }),
       ),
     )
-    await step('rates', async () =>
-      results.push(ratesCheck(process.env, await spendLagNow(reach.lags ?? (() => projectionLag())))),
+
+    // Before the connection rows, because it is the question they assume an
+    // answer to: what this machine says it runs.
+    const choice = store()
+    yield* step(
+      'the store',
+      Effect.sync(() => results.push(storeRow(choice))),
     )
-    await step('refusals', async () => results.push(await passRefusals(load)))
-    await step('the lock', async () => results.push(await conductorLock(reach.lockHolder)))
-    await step('event types', async () => results.push(await readableTypes(queries)))
-    await step('holds', async () => results.push(await logPredatesHoldRow(queries)))
-    await step('snapshots', () =>
-      snapshotCensus(reach.snapshots ?? log.snapshots.census).then((r) => void results.push(r)),
+
+    // One resolve for the whole report (`#389`) — `recipe:`'s own rows below
+    // and the `unconverged` rows in both store branches read this same value,
+    // rather than each asking every project's recipe again.
+    const filters = yield* step(
+      'recipes',
+      Effect.promise(() => projectFiltersOnce(env, load, reach.recipe)),
     )
-    await step('orphans', async () => results.push(await orphans(reach.orphans)))
-    // Read once and handed to both: the two rows below name issues, and a
-    // number on its own is homework for whoever is reading them (#258).
-    const titles = await step('issue titles', () => issueTitles(reach.titles))
-    await step('unconverged', async () => results.push(await unconverged(queries, titles, unresolved)))
-    await step('subscribers', async () => results.push(await subscribers(queries)))
-    await step('end step', async () => results.push(await endStepRan(queries, titles)))
-    // Named one at a time, each saying why it does not apply and naming the
-    // store. See `postgresOnlyRows`.
-    await step('Postgres-only rows', () => {
-      for (const row of postgresOnlyRows()) {
-        results.push({
-          name: row.name,
-          status: 'skip',
-          detail: `not asked on this machine: it wrote store: sqlite, and ${row.because}`,
-        })
+    const unresolved = unresolvedProblems(filters)
+
+    /**
+     * **A machine that wrote `sqlite` is never asked for a connection string.**
+     *
+     * `environment` is a report on the Postgres pair, and on this machine there
+     * is no pair. Pushed unconditionally, it failed a machine `lingtai init` had
+     * just set up correctly — one that appends, reduces `task_view`, renders the
+     * cards and beats the beacon
+     * (`packages/daemon/integration/the-written-choice.test.ts`) — by the name of a
+     * variable it is right not to have, and named giving a Postgres URL as the
+     * remedy. And a failure carrying no `restartAnswers` gates `lingtai restart`
+     * (`gatingFailures`, 0042), so the working machine could not start a daemon
+     * either: setup said correct, doctor said broken, and the way out it offered
+     * was to abandon the configuration.
+     */
+    const fileBacked = !('refused' in choice) && choice.store === 'sqlite'
+
+    let fromFile: string | undefined
+    let unreadable: string | undefined
+    if (!fileBacked && !env['LINGTAI_DATABASE_URL']) {
+      try {
+        fromFile = machine()
+      } catch (err) {
+        unreadable = (err as Error).message
       }
-    })
-  } else if (envResult.status === 'ok' && pooled && direct) {
-    // **The direct connection, and not `queries`.** These read the log, and on
-    // this machine the log has two connection strings: `log.queries` is the
-    // pooled one, and through a pooler a dropped connection turns an audit into
-    // a red check that has nothing to do with the log (#157). The rows take a
-    // `LogQueries` so that the file-backed branch above can ask them at all;
-    // which connection *this* branch hands them is unchanged.
-    const audit = createPostgresLogQueries({ url: direct })
-    await step('the pooler', async () => results.push(await pooledConnection(pooled)))
-    await step('the direct connection', async () => results.push(await directIsSessionMode(direct, standIn)))
-    await step('the schema', async () => results.push(...(await schema(direct))))
-    await step('projections', async () => results.push(await projections(pooled)))
-    await step('projection shapes', async () => results.push(await projectionShapes(pooled)))
-    await step('stopped projections', () => stoppedProjections().then((r) => void results.push(r)))
-    await step('the daemon', async () => results.push(await daemonLiveness()))
-    // Beside liveness, never reduced into it: up and current are two facts, and
-    // for thirty-nine minutes only one of them was measured.
-    await step('daemon currency', async () => results.push(await daemonCurrency()))
-    await step('paused projects', () => pausedProjects(load).then((r) => void results.push(...r)))
-    await step('account limits', () => accountLimits(undefined, load).then((r) => void results.push(...r)))
-    await step('spend', async () => results.push(await spendToday(undefined, () => readControl())))
-    await step('rates', async () => results.push(ratesCheck(process.env, await spendLagNow(() => projectionLag()))))
-    // What the conductor refused, from the log — not what this checkout would
-    // refuse, which the recipe rows answer, and which is a different question
-    // whenever the two are at different commits (#148).
-    await step('refusals', async () => results.push(await passRefusals(load)))
-    await step('the lock', async () => results.push(await conductorLock()))
-    await step('event types', async () => results.push(await readableTypes(audit)))
-    await step('holds', async () => results.push(await logPredatesHoldRow(audit)))
-    const direct_ = createSqlSnapshotStore(createPostgresTicketSql({ url: direct }))
-    await step('snapshots', () => snapshotCensus(reach.snapshots ?? direct_.census).then((r) => void results.push(r)))
-    await step('orphans', async () => results.push(await orphans()))
-    // The projection and not the audit connection: this is what the rows are
-    // *called*, not what they assert, so it is read where every other
-    // projection read here is read (#258).
-    const titles = await step('issue titles', () => issueTitles())
-    await step('unconverged', async () => results.push(await unconverged(audit, titles, unresolved)))
-    await step('subscribers', async () => results.push(await subscribers(audit)))
-    await step('end step', async () => results.push(await endStepRan(audit, titles)))
-  } else {
-    await step('Postgres', () =>
-      results.push({
-        name: 'postgres',
-        status: 'skip',
-        detail: 'not attempted — the environment check failed first',
+    }
+    const pooled = fileBacked ? undefined : env['LINGTAI_DATABASE_URL'] || fromFile
+    // Absent, the pooled one stands in (#176) — the rule `directPostgresUrl`
+    // follows, so the doctor checks the connection the system will actually use.
+    const standIn = !env['LINGTAI_DIRECT_DATABASE_URL']
+    const direct = fileBacked ? undefined : env['LINGTAI_DIRECT_DATABASE_URL'] || pooled
+    const envResult = fileBacked
+      ? {
+          name: 'environment',
+          status: 'skip' as const,
+          detail:
+            'not read on this machine — it wrote store: sqlite, so there is no connection string to report on, ' +
+            'and the store row above says where the log is',
+        }
+      : unreadable
+        ? unreadableConfigRow(unreadable)
+        : environment(
+            pooled,
+            direct,
+            standIn && Boolean(pooled),
+            fromFile ? '~/.lingtai/config.yml database.url' : undefined,
+          )
+    yield* step(
+      'the environment',
+      Effect.sync(() => results.push(envResult)),
+    )
+
+    if (fileBacked) {
+      // Every row below that is about **a log** rather than about Postgres: each
+      // opens the store this machine chose, so each answers here too. Losing the
+      // projection lag, the shape check, the beacon and the lock along with the
+      // connection rows was the same defect's other half, and losing the
+      // reachability of the log itself along with the pooled connection was the
+      // half that let `0 failed` print for a machine nobody had checked (#214).
+      //
+      // Still nothing written, in the sense the rule at the top of this file
+      // means it: no row appends, and none is a probe. Opening a file-backed
+      // store runs its own `create table if not exists` — `events` and
+      // `daemon_status` — which is how that store is opened at all and how the
+      // very next command would open it; not one row goes in.
+      yield* step('the log', Effect.promise(() => logReachable(choice.path, queries)).pipe(Effect.map(push)))
+      yield* step('projections', Effect.promise(() => projections(undefined, reach.lags)).pipe(Effect.map(push)))
+      yield* step(
+        'projection shapes',
+        Effect.promise(() => projectionShapes(undefined, reach.shapes)).pipe(Effect.map(push)),
+      )
+      yield* step('stopped projections', Effect.promise(() => stoppedProjections(reach.status)).pipe(Effect.map(push)))
+      yield* step('the daemon', Effect.promise(() => daemonLiveness(reach.status, reach.pause)).pipe(Effect.map(push)))
+      yield* step('daemon currency', Effect.promise(() => daemonCurrency(reach.status)).pipe(Effect.map(push)))
+      yield* step('paused projects', Effect.promise(() => pausedProjects(load)).pipe(Effect.map(pushAll)))
+      yield* step(
+        'account limits',
+        Effect.promise(() => (reach.accounts ?? (() => accountLimits(undefined, load)))()).pipe(Effect.map(pushAll)),
+      )
+      yield* step(
+        'spend',
+        Effect.promise(() =>
+          spendToday(
+            reach.spend,
+            reach.pause
+              ? () => reach.pause!().then((c) => c ?? Promise.reject(new Error('the control stream could not be read')))
+              : () => readControl(),
+          ),
+        ).pipe(Effect.map(push)),
+      )
+      yield* step(
+        'rates',
+        Effect.promise(() => spendLagNow(reach.lags ?? (() => projectionLag()))).pipe(
+          Effect.map((lag) => push(ratesCheck(process.env, lag))),
+        ),
+      )
+      yield* step('refusals', Effect.promise(() => passRefusals(load)).pipe(Effect.map(push)))
+      yield* step('the lock', Effect.promise(() => conductorLock(reach.lockHolder)).pipe(Effect.map(push)))
+      yield* step('event types', Effect.promise(() => readableTypes(queries)).pipe(Effect.map(push)))
+      yield* step('holds', Effect.promise(() => logPredatesHoldRow(queries)).pipe(Effect.map(push)))
+      yield* step(
+        'snapshots',
+        Effect.promise(() => snapshotCensus(reach.snapshots ?? log.snapshots.census)).pipe(Effect.map(push)),
+      )
+      yield* step('orphans', Effect.promise(() => orphans(reach.orphans)).pipe(Effect.map(push)))
+      // Read once and handed to both: the two rows below name issues, and a
+      // number on its own is homework for whoever is reading them (#258).
+      const titles = yield* step(
+        'issue titles',
+        Effect.promise(() => issueTitles(reach.titles)),
+      )
+      yield* step('unconverged', Effect.promise(() => unconverged(queries, titles, unresolved)).pipe(Effect.map(push)))
+      yield* step('subscribers', Effect.promise(() => subscribers(queries)).pipe(Effect.map(push)))
+      yield* step('end step', Effect.promise(() => endStepRan(queries, titles)).pipe(Effect.map(push)))
+      // Named one at a time, each saying why it does not apply and naming the
+      // store. See `postgresOnlyRows`.
+      yield* step(
+        'Postgres-only rows',
+        Effect.sync(() => {
+          for (const row of postgresOnlyRows()) {
+            results.push({
+              name: row.name,
+              status: 'skip',
+              detail: `not asked on this machine: it wrote store: sqlite, and ${row.because}`,
+            })
+          }
+        }),
+      )
+    } else if (envResult.status === 'ok' && pooled && direct) {
+      // **The direct connection, and not `queries`.** These read the log, and on
+      // this machine the log has two connection strings: `log.queries` is the
+      // pooled one, and through a pooler a dropped connection turns an audit into
+      // a red check that has nothing to do with the log (#157). The rows take a
+      // `LogQueries` so that the file-backed branch above can ask them at all;
+      // which connection *this* branch hands them is unchanged.
+      const audit = createPostgresLogQueries({ url: direct })
+      yield* step('the pooler', Effect.promise(() => pooledConnection(pooled)).pipe(Effect.map(push)))
+      yield* step(
+        'the direct connection',
+        Effect.promise(() => directIsSessionMode(direct, standIn)).pipe(Effect.map(push)),
+      )
+      yield* step('the schema', Effect.promise(() => schema(direct)).pipe(Effect.map(pushAll)))
+      yield* step('projections', Effect.promise(() => projections(pooled)).pipe(Effect.map(push)))
+      yield* step('projection shapes', Effect.promise(() => projectionShapes(pooled)).pipe(Effect.map(push)))
+      yield* step('stopped projections', Effect.promise(() => stoppedProjections()).pipe(Effect.map(push)))
+      yield* step('the daemon', Effect.promise(() => daemonLiveness()).pipe(Effect.map(push)))
+      // Beside liveness, never reduced into it: up and current are two facts, and
+      // for thirty-nine minutes only one of them was measured.
+      yield* step('daemon currency', Effect.promise(() => daemonCurrency()).pipe(Effect.map(push)))
+      yield* step('paused projects', Effect.promise(() => pausedProjects(load)).pipe(Effect.map(pushAll)))
+      yield* step('account limits', Effect.promise(() => accountLimits(undefined, load)).pipe(Effect.map(pushAll)))
+      yield* step('spend', Effect.promise(() => spendToday(undefined, () => readControl())).pipe(Effect.map(push)))
+      yield* step(
+        'rates',
+        Effect.promise(() => spendLagNow(() => projectionLag())).pipe(
+          Effect.map((lag) => push(ratesCheck(process.env, lag))),
+        ),
+      )
+      // What the conductor refused, from the log — not what this checkout would
+      // refuse, which the recipe rows answer, and which is a different question
+      // whenever the two are at different commits (#148).
+      yield* step('refusals', Effect.promise(() => passRefusals(load)).pipe(Effect.map(push)))
+      yield* step('the lock', Effect.promise(() => conductorLock()).pipe(Effect.map(push)))
+      yield* step('event types', Effect.promise(() => readableTypes(audit)).pipe(Effect.map(push)))
+      yield* step('holds', Effect.promise(() => logPredatesHoldRow(audit)).pipe(Effect.map(push)))
+      const direct_ = createSqlSnapshotStore(createPostgresTicketSql({ url: direct }))
+      yield* step(
+        'snapshots',
+        Effect.promise(() => snapshotCensus(reach.snapshots ?? direct_.census)).pipe(Effect.map(push)),
+      )
+      yield* step('orphans', Effect.promise(() => orphans()).pipe(Effect.map(push)))
+      // The projection and not the audit connection: this is what the rows are
+      // *called*, not what they assert, so it is read where every other
+      // projection read here is read (#258).
+      const titles = yield* step(
+        'issue titles',
+        Effect.promise(() => issueTitles()),
+      )
+      yield* step('unconverged', Effect.promise(() => unconverged(audit, titles, unresolved)).pipe(Effect.map(push)))
+      yield* step('subscribers', Effect.promise(() => subscribers(audit)).pipe(Effect.map(push)))
+      yield* step('end step', Effect.promise(() => endStepRan(audit, titles)).pipe(Effect.map(push)))
+    } else {
+      yield* step(
+        'Postgres',
+        Effect.sync(() =>
+          results.push({
+            name: 'postgres',
+            status: 'skip',
+            detail: 'not attempted — the environment check failed first',
+          }),
+        ),
+      )
+    }
+
+    yield* step(
+      'GitHub',
+      Effect.gen(function* () {
+        results.push(githubCredentials(env))
+        const ghRow = yield* Effect.promise(() => ghLogin(env, reach.gh))
+        if (ghRow !== null) results.push(ghRow)
       }),
     )
-  }
+    yield* step('project recipes', Effect.promise(() => projectRecipes(filters)).pipe(Effect.map(pushAll)))
+    yield* step(
+      'declared environment',
+      Effect.promise(() => declaredEnvironment(env, load, reach)).pipe(Effect.map(pushAll)),
+    )
+    yield* step('recipe bases', Effect.promise(() => recipeGovernsItsBase(env, load, reach)).pipe(Effect.map(pushAll)))
+    yield* step('settings', Effect.promise(() => settingsSources(reach.settings)).pipe(Effect.map(push)))
+    yield* step('runtimes', Effect.promise(() => runtimeAuth(reach.runtimes)).pipe(Effect.map(push)))
+    yield* step(
+      'deferred',
+      Effect.sync(() => {
+        for (const d of DEFERRED) results.push({ ...d, status: 'skip', deferred: true })
+      }),
+    )
+    shareFixes(results)
 
-  await step('GitHub', async () => {
-    results.push(githubCredentials(env))
-    const ghRow = await ghLogin(env, reach.gh)
-    if (ghRow !== null) results.push(ghRow)
+    return { results, ...tally(results) }
   })
-  await step('project recipes', async () => results.push(...(await projectRecipes(filters))))
-  await step('declared environment', async () => results.push(...(await declaredEnvironment(env, load, reach))))
-  await step('recipe bases', async () => results.push(...(await recipeGovernsItsBase(env, load, reach))))
-  await step('settings', async () => results.push(await settingsSources(reach.settings)))
-  await step('runtimes', async () => results.push(await runtimeAuth(reach.runtimes)))
-  await step('deferred', () => {
-    for (const d of DEFERRED) results.push({ ...d, status: 'skip', deferred: true })
-  })
-  shareFixes(results)
-
-  return { results, ...tally(results) }
 }
 
 /**
@@ -3488,7 +3553,9 @@ export async function runDoctor(
  * ran a *slightly* different doctor than the one you type would be the worst of
  * both.
  */
-export async function doctorReport(opts: { onProgress?: (p: DoctorProgress) => void } = {}): Promise<DoctorReport> {
+export function doctorReportEffect(
+  opts: { onProgress?: (p: DoctorProgress) => void } = {},
+): Effect.Effect<DoctorReport> {
   const env = doctorEnvironment()
   return runDoctor(
     env,
@@ -3498,6 +3565,11 @@ export async function doctorReport(opts: { onProgress?: (p: DoctorProgress) => v
     undefined,
     { sea: probeSeaBuild, onProgress: opts.onProgress },
   )
+}
+
+/** The face of `doctorReportEffect` for `restart.ts` and `setup-end.ts`, which still await it. */
+export function doctorReport(opts: { onProgress?: (p: DoctorProgress) => void } = {}): Promise<DoctorReport> {
+  return Effect.runPromise(doctorReportEffect(opts))
 }
 
 /**

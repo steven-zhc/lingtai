@@ -40,7 +40,9 @@ import {
   storeChoice,
   type StoreChoice,
 } from '@lingtai/env'
+import { Effect } from 'effect'
 
+import { lift } from './exit.ts'
 import { runningFrom, type AppFacts, type Drained, type LogLocation, type World } from './install.ts'
 import { interactivity, askConfirm, PromptRefused } from './prompt.ts'
 
@@ -49,9 +51,9 @@ export interface Live {
   env: NodeJS.ProcessEnv
   log: (line: string) => void
   /** Who holds the conductor lock. Asked whether or not a log is configured — it is a file (#193). */
-  holder: () => Promise<string | null>
+  holder: () => Effect.Effect<string | null, unknown>
   /** The drain proper — the doctor gate, the request and the wait. Reached unless nothing conducts and no store is written. */
-  drain: (reason: string, despiteDoctor: boolean) => Promise<Drained>
+  drain: (reason: string, despiteDoctor: boolean) => Effect.Effect<Drained, unknown>
 }
 
 /** The real one: `process.env`, the terminal, and the daemon behind a dynamic import. */
@@ -59,17 +61,18 @@ export function live(): Live {
   return {
     env: process.env,
     log: (line) => console.log(line),
-    holder: async () => {
-      // `@lingtai/daemon/lock` and not `@lingtai/daemon`: the lock is a file
-      // under `~/.lingtai/locks/` (#193, 0052) and reads with nothing
-      // configured. The package's index used to reach `@lingtai/event-store`,
-      // whose process-wide client called `postgresUrl()` at import — the only
-      // reason a machine with no log could not ask who conducts, and closed by
-      // #179. The subpath stays: this asks about a file and should load a
-      // file's worth of code.
-      const lock = await import('@lingtai/daemon/lock')
-      return lock.conductorLockHolder()
-    },
+    holder: () =>
+      Effect.gen(function* () {
+        // `@lingtai/daemon/lock` and not `@lingtai/daemon`: the lock is a file
+        // under `~/.lingtai/locks/` (#193, 0052) and reads with nothing
+        // configured. The package's index used to reach `@lingtai/event-store`,
+        // whose process-wide client called `postgresUrl()` at import — the only
+        // reason a machine with no log could not ask who conducts, and closed by
+        // #179. The subpath stays: this asks about a file and should load a
+        // file's worth of code.
+        const lock = yield* lift(() => import('@lingtai/daemon/lock'))
+        return yield* lift(() => lock.conductorLockHolder())
+      }),
     drain: drainWithTheLog,
   }
 }
@@ -85,17 +88,18 @@ export function liveWorld(self: string, outside: Live = live()): World {
     self,
     fetch: (input, init) => fetch(input, init),
     log: outside.log,
-    ask: async (question) => {
-      try {
-        // Enter is a no, as the `[y/N]` reader had it: the default must not be the deletion.
-        return await askConfirm(question.replace(/\s*\[y\/N\]\s*:?\s*$/i, ''), '--yes', interactivity(false), false)
-      } catch (err) {
-        if (!(err instanceof PromptRefused)) throw err
-        // Not a terminal on both ends: refused by name, as before, and nothing is removed.
-        outside.log('there is nobody at a terminal to ask — --yes answers for you, once you have read what it removes')
-        return false
-      }
-    },
+    ask: (question) =>
+      // Enter is a no, as the `[y/N]` reader had it: the default must not be the deletion.
+      lift(() => askConfirm(question.replace(/\s*\[y\/N\]\s*:?\s*$/i, ''), '--yes', interactivity(false), false)).pipe(
+        Effect.catch((err) => {
+          if (!(err instanceof PromptRefused)) return Effect.fail(err)
+          // Not a terminal on both ends: refused by name, as before, and nothing is removed.
+          outside.log(
+            'there is nobody at a terminal to ask — --yes answers for you, once you have read what it removes',
+          )
+          return Effect.succeed(false)
+        }),
+      ),
     running: runningFrom,
     // **Asked whether or not a log is configured.** The conductor lock is a
     // file under `~/.lingtai/locks/` since #193, so a daemon running from a
@@ -262,14 +266,19 @@ function storeWritten(env: NodeJS.ProcessEnv): boolean {
  * and that machine has chosen a store: its doctor gate and a drain somebody
  * left standing are still its own.
  */
-export async function liveDrain(reason: string, despiteDoctor: boolean, outside: Live = live()): Promise<Drained> {
-  const holder = await outside.holder()
-  if (holder === null && !storeWritten(outside.env)) {
-    outside.log('nothing holds the conductor lock and this machine has written no store — nothing to drain')
-    return { ok: true, after: async () => {} }
-  }
-  return outside.drain(reason, despiteDoctor)
-}
+export const liveDrain = (
+  reason: string,
+  despiteDoctor: boolean,
+  outside: Live = live(),
+): Effect.Effect<Drained, unknown> =>
+  Effect.gen(function* () {
+    const holder = yield* outside.holder()
+    if (holder === null && !storeWritten(outside.env)) {
+      outside.log('nothing holds the conductor lock and this machine has written no store — nothing to drain')
+      return { ok: true, after: Effect.void } satisfies Drained
+    }
+    return yield* outside.drain(reason, despiteDoctor)
+  })
 
 /**
  * The drain once there is a log to drain from. Imported here, because it is the log.
@@ -278,62 +287,66 @@ export async function liveDrain(reason: string, despiteDoctor: boolean, outside:
  * checkout to name a commit from, which every installed copy is, and it starts
  * a daemon in this terminal, which an upgrade has no business holding.
  */
-async function drainWithTheLog(reason: string, despiteDoctor: boolean): Promise<Drained> {
-  const daemon = await import('@lingtai/daemon')
-  const { doctorReport } = await import('./doctor.ts')
-  const { formatFailures, gatingFailures, waitForTheLock } = await import('./restart.ts')
-  const by = `human:${process.env['USER'] ?? 'operator'}`
+const drainWithTheLog = (reason: string, despiteDoctor: boolean): Effect.Effect<Drained, unknown> =>
+  Effect.gen(function* () {
+    const daemon = yield* lift(() => import('@lingtai/daemon'))
+    const control = yield* lift(() => import('@lingtai/daemon/control'))
+    const { doctorReportEffect } = yield* lift(() => import('./doctor.ts'))
+    const { formatFailures, gatingFailures, waitForTheLock } = yield* lift(() => import('./restart.ts'))
+    const by = `human:${process.env['USER'] ?? 'operator'}`
 
-  const { drainForUpgrade } = await import('./upgrade-drain.ts')
-  return drainForUpgrade({
-    by,
-    reason,
-    despiteDoctor,
-    doctor: async () => {
-      const report = await doctorReport()
-      const failed = gatingFailures(report.results)
-      console.log(formatFailures(report.results, failed))
-      return failed
-    },
-    holder: () => daemon.conductorLockHolder(),
-    control: () => daemon.readControl(),
-    request: (who, why) => daemon.requestShutdownUnlessStanding(who, why),
-    inFlight: async () => daemon.describeInFlight(await daemon.inFlight().catch(() => [])),
-    wait: () =>
-      waitForTheLock('draining', null, (line) => console.log(line), {
+    const { drainForUpgrade } = yield* lift(() => import('./upgrade-drain.ts'))
+    return yield* drainForUpgrade({
+      by,
+      reason,
+      despiteDoctor,
+      doctor: Effect.gen(function* () {
+        const report = yield* doctorReportEffect()
+        const failed = gatingFailures(report.results)
+        console.log(formatFailures(report.results, failed))
+        return failed
+      }),
+      holder: lift(() => daemon.conductorLockHolder()),
+      control: control.readControlEffect(),
+      request: (who, why) => control.requestShutdownUnlessStandingEffect(who, why),
+      inFlight: control.inFlightEffect().pipe(Effect.map((items) => daemon.describeInFlight(items))),
+      wait: waitForTheLock('draining', null, (line) => console.log(line), {
         ctrlC:
           'ctrl-c stops waiting, leaves the drain standing and the shim where it is — lingtai upgrade again picks it up, and the next start ends it.',
       }),
-    log: (line) => console.log(line),
+      log: (line) => console.log(line),
+    })
   })
-}
 
 /** The App this machine is configured with, as GitHub reports it — null where none is. */
-async function liveApp(): Promise<AppFacts | null> {
-  const env = await import('@lingtai/env')
-  if (!env.hasGitHubApp()) return null
-  const credentials = env.githubApp()
-  const github = await import('@lingtai/github')
-  const reader = github.createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey })
-  const app = await reader.request<{ slug: string; owner: { login: string; type: string } }>('GET', '/app', 'app')
-  const installations = await github.appInstallations(reader)
-  let repositories = 0
-  for (const installation of installations) {
-    repositories += (await github.installationRepositories(reader, installation.id)).length
-  }
-  return {
-    slug: app.slug,
-    owner: app.owner.login,
-    organisation: app.owner.type === 'Organization',
-    installations: installations.length,
-    repositories,
-    // An inline key is in whichever source answered for the App: the
-    // environment, which nothing here removes, or `config.yml`, which an
-    // uninstall does.
-    key: credentials.keySource.startsWith('LINGTAI_')
-      ? credentials.source === 'environment'
-        ? { variable: credentials.keySource, files: [] }
-        : { variable: 'github.app_private_key', files: [credentials.source] }
-      : { path: credentials.keySource },
-  }
-}
+const liveApp = (): Effect.Effect<AppFacts | null, unknown> =>
+  Effect.gen(function* () {
+    const env = yield* lift(() => import('@lingtai/env'))
+    if (!env.hasGitHubApp()) return null
+    const credentials = env.githubApp()
+    const github = yield* lift(() => import('@lingtai/github'))
+    const reader = github.createAppReader({ appId: credentials.appId, privateKey: credentials.privateKey })
+    const app = yield* lift(() =>
+      reader.request<{ slug: string; owner: { login: string; type: string } }>('GET', '/app', 'app'),
+    )
+    const installations = yield* lift(() => github.appInstallations(reader))
+    let repositories = 0
+    for (const installation of installations) {
+      repositories += (yield* lift(() => github.installationRepositories(reader, installation.id))).length
+    }
+    return {
+      slug: app.slug,
+      owner: app.owner.login,
+      organisation: app.owner.type === 'Organization',
+      installations: installations.length,
+      repositories,
+      // An inline key is in whichever source answered for the App: the
+      // environment, which nothing here removes, or `config.yml`, which an
+      // uninstall does.
+      key: credentials.keySource.startsWith('LINGTAI_')
+        ? credentials.source === 'environment'
+          ? { variable: credentials.keySource, files: [] }
+          : { variable: 'github.app_private_key', files: [credentials.source] }
+        : { path: credentials.keySource },
+    } satisfies AppFacts
+  })

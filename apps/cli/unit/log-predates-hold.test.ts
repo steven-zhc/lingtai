@@ -18,10 +18,14 @@ import type { StoreChoice } from '@lingtai/env'
 import { LogPredatesHoldError, logPredatesHold, type LogQueries } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Projection, ProjectionRunner } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
-import { type DoctorReach, runDoctor } from '../src/doctor.ts'
+import { type DoctorReach, runDoctor as runDoctorEffect } from '../src/doctor.ts'
 import { rebuildProjection, rebuildUnderLock } from '../src/projection.ts'
+
+// `runDoctor` is an Effect; these tests read the report it yields.
+const runDoctor = (...a: Parameters<typeof runDoctorEffect>) => Effect.runPromise(runDoctorEffect(...a))
 
 /** A pre-switch step verdict, in the per-action shape `action.ts` no longer writes. */
 const PRE_SWITCH_STEP = { step: 'build', action: 'pnpm test', runId: 'pass-1', onSha: 'a'.repeat(40) }

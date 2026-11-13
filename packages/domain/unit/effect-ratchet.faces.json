@@ -1,5 +1,23 @@
 [
   {
+    "file": "apps/cli/src/board.ts",
+    "fn": "boardAt",
+    "until": "#790",
+    "why": "apps/cli/src/daemon.ts:138 (boardOptions) until CLI-08b; first-project.ts:1355 until CLI-21; init.ts:1247 until CLI-22b"
+  },
+  {
+    "file": "apps/cli/src/board.ts",
+    "fn": "serveBoard",
+    "until": "#790",
+    "why": "apps/cli/src/init.ts:1269 until CLI-22b"
+  },
+  {
+    "file": "apps/cli/src/doctor.ts",
+    "fn": "doctorReport",
+    "until": "#790",
+    "why": "apps/cli/src/world.ts:293 awaits it until CLI-07a and restart.ts:731 until CLI-07b (control); apps/cli/src/setup-end.ts:29 until CLI-19 (the setup's closing card)"
+  },
+  {
     "file": "packages/actions/src/action.ts",
     "fn": "actionRunFace",
     "until": "#790",

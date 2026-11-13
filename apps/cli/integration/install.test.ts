@@ -15,6 +15,7 @@ import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { Effect } from 'effect'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -24,15 +25,21 @@ import {
   installPaths,
   installPlatform,
   pointShim,
-  releaseCheck,
+  releaseCheck as releaseCheckEffect,
   rollback,
   runningFrom,
-  uninstall,
-  upgrade,
-  unpackRelease,
+  uninstall as uninstallEffect,
+  upgrade as upgradeEffect,
+  unpackRelease as unpackReleaseEffect,
   type Drained,
   type World,
 } from '../src/install.ts'
+
+// The commands are Effects; each test runs one to its end, as the CLI's edge does.
+const releaseCheck = (...a: Parameters<typeof releaseCheckEffect>) => Effect.runPromise(releaseCheckEffect(...a))
+const uninstall = (...a: Parameters<typeof uninstallEffect>) => Effect.runPromise(uninstallEffect(...a))
+const upgrade = (...a: Parameters<typeof upgradeEffect>) => Effect.runPromise(upgradeEffect(...a))
+const unpackRelease = (...a: Parameters<typeof unpackReleaseEffect>) => Effect.runPromise(unpackReleaseEffect(...a))
 
 /**
  * `install.sh`, `lingtai upgrade`, `rollback` and `uninstall` (#184), against a
@@ -132,15 +139,16 @@ function world(overrides: Partial<World> = {}): World {
     self: join(installPaths(env).versions, '1.0.0', 'lingtai'),
     fetch,
     log: (line) => lines.push(line),
-    ask: async () => true,
+    ask: () => Effect.succeed(true),
     running: () => [],
-    conducting: async () => null,
-    drain: async (): Promise<Drained> => {
-      const shim = installPaths(env).shim
-      calls.push(`drain while the shim runs ${readlinkSync(shim)}`)
-      return { ok: true, after: async () => void calls.push('after') }
-    },
-    app: async () => null,
+    conducting: () => Effect.succeed(null),
+    drain: () =>
+      Effect.sync((): Drained => {
+        const shim = installPaths(env).shim
+        calls.push(`drain while the shim runs ${readlinkSync(shim)}`)
+        return { ok: true, after: Effect.sync(() => void calls.push('after')) }
+      }),
+    app: () => Effect.succeed(null),
     logWhere: () => ({ kind: 'none' }) as const,
     ...overrides,
   }
@@ -231,7 +239,9 @@ describe('lingtai upgrade', () => {
 
   it('leaves the shim where it is when the drain refuses, and a second upgrade uses what was unpacked', async () => {
     await installOld()
-    expect(await upgrade({ despiteDoctor: false }, world({ drain: async () => ({ ok: false, code: 130 }) }))).toBe(130)
+    expect(
+      await upgrade({ despiteDoctor: false }, world({ drain: () => Effect.succeed({ ok: false, code: 130 }) })),
+    ).toBe(130)
     expect(shimSays()).toBe('lingtai 1.0.0')
 
     lines = []
@@ -307,7 +317,7 @@ describe('lingtai uninstall', () => {
     await installOld()
     const worktree = join(home, '.lingtai', 'worktrees', 'lingtai', 'pass-1')
     mkdirSync(worktree, { recursive: true })
-    const w = world({ conducting: async () => 'steven@host pid 777' })
+    const w = world({ conducting: () => Effect.succeed('steven@host pid 777') })
     expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(1)
     expect(lines.join('\n')).toContain('steven@host pid 777 holds the conductor lock')
     expect(existsSync(worktree)).toBe(true)
@@ -330,7 +340,7 @@ describe('lingtai uninstall', () => {
     mkdirSync(join(home, '.lingtai', 'lingtai'), { recursive: true })
     writeFileSync(recipe, 'steps: {}\n')
     const asked: string[] = []
-    const w = world({ conducting: async () => (asked.push('lock'), null) })
+    const w = world({ conducting: () => Effect.sync(() => (asked.push('lock'), null)) })
 
     expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(0)
     // Asked, and answered: no flag was needed to say what the lock already said.
@@ -349,9 +359,7 @@ describe('lingtai uninstall', () => {
     await installOld()
     const locks = join(home, '.lingtai', 'locks')
     const w = world({
-      conducting: async () => {
-        throw new Error(`EACCES: permission denied, open '${join(locks, 'lingtai:daemon')}'`)
-      },
+      conducting: () => Effect.fail(new Error(`EACCES: permission denied, open '${join(locks, 'lingtai:daemon')}'`)),
       logWhere: () => ({ kind: 'elsewhere', named: 'LINGTAI_DATABASE_URL names' }) as const,
     })
     expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(1)
@@ -384,14 +392,15 @@ describe('lingtai uninstall', () => {
   it('says a key read from the environment is still there', async () => {
     await installOld()
     const w = world({
-      app: async () => ({
-        slug: 'lingtai-steven',
-        owner: 'steven',
-        organisation: false,
-        installations: 1,
-        repositories: 1,
-        key: { variable: 'LINGTAI_GITHUB_APP_PRIVATE_KEY', files: [] },
-      }),
+      app: () =>
+        Effect.succeed({
+          slug: 'lingtai-steven',
+          owner: 'steven',
+          organisation: false,
+          installations: 1,
+          repositories: 1,
+          key: { variable: 'LINGTAI_GITHUB_APP_PRIVATE_KEY', files: [] },
+        }),
     })
     expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(0)
     const said = lines.join('\n')
@@ -406,14 +415,15 @@ describe('lingtai uninstall', () => {
     const file = join(home, '.lingtai', 'versions', '.env.local')
     writeFileSync(file, 'LINGTAI_GITHUB_APP_PRIVATE_KEY=x\n')
     const w = world({
-      app: async () => ({
-        slug: 'lingtai-steven',
-        owner: 'steven',
-        organisation: false,
-        installations: 1,
-        repositories: 1,
-        key: { variable: 'LINGTAI_GITHUB_APP_PRIVATE_KEY', files: [file] },
-      }),
+      app: () =>
+        Effect.succeed({
+          slug: 'lingtai-steven',
+          owner: 'steven',
+          organisation: false,
+          installations: 1,
+          repositories: 1,
+          key: { variable: 'LINGTAI_GITHUB_APP_PRIVATE_KEY', files: [file] },
+        }),
     })
     expect(await uninstall({ yes: true, nothingConducts: false }, w)).toBe(0)
     expect(lines.join('\n')).toContain('which is gone')
@@ -431,7 +441,10 @@ describe('lingtai uninstall', () => {
     await installOld()
     const asked: string[] = []
     expect(
-      await uninstall({ yes: false, nothingConducts: false }, world({ ask: async (q) => (asked.push(q), false) })),
+      await uninstall(
+        { yes: false, nothingConducts: false },
+        world({ ask: (q) => Effect.sync(() => (asked.push(q), false)) }),
+      ),
     ).toBe(1)
     expect(asked).toHaveLength(1)
     expect(existsSync(join(home, '.lingtai', 'versions', '1.0.0'))).toBe(true)
@@ -441,18 +454,19 @@ describe('lingtai uninstall', () => {
     await installOld()
     let appAsked = false
     const w = world({
-      app: async () => {
-        // Asked while the key is still there to sign with.
-        appAsked = existsSync(join(home, '.lingtai'))
-        return {
-          slug: 'lingtai-steven',
-          owner: 'steven',
-          organisation: false,
-          installations: 1,
-          repositories: 2,
-          key: { path: join(home, '.lingtai', 'lingtai', 'app.pem') },
-        }
-      },
+      app: () =>
+        Effect.sync(() => {
+          // Asked while the key is still there to sign with.
+          appAsked = existsSync(join(home, '.lingtai'))
+          return {
+            slug: 'lingtai-steven',
+            owner: 'steven',
+            organisation: false,
+            installations: 1,
+            repositories: 2,
+            key: { path: join(home, '.lingtai', 'lingtai', 'app.pem') },
+          }
+        }),
       logWhere: () => ({ kind: 'elsewhere', named: 'LINGTAI_DATABASE_URL names' }) as const,
     })
     expect(await uninstall({ yes: false, nothingConducts: false }, w)).toBe(0)
@@ -509,7 +523,7 @@ describe('lingtai uninstall', () => {
     let saidBeforeAsking: string[] = []
     const asked: string[] = []
     const w = world({
-      ask: async (q) => (asked.push(q), (saidBeforeAsking = [...lines]), true),
+      ask: (q) => Effect.sync(() => (asked.push(q), (saidBeforeAsking = [...lines]), true)),
       logWhere: () => ({ kind: 'file', path: db, alsoElsewhere: false }) as const,
     })
 
@@ -544,7 +558,7 @@ describe('lingtai uninstall', () => {
     const db = join(home, '.lingtai', 'lingtai.db')
     let saidBeforeAsking: string[] = []
     const w = world({
-      ask: async () => ((saidBeforeAsking = [...lines]), true),
+      ask: () => Effect.sync(() => ((saidBeforeAsking = [...lines]), true)),
       logWhere: () => ({ kind: 'file', path: db, alsoElsewhere: true }) as const,
     })
 

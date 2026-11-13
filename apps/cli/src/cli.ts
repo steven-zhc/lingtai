@@ -12,7 +12,7 @@ import { Argument, CliOutput, Command, Flag } from 'effect/cli'
 import type { BoardVerb } from './board.ts'
 import { definitionOf, PROJECTION_NAMES, startIsVerbose } from './commands.ts'
 import { USAGE as ENV_USAGE } from './env-usage.ts'
-import { exitWith, failed, lift, orFailed, orWizardFailed, wizardFailed } from './exit.ts'
+import { CommandExit, exitWith, failed, lift, orFailed, orWizardFailed, printedBy, wizardFailed } from './exit.ts'
 import { commandHelp } from './help.ts'
 import { applyNoColor, heading, printJson, printJsonError, stripColour, symbol } from './output.ts'
 import { parseRestartArgs, type RestartArgs } from './restart.ts'
@@ -32,9 +32,6 @@ const version = Command.make('version', { json, noColor }, (args) =>
     else process.stdout.write(`${versionLine()}\n`)
   }),
 ).pipe(Command.withDescription(definitionOf('version').task))
-
-/** What a handler sets when it fails on its own: `runCli` resolves to it, as the exit code. */
-let handlerCode = 0
 
 const status = Command.make(
   'status',
@@ -94,18 +91,18 @@ const doctor = Command.make(
     Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       // Loaded here, for the reason `status` gives.
-      const { doctorReport, doctorJson, renderDoctor, tally } = yield* lift(() => import('./doctor.ts'))
+      const { doctorReportEffect, doctorJson, renderDoctor, tally } = yield* lift(() => import('./doctor.ts'))
       const { releaseCheck } = yield* lift(() => import('./install.ts'))
       const { doctorProgress } = yield* lift(() => import('./steps.ts'))
       const progress = doctorProgress({ stdout: process.stdout, stderr: process.stderr, json: args.json })
       const report = yield* Effect.gen(function* () {
-        const report = yield* lift(() => doctorReport({ onProgress: progress.onProgress }))
+        const report = yield* doctorReportEffect({ onProgress: progress.onProgress })
         // Here and not in `runDoctor`, which `lingtai restart` gates on: the one
         // outbound request this tool makes is asked by `doctor` and `upgrade` (#184),
         // and a restart is neither. Timed here, since `runDoctor` never sees it.
         progress.onProgress({ label: 'releases', phase: 'start', done: report.results.length })
         const t0 = performance.now()
-        const row = yield* lift(() => releaseCheck({ fetch, env: process.env, self: import.meta.filename }))
+        const row = yield* releaseCheck({ fetch, env: process.env, self: import.meta.filename })
         report.results.push({ ...row, ms: Math.round(performance.now() - t0) })
         Object.assign(report, tally(report.results))
         return report
@@ -369,11 +366,12 @@ function liveBoardRunner(request: BoardRequest): Effect.Effect<number, unknown> 
     const { port, host } = where.success
     const world = liveBoardWorld(host)
     if (request.verb === 'status' && request.json) {
-      printJson('board status', boardStatusJson(yield* lift(() => readBoardStatus({ port }, world))))
+      printJson('board status', boardStatusJson(yield* readBoardStatus({ port }, world)))
       return 0
     }
-    return yield* lift(() =>
-      boardCommand({ verb: request.verb, port, dir: request.dir ?? builtBoardDir(), open: request.open }, world),
+    return yield* boardCommand(
+      { verb: request.verb, port, dir: request.dir ?? builtBoardDir(), open: request.open },
+      world,
     )
   })
 }
@@ -479,153 +477,171 @@ export interface UninstallRequest {
 }
 
 export interface Runners {
-  run: (request: RunRequest) => Promise<number>
-  attach: (request: AttachRequest) => Promise<number>
-  end: (request: EndRequest) => Promise<number>
-  ticket: (request: TicketRequest) => Promise<number>
-  backlog: (request: BacklogRequest) => Promise<number>
-  env: (request: EnvRequest) => Promise<number>
-  projection: (request: ProjectionRequest) => Promise<number>
-  upgrade: (request: UpgradeRequest) => Promise<number>
-  rollback: (request: RollbackRequest) => Promise<number>
-  uninstall: (request: UninstallRequest) => Promise<number>
+  run: (request: RunRequest) => Effect.Effect<number, unknown>
+  attach: (request: AttachRequest) => Effect.Effect<number, unknown>
+  end: (request: EndRequest) => Effect.Effect<number, unknown>
+  ticket: (request: TicketRequest) => Effect.Effect<number, unknown>
+  backlog: (request: BacklogRequest) => Effect.Effect<number, unknown>
+  env: (request: EnvRequest) => Effect.Effect<number, unknown>
+  projection: (request: ProjectionRequest) => Effect.Effect<number, unknown>
+  upgrade: (request: UpgradeRequest) => Effect.Effect<number, unknown>
+  rollback: (request: RollbackRequest) => Effect.Effect<number, unknown>
+  uninstall: (request: UninstallRequest) => Effect.Effect<number, unknown>
 }
 
 const liveRunners: Runners = {
-  async run(request) {
-    const { run: runAttempt } = await import('./run.ts')
-    return runAttempt(request)
-  },
-  async attach(request) {
-    const { attach } = await import('./attach.ts')
-    // Ctrl-C detaches rather than killing the process, so the command gets to
-    // say that the run is still going and where its log is. Nothing is being
-    // stopped: this is a reader, and 0034's file does not know it has one.
-    const detach = new AbortController()
-    process.on('SIGINT', () => detach.abort())
-    return attach({ runId: request.runId, signal: detach.signal })
-  },
-  async end(request) {
-    const { endReplay } = await import('./end.ts')
-    return endReplay(request)
-  },
-  async ticket(request) {
-    const { ticketClose, ticketEdit, ticketList, ticketNew } = await import('./ticket.ts')
-    const project = request.project === undefined ? {} : { project: request.project }
-    switch (request.verb) {
-      case 'list':
-        return ticketList({
-          ...project,
-          all: request.all === true,
-          json: request.json === true,
-          columns: process.stdout.columns,
-        })
-      case 'close':
-        return ticketClose({ ...project, issue: request.issue! })
-      case 'new':
-        return ticketNew({
-          ...project,
-          ...(request.title === undefined ? {} : { title: request.title }),
-          ...(request.labels === undefined ? {} : { label: request.labels }),
-          ...(request.body === undefined ? {} : { body: request.body }),
-        })
-      case 'edit':
-        return ticketEdit({ ...project, issue: request.issue! })
-    }
-  },
-  async backlog(request) {
-    const backlog = await import('./backlog.ts')
-    if (request.verb === 'list') {
-      try {
-        const listing = await backlog.readBacklogListing({ project: request.project, all: request.all })
-        if (request.json) printJson('backlog', backlog.backlogJson(listing))
-        else for (const line of backlog.renderBacklog(listing)) console.log(line)
-        return 0
-      } catch (err) {
-        return failed('backlog', request.json, err)
+  run: (request) =>
+    Effect.gen(function* () {
+      const { run: runAttempt } = yield* lift(() => import('./run.ts'))
+      return yield* lift(() => runAttempt(request))
+    }),
+  attach: (request) =>
+    Effect.gen(function* () {
+      const { attach } = yield* lift(() => import('./attach.ts'))
+      // Ctrl-C detaches rather than killing the process, so the command gets to
+      // say that the run is still going and where its log is. Nothing is being
+      // stopped: this is a reader, and 0034's file does not know it has one.
+      const detach = yield* Effect.sync(() => {
+        const controller = new AbortController()
+        process.on('SIGINT', () => controller.abort())
+        return controller
+      })
+      return yield* lift(() => attach({ runId: request.runId, signal: detach.signal }))
+    }),
+  end: (request) =>
+    Effect.gen(function* () {
+      const { endReplay } = yield* lift(() => import('./end.ts'))
+      return yield* lift(() => endReplay(request))
+    }),
+  ticket: (request) =>
+    Effect.gen(function* () {
+      const { ticketClose, ticketEdit, ticketList, ticketNew } = yield* lift(() => import('./ticket.ts'))
+      const project = request.project === undefined ? {} : { project: request.project }
+      switch (request.verb) {
+        case 'list':
+          return yield* lift(() =>
+            ticketList({
+              ...project,
+              all: request.all === true,
+              json: request.json === true,
+              columns: process.stdout.columns,
+            }),
+          )
+        case 'close':
+          return yield* lift(() => ticketClose({ ...project, issue: request.issue! }))
+        case 'new':
+          return yield* lift(() =>
+            ticketNew({
+              ...project,
+              ...(request.title === undefined ? {} : { title: request.title }),
+              ...(request.labels === undefined ? {} : { label: request.labels }),
+              ...(request.body === undefined ? {} : { body: request.body }),
+            }),
+          )
+        case 'edit':
+          return yield* lift(() => ticketEdit({ ...project, issue: request.issue! }))
       }
-    }
-    const [project, key, ...extra] = request.positional
-    if (!project || !key) {
-      console.log(backlog.BACKLOG_USAGE)
-      return 2
-    }
-    return backlog.decideFinding(
-      request.verb === 'accept'
-        ? { verb: 'accept', project, key, extra, kind: request.kind, unheld: request.unheld }
-        : { verb: 'decline', project, key, extra, reason: request.reason },
-    )
-  },
-  async env(request) {
-    const { envList, envSet, envUnset } = await import('./env.ts')
-    switch (request.verb) {
-      case 'list':
-        return envList({ project: request.project, json: request.json, columns: process.stdout.columns })
-      case 'set':
-        return envSet(request)
-      case 'unset':
-        return envUnset(request)
-    }
-  },
-  async projection(request) {
-    const projection = await import('./projection.ts')
-    if (request.verb === 'lag') {
-      try {
-        const { projectionLag } = await import('@lingtai/projector')
-        const lags = await projectionLag()
-        if (request.json) printJson('projection lag', projection.projectionLagJson(lags))
-        else
-          for (const line of projection.renderProjectionLag(lags, { columns: process.stdout.columns }))
-            console.log(line)
-        return 0
-      } catch (err) {
-        return failed('projection lag', request.json, err)
+    }),
+  backlog: (request) =>
+    Effect.gen(function* () {
+      const backlog = yield* lift(() => import('./backlog.ts'))
+      if (request.verb === 'list') {
+        return yield* Effect.gen(function* () {
+          const listing = yield* lift(() => backlog.readBacklogListing({ project: request.project, all: request.all }))
+          if (request.json) printJson('backlog', backlog.backlogJson(listing))
+          else for (const line of backlog.renderBacklog(listing)) console.log(line)
+          return 0
+        }).pipe(orFailed('backlog', request.json))
       }
-    }
-    const { log } = await import('@lingtai/event-store')
-    const { createProjectionRunner } = await import('@lingtai/projector')
-    const chosen = projection.PROJECTIONS.find((p) => p.name === request.name)!
-    // Drop the table, reset the checkpoint, replay — which is what makes a
-    // projection's shape free to change, a rebuild rather than a migration.
-    // `rebuildProjection` refuses before any of that if the log predates
-    // #445's payload reset (#451). The conductor lock is taken first and for
-    // the whole replay (0100 §13): a rebuild is a writer, and the lock holder
-    // is the only one.
-    return projection.rebuildUnderLock({
-      name: request.name,
-      queries: log.queries,
-      runnerFor: () => createProjectionRunner({ projection: chosen }),
-    })
-  },
+      const [project, key, ...extra] = request.positional
+      if (!project || !key) {
+        console.log(backlog.BACKLOG_USAGE)
+        return 2
+      }
+      return yield* lift(() =>
+        backlog.decideFinding(
+          request.verb === 'accept'
+            ? { verb: 'accept', project, key, extra, kind: request.kind, unheld: request.unheld }
+            : { verb: 'decline', project, key, extra, reason: request.reason },
+        ),
+      )
+    }),
+  env: (request) =>
+    Effect.gen(function* () {
+      const { envList, envSet, envUnset } = yield* lift(() => import('./env.ts'))
+      switch (request.verb) {
+        case 'list':
+          return yield* envList({ project: request.project, json: request.json, columns: process.stdout.columns })
+        case 'set':
+          return yield* envSet(request)
+        case 'unset':
+          return yield* envUnset(request)
+      }
+    }),
+  projection: (request) =>
+    Effect.gen(function* () {
+      const projection = yield* lift(() => import('./projection.ts'))
+      if (request.verb === 'lag') {
+        return yield* Effect.gen(function* () {
+          const { projectionLagEffect } = yield* lift(() => import('@lingtai/projector'))
+          const lags = yield* projectionLagEffect()
+          if (request.json) printJson('projection lag', projection.projectionLagJson(lags))
+          else
+            for (const line of projection.renderProjectionLag(lags, { columns: process.stdout.columns }))
+              console.log(line)
+          return 0
+        }).pipe(orFailed('projection lag', request.json))
+      }
+      const { log } = yield* lift(() => import('@lingtai/event-store'))
+      const { createProjectionRunner } = yield* lift(() => import('@lingtai/projector'))
+      const chosen = projection.PROJECTIONS.find((p) => p.name === request.name)!
+      // Drop the table, reset the checkpoint, replay — which is what makes a
+      // projection's shape free to change, a rebuild rather than a migration.
+      // `rebuildProjection` refuses before any of that if the log predates
+      // #445's payload reset (#451). The conductor lock is taken first and for
+      // the whole replay (0100 §13): a rebuild is a writer, and the lock holder
+      // is the only one.
+      return yield* lift(() =>
+        projection.rebuildUnderLock({
+          name: request.name,
+          queries: log.queries,
+          runnerFor: () => createProjectionRunner({ projection: chosen }),
+        }),
+      )
+    }),
   // `upgrade` is spawned-from and `version` is what it spawns, so none of these three
   // is imported at the top; `self` is the file this process started from (`install.ts`).
-  async upgrade(request) {
-    const { upgrade } = await import('./install.ts')
-    const { liveWorld } = await import('./world.ts')
-    return upgrade(request, liveWorld(import.meta.filename))
-  },
-  async rollback(request) {
-    const { rollback } = await import('./install.ts')
-    const { liveWorld } = await import('./world.ts')
-    return rollback(request, liveWorld(import.meta.filename))
-  },
-  async uninstall(request) {
-    const { uninstall } = await import('./install.ts')
-    const { liveWorld } = await import('./world.ts')
-    return uninstall(request, liveWorld(import.meta.filename))
-  },
+  upgrade: (request) =>
+    Effect.gen(function* () {
+      const { upgrade } = yield* lift(() => import('./install.ts'))
+      const { liveWorld } = yield* lift(() => import('./world.ts'))
+      return yield* upgrade(request, liveWorld(import.meta.filename))
+    }),
+  rollback: (request) =>
+    Effect.gen(function* () {
+      const { rollback } = yield* lift(() => import('./install.ts'))
+      const { liveWorld } = yield* lift(() => import('./world.ts'))
+      return yield* Effect.sync(() => rollback(request, liveWorld(import.meta.filename)))
+    }),
+  uninstall: (request) =>
+    Effect.gen(function* () {
+      const { uninstall } = yield* lift(() => import('./install.ts'))
+      const { liveWorld } = yield* lift(() => import('./world.ts'))
+      return yield* uninstall(request, liveWorld(import.meta.filename))
+    }),
 }
 
 let runners: Runners = liveRunners
 
-/** A runner that threw: the message and exit 1, as `lingtai.ts` ended every command that threw. */
-async function guarded(command: string, work: () => Promise<number>, asJson = false): Promise<void> {
-  try {
-    handlerCode = await work()
-  } catch (err) {
-    handlerCode = failed(command, asJson, err)
-  }
-}
+/** A runner's report, then its code: a runner that failed was printed by `orFailed` around the handler, and ends 1. */
+const ranWith = (work: Effect.Effect<number, unknown>): Effect.Effect<void, unknown> => Effect.flatMap(work, exitWith)
+
+/** A refusal: the sentence, then exit 2. */
+const refuse = (sentence: string): Effect.Effect<never, CommandExit> =>
+  Effect.suspend(() => {
+    console.error(sentence)
+    return exitWith(2) as Effect.Effect<never, CommandExit>
+  })
 
 const givenNumber = (o: { _tag: string; value?: number }): number | undefined =>
   o._tag === 'Some' ? o.value : undefined
@@ -644,25 +660,17 @@ const runCommand = Command.make(
     noColor,
   },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const project = given(args.project) ?? given(args.projectFlag)
-      if (!project) {
-        console.error(RUN_USAGE)
-        handlerCode = 2
-        return
-      }
+      if (!project) return yield* refuse(RUN_USAGE)
       const issue = givenNumber(args.issue)
       // `--once` with no `--issue` used to be the only mode. It now means the
       // same as `--max 1`: take the queue, but stop after one.
       const max = givenNumber(args.max) ?? (args.once && issue === undefined ? 1 : undefined)
-      if (max !== undefined && max < 1) {
-        console.error('--max takes a positive number')
-        handlerCode = 2
-        return
-      }
+      if (max !== undefined && max < 1) return yield* refuse('--max takes a positive number')
       console.log(heading(`run ${project}`))
-      await guarded('run', () =>
+      yield* ranWith(
         runners.run({
           project,
           ...(issue === undefined ? {} : { issue }),
@@ -671,23 +679,19 @@ const runCommand = Command.make(
           merge: !args.noMerge,
         }),
       )
-    }),
+    }).pipe(orFailed('run', false)),
 ).pipe(Command.withDescription(definitionOf('run').task))
 
 const attachCommand = Command.make(
   'attach',
   { runId: Argument.String('runId').pipe(Argument.optional), noColor },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const runId = given(args.runId)
-      if (!runId) {
-        console.error('lingtai attach <runId>')
-        handlerCode = 2
-        return
-      }
-      await guarded('attach', () => runners.attach({ runId }))
-    }),
+      if (!runId) return yield* refuse('lingtai attach <runId>')
+      yield* ranWith(runners.attach({ runId }))
+    }).pipe(orFailed('attach', false)),
 ).pipe(Command.withDescription(definitionOf('attach').task))
 
 const END_USAGE = 'lingtai end replay [<project>] [--issue <n>]'
@@ -700,23 +704,21 @@ const endReplay = Command.make(
     noColor,
   },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const project = given(args.project)
       const issue = givenNumber(args.issue)
-      await guarded('end', () =>
+      yield* ranWith(
         runners.end({ ...(project === undefined ? {} : { project }), ...(issue === undefined ? {} : { issue }) }),
       )
-    }),
+    }).pipe(orFailed('end', false)),
 )
 
 // One subcommand, spelled out. `lingtai end` on its own would read like an instruction to end something.
-const endCommand = Command.make('end', {}, () =>
-  Effect.sync(() => {
-    console.error(END_USAGE)
-    handlerCode = 2
-  }),
-).pipe(Command.withDescription(definitionOf('end').task), Command.withSubcommands([endReplay]))
+const endCommand = Command.make('end', {}, () => refuse(END_USAGE)).pipe(
+  Command.withDescription(definitionOf('end').task),
+  Command.withSubcommands([endReplay]),
+)
 
 const TICKET_USAGE =
   'lingtai ticket list [--all] [--project <p>]\nlingtai ticket close <n> [--project <p>]\n' +
@@ -730,17 +732,14 @@ function ticketNumbered(verb: 'close' | 'edit') {
     verb,
     { number: Argument.String('n').pipe(Argument.optional), project: projectOption, noColor },
     (args) =>
-      Effect.promise(async () => {
+      Effect.gen(function* () {
         if (args.noColor) applyNoColor()
         const issue = Number(given(args.number))
-        if (!given(args.number) || !Number.isInteger(issue)) {
-          console.error(`lingtai ticket ${verb} <n> [--project <p>]`)
-          handlerCode = 2
-          return
-        }
+        if (!given(args.number) || !Number.isInteger(issue))
+          return yield* refuse(`lingtai ticket ${verb} <n> [--project <p>]`)
         const project = given(args.project)
-        await guarded('ticket', () => runners.ticket({ verb, issue, ...(project === undefined ? {} : { project }) }))
-      }),
+        yield* ranWith(runners.ticket({ verb, issue, ...(project === undefined ? {} : { project }) }))
+      }).pipe(orFailed('ticket', false)),
   )
 }
 
@@ -748,21 +747,18 @@ const ticketList = Command.make(
   'list',
   { all: Flag.Boolean('all').pipe(Flag.withDefault(false)), project: projectOption, json, noColor },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const project = given(args.project)
-      await guarded(
-        'ticket list',
-        () =>
-          runners.ticket({
-            verb: 'list',
-            all: args.all,
-            json: args.json,
-            ...(project === undefined ? {} : { project }),
-          }),
-        args.json,
+      yield* ranWith(
+        runners.ticket({
+          verb: 'list',
+          all: args.all,
+          json: args.json,
+          ...(project === undefined ? {} : { project }),
+        }),
       )
-    }),
+    }).pipe(orFailed('ticket list', args.json)),
 )
 
 const ticketNew = Command.make(
@@ -775,13 +771,13 @@ const ticketNew = Command.make(
     noColor,
   },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const project = given(args.project)
       const title = given(args.title)
       const labels = given(args.label)
       const body = given(args.body)
-      await guarded('ticket', () =>
+      yield* ranWith(
         runners.ticket({
           verb: 'new',
           ...(project === undefined ? {} : { project }),
@@ -790,15 +786,10 @@ const ticketNew = Command.make(
           ...(body === undefined ? {} : { body }),
         }),
       )
-    }),
+    }).pipe(orFailed('ticket', false)),
 )
 
-const ticketCommand = Command.make('ticket', {}, () =>
-  Effect.sync(() => {
-    console.error(TICKET_USAGE)
-    handlerCode = 2
-  }),
-).pipe(
+const ticketCommand = Command.make('ticket', {}, () => refuse(TICKET_USAGE)).pipe(
   Command.withDescription(definitionOf('ticket').task),
   Command.withSubcommands([ticketList, ticketNew, ticketNumbered('close'), ticketNumbered('edit')]),
 )
@@ -817,25 +808,20 @@ const reportCommand = Command.make(
     noColor,
   },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       // Loaded here, for the reason `status` gives: the conductor and the store are not for `lingtai version`.
-      await guarded(
-        'report',
-        async () => {
-          const { runReport } = await import('./report.ts')
-          return runReport({
-            window: given(args.window),
-            from: given(args.from),
-            to: given(args.to),
-            kind: given(args.kind),
-            project: given(args.project),
-            json: args.json,
-          })
-        },
-        args.json,
-      )
-    }),
+      const { runReport } = yield* lift(() => import('./report.ts'))
+      const code = yield* runReport({
+        window: given(args.window),
+        from: given(args.from),
+        to: given(args.to),
+        kind: given(args.kind),
+        project: given(args.project),
+        json: args.json,
+      })
+      yield* exitWith(code)
+    }).pipe(orFailed('report', args.json)),
 ).pipe(Command.withDescription(definitionOf('report').task))
 
 const backlogList = Command.make(
@@ -847,10 +833,10 @@ const backlogList = Command.make(
     noColor,
   },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const project = given(args.project)
-      await guarded('backlog', () =>
+      yield* ranWith(
         runners.backlog({
           verb: 'list',
           all: args.all,
@@ -858,7 +844,7 @@ const backlogList = Command.make(
           ...(project === undefined ? {} : { project }),
         }),
       )
-    }),
+    }).pipe(orFailed('backlog', false)),
 )
 
 const backlogAccept = Command.make(
@@ -870,10 +856,10 @@ const backlogAccept = Command.make(
     noColor,
   },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const kind = given(args.kind)
-      await guarded('backlog', () =>
+      yield* ranWith(
         runners.backlog({
           verb: 'accept',
           positional: [...args.positional],
@@ -881,28 +867,29 @@ const backlogAccept = Command.make(
           ...(kind === undefined ? {} : { kind }),
         }),
       )
-    }),
+    }).pipe(orFailed('backlog', false)),
 )
 
 const backlogDecline = Command.make('decline', { positional: rest, reason: optionalText('reason'), noColor }, (args) =>
-  Effect.promise(async () => {
+  Effect.gen(function* () {
     if (args.noColor) applyNoColor()
     const reason = given(args.reason)
-    await guarded('backlog', () =>
+    yield* ranWith(
       runners.backlog({
         verb: 'decline',
         positional: [...args.positional],
         ...(reason === undefined ? {} : { reason }),
       }),
     )
-  }),
+  }).pipe(orFailed('backlog', false)),
 )
 
 // `lingtai backlog [<project>] [--all]` is the listing: `runCli` writes `list` in front of anything that is not
 // a verb, so the parent has no positional of its own to share with them.
 const backlogCommand = Command.make('backlog', {}, () =>
-  Effect.promise(async () => {
-    const { BACKLOG_USAGE } = await import('./backlog.ts')
+  Effect.gen(function* () {
+    // No `try` here today: a failed import is a defect, which `runCli` ends as 1.
+    const { BACKLOG_USAGE } = yield* lift(() => import('./backlog.ts')).pipe(Effect.orDie)
     console.log(BACKLOG_USAGE)
   }),
 ).pipe(
@@ -915,20 +902,22 @@ const backlogCommand = Command.make('backlog', {}, () =>
 const envProject = Argument.String('project').pipe(Argument.optional)
 
 /** `env` is the parent of three verbs and answers none itself: its usage, exit 2, as a missing verb always was. */
-function envUsage(json = false, command = 'env'): void {
-  // Under --json the failure is the error document on stdout, as everywhere else (0121 §5).
-  if (json) printJsonError(command, 'usage', ENV_USAGE)
-  else console.error(ENV_USAGE)
-  handlerCode = 2
+function envUsage(json = false, command = 'env'): Effect.Effect<never, CommandExit> {
+  return Effect.suspend(() => {
+    // Under --json the failure is the error document on stdout, as everywhere else (0121 §5).
+    if (json) printJsonError(command, 'usage', ENV_USAGE)
+    else console.error(ENV_USAGE)
+    return exitWith(2) as Effect.Effect<never, CommandExit>
+  })
 }
 
 const envList = Command.make('list', { project: envProject, json, noColor }, (args) =>
-  Effect.promise(async () => {
+  Effect.gen(function* () {
     if (args.noColor) applyNoColor()
     const project = given(args.project)
-    if (!project) return envUsage(args.json, 'env list')
-    await guarded('env list', () => runners.env({ verb: 'list', project, json: args.json }), args.json)
-  }),
+    if (!project) return yield* envUsage(args.json, 'env list')
+    yield* ranWith(runners.env({ verb: 'list', project, json: args.json }))
+  }).pipe(orFailed('env list', args.json)),
 )
 
 // `KEY=VALUE` is one token that starts with a letter, so `Args.text` takes it whole — a value of
@@ -937,69 +926,58 @@ const envSet = Command.make(
   'set',
   { project: envProject, argument: Argument.String('KEY[=VALUE]').pipe(Argument.optional), noColor },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const project = given(args.project)
       const argument = given(args.argument)
-      if (!project || !argument) return envUsage()
-      await guarded('env set', () => runners.env({ verb: 'set', project, argument }))
-    }),
+      if (!project || !argument) return yield* envUsage()
+      yield* ranWith(runners.env({ verb: 'set', project, argument }))
+    }).pipe(orFailed('env set', false)),
 )
 
 const envUnset = Command.make(
   'unset',
   { project: envProject, name: Argument.String('KEY').pipe(Argument.optional), noColor },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const project = given(args.project)
       const name = given(args.name)
-      if (!project || !name) return envUsage()
-      await guarded('env unset', () => runners.env({ verb: 'unset', project, name }))
-    }),
+      if (!project || !name) return yield* envUsage()
+      yield* ranWith(runners.env({ verb: 'unset', project, name }))
+    }).pipe(orFailed('env unset', false)),
 )
 
-const envCommand = Command.make('env', {}, () => Effect.sync(envUsage)).pipe(
+// `() =>`: the handler is handed the parsed args, which `envUsage` would read as `json`.
+const envCommand = Command.make('env', {}, () => envUsage()).pipe(
   Command.withDescription(definitionOf('env').task),
   Command.withSubcommands([envList, envSet, envUnset]),
 )
 
 const projectionLag = Command.make('lag', { json, noColor }, (args) =>
-  Effect.promise(async () => {
+  Effect.gen(function* () {
     if (args.noColor) applyNoColor()
-    await guarded('projection lag', () => runners.projection({ verb: 'lag', json: args.json }), args.json)
-  }),
+    yield* ranWith(runners.projection({ verb: 'lag', json: args.json }))
+  }).pipe(orFailed('projection lag', args.json)),
 )
 
 const projectionRebuild = Command.make(
   'rebuild',
   { name: Argument.String('name').pipe(Argument.optional), noColor },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const name = given(args.name)
-      if (!name) {
-        console.error('lingtai projection rebuild <name>')
-        handlerCode = 2
-        return
-      }
+      if (!name) return yield* refuse('lingtai projection rebuild <name>')
       // Named, not discovered (0022): `PROJECTIONS` in `projection.ts` is the list, and
       // `help.test.ts` holds the names in `commands.ts` to it.
-      if (!(PROJECTION_NAMES as readonly string[]).includes(name)) {
-        console.error(`${symbol.fail()} unknown projection "${name}" — known: ${PROJECTION_NAMES.join(', ')}`)
-        handlerCode = 2
-        return
-      }
-      await guarded('projection rebuild', () => runners.projection({ verb: 'rebuild', name }))
-    }),
+      if (!(PROJECTION_NAMES as readonly string[]).includes(name))
+        return yield* refuse(`${symbol.fail()} unknown projection "${name}" — known: ${PROJECTION_NAMES.join(', ')}`)
+      yield* ranWith(runners.projection({ verb: 'rebuild', name }))
+    }).pipe(orFailed('projection rebuild', false)),
 )
 
-const projectionCommand = Command.make('projection', {}, () =>
-  Effect.sync(() => {
-    console.error(commandHelp('projection'))
-    handlerCode = 2
-  }),
-).pipe(
+const projectionCommand = Command.make('projection', {}, () => refuse(commandHelp('projection'))).pipe(
   Command.withDescription(definitionOf('projection').task),
   Command.withSubcommands([projectionLag, projectionRebuild]),
 )
@@ -1008,21 +986,21 @@ const upgradeCommand = Command.make(
   'upgrade',
   { despiteDoctor: Flag.Boolean('despite-doctor').pipe(Flag.withDefault(false)), noColor },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
-      await guarded('upgrade', () => runners.upgrade({ despiteDoctor: args.despiteDoctor }))
-    }),
+      yield* ranWith(runners.upgrade({ despiteDoctor: args.despiteDoctor }))
+    }).pipe(orFailed('upgrade', false)),
 ).pipe(Command.withDescription(definitionOf('upgrade').task))
 
 const rollbackCommand = Command.make(
   'rollback',
   { version: Argument.String('version').pipe(Argument.optional), noColor },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const version = given(args.version)
-      await guarded('rollback', () => runners.rollback(version === undefined ? {} : { version }))
-    }),
+      yield* ranWith(runners.rollback(version === undefined ? {} : { version }))
+    }).pipe(orFailed('rollback', false)),
 ).pipe(Command.withDescription(definitionOf('rollback').task))
 
 const uninstallCommand = Command.make(
@@ -1033,10 +1011,10 @@ const uninstallCommand = Command.make(
     noColor,
   },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
-      await guarded('uninstall', () => runners.uninstall({ yes: args.yes, nothingConducts: args.nothingConducts }))
-    }),
+      yield* ranWith(runners.uninstall({ yes: args.yes, nothingConducts: args.nothingConducts }))
+    }).pipe(orFailed('uninstall', false)),
 ).pipe(Command.withDescription(definitionOf('uninstall').task))
 
 // ------------------------------------------------------- the daemon commands --
@@ -1046,19 +1024,22 @@ const uninstallCommand = Command.make(
 // is loaded, and the supervisor's plist still runs that file with `daemon`.
 
 /** Every handler here ends the same way: a thrown error is a sentence and exit 1. */
-function daemonHandler(args: { noColor: boolean }, run: () => Promise<number>, jsonCommand?: string) {
-  return Effect.promise(async () => {
+function daemonHandler(
+  args: { noColor: boolean },
+  run: () => Effect.Effect<number, unknown>,
+  jsonCommand?: string,
+): Effect.Effect<void, CommandExit> {
+  return Effect.gen(function* () {
     if (args.noColor) applyNoColor()
-    try {
-      handlerCode = await run()
-    } catch (err) {
-      // A script reading `--json` gets the error document on stdout, not an empty string.
-      handlerCode =
-        jsonCommand === undefined
-          ? wizardFailed(err)
-          : printJsonError(jsonCommand, 'failed', err instanceof Error ? err.message : String(err))
-    }
-  })
+    yield* Effect.flatMap(run(), exitWith)
+  }).pipe(
+    // A script reading `--json` gets the error document on stdout, not an empty string.
+    printedBy((err) =>
+      jsonCommand === undefined
+        ? wizardFailed(err)
+        : printJsonError(jsonCommand, 'failed', err instanceof Error ? err.message : String(err)),
+    ),
+  )
 }
 
 const startFlags = {
@@ -1072,7 +1053,9 @@ const startFlags = {
  * One snapshot writer for as long as the daemon runs (0124 §5), acquired in the CLI's own
  * Effect and closed when the command returns. The imports stay dynamic like every heavy one here.
  */
-function withDaemonWriter(run: (writer: Pick<SnapshotWriter, 'offer'>) => Effect.Effect<void>): Effect.Effect<void> {
+function withDaemonWriter(
+  run: (writer: Pick<SnapshotWriter, 'offer'>) => Effect.Effect<void, CommandExit>,
+): Effect.Effect<void, CommandExit> {
   return Effect.scoped(
     Effect.gen(function* () {
       const { log } = yield* Effect.promise(() => import('@lingtai/event-store'))
@@ -1086,22 +1069,26 @@ function withDaemonWriter(run: (writer: Pick<SnapshotWriter, 'offer'>) => Effect
 function startCommand(name: 'start' | 'daemon') {
   return Command.make(name, startFlags, (args) =>
     withDaemonWriter((writer) =>
-      daemonHandler(args, async () => {
-        const { daemonCommand } = await import('./daemon.ts')
-        const flags: Record<string, string> = {
-          ...(args.noConduct ? { 'no-conduct': '' } : {}),
-          ...(args.noMerge ? { 'no-merge': '' } : {}),
-        }
-        // Said when the lock is won; a daemon that did not start has said why, and says nothing more.
-        // `another daemon holds the lock — nothing to do` stays a quiet line, not a failure (0121 §1).
-        return daemonCommand(
-          flags,
-          null,
-          name === 'start' ? () => console.log(`${symbol.pass()} started`) : null,
-          startIsVerbose(name, args.verbose),
-          writer,
-        )
-      }),
+      daemonHandler(args, () =>
+        Effect.gen(function* () {
+          const { daemonCommand } = yield* lift(() => import('./daemon.ts'))
+          const flags: Record<string, string> = {
+            ...(args.noConduct ? { 'no-conduct': '' } : {}),
+            ...(args.noMerge ? { 'no-merge': '' } : {}),
+          }
+          // Said when the lock is won; a daemon that did not start has said why, and says nothing more.
+          // `another daemon holds the lock — nothing to do` stays a quiet line, not a failure (0121 §1).
+          return yield* lift(() =>
+            daemonCommand(
+              flags,
+              null,
+              name === 'start' ? () => console.log(`${symbol.pass()} started`) : null,
+              startIsVerbose(name, args.verbose),
+              writer,
+            ),
+          )
+        }),
+      ),
     ),
   ).pipe(Command.withDescription(definitionOf(name).task))
 }
@@ -1112,17 +1099,21 @@ const reasonOption = optionalText('reason')
 const optionalProject = Argument.String('project').pipe(Argument.optional)
 
 const pause = Command.make('pause', { project: optionalProject, noColor }, (args) =>
-  daemonHandler(args, async () => {
-    const { controlCommand } = await import('./daemon.ts')
-    return controlCommand('pause', { project: given(args.project) })
-  }),
+  daemonHandler(args, () =>
+    Effect.gen(function* () {
+      const { controlCommand } = yield* lift(() => import('./daemon.ts'))
+      return yield* controlCommand('pause', { project: given(args.project) })
+    }),
+  ),
 ).pipe(Command.withDescription(definitionOf('pause').task))
 
 const resume = Command.make('resume', { project: optionalProject, noColor }, (args) =>
-  daemonHandler(args, async () => {
-    const { controlCommand } = await import('./daemon.ts')
-    return controlCommand('resume', { project: given(args.project) })
-  }),
+  daemonHandler(args, () =>
+    Effect.gen(function* () {
+      const { controlCommand } = yield* lift(() => import('./daemon.ts'))
+      return yield* controlCommand('resume', { project: given(args.project) })
+    }),
+  ),
 ).pipe(Command.withDescription(definitionOf('resume').task))
 
 const ceilingRaiseCommand = Command.make(
@@ -1130,27 +1121,26 @@ const ceilingRaiseCommand = Command.make(
   { usd: Argument.String('usd').pipe(Argument.optional), noColor },
   (args) =>
     daemonHandler(args, () =>
-      Promise.all([import('./ceiling-raise.ts'), import('./project-pause.ts')]).then(([raise, pause]) => {
+      Effect.gen(function* () {
+        const raise = yield* lift(() => import('./ceiling-raise.ts'))
         const toUsd = raise.parseUsd(given(args.usd))
         if (toUsd === undefined) {
           console.error('lingtai ceiling raise <usd> — <usd> is a positive number of dollars')
           return 2
         }
-        return pause.runEffect(
-          raise.ceilingRaise({
-            toUsd,
-            by: `human:${process.env['USER'] ?? 'operator'}`,
-            log: (line) => console.log(line),
-          }),
-        )
+        return yield* raise.ceilingRaise({
+          toUsd,
+          by: `human:${process.env['USER'] ?? 'operator'}`,
+          log: (line) => console.log(line),
+        })
       }),
     ),
 )
 
 const ceilingCommand = Command.make('ceiling', {}, () =>
-  Effect.sync(() => {
+  Effect.suspend(() => {
     console.error(commandHelp('ceiling'))
-    handlerCode = 2
+    return exitWith(2)
   }),
 ).pipe(Command.withDescription(definitionOf('ceiling').task), Command.withSubcommands([ceilingRaiseCommand]))
 const accountLift = Command.make(
@@ -1158,21 +1148,23 @@ const accountLift = Command.make(
   { runtime: Argument.String('runtime').pipe(Argument.optional), noColor },
   (args) =>
     daemonHandler(args, () =>
-      import('./account-lift.ts')
-        .then(({ liftAccount, runLiftAccount }) =>
-          runLiftAccount(liftAccount(given(args.runtime), `human:${process.env['USER'] ?? 'operator'}`)),
-        )
-        .catch((err: unknown) => {
+      Effect.gen(function* () {
+        const { liftAccount } = yield* lift(() => import('./account-lift.ts'))
+        return yield* liftAccount(given(args.runtime), `human:${process.env['USER'] ?? 'operator'}`)
+      }).pipe(
+        // Its own sentence: the message alone, never `wizardFailed`'s stack under LINGTAI_DEBUG.
+        printedBy((err) => {
           console.error(err instanceof Error ? err.message : String(err))
           return 1
         }),
+      ),
     ),
 )
 
 const accountCommand = Command.make('account', {}, () =>
-  Effect.sync(() => {
+  Effect.suspend(() => {
     console.error(commandHelp('account'))
-    handlerCode = 2
+    return exitWith(2)
   }),
 ).pipe(Command.withDescription(definitionOf('account').task), Command.withSubcommands([accountLift]))
 
@@ -1186,14 +1178,16 @@ const shutdown = Command.make(
     noColor,
   },
   (args) =>
-    daemonHandler(args, async () => {
-      const { controlCommand } = await import('./daemon.ts')
-      return controlCommand('shutdown', {
-        reason: given(args.reason) ?? args.why.join(' '),
-        ...(args.timeout._tag === 'Some' ? { timeout: args.timeout.value } : {}),
-        force: args.force,
-      })
-    }),
+    daemonHandler(args, () =>
+      Effect.gen(function* () {
+        const { controlCommand } = yield* lift(() => import('./daemon.ts'))
+        return yield* controlCommand('shutdown', {
+          reason: given(args.reason) ?? args.why.join(' '),
+          ...(args.timeout._tag === 'Some' ? { timeout: args.timeout.value } : {}),
+          force: args.force,
+        })
+      }),
+    ),
 ).pipe(Command.withDescription(definitionOf('shutdown').task))
 
 /**
@@ -1219,10 +1213,12 @@ const restart = Command.make(
   },
   (args) =>
     withDaemonWriter((writer) =>
-      daemonHandler(args, async () => {
-        const { restartCommand } = await import('./daemon.ts')
-        return restartCommand(restartArgs!, createSteps(console.log), writer)
-      }),
+      daemonHandler(args, () =>
+        Effect.gen(function* () {
+          const { restartCommand } = yield* lift(() => import('./daemon.ts'))
+          return yield* restartCommand(restartArgs!, createSteps(console.log), writer)
+        }),
+      ),
     ),
 ).pipe(Command.withDescription(definitionOf('restart').task))
 
@@ -1239,59 +1235,59 @@ function serviceVerb(verb: keyof typeof SERVICE_DONE) {
   const withWhy = verb === 'shutdown' || verb === 'restart'
   return Command.make(verb, withWhy ? { why: whyArg, noColor } : { noColor }, (parsed) => {
     const args = parsed as { why?: readonly string[]; noColor: boolean }
-    return daemonHandler(args, async () => {
-      const { serviceOptions } = await import('./daemon.ts')
-      const { serviceCommand, SHUTDOWN_BOARD_ONLY, START_BOARD_ONLY } = await import('./service.ts')
-      const why = args.why ? [...args.why] : []
-      const steps = createSteps(console.log)
-      // `serviceCommand` begins the phases it has (draining, starting); these two have none of their own.
-      if (verb === 'install') steps.begin('writing')
-      if (verb === 'uninstall') steps.begin('removing')
-      let unconfirmed = false // the supervisor already had a conductor process
-      let boardHad = false // ...and a board process, or no board job or build, so the board's start was not made either
-      let code: number
-      try {
-        code = await serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
+    return daemonHandler(args, () =>
+      Effect.gen(function* () {
+        const { serviceOptions } = yield* lift(() => import('./daemon.ts'))
+        const { serviceCommand, SHUTDOWN_BOARD_ONLY, START_BOARD_ONLY } = yield* lift(() => import('./service.ts'))
+        const why = args.why ? [...args.why] : []
+        const steps = createSteps(console.log)
+        // `serviceCommand` begins the phases it has (draining, starting); these two have none of their own.
+        if (verb === 'install') steps.begin('writing')
+        if (verb === 'uninstall') steps.begin('removing')
+        let unconfirmed = false // the supervisor already had a conductor process
+        let boardHad = false // ...and a board process, or no board job or build, so the board's start was not made either
+        const code = yield* serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
           ...serviceOptions(),
           steps,
           unconfirmed: (job) => {
             if (job === 'conductor') unconfirmed = true
             else boardHad = true
           },
-        })
-      } finally {
-        // A throw (EACCES on the service file, say) must not leave the spinner animating.
-        steps.end()
-      }
-      if (unconfirmed && code === START_BOARD_ONLY)
-        console.log(
-          `${symbol.fail()} ${verb} — the supervisor already had a conductor process, so it was not confirmed, and the board did not start`,
+        }).pipe(
+          // A throw (EACCES on the service file, say) must not leave the spinner animating.
+          Effect.ensuring(Effect.sync(() => steps.end())),
         )
-      else if (code === 0 && unconfirmed && !boardHad)
-        console.log(
-          paint.muted(
-            `${verb}: the supervisor already had a conductor process, so it was not started or confirmed — the board was started`,
-          ),
-        )
-      else if (code === 0 && unconfirmed)
-        console.log(paint.muted(`${verb}: the supervisor already had a process, so nothing was started or confirmed`))
-      else if (code === 0) console.log(`${symbol.pass()} ${SERVICE_DONE[verb]}`)
-      else if (code === SHUTDOWN_BOARD_ONLY || code === START_BOARD_ONLY)
-        console.log(`${symbol.fail()} ${verb} — the conductor did, the board did not`)
-      else console.log(`${symbol.fail()} not ${verb === 'shutdown' ? 'shut down' : SERVICE_DONE[verb]}`)
-      return code
-    })
+        if (unconfirmed && code === START_BOARD_ONLY)
+          console.log(
+            `${symbol.fail()} ${verb} — the supervisor already had a conductor process, so it was not confirmed, and the board did not start`,
+          )
+        else if (code === 0 && unconfirmed && !boardHad)
+          console.log(
+            paint.muted(
+              `${verb}: the supervisor already had a conductor process, so it was not started or confirmed — the board was started`,
+            ),
+          )
+        else if (code === 0 && unconfirmed)
+          console.log(paint.muted(`${verb}: the supervisor already had a process, so nothing was started or confirmed`))
+        else if (code === 0) console.log(`${symbol.pass()} ${SERVICE_DONE[verb]}`)
+        else if (code === SHUTDOWN_BOARD_ONLY || code === START_BOARD_ONLY)
+          console.log(`${symbol.fail()} ${verb} — the conductor did, the board did not`)
+        else console.log(`${symbol.fail()} not ${verb === 'shutdown' ? 'shut down' : SERVICE_DONE[verb]}`)
+        return code
+      }),
+    )
   }).pipe(Command.withDescription(`${verb} the daemon and the board jobs`))
 }
 
 const serviceStatus = Command.make('status', { json, noColor }, (args) =>
   daemonHandler(
     args,
-    async () => {
-      const { serviceOptions } = await import('./daemon.ts')
-      const { serviceCommand } = await import('./service.ts')
-      return serviceCommand(['status'], { ...serviceOptions(), json: args.json })
-    },
+    () =>
+      Effect.gen(function* () {
+        const { serviceOptions } = yield* lift(() => import('./daemon.ts'))
+        const { serviceCommand } = yield* lift(() => import('./service.ts'))
+        return yield* serviceCommand(['status'], { ...serviceOptions(), json: args.json })
+      }),
     args.json ? 'service status' : undefined,
   ),
 ).pipe(Command.withDescription('each job on its own: the supervisor, and whether it answers'))
@@ -1547,14 +1543,13 @@ export async function runCli(
     }
   }
   const errors: string[] = []
-  handlerCode = 0
   let handlerExited = false
   const code = await Effect.runPromise(
     run(argv.slice(2)).pipe(
       Effect.provide(CliOutput.layerPresenter(USAGE_ERRORS_ONLY)),
       Effect.provideService(Console.Console, consoleFor(globalThis.console, json, errors)),
       Effect.provide(NodeServices.layer),
-      Effect.map(() => handlerCode),
+      Effect.as(0),
       Effect.catchTag('CommandExit', (e) => {
         handlerExited = true
         return Effect.succeed(e.code)
@@ -1563,7 +1558,7 @@ export async function runCli(
     ),
   )
   // A handler that failed on its own has already said so; `usage` is for what did not parse.
-  if (code !== 0 && json && handlerCode === 0 && !handlerExited) {
+  if (code !== 0 && json && !handlerExited) {
     const command = args.find((a) => !a.startsWith('-')) ?? 'lingtai'
     return printJsonError(command, 'usage', errors.join('\n') || 'invalid usage')
   }

@@ -1,4 +1,5 @@
 /** The daemon commands through `@effect/cli` (#622): what is refused before a handler runs, and what a verdict looks like. */
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runCli } from '../src/cli.ts'
@@ -12,14 +13,16 @@ const seen = vi.hoisted(() => ({
 }))
 
 vi.mock('../src/daemon.ts', () => ({
-  restartCommand: async (args: unknown) => {
-    seen.calls.push({ command: 'restart', options: args })
-    return 0
-  },
-  controlCommand: async (verb: string, input: unknown) => {
-    seen.calls.push({ command: verb, options: input })
-    return 0
-  },
+  restartCommand: (args: unknown) =>
+    Effect.sync(() => {
+      seen.calls.push({ command: 'restart', options: args })
+      return 0
+    }),
+  controlCommand: (verb: string, input: unknown) =>
+    Effect.sync(() => {
+      seen.calls.push({ command: verb, options: input })
+      return 0
+    }),
   daemonCommand: async (flags: unknown) => {
     seen.calls.push({ command: 'daemon', options: flags })
     return 0
@@ -29,12 +32,12 @@ vi.mock('../src/daemon.ts', () => ({
 vi.mock('../src/service.ts', () => ({
   SHUTDOWN_BOARD_ONLY: 3,
   START_BOARD_ONLY: 4,
-  serviceCommand: async (argv: string[], options: unknown) => {
+  serviceCommand: (argv: string[], options: unknown) => {
     seen.calls.push({ command: `service ${argv.join('|')}`, options })
     const note = (options as { unconfirmed: (job: string) => void }).unconfirmed
     if (argv[0] === 'start' && seen.unconfirmed) note('conductor')
     if (argv[0] === 'start' && seen.board) note('board')
-    return seen.code
+    return Effect.succeed(seen.code)
   },
 }))
 
@@ -208,7 +211,7 @@ describe('lingtai pause, shutdown, resume, start', () => {
 describe('service status --json when the handler throws', () => {
   it('prints the error document on stdout', async () => {
     const service = await import('../src/service.ts')
-    vi.spyOn(service, 'serviceCommand').mockRejectedValueOnce(new Error('no passwd entry'))
+    vi.spyOn(service, 'serviceCommand').mockReturnValueOnce(Effect.fail(new Error('no passwd entry')))
     const r = await capture(['service', 'status', '--json'])
     expect(r.code).toBe(1)
     expect(JSON.parse(r.out.trim())).toMatchObject({ command: 'service status', error: { message: 'no passwd entry' } })
@@ -221,7 +224,7 @@ describe('a thrown failure ends the steps', () => {
     const ended = vi.fn()
     const steps = await import('../src/steps.ts')
     vi.spyOn(steps, 'createSteps').mockReturnValue({ begin() {}, progress() {}, end: ended })
-    vi.spyOn(service, 'serviceCommand').mockRejectedValueOnce(new Error('EACCES'))
+    vi.spyOn(service, 'serviceCommand').mockReturnValueOnce(Effect.fail(new Error('EACCES')))
     const r = await capture(['service', 'install'])
     expect(r.code).toBe(1)
     expect(ended).toHaveBeenCalled()

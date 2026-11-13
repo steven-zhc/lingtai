@@ -1,4 +1,5 @@
 /** `run`, `attach`, `ticket`, `end` and `backlog` through `@effect/cli` (#624): what reaches each runner, and what a refusal says. */
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runCli, type Runners } from '../src/cli.ts'
@@ -28,9 +29,9 @@ afterEach(() => {
 })
 
 /** A runner that records what it was handed and exits 0. */
-function recording<T>(): { seen: T[]; run: (request: T) => Promise<number> } {
+function recording<T>(): { seen: T[]; run: (request: T) => Effect.Effect<number> } {
   const seen: T[] = []
-  return { seen, run: async (request) => (seen.push(request), 0) }
+  return { seen, run: (request) => (seen.push(request), Effect.succeed(0)) }
 }
 
 describe('lingtai run', () => {
@@ -62,7 +63,7 @@ describe('lingtai run', () => {
   })
 
   it('passes the runner’s exit code through', async () => {
-    expect((await capture(['run', 'p'], { run: async () => 1 })).code).toBe(1)
+    expect((await capture(['run', 'p'], { run: () => Effect.succeed(1) })).code).toBe(1)
   })
 })
 
@@ -111,9 +112,7 @@ describe('lingtai ticket', () => {
   })
 
   it('answers a runner that threw with the error document under --json, and prose otherwise', async () => {
-    const boom = async (): Promise<number> => {
-      throw new Error('database is down')
-    }
+    const boom = (): Effect.Effect<number, Error> => Effect.fail(new Error('database is down'))
     const json = await capture(['ticket', 'list', '--json'], { ticket: boom })
     expect(json.code).toBe(1)
     expect(JSON.parse(json.out)).toMatchObject({ command: 'ticket list', error: { message: 'database is down' } })

@@ -24,12 +24,13 @@ import {
   resolutionWords,
 } from '@lingtai/conductor/report'
 import {
-  projectionLag,
-  readSpend,
-  readTicketReport,
+  projectionLagEffect,
+  readSpendEffect,
+  readTicketReportEffect,
   type ProjectionLag,
   type TicketReportRow,
 } from '@lingtai/projector'
+import { Cause, Effect } from 'effect'
 
 import { jsonDocument, keyValues, section, table } from './output.ts'
 
@@ -46,9 +47,9 @@ export interface ReportOptions {
 }
 
 export interface ReportPorts {
-  tickets?: (query: { project?: string }) => Promise<readonly TicketReportRow[]>
-  spend?: (query: { since: Date }) => Promise<readonly ReportSpendRow[]>
-  lags?: () => Promise<readonly ProjectionLag[]>
+  tickets?: (query: { project?: string }) => Effect.Effect<readonly TicketReportRow[], unknown>
+  spend?: (query: { since: Date }) => Effect.Effect<readonly ReportSpendRow[], unknown>
+  lags?: () => Effect.Effect<readonly ProjectionLag[], unknown>
   now?: () => Date
 }
 
@@ -288,60 +289,65 @@ export function describeLags(lags: readonly ProjectionLag[]): {
 }
 
 /** Reads, computes and prints. Returns the exit code: 0, or 2 for a flag it refuses. A read that fails throws. */
-export async function runReport(
+export const runReport = (
   options: ReportOptions,
   ports: ReportPorts = {},
   io?: Partial<ReportIo>,
-): Promise<number> {
-  const out = io?.out ?? process.stdout
-  const err = io?.err ?? process.stderr
-  const columns = io && 'columns' in io ? io.columns : process.stdout.columns
-  const asJson = options.json === true
+): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const out = io?.out ?? process.stdout
+    const err = io?.err ?? process.stderr
+    const columns = io && 'columns' in io ? io.columns : process.stdout.columns
+    const asJson = options.json === true
 
-  const parsed = parseReport(options)
-  if (!parsed.ok) {
-    if (asJson) out.write(`${jsonDocument('report', { error: { code: 'usage', message: parsed.message } })}\n`)
-    else err.write(`${parsed.message}\n`)
-    return 2
-  }
-  const { query } = parsed
-
-  // Said, not repaired: this command appends nothing and reduces nothing.
-  let lag: ReturnType<typeof describeLags>
-  try {
-    lag = describeLags(await (ports.lags ?? (() => projectionLag()))())
-  } catch (e) {
-    lag = {
-      rows: [],
-      notes: [
-        `could not read how far the projections are behind: ${(e as Error).message} — figures may be older than the log`,
-      ],
+    const parsed = parseReport(options)
+    if (!parsed.ok) {
+      if (asJson) out.write(`${jsonDocument('report', { error: { code: 'usage', message: parsed.message } })}\n`)
+      else err.write(`${parsed.message}\n`)
+      return 2
     }
-  }
-  for (const note of lag.notes) err.write(`${note}\n`)
+    const { query } = parsed
 
-  const now = (ports.now ?? (() => new Date()))()
-  const window = resolveWindow(query.spec, now)
-  const tickets = await (ports.tickets ?? ((q) => readTicketReport(q)))(
-    query.project === null ? {} : { project: query.project },
-  )
-  // Not narrowed by project here: `report()` does it, and a run with no ticket belongs to no project.
-  const spend = await (ports.spend ?? ((q) => readSpend(q)))({ since: window.from })
+    // Said, not repaired: this command appends nothing and reduces nothing.
+    // A store failure is a defect (`projectionLagEffect` has no error channel), so the
+    // note is taken from the whole cause; an interruption still passes.
+    const lag = yield* (ports.lags ?? (() => projectionLagEffect()))().pipe(
+      Effect.map((lags) => describeLags(lags)),
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause)
+          : Effect.succeed<ReturnType<typeof describeLags>>({
+              rows: [],
+              notes: [
+                `could not read how far the projections are behind: ${(Cause.squash(cause) as Error).message} — figures may be older than the log`,
+              ],
+            }),
+      ),
+    )
+    for (const note of lag.notes) err.write(`${note}\n`)
 
-  const result = computeReport({
-    tickets,
-    spend,
-    window,
-    project: query.project,
-    kinds: query.kind === null ? null : [query.kind],
-    sortBy: 'rounds',
+    const now = (ports.now ?? (() => new Date()))()
+    const window = resolveWindow(query.spec, now)
+    const tickets = yield* (ports.tickets ?? ((q) => readTicketReportEffect(q)))(
+      query.project === null ? {} : { project: query.project },
+    )
+    // Not narrowed by project here: `report()` does it, and a run with no ticket belongs to no project.
+    const spend = yield* (ports.spend ?? ((q) => readSpendEffect(q)))({ since: window.from })
+
+    const result = computeReport({
+      tickets,
+      spend,
+      window,
+      project: query.project,
+      kinds: query.kind === null ? null : [query.kind],
+      sortBy: 'rounds',
+    })
+
+    if (asJson) {
+      const { spec: _spec, ...asked } = query
+      out.write(`${jsonDocument('report', { query: asked, lag: lag.rows, ...result })}\n`)
+    } else {
+      for (const line of renderReport(result, { columns })) out.write(`${line}\n`)
+    }
+    return 0
   })
-
-  if (asJson) {
-    const { spec: _spec, ...asked } = query
-    out.write(`${jsonDocument('report', { query: asked, lag: lag.rows, ...result })}\n`)
-  } else {
-    for (const line of renderReport(result, { columns })) out.write(`${line}\n`)
-  }
-  return 0
-}
