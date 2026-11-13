@@ -181,9 +181,27 @@
   },
   {
     "file": "packages/daemon/src/control.ts",
+    "fn": "beaconBeatFace",
+    "until": "#790",
+    "why": "apps/cli/src/daemon.ts's beacon and startup, and apps/cli/integration/doctor.test.ts, until the apps/cli row"
+  },
+  {
+    "file": "packages/daemon/src/control.ts",
+    "fn": "beat",
+    "until": "#790",
+    "why": "apps/cli/src/daemon.ts's beacon and startup, and apps/cli/integration/doctor.test.ts, until the apps/cli row"
+  },
+  {
+    "file": "packages/daemon/src/control.ts",
     "fn": "controlWatermark",
     "until": "#790",
     "why": "apps/cli (daemon, restart, status, doctor, run, conduct, world, project-pause, first-project, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7; packages/daemon (daemon.ts watermark default)"
+  },
+  {
+    "file": "packages/daemon/src/control.ts",
+    "fn": "createStatusTable",
+    "until": "#790",
+    "why": "apps/cli/src/daemon.ts's beacon and startup, and apps/cli/integration/doctor.test.ts, until the apps/cli row"
   },
   {
     "file": "packages/daemon/src/control.ts",
@@ -196,6 +214,12 @@
     "fn": "readControl",
     "until": "#790",
     "why": "apps/cli (daemon, restart, status, doctor, run, conduct, world, project-pause, first-project, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
+  },
+  {
+    "file": "packages/daemon/src/control.ts",
+    "fn": "readStatus",
+    "until": "#790",
+    "why": "apps/cli (daemon, status, doctor, cli, restart) and apps/board (draining, health, board, task); the board keeps a face by 0101 §7"
   },
   {
     "file": "packages/daemon/src/control.ts",
