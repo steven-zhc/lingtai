@@ -115,6 +115,16 @@ describe('answerOutstanding and locks', () => {
     expect(second.called).toEqual(['b:q1'])
   })
 
+  it('stops at a request whose answer did not advance the chat, rather than asking again', async () => {
+    const r = rig([ask('a', 'ticket-lingtai-1', 1)], () => Effect.succeed(null))
+    let calls = 0
+    r.ports.answer = () => Effect.sync(() => void calls++)
+    const out = await run(answerOutstandingQueued(r.ports))
+    expect(calls).toBe(1)
+    expect(out).toEqual({ answered: 0, heldBack: 0 })
+    expect(r.lines.filter((l) => l.includes('not answered — left outstanding'))).toHaveLength(1)
+  })
+
   it('releases the permit when the scan itself dies, and says so', async () => {
     const lines: string[] = []
     const broken = rig([], () => Effect.succeed(null))

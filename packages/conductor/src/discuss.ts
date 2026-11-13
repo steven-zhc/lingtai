@@ -670,12 +670,14 @@ export function holdDiscussionEffect(ports: DiscussionPorts, options: Discussion
     // Unreachable: the loop answers or fails on every path.
     return { costUsd: cost, answered: false, proposal: null }
   }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.sync((): HeldTurn => {
+    Effect.catchCause((cause): Effect.Effect<HeldTurn> => {
+      // An interruption is not a failed turn: it passes, so the enclosing scan stops too.
+      if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause as Cause.Cause<never>)
+      return Effect.sync((): HeldTurn => {
         log(`discussion ${options.chatId}: ${(Cause.squash(cause) as Error).message}`)
         return { costUsd: cost, answered: false, proposal: null }
-      }),
-    ),
+      })
+    }),
   )
 }
 

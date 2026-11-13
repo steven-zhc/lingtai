@@ -394,72 +394,81 @@ export const answerDiscussion = (
      */
     const path = runLogPath(stateDir(), project, request.chatId)
     yield* Effect.promise(() => rm(path, { force: true }).catch(() => {}))
-    const trace = yield* Effect.promise(() => openRunLog({ path }).catch(() => NO_RUN_LOG))
-    // Still here, said on the file itself whether or not there is a line to write:
-    // an agent thinking for a minute writes nothing, and neither does a daemon
-    // that was killed. The board tells the two apart by this (`RUN_LOG_BEAT_MS`).
-    const beat = setInterval(() => {
-      const at = new Date()
-      void utimes(path, at, at).catch(() => {})
-    }, RUN_LOG_BEAT_MS)
-    beat.unref?.()
+    // Acquired uninterruptibly and released on every exit, so an interruption while the log is
+    // opening cannot leave an open file the release never sees.
+    const acquire = Effect.promise(() =>
+      openRunLog({ path })
+        .catch(() => NO_RUN_LOG)
+        .then((trace) => {
+          // Still here, said on the file itself whether or not there is a line to write:
+          // an agent thinking for a minute writes nothing, and neither does a daemon
+          // that was killed. The board tells the two apart by this (`RUN_LOG_BEAT_MS`).
+          const beat = setInterval(() => {
+            const at = new Date()
+            void utimes(path, at, at).catch(() => {})
+          }, RUN_LOG_BEAT_MS)
+          beat.unref?.()
+          return { trace, beat }
+        }),
+    )
 
-    /** Both places: the daemon's own output, and the file the board follows. */
-    const say = (line: string) => {
-      log(line)
-      trace.note('chat', line)
-    }
+    yield* Effect.acquireUseRelease(
+      acquire,
+      ({ trace }) =>
+        Effect.gen(function* () {
+          /** Both places: the daemon's own output, and the file the board follows. */
+          const say = (line: string) => {
+            log(line)
+            trace.note('chat', line)
+          }
+          say(`discussion ${request.chatId} on ${request.ticketId}: ${evidence.reading.join(' · ')}`)
 
-    yield* Effect.gen(function* () {
-      say(`discussion ${request.chatId} on ${request.ticketId}: ${evidence.reading.join(' · ')}`)
+          const held = yield* holdDiscussionEffect(
+            {
+              store: eventStore,
+              log: say,
+              serve: (ref, path) => {
+                const sha = shas.get(ref)
+                if (sha === undefined) return Effect.succeed(null)
+                return readAtEffect({ project, ref: sha, path, limitBytes: FILE_BYTES })
+              },
+              ask: discussionAsk(() => createRuntime(discuss.agent, { tools: 'none' }), {
+                // Its own id per round, so nothing resumes a session. `sessionIdFor`
+                // is a function of the run id, and reusing one would make a second
+                // question a continuation of the first one's transcript rather than a
+                // fresh read of the brief this file just built.
+                runId: (round) =>
+                  lift(() => eventStore.read(chatStream(request.chatId))).pipe(
+                    Effect.map((events) => `${request.chatId}:${events.length}:${round}`),
+                  ),
+                cwd,
+                settingsPath,
+                log: trace,
+              }),
+              version: discussionVersion(() => createRuntime(discuss.agent, { tools: 'none' }), cwd),
+            },
+            {
+              chatId: request.chatId,
+              evidence,
+              question: request.question,
+              by: request.by,
+              call,
+              runtime: discuss.agent,
+              ...(discuss.prompt === undefined ? {} : { prompt: discuss.prompt }),
+            },
+          )
 
-      const held = yield* holdDiscussionEffect(
-        {
-          store: eventStore,
-          log: say,
-          serve: (ref, path) => {
-            const sha = shas.get(ref)
-            if (sha === undefined) return Effect.succeed(null)
-            return readAtEffect({ project, ref: sha, path, limitBytes: FILE_BYTES })
-          },
-          ask: discussionAsk(() => createRuntime(discuss.agent, { tools: 'none' }), {
-            // Its own id per round, so nothing resumes a session. `sessionIdFor`
-            // is a function of the run id, and reusing one would make a second
-            // question a continuation of the first one's transcript rather than a
-            // fresh read of the brief this file just built.
-            runId: (round) =>
-              lift(() => eventStore.read(chatStream(request.chatId))).pipe(
-                Effect.map((events) => `${request.chatId}:${events.length}:${round}`),
-              ),
-            cwd,
-            settingsPath,
-            log: trace,
-          }),
-          version: discussionVersion(() => createRuntime(discuss.agent, { tools: 'none' }), cwd),
-        },
-        {
-          chatId: request.chatId,
-          evidence,
-          question: request.question,
-          by: request.by,
-          call,
-          runtime: discuss.agent,
-          ...(discuss.prompt === undefined ? {} : { prompt: discuss.prompt }),
-        },
-      )
-
-      say(
-        `discussion ${request.chatId}: ${held.answered ? 'answered' : 'did not answer'}` +
-          (held.costUsd === null ? '' : ` · $${held.costUsd.toFixed(2)}`),
-      )
-    }).pipe(
+          say(
+            `discussion ${request.chatId}: ${held.answered ? 'answered' : 'did not answer'}` +
+              (held.costUsd === null ? '' : ` · $${held.costUsd.toFixed(2)}`),
+          )
+        }),
       // The turn is over, so the file is: see `trace` above. Its record is on the
       // chat's stream and this was only ever the trace beside it (0034 §8), and
       // leaving it would hand the *next* question this one's output as the answer
       // being written for it. On every exit, an interruption included.
-      Effect.ensuring(
+      ({ trace, beat }) =>
         Effect.sync(() => clearInterval(beat)).pipe(Effect.andThen(Effect.promise(() => trace.close('delete')))),
-      ),
     )
   }).pipe(
     // Said and never fatal; an interruption passes. The loop keeps going over a question somebody typed.
@@ -547,6 +556,14 @@ export const answerOutstanding = (ports: AnswerPorts = {}): Effect.Effect<Outsta
         yield* answer(next, log).pipe(
           recovering((err) => Effect.sync(() => log(`discussion ${chatId} failed: ${err.message}`))),
         )
+        // Progress is the chat's own count, not the answer returning: an answer that never
+        // appended `DiscussionAnswered` leaves the same request next, and going round again
+        // would buy the same agent again for ever. `break`, as a held-back turn does.
+        const after = reduceChat(yield* read(chatId)).answered
+        if (after <= reduceChat(events).answered) {
+          log(`discussion ${chatId} on ${next.ticketId}: not answered — left outstanding`)
+          break
+        }
         answered += 1
       }
     }
