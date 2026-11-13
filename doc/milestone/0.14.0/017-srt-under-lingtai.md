@@ -369,6 +369,70 @@ with D's policy.
   had a dead refresh token, and `auth status` neither refreshed it nor said
   so.
 
+## One srt per process: can a run read another run's network id?
+
+Measured 2026-11-13 through the library, on both machines, srt 0.0.82. One
+`SandboxManager` is initialised with no allowed domain. Two ids of 16 random
+bytes are registered with `registerCommandNetworkLists`: A may reach
+`example.com`, B may reach nothing. A is wrapped and started (`curl
+example.com; sleep 20`), and four seconds later B is wrapped and run in the same
+worktree. B dumps every process it can see into a file, and the probe outside
+looks for A's id in it, in four encodings. As a control, the same search for
+B's own id must find it.
+
+| | harbor (Linux) | foundry (macOS) |
+|---|---|---|
+| A reaches `example.com` under its own id | 200 | 200 |
+| B reaches it under its own id | refused (`000`) | refused (`000`) |
+| processes B can see | 5 (its own; bwrap gives it a PID namespace) | 683 by `proc_listallpids`; `ps` is refused (`/bin/ps: Operation not permitted`) |
+| other processes' command lines | none visible | **399 readable** through `sysctl(KERN_PROCARGS2)` from Python, A's `bash -c 'curl …; sleep 20'` included; 284 refused with `EINVAL` |
+| other processes' environment | none visible | **empty**: A's block has its argv and no environment |
+| B finds its own id (control) | yes | yes |
+| B finds A's id | **no** | **no** |
+
+So a run did not learn another run's id on either platform. **That is not
+because the id stays out of command lines; it does not.** `wrapWithSandbox`
+returns one shell string that sets the proxy variables inline, id and proxy
+token included (`env HTTP_PROXY=http://srt.<id>…:<token>@localhost:<port> …`
+on macOS, `bwrap … --setenv HTTP_PROXY …` on Linux), and
+`wrapWithSandboxArgv` is only that string behind `<shell> -c`, returned with
+the calling process's whole environment
+(`dist/sandbox/sandbox-manager.js:2448-2450`). The id is in the command line
+of the `bash -c` and of `env` or `bwrap` for the moment before each execs the
+next. On Linux no run sees another's processes at all (PID namespace). On macOS
+a run reads command lines, so a run that polls the process table could catch
+another run's id in that moment. The probe above did not, and what the id
+would give is the other project's allowlist, not a way past the sandbox. That
+residual is accepted and said in the manual.
+
+Two rules follow for Lingtai. **The `env` that `wrapWithSandboxArgv` returns is
+never passed to `spawn`**: it is the daemon's own environment, Lingtai's
+database URL included. The child gets Lingtai's filtered environment and srt's
+proxy variables, nothing else. And the argv is spawned with `shell: false`.
+
+The same row says something wider: **on macOS, a sandboxed run can read the
+command line of the operator's other processes.** A secret passed as an
+argument to any process the operator runs is readable from inside srt. The
+environment is not. The safety manual says so (S12).
+
+## srt 0.0.83
+
+Re-run 2026-11-13 on both machines, because 0.14 pins 0.0.83 rather than the
+0.0.82 measured above. The same library probes, the same configuration, 0.0.83
+installed beside 0.0.82 under `~/srt-probe-83`:
+
+| | harbor | foundry |
+|---|---|---|
+| `~/.ssh` (6 entries outside) | empty inside (Linux mounts an empty directory over a denied one, so `ls` exits 0 and lists nothing) | empty inside; `cat` refused |
+| the `config.yml` canary | refused | refused |
+| a write outside the writable roots | refused | refused |
+| `example.com`, off the allowlist | refused, 1 violation reported | refused, 1 violation reported |
+| per-run lists: A allowed, B not | A 200, B refused | A 200, B refused |
+| B finds A's id | no | no |
+
+Every row matches 0.0.82. `registerCommandNetworkLists` and
+`wrapWithSandboxArgv` are in 0.0.83's API unchanged.
+
 ## What this changes in 0.14.md
 
 1. **The hook socket on Linux needs `allowAllUnixSockets`.** seccomp cannot
@@ -401,6 +465,11 @@ with D's policy.
 9. **Bundling is feasible**, with `apply-seccomp` extracted at start.
 10. **On macOS the deny list includes `~/Library/Keychains`**, or a run can
     read the operator's Claude Code login through `security`.
+11. **A project's allowlist is registered per run.** One srt per process;
+    each wrap registers its project's list under a random id. The id is
+    briefly in a command line (srt puts it there); on macOS a run reads other
+    processes' command lines, so another project's allowlist is the residual,
+    accepted. The `env` srt returns is never the child's environment (above).
 
 ## Not measured
 
