@@ -23,11 +23,19 @@
  */
 import { parsePayload, ticketReducer, waitsFromState, type WaitId, ticketStream } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
-import { ConcurrencyError, type EventStore, eventStore, log, type SnapshotReadOptions } from '@lingtai/event-store'
+import {
+  ConcurrencyError,
+  type EventStore,
+  eventStore,
+  log,
+  readThroughSnapshot,
+  type SnapshotReadOptions,
+} from '@lingtai/event-store'
+import { Effect } from 'effect'
 
-import { deciding } from './approve.ts'
-import { resolveWaitHolding } from './resolve-wait.ts'
-import { readState } from './snapshot-state.ts'
+import { decidingEffect } from './deciding.ts'
+import { asFailure } from './port-face.ts'
+import { resolveWaitHoldingEffect } from './resolve-wait.ts'
 
 export interface AskOutcome {
   ok: boolean
@@ -45,56 +53,73 @@ export interface AskOutcome {
  * blocked item is already asking something; a second question would replace
  * the first unanswered, and the union has room for one.
  */
-export async function ask(
-  options: {
-    project: string
-    issue: number
-    question: string
-    by: string
-    store?: EventStore
-  } & SnapshotReadOptions,
-): Promise<AskOutcome> {
-  const store = options.store ?? eventStore
-  const snapshots = options.snapshots ?? (options.store === undefined ? log.snapshots : undefined)
-  const ticketId = ticketStream(options.project, options.issue)
+export function ask(options: AskOptions): Promise<AskOutcome> {
+  return Effect.runPromise(askEffect(options))
+}
 
-  if (!options.question.trim()) {
-    return { ok: false, ticketId, reason: 'blank', detail: 'a question needs a question' }
-  }
+type AskOptions = {
+  project: string
+  issue: number
+  question: string
+  by: string
+  store?: EventStore
+} & SnapshotReadOptions
 
-  const item = await readState(store, ticketReducer, ticketId, 'all', { snapshots, writer: options.writer })
-  if (item.lifecycle.status !== 'backlog') {
-    // The state it is in, for the reason `requeue` names it: "cannot ask" sends
-    // nobody anywhere, and "it is already running" answers why.
-    return {
-      ok: false,
-      ticketId,
-      reason: 'not-backlog',
-      detail: `${ticketId} is ${item.lifecycle.status} — a question before a run can only be asked of an item nothing holds`,
+export function askEffect(options: AskOptions): Effect.Effect<AskOutcome, unknown> {
+  return Effect.gen(function* () {
+    const store = options.store ?? eventStore
+    const snapshots = options.snapshots ?? (options.store === undefined ? log.snapshots : undefined)
+    const ticketId = ticketStream(options.project, options.issue)
+
+    if (!options.question.trim()) {
+      return { ok: false, ticketId, reason: 'blank', detail: 'a question needs a question' }
     }
-  }
 
-  try {
-    await store.append(ticketId, item.version, [
-      {
-        type: 'WaitStarted',
-        actor: options.by,
-        data: parsePayload('WaitStarted', {
-          waitId: crypto.randomUUID(),
-          reason: { _tag: 'OwnQuestion', question: options.question, by: options.by },
-        }),
-      },
-    ])
-  } catch (err) {
-    // A conductor claimed it between the read and the append. The claim won,
-    // which is the right outcome: say so rather than retrying onto a run.
-    if (err instanceof ConcurrencyError) {
+    const item = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', {
+      snapshots,
+      writer: options.writer,
+    })
+    if (item.lifecycle.status !== 'backlog') {
+      // The state it is in, for the reason `requeue` names it: "cannot ask" sends
+      // nobody anywhere, and "it is already running" answers why.
+      return {
+        ok: false,
+        ticketId,
+        reason: 'not-backlog',
+        detail: `${ticketId} is ${item.lifecycle.status} — a question before a run can only be asked of an item nothing holds`,
+      }
+    }
+
+    // A conductor claimed it between the read and the append: the claim won,
+    // which is the right outcome — say so rather than retrying onto a run. Any
+    // other failure is the append's own and rejects the face.
+    const lost = yield* Effect.tryPromise({
+      try: () =>
+        store.append(ticketId, item.version, [
+          {
+            type: 'WaitStarted',
+            actor: options.by,
+            data: parsePayload('WaitStarted', {
+              waitId: crypto.randomUUID(),
+              reason: { _tag: 'OwnQuestion', question: options.question, by: options.by },
+            }),
+          },
+        ]),
+      catch: asFailure,
+    }).pipe(
+      Effect.uninterruptible,
+      Effect.as(false),
+      Effect.catchIf(
+        (err) => err instanceof ConcurrencyError,
+        () => Effect.succeed(true),
+      ),
+    )
+    if (lost) {
       return { ok: false, ticketId, reason: 'changed', detail: `${ticketId} changed while asking — read it again` }
     }
-    throw err
-  }
 
-  return { ok: true, ticketId, detail: `asked, by ${options.by} — the queue passes over it until it is answered` }
+    return { ok: true, ticketId, detail: `asked, by ${options.by} — the queue passes over it until it is answered` }
+  })
 }
 
 export interface AnswerOptions extends SnapshotReadOptions {
@@ -136,14 +161,18 @@ export interface AnswerOptions extends SnapshotReadOptions {
  * it were a question about the ticket would throw the diff away and put a
  * sentence about one attempt into every attempt after it.
  */
-export async function answer(options: AnswerOptions): Promise<AskOutcome> {
+export function answer(options: AnswerOptions): Promise<AskOutcome> {
+  return Effect.runPromise(answerEffect(options))
+}
+
+export function answerEffect(options: AnswerOptions): Effect.Effect<AskOutcome, unknown> {
   const store = options.store ?? eventStore
   const snapshots = options.snapshots ?? (options.store === undefined ? log.snapshots : undefined)
   const ticketId = ticketStream(options.project, options.issue)
   if (!options.answer.trim()) {
-    return { ok: false, ticketId, reason: 'blank', detail: 'an answer needs an answer' }
+    return Effect.succeed({ ok: false, ticketId, reason: 'blank', detail: 'an answer needs an answer' })
   }
-  return deciding(
+  return decidingEffect<AskOutcome, unknown, never>(
     ticketId,
     () => ({
       ok: false,
@@ -151,80 +180,91 @@ export async function answer(options: AnswerOptions): Promise<AskOutcome> {
       reason: 'busy',
       detail: `${ticketId} is being decided by someone else right now. Nothing was resolved — reload and read it again.`,
     }),
-    () => answerHolding(options, store, ticketId, { snapshots, writer: options.writer }),
+    answerHoldingEffect(options, store, ticketId, { snapshots, writer: options.writer }),
   )
 }
 
 /**
  * **Exported for the unit half alone**, like `approveHolding`: `answer()` takes
- * `createFileLocker()` (`deciding`), which is the filesystem, so by 0060 §1 it
+ * `createFileLocker()` (`decidingEffect`), which is the filesystem, so by 0060 §1 it
  * cannot be unit-tested — this function underneath it can. `index.ts` does not
  * re-export it.
  */
-export async function answerHolding(
+export function answerHolding(
   options: AnswerOptions,
   store: EventStore,
   ticketId: string,
   read: SnapshotReadOptions = {},
 ): Promise<AskOutcome> {
-  const item = await readState(store, ticketReducer, ticketId, 'all', read)
-  if (item.lifecycle.status !== 'blocked') {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'not-blocked',
-      detail: `${ticketId} is ${item.lifecycle.status}, not asking anything`,
-    }
-  }
+  return Effect.runPromise(answerHoldingEffect(options, store, ticketId, read))
+}
 
-  // **Only an `OwnQuestion` offers `AnswerQuestion`** (`wait.ts`'s own table)
-  // — every other wait carries a run, which is exactly `life.runId !== null`
-  // today: a hold with no `run` field is `Question`'s alone.
-  const wait = waitsFromState(item).at(-1)
-  if (wait === undefined) {
-    return { ok: false, ticketId, reason: 'not-asking', detail: `${ticketId} is not asking anything` }
-  }
-  const reason = wait.reason
-  if (!allowedResolutions(reason).includes('AnswerQuestion')) {
-    const runId = 'run' in reason ? reason.run.runId : null
-    return {
-      ok: false,
-      ticketId,
-      reason: 'not-a-question',
-      detail: `${ticketId} is held by ${runId}, not asking before a run — use lingtai requeue <project> --issue <n> --into-body <text> to answer its question`,
+export function answerHoldingEffect(
+  options: AnswerOptions,
+  store: EventStore,
+  ticketId: string,
+  read: SnapshotReadOptions = {},
+): Effect.Effect<AskOutcome, unknown> {
+  return Effect.gen(function* () {
+    const item = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', read)
+    if (item.lifecycle.status !== 'blocked') {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'not-blocked',
+        detail: `${ticketId} is ${item.lifecycle.status}, not asking anything`,
+      }
     }
-  }
-  if (reason._tag === 'OwnQuestion' && options.question !== undefined && options.question !== reason.question) {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'question-changed',
-      detail: `${ticketId} is asking a different question now — "${reason.question}" — read it again`,
+
+    // **Only an `OwnQuestion` offers `AnswerQuestion`** (`wait.ts`'s own table)
+    // — every other wait carries a run, which is exactly `life.runId !== null`
+    // today: a hold with no `run` field is `Question`'s alone.
+    const wait = waitsFromState(item).at(-1)
+    if (wait === undefined) {
+      return { ok: false, ticketId, reason: 'not-asking', detail: `${ticketId} is not asking anything` }
     }
-  }
+    const reason = wait.reason
+    if (!allowedResolutions(reason).includes('AnswerQuestion')) {
+      const runId = 'run' in reason ? reason.run.runId : null
+      return {
+        ok: false,
+        ticketId,
+        reason: 'not-a-question',
+        detail: `${ticketId} is held by ${runId}, not asking before a run — use lingtai requeue <project> --issue <n> --into-body <text> to answer its question`,
+      }
+    }
+    if (reason._tag === 'OwnQuestion' && options.question !== undefined && options.question !== reason.question) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'question-changed',
+        detail: `${ticketId} is asking a different question now — "${reason.question}" — read it again`,
+      }
+    }
 
-  // The append itself, and the version check that guards it, are
-  // `resolveWait`'s now (#465) — every check above this line is `answer`'s
-  // own reading of what a question may be answered at all, which
-  // `resolveWaitHolding`'s generic `allowedResolutions` check re-asks and
-  // agrees with by construction. `answer()` holds the decide-lock around all
-  // of it, as every other resolution does.
-  const resolved = await resolveWaitHolding(
-    {
+    // The append itself, and the version check that guards it, are
+    // `resolveWait`'s now (#465) — every check above this line is `answer`'s
+    // own reading of what a question may be answered at all, which
+    // `resolveWaitHolding`'s generic `allowedResolutions` check re-asks and
+    // agrees with by construction. `answer()` holds the decide-lock around all
+    // of it, as every other resolution does.
+    const resolved = yield* resolveWaitHoldingEffect(
+      {
+        ticketId,
+        issue: options.issue,
+        waitId: options.waitId ?? wait.waitId,
+        resolution: { _tag: 'AnswerQuestion', choice: options.answer },
+        by: options.by,
+        note: options.answer,
+        store,
+        ...read,
+      },
       ticketId,
-      issue: options.issue,
-      waitId: options.waitId ?? wait.waitId,
-      resolution: { _tag: 'AnswerQuestion', choice: options.answer },
-      by: options.by,
-      note: options.answer,
-      store,
-      ...read,
-    },
-    ticketId,
-  )
-  if (!resolved.ok) {
-    return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
-  }
+    )
+    if (!resolved.ok) {
+      return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
+    }
 
-  return { ok: true, ticketId, detail: `answered, by ${options.by} — back in the queue, and every attempt is told` }
+    return { ok: true, ticketId, detail: `answered, by ${options.by} — back in the queue, and every attempt is told` }
+  })
 }

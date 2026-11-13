@@ -8,11 +8,17 @@ import {
   ticketStream,
 } from '@lingtai/domain'
 import { continuationOf } from '@lingtai/domain/wait'
-import { createFileLocker } from '@lingtai/env/lock'
-import { type EventStore, eventStore, log as processLog, type SnapshotReadOptions } from '@lingtai/event-store'
+import {
+  type EventStore,
+  eventStore,
+  log as processLog,
+  readThroughSnapshot,
+  type SnapshotReadOptions,
+} from '@lingtai/event-store'
+import { Effect } from 'effect'
 
-import { describeReason, resolveWaitHolding } from './resolve-wait.ts'
-import { readState } from './snapshot-state.ts'
+import { decidingEffect } from './deciding.ts'
+import { describeReason, resolveWaitHoldingEffect } from './resolve-wait.ts'
 import type { IssueChannel } from './tell.ts'
 
 /**
@@ -34,15 +40,6 @@ import type { IssueChannel } from './tell.ts'
  * about whether the sha is stale or a refusal needs a reason moved there with
  * the append (#150, #92).
  */
-export async function deciding<T>(ticketId: string, busy: () => T, act: () => Promise<T>): Promise<T> {
-  const got = await createFileLocker().tryLock(`decide:${ticketId}`, 'lingtai-decide')
-  if (!got.ok) return busy()
-  try {
-    return await act()
-  } finally {
-    await got.lock.release()
-  }
-}
 
 export interface ApproveOptions extends SnapshotReadOptions {
   project: string
@@ -100,11 +97,15 @@ export type ApproveResult =
     }
   | { ok: false; ticketId: string; reason: string; detail: string }
 
-export async function approve(options: ApproveOptions): Promise<ApproveResult> {
+export function approve(options: ApproveOptions): Promise<ApproveResult> {
+  return Effect.runPromise(approveEffect(options))
+}
+
+export function approveEffect(options: ApproveOptions): Effect.Effect<ApproveResult, unknown> {
   const ticketId = ticketStream(options.project, options.issue)
   // Held through the append that grants it, so a requeue cannot put the item
-  // back in the queue while this is deciding it. See `deciding`.
-  return deciding<ApproveResult>(
+  // back in the queue while this is deciding it. See `decidingEffect`.
+  return decidingEffect<ApproveResult, unknown, never>(
     ticketId,
     () => ({
       ok: false,
@@ -112,71 +113,174 @@ export async function approve(options: ApproveOptions): Promise<ApproveResult> {
       reason: 'busy',
       detail: `${ticketId} is being decided by someone else right now. Nothing was resolved — reload and read it again.`,
     }),
-    () =>
-      approveHolding(
-        {
-          ...options,
-          snapshots: options.snapshots ?? (options.store === undefined ? processLog.snapshots : undefined),
-        },
-        ticketId,
-      ),
+    approveHoldingEffect(
+      {
+        ...options,
+        snapshots: options.snapshots ?? (options.store === undefined ? processLog.snapshots : undefined),
+      },
+      ticketId,
+    ),
   )
 }
 
 /**
  * **Exported for the unit half alone** (`#487`). `approve()` above takes
- * `createFileLocker()` (`deciding`), which is the filesystem, so by 0060 §1
+ * `createFileLocker()` (`decidingEffect`), which is the filesystem, so by 0060 §1
  * the whole of `approve()` cannot be unit-tested — this function underneath
  * it can, and `index.ts` does not re-export it, so nothing outside this
  * module or a test gains a second way to grant an approval unlocked.
  */
-export async function approveHolding(options: ApproveOptions, ticketId: string): Promise<ApproveResult> {
-  const store = options.store ?? eventStore
-  const log = options.log ?? (() => {})
+export function approveHolding(options: ApproveOptions, ticketId: string): Promise<ApproveResult> {
+  return Effect.runPromise(approveHoldingEffect(options, ticketId))
+}
 
-  const read: SnapshotReadOptions = { snapshots: options.snapshots, writer: options.writer }
-  const item = await readState(store, ticketReducer, ticketId, 'all', read)
+export function approveHoldingEffect(options: ApproveOptions, ticketId: string): Effect.Effect<ApproveResult, unknown> {
+  return Effect.gen(function* () {
+    const store = options.store ?? eventStore
+    const log = options.log ?? (() => {})
 
-  // **The way out of a continuation `resolveWaitHolding` could not schedule**
-  // (#465). `WaitResolved{Approve}` already committed — the lifecycle is
-  // `approved` — but the retried `ContinueRequested` append inside it may
-  // still have exhausted its retries and left no row for a conductor to act
-  // on. A second `Approve` of the same wait and sha asks only for that row:
-  // `resolveWaitHolding` matches this exact state before its `not-blocked`
-  // refusal and appends `ContinueRequested` alone, writing no second
-  // `WaitResolved` — `resolveWait` stays the only writer of that event.
-  if (item.lifecycle.status === 'approved') {
-    // **The wait check, before the sha check** (#508). Naming the wait first
-    // means a click from a stale `approved` card is refused by the wait it
-    // named rather than by whatever sha happens to differ — the sentence a
-    // person reading the refusal needs is "that is not the question you were
-    // shown", not an sha mismatch that reads like a branch race.
-    if (options.waitId !== 'open' && options.waitId !== item.lifecycle.waitId) {
+    const read: SnapshotReadOptions = { snapshots: options.snapshots, writer: options.writer }
+    const item = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', read)
+
+    // **The way out of a continuation `resolveWaitHolding` could not schedule**
+    // (#465). `WaitResolved{Approve}` already committed — the lifecycle is
+    // `approved` — but the retried `ContinueRequested` append inside it may
+    // still have exhausted its retries and left no row for a conductor to act
+    // on. A second `Approve` of the same wait and sha asks only for that row:
+    // `resolveWaitHolding` matches this exact state before its `not-blocked`
+    // refusal and appends `ContinueRequested` alone, writing no second
+    // `WaitResolved` — `resolveWait` stays the only writer of that event.
+    if (item.lifecycle.status === 'approved') {
+      // **The wait check, before the sha check** (#508). Naming the wait first
+      // means a click from a stale `approved` card is refused by the wait it
+      // named rather than by whatever sha happens to differ — the sentence a
+      // person reading the refusal needs is "that is not the question you were
+      // shown", not an sha mismatch that reads like a branch race.
+      if (options.waitId !== 'open' && options.waitId !== item.lifecycle.waitId) {
+        return {
+          ok: false,
+          ticketId,
+          reason: 'stale',
+          detail:
+            `the card showed wait ${options.waitId} and ${ticketId} is now approved at wait ` +
+            `${item.lifecycle.waitId} — nothing was resolved. Reload and read it again.`,
+        }
+      }
+      if (options.onSha && options.onSha !== item.lifecycle.onSha) {
+        return {
+          ok: false,
+          ticketId,
+          reason: 'stale',
+          detail:
+            `the card showed ${options.onSha.slice(0, 7)} and the approval on record is for ` +
+            `${item.lifecycle.onSha.slice(0, 7)}. Nothing was resolved — reload and read it again.`,
+        }
+      }
+      const resolved = yield* resolveWaitHoldingEffect(
+        {
+          ticketId,
+          issue: options.issue,
+          waitId: options.waitId === 'open' ? item.lifecycle.waitId : options.waitId,
+          resolution: { _tag: 'Approve', onSha: item.lifecycle.onSha },
+          by: options.by,
+          note: options.note,
+          client: options.client,
+          store,
+          ...read,
+        },
+        ticketId,
+      )
+      if (!resolved.ok) {
+        return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
+      }
+      const { runId, waitId, onSha } = item.lifecycle
+      const runEvents = yield* Effect.promise(() => store.read(runId))
+      // The `WaitStarted` this approval already answered is still on the
+      // stream — `waitsOf` matches it by `waitId`, never by position — so the
+      // continuation is read the same way the first approval read it.
+      const reduce = waitsFromState(item).find((w) => w.waitId === waitId)!
+      const continuation = continuationOf(reduce.reason, stepOutcomesOf(runEvents))!
+      log(`approved ${onSha.slice(0, 7)} by ${options.by} — rescheduled to continue at ${continuation.step}`)
+      return { ok: true, ticketId, runId, continuesAt: continuation.step, unscheduled: resolved.unscheduled }
+    }
+
+    if (item.lifecycle.status !== 'blocked') {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'not-blocked',
+        detail: `${ticketId} is ${item.lifecycle.status}, not blocked — nothing was resolved`,
+      }
+    }
+    const block = item.lifecycle
+    // **The wait check, before the sha check — same reason as the `approved`
+    // branch above** (#508). A continuation that stops at a *new* wait moves
+    // the lifecycle straight back to `blocked` (`WaitStarted`'s own reduce), so a
+    // stale `approved` card's click lands here, not in the branch above — this
+    // is the check the finding is actually about.
+    if (options.waitId !== 'open' && options.waitId !== block.waitId) {
       return {
         ok: false,
         ticketId,
         reason: 'stale',
         detail:
-          `the card showed wait ${options.waitId} and ${ticketId} is now approved at wait ` +
-          `${item.lifecycle.waitId} — nothing was resolved. Reload and read it again.`,
+          `the card showed wait ${options.waitId} and ${ticketId} is now waiting on wait ` +
+          `${block.waitId} — nothing was resolved. Reload and read it again.`,
       }
     }
-    if (options.onSha && options.onSha !== item.lifecycle.onSha) {
+    const runId = block.runId
+    if (runId === null) {
+      // `allowedResolutions` never offers `Approve` for an `OwnQuestion`, the
+      // one `WaitReason` with no run — so a block offering `Approve` always
+      // names one, and this is a defensive refusal rather than a reachable row.
+      return { ok: false, ticketId, reason: 'no-run', detail: `${ticketId} has no run to approve` }
+    }
+
+    const runEvents = yield* Effect.promise(() => store.read(runId))
+    const run = reduceAttempt(runEvents)
+
+    // The sha an approval is about: see `approvalSha` in @lingtai/domain.
+    const onSha: string | null = approvalSha(run)
+    if (onSha === null) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'not-awaiting-approval',
+        detail: `${runId} is ${run.lifecycle.status}, not waiting for approval`,
+      }
+    }
+
+    if (options.onSha && options.onSha !== onSha) {
       return {
         ok: false,
         ticketId,
         reason: 'stale',
         detail:
-          `the card showed ${options.onSha.slice(0, 7)} and the approval on record is for ` +
-          `${item.lifecycle.onSha.slice(0, 7)}. Nothing was resolved — reload and read it again.`,
+          `the card showed ${options.onSha.slice(0, 7)} and the run is now asking about ` +
+          `${onSha.slice(0, 7)}. Nothing was resolved — reload and read it again.`,
       }
     }
-    const resolved = await resolveWaitHolding(
+
+    // Where this continues, and what it waives there — read here only to say
+    // so on success (and to refuse by name before the append, rather than
+    // after it, when it is not offered at all). `resolveWaitHolding` reads
+    // `allowedResolutions` independently and agrees with this by construction.
+    const continuation = continuationOf(block.reason, stepOutcomesOf(runEvents))
+    if (continuation === null) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'not-offered',
+        detail: `Approve is not offered for ${describeReason(block.reason)} — nothing was resolved.`,
+      }
+    }
+
+    const resolved = yield* resolveWaitHoldingEffect(
       {
         ticketId,
         issue: options.issue,
-        waitId: options.waitId === 'open' ? item.lifecycle.waitId : options.waitId,
-        resolution: { _tag: 'Approve', onSha: item.lifecycle.onSha },
+        waitId: options.waitId === 'open' ? block.waitId : options.waitId,
+        resolution: { _tag: 'Approve', onSha },
         by: options.by,
         note: options.note,
         client: options.client,
@@ -188,108 +292,10 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
     if (!resolved.ok) {
       return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
     }
-    const { runId, waitId, onSha } = item.lifecycle
-    const runEvents = await store.read(runId)
-    // The `WaitStarted` this approval already answered is still on the
-    // stream — `waitsOf` matches it by `waitId`, never by position — so the
-    // continuation is read the same way the first approval read it.
-    const reduce = waitsFromState(item).find((w) => w.waitId === waitId)!
-    const continuation = continuationOf(reduce.reason, stepOutcomesOf(runEvents))!
-    log(`approved ${onSha.slice(0, 7)} by ${options.by} — rescheduled to continue at ${continuation.step}`)
+
+    log(`approved ${onSha.slice(0, 7)} by ${options.by} — continues at ${continuation.step}`)
     return { ok: true, ticketId, runId, continuesAt: continuation.step, unscheduled: resolved.unscheduled }
-  }
-
-  if (item.lifecycle.status !== 'blocked') {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'not-blocked',
-      detail: `${ticketId} is ${item.lifecycle.status}, not blocked — nothing was resolved`,
-    }
-  }
-  const block = item.lifecycle
-  // **The wait check, before the sha check — same reason as the `approved`
-  // branch above** (#508). A continuation that stops at a *new* wait moves
-  // the lifecycle straight back to `blocked` (`WaitStarted`'s own reduce), so a
-  // stale `approved` card's click lands here, not in the branch above — this
-  // is the check the finding is actually about.
-  if (options.waitId !== 'open' && options.waitId !== block.waitId) {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'stale',
-      detail:
-        `the card showed wait ${options.waitId} and ${ticketId} is now waiting on wait ` +
-        `${block.waitId} — nothing was resolved. Reload and read it again.`,
-    }
-  }
-  const runId = block.runId
-  if (runId === null) {
-    // `allowedResolutions` never offers `Approve` for an `OwnQuestion`, the
-    // one `WaitReason` with no run — so a block offering `Approve` always
-    // names one, and this is a defensive refusal rather than a reachable row.
-    return { ok: false, ticketId, reason: 'no-run', detail: `${ticketId} has no run to approve` }
-  }
-
-  const runEvents = await store.read(runId)
-  const run = reduceAttempt(runEvents)
-
-  // The sha an approval is about: see `approvalSha` in @lingtai/domain.
-  const onSha: string | null = approvalSha(run)
-  if (onSha === null) {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'not-awaiting-approval',
-      detail: `${runId} is ${run.lifecycle.status}, not waiting for approval`,
-    }
-  }
-
-  if (options.onSha && options.onSha !== onSha) {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'stale',
-      detail:
-        `the card showed ${options.onSha.slice(0, 7)} and the run is now asking about ` +
-        `${onSha.slice(0, 7)}. Nothing was resolved — reload and read it again.`,
-    }
-  }
-
-  // Where this continues, and what it waives there — read here only to say
-  // so on success (and to refuse by name before the append, rather than
-  // after it, when it is not offered at all). `resolveWaitHolding` reads
-  // `allowedResolutions` independently and agrees with this by construction.
-  const continuation = continuationOf(block.reason, stepOutcomesOf(runEvents))
-  if (continuation === null) {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'not-offered',
-      detail: `Approve is not offered for ${describeReason(block.reason)} — nothing was resolved.`,
-    }
-  }
-
-  const resolved = await resolveWaitHolding(
-    {
-      ticketId,
-      issue: options.issue,
-      waitId: options.waitId === 'open' ? block.waitId : options.waitId,
-      resolution: { _tag: 'Approve', onSha },
-      by: options.by,
-      note: options.note,
-      client: options.client,
-      store,
-      ...read,
-    },
-    ticketId,
-  )
-  if (!resolved.ok) {
-    return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
-  }
-
-  log(`approved ${onSha.slice(0, 7)} by ${options.by} — continues at ${continuation.step}`)
-  return { ok: true, ticketId, runId, continuesAt: continuation.step, unscheduled: resolved.unscheduled }
+  })
 }
 
 /**
@@ -317,36 +323,42 @@ export async function approveHolding(options: ApproveOptions, ticketId: string):
  * whose triage asked questions (#921): their answers are written into the body
  * first, through `github`, and a failed write or a missing `github` refuses.
  */
-export async function requeue(
-  options: {
-    project: string
-    issue: number
-    by: string
-    /**
-     * Why, on the record — optional (#424). A requeue of a run's block reduces into
-     * an `AnswerRecord` only when `runId` is set (`ticket.ts`), and
-     * `answersBrief` keeps only the ones with `runId === null`
-     * (`attempts.ts:572`); a requeue of a question is written `withdrawn`, which
-     * the reducer keeps no answer for. So an optional note here never reaches a
-     * later attempt's prompt, unlike `answer()`'s.
-     */
-    note: string
-    /**
-     * What to do with a question asked before any run: withdraw it (the default,
-     * `lingtai requeue` and the board's Withdraw), or refuse. The board's Send
-     * refuses — it checks first, but a `lingtai ask` landing between that check
-     * and this read would otherwise be withdrawn under a note about a document.
-     */
-    onQuestion?: 'withdraw' | 'refuse'
-    /** The wait the caller was shown — see `ApproveOptions.waitId`'s own comment. */
-    waitId?: WaitId
-    /** Where the wait's triage answers are written before it requeues (#921). */
-    github?: IssueChannel
-    /** The answers the person picked, by question index (#922); a missing index takes the recommended one. */
-    picks?: Readonly<Record<number, string>>
-    store?: EventStore
-  } & SnapshotReadOptions,
-): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string; written?: boolean }> {
+export function requeue(options: RequeueOptions): Promise<RequeueResult> {
+  return Effect.runPromise(requeueEffect(options))
+}
+
+type RequeueResult = { ok: boolean; ticketId: string; reason?: string; detail: string; written?: boolean }
+
+type RequeueOptions = {
+  project: string
+  issue: number
+  by: string
+  /**
+   * Why, on the record — optional (#424). A requeue of a run's block reduces into
+   * an `AnswerRecord` only when `runId` is set (`ticket.ts`), and
+   * `answersBrief` keeps only the ones with `runId === null`
+   * (`attempts.ts:572`); a requeue of a question is written `withdrawn`, which
+   * the reducer keeps no answer for. So an optional note here never reaches a
+   * later attempt's prompt, unlike `answer()`'s.
+   */
+  note: string
+  /**
+   * What to do with a question asked before any run: withdraw it (the default,
+   * `lingtai requeue` and the board's Withdraw), or refuse. The board's Send
+   * refuses — it checks first, but a `lingtai ask` landing between that check
+   * and this read would otherwise be withdrawn under a note about a document.
+   */
+  onQuestion?: 'withdraw' | 'refuse'
+  /** The wait the caller was shown — see `ApproveOptions.waitId`'s own comment. */
+  waitId?: WaitId
+  /** Where the wait's triage answers are written before it requeues (#921). */
+  github?: IssueChannel
+  /** The answers the person picked, by question index (#922); a missing index takes the recommended one. */
+  picks?: Readonly<Record<number, string>>
+  store?: EventStore
+} & SnapshotReadOptions
+
+export function requeueEffect(options: RequeueOptions): Effect.Effect<RequeueResult, unknown> {
   const store = options.store ?? eventStore
   const snapshots = options.snapshots ?? (options.store === undefined ? processLog.snapshots : undefined)
   const ticketId = ticketStream(options.project, options.issue)
@@ -356,8 +368,8 @@ export async function requeue(
   // leaves the item `blocked` for seconds; unblocking it then let the diff land
   // on an item a new run had claimed. The run is left as it is: an approval
   // that arrives after this reads the item, which is no longer holding it. See
-  // `deciding`.
-  return deciding<Awaited<ReturnType<typeof requeueHolding>>>(
+  // `decidingEffect`.
+  return decidingEffect<RequeueResult, unknown, never>(
     ticketId,
     () => ({
       ok: false,
@@ -365,91 +377,104 @@ export async function requeue(
       reason: 'busy',
       detail: `${ticketId} is being decided by someone else right now — an approval may be merging it. Reload and read it again`,
     }),
-    () => requeueHolding(options, store, ticketId, { snapshots, writer: options.writer }),
+    requeueHoldingEffect(options, store, ticketId, { snapshots, writer: options.writer }),
   )
 }
 
+type RequeueHoldingOptions = {
+  by: string
+  note: string
+  onQuestion?: 'withdraw' | 'refuse'
+  waitId?: WaitId
+  github?: IssueChannel
+  picks?: Readonly<Record<number, string>>
+}
+
 /** Exported for the unit half alone — see `approveHolding`'s own comment. */
-export async function requeueHolding(
-  options: {
-    by: string
-    note: string
-    onQuestion?: 'withdraw' | 'refuse'
-    waitId?: WaitId
-    github?: IssueChannel
-    picks?: Readonly<Record<number, string>>
-  },
+export function requeueHolding(
+  options: RequeueHoldingOptions,
   store: EventStore,
   ticketId: string,
   read: SnapshotReadOptions = {},
-): Promise<{ ok: boolean; ticketId: string; reason?: string; detail: string; written?: boolean }> {
-  const item = await readState(store, ticketReducer, ticketId, 'all', read)
-  if (item.lifecycle.status !== 'blocked') {
-    // Saying which state it is in, for the reason `approve` does: "not blocked"
-    // sends somebody nowhere, and "it is already running" answers the question.
-    return {
-      ok: false,
-      ticketId,
-      reason: 'not-blocked',
-      detail: `${ticketId} is ${item.lifecycle.status}, not blocked`,
-    }
-  }
-  // **A block no run holds is a question about the ticket (#147), and a requeue
-  // withdraws it rather than answering it.** The reducer keeps whatever note ends
-  // such a block as a decision and carries it into every later prompt
-  // (`answersBrief`), so a requeue's why — *asked by mistake, ignore* — is
-  // written `withdrawn`, which the reducer keeps nothing of. Answering is
-  // `answer()`'s. Refusing here instead left a mistaken question no way out
-  // but an answer every attempt would be told.
-  //
-  // **An `OwnQuestion` is the only wait a requeue withdraws** — every other
-  // wait carries a run, which is exactly `item.lifecycle.runId === null` read
-  // the old way.
-  const withdrawn = item.lifecycle.reason._tag === 'OwnQuestion'
-  if (withdrawn && options.onQuestion === 'refuse') {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'asking-question',
-      detail: `${ticketId} is asking a question before any run — answer it first`,
-    }
-  }
+): Promise<RequeueResult> {
+  return Effect.runPromise(requeueHoldingEffect(options, store, ticketId, read))
+}
 
-  // Trimmed, so a whitespace-only box lands as the empty string rather than
-  // verbatim (#424) — a blank note is stored as empty, never invented.
-  const note = options.note.trim() ? options.note : ''
-
-  const resolved = await resolveWaitHolding(
-    {
-      ticketId,
-      waitId: options.waitId ?? item.lifecycle.waitId,
-      resolution: { _tag: 'Requeue' },
-      by: options.by,
-      note,
-      github: options.github,
-      picks: options.picks,
-      store,
-      ...read,
-    },
-    ticketId,
-  )
-  if (!resolved.ok) {
-    return {
-      ok: false,
-      ticketId,
-      reason: resolved.reason,
-      detail: resolved.detail,
-      ...(resolved.written ? { written: true } : {}),
+export function requeueHoldingEffect(
+  options: RequeueHoldingOptions,
+  store: EventStore,
+  ticketId: string,
+  read: SnapshotReadOptions = {},
+): Effect.Effect<RequeueResult, unknown> {
+  return Effect.gen(function* () {
+    const item = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', read)
+    if (item.lifecycle.status !== 'blocked') {
+      // Saying which state it is in, for the reason `approve` does: "not blocked"
+      // sends somebody nowhere, and "it is already running" answers the question.
+      return {
+        ok: false,
+        ticketId,
+        reason: 'not-blocked',
+        detail: `${ticketId} is ${item.lifecycle.status}, not blocked`,
+      }
     }
-  }
+    // **A block no run holds is a question about the ticket (#147), and a requeue
+    // withdraws it rather than answering it.** The reducer keeps whatever note ends
+    // such a block as a decision and carries it into every later prompt
+    // (`answersBrief`), so a requeue's why — *asked by mistake, ignore* — is
+    // written `withdrawn`, which the reducer keeps nothing of. Answering is
+    // `answer()`'s. Refusing here instead left a mistaken question no way out
+    // but an answer every attempt would be told.
+    //
+    // **An `OwnQuestion` is the only wait a requeue withdraws** — every other
+    // wait carries a run, which is exactly `item.lifecycle.runId === null` read
+    // the old way.
+    const withdrawn = item.lifecycle.reason._tag === 'OwnQuestion'
+    if (withdrawn && options.onQuestion === 'refuse') {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'asking-question',
+        detail: `${ticketId} is asking a question before any run — answer it first`,
+      }
+    }
 
-  return {
-    ok: true,
-    ticketId,
-    detail: withdrawn
-      ? `question withdrawn, by ${options.by} — back in the queue, and no attempt is told it`
-      : `back in the queue, by ${options.by}`,
-  }
+    // Trimmed, so a whitespace-only box lands as the empty string rather than
+    // verbatim (#424) — a blank note is stored as empty, never invented.
+    const note = options.note.trim() ? options.note : ''
+
+    const resolved = yield* resolveWaitHoldingEffect(
+      {
+        ticketId,
+        waitId: options.waitId ?? item.lifecycle.waitId,
+        resolution: { _tag: 'Requeue' },
+        by: options.by,
+        note,
+        github: options.github,
+        picks: options.picks,
+        store,
+        ...read,
+      },
+      ticketId,
+    )
+    if (!resolved.ok) {
+      return {
+        ok: false,
+        ticketId,
+        reason: resolved.reason,
+        detail: resolved.detail,
+        ...(resolved.written ? { written: true } : {}),
+      }
+    }
+
+    return {
+      ok: true,
+      ticketId,
+      detail: withdrawn
+        ? `question withdrawn, by ${options.by} — back in the queue, and no attempt is told it`
+        : `back in the queue, by ${options.by}`,
+    }
+  })
 }
 
 // **`waive()` is gone (#502).** It appended `StepWaived`, which 0120's

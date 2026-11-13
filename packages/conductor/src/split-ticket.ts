@@ -40,7 +40,7 @@ import { allowedResolutions, splitPlanProblems, describeSplitProblem } from '@li
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 import type { GitHubClient, LinkedIssue } from '@lingtai/github'
 
-import { deciding } from './approve.ts'
+import { deciding } from './deciding.ts'
 import { describeReason, resolveWaitHolding } from './resolve-wait.ts'
 import { splitDoneWhen } from './split-body.ts'
 import { BodyChanged } from './ticket-store.ts'

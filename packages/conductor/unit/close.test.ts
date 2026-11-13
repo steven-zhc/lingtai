@@ -227,6 +227,16 @@ describe('closing runs the end point', () => {
     expect(g.labelWrites).toEqual([['bug']])
   })
 
+  it('does not close when the recipe rejects with null', async () => {
+    const s = store()
+    const g = github(null)
+
+    await expect(
+      closeUnlocked({ ...args(s, g), recipe: () => Promise.reject(null) } as unknown as Parameters<typeof close>[0]),
+    ).rejects.toThrow()
+    expect(s.appends).toEqual([])
+  })
+
   it('refuses on a recipe it cannot read, and closes nothing', async () => {
     const s = store()
     const g = github(null)

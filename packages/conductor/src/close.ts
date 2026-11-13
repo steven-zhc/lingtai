@@ -105,12 +105,14 @@ import {
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
 import type { StepAction } from '@lingtai/recipe'
 import type { ResolvedRecipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
-import { deciding } from './approve.ts'
+import { decidingEffect } from './deciding.ts'
 import { resolveEndActions } from './end-step.ts'
 import { labelsFor } from './labels.ts'
+import { asFailure } from './port-face.ts'
 import { currentRecipe } from './projects.ts'
-import { resolveWaitHolding } from './resolve-wait.ts'
+import { resolveWaitHoldingEffect } from './resolve-wait.ts'
 import { tellGitHubAbout, type IssueChannel, type RefChannel } from './tell.ts'
 
 export interface CloseOutcome {
@@ -120,13 +122,17 @@ export interface CloseOutcome {
   detail: string
 }
 
-export async function close(options: CloseOptions): Promise<CloseOutcome> {
+export function close(options: CloseOptions): Promise<CloseOutcome> {
+  return Effect.runPromise(closeEffect(options))
+}
+
+export function closeEffect(options: CloseOptions): Effect.Effect<CloseOutcome, unknown> {
   const store = options.store ?? eventStore
   const ticketId = ticketStream(options.project, options.issue)
   if (!options.reason.trim()) {
-    return { ok: false, ticketId, reason: 'blank', detail: 'a close needs a reason' }
+    return Effect.succeed({ ok: false, ticketId, reason: 'blank', detail: 'a close needs a reason' })
   }
-  return deciding(
+  return decidingEffect<CloseOutcome, unknown, never>(
     ticketId,
     () => ({
       ok: false,
@@ -134,128 +140,160 @@ export async function close(options: CloseOptions): Promise<CloseOutcome> {
       reason: 'busy',
       detail: `${ticketId} is being decided by someone else right now. Nothing was closed — reload and read it again.`,
     }),
-    () => closeHolding(options, store, ticketId),
+    closeHoldingEffect(options, store, ticketId),
   )
 }
 
 /**
  * **Exported for the unit half alone**, like `approveHolding`: `close()` takes
- * `createFileLocker()` (`deciding`), which is the filesystem, so by 0060 §1 it
+ * `createFileLocker()` (`decidingEffect`), which is the filesystem, so by 0060 §1 it
  * cannot be unit-tested — this function underneath it can. `index.ts` does not
  * re-export it.
  */
-export async function closeHolding(options: CloseOptions, store: EventStore, ticketId: string): Promise<CloseOutcome> {
-  const events = await store.read(ticketId)
-  const item = reduceTicket(events)
+export function closeHolding(options: CloseOptions, store: EventStore, ticketId: string): Promise<CloseOutcome> {
+  return Effect.runPromise(closeHoldingEffect(options, store, ticketId))
+}
 
-  if (item.lifecycle.status === 'closed') {
-    return { ok: false, ticketId, reason: 'already-closed', detail: `${ticketId} is already closed` }
-  }
-  if (item.lifecycle.status === 'landed') {
-    // Not an error a person needs to work around: it is done, and saying so is
-    // more useful than appending a second ending over the first.
-    return { ok: false, ticketId, reason: 'landed', detail: `${ticketId} landed — there is nothing to close` }
-  }
+export function closeHoldingEffect(
+  options: CloseOptions,
+  store: EventStore,
+  ticketId: string,
+): Effect.Effect<CloseOutcome, unknown> {
+  return Effect.gen(function* () {
+    const events = yield* Effect.promise(() => store.read(ticketId))
+    const item = reduceTicket(events)
 
-  if (options.ifVersion !== undefined && item.version !== options.ifVersion) {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'changed',
-      detail: `${ticketId} changed since it was checked — read it again`,
+    if (item.lifecycle.status === 'closed') {
+      return { ok: false, ticketId, reason: 'already-closed', detail: `${ticketId} is already closed` }
     }
-  }
+    if (item.lifecycle.status === 'landed') {
+      // Not an error a person needs to work around: it is done, and saying so is
+      // more useful than appending a second ending over the first.
+      return { ok: false, ticketId, reason: 'landed', detail: `${ticketId} landed — there is nothing to close` }
+    }
 
-  // Before the close is recorded, so an unreadable recipe refuses rather than
-  // appending a terminal whose point silently could not run — `approve`'s rule
-  // and its reason (0005, 0044).
-  let end: readonly StepAction[] = []
-  if (options.state && options.client) {
-    try {
+    if (options.ifVersion !== undefined && item.version !== options.ifVersion) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'changed',
+        detail: `${ticketId} changed since it was checked — read it again`,
+      }
+    }
+
+    // Before the close is recorded, so an unreadable recipe refuses rather than
+    // appending a terminal whose point silently could not run — `approve`'s rule
+    // and its reason (0005, 0044).
+    let end: readonly StepAction[] = []
+    if (options.state && options.client) {
       const state = options.state
-      end = (await (options.recipe ?? (() => currentRecipe(state)))()).recipe.steps.end
-    } catch (err) {
-      return {
-        ok: false,
-        ticketId,
-        reason: 'recipe-unreadable',
-        detail: `${(err as Error).message}. Nothing was closed.`,
+      // The seam, the await and the `.recipe.steps.end` read are all inside the
+      // catch, as they were: an unreadable recipe refuses, whatever made it so.
+      const loaded = yield* Effect.tryPromise({
+        try: () => (options.recipe ?? (() => currentRecipe(state)))(),
+        catch: asFailure,
+      }).pipe(
+        Effect.flatMap((resolved) => Effect.try({ try: () => resolved.recipe.steps.end, catch: asFailure })),
+        Effect.map((steps) => ({ ok: true as const, steps })),
+        Effect.catch((failure) => Effect.succeed({ ok: false as const, failure })),
+      )
+      if (!loaded.ok) {
+        return {
+          ok: false,
+          ticketId,
+          reason: 'recipe-unreadable',
+          detail: `${loaded.failure.message}. Nothing was closed.`,
+        }
       }
+      end = loaded.steps
     }
-  }
 
-  // One transaction. The outcome and what its point resolved to cannot come
-  // apart, and the version check that guards the close guards both.
-  const ended = resolveEndActions(events, end, 'closed')
-  const closedEvent: ToAppend = {
-    type: 'TicketClosed',
-    actor: options.by,
-    data: parsePayload('TicketClosed', { by: options.by, reason: options.reason }),
-  }
+    // One transaction. The outcome and what its point resolved to cannot come
+    // apart, and the version check that guards the close guards both.
+    const ended = resolveEndActions(events, end, 'closed')
+    const closedEvent: ToAppend = {
+      type: 'TicketClosed',
+      actor: options.by,
+      data: parsePayload('TicketClosed', { by: options.by, reason: options.reason }),
+    }
 
-  // **A blocked item resolves its wait in the same append as the close**
-  // (#465, 0118 §11) — `Close` is always offered, so `resolveWaitHolding`'s
-  // `allowedResolutions` check never refuses it; closing is still the fact
-  // that is on the log either way. A close while nothing is waiting — the
-  // ordinary case — appends `TicketClosed` and `ended` directly, as it
-  // always has: there is no wait here for anything to resolve.
-  if (item.lifecycle.status === 'blocked') {
-    // The card that rendered this close showed no wait at all — a queued
-    // card's Close (#508) — and the item turns out to be blocked after all.
-    // Refusing by name is the same guard `approve.ts` closes for `Approve`:
-    // resolving whatever is open now would close a wait nobody was shown.
-    if (options.waitId === null) {
-      return {
-        ok: false,
-        ticketId,
-        reason: 'wait-moved',
-        detail:
-          `this card showed no wait and ${ticketId} is now waiting on ${item.lifecycle.waitId} — ` +
-          `nothing was closed. Reload and read it again.`,
+    // **A blocked item resolves its wait in the same append as the close**
+    // (#465, 0118 §11) — `Close` is always offered, so `resolveWaitHolding`'s
+    // `allowedResolutions` check never refuses it; closing is still the fact
+    // that is on the log either way. A close while nothing is waiting — the
+    // ordinary case — appends `TicketClosed` and `ended` directly, as it
+    // always has: there is no wait here for anything to resolve.
+    if (item.lifecycle.status === 'blocked') {
+      // The card that rendered this close showed no wait at all — a queued
+      // card's Close (#508) — and the item turns out to be blocked after all.
+      // Refusing by name is the same guard `approve.ts` closes for `Approve`:
+      // resolving whatever is open now would close a wait nobody was shown.
+      if (options.waitId === null) {
+        return {
+          ok: false,
+          ticketId,
+          reason: 'wait-moved',
+          detail:
+            `this card showed no wait and ${ticketId} is now waiting on ${item.lifecycle.waitId} — ` +
+            `nothing was closed. Reload and read it again.`,
+        }
       }
-    }
-    const resolved = await resolveWaitHolding(
-      {
+      const resolved = yield* resolveWaitHoldingEffect(
+        {
+          ticketId,
+          waitId: options.waitId ?? item.lifecycle.waitId,
+          resolution: { _tag: 'Close' },
+          by: options.by,
+          note: options.reason,
+          with: [closedEvent, ...ended],
+          store,
+        },
         ticketId,
-        waitId: options.waitId ?? item.lifecycle.waitId,
-        resolution: { _tag: 'Close' },
-        by: options.by,
-        note: options.reason,
-        with: [closedEvent, ...ended],
-        store,
-      },
-      ticketId,
-    )
-    if (!resolved.ok) {
-      return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
-    }
-  } else {
-    try {
-      await store.append(ticketId, item.version, [closedEvent, ...ended])
-    } catch (err) {
+      )
+      if (!resolved.ok) {
+        return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
+      }
+    } else {
       // Something moved between the read and the append — a pass claimed it, or
       // a gate answered. Say so rather than closing over a decision nobody saw.
-      if (err instanceof ConcurrencyError) {
+      const lost = yield* Effect.tryPromise({
+        try: () => store.append(ticketId, item.version, [closedEvent, ...ended]),
+        catch: asFailure,
+      }).pipe(
+        Effect.uninterruptible,
+        Effect.as(false),
+        Effect.catchIf(
+          (err) => err instanceof ConcurrencyError,
+          () => Effect.succeed(true),
+        ),
+      )
+      if (lost) {
         return { ok: false, ticketId, reason: 'changed', detail: `${ticketId} changed while closing — read it again` }
       }
-      throw err
     }
-  }
 
-  // Resolved, then done, in that order and never the reverse: the resolution is
-  // a fact and is already on the log; this is I/O that must not be able to undo
-  // it. `labelsFor("closed")` is empty, so what it writes is the removal of
-  // whatever an earlier state left on, and the recipe's own actions run after
-  // and may overrule it.
-  if (options.client) {
-    await tellGitHubAbout({
-      store,
-      github: options.client,
-      ticketId,
-      labels: labelsFor('closed'),
-      appended: ended,
-    })
-  }
+    // Resolved, then done, in that order and never the reverse: the resolution is
+    // a fact and is already on the log; this is I/O that must not be able to undo
+    // it. `labelsFor("closed")` is empty, so what it writes is the removal of
+    // whatever an earlier state left on, and the recipe's own actions run after
+    // and may overrule it.
+    if (options.client) {
+      const client = options.client
+      yield* Effect.uninterruptible(
+        Effect.tryPromise({
+          try: () =>
+            tellGitHubAbout({
+              store,
+              github: client,
+              ticketId,
+              labels: labelsFor('closed'),
+              appended: ended,
+            }),
+          catch: asFailure,
+        }),
+      )
+    }
 
-  return { ok: true, ticketId, detail: `closed by ${options.by} — the queue will not offer it again` }
+    return { ok: true, ticketId, detail: `closed by ${options.by} — the queue will not offer it again` }
+  })
 }
