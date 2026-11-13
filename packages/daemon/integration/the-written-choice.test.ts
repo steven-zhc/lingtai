@@ -31,6 +31,7 @@ function module_(...parts: string[]): string {
 
 const EVENT_STORE = module_('packages', 'event-store', 'src', 'index.ts')
 const PROJECTOR = module_('packages', 'projector', 'src', 'index.ts')
+const PROMISE_RUNNER = module_('packages', 'projector', 'test', 'promise-runner.ts')
 const DAEMON = module_('packages', 'daemon', 'src', 'index.ts')
 const CONTROL = module_('packages', 'daemon', 'src', 'control.ts')
 const DOMAIN = module_('packages', 'domain', 'src', 'index.ts')
@@ -101,7 +102,8 @@ describe('a machine that wrote sqlite', () => {
       tls.connect = refuse;
 
       const { eventStore, log } = await import(${EVENT_STORE});
-      const { createProjectionRunner, projectionLag, readTasks, taskViewProjection } = await import(${PROJECTOR});
+      const { projectionLag, readTasks, taskViewProjection } = await import(${PROJECTOR});
+      const { createProjectionRunner } = await import(${PROMISE_RUNNER});
       const { beat, createStatusTableEffect, readStatus } = await import(${CONTROL});
       const { Effect } = await import(${EFFECT});
       const { parsePayload, ticketStream } = await import(${DOMAIN});
@@ -216,12 +218,12 @@ describe('a machine that wrote postgres', () => {
         return [...tried];
       };
 
-      const { processLog } = await import(${EVENT_STORE});
-      const { projectionStore } = await import(${PROJECTOR});
+      const { log } = await import(${EVENT_STORE});
+      const { openProjections } = await import(${PROJECTOR});
+      const { Effect } = await import(${EFFECT});
       const { processDaemonStore, readStatus } = await import(${DAEMON});
 
-      const log = await processLog();
-      const projections = await projectionStore();
+      const projections = await Effect.runPromise(openProjections());
       const daemon = await processDaemonStore();
 
       const store = await at(() => log.store.readAll(0n, 1));
@@ -230,9 +232,9 @@ describe('a machine that wrote postgres', () => {
         const session = log.waker("probe").open({ nudge() {}, lost() {} });
         try { await session.ready; } finally { session.close(); }
       });
-      const reduce = await at(() => projections.lags());
+      const reduce = await at(() => Effect.runPromise(projections.lags()));
       const beacon = await at(() => readStatus(daemon));
-      await projections.close().catch(() => {});
+      await Effect.runPromise(projections.close()).catch(() => {});
 
       console.log(JSON.stringify({
         store, queries, waker, reduce, beacon,

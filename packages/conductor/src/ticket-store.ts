@@ -230,7 +230,7 @@ export interface TicketsForOptions {
 }
 
 const defaultSql: Effect.Effect<TicketSql> = Effect.promise(() => import('@lingtai/event-store')).pipe(
-  Effect.flatMap((m) => Effect.promise(() => m.processTicketSql())),
+  Effect.flatMap((m) => m.processTicketSqlEffect()),
 )
 
 const defaultLogQueries: Effect.Effect<Pick<LogQueries, 'projectStreams'>> = Effect.promise(

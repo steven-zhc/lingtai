@@ -21,7 +21,7 @@ import { integrationStream, type ToAppend, ticketStream } from '@lingtai/domain'
 import type { Envelope } from '@lingtai/domain'
 import { anAttempt, anOutcome, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
-import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -45,7 +45,7 @@ const head = async (streamId: string) => {
 }
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
   const resolve = createSubjectResolver(store)
   subject = (event) => Effect.runPromise(resolve(event))
 

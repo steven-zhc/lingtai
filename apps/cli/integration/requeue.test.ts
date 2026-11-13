@@ -17,7 +17,7 @@ import { requeue } from '@lingtai/conductor'
 import { projectStream, reduceTicket, type ToAppend, ticketStream } from '@lingtai/domain'
 import { aClaim, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
-import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -77,7 +77,7 @@ const blocked = (n: number): ToAppend =>
   )
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
 
   // Registered, because the command refuses a project it has never heard of
   // before it goes looking for a work item.

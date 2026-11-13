@@ -14,8 +14,9 @@ import { selectRunnable } from '@lingtai/conductor/queue'
 import type { Envelope, ProjectState, ToAppend } from '@lingtai/domain'
 import { aClaim, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
-import { processEventStore, type EventStore } from '@lingtai/event-store'
-import { createProjectionRunner, taskViewProjection } from '@lingtai/projector'
+import { eventStore, type EventStore } from '@lingtai/event-store'
+import { taskViewProjection } from '@lingtai/projector'
+import { createProjectionRunner } from '@lingtai/projector/test/promise-runner'
 import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -72,7 +73,7 @@ const started = (taskId: string) => ({
 })
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
   home = await mkdtemp(join(tmpdir(), 'lingtai-reconcile-'))
 }, 120_000)
 

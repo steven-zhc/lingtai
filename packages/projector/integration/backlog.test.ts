@@ -8,10 +8,11 @@
 import type { Envelope, Finding, ToAppend } from '@lingtai/domain'
 import { backlogStream, findingKey } from '@lingtai/domain'
 import { anAttempt } from '@lingtai/domain/test/events'
-import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { backlogProjection, createProjectionRunner, readBacklog } from '../src/index.ts'
+import { backlogProjection, readBacklog } from '../src/index.ts'
+import { createProjectionRunner } from '../test/promise-runner.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 const created = new Set<string>()
@@ -99,7 +100,7 @@ async function reduce(): Promise<void> {
 const keyOf = (claim: string) => findingKey({ issue: '1', step: 'proposed', action: 'review', file: 'src/a.ts', claim })
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
   // The test database is shared, and may hold this table in an older shape.
   // A rebuild is how any drift is answered, here as anywhere.
   await rebuild()

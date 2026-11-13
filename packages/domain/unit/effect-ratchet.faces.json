@@ -486,154 +486,112 @@
     "why": "`createWorkLoop`, which the daemon's own tests hold a promise `WorkLoop` through until they move; the daemon's loop is `makeWorkLoop`"
   },
   {
-    "file": "packages/event-store/src/choose.ts",
-    "fn": "processEventStore",
-    "until": "#790",
-    "why": "integration tests in apps/cli, conductor, daemon, projector and repo await it"
-  },
-  {
-    "file": "packages/event-store/src/choose.ts",
-    "fn": "processLog",
-    "until": "#790",
-    "why": "apps/cli `projector.ts` only"
-  },
-  {
-    "file": "packages/event-store/src/choose.ts",
-    "fn": "processTicketSql",
-    "until": "#790",
-    "why": "conductor ticket-history.ts and ticket-store.ts await it, and `closable.test.ts` calls it"
-  },
-  {
-    "file": "packages/event-store/src/closable.ts",
-    "fn": "closableCloseFace",
-    "until": "#790",
-    "why": "`closableOnce`, which wraps the Effect one for a caller that holds a promise"
-  },
-  {
-    "file": "packages/event-store/src/closable.ts",
-    "fn": "closableGetFace",
-    "until": "#790",
-    "why": "packages/projector choose.ts's shared store holds a promise closableOnce"
-  },
-  {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "appendFace",
-    "until": "#790",
-    "why": "every promise EventStore holder outside packages/event-store, and the test fakes"
+    "until": "0101 §7",
+    "why": "the promise `EventStore` the board holds as `eventStore` and `log.store` (`promiseStore` fills every method of it): apps/board/src/lib/task.ts, apps/board/src/app/actions.ts, apps/board/src/app/api/webhook/route.ts, apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "censusFace",
-    "until": "#790",
-    "why": "every promise SnapshotStore holder outside packages/event-store (apps/cli doctor), and the test fakes"
+    "until": "0101 §7",
+    "why": "`log.snapshots`, the promise `SnapshotStore` (`promiseSnapshots` fills all three methods): apps/board/src/lib/board.ts, apps/board/src/app/actions.ts, apps/board/src/lib/snapshot-writer.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "endedWithoutEndActionsFace",
-    "until": "#790",
-    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
+    "until": "0101 §7",
+    "why": "`log.queries`, the promise `LogQueries` that `Log` requires and `deferredLog` fills (`promiseQueries`); the board imports `log` in apps/board/src/lib/board.ts and apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "execFace",
-    "until": "#790",
-    "why": "every promise TicketSql holder outside packages/event-store (db-tickets, ticket-store, ticket-history), and the test fakes"
-  },
-  {
-    "file": "packages/event-store/src/store-face.ts",
-    "fn": "execIdempotently",
-    "until": "#790",
-    "why": "packages/event-store/unit/log-sql-effects.test.ts calls it as a promise; no production caller"
+    "until": "0101 §7",
+    "why": "the promise `TicketSql` the board reaches through `ownerlessClient` (conductor `ownerless.ts` → `ticket-store.ts` `defaultSql` → `processTicketSqlEffect`, whose value `promiseLogSql` fills): apps/board/src/app/actions.ts, apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "followFace",
-    "until": "#790",
-    "why": "apps/board's stream route calls the promise `subscribe` until its row"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/api/stream/route.ts:133 passes the promise `subscribe` a `log.store` and a `log.waker`; `follow` runs this face"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "headFace",
-    "until": "#790",
-    "why": "every promise EventStore holder outside packages/event-store, and the test fakes"
+    "until": "0101 §7",
+    "why": "the promise `EventStore` the board holds as `eventStore` and `log.store` (`promiseStore` fills every method of it): apps/board/src/lib/task.ts, apps/board/src/app/actions.ts, apps/board/src/app/api/webhook/route.ts, apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "latestFace",
-    "until": "#790",
-    "why": "every promise SnapshotStore holder outside packages/event-store (apps/cli doctor), and the test fakes"
-  },
-  {
-    "file": "packages/event-store/src/store-face.ts",
-    "fn": "logPredatesHold",
-    "until": "#790",
-    "why": "apps/cli (projection, projector) call it as a promise"
+    "until": "0101 §7",
+    "why": "`log.snapshots`, the promise `SnapshotStore` (`promiseSnapshots` fills all three methods): apps/board/src/lib/board.ts, apps/board/src/app/actions.ts, apps/board/src/lib/snapshot-writer.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "projectStreamsFace",
-    "until": "#790",
-    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
+    "until": "0101 §7",
+    "why": "`log.queries`, the promise `LogQueries` that `Log` requires and `deferredLog` fills (`promiseQueries`); the board imports `log` in apps/board/src/lib/board.ts and apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "putFace",
-    "until": "#790",
-    "why": "every promise SnapshotStore holder outside packages/event-store (apps/cli doctor), and the test fakes"
+    "until": "0101 §7",
+    "why": "`log.snapshots`, the promise `SnapshotStore` (`promiseSnapshots` fills all three methods): apps/board/src/lib/board.ts, apps/board/src/app/actions.ts, apps/board/src/lib/snapshot-writer.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "queryFace",
-    "until": "#790",
-    "why": "every promise TicketSql holder outside packages/event-store (db-tickets, ticket-store, ticket-history), and the test fakes"
+    "until": "0101 §7",
+    "why": "the promise `TicketSql` the board reaches through `ownerlessClient` (conductor `ownerless.ts` → `ticket-store.ts` `defaultSql` → `processTicketSqlEffect`, whose value `promiseLogSql` fills): apps/board/src/app/actions.ts, apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "readAllFace",
-    "until": "#790",
-    "why": "every promise EventStore holder outside packages/event-store, and the test fakes"
+    "until": "0101 §7",
+    "why": "the promise `EventStore` the board holds as `eventStore` and `log.store` (`promiseStore` fills every method of it): apps/board/src/lib/task.ts, apps/board/src/app/actions.ts, apps/board/src/app/api/webhook/route.ts, apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "readFace",
-    "until": "#790",
-    "why": "every promise EventStore holder outside packages/event-store, and the test fakes"
+    "until": "0101 §7",
+    "why": "the promise `EventStore` the board holds as `eventStore` and `log.store` (`promiseStore` fills every method of it): apps/board/src/lib/task.ts, apps/board/src/app/actions.ts, apps/board/src/app/api/webhook/route.ts, apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "readTypesFace",
-    "until": "#790",
-    "why": "every promise EventStore holder outside packages/event-store, and the test fakes"
+    "until": "0101 §7",
+    "why": "the promise `EventStore` the board holds as `eventStore` and `log.store` (`promiseStore` fills every method of it): apps/board/src/lib/task.ts, apps/board/src/app/actions.ts, apps/board/src/app/api/webhook/route.ts, apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "rowsOfTypeFace",
-    "until": "#790",
-    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
+    "until": "0101 §7",
+    "why": "`log.queries`, the promise `LogQueries` that `Log` requires and `deferredLog` fills (`promiseQueries`); the board imports `log` in apps/board/src/lib/board.ts and apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "subscriberFailuresFace",
-    "until": "#790",
-    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
+    "until": "0101 §7",
+    "why": "`log.queries`, the promise `LogQueries` that `Log` requires and `deferredLog` fills (`promiseQueries`); the board imports `log` in apps/board/src/lib/board.ts and apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "typeCountsFace",
-    "until": "#790",
-    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
+    "until": "0101 §7",
+    "why": "`log.queries`, the promise `LogQueries` that `Log` requires and `deferredLog` fills (`promiseQueries`); the board imports `log` in apps/board/src/lib/board.ts and apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "unconvergedUpdatesFace",
-    "until": "#790",
-    "why": "every promise LogQueries holder outside packages/event-store, and the test fakes"
+    "until": "0101 §7",
+    "why": "`log.queries`, the promise `LogQueries` that `Log` requires and `deferredLog` fills (`promiseQueries`); the board imports `log` in apps/board/src/lib/board.ts and apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
     "fn": "wakeSessionFace",
-    "until": "#790",
-    "why": "`Log.waker(name)` is a promise `Waker` that apps/board's stream route passes to `subscribe`, and fakes in daemon and projector tests implement"
+    "until": "0101 §7",
+    "why": "`Log.waker(name)` is the promise `Waker` that apps/board/src/app/api/stream/route.ts:139 passes to `subscribe`"
   },
   {
     "file": "packages/github/src/app.ts",
@@ -668,212 +626,158 @@
   {
     "file": "packages/projector/src/backlog.ts",
     "fn": "readBacklog",
-    "until": "#790",
-    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
-  },
-  {
-    "file": "packages/projector/src/choose.ts",
-    "fn": "projectionStore",
-    "until": "#790",
-    "why": "`packages/daemon/integration/the-written-choice.test.ts`"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/backlog.ts, apps/board/src/lib/landed.ts"
   },
   {
     "file": "packages/projector/src/projection.ts",
     "fn": "projectionLag",
-    "until": "#790",
-    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/footer.ts, apps/board/src/lib/health.ts, apps/board/src/app/page.tsx; apps/site/scripts/books.ts"
   },
   {
     "file": "packages/projector/src/projection.ts",
     "fn": "readLag",
-    "until": "#790",
-    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/landed.ts, apps/board/src/lib/spend.ts"
   },
   {
     "file": "packages/projector/src/read-landed.ts",
     "fn": "readLanded",
-    "until": "#790",
-    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/landed.ts"
   },
   {
     "file": "packages/projector/src/read-ticket-report.ts",
     "fn": "readTicketReport",
-    "until": "#790",
-    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
-  },
-  {
-    "file": "packages/projector/src/runner-face.ts",
-    "fn": "runnerCloseFace",
-    "until": "#790",
-    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
-  },
-  {
-    "file": "packages/projector/src/runner-face.ts",
-    "fn": "runnerLagFace",
-    "until": "#790",
-    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
-  },
-  {
-    "file": "packages/projector/src/runner-face.ts",
-    "fn": "runnerRebuildFace",
-    "until": "#790",
-    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
-  },
-  {
-    "file": "packages/projector/src/runner-face.ts",
-    "fn": "runnerShapeFace",
-    "until": "#790",
-    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
-  },
-  {
-    "file": "packages/projector/src/runner-face.ts",
-    "fn": "runnerStartFace",
-    "until": "#790",
-    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
-  },
-  {
-    "file": "packages/projector/src/runner-face.ts",
-    "fn": "runnerStopFace",
-    "until": "#790",
-    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
-  },
-  {
-    "file": "packages/projector/src/shape.ts",
-    "fn": "projectionShape",
-    "until": "#790",
-    "why": "apps/cli doctor.ts awaits it until its row"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/report.ts, apps/board/src/lib/task.ts; apps/site/scripts/books.ts"
   },
   {
     "file": "packages/projector/src/spend.ts",
     "fn": "readSpend",
-    "until": "#790",
-    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/lib/day-spend.ts, apps/board/src/lib/locks.ts, apps/board/src/lib/report.ts, apps/board/src/lib/spend.ts, apps/board/src/lib/task.ts; apps/site/src/lib/snapshot.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "advanceFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "backlogFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "checkpointFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "closeFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "columnsOfFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "createFace",
-    "until": "#790",
-    "why": "the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "lagFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "lagsFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "landedFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "queryFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "reduceFace",
-    "until": "#790",
-    "why": "the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "registerFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
-  },
-  {
-    "file": "packages/projector/src/store-face.ts",
-    "fn": "resetFace",
-    "until": "#790",
-    "why": "the tests that reduce through a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "rewindFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "spendFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "taskProjectsFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "tasksFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "ticketReportFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/store-face.ts",
     "fn": "transactFace",
-    "until": "#790",
-    "why": "the runner, `shape.ts`, `choose.ts`'s reads and the projections' `ProjectionContext` until the projector tickets after this one; the tests that build a promise store, among them `packages/projector/test/contract.ts` and `apps/board/unit/waiting-card.test.tsx`"
+    "until": "0101 §7",
+    "why": "the promise `ProjectionStore` that `promiseProjectionStore` fills, which the board's own tests build with `createSqliteProjectionStore`: apps/board/unit/waiting-card.test.tsx, apps/board/test/visual-waiting.ts"
   },
   {
     "file": "packages/projector/src/task-view.ts",
     "fn": "readTaskProjects",
-    "until": "#790",
-    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/board.ts"
   },
   {
     "file": "packages/projector/src/task-view.ts",
     "fn": "readTasks",
-    "until": "#790",
-    "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor read the projections as promises."
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/board.ts, apps/board/src/lib/health.ts, apps/board/src/app/api/search/route.ts, apps/board/src/lib/task.ts; apps/site/scripts/books.ts, apps/site/scripts/snapshot.ts"
   },
   {
     "file": "packages/recipe/src/files.ts",

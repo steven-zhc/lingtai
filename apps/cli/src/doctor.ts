@@ -135,7 +135,6 @@ import {
   describeShape,
   projectionLag,
   projectionLagEffect,
-  projectionShape,
   projectionShapeEffect,
   readTasks,
   readTasksEffect,
@@ -795,7 +794,7 @@ function schema(url: string): Effect.Effect<CheckResult[]> {
 /** What the beacon read answers: the daemon's status, or `null` where none has ever run. */
 type Beacon = Awaited<ReturnType<typeof readStatus>>
 type ProjectionLags = Awaited<ReturnType<typeof projectionLag>>
-type ProjectionShape = Awaited<ReturnType<typeof projectionShape>>
+type ProjectionShape = Effect.Success<ReturnType<typeof projectionShapeEffect>>
 
 /**
  * Projections that stopped alone in the running daemon (#839).

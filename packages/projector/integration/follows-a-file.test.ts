@@ -29,10 +29,10 @@ import { parsePayload, ticketStream } from '@lingtai/domain'
 import { createSqliteLog, openSqliteLog } from '@lingtai/event-store/sqlite'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { createProjectionRunner } from '../src/projection.ts'
 import { makeSqliteProjections, openSqliteProjections } from '../src/sqlite.ts'
 import { promiseProjectionStore } from '../src/store-face.ts'
 import { taskViewProjection } from '../src/task-view.ts'
+import { createProjectionRunner } from '../test/promise-runner.ts'
 
 const dirs: string[] = []
 

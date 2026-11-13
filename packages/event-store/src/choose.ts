@@ -42,7 +42,7 @@ import { Effect, Layer } from 'effect'
 
 import { closableOnceEffect } from './closable.ts'
 import { createDb } from './db.ts'
-import { Events, type EventStore, type EventsPort, makePostgresEvents } from './event-store.ts'
+import { Events, type EventsPort, makePostgresEvents } from './event-store.ts'
 import { createPostgresLog, type Log } from './log.ts'
 import { makePostgresLogSql, makePostgresQueries, Queries, type QueriesPort } from './queries.ts'
 import { makeSqlSnapshots, Snapshots, type SnapshotsPort } from './snapshots.ts'
@@ -77,32 +77,11 @@ export function closeProcessLogEffect() {
 }
 
 /**
- * The log this process runs: the store, the questions beside it and the waker
- * that goes with both (#221).
- */
-export function processLog(): Promise<Log> {
-  return Effect.runPromise(processLogEffect())
-}
-
-const processLogEffect = () => Effect.map(process_.get(), (o) => o.log)
-
-/** Just the store, for the callers that append and read and ask nothing else. */
-export function processEventStore(): Promise<EventStore> {
-  return Effect.runPromise(processEventStoreEffect())
-}
-
-const processEventStoreEffect = () => Effect.map(process_.get(), (o) => o.log.store)
-
-/**
  * The ticket store this process runs — `tickets` and `ticket_comments`, in
  * whichever database the log itself is (#379). Opened alongside the log by the
  * same call, so a SQLite machine shares the one handle rather than opening the
  * file twice.
  */
-export function processTicketSql(): Promise<TicketSql> {
-  return Effect.runPromise(processTicketSqlEffect())
-}
-
 export const processTicketSqlEffect = (): Effect.Effect<TicketSql> => Effect.map(process_.get(), (o) => o.tickets)
 
 const openEffect: Effect.Effect<Opened> = Effect.gen(function* () {

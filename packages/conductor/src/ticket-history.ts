@@ -21,11 +21,11 @@ import { makeDbTickets } from './db-tickets.ts'
  */
 export function liveHistoryEffect(project: string): Effect.Effect<readonly string[]> {
   return Effect.gen(function* () {
-    const { log, processTicketSql } = yield* Effect.promise(() => import('@lingtai/event-store'))
+    const { log, processTicketSqlEffect } = yield* Effect.promise(() => import('@lingtai/event-store'))
     const { parseTicketStream, ticketStreamsOf } = yield* Effect.promise(() => import('@lingtai/domain'))
     const streams = yield* Effect.promise(() => log.queries.projectStreams(ticketStreamsOf(project)))
     const wiStreams = streams.filter((id) => parseTicketStream(id)?.project === project)
-    const sql = yield* Effect.promise(() => processTicketSql())
+    const sql = yield* processTicketSqlEffect()
     const dbTicketRows = yield* makeDbTickets(sql, project).listIssuesSince(new Date(0))
     return [...wiStreams, ...dbTicketRows.map((t) => `db ticket #${t.number}`)]
   })

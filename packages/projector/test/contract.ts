@@ -32,11 +32,11 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { backlogProjection } from '../src/backlog.ts'
-import { createProjectionRunner } from '../src/projection.ts'
 import { spendProjection } from '../src/spend.ts'
-import { createFace, reduceFace, resetFace } from '../src/store-face.ts'
+import { createFace, fromPromiseContext, reduceFace } from '../src/store-face.ts'
 import type { Projection, ProjectionsPort, ProjectionStore } from '../src/store.ts'
 import { taskViewProjection } from '../src/task-view.ts'
+import { createProjectionRunner } from './promise-runner.ts'
 
 /**
  * The subject of the runner assertions: a projection that exists only here.
@@ -480,7 +480,7 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
         await f.store.transact((ctx) => createFace(contractProjection, ctx))
         expect((await f.store.columnsOf([CONTRACT_TABLE])).has(CONTRACT_TABLE)).toBe(true)
 
-        await f.store.transact((ctx) => resetFace(contractProjection, ctx))
+        await f.store.transact((ctx) => Effect.runPromise(contractProjection.reset(fromPromiseContext(ctx))))
         expect((await f.store.columnsOf([CONTRACT_TABLE])).has(CONTRACT_TABLE)).toBe(false)
       } finally {
         await f.close()

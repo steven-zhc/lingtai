@@ -19,7 +19,7 @@ import { expect, it } from 'vitest'
 const root = join(import.meta.dirname, '../../..')
 
 const MAY_BUILD_A_RUNNER: Readonly<Record<string, string>> = {
-  'packages/projector/src/projection.ts': 'the definition of createProjectionRunner',
+  'packages/projector/src/projection.ts': 'the definition of makeRunner',
   'packages/daemon/src/daemon.ts': 'the daemon, after acquireDaemonLock — held even under --no-conduct',
   'apps/cli/src/projector.ts': "`lingtai run`'s ProjectorLive, built after run takes the conductor lock",
   'apps/cli/src/rates.ts': "the price-triggered rebuild (#680), called only from a lock holder's own process",

@@ -23,9 +23,7 @@
  * is re-exported here: a caller asks for a store rather than naming one.
  */
 export {
-  createProjectionRunner,
   makeRunner,
-  promiseRunner,
   type ProjectionRunnerPort,
   projectionLag,
   projectionLagEffect,
@@ -48,12 +46,11 @@ export {
   type TaskQuery,
   type TicketReportQuery,
 } from './store.ts'
-export { createFace, reduceFace, resetFace } from './store-face.ts'
+export { createFace, reduceFace } from './store-face.ts'
 export {
   closeProcessProjectionsEffect,
   ProcessProjectionsClosedError,
   openProjections,
-  projectionStore,
   type ProjectionStoreOptions,
 } from './choose.ts'
 export {
@@ -62,7 +59,6 @@ export {
   declaredShape,
   describeDrift,
   describeShape,
-  projectionShape,
   projectionShapeEffect,
   type ProjectionDrift,
   type ProjectionShape,

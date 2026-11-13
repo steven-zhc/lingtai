@@ -107,10 +107,6 @@ export function reduceFace(projection: Projection, events: readonly Envelope[], 
   return Effect.runPromise(projection.reduce(events, fromPromiseContext(ctx)))
 }
 
-export function resetFace(projection: Projection, ctx: ProjectionContext) {
-  return Effect.runPromise(projection.reset(fromPromiseContext(ctx)))
-}
-
 /** The promise `ProjectionContext` a reducer holds, over the port's. */
 export function promiseContext(ctx: ProjectionContextPort): ProjectionContext {
   return {

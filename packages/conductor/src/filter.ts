@@ -327,7 +327,7 @@ export function ownerlessRefusal(project: string, recipe: Recipe): string | null
  * touched them.
  *
  * `options.tickets` exists for the unit tests: handed a `:memory:` SQLite and
- * a fake log, `ticketsFor` never reaches `processTicketSql()`'s default,
+ * a fake log, `ticketsFor` never reaches `processTicketSqlEffect()`'s default,
  * which `HOME=/nonexistent pnpm test` cannot open.
  */
 export function projectClientEffect(

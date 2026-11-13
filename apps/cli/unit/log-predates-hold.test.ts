@@ -15,7 +15,7 @@ import type { Runtime } from '@lingtai/agent'
  */
 import { type AcquireDaemonLockOptions, startDaemon } from '@lingtai/daemon'
 import type { StoreChoice } from '@lingtai/env'
-import { LogPredatesHoldError, logPredatesHold, type LogQueries } from '@lingtai/event-store'
+import { LogPredatesHoldError, logPredatesHoldEffect, type LogQueries } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Projection, ProjectionRunner, ProjectionRunnerPort } from '@lingtai/projector'
 import { Effect } from 'effect'
@@ -62,6 +62,9 @@ const reach: DoctorReach = {
     throw new Error('no project is registered — nothing should resolve an agent environment')
   },
 }
+
+const logPredatesHold = (q: Pick<LogQueries, 'typeCounts'>) =>
+  Effect.runPromise(logPredatesHoldEffect({ typeCounts: () => Effect.promise(() => q.typeCounts()) }))
 
 /** A `LogQueries` over the given store, with every other question answering an empty log. */
 function queriesOver(store: Pick<LogQueries, 'typeCounts'>): LogQueries {

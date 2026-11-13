@@ -34,7 +34,7 @@ export type Db = ReturnType<typeof createDb>
  * `apps/cli/src/entry.ts` had to answer five commands before `lingtai.ts`
  * loaded at all.
  *
- * The one client a process holds is `processLog()`'s in `choose.ts`, built
+ * The one client a process holds is the `log` in `index.ts`, built
  * from the written choice at first use. This factory stays for the caller that
  * wants a *second*, independent connection — 0009's reason, unchanged.
  */

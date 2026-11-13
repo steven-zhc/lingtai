@@ -9,9 +9,10 @@ import type { EventStore } from '@lingtai/event-store'
 import { Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { createProjectionRunner, makeRunner } from '../src/projection.ts'
+import { makeRunner } from '../src/projection.ts'
 import { makeSqliteProjections, openSqliteProjections } from '../src/sqlite.ts'
 import type { Projection } from '../src/store.ts'
+import { createProjectionRunner } from '../test/promise-runner.ts'
 
 describe('a runner whose reducer dies', () => {
   it("stops with the reducer's own error, once, and attempts no second batch", async () => {

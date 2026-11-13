@@ -11,8 +11,9 @@ import { userInfo } from 'node:os'
  * Real events, throwaway project, as every database-touching test here does.
  */
 import { projectStream, reduceTicket, ticketStream } from '@lingtai/domain'
-import { processEventStore, type EventStore } from '@lingtai/event-store'
-import { createProjectionRunner, taskViewProjection } from '@lingtai/projector'
+import { eventStore, type EventStore } from '@lingtai/event-store'
+import { taskViewProjection } from '@lingtai/projector'
+import { createProjectionRunner } from '@lingtai/projector/test/promise-runner'
 import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -52,7 +53,7 @@ async function reduce(): Promise<void> {
 }
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
   await store.append(projectStream(PROJECT), 0, [
     {
       type: 'ProjectConfigured',
