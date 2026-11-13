@@ -5,10 +5,14 @@
  * `apps/cli/unit/landing.test.ts` does for `askLanding`.
  */
 import { type RecipeFiles, recipePath } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { QuestionWorld } from '../src/question.ts'
-import { askKinds, askTickets } from '../src/source.ts'
+import { askKinds as askKindsEffect, askTickets as askTicketsEffect } from '../src/source.ts'
+
+const askKinds = (...args: Parameters<typeof askKindsEffect>) => Effect.runPromise(askKindsEffect(...args))
+const askTickets = (...args: Parameters<typeof askTicketsEffect>) => Effect.runPromise(askTicketsEffect(...args))
 
 const before = process.env['NO_COLOR']
 beforeAll(() => {
