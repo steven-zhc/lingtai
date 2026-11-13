@@ -330,10 +330,12 @@ describe('waiting for the lock', () => {
     let asked = 0
     const lines: string[] = []
 
-    const waited = await waitForTheLock('draining', null, (l) => lines.push(l), {
-      ask: () => answers[Math.min(asked++, answers.length - 1)]!(),
-      pollMs: 1,
-    })
+    const waited = await Effect.runPromise(
+      waitForTheLock('draining', null, (l) => lines.push(l), {
+        ask: Effect.suspend(() => lift(answers[Math.min(asked++, answers.length - 1)]!)),
+        pollMs: 1,
+      }),
+    )
 
     expect(waited).toBe('free')
     // Free only on the answer that said nobody, not on the one that failed.
@@ -342,12 +344,12 @@ describe('waiting for the lock', () => {
   })
 
   it('gives up on its timeout rather than calling a lock it cannot read free', async () => {
-    const waited = await waitForTheLock('draining', 5, () => {}, {
-      ask: async () => {
-        throw new Error('the pooler restarted')
-      },
-      pollMs: 2,
-    })
+    const waited = await Effect.runPromise(
+      waitForTheLock('draining', 5, () => {}, {
+        ask: Effect.fail(new Error('the pooler restarted')),
+        pollMs: 2,
+      }),
+    )
     expect(waited).toBe('gave-up')
   })
 })
@@ -726,9 +728,9 @@ async function supervised(
         holding: () => Effect.succeed('nothing in flight'),
         queue: () =>
           Effect.succeed({
-            wait: async () => ((w.phase = 'drained'), 'held' as const),
-            holds: async () => true,
-            leave: async () => {},
+            wait: () => Effect.sync(() => ((w.phase = 'drained'), 'held' as const)),
+            holds: Effect.succeed(true),
+            leave: Effect.void,
           }),
       },
       started: {

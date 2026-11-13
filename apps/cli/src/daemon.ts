@@ -91,7 +91,7 @@ export function serviceOptions(): ServiceOptions {
       // Not caught here: a read that failed is not "nothing is in flight", and
       // `service shutdown` says it could not be read.
       holding: () => inFlightEffect().pipe(Effect.map((items) => describeInFlight(items))),
-      queue: () => lift(() => queueForTheLock()),
+      queue: () => queueForTheLock(),
     },
     // A supervisor's exit code says the job was asked for, not that a daemon
     // won the lock and took work — so a start is confirmed by the record the
