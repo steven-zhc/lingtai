@@ -3,9 +3,10 @@ import { connect, createServer, type Server } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { Effect } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { boardEntry, boardPortOrWhy, builtBoardDir, serveBoard } from '../src/board.ts'
+import { boardEntry, boardPortOrWhy, builtBoardDir, serveBoardEffect } from '../src/board.ts'
 
 /**
  * `serveBoard` against a stand-in `server.js` that does what Next's does: binds
@@ -65,7 +66,7 @@ function answers(port: number): Promise<boolean> {
 describe('serveBoard', () => {
   it('resolves only once the server is listening, not when server.js has loaded', async () => {
     const port = await freePort()
-    await serveBoard({ dir: fakeBoard(400), port, host: '127.0.0.1', release: async () => {} })
+    await Effect.runPromise(serveBoardEffect({ dir: fakeBoard(400), port, host: '127.0.0.1', release: Effect.void }))
     expect(await answers(port)).toBe(true)
   })
 
@@ -75,9 +76,9 @@ describe('serveBoard', () => {
     servers.push(holder)
     await new Promise<void>((resolve) => holder.listen(port, '127.0.0.1', resolve))
 
-    await expect(serveBoard({ dir: fakeBoard(0), port, host: '127.0.0.1', release: async () => {} })).rejects.toThrow(
-      `127.0.0.1:${port} is already in use`,
-    )
+    await expect(
+      Effect.runPromise(serveBoardEffect({ dir: fakeBoard(0), port, host: '127.0.0.1', release: Effect.void })),
+    ).rejects.toThrow(`127.0.0.1:${port} is already in use`)
     expect((globalThis as { __boardLoaded?: boolean }).__boardLoaded).toBeUndefined()
   })
 })

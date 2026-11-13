@@ -366,11 +366,12 @@ function liveBoardRunner(request: BoardRequest): Effect.Effect<number, unknown> 
     const { port, host } = where.success
     const world = liveBoardWorld(host)
     if (request.verb === 'status' && request.json) {
-      printJson('board status', boardStatusJson(yield* lift(() => readBoardStatus({ port }, world))))
+      printJson('board status', boardStatusJson(yield* readBoardStatus({ port }, world)))
       return 0
     }
-    return yield* lift(() =>
-      boardCommand({ verb: request.verb, port, dir: request.dir ?? builtBoardDir(), open: request.open }, world),
+    return yield* boardCommand(
+      { verb: request.verb, port, dir: request.dir ?? builtBoardDir(), open: request.open },
+      world,
     )
   })
 }

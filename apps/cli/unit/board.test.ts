@@ -1,3 +1,4 @@
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 /**
@@ -13,6 +14,7 @@ import {
   holdingProcess,
   stopOnSignal,
   type BoardCommand,
+  type BoardOptions,
   type BoardWorld,
 } from '../src/board.ts'
 import { BOARD_WAIT_MS, type Keeper } from '../src/service.ts'
@@ -20,19 +22,29 @@ import { BOARD_WAIT_MS, type Keeper } from '../src/service.ts'
 const PORT = 17820
 const URL = `http://127.0.0.1:${PORT}`
 
+/** The five ports that are Effects, as the fakes below write them: promises, lifted in `world`. */
+type PromisePorts = {
+  answering: (port: number) => Promise<string | null>
+  bound: (port: number) => Promise<boolean>
+  serve: (options: BoardOptions) => Promise<void>
+  open: (url: string) => Promise<boolean>
+  sleep: (ms: number) => Promise<void>
+}
+
 function world(
-  over: Partial<BoardWorld> & {
-    holder?: string | null
-    /** Whether a supervisor keeps the board's job — a keeper that answers as the real one does. */
-    kept?: boolean
-    /**
-     * How many asks after `bootout` the supervisor goes on saying it has the
-     * job. `bootout` returns while the job is still running, so this is the
-     * ordinary case and not a pathological one; `Infinity` is a job that never
-     * goes.
-     */
-    jobGoesAfter?: number
-  } = {},
+  over: Partial<Omit<BoardWorld, keyof PromisePorts>> &
+    Partial<PromisePorts> & {
+      holder?: string | null
+      /** Whether a supervisor keeps the board's job — a keeper that answers as the real one does. */
+      kept?: boolean
+      /**
+       * How many asks after `bootout` the supervisor goes on saying it has the
+       * job. `bootout` returns while the job is still running, so this is the
+       * ordinary case and not a pathological one; `Infinity` is a job that never
+       * goes.
+       */
+      jobGoesAfter?: number
+    } = {},
 ) {
   const out: string[] = []
   const err: string[] = []
@@ -43,14 +55,20 @@ function world(
   let booted = false
   let asksSinceBootout = 0
   let keeperAsks = 0
+  const fakes: PromisePorts = {
+    answering: async () => null,
+    bound: async () => false,
+    serve: async () => {},
+    open: async () => true,
+    sleep: async () => {},
+    ...over,
+  }
   const w: BoardWorld = {
     host: '127.0.0.1',
     reach: '127.0.0.1',
     hostname: 'mac',
     home: { path: '/Users/x/lingtai-trial/a', shown: '~/lingtai-trial/a' },
     notSetUp: () => false,
-    answering: async () => null,
-    bound: async () => false,
     locker: {
       tryLock: async (_key, name) => {
         if (holder !== null) return { ok: false, holder }
@@ -75,22 +93,24 @@ function world(
       if (call[1] === 'bootout' || (call[1] === '--user' && call[2] === 'stop')) booted = true
       return { status: 0, out: '' }
     },
-    serve: async () => {},
-    open: async () => true,
     signal: (pid) => {
       signalled.push(pid)
       holder = null
       return true
     },
-    sleep: async () => {},
     now: () => Date.now(),
     whereThePortIsSet: 'board.port in ~/.lingtai/config.yml, or --port for this one run',
     log: (l) => out.push(l),
     error: (l) => err.push(l),
     ...over,
+    answering: (port) => Effect.promise(() => fakes.answering(port)),
+    bound: (port) => Effect.promise(() => fakes.bound(port)),
+    serve: (options) => Effect.promise(() => fakes.serve(options)),
+    open: (url) => Effect.promise(() => fakes.open(url)),
+    sleep: (ms) => Effect.promise(() => fakes.sleep(ms)),
   }
   const go = (verb: BoardCommand['verb'], extra: Partial<BoardCommand> = {}) =>
-    boardCommand({ verb, port: PORT, dir: '/dist/board', open: false, ...extra }, w)
+    Effect.runPromise(boardCommand({ verb, port: PORT, dir: '/dist/board', open: false, ...extra }, w))
   return { go, out, err, calls, signalled, held: () => holder, keeperAsks: () => keeperAsks }
 }
 
