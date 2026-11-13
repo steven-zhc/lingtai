@@ -119,3 +119,25 @@ describe('the work loop as Effects', () => {
     expect(delivered).toEqual([])
   })
 })
+
+describe('a pass that dies', () => {
+  it('is told as a failed turn, and the loop carries on', async () => {
+    const told: string[] = []
+    let passes = 0
+    const port = makeWorkLoop(
+      base({
+        tell: (line) => told.push(line),
+        // A store failure is a defect (0101 §6); the promise this replaced caught it as a rejection.
+        pass: () => {
+          passes += 1
+          return Effect.die(new Error('x'))
+        },
+      }),
+    )
+    await Effect.runPromise(port.start())
+    await ticks()
+    expect(told).toContain('turn failed: x')
+    expect(passes).toBeGreaterThan(0)
+    await Effect.runPromise(port.stop())
+  })
+})

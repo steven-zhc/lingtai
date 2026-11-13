@@ -3,7 +3,7 @@
  * pause still ends the whole pass.
  */
 import { loadProject, reachAccountLimit } from '@lingtai/conductor'
-import { lockedEffect, makeGuard } from '@lingtai/daemon'
+import { CeilingUnchecked, type Guard, lockedEffect, makeGuard } from '@lingtai/daemon'
 import { accountStream, projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
@@ -179,5 +179,62 @@ describe('a pass with one project locked', () => {
     expect(entered).toEqual(['first', 'second'])
     expect(lines.find((l) => l.startsWith('third: not looked at'))).toContain("claude-code's usage limit")
     expect(await store.read('ctl-conductor')).toEqual([])
+  })
+})
+
+describe('lockedEffect over a guard whose read fails or dies', () => {
+  const gated = async (guard: Guard) => {
+    const { store, projects } = await twoProjects()
+    const entered: string[] = []
+    const lines: string[] = []
+    await runConduct({
+      projects: projects.slice(0, 1),
+      codeSha: null,
+      store,
+      outcome: { projects: 0, ran: 0, refused: [] },
+      log: (l) => lines.push(l),
+      locked: lockedEffect(guard),
+      work: effectOf(async (project) => {
+        entered.push(project.project!)
+        return 'looked-away'
+      }),
+    })
+    return { entered, lines }
+  }
+
+  it('answers the ceiling sentence for a failure, and the look it gates starts nothing', async () => {
+    const { entered, lines } = await gated({
+      locksFor: () => Effect.fail(new CeilingUnchecked({ why: 'spend is behind' })),
+    })
+    expect(entered).toEqual([])
+    expect(lines).toEqual([
+      'first: not looked at — could not check the daily ceiling: spend is behind — taking no work',
+    ])
+  })
+
+  it('answers the same sentence for a check that dies', async () => {
+    const { entered, lines } = await gated({
+      locksFor: () => Effect.die(new CeilingUnchecked({ why: 'spend is behind' })),
+    })
+    expect(entered).toEqual([])
+    expect(lines).toEqual([
+      'first: not looked at — could not check the daily ceiling: spend is behind — taking no work',
+    ])
+  })
+
+  it('is told a read that died as a refusal of the project, not a look that ends', async () => {
+    const { store, projects } = await twoProjects()
+    const outcome = { projects: 0, ran: 0, refused: [] as { project: string; detail: string }[] }
+    const lines: string[] = []
+    await runConduct({
+      projects: projects.slice(0, 1),
+      codeSha: null,
+      store,
+      outcome,
+      log: (l) => lines.push(l),
+      work: () => Effect.die(new Error('x')),
+    })
+    expect(outcome.refused).toEqual([{ project: 'first', detail: 'x' }])
+    expect(lines).toContain('first: x')
   })
 })

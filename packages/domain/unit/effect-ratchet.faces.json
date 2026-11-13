@@ -165,7 +165,7 @@
     "file": "packages/conductor/src/discover.ts",
     "fn": "runnableNow",
     "until": "#790",
-    "why": "apps/board (board.ts, queued.ts), and apps/cli (status.ts, conduct.ts) await it"
+    "why": "apps/board (board.ts, queued.ts), and apps/cli (status.ts) await it"
   },
   {
     "file": "packages/conductor/src/discuss.ts",
@@ -291,7 +291,7 @@
     "file": "packages/conductor/src/projects.ts",
     "fn": "loadProjects",
     "until": "#790",
-    "why": "apps/board (search, landed, locks), apps/cli (rates, daemon, status, triage, conduct) await it"
+    "why": "apps/board (search, landed, locks), apps/cli (rates, daemon, status, triage) await it"
   },
   {
     "file": "packages/conductor/src/projects.ts",
@@ -357,7 +357,7 @@
     "file": "packages/conductor/src/same-file.ts",
     "fn": "readFixFiles",
     "until": "#790",
-    "why": "apps/cli `status.ts` and `conduct.ts` await it"
+    "why": "apps/cli `status.ts` awaits it"
   },
   {
     "file": "packages/conductor/src/schedule.ts",
@@ -369,7 +369,7 @@
     "file": "packages/conductor/src/snapshot-state.ts",
     "fn": "readState",
     "until": "#790",
-    "why": "apps/cli (requeue, continuing, subscribers, status, grant-fix-round, triage, approve) and apps/board read a reducer's state as a promise"
+    "why": "apps/cli (requeue, subscribers, status, grant-fix-round, triage, approve) and apps/board read a reducer's state as a promise"
   },
   {
     "file": "packages/conductor/src/split-ticket.ts",
@@ -447,7 +447,7 @@
     "file": "packages/daemon/src/control.ts",
     "fn": "readControl",
     "until": "#790",
-    "why": "apps/cli (daemon, restart, status, run, conduct, world, project-pause, first-project, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
+    "why": "apps/cli (daemon, restart, status, world, project-pause, first-project, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
   },
   {
     "file": "packages/daemon/src/control.ts",

@@ -9,11 +9,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { conductProjects, conductWork, projectsForTurn, type ConductWorld, type TurnOutcome } from '../src/conduct.ts'
 
 const runConduct = (o: Parameters<typeof conductProjects>[0]) => Effect.runPromise(conductProjects(o))
-/** The ports are Effects; these fakes are written as promises. */
-const effectOf =
-  <A extends unknown[], B extends string | null>(f: (...a: A) => Promise<B>) =>
-  (...a: A) =>
-    Effect.promise(() => f(...a))
 
 /**
  * A pass's per-project work, for a project with no owner beside a GitHub one
