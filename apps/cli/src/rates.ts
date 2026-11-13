@@ -148,9 +148,13 @@ export const rebuildEstimates = (priced: string[]): Effect.Effect<string, unknow
  * `Scope`: it outlives the pass that asked, `ratesSettled` is what waits for it, and closing the scope — or
  * interrupting whoever owns it — interrupts it.
  */
-export const startRates = (now: Date = new Date()): Effect.Effect<void, never, Scope.Scope> =>
-  ratesDue(now)
-    ? Effect.forkScoped(refreshRates(realRatePorts(modelsSeenInSpend, process.env, rebuildEstimates)), {
-        startImmediately: true,
-      }).pipe(Effect.asVoid)
-    : Effect.void
+export const startRates = (now?: Date): Effect.Effect<void, never, Scope.Scope> =>
+  // Decided each time the Effect runs, not when it is built: the daemon repeats one of these hourly, and a
+  // clock and a note read once would freeze that answer for the life of the process.
+  Effect.suspend(() =>
+    ratesDue(now ?? new Date())
+      ? Effect.forkScoped(refreshRates(realRatePorts(modelsSeenInSpend, process.env, rebuildEstimates)), {
+          startImmediately: true,
+        }).pipe(Effect.asVoid)
+      : Effect.void,
+  )
