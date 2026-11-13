@@ -30,7 +30,10 @@ const noop = (): void => undefined
 
 /** Carries a value `failed` judged a failure through the observer's rejection, so its span is marked. */
 class Judged<T> {
-  constructor(readonly value: T) {}
+  readonly value: T
+  constructor(value: T) {
+    this.value = value
+  }
 }
 
 /**

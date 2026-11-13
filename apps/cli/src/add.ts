@@ -331,8 +331,10 @@ function slugRepo(slug: string): string | null {
 type Added = Effect.Success<ReturnType<FirstProjectWorld['github']['add']>>
 
 class Declined extends Error {
-  constructor(readonly result: Added) {
+  readonly result: Added
+  constructor(result: Added) {
     super('declined')
+    this.result = result
   }
 }
 
