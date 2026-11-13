@@ -118,6 +118,26 @@ describe('proposeSetup', () => {
     expect(p.base).toMatchObject({ known: false, reason: 'no branch', default: null })
   })
 
+  it('a reader that throws while building its Effect is still a known:false line', async () => {
+    const throwing = {
+      has: (): never => {
+        throw new Error('has threw')
+      },
+      read: () => Effect.succeed(null),
+    }
+    const p = await run(
+      { kind: 'github', owner: 'acme', repo: 'widget' },
+      readers({
+        setupReader: throwing,
+        defaultBranch: () => {
+          throw new Error('unavailable')
+        },
+      }),
+    )
+    expect(p.base).toMatchObject({ known: false, reason: 'unavailable', default: null })
+    expect(p.install).toMatchObject({ known: false, reason: 'the repository could not be read: has threw' })
+  })
+
   it('a runtime probe that fails is unknown for the runtimes and the agents', async () => {
     const p = await run(
       { kind: 'github', owner: 'acme', repo: 'widget' },

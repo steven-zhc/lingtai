@@ -165,7 +165,7 @@ export const runTrialEffect = Effect.fn('setup.trial')(function* (
       patterns: productionPatterns(asStrings(declared['refuseHosts'])),
       home: at.home,
     }),
-  ).pipe(Effect.catch((err) => Effect.succeed({ refusal: messageOf(err), values: {} as Record<string, string> })))
+  ).pipe(Effect.catch((err) => Effect.succeed({ refusal: messageOf(err.cause), values: {} as Record<string, string> })))
   const runs = [...(install === null ? [] : [install]), ...build]
   if (env.refusal) {
     return {
@@ -195,7 +195,7 @@ export const runTrialEffect = Effect.fn('setup.trial')(function* (
         // Uninterruptible: `remove` must not start while git is still writing.
         // Ctrl+C reaches git through its process group, not through the fiber.
         const cutting = yield* Effect.uninterruptible(
-          portCause(
+          portCause(() =>
             deps.provision({
               project: at.project,
               owner: at.owner,
@@ -264,7 +264,7 @@ export const runTrialEffect = Effect.fn('setup.trial')(function* (
     (runId) =>
       // A failed cleanup must not replace the failure it cleans up after — and
       // must not be hidden either: the checkout holds a planted env file.
-      portCause(deps.remove({ project: at.project, runId, home: at.home })).pipe(
+      portCause(() => deps.remove({ project: at.project, runId, home: at.home })).pipe(
         Effect.catch((err) =>
           Effect.gen(function* () {
             const why = messageOf(err)

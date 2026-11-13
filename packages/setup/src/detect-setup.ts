@@ -111,7 +111,7 @@ const failed = (e: unknown): SetupFailed => new SetupFailed({ operation: 'detect
 
 /** A read through the port; a rejection is `SetupFailed`. */
 const readPath = (reader: SetupReader, path: string): Effect.Effect<string | null, SetupFailed> =>
-  portCause(reader.read(path)).pipe(Effect.mapError(failed))
+  portCause(() => reader.read(path)).pipe(Effect.mapError(failed))
 
 /** A read a detector survives: a rejection is "could not get this content". */
 const readOrNull = (reader: SetupReader, path: string): Effect.Effect<string | null> =>
@@ -119,7 +119,7 @@ const readOrNull = (reader: SetupReader, path: string): Effect.Effect<string | n
 
 /** Tri-state: `has` rejecting is "could not tell", never absent. */
 const hasOrUnknown = (reader: SetupReader, path: string): Effect.Effect<boolean | 'unknown'> =>
-  portCause(reader.has(path)).pipe(Effect.catch(() => Effect.succeed('unknown' as const)))
+  portCause(() => reader.has(path)).pipe(Effect.catch(() => Effect.succeed('unknown' as const)))
 
 const detectInstall = (
   reader: SetupReader,

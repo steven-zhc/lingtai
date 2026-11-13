@@ -99,7 +99,7 @@ const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : Strin
 type Settled<T> = { ok: true; value: T } | { ok: false; reason: string }
 
 /** A reader as an Effect that cannot fail: the failure, or a defect, is a value. */
-const settle = <T>(read: Effect.Effect<T, unknown>): Effect.Effect<Settled<T>, never> =>
+const settle = <T>(read: () => Effect.Effect<T, unknown>): Effect.Effect<Settled<T>, never> =>
   portCause(read).pipe(
     Effect.match({
       onSuccess: (value): Settled<T> => ({ ok: true, value }),
@@ -109,7 +109,7 @@ const settle = <T>(read: Effect.Effect<T, unknown>): Effect.Effect<Settled<T>, n
 
 /** One reader as an Effect that can only succeed: a failure is a `known: false` line. */
 const attempt = <T, A>(
-  read: Effect.Effect<T, unknown>,
+  read: () => Effect.Effect<T, unknown>,
   ok: (value: T) => Line<A>,
   fallback: A,
 ): Effect.Effect<Line<A>, never> =>
@@ -131,7 +131,7 @@ function watched(reader: SetupReader): { reader: SetupReader; failure: () => str
   return {
     reader: {
       has: (path) =>
-        portCause(reader.has(path)).pipe(
+        portCause(() => reader.has(path)).pipe(
           Effect.tap((there) =>
             Effect.sync(() => {
               if (there) present.add(path)
@@ -142,7 +142,7 @@ function watched(reader: SetupReader): { reader: SetupReader; failure: () => str
       // A reader answers `null` for "could not get this content", so a file
       // that `has` just found and `read` cannot return is a failed read.
       read: (path) =>
-        portCause(reader.read(path)).pipe(
+        portCause(() => reader.read(path)).pipe(
           Effect.tap((text) =>
             Effect.sync(() => {
               if (text === null && present.has(path)) failed ??= `${path} exists but could not be read`
@@ -170,7 +170,7 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
         : { known: false, reason: `the repository could not be read: ${readFailure}`, default: fallback }
 
     const base = yield* attempt(
-      readers.defaultBranch(),
+      readers.defaultBranch,
       (b): Line<string | null> =>
         b === null
           ? { known: false, reason: 'the default branch could not be determined', default: null }
@@ -178,7 +178,7 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
       null,
     )
 
-    const probed = yield* settle(readers.runtimes())
+    const probed = yield* settle(readers.runtimes)
     const foundRuntimes = probed.ok ? probed.value : []
     const signedIn = foundRuntimes.filter((r) => r.signedIn).map((r) => r.id)
     const agents = defaultAgents(signedIn)
@@ -209,8 +209,8 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
 
     // History overrides `origin`: another source would number its own tickets
     // into the same streams (`DIFFERENT_SOURCE_CLASH`, apps/cli/src/source.ts).
-    const history = yield* settle(readers.history(project))
-    const origin = target.kind === 'local' ? yield* settle(readers.origin(target.path)) : null
+    const history = yield* settle(() => readers.history(project))
+    const origin = target.kind === 'local' ? yield* settle(() => readers.origin(target.path)) : null
     const repository =
       target.kind === 'github'
         ? { owner: target.owner, repo: target.repo }
