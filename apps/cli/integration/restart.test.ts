@@ -718,44 +718,46 @@ async function supervised(
     return { status: 0, out: '' }
   }
   const service = (argv: string[], asked: { timeoutMs: number | null; force: boolean }) =>
-    lift(() =>
-      serviceCommand(argv, {
-        liveness: async () => 'up',
-        shutdown: async () => shutdownNow(),
-        drain: {
-          ask: (by, reason) => promised.ask(by, reason, asked.timeoutMs, asked.force),
-          holding: async () => 'nothing in flight',
-          queue: async () => ({
-            wait: async () => ((w.phase = 'drained'), 'held'),
+    serviceCommand(argv, {
+      liveness: () => Effect.succeed('up'),
+      shutdown: () => lift(async () => shutdownNow()),
+      drain: {
+        ask: (by, reason) => lift(() => promised.ask(by, reason, asked.timeoutMs, asked.force)),
+        holding: () => Effect.succeed('nothing in flight'),
+        queue: () =>
+          Effect.succeed({
+            wait: async () => ((w.phase = 'drained'), 'held' as const),
             holds: async () => true,
             leave: async () => {},
           }),
-        },
-        started: { watermark: promised.watermark, after: promised.startAfter },
-        // The board's job answers at once unless the scene says otherwise:
-        // `lingtai restart` is about the conductor, and a board that would not
-        // come up is `service`'s to report. `heldBy` is null even under
-        // `wontAnswer` — a squatter that is not a Lingtai board takes no board
-        // lock, which is exactly why the job is started over it and exits.
-        board: {
-          url: 'http://127.0.0.1:17820',
-          answering: async () => (board.wontAnswer ? null : 'http://127.0.0.1:17820'),
-          missing: () => null,
-          heldBy: async () => null,
-        },
-        by: BY,
-        platform: 'darwin',
-        env: { HOME: home, USER: 'lingtai' },
-        root: home,
-        uid: process.getuid!(),
-        username: 'lingtai',
-        exec,
-        which: (bin) => (bin === 'node' ? '/usr/bin/node' : `/usr/bin/${bin}`),
-        sleep: async () => {},
-        log,
-        error: log,
-      }),
-    )
+      },
+      started: {
+        watermark: () => lift(() => promised.watermark()),
+        after: (version) => lift(() => promised.startAfter(version)),
+      },
+      // The board's job answers at once unless the scene says otherwise:
+      // `lingtai restart` is about the conductor, and a board that would not
+      // come up is `service`'s to report. `heldBy` is null even under
+      // `wontAnswer` — a squatter that is not a Lingtai board takes no board
+      // lock, which is exactly why the job is started over it and exits.
+      board: {
+        url: 'http://127.0.0.1:17820',
+        answering: () => Effect.succeed(board.wontAnswer ? null : 'http://127.0.0.1:17820'),
+        missing: () => null,
+        heldBy: () => Effect.succeed(null),
+      },
+      by: BY,
+      platform: 'darwin',
+      env: { HOME: home, USER: 'lingtai' },
+      root: home,
+      uid: process.getuid!(),
+      username: 'lingtai',
+      exec,
+      which: (bin) => (bin === 'node' ? '/usr/bin/node' : `/usr/bin/${bin}`),
+      sleep: () => Effect.void,
+      log,
+      error: log,
+    })
   return outcome(await Effect.runPromise(restartSupervised(args, { service, facts, log })))
 }
 

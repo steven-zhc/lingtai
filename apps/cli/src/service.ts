@@ -81,8 +81,9 @@ import { dirname, join } from 'node:path'
 
 import type { Asking, RecordedStart } from '@lingtai/daemon'
 import { repoRoot, stateDir } from '@lingtai/env'
-import { Context, Effect, Fiber } from 'effect'
+import { Cause, Context, Effect, Fiber } from 'effect'
 
+import { lift } from './exit.ts'
 import { jsonErrorDocument } from './output.ts'
 import {
   renderServiceStatus,
@@ -102,15 +103,37 @@ import { WALL_LIMIT } from './wall-limit.ts'
  * its own scope and deletes this.
  */
 function keepAsked(
-  standing: () => Promise<unknown>,
-  ask: () => Promise<unknown>,
+  standing: Effect.Effect<unknown, unknown>,
+  ask: Effect.Effect<unknown, unknown>,
   everyMs: number,
 ): { stop: () => Promise<void> } {
-  const fiber = Effect.runForkWith(Context.empty())(
-    keepAskedLoop(Effect.tryPromise(standing), Effect.tryPromise(ask), everyMs),
-  )
+  const fiber = Effect.runForkWith(Context.empty())(keepAskedLoop(standing, ask, everyMs))
   return { stop: () => Effect.runPromiseWith(Context.empty())(Fiber.interrupt(fiber)) }
 }
+
+/** What a cause says, for the sentence that reports a read that failed. */
+const messageOf = (cause: Cause.Cause<unknown>): string => {
+  const err = Cause.squash(cause)
+  return err instanceof Error ? err.message : String(err)
+}
+
+const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
+
+/**
+ * A read that could not be made, answered in words. A store's failure is a
+ * defect (#1074), so this is `catchCause` and not `catch`; only an
+ * interruption passes through.
+ */
+const answeringUnread =
+  <B>(answer: (message: string) => B) =>
+  <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A | B, never, R> =>
+    self.pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause as Cause.Cause<never>)
+          : Effect.succeed(answer(messageOf(cause))),
+      ),
+    )
 
 /** Unchanged from `scripts/launchd.sh`, so the agent it installed is the one this replaces. */
 export const LAUNCHD_LABEL = 'ai.nextloom.lingtai.daemon'
@@ -586,15 +609,15 @@ function processRunning(platform: ServicePlatform, lines: readonly string[]): bo
  */
 export interface ServiceDrain {
   /** `requestShutdownUnlessStanding`: never appended over a request already standing. */
-  ask: (by: string, reason: string) => Promise<Asking>
+  ask: (by: string, reason: string) => Effect.Effect<Asking, unknown>
   /** What is in flight, in words, said before the wait. */
-  holding: () => Promise<string>
+  holding: () => Effect.Effect<string, unknown>
   /**
    * A place in the queue for the conductor lock — `queueForDaemonLock` — taken
    * before the request is appended, so that whoever holds the lock now hands
    * it to this command and not to a copy the supervisor starts after it exits.
    */
-  queue: () => Promise<LockQueue>
+  queue: () => Effect.Effect<LockQueue, unknown>
 }
 
 /** What `ServiceDrain.queue` returns. */
@@ -662,14 +685,14 @@ export interface ServiceOptions {
   /** `status --json` (#622): the one document goes to `log`, and `NO_SUPERVISOR` becomes the error document. */
   json?: boolean
   /** `daemon_status`, the beacon outside the log (#46). Injected so this file loads without a database. */
-  liveness: () => Promise<string>
+  liveness: () => Effect.Effect<string, unknown>
   /**
    * The shutdown request in force, off the control stream, or null. Injected
    * for the same reason. A start ends the request standing (0126), so one that
    * is somebody else's is a decision a start would make for them: it is refused,
    * and this person's own is not.
    */
-  shutdown: () => Promise<{ by: string; reason: string } | null>
+  shutdown: () => Effect.Effect<{ by: string; reason: string } | null, unknown>
   /** What `shutdown` and `restart` wait on before the supervisor is told anything. */
   drain: ServiceDrain
   /**
@@ -679,8 +702,8 @@ export interface ServiceOptions {
    * reported success over an idle queue (#167).
    */
   started: {
-    watermark: () => Promise<number>
-    after: (version: number) => Promise<RecordedStart | null>
+    watermark: () => Effect.Effect<number, unknown>
+    after: (version: number) => Effect.Effect<RecordedStart | null, unknown>
   }
   /**
    * The board job's own two facts, beside the daemon's (#187): where it should
@@ -698,7 +721,7 @@ export interface ServiceOptions {
      * a number nobody chose.
      */
     url: string
-    answering: () => Promise<string | null>
+    answering: () => Effect.Effect<string | null, unknown>
     /**
      * Why `lingtai board start` would serve nothing on this machine, and what
      * to do about it — or null where it would serve a board.
@@ -731,7 +754,7 @@ export interface ServiceOptions {
      * called the start good. Throws where the lock cannot be read: *unread* is
      * not *nobody*, and a start over an unread lock is the crash loop again.
      */
-    heldBy: () => Promise<string | null>
+    heldBy: () => Effect.Effect<string | null, unknown>
   }
   /** Who asks for the drain — `human:$USER`, as `lingtai shutdown` records it. */
   by?: string
@@ -742,7 +765,7 @@ export interface ServiceOptions {
   username?: string
   exec?: Exec
   which?: (bin: string) => string | null
-  sleep?: (ms: number) => Promise<void>
+  sleep?: (ms: number) => Effect.Effect<void>
   /**
    * The clock a wait is measured against, beside the `sleep` it is spent in.
    * A wait that says how long it is has to be both: see `BOARD_WAIT_MS`.
@@ -817,894 +840,933 @@ export function keeper(
   return { kept: true, platform, path, uid }
 }
 
-export async function serviceCommand(args: string[], options: ServiceOptions): Promise<number> {
-  const log = options.log ?? ((line: string) => console.log(line))
-  const error = options.error ?? ((line: string) => console.error(line))
-  const exec = options.exec ?? execCall
-  const which = options.which ?? whichBin
-  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
-  const now = options.now ?? (() => Date.now())
-  const verb = args[0] as Verb | undefined
-  if (args[0] === 'stop') {
-    // Gone rather than kept as an alias. It sent the supervisor's signal, and
-    // launchd SIGKILLed the drain that began twenty seconds in (#174); a name
-    // that used to return in seconds and now waits a pass should be chosen.
-    error(
-      "lingtai service stop is gone — it was the supervisor's signal, which kills an attempt in flight 20 seconds in.",
-    )
-    error('pnpm lingtai service shutdown "why" drains through the log, waits for the attempt, then unloads.')
-    return 2
-  }
-  if (!verb || !VERBS.includes(verb)) {
-    error(`lingtai service ${VERBS.join('|')}`)
-    return 2
-  }
-
-  const platform = platformFor(options.platform ?? process.platform)
-  // Not just the OS: a Linux container has `linux` and no `systemctl`.
-  if (!platform || !which(platform === 'launchd' ? 'launchctl' : 'systemctl')) {
-    if (options.json && verb === 'status') log(jsonErrorDocument('service status', 'no-supervisor', NO_SUPERVISOR))
-    else error(NO_SUPERVISOR)
-    return 1
-  }
-
-  const env = options.env ?? process.env
-  const by = options.by ?? `human:${env['USER'] ?? 'operator'}`
-  const reason = args.slice(1).join(' ').trim() || 'no reason given'
-  const uid = options.uid ?? process.getuid?.() ?? 0
-  const username = options.username ?? userInfo().username
-  const inputs: ServiceInputs = {
-    // The `node` on PATH, as `scripts/launchd.sh` used, rather than
-    // `process.execPath` — under Homebrew a versioned Cellar path that the next
-    // `brew upgrade` deletes out from under the unit.
-    node: which('node') ?? process.execPath,
-    root: options.root ?? repoRoot(),
-    env,
-  }
-  const fileFor = (job: Job): ServiceFile =>
-    platform === 'launchd' ? launchdPlist(inputs, job) : systemdUnit(inputs, job)
-  let file: ServiceFile
-  let boardFile: ServiceFile
-  try {
-    file = fileFor(DAEMON_JOB)
-    boardFile = fileFor(BOARD_JOB)
-  } catch (err) {
-    if (options.json && verb === 'status')
-      log(jsonErrorDocument('service status', 'service-file', (err as Error).message))
-    else error((err as Error).message)
-    return 1
-  }
-  const steps = options.steps ?? noSteps
-  const target = `gui/${uid}/${LAUNCHD_LABEL}`
-  const boardTarget = `gui/${uid}/${BOARD_JOB.label}`
-  const named = (job: Job): string => (platform === 'launchd' ? job.label : job.unit)
-
-  const noUserManager = (out: string): void => {
-    if (platform === 'systemd' && /bus|XDG_RUNTIME_DIR/i.test(out)) {
-      // The usual cause under `sudo -u`: no user session, so no user manager.
+export const serviceCommand = (args: string[], options: ServiceOptions): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const log = options.log ?? ((line: string) => console.log(line))
+    const error = options.error ?? ((line: string) => console.error(line))
+    const exec = options.exec ?? execCall
+    const which = options.which ?? whichBin
+    const sleep = options.sleep ?? ((ms: number) => Effect.sleep(ms))
+    const now = options.now ?? (() => Date.now())
+    const verb = args[0] as Verb | undefined
+    if (args[0] === 'stop') {
+      // Gone rather than kept as an alias. It sent the supervisor's signal, and
+      // launchd SIGKILLed the drain that began twenty seconds in (#174); a name
+      // that used to return in seconds and now waits a pass should be chosen.
       error(
-        'no systemd user manager for this user — log in as them, or `machinectl shell <user>@`; see doc/operating.md',
+        "lingtai service stop is gone — it was the supervisor's signal, which kills an attempt in flight 20 seconds in.",
       )
+      error('pnpm lingtai service shutdown "why" drains through the log, waits for the attempt, then unloads.')
+      return 2
     }
-  }
-
-  /** Runs one supervisor call, printed first. False, with its output on stderr, when it failed. */
-  const run = (call: string[]): boolean => {
-    log(`$ ${call.join(' ')}`)
-    const r = exec(call)
-    if (r.status === 0) return true
-    if (r.out.trim()) error(r.out.trim())
-    noUserManager(r.out)
-    return false
-  }
-
-  /** The supervisor's answer, or null with the reason on stderr — never guessed as "not loaded". */
-  const askJob = (job: Job): { loaded: boolean; lines: string[] } | null => {
-    const answer = askSupervisor(platform, exec, uid, job)
-    if ('unread' in answer) {
-      error(
-        job.id === 'daemon'
-          ? `could not ask the supervisor about the service — ${answer.unread}`
-          : `could not ask the supervisor about the board's job — ${answer.unread}`,
-      )
-      noUserManager(answer.unread)
-      return null
+    if (!verb || !VERBS.includes(verb)) {
+      error(`lingtai service ${VERBS.join('|')}`)
+      return 2
     }
-    return answer
-  }
-  const ask = () => askJob(DAEMON_JOB)
 
-  /**
-   * `bootout` returns while the job is still going, and a `bootstrap` in that
-   * window fails — so wait until launchd says it is gone.
-   */
-  const unloadJob = async (job: Job): Promise<boolean> => {
-    if (!run(['launchctl', 'bootout', `gui/${uid}/${job.label}`])) return false
-    const until = Date.now() + UNLOAD_WAIT_MS
-    for (;;) {
-      const answer = askSupervisor(platform, exec, uid, job)
-      if ('loaded' in answer && !answer.loaded) return true
-      if (Date.now() > until) {
-        error(
-          'unread' in answer
-            ? `could not ask launchd whether ${job.label} unloaded — ${answer.unread}`
-            : `${job.label} is still loaded ${UNLOAD_WAIT_MS / 1000}s after bootout`,
-        )
-        return false
-      }
-      await sleep(500)
+    const platform = platformFor(options.platform ?? process.platform)
+    // Not just the OS: a Linux container has `linux` and no `systemctl`.
+    if (!platform || !which(platform === 'launchd' ? 'launchctl' : 'systemctl')) {
+      if (options.json && verb === 'status') log(jsonErrorDocument('service status', 'no-supervisor', NO_SUPERVISOR))
+      else error(NO_SUPERVISOR)
+      return 1
     }
-  }
-  const unload = () => unloadJob(DAEMON_JOB)
 
-  /** Two answers to two questions, neither reduced into the other. */
-  const report = async (): Promise<number> => {
-    log(`supervisor  (${platform === 'launchd' ? `launchctl, ${target}` : `systemctl --user, ${SYSTEMD_UNIT}`})`)
-    const answer = askSupervisor(platform, exec, uid)
-    const lines = 'unread' in answer ? [`could not ask — ${answer.unread}`] : answer.lines
-    for (const l of lines.length > 0 ? lines : ['loaded, and said nothing about the process']) log(`  ${l}`)
-    log('daemon      (daemon_status, the beacon — whether it is beating, which loaded does not say)')
-    log(`  ${await options.liveness().catch((err: unknown) => `could not read it — ${(err as Error).message}`)}`)
-    return 'unread' in answer ? 1 : 0
-  }
-
-  const installed = existsSync(file.path)
-  const notInstalled = (): number => {
-    error(`${file.path} does not exist — pnpm lingtai service install`)
-    return 1
-  }
-
-  // ------------------------------------------------------------ the board --
-  //
-  // The second job (#187), and everything below is deliberately shorter than
-  // the daemon's. The board takes no place in the conductor lock's queue,
-  // claims no ticket and finishes no pass, so its stop is the supervisor's
-  // signal and nothing waits on the log for it — which is why it is `stop` and
-  // never `shutdown`. (It does hold a lock of its own, per port, so that
-  // `lingtai board stop` has a pid to signal; nothing here reads it.)
-
-  const boardInstalled = (): boolean => existsSync(boardFile.path)
-
-  /**
-   * Said wherever a board job would have been written or started, and there is
-   * no board for it to serve. Not a refusal: the verb was about the conductor,
-   * and the conductor is fine.
-   */
-  const sayNoBoard = (missing: { why: string; remedy: readonly string[] }, what: 'written' | 'started'): void => {
-    log(`${missing.why}, so no board job was ${what}`)
-    for (const line of missing.remedy) log(`      ${line}`)
-  }
-
-  /** Whether a Lingtai board answers where it should — the board's own word, not the supervisor's. */
-  const boardAnswers = async (): Promise<string | null | { unread: string }> => {
+    const env = options.env ?? process.env
+    const by = options.by ?? `human:${env['USER'] ?? 'operator'}`
+    const reason = args.slice(1).join(' ').trim() || 'no reason given'
+    const uid = options.uid ?? process.getuid?.() ?? 0
+    const username = options.username ?? userInfo().username
+    const inputs: ServiceInputs = {
+      // The `node` on PATH, as `scripts/launchd.sh` used, rather than
+      // `process.execPath` — under Homebrew a versioned Cellar path that the next
+      // `brew upgrade` deletes out from under the unit.
+      node: which('node') ?? process.execPath,
+      root: options.root ?? repoRoot(),
+      env,
+    }
+    const fileFor = (job: Job): ServiceFile =>
+      platform === 'launchd' ? launchdPlist(inputs, job) : systemdUnit(inputs, job)
+    let file: ServiceFile
+    let boardFile: ServiceFile
     try {
-      return await options.board.answering()
+      file = fileFor(DAEMON_JOB)
+      boardFile = fileFor(BOARD_JOB)
     } catch (err) {
-      return { unread: (err as Error).message }
-    }
-  }
-
-  /** Waits for a board to answer after a start. False when none did, having said so. */
-  const confirmBoard = async (): Promise<boolean> => {
-    const seconds = BOARD_WAIT_MS / 1000
-    log(`waiting for the board to answer on ${options.board.url} — up to ${seconds}s. It is waiting, not hung.`)
-    // The clock as well as the count: an `answering` that waits out its own
-    // timeout on every ask makes 75 of them far longer than the 75 seconds
-    // said above, and a wait that outlives its own sentence looks hung.
-    const until = now() + BOARD_WAIT_MS
-    let unread: string | null = null
-    for (let i = 0; i < BOARD_WAIT_POLLS; i++) {
-      if (i > 0 && now() >= until) break
-      const asked = await boardAnswers()
-      if (typeof asked === 'string') {
-        log(`the board answers on ${asked}`)
-        return true
-      }
-      unread = asked === null ? null : asked.unread
-      await sleep(1_000)
-    }
-    error(
-      unread === null
-        ? `the supervisor accepted the board's start, and nothing answered on ${options.board.url} in ${seconds}s — so the UI is not up on its account.`
-        : `the supervisor accepted the board's start, and ${options.board.url} could not be asked whether a board answers — ${unread}.`,
-    )
-    error(
-      `${join(boardFile.logs, `${BOARD_JOB.log}.err`)} is what the job wrote; a port somebody else holds is named there in words.`,
-    )
-    return false
-  }
-
-  /** The supervisor's start for the board job, then the board's own answer. */
-  const startBoard = async (): Promise<number> => {
-    // Before the job is asked about: a checkout that has never been built has
-    // no board to serve, and starting a job over that is the crash loop this
-    // command exists to keep off the machine.
-    const missing = options.board.missing()
-    if (missing !== null) {
-      sayNoBoard(missing, 'started')
-      options.unconfirmed?.('board')
-      return 0
-    }
-    if (!boardInstalled()) {
-      // An install from before the board had a job (#187), and not a failure of
-      // whatever verb is running: the daemon it was really about did start.
-      log(
-        `no board job at ${boardFile.path}, so nothing was started for the board — pnpm lingtai service install writes one`,
-      )
-      options.unconfirmed?.('board')
-      return 0
-    }
-    const answer = askJob(BOARD_JOB)
-    if (!answer) return 1
-    if (answer.loaded && processRunning(platform, answer.lines)) {
-      // Not started again, and not confirmed either — the same rule the daemon's
-      // start follows. A process the supervisor is running may be failing to
-      // bind, and `service status` is where that shows.
-      log(
-        "the supervisor has a process for the board's job, so nothing was started for it — and nothing confirmed either: service status says whether a board answers",
-      )
-      options.unconfirmed?.('board')
-      return 0
-    }
-    // The port, before the supervisor is told anything. The lock is held by a
-    // board this machine is serving, and the supervisor has just said the
-    // process is not its job's — so it is a terminal's. Bootstrapped over that,
-    // the job is refused by the lock, exits 1, and is respawned every thirty
-    // seconds for ever, while `confirmBoard` finds the terminal's board on the
-    // same URL and calls the start good. That is the one state two jobs make
-    // likelier, and the only place that can see it coming.
-    let holder: string | null
-    try {
-      holder = await options.board.heldBy()
-    } catch (err) {
-      error(`the board lock could not be read — ${(err as Error).message}. Nothing was started for the board:`)
-      error(
-        "a board already on the port would make the supervisor's job exit at once, and be respawned every thirty seconds for ever",
-      )
+      if (options.json && verb === 'status')
+        log(jsonErrorDocument('service status', 'service-file', (err as Error).message))
+      else error((err as Error).message)
       return 1
     }
-    if (holder !== null) {
-      error(`a board is already on ${options.board.url}, and it is not the supervisor's — held by ${holder}`)
-      error(
-        'nothing was started for the board: that lock would refuse the job, which would exit and be respawned every thirty seconds for ever',
-      )
-      error('pnpm lingtai board stop stops that one, and pnpm lingtai service start hands the board to the supervisor')
-      return 1
-    }
-    if (platform === 'systemd') {
-      if (!run(['systemctl', '--user', 'start', BOARD_SYSTEMD_UNIT])) return 1
-    } else if (
-      !run(
-        answer.loaded
-          ? ['launchctl', 'kickstart', boardTarget]
-          : ['launchctl', 'bootstrap', `gui/${uid}`, boardFile.path],
-      )
-    ) {
-      return 1
-    }
-    return (await confirmBoard()) ? 0 : 1
-  }
+    const steps = options.steps ?? noSteps
+    const target = `gui/${uid}/${LAUNCHD_LABEL}`
+    const boardTarget = `gui/${uid}/${BOARD_JOB.label}`
+    const named = (job: Job): string => (platform === 'launchd' ? job.label : job.unit)
 
-  /**
-   * The supervisor's stop for the board job — a signal, and that is the whole
-   * of it. There is no drain: nothing is in flight to lose, and a verb that
-   * waited would be `shutdown` wearing the board's name.
-   *
-   * **`why` says the reason there is no board to find** (#187). A `board.port`
-   * that is not a port number holds up nothing of the conductor's, so it is
-   * never a refusal here — and `shutdown` is a verb whose whole output is
-   * otherwise the conductor's, which left the one place an operator meets that
-   * typo saying nothing about it: the board was reported merely absent, and the
-   * file read as fine. It is the caller's flag rather than this file's, because
-   * `restart` says the same reason at its start leg and one reason is said
-   * once. Said or not, the job is stopped exactly as it would have been: an
-   * install from when the port still read leaves one behind, and that is the
-   * supervisor's to boot out either way.
-   */
-  const stopBoard = async (why: boolean): Promise<number> => {
-    const missing = why ? options.board.missing() : null
-    if (missing !== null) {
-      log(missing.why)
-      for (const line of missing.remedy) log(`      ${line}`)
-    }
-    const answer = askJob(BOARD_JOB)
-    if (!answer) return 1
-    if (!answer.loaded) {
-      log(`the supervisor is not running ${named(BOARD_JOB)} — nothing of its to stop`)
-      return 0
-    }
-    const stopped =
-      platform === 'launchd' ? await unloadJob(BOARD_JOB) : run(['systemctl', '--user', 'stop', BOARD_SYSTEMD_UNIT])
-    if (!stopped) {
-      error(
-        `the supervisor did not stop ${named(BOARD_JOB)} — the board may still be answering on ${options.board.url}`,
-      )
-      return 1
-    }
-    log(`stopped ${named(BOARD_JOB)}`)
-    return 0
-  }
-
-  /**
-   * One job stopped, unloaded and removed. `drains` is the daemon's alone: it
-   * is the one with a pass in flight, and `bootout` on its own would kill it
-   * (#174). The board has nothing to finish, so its own stop is the signal.
-   */
-  const uninstallJob = async (job: Job, jobFile: ServiceFile, drains: boolean): Promise<number> => {
-    const answer = askJob(job)
-    if (!answer) return 1
-    let code = 0
-    if (answer.loaded) {
-      const kept =
-        platform === 'launchd' || !answer.lines.some((l) => l === 'ActiveState=inactive' || l === 'ActiveState=failed')
-      if (kept && drains) {
-        const drained = await drain()
-        if (drained !== 0) return drained
-      } else if (kept && platform === 'launchd' && !(await unloadJob(job))) {
+    const noUserManager = (out: string): void => {
+      if (platform === 'systemd' && /bus|XDG_RUNTIME_DIR/i.test(out)) {
+        // The usual cause under `sudo -u`: no user session, so no user manager.
         error(
-          `${job.label} is still loaded — ${jobFile.path} is left in place, since removing it would leave a job nothing can name`,
+          'no systemd user manager for this user — log in as them, or `machinectl shell <user>@`; see doc/operating.md',
         )
-        return 1
-      }
-      // The drain, or the unload above, took a launchd job; a systemd unit is
-      // stopped and still enabled.
-      //
-      // **A `disable --now` that failed keeps the file**, exactly as the
-      // launchd branch above does. Removing it and reloading leaves the unit
-      // `not-found` while the process is still running, so nothing can name it
-      // to stop it — a worse end than the one this verb was asked for.
-      if (platform === 'systemd' && !run(['systemctl', '--user', 'disable', '--now', job.unit])) {
-        error(
-          `${job.unit} is still loaded — ${jobFile.path} is left in place, since removing it would leave a job nothing can name`,
-        )
-        return 1
       }
     }
-    if (!existsSync(jobFile.path)) {
-      log(`nothing at ${jobFile.path}${answer.loaded ? ', and the job it named is unloaded' : ''}`)
-      return code
-    }
-    await rm(jobFile.path, { force: true })
-    if (platform === 'systemd' && !run(['systemctl', '--user', 'daemon-reload'])) code = 1
-    log(`removed ${jobFile.path} (logs kept in ${jobFile.logs})`)
-    return code
-  }
 
-  /** The board's two answers, beside the daemon's two and reduced into neither. */
-  const reportBoard = async (): Promise<number> => {
-    log(
-      `supervisor  (${platform === 'launchd' ? `launchctl, ${boardTarget}` : `systemctl --user, ${BOARD_SYSTEMD_UNIT}`})`,
-    )
-    const answer = askSupervisor(platform, exec, uid, BOARD_JOB)
-    const lines = 'unread' in answer ? [`could not ask — ${answer.unread}`] : answer.lines
-    for (const l of lines.length > 0 ? lines : ['loaded, and said nothing about the process']) log(`  ${l}`)
-    log(`board       (${options.board.url} — whether a board answers there, which loaded does not say)`)
-    const asked = await boardAnswers()
-    log(
-      `  ${typeof asked === 'string' ? `answers on ${asked}` : asked === null ? 'nothing answers' : `could not ask — ${asked.unread}`}`,
-    )
-    // Where there is no board to serve, the address above is the default's and
-    // nothing is on it — said here, or a `board.port` that is not a port number
-    // reads as a board that is merely down.
-    const missing = options.board.missing()
-    if (missing !== null) {
-      log(`  ${missing.why}, so this machine has no board job to keep`)
-      for (const line of missing.remedy) log(`  ${line}`)
-    }
-    return 'unread' in answer ? 1 : 0
-  }
-
-  /**
-   * Whether a start would end a stop somebody else asked for. A start ends the
-   * request standing (0126), so over somebody else's it decides for them; this
-   * person's own is the one it is meant to end, and is not refused.
-   * A request that could not be read is a refusal, never *nothing stands*: the
-   * start could end somebody's drain without being able to see that it did.
-   */
-  const shutdownStands = async (
-    /** Whether this command has already unloaded the service, so "nothing was stopped" would be false. */
-    unloaded = false,
-  ): Promise<boolean> => {
-    const standing = await options.shutdown().catch((err: unknown) => ({ unread: (err as Error).message }))
-    const verdict = standingRefusal({ by, standing, unloaded })
-    if (!verdict.refuse) {
-      if (verdict.note !== null) log(verdict.note)
+    /** Runs one supervisor call, printed first. False, with its output on stderr, when it failed. */
+    const run = (call: string[]): boolean => {
+      log(`$ ${call.join(' ')}`)
+      const r = exec(call)
+      if (r.status === 0) return true
+      if (r.out.trim()) error(r.out.trim())
+      noUserManager(r.out)
       return false
     }
-    for (const line of verdict.lines) error(line)
-    return true
-  }
 
-  /**
-   * One supervisor call that starts the daemon, and then the daemon's own word
-   * for it: 0 only once a `ConductorStarted` is on the log after the call.
-   */
-  const startAndConfirm = async (call: string[]): Promise<number> => {
-    const mark = await options.started.watermark().catch((err: unknown) => err as Error)
-    if (!run(call)) return 1
-    if (mark instanceof Error) {
-      error(
-        `the supervisor was asked to start the daemon, and where the control stream is could not be read — ${mark.message}.`,
-      )
-      error(
-        'So whether a daemon took work is not known: pnpm lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up.',
-      )
-      return 1
-    }
-    log(
-      `waiting for the daemon to record its start — up to ${START_WAIT_POLLS}s, since it records after its reconcile. It is waiting, not hung.`,
-    )
-    /**
-     * Why the last read failed, or null when it answered. A read that failed is
-     * not a read that found nothing: the daemon may have recorded its start and
-     * be taking work while this cannot see the stream.
-     */
-    let unread: string | null = null
-    for (let i = 0; i < START_WAIT_POLLS; i++) {
-      let record: RecordedStart | null = null
-      try {
-        record = await options.started.after(mark)
-        unread = null
-      } catch (err) {
-        unread = (err as Error).message
-      }
-      if (record !== null) {
-        log(
-          `a daemon recorded its start — ${record.sha ? record.sha.slice(0, 7) : 'an unrecorded commit'}` +
-            `${record.dirty ? ' (worktree dirty)' : ''} as ${record.worker}, recorded as ${record.by}`,
+    /** The supervisor's answer, or null with the reason on stderr — never guessed as "not loaded". */
+    const askJob = (job: Job): { loaded: boolean; lines: string[] } | null => {
+      const answer = askSupervisor(platform, exec, uid, job)
+      if ('unread' in answer) {
+        error(
+          job.id === 'daemon'
+            ? `could not ask the supervisor about the service — ${answer.unread}`
+            : `could not ask the supervisor about the board's job — ${answer.unread}`,
         )
-        return 0
+        noUserManager(answer.unread)
+        return null
       }
-      await sleep(1_000)
+      return answer
     }
-    if (unread !== null) {
-      error(
-        `the supervisor accepted the start, and the control stream could not be read to see whether a daemon recorded one — ${unread}.`,
-      )
-      error('So whether a daemon took work is not known: a daemon may be running an attempt now.')
-      error(
-        'pnpm lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up and who holds the lock.',
-      )
+    const ask = () => askJob(DAEMON_JOB)
+
+    /**
+     * `bootout` returns while the job is still going, and a `bootstrap` in that
+     * window fails — so wait until launchd says it is gone.
+     */
+    const unloadJob = (job: Job): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        if (!run(['launchctl', 'bootout', `gui/${uid}/${job.label}`])) return false
+        const until = Date.now() + UNLOAD_WAIT_MS
+        for (;;) {
+          const answer = askSupervisor(platform, exec, uid, job)
+          if ('loaded' in answer && !answer.loaded) return true
+          if (Date.now() > until) {
+            error(
+              'unread' in answer
+                ? `could not ask launchd whether ${job.label} unloaded — ${answer.unread}`
+                : `${job.label} is still loaded ${UNLOAD_WAIT_MS / 1000}s after bootout`,
+            )
+            return false
+          }
+          yield* sleep(500)
+        }
+      })
+    const unload = () => unloadJob(DAEMON_JOB)
+
+    /** Two answers to two questions, neither reduced into the other. */
+    const report = (): Effect.Effect<number> =>
+      Effect.gen(function* () {
+        log(`supervisor  (${platform === 'launchd' ? `launchctl, ${target}` : `systemctl --user, ${SYSTEMD_UNIT}`})`)
+        const answer = askSupervisor(platform, exec, uid)
+        const lines = 'unread' in answer ? [`could not ask — ${answer.unread}`] : answer.lines
+        for (const l of lines.length > 0 ? lines : ['loaded, and said nothing about the process']) log(`  ${l}`)
+        log('daemon      (daemon_status, the beacon — whether it is beating, which loaded does not say)')
+        log(`  ${yield* options.liveness().pipe(answeringUnread((message) => `could not read it — ${message}`))}`)
+        return 'unread' in answer ? 1 : 0
+      })
+
+    const installed = existsSync(file.path)
+    const notInstalled = (): number => {
+      error(`${file.path} does not exist — pnpm lingtai service install`)
       return 1
     }
-    error(
-      `the supervisor accepted the start, and no daemon recorded one in ${START_WAIT_POLLS}s — so no work is being taken on its account.`,
-    )
-    error(
-      'A daemon that loses the conductor lock, reads a shutdown, or fails on its way up records nothing, and may exit 0 for the supervisor to start again.',
-    )
-    error(
-      'pnpm lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up and who holds the lock.',
-    )
-    return 1
-  }
 
-  /**
-   * The supervisor's start, refused while a shutdown request stands, and
-   * confirmed by the daemon's record.
-   *
-   * The refusal answers `REFUSED_OVER_SHUTDOWN` and not 1, so that a caller can
-   * tell *nothing was started* from *the start failed*: the sentence it prints
-   * is **Nothing was started or stopped**, and `service start` going on to
-   * bootstrap the board's job under it would make that false in the same
-   * output. Never returned from `serviceCommand` — both call sites below turn
-   * it into the 1 the operator sees.
-   */
-  const start = async (unloaded = false): Promise<number> => {
-    if (await shutdownStands(unloaded)) return REFUSED_OVER_SHUTDOWN
-    const answer = ask()
-    if (!answer) return 1
-    // A daemon the supervisor is already running is not started again — and is
-    // not a start to wait for, which would be a wait for nothing.
-    if (answer.loaded && processRunning(platform, answer.lines)) {
-      log(
-        'the supervisor is already running a daemon, so nothing was started — and nothing was confirmed either: that process ' +
-          'may have lost the lock and be taking no work. lingtai doctor says who holds the lock',
-      )
-      options.unconfirmed?.('conductor')
-      return 0
+    // ------------------------------------------------------------ the board --
+    //
+    // The second job (#187), and everything below is deliberately shorter than
+    // the daemon's. The board takes no place in the conductor lock's queue,
+    // claims no ticket and finishes no pass, so its stop is the supervisor's
+    // signal and nothing waits on the log for it — which is why it is `stop` and
+    // never `shutdown`. (It does hold a lock of its own, per port, so that
+    // `lingtai board stop` has a pid to signal; nothing here reads it.)
+
+    const boardInstalled = (): boolean => existsSync(boardFile.path)
+
+    /**
+     * Said wherever a board job would have been written or started, and there is
+     * no board for it to serve. Not a refusal: the verb was about the conductor,
+     * and the conductor is fine.
+     */
+    const sayNoBoard = (missing: { why: string; remedy: readonly string[] }, what: 'written' | 'started'): void => {
+      log(`${missing.why}, so no board job was ${what}`)
+      for (const line of missing.remedy) log(`      ${line}`)
     }
-    if (platform === 'systemd') return startAndConfirm(['systemctl', '--user', 'start', SYSTEMD_UNIT])
-    // `shutdown` unloads, and `kickstart` cannot find a job that is not loaded.
-    // Plain `kickstart` starts a loaded job that is not running and leaves a
-    // running one alone, which is `systemctl start`. A job unloaded and loaded
-    // again, not `kickstart -k`, is also what applies a rewritten plist.
-    return startAndConfirm(
-      answer.loaded ? ['launchctl', 'kickstart', target] : ['launchctl', 'bootstrap', `gui/${uid}`, file.path],
-    )
-  }
 
-  /**
-   * The drain, then the supervisor — in that order, and the order is the fix.
-   *
-   * 1. a place in the queue for the conductor lock. Under KeepAlive the daemon
-   *    that drains and exits is started again at once, and since #159 that copy
-   *    reads nothing appended before it started — so the request does not keep
-   *    it from work. The lock does: Postgres hands a released lock to the
-   *    session already waiting, before the copy can try for it.
-   * 2. the request, on the log: the daemon finishes the pass in flight, the
-   *    gates and the merge lane with it, and exits. Only this command's own —
-   *    one already standing is adopted when it is this person's,
-   *    and refused when it is somebody else's.
-   * 3. the wait, until this command holds the lock. Bounded by the pass — by
-   *    the recipe's runtime.limits — and not by anything here.
-   * 4. the unload, still holding the lock. A copy the supervisor started
-   *    meanwhile lost the lock and claimed nothing, so there is nothing left
-   *    for the supervisor's SIGKILL to take.
-   * 5. the lock released; the request stands until the next start ends it, and
-   *    `service start` by this person is not refused over it.
-   */
-  const drain = async (): Promise<number> => {
-    steps.begin('draining')
-    const queue = await options.drain.queue().catch((err: unknown) => err as Error)
-    if (queue instanceof Error) {
-      // The database is what the drain goes through, and it is also what a
-      // daemon needs to hold the lock or claim anything. So when it cannot be
-      // reached — a paused project, a wrong URL, and the supervisor restarting
-      // copy after copy that fails to connect — the supervisor is asked instead
-      // whether a process is running at all. A moment with none is a moment
-      // with no pass for its signal to kill, and the unload goes ahead then.
-      log(`the conductor lock could not be queued for — ${queue.message}.`)
-      log(
-        `asking the supervisor whether a daemon is running, for up to ${IDLE_WAIT_POLLS}s: with none, there is no attempt to drain`,
-      )
-      for (let i = 0; i < IDLE_WAIT_POLLS; i++) {
-        const now = ask()
-        if (!now) return 1
-        if (!now.loaded) {
-          log(
-            `the supervisor no longer has ${platform === 'launchd' ? LAUNCHD_LABEL : SYSTEMD_UNIT} loaded — nothing to drain or unload`,
-          )
+    /** Whether a Lingtai board answers where it should — the board's own word, not the supervisor's. */
+    const boardAnswers = (): Effect.Effect<string | null | { unread: string }> =>
+      options.board.answering().pipe(answeringUnread((unread) => ({ unread })))
+
+    /** Waits for a board to answer after a start. False when none did, having said so. */
+    const confirmBoard = (): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        const seconds = BOARD_WAIT_MS / 1000
+        log(`waiting for the board to answer on ${options.board.url} — up to ${seconds}s. It is waiting, not hung.`)
+        // The clock as well as the count: an `answering` that waits out its own
+        // timeout on every ask makes 75 of them far longer than the 75 seconds
+        // said above, and a wait that outlives its own sentence looks hung.
+        const until = now() + BOARD_WAIT_MS
+        let unread: string | null = null
+        for (let i = 0; i < BOARD_WAIT_POLLS; i++) {
+          if (i > 0 && now() >= until) break
+          const asked = yield* boardAnswers()
+          if (typeof asked === 'string') {
+            log(`the board answers on ${asked}`)
+            return true
+          }
+          unread = asked === null ? null : asked.unread
+          yield* sleep(1_000)
+        }
+        error(
+          unread === null
+            ? `the supervisor accepted the board's start, and nothing answered on ${options.board.url} in ${seconds}s — so the UI is not up on its account.`
+            : `the supervisor accepted the board's start, and ${options.board.url} could not be asked whether a board answers — ${unread}.`,
+        )
+        error(
+          `${join(boardFile.logs, `${BOARD_JOB.log}.err`)} is what the job wrote; a port somebody else holds is named there in words.`,
+        )
+        return false
+      })
+
+    /** The supervisor's start for the board job, then the board's own answer. */
+    const startBoard = (): Effect.Effect<number> =>
+      Effect.gen(function* () {
+        // Before the job is asked about: a checkout that has never been built has
+        // no board to serve, and starting a job over that is the crash loop this
+        // command exists to keep off the machine.
+        const missing = options.board.missing()
+        if (missing !== null) {
+          sayNoBoard(missing, 'started')
+          options.unconfirmed?.('board')
           return 0
         }
-        if (!processRunning(platform, now.lines)) {
+        if (!boardInstalled()) {
+          // An install from before the board had a job (#187), and not a failure of
+          // whatever verb is running: the daemon it was really about did start.
           log(
-            'the supervisor has no daemon running, so nothing holds the conductor lock or an attempt — stopped without the drain',
+            `no board job at ${boardFile.path}, so nothing was started for the board — pnpm lingtai service install writes one`,
           )
-          const stopped = platform === 'launchd' ? await unload() : run(['systemctl', '--user', 'stop', SYSTEMD_UNIT])
-          return stopped ? 0 : 1
+          options.unconfirmed?.('board')
+          return 0
         }
-        await sleep(1_000)
-      }
-      error(
-        `a daemon stayed running for ${IDLE_WAIT_POLLS}s while the conductor lock could not be queued for. Nothing was stopped:`,
-      )
-      error(
-        "it may be in an attempt the supervisor's signal would kill, and without a place in the lock's queue the copy started after a drain could take work that the unload kills.",
-      )
-      error(
-        platform === 'launchd'
-          ? `To stop it regardless, and kill whatever it is running: launchctl bootout ${target}`
-          : `To stop it regardless, and kill whatever it is running: systemctl --user stop ${SYSTEMD_UNIT}`,
-      )
-      return 1
-    }
-    let watcher: { stop: () => Promise<void> } | undefined
-    try {
-      const asked = await options.drain.ask(by, `service ${verb}: ${reason}`).catch((err: unknown) => err as Error)
-      if (asked instanceof Error) {
-        error(`the shutdown could not be asked for — ${asked.message}. Nothing was stopped:`)
-        error("the supervisor's signal would kill an attempt in flight, so it is not sent without the drain.")
-        return 1
-      }
-      // This person's own standing request is adopted and waited on (0126): the
-      // start that follows ends it. Somebody else's is refused.
-      if (!asked.asked && asked.standing.by !== by) {
-        error(
-          `a shutdown asked by ${asked.standing.by} (${asked.standing.reason}) is already standing. Nothing was stopped:`,
-        )
-        error(`it is theirs, not this command's. ${FOREIGN_STANDING}`)
-        return 1
-      }
-      if (!asked.asked) log(`a shutdown you asked for is already standing (${asked.standing.reason}) — waiting on it`)
-      log(`draining — ${await options.drain.holding().catch(() => 'what is in flight could not be read')}.`)
-      log(
-        `the attempt in flight finishes first: its agent, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`,
-      )
-
-      // A lock gone with its connection can be taken, in the gap, by a copy the
-      // supervisor started. If it recorded its start, that ended the request, and the
-      // request is asked again, above its watermark. If it has not recorded yet,
-      // the request stands and is above its `since`, so it obeys that. Either way
-      // this person's own request is the one waited on; somebody else's is not.
-      const askAgain = async (): Promise<void> => {
-        const again = await options.drain.ask(by, `service ${verb}: ${reason}`)
-        if (!again.asked && again.standing.by !== by)
-          throw new Error(`a shutdown asked by ${again.standing.by} (${again.standing.reason}) landed first`)
-      }
-      // Only where the entry passed steps: `noSteps` would swallow the repeated line `log` carries otherwise.
-      const progress = options.steps === undefined ? undefined : (line: string) => steps.progress(line)
-      // A line written while the spinner is live would be erased by its next redraw, so it ends first.
-      const waitLog = (line: string): void => {
-        steps.end()
-        log(line)
-      }
-      // A start by a copy that held the lock while initialising ends the request
-      // adopted above; the lock then stays with it and the wait never ends. So
-      // whenever no request stands during the wait, it is asked again.
-      watcher = keepAsked(
-        () => options.shutdown(),
-        () => askAgain(),
-        2000,
-      )
-      let waited = await queue.wait(waitLog, askAgain, progress)
-      steps.end()
-      // Asked again right before the supervisor is told: the lock is only worth
-      // anything while its session lasts, and a wait that ended held says
-      // nothing about a connection that dropped since. After `bootout` or
-      // `systemctl stop` the supervisor starts no copy, so this is the last
-      // moment a lost lock could be handed to one.
-      while (waited === 'held' && !(await queue.holds().catch(() => false))) {
-        log(
-          'the conductor lock was lost with its connection before the supervisor was told anything — its place is taken again, the drain asked again, and the wait goes on',
-        )
-        waited = await queue.wait(waitLog, askAgain, progress)
-        steps.end()
-      }
-      if (waited !== 'held') {
-        await queue.leave()
-        log(
-          `${waited === 'interrupted' ? 'stopped waiting' : 'gave up waiting'}, and the supervisor was told nothing. ` +
-            'The request stands until the next start ends it, and service start by this person is not refused over it. ' +
-            'A daemon that had already read it still finishes its attempt and exits. pnpm lingtai service shutdown picks it up again.',
-        )
-        return waited === 'interrupted' ? 130 : 1
-      }
-      log(
-        'this command holds the conductor lock — the attempt is over, and nothing the supervisor starts now can take work',
-      )
-
-      // Unloaded, not killed: KeepAlive would bring a killed job straight back.
-      const stopped = platform === 'launchd' ? await unload() : run(['systemctl', '--user', 'stop', SYSTEMD_UNIT])
-      await queue.leave()
-      if (!stopped) {
-        error(
-          'the supervisor did not stop the service, above — it may still be running it, and a daemon it starts takes work. ' +
-            'The request stands until the next start ends it; pnpm lingtai service shutdown picks it up again.',
-        )
-        return 1
-      }
-      return 0
-    } finally {
-      // Joined before the command is over: no append can follow it.
-      await watcher?.stop()
-      await queue.leave()
-    }
-  }
-
-  switch (verb) {
-    case 'status': {
-      // Two jobs, two reports, and never one summary: a board that is up beside
-      // a conductor launchd respawns every thirty seconds is the exact state a
-      // single word for both would hide.
-      const asked = (job?: Job): SupervisorAnswer => {
-        const answer = askSupervisor(platform, exec, uid, job)
-        return 'unread' in answer ? { unread: answer.unread } : { lines: answer.lines }
-      }
-      const status: ServiceStatus = {
-        platform,
-        conductor: {
-          target: platform === 'launchd' ? target : SYSTEMD_UNIT,
-          supervisor: asked(),
-          beacon: await options.liveness().catch((err: unknown) => ({ unread: (err as Error).message })),
-        },
-        board: {
-          target: platform === 'launchd' ? boardTarget : BOARD_SYSTEMD_UNIT,
-          supervisor: asked(BOARD_JOB),
-          url: options.board.url,
-          answers: await boardAnswers(),
-          missing: options.board.missing(),
-        },
-      }
-      if (options.json) log(JSON.stringify({ version: 1, command: 'service status', ...serviceStatusJson(status) }))
-      else for (const line of renderServiceStatus(status)) log(line)
-      return serviceStatusCode(status)
-    }
-
-    case 'install': {
-      // The checkout is `repoRoot()` — wherever this command was run from, not
-      // the installing user's. `pnpm --dir /home/admin/lingtai` as the service
-      // user would write a unit that runs another user's code, or cannot.
-      const owner = (await stat(inputs.root)).uid
-      if (owner !== uid) {
-        error(
-          `${inputs.root} is owned by uid ${owner}, not uid ${uid}, who would run it — ` +
-            'install from a checkout this user owns (see doc/operating.md)',
-        )
-        return 1
-      }
-      let started = false
-      await mkdir(file.logs, { recursive: true })
-      await mkdir(dirname(file.path), { recursive: true })
-      // The board's file is written only where there is a board to serve. A
-      // plist for `board start` on an unbuilt checkout is a job that exits at
-      // once and is respawned every thirty seconds for ever, and this command
-      // is the one place that can see it coming.
-      const noBoard = options.board.missing()
-      // Both files before either job is touched: under systemd one
-      // `daemon-reload` then has both units to read, and a refusal below leaves
-      // two files written and nothing loaded, which is what it says.
-      await writeFile(file.path, file.content)
-      if (noBoard === null) await writeFile(boardFile.path, boardFile.content)
-      log(`wrote ${file.path}`)
-      if (noBoard === null) {
-        log(`wrote ${boardFile.path}`)
-        log(`logs  ${join(file.logs, `${DAEMON_JOB.log}.log`)} and ${join(boardFile.logs, `${BOARD_JOB.log}.log`)}`)
-      } else {
-        log(`logs  ${join(file.logs, `${DAEMON_JOB.log}.log`)}`)
-        sayNoBoard(noBoard, 'written')
-      }
-
-      if (platform === 'launchd') {
-        const before = ask()
-        if (!before) {
-          error('the files are written and nothing was loaded')
-          return 1
-        }
-        if (before.loaded) {
-          // Not reloaded: that would signal a pass in flight. launchd reads the
-          // plist only when it loads the job — a KeepAlive respawn reuses the
-          // definition already loaded — so this file is not in effect yet.
-          log(`note  launchd already had ${LAUNCHD_LABEL} loaded, and keeps using the definition it loaded,`)
-          log('      respawns included, until: pnpm lingtai service restart')
-        } else if (await shutdownStands()) {
-          error('the files are written and nothing was loaded')
-          return 1
-        } else if ((await startAndConfirm(['launchctl', 'bootstrap', `gui/${uid}`, file.path])) !== 0) {
-          return 1
-        } else {
-          started = true
-        }
-      } else {
-        const before = ask()
-        if (!before) return 1
-        if (!run(['systemctl', '--user', 'daemon-reload'])) return 1
-        if (!run(['systemctl', '--user', 'enable', SYSTEMD_UNIT])) return 1
-        const active = before.lines.includes('ActiveState=active')
-        if (active) {
-          log('note  systemd has reloaded the unit, and the process it already had keeps the one it started with')
-          log('      until its next start: pnpm lingtai service restart')
-        } else if (await shutdownStands()) {
-          error("the units are written, the daemon's is enabled, and nothing was started")
-          return 1
-        } else if ((await startAndConfirm(['systemctl', '--user', 'start', SYSTEMD_UNIT])) !== 0) {
-          return 1
-        } else {
-          started = true
-        }
-        const linger = lingering(exec, username)
-        if (linger === 'no') {
-          log(`note  lingering is off for ${username}, so the user manager, and the daemon, stop at their last logout:`)
-          log(`      sudo loginctl enable-linger ${username}`)
-        } else if (linger !== 'yes') {
+        const answer = askJob(BOARD_JOB)
+        if (!answer) return 1
+        if (answer.loaded && processRunning(platform, answer.lines)) {
+          // Not started again, and not confirmed either — the same rule the daemon's
+          // start follows. A process the supervisor is running may be failing to
+          // bind, and `service status` is where that shows.
           log(
-            `note  could not read whether lingering is on — ${linger.unread}. Without it the daemon stops at ${username}'s last logout`,
+            "the supervisor has a process for the board's job, so nothing was started for it — and nothing confirmed either: service status says whether a board answers",
+          )
+          options.unconfirmed?.('board')
+          return 0
+        }
+        // The port, before the supervisor is told anything. The lock is held by a
+        // board this machine is serving, and the supervisor has just said the
+        // process is not its job's — so it is a terminal's. Bootstrapped over that,
+        // the job is refused by the lock, exits 1, and is respawned every thirty
+        // seconds for ever, while `confirmBoard` finds the terminal's board on the
+        // same URL and calls the start good. That is the one state two jobs make
+        // likelier, and the only place that can see it coming.
+        const read = yield* options.board.heldBy().pipe(
+          Effect.map((held) => ({ held })),
+          answeringUnread((unread) => ({ unread })),
+        )
+        if ('unread' in read) {
+          error(`the board lock could not be read — ${read.unread}. Nothing was started for the board:`)
+          error(
+            "a board already on the port would make the supervisor's job exit at once, and be respawned every thirty seconds for ever",
+          )
+          return 1
+        }
+        const holder = read.held
+        if (holder !== null) {
+          error(`a board is already on ${options.board.url}, and it is not the supervisor's — held by ${holder}`)
+          error(
+            'nothing was started for the board: that lock would refuse the job, which would exit and be respawned every thirty seconds for ever',
+          )
+          error(
+            'pnpm lingtai board stop stops that one, and pnpm lingtai service start hands the board to the supervisor',
+          )
+          return 1
+        }
+        if (platform === 'systemd') {
+          if (!run(['systemctl', '--user', 'start', BOARD_SYSTEMD_UNIT])) return 1
+        } else if (
+          !run(
+            answer.loaded
+              ? ['launchctl', 'kickstart', boardTarget]
+              : ['launchctl', 'bootstrap', `gui/${uid}`, boardFile.path],
+          )
+        ) {
+          return 1
+        }
+        return (yield* confirmBoard()) ? 0 : 1
+      })
+
+    /**
+     * The supervisor's stop for the board job — a signal, and that is the whole
+     * of it. There is no drain: nothing is in flight to lose, and a verb that
+     * waited would be `shutdown` wearing the board's name.
+     *
+     * **`why` says the reason there is no board to find** (#187). A `board.port`
+     * that is not a port number holds up nothing of the conductor's, so it is
+     * never a refusal here — and `shutdown` is a verb whose whole output is
+     * otherwise the conductor's, which left the one place an operator meets that
+     * typo saying nothing about it: the board was reported merely absent, and the
+     * file read as fine. It is the caller's flag rather than this file's, because
+     * `restart` says the same reason at its start leg and one reason is said
+     * once. Said or not, the job is stopped exactly as it would have been: an
+     * install from when the port still read leaves one behind, and that is the
+     * supervisor's to boot out either way.
+     */
+    const stopBoard = (why: boolean): Effect.Effect<number> =>
+      Effect.gen(function* () {
+        const missing = why ? options.board.missing() : null
+        if (missing !== null) {
+          log(missing.why)
+          for (const line of missing.remedy) log(`      ${line}`)
+        }
+        const answer = askJob(BOARD_JOB)
+        if (!answer) return 1
+        if (!answer.loaded) {
+          log(`the supervisor is not running ${named(BOARD_JOB)} — nothing of its to stop`)
+          return 0
+        }
+        const stopped =
+          platform === 'launchd'
+            ? yield* unloadJob(BOARD_JOB)
+            : run(['systemctl', '--user', 'stop', BOARD_SYSTEMD_UNIT])
+        if (!stopped) {
+          error(
+            `the supervisor did not stop ${named(BOARD_JOB)} — the board may still be answering on ${options.board.url}`,
+          )
+          return 1
+        }
+        log(`stopped ${named(BOARD_JOB)}`)
+        return 0
+      })
+
+    /**
+     * One job stopped, unloaded and removed. `drains` is the daemon's alone: it
+     * is the one with a pass in flight, and `bootout` on its own would kill it
+     * (#174). The board has nothing to finish, so its own stop is the signal.
+     */
+    const uninstallJob = (job: Job, jobFile: ServiceFile, drains: boolean): Effect.Effect<number, unknown> =>
+      Effect.gen(function* () {
+        const answer = askJob(job)
+        if (!answer) return 1
+        let code = 0
+        if (answer.loaded) {
+          const kept =
+            platform === 'launchd' ||
+            !answer.lines.some((l) => l === 'ActiveState=inactive' || l === 'ActiveState=failed')
+          if (kept && drains) {
+            const drained = yield* drain()
+            if (drained !== 0) return drained
+          } else if (kept && platform === 'launchd' && !(yield* unloadJob(job))) {
+            error(
+              `${job.label} is still loaded — ${jobFile.path} is left in place, since removing it would leave a job nothing can name`,
+            )
+            return 1
+          }
+          // The drain, or the unload above, took a launchd job; a systemd unit is
+          // stopped and still enabled.
+          //
+          // **A `disable --now` that failed keeps the file**, exactly as the
+          // launchd branch above does. Removing it and reloading leaves the unit
+          // `not-found` while the process is still running, so nothing can name it
+          // to stop it — a worse end than the one this verb was asked for.
+          if (platform === 'systemd' && !run(['systemctl', '--user', 'disable', '--now', job.unit])) {
+            error(
+              `${job.unit} is still loaded — ${jobFile.path} is left in place, since removing it would leave a job nothing can name`,
+            )
+            return 1
+          }
+        }
+        if (!existsSync(jobFile.path)) {
+          log(`nothing at ${jobFile.path}${answer.loaded ? ', and the job it named is unloaded' : ''}`)
+          return code
+        }
+        yield* lift(() => rm(jobFile.path, { force: true }))
+        if (platform === 'systemd' && !run(['systemctl', '--user', 'daemon-reload'])) code = 1
+        log(`removed ${jobFile.path} (logs kept in ${jobFile.logs})`)
+        return code
+      })
+
+    /** The board's two answers, beside the daemon's two and reduced into neither. */
+    const reportBoard = (): Effect.Effect<number> =>
+      Effect.gen(function* () {
+        log(
+          `supervisor  (${platform === 'launchd' ? `launchctl, ${boardTarget}` : `systemctl --user, ${BOARD_SYSTEMD_UNIT}`})`,
+        )
+        const answer = askSupervisor(platform, exec, uid, BOARD_JOB)
+        const lines = 'unread' in answer ? [`could not ask — ${answer.unread}`] : answer.lines
+        for (const l of lines.length > 0 ? lines : ['loaded, and said nothing about the process']) log(`  ${l}`)
+        log(`board       (${options.board.url} — whether a board answers there, which loaded does not say)`)
+        const asked = yield* boardAnswers()
+        log(
+          `  ${typeof asked === 'string' ? `answers on ${asked}` : asked === null ? 'nothing answers' : `could not ask — ${asked.unread}`}`,
+        )
+        // Where there is no board to serve, the address above is the default's and
+        // nothing is on it — said here, or a `board.port` that is not a port number
+        // reads as a board that is merely down.
+        const missing = options.board.missing()
+        if (missing !== null) {
+          log(`  ${missing.why}, so this machine has no board job to keep`)
+          for (const line of missing.remedy) log(`  ${line}`)
+        }
+        return 'unread' in answer ? 1 : 0
+      })
+
+    /**
+     * Whether a start would end a stop somebody else asked for. A start ends the
+     * request standing (0126), so over somebody else's it decides for them; this
+     * person's own is the one it is meant to end, and is not refused.
+     * A request that could not be read is a refusal, never *nothing stands*: the
+     * start could end somebody's drain without being able to see that it did.
+     */
+    const shutdownStands = (
+      /** Whether this command has already unloaded the service, so "nothing was stopped" would be false. */
+      unloaded = false,
+    ): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        const standing = yield* options.shutdown().pipe(answeringUnread((unread) => ({ unread })))
+        const verdict = standingRefusal({ by, standing, unloaded })
+        if (!verdict.refuse) {
+          if (verdict.note !== null) log(verdict.note)
+          return false
+        }
+        for (const line of verdict.lines) error(line)
+        return true
+      })
+
+    /**
+     * One supervisor call that starts the daemon, and then the daemon's own word
+     * for it: 0 only once a `ConductorStarted` is on the log after the call.
+     */
+    const startAndConfirm = (call: string[]): Effect.Effect<number> =>
+      Effect.gen(function* () {
+        const mark = yield* options.started.watermark().pipe(answeringUnread((message) => new Error(message)))
+        if (!run(call)) return 1
+        if (mark instanceof Error) {
+          error(
+            `the supervisor was asked to start the daemon, and where the control stream is could not be read — ${mark.message}.`,
+          )
+          error(
+            'So whether a daemon took work is not known: pnpm lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up.',
+          )
+          return 1
+        }
+        log(
+          `waiting for the daemon to record its start — up to ${START_WAIT_POLLS}s, since it records after its reconcile. It is waiting, not hung.`,
+        )
+        /**
+         * Why the last read failed, or null when it answered. A read that failed is
+         * not a read that found nothing: the daemon may have recorded its start and
+         * be taking work while this cannot see the stream.
+         */
+        let unread: string | null = null
+        for (let i = 0; i < START_WAIT_POLLS; i++) {
+          const read = yield* options.started.after(mark).pipe(
+            Effect.map((found) => ({ found })),
+            answeringUnread((message) => ({ unread: message })),
+          )
+          let record: RecordedStart | null = null
+          if ('unread' in read) unread = read.unread
+          else {
+            record = read.found
+            unread = null
+          }
+          if (record !== null) {
+            log(
+              `a daemon recorded its start — ${record.sha ? record.sha.slice(0, 7) : 'an unrecorded commit'}` +
+                `${record.dirty ? ' (worktree dirty)' : ''} as ${record.worker}, recorded as ${record.by}`,
+            )
+            return 0
+          }
+          yield* sleep(1_000)
+        }
+        if (unread !== null) {
+          error(
+            `the supervisor accepted the start, and the control stream could not be read to see whether a daemon recorded one — ${unread}.`,
+          )
+          error('So whether a daemon took work is not known: a daemon may be running an attempt now.')
+          error(
+            'pnpm lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up and who holds the lock.',
+          )
+          return 1
+        }
+        error(
+          `the supervisor accepted the start, and no daemon recorded one in ${START_WAIT_POLLS}s — so no work is being taken on its account.`,
+        )
+        error(
+          'A daemon that loses the conductor lock, reads a shutdown, or fails on its way up records nothing, and may exit 0 for the supervisor to start again.',
+        )
+        error(
+          'pnpm lingtai service status says what the supervisor did, and lingtai doctor whether a daemon is up and who holds the lock.',
+        )
+        return 1
+      })
+
+    /**
+     * The supervisor's start, refused while a shutdown request stands, and
+     * confirmed by the daemon's record.
+     *
+     * The refusal answers `REFUSED_OVER_SHUTDOWN` and not 1, so that a caller can
+     * tell *nothing was started* from *the start failed*: the sentence it prints
+     * is **Nothing was started or stopped**, and `service start` going on to
+     * bootstrap the board's job under it would make that false in the same
+     * output. Never returned from `serviceCommand` — both call sites below turn
+     * it into the 1 the operator sees.
+     */
+    const start = (unloaded = false): Effect.Effect<number> =>
+      Effect.gen(function* () {
+        if (yield* shutdownStands(unloaded)) return REFUSED_OVER_SHUTDOWN
+        const answer = ask()
+        if (!answer) return 1
+        // A daemon the supervisor is already running is not started again — and is
+        // not a start to wait for, which would be a wait for nothing.
+        if (answer.loaded && processRunning(platform, answer.lines)) {
+          log(
+            'the supervisor is already running a daemon, so nothing was started — and nothing was confirmed either: that process ' +
+              'may have lost the lock and be taking no work. lingtai doctor says who holds the lock',
+          )
+          options.unconfirmed?.('conductor')
+          return 0
+        }
+        if (platform === 'systemd') return yield* startAndConfirm(['systemctl', '--user', 'start', SYSTEMD_UNIT])
+        // `shutdown` unloads, and `kickstart` cannot find a job that is not loaded.
+        // Plain `kickstart` starts a loaded job that is not running and leaves a
+        // running one alone, which is `systemctl start`. A job unloaded and loaded
+        // again, not `kickstart -k`, is also what applies a rewritten plist.
+        return yield* startAndConfirm(
+          answer.loaded ? ['launchctl', 'kickstart', target] : ['launchctl', 'bootstrap', `gui/${uid}`, file.path],
+        )
+      })
+
+    /**
+     * The drain, then the supervisor — in that order, and the order is the fix.
+     *
+     * 1. a place in the queue for the conductor lock. Under KeepAlive the daemon
+     *    that drains and exits is started again at once, and since #159 that copy
+     *    reads nothing appended before it started — so the request does not keep
+     *    it from work. The lock does: Postgres hands a released lock to the
+     *    session already waiting, before the copy can try for it.
+     * 2. the request, on the log: the daemon finishes the pass in flight, the
+     *    gates and the merge lane with it, and exits. Only this command's own —
+     *    one already standing is adopted when it is this person's,
+     *    and refused when it is somebody else's.
+     * 3. the wait, until this command holds the lock. Bounded by the pass — by
+     *    the recipe's runtime.limits — and not by anything here.
+     * 4. the unload, still holding the lock. A copy the supervisor started
+     *    meanwhile lost the lock and claimed nothing, so there is nothing left
+     *    for the supervisor's SIGKILL to take.
+     * 5. the lock released; the request stands until the next start ends it, and
+     *    `service start` by this person is not refused over it.
+     */
+    const drain = (): Effect.Effect<number, unknown> =>
+      Effect.gen(function* () {
+        steps.begin('draining')
+        const queue = yield* options.drain.queue().pipe(answeringUnread((message) => new Error(message)))
+        if (queue instanceof Error) {
+          // The database is what the drain goes through, and it is also what a
+          // daemon needs to hold the lock or claim anything. So when it cannot be
+          // reached — a paused project, a wrong URL, and the supervisor restarting
+          // copy after copy that fails to connect — the supervisor is asked instead
+          // whether a process is running at all. A moment with none is a moment
+          // with no pass for its signal to kill, and the unload goes ahead then.
+          log(`the conductor lock could not be queued for — ${queue.message}.`)
+          log(
+            `asking the supervisor whether a daemon is running, for up to ${IDLE_WAIT_POLLS}s: with none, there is no attempt to drain`,
+          )
+          for (let i = 0; i < IDLE_WAIT_POLLS; i++) {
+            const now = ask()
+            if (!now) return 1
+            if (!now.loaded) {
+              log(
+                `the supervisor no longer has ${platform === 'launchd' ? LAUNCHD_LABEL : SYSTEMD_UNIT} loaded — nothing to drain or unload`,
+              )
+              return 0
+            }
+            if (!processRunning(platform, now.lines)) {
+              log(
+                'the supervisor has no daemon running, so nothing holds the conductor lock or an attempt — stopped without the drain',
+              )
+              const stopped =
+                platform === 'launchd' ? yield* unload() : run(['systemctl', '--user', 'stop', SYSTEMD_UNIT])
+              return stopped ? 0 : 1
+            }
+            yield* sleep(1_000)
+          }
+          error(
+            `a daemon stayed running for ${IDLE_WAIT_POLLS}s while the conductor lock could not be queued for. Nothing was stopped:`,
+          )
+          error(
+            "it may be in an attempt the supervisor's signal would kill, and without a place in the lock's queue the copy started after a drain could take work that the unload kills.",
+          )
+          error(
+            platform === 'launchd'
+              ? `To stop it regardless, and kill whatever it is running: launchctl bootout ${target}`
+              : `To stop it regardless, and kill whatever it is running: systemctl --user stop ${SYSTEMD_UNIT}`,
+          )
+          return 1
+        }
+        let watcher: { stop: () => Promise<void> } | undefined
+        // Joined before the command is over, on every way out — a store's failure
+        // is a defect, and it leaves this body as a cause rather than a throw.
+        const leaving = Effect.suspend(() =>
+          lift(() => watcher?.stop() ?? Promise.resolve()).pipe(
+            Effect.ignore,
+            Effect.andThen(lift(() => queue.leave()).pipe(Effect.ignore)),
+          ),
+        )
+        const waiting = Effect.gen(function* () {
+          const asked = yield* options.drain
+            .ask(by, `service ${verb}: ${reason}`)
+            .pipe(answeringUnread((message) => new Error(message)))
+          if (asked instanceof Error) {
+            error(`the shutdown could not be asked for — ${asked.message}. Nothing was stopped:`)
+            error("the supervisor's signal would kill an attempt in flight, so it is not sent without the drain.")
+            return 1
+          }
+          // This person's own standing request is adopted and waited on (0126): the
+          // start that follows ends it. Somebody else's is refused.
+          if (!asked.asked && asked.standing.by !== by) {
+            error(
+              `a shutdown asked by ${asked.standing.by} (${asked.standing.reason}) is already standing. Nothing was stopped:`,
+            )
+            error(`it is theirs, not this command's. ${FOREIGN_STANDING}`)
+            return 1
+          }
+          if (!asked.asked)
+            log(`a shutdown you asked for is already standing (${asked.standing.reason}) — waiting on it`)
+          log(
+            `draining — ${yield* options.drain.holding().pipe(answeringUnread(() => 'what is in flight could not be read'))}.`,
+          )
+          log(
+            `the attempt in flight finishes first: its agent, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`,
+          )
+
+          // A lock gone with its connection can be taken, in the gap, by a copy the
+          // supervisor started. If it recorded its start, that ended the request, and the
+          // request is asked again, above its watermark. If it has not recorded yet,
+          // the request stands and is above its `since`, so it obeys that. Either way
+          // this person's own request is the one waited on; somebody else's is not.
+          //
+          // An Effect here, and a promise where `LockQueue.wait` takes it (CLI-08b
+          // makes the queue one too): it fails with an `Error` whose message the
+          // queue prints, a store's defect included.
+          const askAgain: Effect.Effect<void, unknown> = Effect.gen(function* () {
+            const again = yield* options.drain.ask(by, `service ${verb}: ${reason}`)
+            if (!again.asked && again.standing.by !== by)
+              return yield* Effect.fail(
+                new Error(`a shutdown asked by ${again.standing.by} (${again.standing.reason}) landed first`),
+              )
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.fail(asError(Cause.squash(cause))),
+            ),
+          )
+          // The fibre each promise round starts carries this one's services.
+          const runAsk = Effect.runPromiseWith(yield* Effect.context<never>())
+          const retake = (): Promise<void> => runAsk(askAgain)
+          // Only where the entry passed steps: `noSteps` would swallow the repeated line `log` carries otherwise.
+          const progress = options.steps === undefined ? undefined : (line: string) => steps.progress(line)
+          // A line written while the spinner is live would be erased by its next redraw, so it ends first.
+          const waitLog = (line: string): void => {
+            steps.end()
+            log(line)
+          }
+          // A start by a copy that held the lock while initialising ends the request
+          // adopted above; the lock then stays with it and the wait never ends. So
+          // whenever no request stands during the wait, it is asked again.
+          watcher = keepAsked(options.shutdown(), askAgain, 2000)
+          let waited = yield* lift(() => queue.wait(waitLog, retake, progress))
+          steps.end()
+          // Asked again right before the supervisor is told: the lock is only worth
+          // anything while its session lasts, and a wait that ended held says
+          // nothing about a connection that dropped since. After `bootout` or
+          // `systemctl stop` the supervisor starts no copy, so this is the last
+          // moment a lost lock could be handed to one.
+          while (waited === 'held' && !(yield* lift(() => queue.holds()).pipe(answeringUnread(() => false)))) {
+            log(
+              'the conductor lock was lost with its connection before the supervisor was told anything — its place is taken again, the drain asked again, and the wait goes on',
+            )
+            waited = yield* lift(() => queue.wait(waitLog, retake, progress))
+            steps.end()
+          }
+          if (waited !== 'held') {
+            yield* lift(() => queue.leave())
+            log(
+              `${waited === 'interrupted' ? 'stopped waiting' : 'gave up waiting'}, and the supervisor was told nothing. ` +
+                'The request stands until the next start ends it, and service start by this person is not refused over it. ' +
+                'A daemon that had already read it still finishes its attempt and exits. pnpm lingtai service shutdown picks it up again.',
+            )
+            return waited === 'interrupted' ? 130 : 1
+          }
+          log(
+            'this command holds the conductor lock — the attempt is over, and nothing the supervisor starts now can take work',
+          )
+
+          // Unloaded, not killed: KeepAlive would bring a killed job straight back.
+          const stopped = platform === 'launchd' ? yield* unload() : run(['systemctl', '--user', 'stop', SYSTEMD_UNIT])
+          yield* lift(() => queue.leave())
+          if (!stopped) {
+            error(
+              'the supervisor did not stop the service, above — it may still be running it, and a daemon it starts takes work. ' +
+                'The request stands until the next start ends it; pnpm lingtai service shutdown picks it up again.',
+            )
+            return 1
+          }
+          return 0
+        })
+        return yield* waiting.pipe(Effect.ensuring(leaving))
+      })
+
+    switch (verb) {
+      case 'status': {
+        // Two jobs, two reports, and never one summary: a board that is up beside
+        // a conductor launchd respawns every thirty seconds is the exact state a
+        // single word for both would hide.
+        const asked = (job?: Job): SupervisorAnswer => {
+          const answer = askSupervisor(platform, exec, uid, job)
+          return 'unread' in answer ? { unread: answer.unread } : { lines: answer.lines }
+        }
+        const status: ServiceStatus = {
+          platform,
+          conductor: {
+            target: platform === 'launchd' ? target : SYSTEMD_UNIT,
+            supervisor: asked(),
+            beacon: yield* options.liveness().pipe(answeringUnread((unread) => ({ unread }))),
+          },
+          board: {
+            target: platform === 'launchd' ? boardTarget : BOARD_SYSTEMD_UNIT,
+            supervisor: asked(BOARD_JOB),
+            url: options.board.url,
+            answers: yield* boardAnswers(),
+            missing: options.board.missing(),
+          },
+        }
+        if (options.json) log(JSON.stringify({ version: 1, command: 'service status', ...serviceStatusJson(status) }))
+        else for (const line of renderServiceStatus(status)) log(line)
+        return serviceStatusCode(status)
+      }
+
+      case 'install': {
+        // The checkout is `repoRoot()` — wherever this command was run from, not
+        // the installing user's. `pnpm --dir /home/admin/lingtai` as the service
+        // user would write a unit that runs another user's code, or cannot.
+        const owner = (yield* lift(() => stat(inputs.root))).uid
+        if (owner !== uid) {
+          error(
+            `${inputs.root} is owned by uid ${owner}, not uid ${uid}, who would run it — ` +
+              'install from a checkout this user owns (see doc/operating.md)',
+          )
+          return 1
+        }
+        let started = false
+        yield* lift(() => mkdir(file.logs, { recursive: true }))
+        yield* lift(() => mkdir(dirname(file.path), { recursive: true }))
+        // The board's file is written only where there is a board to serve. A
+        // plist for `board start` on an unbuilt checkout is a job that exits at
+        // once and is respawned every thirty seconds for ever, and this command
+        // is the one place that can see it coming.
+        const noBoard = options.board.missing()
+        // Both files before either job is touched: under systemd one
+        // `daemon-reload` then has both units to read, and a refusal below leaves
+        // two files written and nothing loaded, which is what it says.
+        yield* lift(() => writeFile(file.path, file.content))
+        if (noBoard === null) yield* lift(() => writeFile(boardFile.path, boardFile.content))
+        log(`wrote ${file.path}`)
+        if (noBoard === null) {
+          log(`wrote ${boardFile.path}`)
+          log(`logs  ${join(file.logs, `${DAEMON_JOB.log}.log`)} and ${join(boardFile.logs, `${BOARD_JOB.log}.log`)}`)
+        } else {
+          log(`logs  ${join(file.logs, `${DAEMON_JOB.log}.log`)}`)
+          sayNoBoard(noBoard, 'written')
+        }
+
+        if (platform === 'launchd') {
+          const before = ask()
+          if (!before) {
+            error('the files are written and nothing was loaded')
+            return 1
+          }
+          if (before.loaded) {
+            // Not reloaded: that would signal a pass in flight. launchd reads the
+            // plist only when it loads the job — a KeepAlive respawn reuses the
+            // definition already loaded — so this file is not in effect yet.
+            log(`note  launchd already had ${LAUNCHD_LABEL} loaded, and keeps using the definition it loaded,`)
+            log('      respawns included, until: pnpm lingtai service restart')
+          } else if (yield* shutdownStands()) {
+            error('the files are written and nothing was loaded')
+            return 1
+          } else if ((yield* startAndConfirm(['launchctl', 'bootstrap', `gui/${uid}`, file.path])) !== 0) {
+            return 1
+          } else {
+            started = true
+          }
+        } else {
+          const before = ask()
+          if (!before) return 1
+          if (!run(['systemctl', '--user', 'daemon-reload'])) return 1
+          if (!run(['systemctl', '--user', 'enable', SYSTEMD_UNIT])) return 1
+          const active = before.lines.includes('ActiveState=active')
+          if (active) {
+            log('note  systemd has reloaded the unit, and the process it already had keeps the one it started with')
+            log('      until its next start: pnpm lingtai service restart')
+          } else if (yield* shutdownStands()) {
+            error("the units are written, the daemon's is enabled, and nothing was started")
+            return 1
+          } else if ((yield* startAndConfirm(['systemctl', '--user', 'start', SYSTEMD_UNIT])) !== 0) {
+            return 1
+          } else {
+            started = true
+          }
+          const linger = lingering(exec, username)
+          if (linger === 'no') {
+            log(
+              `note  lingering is off for ${username}, so the user manager, and the daemon, stop at their last logout:`,
+            )
+            log(`      sudo loginctl enable-linger ${username}`)
+          } else if (linger !== 'yes') {
+            log(
+              `note  could not read whether lingering is on — ${linger.unread}. Without it the daemon stops at ${username}'s last logout`,
+            )
+          }
+        }
+
+        // The board's job, after the daemon's and never instead of it: everything
+        // above refuses by returning, and each of those refusals says that nothing
+        // was loaded — which a board loaded first would make false.
+        //
+        // A standing shutdown request is one of those returns, above, under *the
+        // files are written and nothing was loaded* — so no board job is started
+        // under that sentence here, and none is in `start` below either.
+        // A failure here is the board's and exits as the board's: returning 1
+        // gave the conductor's number to a conductor that had installed, started
+        // and recorded its start, and skipped both reports on the way out, so
+        // nothing on screen said the daemon was up (#187).
+        const boardEnabled =
+          noBoard !== null || platform !== 'systemd' || run(['systemctl', '--user', 'enable', BOARD_SYSTEMD_UNIT])
+        if (!boardEnabled) error(`${BOARD_SYSTEMD_UNIT} could not be enabled, so nothing was started for the board`)
+        // Said once, above, where there is nothing to serve — so the start is not
+        // asked to say it again.
+        const boardCode = noBoard === null && boardEnabled ? yield* startBoard() : 0
+
+        log('')
+        log('the conductor')
+        const code = yield* report()
+        // After the start's record, so the beacon has had its first beat — but a
+        // beacon is five seconds apart, and the record is what said it started.
+        if (started)
+          log('the beacon above may be one beat behind the start recorded before it — pnpm lingtai service status')
+        log('')
+        log('the board')
+        const boardReport = yield* reportBoard()
+        // Every leg of the conductor's has returned above or is `code`; the three
+        // left are the board's alone, and say so by their number.
+        return code !== 0 ? code : !boardEnabled || boardCode !== 0 || boardReport !== 0 ? START_BOARD_ONLY : 0
+      }
+
+      case 'start': {
+        if (!installed) return notInstalled()
+        steps.begin('starting')
+        const daemon = yield* start()
+        // A standing shutdown request refuses both legs, and that is the one
+        // failure of the daemon's that stops the board's start: the refusal says
+        // *Nothing was started or stopped*, so a `launchctl bootstrap` of the
+        // board's job after it would contradict it in the same output. `install`
+        // and `restart` both return before their board start in that case.
+        if (daemon === REFUSED_OVER_SHUTDOWN) return 1
+        // Otherwise both legs run — a `service start` that exited 0 over a board
+        // nobody can open is the claim #167 took out of the daemon's start — and
+        // the number says which one failed, since `lingtai restart` asks this
+        // about the conductor. The daemon's answer wins where both failed: *the
+        // board did not come up* is not a thing to tell a restart whose daemon
+        // never started either.
+        const board = yield* startBoard()
+        return daemon !== 0 ? daemon : board === 0 ? 0 : START_BOARD_ONLY
+      }
+
+      case 'shutdown':
+      case 'restart': {
+        if (!installed) return notInstalled()
+        if (verb === 'restart' && (yield* shutdownStands())) return 1
+        const answer = ask()
+        if (!answer) return 1
+        const kept =
+          platform === 'launchd'
+            ? answer.loaded
+            : answer.loaded && !answer.lines.some((l) => l === 'ActiveState=inactive' || l === 'ActiveState=failed')
+        if (kept) {
+          const drained = yield* drain()
+          if (drained !== 0) return drained
+        } else {
+          log(
+            `the supervisor is not running ${platform === 'launchd' ? LAUNCHD_LABEL : SYSTEMD_UNIT} — nothing of its to drain`,
           )
         }
+        // The board goes last, both ways, and the order is the daemon's refusals.
+        // On the way down the UI is what watches the drain, and it is worth
+        // having through it. On the way up `start` may still refuse over a
+        // request that landed during the wait, and its refusal says *nothing was
+        // started* — which a board started first would make false.
+        // Why there is no board to stop is said here for `shutdown`, which ends
+        // at this leg; `restart` says the same reason at its start leg below.
+        const boardStopped = yield* stopBoard(verb === 'shutdown')
+        // The drain finished; the board's job is its own answer, and never the
+        // drain's. `lingtai restart` reads this number as *did the conductor
+        // stop*, so a board the supervisor would not bootout exits
+        // `SHUTDOWN_BOARD_ONLY` — non-zero, since the verb did not do all it
+        // says, and not 1, since the conductor is drained and unloaded and a
+        // restart has no reason to abandon its start over the UI.
+        if (verb === 'shutdown') return boardStopped === 0 ? 0 : SHUTDOWN_BOARD_ONLY
+        steps.begin('starting')
+        const daemonStarted = yield* start(kept)
+        // The sentinel stays inside this file: what a refused start is worth to
+        // anybody outside is 1.
+        if (daemonStarted !== 0) return daemonStarted === REFUSED_OVER_SHUTDOWN ? 1 : daemonStarted
+        const boardStarted = yield* startBoard()
+        // The conductor drained, unloaded, started and recorded it; both numbers
+        // left are the board's, and one exit says that rather than reading like a
+        // restart that failed.
+        //
+        // **Which of the two, though.** doc/operating.md gives 3 and 4 their own
+        // sentences — *the board's job would not stop* and *the board did not
+        // come up* — and one number for both said the second where the first had
+        // happened: a `bootout` refused mid-start leaves the board running and
+        // answering, and the start that follows finds the job loaded with a live
+        // pid and succeeds, so an operator reading 4 against that table went
+        // looking for a board that was up the whole time. The start's failure
+        // wins where both failed, because it is the end state: nothing came up.
+        if (boardStarted !== 0) return START_BOARD_ONLY
+        return boardStopped !== 0 ? SHUTDOWN_BOARD_ONLY : 0
       }
 
-      // The board's job, after the daemon's and never instead of it: everything
-      // above refuses by returning, and each of those refusals says that nothing
-      // was loaded — which a board loaded first would make false.
-      //
-      // A standing shutdown request is one of those returns, above, under *the
-      // files are written and nothing was loaded* — so no board job is started
-      // under that sentence here, and none is in `start` below either.
-      // A failure here is the board's and exits as the board's: returning 1
-      // gave the conductor's number to a conductor that had installed, started
-      // and recorded its start, and skipped both reports on the way out, so
-      // nothing on screen said the daemon was up (#187).
-      const boardEnabled =
-        noBoard !== null || platform !== 'systemd' || run(['systemctl', '--user', 'enable', BOARD_SYSTEMD_UNIT])
-      if (!boardEnabled) error(`${BOARD_SYSTEMD_UNIT} could not be enabled, so nothing was started for the board`)
-      // Said once, above, where there is nothing to serve — so the start is not
-      // asked to say it again.
-      const boardCode = noBoard === null && boardEnabled ? await startBoard() : 0
-
-      log('')
-      log('the conductor')
-      const code = await report()
-      // After the start's record, so the beacon has had its first beat — but a
-      // beacon is five seconds apart, and the record is what said it started.
-      if (started)
-        log('the beacon above may be one beat behind the start recorded before it — pnpm lingtai service status')
-      log('')
-      log('the board')
-      const boardReport = await reportBoard()
-      // Every leg of the conductor's has returned above or is `code`; the three
-      // left are the board's alone, and say so by their number.
-      return code !== 0 ? code : !boardEnabled || boardCode !== 0 || boardReport !== 0 ? START_BOARD_ONLY : 0
-    }
-
-    case 'start': {
-      if (!installed) return notInstalled()
-      steps.begin('starting')
-      const daemon = await start()
-      // A standing shutdown request refuses both legs, and that is the one
-      // failure of the daemon's that stops the board's start: the refusal says
-      // *Nothing was started or stopped*, so a `launchctl bootstrap` of the
-      // board's job after it would contradict it in the same output. `install`
-      // and `restart` both return before their board start in that case.
-      if (daemon === REFUSED_OVER_SHUTDOWN) return 1
-      // Otherwise both legs run — a `service start` that exited 0 over a board
-      // nobody can open is the claim #167 took out of the daemon's start — and
-      // the number says which one failed, since `lingtai restart` asks this
-      // about the conductor. The daemon's answer wins where both failed: *the
-      // board did not come up* is not a thing to tell a restart whose daemon
-      // never started either.
-      const board = await startBoard()
-      return daemon !== 0 ? daemon : board === 0 ? 0 : START_BOARD_ONLY
-    }
-
-    case 'shutdown':
-    case 'restart': {
-      if (!installed) return notInstalled()
-      if (verb === 'restart' && (await shutdownStands())) return 1
-      const answer = ask()
-      if (!answer) return 1
-      const kept =
-        platform === 'launchd'
-          ? answer.loaded
-          : answer.loaded && !answer.lines.some((l) => l === 'ActiveState=inactive' || l === 'ActiveState=failed')
-      if (kept) {
-        const drained = await drain()
-        if (drained !== 0) return drained
-      } else {
-        log(
-          `the supervisor is not running ${platform === 'launchd' ? LAUNCHD_LABEL : SYSTEMD_UNIT} — nothing of its to drain`,
-        )
+      case 'uninstall': {
+        /**
+         * **Both legs run, whatever either answers, and the worst is returned.**
+         * Every other verb stops at its first refusal; this one must not. A
+         * `service uninstall` that gave up at the daemon — because its file was
+         * already gone, or its unload failed — used to exit 0 with the board's job
+         * still loaded and its plist still on disk, and launchd went on starting a
+         * board at every login under a command that reported success. The whole
+         * point of the verb is that nothing is left behind, so nothing is skipped
+         * and anything that could not be removed is named.
+         */
+        const daemonGone = yield* uninstallJob(DAEMON_JOB, file, true)
+        const boardGone = yield* uninstallJob(BOARD_JOB, boardFile, false)
+        return daemonGone !== 0 ? daemonGone : boardGone
       }
-      // The board goes last, both ways, and the order is the daemon's refusals.
-      // On the way down the UI is what watches the drain, and it is worth
-      // having through it. On the way up `start` may still refuse over a
-      // request that landed during the wait, and its refusal says *nothing was
-      // started* — which a board started first would make false.
-      // Why there is no board to stop is said here for `shutdown`, which ends
-      // at this leg; `restart` says the same reason at its start leg below.
-      const boardStopped = await stopBoard(verb === 'shutdown')
-      // The drain finished; the board's job is its own answer, and never the
-      // drain's. `lingtai restart` reads this number as *did the conductor
-      // stop*, so a board the supervisor would not bootout exits
-      // `SHUTDOWN_BOARD_ONLY` — non-zero, since the verb did not do all it
-      // says, and not 1, since the conductor is drained and unloaded and a
-      // restart has no reason to abandon its start over the UI.
-      if (verb === 'shutdown') return boardStopped === 0 ? 0 : SHUTDOWN_BOARD_ONLY
-      steps.begin('starting')
-      const daemonStarted = await start(kept)
-      // The sentinel stays inside this file: what a refused start is worth to
-      // anybody outside is 1.
-      if (daemonStarted !== 0) return daemonStarted === REFUSED_OVER_SHUTDOWN ? 1 : daemonStarted
-      const boardStarted = await startBoard()
-      // The conductor drained, unloaded, started and recorded it; both numbers
-      // left are the board's, and one exit says that rather than reading like a
-      // restart that failed.
-      //
-      // **Which of the two, though.** doc/operating.md gives 3 and 4 their own
-      // sentences — *the board's job would not stop* and *the board did not
-      // come up* — and one number for both said the second where the first had
-      // happened: a `bootout` refused mid-start leaves the board running and
-      // answering, and the start that follows finds the job loaded with a live
-      // pid and succeeds, so an operator reading 4 against that table went
-      // looking for a board that was up the whole time. The start's failure
-      // wins where both failed, because it is the end state: nothing came up.
-      if (boardStarted !== 0) return START_BOARD_ONLY
-      return boardStopped !== 0 ? SHUTDOWN_BOARD_ONLY : 0
     }
-
-    case 'uninstall': {
-      /**
-       * **Both legs run, whatever either answers, and the worst is returned.**
-       * Every other verb stops at its first refusal; this one must not. A
-       * `service uninstall` that gave up at the daemon — because its file was
-       * already gone, or its unload failed — used to exit 0 with the board's job
-       * still loaded and its plist still on disk, and launchd went on starting a
-       * board at every login under a command that reported success. The whole
-       * point of the verb is that nothing is left behind, so nothing is skipped
-       * and anything that could not be removed is named.
-       */
-      const daemonGone = await uninstallJob(DAEMON_JOB, file, true)
-      const boardGone = await uninstallJob(BOARD_JOB, boardFile, false)
-      return daemonGone !== 0 ? daemonGone : boardGone
-    }
-  }
-}
+  })

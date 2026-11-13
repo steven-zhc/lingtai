@@ -20,9 +20,10 @@ import {
   recordStart,
   reconcile,
   requestShutdownEffect,
-  requestShutdownUnlessStanding,
-  controlWatermark,
-  startAfter,
+  requestShutdownUnlessStandingEffect,
+  controlWatermarkEffect,
+  startAfterEffect,
+  readControlEffect,
   HEARTBEAT_MS,
   startBeacon,
   startDaemon,
@@ -42,7 +43,7 @@ import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
 import { Cause, Effect } from 'effect'
 
-import { boardAt, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
+import { boardAtEffect, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
 import { conductorTurn } from './conduct.ts'
 import { ceilingPort } from './day-ceiling.ts'
 import { answerOutstandingQueued, onDiscussionRequested } from './discuss.ts'
@@ -81,23 +82,23 @@ export function serviceOptions(): ServiceOptions {
     // Doctor reduces that into "no daemon has run", and here it would be the
     // one wrong answer this command exists to avoid. It is the only read:
     // a second one could fail where this succeeded.
-    liveness: async () => (await daemonLiveness(() => readStatus())).detail,
-    shutdown: async () => (await readControl()).shutdown,
+    liveness: () => lift(() => daemonLiveness(() => readStatus())).pipe(Effect.map((live) => live.detail)),
+    shutdown: () => readControlEffect().pipe(Effect.map((control) => control.shutdown)),
     // `lingtai shutdown`'s own append and a wait on the lock (#174): the
     // supervisor is told only once this command holds the conductor lock.
     drain: {
-      ask: (by, reason) => requestShutdownUnlessStanding(by, reason),
+      ask: (by, reason) => requestShutdownUnlessStandingEffect(by, reason),
       // Not caught here: a read that failed is not "nothing is in flight", and
       // `service shutdown` says it could not be read.
-      holding: async () => describeInFlight(await inFlight()),
-      queue: () => queueForTheLock(),
+      holding: () => inFlightEffect().pipe(Effect.map((items) => describeInFlight(items))),
+      queue: () => lift(() => queueForTheLock()),
     },
     // A supervisor's exit code says the job was asked for, not that a daemon
     // won the lock and took work — so a start is confirmed by the record the
     // daemon appends before its first pass (#167).
     started: {
-      watermark: () => controlWatermark(),
-      after: (version) => startAfter(version),
+      watermark: () => controlWatermarkEffect(),
+      after: (version) => startAfterEffect(version),
     },
   }
 }
@@ -124,25 +125,23 @@ export function boardOptions(): ServiceOptions['board'] {
       // default's is where a board would answer once the file reads, and
       // `missing` says in the same breath that nothing is on it.
       url: `http://127.0.0.1:${BOARD_PORT}`,
-      answering: async () => null,
+      answering: () => Effect.succeed(null),
       missing: () => ({
         why,
         remedy: [`the board's port is set in ${configPath(process.env)}, and nothing else here reads it`],
       }),
       // Never reached: every verb asks `missing` first and starts no board.
-      heldBy: async () => {
-        throw new Error(why)
-      },
+      heldBy: () => Effect.fail(new Error(why)),
     }
   }
   const { port, reach } = asked
   return {
     url: boardOrigin(reach, port),
-    answering: () => boardAt(port, reach),
+    answering: () => boardAtEffect(port, reach),
     missing: boardMissing,
     // The key `lingtai board start` takes, read without taking it — so a board
     // in a terminal is not a job the supervisor respawns every thirty seconds.
-    heldBy: () => createFileLocker().holder(boardLock(port)),
+    heldBy: () => lift(() => createFileLocker().holder(boardLock(port))),
   }
 }
 
@@ -935,19 +934,17 @@ const restartSteps = (
       const code = yield* restartSupervised(args, {
         steps,
         service: (argv, asked) =>
-          lift(() =>
-            serviceCommand(argv, {
-              ...options,
-              // The phases are `restartSupervised`'s own labels; the wait inside the drain still
-              // reaches the spinner through `progress`, and `end` clears it.
-              steps: { begin() {}, progress: (line) => steps.progress(line), end: () => steps.end() },
-              drain: {
-                ...options.drain,
-                ask: (by: string, reason: string) =>
-                  requestShutdownUnlessStanding(by, reason, asked.timeoutMs, undefined, asked.force),
-              },
-            }),
-          ),
+          serviceCommand(argv, {
+            ...options,
+            // The phases are `restartSupervised`'s own labels; the wait inside the drain still
+            // reaches the spinner through `progress`, and `end` clears it.
+            steps: { begin() {}, progress: (line) => steps.progress(line), end: () => steps.end() },
+            drain: {
+              ...options.drain,
+              ask: (by: string, reason: string) =>
+                requestShutdownUnlessStandingEffect(by, reason, asked.timeoutMs, undefined, asked.force),
+            },
+          }),
       })
       if (code === 0) restarted(null)
       return code
