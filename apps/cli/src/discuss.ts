@@ -125,20 +125,20 @@ export const prepare = (
   chatId: string,
   home = stateDir(),
 ): Effect.Effect<{ cwd: string; settingsPath: string }, unknown> =>
-  Effect.tryPromise({
-    try: async () => {
-      const cwd = chatDir(chatId, home)
-      await rm(cwd, { recursive: true, force: true })
-      await mkdir(cwd, { recursive: true, mode: 0o700 })
-      const settingsPath = join(home, 'chats', `${chatId}.settings.json`)
-      await writeFile(
+  Effect.gen(function* () {
+    const io = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
+    const cwd = chatDir(chatId, home)
+    yield* io(() => rm(cwd, { recursive: true, force: true }))
+    yield* io(() => mkdir(cwd, { recursive: true, mode: 0o700 }))
+    const settingsPath = join(home, 'chats', `${chatId}.settings.json`)
+    yield* io(() =>
+      writeFile(
         settingsPath,
         `${JSON.stringify({ permissions: { defaultMode: 'default', deny: DENIED } }, null, 2)}\n`,
         { mode: 0o600 },
-      )
-      return { cwd, settingsPath }
-    },
-    catch: (e) => e,
+      ),
+    )
+    return { cwd, settingsPath }
   })
 
 /**

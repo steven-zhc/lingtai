@@ -2,7 +2,7 @@ import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import { RepoFailed, gitEffect } from '../src/git.ts'
-import { conflictedPathsAt } from '../src/mirror.ts'
+import { conflictedPathsAtEffect } from '../src/mirror.ts'
 
 vi.mock('../src/git.ts', async () => ({
   ...(await vi.importActual<typeof import('../src/git.ts')>('../src/git.ts')),
@@ -27,9 +27,9 @@ describe('conflictedPathsAt', () => {
       return Effect.fail(new RepoFailed({ operation: 'git', detail: `unexpected git command: ${args[0]}` }))
     })
 
-    await expect(conflictedPathsAt({ project: 'test', baseSha: oid, headSha: oid })).rejects.toThrow(
-      'stdout maxBuffer length exceeded',
-    )
+    await expect(
+      Effect.runPromise(conflictedPathsAtEffect({ project: 'test', baseSha: oid, headSha: oid })),
+    ).rejects.toThrow('stdout maxBuffer length exceeded')
   })
 
   it('keeps the one-hunk fallback when the merged tree has no copy of the path', async () => {
@@ -50,7 +50,7 @@ describe('conflictedPathsAt', () => {
       return Effect.fail(new RepoFailed({ operation: 'git', detail: `unexpected git command: ${args[0]}` }))
     })
 
-    const paths = await conflictedPathsAt({ project: 'test', baseSha: oid, headSha: oid })
+    const paths = await Effect.runPromise(conflictedPathsAtEffect({ project: 'test', baseSha: oid, headSha: oid }))
     expect(paths).toMatchObject([{ path: 'a.ts', hunks: 1, hunkLines: [1], base: 'readable stage blob' }])
   })
 })

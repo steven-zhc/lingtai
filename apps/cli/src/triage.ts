@@ -18,7 +18,6 @@ import { readingFor } from '@lingtai/conductor/discuss'
 import { currentRecipeEffect, loadProjectEffect, loadProjectsEffect } from '@lingtai/conductor/projects'
 import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
 import { recordPrompt } from '@lingtai/conductor/record-prompt'
-import { readState } from '@lingtai/conductor/snapshot-state'
 import {
   MAX_READ_ROUNDS,
   parseTriage,
@@ -671,7 +670,7 @@ const gatherEvidence = (
     let head: string | null = null
     if (runId !== null) {
       // An unreadable run stream is not evidence that the attempt has no head.
-      const run = yield* lift(() => readState(deps.store, attemptReducer, runId, 'all', deps))
+      const run = yield* readThroughSnapshot(deps.store, attemptReducer, runId, 'all', deps)
       routed = run.route
       published = run.published
       head = run.headSha

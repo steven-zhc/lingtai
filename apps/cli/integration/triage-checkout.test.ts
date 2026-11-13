@@ -54,7 +54,7 @@ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:2,output_t
     [head, 'attempt head'],
     [base, 'base'],
   ]) {
-    const checkout = await prepareTriageCheckout('project', sha!, root)
+    const checkout = await Effect.runPromise(prepareTriageCheckout('project', sha!, root))
     try {
       expect(await git(['rev-parse', 'HEAD'], { cwd: checkout.cwd, env: checkout.env })).toBe(sha)
       expect(await git(['remote'], { cwd: checkout.cwd, env: checkout.env })).toBe('')
@@ -72,7 +72,7 @@ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:2,output_t
       expect(result.text).toBe(expected)
       expect(await readFile(join(checkout.cwd, 'answer.txt'), 'utf8')).toBe('edited by tool\n')
     } finally {
-      await checkout.cleanup()
+      await Effect.runPromise(checkout.cleanup)
     }
     expect(await readFile(join(source, 'answer.txt'), 'utf8')).toBe('attempt head\n')
     expect(await git(['rev-parse', 'HEAD'], { cwd: mirror, env })).toBe(head)
@@ -101,11 +101,11 @@ it('lets Codex refresh its login where the original will read it', async () => {
   process.env['HOME'] = home
   delete process.env['CODEX_HOME']
   try {
-    const checkout = await prepareTriageCheckout('project', sha, root)
+    const checkout = await Effect.runPromise(prepareTriageCheckout('project', sha, root))
     expect(checkout.env['CODEX_HOME']).toBe(join(home, '.codex'))
     expect(checkout.env['HOME']).not.toBe(home)
     await writeFile(join(checkout.env['CODEX_HOME']!, 'auth.json'), '{"refresh":"new"}')
-    await checkout.cleanup()
+    await Effect.runPromise(checkout.cleanup)
     expect(await readFile(auth, 'utf8')).toBe('{"refresh":"new"}')
   } finally {
     for (const [key, value] of Object.entries(saved)) {

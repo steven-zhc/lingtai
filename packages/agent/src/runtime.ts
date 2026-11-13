@@ -299,16 +299,6 @@ export const runtimeVersionOfEffect = (
         Effect.catchDefect(() => Effect.succeed(null)),
       )
 
-/** The Effect above as a promise, for `apps/cli` (a listed face, #790). Never rejects. */
-export function runtimeVersionOf(runtime: Runtime, env: Record<string, string>, cwd?: string): Promise<string | null> {
-  return Effect.runPromise(runtimeVersionOfEffect(runtime, env, cwd))
-}
-
-/** `Runtime.run` as a promise, for `apps/cli` (a listed face, #790). */
-export function runtimeRun(runtime: Runtime, request: RunRequest): Promise<RunOutcome> {
-  return Effect.runPromise(runtime.run(request))
-}
-
 /**
  * Whether this runtime can be asked to do what the tier names.
  *

@@ -14,7 +14,18 @@ import { Triage, triageCallFor } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
-import { enqueueTriage, waitTriage, type TriagePorts, type WaitTriageRequest } from '../src/triage.ts'
+import {
+  enqueueTriage,
+  waitTriage as waitTriageEffect,
+  type TriagePorts,
+  type WaitTriageRequest,
+} from '../src/triage.ts'
+
+const waitTriage = (deps: TriagePorts, request: WaitTriageRequest) => Effect.runPromise(waitTriageEffect(deps, request))
+
+/** A fake port answers with a promise or with an Effect; the port itself is always an Effect. */
+const asEffect = <R>(value: Promise<R> | Effect.Effect<R, unknown>): Effect.Effect<R, unknown> =>
+  Effect.isEffect(value) ? value : Effect.tryPromise({ try: () => value, catch: (e) => e })
 
 const TRIAGE = Triage.parse({})
 
@@ -105,28 +116,79 @@ function stubRuntime(respond: (request: RunRequest, call: number) => RunOutcome 
   return { runtime, requests }
 }
 
-function fakeMirror(overrides: Partial<TriagePorts['mirror']> = {}): TriagePorts['mirror'] {
-  return {
+type Fake<F> = F extends (...args: infer A) => Effect.Effect<infer R, unknown>
+  ? (...args: A) => Promise<R> | Effect.Effect<R, unknown>
+  : never
+
+function fakeMirror(
+  overrides: { [K in keyof TriagePorts['mirror']]?: Fake<TriagePorts['mirror'][K]> } = {},
+): TriagePorts['mirror'] {
+  const answers = {
     refSha: async () => null,
     listAt: async () => ({ paths: [], truncated: false }),
     readAt: async () => null,
     diffStatAt: async () => null,
     conflictedPathsAt: async () => [],
     ...overrides,
-  }
+  } as Record<keyof TriagePorts['mirror'], (...args: never[]) => Promise<unknown> | Effect.Effect<unknown, unknown>>
+  return Object.fromEntries(
+    Object.entries(answers).map(([name, answer]) => [
+      name,
+      (...args: never[]) => Effect.suspend(() => asEffect(answer(...args))),
+    ]),
+  ) as unknown as TriagePorts['mirror']
 }
 
-function fakeDeps(store: EventStore, runtime: Runtime, overrides: Partial<TriagePorts> = {}): TriagePorts {
+type CheckoutFake = {
+  cwd: string
+  settingsPath: string
+  env: Record<string, string>
+  cleanup: (() => Promise<void>) | Effect.Effect<void, Error>
+}
+
+type DepsOverrides = Omit<Partial<TriagePorts>, 'issue' | 'base' | 'prepare' | 'prepareCheckout'> & {
+  issue?: (ticketId: string, signal?: AbortSignal) => Promise<{ ref: string; title: string; body: string }>
+  base?: (ticketId: string) => Promise<string>
+  prepare?: (id: string) => Promise<{ cwd: string; settingsPath: string }>
+  prepareCheckout?: (
+    project: string,
+    sha: string,
+    signal?: AbortSignal,
+  ) => Promise<CheckoutFake> | Effect.Effect<CheckoutFake, unknown>
+}
+
+function fakeDeps(store: EventStore, runtime: Runtime, overrides: DepsOverrides = {}): TriagePorts {
+  const { issue, base, prepare, prepareCheckout, ...rest } = overrides
   return {
     store,
     runtime: vi.fn(() => runtime),
     mirror: fakeMirror(),
-    issue: async () => ({ ref: '1', title: 'the ticket', body: 'the body' }),
-    base: async () => 'main',
-    prepare: async () => ({ cwd: '/tmp/triage', settingsPath: '/tmp/triage.settings.json' }),
+    issue: (ticketId, signal) =>
+      Effect.suspend(() =>
+        asEffect((issue ?? (async () => ({ ref: '1', title: 'the ticket', body: 'the body' })))(ticketId, signal)),
+      ),
+    base: (ticketId) => Effect.suspend(() => asEffect((base ?? (async () => 'main'))(ticketId))),
+    prepare: (id) =>
+      Effect.suspend(() =>
+        asEffect((prepare ?? (async () => ({ cwd: '/tmp/triage', settingsPath: '/tmp/triage.settings.json' })))(id)),
+      ),
+    ...(prepareCheckout === undefined
+      ? {}
+      : {
+          prepareCheckout: (project: string, sha: string, signal?: AbortSignal) =>
+            Effect.suspend(() => asEffect(prepareCheckout(project, sha, signal))).pipe(
+              Effect.map((c) => ({
+                ...c,
+                cleanup: (Effect.isEffect(c.cleanup)
+                  ? c.cleanup
+                  : Effect.suspend(() => asEffect((c.cleanup as () => Promise<void>)()))
+                ).pipe(Effect.mapError((e) => e as Error)),
+              })),
+            ),
+        }),
     now: () => 0,
     log: () => {},
-    ...overrides,
+    ...rest,
   }
 }
 
@@ -1071,6 +1133,62 @@ describe('waitTriage', () => {
   describe('the recipe wall', () => {
     const SHORT = Triage.parse({ limits: { wall: '20ms' } })
     const never = (): Promise<never> => new Promise(() => {})
+
+    it('ends as a timeout when a mirror read never settles under a 50 ms wall, and no checkout is made', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 70)
+      const { runtime, requests } = stubRuntime(() => outcomeOf())
+      const prepareCheckout = vi.fn()
+      const deps = fakeDeps(store, runtime, {
+        mirror: fakeMirror({ refSha: async () => 'a'.repeat(40), listAt: () => Effect.never }),
+        prepareCheckout,
+      })
+      const startedAt = Date.now()
+
+      const held = await waitTriage(
+        deps,
+        requestOn(ticketId, aWaitId(), {
+          triage: Triage.parse({ agent: 'codex', tools: 'full', limits: { wall: '50ms' } }),
+        }),
+      )
+
+      expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
+      expect(Date.now() - startedAt).toBeLessThan(1000)
+      expect(prepareCheckout).not.toHaveBeenCalled()
+      expect(requests).toHaveLength(0)
+    })
+
+    it('cleans up a checkout that lands after the wall, and does not wait for it', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 71)
+      const { runtime, requests } = stubRuntime(() => outcomeOf())
+      const cleanup = vi.fn(() => Effect.void)
+      // Uninterruptible, like a clone in flight: only the guard can end the wait for it.
+      const prepareCheckout = vi.fn(() =>
+        Effect.uninterruptible(Effect.sleep('150 millis')).pipe(
+          Effect.as({ cwd: '/tmp/late', settingsPath: '/tmp/late.json', env: {}, cleanup: Effect.suspend(cleanup) }),
+        ),
+      )
+      const deps = fakeDeps(store, runtime, {
+        mirror: fakeMirror({ refSha: async () => 'a'.repeat(40) }),
+        prepareCheckout,
+      })
+      const startedAt = Date.now()
+
+      const held = await waitTriage(
+        deps,
+        requestOn(ticketId, aWaitId(), {
+          triage: Triage.parse({ agent: 'codex', tools: 'full', limits: { wall: '50ms' } }),
+        }),
+      )
+      const waited = Date.now() - startedAt
+
+      expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
+      expect(waited).toBeLessThan(140)
+      expect(requests).toHaveLength(0)
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      expect(cleanup).toHaveBeenCalledOnce()
+    })
 
     it('stops a triage whose mirror read never returns, appends a failed WaitTriaged, and dispatches nothing', async () => {
       const store = createMemoryEventStore()

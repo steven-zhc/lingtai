@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createClaudeCodeRuntime } from '../src/claude-code.ts'
 import { createCodexRuntime } from '../src/codex.ts'
-import { runtimeVersionOf, runtimeVersionOfEffect, type Runtime } from '../src/runtime.ts'
+import { runtimeVersionOfEffect, type Runtime } from '../src/runtime.ts'
 
 /** A spawn that prints `out` and exits 0, recording what it was asked to start. */
 function fakeSpawn(out: string) {
@@ -49,19 +49,19 @@ describe('Runtime.version (#929)', () => {
   })
 })
 
-describe('runtimeVersionOf', () => {
+describe('runtimeVersionOfEffect', () => {
   const bare = { capabilities: {} } as unknown as Runtime
   it('is null for a runtime with no version, and never rejects', async () => {
-    expect(await runtimeVersionOf(bare, {})).toBeNull()
+    expect(await Effect.runPromise(runtimeVersionOfEffect(bare, {}))).toBeNull()
     const rejecting = { ...bare, version: () => Effect.die(new Error('boom')) } as Runtime
-    expect(await runtimeVersionOf(rejecting, {})).toBeNull()
+    expect(await Effect.runPromise(runtimeVersionOfEffect(rejecting, {}))).toBeNull()
     const throwing = {
       ...bare,
       version: () => {
         throw new Error('sync')
       },
     } as Runtime
-    expect(await runtimeVersionOf(throwing, {})).toBeNull()
+    expect(await Effect.runPromise(runtimeVersionOfEffect(throwing, {}))).toBeNull()
     expect(await Effect.runPromise(runtimeVersionOfEffect(throwing, {}))).toBeNull()
   })
   it('lets an interruption through rather than answering null', async () => {
@@ -82,7 +82,7 @@ describe('runtimeVersionOf', () => {
       ...bare,
       version: (env: Record<string, string>) => Effect.sync(() => (seen.push(env), 'fake 1')),
     } as Runtime
-    expect(await runtimeVersionOf(r, { A: 'b' })).toBe('fake 1')
+    expect(await Effect.runPromise(runtimeVersionOfEffect(r, { A: 'b' }))).toBe('fake 1')
     expect(seen).toEqual([{ A: 'b' }])
   })
 })

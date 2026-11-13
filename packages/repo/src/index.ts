@@ -35,16 +35,12 @@ export {
   type Worktree,
 } from './worktree.ts'
 export {
-  conflictedPathsAt,
   conflictedPathsAtEffect,
-  diffStatAt,
   diffStatAtEffect,
-  listAt,
   listAtEffect,
   mirrorBranchSha,
   mirrorBranchShaEffect,
   mirrorPathFor,
-  readAt,
   readAtEffect,
   refSha,
   refShaEffect,

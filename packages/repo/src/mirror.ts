@@ -92,12 +92,6 @@ export const readAtEffect = Effect.fn('readAtEffect')(function* (
     : text
 })
 
-export function readAt(
-  options: MirrorOptions & { ref: string; path: string; limitBytes?: number },
-): Promise<string | null> {
-  return Effect.runPromise(readAtEffect(options))
-}
-
 /**
  * `git diff --stat <base>...<head>`, bounded the way `readAt` bounds a file.
  *
@@ -125,12 +119,6 @@ export const diffStatAtEffect = Effect.fn('diffStatAtEffect')(function* (
     : text
 })
 
-export function diffStatAt(
-  options: MirrorOptions & { base: string; head: string; limitBytes?: number },
-): Promise<string | null> {
-  return Effect.runPromise(diffStatAtEffect(options))
-}
-
 /**
  * Every path at a ref, so a reader can name one.
  *
@@ -150,12 +138,6 @@ export const listAtEffect = Effect.fn('listAtEffect')(function* (
   const paths = out.split('\n').filter((p) => p !== '')
   return { paths: paths.slice(0, limit), truncated: paths.length > limit }
 })
-
-export function listAt(
-  options: MirrorOptions & { ref: string; limit?: number },
-): Promise<{ paths: string[]; truncated: boolean }> {
-  return Effect.runPromise(listAtEffect(options))
-}
 
 export interface ConflictedPath {
   path: string
@@ -249,9 +231,3 @@ export const conflictedPathsAtEffect = Effect.fn('conflictedPathsAtEffect')(func
   }
   return paths
 })
-
-export function conflictedPathsAt(
-  options: MirrorOptions & { baseSha: string; headSha: string; limitBytes?: number },
-): Promise<ConflictedPath[]> {
-  return Effect.runPromise(conflictedPathsAtEffect(options))
-}
