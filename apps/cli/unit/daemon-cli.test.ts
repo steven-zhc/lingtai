@@ -1,4 +1,5 @@
 /** The daemon commands through `@effect/cli` (#622): what is refused before a handler runs, and what a verdict looks like. */
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runCli } from '../src/cli.ts'
@@ -12,14 +13,16 @@ const seen = vi.hoisted(() => ({
 }))
 
 vi.mock('../src/daemon.ts', () => ({
-  restartCommand: async (args: unknown) => {
-    seen.calls.push({ command: 'restart', options: args })
-    return 0
-  },
-  controlCommand: async (verb: string, input: unknown) => {
-    seen.calls.push({ command: verb, options: input })
-    return 0
-  },
+  restartCommand: (args: unknown) =>
+    Effect.sync(() => {
+      seen.calls.push({ command: 'restart', options: args })
+      return 0
+    }),
+  controlCommand: (verb: string, input: unknown) =>
+    Effect.sync(() => {
+      seen.calls.push({ command: verb, options: input })
+      return 0
+    }),
   daemonCommand: async (flags: unknown) => {
     seen.calls.push({ command: 'daemon', options: flags })
     return 0
