@@ -467,14 +467,14 @@ export const COMMANDS = [
   define({
     name: 'ceiling',
     group: 'daemon',
-    task: "raise today's spending ceiling once it has been reached",
+    task: "raise today's spending ceiling",
     effect: 'changes',
     usage: [
       'lingtai ceiling raise <usd>',
       "  Raises today's ceiling to <usd> dollars, a figure above both what has been",
-      '  spent and the ceiling that was reached. Lasts until midnight; the',
-      '  configuration (limits.day_usd) is not changed. Refused while the ceiling',
-      "  has not been reached, or while today's spend cannot be read.",
+      "  spent and today's ceiling, at any time of the day. Lasts until midnight; the",
+      '  configuration (limits.day_usd) is not changed. Refused while no ceiling',
+      "  is configured, or while today's spend cannot be read.",
     ],
     examples: ['lingtai ceiling raise 40'],
   }),

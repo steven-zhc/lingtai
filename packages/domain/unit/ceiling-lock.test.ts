@@ -110,17 +110,39 @@ describe('ceilingCheck', () => {
 })
 
 describe('raiseTransition', () => {
-  const raise = (state: ControlState, toUsd: number, spentCents: number) =>
-    raiseTransition({ state, now: NOW, toUsd, by: 'human:steven', spentCents })
+  const raise = (state: ControlState, toUsd: number, spentCents: number, configured: number | null = 25) =>
+    raiseTransition({ state, now: NOW, toUsd, by: 'human:steven', spentCents, configuredUsd: configured ?? undefined })
 
-  it('refuses not-reached when nothing stands, whatever the figure', () => {
-    expect(raise(emptyControl, 1000, 0)).toEqual({ ok: false, refused: 'not-reached' })
+  it('refuses no-ceiling when none is configured, whatever the figure', () => {
+    expect(raise(emptyControl, 1000, 0, null)).toEqual({ ok: false, refused: 'no-ceiling' })
   })
-  it('refuses not-reached when what stands is from another day', () => {
-    expect(raise(stateWith({ reached: reached(YESTERDAY, 25) }), 40, 2500)).toEqual({
-      ok: false,
-      refused: 'not-reached',
+  it('raises with nothing standing, from the configured figure', () => {
+    expect(raise(emptyControl, 300, 15000, 200)).toEqual({
+      ok: true,
+      event: {
+        type: 'DayCeilingLifted',
+        actor: 'human:steven',
+        data: { day: TODAY, why: 'person', by: 'human:steven', toUsd: 300, fromUsd: 200 },
+      },
     })
+  })
+  it('raises over a lock from another day, naming today', () => {
+    const r = raise(stateWith({ reached: reached(YESTERDAY, 25) }), 40, 2500)
+    expect(r).toMatchObject({ ok: true, event: { data: { day: TODAY, fromUsd: 25 } } })
+  })
+  it('refuses a second raise not above the first', () => {
+    const state = stateWith({ raised: { day: TODAY, toUsd: 300, by: 'human:a', at: NOW } })
+    expect(raise(state, 250, 15000, 200)).toEqual({ ok: false, refused: 'not-above-ceiling' })
+    expect(raise(state, 350, 15000, 200)).toMatchObject({ ok: true, event: { data: { fromUsd: 300 } } })
+  })
+  it('a raise before the ceiling is reached means the day locks at the raised figure only', () => {
+    const lifted = raise(emptyControl, 300, 15000, 200)
+    if (!lifted.ok) throw new Error('refused')
+    const state = stateWith({ raised: { day: TODAY, toUsd: 300, by: 'human:steven', at: NOW } })
+    expect(check(state, 200, 21000)).toEqual([])
+    expect(shapes(check(state, 200, 30000))).toEqual([
+      ['DayCeilingReached', { day: TODAY, reportedUsd: 300, estimatedUsd: 0, ceilingUsd: 300 }],
+    ])
   })
   it('refuses a figure not above the spend', () => {
     expect(raise(stateWith({ reached: reached(TODAY, 25) }), 30, 3000)).toEqual({
@@ -128,12 +150,12 @@ describe('raiseTransition', () => {
       refused: 'not-above-spend',
     })
   })
-  it('refuses a figure not above the ceiling that was reached', () => {
+  it('refuses a figure not above today’s ceiling', () => {
     expect(raise(stateWith({ reached: reached(TODAY, 25) }), 25, 2000)).toEqual({
       ok: false,
       refused: 'not-above-ceiling',
     })
-    expect(raise(stateWith({ reached: reached(TODAY, 40) }), 30, 2500)).toEqual({
+    expect(raise(stateWith({ reached: reached(TODAY, 40) }), 30, 2500, 40)).toEqual({
       ok: false,
       refused: 'not-above-ceiling',
     })

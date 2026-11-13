@@ -299,6 +299,8 @@ export const continueTodayWith = (input: {
   by: string
   now?: Date
   readSpend: () => Promise<{ day: { reportedCents: number; estimatedCents: number } | null }>
+  /** `limits.day_usd`; throws on a malformed figure, which is a refusal and not "no ceiling". */
+  configuredUsd: () => number | undefined
 }) =>
   Effect.gen(function* () {
     const { toUsd } = input
@@ -312,10 +314,20 @@ export const continueTodayWith = (input: {
     if (day === null) {
       return { ok: false, detail: "today's spend could not be read — nothing raised" } satisfies ActionResult
     }
+    const configured = yield* Effect.try({ try: () => input.configuredUsd(), catch: (e) => e }).pipe(
+      Effect.catch((e: unknown) => Effect.succeed({ unreadable: e instanceof Error ? e.message : String(e) } as const)),
+    )
+    if (typeof configured === 'object') {
+      return {
+        ok: false,
+        detail: `could not read limits.day_usd: ${configured.unreadable} — nothing raised`,
+      } satisfies ActionResult
+    }
     const raising = yield* raiseDayCeiling({
       toUsd,
       by: input.by,
       spentCents: day.reportedCents + day.estimatedCents,
+      configuredUsd: configured,
       store: input.store,
       now: input.now,
     })
