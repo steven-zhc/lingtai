@@ -5,7 +5,6 @@
  * that read a promise `runAttempt`. No host calls them, so they are not a face in the ratchet's
  * sense and not counted: `test/` is not `src`.
  */
-import type { EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 
 import { requeueHoldingEffect } from '../src/approve.ts'
