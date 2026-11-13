@@ -81,7 +81,7 @@
   },
   {
     "file": "packages/conductor/src/create-app.ts",
-    "function": "recordedApp",
+    "function": "recordedAppEffect",
     "type": "GitHubAppCreated",
     "count": 1,
     "class": "select",
