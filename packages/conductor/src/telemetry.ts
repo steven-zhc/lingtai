@@ -163,9 +163,12 @@ const EXPORT_MS = 3000
  */
 const boundedEffect = (flushing: () => Promise<void>, ms: number, cancel: () => void = () => {}) =>
   Effect.tryPromise(flushing).pipe(
-    Effect.ignore,
+    // The SDK has its own budget, and at an equal deadline its rejection can
+    // arrive before ours: a flush that did not finish cleanly cancels too.
+    Effect.as(true),
+    Effect.orElseSucceed(() => false),
     Effect.timeoutOption(ms),
-    Effect.flatMap((done) => (Option.isNone(done) ? Effect.sync(cancel) : Effect.void)),
+    Effect.flatMap((done) => (Option.isSome(done) && done.value ? Effect.void : Effect.sync(cancel))),
   )
 
 /**
