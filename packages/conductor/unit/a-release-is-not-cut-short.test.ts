@@ -33,27 +33,26 @@ describe('a release whose labels write is still in flight when the pass is inter
   it('records the release, the labels write and its outcome once the write is let through', async () => {
     const base = memoryStore()
     const said: string[] = []
-    const did: string[] = []
+    let refused = false
+    // The claim's append is refused with something other than a lost race, so the pass
+    // gives the item back through `release` on an *interruptible* path (not the
+    // `Effect.ensuring` finalizer, which is uninterruptible whatever the release does).
+    // No end plan is resolved on that path, so there is no `EndActionsResolved` to expect.
+    const store: typeof base = {
+      ...base,
+      async append(streamId, expectedVersion, events) {
+        if (!refused && events.some((e) => e.type === 'TicketClaimed')) {
+          refused = true
+          throw new Error('terminating connection')
+        }
+        return base.append(streamId, expectedVersion, events)
+      },
+    }
 
     await Effect.runPromise(
       Effect.gen(function* () {
         const reached = yield* Deferred.make<void>()
         const latch = yield* Deferred.make<void>()
-        const claimReached = yield* Deferred.make<void>()
-        const claimLatch = yield* Deferred.make<void>()
-        // The claim's append is held back too, so the interruption lands while the
-        // pass is still taking the item and what runs afterwards is the release.
-        const store: typeof base = {
-          ...base,
-          async append(streamId, expectedVersion, events) {
-            if (events.some((e) => e.type === 'TicketClaimed')) {
-              await Effect.runPromise(
-                Deferred.succeed(claimReached, undefined).pipe(Effect.andThen(Deferred.await(claimLatch))),
-              )
-            }
-            return base.append(streamId, expectedVersion, events)
-          },
-        }
         const client = holdingTheQueuedLabel(said, reached, latch)
         const pass = yield* Effect.forkChild(
           runOnce({
@@ -68,17 +67,15 @@ describe('a release whose labels write is still in flight when the pass is inter
             home: '/tmp/fake-home',
             store,
             log: () => {},
-          }).pipe(Effect.provide(withPorts(fakePorts(did, store)))),
+          }).pipe(Effect.provide(withPorts(fakePorts([], store)))),
         )
-        yield* Deferred.await(claimReached)
-        const interrupter = yield* Effect.forkChild(Fiber.interrupt(pass))
-        for (let i = 0; i < 20; i++) yield* Effect.yieldNow
-        yield* Deferred.succeed(claimLatch, undefined)
-        // The release is now inside its labels write. Nothing after it has happened.
+        // The release is now inside its labels write; nothing after it has happened.
         yield* Deferred.await(reached)
         const before = (base.streams.get(`ticket-${PROJECT}-7`) ?? []).map((e) => e.type)
         expect(before).toContain('TicketReleased')
         expect(said.some((line) => line.startsWith('labels'))).toBe(false)
+        const interrupter = yield* Effect.forkChild(Fiber.interrupt(pass))
+        for (let i = 0; i < 20; i++) yield* Effect.yieldNow
         yield* Deferred.succeed(latch, undefined)
         yield* Fiber.join(interrupter)
       }),

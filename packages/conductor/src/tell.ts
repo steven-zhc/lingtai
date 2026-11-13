@@ -166,50 +166,55 @@ export type Told = { recorded: 'IssueUpdated' } | { recorded: 'IssueUpdateFailed
  * that is a far smaller wrong than deleting all of them.
  */
 export function tellGitHubEffect(options: TellOptions): Effect.Effect<Told> {
-  return Effect.gen(function* () {
-    const { store, github, ticketId, change } = options
-    const target = split(ticketId)
-    if (target === null) return { recorded: null } as const
-    const { project, issue } = target
+  // Uninterruptible: the write and the row that records it are one act. The promise
+  // behind the write runs on when the fiber is interrupted, and an interruption that
+  // landed between the two would leave a comment on GitHub whose id is on no ledger.
+  return Effect.uninterruptible(
+    Effect.gen(function* () {
+      const { store, github, ticketId, change } = options
+      const target = split(ticketId)
+      if (target === null) return { recorded: null } as const
+      const { project, issue } = target
 
-    // A defect inside the write (a malformed answer from the port) is a failed
-    // write like a rejection: nothing here ever throws.
-    const written = yield* Effect.result(
-      write(github, issue, change).pipe(Effect.catchDefect((defect) => Effect.fail(defect))),
-    )
-    if (Result.isFailure(written)) {
-      const err = written.failure
-      yield* recordEffect(
-        store,
-        ticketId,
-        'IssueUpdateFailed', // the update threw
-        {
-          project,
-          issue: String(issue),
-          change: change.kind,
-          error: (err as Error).message,
-          ...(change.kind === 'comment-edited' || (change.kind === 'comment' && change.waitId !== undefined)
-            ? { waitId: change.waitId! }
-            : {}),
-        },
+      // A defect inside the write (a malformed answer from the port) is a failed
+      // write like a rejection: nothing here ever throws.
+      const written = yield* Effect.result(
+        write(github, issue, change).pipe(Effect.catchDefect((defect) => Effect.fail(defect))),
       )
-      return { recorded: 'IssueUpdateFailed', error: err } as const
-    }
-    const detail = written.success
-    yield* recordEffect(store, ticketId, 'IssueUpdated', {
-      project,
-      issue: String(issue),
-      change: change.kind,
-      detail,
-      ...(change.kind === 'comment' || change.kind === 'comment-edited'
-        ? {
-            ...(change.waitId !== undefined ? { waitId: change.waitId } : {}),
-            ...(change.kind === 'comment' && change.question !== undefined ? { question: change.question } : {}),
-          }
-        : {}),
-    })
-    return { recorded: 'IssueUpdated' } as const
-  })
+      if (Result.isFailure(written)) {
+        const err = written.failure
+        yield* recordEffect(
+          store,
+          ticketId,
+          'IssueUpdateFailed', // the update threw
+          {
+            project,
+            issue: String(issue),
+            change: change.kind,
+            error: (err as Error).message,
+            ...(change.kind === 'comment-edited' || (change.kind === 'comment' && change.waitId !== undefined)
+              ? { waitId: change.waitId! }
+              : {}),
+          },
+        )
+        return { recorded: 'IssueUpdateFailed', error: err } as const
+      }
+      const detail = written.success
+      yield* recordEffect(store, ticketId, 'IssueUpdated', {
+        project,
+        issue: String(issue),
+        change: change.kind,
+        detail,
+        ...(change.kind === 'comment' || change.kind === 'comment-edited'
+          ? {
+              ...(change.waitId !== undefined ? { waitId: change.waitId } : {}),
+              ...(change.kind === 'comment' && change.question !== undefined ? { question: change.question } : {}),
+            }
+          : {}),
+      })
+      return { recorded: 'IssueUpdated' } as const
+    }),
+  )
 }
 
 /** A port's promise as an Effect whose failure is whatever it rejected with. */
@@ -308,49 +313,52 @@ function sweepRefsHeldEffect(options: {
   /** `agent/<n>` itself, on top of its arms. */
   andTheBranch: boolean
 }): Effect.Effect<boolean> {
-  return Effect.gen(function* () {
-    const { store, github, ticketId } = options
-    const target = split(ticketId)
-    if (target === null) return true
-    const { project, issue } = target
+  // Uninterruptible, as `tellGitHubEffect` is: a delete that went through is recorded.
+  return Effect.uninterruptible(
+    Effect.gen(function* () {
+      const { store, github, ticketId } = options
+      const target = split(ticketId)
+      if (target === null) return true
+      const { project, issue } = target
 
-    const branch = agentBranch(issue)
-    const arms = armPrefix(branch)
-    // Appended to as each delete comes back, so both endings can name it: the
-    // row is written *after* the loop either way, and a `doomed` the loop did not
-    // finish would describe refs that are still on `origin`.
-    const gone: string[] = []
-    const swept = yield* Effect.result(
-      Effect.gen(function* () {
-        const found = yield* attempt(() => github.matchingRefs(`heads/${branch}`))
-        const doomed = found.filter(
-          (ref) => ref.startsWith(`heads/${arms}`) || (options.andTheBranch && ref === `heads/${branch}`),
-        )
-        for (const ref of doomed) {
-          yield* attempt(() => github.deleteRef(ref))
-          gone.push(ref)
-        }
-      }).pipe(Effect.catchDefect((defect) => Effect.fail(defect))),
-    )
-    if (Result.isFailure(swept)) {
-      yield* recordEffect(store, ticketId, 'IssueUpdateFailed', {
+      const branch = agentBranch(issue)
+      const arms = armPrefix(branch)
+      // Appended to as each delete comes back, so both endings can name it: the
+      // row is written *after* the loop either way, and a `doomed` the loop did not
+      // finish would describe refs that are still on `origin`.
+      const gone: string[] = []
+      const swept = yield* Effect.result(
+        Effect.gen(function* () {
+          const found = yield* attempt(() => github.matchingRefs(`heads/${branch}`))
+          const doomed = found.filter(
+            (ref) => ref.startsWith(`heads/${arms}`) || (options.andTheBranch && ref === `heads/${branch}`),
+          )
+          for (const ref of doomed) {
+            yield* attempt(() => github.deleteRef(ref))
+            gone.push(ref)
+          }
+        }).pipe(Effect.catchDefect((defect) => Effect.fail(defect))),
+      )
+      if (Result.isFailure(swept)) {
+        yield* recordEffect(store, ticketId, 'IssueUpdateFailed', {
+          project,
+          issue: String(issue),
+          change: 'refs',
+          error: sweepFailure(swept.failure, gone),
+        })
+        return false
+      }
+      yield* recordEffect(store, ticketId, 'IssueUpdated', {
         project,
         issue: String(issue),
         change: 'refs',
-        error: sweepFailure(swept.failure, gone),
+        // The names and not the count, because *which* arms went is the only thing
+        // a reader coming back to this row can no longer get from the remote.
+        detail: gone.length === 0 ? 'none' : gone.join(','),
       })
-      return false
-    }
-    yield* recordEffect(store, ticketId, 'IssueUpdated', {
-      project,
-      issue: String(issue),
-      change: 'refs',
-      // The names and not the count, because *which* arms went is the only thing
-      // a reader coming back to this row can no longer get from the remote.
-      detail: gone.length === 0 ? 'none' : gone.join(','),
-    })
-    return true
-  })
+      return true
+    }),
+  )
 }
 
 /**
