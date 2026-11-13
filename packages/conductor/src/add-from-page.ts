@@ -51,7 +51,7 @@ import {
 } from '@lingtai/setup'
 import { Effect } from 'effect'
 
-import { add, addLocal } from './onboard.ts'
+import { addEffect, addLocalEffect } from './onboard.ts'
 import { loadAllProjects, signedInHere } from './projects.ts'
 import { liveHistory } from './ticket-history.ts'
 
@@ -286,11 +286,8 @@ export function liveRegister(target: SetupTarget, home?: string): AddPorts['regi
   if (target.kind === 'github') {
     return (form) => {
       const lines: string[] = []
-      return Effect.tryPromise({
-        try: () => add({ slug: `${target.owner}/${target.repo}` }, (line) => lines.push(line)),
-        catch: reasonOf,
-      }).pipe(
-        Effect.mapError((reason) => new Error(reason)),
+      return addEffect({ slug: `${target.owner}/${target.repo}` }, (line) => lines.push(line)).pipe(
+        Effect.mapError((e) => new Error(reasonOf(e))),
         Effect.flatMap((added) =>
           added.ok
             ? Effect.void
@@ -318,21 +315,19 @@ export function liveRegister(target: SetupTarget, home?: string): AddPorts['regi
       }
       const tip = yield* gitIn(dir, ['rev-parse', '--verify', `refs/heads/${form.base}^{commit}`])
       if (!tip.ok) return yield* Effect.fail(new Error(`could not read ${form.base} in ${dir} — ${tip.out}`))
-      yield* Effect.tryPromise({
-        try: () =>
-          resolveLocalRecipe(form.project, { home, signedIn: signedInHere }).then((resolved) =>
-            addLocal(
-              {
-                project: form.project,
-                base: baseOf(resolved.recipe),
-                configHash: resolved.configHash,
-                fromSha: tip.out,
-              },
-              resolved,
-            ),
-          ),
+      const resolved = yield* Effect.tryPromise({
+        try: () => resolveLocalRecipe(form.project, { home, signedIn: signedInHere }),
         catch: (e) => new Error(reasonOf(e)),
       })
+      yield* addLocalEffect(
+        {
+          project: form.project,
+          base: baseOf(resolved.recipe),
+          configHash: resolved.configHash,
+          fromSha: tip.out,
+        },
+        resolved,
+      ).pipe(Effect.mapError((e) => new Error(reasonOf(e))))
     })
 }
 
