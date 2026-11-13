@@ -8,7 +8,7 @@ given of the operator's own accounts. The `sandbox` block of the recipe owns
 containment and there is no tier. This ADR is the decision;
 [the 0.14 plan](../milestone/0.14.0/0.14.md) holds what a person sees and sets
 on the board. Measurements are
-[experiment 017](../experiments/017-srt-under-lingtai.md)'s.
+[experiment 017](../milestone/0.14.0/017-srt-under-lingtai.md)'s.
 
 Not built: the code still carries the tier, and removing it is what makes §10
 true.
@@ -76,7 +76,12 @@ true.
     writable directories these are write-denied: the mirror's `config`,
     `hooks/` and `info/`; `~/.claude`'s settings, hooks and plugins; and
     `<tmpdir>/lingtai`, where the hook sockets are. A run still connects to its
-    socket and cannot remove or replace one.
+    socket and cannot remove or replace one. The state directory, `~/.lingtai`,
+    is read-denied whole, so another project's recipe and run logs are
+    unreadable; a run's own worktree and the mirror are allowed back, and a git
+    commit in the worktree works (the denied whole and the allowed back are
+    measured in 017). `~/.lingtai/cache/<project>/` is the one writable part
+    (§11).
 
 13. **The `sandbox` block's rules.**
     - `enabled` defaults to true inside a present block; an absent block is
@@ -85,7 +90,10 @@ true.
     - `network.allow`, `write` and `deny` are add-only: they extend the policy
       and never remove from it.
     - A `write` that is, lies inside, or contains a protected path is refused
-      at resolve.
+      at resolve. Protected are: every path on §12's deny list, `$HOME`
+      itself, the state directory `~/.lingtai`, the mirror, the runtimes'
+      configuration directories (`~/.claude`, `~/.claude.json`, `~/.codex`),
+      and the host's tool and cache directories of §11.
     - A `deny` inside `<stateDir>/worktrees/<project>/` or the mirror is
       refused at resolve, because `srt`'s `allowRead` overrides `denyRead`.
     - The fallback is decided once per run, before it starts.
