@@ -22,7 +22,7 @@ const ticks = async (n = 5) => {
 }
 
 function world() {
-  const gate = Deferred.makeUnsafe<void>()
+  const release = Deferred.makeUnsafe<void>()
   const record: string[] = []
   const daemon: DaemonPort = {
     stopped: () => Effect.succeed('asked' as const),
@@ -37,7 +37,7 @@ function world() {
     daemon,
     loop: () => ({
       stop: () =>
-        Deferred.await(gate).pipe(
+        Deferred.await(release).pipe(
           Effect.onInterrupt(() => Effect.sync(() => void record.push('interrupted'))),
           Effect.andThen(Effect.sync(() => void record.push('loop.stop'))),
         ),
@@ -47,12 +47,12 @@ function world() {
     services: Context.empty(),
     exit: (code) => void record.push(`exit ${code}`),
   })
-  return { stopping, gate, record }
+  return { stopping, release, record }
 }
 
 describe('a SIGINT while a pass is in flight', () => {
   it('prints the draining lines once, and stops the daemon only after the pass finished', async () => {
-    const { stopping, gate, record } = world()
+    const { stopping, release, record } = world()
     stopping.onSignal('SIGINT')
     await ticks()
 
@@ -65,7 +65,7 @@ describe('a SIGINT while a pass is in flight', () => {
     expect(record).not.toContain('daemon.stop')
     expect(record).not.toContain('beacon.stop stopping')
 
-    Deferred.doneUnsafe(gate, Effect.void)
+    Deferred.doneUnsafe(release, Effect.void)
     await ticks()
     expect(record.indexOf('loop.stop')).toBeLessThan(record.indexOf('beacon.stop stopping'))
     expect(record.indexOf('beacon.stop stopping')).toBeLessThan(record.indexOf('daemon.stop'))
@@ -75,7 +75,7 @@ describe('a SIGINT while a pass is in flight', () => {
   })
 
   it('a second press stops now, without waiting for the pass and without interrupting it', async () => {
-    const { stopping, gate, record } = world()
+    const { stopping, release, record } = world()
     stopping.onSignal('SIGINT')
     await ticks()
     stopping.onSignal('SIGINT')
@@ -87,6 +87,6 @@ describe('a SIGINT while a pass is in flight', () => {
     expect(record).not.toContain('loop.stop')
     expect(record).not.toContain('interrupted')
     expect(lines.filter((l) => l.startsWith('draining —'))).toHaveLength(1)
-    Deferred.doneUnsafe(gate, Effect.void)
+    Deferred.doneUnsafe(release, Effect.void)
   })
 })
