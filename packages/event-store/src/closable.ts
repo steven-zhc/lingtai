@@ -17,17 +17,6 @@ export class ProcessLogClosedError extends Error {
   }
 }
 
-export interface Closable {
-  close(): Promise<void>
-}
-
-export interface ClosableOnce<T extends Closable> {
-  /** Open on first use; racing first callers share one open. */
-  get(): Promise<T>
-  /** Close what was opened, once; with nothing opened, only refuse from now on. */
-  close(): Promise<void>
-}
-
 /** The Effect form: `get` and `close` are methods that return Effects, run when asked. */
 export interface ClosableOnceEffect<T> {
   /** Open on first use, memoised in a `Deferred` so racing first callers open once. */
@@ -86,22 +75,4 @@ export function closableOnceEffect<T>(
         }),
       ),
   }
-}
-
-/** Held until the projector's shared store holds a `closableOnceEffect` (#790). */
-export function closableGetFace<T>(c: ClosableOnceEffect<T>): Promise<T> {
-  return Effect.runPromise(c.get())
-}
-
-export function closableCloseFace<T>(c: ClosableOnceEffect<T>): Promise<void> {
-  return Effect.runPromise(c.close())
-}
-
-export function closableOnce<T extends Closable>(
-  open: () => Promise<T>,
-  /** The refusal a `get` after `close` gets; the process log's own by default. */
-  refuse: () => Error = () => new ProcessLogClosedError(),
-): ClosableOnce<T> {
-  const c = closableOnceEffect(Effect.promise(open), (t: T) => Effect.promise(() => t.close()), refuse)
-  return { get: () => closableGetFace(c), close: () => closableCloseFace(c) }
 }

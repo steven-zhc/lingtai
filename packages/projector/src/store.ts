@@ -23,8 +23,8 @@
  * board's columns are.
  *
  * **Nothing here chooses, and since #179 exactly one file next door does.**
- * `readTasks`, `readBacklog`, `projectionLag`, `projectionShape` and
- * `createProjectionRunner` each ask `choose.ts` for a store, which reads the
+ * `readTasks`, `readBacklog`, `projectionLag`, `projectionShapeEffect` and
+ * `makeRunner` each ask `choose.ts` for a store, which reads the
  * one value `~/.lingtai/config.yml` holds
  * ([0056](../../../doc/decisions-archive/0056-the-store-is-a-written-choice.md)). This
  * interface is what made that a single edit rather than six.

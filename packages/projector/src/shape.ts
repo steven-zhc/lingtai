@@ -222,11 +222,6 @@ export function projectionShapeEffect(projection: Projection, url?: string) {
   return withStoreEffect({ ...(url === undefined ? {} : { url }), max: 1 }, (p) => shapeIn(projection, p))
 }
 
-/** The same, as a promise, for `lingtai doctor` until its row. */
-export function projectionShape(projection: Projection, url?: string): Promise<ProjectionShape> {
-  return Effect.runPromise(projectionShapeEffect(projection, url))
-}
-
 /** One line for a report: what was compared, and what it found. */
 export function describeShape(shape: ProjectionShape): string {
   if (shape.drift.length > 0) return describeDrift(shape.projection, shape.drift)

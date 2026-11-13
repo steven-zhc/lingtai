@@ -23,8 +23,7 @@ import { closableOnceEffect, type ClosableOnceEffect } from '@lingtai/event-stor
 import { Effect } from 'effect'
 
 import { makePostgresProjections } from './postgres.ts'
-import { promiseProjectionStore } from './store-face.ts'
-import type { ProjectionsPort, ProjectionStore } from './store.ts'
+import type { ProjectionsPort } from './store.ts'
 
 export interface ProjectionStoreOptions {
   /**
@@ -71,15 +70,6 @@ export const openProjections = (options: ProjectionStoreOptions = {}): Effect.Ef
       Effect.map((sqlite) => sqlite.makeSqliteProjections(sqlite.openSqliteProjections(choice.path))),
     )
   })
-
-/**
- * The promise `ProjectionStore`, opened fresh: the runner (`projection.ts`) and
- * `packages/daemon/integration/the-written-choice.test.ts` hold it as a promise
- * until their own tickets.
- */
-export function projectionStore(options: ProjectionStoreOptions = {}): Promise<ProjectionStore> {
-  return Effect.runPromise(Effect.map(openProjections(options), promiseProjectionStore))
-}
 
 /** Raised by a read that asks for the shared projection store after it was closed. */
 export class ProcessProjectionsClosedError extends Error {

@@ -13,7 +13,7 @@
  * `DiscussionHeld` on the item's — which is exactly the shape a single-stream
  * fake cannot check.
  */
-import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -64,7 +64,7 @@ const answers = (text: string) => async (): Promise<Answered> => ({
 })
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
 }, 120_000)
 
 describe('a discussion, on the log', () => {

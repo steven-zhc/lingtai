@@ -40,14 +40,6 @@ import type { Waker, WakerPort } from '@lingtai/event-store/wake'
 import { Deferred, Effect, Exit, Scope } from 'effect'
 
 import { openProjections, withStoreEffect } from './choose.ts'
-import {
-  runnerCloseFace,
-  runnerLagFace,
-  runnerRebuildFace,
-  runnerShapeFace,
-  runnerStartFace,
-  runnerStopFace,
-} from './runner-face.ts'
 import { ProjectionShapeError, type ProjectionShape, shapeIn } from './shape.ts'
 import type { Projection, ProjectionLag, ProjectionsPort } from './store.ts'
 
@@ -351,29 +343,6 @@ export function makeRunner(
     // refuse on a machine that has written no choice.
     close: () => Effect.andThen(stop, mine ? mine.close() : Effect.void),
   }
-}
-
-/** The promise `ProjectionRunner` over `makeRunner`'s, for the daemon and the CLI until rows 9 and 11+ (#790). */
-export function promiseRunner(r: ProjectionRunnerPort<never>): ProjectionRunner {
-  return {
-    name: r.name,
-    get failure() {
-      return r.failure
-    },
-    get running() {
-      return r.running
-    },
-    start: () => runnerStartFace(r),
-    stop: () => runnerStopFace(r),
-    rebuild: () => runnerRebuildFace(r),
-    lag: () => runnerLagFace(r),
-    shape: () => runnerShapeFace(r),
-    close: () => runnerCloseFace(r),
-  }
-}
-
-export function createProjectionRunner(options: ProjectionRunnerOptions): ProjectionRunner {
-  return promiseRunner(makeRunner(options, { detached: true }))
 }
 
 /**

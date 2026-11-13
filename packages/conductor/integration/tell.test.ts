@@ -13,7 +13,7 @@
  * selects on — so Lingtai deleted its own queue's selection criteria. That is
  * the regression this case exists for.
  */
-import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -77,7 +77,7 @@ const last = async (id: string) => {
 }
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
 }, 120_000)
 
 describe('tellGitHub', () => {

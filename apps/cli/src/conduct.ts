@@ -216,7 +216,7 @@ interface CommonPassOptions {
  * **Branches on `project.owner`, before anything is built** (`#355`). A
  * project with no owner has no App to check and no `GitHubClient` to build:
  * `ownerlessClient` is `apps/cli/src/run.ts`'s own assembly, called with
- * `world.ticketsFor` as its seam so a test needs no `processTicketSql()`.
+ * `world.ticketsFor` as its seam so a test needs no `processTicketSqlEffect()`.
  * Everything from `runnableNow` on is shared — what differs is only how
  * `common` was built.
  */

@@ -16,21 +16,9 @@
 import type { Envelope, EventType, ToAppend } from '@lingtai/domain'
 import { Cause, Deferred, Effect, Exit } from 'effect'
 
-import {
-  ConcurrencyError,
-  type EventStore,
-  type EventsPort,
-  type LogPredatesHoldError,
-  logPredatesHoldEffect,
-} from './event-store.ts'
+import { ConcurrencyError, type EventStore, type EventsPort } from './event-store.ts'
 import type { LogQueries, QueriesPort } from './queries.ts'
-import {
-  execIdempotentlyEffect,
-  type Snapshot,
-  type SnapshotKey,
-  type SnapshotsPort,
-  type SnapshotStore,
-} from './snapshots.ts'
+import { type Snapshot, type SnapshotKey, type SnapshotsPort, type SnapshotStore } from './snapshots.ts'
 import { follow, type FollowCell, type FollowOptions, type SubscribeOptions } from './subscribe.ts'
 import type { LogSqlPort, TicketSql } from './ticket-sql.ts'
 import type { WakeListener, Waker, WakerPort } from './wake.ts'
@@ -145,14 +133,6 @@ export function fromPromiseQueries(queries: LogQueries): QueriesPort {
   }
 }
 
-/**
- * The pre-flight, as a promise: *returns* the `LogPredatesHoldError` it finds
- * and rejects only when `typeCounts` itself failed.
- */
-export function logPredatesHold(queries: Pick<LogQueries, 'typeCounts'>): Promise<LogPredatesHoldError | null> {
-  return Effect.runPromise(logPredatesHoldEffect({ typeCounts: () => Effect.promise(() => queries.typeCounts()) }))
-}
-
 // ------------------------------------------------------- ticket SQL (#1028) ----
 
 export function queryFace<T>(sql: LogSqlPort, text: string, params?: readonly unknown[]) {
@@ -213,11 +193,6 @@ export function fromPromiseSnapshots(store: SnapshotStore): SnapshotsPort {
     put: (snapshot) => Effect.promise(() => store.put(snapshot)),
     census: () => Effect.promise(() => store.census()),
   }
-}
-
-/** The idempotent DDL, as a promise: rejects with the very error a non-race `exec` failed with. */
-export function execIdempotently(sql: TicketSql, ddl: string): Promise<void> {
-  return Effect.runPromise(execIdempotentlyEffect(fromPromiseLogSql(sql), ddl))
 }
 
 // ------------------------------------------------------------ waker (#1048) ----

@@ -1,5 +1,5 @@
 import type { ProjectState } from '@lingtai/domain'
-import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 /**
  * Convergence: GitHub is brought into line without anything being replayed.
  *
@@ -83,7 +83,7 @@ async function seed(stream: string, events: { type: string; data: unknown }[]): 
 }
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
 }, 120_000)
 
 describe('convergeIssues', () => {

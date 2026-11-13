@@ -18,11 +18,10 @@ import pg from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import {
-  createProjectionRunner,
   declaredColumns,
   describeShape,
   projectionLag,
-  projectionShape,
+  projectionShapeEffect,
   type Projection,
   type ProjectionRunner,
   type ProjectionsPort,
@@ -38,6 +37,7 @@ import {
   describeProjectionStoreContract,
   type ProjectionFixture,
 } from '../test/contract.ts'
+import { createProjectionRunner } from '../test/promise-runner.ts'
 
 let client: Db
 let store: EventStore
@@ -422,7 +422,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
       // column the table was built without.
       await direct((c) => c.query(`alter table ${TEST_TABLE} drop column path`))
 
-      const drifted = await projectionShape(testProjection, directPostgresUrl())
+      const drifted = await Effect.runPromise(projectionShapeEffect(testProjection, directPostgresUrl()))
       expect(drifted.drift).toHaveLength(1)
       expect(drifted.drift[0]!.table).toBe(TEST_TABLE)
       expect(drifted.drift[0]!.missing).toEqual(['path'])
@@ -437,7 +437,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
       // A rebuild is the fix, and it is checkable without one: after it, the
       // check is clean.
       await runner.rebuild()
-      const rebuilt = await projectionShape(testProjection, directPostgresUrl())
+      const rebuilt = await Effect.runPromise(projectionShapeEffect(testProjection, directPostgresUrl()))
       expect(rebuilt.drift).toEqual([])
       expect(rebuilt.matched).toContain(TEST_TABLE)
     })

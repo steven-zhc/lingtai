@@ -11,7 +11,7 @@ import { SUBSCRIBER_STREAM, type Envelope, type ToAppend } from '@lingtai/domain
  */
 import { aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
-import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -44,7 +44,7 @@ async function until(what: () => boolean, ms = 20_000): Promise<void> {
 }
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
 })
 
 describe('the work loop', () => {

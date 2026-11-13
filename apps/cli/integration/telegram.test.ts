@@ -32,7 +32,7 @@ import type { ProjectFilter } from '@lingtai/conductor'
 import { makeWorkLoop, type WorkLoopPort } from '@lingtai/daemon'
 import { SUBSCRIBER_STREAM, ticketStream } from '@lingtai/domain'
 import { boardUrl } from '@lingtai/env'
-import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { resolveRecipe, type Subscriber as SubscriberSpec } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
@@ -48,7 +48,7 @@ let store: EventStore
 let shipped: SubscriberSpec
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
   const resolved = await resolveRecipe(async (path) => readFile(join(ROOT, path), 'utf8'), 'HEAD')
   const found = resolved.recipe.subscribers.find((s) => s.name === 'telegram')
   if (!found) throw new Error('.lingtai/config.yaml declares no telegram subscriber')

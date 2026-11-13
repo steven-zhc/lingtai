@@ -24,15 +24,9 @@ import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import {
-  createProjectionRunner,
-  describeArm,
-  describeWaitLines,
-  describeWait,
-  readTasks,
-  taskViewProjection,
-} from '../src/index.ts'
+import { describeArm, describeWaitLines, describeWait, readTasks, taskViewProjection } from '../src/index.ts'
 import type { TaskCard } from '../src/task-view.ts'
+import { createProjectionRunner } from '../test/promise-runner.ts'
 
 function hold(card: TaskCard) {
   return card.wait === null

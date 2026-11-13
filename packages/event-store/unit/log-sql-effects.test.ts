@@ -1,7 +1,7 @@
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { execIdempotently, execIdempotentlyEffect, fromPromiseLogSql, promiseLogSql } from '../src/index.ts'
+import { execIdempotentlyEffect, fromPromiseLogSql, promiseLogSql } from '../src/index.ts'
 import { makeSqlSnapshots } from '../src/snapshots.ts'
 import type { LogSqlPort, TicketSql } from '../src/ticket-sql.ts'
 
@@ -25,13 +25,11 @@ describe('execIdempotentlyEffect', () => {
     expect(calls()).toBe(3)
   })
 
-  it('lets any other defect die once, as the same object, through the face too', async () => {
+  it('lets any other defect die once, as the same object, ', async () => {
     const boom = { code: '42601' }
     const { sql, calls } = dying('postgres', [boom, boom])
     await expect(Effect.runPromise(execIdempotentlyEffect(sql, 'ddl'))).rejects.toBe(boom)
     expect(calls()).toBe(1)
-    const fake: TicketSql = { dialect: 'postgres', query: async () => [], exec: () => Promise.reject(boom) }
-    await expect(execIdempotently(fake, 'ddl')).rejects.toBe(boom)
   })
 
   it('does not retry a race code on sqlite', async () => {

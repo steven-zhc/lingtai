@@ -20,24 +20,14 @@ export {
   closeProcessLogEffect,
   eventsLayer,
   logSqlLayer,
-  processEventStore,
   queriesLayer,
   snapshotsLayer,
   processEvents,
   processQueries,
-  processLog,
-  processTicketSql,
   processTicketSqlEffect,
   processWaker,
 } from './choose.ts'
-export {
-  closableOnce,
-  closableOnceEffect,
-  ProcessLogClosedError,
-  type Closable,
-  type ClosableOnce,
-  type ClosableOnceEffect,
-} from './closable.ts'
+export { closableOnceEffect, ProcessLogClosedError, type ClosableOnceEffect } from './closable.ts'
 export { LogSql, type LogSqlPort, type TicketSql } from './ticket-sql.ts'
 export {
   createSqlSnapshotStore,
@@ -107,13 +97,11 @@ export const eventStore: EventStore = promiseStore(deferredEvents(processEvents)
  */
 export const log: Log = deferredLog()
 export {
-  execIdempotently,
   fromPromiseLogSql,
   fromPromiseQueries,
   fromPromiseSnapshots,
   fromPromiseStore,
   fromPromiseWaker,
-  logPredatesHold,
   promiseLogSql,
   promiseQueries,
   promiseSnapshots,

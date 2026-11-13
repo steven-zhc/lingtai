@@ -8,10 +8,10 @@ import { reduceTicket } from '@lingtai/domain'
  * between a projection and a caller that reads one.
  */
 import { directPostgresUrl } from '@lingtai/env'
-import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
-import { createProjectionRunner } from '@lingtai/projector'
 import { taskViewProjection } from '@lingtai/projector'
+import { createProjectionRunner } from '@lingtai/projector/test/promise-runner'
 import pg from 'pg'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -38,7 +38,7 @@ async function build(): Promise<void> {
 }
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
 }, 120_000)
 
 describe('selectRunnable', () => {

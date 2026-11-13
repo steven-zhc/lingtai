@@ -12,7 +12,7 @@
  */
 import { loadProject } from '@lingtai/conductor'
 import { projectStream } from '@lingtai/domain'
-import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -34,7 +34,7 @@ const NEW = 'be9fd26'.padEnd(40, '0')
 let store: EventStore
 
 beforeAll(async () => {
-  store = await processEventStore()
+  store = eventStore
   for (const project of [BROKEN, HEALTHY]) {
     await store.append(projectStream(project), 0, [
       {

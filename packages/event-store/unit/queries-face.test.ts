@@ -1,9 +1,10 @@
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { LogPredatesHoldError } from '../src/event-store.ts'
+import { LogPredatesHoldError, logPredatesHoldEffect } from '../src/event-store.ts'
 import type { LogQueries } from '../src/queries.ts'
 import { createSqliteLogQueries, openSqliteLog } from '../src/sqlite.ts'
-import { fromPromiseQueries, logPredatesHold, promiseQueries } from '../src/store-face.ts'
+import { fromPromiseQueries, promiseQueries } from '../src/store-face.ts'
 
 const fake = (typeCounts: LogQueries['typeCounts']): LogQueries => ({
   projectStreams: async () => [],
@@ -37,6 +38,8 @@ describe('the promise LogQueries over the port', () => {
     expect((err as Error).message).toMatch(/finalized|not open|closed/i)
   })
 })
+
+const logPredatesHold = (q: LogQueries) => Effect.runPromise(logPredatesHoldEffect(fromPromiseQueries(q)))
 
 describe('logPredatesHold', () => {
   it('returns, not rejects, an error for an unknown type', async () => {

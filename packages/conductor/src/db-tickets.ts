@@ -15,7 +15,7 @@ import { Deferred, Effect } from 'effect'
  * here appends an event: a reset of `events` (007, 010) leaves them alone.
  *
  * **No driver here.** This file takes a `TicketSql` — the seam
- * `@lingtai/event-store` exports beside `processLog` — and never names
+ * `@lingtai/event-store` exports beside `log` — and never names
  * `pg` or `node:sqlite` itself; `unit/one-store.test.ts` is the test that holds
  * that.
  *
@@ -95,7 +95,7 @@ const POSTGRES_TICKET_COMMENTS = `
  * **Called by `makeDbTickets`, on first use, and from nowhere else.** The tables
  * are created by the adapter the first time one of its verbs runs (#380), not
  * by every process that opens the log — calling this from
- * `processTicketSql()` would put ticket tables in front of every command that
+ * `processTicketSqlEffect()` would put ticket tables in front of every command that
  * merely reads the event store.
  */
 export function ensureTicketTablesEffect(sql: TicketSql): Effect.Effect<void> {

@@ -424,6 +424,11 @@ export function face(name: string, text: string, fn: string): { pos: number } | 
   return { pos }
 }
 
+/** The files under `apps/board` and `apps/site` a face's `why` names, each as the path without its `:line`. */
+export function hostPaths(why: string): string[] {
+  return [...why.matchAll(/apps\/(?:board|site)\/[\w@./()[\]-]*[\w)\]]/g)].map((m) => m[0])
+}
+
 /**
  * The faces file, checked without the filesystem: `read` hands back a file's text or undefined.
  * `exempt` maps a file to the positions of the runs not to count, each to the entry that excuses it.
@@ -452,7 +457,19 @@ export function checkFaces(
       refusals.push(`${who} is out of order: entries are sorted by file, then fn, after ${prev.file} ${prev.fn}.`)
     }
     prev = entry
-    if (!/^#\d+$/.test(entry.until)) refusals.push(`${who}: \`until\` must be an issue, as "#790".`)
+    if (entry.until === '0101 §7') {
+      // The board and the site keep promises for good (0101 §7), so this `until` is true only of a face a host
+      // file reaches. A `why` naming `packages/…` alone is a test's reason, and a test is not a host.
+      const hosts = hostPaths(entry.why)
+      if (hosts.length === 0) {
+        refusals.push(`${who}: \`until\` "0101 §7" needs a \`why\` that names a file under apps/board or apps/site.`)
+      }
+      for (const h of hosts) {
+        if (read(h) === undefined) refusals.push(`${who}: \`why\` names ${h}, which does not exist.`)
+      }
+    } else if (!/^#\d+$/.test(entry.until)) {
+      refusals.push(`${who}: \`until\` must be an issue, as "#790", or "0101 §7" for a face a host reads.`)
+    }
     if (entry.why.trim() === '') refusals.push(`${who}: \`why\` is empty.`)
     const key = `${entry.file}\0${entry.fn}`
     if (seen.has(key)) {
@@ -806,6 +823,24 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
       expect(run([{ ...ok, file: 'packages/repo/src/missing.ts' }])).toMatch(/no file/)
       expect(run('nope')).toMatch(/not an array/)
     })
+    it('accepts "0101 §7" on a why that names an existing host file, and refuses it otherwise', () => {
+      const host = 'apps/board/src/lib/board.ts'
+      const withHost = (f: string): string | undefined => (f === host ? 'export {}' : src[f])
+      const board = { ...ok, until: '0101 §7', why: `${host}:1505 holds the promise store` }
+      expect(checkFaces([board], withHost).refusals).toEqual([])
+      expect(checkFaces([board], read).refusals.join('\n')).toMatch(
+        /names apps\/board\/src\/lib\/board\.ts, which does not exist/,
+      )
+      expect(run([{ ...board, why: 'packages/conductor/src/x.ts and the tests' }])).toMatch(
+        /names a file under apps\/board/,
+      )
+      expect(run([{ ...board, why: ' ' }])).toMatch(/`why` is empty/)
+      expect(
+        checkFaces([{ ...board, why: 'apps/site/scripts/books.ts' }], (f) =>
+          f === 'apps/site/scripts/books.ts' ? '' : src[f],
+        ).refusals,
+      ).toEqual([])
+    })
     it('refuses an entry out of order', () => {
       expect(run([{ ...ok, fn: 'g' }, ok])).toMatch(/out of order/)
     })
@@ -886,7 +921,10 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
   it('holds every package at or below its baseline, and asks for it lowered when below', async () => {
     const listed = Array.isArray(faces) ? (faces as { file?: unknown }[]).map((e) => e?.file) : []
     const texts = new Map<string, string>()
-    for (const f of listed) {
+    const named = Array.isArray(faces)
+      ? (faces as { why?: unknown }[]).flatMap((e) => hostPaths(String(e?.why ?? '')))
+      : []
+    for (const f of [...listed, ...named]) {
       if (typeof f !== 'string' || texts.has(f)) continue
       try {
         texts.set(f, await readFile(`${root}${f}`, 'utf8'))

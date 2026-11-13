@@ -17,7 +17,7 @@ import { promisify } from 'node:util'
  * real conflicts, no network.
  */
 import { integrationStream } from '@lingtai/domain'
-import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { eventStore, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
@@ -89,7 +89,7 @@ beforeAll(async () => {
   originPath = join(root, 'origin.git')
   work = join(root, 'work')
   home = join(root, 'home')
-  store = await processEventStore()
+  store = eventStore
   streams.add(integrationStream(PROJECT, 'develop'))
 })
 

@@ -11,9 +11,9 @@ import type { EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { createProjectionRunner } from '../src/projection.ts'
 import { makeSqliteProjections, openSqliteProjections } from '../src/sqlite.ts'
 import type { Projection } from '../src/store.ts'
+import { createProjectionRunner } from '../test/promise-runner.ts'
 
 describe('a runner stopped while a nudge-triggered batch is in flight', () => {
   it('waits for the batch to commit, and applies nothing after', async () => {

@@ -44,7 +44,7 @@ export interface OwnerlessClient {
  * own git credentials answer for the push and the sweep.
  *
  * `ticketsOf` is the seam a test needs: `ticketsFor`'s default reaches
- * `processTicketSql()`, which `HOME=/nonexistent pnpm test` cannot open.
+ * `processTicketSqlEffect()`, which `HOME=/nonexistent pnpm test` cannot open.
  */
 export function ownerlessClientEffect(
   state: ProjectState,
