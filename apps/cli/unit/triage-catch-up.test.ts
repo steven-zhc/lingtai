@@ -93,8 +93,16 @@ function fixture() {
   return { deps, run, append, add }
 }
 
-async function drained() {
-  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+/**
+ * A signal the code under test gives: `fire` is called from a port, `fired` settles once it has been.
+ * It waits for what happened, never for a time, so it holds under any load.
+ */
+function signal() {
+  const done = Deferred.makeUnsafe<void>()
+  return {
+    fire: () => Deferred.doneUnsafe(done, Effect.void),
+    fired: Effect.runPromise(Deferred.await(done)),
+  }
 }
 
 describe('triage catch-up', () => {
@@ -114,7 +122,6 @@ describe('triage catch-up', () => {
       ),
     )
     await catchUpTriage('lingtai', triage, f.deps)
-    await drained()
     expect(f.run).toHaveBeenCalledTimes(2)
     expect(f.run.mock.calls.map(([request]) => request.waitId)).toEqual([first.waitId, interrupted.waitId])
   })
@@ -136,7 +143,6 @@ describe('triage catch-up', () => {
       )
     }
     await catchUpTriage('lingtai', triage, f.deps)
-    await drained()
     expect(f.run.mock.calls.map(([request]) => request.waitId)).toEqual([before.waitId])
   })
 
@@ -160,7 +166,6 @@ describe('triage catch-up', () => {
     expect(hashes.has('lingtai')).toBe(false)
     expect(f.run).not.toHaveBeenCalled()
     await catchUpChangedTriage('lingtai', triage, hashes, f.deps)
-    await drained()
     expect(f.run.mock.calls.map(([request]) => request.waitId)).toEqual([interrupted.waitId])
   })
 
@@ -175,7 +180,6 @@ describe('triage catch-up', () => {
       log: () => {},
     }
     await onWaitStarted(wait.wait, { ...f.deps, ...live, store: f.deps.store })
-    await drained()
     expect(f.run).not.toHaveBeenCalled()
   })
 
@@ -183,50 +187,57 @@ describe('triage catch-up', () => {
     const f = fixture()
     f.add(20)
     await Promise.all([catchUpTriage('lingtai', triage, f.deps), catchUpTriage('lingtai', triage, f.deps)])
-    await drained()
     expect(f.run).toHaveBeenCalledOnce()
   })
 
   it('frees the permit and the key when a worker dies, so the next key runs', async () => {
     const key = (n: number) => ({ ticketId: `ticket-dies-${n}`, waitId: `wait-dies-${n}` as WaitId })
-    const next = vi.fn(async () => {})
+    const ran = signal()
+    const next = vi.fn(async () => ran.fire())
     const log = vi.fn()
     expect(enqueueTriage(key(1), Effect.die(new Error('worker died')), log)).toBe(true)
     expect(enqueueTriage(key(2), fx(next), log)).toBe(true)
-    await drained()
+    await ran.fired
     expect(next).toHaveBeenCalledOnce()
     expect(log).toHaveBeenCalledWith('triage wait-dies-1: worker died')
-    expect(enqueueTriage(key(1), Effect.void, log)).toBe(true)
-    await drained()
+    const freed = signal()
+    expect(enqueueTriage(key(1), Effect.sync(freed.fire), log)).toBe(true)
+    await freed.fired
   })
 
   it('returns from onWaitStarted while the worker still waits, and the worker completes once released', async () => {
     const f = fixture()
     const wait = f.add(21)
     const hold = Deferred.makeUnsafe<void>()
-    let finished = false
+    const entered = signal()
+    const finished = signal()
+    let done = false
     const live: TriageTriggerPorts = {
       store: f.deps.store,
       triageFor: () => Effect.succeed(triage),
       daemonStartedAt: () => Effect.succeed(startedAt),
       run: () =>
         Effect.gen(function* () {
+          entered.fire()
           yield* Deferred.await(hold)
-          finished = true
+          done = true
+          finished.fire()
         }),
     }
     await onWaitStarted(wait.wait, { ...f.deps, ...live, store: f.deps.store })
-    await drained()
-    expect(finished).toBe(false)
+    await entered.fired
+    expect(done).toBe(false)
     Deferred.doneUnsafe(hold, Effect.void)
-    await drained()
-    expect(finished).toBe(true)
+    await finished.fired
+    expect(done).toBe(true)
   })
 
   it('catches up every project on a lifted day though one project’s recipe read is stalled', async () => {
     const f = fixture()
     const hold = Deferred.makeUnsafe<void>()
     const scanned: string[] = []
+    const scannedB = signal()
+    const scannedA = signal()
     const live: TriageTriggerPorts = {
       store: f.deps.store,
       projects: () => Effect.succeed(['a', 'b']),
@@ -241,13 +252,15 @@ describe('triage catch-up', () => {
       store: f.deps.store,
       readTasks: (project) => {
         scanned.push(project)
+        if (project === 'b') scannedB.fire()
+        if (project === 'a') scannedA.fire()
         return Effect.succeed([])
       },
     })
-    await drained()
+    await scannedB.fired
     expect(scanned).toEqual(['b'])
     Deferred.doneUnsafe(hold, Effect.void)
-    await drained()
+    await scannedA.fired
     expect(scanned).toEqual(['b', 'a'])
   })
 
@@ -293,7 +306,6 @@ describe('triage catch-up', () => {
       )
     }
     await catchUpTriage('lingtai', triage, f.deps)
-    await drained()
     expect(f.run).not.toHaveBeenCalled()
     expect(wait.events().map((event) => event.type)).toEqual([
       'WaitStarted',
@@ -309,7 +321,6 @@ describe('triage catch-up', () => {
       by: { _tag: 'Agent', runtime: 'claude-code', model: 'model-2' },
     })
     await catchUpTriage('lingtai', triage, f.deps)
-    await drained()
     expect(f.append).toHaveBeenCalledOnce()
   })
 
@@ -329,7 +340,6 @@ describe('triage catch-up', () => {
     second.push(started(second, 1))
     second.push(started(second, 2))
     await expect(catchUpTriage('lingtai', triage, f.deps)).resolves.toBeUndefined()
-    await drained()
     expect(f.run).not.toHaveBeenCalled()
     expect(retry.events().map((e) => e.type)).toEqual(['WaitStarted', 'TriageStarted'])
     expect(second.events().at(-1)?.data).toMatchObject({ result: { _tag: 'TriageFailed', why: 'interrupted' } })
@@ -340,7 +350,6 @@ describe('triage catch-up', () => {
     f.deps.locked = () => Effect.fail(new Error('read failed'))
     f.add(1)
     await catchUpTriage('lingtai', triage, f.deps)
-    await drained()
     expect(f.run).not.toHaveBeenCalled()
   })
 
@@ -378,7 +387,6 @@ describe('triage catch-up', () => {
       }) as typeof real,
     }
     await catchUpTriage('lingtai', triage, f.deps)
-    await drained()
     expect(f.append).toHaveBeenCalledTimes(2)
     expect(f.append.mock.calls[0]![1]).toBe(3)
     expect(f.append.mock.calls[1]![1]).toBe(4)
@@ -417,7 +425,6 @@ describe('triage catch-up', () => {
     f.add(6, own)
     f.add(7, signoff)
     await catchUpTriage('lingtai', triage, f.deps)
-    await drained()
     expect(f.run).not.toHaveBeenCalled()
     expect(f.append).not.toHaveBeenCalled()
   })
@@ -426,15 +433,17 @@ describe('triage catch-up', () => {
     const f = fixture()
     const wait = f.add(8)
     let finish!: () => void
+    const called = signal()
     const worker = vi.fn(
       () =>
         new Promise<void>((resolve) => {
           finish = resolve
+          called.fire()
         }),
     )
     f.deps.run = () => fx(worker)
     const scan = catchUpTriage('lingtai', triage, f.deps)
-    await drained()
+    await called.fired
     const live: TriageTriggerPorts = {
       store: f.deps.store,
       triageFor: () => Effect.succeed(triage),
@@ -452,9 +461,16 @@ describe('triage catch-up', () => {
     const wait = f.add(12)
     const hashes = new Map<string, string>()
     let finish!: (outcome: { started: boolean }) => void
+    const called = signal()
     const worker = vi
       .fn()
-      .mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+            called.fire()
+          }),
+      )
       .mockResolvedValueOnce({ started: true })
     f.deps.run = () => fx(worker)
     const live: TriageTriggerPorts = {
@@ -465,10 +481,21 @@ describe('triage catch-up', () => {
     }
 
     await onWaitStarted(wait.wait, { ...f.deps, ...live, store: f.deps.store })
-    await drained()
+    await called.fired
     expect(worker).toHaveBeenCalledOnce()
+    // The scan has joined the live worker's key once it has read the ticket's stream.
+    const joined = signal()
+    const read = f.deps.store.read
+    f.deps.store = {
+      ...f.deps.store,
+      read: async (stream) => {
+        const events = await read(stream)
+        joined.fire()
+        return events
+      },
+    }
     const scan = catchUpChangedTriage('lingtai', triage, hashes, f.deps)
-    await drained()
+    await joined.fired
     finish({ started: false })
 
     await expect(scan).rejects.toThrow(`could not start triage ${wait.waitId}`)
@@ -486,7 +513,6 @@ describe('triage catch-up', () => {
     const hashes = new Map<string, string>()
     await catchUpChangedTriage('lingtai', null, hashes, f.deps)
     await catchUpChangedTriage('lingtai', triage, hashes, f.deps)
-    await drained()
     expect(f.run).toHaveBeenCalledOnce()
     await catchUpChangedTriage('lingtai', triage, hashes, f.deps)
     expect(f.run).toHaveBeenCalledOnce()
@@ -507,7 +533,6 @@ describe('triage catch-up', () => {
       }),
     )
     await catchUpChangedTriage('lingtai', Triage.parse({ prompt: 'changed' }), hashes, f.deps)
-    await drained()
     expect(f.run).toHaveBeenCalledOnce()
   })
 
