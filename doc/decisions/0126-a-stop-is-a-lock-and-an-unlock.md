@@ -1,6 +1,6 @@
 # 0126 — A stop is a lock and an unlock on the stream of what it stops
 
-**Status** accepted · 2026-11-11 · amended 2026-11-13: an account is a platform's, and a rate limit is its lock · not yet built
+**Status** accepted · 2026-11-11 · amended 2026-11-13: an account is a platform's, and a rate limit is its lock; a missing tier is a refused required sandbox · not yet built
 
 Three things stop new work: a person pausing a project, the day's spend reaching
 the ceiling, and a platform's account reaching a limit — a runtime's usage limit,
@@ -21,7 +21,7 @@ than the daemon (`scopeControl`) unless it `holdsAcrossStarts`. A pause about on
 project stopped every project.
 
 The pause over a tier the setup cannot provide (#405) is not a stop of this kind:
-see *A tier no runtime can provide*.
+see *A required sandbox the host cannot provide*.
 
 ## Decision
 
@@ -184,19 +184,18 @@ see *A tier no runtime can provide*.
    figure with *today only, raised from $y by you*); a queued card of a locked
    project says which lock holds it; the project filter marks a paused project.
 
-## A tier no runtime can provide
+## A required sandbox the host cannot provide
 
-A tier is the containment a recipe requires (`open`, `guarded`, `sandboxed`), and
-what each runtime provides is a constant in code (`claude-code.ts`, `codex.ts`).
-A recipe that requires a tier one of its own runtimes cannot provide is a recipe
-in error, not a state of the machine: it is fixed by editing the recipe, and it is
-known before anything is claimed (`missingForTier`). So it is refused where any
-recipe in error is refused, when the recipe resolves, per project
+A recipe that requires the sandbox (`sandbox.required: true`,
+[0127](0127-what-an-agent-can-reach.md) §13) on a host that cannot provide it is
+a recipe in error, not a state of the machine: it is fixed by editing the recipe
+or the host, and it is known before anything is claimed. So it is refused where
+any recipe in error is refused, when the recipe resolves, per project
 ([0122](0122-several-passes-share-one-conductor.md) §7, *A refused recipe*), and
-the project takes work again on the first look after the recipe is fixed. It has
-no lock, no check in the guard and no events of its own. #676 builds this, with
-the security work of 0.14.0; until then a missing tier still pauses the
-conductor (`ConductorPaused {cause: 'setup'}`), and `lingtai resume` lifts it.
+the project takes work again on the first look after it is fixed. It has no
+lock, no check in the guard and no events of its own. Until the tier is removed
+from the code (0127 §10), a missing tier still pauses the conductor
+(`ConductorPaused {cause: 'setup'}`), and `lingtai resume` lifts it.
 
 ## Shutdown and drain
 
@@ -235,10 +234,10 @@ by the locks §5 returns, not by it. Nothing above is removed until both system
 locks have moved.
 
 **Deferred to 0.14.0.** The pause over a missing tier is not removed with the
-rest: until #676 lands, `ConductorPaused` with `cause: 'setup'`, `ConductorResumed`,
+rest: until the tier is removed (0127 §10), `ConductorPaused` with `cause: 'setup'`, `ConductorResumed`,
 the `Paused` chip (which then speaks only of it) and a bare `lingtai resume`
 lifting it stay. #1013 removes everything else listed above; the remainder goes
-with #676.
+with the tier's removal.
 
 **Upgrading:** a `ConductorPaused` other than the setup's standing when a daemon
 restarts onto the removal stops nothing any more. Run `lingtai resume` before that restart;
