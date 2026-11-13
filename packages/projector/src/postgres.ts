@@ -255,11 +255,31 @@ export type QueryPool = Pick<pg.Pool, 'connect' | 'query'>
 export function queryRows(pool: QueryPool, text: string, args?: unknown[]): Promise<pg.QueryResultRow[]> {
   const around = acquireObserver()
   if (around === undefined) return pool.query(text, args).then((r) => r.rows)
-  return around(() => pool.connect()).then(
+  // A checked-out client has no listener but ours: `Pool.query` installs one for the same reason, and
+  // without it a dropped connection is an uncaught `error` event rather than this read's rejection.
+  // pg drops its idle listener and hands the client over in one tick, so the listener goes on inside
+  // `connect`'s own callback: attached after a promise hop, an error arriving with the handoff is uncaught.
+  // An error before the query starts is kept and fails the read as soon as it does.
+  let early: Error | undefined
+  let onFail: ((err: Error) => void) | undefined
+  const onError = (err: Error): void => {
+    if (onFail === undefined) early ??= err
+    else onFail(err)
+  }
+  const checkout = (): Promise<pg.PoolClient> =>
+    new Promise((resolve, reject) => {
+      pool.connect((err, client) => {
+        if (client === undefined) {
+          reject(err ?? new Error('no connection'))
+          return
+        }
+        client.on('error', onError)
+        resolve(client)
+      })
+    })
+  return around(checkout).then(
     (client) =>
       new Promise<pg.QueryResultRow[]>((resolve, reject) => {
-        // A checked-out client has no listener but ours: `Pool.query` installs one for the same reason, and
-        // without it a dropped connection is an uncaught `error` event rather than this read's rejection.
         let settled = false
         const finish = (err: unknown, rows?: pg.QueryResultRow[]): void => {
           if (settled) return
@@ -273,8 +293,11 @@ export function queryRows(pool: QueryPool, text: string, args?: unknown[]): Prom
             reject(err)
           }
         }
-        const onError = (err: Error): void => finish(err)
-        client.on('error', onError)
+        onFail = (err) => finish(err)
+        if (early !== undefined) {
+          finish(early)
+          return
+        }
         client.query(text, args).then(
           (r) => finish(undefined, r.rows),
           (err: unknown) => finish(err),

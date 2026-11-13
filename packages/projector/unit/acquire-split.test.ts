@@ -7,13 +7,14 @@ import { queryRows, type QueryPool } from '../src/postgres.ts'
 
 afterEach(() => setAcquireObserver(undefined))
 
+type Handoff = (err: Error | undefined, client: EventEmitter) => void
+
 const poolOf = (query: (text: string) => Promise<{ rows: unknown[] }>) => {
   const release = vi.fn()
   const pool = {
     query: vi.fn(),
-    connect: vi.fn(async () => {
-      await new Promise((r) => setTimeout(r, 20))
-      return Object.assign(new EventEmitter(), { query, release })
+    connect: vi.fn((cb: Handoff) => {
+      setTimeout(() => cb(undefined, Object.assign(new EventEmitter(), { query, release })), 20)
     }),
   }
   return { pool: pool as unknown as QueryPool, release, raw: pool }
@@ -59,10 +60,10 @@ it('an error event on the checked-out client rejects the read and is not uncaugh
   const release = vi.fn()
   const pool = {
     query: vi.fn(),
-    connect: vi.fn(async () => {
+    connect: vi.fn((cb: Handoff) => {
       const client = Object.assign(new EventEmitter(), { query: () => new Promise(() => undefined), release })
       clients.push(client)
-      return client
+      cb(undefined, client)
     }),
   } as unknown as QueryPool
   const read = queryRows(pool, 'select 1')
@@ -72,4 +73,22 @@ it('an error event on the checked-out client rejects the read and is not uncaugh
   await expect(read).rejects.toBe(dropped)
   expect(release).toHaveBeenCalledWith(dropped)
   expect(clients[0]!.listenerCount('error')).toBe(0)
+})
+
+it('an error emitted in the same tick as the handoff rejects the read and is not uncaught', async () => {
+  setAcquireObserver((run) => run())
+  const dropped = new Error('connection terminated')
+  const release = vi.fn()
+  const client = Object.assign(new EventEmitter(), { query: () => new Promise(() => undefined), release })
+  const pool = {
+    query: vi.fn(),
+    // pg hands the client over and the socket's error arrives in the same callback, before any promise continuation.
+    connect: vi.fn((cb: Handoff) => {
+      cb(undefined, client)
+      client.emit('error', dropped)
+    }),
+  } as unknown as QueryPool
+  await expect(queryRows(pool, 'select 1')).rejects.toBe(dropped)
+  expect(release).toHaveBeenCalledWith(dropped)
+  expect(client.listenerCount('error')).toBe(0)
 })
