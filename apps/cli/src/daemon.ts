@@ -29,6 +29,7 @@ import {
   startBeacon,
   startDaemon,
   lockedBy,
+  lockedEffect,
   makeGuard,
   notTakingWork,
   type CodeVersion,
@@ -509,7 +510,8 @@ export async function daemonCommand(
   // nothing ever obeyed it, and the command waiting for the lock waited for ever.
   const triageHashes = new Map<string, string>()
   // One `locked`, asked by every gate that starts an agent (0126 §5); it caches nothing.
-  const locked = lockedBy(makeGuard({ store: eventStore, ceiling: ceilingPort(undefined, {}) }))
+  const guard = makeGuard({ store: eventStore, ceiling: ceilingPort(undefined, {}) })
+  const locked = lockedBy(guard)
   const scanTriage = async (project: string, triage: Triage | null): Promise<void> => {
     try {
       await catchUpChangedTriage(
@@ -619,48 +621,50 @@ export async function daemonCommand(
               )
             : void drain(why, asked?.timeoutMs ?? null),
 
-      pass: async (reason, started) => {
-        await declared.retry()
-        const recipes = new Map<string, Triage | null>()
-        const outcome = await conductorTurn({
-          merge: !('no-merge' in flags),
-          controlWriter: writer ?? undefined,
-          // The commit read at startup, so a refusal on the log says which
-          // process refused (#148).
-          codeSha: code.sha,
-          // Asked again inside the pass, before each project and ticket, with
-          // the same scope as the loop's own (#159): a run that stands the
-          // conductor down must stop the next claim in this pass, not the next
-          // pass (#210).
-          paused: claiming,
-          // One project's pause (0126): asked of the guard, which is the only
-          // reader of `prj-` — a gate never reads it itself.
-          locked,
-          log: trace,
-          tell: (line) => console.log(line),
-          many: registered.length > 1,
-          ...(started ? { slots: { set: slots, started } } : {}),
-          onRecipe: (project, recipe) => recipes.set(project, recipe.triage ?? null),
-        })
-        for (const [project, triage] of recipes) await scanTriage(project, triage)
-        // The run told GitHub as it went (0022), so there is nothing left
-        // here to send and nothing to report about sending it.
-        // A routine pass, in the accent — structure, not a verdict. What the
-        // pass *decided* is coloured line by line above this; this one only
-        // says the loop went round.
-        const attemptLine = (refused: boolean): string =>
-          paint.accent(
-            `turn (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
-              (refused && outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ''),
-          )
-        if (verbose) console.log(attemptLine(true))
-        // A refusal is not trace: a quiet start must still say why nothing was taken.
-        else if (outcome.refused.length > 0) {
-          console.log(
-            `${outcome.refused.length} project(s) refused this turn — lingtai start --verbose, or lingtai status`,
-          )
-        }
-      },
+      pass: (reason, started) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() => declared.retry())
+          const recipes = new Map<string, Triage | null>()
+          const outcome = yield* conductorTurn({
+            merge: !('no-merge' in flags),
+            controlWriter: writer ?? undefined,
+            // The commit read at startup, so a refusal on the log says which
+            // process refused (#148).
+            codeSha: code.sha,
+            // Asked again inside the pass, before each project and ticket, with
+            // the same scope as the loop's own (#159): a run that stands the
+            // conductor down must stop the next claim in this pass, not the next
+            // pass (#210).
+            // A promise port until CLI-14 moves `claiming`; read fresh at every ask, never once at wiring time.
+            paused: Effect.promise(() => claiming()),
+            // One project's pause (0126): asked of the guard, which is the only
+            // reader of `prj-` — a gate never reads it itself.
+            locked: lockedEffect(guard),
+            log: trace,
+            tell: (line) => console.log(line),
+            many: registered.length > 1,
+            ...(started ? { slots: { set: slots, started } } : {}),
+            onRecipe: (project, recipe) => recipes.set(project, recipe.triage ?? null),
+          })
+          for (const [project, triage] of recipes) yield* Effect.promise(() => scanTriage(project, triage))
+          // The run told GitHub as it went (0022), so there is nothing left
+          // here to send and nothing to report about sending it.
+          // A routine pass, in the accent — structure, not a verdict. What the
+          // pass *decided* is coloured line by line above this; this one only
+          // says the loop went round.
+          const attemptLine = (refused: boolean): string =>
+            paint.accent(
+              `turn (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
+                (refused && outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ''),
+            )
+          if (verbose) console.log(attemptLine(true))
+          // A refusal is not trace: a quiet start must still say why nothing was taken.
+          else if (outcome.refused.length > 0) {
+            console.log(
+              `${outcome.refused.length} project(s) refused this turn — lingtai start --verbose, or lingtai status`,
+            )
+          }
+        }),
     })
     // The whole stream's, like the loop's: the one pause left is the setup's,
     // and it holds across starts, so a daemon that has just started announces

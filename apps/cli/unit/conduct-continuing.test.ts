@@ -1,13 +1,16 @@
+import { createSlots } from '@lingtai/conductor'
 import { memoryTickets } from '@lingtai/conductor/memory-tickets'
 import { type ControlState, type ProjectState, ticketStream } from '@lingtai/domain'
 import { aClaim, aLanding, aResolution, anAttemptRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { resolveRecipe } from '@lingtai/recipe'
-import { Effect } from 'effect'
+import { Deferred, Effect, Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { conductProjects, conductWork, type ConductWorld, type TurnOutcome } from '../src/conduct.ts'
+
+const runConduct = (o: Parameters<typeof conductProjects>[0]) => Effect.runPromise(conductProjects(o))
 
 /**
  * `conductWork`'s own `continuing` dispatch (#465, 0120 §6).
@@ -144,7 +147,7 @@ describe('conductWork: a continuing row that has gone stale', () => {
       world,
     )
 
-    await conductProjects({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
+    await runConduct({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
 
     expect(runOnceCalls).toEqual([])
     expect(runQueueCalls).toEqual(['lingtai'])
@@ -197,7 +200,7 @@ describe('conductWork: a continuing row declined at claim', () => {
       world,
     )
 
-    await conductProjects({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
+    await runConduct({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
 
     expect(runQueueCalls).toEqual(['lingtai'])
     expect(outcome.ran).toBe(0)
@@ -251,9 +254,141 @@ describe('conductWork: two continuing rows for the same project', () => {
       world,
     )
 
-    await conductProjects({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
+    await runConduct({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
 
     expect(runOnceCalls).toEqual([{ issue: 470, continuing: { runId: 'pass-470' }, merge: false }])
     expect(outcome.ran).toBe(1)
+  })
+})
+
+/** A world whose `runOnce` is `run`, and whose queue is empty. */
+function worldRunning(
+  resolved: Awaited<ReturnType<typeof worldFor>>['resolved'],
+  tickets: Awaited<ReturnType<typeof worldFor>>['tickets'],
+  run: ConductWorld['runOnce'],
+): ConductWorld {
+  return {
+    createGitHubClient: () => {
+      throw new Error('not reached — no owner')
+    },
+    currentRecipe: async () => resolved,
+    ticketsFor: async () => tickets,
+    selectRunnable: async () => [],
+    runOnce: run,
+    runQueue: () => Effect.succeed({ ran: [], stopped: 'empty', attempted: [] }),
+  }
+}
+
+const HELD = { ok: 'held', ticketId: 't-470', runId: 'pass-470', headSha: SHA, step: 'merge' } as const
+const ROW = { project: 'lingtai', issue: '470', runId: 'pass-470', by: 'human:steven' }
+const HERE = { ref: null, looked: Effect.void }
+
+describe('conductWork: a detached pass', () => {
+  it('outlives the look, and nothing interrupts it', async () => {
+    const store = createMemoryEventStore()
+    await approvedTicket(store, 470, 'pass-470')
+    const { resolved, tickets } = await worldFor()
+    const gate = Deferred.makeUnsafe<void>()
+    let interrupted = false
+    let finished = false
+    const world = worldRunning(resolved, tickets, () =>
+      Deferred.await(gate).pipe(
+        Effect.onInterrupt(() => Effect.sync(() => void (interrupted = true))),
+        Effect.map(() => {
+          finished = true
+          return HELD
+        }),
+      ),
+    )
+    const handed: Promise<boolean | void>[] = []
+    const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
+    const work = conductWork(
+      {
+        hookBinary: '/dev/null',
+        prompt: 'go',
+        control: controlWith([ROW]),
+        outcome,
+        log: () => {},
+        store,
+        slots: { set: createSlots(), started: (p) => handed.push(p), ceilingSet: true, anyMany: true },
+      },
+      world,
+    )
+
+    // The look returns while the pass is still waiting on the gate.
+    expect(await Effect.runPromise(work(PROJECT, HERE))).toBe('looked')
+    expect(handed).toHaveLength(1)
+    expect(finished).toBe(false)
+
+    await Effect.runPromise(Deferred.succeed(gate, undefined))
+    expect(await handed[0]).toBe(true)
+    expect(finished).toBe(true)
+    expect(interrupted).toBe(false)
+    expect(outcome.ran).toBe(1)
+  })
+})
+
+describe('conductWork: the turn’s span is the parent of the pass’s', () => {
+  /** What the fake `runOnce` sees: the span it opens, and that span's parent. */
+  const spans = () => {
+    const seen: { parent: string | undefined }[] = []
+    const run: ConductWorld['runOnce'] = () =>
+      Effect.gen(function* () {
+        const mine = yield* Effect.currentSpan
+        seen.push({ parent: Option.getOrUndefined(mine.parent)?.spanId })
+        return HELD
+      }).pipe(Effect.orDie, Effect.withSpan('pass'))
+    return { seen, run }
+  }
+  const underTurn = (look: Effect.Effect<unknown>) =>
+    Effect.gen(function* () {
+      const turn = yield* Effect.currentSpan
+      yield* look
+      return turn.spanId
+    }).pipe(Effect.orDie, Effect.withSpan('turn'))
+
+  it('for an awaited pass', async () => {
+    const store = createMemoryEventStore()
+    await approvedTicket(store, 470, 'pass-470')
+    const { resolved, tickets } = await worldFor()
+    const { seen, run } = spans()
+    const work = conductWork(
+      {
+        hookBinary: '/dev/null',
+        prompt: 'go',
+        control: controlWith([ROW]),
+        outcome: { projects: 0, ran: 0, refused: [] },
+        log: () => {},
+        store,
+      },
+      worldRunning(resolved, tickets, run),
+    )
+    const turn = await Effect.runPromise(underTurn(work(PROJECT, HERE)))
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.parent).toBe(turn)
+  })
+
+  it('for a detached one', async () => {
+    const store = createMemoryEventStore()
+    await approvedTicket(store, 470, 'pass-470')
+    const { resolved, tickets } = await worldFor()
+    const { seen, run } = spans()
+    const handed: Promise<boolean | void>[] = []
+    const work = conductWork(
+      {
+        hookBinary: '/dev/null',
+        prompt: 'go',
+        control: controlWith([ROW]),
+        outcome: { projects: 0, ran: 0, refused: [] },
+        log: () => {},
+        store,
+        slots: { set: createSlots(), started: (p) => handed.push(p), ceilingSet: true, anyMany: true },
+      },
+      worldRunning(resolved, tickets, run),
+    )
+    const turn = await Effect.runPromise(underTurn(work(PROJECT, HERE)))
+    await Promise.all(handed)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.parent).toBe(turn)
   })
 })

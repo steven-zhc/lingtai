@@ -13,6 +13,12 @@ import { notTakingWork } from '../src/daemon.ts'
 import type { DaemonStore } from '../src/store.ts'
 import { createWorkLoop } from '../src/work-loop.ts'
 
+/** The work loop's `pass` is an Effect; these fakes are written as promises. */
+const asEffect =
+  <A extends unknown[]>(f: (...args: A) => Promise<unknown>) =>
+  (...args: A): Effect.Effect<void> =>
+    Effect.promise(async () => void (await f(...args)))
+
 const quiet = {
   ready: Promise.resolve(),
   close() {},
@@ -31,9 +37,9 @@ describe('the work loop drain', () => {
       sweepMs: 0,
       eventLog: log,
       daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
-      pass: async (_reason, started) => {
+      pass: asEffect(async (_reason, started) => {
         for (let i = 0; i < 2; i++) started?.(new Promise<void>((r) => releases.push(r)))
-      },
+      }),
     })
 
     await loop.start()
@@ -60,10 +66,10 @@ describe('the work loop drain', () => {
       sweepMs: 0,
       eventLog: log,
       daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
-      pass: async (reason, started) => {
+      pass: asEffect(async (reason, started) => {
         reasons.push(reason)
         if (reasons.length === 1) started?.(new Promise<boolean>((r) => releases.push(r)))
-      },
+      }),
     })
 
     await loop.start()
@@ -83,10 +89,10 @@ describe('the work loop drain', () => {
       sweepMs: 0,
       eventLog: log,
       daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
-      pass: async (reason, started) => {
+      pass: asEffect(async (reason, started) => {
         reasons.push(reason)
         started?.(new Promise<boolean>((r) => releases.push(r)))
-      },
+      }),
     })
 
     await loop.start()
@@ -105,9 +111,9 @@ describe('the work loop drain', () => {
       eventLog: log,
       daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
       paused: async () => notTakingWork(stopped),
-      pass: async (reason) => {
+      pass: asEffect(async (reason) => {
         reasons.push(reason)
-      },
+      }),
     })
     await loop.start()
     await new Promise((r) => setTimeout(r, 20))

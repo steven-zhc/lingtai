@@ -68,8 +68,8 @@ const queue = (
       hookBinary: '/nonexistent',
       prompt: 'p',
       recipe: untouched<Recipe>('recipe'),
-      ...(paused ? { paused } : {}),
-      locked,
+      ...(paused ? { paused: Effect.promise(() => paused()) } : {}),
+      locked: (project) => Effect.promise(() => locked(project)),
       ...extra,
       log: (l) => lines.push(l),
     }).pipe(

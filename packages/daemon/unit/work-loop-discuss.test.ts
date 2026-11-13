@@ -12,6 +12,12 @@ import { describe, expect, it } from 'vitest'
 import type { DaemonStore } from '../src/store.ts'
 import { COMPLETION_EVENTS, createWorkLoop, DISCUSSION_EVENTS, TRIAGE_EVENTS } from '../src/work-loop.ts'
 
+/** The work loop's `pass` is an Effect; these fakes are written as promises. */
+const asEffect =
+  <A extends unknown[]>(f: (...args: A) => Promise<unknown>) =>
+  (...args: A): Effect.Effect<void> =>
+    Effect.promise(async () => void (await f(...args)))
+
 describe('what discuss is handed', () => {
   it('names a request and a resume, and no landing', () => {
     expect([...DISCUSSION_EVENTS]).toEqual(['DiscussionRequested', 'ProjectResumed', 'DayCeilingLifted'])
@@ -41,7 +47,7 @@ describe('the loop delivers to discuss', () => {
       sweepMs: 0,
       eventLog: log,
       daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
-      pass: async () => {},
+      pass: asEffect(async () => {}),
       discuss: async (e) => {
         seen.push(e.type)
       },
@@ -72,7 +78,7 @@ describe('the loop delivers to triage', () => {
       sweepMs: 0,
       eventLog: log,
       daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
-      pass: async () => {},
+      pass: asEffect(async () => {}),
       triage: async (e) => {
         seen.push(e.type)
       },

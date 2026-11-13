@@ -123,6 +123,7 @@ export {
 export {
   CeilingUnchecked,
   lockedBy,
+  lockedEffect,
   lockFailure,
   makeGuard,
   type CeilingPort,

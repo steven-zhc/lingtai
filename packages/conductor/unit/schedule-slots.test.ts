@@ -234,10 +234,10 @@ describe('runQueue with slots', () => {
         prompt: 'p',
         recipe: {} as Recipe,
         slots: { set: slots, limit: 2, started: (p) => handed.push(p) },
-        paused: async () => {
+        paused: Effect.sync(() => {
           asked += 1
           return asked === 1 ? null : 'task_view stopped'
-        },
+        }),
         log: () => {},
       }).pipe(Effect.provide(Layer.merge(Layer.succeed(Repo, {} as never), Layer.succeed(AgentHost, {} as never)))),
     )

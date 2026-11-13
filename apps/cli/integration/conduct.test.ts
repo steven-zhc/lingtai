@@ -13,9 +13,17 @@
 import { loadProject } from '@lingtai/conductor'
 import { projectStream } from '@lingtai/domain'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { type TurnOutcome, conductProjects } from '../src/conduct.ts'
+
+const runConduct = (o: Parameters<typeof conductProjects>[0]) => Effect.runPromise(conductProjects(o))
+/** The ports are Effects; these fakes are written as promises. */
+const effectOf =
+  <A extends unknown[], B extends string | null>(f: (...a: A) => Promise<B>) =>
+  (...a: A) =>
+    Effect.promise(() => f(...a))
 
 const BROKEN = `esctest${crypto.randomUUID().slice(0, 6)}`
 const HEALTHY = `esctest${crypto.randomUUID().slice(0, 6)}`
@@ -41,18 +49,18 @@ beforeAll(async () => {
 /** One sweep over both projects, BROKEN throwing while `broken`. */
 async function sweep(broken: boolean, codeSha: string, worked: string[] = []): Promise<TurnOutcome> {
   const projects = [(await loadProject(BROKEN, store))!, (await loadProject(HEALTHY, store))!]
-  return conductProjects({
+  return runConduct({
     projects,
     codeSha,
     store,
     outcome: { projects: 0, ran: 0, refused: [] },
     log: () => {},
-    work: async (project, where) => {
+    work: effectOf(async (project, where) => {
       where.ref = 'main'
       if (project.project === BROKEN && broken) throw new Error(REFUSAL)
       worked.push(project.project!)
       return 'looked'
-    },
+    }),
   })
 }
 
@@ -91,13 +99,13 @@ describe('a pass that refuses a project', () => {
 
   it('appends nothing for a project it looked away from without reading anything', async () => {
     const before = await types(HEALTHY)
-    await conductProjects({
+    await runConduct({
       projects: [(await loadProject(HEALTHY, store))!],
       codeSha: OLD,
       store,
       outcome: { projects: 0, ran: 0, refused: [] },
       log: () => {},
-      work: async () => 'looked-away',
+      work: effectOf(async () => 'looked-away'),
     })
     expect(await types(HEALTHY)).toEqual(before)
   })
@@ -116,20 +124,20 @@ describe('a pass that refuses a project', () => {
     let midRun: string | undefined
     const N = 5
     for (let i = 0; i < N; i++) {
-      const outcome = await conductProjects({
+      const outcome = await runConduct({
         projects: [(await loadProject(BROKEN, store))!],
         codeSha: NEW,
         store,
         outcome: { projects: 0, ran: 0, refused: [] },
         log: () => {},
-        work: async (_project, where) => {
+        work: effectOf(async (_project, where) => {
           where.ref = 'main'
-          await where.looked()
+          await Effect.runPromise(where.looked)
           // The run, in flight.
           midRun ??= (await types(BROKEN)).at(-1)
           expect((await loadProject(BROKEN, store))!.refused).toBeNull()
           throw new Error(`merge lane: 502 Bad Gateway, request ${i}`)
-        },
+        }),
       })
       expect(outcome.refused).toHaveLength(1)
     }

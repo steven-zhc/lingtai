@@ -14,9 +14,13 @@ import { Effect, Layer } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { ConductorLock } from '../src/conductor-lock.ts'
-import { stillOwed } from '../src/continuing.ts'
+import { stillOwed as stillOwedEffect } from '../src/continuing.ts'
 import { Projector } from '../src/projector.ts'
-import { run, type RunWorld } from '../src/run.ts'
+import { run as runEffect, type RunWorld } from '../src/run.ts'
+
+/** `run` is an Effect; these tests ask for its exit code. */
+const run = (...args: Parameters<typeof runEffect>) => Effect.runPromise(runEffect(...args))
+const stillOwed = (...args: Parameters<typeof stillOwedEffect>) => Effect.runPromise(stillOwedEffect(...args))
 
 const notReached = (): never => {
   throw new Error('not reached')

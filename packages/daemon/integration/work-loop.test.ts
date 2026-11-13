@@ -12,9 +12,16 @@ import { SUBSCRIBER_STREAM, type Envelope, type ToAppend } from '@lingtai/domain
 import { aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { createWorkLoop } from '../src/index.ts'
+
+/** The work loop's `pass` is an Effect; these fakes are written as promises. */
+const asEffect =
+  <A extends unknown[]>(f: (...args: A) => Promise<unknown>) =>
+  (...args: A): Effect.Effect<void> =>
+    Effect.promise(async () => void (await f(...args)))
 
 const created = new Set<string>()
 let store: EventStore
@@ -48,7 +55,7 @@ describe('the work loop', () => {
   it('runs a pass at startup, before anything has happened', async () => {
     const reasons: string[] = []
     const loop = createWorkLoop({
-      pass: async (reason) => void reasons.push(reason),
+      pass: asEffect(async (reason) => void reasons.push(reason)),
     })
 
     await loop.start()
@@ -61,7 +68,7 @@ describe('the work loop', () => {
 
   it('wakes on a completion event and not on anything else', async () => {
     const reasons: string[] = []
-    const loop = createWorkLoop({ pass: async (r) => void reasons.push(r) })
+    const loop = createWorkLoop({ pass: asEffect(async (r) => void reasons.push(r)) })
     await loop.start()
 
     try {
@@ -96,14 +103,14 @@ describe('the work loop', () => {
 
     let n = 0
     const loop = createWorkLoop({
-      pass: async () => {
+      pass: asEffect(async () => {
         n += 1
         inFlight += 1
         if (inFlight > 1) overlapped = true
         // Hold the first pass open while the events land.
         if (n === 1) await firstTurn
         inFlight -= 1
-      },
+      }),
     })
 
     const started = loop.start()
@@ -136,10 +143,10 @@ describe('the work loop', () => {
   it('survives a pass that throws, because the next event is when to retry', async () => {
     let calls = 0
     const loop = createWorkLoop({
-      pass: async () => {
+      pass: asEffect(async () => {
         calls += 1
         throw new Error('the conductor blew up')
-      },
+      }),
     })
 
     // Startup must not reject: a loop that dies on its first bad pass is a
@@ -166,11 +173,11 @@ describe('the work loop', () => {
 
     const loop = createWorkLoop({
       sweepMs: 0,
-      pass: async () => {
+      pass: asEffect(async () => {
         inPass = true
         await held
         finished = true
-      },
+      }),
     })
 
     // Not awaited: `start()` awaits the first pass, which is the one being
@@ -204,12 +211,12 @@ describe('the work loop', () => {
 
     const loop = createWorkLoop({
       sweepMs: 0,
-      pass: async (_reason, started) => {
+      pass: asEffect(async (_reason, started) => {
         for (let i = 0; i < 2; i++) {
           begun += 1
           started?.(new Promise<void>((r) => releases.push(r)))
         }
-      },
+      }),
     })
 
     await loop.start()
@@ -245,7 +252,7 @@ describe('the work loop', () => {
       // request at startup must run no pass at all.
       shutdown: async () => (allowed ? null : 'asked by human:steven — picking up #88'),
       onShutdown: (why) => void told.push(why),
-      pass: async () => void (passes += 1),
+      pass: asEffect(async () => void (passes += 1)),
     })
 
     await loop.start()
@@ -327,7 +334,7 @@ describe('the work loop', () => {
           },
         },
       ],
-      pass: async () => {},
+      pass: asEffect(async () => {}),
     })
 
     await loop.start()
@@ -395,7 +402,7 @@ describe('the work loop', () => {
       sweepMs: 0,
       store,
       subscribers: () => declared,
-      pass: async () => {},
+      pass: asEffect(async () => {}),
     })
 
     await loop.start()
@@ -448,7 +455,7 @@ describe('the work loop', () => {
       // be on a queue that is otherwise silent.
       sweepMs: 0,
       paused: async () => !lifted,
-      pass: async () => void (passes += 1),
+      pass: asEffect(async () => void (passes += 1)),
     })
 
     await loop.start()

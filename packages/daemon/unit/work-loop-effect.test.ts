@@ -11,6 +11,12 @@ import { describe, expect, it } from 'vitest'
 import type { DaemonStore } from '../src/store.ts'
 import { COMPLETION_EVENTS, makeWorkLoop, type WorkLoopOptions } from '../src/work-loop.ts'
 
+/** The work loop's `pass` is an Effect; these fakes are written as promises. */
+const asEffect =
+  <A extends unknown[]>(f: (...args: A) => Promise<unknown>) =>
+  (...args: A): Effect.Effect<void> =>
+    Effect.promise(async () => void (await f(...args)))
+
 const quiet = { ready: Promise.resolve(), close() {} }
 const makeLog = () =>
   ({ store: createMemoryEventStore(), queries: {}, waker: () => ({ open: () => quiet }) }) as unknown as Log
@@ -41,14 +47,14 @@ const base = (extra: Partial<WorkLoopOptions> = {}): WorkLoopOptions => ({
   sweepMs: 0,
   eventLog: makeLog(),
   daemonStore,
-  pass: async () => {},
+  pass: asEffect(async () => {}),
   ...extra,
 })
 
 describe('the work loop as Effects', () => {
   it('stop waits for a pass handed to started, and never interrupts it', async () => {
     const g = held()
-    const port = makeWorkLoop(base({ pass: async (_r, started) => void started?.(g.promise) }))
+    const port = makeWorkLoop(base({ pass: asEffect(async (_r, started) => void started?.(g.promise)) }))
     await Effect.runPromise(port.start())
     let done = false
     const stopping = Effect.runPromise(port.stop()).then(() => (done = true))
@@ -61,7 +67,7 @@ describe('the work loop as Effects', () => {
 
   it('stop waits for a look whose pass is running, and never interrupts it', async () => {
     const g = held()
-    const port = makeWorkLoop(base({ pass: () => g.promise }))
+    const port = makeWorkLoop(base({ pass: asEffect(() => g.promise) }))
     const starting = Effect.runPromise(port.start())
     await ticks()
     let done = false
@@ -111,5 +117,27 @@ describe('the work loop as Effects', () => {
     ] as never)
     await ticks()
     expect(delivered).toEqual([])
+  })
+})
+
+describe('a pass that dies', () => {
+  it('is told as a failed turn, and the loop carries on', async () => {
+    const told: string[] = []
+    let passes = 0
+    const port = makeWorkLoop(
+      base({
+        tell: (line) => told.push(line),
+        // A store failure is a defect (0101 §6); the promise this replaced caught it as a rejection.
+        pass: () => {
+          passes += 1
+          return Effect.die(new Error('x'))
+        },
+      }),
+    )
+    await Effect.runPromise(port.start())
+    await ticks()
+    expect(told).toContain('turn failed: x')
+    expect(passes).toBeGreaterThan(0)
+    await Effect.runPromise(port.stop())
   })
 })

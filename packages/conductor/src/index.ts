@@ -18,6 +18,7 @@ export {
   kindOf,
   passedOver,
   runnableNow,
+  runnableNowEffect,
   type Considered,
   type Offered,
   type RunnableNowOptions,
@@ -26,7 +27,14 @@ export {
   type TicketListing,
   type TicketSource,
 } from './discover.ts'
-export { currentRecipe, listProjectStreamsEffect, loadProject, loadProjects, signedInHere } from './projects.ts'
+export {
+  currentRecipe,
+  listProjectStreamsEffect,
+  loadProject,
+  loadProjects,
+  loadProjectsEffect,
+  signedInHere,
+} from './projects.ts'
 export { gitRefChannel, type GitRefChannelOptions } from './git-refs.ts'
 export { ownerlessClient, type OwnerlessClient } from './ownerless.ts'
 export {
@@ -55,7 +63,7 @@ export {
   type Runnable,
   type RunnableOptions,
 } from './queue.ts'
-export { collision, fixFiles, readFixFiles, waitsFor } from './same-file.ts'
+export { collision, fixFiles, readFixFiles, readFixFilesEffect, waitsFor } from './same-file.ts'
 export { declinedBeforeWork } from './schedule.ts'
 export { createSlots, type Slot, type Slots } from './slots.ts'
 export { AgentHost, Repo, type AgentHostPort, type RepoPort, type RunPorts } from './ports.ts'

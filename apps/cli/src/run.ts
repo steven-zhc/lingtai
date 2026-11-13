@@ -45,7 +45,7 @@ import {
   type Tickets,
 } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
-import { lockedBy, makeGuard, readControl } from '@lingtai/daemon'
+import { lockedEffect, makeGuard, readControlEffect } from '@lingtai/daemon'
 import type { ControlState, ProjectState } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
 import { eventStore, log as theLog, type EventStore } from '@lingtai/event-store'
@@ -65,6 +65,7 @@ import { Data, Effect, type Layer } from 'effect'
 import { ConductorLock, ConductorLockLive, type ConductorBusy, type LockUnreadable } from './conductor-lock.ts'
 import { stillOwed } from './continuing.ts'
 import { ceilingPort, type DayCeilingPorts } from './day-ceiling.ts'
+import { recovering } from './exit.ts'
 import { symbol } from './output.ts'
 import { Projector, ProjectorLive } from './projector.ts'
 import { startRates } from './rates.ts'
@@ -149,11 +150,9 @@ class Paused extends Data.TaggedError('Paused')<{
  * finishes, and the next is not taken.
  */
 const heedThePause = (store: EventStore | undefined) =>
-  Effect.tryPromise({
-    try: () => readControl(store),
+  readControlEffect(store).pipe(
     // Not "not paused": a pause that could not be read is not consent.
-    catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
-  }).pipe(
+    recovering((err) => Effect.fail(refuse(`could not read whether the conductor is paused: ${err.message}`))),
     Effect.flatMap((control) =>
       control.paused ? Effect.fail(new Paused({ by: control.by, reason: control.reason })) : Effect.void,
     ),
@@ -164,7 +163,7 @@ class ProjectLocked extends Data.TaggedError('ProjectLocked')<{ readonly sentenc
 
 /** This project's lock, from the guard: the one callback the daemon's gates are handed too. */
 const lockedFor = (store: EventStore | undefined, ceiling?: DayCeilingPorts) =>
-  lockedBy(makeGuard({ store: store ?? eventStore, ceiling: ceilingPort(store, ceiling) }))
+  lockedEffect(makeGuard({ store: store ?? eventStore, ceiling: ceilingPort(store, ceiling) }))
 
 /**
  * The lock on this project, asked **after** the conductor lock is taken: the
@@ -174,11 +173,11 @@ const lockedFor = (store: EventStore | undefined, ceiling?: DayCeilingPorts) =>
  * is not *unlocked*.
  */
 const heedTheLock = (
-  locked: (project: string) => Promise<string | null>,
+  locked: (project: string) => Effect.Effect<string | null>,
   project: string,
 ): Effect.Effect<void, Refused | ProjectLocked> =>
   Effect.gen(function* () {
-    const sentence = yield* Effect.promise(() => locked(project))
+    const sentence = yield* locked(project)
     if (sentence === null) return
     if (sentence.startsWith('could not ')) return yield* Effect.fail(refuse(sentence))
     return yield* Effect.fail(new ProjectLocked({ sentence }))
@@ -193,18 +192,17 @@ const saidPaused = (p: { by: string | null; reason: string | null }) =>
  * The same rule as above, too: a pause that could not be read is not consent,
  * so it stops the pass rather than taking the next ticket unasked.
  */
-const pausedSentence = async (store: EventStore | undefined): Promise<string | null> => {
-  const control = await readControl(store)
-  return control.paused ? `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}` : null
-}
+const pausedSentence = (store: EventStore | undefined): Effect.Effect<string | null, unknown> =>
+  readControlEffect(store).pipe(
+    Effect.map((control) => (control.paused ? `${saidPaused(control)} — ${RUN_UNDER_A_PAUSE}` : null)),
+  )
 
-const stillPaused = (store: EventStore | undefined) => async (): Promise<string | null> => {
-  try {
-    return await pausedSentence(store)
-  } catch (err) {
-    return `could not read whether the conductor is paused: ${(err as Error).message} — taking no other ticket`
-  }
-}
+const stillPaused = (store: EventStore | undefined): Effect.Effect<string | null> =>
+  pausedSentence(store).pipe(
+    recovering((err) =>
+      Effect.succeed(`could not read whether the conductor is paused: ${err.message} — taking no other ticket`),
+    ),
+  )
 
 /**
  * What `lingtai run` says before it claims anything — the runtime, whose
@@ -324,12 +322,11 @@ interface CommonPassOptions {
   remote?: string
 }
 
-export async function run(
+export function run(
   options: RunOptions,
   log: (line: string) => void = console.log,
   world: RunWorld = liveRunWorld(options, log),
-): Promise<number> {
-  await startTracing()
+): Effect.Effect<number> {
   const locked = lockedFor(options.store, options.dayCeiling)
   const program = Effect.gen(function* () {
     /**
@@ -531,20 +528,21 @@ export async function run(
       // ---- continuing what a person approved ---------------------------------
       // Read fresh each time: an approval made while the queue ran is on the
       // stream by the second look. A failed read is a refusal, not an empty list.
-      const owedRows = Effect.tryPromise({
-        try: async () => (await readControl(options.store)).continuing,
-        catch: (err) => refuse(`could not read the approvals owed a continuation: ${(err as Error).message}`),
-      })
+      const owedRows = readControlEffect(options.store).pipe(
+        Effect.map((control) => control.continuing),
+        recovering((err) => Effect.fail(refuse(`could not read the approvals owed a continuation: ${err.message}`))),
+      )
       const isOwed = (row: ControlState['continuing'][number]) =>
-        Effect.tryPromise({
-          try: () =>
-            stillOwed(options.store ?? eventStore, options.project, row, {
-              // No writer: a short command reads snapshots and never writes them (0124 §5).
-              snapshots: options.store === undefined ? theLog.snapshots : undefined,
-            }),
-          catch: (err) =>
-            refuse(`could not read #${row.issue} to see whether it is owed a continuation: ${(err as Error).message}`),
-        })
+        stillOwed(options.store ?? eventStore, options.project, row, {
+          // No writer: a short command reads snapshots and never writes them (0124 §5).
+          snapshots: options.store === undefined ? theLog.snapshots : undefined,
+        }).pipe(
+          recovering((err) =>
+            Effect.fail(
+              refuse(`could not read #${row.issue} to see whether it is owed a continuation: ${err.message}`),
+            ),
+          ),
+        )
       /**
        * Every live `ContinueRequested` row for this project, in order, each
        * continued by `runOnce` with `continuing: { runId }` (#747). The control
@@ -568,15 +566,16 @@ export async function run(
             if (!(yield* isOwed(row))) continue
             // A pause that cannot be read is a refusal here, not a stop: the approval
             // is still owed and a clean exit would say nothing was wrong.
-            const sentence = yield* Effect.tryPromise({
-              try: () => pausedSentence(options.store),
-              catch: (err) => refuse(`could not read whether the conductor is paused: ${(err as Error).message}`),
-            })
+            const sentence = yield* pausedSentence(options.store).pipe(
+              recovering((err) =>
+                Effect.fail(refuse(`could not read whether the conductor is paused: ${err.message}`)),
+              ),
+            )
             if (sentence !== null) {
               log(sentence)
               return { ran, stopped: sentence }
             }
-            const lock = yield* Effect.promise(() => locked(options.project))
+            const lock = yield* locked(options.project)
             if (lock !== null && lock.startsWith('could not ')) return yield* Effect.fail(refuse(lock))
             if (lock !== null) {
               log(lock)
@@ -665,7 +664,7 @@ export async function run(
       }
       // Asked after the approval reads, right before the start: a pause recorded
       // while they were pending must not be started over.
-      const lock = yield* Effect.promise(() => locked(options.project))
+      const lock = yield* locked(options.project)
       if (lock !== null && lock.startsWith('could not ')) return yield* Effect.fail(refuse(lock))
       if (lock !== null) {
         log(lock)
@@ -703,51 +702,53 @@ export async function run(
 
   // The edge, once. Everything above is a description; this is where it runs,
   // and where a `Refused` becomes the line and the exit code it always was.
-  const code = await Effect.runPromise(
-    heedThePause(options.store).pipe(
-      Effect.andThen(program.pipe(Effect.ensuring(Effect.promise(() => ratesSettled())), Effect.provide(world.lock))),
-      // Exit 0, as for the lock below: nothing went wrong, a person decided
-      // this. Who and why, because a pause nobody remembers is the one this
-      // line is for.
-      Effect.catchTag('Paused', (p) =>
-        Effect.sync(() => {
-          log(saidPaused(p))
-          log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
-          return 0
-        }),
-      ),
-      Effect.catchTag('ProjectLocked', (l) =>
-        Effect.sync(() => {
-          log(l.sentence)
-          log('nothing was taken: this project is locked')
-          return 0
-        }),
-      ),
-      Effect.catchTag('Refused', (r) =>
-        Effect.sync(() => {
-          log(`${symbol.fail()} ${r.detail}`)
-          return 1
-        }),
-      ),
-      // Exit 0. Typing this while the daemon is up is a reasonable thing to do,
-      // and answering it with an error would teach people to ignore errors —
-      // `lingtai daemon` has said so since it grew the lock.
-      Effect.catchTag('ConductorBusy', (busy) =>
-        Effect.sync(() => {
-          log(`another conductor holds the lock${busy.holder ? ` (${busy.holder})` : ''} — nothing to do`)
-          return 0
-        }),
-      ),
-      // Not a busy signal: the log could not be reached at all. One line and a
-      // non-zero code, the same shape as every other refusal.
-      Effect.catchTag('LockUnreadable', (err) =>
-        Effect.sync(() => {
-          log(`${symbol.fail()} could not reach the log to take the conductor lock: ${err.detail}`)
-          return 1
-        }),
-      ),
+  const edge = heedThePause(options.store).pipe(
+    Effect.andThen(program.pipe(Effect.ensuring(Effect.promise(() => ratesSettled())), Effect.provide(world.lock))),
+    // Exit 0, as for the lock below: nothing went wrong, a person decided
+    // this. Who and why, because a pause nobody remembers is the one this
+    // line is for.
+    Effect.catchTag('Paused', (p) =>
+      Effect.sync(() => {
+        log(saidPaused(p))
+        log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
+        return 0
+      }),
+    ),
+    Effect.catchTag('ProjectLocked', (l) =>
+      Effect.sync(() => {
+        log(l.sentence)
+        log('nothing was taken: this project is locked')
+        return 0
+      }),
+    ),
+    Effect.catchTag('Refused', (r) =>
+      Effect.sync(() => {
+        log(`${symbol.fail()} ${r.detail}`)
+        return 1
+      }),
+    ),
+    // Exit 0. Typing this while the daemon is up is a reasonable thing to do,
+    // and answering it with an error would teach people to ignore errors —
+    // `lingtai daemon` has said so since it grew the lock.
+    Effect.catchTag('ConductorBusy', (busy) =>
+      Effect.sync(() => {
+        log(`another conductor holds the lock${busy.holder ? ` (${busy.holder})` : ''} — nothing to do`)
+        return 0
+      }),
+    ),
+    // Not a busy signal: the log could not be reached at all. One line and a
+    // non-zero code, the same shape as every other refusal.
+    Effect.catchTag('LockUnreadable', (err) =>
+      Effect.sync(() => {
+        log(`${symbol.fail()} could not reach the log to take the conductor lock: ${err.detail}`)
+        return 1
+      }),
     ),
   )
-  await flushTracing()
-  return code
+  return Effect.gen(function* () {
+    yield* Effect.promise(() => startTracing())
+    const code = yield* edge
+    yield* Effect.promise(() => flushTracing())
+    return code
+  })
 }

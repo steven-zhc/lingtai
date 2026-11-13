@@ -8,7 +8,9 @@ const source = readFileSync(new URL('../src/daemon.ts', import.meta.url), 'utf8'
 
 describe('the daemon and the daily ceiling', () => {
   it('has the one composed hook in both paused callbacks, which reads the control stream alone', () => {
-    expect(source.match(/\bpaused: claiming,/g)).toHaveLength(2)
+    // The loop's own is a promise until CLI-14; the turn's is the same `claiming`, asked afresh each time.
+    expect(source.match(/\bpaused: claiming,/g)).toHaveLength(1)
+    expect(source.match(/\bpaused: Effect\.promise\(\(\) => claiming\(\)\),/g)).toHaveLength(1)
     expect(source.match(/\bpausedSentence\(/g)).toHaveLength(2) // the call and the definition
   })
 

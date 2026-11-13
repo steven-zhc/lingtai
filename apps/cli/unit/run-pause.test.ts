@@ -22,7 +22,10 @@ import { describe, expect, it } from 'vitest'
 
 import { daemonLiveness } from '../src/doctor.ts'
 import { commandHelp } from '../src/help.ts'
-import { RUN_UNDER_A_PAUSE, run } from '../src/run.ts'
+import { RUN_UNDER_A_PAUSE, run as runEffect } from '../src/run.ts'
+
+/** `run` is an Effect; these tests ask for its exit code. */
+const run = (...args: Parameters<typeof runEffect>) => Effect.runPromise(runEffect(...args))
 
 /** The setup's pause, the one pause that stops the conductor, planted the way `pauseConductorOnce` appends it. */
 async function plantSetupPause(store: EventStore, reason: string): Promise<void> {

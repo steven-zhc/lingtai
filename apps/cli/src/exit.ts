@@ -16,6 +16,23 @@ export const exitWith = (code: number): Effect.Effect<void, CommandExit> =>
 export const lift = <A>(f: () => PromiseLike<A>): Effect.Effect<A, unknown> =>
   Effect.tryPromise({ try: f, catch: (e) => e })
 
+/**
+ * `catchCause` that lets an interruption through. What the promise this replaces caught was a
+ * rejection, and a store failure (a defect, 0101 §6) arrived as one; `Cause.squash` is the object
+ * `runPromise` threw, so a message read off it is the one it always was.
+ */
+export const recovering =
+  <B, E2 = never>(onError: (err: Error) => Effect.Effect<B, E2>) =>
+  <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A | B, E2, R> =>
+    self.pipe(
+      Effect.catchCause((cause): Effect.Effect<B, E2> =>
+        // An interruption-only cause has no failure in it, so it is a `Cause<never>`.
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause as Cause.Cause<never>)
+          : onError(Cause.squash(cause) as Error),
+      ),
+    )
+
 /** A handler that could not produce its report: the error document under `--json`, the message otherwise. Returns the exit code. */
 export function failed(command: string, asJson: boolean, err: unknown): number {
   const message = (err as Error).message || String(err)

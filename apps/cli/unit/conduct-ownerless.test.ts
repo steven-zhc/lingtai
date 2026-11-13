@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { conductProjects, conductWork, projectsForTurn, type ConductWorld, type TurnOutcome } from '../src/conduct.ts'
 
+const runConduct = (o: Parameters<typeof conductProjects>[0]) => Effect.runPromise(conductProjects(o))
+
 /**
  * A pass's per-project work, for a project with no owner beside a GitHub one
  * (`#355`) — `conductWork` is the seam this needed: before it, `work` was a
@@ -151,7 +153,7 @@ describe('conductWork, a pass across a project with no owner and a GitHub projec
     )
 
     const lines: string[] = []
-    await conductProjects({
+    await runConduct({
       projects: [LOCAL_PROJECT, GH_PROJECT],
       codeSha: null,
       outcome,
@@ -223,7 +225,7 @@ describe('conductWork, with no GitHub App on this machine', () => {
       world,
     )
 
-    await conductProjects({
+    await runConduct({
       projects: [LOCAL_PROJECT],
       codeSha: null,
       outcome,

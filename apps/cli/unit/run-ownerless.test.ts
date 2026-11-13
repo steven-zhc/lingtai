@@ -20,7 +20,10 @@ import { describe, expect, it } from 'vitest'
 
 import { ConductorLock } from '../src/conductor-lock.ts'
 import { Projector } from '../src/projector.ts'
-import { run, type RunWorld } from '../src/run.ts'
+import { run as runEffect, type RunWorld } from '../src/run.ts'
+
+/** `run` is an Effect; these tests ask for its exit code. */
+const run = (...args: Parameters<typeof runEffect>) => Effect.runPromise(runEffect(...args))
 
 /** Assignable to any field on `RunWorld` — `never` satisfies every return type. */
 const notReached = (): never => {
