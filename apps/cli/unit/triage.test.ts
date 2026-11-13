@@ -6,15 +6,13 @@ import { TRIAGE_ANSWER_JSON_SCHEMA, type WaitReason } from '@lingtai/domain/wait
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Triage, triageCallFor } from '@lingtai/recipe'
-
-const enqueueTriage = (...args: Parameters<typeof enqueueTriageEffect>): boolean =>
-  Effect.runSync(enqueueTriageEffect(...args)).added
 /**
  * `waitTriage` (`#428`): one held wait, triaged — checked against
  * `createMemoryEventStore()` and a stand-in `Runtime`, so no database, no
  * process and no agent (0060 §1).
  */
-import { Effect, Fiber } from 'effect'
+import { Deferred, Effect, Fiber } from 'effect'
+import { TestClock } from 'effect/testing'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -23,6 +21,34 @@ import {
   type TriagePorts,
   type WaitTriageRequest,
 } from '../src/triage.ts'
+
+/** Runs `waitTriage` with the wall on a `TestClock`: waits for `entered` (the read that hangs), then moves time by `ms`. */
+const waitPastWall = (
+  deps: TriagePorts,
+  request: WaitTriageRequest,
+  entered: Promise<unknown>,
+  ms: number,
+  after: Effect.Effect<void, unknown> = Effect.void,
+) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(waitTriageEffect(deps, request))
+      yield* Effect.promise(() => entered)
+      yield* TestClock.adjust(ms)
+      const held = yield* Fiber.join(fiber)
+      yield* after
+      return held
+    }).pipe(Effect.provide(TestClock.layer())),
+  )
+
+/** A promise and the call that settles it — "this fake was reached". */
+const latch = () => {
+  let open!: () => void
+  const reached = new Promise<void>((resolve) => {
+    open = resolve
+  })
+  return { reached, open }
+}
 
 const waitTriage = (deps: TriagePorts, request: WaitTriageRequest) => Effect.runPromise(waitTriageEffect(deps, request))
 
@@ -189,7 +215,6 @@ function fakeDeps(store: EventStore, runtime: Runtime, overrides: DepsOverrides 
               })),
             ),
         }),
-    now: () => 0,
     log: () => {},
     ...rest,
   }
@@ -1165,27 +1190,38 @@ describe('waitTriage', () => {
   describe('the recipe wall', () => {
     const SHORT = Triage.parse({ limits: { wall: '20ms' } })
     const never = (): Promise<never> => new Promise(() => {})
+    /** `never`, after saying it was reached. */
+    const neverAfter =
+      (open: () => void) =>
+      (..._args: unknown[]): Promise<never> => {
+        open()
+        return never()
+      }
 
     it('ends as a timeout when a mirror read never settles under a 50 ms wall, and no checkout is made', async () => {
       const store = createMemoryEventStore()
       const ticketId = ticketStream('lingtai', 70)
       const { runtime, requests } = stubRuntime(() => outcomeOf())
       const prepareCheckout = vi.fn()
+      const entered = latch()
       const deps = fakeDeps(store, runtime, {
-        mirror: fakeMirror({ refSha: async () => 'a'.repeat(40), listAt: () => Effect.never }),
+        mirror: fakeMirror({
+          refSha: async () => 'a'.repeat(40),
+          listAt: () => Effect.sync(entered.open).pipe(Effect.andThen(Effect.never)),
+        }),
         prepareCheckout,
       })
-      const startedAt = Date.now()
 
-      const held = await waitTriage(
+      const held = await waitPastWall(
         deps,
         requestOn(ticketId, aWaitId(), {
           triage: Triage.parse({ agent: 'codex', tools: 'full', limits: { wall: '50ms' } }),
         }),
+        entered.reached,
+        50,
       )
 
       expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
-      expect(Date.now() - startedAt).toBeLessThan(1000)
       expect(prepareCheckout).not.toHaveBeenCalled()
       expect(requests).toHaveLength(0)
     })
@@ -1194,31 +1230,38 @@ describe('waitTriage', () => {
       const store = createMemoryEventStore()
       const ticketId = ticketStream('lingtai', 71)
       const { runtime, requests } = stubRuntime(() => outcomeOf())
-      const cleanup = vi.fn(() => Effect.void)
+      const cleaned = latch()
+      const cleanup = vi.fn(() => Effect.sync(cleaned.open))
+      const entered = latch()
       // Uninterruptible, like a clone in flight: only the guard can end the wait for it.
-      const prepareCheckout = vi.fn(() =>
-        Effect.uninterruptible(Effect.sleep('150 millis')).pipe(
+      const prepareCheckout = vi.fn(() => {
+        entered.open()
+        return Effect.uninterruptible(Effect.sleep('150 millis')).pipe(
           Effect.as({ cwd: '/tmp/late', settingsPath: '/tmp/late.json', env: {}, cleanup: Effect.suspend(cleanup) }),
-        ),
-      )
+        )
+      })
       const deps = fakeDeps(store, runtime, {
         mirror: fakeMirror({ refSha: async () => 'a'.repeat(40) }),
         prepareCheckout,
       })
-      const startedAt = Date.now()
 
-      const held = await waitTriage(
+      const held = await waitPastWall(
         deps,
         requestOn(ticketId, aWaitId(), {
           triage: Triage.parse({ agent: 'codex', tools: 'full', limits: { wall: '50ms' } }),
         }),
+        entered.reached,
+        50,
+        Effect.gen(function* () {
+          // The wall has passed, the checkout (150 ms) has not landed: nothing to clean yet.
+          expect(cleanup).not.toHaveBeenCalled()
+          yield* TestClock.adjust(100)
+          yield* Effect.promise(() => cleaned.reached)
+        }),
       )
-      const waited = Date.now() - startedAt
 
       expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
-      expect(waited).toBeLessThan(140)
       expect(requests).toHaveLength(0)
-      await new Promise((resolve) => setTimeout(resolve, 250))
       expect(cleanup).toHaveBeenCalledOnce()
     })
 
@@ -1226,9 +1269,10 @@ describe('waitTriage', () => {
       const store = createMemoryEventStore()
       const ticketId = ticketStream('lingtai', 7)
       const { runtime, requests } = stubRuntime(() => outcomeOf())
-      const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ refSha: never }) })
+      const entered = latch()
+      const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ refSha: neverAfter(entered.open) }) })
 
-      const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+      const held = await waitPastWall(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }), entered.reached, 20)
 
       expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
       expect(requests).toHaveLength(0)
@@ -1239,9 +1283,10 @@ describe('waitTriage', () => {
       const store = createMemoryEventStore()
       const ticketId = ticketStream('lingtai', 8)
       const { runtime, requests } = stubRuntime(() => outcomeOf())
-      const deps = fakeDeps(store, runtime, { issue: never })
+      const entered = latch()
+      const deps = fakeDeps(store, runtime, { issue: neverAfter(entered.open) })
 
-      const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+      const held = await waitPastWall(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }), entered.reached, 20)
 
       expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
       expect(requests).toHaveLength(0)
@@ -1251,14 +1296,17 @@ describe('waitTriage', () => {
       const store = createMemoryEventStore()
       const ticketId = ticketStream('lingtai', 9)
       const { runtime, requests } = stubRuntime(() => outcomeOf())
-      const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ conflictedPathsAt: never }) })
+      const entered = latch()
+      const deps = fakeDeps(store, runtime, { mirror: fakeMirror({ conflictedPathsAt: neverAfter(entered.open) }) })
 
-      const held = await waitTriage(
+      const held = await waitPastWall(
         deps,
         requestOn(ticketId, aWaitId(), {
           triage: SHORT,
           reason: conflictReason('a'.repeat(40), 'b'.repeat(40)),
         }),
+        entered.reached,
+        20,
       )
 
       expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
@@ -1273,16 +1321,18 @@ describe('waitTriage', () => {
       const ticketId = ticketStream('lingtai', 12)
       const { runtime } = stubRuntime(() => outcomeOf())
       const seen: (AbortSignal | undefined)[] = []
+      const entered = latch()
       const deps = fakeDeps(store, runtime, {
         mirror: fakeMirror({
           refSha: (input) => {
             seen.push(input.signal)
+            entered.open()
             return never()
           },
         }),
       })
 
-      await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+      await waitPastWall(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }), entered.reached, 20)
 
       expect(seen[0]).toBeDefined()
       expect(seen[0]?.aborted).toBe(true)
@@ -1291,17 +1341,19 @@ describe('waitTriage', () => {
     it("records the wall as 'timeout' when the runtime reports the wall's abort as 'aborted'", async () => {
       const store = createMemoryEventStore()
       const ticketId = ticketStream('lingtai', 13)
+      const entered = latch()
       const { runtime } = stubRuntime(
         (request) =>
           new Promise<RunOutcome>((resolve) => {
             request.signal?.addEventListener('abort', () =>
               resolve(outcomeOf({ failure: { kind: 'aborted', detail: 'the signal aborted the run' } })),
             )
+            entered.open()
           }),
       )
       const deps = fakeDeps(store, runtime)
 
-      const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }))
+      const held = await waitPastWall(deps, requestOn(ticketId, aWaitId(), { triage: SHORT }), entered.reached, 20)
 
       expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
     })
@@ -1311,26 +1363,33 @@ describe('waitTriage', () => {
       const first = aWaitId()
       const second = aWaitId()
       const { runtime } = stubRuntime(() => outcomeOf())
-      const stuck = fakeDeps(store, runtime, { mirror: fakeMirror({ refSha: never }) })
+      const entered = latch()
+      const stuck = fakeDeps(store, runtime, { mirror: fakeMirror({ refSha: neverAfter(entered.open) }) })
       const ran: string[] = []
       const log = (): void => {}
 
-      enqueueTriage(
-        { ticketId: ticketStream('lingtai', 10), waitId: first },
-        Effect.tryPromise(() => waitTriage(stuck, requestOn(ticketStream('lingtai', 10), first, { triage: SHORT }))),
-        log,
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          yield* enqueueTriageEffect(
+            { ticketId: ticketStream('lingtai', 10), waitId: first },
+            waitTriageEffect(stuck, requestOn(ticketStream('lingtai', 10), first, { triage: SHORT })).pipe(
+              Effect.asVoid,
+            ),
+            log,
+          )
+          const done = yield* Deferred.make<void>()
+          yield* enqueueTriageEffect(
+            { ticketId: ticketStream('lingtai', 11), waitId: second },
+            Effect.sync(() => {
+              ran.push('second')
+            }).pipe(Effect.andThen(Deferred.succeed(done, undefined))),
+            log,
+          )
+          yield* Effect.promise(() => entered.reached)
+          yield* TestClock.adjust(20)
+          yield* Deferred.await(done)
+        }).pipe(Effect.provide(TestClock.layer())),
       )
-      const done = new Promise<void>((resolve) => {
-        enqueueTriage(
-          { ticketId: ticketStream('lingtai', 11), waitId: second },
-          Effect.sync(() => {
-            ran.push('second')
-            resolve()
-          }),
-          log,
-        )
-      })
-      await done
 
       expect(ran).toEqual(['second'])
       expect(typesOf(await store.read(ticketStream('lingtai', 10)))).toEqual(['TriageStarted', 'WaitTriaged'])
@@ -1553,9 +1612,12 @@ describe('waitTriage', () => {
     const ticketId = ticketStream('lingtai', 8)
     const { runtime, requests } = stubRuntime(() => ADVISED)
     const runtimeFactory = vi.fn(() => runtime)
-    const deps = fakeDeps(store, runtime, { runtime: runtimeFactory, now: () => 1_000 })
+    const deps = fakeDeps(store, runtime, { runtime: runtimeFactory })
 
-    await waitTriage(deps, requestOn(ticketId, aWaitId()))
+    // Frozen time: the first call's `wallMs` is the whole wall, exactly, on any machine.
+    await Effect.runPromise(
+      waitTriageEffect(deps, requestOn(ticketId, aWaitId())).pipe(Effect.provide(TestClock.layer())),
+    )
 
     expect(runtimeFactory).toHaveBeenCalledWith('claude-code', { tools: 'none' })
     expect(requests[0]?.limits).toEqual(triageCallFor(TRIAGE))
