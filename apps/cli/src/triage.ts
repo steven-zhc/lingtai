@@ -1085,6 +1085,11 @@ const waitTriageWithin = (
                 ),
               )
               let threw = false
+              // While the run is in flight a tool may be alive in the checkout. An interruption
+              // leaves this fiber before the outcome is seen, so the safe answer is the default
+              // and only an outcome that came back without the marker lowers it again.
+              const toolsMayRemainBefore = toolsMayRemain
+              toolsMayRemain = true
               // The wall reaches the runtime as `request.signal` (#1065), not as an interruption.
               const outcome = yield* runtime
                 .run({
@@ -1120,7 +1125,8 @@ const waitTriageWithin = (
                   ),
                 )
 
-              if (outcome.failure?.detail.includes('process cleanup incomplete')) toolsMayRemain = true
+              toolsMayRemain =
+                toolsMayRemainBefore || (outcome.failure?.detail.includes('process cleanup incomplete') ?? false)
 
               if (!threw) {
                 // A call that was billed and cannot be recorded ends the triage —

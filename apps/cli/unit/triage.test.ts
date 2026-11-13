@@ -11,7 +11,7 @@ import { Triage, triageCallFor } from '@lingtai/recipe'
  * `createMemoryEventStore()` and a stand-in `Runtime`, so no database, no
  * process and no agent (0060 §1).
  */
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -494,6 +494,35 @@ describe('waitTriage', () => {
       },
     )
     await waitTriage(deps, requestOn(ticketId, aWaitId(), { triage: Triage.parse({ agent: 'codex', tools: 'full' }) }))
+    expect(cleanup).not.toHaveBeenCalled()
+  })
+
+  it('keeps the checkout when the fiber is interrupted while the run is in flight', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 573)
+    const cleanup = vi.fn(async () => {})
+    const { runtime } = stubRuntime(() => ADVISED)
+    let running = false
+    const hanging: Runtime = {
+      ...runtime,
+      run: () =>
+        Effect.suspend(() => {
+          running = true
+          return Effect.never
+        }),
+    }
+    const deps = fakeDeps(store, hanging, {
+      mirror: fakeMirror({ refSha: async () => 'a'.repeat(40) }),
+      prepareCheckout: async () => ({ cwd: '/tmp/c', settingsPath: '/tmp/s', env: {}, cleanup }),
+    })
+    const fiber = Effect.runFork(
+      waitTriageEffect(
+        deps,
+        requestOn(ticketId, aWaitId(), { triage: Triage.parse({ agent: 'codex', tools: 'full' }) }),
+      ),
+    )
+    while (!running) await new Promise((resolve) => setTimeout(resolve, 5))
+    await Effect.runPromise(Fiber.interrupt(fiber))
     expect(cleanup).not.toHaveBeenCalled()
   })
 
