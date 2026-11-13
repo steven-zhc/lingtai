@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@lingtai/projector/task-view', async (orig) => ({
   ...(await orig<object>()),
   readTasks: mocks.readTasks,
-  onBoardProjects: vi.fn(async () => []),
+  readTaskProjects: vi.fn(async () => []),
 }))
 vi.mock('@lingtai/conductor/projects', async (orig) => ({
   ...(await orig<object>()),
