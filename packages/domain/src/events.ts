@@ -2615,7 +2615,7 @@ export const EVENT_AT = {
   DiscussionAnswered: ['outside'],
   DiscussionHeld: ['outside'],
   PromptEdited: ['outside'],
-  ProjectOnboardingStarted: ['outside'],
+  ProjectOnboardingStarted: [],
   ProjectConfigured: ['outside'],
   ProjectRefused: ['outside'],
   ProjectRecovered: ['outside'],
@@ -2673,6 +2673,7 @@ export const RETIRED: ReadonlySet<EventType> = new Set<EventType>([
   'TicketLinked',
   'PassRouted',
   'ConductorShutdownWithdrawn',
+  'ProjectOnboardingStarted',
 ])
 
 export function isRetiredEventType(t: string): boolean {

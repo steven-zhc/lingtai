@@ -147,7 +147,7 @@
     "file": "packages/conductor/src/discover.ts",
     "fn": "runnableNow",
     "until": "#790",
-    "why": "apps/board (board.ts, queued.ts), apps/cli (status.ts, conduct.ts) and `wizard.ts` await it"
+    "why": "apps/board (board.ts, queued.ts), and apps/cli (status.ts, conduct.ts) await it"
   },
   {
     "file": "packages/conductor/src/discuss.ts",
@@ -261,7 +261,7 @@
     "file": "packages/conductor/src/queue.ts",
     "fn": "selectRunnable",
     "until": "#790",
-    "why": "apps/board `queued.ts`, apps/cli `status.ts`, `packages/daemon/integration/reconcile.test.ts` and `wizard.ts` await it"
+    "why": "apps/board `queued.ts`, apps/cli `status.ts`, `packages/daemon/integration/reconcile.test.ts` await it"
   },
   {
     "file": "packages/conductor/src/rate-snapshot.ts",

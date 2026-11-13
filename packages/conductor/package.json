@@ -42,7 +42,6 @@
     "./db-tickets": "./src/db-tickets.ts",
     "./ticket-history": "./src/ticket-history.ts",
     "./add-from-page": "./src/add-from-page.ts",
-    "./wizard": "./src/wizard.ts",
     "./rate-snapshot": "./src/rate-snapshot.ts",
     "./telemetry": "./src/telemetry.ts"
   },
