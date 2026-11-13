@@ -25,9 +25,10 @@ import { join } from 'node:path'
 import type { ProjectState } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
+import { Effect } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { releaseForeignClaims, reconcile } from '../src/reconcile.ts'
+import { releaseForeignClaimsEffect, reconcile } from '../src/reconcile.ts'
 import type { DaemonStore, StreamQuery } from '../src/store.ts'
 
 const PROJECT = 'pureproj'
@@ -113,12 +114,14 @@ describe("a pass given a store reads that store's log", () => {
     const events = await logWithAClaim()
     const { store, asked } = recordingStore(events, [CLAIMED])
 
-    const findings = await releaseForeignClaims({
-      daemonStore: store,
-      projects: [project],
-      worker: 'local:1',
-      dryRun: true,
-    })
+    const findings = await Effect.runPromise(
+      releaseForeignClaimsEffect({
+        daemonStore: store,
+        projects: [project],
+        worker: 'local:1',
+        dryRun: true,
+      }),
+    )
 
     // Asked this store, and reduced this store's log. Reading the process-wide
     // Postgres instead returns `[]` for `ticket-pureproj-117`, and an empty reduce is

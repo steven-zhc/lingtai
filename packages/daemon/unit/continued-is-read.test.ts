@@ -1,3 +1,8 @@
+import { ticketStream } from '@lingtai/domain'
+import type { ProjectState } from '@lingtai/domain'
+import { aClaim, aResolution, aWait, aWaitId } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 /**
  * `reconcile` and `converge` select ticket streams by event type and then reduce
  * each with `reduceTicket`, which reads a claim and a continuation through
@@ -8,15 +13,11 @@
  * Unit, by 0060 §1: a memory log and a fake `DaemonStore`. Every worker is on a
  * foreign host so nothing here spawns `ps`.
  */
-import { ticketStream } from '@lingtai/domain'
-import type { ProjectState } from '@lingtai/domain'
-import { aClaim, aResolution, aWait, aWaitId } from '@lingtai/domain/test/events'
-import { makeStream } from '@lingtai/domain/test/support'
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { findIssueDrift } from '../src/converge.ts'
-import { releaseForeignClaims } from '../src/reconcile.ts'
+import { releaseForeignClaimsEffect } from '../src/reconcile.ts'
 import type { DaemonStore } from '../src/store.ts'
 
 const PROJECT = 'lingtai'
@@ -90,7 +91,9 @@ function fakeClient(labels: readonly string[]) {
 describe('a continuation is read by reconcile and converge', () => {
   it('both ask for TicketContinued streams', async () => {
     const s = await seeded('continued')
-    await releaseForeignClaims({ store: s.store, daemonStore: s.daemonStore, projects: [project], worker: MINE })
+    await Effect.runPromise(
+      releaseForeignClaimsEffect({ store: s.store, daemonStore: s.daemonStore, projects: [project], worker: MINE }),
+    )
     await findIssueDrift({
       store: s.store,
       daemonStore: s.daemonStore,
@@ -104,13 +107,15 @@ describe('a continuation is read by reconcile and converge', () => {
   it("checks the continuation's worker, same as the old form", async () => {
     const run = async (form: Form, worker: string) => {
       const s = await seeded(form)
-      return releaseForeignClaims({
-        store: s.store,
-        daemonStore: s.daemonStore,
-        projects: [project],
-        worker,
-        dryRun: true,
-      })
+      return Effect.runPromise(
+        releaseForeignClaimsEffect({
+          store: s.store,
+          daemonStore: s.daemonStore,
+          projects: [project],
+          worker,
+          dryRun: true,
+        }),
+      )
     }
     const old = await run('claimed', MINE)
     const next = await run('continued', MINE)
@@ -123,13 +128,15 @@ describe('a continuation is read by reconcile and converge', () => {
   it('leaves a run alone when this conductor made the continuation', async () => {
     for (const form of ['claimed', 'continued'] as const) {
       const s = await seeded(form)
-      const found = await releaseForeignClaims({
-        store: s.store,
-        daemonStore: s.daemonStore,
-        projects: [project],
-        worker: W2,
-        dryRun: true,
-      })
+      const found = await Effect.runPromise(
+        releaseForeignClaimsEffect({
+          store: s.store,
+          daemonStore: s.daemonStore,
+          projects: [project],
+          worker: W2,
+          dryRun: true,
+        }),
+      )
       expect(found).toEqual([])
     }
   })

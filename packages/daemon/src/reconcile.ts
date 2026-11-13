@@ -76,7 +76,6 @@ import { promisify } from 'node:util'
 // reason: `@lingtai/conductor`'s index pulls in the gate pipeline and its
 // child-process types, and the board imports this package.
 import { conductorWorker } from '@lingtai/conductor/claim'
-import { readState } from '@lingtai/conductor/snapshot-state'
 import {
   type Envelope,
   reduceTicket,
@@ -86,8 +85,15 @@ import {
   ticketStreamsOf,
 } from '@lingtai/domain'
 import { paint } from '@lingtai/env/colour'
-import { type EventStore, eventStore, log as processLog, type SnapshotReadOptions } from '@lingtai/event-store'
-import { projectionLag } from '@lingtai/projector'
+import {
+  type EventStore,
+  eventStore,
+  log as processLog,
+  readThroughSnapshot,
+  type SnapshotReadOptions,
+} from '@lingtai/event-store'
+import { projectionLagEffect } from '@lingtai/projector'
+import { Cause, Effect } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import { CONTROL_STREAM } from './control.ts'
@@ -106,9 +112,22 @@ const execFile = promisify(execFileCb)
  * interface. A store the caller injected is used as it is and left open, for
  * the reason a pool passed in is the caller's to end.
  */
-function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => Promise<T>): Promise<T> {
-  return withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, fn)
+function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => Promise<T>): Effect.Effect<T, unknown> {
+  // `withDaemonStore` is lifted until DAEMON-7a. The error is kept as it came, so a message read off it is the store's.
+  return attempt(() => withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, fn))
 }
+
+/** A promise as an Effect whose failure is the rejection itself, unwrapped — the shape `readThroughSnapshot` uses. */
+const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> => Effect.tryPromise({ try: f, catch: (e) => e })
+
+/** The message of whatever a step failed with, whether it failed or died. */
+const messageOf = (cause: Cause.Cause<unknown>): string => (Cause.squash(cause) as Error).message
+
+/** A ticket's state, or nothing at all when it cannot be read. */
+const ticketOf = (store: EventStore, options: ReconcileOptions, id: string) =>
+  readThroughSnapshot(store, ticketReducer, id, 'all', readOf(options)).pipe(
+    Effect.catch(() => Effect.succeed(reduceTicket([]))),
+  )
 
 /**
  * The log a pass reads and appends through: **the one the streams came from.**
@@ -277,32 +296,32 @@ export interface ReconcileOptions {
  * Reads only. `reconcile` is what acts, and `lingtai doctor` calls this on its own
  * so it can say what would happen without making it happen.
  */
-export async function findOrphans(options: ReconcileOptions = {}): Promise<Finding[]> {
+export function findOrphans(options: ReconcileOptions = {}): Promise<Finding[]> {
+  return Effect.runPromise(findOrphansEffect(options))
+}
+
+export const findOrphansEffect = Effect.fn('daemon.findOrphans')(function* (options: ReconcileOptions = {}) {
   const store = logOf(options)
   const abandoned = options.abandoned ?? new Set<string>()
   const home = options.home ?? defaultHome()
   const root = join(home, 'worktrees')
 
-  let projects: string[]
-  try {
-    projects = (await readdir(root, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name)
-  } catch {
+  const projects = yield* attempt(() => readdir(root, { withFileTypes: true })).pipe(
+    Effect.map((entries) => entries.filter((e) => e.isDirectory()).map((e) => e.name)),
     // No worktrees directory means nothing has ever run here, which is not a
     // divergence.
-    return []
-  }
+    Effect.catch(() => Effect.succeed(null)),
+  )
+  if (projects === null) return [] as Finding[]
 
   const findings: Finding[] = []
 
   for (const project of projects) {
-    let runs: string[]
-    try {
-      runs = (await readdir(join(root, project), { withFileTypes: true }))
-        .filter((e) => e.isDirectory())
-        .map((e) => e.name)
-    } catch {
-      continue
-    }
+    const runs = yield* attempt(() => readdir(join(root, project), { withFileTypes: true })).pipe(
+      Effect.map((entries) => entries.filter((e) => e.isDirectory()).map((e) => e.name)),
+      Effect.catch(() => Effect.succeed(null)),
+    )
+    if (runs === null) continue
 
     for (const runId of runs) {
       const path = join(root, project, runId)
@@ -311,7 +330,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
       // `PreparationStarted` or `RunStarted`. Read from the log rather than a
       // projection: reconciliation has to work when a projection is the thing
       // that is broken.
-      const run = await store.read(runId).catch(() => [])
+      const run = yield* attempt(() => store.read(runId)).pipe(Effect.catch(() => Effect.succeed([] as Envelope[])))
       const taskId = run
         .map((e) => (e.data as { ticketId?: string } | undefined)?.ticketId)
         .find((id): id is string => typeof id === 'string')
@@ -331,7 +350,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
         continue
       }
 
-      const task = await readState(store, ticketReducer, taskId, 'all', readOf(options)).catch(() => reduceTicket([]))
+      const task = yield* ticketOf(store, options, taskId)
       const life = task.lifecycle
       const live = life.status === 'claimed' && life.runId === runId && !abandoned.has(taskId)
 
@@ -351,7 +370,7 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
   }
 
   return findings
-}
+})
 
 /**
  * Run logs whose run is over and whose ticket is done.
@@ -392,38 +411,38 @@ export async function findOrphans(options: ReconcileOptions = {}): Promise<Findi
  * a record, so no behaviour may depend on its contents, and the only question
  * asked of one is whether it is still owed an explanation.
  */
-export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Finding[]> {
+export function findOrphanLogs(options: ReconcileOptions = {}): Promise<Finding[]> {
+  return Effect.runPromise(findOrphanLogsEffect(options))
+}
+
+export const findOrphanLogsEffect = Effect.fn('daemon.findOrphanLogs')(function* (options: ReconcileOptions = {}) {
   const store = logOf(options)
   const home = options.home ?? defaultHome()
   const root = join(home, 'runs')
 
-  let projects: string[]
-  try {
-    projects = (await readdir(root, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name)
-  } catch {
-    return []
-  }
+  const projects = yield* attempt(() => readdir(root, { withFileTypes: true })).pipe(
+    Effect.map((entries) => entries.filter((e) => e.isDirectory()).map((e) => e.name)),
+    Effect.catch(() => Effect.succeed(null)),
+  )
+  if (projects === null) return [] as Finding[]
 
   const findings: Finding[] = []
 
   for (const project of projects) {
-    let logs: string[]
-    try {
-      // Only `<runId>.log`. `runs/` also holds `settingsPathFor`'s
-      // `runs/<runId>/settings.json`, which is a directory named for a run —
-      // the two shapes share a parent and never each other's names.
-      logs = (await readdir(join(root, project), { withFileTypes: true }))
-        .filter((e) => e.isFile() && e.name.endsWith('.log'))
-        .map((e) => e.name)
-    } catch {
-      continue
-    }
+    // Only `<runId>.log`. `runs/` also holds `settingsPathFor`'s
+    // `runs/<runId>/settings.json`, which is a directory named for a run —
+    // the two shapes share a parent and never each other's names.
+    const logs = yield* attempt(() => readdir(join(root, project), { withFileTypes: true })).pipe(
+      Effect.map((entries) => entries.filter((e) => e.isFile() && e.name.endsWith('.log')).map((e) => e.name)),
+      Effect.catch(() => Effect.succeed(null)),
+    )
+    if (logs === null) continue
 
     for (const name of logs) {
       const path = join(root, project, name)
       const runId = name.slice(0, -'.log'.length)
 
-      const run = await store.read(runId).catch(() => [])
+      const run = yield* attempt(() => store.read(runId)).pipe(Effect.catch(() => Effect.succeed([] as Envelope[])))
       const taskId = run
         .map((e) => (e.data as { ticketId?: string } | undefined)?.ticketId)
         .find((id): id is string => typeof id === 'string')
@@ -440,7 +459,7 @@ export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Fi
         continue
       }
 
-      const task = await readState(store, ticketReducer, taskId, 'all', readOf(options)).catch(() => reduceTicket([]))
+      const task = yield* ticketOf(store, options, taskId)
       // Landed and nothing else. `blocked` is a question somebody has to
       // answer, and the log is half of what they answer it with.
       if (task.lifecycle.status !== 'landed') continue
@@ -456,7 +475,7 @@ export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Fi
   }
 
   return findings
-}
+})
 
 /**
  * Is the projection at the head of the log?
@@ -467,12 +486,18 @@ export async function findOrphanLogs(options: ReconcileOptions = {}): Promise<Fi
  * the symptom and hide that. The one thing this must not do is make a broken
  * projector look like a working one.
  */
-export async function findLaggingProjections(options: ReconcileOptions = {}): Promise<Finding[]> {
+export const findLaggingProjectionsEffect = Effect.fn('daemon.findLaggingProjections')(function* (
+  options: ReconcileOptions = {},
+) {
   const known = new Set(options.projections ?? [])
-  if (known.size === 0) return []
-  const lags = await projectionLag(options.url).catch(() => null)
+  if (known.size === 0) return [] as Finding[]
+  // The store open behind `projectionLagEffect` is not promised to fail rather than die, and the catch this
+  // replaces swallowed both.
+  const lags = yield* projectionLagEffect(options.url).pipe(
+    Effect.catchCause((cause) => (Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.succeed(null))),
+  )
   // No checkpoints table yet is a system that has never run, not a divergence.
-  if (lags === null) return []
+  if (lags === null) return [] as Finding[]
   return lags
     .filter((l) => known.has(l.name))
     .filter((l) => l.lag > 0n)
@@ -483,7 +508,7 @@ export async function findLaggingProjections(options: ReconcileOptions = {}): Pr
       action: 'reported' as const,
       path: '',
     }))
-}
+})
 
 /**
  * Claims held by a conductor that is not this one, so the item can be taken again.
@@ -516,13 +541,15 @@ export async function findLaggingProjections(options: ReconcileOptions = {}): Pr
  * kills the process the claim names first, because a detached agent outlives
  * its conductor. See `killWorker`.
  */
-export async function releaseForeignClaims(options: ReconcileOptions = {}): Promise<Finding[]> {
+export const releaseForeignClaimsEffect = Effect.fn('daemon.releaseForeignClaims')(function* (
+  options: ReconcileOptions = {},
+) {
   const store = logOf(options)
   const worker = options.worker ?? conductorWorker()
   const names = (options.projects ?? []).map((p) => p.project).filter((n): n is string => !!n)
-  if (names.length === 0) return []
+  if (names.length === 0) return [] as Finding[]
 
-  const streams = await withStreams(options, (it) =>
+  const streams = yield* withStreams(options, (it) =>
     // `TicketContinued` is listed beside the claim so the selection does not
     // lean on a continuation never being a stream's only claim-shaped event;
     // `reduceTicket` below is what names the worker (`claimShapeOf`).
@@ -534,11 +561,11 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
     // No log to read is not a divergence — and on a machine that has written no
     // choice, `chosenStore()`'s refusal lands here too, which is the same
     // answer: nothing to compare against.
-    .catch(() => [] as string[])
+    .pipe(Effect.catch(() => Effect.succeed([] as string[])))
 
   const findings: Finding[] = []
   for (const ticketId of streams) {
-    const item = await readState(store, ticketReducer, ticketId, 'all', readOf(options)).catch(() => reduceTicket([]))
+    const item = yield* ticketOf(store, options, ticketId)
     const life = item.lifecycle
     if (life.status !== 'claimed') continue
     if (life.worker === worker) continue
@@ -551,7 +578,7 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
     })
   }
   return findings
-}
+})
 
 /**
  * Kills the process a dead claim names, or says why it did not.
@@ -581,7 +608,7 @@ export async function releaseForeignClaims(options: ReconcileOptions = {}): Prom
  * Returns the sentence, never throws. Reconciliation reports; it does not
  * refuse to start because a process could not be read.
  */
-export async function killWorker(worker: string): Promise<string> {
+export const killWorkerEffect = Effect.fn('daemon.killWorker')(function* (worker: string) {
   const named = parseWorker(worker)
   if (!named) return `"${worker}" names no process`
   if (named.host !== thisHost()) {
@@ -592,17 +619,21 @@ export async function killWorker(worker: string): Promise<string> {
   // not survivable.
   if (named.pid === process.pid) return `pid ${named.pid} is this process`
 
-  try {
-    // Signal 0 asks whether it exists without touching it. The ordinary answer
-    // is that it does not: the conductor died, which is why we are here.
-    process.kill(named.pid, 0)
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (code === 'ESRCH') return `pid ${named.pid} is gone`
-    return `pid ${named.pid} is alive and not ours to signal (${code ?? 'unknown'}) — reported, not killed`
-  }
+  const gone = yield* Effect.sync((): string | null => {
+    try {
+      // Signal 0 asks whether it exists without touching it. The ordinary answer
+      // is that it does not: the conductor died, which is why we are here.
+      process.kill(named.pid, 0)
+      return null
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ESRCH') return `pid ${named.pid} is gone`
+      return `pid ${named.pid} is alive and not ours to signal (${code ?? 'unknown'}) — reported, not killed`
+    }
+  })
+  if (gone !== null) return gone
 
-  const command = await commandOf(named.pid)
+  const command = yield* commandOf(named.pid)
   if (command === null) {
     return `pid ${named.pid} is alive and its command could not be read — reported, not killed`
   }
@@ -610,13 +641,15 @@ export async function killWorker(worker: string): Promise<string> {
     return `pid ${named.pid} is alive and is not ours — "${command}" — reported, not killed`
   }
 
-  try {
-    process.kill(named.pid, 'SIGKILL')
-    return `killed pid ${named.pid} — "${command}"`
-  } catch (err) {
-    return `pid ${named.pid} could not be killed: ${(err as Error).message}`
-  }
-}
+  return yield* Effect.sync(() => {
+    try {
+      process.kill(named.pid, 'SIGKILL')
+      return `killed pid ${named.pid} — "${command}"`
+    } catch (err) {
+      return `pid ${named.pid} could not be killed: ${(err as Error).message}`
+    }
+  })
+})
 
 /** Host and pid, as `conductorWorker` writes them. Null when it is not that. */
 function parseWorker(worker: string): { host: string; pid: number } | null {
@@ -633,15 +666,15 @@ function thisHost(): string {
 }
 
 /** The process's command line, or null when it could not be read. */
-async function commandOf(pid: number): Promise<string | null> {
-  try {
-    const { stdout } = await execFile('ps', ['-o', 'command=', '-p', String(pid)])
-    const line = stdout.trim()
-    return line === '' ? null : line
-  } catch {
+function commandOf(pid: number): Effect.Effect<string | null> {
+  return attempt(() => execFile('ps', ['-o', 'command=', '-p', String(pid)])).pipe(
+    Effect.map(({ stdout }) => {
+      const line = stdout.trim()
+      return line === '' ? null : line
+    }),
     // `ps` exits non-zero for a pid that has gone between the check and here.
-    return null
-  }
+    Effect.catch(() => Effect.succeed(null)),
+  )
 }
 
 /**
@@ -657,83 +690,42 @@ function isOurs(command: string): boolean {
   return /\bnode\b/.test(command) && /lingtai/i.test(command)
 }
 
-export async function reconcile(options: ReconcileOptions = {}): Promise<Finding[]> {
-  const log = options.log ?? (() => {})
-  const store = logOf(options)
+export function reconcile(options: ReconcileOptions = {}): Promise<Finding[]> {
+  return Effect.runPromise(reconcileEffect(options))
+}
 
-  // Read all four before acting on any. A pass that repaired as it discovered
-  // would report a world that no longer existed by the time it finished.
-  //
-  // The claim check reads first so the worktree scan can be told what it found.
-  // Still read-before-act: nothing has been appended at this point, and the
-  // findings are reported in the old order.
-  const foreign = await releaseForeignClaims(options)
-  const abandoned = new Set(foreign.map((f) => f.stream))
-  const scanned = [
-    ...(await findLaggingProjections(options)),
-    ...(await findOrphans({ ...options, abandoned })),
-    ...(await findOrphanLogs(options)),
-    ...foreign,
-  ]
-
-  // 4. GitHub, which repairs as it reads because the read *is* the comparison
-  // — see `converge.ts`. Skipped entirely when nothing was injected to reach
-  // GitHub with, rather than guessed at.
-  if (options.github) {
-    const { divergences, converged } = await convergeIssues({
-      ...options.github,
-      store,
-      ...(options.url === undefined ? {} : { url: options.url }),
-      ...(options.dryRun === undefined ? {} : { dryRun: options.dryRun }),
-      // Handed on for the same reason `store` is: without it the converge half
-      // opens a store of its own, so a pass given a working store would still
-      // be refused on a machine that has written no choice — and where it did
-      // open one, it would be asking a second log which streams the first
-      // one's findings are about.
-      ...(options.daemonStore === undefined ? {} : { daemonStore: options.daemonStore }),
-      log,
-    })
-    const done = new Set(converged.map((d) => `${d.ticketId}:${d.change}`))
-    for (const d of divergences) {
-      scanned.push({
-        stream: d.ticketId,
-        expected: `${d.change}: ${d.expected}`,
-        actual: d.actual,
-        action: done.has(`${d.ticketId}:${d.change}`) ? 'converged' : 'reported',
-        path: '',
-      })
-    }
-  }
-
-  const findings = await withoutReported(store, scanned, log)
-  if (findings.length === 0) return []
-
-  for (const f of findings) {
-    if (f.action === 'released') {
-      try {
-        // Re-read rather than trust the finding. Between the scan and here this
-        // conductor could have claimed the item itself, and releasing a live
-        // claim is a far worse outcome than leaving a dead one — the same rule
-        // the worktree check follows for the same reason.
-        const state = await readState(store, ticketReducer, f.stream, 'all', readOf(options))
-        const life = state.lifecycle
-        const mine = options.worker ?? conductorWorker()
-        if (life.status !== 'claimed' || life.worker === mine) {
-          f.action = 'reported'
-          f.actual = `${f.actual} (claimed again before it could be released)`
-          continue
-        }
-        // The process, before the claim (0030 §5). A detached agent outlives
-        // the conductor that started it, so a claim whose worker is still alive
-        // is one with something still spending against it — and releasing the
-        // ticket while that runs is how two agents end up on one branch.
-        //
-        // Whichever way it goes, the claim is released: what changes is whether
-        // the sentence says `killed` or names a process nobody dared touch.
-        const fate = await killWorker(life.worker)
-        f.actual = `${f.actual} — ${fate}`
-        log(paint.pass(`reconciled: ${f.stream} worker ${life.worker} — ${fate}`))
-        await store.append(f.stream, state.version, [
+/**
+ * One release: re-read, guard, kill, append — a single uninterruptible step. An interruption between the kill and
+ * the append would leave a dead worker and a live claim, which is #87. Anything that goes wrong inside it, a
+ * failure or a defect, is the finding's own report and the loop goes on.
+ */
+const releaseOne = (f: Finding, store: EventStore, options: ReconcileOptions, log: (line: string) => void) =>
+  Effect.uninterruptible(
+    Effect.gen(function* () {
+      // Re-read rather than trust the finding. Between the scan and here this
+      // conductor could have claimed the item itself, and releasing a live
+      // claim is a far worse outcome than leaving a dead one — the same rule
+      // the worktree check follows for the same reason.
+      const state = yield* readThroughSnapshot(store, ticketReducer, f.stream, 'all', readOf(options))
+      const life = state.lifecycle
+      const mine = options.worker ?? conductorWorker()
+      if (life.status !== 'claimed' || life.worker === mine) {
+        f.action = 'reported'
+        f.actual = `${f.actual} (claimed again before it could be released)`
+        return
+      }
+      // The process, before the claim (0030 §5). A detached agent outlives
+      // the conductor that started it, so a claim whose worker is still alive
+      // is one with something still spending against it — and releasing the
+      // ticket while that runs is how two agents end up on one branch.
+      //
+      // Whichever way it goes, the claim is released: what changes is whether
+      // the sentence says `killed` or names a process nobody dared touch.
+      const fate = yield* killWorkerEffect(life.worker)
+      f.actual = `${f.actual} — ${fate}`
+      log(paint.pass(`reconciled: ${f.stream} worker ${life.worker} — ${fate}`))
+      yield* attempt(() =>
+        store.append(f.stream, state.version, [
           {
             type: 'TicketReleased',
             actor: 'conductor',
@@ -748,57 +740,133 @@ export async function reconcile(options: ReconcileOptions = {}): Promise<Finding
               cause: null,
             }),
           },
-        ])
-        log(paint.pass(`reconciled: released ${f.stream}`))
-      } catch (err) {
+        ]),
+      )
+      log(paint.pass(`reconciled: released ${f.stream}`))
+    }).pipe(
+      // A store of the process is a defect when it fails, so `Effect.catch` alone would miss it; the `try` this
+      // replaces caught everything.
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
         f.action = 'reported'
-        f.actual = `${f.actual} (could not release: ${(err as Error).message})`
-      }
-      continue
-    }
-    if (f.action !== 'removed') continue
-    try {
-      await rm(f.path, { recursive: true, force: true })
-      log(paint.pass(`reconciled: removed ${f.path}`))
-    } catch (err) {
-      // Report the failure rather than the intention. An event saying
-      // "removed" about a directory that is still there is worse than no
-      // event, because it is the kind of wrong you only find by going to look.
-      f.action = 'reported'
-      f.actual = `${f.actual} (could not remove: ${(err as Error).message})`
-      log(`reconcile could not remove ${f.path}: ${(err as Error).message}`)
+        f.actual = `${f.actual} (could not release: ${messageOf(cause)})`
+        return Effect.void
+      }),
+    ),
+  )
+
+/** One removal, as one uninterruptible step. */
+const removeOne = (f: Finding, log: (line: string) => void) =>
+  Effect.uninterruptible(
+    attempt(() => rm(f.path, { recursive: true, force: true })).pipe(
+      Effect.flatMap(() => Effect.sync(() => log(paint.pass(`reconciled: removed ${f.path}`)))),
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+        // Report the failure rather than the intention. An event saying
+        // "removed" about a directory that is still there is worse than no
+        // event, because it is the kind of wrong you only find by going to look.
+        const message = messageOf(cause)
+        f.action = 'reported'
+        f.actual = `${f.actual} (could not remove: ${message})`
+        return Effect.sync(() => log(`reconcile could not remove ${f.path}: ${message}`))
+      }),
+    ),
+  )
+
+export const reconcileEffect = Effect.fn('daemon.reconcile')(function* (options: ReconcileOptions = {}) {
+  const log = options.log ?? (() => {})
+  const store = logOf(options)
+
+  // Read all four before acting on any. A pass that repaired as it discovered
+  // would report a world that no longer existed by the time it finished.
+  //
+  // The claim check reads first so the worktree scan can be told what it found.
+  // Still read-before-act: nothing has been appended at this point, and the
+  // findings are reported in the old order.
+  const foreign = yield* releaseForeignClaimsEffect(options)
+  const abandoned = new Set(foreign.map((f) => f.stream))
+  const scanned = [
+    ...(yield* findLaggingProjectionsEffect(options)),
+    ...(yield* findOrphansEffect({ ...options, abandoned })),
+    ...(yield* findOrphanLogsEffect(options)),
+    ...foreign,
+  ]
+
+  // 4. GitHub, which repairs as it reads because the read *is* the comparison
+  // — see `converge.ts`. Skipped entirely when nothing was injected to reach
+  // GitHub with, rather than guessed at.
+  if (options.github) {
+    const github = options.github
+    // Lifted until DAEMON-4.
+    const { divergences, converged } = yield* Effect.promise(() =>
+      convergeIssues({
+        ...github,
+        store,
+        ...(options.url === undefined ? {} : { url: options.url }),
+        ...(options.dryRun === undefined ? {} : { dryRun: options.dryRun }),
+        // Handed on for the same reason `store` is: without it the converge half
+        // opens a store of its own, so a pass given a working store would still
+        // be refused on a machine that has written no choice — and where it did
+        // open one, it would be asking a second log which streams the first
+        // one's findings are about.
+        ...(options.daemonStore === undefined ? {} : { daemonStore: options.daemonStore }),
+        log,
+      }),
+    )
+    const done = new Set(converged.map((d) => `${d.ticketId}:${d.change}`))
+    for (const d of divergences) {
+      scanned.push({
+        stream: d.ticketId,
+        expected: `${d.change}: ${d.expected}`,
+        actual: d.actual,
+        action: done.has(`${d.ticketId}:${d.change}`) ? 'converged' : 'reported',
+        path: '',
+      })
     }
   }
 
-  const at = await store.head(CONTROL_STREAM)
-  await store.append(CONTROL_STREAM, at, [
-    {
-      type: 'Reconciled',
-      actor: 'conductor',
-      data: parsePayload('Reconciled', {
-        findings: findings.map((f) => ({
-          stream: f.stream,
-          expected: f.expected,
-          actual: f.actual,
-          action: f.action,
-        })),
-      }),
-    },
-  ])
+  const findings = yield* Effect.promise(() => withoutReported(store, scanned, log))
+  if (findings.length === 0) return [] as Finding[]
+
+  for (const f of findings) {
+    if (f.action === 'released') {
+      yield* releaseOne(f, store, options, log)
+      continue
+    }
+    if (f.action !== 'removed') continue
+    yield* removeOne(f, log)
+  }
+
+  // A defect, and the host reports it: the daemon starts anyway (`apps/cli/src/daemon.ts`).
+  yield* Effect.promise(() =>
+    store.head(CONTROL_STREAM).then((at) =>
+      store.append(CONTROL_STREAM, at, [
+        {
+          type: 'Reconciled',
+          actor: 'conductor',
+          data: parsePayload('Reconciled', {
+            findings: findings.map((f) => ({
+              stream: f.stream,
+              expected: f.expected,
+              actual: f.actual,
+              action: f.action,
+            })),
+          }),
+        },
+      ]),
+    ),
+  )
 
   return findings
-}
+})
 
 function defaultHome(): string {
   return process.env['LINGTAI_HOME'] ?? join(process.env['HOME'] ?? '.', '.lingtai')
 }
 
 /** Exported for a test that wants to know the directory really went. */
-export async function exists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
-  }
-}
+export const existsEffect = (path: string): Effect.Effect<boolean> =>
+  attempt(() => stat(path)).pipe(
+    Effect.as(true),
+    Effect.catch(() => Effect.succeed(false)),
+  )

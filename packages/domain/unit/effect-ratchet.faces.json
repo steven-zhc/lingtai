@@ -165,7 +165,7 @@
     "file": "packages/conductor/src/snapshot-state.ts",
     "fn": "readState",
     "until": "#790",
-    "why": "apps/cli (requeue, continuing, subscribers, status, grant-fix-round, triage, approve), packages/daemon (reconcile, control) and apps/board read a reducer's state as a promise"
+    "why": "apps/cli (requeue, continuing, subscribers, status, grant-fix-round, triage, approve), packages/daemon (control) and apps/board read a reducer's state as a promise"
   },
   {
     "file": "packages/conductor/src/ticket-history.ts",
@@ -202,6 +202,24 @@
     "fn": "recordFailureFace",
     "until": "#790",
     "why": "`deliver`'s promise callbacks in `packages/daemon/src/work-loop.ts`, which hold the CLI's `EventSubscriber.deliver`, until that is an Effect (apps/cli row)"
+  },
+  {
+    "file": "packages/daemon/src/reconcile.ts",
+    "fn": "findOrphanLogs",
+    "until": "#790",
+    "why": "apps/cli/src/daemon.ts (startup) and apps/cli/src/doctor.ts (dry run) await it until the apps/cli row"
+  },
+  {
+    "file": "packages/daemon/src/reconcile.ts",
+    "fn": "findOrphans",
+    "until": "#790",
+    "why": "apps/cli/src/daemon.ts (startup) and apps/cli/src/doctor.ts (dry run) await it until the apps/cli row"
+  },
+  {
+    "file": "packages/daemon/src/reconcile.ts",
+    "fn": "reconcile",
+    "until": "#790",
+    "why": "apps/cli/src/daemon.ts (startup) and apps/cli/src/doctor.ts (dry run) await it until the apps/cli row"
   },
   {
     "file": "packages/daemon/src/work-loop.ts",
