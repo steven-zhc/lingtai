@@ -18,6 +18,7 @@ export {
   type PermissionGap,
   type VisibleRepository,
 } from './app.ts'
+export { setRequestObserver, type RequestInfo, type RequestObserver } from './observe.ts'
 export {
   LINGTAI_URL,
   MANIFEST_EVENTS,

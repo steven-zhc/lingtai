@@ -22,9 +22,23 @@ import { Effect } from 'effect'
 import type { EventStore } from './event-store.ts'
 import type { Snapshot, SnapshotStore } from './snapshots.ts'
 
+/**
+ * What a caller may watch of one read (#1144). Each hook only wraps work the
+ * read does anyway, and none changes what it returns. `read` wraps one store
+ * call (`latest`, the `tail`, the anchor's `recheck`, a `full` re-read), `reduce`
+ * the fold, and `served` says whether a snapshot answered: true only when one
+ * was used and its anchor still held, false when the whole stream was read.
+ */
+export interface SnapshotReadObserver {
+  readonly read: <A>(step: 'latest' | 'tail' | 'recheck' | 'full', run: () => Promise<A>) => Promise<A>
+  readonly reduce: <A>(run: () => A) => A
+  readonly served: (snapshot: boolean) => void
+}
+
 export interface SnapshotReadOptions {
   readonly snapshots?: SnapshotStore
   readonly writer?: { offer(snapshot: Snapshot): void }
+  readonly observe?: SnapshotReadObserver
 }
 
 const said = new Set<string>()
@@ -45,15 +59,26 @@ export function readThroughSnapshot<S>(
   types: readonly EventType[] | 'all',
   options: SnapshotReadOptions = {},
 ): Effect.Effect<S, unknown> {
-  const { snapshots, writer } = options
+  const { snapshots, writer, observe } = options
+  const step = <A>(name: 'latest' | 'tail' | 'recheck' | 'full', run: () => Promise<A>): (() => Promise<A>) =>
+    observe === undefined ? run : () => observe.read(name, run)
+  const fold = (state: S, events: Envelope[]): S =>
+    observe === undefined
+      ? reduceFrom(reducer, state, events)
+      : observe.reduce(() => reduceFrom(reducer, state, events))
   const readFrom = (from?: number): Promise<Envelope[]> =>
     types === 'all' ? store.read(streamId, from) : store.readTypes(streamId, types, from)
   if (snapshots === undefined) {
-    return attempt(() => readFrom()).pipe(Effect.map((all) => reduceFrom(reducer, reducer.initial, all)))
+    return attempt(step('full', () => readFrom())).pipe(
+      Effect.map((all) => {
+        observe?.served(false)
+        return fold(reducer.initial, all)
+      }),
+    )
   }
   return Effect.gen(function* () {
     const key = { streamId, reducer: reducer.name, reducerVersion: reducer.version }
-    const row = yield* attempt(() => snapshots.latest(key)).pipe(
+    const row = yield* attempt(step('latest', () => snapshots.latest(key))).pipe(
       Effect.catch((e) => {
         sayOnce(reducer.name, 'latest', e)
         return Effect.succeed(null)
@@ -71,18 +96,21 @@ export function readThroughSnapshot<S>(
         sayOnce(reducer.name, 'decode', e)
       }
     }
-    let tail: Envelope[] = yield* attempt(() => readFrom(start + 1))
+    let tail: Envelope[] = yield* attempt(step('tail', () => readFrom(start + 1)))
+    let served = row !== null && start > 0
     if (row !== null && start > 0) {
       // The anchor was checked before the tail was read; a reset in between would pair the old
       // state with the new log's events. Ask again: only an anchor still holding vouches for the tail.
-      const again = yield* attempt(() => snapshots.latest(key)).pipe(Effect.orElseSucceed(() => null))
+      const again = yield* attempt(step('recheck', () => snapshots.latest(key))).pipe(Effect.orElseSucceed(() => null))
       if (again === null || again.streamVersion !== row.streamVersion || again.lastSeq !== row.lastSeq) {
         state = reducer.initial
         from = 0
-        tail = yield* attempt(() => readFrom())
+        served = false
+        tail = yield* attempt(step('full', () => readFrom()))
       }
     }
-    const reduced = reduceFrom(reducer, state, tail)
+    observe?.served(served)
+    const reduced = fold(state, tail)
     const last = tail[tail.length - 1]
     if (last !== undefined && writer !== undefined && crossesCommitBoundary(from, last.version)) {
       writer.offer({

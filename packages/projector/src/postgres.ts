@@ -18,6 +18,7 @@ import { postgresUrl } from '@lingtai/env'
 import { Effect, Exit } from 'effect'
 import pg from 'pg'
 
+import { acquireObserver } from './acquire.ts'
 import type { BacklogEntry } from './backlog.ts'
 import { grantOfFor, type SpendRow } from './spend.ts'
 import { promiseProjectionStore } from './store-face.ts'
@@ -243,6 +244,68 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
 
 const codeOf = (err: unknown) => (err as { code?: string }).code
 
+/** The part of a `pg.Pool` a read needs, so a test can hand a fake one. */
+export type QueryPool = Pick<pg.Pool, 'connect' | 'query'>
+
+/**
+ * One read. With an observer installed it takes the connection itself, which is
+ * what `Pool.query` does underneath, so the checkout is its own step; a driver
+ * error discards the client (`release(err)`), as `Pool.query` does.
+ */
+export function queryRows(pool: QueryPool, text: string, args?: unknown[]): Promise<pg.QueryResultRow[]> {
+  const around = acquireObserver()
+  if (around === undefined) return pool.query(text, args).then((r) => r.rows)
+  // A checked-out client has no listener but ours: `Pool.query` installs one for the same reason, and
+  // without it a dropped connection is an uncaught `error` event rather than this read's rejection.
+  // pg drops its idle listener and hands the client over in one tick, so the listener goes on inside
+  // `connect`'s own callback: attached after a promise hop, an error arriving with the handoff is uncaught.
+  // An error before the query starts is kept and fails the read as soon as it does.
+  let early: Error | undefined
+  let onFail: ((err: Error) => void) | undefined
+  const onError = (err: Error): void => {
+    if (onFail === undefined) early ??= err
+    else onFail(err)
+  }
+  const checkout = (): Promise<pg.PoolClient> =>
+    new Promise((resolve, reject) => {
+      pool.connect((err, client) => {
+        if (client === undefined) {
+          reject(err ?? new Error('no connection'))
+          return
+        }
+        client.on('error', onError)
+        resolve(client)
+      })
+    })
+  return around(checkout).then(
+    (client) =>
+      new Promise<pg.QueryResultRow[]>((resolve, reject) => {
+        let settled = false
+        const finish = (err: unknown, rows?: pg.QueryResultRow[]): void => {
+          if (settled) return
+          settled = true
+          client.removeListener('error', onError)
+          if (err === undefined) {
+            client.release()
+            resolve(rows ?? [])
+          } else {
+            client.release(err instanceof Error ? err : true)
+            reject(err)
+          }
+        }
+        onFail = (err) => finish(err)
+        if (early !== undefined) {
+          finish(early)
+          return
+        }
+        client.query(text, args).then(
+          (r) => finish(undefined, r.rows),
+          (err: unknown) => finish(err),
+        )
+      }),
+  )
+}
+
 /** `Projections` over a `pg.Pool`. A driver error is a defect, as itself. */
 export function makePostgresProjections(options: PostgresProjectionStoreOptions = {}): ProjectionsPort {
   const pool = new pg.Pool({
@@ -252,13 +315,13 @@ export function makePostgresProjections(options: PostgresProjectionStoreOptions 
   })
   listenForIdleErrors(pool)
 
-  const rows = (text: string, args?: unknown[]) => Effect.promise(() => pool.query(text, args).then((r) => r.rows))
+  const rows = (text: string, args?: unknown[]) => Effect.promise(() => queryRows(pool, text, args))
 
   /** A read whose missing table (`42P01`) is no rows rather than a failure. */
   const rowsOrNone = (text: string, args?: unknown[]) =>
     Effect.promise(() =>
-      pool.query(text, args).then(
-        (r) => r.rows,
+      queryRows(pool, text, args).then(
+        (r) => r,
         (err: unknown) => {
           if (codeOf(err) === '42P01') return []
           throw err

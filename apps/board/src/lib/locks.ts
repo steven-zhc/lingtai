@@ -36,6 +36,7 @@ import { cache } from 'react'
 import type { ActionResult } from './diff.ts'
 import { accountsHolding, ceilingToday, isPaused } from './lock-marks.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
+import { traced, tracedSync } from './timing.ts'
 
 const run = Effect.runPromiseWith(Context.empty())
 
@@ -47,7 +48,22 @@ export const readRegistered = cache(() => loadProjects())
  * Not caught: a caller that cannot say what it failed to read must not draw
  * "nothing holds" from it (#77). `readProjectLocks` catches it for itself.
  */
-export const readControlOnce = cache(async () => readControl(undefined, { writer: await boardWriterOrNone() }))
+export const readControlOnce = cache(async () => {
+  const writer = await boardWriterOrNone()
+  // One span for the read, with a child for each store call and for the fold, and whether a snapshot
+  // served it (#1144). The store's own pool is not the projection pool: a `control.*` span is
+  // everything the read took, a wait for a connection included.
+  return traced('control.snapshot', (span) =>
+    readControl(undefined, {
+      writer,
+      observe: {
+        read: (step, run) => traced(`control.${step}`, () => run()),
+        reduce: (run) => tracedSync('control.reduce', run),
+        served: (snapshot) => span.setAttribute('lingtai.snapshot', snapshot),
+      },
+    }),
+  )
+})
 
 export type HeldProject = { project: string; locks: readonly Lock[] }
 export type ProjectLocks =

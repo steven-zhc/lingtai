@@ -1,0 +1,94 @@
+import { EventEmitter } from 'node:events'
+
+import { afterEach, expect, it, vi } from 'vitest'
+
+import { setAcquireObserver } from '../src/acquire.ts'
+import { queryRows, type QueryPool } from '../src/postgres.ts'
+
+afterEach(() => setAcquireObserver(undefined))
+
+type Handoff = (err: Error | undefined, client: EventEmitter) => void
+
+const poolOf = (query: (text: string) => Promise<{ rows: unknown[] }>) => {
+  const release = vi.fn()
+  const pool = {
+    query: vi.fn(),
+    connect: vi.fn((cb: Handoff) => {
+      setTimeout(() => cb(undefined, Object.assign(new EventEmitter(), { query, release })), 20)
+    }),
+  }
+  return { pool: pool as unknown as QueryPool, release, raw: pool }
+}
+
+it('with no observer a read is pool.query and takes no connection itself', async () => {
+  const { pool, raw } = poolOf(async () => ({ rows: [] }))
+  raw.query.mockResolvedValue({ rows: [{ a: 1 }] })
+  expect(await queryRows(pool, 'select 1')).toEqual([{ a: 1 }])
+  expect(raw.connect).not.toHaveBeenCalled()
+})
+
+it('with one, the checkout is measured apart from the query and the client goes back', async () => {
+  const seen: string[] = []
+  setAcquireObserver(async (run) => {
+    const start = performance.now()
+    const client = await run()
+    seen.push(`acquire>=15:${performance.now() - start >= 15}`)
+    return client
+  })
+  const { pool, release } = poolOf(async () => {
+    seen.push('query')
+    return { rows: [{ a: 1 }] }
+  })
+  expect(await queryRows(pool, 'select 1')).toEqual([{ a: 1 }])
+  expect(seen).toEqual(['acquire>=15:true', 'query'])
+  expect(release).toHaveBeenCalledWith()
+})
+
+it('a driver error discards the client and still rejects as itself', async () => {
+  setAcquireObserver((run) => run())
+  const err = Object.assign(new Error('boom'), { code: '42P01' })
+  const { pool, release } = poolOf(async () => {
+    throw err
+  })
+  await expect(queryRows(pool, 'select 1')).rejects.toBe(err)
+  expect(release).toHaveBeenCalledWith(err)
+})
+
+it('an error event on the checked-out client rejects the read and is not uncaught', async () => {
+  setAcquireObserver((run) => run())
+  const clients: EventEmitter[] = []
+  const release = vi.fn()
+  const pool = {
+    query: vi.fn(),
+    connect: vi.fn((cb: Handoff) => {
+      const client = Object.assign(new EventEmitter(), { query: () => new Promise(() => undefined), release })
+      clients.push(client)
+      cb(undefined, client)
+    }),
+  } as unknown as QueryPool
+  const read = queryRows(pool, 'select 1')
+  await new Promise((r) => setTimeout(r, 5))
+  const dropped = new Error('connection terminated')
+  expect(() => clients[0]!.emit('error', dropped)).not.toThrow()
+  await expect(read).rejects.toBe(dropped)
+  expect(release).toHaveBeenCalledWith(dropped)
+  expect(clients[0]!.listenerCount('error')).toBe(0)
+})
+
+it('an error emitted in the same tick as the handoff rejects the read and is not uncaught', async () => {
+  setAcquireObserver((run) => run())
+  const dropped = new Error('connection terminated')
+  const release = vi.fn()
+  const client = Object.assign(new EventEmitter(), { query: () => new Promise(() => undefined), release })
+  const pool = {
+    query: vi.fn(),
+    // pg hands the client over and the socket's error arrives in the same callback, before any promise continuation.
+    connect: vi.fn((cb: Handoff) => {
+      cb(undefined, client)
+      client.emit('error', dropped)
+    }),
+  } as unknown as QueryPool
+  await expect(queryRows(pool, 'select 1')).rejects.toBe(dropped)
+  expect(release).toHaveBeenCalledWith(dropped)
+  expect(client.listenerCount('error')).toBe(0)
+})

@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { performance } from 'node:perf_hooks'
 
-import { SpanStatusCode, trace } from '@opentelemetry/api'
+import { type Span, SpanStatusCode, trace } from '@opentelemetry/api'
 
 /**
  * Names and times every read a page makes (#774). **Server only**: this
@@ -126,6 +126,49 @@ export async function timed<T>(name: string, fn: () => Promise<T>, options: Time
         record('failed')
         throw err
       }
+    } catch (err) {
+      span.setStatus({ code: SpanStatusCode.ERROR })
+      throw err
+    } finally {
+      span.end()
+    }
+  })
+}
+
+/** What a span of `traced` may carry: numbers, booleans and a project's name, never a URL, a title or a body (0101 §6). */
+export type SpanAttributes = Readonly<Record<string, string | number | boolean>>
+
+/**
+ * A span and nothing else (#1144): no entry in `TimingMeta`. For what repeats
+ * per card, per request or per connection, where a meta entry each would grow
+ * with the board. `timed` stays for the fixed few reads a render waits for.
+ *
+ * The error is rethrown untouched and never read, as in `timed`.
+ */
+export function traced<T>(name: string, fn: (span: Span) => Promise<T>, attributes?: SpanAttributes): Promise<T> {
+  return trace.getTracer('lingtai-board').startActiveSpan(name, { attributes }, (span) => {
+    const done = (): void => span.end()
+    const fail = (err: unknown): never => {
+      span.setStatus({ code: SpanStatusCode.ERROR })
+      span.end()
+      throw err
+    }
+    try {
+      return fn(span).then((value) => {
+        done()
+        return value
+      }, fail)
+    } catch (err) {
+      return fail(err)
+    }
+  })
+}
+
+/** `traced` for a synchronous step: the same span, ended when `fn` returns or throws. */
+export function tracedSync<T>(name: string, fn: () => T, attributes?: SpanAttributes): T {
+  return trace.getTracer('lingtai-board').startActiveSpan(name, { attributes }, (span) => {
+    try {
+      return fn()
     } catch (err) {
       span.setStatus({ code: SpanStatusCode.ERROR })
       throw err

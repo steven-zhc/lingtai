@@ -2,6 +2,8 @@ import { machineOtlpEndpoint, type MachineFile } from '@lingtai/env'
 import { context, trace } from '@opentelemetry/api'
 import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from '@opentelemetry/sdk-trace-base'
 
+import { installTraceSeams } from './trace-seams.ts'
+
 /**
  * Exports the board's own timed reads as OpenTelemetry spans (#775), and only
  * when `telemetry.otlp_endpoint` is set. **Server only.**
@@ -195,6 +197,7 @@ export async function installTracing(
   })
   trace.setGlobalTracerProvider(provider)
   context.setGlobalContextManager(new sdk.hooks.AsyncLocalStorageContextManager().enable())
+  installTraceSeams()
   return provider
 }
 
