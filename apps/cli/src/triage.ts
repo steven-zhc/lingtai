@@ -67,7 +67,7 @@ import {
   refShaEffect,
   type ConflictedPath,
 } from '@lingtai/repo'
-import { Cause, Deferred, Effect, Exit, Fiber, Semaphore } from 'effect'
+import { Cause, Clock, Deferred, Duration, Effect, Exit, Fiber, Semaphore } from 'effect'
 
 import { prepare } from './discuss.ts'
 import { lift } from './exit.ts'
@@ -499,7 +499,6 @@ export function daemonTriagePorts(
           base: baseOf,
           prepare,
           prepareCheckout: (project, sha, signal) => prepareTriageCheckout(project, sha, undefined, signal),
-          now: Date.now,
           log,
         },
         request,
@@ -562,7 +561,6 @@ export interface TriagePorts extends SnapshotReadOptions {
    * under a live tool.
    */
   prepareCheckout?(project: string, sha: string, signal?: AbortSignal): Effect.Effect<Checkout, unknown>
-  now(): number
   log?(line: string): void
 }
 
@@ -734,18 +732,16 @@ export const waitTriage = (
   deps: TriagePorts,
   request: WaitTriageRequest,
 ): Effect.Effect<{ attempt: number; result: TriageResult; started?: boolean }, unknown> =>
-  Effect.suspend(() => {
+  Effect.gen(function* () {
     // The recipe's wall starts here, before the first read, and bounds the whole
-    // attempt — reads included. A timer we clear rather than `AbortSignal.timeout`,
+    // attempt — reads included. It sleeps on Effect's clock, so a test drives it
+    // with `TestClock`, and the child fiber is interrupted when the attempt ends,
     // so a finished attempt leaves nothing keeping the event loop alive.
     const wallMs = triageCallFor(request.triage).wallMs
     const wall = new AbortController()
-    const timer = setTimeout(() => wall.abort(), wallMs)
-    timer.unref?.()
-    const startedAt = deps.now()
-    return waitTriageWithin(deps, request, wall.signal, startedAt + wallMs).pipe(
-      Effect.ensuring(Effect.sync(() => clearTimeout(timer))),
-    )
+    yield* Effect.forkChild(Effect.sleep(Duration.millis(wallMs)).pipe(Effect.andThen(Effect.sync(() => wall.abort()))))
+    const startedAt = yield* Clock.currentTimeMillis
+    return yield* waitTriageWithin(deps, request, wall.signal, startedAt + wallMs)
   })
 
 type Waited = { attempt: number; result: TriageResult; started?: boolean }
@@ -1026,7 +1022,7 @@ const waitTriageWithin = (
                 break
               }
 
-              const wallLeft = deadline - deps.now()
+              const wallLeft = deadline - (yield* Clock.currentTimeMillis)
               if (wallLeft <= 0) {
                 result = { _tag: 'TriageFailed', why: 'timeout' }
                 break
