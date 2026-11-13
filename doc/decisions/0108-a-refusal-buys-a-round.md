@@ -158,7 +158,7 @@ fixes the bounds and the endings that router works inside.
     guard once `until` has passed or by a person (0126 §7), and names which agent met the wall. The item is released
     (`failed`) and keeps its place; any commits are published first. **A run that
     started and met the account's limit locks the account the same way** — a crash
-    whose detail is the runtime's own account-limit sentence (`metTheAccountWall`:
+    whose detail is the runtime's own account-limit sentence (`accountWallOf`:
     Claude Code's *You've hit your … limit*, Codex's *You have hit your usage
     limit*) appends the same `AccountLimitReached`, with the same `until` and
     fallback — but the item is **not** released: it keeps its crash wait (§12),
@@ -183,8 +183,16 @@ fixes the bounds and the endings that router works inside.
     counted over the whole attempt, not over consecutive failures, and is in
     the ceiling (§8). With it spent, the next transient crash holds for a
     person as above. Which sentences count is a list in one function, matched
-    on the runtime's own words like `metTheAccountWall`, and a sentence not on
-    it is a crash. A step
+    on the runtime's own words like `accountWallOf`, and a sentence not on
+    it is a crash. The list's evidence is
+    [doc/design/platform-errors.md](../design/platform-errors.md), and it holds
+    two rules from there: the edge's refusal page is matched on its title,
+    never as *a 403*, because every 403 either API documents is repeatable; and
+    a 429 that names a spend or billing limit — Anthropic's
+    `enforced_spend_limit_reached` (sent with no `retry-after`), OpenAI's
+    billing `error.code`s — is not transient, since it fails until a person or
+    the month changes it. A runtime's sentence for an error is listed only once
+    a run has printed it. A step
     that stopped to ask a question is a different ending (`StepAsked`) and goes
     to the router.
 
@@ -235,9 +243,15 @@ fixes the bounds and the endings that router works inside.
     a conflict round. **Only when the head cannot be continued** — the branch
     is gone or no longer at the recorded sha — may the ticket start over from
     the base, and that is a restart: it is counted in `restarts`, and with none
-    left it holds for a person. A refusal the remote will repeat — a 4xx (a
-    protected branch, a missing permission) — holds for a person at once,
-    because retrying it buys nothing.
+    left it holds for a person. A refusal the remote will repeat — a 4xx, a
+    protected branch (`GH006`, `GH013`), push protection, a declined
+    pre-receive hook, a file or a push over GitHub's size limits — holds for a
+    person at once, because retrying it buys nothing
+    ([doc/design/platform-errors.md](../design/platform-errors.md) §2). git's
+    *the remote end hung up unexpectedly* is both a dropped connection and
+    GitHub's sign of a push over 2 GiB, so it is retried as transient, and the
+    hold that follows its spent retries names both causes rather than only
+    *origin could not be reached*.
 
 16. **A rule comes before a judge, and triage never acts.** What is only
     mechanical or only transient (§8, §12, §13, §15) is answered by a rule,
