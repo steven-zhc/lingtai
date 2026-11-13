@@ -16,9 +16,10 @@ import { Effect } from 'effect'
 import { expect, it } from 'vitest'
 
 import type { GitResult } from '../src/first-project.ts'
-import { type InitWorld, initCommand } from '../src/init.ts'
+import { initCommandEffect } from '../src/init.ts'
 import { acceptingDefaults } from '../src/question.ts'
 import { flagsFromArgv } from '../test/flags.ts'
+import { type PromiseInitWorld, liftInitWorld } from '../test/init-world.ts'
 import golden from './init-golden.fixture.json'
 
 const ENV = { VITEST: '1', HOME: '/nonexistent', LINGTAI_TEST_SQLITE_PATH: '/nonexistent/log.sqlite' }
@@ -42,7 +43,7 @@ async function run(): Promise<{ code: number; lines: string[] }> {
       return fn()
     },
   })
-  const world: InitWorld = {
+  const world: PromiseInitWorld = {
     env: ENV,
     machine: {
       read: (path) => machineFiles.get(path) ?? null,
@@ -91,7 +92,7 @@ async function run(): Promise<{ code: number; lines: string[] }> {
       blocks: 'doctor: 3 ok, 0 not checked here, 0 not implemented yet, 0 failed',
     }),
   }
-  const code = await initCommand(flagsFromArgv(['--local', '/repo']), world)
+  const code = await Effect.runPromise(initCommandEffect(flagsFromArgv(['--local', '/repo']), liftInitWorld(world)))
   return { code, lines: logged }
 }
 

@@ -14,11 +14,16 @@ import {
   type InitWorld,
   type RuntimeFound,
   configPath,
-  initCommand,
+  initCommandEffect,
   liveMachine,
   redact,
 } from '../src/init.ts'
 import { flagsFromArgv } from '../test/flags.ts'
+import { liftInitWorld } from '../test/init-world.ts'
+
+/** `initCommandEffect`, run to its exit code, the way every test here awaited `initCommand`. */
+const initCommand = (args: Parameters<typeof initCommandEffect>[0], w: InitWorld): Promise<number> =>
+  Effect.runPromise(initCommandEffect(args, w))
 
 /**
  * `lingtai init` (#186), against a world with no database, GitHub, runtime or
@@ -153,7 +158,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
   }
   return {
     seen,
-    world: {
+    world: liftInitWorld({
       env: { LINGTAI_HOME: home, ...script.env },
       // The real one, over `node:fs` (#435) — `config.yml` is a real file
       // here (this file's own header), and the test fixture must read and
@@ -271,7 +276,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         toFix: { count: 0, failed: false },
         blocks: script.doctor ?? 'doctor: 0 ok, 0 not checked here, 0 not implemented yet, 0 failed',
       }),
-    },
+    }),
   }
 }
 

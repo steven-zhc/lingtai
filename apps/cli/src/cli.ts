@@ -121,8 +121,8 @@ const doctor = Command.make(
 // loads the board's server module, which no other command needs.
 const init = Command.make('init', initOptions, (args) =>
   Effect.gen(function* () {
-    const { initCommand, liveInitWorld } = yield* lift(() => import('./init.ts'))
-    yield* exitWith(yield* lift(() => initCommand(flagsOf(args), liveInitWorld())))
+    const { initCommandEffect, liveInitWorld } = yield* lift(() => import('./init.ts'))
+    yield* exitWith(yield* initCommandEffect(flagsOf(args), liveInitWorld()))
   }).pipe(orWizardFailed()),
 ).pipe(Command.withDescription(definitionOf('init').task))
 

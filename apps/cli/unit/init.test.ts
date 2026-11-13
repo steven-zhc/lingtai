@@ -5,7 +5,13 @@ import { describe, expect, it } from 'vitest'
 import { parseDocument } from 'yaml'
 
 import type { GitResult } from '../src/first-project.ts'
-import { type AppCheck, type InitWorld, type RuntimeFound, initCommand, machineRuntimeRefusal } from '../src/init.ts'
+import {
+  type AppCheck,
+  type InitWorld,
+  type RuntimeFound,
+  initCommandEffect,
+  machineRuntimeRefusal,
+} from '../src/init.ts'
 /**
  * `machineRuntimeRefusal` (#398): a pure function of the machine's
  * `config.yml`, so the migration message for a file still naming a runtime
@@ -22,7 +28,13 @@ import { type AppCheck, type InitWorld, type RuntimeFound, initCommand, machineR
  */
 import { githubInitSteps, hereSteps, localInitSteps } from '../src/next-steps.ts'
 import { type NextStep, renderNextBlock, renderNextLine, stripColour } from '../src/output.ts'
+import { liftPort } from '../test/first-project-world.ts'
 import { flagsFromArgv } from '../test/flags.ts'
+import { type PromiseInitWorld, liftInitWorld, signalPort } from '../test/init-world.ts'
+
+/** `initCommandEffect`, run to its exit code, the way every test here awaited `initCommand`. */
+const initCommand = (args: Parameters<typeof initCommandEffect>[0], world: InitWorld): Promise<number> =>
+  Effect.runPromise(initCommandEffect(args, world))
 
 const PATH = '/home/me/.lingtai/config.yml'
 
@@ -105,7 +117,7 @@ function harness(
   const writes = { count: 0 }
   const calls = { boardAt: 0, board: 0 }
   const answers = [...(options.answers ?? [])]
-  const world: InitWorld = {
+  const world: PromiseInitWorld = {
     env: ENV,
     machine: {
       read: (path) => machineFiles.get(path) ?? null,
@@ -174,7 +186,7 @@ function harness(
     },
   }
   return {
-    world,
+    world: liftInitWorld(world),
     logged,
     asked,
     files,
@@ -357,7 +369,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
 
   it('re-running init on a machine with a project ends the same way, once', async () => {
     const { world, logged } = harness({ gitPlan: GIT_PLAN, answers: [''] })
-    world.projects = async () => [{ name: 'repo' }] as never
+    world.projects = liftPort(async () => [{ name: 'repo' }] as never)
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
     expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
     // The directory is not a git repository here (no git plan for it): `lingtai add` asks which.
@@ -416,7 +428,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     const { world, logged } = harness({
       app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
     })
-    world.projects = async () => [{ name: 'repo' }] as never
+    world.projects = liftPort(async () => [{ name: 'repo' }] as never)
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
     const text = logged.join('\n')
     expect(text).toMatch(/github\s+the App lingtai-me/)
@@ -456,9 +468,10 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
 
   it('the App skipped closes on lingtai add, last and once', async () => {
     const { world, logged } = harness()
-    world.pressed = async () => {}
-    world.appeared = (signal) =>
-      new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))))
+    world.pressed = signalPort(async () => {})
+    world.appeared = signalPort(
+      (signal) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))),
+    )
     world.ask = async (question) =>
       /a GitHub project/.test(question)
         ? 'github'
@@ -482,7 +495,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
 
   it('a re-run with a configured App and projects closes on the directory block', async () => {
     const { world, logged } = harness({ app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never })
-    world.projects = async () => [{ name: 'repo' }] as never
+    world.projects = liftPort(async () => [{ name: 'repo' }] as never)
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
     expectClosesOn(logged, hereSteps({ kind: 'outside' }).steps)
   })
@@ -564,10 +577,10 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
       ghStatus: { ok: true, login: 'steven', scopes: ['repo', 'workflow'] },
     })
     let opened = 0
-    world.open = async () => {
+    world.open = liftPort(async () => {
       opened++
       return true
-    }
+    })
     world.ask = async (question) =>
       /a GitHub project/.test(question) ? 'github' : /signed in as steven/.test(question) ? '' : null
 
@@ -615,7 +628,7 @@ describe('init on a machine that already has projects names the directory it was
   const run = async (cwd: string, plan: Record<string, GitResult>, files: Record<string, string> = {}) => {
     const { world, logged, files: store } = harness({ gitPlan: plan, cwd })
     for (const [k, v] of Object.entries(files)) store.set(k, v)
-    world.projects = async () => [{ project: 'widgets', owner: 'acme' }] as never
+    world.projects = liftPort(async () => [{ project: 'widgets', owner: 'acme' }] as never)
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
     return logged
   }
@@ -670,7 +683,7 @@ describe('init on a machine that already has projects names the directory it was
       doctor: async () => ({ text: '1 failed', failed: true }),
       doctorNext: 'lingtai init',
     })
-    world.projects = async () => [{ project: 'widgets', owner: 'acme' }] as never
+    world.projects = liftPort(async () => [{ project: 'widgets', owner: 'acme' }] as never)
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
     expectClosesOnLine(logged, 'lingtai init')
     expect(lines(logged).join('\n')).not.toContain('is not a project here')

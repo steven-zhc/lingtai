@@ -105,13 +105,13 @@
  * `InitWorld`, so a test drives every other step and every interruption with
  * no database, network or browser.
  */
-import { spawn, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
-import { addLocal } from '@lingtai/conductor/onboard'
-import { loadAllProjects, signedInHere } from '@lingtai/conductor/projects'
-import { liveHistory } from '@lingtai/conductor/ticket-history'
+import { addLocalEffect } from '@lingtai/conductor/onboard'
+import { loadAllProjectsEffect, signedInHere } from '@lingtai/conductor/projects'
+import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { type ProjectState } from '@lingtai/domain'
 import {
   SQLITE_MACHINE,
@@ -132,12 +132,12 @@ import {
 import { paint } from '@lingtai/env/colour'
 import type { Locker } from '@lingtai/env/lock'
 import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
-import { type SchemaOutcome, createSchema } from '@lingtai/event-store/schema'
-import { ghStatus, liveGh, type GhRun, type GhStatus } from '@lingtai/github'
+import { type Queryable, type SchemaOutcome, createSchemaEffect } from '@lingtai/event-store/schema'
+import { ghStatusEffect, liveGh, type GhRun, type GhStatus } from '@lingtai/github'
 import {
   diskFiles,
   kindsOf,
-  readRecipeKey,
+  readRecipeKeyEffect,
   recipePath,
   resolveSource,
   ticketSourceOf,
@@ -145,20 +145,22 @@ import {
   type SignedIn,
 } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
-import { askRuntimes, runtimeStateSentence, type RuntimeFound } from '@lingtai/setup'
+import { askRuntimesEffect, runtimeStateSentence, type RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { Document, isMap, parseDocument } from 'yaml'
 
-import { checkApp, pollForApp, type AppCheck } from './app-check.ts'
-import { boardAt, boardLock, builtBoardDir, serveBoard } from './board.ts'
+import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
+import { boardAtEffect, boardLock, builtBoardDir, serveBoardEffect } from './board.ts'
+import { lift, recovering } from './exit.ts'
 import {
-  chooseFirstProject,
+  chooseFirstProjectEffect,
   type FirstProjectWorld,
   type GitResult,
-  liveGit,
+  liveGitEffect,
+  liveOpen,
   liveSetupReader,
   type RegisterLocalPayload,
-  pathExists,
+  pathExistsEffect,
 } from './first-project.ts'
 import { APP_WAIT_MS, waitForAppEffect } from './github-app.ts'
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
@@ -166,8 +168,8 @@ import { type RawStdin, waitForKeypress } from './keypress.ts'
 import { githubInitSteps, type Here, hereSteps, localInitSteps } from './next-steps.ts'
 import { heading, keyValues, renderNextBlock, renderNextLine, section, symbol } from './output.ts'
 import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
-import { question, spun, type QuestionWorld } from './question.ts'
-import { DOCTOR_VERBOSE, liveSetupDoctor, printSetupEnd, type SetupDoctor } from './setup-end.ts'
+import { questionEffect, spunEffect, type QuestionWorld } from './question.ts'
+import { DOCTOR_VERBOSE, liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './setup-end.ts'
 import type { WizardFlags } from './wizard-options.ts'
 
 // -------------------------------------------------------------- the world --
@@ -205,60 +207,60 @@ export interface InitWorld {
   /** `QuestionWorld.spin` — a slow step under a label; absent means just run it. */
   spin?: QuestionWorld['spin']
   /** `git --version`, or null when there is no git. */
-  git: () => Promise<string | null>
+  git: () => Effect.Effect<string | null, unknown>
   /** Every runtime, asked whether it is installed and signed in. */
-  runtimes: () => Promise<RuntimeFound[]>
+  runtimes: () => Effect.Effect<readonly RuntimeFound[], unknown>
   /** `FirstProjectWorld.setupReader` (#431) — a real directory, over `node:fs`. */
   setupReader: (dir: string) => SetupReader
   /** `FirstProjectWorld.exists` — over `node:fs`. */
-  exists: (path: string) => Promise<boolean>
+  exists: (path: string) => Effect.Effect<boolean, unknown>
   /** Connect, and create the tables where there are none. */
-  database: (url: string) => Promise<DatabaseCheck>
+  database: (url: string) => Effect.Effect<DatabaseCheck, unknown>
   /** The App this machine is configured with, asked with a real call. */
-  app: () => Promise<AppCheck>
+  app: () => Effect.Effect<AppCheck, unknown>
   /** `gh auth status` (#706) — asked only when the GitHub-auth question is, or `--github-auth gh` is given. */
-  ghStatus: () => Promise<GhStatus>
+  ghStatus: () => Effect.Effect<GhStatus, unknown>
   /** `gh` with the terminal handed over (#712) — absent where there is no terminal, so the sign-in option is not offered. */
   gh?: GhRun
   /**
-   * Resolves once an App is configured and answers — written by the board's
-   * first screen. Stops polling once `signal` aborts; the loser of a race.
+   * Succeeds once an App is configured and answers — written by the board's
+   * first screen. Stops polling once interrupted; the loser of a race.
    */
-  appeared: (signal: AbortSignal) => Promise<{ slug: string; owner: string }>
-  /** Resolves on any keypress at a TTY — the skip. Never, at no TTY, until `signal` aborts. */
-  pressed: (signal: AbortSignal) => Promise<void>
+  appeared: () => Effect.Effect<{ slug: string; owner: string }, unknown>
+  /** Succeeds on any keypress at a TTY — the skip. Never, at no TTY, until interrupted. */
+  pressed: () => Effect.Effect<void, unknown>
   /**
    * A Lingtai board already answering on this port — the machine's own, from
    * `lingtai board` or the service — as its URL, or null. Asked before one is
    * started, since a second on the same port is refused.
    */
-  boardAt: (port: number) => Promise<string | null>
+  boardAt: (port: number) => Effect.Effect<string | null, unknown>
   /** Serve the board; the process stays up for it. */
-  board: (port: number) => Promise<{ url: string } | { refused: string }>
+  board: (port: number) => Effect.Effect<{ url: string } | { refused: string }, unknown>
   /** Open a browser. False when none could be. */
-  open: (url: string) => Promise<boolean>
+  open: (url: string) => Effect.Effect<boolean, unknown>
   /**
    * `FirstProjectWorld.git` (#394) — named distinctly from `git` above, which
    * answers `git --version` rather than running a command in a directory.
    */
-  runGit: (dir: string, args: readonly string[]) => Promise<GitResult>
+  runGit: (dir: string, args: readonly string[]) => Effect.Effect<GitResult, unknown>
   /** `loadAllProjects` — registered and pending alike, keyed by name (#394). */
-  projects: () => Promise<readonly ProjectState[]>
+  projects: () => Effect.Effect<readonly ProjectState[], unknown>
   /** The lock an add is made under; the machine's file lock unless a test hands one in. */
   locker?: Locker
   files: RecipeFiles
   signedIn: SignedIn
   /** `FirstProjectWorld.register` for the local branch — appends `ProjectConfigured`. */
-  registerLocal: (payload: RegisterLocalPayload) => Promise<{ line: string; updated: boolean }>
+  registerLocal: (payload: RegisterLocalPayload) => Effect.Effect<{ line: string; updated: boolean }, unknown>
   /** `FirstProjectWorld.history` (#396) — `ticket-<project>-*` streams already in the log for this project. */
-  history: (project: string) => Promise<readonly string[]>
+  history: (project: string) => Effect.Effect<readonly string[], unknown>
   /**
    * The report `lingtai doctor` would print, formatted — printed at the end
    * and never allowed to set the exit code (#434). The live one imports
    * `./doctor.ts` dynamically; this file's header warns why an eager one would
    * break a fresh machine.
    */
-  doctor: () => Promise<SetupDoctor>
+  doctor: () => Effect.Effect<SetupDoctor, unknown>
   /** The directory `init` was run in (live: `process.cwd()`) — asked about when this machine already has projects (#756). */
   cwd: string
 }
@@ -280,12 +282,6 @@ export function configPath(env: NodeJS.ProcessEnv): string {
 }
 
 /** The machine file as a document, so a write keeps every comment and key it did not choose. */
-/** A promise port as an Effect port: runs nothing, and keeps the rejection as its own failure (never `Effect.promise`, which makes it a defect). */
-const lifted =
-  <Args extends readonly unknown[], A>(f: (...args: Args) => PromiseLike<A>) =>
-  (...args: Args): Effect.Effect<A, unknown> =>
-    Effect.tryPromise({ try: () => f(...args), catch: (e) => e })
-
 function readConfig(path: string, read: InitWorld['machine']['read']): Document | { refused: string } {
   const text = read(path)
   if (text === null) return new Document({})
@@ -333,467 +329,478 @@ function heldFact(held: string[], title: string, pairs: readonly (readonly [stri
   held.push(section(title, [...keyValues(pairs), ...(note === undefined ? [] : [note])]))
 }
 
-export async function initCommand(args: WizardFlags, world: InitWorld): Promise<number> {
-  const { flags, repeated } = args
-  // The heading, `Machine` and `Store` are printed only by a run that does not end on the card (#773).
-  const held: string[] = []
-  const flush = (): void => {
-    for (const line of held.splice(0)) world.log(line)
-  }
-  const stop = (line: string, code = 1): number => {
-    flush()
-    return refuse(world, line, code)
-  }
-  const buildFlags = repeated['build'] ?? []
-  const asked = flags['port'] === undefined ? null : Number(flags['port'])
-  if (asked !== null && (!Number.isInteger(asked) || asked <= 0))
-    return stop(`${USAGE} — --port takes a port number`, 2)
-  const named = flags['store'] ?? null
-  if (named !== null && named !== 'sqlite' && named !== 'postgres')
-    return stop(`${USAGE} — --store takes sqlite or postgres`, 2)
-  // Two stores named in one command: neither is guessed at, and nothing is written (#345).
-  if (named === 'sqlite' && flags['database-url'] !== undefined) {
-    return stop(`${USAGE} — --store sqlite and --database-url name two different stores. Nothing was written`, 2)
-  }
-
-  const home = stateDir(world.env)
-  const path = configPath(world.env)
-
-  // ---- look -----------------------------------------------------------------
-  held.push(heading('init'))
-  const git = await world.git()
-  const runtimes = await spun(world, 'looking for runtimes', () => world.runtimes())
-  heldFact(held, 'Machine', [
-    ['git', git ? git : paint.fail('not on PATH')],
-    ...runtimes.map((r) => {
-      const state = r.signedIn ? r.detail : runtimeStateSentence(r.id, r.state, r.detail).slice(r.id.length + 1)
-      return [r.id, state] as const
-    }),
-    ['home', `${home} — ${world.machine.describeHome(home, path)}`],
-  ])
-  if (!git) {
-    return stop(
-      'git is not on PATH — the mirror and the worktrees are git. Install it and run lingtai init again; nothing was written',
-    )
-  }
-
-  let hadConfig = false
-  const config = readConfig(path, (p) => {
-    const text = world.machine.read(p)
-    hadConfig = text !== null
-    return text
-  })
-  if ('refused' in config) return stop(config.refused)
-
-  // ---- the store ------------------------------------------------------------
-  const store = await chooseStore(world, config, path, flags['database-url'] ?? null, named, held, flush, stop)
-  if (store !== null) return store
-  const storeNow = storeChoice(world.env, machineFor(world, path))
-  const homeIsNew = !hadConfig && world.machine.read(path) !== null
-  const storeKept = initKept({
-    choice: storeNow,
-    configPath: path,
-    startedWithConfig: hadConfig,
-    wrote: homeIsNew,
-  })
-
-  // ---- the agent --------------------------------------------------------
-  // Which runtime runs is each project's question now (`#372`, `#398`),
-  // asked by `lingtai add`'s `agents.ts` — never here. This still refuses a
-  // `config.yml` naming one: that is a migration message for a file written
-  // before `#372`, not a question `init` is asking.
-  const agentRefusal = machineRuntimeRefusal(config, path)
-  if (agentRefusal !== null) return stop(agentRefusal)
-
-  // ---- the App --------------------------------------------------------------
-  // How this machine reaches GitHub, read off the file this world was handed
-  // and the environment, not off the disk. A refused `github.auth` stops here,
-  // by name, before anything is asked (0114 §1).
-  const authElection = githubAuthElectionFrom(world.env, machineFor(world, path))
-  if ('refused' in authElection) return stop(`${authElection.refused}. Fix it and run lingtai init again`)
-  const ghMachine = authElection.kind === 'gh'
-
-  // A `gh` machine's App, if it carries one, is never consulted (0114 §1).
-  const app: AppCheck = ghMachine ? { configured: false } : await world.app()
-  if (app.configured && !app.ok) {
-    return stop(
-      `the GitHub App configured here does not answer — ${app.why}. A second App is not created beside it: ` +
-        'fix its credentials, or remove them, and run lingtai init again',
-    )
-  }
-  // ---- which project ---------------------------------------------------------
-  // Registering a project *is* the record of the answer (#394) — nothing
-  // machine-wide holds "local" or "github". A machine that already has
-  // projects is told what it has and how to add another, rather than asked
-  // the question again; an explicit --project or --local names what to do
-  // next and reopens the question on one. (`--github` is `lingtai add`'s own
-  // flag, not `init`'s — `parseArgs` above refuses it, so a GitHub project
-  // here is always named through `--project github` instead; checking for it
-  // below was dead, since it could never be set.)
-  const explicitChoice = flags['project'] !== undefined || flags['local'] !== undefined
-  // Whether the project question is asked at all this run — false when the
-  // machine already has projects and nothing named which to add, so the
-  // question is not asked again (below), only answered by what is printed
-  // here (#394's finding 3: this must not itself end the run — the board
-  // still has to start, and the port flag still has to be obeyed).
-  let askProject = true
-  // Where `init` was run, when the machine already has projects: what the closing block is built from (#756).
-  let here: Here | null = null
-  if (!explicitChoice) {
-    const registered = await world.projects()
-    if (registered.length > 0) {
-      const listed: string[] = []
-      for (const p of registered) {
-        if (p.owner !== null) {
-          listed.push(`${p.owner}/${p.project} — github`)
-          continue
-        }
-        // `owner: null` is a local project, and also a GitHub one registered
-        // before `ProjectConfigured` carried an owner (#352's `unrecorded`):
-        // only the remote a local registration writes tells the two apart.
-        const remote =
-          p.project === null ? null : await readRecipeKey(p.project, ['repo', 'remote'], { home, files: world.files })
-        listed.push(
-          typeof remote === 'string'
-            ? `${p.project} — local, ${remote}`
-            : `${p.project} — owner not recorded; lingtai add <owner>/${p.project} records it`,
-        )
-      }
-      here = await whereAmI(world, registered, home)
+export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.Effect<number, unknown> {
+  return Effect.gen(function* () {
+    const { flags, repeated } = args
+    // The heading, `Machine` and `Store` are printed only by a run that does not end on the card (#773).
+    const held: string[] = []
+    const flush = (): void => {
+      for (const line of held.splice(0)) world.log(line)
+    }
+    const stop = (line: string, code = 1): number => {
       flush()
-      world.log(
-        section('Projects', [
-          ...listed,
-          paint.muted(
-            'lingtai add asks GitHub-or-directory for another project; lingtai init --project github sets up ' +
-              'the GitHub App on a machine that has only local projects',
-          ),
-        ]),
+      return refuse(world, line, code)
+    }
+    const buildFlags = repeated['build'] ?? []
+    const asked = flags['port'] === undefined ? null : Number(flags['port'])
+    if (asked !== null && (!Number.isInteger(asked) || asked <= 0))
+      return stop(`${USAGE} — --port takes a port number`, 2)
+    const named = flags['store'] ?? null
+    if (named !== null && named !== 'sqlite' && named !== 'postgres')
+      return stop(`${USAGE} — --store takes sqlite or postgres`, 2)
+    // Two stores named in one command: neither is guessed at, and nothing is written (#345).
+    if (named === 'sqlite' && flags['database-url'] !== undefined) {
+      return stop(`${USAGE} — --store sqlite and --database-url name two different stores. Nothing was written`, 2)
+    }
+
+    const home = stateDir(world.env)
+    const path = configPath(world.env)
+
+    // ---- look -----------------------------------------------------------------
+    held.push(heading('init'))
+    const git = yield* world.git()
+    const runtimes = yield* spunEffect(world, 'looking for runtimes', world.runtimes())
+    heldFact(held, 'Machine', [
+      ['git', git ? git : paint.fail('not on PATH')],
+      ...runtimes.map((r) => {
+        const state = r.signedIn ? r.detail : runtimeStateSentence(r.id, r.state, r.detail).slice(r.id.length + 1)
+        return [r.id, state] as const
+      }),
+      ['home', `${home} — ${world.machine.describeHome(home, path)}`],
+    ])
+    if (!git) {
+      return stop(
+        'git is not on PATH — the mirror and the worktrees are git. Install it and run lingtai init again; nothing was written',
       )
-      // Nothing below here reaches `chooseFirstProject`, so nothing reads any
-      // of these flags — refused by name instead of silently discarded, the
-      // same reason `runGithubBranch`'s own guard exists (#396 fix round,
-      // finding 3; #431 fix round, finding 1 — the ten `askRecipe` flags got
-      // no equivalent guard here, and this path never reaches
-      // `runGithubBranch`'s own).
-      const discardedFlag = [
-        'tickets',
-        'kinds',
-        'agent',
-        'model',
-        'reviewer',
-        'reviewer-model',
-        'install',
-        'build',
-        'check-build',
-        'land',
-        'rounds',
-        'wall',
-        'budget',
-        'github-auth',
-      ].find((name) => flags[name] !== undefined)
-      if (discardedFlag !== undefined) {
-        return stop(
-          `--${discardedFlag} ${flags[discardedFlag]}, but this machine already has a project and none is named ` +
-            'to set up here — pass --project github, --project local, or --local <dir>, or use lingtai add for ' +
-            'one that already exists. The store chosen above is kept',
-        )
-      }
-      askProject = false
-    }
-  }
-
-  // ---- the board, started lazily --------------------------------------------
-  // The port is decided here and not at the top: `board.port` is read out of
-  // the same file `readConfig` above refuses by name, and a file that does not
-  // parse should say so once, in its own words, rather than through the port.
-  //
-  // **Started only once the wizard asks for a URL** (#434): a board started
-  // unconditionally here, as it used to be, keeps a process with no terminal
-  // behind it (`install.sh`) alive forever once it serves one. `startBoard`
-  // is memoised, so `boardUrl()` below calls it at most once per run, and a
-  // local project never calls it at all.
-  const port = asked ?? boardPort(world.env, machineFor(world, path))
-  type BoardStart = { url: string; started: boolean } | { refused: string }
-  // A settled value, not a cached promise: every call here is already
-  // awaited before the next one starts, so there is no race to memoise
-  // against — only the repeat call `startBoard` exists to avoid.
-  let boardResult: BoardStart | null = null
-  const startBoard = async (): Promise<BoardStart> => {
-    if (boardResult !== null) return boardResult
-    // A board already up is this machine's, and the wizard is on it: a
-    // re-run uses it rather than failing on its port.
-    const running = await world.boardAt(port)
-    if (running !== null) {
-      boardResult = { url: running, started: false }
-      return boardResult
-    }
-    const started = await world.board(port)
-    boardResult = 'refused' in started ? { refused: started.refused } : { url: started.url, started: true }
-    return boardResult
-  }
-  // A function, not a bare read of `boardResult`: TypeScript does not narrow
-  // a `let` this far from its declaration once a nested closure (`startBoard`
-  // above) assigns to it, and reports every later `boardResult !== null`
-  // check against `null` alone rather than `BoardStart`. Going through a
-  // function with its own return type annotation sidesteps that.
-  const boardSoFar = (): BoardStart | null => boardResult
-  const boardRefused = (why: string): number =>
-    stop(
-      `the board did not start — ${why}. Everything chosen above is kept, and lingtai init again continues from here`,
-    )
-
-  // *this machine* alone, for a GitHub run that has no repository yet: no project group, and a ready
-  // line without a recipe. `how` is the one row about GitHub.
-  const machineCard = async (how: string): Promise<string | undefined> => {
-    held.length = 0
-    const end = await printSetupEnd(
-      world,
-      {
-        command: 'init',
-        updated: false,
-        home,
-        homeIsNew,
-        userHome: world.env['HOME'] ?? '',
-        store: storeNow,
-        runtimes,
-        github: how,
-      },
-      [],
-    )
-    return end.fix
-  }
-  const reachRow = async (viaGh: boolean): Promise<string> => {
-    if (viaGh) {
-      const status = await world.ghStatus()
-      return status.ok
-        ? status.login === ''
-          ? 'gh, signed in'
-          : `gh, signed in as ${status.login}`
-        : 'gh, not signed in'
-    }
-    return app.configured && app.ok ? `the App ${app.slug}` : 'no App yet'
-  }
-
-  let github = false
-  // What a failed doctor closes on; undefined when it did not fail.
-  let fix: string | undefined
-  // A local run's doctor report is part of the card; every other path prints it whole, below.
-  let cardDrawn = false
-  // The board's `/setup/repository` page, when the App was just made here.
-  let githubSetupUrl: string | undefined
-  if (askProject) {
-    // Built from `world` directly rather than through a live default (#394's
-    // finding 6): every seam `chooseFirstProject` reaches for — `git`, the
-    // log, the recipe files, the App — is the one this test or process was
-    // handed, never `checkApp`, `loadAllProjects`, a bare `stateDir()` or
-    // `diskFiles` reached for underneath it.
-    const firstProjectWorld: FirstProjectWorld = {
-      ask: world.ask,
-      log: world.log,
-      git: lifted(world.runGit),
-      projects: lifted(world.projects),
-      locker: world.locker,
-      files: world.files,
-      home,
-      signedIn: world.signedIn,
-      // Already probed above, for the "look" lines — a second probe for the
-      // same run would ask every runtime whether it is signed in twice.
-      runtimes: () => Effect.succeed(runtimes),
-      setupReader: world.setupReader,
-      exists: lifted(world.exists),
-      register: lifted(world.registerLocal),
-      history: lifted(world.history),
-      // The store above is already written by the time this runs — the same
-      // reason `askFirstProject` carries this sentence (#394 finding 2).
-      kept: storeKept.kept,
-      ...(storeKept.startOver === undefined ? {} : { startOver: storeKept.startOver }),
-      command: 'lingtai init',
-      // `init`'s only (first-project.ts): a configured App already answers
-      // *is the project*, and `--project`/`--github-app` naming anything else
-      // is refused rather than asked past.
-      githubAppIsTheProject: true,
-      github: {
-        // The same election `githubAuthKind` makes, over the file this world
-        // was handed — a refusal of it already stopped the run above.
-        auth: () => {
-          const elected = githubAuthElectionFrom(world.env, machineFor(world, path))
-          if ('refused' in elected) throw new Error(elected.refused)
-          return elected.kind
-        },
-        ghStatus: lifted(world.ghStatus),
-        ...(world.gh === undefined ? {} : { gh: world.gh }),
-        writeAuth: (kind) => Effect.try({ try: () => writeGithubAuth(world.machine, path, kind), catch: (e) => e }),
-        // Already fetched above, for the "the App" line — a second real call
-        // (`GET /app`) for the same run would answer the same question twice.
-        app: () => Effect.succeed(app),
-        // The trap: a refused start answers null here, same as no board
-        // running at all — `runGithubBranch` turns that into its own
-        // sentence, written for `lingtai add`, absurd inside `init`. The
-        // check below, after `chooseFirstProject` returns, replaces it with
-        // the board's own refusal whenever this was the reason.
-        boardUrl: lifted(async () => {
-          const started = await startBoard()
-          return 'url' in started ? started.url : null
-        }),
-        waitForApp: (boardUrl) =>
-          waitForAppEffect(
-            { log: world.log, open: world.open, appeared: world.appeared, pressed: world.pressed },
-            boardUrl,
-            { waitMs: APP_WAIT_MS },
-          ),
-        // `init` never gives `chooseFirstProject` a slug — `--github` is
-        // `lingtai add`'s own flag, refused by `parseArgs` above, so
-        // `runGithubBranch`'s `givenSlug` is always null here and returns
-        // before either of these runs (#394's dead-seam finding: `InitWorld`
-        // used to carry a `picker` and an `addGithub` that nothing called).
-        picker: () => {
-          throw new Error('unreachable: lingtai init never gives chooseFirstProject a slug')
-        },
-        add: () => {
-          throw new Error('unreachable: lingtai init never gives chooseFirstProject a slug')
-        },
-      },
-    }
-    const chosen = await chooseFirstProject(firstProjectWorld, flags, buildFlags)
-    if ('refused' in chosen) {
-      // `boardUrl()` above is the only caller of `startBoard` on this path —
-      // if it was ever asked for, a refusal it hit is the real reason, over
-      // the GitHub-add sentence `chosen.refused` carries for a null URL.
-      const soFar = boardSoFar()
-      if (soFar !== null && 'refused' in soFar) return boardRefused(soFar.refused)
-      return stop(chosen.refused)
     }
 
-    if (chosen.project === 'local') {
-      const recipeFile = recipePath(chosen.name, home)
-      // Read back like `summariseRecipe` does: a recipe that cannot be read draws no card.
-      if ((await world.files.read(recipeFile)) === null) {
-        return stop(`the recipe could not be read back from ${recipeFile}`)
-      }
-      held.length = 0
-      const end = await printSetupEnd(
-        world,
-        {
-          command: 'init',
-          project: chosen.name,
-          updated: chosen.updated,
-          home,
-          homeIsNew,
-          userHome: world.env['HOME'] ?? '',
-          store: storeNow,
-          runtimes,
-          recipe: chosen.card,
-          trial: chosen.trial,
-          recipePath: recipeFile,
-        },
-        chosen.hints,
+    let hadConfig = false
+    const config = readConfig(path, (p) => {
+      const text = world.machine.read(p)
+      hadConfig = text !== null
+      return text
+    })
+    if ('refused' in config) return stop(config.refused)
+
+    // ---- the store ------------------------------------------------------------
+    const store = yield* chooseStore(world, config, path, flags['database-url'] ?? null, named, held, flush, stop)
+    if (store !== null) return store
+    const storeNow = storeChoice(world.env, machineFor(world, path))
+    const homeIsNew = !hadConfig && world.machine.read(path) !== null
+    const storeKept = initKept({
+      choice: storeNow,
+      configPath: path,
+      startedWithConfig: hadConfig,
+      wrote: homeIsNew,
+    })
+
+    // ---- the agent --------------------------------------------------------
+    // Which runtime runs is each project's question now (`#372`, `#398`),
+    // asked by `lingtai add`'s `agents.ts` — never here. This still refuses a
+    // `config.yml` naming one: that is a migration message for a file written
+    // before `#372`, not a question `init` is asking.
+    const agentRefusal = machineRuntimeRefusal(config, path)
+    if (agentRefusal !== null) return stop(agentRefusal)
+
+    // ---- the App --------------------------------------------------------------
+    // How this machine reaches GitHub, read off the file this world was handed
+    // and the environment, not off the disk. A refused `github.auth` stops here,
+    // by name, before anything is asked (0114 §1).
+    const authElection = githubAuthElectionFrom(world.env, machineFor(world, path))
+    if ('refused' in authElection) return stop(`${authElection.refused}. Fix it and run lingtai init again`)
+    const ghMachine = authElection.kind === 'gh'
+
+    // A `gh` machine's App, if it carries one, is never consulted (0114 §1).
+    const app: AppCheck = ghMachine ? { configured: false } : yield* world.app()
+    if (app.configured && !app.ok) {
+      return stop(
+        `the GitHub App configured here does not answer — ${app.why}. A second App is not created beside it: ` +
+          'fix its credentials, or remove them, and run lingtai init again',
       )
-      fix = end.fix
-      cardDrawn = true
-    } else {
-      github = true
-      let how = await reachRow(chosen.auth === 'gh')
-      if (chosen.auth === 'gh') {
-        // No App to start a board for: the saved `gh` login is the whole of
-        // the auth, and a repository is named to `lingtai add`, not picked.
-      } else if (chosen.app === 'already') {
-        // Nothing upstream asked for a URL on this path — `app.configured` was
-        // already true, so `boardUrl()` above was never called.
-        const started = await startBoard()
-        if ('refused' in started) return boardRefused(started.refused)
-        const wizard = `${started.url}/setup/repository`
+    }
+    // ---- which project ---------------------------------------------------------
+    // Registering a project *is* the record of the answer (#394) — nothing
+    // machine-wide holds "local" or "github". A machine that already has
+    // projects is told what it has and how to add another, rather than asked
+    // the question again; an explicit --project or --local names what to do
+    // next and reopens the question on one. (`--github` is `lingtai add`'s own
+    // flag, not `init`'s — `parseArgs` above refuses it, so a GitHub project
+    // here is always named through `--project github` instead; checking for it
+    // below was dead, since it could never be set.)
+    const explicitChoice = flags['project'] !== undefined || flags['local'] !== undefined
+    // Whether the project question is asked at all this run — false when the
+    // machine already has projects and nothing named which to add, so the
+    // question is not asked again (below), only answered by what is printed
+    // here (#394's finding 3: this must not itself end the run — the board
+    // still has to start, and the port flag still has to be obeyed).
+    let askProject = true
+    // Where `init` was run, when the machine already has projects: what the closing block is built from (#756).
+    let here: Here | null = null
+    if (!explicitChoice) {
+      const registered = yield* world.projects()
+      if (registered.length > 0) {
+        const listed: string[] = []
+        for (const p of registered) {
+          if (p.owner !== null) {
+            listed.push(`${p.owner}/${p.project} — github`)
+            continue
+          }
+          // `owner: null` is a local project, and also a GitHub one registered
+          // before `ProjectConfigured` carried an owner (#352's `unrecorded`):
+          // only the remote a local registration writes tells the two apart.
+          const remote =
+            p.project === null
+              ? null
+              : yield* readRecipeKeyEffect(p.project, ['repo', 'remote'], { home, files: world.files })
+          listed.push(
+            typeof remote === 'string'
+              ? `${p.project} — local, ${remote}`
+              : `${p.project} — owner not recorded; lingtai add <owner>/${p.project} records it`,
+          )
+        }
+        here = yield* whereAmI(world, registered, home)
+        flush()
         world.log(
-          (await world.open(wizard))
-            ? paint.pass(`opened ${wizard}`)
-            : `no browser could be opened here — open ${wizard}`,
+          section('Projects', [
+            ...listed,
+            paint.muted(
+              'lingtai add asks GitHub-or-directory for another project; lingtai init --project github sets up ' +
+                'the GitHub App on a machine that has only local projects',
+            ),
+          ]),
         )
-      } else if ('made' in chosen.app) {
-        // Already started, successfully, to hand `waitForApp` its URL above —
-        // this reads the same memo rather than starting a second one.
-        const started = await startBoard()
-        const url = 'url' in started ? started.url : ''
-        githubSetupUrl = `${url}/setup/repository`
-        how = `the App ${chosen.app.made.slug}`
+        // Nothing below here reaches `chooseFirstProject`, so nothing reads any
+        // of these flags — refused by name instead of silently discarded, the
+        // same reason `runGithubBranch`'s own guard exists (#396 fix round,
+        // finding 3; #431 fix round, finding 1 — the ten `askRecipe` flags got
+        // no equivalent guard here, and this path never reaches
+        // `runGithubBranch`'s own).
+        const discardedFlag = [
+          'tickets',
+          'kinds',
+          'agent',
+          'model',
+          'reviewer',
+          'reviewer-model',
+          'install',
+          'build',
+          'check-build',
+          'land',
+          'rounds',
+          'wall',
+          'budget',
+          'github-auth',
+        ].find((name) => flags[name] !== undefined)
+        if (discardedFlag !== undefined) {
+          return stop(
+            `--${discardedFlag} ${flags[discardedFlag]}, but this machine already has a project and none is named ` +
+              'to set up here — pass --project github, --project local, or --local <dir>, or use lingtai add for ' +
+              'one that already exists. The store chosen above is kept',
+          )
+        }
+        askProject = false
       }
-      // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s
-      // own call to `waitForApp` (`appComeBackLine`).
-      //
-      // `init`'s GitHub branch never has a slug, so there is no recipe file
-      // to name here — it exists once a repository is picked.
-      fix = await machineCard(how)
+    }
+
+    // ---- the board, started lazily --------------------------------------------
+    // The port is decided here and not at the top: `board.port` is read out of
+    // the same file `readConfig` above refuses by name, and a file that does not
+    // parse should say so once, in its own words, rather than through the port.
+    //
+    // **Started only once the wizard asks for a URL** (#434): a board started
+    // unconditionally here, as it used to be, keeps a process with no terminal
+    // behind it (`install.sh`) alive forever once it serves one. `startBoard`
+    // is memoised, so `boardUrl()` below calls it at most once per run, and a
+    // local project never calls it at all.
+    const port = asked ?? boardPort(world.env, machineFor(world, path))
+    type BoardStart = { url: string; started: boolean } | { refused: string }
+    // A settled value, not a cached promise: every call here is already
+    // awaited before the next one starts, so there is no race to memoise
+    // against — only the repeat call `startBoard` exists to avoid.
+    let boardResult: BoardStart | null = null
+    const startBoard = (): Effect.Effect<BoardStart, unknown> =>
+      Effect.gen(function* () {
+        if (boardResult !== null) return boardResult
+        // A board already up is this machine's, and the wizard is on it: a
+        // re-run uses it rather than failing on its port.
+        const running = yield* world.boardAt(port)
+        if (running !== null) {
+          boardResult = { url: running, started: false }
+          return boardResult
+        }
+        const started = yield* world.board(port)
+        boardResult = 'refused' in started ? { refused: started.refused } : { url: started.url, started: true }
+        return boardResult
+      })
+    // A function, not a bare read of `boardResult`: TypeScript does not narrow
+    // a `let` this far from its declaration once a nested closure (`startBoard`
+    // above) assigns to it, and reports every later `boardResult !== null`
+    // check against `null` alone rather than `BoardStart`. Going through a
+    // function with its own return type annotation sidesteps that.
+    const boardSoFar = (): BoardStart | null => boardResult
+    const boardRefused = (why: string): number =>
+      stop(
+        `the board did not start — ${why}. Everything chosen above is kept, and lingtai init again continues from here`,
+      )
+
+    // *this machine* alone, for a GitHub run that has no repository yet: no project group, and a ready
+    // line without a recipe. `how` is the one row about GitHub.
+    const machineCard = (how: string): Effect.Effect<string | undefined, unknown> =>
+      Effect.gen(function* () {
+        held.length = 0
+        const end = yield* printSetupEndEffect(
+          world,
+          {
+            command: 'init',
+            updated: false,
+            home,
+            homeIsNew,
+            userHome: world.env['HOME'] ?? '',
+            store: storeNow,
+            runtimes,
+            github: how,
+          },
+          [],
+        )
+        return end.fix
+      })
+    const reachRow = (viaGh: boolean): Effect.Effect<string, unknown> =>
+      Effect.gen(function* () {
+        if (viaGh) {
+          const status = yield* world.ghStatus()
+          return status.ok
+            ? status.login === ''
+              ? 'gh, signed in'
+              : `gh, signed in as ${status.login}`
+            : 'gh, not signed in'
+        }
+        return app.configured && app.ok ? `the App ${app.slug}` : 'no App yet'
+      })
+
+    let github = false
+    // What a failed doctor closes on; undefined when it did not fail.
+    let fix: string | undefined
+    // A local run's doctor report is part of the card; every other path prints it whole, below.
+    let cardDrawn = false
+    // The board's `/setup/repository` page, when the App was just made here.
+    let githubSetupUrl: string | undefined
+    if (askProject) {
+      // Built from `world` directly rather than through a live default (#394's
+      // finding 6): every seam `chooseFirstProject` reaches for — `git`, the
+      // log, the recipe files, the App — is the one this test or process was
+      // handed, never `checkApp`, `loadAllProjects`, a bare `stateDir()` or
+      // `diskFiles` reached for underneath it.
+      const firstProjectWorld: FirstProjectWorld = {
+        ask: world.ask,
+        log: world.log,
+        git: world.runGit,
+        projects: world.projects,
+        locker: world.locker,
+        files: world.files,
+        home,
+        signedIn: world.signedIn,
+        // Already probed above, for the "look" lines — a second probe for the
+        // same run would ask every runtime whether it is signed in twice.
+        runtimes: () => Effect.succeed(runtimes),
+        setupReader: world.setupReader,
+        exists: world.exists,
+        register: world.registerLocal,
+        history: world.history,
+        // The store above is already written by the time this runs — the same
+        // reason `askFirstProject` carries this sentence (#394 finding 2).
+        kept: storeKept.kept,
+        ...(storeKept.startOver === undefined ? {} : { startOver: storeKept.startOver }),
+        command: 'lingtai init',
+        // `init`'s only (first-project.ts): a configured App already answers
+        // *is the project*, and `--project`/`--github-app` naming anything else
+        // is refused rather than asked past.
+        githubAppIsTheProject: true,
+        github: {
+          // The same election `githubAuthKind` makes, over the file this world
+          // was handed — a refusal of it already stopped the run above.
+          auth: () => {
+            const elected = githubAuthElectionFrom(world.env, machineFor(world, path))
+            if ('refused' in elected) throw new Error(elected.refused)
+            return elected.kind
+          },
+          ghStatus: world.ghStatus,
+          ...(world.gh === undefined ? {} : { gh: world.gh }),
+          writeAuth: (kind) => Effect.try({ try: () => writeGithubAuth(world.machine, path, kind), catch: (e) => e }),
+          // Already fetched above, for the "the App" line — a second real call
+          // (`GET /app`) for the same run would answer the same question twice.
+          app: () => Effect.succeed(app),
+          // The trap: a refused start answers null here, same as no board
+          // running at all — `runGithubBranch` turns that into its own
+          // sentence, written for `lingtai add`, absurd inside `init`. The
+          // check below, after `chooseFirstProject` returns, replaces it with
+          // the board's own refusal whenever this was the reason.
+          boardUrl: () => startBoard().pipe(Effect.map((started) => ('url' in started ? started.url : null))),
+          waitForApp: (boardUrl) =>
+            waitForAppEffect(
+              { log: world.log, open: world.open, appeared: world.appeared, pressed: world.pressed },
+              boardUrl,
+              { waitMs: APP_WAIT_MS },
+            ),
+          // `init` never gives `chooseFirstProject` a slug — `--github` is
+          // `lingtai add`'s own flag, refused by `parseArgs` above, so
+          // `runGithubBranch`'s `givenSlug` is always null here and returns
+          // before either of these runs (#394's dead-seam finding: `InitWorld`
+          // used to carry a `picker` and an `addGithub` that nothing called).
+          picker: () => {
+            throw new Error('unreachable: lingtai init never gives chooseFirstProject a slug')
+          },
+          add: () => {
+            throw new Error('unreachable: lingtai init never gives chooseFirstProject a slug')
+          },
+        },
+      }
+      const chosen = yield* chooseFirstProjectEffect(firstProjectWorld, flags, buildFlags)
+      if ('refused' in chosen) {
+        // `boardUrl()` above is the only caller of `startBoard` on this path —
+        // if it was ever asked for, a refusal it hit is the real reason, over
+        // the GitHub-add sentence `chosen.refused` carries for a null URL.
+        const soFar = boardSoFar()
+        if (soFar !== null && 'refused' in soFar) return boardRefused(soFar.refused)
+        return stop(chosen.refused)
+      }
+
+      if (chosen.project === 'local') {
+        const recipeFile = recipePath(chosen.name, home)
+        // Read back like `summariseRecipe` does: a recipe that cannot be read draws no card.
+        if ((yield* lift(() => world.files.read(recipeFile))) === null) {
+          return stop(`the recipe could not be read back from ${recipeFile}`)
+        }
+        held.length = 0
+        const end = yield* printSetupEndEffect(
+          world,
+          {
+            command: 'init',
+            project: chosen.name,
+            updated: chosen.updated,
+            home,
+            homeIsNew,
+            userHome: world.env['HOME'] ?? '',
+            store: storeNow,
+            runtimes,
+            recipe: chosen.card,
+            trial: chosen.trial,
+            recipePath: recipeFile,
+          },
+          chosen.hints,
+        )
+        fix = end.fix
+        cardDrawn = true
+      } else {
+        github = true
+        let how = yield* reachRow(chosen.auth === 'gh')
+        if (chosen.auth === 'gh') {
+          // No App to start a board for: the saved `gh` login is the whole of
+          // the auth, and a repository is named to `lingtai add`, not picked.
+        } else if (chosen.app === 'already') {
+          // Nothing upstream asked for a URL on this path — `app.configured` was
+          // already true, so `boardUrl()` above was never called.
+          const started = yield* startBoard()
+          if ('refused' in started) return boardRefused(started.refused)
+          const wizard = `${started.url}/setup/repository`
+          world.log(
+            (yield* world.open(wizard))
+              ? paint.pass(`opened ${wizard}`)
+              : `no browser could be opened here — open ${wizard}`,
+          )
+        } else if ('made' in chosen.app) {
+          // Already started, successfully, to hand `waitForApp` its URL above —
+          // this reads the same memo rather than starting a second one.
+          const started = yield* startBoard()
+          const url = 'url' in started ? started.url : ''
+          githubSetupUrl = `${url}/setup/repository`
+          how = `the App ${chosen.app.made.slug}`
+        }
+        // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s
+        // own call to `waitForApp` (`appComeBackLine`).
+        //
+        // `init`'s GitHub branch never has a slug, so there is no recipe file
+        // to name here — it exists once a repository is picked.
+        fix = yield* machineCard(how)
+        cardDrawn = true
+      }
+    } else if (app.configured && !ghMachine) {
+      github = true
+      // Nothing new was asked — the machine already has projects, told above —
+      // but a configured App still has its one remaining screen: the wizard
+      // that picks a repository for it. Nothing upstream asked for a board yet.
+      const started = yield* startBoard()
+      if ('refused' in started) return boardRefused(started.refused)
+      const wizard = `${started.url}/setup/repository`
+      world.log(
+        (yield* world.open(wizard))
+          ? paint.pass(`opened ${wizard}`)
+          : `no browser could be opened here — open ${wizard}`,
+      )
+      fix = yield* machineCard(yield* reachRow(ghMachine))
       cardDrawn = true
     }
-  } else if (app.configured && !ghMachine) {
-    github = true
-    // Nothing new was asked — the machine already has projects, told above —
-    // but a configured App still has its one remaining screen: the wizard
-    // that picks a repository for it. Nothing upstream asked for a board yet.
-    const started = await startBoard()
-    if ('refused' in started) return boardRefused(started.refused)
-    const wizard = `${started.url}/setup/repository`
-    world.log(
-      (await world.open(wizard)) ? paint.pass(`opened ${wizard}`) : `no browser could be opened here — open ${wizard}`,
-    )
-    fix = await machineCard(await reachRow(ghMachine))
-    cardDrawn = true
-  }
 
-  if (!cardDrawn) {
-    flush()
-    try {
-      // `failed` counts failures only, never warnings: a fresh machine
-      // nearly always warns, and `--verbose` on every first init would be noise.
-      const done = await world.doctor()
-      world.log(done.blocks)
-      if (done.toFix.failed) fix = done.next ?? DOCTOR_VERBOSE
-    } catch (err) {
-      world.log(`doctor did not finish — ${(err as Error).message || String(err)}`)
-      fix = DOCTOR_VERBOSE
-    }
-  }
-  let needBoard = false
-
-  // The board is never printed about unless it refused: the card has no row for it, and
-  // `next:` is what tells a person to start one.
-  const started = boardSoFar()
-  if (started === null) {
-    // Nothing here asked for a board, but one may already be serving this
-    // machine (#434 fix round) — `lingtai board` refuses by name rather than
-    // confirm that, so the operator is told which is true before reaching for it.
-    const running = await world.boardAt(port)
-    needBoard = running === null
     if (!cardDrawn) {
-      world.log(heading('Board'))
-      world.log(
-        running !== null
-          ? paint.muted(`the board was already running at ${running} — this started none`)
-          : paint.muted('no board was started'),
+      flush()
+      const said = yield* world.doctor().pipe(
+        Effect.map((done) => ({ done }) as const),
+        recovering((err) => Effect.succeed({ threw: err.message || String(err) } as const)),
       )
+      if ('threw' in said) {
+        world.log(`doctor did not finish — ${said.threw}`)
+        fix = DOCTOR_VERBOSE
+      } else {
+        // `failed` counts failures only, never warnings: a fresh machine
+        // nearly always warns, and `--verbose` on every first init would be noise.
+        world.log(said.done.blocks)
+        if (said.done.toFix.failed) fix = said.done.next ?? DOCTOR_VERBOSE
+      }
     }
-  } else {
-    needBoard = 'refused' in started
-    if (!cardDrawn) world.log(heading('Board'))
-    if ('refused' in started) world.log(paint.fail(`the board did not start — ${started.refused}`))
-    else if (started.started) {
-      // Said on the card's paths too: it is why this terminal does not return, and how to stop it.
-      world.log(
-        paint.muted('the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again'),
-      )
-    } else if (!cardDrawn) {
-      world.log(paint.muted(`the board was already running at ${started.url} — this started none`))
+    let needBoard = false
+
+    // The board is never printed about unless it refused: the card has no row for it, and
+    // `next:` is what tells a person to start one.
+    const started = boardSoFar()
+    if (started === null) {
+      // Nothing here asked for a board, but one may already be serving this
+      // machine (#434 fix round) — `lingtai board` refuses by name rather than
+      // confirm that, so the operator is told which is true before reaching for it.
+      const running = yield* world.boardAt(port)
+      needBoard = running === null
+      if (!cardDrawn) {
+        world.log(heading('Board'))
+        world.log(
+          running !== null
+            ? paint.muted(`the board was already running at ${running} — this started none`)
+            : paint.muted('no board was started'),
+        )
+      }
+    } else {
+      needBoard = 'refused' in started
+      if (!cardDrawn) world.log(heading('Board'))
+      if ('refused' in started) world.log(paint.fail(`the board did not start — ${started.refused}`))
+      else if (started.started) {
+        // Said on the card's paths too: it is why this terminal does not return, and how to stop it.
+        world.log(
+          paint.muted('the board keeps running in this terminal — ctrl-c stops it, and lingtai board starts it again'),
+        )
+      } else if (!cardDrawn) {
+        world.log(paint.muted(`the board was already running at ${started.url} — this started none`))
+      }
     }
-  }
-  // The last thing printed (0121 §1): a failure closes on one line, anything else on the path's numbered block.
-  if (fix !== undefined) {
-    world.log(renderNextLine(fix))
-  } else {
-    const closing =
-      here !== null ? hereSteps(here) : { steps: github ? githubInitSteps(githubSetupUrl) : localInitSteps(needBoard) }
-    if (closing.preface !== undefined) world.log(closing.preface)
-    for (const line of renderNextBlock(closing.steps)) world.log(line)
-  }
-  return 0
+    // The last thing printed (0121 §1): a failure closes on one line, anything else on the path's numbered block.
+    if (fix !== undefined) {
+      world.log(renderNextLine(fix))
+    } else {
+      const closing =
+        here !== null
+          ? hereSteps(here)
+          : { steps: github ? githubInitSteps(githubSetupUrl) : localInitSteps(needBoard) }
+      if (closing.preface !== undefined) world.log(closing.preface)
+      for (const line of renderNextBlock(closing.steps)) world.log(line)
+    }
+    return 0
+  })
 }
 
 /**
@@ -801,39 +808,42 @@ export async function initCommand(args: WizardFlags, world: InitWorld): Promise<
  * the one `add --local` keys a project by: `basename` of `git rev-parse --show-toplevel`, case-insensitive.
  * A git failure is "not inside a repository"; a recipe that cannot be read leaves the ticket line out.
  */
-async function whereAmI(world: InitWorld, registered: readonly ProjectState[], home: string): Promise<Here> {
-  let toplevel: string
-  try {
-    const top = await world.runGit(world.cwd, ['rev-parse', '--show-toplevel'])
-    if (!top.ok || top.stdout.trim() === '') return { kind: 'outside' }
-    toplevel = top.stdout.trim()
-  } catch {
-    return { kind: 'outside' }
-  }
-  const name = basename(toplevel).toLowerCase()
-  const match = registered.find((p) => typeof p.project === 'string' && p.project.toLowerCase() === name)
-  if (match === undefined || match.project === null) return { kind: 'unregistered', toplevel }
-  // The effective settings, as the conductor resolves them: an omitted `tickets` is github, and kinds may sit under a `queue:`.
-  let tickets: 'db' | 'github' | null = null
-  let kinds: string[] = []
-  try {
-    const path = recipePath(match.project, home)
-    const text = await world.files.read(path)
-    if (text !== null) {
-      const recipe = resolveSource(text, path, path).recipe
-      tickets = ticketSourceOf(recipe)
-      kinds = [...kindsOf(recipe)]
-    }
-  } catch {
-    tickets = null
-  }
-  return {
-    kind: 'registered',
-    project: match.project,
-    tickets,
-    kinds,
-    slug: match.owner === null ? null : `${match.owner}/${match.project}`,
-  }
+function whereAmI(world: InitWorld, registered: readonly ProjectState[], home: string): Effect.Effect<Here, unknown> {
+  return Effect.gen(function* () {
+    const top = yield* world
+      .runGit(world.cwd, ['rev-parse', '--show-toplevel'])
+      .pipe(recovering(() => Effect.succeed(null)))
+    if (top === null || !top.ok || top.stdout.trim() === '') return { kind: 'outside' } as const
+    const toplevel = top.stdout.trim()
+    const name = basename(toplevel).toLowerCase()
+    const match = registered.find((p) => typeof p.project === 'string' && p.project.toLowerCase() === name)
+    if (match === undefined || match.project === null) return { kind: 'unregistered', toplevel } as const
+    const project = match.project
+    // The effective settings, as the conductor resolves them: an omitted `tickets` is github, and kinds may sit under a `queue:`.
+    let tickets: 'db' | 'github' | null = null
+    let kinds: string[] = []
+    yield* Effect.gen(function* () {
+      const path = recipePath(project, home)
+      const text = yield* lift(() => world.files.read(path))
+      if (text !== null) {
+        const recipe = resolveSource(text, path, path).recipe
+        tickets = ticketSourceOf(recipe)
+        kinds = [...kindsOf(recipe)]
+      }
+    }).pipe(
+      recovering(() => {
+        tickets = null
+        return Effect.void
+      }),
+    )
+    return {
+      kind: 'registered',
+      project,
+      tickets,
+      kinds,
+      slug: match.owner === null ? null : `${match.owner}/${match.project}`,
+    } as const
+  })
 }
 
 function describeSchema(schema: SchemaOutcome): string {
@@ -850,7 +860,7 @@ function describeSchema(schema: SchemaOutcome): string {
  * later command asks — and *that* is what is printed, so the line at the end of
  * setup is a reading of the machine rather than a report of what was typed.
  */
-async function chooseStore(
+function chooseStore(
   world: InitWorld,
   config: Document,
   path: string,
@@ -859,165 +869,173 @@ async function chooseStore(
   held: string[],
   flush: () => void,
   stop: (line: string, code?: number) => number,
-): Promise<number | null> {
-  // `--store sqlite` is refused, before anything else is looked at, wherever
-  // the machine would not obey it — writing it there would be #215 again.
-  if (named === 'sqlite') {
-    const refused = sqliteRefused(world, config, path)
-    if (refused !== null) return stop(refused)
-  }
-
-  // `--database-url` given as the empty string names nothing to connect to,
-  // with or without --store postgres beside it: unlike flag === null, it is
-  // not the question's business to answer, because reading it as the
-  // question's own empty answer would silently rewrite a settled Postgres
-  // machine to SQLite with no connection attempted (the only thing a flag
-  // given to be explicit should never do, #392). This runs ahead of the
-  // exported-URL check below, so an empty flag is refused for what it is
-  // rather than reported as naming a database the export does not.
-  if (flag !== null && flag.trim() === '') {
-    const given = named === 'postgres' ? '--store postgres --database-url' : '--database-url'
-    return stop(`${USAGE} — ${given} takes a postgres:// URL. Leave it out entirely for SQLite. Nothing was written`, 2)
-  }
-
-  // An exported LINGTAI_DATABASE_URL decides and supplies the URL (0056 §3),
-  // and nothing is written for it: it is the process's answer, not the file's,
-  // and this command does not own the process a daemon will be started in.
-  const preset = storeChoice(world.env, machineFor(world, path))
-  if (!('refused' in preset) && preset.where === 'environment' && preset.store === 'postgres') {
-    // `--database-url` naming a database the exported URL does not is a
-    // choice this process would not obey — whether or not `--store postgres`
-    // named it too: refused, rather than connecting to the other one and
-    // reporting it as though it were what was asked (naming the same database
-    // is that same run; naming another is refused, never ignored).
-    if (flag !== null && flag.trim() !== preset.url) {
-      const given = named === 'postgres' ? '--store postgres --database-url' : '--database-url'
-      return stop(exportedUrlRefusal(given, redactUrl(flag), preset.from, redactUrl(preset.url)))
+): Effect.Effect<number | null, unknown> {
+  return Effect.gen(function* () {
+    // `--store sqlite` is refused, before anything else is looked at, wherever
+    // the machine would not obey it — writing it there would be #215 again.
+    if (named === 'sqlite') {
+      const refused = sqliteRefused(world, config, path)
+      if (refused !== null) return stop(refused)
     }
-    const check = await spun(world, 'connecting to the database', () => world.database(preset.url))
-    if (!check.ok) {
+
+    // `--database-url` given as the empty string names nothing to connect to,
+    // with or without --store postgres beside it: unlike flag === null, it is
+    // not the question's business to answer, because reading it as the
+    // question's own empty answer would silently rewrite a settled Postgres
+    // machine to SQLite with no connection attempted (the only thing a flag
+    // given to be explicit should never do, #392). This runs ahead of the
+    // exported-URL check below, so an empty flag is refused for what it is
+    // rather than reported as naming a database the export does not.
+    if (flag !== null && flag.trim() === '') {
+      const given = named === 'postgres' ? '--store postgres --database-url' : '--database-url'
       return stop(
-        `the database ${preset.from} names, ${redactUrl(preset.url)}, does not answer — ${check.why}. ` +
-          "It is not this command's to replace: fix it, or remove it, and run lingtai init again",
+        `${USAGE} — ${given} takes a postgres:// URL. Leave it out entirely for SQLite. Nothing was written`,
+        2,
       )
     }
-    heldFact(held, 'Store', [['store', paint.pass(`${describeStore(preset)} · ${describeSchema(check.schema)}`)]])
-    return null
-  }
 
-  // `--store postgres` names the store and the URL comes from `--database-url`.
-  // Without one at all there is nothing to connect to, and the question it
-  // would fall back on is not a Postgres question: its empty answer is
-  // SQLite. (An empty `--database-url` is refused above, ahead of the
-  // exported-URL check, rather than here.)
-  if (named === 'postgres' && flag === null) {
-    return stop(
-      `${USAGE} — --store postgres takes --database-url <postgres url>, or an exported LINGTAI_DATABASE_URL. Nothing was written`,
-      2,
-    )
-  }
-
-  // `--database-url <url>` is a given answer that bypasses what follows
-  // entirely — settled, inherited and the question alike — so that a URL
-  // that fails to connect refuses on its own account rather than falling
-  // through to whatever the file already says. That holds whether or not
-  // `--store postgres` named it too: a flag given without `--store` is still
-  // a flag, not silently discarded because nothing named the store.
-  if (flag === null) {
-    // The settled-store check runs once: a machine already answering is
-    // reported and not asked about again (this file's header).
-    const settled = storeChoice(world.env, machineFor(world, path))
-    if (!('refused' in settled)) {
-      if (settled.store === 'sqlite') return sqliteChosen(held, settled)
-      const check = await spun(world, 'connecting to the database', () => world.database(settled.url))
-      if (check.ok) {
-        heldFact(held, 'Store', [['store', paint.pass(`${describeStore(settled)} · ${describeSchema(check.schema)}`)]])
-        return null
+    // An exported LINGTAI_DATABASE_URL decides and supplies the URL (0056 §3),
+    // and nothing is written for it: it is the process's answer, not the file's,
+    // and this command does not own the process a daemon will be started in.
+    const preset = storeChoice(world.env, machineFor(world, path))
+    if (!('refused' in preset) && preset.where === 'environment' && preset.store === 'postgres') {
+      // `--database-url` naming a database the exported URL does not is a
+      // choice this process would not obey — whether or not `--store postgres`
+      // named it too: refused, rather than connecting to the other one and
+      // reporting it as though it were what was asked (naming the same database
+      // is that same run; naming another is refused, never ignored).
+      if (flag !== null && flag.trim() !== preset.url) {
+        const given = named === 'postgres' ? '--store postgres --database-url' : '--database-url'
+        return stop(exportedUrlRefusal(given, redactUrl(flag), preset.from, redactUrl(preset.url)))
       }
-      flush()
-      fact(world, 'Store', [['store', paint.fail(`${describeStore(settled)} does not answer — ${check.why}`)]])
-    } else if (settled.because === 'unreadable') {
-      // `readConfig` refused this already; it is here because the two readers
-      // are separate and one of them must not be the only one that looks.
-      return stop(settled.refused)
-    } else {
-      // *Nothing chosen* is the question this command is about to ask, so it
-      // is asked rather than reported — a refusal naming `lingtai init` is
-      // absurd inside `lingtai init`. The other two are a file being
-      // repaired, and what was wrong with it is said before asking again.
-      if (settled.because !== 'nothing chosen') {
-        flush()
-        world.log(paint.fail(settled.refused))
+      const check = yield* spunEffect(world, 'connecting to the database', world.database(preset.url))
+      if (!check.ok) {
+        return stop(
+          `the database ${preset.from} names, ${redactUrl(preset.url)}, does not answer — ${check.why}. ` +
+            "It is not this command's to replace: fix it, or remove it, and run lingtai init again",
+        )
       }
+      heldFact(held, 'Store', [['store', paint.pass(`${describeStore(preset)} · ${describeSchema(check.schema)}`)]])
+      return null
+    }
 
-      // The inherited-URL check runs once, ahead of the question, and never
-      // through the seam: a machine set up before the store was a written
-      // value (#186) has a `database.url` and no `store`. That URL is the
-      // choice nobody recorded — it is verified and recorded, not asked for,
-      // and tried only this once. Taking it again on the next pass would be a
-      // loop that never reaches the question, since what makes it
-      // inheritable — a `url` with no `store` — is still true after it failed.
-      const older = config.getIn(['database', 'url'])
-      if (settled.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
-        const check = await spun(world, 'connecting to the database', () => world.database(older))
+    // `--store postgres` names the store and the URL comes from `--database-url`.
+    // Without one at all there is nothing to connect to, and the question it
+    // would fall back on is not a Postgres question: its empty answer is
+    // SQLite. (An empty `--database-url` is refused above, ahead of the
+    // exported-URL check, rather than here.)
+    if (named === 'postgres' && flag === null) {
+      return stop(
+        `${USAGE} — --store postgres takes --database-url <postgres url>, or an exported LINGTAI_DATABASE_URL. Nothing was written`,
+        2,
+      )
+    }
+
+    // `--database-url <url>` is a given answer that bypasses what follows
+    // entirely — settled, inherited and the question alike — so that a URL
+    // that fails to connect refuses on its own account rather than falling
+    // through to whatever the file already says. That holds whether or not
+    // `--store postgres` named it too: a flag given without `--store` is still
+    // a flag, not silently discarded because nothing named the store.
+    if (flag === null) {
+      // The settled-store check runs once: a machine already answering is
+      // reported and not asked about again (this file's header).
+      const settled = storeChoice(world.env, machineFor(world, path))
+      if (!('refused' in settled)) {
+        if (settled.store === 'sqlite') return sqliteChosen(held, settled)
+        const check = yield* spunEffect(world, 'connecting to the database', world.database(settled.url))
         if (check.ok) {
-          config.setIn(['database', 'store'], 'postgres')
-          config.setIn(['database', 'url'], older)
-          world.machine.write(path, config.toString())
-          const read = confirm(world, stop, path, 'postgres')
-          if (typeof read === 'number') return read
-          heldFact(held, 'Store', [['store', paint.pass(`${describeStore(read)} · ${describeSchema(check.schema)}`)]])
+          heldFact(held, 'Store', [
+            ['store', paint.pass(`${describeStore(settled)} · ${describeSchema(check.schema)}`)],
+          ])
           return null
         }
         flush()
-        world.log(paint.fail(`${redactUrl(older)} does not answer — ${check.why}`))
+        fact(world, 'Store', [['store', paint.fail(`${describeStore(settled)} does not answer — ${check.why}`)]])
+      } else if (settled.because === 'unreadable') {
+        // `readConfig` refused this already; it is here because the two readers
+        // are separate and one of them must not be the only one that looks.
+        return stop(settled.refused)
+      } else {
+        // *Nothing chosen* is the question this command is about to ask, so it
+        // is asked rather than reported — a refusal naming `lingtai init` is
+        // absurd inside `lingtai init`. The other two are a file being
+        // repaired, and what was wrong with it is said before asking again.
+        if (settled.because !== 'nothing chosen') {
+          flush()
+          world.log(paint.fail(settled.refused))
+        }
+
+        // The inherited-URL check runs once, ahead of the question, and never
+        // through the seam: a machine set up before the store was a written
+        // value (#186) has a `database.url` and no `store`. That URL is the
+        // choice nobody recorded — it is verified and recorded, not asked for,
+        // and tried only this once. Taking it again on the next pass would be a
+        // loop that never reaches the question, since what makes it
+        // inheritable — a `url` with no `store` — is still true after it failed.
+        const older = config.getIn(['database', 'url'])
+        if (settled.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
+          const check = yield* spunEffect(world, 'connecting to the database', world.database(older))
+          if (check.ok) {
+            config.setIn(['database', 'store'], 'postgres')
+            config.setIn(['database', 'url'], older)
+            world.machine.write(path, config.toString())
+            const read = confirm(world, stop, path, 'postgres')
+            if (typeof read === 'number') return read
+            heldFact(held, 'Store', [['store', paint.pass(`${describeStore(read)} · ${describeSchema(check.schema)}`)]])
+            return null
+          }
+          flush()
+          world.log(paint.fail(`${redactUrl(older)} does not answer — ${check.why}`))
+        }
       }
     }
-  }
 
-  // Everything settled or inherited failed to answer the question, so one
-  // question is asked — `--store sqlite` is the empty answer, given in
-  // advance, with no terminal needed to give it (#345).
-  let schema: SchemaOutcome | null = null
-  const result = await question(world, {
-    name: 'the store',
-    command: 'lingtai init',
-    flag: '--store sqlite, or --store postgres --database-url <url>',
-    given: named === 'sqlite' ? '' : flag,
-    prompt: 'a Postgres URL for the log — empty for SQLite',
-    fallback: '',
-    show: redactUrl,
-    validate: async (answer) => {
-      if (answer === '') return null
-      if (!/^postgres(ql)?:\/\//.test(answer)) {
-        return 'that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written'
-      }
-      const check = await spun(world, 'connecting to the database', () => world.database(answer))
-      if (!check.ok) return `${redactUrl(answer)} does not answer — ${check.why}. Nothing was written`
-      schema = check.schema
-      return null
-    },
-  })
-  if ('refused' in result) return stop(result.refused)
+    // Everything settled or inherited failed to answer the question, so one
+    // question is asked — `--store sqlite` is the empty answer, given in
+    // advance, with no terminal needed to give it (#345).
+    let schema: SchemaOutcome | null = null
+    const result = yield* questionEffect(world, {
+      name: 'the store',
+      command: 'lingtai init',
+      flag: '--store sqlite, or --store postgres --database-url <url>',
+      given: named === 'sqlite' ? '' : flag,
+      prompt: 'a Postgres URL for the log — empty for SQLite',
+      fallback: '',
+      show: redactUrl,
+      validate: (answer) =>
+        Effect.gen(function* () {
+          if (answer === '') return null
+          if (!/^postgres(ql)?:\/\//.test(answer)) {
+            return 'that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written'
+          }
+          const check = yield* spunEffect(world, 'connecting to the database', world.database(answer))
+          if (!check.ok) return `${redactUrl(answer)} does not answer — ${check.why}. Nothing was written`
+          schema = check.schema
+          return null
+        }),
+    })
+    if ('refused' in result) return stop(result.refused)
 
-  if (result.answer === '') {
-    // The SQLite choice, written — and `database.url` removed in the same
-    // write. Left behind it would go on selecting Postgres under a screen
-    // that had just said SQLite, which is the whole of #215.
-    config.setIn(['database', 'store'], 'sqlite')
-    config.deleteIn(['database', 'url'])
+    if (result.answer === '') {
+      // The SQLite choice, written — and `database.url` removed in the same
+      // write. Left behind it would go on selecting Postgres under a screen
+      // that had just said SQLite, which is the whole of #215.
+      config.setIn(['database', 'store'], 'sqlite')
+      config.deleteIn(['database', 'url'])
+      world.machine.write(path, config.toString())
+      const read = confirm(world, stop, path, 'sqlite')
+      return typeof read === 'number' ? read : sqliteChosen(held, read)
+    }
+
+    config.setIn(['database', 'store'], 'postgres')
+    config.setIn(['database', 'url'], result.answer)
     world.machine.write(path, config.toString())
-    const read = confirm(world, stop, path, 'sqlite')
-    return typeof read === 'number' ? read : sqliteChosen(held, read)
-  }
-
-  config.setIn(['database', 'store'], 'postgres')
-  config.setIn(['database', 'url'], result.answer)
-  world.machine.write(path, config.toString())
-  const read = confirm(world, stop, path, 'postgres')
-  if (typeof read === 'number') return read
-  heldFact(held, 'Store', [['store', paint.pass(`${describeStore(read)} · ${describeSchema(schema!)}`)]])
-  return null
+    const read = confirm(world, stop, path, 'postgres')
+    if (typeof read === 'number') return read
+    heldFact(held, 'Store', [['store', paint.pass(`${describeStore(read)} · ${describeSchema(schema!)}`)]])
+    return null
+  })
 }
 
 /**
@@ -1212,6 +1230,36 @@ export function liveMachine(): InitWorld['machine'] {
   }
 }
 
+/** A Postgres client as `database` uses it: what `createSchemaEffect` queries, and the two ends of a connection. */
+export interface DatabaseClient extends Queryable {
+  connect: () => PromiseLike<unknown>
+  end: () => PromiseLike<unknown>
+}
+
+/**
+ * Connect, and create the tables where there are none. A failure and a defect alike answer `{ ok: false, why }`
+ * — `createSchemaEffect`'s failures are defects (0101 §6) — and an interruption is let through. The client is
+ * ended when the check is over, however it ended, and a failure to end it is not the check's.
+ */
+export const databaseCheck = (
+  url: string,
+  open: (url: string) => Effect.Effect<DatabaseClient, unknown>,
+): Effect.Effect<DatabaseCheck> =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const client = yield* Effect.acquireRelease(open(url), (opened) => lift(() => opened.end()).pipe(Effect.ignore))
+      yield* lift(() => client.connect())
+      const schema = yield* createSchemaEffect(client)
+      return { ok: true, schema } as DatabaseCheck
+    }),
+  ).pipe(recovering((err) => Effect.succeed({ ok: false, why: err.message || String(err) } as DatabaseCheck)))
+
+/** `import('pg')` stays inside: a fresh machine has no store configured, and `entry.ts` keeps `init` lazy. */
+const pgClient = (url: string): Effect.Effect<DatabaseClient, unknown> =>
+  lift(() => import('pg')).pipe(
+    Effect.map(({ default: pg }) => new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000 })),
+  )
+
 export function liveInitWorld(): InitWorld {
   return {
     env: process.env,
@@ -1219,101 +1267,91 @@ export function liveInitWorld(): InitWorld {
     log: (line) => console.log(line),
     ask: liveAsk,
     spin: liveSpin,
-    git: async () => {
-      const said = spawnSync('git', ['--version'], { encoding: 'utf8' })
-      return said.status === 0 ? said.stdout.trim() : null
-    },
-    runtimes: askRuntimes,
+    git: () =>
+      Effect.try({
+        try: () => {
+          const said = spawnSync('git', ['--version'], { encoding: 'utf8' })
+          return said.status === 0 ? said.stdout.trim() : null
+        },
+        catch: (e) => e,
+      }),
+    runtimes: askRuntimesEffect,
     setupReader: liveSetupReader,
-    exists: pathExists,
-    database: async (url) => {
-      const pg = (await import('pg')).default
-      const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000 })
-      try {
-        await client.connect()
-        return { ok: true, schema: await createSchema(client) }
-      } catch (err) {
-        return { ok: false, why: (err as Error).message || String(err) }
-      } finally {
-        await client.end().catch(() => {})
-      }
-    },
-    app: checkApp,
-    ghStatus: () => ghStatus(),
+    exists: pathExistsEffect,
+    database: (url) => databaseCheck(url, pgClient),
+    app: checkAppEffect,
+    ghStatus: () => ghStatusEffect(),
     ...(refusal('', interactivity(false)) === null ? { gh: liveGh } : {}),
-    appeared: pollForApp,
-    pressed: (signal) => waitForKeypress(process.stdin, signal),
+    appeared: pollForAppEffect,
+    // Handed an aborted signal when the race it is in is lost, so raw mode is undone.
+    pressed: () => Effect.tryPromise({ try: (signal) => waitForKeypress(process.stdin, signal), catch: (e) => e }),
     // A host that is not an address finds no board here, so `board` below is
     // asked and refuses it by name: the probe never answers for a setting
     // that is invalid, whatever happens to be listening on loopback.
-    boardAt: (port) => {
-      let reach: string
-      try {
-        reach = boardReachHost(boardHost())
-      } catch {
-        return Promise.resolve(null)
-      }
-      return boardAt(port, reach)
-    },
-    board: async (port) => {
-      let host: string
-      try {
-        host = boardHost()
-      } catch (err) {
-        return { refused: (err as Error).message }
-      }
-      // The same lock `lingtai board start` takes (#187), and for the same
-      // reason: a board this process serves and no lock names is one that
-      // `lingtai board status` calls nobody's and `lingtai board stop` cannot
-      // stop. Held for as long as this process serves — `kept` is module scope
-      // so nothing collects the handle out from under the lock.
-      const taken = await createFileLocker().tryLock(boardLock(port), `board on ${port}`)
-      if (!taken.ok) {
-        return {
-          refused: `a board is already on ${port} — held by ${taken.holder ?? 'a holder that has not named itself'}`,
+    boardAt: (port) =>
+      Effect.gen(function* () {
+        let reach: string
+        try {
+          reach = boardReachHost(boardHost())
+        } catch {
+          return null
         }
-      }
-      kept = taken.lock
-      try {
-        await serveBoard({
-          dir: builtBoardDir(),
-          port,
-          host,
-          release: async () => {
-            await kept?.release()
-            kept = null
-          },
-        })
-      } catch (err) {
-        await kept.release()
-        kept = null
-        return { refused: (err as Error).message }
-      }
-      return { url: boardOrigin(boardReachHost(host), port) }
-    },
-    open: (url) =>
-      new Promise((resolve) => {
-        const opener = process.platform === 'darwin' ? 'open' : 'xdg-open'
-        const child = spawn(opener, [url], { stdio: 'ignore', detached: true })
-        child.once('error', () => resolve(false))
-        child.once('spawn', () => {
-          child.unref()
-          resolve(true)
-        })
+        return yield* boardAtEffect(port, reach)
       }),
-    runGit: liveGit,
-    projects: () => loadAllProjects(),
+    board: (port) =>
+      Effect.gen(function* () {
+        let host: string
+        try {
+          host = boardHost()
+        } catch (err) {
+          return { refused: (err as Error).message }
+        }
+        // The same lock `lingtai board start` takes (#187), and for the same
+        // reason: a board this process serves and no lock names is one that
+        // `lingtai board status` calls nobody's and `lingtai board stop` cannot
+        // stop. Held for as long as this process serves — `kept` is module scope
+        // so nothing collects the handle out from under the lock.
+        const taken = yield* lift(() => createFileLocker().tryLock(boardLock(port), `board on ${port}`))
+        if (!taken.ok) {
+          return {
+            refused: `a board is already on ${port} — held by ${taken.holder ?? 'a holder that has not named itself'}`,
+          }
+        }
+        kept = taken.lock
+        // The lock's own release, never this handler's scope: the board outlives the command (`entry.ts`),
+        // and a lock that will not let go is a defect, as `serveBoard`'s face made it.
+        const release = lift(() => kept?.release() ?? Promise.resolve()).pipe(
+          Effect.orDie,
+          Effect.andThen(
+            Effect.sync(() => {
+              kept = null
+            }),
+          ),
+        )
+        const failed = yield* serveBoardEffect({ dir: builtBoardDir(), port, host, release }).pipe(
+          Effect.as(null),
+          recovering((err) => Effect.succeed(err)),
+        )
+        if (failed !== null) {
+          yield* release
+          return { refused: failed.message }
+        }
+        return { url: boardOrigin(boardReachHost(host), port) }
+      }),
+    open: (url) => lift(() => liveOpen(url)),
+    runGit: liveGitEffect,
+    projects: () => loadAllProjectsEffect(),
     files: diskFiles,
     signedIn: signedInHere,
     registerLocal: (payload) =>
-      addLocal(
+      addLocalEffect(
         { project: payload.project, base: payload.base, configHash: payload.configHash, fromSha: payload.fromSha },
         payload.resolved,
       ),
-    history: liveHistory,
+    history: liveHistoryEffect,
     // Dynamic, never a static import of `./doctor.ts` — this file's header
     // warns that an eager log read breaks a fresh machine (`setup-end.ts` keeps that).
-    doctor: liveSetupDoctor,
+    doctor: liveSetupDoctorEffect,
     cwd: process.cwd(),
   }
 }

@@ -79,11 +79,11 @@ export function askFirstProjectEffect(
 
 export interface AppWaitWorld {
   log: (line: string) => void
-  open: (url: string) => Promise<boolean>
-  /** Resolves once an App is configured and answers; stops polling on abort. */
-  appeared: (signal: AbortSignal) => Promise<{ slug: string; owner: string }>
-  /** Resolves on any keypress at a TTY; never, at no TTY, until aborted. */
-  pressed: (signal: AbortSignal) => Promise<void>
+  open: (url: string) => Effect.Effect<boolean, unknown>
+  /** Succeeds once an App is configured and answers; stops polling once interrupted. */
+  appeared: () => Effect.Effect<{ slug: string; owner: string }, unknown>
+  /** Succeeds on any keypress at a TTY; never, at no TTY, until interrupted. */
+  pressed: () => Effect.Effect<void, unknown>
 }
 
 export type AppWaitResult = { made: { slug: string; owner: string } } | { skipped: true } | { timedOut: true }
@@ -117,22 +117,18 @@ export function waitForAppEffect(
   return Effect.gen(function* () {
     const wizard = `${boardUrl}/setup/github-app`
     world.log(
-      (yield* lift(() => world.open(wizard)))
+      (yield* world.open(wizard))
         ? paint.pass(`opened ${wizard}`)
         : paint.signal(`no browser could be opened here — open ${wizard}`),
     )
     world.log(paint.signal('waiting for the App — press Create on that page, or any key here to skip'))
 
     // First to settle wins, as `Promise.race` did. The losers are interrupted: a
-    // lifted `appeared` or `pressed` is handed an aborted signal (a signal left live
-    // would leave `pressed`'s raw mode never undone), and an interrupted sleep clears its timer.
+    // lifted `pressed` is handed an aborted signal (a signal left live would leave
+    // its raw mode never undone), and an interrupted sleep clears its timer.
     const result = yield* Effect.raceAllFirst([
-      Effect.tryPromise({ try: (signal) => world.appeared(signal), catch: (e) => e }).pipe(
-        Effect.map((made) => ({ made }) as const),
-      ),
-      Effect.tryPromise({ try: (signal) => world.pressed(signal), catch: (e) => e }).pipe(
-        Effect.map(() => 'skipped' as const),
-      ),
+      world.appeared().pipe(Effect.map((made) => ({ made }) as const)),
+      world.pressed().pipe(Effect.map(() => 'skipped' as const)),
       Effect.sleep(waitMs).pipe(Effect.map(() => 'timedOut' as const)),
     ])
 
