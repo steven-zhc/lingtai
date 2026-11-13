@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import localFont from 'next/font/local'
 
 import './globals.css'
+import { FooterHeight } from './footer-height'
 import { Palette } from './palette'
 
 /**
@@ -78,6 +79,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {children}
         <Palette />
+        <FooterHeight />
       </body>
     </html>
   )

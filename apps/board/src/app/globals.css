@@ -174,11 +174,11 @@ body {
   position: sticky; bottom: 0; z-index: 5;
   background: var(--ground);
 }
-/* The footer's one-line height (1px border + 2 x 10px padding + 14px at 1.5 line height),
-   declared once where a footer exists so a sticky panel can leave room for it. One line on
-   purpose: the footer wraps only below 900px, where side panels have stacked under the form,
-   so no ResizeObserver. /setup has no .footer, so the variable falls back to 0px there. */
-body:has(.footer) { --footer-h: 42px; }
+/* The footer's height, so a sticky panel can leave room for it. 42px is the one-line height
+   (1px border + 2 x 10px padding + 14px at 1.5 line height) and holds until footer-height.tsx
+   measures the rendered footer, wrapped or not, and sets --footer-h inline on the root, which
+   wins over this rule. /setup has no .footer, so the variable falls back to 0px there. */
+:root:has(.footer) { --footer-h: 42px; }
 .footer b { color: var(--ink); font-weight: 500; }
 .footer .spend { display: inline-flex; align-items: center; gap: 8px; }
 .footer .spend.at-ceiling > span:first-child, .footer .spend.at-ceiling .of { color: var(--fail); }

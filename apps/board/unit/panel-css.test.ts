@@ -62,6 +62,6 @@ describe('the sticky footer (#1123)', () => {
 
   it('.rfile leaves room for the footer, and only where one exists', () => {
     expect(block('.rfile')).toContain('var(--footer-h')
-    expect(block('body:has(.footer)')).toContain('--footer-h')
+    expect(block(':root:has(.footer)')).toContain('--footer-h')
   })
 })
