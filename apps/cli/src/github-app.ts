@@ -8,8 +8,10 @@
  * add`'s GitHub branch (#394) can call `askFirstProject` and `waitForApp` too.
  */
 import { paint } from '@lingtai/env/colour'
+import { Effect } from 'effect'
 
-import { question, type QuestionWorld } from './question.ts'
+import { lift } from './exit.ts'
+import { questionEffect, type QuestionWorld } from './question.ts'
 
 /** A person reading GitHub's manifest page gets this long before coming back. */
 export const APP_WAIT_MS = 10 * 60_000
@@ -28,49 +30,51 @@ export type FirstProject = { project: 'local' } | { project: 'github'; app: 'cre
  * exists. `lingtai add` (`first-project.ts`) has no store to report kept, and
  * passes its own `'Nothing was written'` instead (#394 finding 5).
  */
-export async function askFirstProject(
+export function askFirstProjectEffect(
   world: QuestionWorld,
   flags: Record<string, string>,
   kept = 'the store chosen above is kept',
   cancel: { startOver?: string; command?: string } = {},
-): Promise<FirstProject> {
-  const kind = await question(world, {
-    name: 'the project',
-    flag: '--project github, or --project local',
-    given: flags['project'] ?? null,
-    prompt: 'a GitHub project, or one on this machine only',
-    fallback: 'github',
-    choices: ['github', 'local'],
-    kept,
-    ...cancel,
-  })
-  if ('refused' in kind) return { refused: kind.refused }
-  if (kind.answer === 'local') {
-    // The same rule `chooseStore` holds to for `--store`: a flag naming
-    // anything else is refused rather than silently discarded (#393) — and
-    // `--github-app` names something `local` never asks for.
-    if (flags['github-app'] !== undefined) {
-      return {
-        refused:
-          `--github-app ${flags['github-app']}, but --project local creates no GitHub App. Leave out ` +
-          `--github-app, or pass --project github. ${kept}`,
+): Effect.Effect<FirstProject, unknown> {
+  return Effect.gen(function* () {
+    const kind = yield* questionEffect(world, {
+      name: 'the project',
+      flag: '--project github, or --project local',
+      given: flags['project'] ?? null,
+      prompt: 'a GitHub project, or one on this machine only',
+      fallback: 'github',
+      choices: ['github', 'local'],
+      kept,
+      ...cancel,
+    })
+    if ('refused' in kind) return { refused: kind.refused }
+    if (kind.answer === 'local') {
+      // The same rule `chooseStore` holds to for `--store`: a flag naming
+      // anything else is refused rather than silently discarded (#393) — and
+      // `--github-app` names something `local` never asks for.
+      if (flags['github-app'] !== undefined) {
+        return {
+          refused:
+            `--github-app ${flags['github-app']}, but --project local creates no GitHub App. Leave out ` +
+            `--github-app, or pass --project github. ${kept}`,
+        }
       }
+      return { project: 'local' }
     }
-    return { project: 'local' }
-  }
 
-  const how = await question(world, {
-    name: 'the GitHub App',
-    flag: '--github-app create, or --github-app skip',
-    given: flags['github-app'] ?? null,
-    prompt: 'create the GitHub App now, or skip it for later',
-    fallback: 'create',
-    choices: ['create', 'skip'],
-    kept,
-    ...cancel,
+    const how = yield* questionEffect(world, {
+      name: 'the GitHub App',
+      flag: '--github-app create, or --github-app skip',
+      given: flags['github-app'] ?? null,
+      prompt: 'create the GitHub App now, or skip it for later',
+      fallback: 'create',
+      choices: ['create', 'skip'],
+      kept,
+      ...cancel,
+    })
+    if ('refused' in how) return { refused: how.refused }
+    return { project: 'github', app: how.answer as 'create' | 'skip' }
   })
-  if ('refused' in how) return { refused: how.refused }
-  return { project: 'github', app: how.answer as 'create' | 'skip' }
 }
 
 export interface AppWaitWorld {
@@ -105,47 +109,57 @@ function describeWait(waitMs: number): string {
  * and `waitMs`. Always lets `init` go on — a skip or a timeout logs the one
  * come-back line rather than leaving anything looking lost.
  */
-export async function waitForApp(
+export function waitForAppEffect(
   world: AppWaitWorld,
   boardUrl: string,
   { waitMs }: { waitMs: number },
-): Promise<AppWaitResult> {
-  const wizard = `${boardUrl}/setup/github-app`
-  world.log(
-    (await world.open(wizard))
-      ? paint.pass(`opened ${wizard}`)
-      : paint.signal(`no browser could be opened here — open ${wizard}`),
-  )
-  world.log(paint.signal('waiting for the App — press Create on that page, or any key here to skip'))
+): Effect.Effect<AppWaitResult, unknown> {
+  return Effect.gen(function* () {
+    const wizard = `${boardUrl}/setup/github-app`
+    world.log(
+      (yield* lift(() => world.open(wizard)))
+        ? paint.pass(`opened ${wizard}`)
+        : paint.signal(`no browser could be opened here — open ${wizard}`),
+    )
+    world.log(paint.signal('waiting for the App — press Create on that page, or any key here to skip'))
 
-  const controller = new AbortController()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let result: { made: { slug: string; owner: string } } | 'skipped' | 'timedOut'
-  try {
-    const timedOut = new Promise<'timedOut'>((resolve) => {
-      timer = setTimeout(() => resolve('timedOut'), waitMs)
-    })
-    const settled = Promise.race([
-      world.appeared(controller.signal).then((made) => ({ made }) as const),
-      world.pressed(controller.signal).then(() => 'skipped' as const),
+    // First to settle wins, as `Promise.race` did. The losers are interrupted: a
+    // lifted `appeared` or `pressed` is handed an aborted signal (a signal left live
+    // would leave `pressed`'s raw mode never undone), and an interrupted sleep clears its timer.
+    const result = yield* Effect.raceAllFirst([
+      Effect.tryPromise({ try: (signal) => world.appeared(signal), catch: (e) => e }).pipe(
+        Effect.map((made) => ({ made }) as const),
+      ),
+      Effect.tryPromise({ try: (signal) => world.pressed(signal), catch: (e) => e }).pipe(
+        Effect.map(() => 'skipped' as const),
+      ),
+      Effect.sleep(waitMs).pipe(Effect.map(() => 'timedOut' as const)),
     ])
-    result = await Promise.race([settled, timedOut])
-  } finally {
-    // The race's loser, whichever it was: a timer left running would fire
-    // into a board that may have moved on, and a signal left live would leave
-    // `pressed`'s raw mode never undone.
-    controller.abort()
-    clearTimeout(timer)
-  }
 
-  if (typeof result === 'object') {
-    world.log(paint.pass(`app          ${result.made.slug}, owned by ${result.made.owner} — it answered`))
-    return result
-  }
-  if (result === 'skipped') {
-    world.log(appComeBackLine(boardUrl, 'skipped'))
-    return { skipped: true }
-  }
-  world.log(appComeBackLine(boardUrl, describeWait(waitMs)))
-  return { timedOut: true }
+    if (typeof result === 'object') {
+      world.log(paint.pass(`app          ${result.made.slug}, owned by ${result.made.owner} — it answered`))
+      return result
+    }
+    if (result === 'skipped') {
+      world.log(appComeBackLine(boardUrl, 'skipped'))
+      return { skipped: true } as const
+    }
+    world.log(appComeBackLine(boardUrl, describeWait(waitMs)))
+    return { timedOut: true } as const
+  })
+}
+
+/** The face of `waitForAppEffect` for the tops, which still await it (CLI-21, CLI-22b). */
+export function waitForApp(world: AppWaitWorld, boardUrl: string, options: { waitMs: number }): Promise<AppWaitResult> {
+  return Effect.runPromise(waitForAppEffect(world, boardUrl, options))
+}
+
+/** The face of `askFirstProjectEffect` for `first-project.ts` (CLI-21). */
+export function askFirstProject(
+  world: QuestionWorld,
+  flags: Record<string, string>,
+  kept?: string,
+  cancel?: { startOver?: string; command?: string },
+): Promise<FirstProject> {
+  return Effect.runPromise(askFirstProjectEffect(world, flags, kept, cancel))
 }

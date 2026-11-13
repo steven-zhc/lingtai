@@ -3,9 +3,10 @@
  * declares — no filesystem, so these are `unit/` by 0060 §1, unlike
  * `initCommand` itself (`integration/init.test.ts`).
  */
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { APP_WAIT_MS, type AppWaitWorld, askFirstProject, waitForApp } from '../src/github-app.ts'
+import { APP_WAIT_MS, type AppWaitWorld, askFirstProject, waitForApp, waitForAppEffect } from '../src/github-app.ts'
 import type { QuestionWorld } from '../src/question.ts'
 
 // Same reason as `question.test.ts`: the assertions below read `paint`'s
@@ -147,5 +148,41 @@ describe('waitForApp (#393)', () => {
     expect(result).toEqual({ made: { slug: 'lingtai-me', owner: 'me' } })
     expect(lines.some((l) => l.includes('lingtai-me, owned by me'))).toBe(true)
     expect(lines.some((l) => l.includes('not created'))).toBe(false)
+  })
+})
+
+describe('waitForAppEffect (#1110)', () => {
+  const never = (signal: AbortSignal) =>
+    new Promise<never>((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)))
+
+  it('answers the keypress and aborts the signal handed to appeared', async () => {
+    let seen: AbortSignal | undefined
+    const lines: string[] = []
+    const world: AppWaitWorld = {
+      log: (line) => lines.push(line),
+      open: async () => true,
+      appeared: (signal) => {
+        seen = signal
+        return never(signal)
+      },
+      pressed: async () => {},
+    }
+    const result = await Effect.runPromise(waitForAppEffect(world, 'http://127.0.0.1:3200', { waitMs: APP_WAIT_MS }))
+    expect(result).toEqual({ skipped: true })
+    expect(seen?.aborted).toBe(true)
+  })
+
+  it('fails with the rejection of a key reader that dies, rather than waiting on', async () => {
+    const world: AppWaitWorld = {
+      log: () => {},
+      open: async () => true,
+      appeared: never,
+      pressed: async () => {
+        throw new Error('tty gone')
+      },
+    }
+    await expect(
+      Effect.runPromise(waitForAppEffect(world, 'http://127.0.0.1:3200', { waitMs: APP_WAIT_MS })),
+    ).rejects.toThrow('tty gone')
   })
 })

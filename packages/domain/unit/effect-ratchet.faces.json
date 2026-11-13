@@ -1,5 +1,17 @@
 [
   {
+    "file": "apps/cli/src/app-check.ts",
+    "fn": "checkApp",
+    "until": "#790",
+    "why": "first-project.ts:1233, :1354 (CLI-21) and init.ts:1232 (CLI-22b)"
+  },
+  {
+    "file": "apps/cli/src/app-check.ts",
+    "fn": "pollForApp",
+    "until": "#790",
+    "why": "fills the promise port InitWorld.appeared (init.ts:1235, CLI-22b) and first-project.ts:1315 (CLI-21); it rejects with an interruption once its signal aborts, where the loop it replaced stayed pending, and waitForApp's race has by then interrupted its only consumer"
+  },
+  {
     "file": "apps/cli/src/board.ts",
     "fn": "boardAt",
     "until": "#790",
@@ -12,22 +24,46 @@
     "why": "apps/cli/src/init.ts:1269 until CLI-22b"
   },
   {
-    "file": "apps/cli/src/doctor.ts",
-    "fn": "doctorReport",
+    "file": "apps/cli/src/github-app.ts",
+    "fn": "askFirstProject",
     "until": "#790",
-    "why": "apps/cli/src/world.ts:293 awaits it until CLI-07a and restart.ts:731 until CLI-07b (control); apps/cli/src/setup-end.ts:29 until CLI-19 (the setup's closing card)"
+    "why": "first-project.ts (CLI-21)"
+  },
+  {
+    "file": "apps/cli/src/github-app.ts",
+    "fn": "waitForApp",
+    "until": "#790",
+    "why": "first-project.ts (CLI-21); init.ts:632 (CLI-22b)"
+  },
+  {
+    "file": "apps/cli/src/github-auth.ts",
+    "fn": "askGithubAuth",
+    "until": "#790",
+    "why": "first-project.ts (CLI-21); init.ts (CLI-22b)"
   },
   {
     "file": "apps/cli/src/question.ts",
     "fn": "question",
     "until": "#790",
-    "why": "add.ts, github-app.ts, github-auth.ts and setup-build.ts (CLI-19), first-project.ts (CLI-21) and init.ts (CLI-22b) call it with promise `validate`s until their rows"
+    "why": "add.ts, first-project.ts (CLI-21) and init.ts (CLI-22b) call it with promise `validate`s until their rows"
   },
   {
     "file": "apps/cli/src/recipe-flow.ts",
     "fn": "askRecipe",
     "until": "#790",
     "why": "first-project.ts:861, :869, :1036 (CLI-21) and add-github.ts:392 (CLI-22a) await it"
+  },
+  {
+    "file": "apps/cli/src/setup-end.ts",
+    "fn": "liveSetupDoctor",
+    "until": "#790",
+    "why": "init.ts:1307 and add.ts:407 hand it over as a port value (CLI-22a for add.ts, CLI-22b for init.ts)"
+  },
+  {
+    "file": "apps/cli/src/setup-end.ts",
+    "fn": "printSetupEnd",
+    "until": "#790",
+    "why": "init.ts:543, :666, :1307 and add.ts:255, :297, :407 (CLI-22a for add.ts, CLI-22b for init.ts)"
   },
   {
     "file": "packages/actions/src/action.ts",
@@ -1008,27 +1044,9 @@
     "why": "packages/setup trial-build.ts and apps/cli/scripts/rung-1.ts"
   },
   {
-    "file": "packages/setup/src/detect-setup.ts",
-    "fn": "detectSetup",
-    "until": "#790",
-    "why": "apps/cli/src/setup-build.ts and apps/cli/unit/add-from-page-equals-add.test.ts call it as a promise; goes with the apps/cli setup group"
-  },
-  {
     "file": "packages/setup/src/runtimes.ts",
     "fn": "askRuntimes",
     "until": "#790",
     "why": "apps/cli (add-github, first-project, init) and packages/conductor/src/add-from-page.ts call it as a promise; goes with the later of the apps/cli setup group and the conductor rest"
-  },
-  {
-    "file": "packages/setup/src/trial-build.ts",
-    "fn": "runLiveTrial",
-    "until": "#790",
-    "why": "liveTrialBuild hands it to apps/cli (add-github, first-project; read at setup-build.ts); goes with the apps/cli setup group"
-  },
-  {
-    "file": "packages/setup/src/trial-build.ts",
-    "fn": "trialBase",
-    "until": "#790",
-    "why": "liveTrialBuild hands it to apps/cli (add-github, first-project; read at setup-build.ts); goes with the apps/cli setup group"
   }
 ]

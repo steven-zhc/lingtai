@@ -21,9 +21,11 @@ import { dirname } from 'node:path'
 
 import { paint } from '@lingtai/env/colour'
 import { ghScopeGap, type GhRun, type GhStatus } from '@lingtai/github'
+import { Effect } from 'effect'
 import { isMap, parseDocument } from 'yaml'
 
-import { question, type QuestionWorld } from './question.ts'
+import { lift, recovering } from './exit.ts'
+import { questionEffect, type QuestionWorld } from './question.ts'
 
 export interface GithubAuthWorld extends QuestionWorld {
   github: {
@@ -99,118 +101,126 @@ function notReady(status: GhStatus): string | null {
   return gap === null ? null : `${gap}, and run this again`
 }
 
-export async function askGithubAuth(
+export function askGithubAuthEffect(
   world: GithubAuthWorld,
   flags: Record<string, string>,
   appConfigured: boolean,
   kept: string,
   cancel: { startOver?: string; command?: string } = {},
-): Promise<GithubAuthAnswer> {
-  const given = flags['github-auth'] ?? null
-  if (given !== null && given !== 'gh' && given !== 'app') {
-    return { refused: `--github-auth ${given} is not one of gh, app. ${kept}` }
-  }
+): Effect.Effect<GithubAuthAnswer, unknown> {
+  return Effect.gen(function* () {
+    const given = flags['github-auth'] ?? null
+    if (given !== null && given !== 'gh' && given !== 'app') {
+      return { refused: `--github-auth ${given} is not one of gh, app. ${kept}` }
+    }
 
-  const set = world.github.auth?.() ?? null
-  const elected = set ?? (appConfigured ? 'app' : null)
-  if (elected !== null) {
-    if (given !== null && given !== elected) {
-      return {
-        refused:
-          `--github-auth ${given}, but ${elected} is already how this machine reaches GitHub. ` +
-          `Leave out --github-auth, or pass --github-auth ${elected}. ${kept}`,
+    const set = world.github.auth?.() ?? null
+    const elected = set ?? (appConfigured ? 'app' : null)
+    if (elected !== null) {
+      if (given !== null && given !== elected) {
+        return {
+          refused:
+            `--github-auth ${given}, but ${elected} is already how this machine reaches GitHub. ` +
+            `Leave out --github-auth, or pass --github-auth ${elected}. ${kept}`,
+        }
       }
+      // An explicit `--github-auth gh` is checked even where `gh` is already saved:
+      // the login may have been signed out, or lost a scope, since it was written.
+      if (given === 'gh') {
+        const why = notReady(yield* lift(() => world.github.ghStatus()))
+        if (why !== null) return { refused: `--github-auth gh, but ${why}. ${kept}` }
+      }
+      world.log(`github       ${elected} — ${set === null ? 'a GitHub App is configured here' : 'github.auth'}`)
+      return { auth: elected, pending: false }
     }
-    // An explicit `--github-auth gh` is checked even where `gh` is already saved:
-    // the login may have been signed out, or lost a scope, since it was written.
+
+    if (given === 'app') return { auth: 'app', pending: true }
+
+    const status = yield* lift(() => world.github.ghStatus())
+    const why = notReady(status)
+
+    const write = (): Effect.Effect<GithubAuthAnswer> =>
+      lift(() => world.github.writeAuth('gh')).pipe(
+        Effect.map((): GithubAuthAnswer => ({ auth: 'gh', pending: false })),
+        recovering((err) => Effect.succeed<GithubAuthAnswer>({ refused: `${err.message}. ${kept}` })),
+      )
+
     if (given === 'gh') {
-      const why = notReady(await world.github.ghStatus())
-      if (why !== null) return { refused: `--github-auth gh, but ${why}. ${kept}` }
+      return why === null ? yield* write() : { refused: `--github-auth gh, but ${why}. ${kept}` }
     }
-    world.log(`github       ${elected} — ${set === null ? 'a GitHub App is configured here' : 'github.auth'}`)
-    return { auth: elected, pending: false }
-  }
 
-  if (given === 'app') return { auth: 'app', pending: true }
-
-  const status = await world.github.ghStatus()
-  const why = notReady(status)
-
-  const write = async (): Promise<GithubAuthAnswer> => {
-    try {
-      await world.github.writeAuth('gh')
-    } catch (err) {
-      return { refused: `${(err as Error).message}. ${kept}` }
-    }
-    return { auth: 'gh', pending: false }
-  }
-
-  if (given === 'gh') {
-    return why === null ? write() : { refused: `--github-auth gh, but ${why}. ${kept}` }
-  }
-
-  let current = status
-  for (;;) {
-    const why = notReady(current)
-    if (why === null && current.ok) {
-      const asked = await question(world, {
+    let current = status
+    for (;;) {
+      const why = notReady(current)
+      if (why === null && current.ok) {
+        const asked = yield* questionEffect(world, {
+          name: 'how this machine reaches GitHub',
+          flag: '--github-auth gh, or --github-auth app',
+          given: null,
+          prompt:
+            `gh, signed in as ${current.login} — Lingtai's labels, comments, pull requests and pushes will appear as ` +
+            'that account — or app, its own GitHub App',
+          fallback: 'gh',
+          choices: ['gh', 'app'],
+          kept,
+          ...cancel,
+        })
+        if ('refused' in asked) return { refused: asked.refused }
+        return asked.answer === 'gh' ? yield* write() : { auth: 'app', pending: true }
+      }
+      const args = signInArgs(current)
+      const canSignIn = world.github.gh !== undefined && args !== null
+      world.log(paint.signal(`github       gh cannot be used yet — ${why!.replace(/, and run this again$/, '')}`))
+      const asked = yield* questionEffect(world, {
         name: 'how this machine reaches GitHub',
         flag: '--github-auth gh, or --github-auth app',
         given: null,
-        prompt:
-          `gh, signed in as ${current.login} — Lingtai's labels, comments, pull requests and pushes will appear as ` +
-          'that account — or app, its own GitHub App',
-        fallback: 'gh',
-        choices: ['gh', 'app'],
+        prompt: canSignIn
+          ? `sign-in, to sign gh in now (\`gh ${args.join(' ')}\`) — or app, a GitHub App of its own`
+          : 'app, a GitHub App of its own — or gh, once you have fixed the above and run this again',
+        fallback: canSignIn ? 'sign-in' : 'app',
+        choices: canSignIn ? ['sign-in', 'app'] : ['app', 'gh'],
         kept,
         ...cancel,
       })
       if ('refused' in asked) return { refused: asked.refused }
-      return asked.answer === 'gh' ? write() : { auth: 'app', pending: true }
-    }
-    const args = signInArgs(current)
-    const canSignIn = world.github.gh !== undefined && args !== null
-    world.log(paint.signal(`github       gh cannot be used yet — ${why!.replace(/, and run this again$/, '')}`))
-    const asked = await question(world, {
-      name: 'how this machine reaches GitHub',
-      flag: '--github-auth gh, or --github-auth app',
-      given: null,
-      prompt: canSignIn
-        ? `sign-in, to sign gh in now (\`gh ${args.join(' ')}\`) — or app, a GitHub App of its own`
-        : 'app, a GitHub App of its own — or gh, once you have fixed the above and run this again',
-      fallback: canSignIn ? 'sign-in' : 'app',
-      choices: canSignIn ? ['sign-in', 'app'] : ['app', 'gh'],
-      kept,
-      ...cancel,
-    })
-    if ('refused' in asked) return { refused: asked.refused }
-    if (asked.answer === 'app') return { auth: 'app', pending: true }
-    if (!canSignIn) return { refused: `gh was chosen, but ${why}. ${kept}` }
+      if (asked.answer === 'app') return { auth: 'app', pending: true }
+      if (!canSignIn) return { refused: `gh was chosen, but ${why}. ${kept}` }
 
-    world.log(`github       handing the terminal to gh: gh ${args.join(' ')}`)
-    // `gh` shares the foreground process group, so Ctrl+C reaches it; init
-    // ignores its own copy and comes back to the choice (0121 §10: the command owns the process).
-    const ignore = () => {}
-    process.on('SIGINT', ignore)
-    let result
-    try {
-      result = await world.github.gh!(args, { stdio: 'inherit' })
-    } finally {
-      process.off('SIGINT', ignore)
+      world.log(`github       handing the terminal to gh: gh ${args.join(' ')}`)
+      // `gh` shares the foreground process group, so Ctrl+C reaches it; init
+      // ignores its own copy and comes back to the choice (0121 §10: the command owns the process).
+      const ignore = () => {}
+      const result = yield* Effect.acquireUseRelease(
+        Effect.sync(() => void process.on('SIGINT', ignore)),
+        () => lift(() => world.github.gh!(args, { stdio: 'inherit' })),
+        () => Effect.sync(() => void process.off('SIGINT', ignore)),
+      )
+      current = yield* lift(() => world.github.ghStatus())
+      if (!('missing' in result) && result.code === 0 && current.ok && notReady(current) === null) {
+        world.log(`github       gh, signed in as ${current.login}`)
+        return yield* write()
+      }
+      world.log(
+        'missing' in result
+          ? 'github       gh is not installed'
+          : result.code !== 0
+            ? `github       gh ${args[0]} ${args[1]} exited ${result.code}`
+            : 'github       gh signed in, but it is still not usable',
+      )
     }
-    current = await world.github.ghStatus()
-    if (!('missing' in result) && result.code === 0 && current.ok && notReady(current) === null) {
-      world.log(`github       gh, signed in as ${current.login}`)
-      return write()
-    }
-    world.log(
-      'missing' in result
-        ? 'github       gh is not installed'
-        : result.code !== 0
-          ? `github       gh ${args[0]} ${args[1]} exited ${result.code}`
-          : 'github       gh signed in, but it is still not usable',
-    )
-  }
+  })
+}
+
+/** The face of `askGithubAuthEffect` for `first-project.ts` (CLI-21) and `init.ts` (CLI-22b). */
+export function askGithubAuth(
+  world: GithubAuthWorld,
+  flags: Record<string, string>,
+  appConfigured: boolean,
+  kept: string,
+  cancel?: { startOver?: string; command?: string },
+): Promise<GithubAuthAnswer> {
+  return Effect.runPromise(askGithubAuthEffect(world, flags, appConfigured, kept, cancel))
 }
 
 /** The `gh` command that moves this status towards ready, or null where signing in cannot change it (#712). */

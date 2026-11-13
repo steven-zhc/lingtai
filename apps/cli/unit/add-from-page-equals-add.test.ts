@@ -8,7 +8,7 @@
 import { LIMIT_DEFAULTS, type RecipeFiles, recipePath } from '@lingtai/recipe'
 import {
   applySetup,
-  detectSetup,
+  detectSetupEffect,
   LINGTAI_BASE,
   type RuntimeFound,
   type SetupForm,
@@ -83,7 +83,7 @@ async function viaAdd(project: string, local: boolean, seeds: SetupForm['target'
 }
 
 async function viaPage(form: (checks: { name: string; run: string }[], install: string) => SetupForm) {
-  const detected = await detectSetup(reader)
+  const detected = await Effect.runPromise(detectSetupEffect(reader))
   const files = mapFiles()
   const f = form(
     detected.build.map(({ name, run }) => ({ name, run })),

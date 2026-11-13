@@ -3730,11 +3730,6 @@ export function doctorReportEffect(
   )
 }
 
-/** The face of `doctorReportEffect` for `restart.ts` and `setup-end.ts`, which still await it. */
-export function doctorReport(opts: { onProgress?: (p: DoctorProgress) => void } = {}): Promise<DoctorReport> {
-  return Effect.runPromise(doctorReportEffect(opts))
-}
-
 /**
  * That environment: a copy of this process's, with the two unprefixed names
  * carrying what this copy reads for itself — and **carrying neither** where

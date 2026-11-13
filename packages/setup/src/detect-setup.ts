@@ -802,11 +802,3 @@ export const detectSetupEffect = Effect.fn('setup.detect')(function* (
   const { install, build, skipped, others } = first.found
   return { install, build, skipped, ...(others === undefined ? {} : { others }), notes } as DetectedSetup
 })
-
-/** The promise face, for the callers outside this package that have not moved yet (#790). */
-export function detectSetup(
-  reader: SetupReader,
-  detectors: readonly StackDetector[] = DETECTORS,
-): Promise<DetectedSetup> {
-  return Effect.runPromise(detectSetupEffect(reader, detectors))
-}
