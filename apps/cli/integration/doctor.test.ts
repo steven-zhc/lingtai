@@ -19,6 +19,7 @@ import type { LogQueries } from '@lingtai/event-store'
 import { createSqliteLogQueries, openSqliteLog } from '@lingtai/event-store/sqlite'
 import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
 import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import pg from 'pg'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -32,7 +33,7 @@ import {
   logReachable,
   postgresOnlyRows,
   renderDoctor,
-  runDoctor,
+  runDoctor as runDoctorEffect,
 } from '../src/doctor.ts'
 import type { DoctorReach } from '../src/doctor.ts'
 // The count `lingtai restart` gates on, asked of this report rather than
@@ -40,6 +41,9 @@ import type { DoctorReach } from '../src/doctor.ts'
 // alone does not show (0042).
 import { gatingFailures } from '../src/restart.ts'
 import { probeSeaBuild } from '../src/sea-build.ts'
+
+// `runDoctor` is an Effect; these tests read the report it yields.
+const runDoctor = (...a: Parameters<typeof runDoctorEffect>) => Effect.runPromise(runDoctorEffect(...a))
 
 const POOLED = 'postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true'
 const DIRECT = 'postgresql://u:p@db.example.com:5432/postgres'
