@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest'
 import { runOnce } from '../src/conduct.ts'
 import { dbTickets } from '../src/db-tickets.ts'
 import { runnableNow } from '../src/discover.ts'
-import { ticketedClientOf, TicketSourceConflict, ticketsFor, type Tickets } from '../src/ticket-store.ts'
+import { ticketedClientOf, TicketSourceConflict, ticketsForEffect, type Tickets } from '../src/ticket-store.ts'
 import {
   fakeGitHub,
   fakePorts,
@@ -115,7 +115,7 @@ describe('ticketsFor', () => {
   it('answers the client itself when the recipe names no source, exactly the value it always answered', async () => {
     const client = fakeGitHub([])
     const recipe = await recipeOf(RECIPE_GITHUB)
-    expect(await ticketsFor(project, recipe, client)).toBe(client)
+    expect(await Effect.runPromise(ticketsForEffect(project, recipe, client))).toBe(client)
   })
 
   it('answers a store backed by dbTickets when the recipe says db', async () => {
@@ -123,10 +123,12 @@ describe('ticketsFor', () => {
     const recipe = await recipeOf(RECIPE_DB)
     const client = fakeGitHub([])
 
-    const tickets = await ticketsFor(project, recipe, client, {
-      sql,
-      log: { projectStreams: async () => [] },
-    })
+    const tickets = await Effect.runPromise(
+      ticketsForEffect(project, recipe, client, {
+        sql,
+        log: { projectStreams: async () => [] },
+      }),
+    )
     expect(tickets).not.toBe(client)
 
     const opened = await tickets.createIssue({ title: 'a race in the importer', body: 'fix it', labels: ['bug'] })
@@ -151,7 +153,7 @@ describe('ticketsFor', () => {
       const recipe = await recipeOf(RECIPE_DB)
 
       await expect(
-        ticketsFor(project, recipe, fakeGitHub([]), { sql: freshSql(), log: logOver(store) }),
+        Effect.runPromise(ticketsForEffect(project, recipe, fakeGitHub([]), { sql: freshSql(), log: logOver(store) })),
       ).rejects.toThrow(TicketSourceConflict)
     })
 
@@ -164,7 +166,9 @@ describe('ticketsFor', () => {
       const sql = freshSql()
       await dbTickets(sql, PROJECT).createIssue({ title: 'switched on purpose', body: '', labels: [] })
 
-      await expect(ticketsFor(project, recipe, fakeGitHub([]), { sql, log: logOver(store) })).resolves.toBeDefined()
+      await expect(
+        Effect.runPromise(ticketsForEffect(project, recipe, fakeGitHub([]), { sql, log: logOver(store) })),
+      ).resolves.toBeDefined()
     })
 
     it('does not refuse a project with no wi- streams at all', async () => {
@@ -172,7 +176,7 @@ describe('ticketsFor', () => {
       const recipe = await recipeOf(RECIPE_DB)
 
       await expect(
-        ticketsFor(project, recipe, fakeGitHub([]), { sql: freshSql(), log: logOver(store) }),
+        Effect.runPromise(ticketsForEffect(project, recipe, fakeGitHub([]), { sql: freshSql(), log: logOver(store) })),
       ).resolves.toBeDefined()
     })
   })

@@ -21,7 +21,7 @@ import {
   makeQueueAction,
   makeWorkAction,
   makeWorktreeAction,
-  runCommand,
+  commandEffect,
 } from '@lingtai/actions'
 import type { LandedCommit, LandedPath, LandedTitle } from '@lingtai/actions'
 import { FAILED, markFailed } from '@lingtai/actions/spans'
@@ -291,7 +291,7 @@ function baseCheckFor(store: EventStore, log: (line: string) => void, home: stri
   if (check === undefined) {
     check = createBaseCheck({
       store,
-      run: runCommand,
+      run: commandEffect,
       worktreePath: (project, sha7, runId) => worktreePath(home, project, `base-${sha7}-${runId}`),
       note: log,
     })

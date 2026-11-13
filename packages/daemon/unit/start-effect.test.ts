@@ -10,7 +10,8 @@ import { Deferred, Effect, Fiber } from 'effect'
 import { TestClock } from 'effect/testing'
 import { describe, expect, it } from 'vitest'
 
-import { defaultRunnerFor, startDaemon, startDaemonEffect } from '../src/daemon.ts'
+import { defaultRunnerFor, startDaemonEffect } from '../src/daemon.ts'
+import { startDaemon } from '../test/promise-faces.ts'
 
 const projection = (name: string): Projection => ({ name }) as Projection
 

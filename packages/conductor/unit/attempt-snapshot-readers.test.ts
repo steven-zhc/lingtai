@@ -1,18 +1,19 @@
-/**
- * The readers that need only an attempt's state read it through the attempt snapshot (#878): with a snapshot
- * planted below the head they answer as they do with none, and with a store passed in and no `snapshots` they
- * never touch the process log's.
- */
 import { attemptReducer, reduceAll, reduceAttempt, ticketStream, type Envelope } from '@lingtai/domain'
 import { aClaim, anAttempt, anAttemptRef, aWait } from '@lingtai/domain/test/events'
 import { histories } from '@lingtai/domain/test/histories'
 import { makeStream } from '@lingtai/domain/test/support'
 import { log, type EventStore, type SnapshotStore } from '@lingtai/event-store'
 import { createMemoryEventStore, createMemorySnapshotStore, type MemoryEventStore } from '@lingtai/event-store/memory'
+/**
+ * The readers that need only an attempt's state read it through the attempt snapshot (#878): with a snapshot
+ * planted below the head they answer as they do with none, and with a store passed in and no `snapshots` they
+ * never touch the process log's.
+ */
+import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { nextPrompt } from '../src/prompt.ts'
-import { resolveWaitHolding } from '../src/resolve-wait.ts'
+import { resolveWaitHoldingEffect } from '../src/resolve-wait.ts'
 
 const PROJECT = 'lingtai'
 const SHA = 'a'.repeat(40)
@@ -84,19 +85,21 @@ describe('readers over an attempt snapshot planted below the head', () => {
       const { store, ticketId, runId } = await blockedAtSignoff(withSnapshot ? 1 : 2)
       const snapshots = withSnapshot ? await plantBelowHead(store, runId) : undefined
       const wait = (await store.read(ticketId)).findLast((e) => e.type === 'WaitStarted')!.data as { waitId: string }
-      const result = await resolveWaitHolding(
-        {
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId,
+            issue: withSnapshot ? 1 : 2,
+            waitId: wait.waitId as never,
+            resolution: { _tag: 'Approve', onSha: SHA } as never,
+            by: 'human:s',
+            note: '',
+            store,
+            snapshots,
+            client: { refSha: async () => SHA } as never,
+          } as never,
           ticketId,
-          issue: withSnapshot ? 1 : 2,
-          waitId: wait.waitId as never,
-          resolution: { _tag: 'Approve', onSha: SHA } as never,
-          by: 'human:s',
-          note: '',
-          store,
-          snapshots,
-          client: { refSha: async () => SHA } as never,
-        } as never,
-        ticketId,
+        ),
       )
       return { ok: result.ok, reason: 'reason' in result ? result.reason : null }
     }
@@ -111,18 +114,20 @@ describe('a store passed in with no snapshots never touches the process log', ()
     })
     const { store, ticketId } = await blockedAtSignoff(4)
     const wait = (await store.read(ticketId)).findLast((e) => e.type === 'WaitStarted')!.data as { waitId: string }
-    await resolveWaitHolding(
-      {
+    await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId,
+          issue: 4,
+          waitId: wait.waitId as never,
+          resolution: { _tag: 'Approve', onSha: SHA } as never,
+          by: 'human:s',
+          note: '',
+          store,
+          client: { refSha: async () => SHA } as never,
+        } as never,
         ticketId,
-        issue: 4,
-        waitId: wait.waitId as never,
-        resolution: { _tag: 'Approve', onSha: SHA } as never,
-        by: 'human:s',
-        note: '',
-        store,
-        client: { refSha: async () => SHA } as never,
-      } as never,
-      ticketId,
+      ),
     )
     expect(latest).not.toHaveBeenCalled()
   })

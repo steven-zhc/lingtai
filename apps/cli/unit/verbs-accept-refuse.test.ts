@@ -1,7 +1,7 @@
-import { answer, ask, close } from '@lingtai/conductor'
-import { answerHolding, type AnswerOptions } from '@lingtai/conductor/ask'
-import { closeHolding, type CloseOptions } from '@lingtai/conductor/close'
-import { approveHolding, type ApproveOptions, requeueHolding } from '@lingtai/conductor/decide'
+import { answer, close } from '@lingtai/conductor'
+import { answerHoldingEffect, askEffect, type AnswerOptions } from '@lingtai/conductor/ask'
+import { closeHoldingEffect, type CloseOptions } from '@lingtai/conductor/close'
+import { approveHolding, type ApproveOptions, requeueHoldingEffect } from '@lingtai/conductor/decide'
 /**
  * #485: pins what each CLI verb accepts and refuses, calling the function
  * each CLI wrapper calls — never a reduced fixture — with the exact option
@@ -66,15 +66,16 @@ import {
 import { makeStream } from '@lingtai/domain/test/support'
 import { type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 /** `answer()` takes the decide lock (the filesystem); this is the half underneath it, with the store and stream it derives. */
 const answerUnlocked = (o: AnswerOptions) =>
-  answerHolding(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue))
+  Effect.runPromise(answerHoldingEffect(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue)))
 
 /** `close()` takes the decide lock (the filesystem); this is the half underneath it, with the store and stream it derives. */
 const closeUnlocked = (o: CloseOptions) =>
-  closeHolding(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue))
+  Effect.runPromise(closeHoldingEffect(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue)))
 
 const PROJECT = 'lingtai'
 const SHA = 'a'.repeat(40)
@@ -106,7 +107,7 @@ describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuesti
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 101)
 
-    const result = await requeueHolding({ by: 'human:steven', note: '' }, store, ticketId)
+    const result = await Effect.runPromise(requeueHoldingEffect({ by: 'human:steven', note: '' }, store, ticketId))
 
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('not blocked')
@@ -122,10 +123,14 @@ describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuesti
    */
   it('withdraws a question asked before any run, rather than refusing it', async () => {
     const store = createMemoryEventStore()
-    await ask({ project: PROJECT, issue: 102, question: 'which design?', by: 'human:steven', store })
+    await Effect.runPromise(
+      askEffect({ project: PROJECT, issue: 102, question: 'which design?', by: 'human:steven', store }),
+    )
     const ticketId = ticketStream(PROJECT, 102)
 
-    const result = await requeueHolding({ by: 'human:steven', note: 'asked by mistake' }, store, ticketId)
+    const result = await Effect.runPromise(
+      requeueHoldingEffect({ by: 'human:steven', note: 'asked by mistake' }, store, ticketId),
+    )
 
     expect(result.ok).toBe(true)
     expect(result.detail).toContain('withdrawn')
@@ -148,7 +153,9 @@ describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuesti
       }),
     ])
 
-    const result = await requeueHolding({ by: 'human:steven', note: 'build the simpler one' }, store, ticketId)
+    const result = await Effect.runPromise(
+      requeueHoldingEffect({ by: 'human:steven', note: 'build the simpler one' }, store, ticketId),
+    )
 
     expect(result.ok).toBe(true)
     expect(result.detail).not.toContain('withdrawn')

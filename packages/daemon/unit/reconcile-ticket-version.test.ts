@@ -14,7 +14,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { reconcile } from '../src/reconcile.ts'
+import { reconcileEffect } from '../src/reconcile.ts'
 import type { DaemonStore } from '../src/store.ts'
 
 const PROJECT = 'lingtai'
@@ -40,13 +40,15 @@ describe('reconcile releases at the version it read', () => {
     return { store, daemonStore, item }
   }
   const run = (store: EventStore, daemonStore: DaemonStore) =>
-    reconcile({
-      store,
-      daemonStore,
-      projects: [project],
-      worker: 'elsewhere:1',
-      home: '/nonexistent/lingtai-home',
-    })
+    Effect.runPromise(
+      reconcileEffect({
+        store,
+        daemonStore,
+        projects: [project],
+        worker: 'elsewhere:1',
+        home: '/nonexistent/lingtai-home',
+      }),
+    )
 
   it('releases when nothing landed in between', async () => {
     const s = await seeded()

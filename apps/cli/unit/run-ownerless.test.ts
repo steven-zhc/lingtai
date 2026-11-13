@@ -107,7 +107,7 @@ describe('run, for a project with no owner', () => {
       // Never reached: there is no owner to build a `GitHubClient` for.
       createGitHubClient: notReached,
       currentRecipe: async () => resolved,
-      ticketsFor: async () => FAKE_DB_TICKETS,
+      ticketsFor: () => Effect.succeed(FAKE_DB_TICKETS),
       readHookBinary: async () => Buffer.from(''),
       readPrompt: async () => 'go read the ticket',
       // This run takes the queue, so `runOnce` is never reached either.
@@ -116,7 +116,7 @@ describe('run, for a project with no owner', () => {
         handed.push(options)
         return Effect.succeed({ ran: [], stopped: 'empty', attempted: [] })
       },
-      tallyPass: async () => ({ landed: 0, held: 0, stopped: 0 }),
+      tallyPass: () => Effect.succeed({ landed: 0, held: 0, stopped: 0 }),
       lock: FAKE_LOCK,
       projector: FAKE_PROJECTOR,
       ports: FAKE_PORTS,

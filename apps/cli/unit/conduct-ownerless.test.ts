@@ -122,7 +122,7 @@ describe('conductWork, a pass across a project with no owner and a GitHub projec
         return ghClient
       },
       currentRecipe: async (project) => (project.project === 'local' ? localResolved : ghResolved),
-      ticketsFor: async (project, _recipe, client) => (project.project === 'local' ? localTickets : client),
+      ticketsFor: (project, _recipe, client) => Effect.succeed(project.project === 'local' ? localTickets : client),
       selectRunnable: async ({ project, offered }) => {
         selectRunnableCalls.push({ project, offered: offered.map((o) => o.ref) })
         return offered.map((o) => ({ taskId: `t-${o.ref}`, issue: o.ref, title: o.title, kind: o.kind }))
@@ -199,7 +199,7 @@ describe('conductWork, with no GitHub App on this machine', () => {
         throw new Error('not reached — no owner, no App')
       },
       currentRecipe: async () => localResolved,
-      ticketsFor: async () => localTickets,
+      ticketsFor: () => Effect.succeed(localTickets),
       selectRunnable: async ({ offered }) =>
         offered.map((o) => ({ taskId: `t-${o.ref}`, issue: o.ref, title: o.title, kind: o.kind })),
       runOnce: () => {

@@ -1,3 +1,9 @@
+import { type Action, type Envelope, reduceTicket, waitsOf, ticketStream } from '@lingtai/domain'
+import { aClaim, anAttempt, anAttemptRef, aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
+import { allowedResolutions } from '@lingtai/domain/wait'
+import type { EventStore } from '@lingtai/event-store'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 /**
  * `#487`: `ask`/`answer`/`requeue`/`approve` moved their reading and writing
  * from `Hold`/`allowedMoves` onto `waitsOf` and 0118's `allowedResolutions` —
@@ -23,20 +29,15 @@
  * `waitsOf`, `reduceTicket(...).answers` and `ticketNoteOf` — never
  * through a type name, so `#464`'s event-shape change leaves this file alone.
  */
-import { type Action, type Envelope, reduceTicket, waitsOf, ticketStream } from '@lingtai/domain'
-import { aClaim, anAttempt, anAttemptRef, aWait } from '@lingtai/domain/test/events'
-import { makeStream } from '@lingtai/domain/test/support'
-import { allowedResolutions } from '@lingtai/domain/wait'
-import type { EventStore } from '@lingtai/event-store'
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { approveHolding, type ApproveOptions, requeueHolding } from '../src/approve.ts'
-import { answer, answerHolding, type AnswerOptions, ask } from '../src/ask.ts'
+import { approveHolding, type ApproveOptions, requeueHoldingEffect } from '../src/approve.ts'
+import { answer, answerHoldingEffect, type AnswerOptions, askEffect } from '../src/ask.ts'
 
 /** `answer()` takes the decide lock (the filesystem); this is the half underneath it, with the store and stream it derives. */
 const answerUnlocked = (o: AnswerOptions) =>
-  answerHolding(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue))
+  Effect.runPromise(answerHoldingEffect(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue)))
 
 const PROJECT = 'lingtai'
 const SHA = 'a'.repeat(40)
@@ -78,7 +79,9 @@ function fakeClient(refSha: string | null): ApproveOptions['client'] {
 describe('ask', () => {
   it('refuses a blank question', async () => {
     const store = createMemoryEventStore()
-    const result = await ask({ project: PROJECT, issue: 1, question: '  ', by: 'human:steven', store })
+    const result = await Effect.runPromise(
+      askEffect({ project: PROJECT, issue: 1, question: '  ', by: 'human:steven', store }),
+    )
     expect(result).toEqual({
       ok: false,
       ticketId: ticketStream(PROJECT, 1),
@@ -92,7 +95,9 @@ describe('ask', () => {
     const ticketId = ticketStream(PROJECT, 2)
     await seed(store, ticketId, aClaim(makeStream(ticketId), 'pass-2'))
 
-    const result = await ask({ project: PROJECT, issue: 2, question: 'which design?', by: 'human:steven', store })
+    const result = await Effect.runPromise(
+      askEffect({ project: PROJECT, issue: 2, question: 'which design?', by: 'human:steven', store }),
+    )
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('claimed')
   })
@@ -101,7 +106,9 @@ describe('ask', () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 3)
 
-    const result = await ask({ project: PROJECT, issue: 3, question: 'which design?', by: 'human:steven', store })
+    const result = await Effect.runPromise(
+      askEffect({ project: PROJECT, issue: 3, question: 'which design?', by: 'human:steven', store }),
+    )
     expect(result).toEqual({
       ok: true,
       ticketId,
@@ -160,7 +167,9 @@ describe('answer', () => {
 
   it('refuses when the question has moved on', async () => {
     const store = createMemoryEventStore()
-    await ask({ project: PROJECT, issue: 7, question: 'which design?', by: 'human:steven', store })
+    await Effect.runPromise(
+      askEffect({ project: PROJECT, issue: 7, question: 'which design?', by: 'human:steven', store }),
+    )
 
     const result = await answerUnlocked({
       project: PROJECT,
@@ -177,7 +186,9 @@ describe('answer', () => {
   it('answers, and the reducer keeps the answer with no run', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 8)
-    await ask({ project: PROJECT, issue: 8, question: 'which design?', by: 'human:steven', store })
+    await Effect.runPromise(
+      askEffect({ project: PROJECT, issue: 8, question: 'which design?', by: 'human:steven', store }),
+    )
 
     const result = await answerUnlocked({ project: PROJECT, issue: 8, answer: 'the first', by: 'human:steven', store })
     expect(result).toEqual({
@@ -199,7 +210,7 @@ describe('requeue', () => {
   it('refuses an item nothing is holding', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 9)
-    const result = await requeueHolding({ by: 'human:steven', note: '' }, store, ticketId)
+    const result = await Effect.runPromise(requeueHoldingEffect({ by: 'human:steven', note: '' }, store, ticketId))
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('not blocked')
   })
@@ -207,9 +218,13 @@ describe('requeue', () => {
   it('refuses to treat an OwnQuestion as a requeue when asked to refuse it', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 10)
-    await ask({ project: PROJECT, issue: 10, question: 'which design?', by: 'human:steven', store })
+    await Effect.runPromise(
+      askEffect({ project: PROJECT, issue: 10, question: 'which design?', by: 'human:steven', store }),
+    )
 
-    const result = await requeueHolding({ by: 'human:steven', note: '', onQuestion: 'refuse' }, store, ticketId)
+    const result = await Effect.runPromise(
+      requeueHoldingEffect({ by: 'human:steven', note: '', onQuestion: 'refuse' }, store, ticketId),
+    )
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('answer it first')
   })
@@ -217,9 +232,13 @@ describe('requeue', () => {
   it('withdraws an OwnQuestion rather than answering it, with no answers entry', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 11)
-    await ask({ project: PROJECT, issue: 11, question: 'which design?', by: 'human:steven', store })
+    await Effect.runPromise(
+      askEffect({ project: PROJECT, issue: 11, question: 'which design?', by: 'human:steven', store }),
+    )
 
-    const result = await requeueHolding({ by: 'human:steven', note: 'asked by mistake' }, store, ticketId)
+    const result = await Effect.runPromise(
+      requeueHoldingEffect({ by: 'human:steven', note: 'asked by mistake' }, store, ticketId),
+    )
     expect(result.ok).toBe(true)
     expect(result.detail).toContain('withdrawn')
 
@@ -245,7 +264,9 @@ describe('requeue', () => {
       }),
     ])
 
-    const result = await requeueHolding({ by: 'human:steven', note: 'build the simpler one' }, store, ticketId)
+    const result = await Effect.runPromise(
+      requeueHoldingEffect({ by: 'human:steven', note: 'build the simpler one' }, store, ticketId),
+    )
     expect(result.ok).toBe(true)
     expect(result.detail).not.toContain('withdrawn')
 
@@ -274,7 +295,7 @@ describe('requeue', () => {
       }),
     ])
 
-    await requeueHolding({ by: 'human:steven', note: '   ' }, store, ticketId)
+    await Effect.runPromise(requeueHoldingEffect({ by: 'human:steven', note: '   ' }, store, ticketId))
 
     const answers = reduceTicket(await store.read(ticketId)).answers
     expect(answers).toEqual([
@@ -308,7 +329,9 @@ describe('requeue', () => {
 
     // Tab B's own requeue, then a reclaim onto a new wait — tab A never sees
     // either append.
-    const first = await requeueHolding({ by: 'human:someone-else', note: 'try the other one' }, store, ticketId)
+    const first = await Effect.runPromise(
+      requeueHoldingEffect({ by: 'human:someone-else', note: 'try the other one' }, store, ticketId),
+    )
     expect(first.ok).toBe(true)
     await seed(store, ticketId, [
       ...aClaim(item, 'pass-14-b'),
@@ -325,7 +348,9 @@ describe('requeue', () => {
     expect(waitB).not.toEqual(waitA)
 
     // Tab A's stale click, naming the wait it was shown.
-    const stale = await requeueHolding({ by: 'human:steven', note: 'from the old tab', waitId: waitA }, store, ticketId)
+    const stale = await Effect.runPromise(
+      requeueHoldingEffect({ by: 'human:steven', note: 'from the old tab', waitId: waitA }, store, ticketId),
+    )
     expect(stale).toMatchObject({ ok: false })
     expect(stale.detail).toContain('not waiting on')
 

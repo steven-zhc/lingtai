@@ -21,10 +21,8 @@ import type { Log, LogQueries } from '@lingtai/event-store/log'
 // anything at import; the split stays because a caller that brings its own log
 // should still load no store at all.
 import type { EventStore } from '@lingtai/event-store/store'
-import { type LocalRecipeOptions, type ResolvedRecipe, type SignedIn, resolveLocalRecipe } from '@lingtai/recipe'
+import { type LocalRecipeOptions, type ResolvedRecipe, type SignedIn, resolveLocalRecipeEffect } from '@lingtai/recipe'
 import { Effect } from 'effect'
-
-import { asFailure } from './port-face.ts'
 
 /** The process-wide log — whichever store this machine chose — reached only when nobody supplied one. */
 const defaultLog = (): Effect.Effect<Log> =>
@@ -124,14 +122,6 @@ export function signedInIdsEffect(
   ).pipe(Effect.map((found) => found.flat()))
 }
 
-/** `signedInIdsEffect` as the promise `@lingtai/recipe`'s `SignedIn` port is (a listed face, #790). */
-export function signedInIds(
-  runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[],
-  env: Record<string, string>,
-): Promise<readonly RuntimeId[]> {
-  return Effect.runPromise(signedInIdsEffect(runtimes, env))
-}
-
 /**
  * Which runtimes are signed in here, in the environment a run gets.
  *
@@ -156,7 +146,12 @@ export function signedInProbe(
   return () => {
     if (kept === null || now() - kept.at >= ttlMs) {
       const env = runnableEnv({})
-      const ids = signedInIds(runtimes, env)
+      // `SignedIn` is `@lingtai/recipe`'s promise port, so this stays a promise; `signedInIdsEffect` is the same question as an Effect.
+      const ids = Promise.all(
+        runtimes.map((r) =>
+          Promise.resolve(r.checkAuth?.(env)).then((auth) => (auth?.loggedIn ? [r.capabilities.id] : [])),
+        ),
+      ).then((found) => found.flat())
       kept = { at: now(), ids }
     }
     return kept.ids
@@ -207,14 +202,10 @@ export function currentRecipeEffect(
   const project = state.project
   if (!project) return Effect.fail(new Error('no repository name recorded — re-run lingtai add'))
   // A recipe that is missing or invalid is a typed failure carrying today's message, never a defect.
-  return Effect.tryPromise({
-    try: () =>
-      resolveLocalRecipe(project, {
-        ...options,
-        base: base ?? state.base ?? null,
-        signedIn: options.signedIn ?? signedInHere,
-      }),
-    catch: asFailure,
+  return resolveLocalRecipeEffect(project, {
+    ...options,
+    base: base ?? state.base ?? null,
+    signedIn: options.signedIn ?? signedInHere,
   })
 }
 

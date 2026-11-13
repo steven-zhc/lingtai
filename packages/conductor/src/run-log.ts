@@ -136,11 +136,6 @@ export function listRunLogsEffect(home?: string): Effect.Effect<FoundRunLog[]> {
   })
 }
 
-/** `listRunLogsEffect` as the promise `lingtai attach` awaits (a listed face, #790). */
-export function listRunLogs(home?: string): Promise<FoundRunLog[]> {
-  return Effect.runPromise(listRunLogsEffect(home))
-}
-
 function projectsInEffect(home: string): Effect.Effect<string[]> {
   return Effect.promise(() => readdir(join(home, 'runs'), { withFileTypes: true })).pipe(
     Effect.map((entries) => entries.filter((e) => e.isDirectory()).map((e) => e.name)),

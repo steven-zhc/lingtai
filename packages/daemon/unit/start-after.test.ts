@@ -1,9 +1,10 @@
 /** `startAfter` reads only `ConductorStarted` events from just past `version` (#872). */
 import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { controlWatermark, startAfter } from '../src/control.ts'
+import { controlWatermarkEffect, startAfterEffect } from '../src/control.ts'
 
 const started = (by: string) => ({
   type: 'ConductorStarted' as const,
@@ -24,9 +25,9 @@ describe('startAfter', () => {
     const store = createMemoryEventStore()
     await store.append(CONTROL_STREAM, 0, [started('one'), resumed, started('two'), started('three')])
 
-    expect((await startAfter(1, store))?.by).toBe('two')
-    expect((await startAfter(3, store))?.by).toBe('three')
-    expect(await startAfter(4, store)).toBeNull()
-    expect(await controlWatermark(store)).toBe(4)
+    expect((await Effect.runPromise(startAfterEffect(1, store)))?.by).toBe('two')
+    expect((await Effect.runPromise(startAfterEffect(3, store)))?.by).toBe('three')
+    expect(await Effect.runPromise(startAfterEffect(4, store))).toBeNull()
+    expect(await Effect.runPromise(controlWatermarkEffect(store))).toBe(4)
   })
 })

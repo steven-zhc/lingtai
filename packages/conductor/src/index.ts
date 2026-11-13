@@ -36,7 +36,7 @@ export {
   signedInHere,
 } from './projects.ts'
 export { gitRefChannel, type GitRefChannelOptions } from './git-refs.ts'
-export { ownerlessClient, type OwnerlessClient } from './ownerless.ts'
+export { ownerlessClient, ownerlessClientEffect, type OwnerlessClient } from './ownerless.ts'
 export {
   describeFilter,
   describeFilters,
@@ -47,7 +47,7 @@ export {
   attemptCeiling,
   projectClient,
   projectFilter,
-  projectFilters,
+  projectFiltersEffect,
   type ClientFor,
   type StepPlan,
   type RecipeFor,
@@ -63,7 +63,7 @@ export {
   type Runnable,
   type RunnableOptions,
 } from './queue.ts'
-export { collision, fixFiles, readFixFiles, readFixFilesEffect, waitsFor } from './same-file.ts'
+export { collision, fixFiles, readFixFilesEffect, waitsFor } from './same-file.ts'
 export { declinedBeforeWork } from './schedule.ts'
 export { createSlots, type Slot, type Slots } from './slots.ts'
 export { AgentHost, Repo, type AgentHostPort, type RepoPort, type RunPorts } from './ports.ts'
@@ -79,7 +79,6 @@ export {
 export {
   findRunLog,
   followRunLogStream,
-  listRunLogs,
   runLogPath,
   type FoundRunLog,
   type RunLogEnding,
@@ -89,14 +88,14 @@ export { nextPrompt, renderPrompt, type NextPrompt, type PromptEdit } from './pr
 export { parseResetAt, standDown } from './never-started.ts'
 export {
   runQueue,
-  tallyTurn,
+  tallyTurnEffect,
   type TurnTally,
   type ScheduleOptions,
   type ScheduleResult,
   type StoppedBecause,
 } from './schedule.ts'
 export { approve, requeue, type ApproveOptions, type ApproveResult } from './approve.ts'
-export { answer, ask, type AskOutcome } from './ask.ts'
+export { answer, type AskOutcome } from './ask.ts'
 export { close, type CloseOutcome } from './close.ts'
 export { refusingOn, resolveWait, type ResolveWaitOptions, type ResolveWaitResult } from './resolve-wait.ts'
 export { diagnoseRefusal, whoseFailure, type AttributedFailure as Failure, type FailureOwner } from '@lingtai/domain'
@@ -115,7 +114,6 @@ export {
 } from './attempts.ts'
 export {
   appendEndActionsEffect,
-  endedWithoutEndActions,
   endedWithoutEndActionsEffect,
   resolveEndActions,
   type TerminalOutcome,
@@ -124,7 +122,6 @@ export {
 export { LINGTAI_LABEL_PREFIX, foreignLabels, labelsFor } from './labels.ts'
 export {
   tellGitHubEffect,
-  tellGitHubAbout,
   tellGitHubAboutEffect,
   sweepRefsEffect,
   type TellAboutOptions,
@@ -149,7 +146,7 @@ export {
   githubTicketStore,
   keyMarker,
   ticketedClientOf,
-  ticketsFor,
+  ticketsForEffect,
   TicketSourceConflict,
   type ProposedRef,
   type ProposedTicket,
@@ -161,7 +158,6 @@ export {
 export { ANSWER_CLOSE_MARKER, answerOpenMarker, upsertSection } from './body-section.ts'
 export {
   editBodyAndRequeue,
-  editBodyAndRequeueHolding,
   type EditBodyAndRequeueOptions,
   type EditBodyAndRequeueResult,
   type WriteSectionResult,

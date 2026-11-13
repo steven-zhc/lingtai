@@ -100,7 +100,7 @@ import { follow } from '@lingtai/event-store/subscribe'
 import { Cause, Context, Effect, Exit, Scope } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
-import { makeFailureRecorder, recordFailureFace } from './failure-recorder.ts'
+import { makeFailureRecorder } from './failure-recorder.ts'
 import { createInFlight } from './in-flight.ts'
 import type { DaemonStore } from './store.ts'
 
@@ -441,7 +441,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
       if (settled) return
       settled = true
       tell(`${name} failed on ${event.type}: ${reason}`)
-      void recordFailureFace(recorder, name, event, reason, project)
+      void Effect.runPromiseWith(services)(recorder.record(name, event, reason, project))
     }
 
     const timer = setTimeout(
@@ -648,30 +648,6 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
         // prevent, silently, at the moment it matters most.
         yield* passesInFlight.settled()
       }),
-  }
-}
-
-/** `apps/cli/src/daemon.ts` and `apps/cli/integration/telegram.test.ts` hold a promise `WorkLoop` until the apps/cli row; the daemon's own tests hold it too. */
-export function workLoopStartFace(port: WorkLoopPort) {
-  return Effect.runPromise(port.start())
-}
-
-/** As `workLoopStartFace`. */
-export function workLoopStopFace(port: WorkLoopPort) {
-  return Effect.runPromise(port.stop())
-}
-
-export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
-  const port = makeWorkLoop(options)
-  return {
-    start: () => workLoopStartFace(port),
-    stop: () => workLoopStopFace(port),
-    get passes() {
-      return port.passes
-    },
-    get busy() {
-      return port.busy
-    },
   }
 }
 

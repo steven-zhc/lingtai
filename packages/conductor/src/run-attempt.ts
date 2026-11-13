@@ -1987,14 +1987,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
 }
 
 /**
- * `runAttemptEffect` for a caller that holds promise ports (#1053): the tests,
- * and nothing in production.
- */
-export function runAttempt(options: AttemptOptions): Promise<AttemptOver> {
-  return Effect.runPromise(runAttemptEffect(attemptPortsFrom(options)))
-}
-
-/**
  * **`claim`, run before the walk and never inside it** (0120 §6, `#463`):
  * the one step whose body has nothing to route or requeue, so `runAttempt`'s
  * own terminal, `AttemptEnd`, has no row for it. `conduct.ts` calls this first,
@@ -2013,11 +2005,6 @@ export function claimStepEffect(options: AttemptPortOptions): Effect.Effect<Step
     context: { ...options.context, round: 0, recheck: options.context.recheck ?? [] },
     outcome: null,
   })
-}
-
-/** `claimStepEffect` for a caller that holds promise ports (#1053): the tests, and nothing in production. */
-export function claimStep(options: AttemptOptions): Promise<StepReached> {
-  return Effect.runPromise(claimStepEffect(attemptPortsFrom(options)))
 }
 
 /**

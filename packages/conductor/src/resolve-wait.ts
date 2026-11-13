@@ -205,16 +205,6 @@ function matchHead(given: string, head: string): 'match' | 'bad-sha' | 'mismatch
   return head.startsWith(sha) ? 'match' : 'mismatch'
 }
 
-/**
- * **Exported for the unit half alone**, the same reason `approveHolding` was
- * (`#487`): `resolveWait()` above takes `createFileLocker()`, which is the
- * filesystem, so by 0060 §1 the whole of `resolveWait()` cannot be
- * unit-tested — this function underneath it can.
- */
-export function resolveWaitHolding(options: ResolveWaitOptions, ticketId: string): Promise<ResolveWaitResult> {
-  return Effect.runPromise(resolveWaitHoldingEffect(options, ticketId))
-}
-
 export function resolveWaitHoldingEffect(
   options: ResolveWaitOptions,
   ticketId: string,

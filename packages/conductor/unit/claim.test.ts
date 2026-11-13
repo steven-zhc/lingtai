@@ -12,7 +12,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { claimTicketEffect, continueTicketEffect } from '../src/claim.ts'
-import { resolveWaitHolding } from '../src/resolve-wait.ts'
+import { resolveWaitHoldingEffect } from '../src/resolve-wait.ts'
 
 const PROJECT = 'lingtai'
 const SHA = 'a'.repeat(40)
@@ -47,17 +47,19 @@ async function approvedTicket(issue: number, runId: string) {
   // `client`/`issue`, so the branch-staleness check `resolveWaitHolding` now
   // requires for every `Approve` actually runs — omitting them used to skip
   // it silently (`resolve-wait.test.ts`'s own `no-client` refusal).
-  const resolved = await resolveWaitHolding(
-    {
+  const resolved = await Effect.runPromise(
+    resolveWaitHoldingEffect(
+      {
+        ticketId,
+        issue,
+        waitId,
+        resolution: { _tag: 'Approve', onSha: SHA },
+        by: 'human:steven',
+        client: { refSha: async () => SHA },
+        store,
+      },
       ticketId,
-      issue,
-      waitId,
-      resolution: { _tag: 'Approve', onSha: SHA },
-      by: 'human:steven',
-      client: { refSha: async () => SHA },
-      store,
-    },
-    ticketId,
+    ),
   )
   if (!resolved.ok) throw new Error(`fixture setup failed: ${resolved.detail}`)
   return { store, ticketId }

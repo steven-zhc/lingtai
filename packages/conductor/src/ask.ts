@@ -44,19 +44,6 @@ export interface AskOutcome {
   detail: string
 }
 
-/**
- * Holds an item on a question, before any run has claimed it.
- *
- * Refused on anything but `backlog`. A claimed item has a run that would be
- * holding a worktree while the question sat unanswered — and its block belongs
- * to that run, which is what the three in-pass appenders already write. A
- * blocked item is already asking something; a second question would replace
- * the first unanswered, and the union has room for one.
- */
-export function ask(options: AskOptions): Promise<AskOutcome> {
-  return Effect.runPromise(askEffect(options))
-}
-
 type AskOptions = {
   project: string
   issue: number
@@ -182,21 +169,6 @@ export function answerEffect(options: AnswerOptions): Effect.Effect<AskOutcome, 
     }),
     answerHoldingEffect(options, store, ticketId, { snapshots, writer: options.writer }),
   )
-}
-
-/**
- * **Exported for the unit half alone**, like `approveHolding`: `answer()` takes
- * `createFileLocker()` (`decidingEffect`), which is the filesystem, so by 0060 §1 it
- * cannot be unit-tested — this function underneath it can. `index.ts` does not
- * re-export it.
- */
-export function answerHolding(
-  options: AnswerOptions,
-  store: EventStore,
-  ticketId: string,
-  read: SnapshotReadOptions = {},
-): Promise<AskOutcome> {
-  return Effect.runPromise(answerHoldingEffect(options, store, ticketId, read))
 }
 
 export function answerHoldingEffect(

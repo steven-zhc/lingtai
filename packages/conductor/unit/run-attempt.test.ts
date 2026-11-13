@@ -32,7 +32,6 @@ import {
   ATTEMPT,
   REFUSING_STEPS,
   outcomeOf,
-  runAttempt,
   type AttemptEvent,
   type AttemptOptions,
   type StepBodies,
@@ -41,6 +40,7 @@ import {
   type StepReached,
   type StepWork,
 } from '../src/run-attempt.ts'
+import { runAttempt } from '../test/promise-faces.ts'
 
 // --------------------------------------------------------------- fixtures ----
 

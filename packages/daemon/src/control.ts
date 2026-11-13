@@ -155,10 +155,6 @@ export const controlWatermarkEffect = (store: EventStore = eventStore): Effect.E
     return yield* events.head(CONTROL_STREAM)
   })
 
-export function controlWatermark(store: EventStore = eventStore): Promise<number> {
-  return Effect.runPromise(controlWatermarkEffect(store))
-}
-
 /** Appends one event and returns the version it landed at. */
 const append = (type: string, data: unknown, store: EventStore, at?: number): Effect.Effect<number, ConcurrencyError> =>
   Effect.gen(function* () {
@@ -237,16 +233,6 @@ export const requestShutdownEffect = (
   // it later — `lingtai restart` — can withdraw that one and no other.
   append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store)
 
-export function requestShutdown(
-  by: string,
-  reason: string,
-  timeoutMs: number | null = null,
-  store: EventStore = eventStore,
-  force = false,
-): Promise<number> {
-  return Effect.runPromise(requestShutdownEffect(by, reason, timeoutMs, store, force))
-}
-
 /** What `requestShutdownUnlessStanding` found, and so what it did. */
 export type Asking =
   /** Nothing was standing, and this request now is — at `version`. */
@@ -290,16 +276,6 @@ export const requestShutdownUnlessStandingEffect = (
       )
     })
   return attempt(0)
-}
-
-export function requestShutdownUnlessStanding(
-  by: string,
-  reason: string,
-  timeoutMs: number | null = null,
-  store: EventStore = eventStore,
-  force = false,
-): Promise<Asking> {
-  return Effect.runPromise(requestShutdownUnlessStandingEffect(by, reason, timeoutMs, store, force))
 }
 
 /**
@@ -397,10 +373,6 @@ export const startAfterEffect = (
       at: found.at,
     }
   })
-
-export function startAfter(version: number, store: EventStore = eventStore): Promise<RecordedStart | null> {
-  return Effect.runPromise(startAfterEffect(version, store))
-}
 
 /**
  * Every shutdown request on `ctl-conductor` after `from` and at or below `to`,
@@ -540,10 +512,6 @@ export const beatEffect = (state: string, options: BeatOptions = {}): Effect.Eff
     )
   })
 
-export function beat(state: string, options: BeatOptions = {}): Promise<void> {
-  return Effect.runPromise(beatEffect(state, options))
-}
-
 /**
  * The beacon, for as long as this process lives.
  *
@@ -641,6 +609,7 @@ export const makeBeacon = (options: Omit<BeaconOptions, 'every'> = {}): BeaconPo
   }
 }
 
+/** The beacon's own timer in `startBeaconOn`, a promise host with no Effect around it; apps/cli/src/daemon.ts starts it. */
 export const beaconBeatFace = (port: BeaconPort, word: string): Promise<void> => Effect.runPromise(port.beat(word))
 
 export function startBeacon(state: string, options: BeaconOptions = {}): Beacon {

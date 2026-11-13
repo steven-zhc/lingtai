@@ -104,7 +104,7 @@ describe('a machine that wrote sqlite', () => {
       const { eventStore, log } = await import(${EVENT_STORE});
       const { projectionLag, readTasks, taskViewProjection } = await import(${PROJECTOR});
       const { createProjectionRunner } = await import(${PROMISE_RUNNER});
-      const { beat, createStatusTableEffect, readStatus } = await import(${CONTROL});
+      const { beatEffect, createStatusTableEffect, readStatus } = await import(${CONTROL});
       const { Effect } = await import(${EFFECT});
       const { parsePayload, ticketStream } = await import(${DOMAIN});
 
@@ -122,7 +122,7 @@ describe('a machine that wrote sqlite', () => {
       await runner.start();
 
       await Effect.runPromise(createStatusTableEffect());
-      await beat("up");
+      await Effect.runPromise(beatEffect("up"));
       const status = await readStatus();
 
       const cards = await readTasks({ project });
@@ -221,10 +221,10 @@ describe('a machine that wrote postgres', () => {
       const { log } = await import(${EVENT_STORE});
       const { openProjections } = await import(${PROJECTOR});
       const { Effect } = await import(${EFFECT});
-      const { processDaemonStore, readStatus } = await import(${DAEMON});
+      const { processDaemonStoreEffect, readStatus } = await import(${DAEMON});
 
       const projections = await Effect.runPromise(openProjections());
-      const daemon = await processDaemonStore();
+      const daemon = await Effect.runPromise(processDaemonStoreEffect());
 
       const store = await at(() => log.store.readAll(0n, 1));
       const queries = await at(() => log.queries.projectStreams("ticket-"));

@@ -315,7 +315,7 @@ export function unreadLines(unread: readonly UnreadProject[]): string[] {
 
 export interface SubscriberSetOptions extends BuildSubscribersOptions {
   /** Reads these projects' recipes again. The daemon's is `projectFilters` over the registered projects. */
-  reread: (projects: readonly string[]) => Promise<readonly ProjectFilter[]>
+  reread: (projects: readonly string[]) => Effect.Effect<readonly ProjectFilter[], unknown>
 }
 
 /** The daemon's subscribers, as they are now — which a later pass can add to. */
@@ -363,10 +363,7 @@ export function createSubscriberSet(options: SubscriberSetOptions): Effect.Effec
       retry: () =>
         Effect.gen(function* () {
           if (current.unread.length === 0) return
-          const filters = yield* Effect.tryPromise({
-            try: () => options.reread(current.unread.map((u) => u.project)),
-            catch: (err) => err,
-          })
+          const filters = yield* options.reread(current.unread.map((u) => u.project))
           const next = yield* buildSubscribers({ ...options, filters })
           const still = new Set(next.unread.map((u) => u.project))
           for (const { project } of current.unread) {

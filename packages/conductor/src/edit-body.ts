@@ -77,16 +77,6 @@ export function editBodyAndRequeueEffect(
   )
 }
 
-/** Exported for the unit half alone — see `requeueHolding`'s own comment in `approve.ts`. */
-export function editBodyAndRequeueHolding(
-  options: EditBodyAndRequeueOptions,
-  store: EventStore,
-  ticketId: string,
-  read: SnapshotReadOptions = {},
-): Promise<EditBodyAndRequeueResult> {
-  return Effect.runPromise(editBodyAndRequeueHoldingEffect(options, store, ticketId, read))
-}
-
 export function editBodyAndRequeueHoldingEffect(
   options: EditBodyAndRequeueOptions,
   store: EventStore,

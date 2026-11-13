@@ -290,16 +290,6 @@ export interface ReconcileOptions {
   github?: ConvergeOptions
 }
 
-/**
- * Finds every worktree the log says should not exist.
- *
- * Reads only. `reconcile` is what acts, and `lingtai doctor` calls this on its own
- * so it can say what would happen without making it happen.
- */
-export function findOrphans(options: ReconcileOptions = {}): Promise<Finding[]> {
-  return Effect.runPromise(findOrphansEffect(options))
-}
-
 export const findOrphansEffect = Effect.fn('daemon.findOrphans')(function* (options: ReconcileOptions = {}) {
   const store = logOf(options)
   const abandoned = options.abandoned ?? new Set<string>()
@@ -371,49 +361,6 @@ export const findOrphansEffect = Effect.fn('daemon.findOrphans')(function* (opti
 
   return findings
 })
-
-/**
- * Run logs whose run is over and whose ticket is done.
- *
- * The second thing `~/.lingtai` holds that outlives every process that knew
- * about it, and it is deliberately the worktree's shape —
- * `runs/<project>/<runId>.log` beside `worktrees/<project>/<runId>/` — so this
- * is the same walk in the same pass rather than a second mechanism
- * ([0034](../../../doc/decisions-archive/0034-the-run-log.md) §1).
- *
- * **The rule is not the worktree's rule, and it must not be.** A worktree
- * belonging to a run that is over is *always* wrong: it holds a branch checked
- * out and stops git updating that ref. A log belonging to a run that is over is
- * the ordinary case and the whole point — 0034 §4 keeps exactly those, because
- * the log worth reading is the one from the run that just failed.
- *
- * So what is reaped here is narrower: **a log whose work item has landed**
- * (§5). These files exist to explain why an item is not done; when it lands and
- * its issue closes there is nothing left to explain. `conduct.ts` deletes its
- * own on the way out, so in the ordinary case this finds nothing. It catches
- * the two cases that release cannot: a daemon killed mid-run, and an item that
- * landed by some other route — an approval, on the CLI or the board.
- *
- * A log with **no run stream behind it** is reported and never removed, which
- * is `findOrphans`' rule verbatim and for its reason: a run that never got as
- * far as saying what it was for is a mystery, and deleting mysteries is how you
- * stop being able to explain them.
- *
- * **A discussion's log is one of these and needs no case of its own** (#132).
- * `answerDiscussion` names the file for the `chatId`, that id *is* the chat's
- * stream, and `DiscussionAsked` on it carries the work item — so the two
- * questions below are asked and answered about a chat exactly as they are about
- * a run. A turn deletes its own on the way out, exactly as `conduct.ts` does,
- * so what this finds is the same residue for the same reason: a daemon killed
- * mid-answer.
- *
- * Nothing here reads what is *in* a file. 0034 §8 — the log is a trace and not
- * a record, so no behaviour may depend on its contents, and the only question
- * asked of one is whether it is still owed an explanation.
- */
-export function findOrphanLogs(options: ReconcileOptions = {}): Promise<Finding[]> {
-  return Effect.runPromise(findOrphanLogsEffect(options))
-}
 
 export const findOrphanLogsEffect = Effect.fn('daemon.findOrphanLogs')(function* (options: ReconcileOptions = {}) {
   const store = logOf(options)
@@ -692,10 +639,6 @@ function commandOf(pid: number): Effect.Effect<string | null> {
  */
 function isOurs(command: string): boolean {
   return /\bnode\b/.test(command) && /lingtai/i.test(command)
-}
-
-export function reconcile(options: ReconcileOptions = {}): Promise<Finding[]> {
-  return Effect.runPromise(reconcileEffect(options))
 }
 
 /**

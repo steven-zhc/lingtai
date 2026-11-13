@@ -32,17 +32,16 @@ import {
   AgentHost,
   currentRecipe,
   loadProject,
-  ownerlessClient,
+  ownerlessClientEffect,
   ticketedClientOf,
   attemptCeiling,
   Repo,
   runOnce,
   runQueue,
-  tallyTurn,
-  ticketsFor,
+  tallyTurnEffect,
+  ticketsForEffect,
   type TurnClient,
   type RunOnceResult,
-  type Tickets,
 } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { lockedEffect, makeGuard, readControlEffect } from '@lingtai/daemon'
@@ -278,12 +277,12 @@ export interface RunWorld {
   createGitHubClient: (options: CreateClientOptions) => Promise<GitHubClient>
   /** `currentRecipe` ignores its second argument; kept so a GitHub project is resolved exactly as it is today. */
   currentRecipe: (project: ProjectState, client?: GitHubClient) => Promise<ResolvedRecipe>
-  ticketsFor: (project: ProjectState, recipe: Recipe, client: Tickets) => Promise<Tickets>
+  ticketsFor: typeof ticketsForEffect
   readHookBinary: (path: string) => Promise<unknown>
   readPrompt: (path: string) => Promise<string>
   runOnce: typeof runOnce
   runQueue: typeof runQueue
-  tallyPass: typeof tallyTurn
+  tallyPass: typeof tallyTurnEffect
   lock: Layer.Layer<ConductorLock, ConductorBusy | LockUnreadable>
   projector: Layer.Layer<Projector>
   ports: Layer.Layer<Repo | AgentHost>
@@ -296,12 +295,12 @@ export function liveRunWorld(options: RunOptions, log: (line: string) => void): 
     loadProject,
     createGitHubClient,
     currentRecipe,
-    ticketsFor,
+    ticketsFor: ticketsForEffect,
     readHookBinary: (path) => readFile(path),
     readPrompt: (path) => readFile(path, 'utf8'),
     runOnce,
     runQueue,
-    tallyPass: tallyTurn,
+    tallyPass: tallyTurnEffect,
     lock: ConductorLockLive(options.lockKey === undefined ? {} : { key: options.lockKey }),
     projector: ProjectorLive(log),
     ports: tracedPorts,
@@ -461,13 +460,16 @@ export function run(
          * and the shape is what stops the two disagreeing about whether this
          * project will take work (#76).
          */
-        const { client: ownerless, remote } = yield* Effect.tryPromise({
+        const { client: ownerless, remote } = yield* ownerlessClientEffect(
+          project,
+          resolved.recipe,
+          world.ticketsFor,
+        ).pipe(
           // `client` is never read here: `ownerlessClient`'s own refusal
           // already requires `source.tickets: db`, `ticketsFor`'s only
           // branch that does not pass its third argument straight through.
-          try: () => ownerlessClient(project, resolved.recipe, world.ticketsFor),
-          catch: (err) => refuse((err as Error).message),
-        })
+          Effect.mapError((err) => refuse(err.message)),
+        )
 
         // Before anything is claimed: the runtime, whose account it spends on,
         // and what the pass may cost (`#348`) — read off the recipe `resolved`
@@ -503,10 +505,9 @@ export function run(
         // reduces that choice back into one object so `runOnce` and `runQueue`
         // keep taking one client; the refs, `fileAt`, the branch and the token
         // still go to GitHub either way.
-        const tickets = yield* Effect.tryPromise({
-          try: () => world.ticketsFor(project, resolved.recipe, owned),
-          catch: (err) => refuse((err as Error).message),
-        })
+        const tickets = yield* world
+          .ticketsFor(project, resolved.recipe, owned)
+          .pipe(Effect.mapError((err) => refuse((err as Error).message)))
 
         common = {
           project,
@@ -638,10 +639,13 @@ export function run(
         // while the pass carried on has landed, and the log says so — see
         // `tallyTurn`. Counting the merges this process performed printed
         // `0 landed` over a merge that had happened, and exited 1 on the count.
-        const { landed, held, stopped } = yield* Effect.tryPromise({
-          try: () => world.tallyPass(outcome.ran),
-          catch: (err) => refuse(`the attempt ran, but its summary could not be read back: ${(err as Error).message}`),
-        })
+        const { landed, held, stopped } = yield* world
+          .tallyPass(outcome.ran)
+          .pipe(
+            Effect.mapError((err) =>
+              refuse(`the attempt ran, but its summary could not be read back: ${(err as Error).message}`),
+            ),
+          )
         log(
           `${stopped === 0 ? symbol.pass() : symbol.fail()} ${outcome.ran.length} run(s): ${landed} landed, ${held} held, ${stopped} stopped (${outcome.stopped})`,
         )

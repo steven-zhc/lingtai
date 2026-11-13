@@ -13,7 +13,7 @@ import type { Runtime } from '@lingtai/agent'
  * gone from the catalogue — `createMemoryEventStore().plant` is the only way
  * to get either into a store at all, since `append` validates on the way in.
  */
-import { type AcquireDaemonLockOptions, startDaemon } from '@lingtai/daemon'
+import { type AcquireDaemonLockOptions, startDaemonEffect } from '@lingtai/daemon'
 import type { StoreChoice } from '@lingtai/env'
 import { LogPredatesHoldError, logPredatesHoldEffect, type LogQueries } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -172,12 +172,14 @@ describe('daemon start refuses through the guard (#451)', () => {
     store.plant({ type: 'StepRequested', schemaVer: 1, data: PRE_SWITCH_STEP })
 
     const order: string[] = []
-    const started = await startDaemon({
-      projections: [],
-      predatesHold: () => logPredatesHold(store),
-      watermark: async () => (order.push('watermark'), 0),
-      acquire: async () => (order.push('lock taken'), { ok: false, holder: null }),
-    })
+    const started = await Effect.runPromise(
+      startDaemonEffect({
+        projections: [],
+        predatesHold: () => logPredatesHold(store),
+        watermark: async () => (order.push('watermark'), 0),
+        acquire: async () => (order.push('lock taken'), { ok: false, holder: null }),
+      }),
+    )
 
     expect(order).toEqual([])
     expect(started.ok).toBe(false)

@@ -23,22 +23,21 @@ import { resolve } from 'node:path'
 
 import { createRuntime, type Runtime } from '@lingtai/agent'
 import {
-  ownerlessClient,
   currentRecipe,
   declinedBeforeWork,
   loadProjectsEffect,
+  ownerlessClientEffect,
   ticketedClientOf,
   readFixFilesEffect,
   runOnce,
   runQueue,
   runnableNowEffect,
   selectRunnable,
-  ticketsFor,
+  ticketsForEffect,
   type TurnClient,
   type RunOnceResult,
   type ScheduleResult,
   type Slots,
-  type Tickets,
   waitsFor,
 } from '@lingtai/conductor'
 import { readControlEffect } from '@lingtai/daemon'
@@ -132,7 +131,7 @@ export interface TurnOutcome {
 export interface ConductWorld {
   createGitHubClient: (options: CreateClientOptions) => Promise<GitHubClient>
   currentRecipe: (project: ProjectState, client?: GitHubClient, base?: string) => Promise<ResolvedRecipe>
-  ticketsFor: (project: ProjectState, recipe: Recipe, client: Tickets) => Promise<Tickets>
+  ticketsFor: typeof ticketsForEffect
   selectRunnable: typeof selectRunnable
   runOnce: typeof runOnce
   runQueue: typeof runQueue
@@ -140,7 +139,7 @@ export interface ConductWorld {
 
 /** The real one. */
 export function liveConductWorld(): ConductWorld {
-  return { createGitHubClient, currentRecipe, ticketsFor, selectRunnable, runOnce, runQueue }
+  return { createGitHubClient, currentRecipe, ticketsFor: ticketsForEffect, selectRunnable, runOnce, runQueue }
 }
 
 /**
@@ -263,8 +262,8 @@ export function conductWork(
         // Both before `where.looked()`: a refusal here — no `source.tickets:
         // db`, no `repo.remote`, a `TicketSourceConflict` — is recorded as a
         // `ProjectRefused` rather than a mid-run failure (#148).
-        const { client, remote } = yield* Effect.promise(() =>
-          ownerlessClient(project, resolved.recipe, world.ticketsFor),
+        const { client, remote } = yield* ownerlessClientEffect(project, resolved.recipe, world.ticketsFor).pipe(
+          Effect.orDie,
         )
         yield* where.looked
 
@@ -294,7 +293,7 @@ export function conductWork(
         // log already has GitHub-numbered work items) is durable: a throw after
         // `looked()` is not recorded as a `ProjectRefused` (see below).
         const recipe = resolved.recipe
-        const tickets = yield* Effect.promise(() => world.ticketsFor(project, recipe, client))
+        const tickets = yield* world.ticketsFor(project, recipe, client).pipe(Effect.orDie)
         // Looked at, now — not when the run below returns, which can be an hour
         // away, all of it with a refusal on record for a project being worked.
         yield* where.looked

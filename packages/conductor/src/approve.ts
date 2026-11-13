@@ -390,16 +390,6 @@ type RequeueHoldingOptions = {
   picks?: Readonly<Record<number, string>>
 }
 
-/** Exported for the unit half alone — see `approveHolding`'s own comment. */
-export function requeueHolding(
-  options: RequeueHoldingOptions,
-  store: EventStore,
-  ticketId: string,
-  read: SnapshotReadOptions = {},
-): Promise<RequeueResult> {
-  return Effect.runPromise(requeueHoldingEffect(options, store, ticketId, read))
-}
-
 export function requeueHoldingEffect(
   options: RequeueHoldingOptions,
   store: EventStore,

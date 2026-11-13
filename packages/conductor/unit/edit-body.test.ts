@@ -14,7 +14,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { answerOpenMarker } from '../src/body-section.ts'
-import { editBodyAndRequeueHolding } from '../src/edit-body.ts'
+import { editBodyAndRequeueHoldingEffect } from '../src/edit-body.ts'
 import type { IssueChannel } from '../src/tell.ts'
 import { writeSectionEffect } from '../src/write-section.ts'
 import { memoryTickets, type MemoryTickets } from '../test/memory-tickets.ts'
@@ -132,18 +132,20 @@ describe('editBodyAndRequeueHolding', () => {
     const tickets = memoryTickets()
     await tickets.createIssue({ title: 't', body: 'the ticket.', labels: [] })
 
-    const result = await editBodyAndRequeueHolding(
-      {
-        project: PROJECT,
-        issue: ISSUE,
-        waitId,
-        text: 'use the helper in foo.ts',
-        by: 'human:steven',
-        github: tickets,
+    const result = await Effect.runPromise(
+      editBodyAndRequeueHoldingEffect(
+        {
+          project: PROJECT,
+          issue: ISSUE,
+          waitId,
+          text: 'use the helper in foo.ts',
+          by: 'human:steven',
+          github: tickets,
+          store,
+        },
         store,
-      },
-      store,
-      ticketId,
+        ticketId,
+      ),
     )
 
     expect(result).toMatchObject({ ok: true, written: true })
@@ -176,9 +178,9 @@ describe('editBodyAndRequeueHolding', () => {
       store,
     }
 
-    const first = await editBodyAndRequeueHolding(options, store, ticketId)
+    const first = await Effect.runPromise(editBodyAndRequeueHoldingEffect(options, store, ticketId))
     expect(first.ok).toBe(true)
-    const second = await editBodyAndRequeueHolding(options, store, ticketId)
+    const second = await Effect.runPromise(editBodyAndRequeueHoldingEffect(options, store, ticketId))
     expect(second.ok).toBe(false) // the ticket is backlog now; the wait is no longer current
 
     const issue = await tickets.getIssue(ISSUE)
@@ -193,10 +195,12 @@ describe('editBodyAndRequeueHolding', () => {
     await tickets.createIssue({ title: 't', body: 'the ticket.', labels: [] })
     const github = landsButThrows(tickets, 'socket hang up')
 
-    const result = await editBodyAndRequeueHolding(
-      { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
-      store,
-      ticketId,
+    const result = await Effect.runPromise(
+      editBodyAndRequeueHoldingEffect(
+        { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
+        store,
+        ticketId,
+      ),
     )
 
     expect(result).toMatchObject({ ok: true, written: true })
@@ -220,10 +224,12 @@ describe('editBodyAndRequeueHolding', () => {
     await tickets.createIssue({ title: 't', body: 'the ticket.', labels: [] })
     const github = alwaysFails(tickets, 'connection refused')
 
-    const result = await editBodyAndRequeueHolding(
-      { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
-      store,
-      ticketId,
+    const result = await Effect.runPromise(
+      editBodyAndRequeueHoldingEffect(
+        { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
+        store,
+        ticketId,
+      ),
     )
 
     expect(result).toMatchObject({ ok: false, written: false })
@@ -240,10 +246,12 @@ describe('editBodyAndRequeueHolding', () => {
     await tickets.createIssue({ title: 't', body: 'the ticket.', labels: [] })
     const github = conflictOnFirstWrite(tickets, (body) => `${body}\n\n## Someone else's edit\n`)
 
-    const result = await editBodyAndRequeueHolding(
-      { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
-      store,
-      ticketId,
+    const result = await Effect.runPromise(
+      editBodyAndRequeueHoldingEffect(
+        { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
+        store,
+        ticketId,
+      ),
     )
 
     expect(result).toMatchObject({ ok: true, written: true })
@@ -276,10 +284,12 @@ describe('editBodyAndRequeueHolding', () => {
     const tickets = memoryTickets()
     await tickets.createIssue({ title: 't', body: 'the ticket.', labels: [] })
 
-    const result = await editBodyAndRequeueHolding(
-      { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github: tickets, store },
-      store,
-      ticketId,
+    const result = await Effect.runPromise(
+      editBodyAndRequeueHoldingEffect(
+        { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github: tickets, store },
+        store,
+        ticketId,
+      ),
     )
 
     expect(result).toMatchObject({ ok: false, written: false, detail: expect.stringContaining('not offered') })
@@ -297,10 +307,12 @@ describe('editBodyAndRequeueHolding', () => {
     await tickets.createIssue({ title: 't', body: 'the ticket.', labels: [] })
     const github = requeuedDuringTheWrite(tickets, store, ticketId, waitId)
 
-    const result = await editBodyAndRequeueHolding(
-      { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
-      store,
-      ticketId,
+    const result = await Effect.runPromise(
+      editBodyAndRequeueHoldingEffect(
+        { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
+        store,
+        ticketId,
+      ),
     )
 
     expect(result.ok).toBe(false)

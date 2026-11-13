@@ -10,7 +10,7 @@
  * these tests pin the whole chain — `askBeforeGithubAdd` gating on its
  * result — rather than a stand-in that always returns null.
  */
-import { checkInstallation } from '@lingtai/conductor/onboard'
+import { checkInstallationEffect } from '@lingtai/conductor/onboard'
 import type { Installation } from '@lingtai/github'
 import { NotInstalledError } from '@lingtai/github'
 import { recipePath, resolveSource } from '@lingtai/recipe'
@@ -101,13 +101,14 @@ function countedDeps(
     written: {},
   }
   counted.deps = {
-    check: (slug, log) => checkInstallation(slug, log, undefined, lookup),
+    check: (slug, log) => checkInstallationEffect(slug, log, undefined, lookup),
     auth: () => 'app',
     interactive: () => true,
     // The App tests prove `gh` is never touched.
-    ghAccess: async () => {
-      throw new Error('gh was asked on an App machine')
-    },
+    ghAccess: () =>
+      fx(async () => {
+        throw new Error('gh was asked on an App machine')
+      }),
     picker,
     files: {
       read: async (path) => {
@@ -128,7 +129,7 @@ function countedDeps(
       return null
     },
     runtimes: overrides.runtimes ?? (() => Effect.succeed([])),
-    history: overrides.history ?? (async () => []),
+    history: overrides.history ?? (() => Effect.succeed([])),
   }
   return counted
 }
