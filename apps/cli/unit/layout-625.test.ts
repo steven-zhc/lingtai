@@ -1,6 +1,7 @@
 /** `env`, `projection`, `upgrade`, `rollback` and `uninstall` through `@effect/cli` and the output module (#625). */
 import type { ProjectEnvListing } from '@lingtai/agent-env'
 import type { ProjectionLag } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runCli, type Runners } from '../src/cli.ts'
@@ -13,6 +14,7 @@ const ESC = String.fromCharCode(27)
 async function capture(
   args: string[],
   runners: Partial<Runners> = {},
+  run: typeof runCli = runCli,
 ): Promise<{ code: number; out: string; err: string }> {
   let out = ''
   let err = ''
@@ -20,7 +22,7 @@ async function capture(
   vi.spyOn(process.stderr, 'write').mockImplementation((t: string | Uint8Array) => ((err += String(t)), true))
   vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void (out += `${a.join(' ')}\n`))
   vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => void (err += `${a.join(' ')}\n`))
-  const code = await runCli(['node', 'lingtai', ...args], runners)
+  const code = await run(['node', 'lingtai', ...args], runners)
   return { code, out, err }
 }
 
@@ -34,9 +36,9 @@ afterEach(() => {
   else process.env['NO_COLOR'] = saved
 })
 
-function recording<T>(): { seen: T[]; run: (request: T) => Promise<number> } {
+function recording<T>(): { seen: T[]; run: (request: T) => Effect.Effect<number> } {
   const seen: T[] = []
-  return { seen, run: async (request) => (seen.push(request), 0) }
+  return { seen, run: (request) => (seen.push(request), Effect.succeed(0)) }
 }
 
 describe('lingtai env', () => {
@@ -71,11 +73,19 @@ describe('lingtai env', () => {
   })
 
   it('answers a read that threw with the error document under --json, exit 1', async () => {
-    const a = await capture(['env', 'list', 'nope', '--json'], {
-      env: async () => {
-        throw new Error('unknown project "nope"')
-      },
-    })
+    // Through the live runner and its `lift`, so the message is the module's own and not the wrapper's.
+    vi.resetModules()
+    vi.doMock('../src/env.ts', async (orig) => ({
+      ...(await orig<typeof import('../src/env.ts')>()),
+      envList: () => Promise.reject(new Error('unknown project "nope"')),
+    }))
+    let a: Awaited<ReturnType<typeof capture>>
+    try {
+      const { runCli: fresh } = await import('../src/cli.ts')
+      a = await capture(['env', 'list', 'nope', '--json'], {}, fresh)
+    } finally {
+      vi.doUnmock('../src/env.ts')
+    }
     expect(a.code).toBe(1)
     expect(JSON.parse(a.out)).toEqual({
       version: 1,
