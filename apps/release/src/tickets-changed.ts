@@ -5,17 +5,17 @@
  */
 import { readFileSync } from 'node:fs'
 
+import { ticketOfLandingSubject } from '@lingtai/repo/landing-subject'
+
 /** Priority order, which is also the order the groups print in. */
 export const KINDS = ['bug', 'tech-debt', 'feature', 'documentation'] as const
-
-const LANDING = /^Merge branch 'agent\/(\d+)' into HEAD$/
 
 /** Ticket numbers from first-parent subjects: anchored, deduplicated, in first-landing order. */
 export function landedTickets(subjects: string[]): number[] {
   const seen = new Set<number>()
   for (const s of subjects) {
-    const m = LANDING.exec(s)
-    if (m) seen.add(Number(m[1]))
+    const n = ticketOfLandingSubject(s)
+    if (n !== null) seen.add(n)
   }
   return [...seen]
 }

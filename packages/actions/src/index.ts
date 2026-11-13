@@ -46,6 +46,13 @@ export {
   type RestoreAnswer,
   type Drafted,
   type ReviewIssue,
+  LANDED_DIFF_LINES,
+  landedPathsSection,
+  type LandedCommit,
+  type LandedCommits,
+  type LandedMoved,
+  type LandedPath,
+  type LandedTitle,
 } from './agent-action.ts'
 export {
   createFileAction,

@@ -161,7 +161,8 @@ export interface AgentActionDeps {
     fromSha: string
     toSha: string
     conflicted?: readonly string[]
-  }) => Promise<{ path: string; diff: string }[]>
+    branchSha?: string
+  }) => Promise<LandedPath[]>
   /**
    * Puts the development worktree back at `onSha`, clean, if the reviewer left
    * it otherwise (`#587`). Supplied by the caller for `diff`'s reason: git is
@@ -205,7 +206,8 @@ export interface AgentPortDeps {
     fromSha: string
     toSha: string
     conflicted?: readonly string[]
-  }): Effect.Effect<{ path: string; diff: string }[]>
+    branchSha?: string
+  }): Effect.Effect<LandedPath[]>
   restore(onSha: string): Effect.Effect<RestoreAnswer>
   settingsPath: string
   limits: AgentActionDeps['limits']
@@ -427,35 +429,146 @@ above. A new finding outside these lines is demoted to a minor note.
 /** How many lines of what landed on the base the review is shown (#594). */
 export const LANDED_DIFF_LINES = 400
 
+/** What a landed ticket's title read gave: known, absent from this log, or a read that failed (#1121). */
+export type LandedTitle = { readonly known: string } | { readonly none: true } | { readonly failed: string }
+
+/** One first-parent commit that touched a conflicted path; `ticket` is set when its subject is a landing. */
+export interface LandedCommit {
+  readonly sha: string
+  readonly subject: string
+  readonly ticket?: { readonly n: number; readonly title: LandedTitle }
+}
+
+/** The commits read for a path, or the failure to read them, which is shown as text. */
+export type LandedCommits = { readonly lines: readonly LandedCommit[] } | { readonly failed: string }
+
+/** One path of the block: the base's diff, and for a conflicted path the commits and the branch's diff (#1121). */
+export interface LandedPath {
+  readonly path: string
+  readonly diff: string
+  readonly commits?: LandedCommits
+  readonly branchDiff?: string
+}
+
+/** What the base moved over, as the block states it. */
+export interface LandedMoved {
+  readonly paths: readonly string[]
+  readonly fromSha: string
+  readonly toSha: string
+  readonly conflicted?: readonly string[]
+  readonly branchSha?: string
+}
+
+const commitLine = (c: LandedCommit): string => {
+  const sha = `\`${c.sha.slice(0, 7)}\``
+  if (c.ticket === undefined) return c.sha === '' ? `- ${c.subject}` : `- ${sha} ${c.subject}`
+  const { n, title } = c.ticket
+  if ('known' in title) return `- ${sha} #${n} — ${title.known}`
+  if ('none' in title) return `- ${sha} #${n} (no title for #${n} in this log)`
+  return `- ${sha} #${n} (title not read: ${title.failed})`
+}
+
+const NOT_SHOWN = '(not shown: past the cap)'
+
+/**
+ * The per-path sections of the block, under one budget (#594, #1121): for a block
+ * with commits or branch sides, `capLines` bounds the whole rendered text, every
+ * heading, label, fence, separator, commit line and diff line, notes included; a
+ * #594 block (diffs only) counts diff lines alone, as it did. The
+ * caller orders `per` (conflicted paths first); this does not sort. The path the
+ * cap lands in is marked cut — with the section, for a path that has commits —
+ * and every later section of it prints `(not shown: past the cap)`; every later
+ * path is named as left out. A path without `commits` renders as #594 did.
+ */
+export function landedPathsSection(moved: LandedMoved, per: readonly LandedPath[], capLines: number): string {
+  const range = (to: string | undefined) => `\`${moved.fromSha.slice(0, 7)}..${(to ?? '').slice(0, 7)}\``
+  // A block of #594's kind (no commits, no branch side) keeps its old count: diff lines only.
+  const counted = per.some((e) => e.commits !== undefined || e.branchDiff !== undefined)
+  const cut: string[] = []
+  const omitted: string[] = []
+  const shown: string[] = []
+  if (!counted) {
+    let left = capLines
+    for (const { path, diff } of per) {
+      if (left <= 0) {
+        omitted.push(path)
+        continue
+      }
+      const lines = diff.replace(/\n$/, '').split('\n')
+      const take = lines.slice(0, left)
+      left -= take.length
+      if (take.length < lines.length) cut.push(path)
+      shown.push(`### ${path}\n\n\`\`\`diff\n${take.join('\n')}\n\`\`\``)
+    }
+  } else {
+    // Every rendered line is charged: headings, labels, fences, blank separators and commit lines
+    // (a multi-line detail is several). What is held back is the two note lines and a two-line
+    // placeholder for each of the three sections a cut path can still owe.
+    let left = capLines - 8
+    const ENTRY_MIN = 6
+    for (const entry of per) {
+      if (left < ENTRY_MIN) {
+        omitted.push(entry.path)
+        continue
+      }
+      let cutIn: string | null = null
+      const out: string[] = [`### ${entry.path}`]
+      left -= out.length + (shown.length > 0 ? 1 : 0)
+      const section = (label: string, head: string | null, body: readonly string[], fence: boolean) => {
+        const overhead = 1 + (head === null ? 0 : 2) + (fence ? 2 : 0)
+        if (cutIn !== null || left < overhead + 1) {
+          cutIn ??= label
+          out.push('', NOT_SHOWN)
+          return
+        }
+        const take = body.slice(0, left - overhead)
+        left -= overhead + take.length
+        if (take.length < body.length) cutIn ??= label
+        out.push('')
+        if (head !== null) out.push(head, '')
+        if (fence) out.push('```diff', ...take, '```')
+        else out.push(...take)
+      }
+      const split = (text: string) => text.replace(/\n$/, '').split('\n')
+      if (entry.commits !== undefined) {
+        const c = entry.commits
+        const lines =
+          'failed' in c
+            ? split(`[could not read the commits: ${c.failed}]`)
+            : c.lines.length === 0
+              ? [`(no first-parent commit in ${range(moved.toSha)} touched this path)`]
+              : c.lines.flatMap((l) => split(commitLine(l)))
+        section('commits', 'What landed here:', lines, false)
+      }
+      section('base diff', null, split(entry.diff), true)
+      if (entry.branchDiff !== undefined) {
+        const head = `What this branch did to it, ${range(moved.branchSha)}:`
+        if (entry.branchDiff.trim() === '')
+          section('branch diff', head, ['(this branch did not change this path)'], false)
+        else section('branch diff', head, split(entry.branchDiff), true)
+      }
+      if (cutIn !== null) cut.push(entry.commits === undefined ? entry.path : `${entry.path} (cut in: ${cutIn})`)
+      shown.push(out.join('\n'))
+    }
+  }
+  const notes = [
+    cut.length > 0 ? `Cut at ${capLines} lines: ${cut.join(', ')}.` : '',
+    omitted.length > 0 ? `Left out, past the ${capLines}-line cap: ${omitted.join(', ')}.` : '',
+  ].filter(Boolean)
+  return `${shown.join('\n\n')}${notes.length > 0 ? `\n\n${notes.join(' ')}` : ''}`
+}
+
 /**
  * The section a review after a `base-moved` merge is shown (#594): every
  * overlapping path up front, then their diffs up to `capLines` lines, the path
  * the cap landed in marked cut and every path after it named as left out.
  */
 export function landedOnBaseBlock(
-  moved: { paths: readonly string[]; fromSha: string; toSha: string; conflicted?: readonly string[] },
-  per: readonly { path: string; diff: string }[],
+  moved: LandedMoved,
+  per: readonly LandedPath[],
   capLines: number = LANDED_DIFF_LINES,
 ): string {
-  let left = capLines
-  const shown: string[] = []
-  const cut: string[] = []
-  const omitted: string[] = []
-  for (const { path, diff } of per) {
-    if (left <= 0) {
-      omitted.push(path)
-      continue
-    }
-    const lines = diff.replace(/\n$/, '').split('\n')
-    const take = lines.slice(0, left)
-    left -= take.length
-    if (take.length < lines.length) cut.push(path)
-    shown.push(`### ${path}\n\n\`\`\`diff\n${take.join('\n')}\n\`\`\``)
-  }
-  const notes = [
-    cut.length > 0 ? `Cut at ${capLines} lines: ${cut.join(', ')}.` : '',
-    omitted.length > 0 ? `Left out, past the ${capLines}-line cap: ${omitted.join(', ')}.` : '',
-  ].filter(Boolean)
+  const section = landedPathsSection(moved, per, capLines)
   if (moved.conflicted !== undefined) {
     const marked = moved.conflicted
     return `## What landed on the base
@@ -467,7 +580,7 @@ changed on both sides: ${moved.paths.map((p) => (marked.includes(p) ? `${p} (con
 What the base did to them, \`${moved.fromSha.slice(0, 7)}..${moved.toSha.slice(0, 7)}\` (the diff above is this
 change against the base it was merged with, so none of this is in it):
 
-${shown.join('\n\n')}${notes.length > 0 ? `\n\n${notes.join(' ')}` : ''}
+${section}
 
 Did the resolution drop or undo any of these base changes? Name each one that is not in the merged result, with the line on each side. Report what you find through the findings below.`
   }
@@ -479,7 +592,7 @@ paths were changed on both sides: ${moved.paths.join(', ')}.
 What the base did to them, \`${moved.fromSha.slice(0, 7)}..${moved.toSha.slice(0, 7)}\` (the diff above is this
 change against the base it was merged with, so none of this is in it):
 
-${shown.join('\n\n')}${notes.length > 0 ? `\n\n${notes.join(' ')}` : ''}
+${section}
 
 Does what landed on the base change the behaviour this change relies on or alters? Name the line on each side. Report what you find through the findings below.`
 }

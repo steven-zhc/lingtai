@@ -756,7 +756,7 @@ export interface FakeTree {
    * `diff --diff-filter=U -z` answers the paths NUL-joined, and `merge-base --is-ancestor`
    * fails when `ancestor` is false. Also makes `did` record each call's full arguments.
    */
-  inTree?: { conflicts: string[]; ancestor: boolean; failing?: string }
+  inTree?: { conflicts: string[]; ancestor: boolean; failing?: string; log?: string }
 }
 
 export function fakePorts(
@@ -827,6 +827,7 @@ export function fakePorts(
             }
             if (args[0] === 'diff' && args.includes('--name-only') && args.includes('-z'))
               return Effect.succeed('src/fix.ts\0')
+            if (args.includes('log') && inTree.log !== undefined) return Effect.succeed(inTree.log)
             if (args[0] === 'merge-base' && args[1] === '--is-ancestor') {
               return inTree.ancestor ? Effect.succeed('') : refuse('not an ancestor')
             }
