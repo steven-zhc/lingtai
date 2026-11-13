@@ -1,6 +1,6 @@
 # 0122 — Several attempts, one conductor: slots per project, who runs together, one landing at a time, what a drain waits for
 
-**Status** accepted · 2026-10-25
+**Status** accepted · 2026-10-25 · amended 2026-11-13: the queue checks a red base itself, and says why nothing runs
 
 One conductor may run several attempts at once. How many is `runtime.concurrency`
 in a project's recipe, default 1. Tickets that cannot safely run together are
@@ -65,6 +65,15 @@ and the dollar ceiling lands before any N > 1.
      with nothing**: everything else runs, and no agent is paid to predict scope.
      What this lets through is caught by the re-review on a moved base (§3, #593)
      and by conflict waits (#589).
+   - **A ticket whose base is red is passed over as `base-red`**
+     ([0108](0108-a-refusal-buys-a-round.md) §13), and it is the queue's look
+     that decides when the base is green again. When a project has a
+     `base-red` ticket and its base's head is not the commit last checked, the
+     look runs the refused check once on that head, in a throwaway worktree —
+     no agent, no claim, no slot — and records the result keyed by the commit
+     and the command. Green, every ticket it held is taken again from its saved
+     head; red, they stay, and the reason says which check on which commit. A
+     base that does not move is not checked again: it is someone's to fix.
    - **The in-memory set of attempts in flight is subtracted first.** A ticket
      claimed a moment ago may still read `queued` in `task_view` on the next look,
      because the projection lags the claim. If both miss, the claim's version
@@ -186,7 +195,23 @@ and the dollar ceiling lands before any N > 1.
    | A refused recipe | `stage: "recipe"` in `conduct.ts` | Already per project | — |
    | A missing environment | `env` in `schedule.ts` | Already per project | — |
    | No GitHub App | `projectsForTurn` in `apps/cli/src/conduct.ts` (#355) | Stays installation-wide: one App per machine ([0114](0114-a-github-app-not-a-token.md)) | — |
-   | A red base | None exists | If one is added, it is per project | — |
+   | A red base | `base-red`, checked by the look (§2, 0108 §13) | Per project | — |
+
+8. **When a project has work queued and nothing running, it says why.** A
+   project whose queue holds a ticket that is not on hold (`agent:hold` and the
+   other excluded labels do not count) and that has had no attempt in flight
+   for longer than one look shows one sentence: why nothing runs, traced to the
+   root of what holds it. *Seven tickets wait on #1111, which waits on you*;
+   *main is red at `a7148c1` (`pnpm test`); three tickets wait for it*;
+   *GitHub's rate limit; work resumes at 14:05*; *the day's ceiling*; *the
+   daemon is not running*. A `blocked-by` chain is followed to the ticket at its
+   root and that ticket's own state; a lock names itself (0126). It is computed
+   from the state the queue already reads — no agent and no new event — and is
+   shown at the top of the board's Queued column and under `Queue` in
+   `lingtai status`, never as a new object on the bar
+   ([doc/design/the-bar.md](../design/the-bar.md)); where the root is a lock,
+   the line points at the banner that already carries it. A queue that holds
+   only tickets on hold says nothing: that is a person's choice.
 
 ## Consequences
 
