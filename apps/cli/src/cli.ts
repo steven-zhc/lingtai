@@ -65,7 +65,12 @@ const eventsCommand = Command.make(
     Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       // Loaded here, for the reason `status` gives: no other command parses the manifest.
-      const { events, eventsJson, findEvent, renderEvent, renderEvents } = yield* lift(() => import('./events.ts'))
+      const { events, eventsJson, findEvent, renderEvent, renderEvents } = yield* lift(
+        () => import('./events.ts'),
+      ).pipe(
+        // No `try` here today: a failed import is a defect, which `runCli` ends as 1.
+        Effect.orDie,
+      )
       if (args.name._tag === 'None') {
         if (args.json) printJson('events', eventsJson(events))
         else for (const line of renderEvents(events, { columns: process.stdout.columns })) console.log(line)
@@ -79,8 +84,7 @@ const eventsCommand = Command.make(
         return yield* exitWith(1)
       } else if (args.json) printJson('events', eventsJson(events, found))
       else for (const line of renderEvent(found)) console.log(line)
-      // No `try` here today: a failed import is a defect, which `runCli` ends as 1.
-    }).pipe(Effect.orDie),
+    }),
 ).pipe(Command.withDescription(definitionOf('events').task))
 
 const doctor = Command.make(
