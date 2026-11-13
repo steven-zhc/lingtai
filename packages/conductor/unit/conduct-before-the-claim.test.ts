@@ -300,12 +300,17 @@ describe('the conductor runs the agent the recipe names, or nothing', () => {
     const store = memoryStore()
     const did: string[] = []
     const codex = RECIPE.replace('agent: claude-code', 'agent: codex')
+    let probed = 0
 
     const result = await once(
       {
         project,
         client: fakeGitHub([], codex),
         runtime,
+        signedIn: () => {
+          probed++
+          return Promise.resolve([])
+        },
         issue: 7,
         hookBinary: '/tmp/fake/lingtai-hook',
         prompt: 'fix {{issue}}',
@@ -318,6 +323,8 @@ describe('the conductor runs the agent the recipe names, or nothing', () => {
     expect(result).toMatchObject({ ok: false, stage: 'recipe', ticketId: null })
     expect((result as { detail: string }).detail).toContain('runtime.agent is codex')
     expect((result as { detail: string }).detail).toContain('this conductor runs claude-code')
+    // The refusal needs no sign-in probe, and a probe is a process (0060 §1).
+    expect(probed).toBe(0)
     expect(did).toEqual([])
     expect(await store.read(`ticket-${PROJECT}-7`)).toEqual([])
   })

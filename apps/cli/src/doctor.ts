@@ -143,7 +143,7 @@ import {
   taskViewProjection,
   type Projection,
 } from '@lingtai/projector'
-import type { ResolvedRecipe } from '@lingtai/recipe'
+import type { ResolvedRecipe, SignedIn } from '@lingtai/recipe'
 import {
   UNBOUNDED,
   baseDivergence,
@@ -1250,6 +1250,8 @@ export interface DoctorReach {
   /** As `spendToday` takes it: today's rows and the ceiling, injectable so a unit test reads no store. */
   /** `gh`'s runner for the `github: gh login` row, injectable so a unit test spawns nothing. */
   gh?: GhRun
+  /** What this machine is signed in to, for the `recipe:` row — injectable so a unit test spawns nothing. */
+  signedIn?: SignedIn
   spend?: () => Effect.Effect<{ day: DaySpend; ceilingUsd: number | undefined }, unknown>
   /** The `account: <runtime>` rows, injectable so a unit test reads no store (#1009). */
   accounts?: () => Effect.Effect<CheckResult[]>
@@ -2407,7 +2409,10 @@ function unresolvedProblems(filters: readonly ProjectFilter[] | null): ReadonlyM
  * The detail is `ProjectFilter`'s, the same value `lingtai daemon` prints at
  * startup and `lingtai status` prints per project. Three commands, one answer.
  */
-function projectRecipes(filters: readonly ProjectFilter[] | null): Effect.Effect<CheckResult[], unknown> {
+function projectRecipes(
+  filters: readonly ProjectFilter[] | null,
+  probe: SignedIn = signedInHere,
+): Effect.Effect<CheckResult[], unknown> {
   return Effect.gen(function* () {
     const name = 'recipe: resolves for every project'
     if (filters === null) {
@@ -2429,7 +2434,7 @@ function projectRecipes(filters: readonly ProjectFilter[] | null): Effect.Effect
     // **What this machine can dispatch beyond each project's own** (`#314`). One
     // cached probe for the whole report rather than one per project: the answer is
     // about the machine, and `signedInProbe` remembers it for a minute anyway.
-    const signedIn = yield* lift(() => signedInHere())
+    const signedIn = yield* lift(() => probe())
     return filters.map((f) => recipeRow(f, f.ok ? f.recipe.runtime.agent : '', signedIn))
   })
 }
@@ -3687,7 +3692,10 @@ export function runDoctor(
         if (ghResult !== null) results.push(ghResult)
       }),
     )
-    yield* step('project recipes', projectRecipes(filters).pipe(Effect.orDie, Effect.map(pushAll)))
+    yield* step(
+      'project recipes',
+      projectRecipes(filters, reach.signedIn ?? signedInHere).pipe(Effect.orDie, Effect.map(pushAll)),
+    )
     yield* step('declared environment', declaredEnvironment(env, loadE, reach).pipe(Effect.map(pushAll)))
     yield* step('recipe bases', recipeGovernsItsBase(env, loadE, reach).pipe(Effect.map(pushAll)))
     yield* step('settings', settingsSources(reach.settings).pipe(Effect.map(push)))
