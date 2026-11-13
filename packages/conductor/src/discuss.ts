@@ -441,7 +441,7 @@ function proposalOf(p: Record<string, unknown>): { kind: 'prompt' | 'ticket'; te
 
 export interface DiscussionPorts {
   /** One file from the mirror, or null when there is no such path at that ref. */
-  serve(ref: string, path: string): Promise<string | null>
+  serve(ref: string, path: string): Effect.Effect<string | null, unknown>
   /**
    * Runs the assistant once.
    *
@@ -451,13 +451,17 @@ export interface DiscussionPorts {
    * what one call may spend arrives through `call`, on every round, off the
    * same recipe's `discuss.limits`.**
    */
-  ask(prompt: string, round: number, call: { model?: string; turns: number; wallMs: number }): Promise<Answered>
+  ask(
+    prompt: string,
+    round: number,
+    call: { model?: string; turns: number; wallMs: number },
+  ): Effect.Effect<Answered, unknown>
   /**
    * The version of the runtime `ask` will use for this round, as it prints it
    * (#929), or null. Asked every round, just before `ask`; a host answers for
-   * the runtime it chose, and a rejection is recorded as null.
+   * the runtime it chose, and a failure or a defect is recorded as null.
    */
-  version(): Promise<string | null>
+  version(): Effect.Effect<string | null, unknown>
   store: EventStore
   log?: (line: string) => void
 }
@@ -503,14 +507,9 @@ export interface HeldTurn {
  *
  * It never throws. A discussion is a thing a person is watching; an exception
  * that reached the daemon's subscription would stop the loop over a question.
- */
-export function holdDiscussion(ports: DiscussionPorts, options: DiscussionTurnOptions): Promise<HeldTurn> {
-  return Effect.runPromise(holdDiscussionEffect(ports, options))
-}
-
-/**
- * `holdDiscussion` as an Effect. It never fails: a port that throws, a store that refuses and a
- * defect all end the turn as `answered: false`, with the cause said through `ports.log`.
+ *
+ * It never fails: a port that fails or dies, a store that refuses and a defect all end the turn as
+ * `answered: false`, with the cause said through `ports.log`. An interruption is not one of them.
  */
 export function holdDiscussionEffect(ports: DiscussionPorts, options: DiscussionTurnOptions): Effect.Effect<HeldTurn> {
   // Outside the generator so the catch below can still report what was spent before the cause.
@@ -580,8 +579,8 @@ export function holdDiscussionEffect(ports: DiscussionPorts, options: Discussion
       let threw = false
       // Before the call, so a crash or a kill still leaves the prompt on the log
       // (#923). `ports.ask` hands `prompt` to the runtime unchanged.
-      const runtimeVersion = yield* lift(() => Promise.resolve().then(() => ports.version())).pipe(
-        Effect.catch(() => Effect.succeed(null)),
+      const runtimeVersion = yield* Effect.suspend(() => ports.version()).pipe(
+        notInterrupted(() => Effect.succeed(null)),
       )
       yield* Effect.promise(() =>
         recordPrompt(
@@ -596,15 +595,15 @@ export function holdDiscussionEffect(ports: DiscussionPorts, options: Discussion
           log,
         ),
       )
-      const outcome = yield* lift(() => ports.ask(prompt, round, call)).pipe(
-        Effect.catch((err: unknown) => {
+      const outcome = yield* Effect.suspend(() => ports.ask(prompt, round, call)).pipe(
+        notInterrupted((err) => {
           threw = true
           return Effect.succeed<Answered>({
             turns: 0,
             durationMs: 0,
             costUsd: null,
             text: null,
-            failure: { kind: 'crash', detail: (err as Error).message },
+            failure: { kind: 'crash', detail: err.message },
           })
         }),
       )
@@ -639,7 +638,9 @@ export function holdDiscussionEffect(ports: DiscussionPorts, options: Discussion
           const cut = at.indexOf(':')
           const ref = at.slice(0, cut)
           const path = at.slice(cut + 1)
-          const text = yield* lift(() => ports.serve(ref, path)).pipe(Effect.catch(() => Effect.succeed(null)))
+          const text = yield* Effect.suspend(() => ports.serve(ref, path)).pipe(
+            notInterrupted(() => Effect.succeed(null)),
+          )
           served.push({ at, text })
         }
         log(`discussion ${options.chatId}: served ${reply.paths.length} file(s)`)
@@ -669,12 +670,14 @@ export function holdDiscussionEffect(ports: DiscussionPorts, options: Discussion
     // Unreachable: the loop answers or fails on every path.
     return { costUsd: cost, answered: false, proposal: null }
   }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.sync((): HeldTurn => {
+    Effect.catchCause((cause): Effect.Effect<HeldTurn> => {
+      // An interruption is not a failed turn: it passes, so the enclosing scan stops too.
+      if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause as Cause.Cause<never>)
+      return Effect.sync((): HeldTurn => {
         log(`discussion ${options.chatId}: ${(Cause.squash(cause) as Error).message}`)
         return { costUsd: cost, answered: false, proposal: null }
-      }),
-    ),
+      })
+    }),
   )
 }
 
@@ -806,7 +809,7 @@ export function concludeDiscussionEffect(options: ConcludeOptions): Effect.Effec
  * Appends one event, re-reading the stream's length when `at` is `-1`.
  *
  * The re-read is not a nicety: the ask was appended at the top of
- * `holdDiscussion` and minutes of agent time have passed since, during which a
+ * `holdDiscussionEffect` and minutes of agent time have passed since, during which a
  * follow-up question can have landed on the same stream. Reading the length
  * again is what an `expectedVersion` is for.
  */
@@ -824,6 +827,21 @@ function appendEvent(
     yield* lift(() => store.append(stream, version, [event]))
   })
 }
+
+/**
+ * `catchCause` that lets an interruption through. A runtime's `run` has no error channel, so one
+ * that fails arrives as a defect, which `Effect.catch` would let past.
+ */
+const notInterrupted =
+  <B>(onError: (err: Error) => Effect.Effect<B>) =>
+  <A, E>(self: Effect.Effect<A, E>): Effect.Effect<A | B, never> =>
+    self.pipe(
+      Effect.catchCause((cause): Effect.Effect<B> =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause as Cause.Cause<never>)
+          : onError(Cause.squash(cause) as Error),
+      ),
+    )
 
 /** A promise port as an Effect whose failure is whatever it rejected with. */
 const lift = <A>(run: () => PromiseLike<A>): Effect.Effect<A, unknown> =>

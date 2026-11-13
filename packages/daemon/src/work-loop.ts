@@ -287,7 +287,7 @@ export interface WorkLoopOptions {
    * the loop over a question — which is why nothing does: `deliver` holds it,
    * and holds it identically to a declared subscriber's.
    */
-  discuss?: (event: Envelope) => Promise<void>
+  discuss?: (event: Envelope) => Effect.Effect<void>
   /** A new wait or a resume (`TRIAGE_EVENTS`), handed to the daemon's triage queue off the pass path. */
   triage?: (event: Envelope) => Promise<void>
   /**
@@ -566,7 +566,8 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
     // Before the trigger check too, and never through `pump`. See
     // `discuss` above: a question must not wait for a run.
     if ((DISCUSSION_EVENTS as readonly string[]).includes(event.type) && options.discuss) {
-      deliver('discuss', event, options.discuss)
+      const discuss = options.discuss
+      deliver('discuss', event, (e) => Effect.runPromiseWith(services)(Effect.suspend(() => discuss(e))))
     }
     if ((TRIAGE_EVENTS as readonly string[]).includes(event.type) && options.triage) {
       deliver('triage', event, options.triage)

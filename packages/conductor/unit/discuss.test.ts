@@ -14,6 +14,7 @@ import type { Envelope, ToAppend } from '@lingtai/domain'
  * 0060 §1 counts as unit too — it touches no filesystem and no process.
  */
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { answerOpenMarker } from '../src/body-section.ts'
@@ -22,7 +23,7 @@ import {
   buildBrief,
   concludeDiscussion,
   discussionSection,
-  holdDiscussion,
+  holdDiscussionEffect,
   MAX_READ_ROUNDS,
   parseReply,
   readingFor,
@@ -30,6 +31,7 @@ import {
   type DiscussionEvidence,
 } from '../src/discuss.ts'
 import { ticketedClientOf } from '../src/ticket-store.ts'
+import { hold } from '../test/hold.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
 import { fakeGitHub as fullFakeGitHub, memoryStore } from '../test/one-attempt.ts'
 
@@ -332,7 +334,7 @@ describe('holding one question', () => {
     const store = fakeStore()
     const calls: unknown[] = []
     const prompts: string[] = []
-    const held = await holdDiscussion(
+    const held = await hold(
       {
         store: store.store,
         serve: async () => null,
@@ -389,7 +391,7 @@ describe('holding one question', () => {
    */
   it('appends no RunSpent for a process that was killed before it answered anything', async () => {
     const store = fakeStore()
-    const held = await holdDiscussion(
+    const held = await hold(
       {
         store: store.store,
         serve: async () => null,
@@ -414,12 +416,45 @@ describe('holding one question', () => {
     expect(answerOf(store.appended).failure).toContain('crash')
   })
 
+  /**
+   * `Runtime.run` has no error channel, so a runtime that fails reaches `ask` as a *defect*. The
+   * promise fakes above fail through the error channel and would pass either way.
+   */
+  it('records an ask that dies as a crash, with no RunSpent', async () => {
+    const store = fakeStore()
+    const lines: string[] = []
+    const held = await Effect.runPromise(
+      holdDiscussionEffect(
+        {
+          store: store.store,
+          log: (line) => lines.push(line),
+          serve: () => Effect.succeed(null),
+          version: () => Effect.die(new Error('no version')),
+          ask: () => Effect.die(new Error('boom')),
+        },
+        {
+          chatId: 'chat-1',
+          evidence: EVIDENCE,
+          question: 'why?',
+          by: 'human:steven',
+          call: CALL,
+          runtime: 'claude-code',
+        },
+      ),
+    )
+
+    expect(held).toEqual({ costUsd: null, answered: false, proposal: null })
+    expect(store.types()).toEqual(['DiscussionAsked', 'RunPrompted', 'DiscussionAnswered'])
+    expect(answerOf(store.appended).failure).toBe('crash: boom')
+    expect(lines).toContain('discussion chat-1: crash — boom')
+  })
+
   it('serves the files it is asked for, then answers with them', async () => {
     const store = fakeStore()
     const served: string[] = []
     let round = 0
 
-    const held = await holdDiscussion(
+    const held = await hold(
       {
         store: store.store,
         version: async () => null,
@@ -468,7 +503,7 @@ describe('holding one question', () => {
    * figures — the spend `held.costUsd` sums in memory, never a second time on
    * `DiscussionAnswered` (#502, 0110 §9).
    */
-  it('appends one RunSpent per process, and holdDiscussion sums the cost in memory', async () => {
+  it('appends one RunSpent per process, and holdDiscussionEffect sums the cost in memory', async () => {
     const store = fakeStore()
     const rounds: Answered[] = [
       {
@@ -498,7 +533,7 @@ describe('holding one question', () => {
     ]
     let round = 0
 
-    const held = await holdDiscussion(
+    const held = await hold(
       {
         store: store.store,
         serve: async () => 'x',
@@ -555,7 +590,7 @@ describe('holding one question', () => {
     const store = fakeStore()
     let round = 0
 
-    await holdDiscussion(
+    await hold(
       {
         store: store.store,
         serve: async () => 'x',
@@ -601,7 +636,7 @@ describe('holding one question', () => {
 
   it('leaves usage off the event when nothing reported any', async () => {
     const store = fakeStore()
-    await holdDiscussion(
+    await hold(
       {
         store: store.store,
         serve: async () => null,
@@ -630,7 +665,7 @@ describe('holding one question', () => {
 
   it('stops asking for files once the rounds run out, and says that is why', async () => {
     const store = fakeStore()
-    await holdDiscussion(
+    await hold(
       {
         store: store.store,
         serve: async () => 'x',

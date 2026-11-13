@@ -661,7 +661,7 @@ export function daemonCommand(
         // The third kind of agent, hosted here because the daemon is where money
         // is spent (0033 §3). Off the pass path: a question must not queue behind
         // a run, and it takes no claim and provisions nothing that would need to.
-        discuss: (event) => onDiscussionRequested(event, (line) => console.log(line), locked),
+        discuss: (event) => onDiscussionRequested(event, (line) => console.log(line), lockedEffect(guard)),
         triage: (event) =>
           onWaitStarted(
             event,
@@ -792,16 +792,10 @@ export function daemonCommand(
         // A question asked while nothing was listening is waiting in the stream,
         // exactly as a pause is (0013). After `start`, so the subscription is
         // already up and a question that arrives during this one is not missed.
-        const waiting = yield* Effect.promise(() =>
-          answerOutstandingQueued({ log: (line) => console.log(line), locked }),
-        ).pipe(
-          recovering((err) =>
-            Effect.sync(() => {
-              console.error(`discussions: ${err.message}`)
-              return { answered: 0, heldBack: 0 }
-            }),
-          ),
-        )
+        const waiting = yield* answerOutstandingQueued({
+          log: (line) => console.log(line),
+          locked: lockedEffect(guard),
+        })
         if (waiting.answered > 0) console.log(`answered ${waiting.answered} discussion(s) that were waiting`)
         if (waiting.heldBack > 0) {
           console.log(`${waiting.heldBack} held back by a lock — answered when the project is resumed`)

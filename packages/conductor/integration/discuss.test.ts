@@ -18,12 +18,12 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
   concludeDiscussion,
-  holdDiscussion,
   readingFor,
   type Answered,
   type DiscussionEvidence,
   type IssueChannel,
 } from '../src/discuss.ts'
+import { hold } from '../test/hold.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 const created = new Set<string>()
@@ -72,7 +72,7 @@ describe('a discussion, on the log', () => {
     const ticketId = id('wi')
     const chatId = id('chat')
 
-    await holdDiscussion(
+    await hold(
       {
         store,
         serve: async () => null,
@@ -109,7 +109,7 @@ describe('a discussion, on the log', () => {
     const ticketId = id('wi')
     const chatId = id('chat')
 
-    await holdDiscussion(
+    await hold(
       {
         store,
         serve: async () => null,
@@ -157,7 +157,7 @@ describe('a discussion, on the log', () => {
   it('appends to the ticket body, and still records the spend when GitHub refuses', async () => {
     const ticketId = id('wi')
     const chatId = id('chat')
-    await holdDiscussion(
+    await hold(
       {
         store,
         serve: async () => null,
@@ -204,7 +204,7 @@ describe('a discussion, on the log', () => {
 
     // And the refusal path, on a second conversation about the same item.
     const second = id('chat')
-    await holdDiscussion(
+    await hold(
       {
         store,
         serve: async () => null,

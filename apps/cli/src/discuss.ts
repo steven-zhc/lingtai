@@ -44,25 +44,24 @@ import {
   NO_RUN_LOG,
   openRunLog,
   RUN_LOG_BEAT_MS,
-  runtimeRun,
-  runtimeVersionOf,
+  runtimeVersionOfEffect,
   type RunTrace,
   type Runtime,
 } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import {
   FILE_BYTES,
-  holdDiscussion,
+  holdDiscussionEffect,
   LOG_LINES,
   readingFor,
   type DiscussionEvidence,
   type DiscussionPorts,
   type ReadableRef,
 } from '@lingtai/conductor/discuss'
-import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
-import { readProjectTicket, type ReadProjectTicket } from '@lingtai/conductor/read-ticket'
+import { currentRecipe, loadProjectEffect } from '@lingtai/conductor/projects'
+import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
 import { runLogPath } from '@lingtai/conductor/run-log'
-import { DISCUSSION_EVENTS, readControl } from '@lingtai/daemon'
+import { DISCUSSION_EVENTS, readControlEffect } from '@lingtai/daemon'
 import {
   chatStream,
   parseTicketStream,
@@ -78,7 +77,10 @@ import {
 import { stateDir } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import { callFor, DISCUSS_DEFAULTS, type Discuss } from '@lingtai/recipe'
-import { listAt, readAt, refSha } from '@lingtai/repo'
+import { listAtEffect, readAtEffect, refShaEffect } from '@lingtai/repo'
+import { Effect, Semaphore } from 'effect'
+
+import { lift, recovering } from './exit.ts'
 
 /**
  * Every tool, denied.
@@ -157,18 +159,19 @@ export function logLines(events: readonly Envelope[], limit: number): string[] {
  * sentence in the brief rather than an absence (#76). Read through the one
  * reader, so a `db` project's ticket comes from its table (#731).
  */
-export async function ticketEvidence(
+export const ticketEvidence = (
   state: ProjectState | null,
   project: string,
   issue: number,
-  read: ReadProjectTicket = readProjectTicket,
-): Promise<{ ticket: DiscussionEvidence['ticket']; ticketProblem: string | null }> {
-  if (state === null) return { ticket: null, ticketProblem: `${project} is not a registered project` }
-  const answer = await read(state, issue)
-  if (!answer.ok) return { ticket: null, ticketProblem: (answer.error as Error).message }
-  const live = answer.ticket
-  return { ticket: { ref: String(live.number), title: live.title, body: live.body }, ticketProblem: null }
-}
+  read: typeof readProjectTicketEffect = readProjectTicketEffect,
+): Effect.Effect<{ ticket: DiscussionEvidence['ticket']; ticketProblem: string | null }> =>
+  Effect.gen(function* () {
+    if (state === null) return { ticket: null, ticketProblem: `${project} is not a registered project` }
+    const answer = yield* read(state, issue)
+    if (!answer.ok) return { ticket: null, ticketProblem: (answer.error as Error).message }
+    const live = answer.ticket
+    return { ticket: { ref: String(live.number), title: live.title, body: live.body }, ticketProblem: null }
+  })
 
 /**
  * Everything the assistant is given, gathered from the log, GitHub and the
@@ -179,61 +182,65 @@ export async function ticketEvidence(
  * mirror is allowed to be missing for the same reason: a project nothing has
  * cloned yet is a fact, and "no file can be read" is the honest brief for it.
  */
-export async function gatherEvidence(request: DiscussionRequest): Promise<DiscussionEvidence> {
-  const parsed = parseTicketStream(request.ticketId)
-  const project = parsed?.project ?? ''
-  const own = await eventStore.read(request.ticketId)
-  const item = reduceTicket(own)
-  const triage = currentWaitTriage(own)
+export const gatherEvidence = (request: DiscussionRequest): Effect.Effect<DiscussionEvidence, unknown> =>
+  Effect.gen(function* () {
+    const parsed = parseTicketStream(request.ticketId)
+    const project = parsed?.project ?? ''
+    const own = yield* lift(() => eventStore.read(request.ticketId))
+    const item = reduceTicket(own)
+    const triage = currentWaitTriage(own)
 
-  const runIds = [...item.runs]
-  const streams = await Promise.all(runIds.map((id) => eventStore.read(id)))
+    const runIds = [...item.runs]
+    const streams = yield* Effect.all(
+      runIds.map((id) => lift(() => eventStore.read(id))),
+      { concurrency: 'unbounded' },
+    )
 
-  // 1-based, in claim order — the same numbering the detail page shows, so a
-  // question about "attempt 2" means the attempt the page called 2.
-  const index = request.attempt === null ? -1 : request.attempt - 1
-  // The commit an attempt produced, from that attempt's own stream.
-  //
-  // The log and not the branch ref, which is the whole of the second blind spot:
-  // `worktree add -B` leaves `agent/<n>` pointing at the base after an attempt
-  // that committed nothing, so the ref existing proves nothing about the attempt.
-  // `RunProducedDiff` is the attempt saying it produced something.
-  const head = index >= 0 ? reduceAttempt(streams[index] ?? []).headSha : null
+    // 1-based, in claim order — the same numbering the detail page shows, so a
+    // question about "attempt 2" means the attempt the page called 2.
+    const index = request.attempt === null ? -1 : request.attempt - 1
+    // The commit an attempt produced, from that attempt's own stream.
+    //
+    // The log and not the branch ref, which is the whole of the second blind spot:
+    // `worktree add -B` leaves `agent/<n>` pointing at the base after an attempt
+    // that committed nothing, so the ref existing proves nothing about the attempt.
+    // `RunProducedDiff` is the attempt saying it produced something.
+    const head = index >= 0 ? reduceAttempt(streams[index] ?? []).headSha : null
 
-  const state = await loadProject(project).catch(() => null)
-  const base = state?.base ?? 'main'
+    const state = yield* loadProjectEffect(project).pipe(recovering(() => Effect.succeed(null)))
+    const base = state?.base ?? 'main'
 
-  const { ticket, ticketProblem } = await ticketEvidence(state, project, Number(parsed?.issue))
+    const { ticket, ticketProblem } = yield* ticketEvidence(state, project, Number(parsed?.issue))
 
-  const baseSha = await refSha({ project, ref: base })
-  const refs: ReadableRef[] = []
-  if (baseSha !== null) {
-    const listed = await listAt({ project, ref: base })
-    refs.push({ ref: base, sha: baseSha, paths: listed.paths, truncated: listed.truncated })
-  }
-  if (head !== null && (await refSha({ project, ref: head })) !== null) {
-    const listed = await listAt({ project, ref: head })
-    refs.push({
-      ref: `attempt-${request.attempt}`,
-      sha: head,
-      paths: listed.paths,
-      truncated: listed.truncated,
-    })
-  }
+    const baseSha = yield* refShaEffect({ project, ref: base })
+    const refs: ReadableRef[] = []
+    if (baseSha !== null) {
+      const listed = yield* listAtEffect({ project, ref: base })
+      refs.push({ ref: base, sha: baseSha, paths: listed.paths, truncated: listed.truncated })
+    }
+    if (head !== null && (yield* refShaEffect({ project, ref: head })) !== null) {
+      const listed = yield* listAtEffect({ project, ref: head })
+      refs.push({
+        ref: `attempt-${request.attempt}`,
+        sha: head,
+        paths: listed.paths,
+        truncated: listed.truncated,
+      })
+    }
 
-  return {
-    ticketId: request.ticketId,
-    attempt: request.attempt,
-    ticket,
-    ticketProblem,
-    triage,
-    log: logLines([...own, ...streams.flat()].sort(bySeq), LOG_LINES),
-    // The sentence about a branch that is not there, computed here and recorded
-    // on `DiscussionAsked` — never left to the assistant to remember.
-    reading: readingFor({ attempt: request.attempt, base, baseSha, head }),
-    refs,
-  }
-}
+    return {
+      ticketId: request.ticketId,
+      attempt: request.attempt,
+      ticket,
+      ticketProblem,
+      triage,
+      log: logLines([...own, ...streams.flat()].sort(bySeq), LOG_LINES),
+      // The sentence about a branch that is not there, computed here and recorded
+      // on `DiscussionAsked` — never left to the assistant to remember.
+      reading: readingFor({ attempt: request.attempt, base, baseSha, head }),
+      refs,
+    }
+  })
 
 /** A completed, advised triage belongs in a brief only while its wait is current. */
 export function currentWaitTriage(own: readonly Envelope[]): DiscussionEvidence['triage'] {
@@ -259,26 +266,32 @@ function bySeq(a: Envelope, b: Envelope): number {
  */
 export function discussionAsk(
   runtime: Runtime | (() => Runtime),
-  fixed: { runId: (round: number) => Promise<string>; cwd: string; settingsPath: string; log: RunTrace },
+  fixed: { runId: (round: number) => Effect.Effect<string, unknown>; cwd: string; settingsPath: string; log: RunTrace },
 ): DiscussionPorts['ask'] {
-  return async (prompt, round, call) => {
-    const selected = typeof runtime === 'function' ? runtime() : runtime
-    return runtimeRun(selected, {
-      runId: await fixed.runId(round),
-      cwd: fixed.cwd,
-      prompt,
-      ...(call.model === undefined ? {} : { model: call.model }),
-      settingsPath: fixed.settingsPath,
-      // Nothing but what the runtime needs to authenticate. No token, no
-      // project values, no hook wiring — there is no hook.
-      env: runnableEnv({}),
-      limits: { turns: call.turns, wallMs: call.wallMs },
-      // What the assistant says and thinks, as it says it. The adapter
-      // writes its own stream here (`traceOf`), which is the whole of what
-      // makes the box on the board move.
-      log: fixed.log,
+  return (prompt, round, call) =>
+    // Suspended, so a factory that throws is a defect inside the turn and not at the call site.
+    Effect.suspend(() => {
+      const selected = typeof runtime === 'function' ? runtime() : runtime
+      return fixed.runId(round).pipe(
+        Effect.flatMap((runId) =>
+          selected.run({
+            runId,
+            cwd: fixed.cwd,
+            prompt,
+            ...(call.model === undefined ? {} : { model: call.model }),
+            settingsPath: fixed.settingsPath,
+            // Nothing but what the runtime needs to authenticate. No token, no
+            // project values, no hook wiring — there is no hook.
+            env: runnableEnv({}),
+            limits: { turns: call.turns, wallMs: call.wallMs },
+            // What the assistant says and thinks, as it says it. The adapter
+            // writes its own stream here (`traceOf`), which is the whole of what
+            // makes the box on the board move.
+            log: fixed.log,
+          }),
+        ),
+      )
     })
-  }
 }
 
 /**
@@ -286,10 +299,10 @@ export function discussionAsk(
  * environment it runs with (#929). Resolved per call, like `ask`.
  */
 export function discussionVersion(runtime: Runtime | (() => Runtime), cwd?: string): DiscussionPorts['version'] {
-  // Inside the promise chain, so a factory that throws is a rejection the caller records as null.
+  // Suspended, so a factory that throws is a defect the caller records as null.
   return () =>
-    Promise.resolve().then(() =>
-      runtimeVersionOf(typeof runtime === 'function' ? runtime() : runtime, runnableEnv({}), cwd),
+    Effect.suspend(() =>
+      runtimeVersionOfEffect(typeof runtime === 'function' ? runtime() : runtime, runnableEnv({}), cwd),
     )
 }
 
@@ -299,147 +312,168 @@ export function discussionVersion(runtime: Runtime | (() => Runtime), cwd?: stri
  * Never throws: it is called from the daemon's subscription, and an exception
  * escaping there would stop the loop over a question somebody typed.
  */
-export async function answerDiscussion(
+export const answerDiscussion = (
   request: DiscussionRequest,
   log: (line: string) => void = () => {},
-): Promise<void> {
-  const project = parseTicketStream(request.ticketId)?.project ?? ''
-  const evidence = await gatherEvidence(request)
-  const { cwd, settingsPath } = await prepare(request.chatId)
-  /**
-   * The recipe's own `discuss:`, **asked rather than assumed** (`#313`, `#243`).
-   *
-   * It was `runtime.agent` behind `createToollessRuntime`'s fallback — a field
-   * that decides which runtime works a project's *tickets* and has nothing to
-   * do with a discussion — so `#243` gives a discussion its own field instead.
-   * `currentRecipe` is a file read and nothing else — its own docstring: *"No
-   * request is made and nothing is read from the repository"* — so asking
-   * costs one `readFile` on a path already loaded above.
-   *
-   * A project that is not registered, or whose recipe does not resolve, still
-   * gets an answer — `DISCUSS_DEFAULTS` — because this function never throws:
-   * it is called from the daemon's subscription, and an exception escaping
-   * there would stop the loop over a question somebody typed.
-   */
-  const discuss: Discuss = await loadProject(project)
-    .then((state) => (state === null ? DISCUSS_DEFAULTS : currentRecipe(state).then((r) => r.recipe.discuss)))
-    .catch(() => DISCUSS_DEFAULTS)
-  /**
-   * **Contained by construction, not by fallback** (`#243`).
-   *
-   * The three layers above are what a discussion has instead of a hook and the
-   * steps a run passes, and the first two are a Claude Code settings file. So
-   * `tools: "none"` is not a preference here, it is the containment: a runtime
-   * that cannot be given it must not be handed this prompt. Construction
-   * happens inside the async ask port so an unconfigured Codex route is
-   * recorded as a failed answer instead of leaving this question outstanding.
-   */
-  const call = callFor(discuss)
-  // Names to shas. The assistant reads `main` and `attempt-2`; the mirror is
-  // asked for the commit, so what it was shown cannot drift under it mid-answer.
-  const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]))
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const project = parseTicketStream(request.ticketId)?.project ?? ''
+    const evidence = yield* gatherEvidence(request)
+    const { cwd, settingsPath } = yield* lift(() => prepare(request.chatId))
+    /**
+     * The recipe's own `discuss:`, **asked rather than assumed** (`#313`, `#243`).
+     *
+     * It was `runtime.agent` behind `createToollessRuntime`'s fallback — a field
+     * that decides which runtime works a project's *tickets* and has nothing to
+     * do with a discussion — so `#243` gives a discussion its own field instead.
+     * `currentRecipe` is a file read and nothing else — its own docstring: *"No
+     * request is made and nothing is read from the repository"* — so asking
+     * costs one `readFile` on a path already loaded above.
+     *
+     * A project that is not registered, or whose recipe does not resolve, still
+     * gets an answer — `DISCUSS_DEFAULTS` — because this function never throws:
+     * it is called from the daemon's subscription, and an exception escaping
+     * there would stop the loop over a question somebody typed.
+     */
+    const discuss: Discuss = yield* loadProjectEffect(project).pipe(
+      Effect.flatMap((state) =>
+        state === null
+          ? Effect.succeed(DISCUSS_DEFAULTS)
+          : lift(() => currentRecipe(state)).pipe(Effect.map((r) => r.recipe.discuss)),
+      ),
+      recovering(() => Effect.succeed(DISCUSS_DEFAULTS)),
+    )
+    /**
+     * **Contained by construction, not by fallback** (`#243`).
+     *
+     * The three layers above are what a discussion has instead of a hook and the
+     * steps a run passes, and the first two are a Claude Code settings file. So
+     * `tools: "none"` is not a preference here, it is the containment: a runtime
+     * that cannot be given it must not be handed this prompt. Construction
+     * happens inside the async ask port so an unconfigured Codex route is
+     * recorded as a failed answer instead of leaving this question outstanding.
+     */
+    const call = callFor(discuss)
+    // Names to shas. The assistant reads `main` and `attempt-2`; the mirror is
+    // asked for the commit, so what it was shown cannot drift under it mid-answer.
+    const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]))
 
-  /**
-   * The conversation's trace, as it is produced.
-   *
-   * [0034](../../../doc/decisions-archive/0034-the-run-log.md) opens on *"the agent
-   * produces nothing until it exits"*, and it solved that for runs and not for
-   * discussions — so the box where **the person is the control loop** (0033 §4)
-   * was the one place with no feedback in it, and an assistant thinking for
-   * sixty seconds was indistinguishable from one that had died (#132). The
-   * mechanism is 0034's, unchanged: one file, named by the conductor, followed
-   * from byte zero by whoever is watching.
-   *
-   * **Named for the chat, and it is one turn long.** The name has to be the
-   * chat's, because that is what makes the reaper right about the file: the id
-   * is the chat's own stream, `DiscussionAsked` on it carries the work item, and
-   * `findOrphanLogs` removes it when that item lands — the same rule and the
-   * same code as a run's. But the *file* is one turn's, and the `finally` below
-   * is why: what a follower asks for is the answer being produced right now, and
-   * `followRunLog` reads from byte zero, so a file that outlived its turn would
-   * show the second question the first question's trace and call it live.
-   *
-   * **Its ending is its deletion, and there is no `RUN_LOG_END`.** That line's
-   * words are a run's — *the diff is on the branch* — and this is a
-   * conversation. It does not need them: `holdDiscussion` appends
-   * `DiscussionAnswered` on every path it has, including the crash and the
-   * unreadable reply, so a turn that is over is a turn whose record has landed,
-   * and 0034 §4's *landed → delete* is the whole of the rule. A follower sees
-   * the file go and reports `removed`, which is an ending (`RunLogEnding`), so
-   * the tail stops and the connection with it. What outlives a turn is exactly
-   * the log of a daemon that died mid-answer — the one case still owed an
-   * explanation, and the case §5's reaper is for. That residue is also the one
-   * thing that could still be here when this opens, and `openRunLog` appends on
-   * purpose (a run's second attempt adds to the story rather than erasing it) —
-   * so it goes first. This turn's trace is this turn's.
-   */
-  const path = runLogPath(stateDir(), project, request.chatId)
-  await rm(path, { force: true }).catch(() => {})
-  const trace = await openRunLog({ path }).catch(() => NO_RUN_LOG)
-  // Still here, said on the file itself whether or not there is a line to write:
-  // an agent thinking for a minute writes nothing, and neither does a daemon
-  // that was killed. The board tells the two apart by this (`RUN_LOG_BEAT_MS`).
-  const beat = setInterval(() => {
-    const at = new Date()
-    void utimes(path, at, at).catch(() => {})
-  }, RUN_LOG_BEAT_MS)
-  beat.unref?.()
-
-  /** Both places: the daemon's own output, and the file the board follows. */
-  const say = (line: string) => {
-    log(line)
-    trace.note('chat', line)
-  }
-
-  try {
-    say(`discussion ${request.chatId} on ${request.ticketId}: ${evidence.reading.join(' · ')}`)
-
-    const held = await holdDiscussion(
-      {
-        store: eventStore,
-        log: say,
-        serve: async (ref, path) => {
-          const sha = shas.get(ref)
-          if (sha === undefined) return null
-          return readAt({ project, ref: sha, path, limitBytes: FILE_BYTES })
-        },
-        ask: discussionAsk(() => createRuntime(discuss.agent, { tools: 'none' }), {
-          // Its own id per round, so nothing resumes a session. `sessionIdFor`
-          // is a function of the run id, and reusing one would make a second
-          // question a continuation of the first one's transcript rather than a
-          // fresh read of the brief this file just built.
-          runId: async (round) =>
-            `${request.chatId}:${(await eventStore.read(chatStream(request.chatId))).length}:${round}`,
-          cwd,
-          settingsPath,
-          log: trace,
+    /**
+     * The conversation's trace, as it is produced.
+     *
+     * [0034](../../../doc/decisions-archive/0034-the-run-log.md) opens on *"the agent
+     * produces nothing until it exits"*, and it solved that for runs and not for
+     * discussions — so the box where **the person is the control loop** (0033 §4)
+     * was the one place with no feedback in it, and an assistant thinking for
+     * sixty seconds was indistinguishable from one that had died (#132). The
+     * mechanism is 0034's, unchanged: one file, named by the conductor, followed
+     * from byte zero by whoever is watching.
+     *
+     * **Named for the chat, and it is one turn long.** The name has to be the
+     * chat's, because that is what makes the reaper right about the file: the id
+     * is the chat's own stream, `DiscussionAsked` on it carries the work item, and
+     * `findOrphanLogs` removes it when that item lands — the same rule and the
+     * same code as a run's. But the *file* is one turn's, and the `finally` below
+     * is why: what a follower asks for is the answer being produced right now, and
+     * `followRunLog` reads from byte zero, so a file that outlived its turn would
+     * show the second question the first question's trace and call it live.
+     *
+     * **Its ending is its deletion, and there is no `RUN_LOG_END`.** That line's
+     * words are a run's — *the diff is on the branch* — and this is a
+     * conversation. It does not need them: `holdDiscussion` appends
+     * `DiscussionAnswered` on every path it has, including the crash and the
+     * unreadable reply, so a turn that is over is a turn whose record has landed,
+     * and 0034 §4's *landed → delete* is the whole of the rule. A follower sees
+     * the file go and reports `removed`, which is an ending (`RunLogEnding`), so
+     * the tail stops and the connection with it. What outlives a turn is exactly
+     * the log of a daemon that died mid-answer — the one case still owed an
+     * explanation, and the case §5's reaper is for. That residue is also the one
+     * thing that could still be here when this opens, and `openRunLog` appends on
+     * purpose (a run's second attempt adds to the story rather than erasing it) —
+     * so it goes first. This turn's trace is this turn's.
+     */
+    const path = runLogPath(stateDir(), project, request.chatId)
+    yield* Effect.promise(() => rm(path, { force: true }).catch(() => {}))
+    // Acquired uninterruptibly and released on every exit, so an interruption while the log is
+    // opening cannot leave an open file the release never sees.
+    const acquire = Effect.promise(() =>
+      openRunLog({ path })
+        .catch(() => NO_RUN_LOG)
+        .then((trace) => {
+          // Still here, said on the file itself whether or not there is a line to write:
+          // an agent thinking for a minute writes nothing, and neither does a daemon
+          // that was killed. The board tells the two apart by this (`RUN_LOG_BEAT_MS`).
+          const beat = setInterval(() => {
+            const at = new Date()
+            void utimes(path, at, at).catch(() => {})
+          }, RUN_LOG_BEAT_MS)
+          beat.unref?.()
+          return { trace, beat }
         }),
-        version: discussionVersion(() => createRuntime(discuss.agent, { tools: 'none' }), cwd),
-      },
-      {
-        chatId: request.chatId,
-        evidence,
-        question: request.question,
-        by: request.by,
-        call,
-        runtime: discuss.agent,
-        ...(discuss.prompt === undefined ? {} : { prompt: discuss.prompt }),
-      },
     )
 
-    say(
-      `discussion ${request.chatId}: ${held.answered ? 'answered' : 'did not answer'}` +
-        (held.costUsd === null ? '' : ` · $${held.costUsd.toFixed(2)}`),
+    yield* Effect.acquireUseRelease(
+      acquire,
+      ({ trace }) =>
+        Effect.gen(function* () {
+          /** Both places: the daemon's own output, and the file the board follows. */
+          const say = (line: string) => {
+            log(line)
+            trace.note('chat', line)
+          }
+          say(`discussion ${request.chatId} on ${request.ticketId}: ${evidence.reading.join(' · ')}`)
+
+          const held = yield* holdDiscussionEffect(
+            {
+              store: eventStore,
+              log: say,
+              serve: (ref, path) => {
+                const sha = shas.get(ref)
+                if (sha === undefined) return Effect.succeed(null)
+                return readAtEffect({ project, ref: sha, path, limitBytes: FILE_BYTES })
+              },
+              ask: discussionAsk(() => createRuntime(discuss.agent, { tools: 'none' }), {
+                // Its own id per round, so nothing resumes a session. `sessionIdFor`
+                // is a function of the run id, and reusing one would make a second
+                // question a continuation of the first one's transcript rather than a
+                // fresh read of the brief this file just built.
+                runId: (round) =>
+                  lift(() => eventStore.read(chatStream(request.chatId))).pipe(
+                    Effect.map((events) => `${request.chatId}:${events.length}:${round}`),
+                  ),
+                cwd,
+                settingsPath,
+                log: trace,
+              }),
+              version: discussionVersion(() => createRuntime(discuss.agent, { tools: 'none' }), cwd),
+            },
+            {
+              chatId: request.chatId,
+              evidence,
+              question: request.question,
+              by: request.by,
+              call,
+              runtime: discuss.agent,
+              ...(discuss.prompt === undefined ? {} : { prompt: discuss.prompt }),
+            },
+          )
+
+          say(
+            `discussion ${request.chatId}: ${held.answered ? 'answered' : 'did not answer'}` +
+              (held.costUsd === null ? '' : ` · $${held.costUsd.toFixed(2)}`),
+          )
+        }),
+      // The turn is over, so the file is: see `trace` above. Its record is on the
+      // chat's stream and this was only ever the trace beside it (0034 §8), and
+      // leaving it would hand the *next* question this one's output as the answer
+      // being written for it. On every exit, an interruption included.
+      ({ trace, beat }) =>
+        Effect.sync(() => clearInterval(beat)).pipe(Effect.andThen(Effect.promise(() => trace.close('delete')))),
     )
-  } finally {
-    // The turn is over, so the file is: see `trace` above. Its record is on the
-    // chat's stream and this was only ever the trace beside it (0034 §8), and
-    // leaving it would hand the *next* question this one's output as the answer
-    // being written for it.
-    clearInterval(beat)
-    await trace.close('delete')
-  }
-}
+  }).pipe(
+    // Said and never fatal; an interruption passes. The loop keeps going over a question somebody typed.
+    recovering((err) => Effect.sync(() => log(`discussion ${request.chatId} failed: ${err.message}`))),
+  )
 
 /**
  * The oldest request not yet answered, or null when the chat has caught up.
@@ -465,9 +499,9 @@ export function nextRequest(asks: readonly DiscussionRequest[], chat: ChatState)
 export interface AnswerPorts {
   log?: (line: string) => void
   /** Why a project may not start work, or null (#991's `locked`). Default: nothing is locked. */
-  locked?: (project: string) => Promise<string | null>
-  control?: typeof readControl
-  read?: (chatId: string) => Promise<readonly Envelope[]>
+  locked?: (project: string) => Effect.Effect<string | null>
+  control?: typeof readControlEffect
+  read?: (chatId: string) => Effect.Effect<readonly Envelope[], unknown>
   answer?: typeof answerDiscussion
 }
 
@@ -477,53 +511,64 @@ export interface Outstanding {
   heldBack: number
 }
 
-const readChat = (chatId: string) => eventStore.read(chatStream(chatId))
-const notLocked = () => Promise.resolve(null)
+const readChat = (chatId: string) => lift(() => eventStore.read(chatStream(chatId)))
+const notLocked = () => Effect.succeed(null)
 
-export async function answerOutstanding(ports: AnswerPorts = {}): Promise<Outstanding> {
-  const log = ports.log ?? (() => {})
-  const locked = ports.locked ?? notLocked
-  const answer = ports.answer ?? answerDiscussion
-  const read = ports.read ?? readChat
-  const control = await (ports.control ?? readControl)()
-  const byChat = new Map<string, DiscussionRequest[]>()
-  for (const d of control.discussions) {
-    byChat.set(d.chatId, [...(byChat.get(d.chatId) ?? []), d])
-  }
+export const answerOutstanding = (ports: AnswerPorts = {}): Effect.Effect<Outstanding, unknown> =>
+  Effect.gen(function* () {
+    const log = ports.log ?? (() => {})
+    const locked = ports.locked ?? notLocked
+    const answer = ports.answer ?? answerDiscussion
+    const read = ports.read ?? readChat
+    const control = yield* (ports.control ?? readControlEffect)()
+    const byChat = new Map<string, DiscussionRequest[]>()
+    for (const d of control.discussions) {
+      byChat.set(d.chatId, [...(byChat.get(d.chatId) ?? []), d])
+    }
 
-  let answered = 0
-  let heldBack = 0
-  for (const [chatId, asks] of byChat) {
-    // Until the chat has caught up, not once: two questions can land in one
-    // burst, and answering only the first would leave the second waiting for
-    // an event that has already been.
-    for (;;) {
-      const events = await read(chatId)
-      // D14: requests are counted against answered *turns*, and an answer with
-      // no open ask counts for nothing. Never "some turn has no answer": a
-      // daemon that died between ask and answer leaves that turn unanswered for
-      // ever, and the retry appends a second ask.
-      const next = nextRequest(asks, reduceChat(events))
-      if (next === null) break
-      // A lock is asked per turn, before the agent starts (0126 §6). Held back
-      // means nothing is appended: the request stays outstanding and a resume
-      // brings it round again. `break`, never `continue` — nothing changes, so
-      // the same request would come back as `next` for ever.
-      const project = parseTicketStream(next.ticketId)?.project ?? ''
-      if (project !== '') {
-        const why = await locked(project).catch((err: unknown) => (err as Error).message)
-        if (why !== null) {
-          log(`discussion ${chatId} on ${next.ticketId}: not started — ${why}`)
-          heldBack += 1
+    let answered = 0
+    let heldBack = 0
+    for (const [chatId, asks] of byChat) {
+      // Until the chat has caught up, not once: two questions can land in one
+      // burst, and answering only the first would leave the second waiting for
+      // an event that has already been.
+      for (;;) {
+        const events = yield* read(chatId)
+        // D14: requests are counted against answered *turns*, and an answer with
+        // no open ask counts for nothing. Never "some turn has no answer": a
+        // daemon that died between ask and answer leaves that turn unanswered for
+        // ever, and the retry appends a second ask.
+        const next = nextRequest(asks, reduceChat(events))
+        if (next === null) break
+        // A lock is asked per turn, before the agent starts (0126 §6). Held back
+        // means nothing is appended: the request stays outstanding and a resume
+        // brings it round again. `break`, never `continue` — nothing changes, so
+        // the same request would come back as `next` for ever.
+        const project = parseTicketStream(next.ticketId)?.project ?? ''
+        if (project !== '') {
+          const why = yield* locked(project).pipe(recovering((err) => Effect.succeed(err.message)))
+          if (why !== null) {
+            log(`discussion ${chatId} on ${next.ticketId}: not started — ${why}`)
+            heldBack += 1
+            break
+          }
+        }
+        yield* answer(next, log).pipe(
+          recovering((err) => Effect.sync(() => log(`discussion ${chatId} failed: ${err.message}`))),
+        )
+        // Progress is the chat's own count, not the answer returning: an answer that never
+        // appended `DiscussionAnswered` leaves the same request next, and going round again
+        // would buy the same agent again for ever. `break`, as a held-back turn does.
+        const after = reduceChat(yield* read(chatId)).answered
+        if (after <= reduceChat(events).answered) {
+          log(`discussion ${chatId} on ${next.ticketId}: not answered — left outstanding`)
           break
         }
+        answered += 1
       }
-      await answer(next, log).catch((err: unknown) => log(`discussion ${chatId} failed: ${(err as Error).message}`))
-      answered += 1
     }
-  }
-  return { answered, heldBack }
-}
+    return { answered, heldBack }
+  })
 
 /**
  * One discussion at a time, whatever asks for one.
@@ -533,24 +578,31 @@ export async function answerOutstanding(ports: AnswerPorts = {}): Promise<Outsta
  * read the same chat stream, find the same request outstanding, and answer it
  * twice. Two agents for one question is the one way this feature could surprise
  * somebody with a bill, so the answers are serialised rather than raced.
+ *
+ * Made once per process, at module level, and unsafe because `Semaphore.make` is itself an Effect.
+ * A permit is released on every exit, a failure and an interruption included.
  */
-let queue: Promise<Outstanding> = Promise.resolve({ answered: 0, heldBack: 0 })
+const discussing = Semaphore.makeUnsafe(1)
 
 /**
  * `answerOutstanding`, behind the one queue. Every caller — a request, a resume
  * and daemon startup — goes through here, so two scans never answer the same
  * request at once (#996): a second scan would find the first one's request
- * still unanswered and start it again.
+ * still unanswered and start it again. The permit covers the scan as well as the
+ * answer, because it is the scan that finds the request outstanding.
+ * Never fails: a scan that does is said through `ports.log` and answers nothing.
  */
-export function answerOutstandingQueued(ports: AnswerPorts = {}): Promise<Outstanding> {
-  queue = queue
-    .then(() => answerOutstanding(ports))
-    .catch((err: unknown) => {
-      ports.log?.(`discussions: ${(err as Error).message}`)
-      return { answered: 0, heldBack: 0 }
-    })
-  return queue
-}
+export const answerOutstandingQueued = (ports: AnswerPorts = {}): Effect.Effect<Outstanding> =>
+  discussing.withPermits(1)(
+    answerOutstanding(ports).pipe(
+      recovering((err) =>
+        Effect.sync((): Outstanding => {
+          ports.log?.(`discussions: ${err.message}`)
+          return { answered: 0, heldBack: 0 }
+        }),
+      ),
+    ),
+  )
 
 /**
  * The daemon's handler for one `DiscussionRequested` as it arrives.
@@ -559,11 +611,11 @@ export function answerOutstandingQueued(ports: AnswerPorts = {}): Promise<Outsta
  * outstandingness: two requests can land in one burst, and answering the one in
  * hand while an earlier one is still unanswered would answer them out of order.
  */
-export async function onDiscussionRequested(
+export const onDiscussionRequested = (
   event: Envelope,
   log: (line: string) => void = () => {},
   locked?: AnswerPorts['locked'],
-): Promise<void> {
-  if (!(DISCUSSION_EVENTS as readonly string[]).includes(event.type)) return
-  await answerOutstandingQueued({ log, locked })
-}
+): Effect.Effect<void> =>
+  (DISCUSSION_EVENTS as readonly string[]).includes(event.type)
+    ? answerOutstandingQueued({ log, locked }).pipe(Effect.asVoid)
+    : Effect.void
