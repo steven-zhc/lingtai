@@ -4,8 +4,10 @@
  * importing each other.
  */
 import { type EventStore } from '@lingtai/event-store'
+import { Effect } from 'effect'
 
 import { upsertSection } from './body-section.ts'
+import { asFailure } from './port-face.ts'
 import { record, split, tellGitHub, type IssueChannel } from './tell.ts'
 import { BodyChanged } from './ticket-store.ts'
 
@@ -41,80 +43,102 @@ function sectionTextFor(key: string, text: string): string {
  * the PATCH committed), and the read-back finds the section anyway — that is
  * found, not retried, with a second `IssueUpdated` saying so.
  */
-export async function writeSection(options: {
+export function writeSection(options: WriteSectionOptions): Promise<WriteSectionResult> {
+  return Effect.runPromise(writeSectionEffect(options))
+}
+
+interface WriteSectionOptions {
   store: EventStore
   github: IssueChannel
   ticketId: string
   key: string
   text: string
-}): Promise<WriteSectionResult> {
-  const { store, github, ticketId, key, text } = options
-  const target = split(ticketId)
-  if (target === null) return { written: false, detail: `${ticketId} does not name a numbered issue` }
-  const { issue } = target
+}
 
-  let wanted: string
-  try {
-    wanted = sectionTextFor(key, text)
-  } catch (err) {
-    // Nothing was sent to GitHub, so nothing is appended: "refuse before you
-    // write" applies to the body's own markers as much as to the wait.
-    return { written: false, detail: errorMessage(err) }
-  }
+/** The issue's body, or the reason it could not be read — the read and the `.body` access both inside the catch. */
+const bodyOf = (github: IssueChannel, issue: number): Effect.Effect<string, Error> =>
+  Effect.tryPromise({ try: () => github.getIssue(issue), catch: asFailure }).pipe(
+    Effect.flatMap((got) => Effect.try({ try: () => got.body, catch: asFailure })),
+  )
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let body: string
+export function writeSectionEffect(options: WriteSectionOptions): Effect.Effect<WriteSectionResult> {
+  return Effect.gen(function* () {
+    const { store, github, ticketId, key, text } = options
+    const target = split(ticketId)
+    if (target === null) return { written: false, detail: `${ticketId} does not name a numbered issue` }
+    const { issue } = target
+
+    let wanted: string
     try {
-      body = (await github.getIssue(issue)).body
+      wanted = sectionTextFor(key, text)
     } catch (err) {
-      return { written: false, detail: `the issue could not be read: ${errorMessage(err)}` }
-    }
-
-    let next: string
-    try {
-      next = upsertSection(body, key, text)
-    } catch (err) {
+      // Nothing was sent to GitHub, so nothing is appended: "refuse before you
+      // write" applies to the body's own markers as much as to the wait.
       return { written: false, detail: errorMessage(err) }
     }
 
-    const told = await tellGitHub({ store, github, ticketId, change: { kind: 'body', body: next, ifUnchanged: body } })
-
-    let after: string
-    try {
-      after = (await github.getIssue(issue)).body
-    } catch (err) {
-      // When the write itself recorded `IssueUpdated`, the PATCH is known to
-      // have landed — the read-back failing after that tells us nothing new.
-      // Only a failed or unattempted write leaves it genuinely unknown
-      // whether a retry would duplicate the section, which is when to stop
-      // rather than guess.
-      if (told.recorded === 'IssueUpdated') return { written: true }
-      return {
-        written: false,
-        detail: `the write's outcome is on the log, but the read-back failed: ${errorMessage(err)}`,
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const read = yield* bodyOf(github, issue).pipe(
+        Effect.map((body) => ({ body, failure: null })),
+        Effect.catch((err) => Effect.succeed({ body: '', failure: err as unknown })),
+      )
+      if (read.failure !== null) {
+        return { written: false, detail: `the issue could not be read: ${errorMessage(read.failure)}` }
       }
-    }
+      const body = read.body
 
-    const landed = after.replace(/\r\n/g, '\n').includes(wanted)
-    if (landed) {
+      let next: string
+      try {
+        next = upsertSection(body, key, text)
+      } catch (err) {
+        return { written: false, detail: errorMessage(err) }
+      }
+
+      const told = yield* Effect.promise(() =>
+        tellGitHub({ store, github, ticketId, change: { kind: 'body', body: next, ifUnchanged: body } }),
+      )
+
+      const readBack = yield* bodyOf(github, issue).pipe(
+        Effect.map((after) => ({ after, failure: null })),
+        Effect.catch((err) => Effect.succeed({ after: '', failure: err as unknown })),
+      )
+      if (readBack.failure !== null) {
+        // When the write itself recorded `IssueUpdated`, the PATCH is known to
+        // have landed — the read-back failing after that tells us nothing new.
+        // Only a failed or unattempted write leaves it genuinely unknown
+        // whether a retry would duplicate the section, which is when to stop
+        // rather than guess.
+        if (told.recorded === 'IssueUpdated') return { written: true }
+        return {
+          written: false,
+          detail: `the write's outcome is on the log, but the read-back failed: ${errorMessage(readBack.failure)}`,
+        }
+      }
+      const after = readBack.after
+
+      const landed = after.replace(/\r\n/g, '\n').includes(wanted)
+      if (landed) {
+        if (told.recorded === 'IssueUpdateFailed') {
+          yield* Effect.promise(() =>
+            record(store, ticketId, 'IssueUpdated', {
+              project: target.project,
+              issue: String(issue),
+              change: 'body',
+              detail: `found on read-back after: ${errorMessage(told.error)}`,
+            }),
+          )
+        }
+        return { written: true }
+      }
+
       if (told.recorded === 'IssueUpdateFailed') {
-        await record(store, ticketId, 'IssueUpdated', {
-          project: target.project,
-          issue: String(issue),
-          change: 'body',
-          detail: `found on read-back after: ${errorMessage(told.error)}`,
-        })
+        if (told.error instanceof BodyChanged) continue // retry against the new body
+        return { written: false, detail: `the write failed: ${errorMessage(told.error)}` }
       }
-      return { written: true }
+      if (told.recorded === 'IssueUpdated') continue // a later write removed it; try again
+      return { written: false, detail: 'the write was never attempted' }
     }
 
-    if (told.recorded === 'IssueUpdateFailed') {
-      if (told.error instanceof BodyChanged) continue // retry against the new body
-      return { written: false, detail: `the write failed: ${errorMessage(told.error)}` }
-    }
-    if (told.recorded === 'IssueUpdated') continue // a later write removed it; try again
-    return { written: false, detail: 'the write was never attempted' }
-  }
-
-  return { written: false, detail: 'the section did not land after two tries' }
+    return { written: false, detail: 'the section did not land after two tries' }
+  })
 }

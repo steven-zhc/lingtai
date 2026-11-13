@@ -12,13 +12,13 @@
  */
 import { ticketReducer, ticketStream, type WaitId } from '@lingtai/domain'
 import { allowedResolutions, requeueNote } from '@lingtai/domain/wait'
-import { type EventStore, eventStore, log, type SnapshotReadOptions } from '@lingtai/event-store'
+import { type EventStore, eventStore, log, readThroughSnapshot, type SnapshotReadOptions } from '@lingtai/event-store'
+import { Effect } from 'effect'
 
-import { deciding } from './approve.ts'
-import { describeReason, resolveWaitHolding } from './resolve-wait.ts'
-import { readState } from './snapshot-state.ts'
+import { decidingEffect } from './deciding.ts'
+import { describeReason, resolveWaitHoldingEffect } from './resolve-wait.ts'
 import type { IssueChannel } from './tell.ts'
-import { writeSection } from './write-section.ts'
+import { writeSectionEffect } from './write-section.ts'
 
 export type { IssueChannel } from './tell.ts'
 export { writeSection, type WriteSectionResult } from './write-section.ts'
@@ -49,13 +49,19 @@ export interface EditBodyAndRequeueOptions extends SnapshotReadOptions {
  * `EditBodyAndRequeue` (#422, 0118 §6/§11).
  *
  * One decision at a time, the same lock `approve()` and `requeue()` take
- * (`deciding`, `approve.ts`) — see their own comments for why the log cannot
+ * (`decidingEffect`, `deciding.ts`) — see their own comments for why the log cannot
  * serialise this on its own.
  */
-export async function editBodyAndRequeue(options: EditBodyAndRequeueOptions): Promise<EditBodyAndRequeueResult> {
+export function editBodyAndRequeue(options: EditBodyAndRequeueOptions): Promise<EditBodyAndRequeueResult> {
+  return Effect.runPromise(editBodyAndRequeueEffect(options))
+}
+
+export function editBodyAndRequeueEffect(
+  options: EditBodyAndRequeueOptions,
+): Effect.Effect<EditBodyAndRequeueResult, unknown> {
   const store = options.store ?? eventStore
   const ticketId = ticketStream(options.project, options.issue)
-  return deciding(
+  return decidingEffect<EditBodyAndRequeueResult, unknown, never>(
     ticketId,
     () => ({
       ok: false,
@@ -64,75 +70,85 @@ export async function editBodyAndRequeue(options: EditBodyAndRequeueOptions): Pr
       written: false,
       detail: `${ticketId} is being decided by someone else right now — an approval may be merging it. Reload and read it again`,
     }),
-    () =>
-      editBodyAndRequeueHolding(options, store, ticketId, {
-        snapshots: options.snapshots ?? (options.store === undefined ? log.snapshots : undefined),
-        writer: options.writer,
-      }),
+    editBodyAndRequeueHoldingEffect(options, store, ticketId, {
+      snapshots: options.snapshots ?? (options.store === undefined ? log.snapshots : undefined),
+      writer: options.writer,
+    }),
   )
 }
 
 /** Exported for the unit half alone — see `requeueHolding`'s own comment in `approve.ts`. */
-export async function editBodyAndRequeueHolding(
+export function editBodyAndRequeueHolding(
   options: EditBodyAndRequeueOptions,
   store: EventStore,
   ticketId: string,
   read: SnapshotReadOptions = {},
 ): Promise<EditBodyAndRequeueResult> {
-  // **Refuse before writing** (0118 §6): a body edited for a refusal it was
-  // always going to get is a body changed for nothing.
-  const item = await readState(store, ticketReducer, ticketId, 'all', read)
-  if (item.lifecycle.status !== 'blocked' || item.lifecycle.waitId !== options.waitId) {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'not-waiting',
-      written: false,
-      detail: `${ticketId} is not waiting on ${options.waitId} — nothing was resolved. Reload and read it again.`,
-    }
-  }
-  const reason = item.lifecycle.reason
-  if (!allowedResolutions(reason).includes('EditBodyAndRequeue')) {
-    return {
-      ok: false,
-      ticketId,
-      reason: 'not-offered',
-      written: false,
-      detail: `EditBodyAndRequeue is not offered for ${describeReason(reason)} — nothing was resolved.`,
-    }
-  }
+  return Effect.runPromise(editBodyAndRequeueHoldingEffect(options, store, ticketId, read))
+}
 
-  const key = `${ticketId}/${options.waitId}`
-  const result = await writeSection({ store, github: options.github, ticketId, key, text: options.text })
-  if (!result.written) {
-    return { ok: false, ticketId, reason: 'write-failed', written: false, detail: result.detail }
-  }
-
-  const resolved = await resolveWaitHolding(
-    {
-      ticketId,
-      waitId: options.waitId,
-      resolution: { _tag: 'EditBodyAndRequeue' },
-      writtenSection: options.text,
-      by: options.by,
-      // A note the person typed wins; otherwise it is composed from the text
-      // just written, so it cannot go stale against an edited answer (0118 §6).
-      note: options.note?.trim() ? options.note : requeueNote(options.text),
-      store,
-      ...read,
-    },
-    ticketId,
-  )
-  if (!resolved.ok) {
-    const now = await readState(store, ticketReducer, ticketId, 'all', read)
-    return {
-      ok: false,
-      ticketId,
-      reason: resolved.reason,
-      written: true,
-      detail: `the answer is in the body; ${ticketId} is ${now.lifecycle.status} now — ${resolved.detail}`,
+export function editBodyAndRequeueHoldingEffect(
+  options: EditBodyAndRequeueOptions,
+  store: EventStore,
+  ticketId: string,
+  read: SnapshotReadOptions = {},
+): Effect.Effect<EditBodyAndRequeueResult, unknown> {
+  return Effect.gen(function* () {
+    // **Refuse before writing** (0118 §6): a body edited for a refusal it was
+    // always going to get is a body changed for nothing.
+    const item = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', read)
+    if (item.lifecycle.status !== 'blocked' || item.lifecycle.waitId !== options.waitId) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'not-waiting',
+        written: false,
+        detail: `${ticketId} is not waiting on ${options.waitId} — nothing was resolved. Reload and read it again.`,
+      }
     }
-  }
+    const reason = item.lifecycle.reason
+    if (!allowedResolutions(reason).includes('EditBodyAndRequeue')) {
+      return {
+        ok: false,
+        ticketId,
+        reason: 'not-offered',
+        written: false,
+        detail: `EditBodyAndRequeue is not offered for ${describeReason(reason)} — nothing was resolved.`,
+      }
+    }
 
-  return { ok: true, ticketId, written: true, detail: 'back in the queue, and the answer is in the body' }
+    const key = `${ticketId}/${options.waitId}`
+    const result = yield* writeSectionEffect({ store, github: options.github, ticketId, key, text: options.text })
+    if (!result.written) {
+      return { ok: false, ticketId, reason: 'write-failed', written: false, detail: result.detail }
+    }
+
+    const resolved = yield* resolveWaitHoldingEffect(
+      {
+        ticketId,
+        waitId: options.waitId,
+        resolution: { _tag: 'EditBodyAndRequeue' },
+        writtenSection: options.text,
+        by: options.by,
+        // A note the person typed wins; otherwise it is composed from the text
+        // just written, so it cannot go stale against an edited answer (0118 §6).
+        note: options.note?.trim() ? options.note : requeueNote(options.text),
+        store,
+        ...read,
+      },
+      ticketId,
+    )
+    if (!resolved.ok) {
+      const now = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', read)
+      return {
+        ok: false,
+        ticketId,
+        reason: resolved.reason,
+        written: true,
+        detail: `the answer is in the body; ${ticketId} is ${now.lifecycle.status} now — ${resolved.detail}`,
+      }
+    }
+
+    return { ok: true, ticketId, written: true, detail: 'back in the queue, and the answer is in the body' }
+  })
 }

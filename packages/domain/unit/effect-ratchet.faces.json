@@ -66,6 +66,78 @@
     "why": "apps/cli/src/discuss.ts:291 (discussionVersion) and apps/cli/src/triage.ts:945 await it, until the apps/cli row"
   },
   {
+    "file": "packages/conductor/src/approve.ts",
+    "fn": "approve",
+    "until": "#790",
+    "why": "the board's actions (`apps/board/src/app/actions.ts`) and `apps/cli/src/approve.ts` (`approveRun`) await it, until the board and apps/cli rows"
+  },
+  {
+    "file": "packages/conductor/src/approve.ts",
+    "fn": "approveHolding",
+    "until": "#790",
+    "why": "exported for the unit half (#487): `apps/board/unit/triage-move.test.tsx`, `schedule-continuation-stale.test.ts` and `apps/cli/unit/verbs-accept-refuse.test.ts`"
+  },
+  {
+    "file": "packages/conductor/src/approve.ts",
+    "fn": "requeue",
+    "until": "#790",
+    "why": "`apps/board/src/app/actions.ts` and `apps/cli/src/requeue.ts` await it, until the board and apps/cli rows"
+  },
+  {
+    "file": "packages/conductor/src/approve.ts",
+    "fn": "requeueHolding",
+    "until": "#790",
+    "why": "exported for the unit half (#487): `apps/cli/unit/requeue-into-body.test.ts` and `verbs-accept-refuse.test.ts`"
+  },
+  {
+    "file": "packages/conductor/src/ask.ts",
+    "fn": "answer",
+    "until": "#790",
+    "why": "`apps/board/src/app/actions.ts` and `apps/cli/src/ask.ts` await it, until the board and apps/cli rows"
+  },
+  {
+    "file": "packages/conductor/src/ask.ts",
+    "fn": "answerHolding",
+    "until": "#790",
+    "why": "exported for the unit half (#487): `apps/cli/unit/verbs-accept-refuse.test.ts`"
+  },
+  {
+    "file": "packages/conductor/src/ask.ts",
+    "fn": "ask",
+    "until": "#790",
+    "why": "`apps/cli/src/ask.ts` awaits it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/close.ts",
+    "fn": "close",
+    "until": "#790",
+    "why": "`apps/board/src/app/actions.ts` and `apps/cli/src/close.ts` await it, until the board and apps/cli rows"
+  },
+  {
+    "file": "packages/conductor/src/close.ts",
+    "fn": "closeHolding",
+    "until": "#790",
+    "why": "`apps/cli/unit/verbs-accept-refuse.test.ts` (#487); `conduct.ts` lifts it through `Effect.promise` until CONDUCT8-7"
+  },
+  {
+    "file": "packages/conductor/src/deciding.ts",
+    "fn": "deciding",
+    "until": "#790",
+    "why": "`split-ticket.ts` holds the decide lock through it until CONDUCT8-4"
+  },
+  {
+    "file": "packages/conductor/src/edit-body.ts",
+    "fn": "editBodyAndRequeue",
+    "until": "#790",
+    "why": "`apps/board/src/app/actions.ts` and `apps/cli/src/requeue.ts` await it, until the board and apps/cli rows"
+  },
+  {
+    "file": "packages/conductor/src/edit-body.ts",
+    "fn": "editBodyAndRequeueHolding",
+    "until": "#790",
+    "why": "exported for the unit half (#487): `apps/cli/unit/requeue-into-body.test.ts`"
+  },
+  {
     "file": "packages/conductor/src/filter.ts",
     "fn": "githubClientFor",
     "until": "#790",
@@ -138,6 +210,18 @@
     "why": "apps/board lib/task, apps/cli discuss.ts and triage.ts await it; 0101 §7 lets the board keep promises"
   },
   {
+    "file": "packages/conductor/src/resolve-wait.ts",
+    "fn": "resolveWait",
+    "until": "#790",
+    "why": "`apps/board/src/app/actions.ts` and `apps/cli/src/grant-fix-round.ts` await it, until the board and apps/cli rows"
+  },
+  {
+    "file": "packages/conductor/src/resolve-wait.ts",
+    "fn": "resolveWaitHolding",
+    "until": "#790",
+    "why": "the unit tests that resolve a wait directly (#487's exported-for-the-unit-half reason); `split-ticket.ts` awaits it until CONDUCT8-4"
+  },
+  {
     "file": "packages/conductor/src/run-attempt.ts",
     "fn": "claimStep",
     "until": "#790",
@@ -178,6 +262,12 @@
     "fn": "ticketsFor",
     "until": "#790",
     "why": "apps/cli (conduct, run, ticket)"
+  },
+  {
+    "file": "packages/conductor/src/write-section.ts",
+    "fn": "writeSection",
+    "until": "#790",
+    "why": "`discuss.ts` awaits it until CONDUCT8-7"
   },
   {
     "file": "packages/daemon/src/choose.ts",
