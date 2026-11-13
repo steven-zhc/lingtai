@@ -66,4 +66,16 @@ describe('findOrphanClaudeDirsEffect', () => {
     }
     await expect(Effect.runPromise(findOrphanClaudeDirsEffect({ home: '/h', fs }))).rejects.toBeDefined()
   })
+
+  it('a run stream that cannot be read fails rather than reporting a live directory as abandoned', async () => {
+    const { fs } = fake(tree)
+    const store = {
+      read: async () => {
+        throw Object.assign(new Error('EIO'), { code: 'EIO' })
+      },
+    }
+    await expect(
+      Effect.runPromise(findOrphanClaudeDirsEffect({ home: '/h', fs, dryRun: true, store } as never)),
+    ).rejects.toBeDefined()
+  })
 })

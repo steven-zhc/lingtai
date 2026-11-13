@@ -3025,7 +3025,7 @@ export function codexRoleRow(
 }
 
 /** `claudeOauthToken` as a boolean Effect that keeps the reader's own sentence, which `Effect.try` alone would replace. */
-const readClaudeToken = (env?: NodeJS.ProcessEnv): Effect.Effect<boolean, Error> =>
+export const readClaudeToken = (env?: NodeJS.ProcessEnv): Effect.Effect<boolean, Error> =>
   Effect.try({
     try: () => claudeOauthToken(env) !== undefined,
     catch: (err) => (err instanceof Error ? err : new Error('could not be read')),

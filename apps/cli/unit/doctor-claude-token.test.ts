@@ -1,7 +1,11 @@
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { claudeTokenRow } from '../src/doctor.ts'
+import { claudeTokenRow, readClaudeToken } from '../src/doctor.ts'
 
 const TOKEN = 'sk-ant-oat01-FAKE-0000'
 
@@ -26,8 +30,15 @@ describe('claudeTokenRow', () => {
   })
 
   it('keeps the reader sentence through the production wrapping', async () => {
-    const row = await Effect.runPromise(claudeTokenRow())
-    // the default reads the real environment; it either answers or names the reason, never Effect.try's own sentence
-    expect(row.detail ?? '').not.toContain('An error occurred in Effect.try')
+    // a config.yml that is a directory cannot be read: the reader's own sentence must survive the wrapping
+    const home = mkdtempSync(join(tmpdir(), 'claude-token-'))
+    try {
+      mkdirSync(join(home, 'config.yml'))
+      const row = await Effect.runPromise(claudeTokenRow(() => readClaudeToken({ LINGTAI_HOME: home })))
+      expect(row.status).toBe('fail')
+      expect(row.detail).toContain('could not be read or parsed, so claude.oauth_token is unknown')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 })

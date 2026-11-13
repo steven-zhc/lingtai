@@ -779,7 +779,8 @@ export const findOrphanClaudeDirsEffect = Effect.fn('daemon.findOrphanClaudeDirs
 
     if (options.dryRun) {
       const store = logOf(options)
-      const run = yield* attempt(() => store.read(runId)).pipe(Effect.catch(() => Effect.succeed([] as Envelope[])))
+      // A stream that cannot be read is not evidence the run is over: it fails rather than reporting a live directory as abandoned.
+      const run = yield* attempt(() => store.read(runId))
       const taskId = run
         .map((e) => (e.data as { ticketId?: string } | undefined)?.ticketId)
         .find((id): id is string => typeof id === 'string')
