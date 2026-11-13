@@ -487,12 +487,6 @@
   },
   {
     "file": "packages/event-store/src/choose.ts",
-    "fn": "closeProcessLog",
-    "until": "#790",
-    "why": "apps/cli entry.ts awaits it at the host's edge"
-  },
-  {
-    "file": "packages/event-store/src/choose.ts",
     "fn": "processEventStore",
     "until": "#790",
     "why": "integration tests in apps/cli, conductor, daemon, projector and repo await it"
@@ -513,7 +507,7 @@
     "file": "packages/event-store/src/closable.ts",
     "fn": "closableCloseFace",
     "until": "#790",
-    "why": "the same, through closeProcessProjections"
+    "why": "`closableOnce`, which wraps the Effect one for a caller that holds a promise"
   },
   {
     "file": "packages/event-store/src/closable.ts",
@@ -676,12 +670,6 @@
     "fn": "readBacklog",
     "until": "#790",
     "why": "the board (0101 §7), apps/cli, apps/site/scripts, packages/conductor and packages/daemon read the projections as promises."
-  },
-  {
-    "file": "packages/projector/src/choose.ts",
-    "fn": "closeProcessProjections",
-    "until": "#790",
-    "why": "apps/cli/src/entry.ts:31"
   },
   {
     "file": "packages/projector/src/choose.ts",

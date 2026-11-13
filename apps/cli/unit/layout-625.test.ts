@@ -8,10 +8,11 @@ import type { ProjectionLag } from '@lingtai/projector'
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runCli, type Runners } from '../src/cli.ts'
+import { type Runners } from '../src/cli.ts'
 import { envListJson, formatEnvList, renderEnvList } from '../src/env.ts'
 import { releaseCheck, rollback, uninstall, upgrade, type World } from '../src/install.ts'
 import { projectionLagJson, renderProjectionLag } from '../src/projection.ts'
+import { runCli } from '../test/cli.ts'
 
 const ESC = String.fromCharCode(27)
 
@@ -85,7 +86,7 @@ describe('lingtai env', () => {
     }))
     let a: Awaited<ReturnType<typeof capture>>
     try {
-      const { runCli: fresh } = await import('../src/cli.ts')
+      const { runCli: fresh } = await import('../test/cli.ts')
       a = await capture(['env', 'list', 'nope', '--json'], {}, fresh)
     } finally {
       vi.doUnmock('../src/env.ts')

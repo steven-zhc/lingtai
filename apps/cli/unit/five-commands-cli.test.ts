@@ -2,7 +2,8 @@
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runCli, type Runners } from '../src/cli.ts'
+import { type Runners } from '../src/cli.ts'
+import { runCli } from '../test/cli.ts'
 
 async function capture(
   args: string[],

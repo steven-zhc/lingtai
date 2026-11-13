@@ -30,7 +30,7 @@ export const recipeOptions = {
   budget: text('budget'),
   defaults: Flag.Boolean('defaults').pipe(Flag.withDefault(false)),
   yes: Flag.Boolean('yes').pipe(Flag.withDefault(false)),
-  // `runCli` applies NO_COLOR itself; this only lets the parser accept the flag.
+  // `cli` applies NO_COLOR itself; this only lets the parser accept the flag.
   'no-color': Flag.Boolean('no-color').pipe(Flag.withDefault(false)),
 }
 

@@ -17,7 +17,7 @@ import type { EventStore } from './event-store.ts'
 import type { Log } from './log.ts'
 import { promiseStore } from './store-face.ts'
 export {
-  closeProcessLog,
+  closeProcessLogEffect,
   eventsLayer,
   logSqlLayer,
   processEventStore,

@@ -10,7 +10,9 @@
  * A dynamic `import()` and not a static one, since a static import is evaluated
  * before a line of this file runs; esbuild keeps it lazy in the CJS bundle.
  */
-import { finish } from './ending.ts'
+import { Effect } from 'effect'
+
+import { finishEffect } from './ending.ts'
 import { helpCommand, unknownCommand } from './help.ts'
 import { routeOf, versionFlagAsCommand } from './migrated.ts'
 
@@ -20,29 +22,18 @@ const route = routeOf(argv)
 
 if (route === 'effect') {
   void import('./cli.ts')
-    .then(async ({ runCli }) => {
-      // Already imported by `cli.ts`, so this loads nothing new; dynamic so
-      // that help and unknown commands never touch the store.
-      const { closeProcessLog } = await import('@lingtai/event-store')
-      const { closeProcessProjections } = await import('@lingtai/projector')
-      // Both at once, neither skipped because the other rejected; the first
-      // rejection is re-thrown so `finish` reports it.
-      const closeStores = (): Promise<void> =>
-        Promise.allSettled([closeProcessLog(), closeProcessProjections()]).then((settled) => {
-          const failed = settled.find((r): r is PromiseRejectedResult => r.status === 'rejected')
-          if (failed) throw failed.reason
-        })
-      return finish(
-        () => runCli([...process.argv.slice(0, 2), ...argv]),
-        closeStores,
-        (code) => {
-          // The close gave up with its socket still open, which would hold the
-          // process past the budget; leave once what is already written is out.
+    .then(({ cli, closeStores }) =>
+      // The program's one run (0101 §6). `runPromise` and not `runMain`: `runMain` interrupts the main fiber on
+      // SIGINT, and the daemon's first Ctrl+C is a drain that finishes the pass in flight.
+      Effect.runPromise(
+        finishEffect(cli([...process.argv.slice(0, 2), ...argv]), closeStores, (code) => {
+          // The close gave up with its socket still open, which would hold the process past the budget; leave
+          // once what is already written is out.
           process.exitCode = code
           process.stdout.write('', () => process.stderr.write('', () => process.exit(code)))
-        },
-      )
-    })
+        }),
+      ),
+    )
     .then((code) => {
       // `init` may have started the board in this process, and its listening
       // socket holds the event loop open past `process.exitCode` (#394 finding

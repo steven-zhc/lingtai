@@ -2,7 +2,7 @@
 import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { runCli } from '../src/cli.ts'
+import { runCli } from '../test/cli.ts'
 
 const mocked = vi.hoisted(() => ({ liftFails: false }))
 

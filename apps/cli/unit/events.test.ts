@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { EventsDoc } from '../../../packages/domain/scripts/events.ts'
-import { runCli } from '../src/cli.ts'
 import { eventsBySection, findEvent, renderEvent, renderEvents } from '../src/events.ts'
+import { runCli } from '../test/cli.ts'
 
 async function capture(args: string[]): Promise<{ code: number; out: string; err: string }> {
   let out = ''

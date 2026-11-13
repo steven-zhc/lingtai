@@ -103,8 +103,8 @@ const process_ = closableOnceEffect(
 )
 
 /** Close the shared store when a command has finished. Idempotent; reads after it are refused. */
-export function closeProcessProjections(): Promise<void> {
-  return Effect.runPromise(process_.close())
+export function closeProcessProjectionsEffect() {
+  return process_.close()
 }
 
 /**

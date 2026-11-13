@@ -198,7 +198,7 @@ describe('lingtai doctor through runCli (#716)', () => {
       ...(await orig<typeof import('../src/steps.ts')>()),
       doctorProgress: () => ({ onProgress: () => {}, clear }),
     }))
-    const { runCli } = await import('../src/cli.ts')
+    const { runCli } = await import('../test/cli.ts')
     let out = ''
     vi.spyOn(process.stdout, 'write').mockImplementation((t: unknown) => ((out += String(t)), true))
     vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void (out += `${a.join(' ')}\n`))

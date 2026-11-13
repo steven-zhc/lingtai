@@ -2,8 +2,8 @@
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runCli } from '../src/cli.ts'
 import { parseRestartArgs } from '../src/restart.ts'
+import { runCli } from '../test/cli.ts'
 
 const seen = vi.hoisted(() => ({
   calls: [] as { command: string; options: unknown }[],

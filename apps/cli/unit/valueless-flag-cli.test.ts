@@ -1,7 +1,7 @@
 /** A flag that takes a value and is given none is a usage error, exit 2 (#715). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { runCli } from '../src/cli.ts'
+import { runCli } from '../test/cli.ts'
 
 afterEach(() => vi.restoreAllMocks())
 

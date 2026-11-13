@@ -1,9 +1,9 @@
 /** `lingtai version` through `@effect/cli` says what it always said (#616). */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { runCli } from '../src/cli.ts'
 import { versionFlagAsCommand } from '../src/migrated.ts'
 import { versionFacts, versionLine } from '../src/version.ts'
+import { runCli } from '../test/cli.ts'
 
 async function capture(args: string[]): Promise<{ code: number; out: string; err: string }> {
   let out = ''
