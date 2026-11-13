@@ -34,7 +34,8 @@ export function wizardFailed(err: unknown): number {
   return 1
 }
 
-const printedBy =
+/** Whatever fails is printed by `print` (which returns the exit code) and becomes `CommandExit`; a `CommandExit` and an interruption pass. */
+export const printedBy =
   (print: (err: unknown) => number) =>
   <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, CommandExit, R> =>
     Effect.catchCause(self, (cause): Effect.Effect<A, CommandExit> => {

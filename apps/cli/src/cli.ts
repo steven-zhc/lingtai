@@ -12,7 +12,7 @@ import { Argument, CliOutput, Command, Flag } from 'effect/cli'
 import type { BoardVerb } from './board.ts'
 import { definitionOf, PROJECTION_NAMES, startIsVerbose } from './commands.ts'
 import { USAGE as ENV_USAGE } from './env-usage.ts'
-import { CommandExit, exitWith, failed, lift, orFailed, orWizardFailed, wizardFailed } from './exit.ts'
+import { CommandExit, exitWith, failed, lift, orFailed, orWizardFailed, printedBy, wizardFailed } from './exit.ts'
 import { commandHelp } from './help.ts'
 import { applyNoColor, heading, printJson, printJsonError, stripColour, symbol } from './output.ts'
 import { parseRestartArgs, type RestartArgs } from './restart.ts'
@@ -32,9 +32,6 @@ const version = Command.make('version', { json, noColor }, (args) =>
     else process.stdout.write(`${versionLine()}\n`)
   }),
 ).pipe(Command.withDescription(definitionOf('version').task))
-
-/** What a handler sets when it fails on its own: `runCli` resolves to it, as the exit code. */
-let handlerCode = 0
 
 const status = Command.make(
   'status',
@@ -1030,19 +1027,22 @@ const uninstallCommand = Command.make(
 // is loaded, and the supervisor's plist still runs that file with `daemon`.
 
 /** Every handler here ends the same way: a thrown error is a sentence and exit 1. */
-function daemonHandler(args: { noColor: boolean }, run: () => Promise<number>, jsonCommand?: string) {
-  return Effect.promise(async () => {
+function daemonHandler(
+  args: { noColor: boolean },
+  run: () => Effect.Effect<number, unknown>,
+  jsonCommand?: string,
+): Effect.Effect<void, CommandExit> {
+  return Effect.gen(function* () {
     if (args.noColor) applyNoColor()
-    try {
-      handlerCode = await run()
-    } catch (err) {
-      // A script reading `--json` gets the error document on stdout, not an empty string.
-      handlerCode =
-        jsonCommand === undefined
-          ? wizardFailed(err)
-          : printJsonError(jsonCommand, 'failed', err instanceof Error ? err.message : String(err))
-    }
-  })
+    yield* Effect.flatMap(run(), exitWith)
+  }).pipe(
+    // A script reading `--json` gets the error document on stdout, not an empty string.
+    printedBy((err) =>
+      jsonCommand === undefined
+        ? wizardFailed(err)
+        : printJsonError(jsonCommand, 'failed', err instanceof Error ? err.message : String(err)),
+    ),
+  )
 }
 
 const startFlags = {
@@ -1056,7 +1056,9 @@ const startFlags = {
  * One snapshot writer for as long as the daemon runs (0124 §5), acquired in the CLI's own
  * Effect and closed when the command returns. The imports stay dynamic like every heavy one here.
  */
-function withDaemonWriter(run: (writer: Pick<SnapshotWriter, 'offer'>) => Effect.Effect<void>): Effect.Effect<void> {
+function withDaemonWriter(
+  run: (writer: Pick<SnapshotWriter, 'offer'>) => Effect.Effect<void, CommandExit>,
+): Effect.Effect<void, CommandExit> {
   return Effect.scoped(
     Effect.gen(function* () {
       const { log } = yield* Effect.promise(() => import('@lingtai/event-store'))
@@ -1070,22 +1072,26 @@ function withDaemonWriter(run: (writer: Pick<SnapshotWriter, 'offer'>) => Effect
 function startCommand(name: 'start' | 'daemon') {
   return Command.make(name, startFlags, (args) =>
     withDaemonWriter((writer) =>
-      daemonHandler(args, async () => {
-        const { daemonCommand } = await import('./daemon.ts')
-        const flags: Record<string, string> = {
-          ...(args.noConduct ? { 'no-conduct': '' } : {}),
-          ...(args.noMerge ? { 'no-merge': '' } : {}),
-        }
-        // Said when the lock is won; a daemon that did not start has said why, and says nothing more.
-        // `another daemon holds the lock — nothing to do` stays a quiet line, not a failure (0121 §1).
-        return daemonCommand(
-          flags,
-          null,
-          name === 'start' ? () => console.log(`${symbol.pass()} started`) : null,
-          startIsVerbose(name, args.verbose),
-          writer,
-        )
-      }),
+      daemonHandler(args, () =>
+        Effect.gen(function* () {
+          const { daemonCommand } = yield* lift(() => import('./daemon.ts'))
+          const flags: Record<string, string> = {
+            ...(args.noConduct ? { 'no-conduct': '' } : {}),
+            ...(args.noMerge ? { 'no-merge': '' } : {}),
+          }
+          // Said when the lock is won; a daemon that did not start has said why, and says nothing more.
+          // `another daemon holds the lock — nothing to do` stays a quiet line, not a failure (0121 §1).
+          return yield* lift(() =>
+            daemonCommand(
+              flags,
+              null,
+              name === 'start' ? () => console.log(`${symbol.pass()} started`) : null,
+              startIsVerbose(name, args.verbose),
+              writer,
+            ),
+          )
+        }),
+      ),
     ),
   ).pipe(Command.withDescription(definitionOf(name).task))
 }
@@ -1096,17 +1102,21 @@ const reasonOption = optionalText('reason')
 const optionalProject = Argument.String('project').pipe(Argument.optional)
 
 const pause = Command.make('pause', { project: optionalProject, noColor }, (args) =>
-  daemonHandler(args, async () => {
-    const { controlCommand } = await import('./daemon.ts')
-    return controlCommand('pause', { project: given(args.project) })
-  }),
+  daemonHandler(args, () =>
+    Effect.gen(function* () {
+      const { controlCommand } = yield* lift(() => import('./daemon.ts'))
+      return yield* lift(() => controlCommand('pause', { project: given(args.project) }))
+    }),
+  ),
 ).pipe(Command.withDescription(definitionOf('pause').task))
 
 const resume = Command.make('resume', { project: optionalProject, noColor }, (args) =>
-  daemonHandler(args, async () => {
-    const { controlCommand } = await import('./daemon.ts')
-    return controlCommand('resume', { project: given(args.project) })
-  }),
+  daemonHandler(args, () =>
+    Effect.gen(function* () {
+      const { controlCommand } = yield* lift(() => import('./daemon.ts'))
+      return yield* lift(() => controlCommand('resume', { project: given(args.project) }))
+    }),
+  ),
 ).pipe(Command.withDescription(definitionOf('resume').task))
 
 const ceilingRaiseCommand = Command.make(
@@ -1114,27 +1124,26 @@ const ceilingRaiseCommand = Command.make(
   { usd: Argument.String('usd').pipe(Argument.optional), noColor },
   (args) =>
     daemonHandler(args, () =>
-      Promise.all([import('./ceiling-raise.ts'), import('./project-pause.ts')]).then(([raise, pause]) => {
+      Effect.gen(function* () {
+        const raise = yield* lift(() => import('./ceiling-raise.ts'))
         const toUsd = raise.parseUsd(given(args.usd))
         if (toUsd === undefined) {
           console.error('lingtai ceiling raise <usd> — <usd> is a positive number of dollars')
           return 2
         }
-        return pause.runEffect(
-          raise.ceilingRaise({
-            toUsd,
-            by: `human:${process.env['USER'] ?? 'operator'}`,
-            log: (line) => console.log(line),
-          }),
-        )
+        return yield* raise.ceilingRaise({
+          toUsd,
+          by: `human:${process.env['USER'] ?? 'operator'}`,
+          log: (line) => console.log(line),
+        })
       }),
     ),
 )
 
 const ceilingCommand = Command.make('ceiling', {}, () =>
-  Effect.sync(() => {
+  Effect.suspend(() => {
     console.error(commandHelp('ceiling'))
-    handlerCode = 2
+    return exitWith(2)
   }),
 ).pipe(Command.withDescription(definitionOf('ceiling').task), Command.withSubcommands([ceilingRaiseCommand]))
 const accountLift = Command.make(
@@ -1142,21 +1151,23 @@ const accountLift = Command.make(
   { runtime: Argument.String('runtime').pipe(Argument.optional), noColor },
   (args) =>
     daemonHandler(args, () =>
-      import('./account-lift.ts')
-        .then(({ liftAccount, runLiftAccount }) =>
-          runLiftAccount(liftAccount(given(args.runtime), `human:${process.env['USER'] ?? 'operator'}`)),
-        )
-        .catch((err: unknown) => {
+      Effect.gen(function* () {
+        const { liftAccount } = yield* lift(() => import('./account-lift.ts'))
+        return yield* liftAccount(given(args.runtime), `human:${process.env['USER'] ?? 'operator'}`)
+      }).pipe(
+        // Its own sentence: the message alone, never `wizardFailed`'s stack under LINGTAI_DEBUG.
+        printedBy((err) => {
           console.error(err instanceof Error ? err.message : String(err))
           return 1
         }),
+      ),
     ),
 )
 
 const accountCommand = Command.make('account', {}, () =>
-  Effect.sync(() => {
+  Effect.suspend(() => {
     console.error(commandHelp('account'))
-    handlerCode = 2
+    return exitWith(2)
   }),
 ).pipe(Command.withDescription(definitionOf('account').task), Command.withSubcommands([accountLift]))
 
@@ -1170,14 +1181,18 @@ const shutdown = Command.make(
     noColor,
   },
   (args) =>
-    daemonHandler(args, async () => {
-      const { controlCommand } = await import('./daemon.ts')
-      return controlCommand('shutdown', {
-        reason: given(args.reason) ?? args.why.join(' '),
-        ...(args.timeout._tag === 'Some' ? { timeout: args.timeout.value } : {}),
-        force: args.force,
-      })
-    }),
+    daemonHandler(args, () =>
+      Effect.gen(function* () {
+        const { controlCommand } = yield* lift(() => import('./daemon.ts'))
+        return yield* lift(() =>
+          controlCommand('shutdown', {
+            reason: given(args.reason) ?? args.why.join(' '),
+            ...(args.timeout._tag === 'Some' ? { timeout: args.timeout.value } : {}),
+            force: args.force,
+          }),
+        )
+      }),
+    ),
 ).pipe(Command.withDescription(definitionOf('shutdown').task))
 
 /**
@@ -1203,10 +1218,12 @@ const restart = Command.make(
   },
   (args) =>
     withDaemonWriter((writer) =>
-      daemonHandler(args, async () => {
-        const { restartCommand } = await import('./daemon.ts')
-        return restartCommand(restartArgs!, createSteps(console.log), writer)
-      }),
+      daemonHandler(args, () =>
+        Effect.gen(function* () {
+          const { restartCommand } = yield* lift(() => import('./daemon.ts'))
+          return yield* lift(() => restartCommand(restartArgs!, createSteps(console.log), writer))
+        }),
+      ),
     ),
 ).pipe(Command.withDescription(definitionOf('restart').task))
 
@@ -1223,59 +1240,61 @@ function serviceVerb(verb: keyof typeof SERVICE_DONE) {
   const withWhy = verb === 'shutdown' || verb === 'restart'
   return Command.make(verb, withWhy ? { why: whyArg, noColor } : { noColor }, (parsed) => {
     const args = parsed as { why?: readonly string[]; noColor: boolean }
-    return daemonHandler(args, async () => {
-      const { serviceOptions } = await import('./daemon.ts')
-      const { serviceCommand, SHUTDOWN_BOARD_ONLY, START_BOARD_ONLY } = await import('./service.ts')
-      const why = args.why ? [...args.why] : []
-      const steps = createSteps(console.log)
-      // `serviceCommand` begins the phases it has (draining, starting); these two have none of their own.
-      if (verb === 'install') steps.begin('writing')
-      if (verb === 'uninstall') steps.begin('removing')
-      let unconfirmed = false // the supervisor already had a conductor process
-      let boardHad = false // ...and a board process, or no board job or build, so the board's start was not made either
-      let code: number
-      try {
-        code = await serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
-          ...serviceOptions(),
-          steps,
-          unconfirmed: (job) => {
-            if (job === 'conductor') unconfirmed = true
-            else boardHad = true
-          },
-        })
-      } finally {
-        // A throw (EACCES on the service file, say) must not leave the spinner animating.
-        steps.end()
-      }
-      if (unconfirmed && code === START_BOARD_ONLY)
-        console.log(
-          `${symbol.fail()} ${verb} — the supervisor already had a conductor process, so it was not confirmed, and the board did not start`,
+    return daemonHandler(args, () =>
+      Effect.gen(function* () {
+        const { serviceOptions } = yield* lift(() => import('./daemon.ts'))
+        const { serviceCommand, SHUTDOWN_BOARD_ONLY, START_BOARD_ONLY } = yield* lift(() => import('./service.ts'))
+        const why = args.why ? [...args.why] : []
+        const steps = createSteps(console.log)
+        // `serviceCommand` begins the phases it has (draining, starting); these two have none of their own.
+        if (verb === 'install') steps.begin('writing')
+        if (verb === 'uninstall') steps.begin('removing')
+        let unconfirmed = false // the supervisor already had a conductor process
+        let boardHad = false // ...and a board process, or no board job or build, so the board's start was not made either
+        const code = yield* lift(() =>
+          serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
+            ...serviceOptions(),
+            steps,
+            unconfirmed: (job) => {
+              if (job === 'conductor') unconfirmed = true
+              else boardHad = true
+            },
+          }),
+        ).pipe(
+          // A throw (EACCES on the service file, say) must not leave the spinner animating.
+          Effect.ensuring(Effect.sync(() => steps.end())),
         )
-      else if (code === 0 && unconfirmed && !boardHad)
-        console.log(
-          paint.muted(
-            `${verb}: the supervisor already had a conductor process, so it was not started or confirmed — the board was started`,
-          ),
-        )
-      else if (code === 0 && unconfirmed)
-        console.log(paint.muted(`${verb}: the supervisor already had a process, so nothing was started or confirmed`))
-      else if (code === 0) console.log(`${symbol.pass()} ${SERVICE_DONE[verb]}`)
-      else if (code === SHUTDOWN_BOARD_ONLY || code === START_BOARD_ONLY)
-        console.log(`${symbol.fail()} ${verb} — the conductor did, the board did not`)
-      else console.log(`${symbol.fail()} not ${verb === 'shutdown' ? 'shut down' : SERVICE_DONE[verb]}`)
-      return code
-    })
+        if (unconfirmed && code === START_BOARD_ONLY)
+          console.log(
+            `${symbol.fail()} ${verb} — the supervisor already had a conductor process, so it was not confirmed, and the board did not start`,
+          )
+        else if (code === 0 && unconfirmed && !boardHad)
+          console.log(
+            paint.muted(
+              `${verb}: the supervisor already had a conductor process, so it was not started or confirmed — the board was started`,
+            ),
+          )
+        else if (code === 0 && unconfirmed)
+          console.log(paint.muted(`${verb}: the supervisor already had a process, so nothing was started or confirmed`))
+        else if (code === 0) console.log(`${symbol.pass()} ${SERVICE_DONE[verb]}`)
+        else if (code === SHUTDOWN_BOARD_ONLY || code === START_BOARD_ONLY)
+          console.log(`${symbol.fail()} ${verb} — the conductor did, the board did not`)
+        else console.log(`${symbol.fail()} not ${verb === 'shutdown' ? 'shut down' : SERVICE_DONE[verb]}`)
+        return code
+      }),
+    )
   }).pipe(Command.withDescription(`${verb} the daemon and the board jobs`))
 }
 
 const serviceStatus = Command.make('status', { json, noColor }, (args) =>
   daemonHandler(
     args,
-    async () => {
-      const { serviceOptions } = await import('./daemon.ts')
-      const { serviceCommand } = await import('./service.ts')
-      return serviceCommand(['status'], { ...serviceOptions(), json: args.json })
-    },
+    () =>
+      Effect.gen(function* () {
+        const { serviceOptions } = yield* lift(() => import('./daemon.ts'))
+        const { serviceCommand } = yield* lift(() => import('./service.ts'))
+        return yield* lift(() => serviceCommand(['status'], { ...serviceOptions(), json: args.json }))
+      }),
     args.json ? 'service status' : undefined,
   ),
 ).pipe(Command.withDescription('each job on its own: the supervisor, and whether it answers'))
@@ -1531,14 +1550,13 @@ export async function runCli(
     }
   }
   const errors: string[] = []
-  handlerCode = 0
   let handlerExited = false
   const code = await Effect.runPromise(
     run(argv.slice(2)).pipe(
       Effect.provide(CliOutput.layerPresenter(USAGE_ERRORS_ONLY)),
       Effect.provideService(Console.Console, consoleFor(globalThis.console, json, errors)),
       Effect.provide(NodeServices.layer),
-      Effect.map(() => handlerCode),
+      Effect.as(0),
       Effect.catchTag('CommandExit', (e) => {
         handlerExited = true
         return Effect.succeed(e.code)
@@ -1547,7 +1565,7 @@ export async function runCli(
     ),
   )
   // A handler that failed on its own has already said so; `usage` is for what did not parse.
-  if (code !== 0 && json && handlerCode === 0 && !handlerExited) {
+  if (code !== 0 && json && !handlerExited) {
     const command = args.find((a) => !a.startsWith('-')) ?? 'lingtai'
     return printJsonError(command, 'usage', errors.join('\n') || 'invalid usage')
   }
