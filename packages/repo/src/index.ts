@@ -16,8 +16,11 @@ export {
   BASE_PROTECTED,
   PUSH_REJECTED,
   UNREACHABLE_WAITS,
+  isRemoteError,
+  isRemoteErrorFailure,
   isUnreachable,
   isUnreachableFailure,
+  remoteErrorRef,
   retryUnreachable,
 } from './network.ts'
 export { mirrorWrite } from './mirror-lock.ts'

@@ -42,11 +42,41 @@ export function isUnreachableFailure(err: RepoFailed): boolean {
   return isUnreachable(err.stderr ?? err.detail)
 }
 
+/**
+ * Git's own frame for *the server answered the ref with a 5xx* (#1125):
+ * `! [remote rejected] <src> -> <dst> (Internal Server Error)`. The frame is
+ * git's, the parenthesised reason is the server's, and only RFC 9110's phrases
+ * for 500, 502, 503 and 504 are read — `protected branch hook declined` and
+ * `pre-receive hook declined` arrive on the same line and are not transient.
+ * No `$` anchor: `retryUnreachable` appends ` (after N tries)` to the detail.
+ */
+const REMOTE_ERROR =
+  /^\s*!\s+\[remote rejected\]\s+\S+\s+->\s+\S+\s+\((Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)\)/im
+
+/** True when git's text says the server answered a push with a 5xx. A real rejection always wins. */
+export function isRemoteError(text: string): boolean {
+  if (text === '') return false
+  if (PUSH_REJECTED.test(text) || BASE_PROTECTED.test(text)) return false
+  return REMOTE_ERROR.test(text)
+}
+
+/** `isRemoteError` over a failure: stderr when git gave one, the detail otherwise. */
+export function isRemoteErrorFailure(err: RepoFailed): boolean {
+  return isRemoteError(err.stderr ?? err.detail)
+}
+
+/** The ref a `[remote rejected]` line names, or null when the text has no such frame. */
+export function remoteErrorRef(text: string): string | null {
+  const m = /^\s*!\s+\[remote rejected\]\s+\S+\s+->\s+(\S+)/im.exec(text)
+  return m?.[1]?.replace(/^refs\/heads\//, '') ?? null
+}
+
 /** The waits between tries: three tries in all, so the count is never written apart from the list. */
 export const UNREACHABLE_WAITS: readonly Duration.Input[] = ['10 seconds', '30 seconds']
 
 /**
- * Run `effect` again while it fails because origin could not be reached.
+ * Run `effect` again while it fails because origin could not be reached, or
+ * answered a push with a 5xx (`isRemoteErrorFailure`, #1125).
  *
  * **Wrap the permit, never the other way round**: `retryUnreachable(mirrorWrite(…))`
  * takes and releases a permit per try and sleeps with none held (0122 §6, #1026).
@@ -64,7 +94,7 @@ export const retryUnreachable = <A, R>(
       const result = yield* Effect.result(effect)
       if (Result.isSuccess(result)) return result.success
       const err = result.failure
-      if (!isUnreachableFailure(err)) return yield* Effect.fail(err)
+      if (!isUnreachableFailure(err) && !isRemoteErrorFailure(err)) return yield* Effect.fail(err)
       const wait = waits[i]
       if (wait === undefined) {
         return yield* Effect.fail(new RepoFailed({ ...err, detail: `${err.detail} (after ${tries} tries)` }))

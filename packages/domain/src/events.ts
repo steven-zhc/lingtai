@@ -175,6 +175,10 @@ export type RuntimeId = z.infer<typeof RuntimeId>
  *                    for the branch push before it, after three tries (#1029).
  *                    Nothing was judged; approve re-runs only the land.
  *
+ *   `remote-error`   GitHub answered the branch push, the base push or the
+ *                    publish with a 5xx on every one of three tries (#1125).
+ *                    Nothing was judged; approve re-runs only the land.
+ *
  *   `unexpected`     the merge failed in a way that is not a conflict — a
  *                    dropped store connection, a failed fetch, a failed push
  *                    for a reason that is not `push-rejected`, or any other

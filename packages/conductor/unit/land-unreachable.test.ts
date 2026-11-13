@@ -15,7 +15,7 @@ const TIMEOUT =
 const logOf = (store: ReturnType<typeof memoryStore>) =>
   JSON.stringify([...store.streams.values()].flat(), (_k, v) => (typeof v === 'bigint' ? Number(v) : v))
 
-async function land(pushDetail: string | undefined, failures: number, lsFailures = 0) {
+async function land(pushDetail: string | undefined, failures: number, lsFailures = 0, lsAnswer = '') {
   const store = memoryStore()
   const ports = fakePorts([], store, true)
   const pushes: string[][] = []
@@ -31,7 +31,7 @@ async function land(pushDetail: string | undefined, failures: number, lsFailures
       lsFailures -= 1
       return Effect.fail(new RepoFailed({ operation: 'git ls-remote', detail: TIMEOUT }))
     }
-    if (args[0] === 'ls-remote') return Effect.succeed('')
+    if (args[0] === 'ls-remote') return Effect.succeed(lsAnswer)
     if (args[0] !== 'push' || pushDetail === undefined) return git(args, o)
     return Effect.suspend(() => {
       pushes.push(args)
@@ -93,5 +93,69 @@ describe('the branch push in landNow', () => {
     expect(result.ok).not.toBe(true)
     expect(pushes.length).toBeGreaterThanOrEqual(2)
     expect(logOf(store)).not.toContain('unreachable')
+  })
+
+  describe('a push GitHub answers with a 5xx (#1125)', () => {
+    const FIVE_HUNDRED = ' ! [remote rejected]   HEAD -> agent/7 (Internal Server Error)'
+
+    it('is retried and lands when a later try succeeds', async () => {
+      const { result, pushes, lane } = await land(FIVE_HUNDRED, 2)
+      if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
+      expect(pushes).toHaveLength(3)
+      expect(lane()).toBe(1)
+    })
+
+    it('ends remote-error, not push-rejected, when the tries run out', async () => {
+      const { result, lane, store } = await land(FIVE_HUNDRED, 3)
+      expect(result.ok).not.toBe(true)
+      expect(lane()).toBe(0)
+      const logged = logOf(store)
+      expect(logged).toContain('remote-error')
+      expect(logged).not.toContain('push-rejected')
+    })
+
+    it('lands without a third try when the 5xx push was applied and the next lease is stale', async () => {
+      // Try 1 is answered 500 (applied); try 2 is stale; ls-remote shows the sha being landed.
+      let n = 0
+      const store = memoryStore()
+      const ports = fakePorts([], store, true)
+      let lane = 0
+      ports.repo.integrate = () => Effect.sync(() => (lane++, { ok: true, mergeCommit: 'c'.repeat(40) } as never))
+      const git = ports.repo.git
+      let onSha = ''
+      ports.repo.git = (args, o) => {
+        if (args[0] === 'ls-remote') return Effect.succeed(`${onSha}\trefs/heads/agent/7`)
+        if (args[0] !== 'push' || !args.some((a) => a.startsWith('--force-with-lease'))) return git(args, o)
+        return Effect.suspend(() => {
+          n += 1
+          if (n === 1) return Effect.fail(new RepoFailed({ operation: 'git push', detail: FIVE_HUNDRED }))
+          if (n === 2)
+            return Effect.fail(
+              new RepoFailed({ operation: 'git push', detail: '! [rejected] HEAD -> agent/7 (stale info)' }),
+            )
+          return git(args, o)
+        })
+      }
+      // The head the fake pass reports is what landNow lands.
+      onSha = 'b'.repeat(40)
+      const result = await once(
+        {
+          project,
+          client: fakeGitHub([], RECIPE),
+          runtime,
+          issue: 7,
+          hookBinary: '/tmp/fake/lingtai-hook',
+          prompt: 'fix {{issue}}',
+          merge: true,
+          home: '/tmp/fake-home',
+          store,
+          unreachableWaits: ['0 millis', '0 millis'],
+        },
+        ports,
+      )
+      if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
+      expect(n).toBe(2)
+      expect(lane).toBe(1)
+    })
   })
 })

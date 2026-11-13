@@ -56,6 +56,7 @@ describe('whose failure it is', () => {
       'lane-busy',
       'wip-commit',
       'unreachable',
+      'remote-error',
       'unexpected',
     ] as const) {
       expect(whoseFailure({ ...conflict, reason }), reason).toBe('lingtai')
@@ -107,6 +108,7 @@ describe('whose failure it is', () => {
       'no-commits',
       'push-rejected',
       'unreachable',
+      'remote-error',
       'lane-busy',
       'wip-commit',
       'base-protected',
@@ -173,6 +175,16 @@ describe('a refusal, read for a person', () => {
     expect(reading.recommendation?.action).toBe('approve')
   })
 
+  it('says GitHub answered a server error for remote-error, and recommends approve (#1125)', () => {
+    const detail = ' ! [remote rejected]   HEAD -> agent/1068 (Internal Server Error) (after 3 tries)'
+    const reading = diagnoseRefusal({ reason: 'remote-error', detail, branch: 'agent/1068', base: 'main' })
+    expect(reading.what).toBe(
+      'GitHub answered a server error on the push of agent/1068 while agent/1068 was being landed on main, after 3 tries; nothing about agent/1068 or main is wrong.',
+    )
+    expect(reading.what).not.toMatch(/moved/)
+    expect(reading.recommendation?.action).toBe('approve')
+  })
+
   const REASONS: RefusalReason[] = [
     'conflict',
     'dirty-base',
@@ -182,6 +194,7 @@ describe('a refusal, read for a person', () => {
     'no-commits',
     'push-rejected',
     'unreachable',
+    'remote-error',
     // Nothing writes this since #194 and everything still reads it: the value
     // is on the log, and a build that could not read it could not read this
     // repository's own history.
