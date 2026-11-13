@@ -45,14 +45,14 @@ const signedInRuntime = {
 
 /** Every seam the fileBacked branch would otherwise reach outside the process for — `doctor.test.ts`'s own fixture. */
 const reach: DoctorReach = {
-  status: async () => null,
-  pause: async () => null,
-  lags: async () => [],
-  shapes: async (p: Projection) => ({ projection: p.name, matched: [], absent: [], drift: [] }),
+  status: () => Effect.succeed(null),
+  pause: () => Effect.succeed(null),
+  lags: () => Effect.succeed([]),
+  shapes: (p: Projection) => Effect.succeed({ projection: p.name, matched: [], absent: [], drift: [] }),
   lockHolder: async () => null,
   orphans: async () => [],
   titles: async () => [],
-  settings: async () => null,
+  settings: () => Effect.succeed(null),
   runtimes: () => [signedInRuntime],
   sea: () => ({ can: true }),
   recipe: () => {

@@ -294,7 +294,7 @@ describe('lingtai doctor — a machine whose log is a file', () => {
     expect(existsSync(fresh)).toBe(false)
     const db = openSqliteLog(fresh)
     try {
-      const row = await logReachable(fresh, createSqliteLogQueries(db))
+      const row = await Effect.runPromise(logReachable(fresh, createSqliteLogQueries(db)))
       expect(row.status).toBe('ok')
       expect(row.detail).toContain(fresh)
     } finally {
@@ -304,11 +304,13 @@ describe('lingtai doctor — a machine whose log is a file', () => {
   })
 
   it('fails, rather than skipping, where the log cannot be opened', async () => {
-    const row = await logReachable('/var/empty/nowhere/lingtai.db', {
-      projectStreams: async () => {
-        throw new Error('SQLITE_CANTOPEN: unable to open database file')
-      },
-    } as unknown as LogQueries)
+    const row = await Effect.runPromise(
+      logReachable('/var/empty/nowhere/lingtai.db', {
+        projectStreams: async () => {
+          throw new Error('SQLITE_CANTOPEN: unable to open database file')
+        },
+      } as unknown as LogQueries),
+    )
 
     expect(row.status).toBe('fail')
     expect(row.detail).toContain('SQLITE_CANTOPEN')
@@ -1115,9 +1117,7 @@ describe('daemon: liveness, given the read to report', () => {
     // What `lingtai service status` passes: the read it reports is the read
     // that failed, not a second one on another connection that might.
     await expect(
-      daemonLiveness(async () => {
-        throw new Error('sorry, too many clients already')
-      }),
+      Effect.runPromise(daemonLiveness(() => Effect.fail(new Error('sorry, too many clients already')))),
     ).rejects.toThrow('sorry, too many clients already')
   })
 })

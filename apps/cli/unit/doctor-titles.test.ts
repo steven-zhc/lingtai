@@ -6,6 +6,7 @@ import type { Currency } from '@lingtai/daemon'
 import { emptyControl, type ControlState } from '@lingtai/domain'
 import type { UnconvergedUpdate } from '@lingtai/event-store'
 import type { GhRun } from '@lingtai/github'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -152,23 +153,27 @@ describe('github: gh login', () => {
 
   it('titles signed out, fix gh auth login', async () => {
     const out: GhRun = async () => ({ code: 1, stdout: hosts({ state: 'error', active: true }), stderr: '' })
-    const row = await ghLogin(env, out)
+    const row = await Effect.runPromise(ghLogin(env, out))
     PLAIN(row?.title)
     expect(row?.fix).toBe('gh auth login')
   })
 
   it('gives a missing or too-old gh its own title and no sign-in fix', async () => {
-    const missing = await ghLogin(env, async () => ({ missing: true }) as never)
+    const missing = await Effect.runPromise(ghLogin(env, async () => ({ missing: true }) as never))
     expect(missing).toMatchObject({ status: 'fail', title: 'gh is not installed' })
     expect(missing?.fix).toBeUndefined()
-    const old = await ghLogin(env, async () => ({ code: 1, stdout: '', stderr: 'unknown flag: --json' }))
+    const old = await Effect.runPromise(
+      ghLogin(env, async () => ({ code: 1, stdout: '', stderr: 'unknown flag: --json' })),
+    )
     expect(old).toMatchObject({ status: 'fail', title: 'gh is too old to report its login' })
     expect(old?.fix).toBeUndefined()
-    const out = await ghLogin(env, async () => ({
-      code: 1,
-      stdout: hosts({ state: 'error', active: true }),
-      stderr: '',
-    }))
+    const out = await Effect.runPromise(
+      ghLogin(env, async () => ({
+        code: 1,
+        stdout: hosts({ state: 'error', active: true }),
+        stderr: '',
+      })),
+    )
     expect(out?.detail).not.toContain('gh auth login')
   })
 
@@ -178,7 +183,7 @@ describe('github: gh login', () => {
       stdout: hosts({ state: 'success', active: true, login: 'op', scopes: 'repo' }),
       stderr: '',
     })
-    const row = await ghLogin(env, run)
+    const row = await Effect.runPromise(ghLogin(env, run))
     PLAIN(row?.title)
     expect(row?.fix).toBe('gh auth refresh --hostname github.com --scopes workflow')
     expect(row?.detail).not.toContain('gh auth')
