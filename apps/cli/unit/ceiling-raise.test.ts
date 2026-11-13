@@ -36,7 +36,7 @@ describe('ceilingRaise', () => {
     const code = await Effect.runPromise(
       ceilingRaise({
         ...healthy,
-        rows: () => Effect.fail(new Error('no table')),
+        rows: () => Effect.die(new Error('no table')),
         toUsd: 40,
         by: 'human:steven',
         store,
