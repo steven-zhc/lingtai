@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 
 /**
@@ -15,6 +15,7 @@ import { renderEnvFile } from '@lingtai/agent-env'
 import { stateDir } from '@lingtai/env'
 import { Effect } from 'effect'
 
+import { withExcludes } from './exclude.ts'
 import { RepoFailed, type TokenSource, gitEffect } from './git.ts'
 import { mirrorWrite } from './mirror-lock.ts'
 
@@ -55,6 +56,11 @@ export interface ProvisionOptions {
    * where the restriction does not apply and must not be lifted.
    */
   gitEnv?: NodeJS.ProcessEnv
+  /**
+   * Lines the mirror's `info/exclude` must carry, written once each and keeping what was there (#1152). Linked
+   * worktrees read the common dir's file, so this covers every one. Absent or empty, nothing is written.
+   */
+  exclude?: readonly string[]
 }
 
 export interface Worktree {
@@ -106,6 +112,7 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
   remote?: string
   home?: string
   gitEnv?: NodeJS.ProcessEnv
+  exclude?: readonly string[]
 }): Effect.fn.Return<string, RepoFailed> {
   const home = options.home ?? stateDir()
   const path = mirrorPath(home, options.project)
@@ -130,12 +137,37 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
         Effect.as(true),
         Effect.orElseSucceed(() => false),
       )
+      // Inside the hold, so two passes never interleave the read and the write.
+      const writeExcludes = Effect.uninterruptible(
+        Effect.tryPromise({
+          // Promise chains and no `async`: the ratchet counts those.
+          try: () => {
+            const names = options.exclude ?? []
+            if (names.length === 0) return Promise.resolve()
+            const file = join(path, 'info', 'exclude')
+            return readFile(file, 'utf8')
+              .catch((err: NodeJS.ErrnoException) => {
+                if (err.code === 'ENOENT') return ''
+                throw err
+              })
+              .then((existing) =>
+                // A bare clone made without templates has no `info/`.
+                mkdir(dirname(file), { recursive: true }).then(() => {
+                  const merged = withExcludes(existing, names)
+                  return merged === existing ? undefined : writeFile(file, merged)
+                }),
+              )
+          },
+          catch: (err) => new RepoFailed({ operation: 'info/exclude', detail: (err as Error).message }),
+        }),
+      )
       if (present) {
         // A fetch that fails (a concurrent ref update, the network) says nothing
         // about the mirror: it is shared with every pass in flight, whose worktrees
         // point into its metadata and whose unpushed commits live only in it, so it
         // is never removed on the strength of a failed fetch.
         yield* gitEffect(['fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], { ...run, cwd: path })
+        yield* writeExcludes
         return
       }
       yield* io(() => mkdir(dirname(path), { recursive: true }))
@@ -143,6 +175,7 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
       yield* gitEffect(['clone', '--bare', remote, path], run)
       // A bare clone's origin is not wired for later fetches by default.
       yield* gitEffect(['remote', 'set-url', 'origin', remote], { ...run, cwd: path })
+      yield* writeExcludes
     }),
   )
   return path
@@ -169,6 +202,7 @@ export const provisionWorktreeEffect = Effect.fn('repo.provision')(function* (
       remote: options.remote,
       home,
       gitEnv: options.gitEnv,
+      exclude: options.exclude,
     })
 
     const path = worktreePath(home, options.project, options.runId)
