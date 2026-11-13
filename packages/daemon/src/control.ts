@@ -499,8 +499,11 @@ export function requestRun(project: string, issue: string, by: string, store: Ev
  */
 
 /** Idempotent DDL for the beacon's row. Called once, at every daemon start. */
-export async function createStatusTable(store?: DaemonStore): Promise<void> {
-  await withDaemonStore(store, {}, (it) => it.create())
+export const createStatusTableEffect = (store?: DaemonStore): Effect.Effect<void> =>
+  Effect.promise(() => withDaemonStore(store, {}, (it) => it.create()))
+
+export function createStatusTable(store?: DaemonStore): Promise<void> {
+  return Effect.runPromise(createStatusTableEffect(store))
 }
 
 export interface BeatOptions {
@@ -531,21 +534,26 @@ export interface BeatOptions {
  * a store writes what it is given, and *who is running* is a fact about this
  * process and not about a database.
  */
-export async function beat(state: string, options: BeatOptions = {}): Promise<void> {
-  const { currentRunId = null, code = null, fresh = false, startedAt = null } = options
-  await withDaemonStore(options.store, {}, (store) =>
-    store.beat({
-      pid: process.pid,
-      host: hostname(),
-      state,
-      currentRunId,
-      codeSha: code?.sha ?? null,
-      codeDirty: code?.dirty ?? false,
-      fresh,
-      startedAt,
-      stoppedProjections: options.stoppedProjections ?? [],
-    }),
-  )
+export const beatEffect = (state: string, options: BeatOptions = {}): Effect.Effect<void> =>
+  Effect.promise(() => {
+    const { currentRunId = null, code = null, fresh = false, startedAt = null } = options
+    return withDaemonStore(options.store, {}, (store) =>
+      store.beat({
+        pid: process.pid,
+        host: hostname(),
+        state,
+        currentRunId,
+        codeSha: code?.sha ?? null,
+        codeDirty: code?.dirty ?? false,
+        fresh,
+        startedAt,
+        stoppedProjections: options.stoppedProjections ?? [],
+      }),
+    )
+  })
+
+export function beat(state: string, options: BeatOptions = {}): Promise<void> {
+  return Effect.runPromise(beatEffect(state, options))
 }
 
 /**
@@ -602,8 +610,58 @@ export interface BeaconOptions extends Omit<BeatOptions, 'stoppedProjections'> {
   stoppedProjections?: () => readonly StoppedProjection[]
 }
 
+/** Where a beacon's beats go. `beat` never fails: a failure or a defect is swallowed. */
+export interface BeaconPort {
+  beat(word: string): Effect.Effect<void>
+}
+
+/**
+ * The port over the daemon store. It holds `begun`: whether the row has yet
+ * been begun by this process. Set by a beat that landed and not by one that was
+ * asked for, so a first beat that fails leaves the next one fresh instead of
+ * the previous daemon's start surviving.
+ *
+ * **A beat must never reject**, the first one included. Startup used to
+ * `await beat("starting")` uncaught, and the CLI's top-level handler prints and
+ * sets `exitCode` without exiting: the conductor lock's session connection is a
+ * live handle, so a daemon that failed its first beat would sit on the lock
+ * conducting nothing. A row that cannot be written is reported by its going
+ * stale, which is a report; a held lock is not. Only an interruption passes.
+ */
+export const makeBeacon = (options: Omit<BeaconOptions, 'every'> = {}): BeaconPort => {
+  const { startedAt = null, stoppedProjections, ...beatOptions } = options
+  let begun = false
+  return {
+    beat: (word) =>
+      Effect.suspend(() =>
+        beatEffect(word, {
+          ...beatOptions,
+          fresh: !begun,
+          startedAt,
+          stoppedProjections: stoppedProjections?.() ?? [],
+        }),
+      ).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            begun = true
+          }),
+        ),
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause as Cause.Cause<never>) : Effect.void,
+        ),
+      ),
+  }
+}
+
+export const beaconBeatFace = (port: BeaconPort, word: string): Promise<void> => Effect.runPromise(port.beat(word))
+
 export function startBeacon(state: string, options: BeaconOptions = {}): Beacon {
-  const { every = HEARTBEAT_MS, startedAt = null, stoppedProjections, ...beatOptions } = options
+  const { every, ...rest } = options
+  return startBeaconOn(makeBeacon(rest), state, every === undefined ? {} : { every })
+}
+
+export function startBeaconOn(port: BeaconPort, state: string, options: { every?: number } = {}): Beacon {
+  const { every = HEARTBEAT_MS } = options
   let current = state
   let stopped = false
   /** The writes, in the order they were asked for, and never two at once. */
@@ -611,32 +669,15 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
   /** Queued or in flight. A tick only says "still here"; one already on the way says it. */
   let owed = 0
 
-  /**
-   * Whether the row has yet been begun by this process. Cleared by a beat that
-   * landed and not by one that was asked for, so a first beat that fails leaves
-   * the next one fresh instead of the previous daemon's start surviving.
-   */
-  let begun = false
-
   const write = (word: string): Promise<void> => {
     owed += 1
-    chain = chain.then(async () => {
-      try {
-        const fresh = !begun
-        await beat(word, { ...beatOptions, fresh, startedAt, stoppedProjections: stoppedProjections?.() ?? [] })
-        begun = true
-      } catch {
-        // Every beat, the first one included — and that is a change. Startup
-        // used to `await beat("starting")` uncaught, and the CLI's top-level
-        // handler prints and sets `exitCode` without exiting: the conductor
-        // lock's session connection is a live handle, so the event loop would
-        // not drain and a daemon that failed its first beat would sit on the
-        // lock conducting nothing. A row that cannot be written is reported by
-        // its going stale, which is a report; a held lock is not.
-      } finally {
+    chain = chain
+      .then(() => beaconBeatFace(port, word))
+      // The port swallows everything but an interruption; this keeps one from poisoning the chain.
+      .catch(() => {})
+      .finally(() => {
         owed -= 1
-      }
-    })
+      })
     return chain
   }
 
@@ -657,7 +698,7 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
       current = next
       return write(next)
     },
-    stop: async (last) => {
+    stop: (last) => {
       clearInterval(timer)
       if (!stopped && last !== undefined) {
         current = last
@@ -665,14 +706,17 @@ export function startBeacon(state: string, options: BeaconOptions = {}): Beacon 
       }
       stopped = true
       // Everything scheduled, including the last word, has landed by here.
-      await chain
+      return chain
     },
   }
 }
 
 /** Null when no daemon has ever run. Stale is reported, never hidden. */
-export async function readStatus(store?: DaemonStore): Promise<DaemonStatus | null> {
-  return withDaemonStore(store, {}, (it) => it.status())
+export const readStatusEffect = (store?: DaemonStore): Effect.Effect<DaemonStatus | null> =>
+  Effect.promise(() => withDaemonStore(store, {}, (it) => it.status()))
+
+export function readStatus(store?: DaemonStore): Promise<DaemonStatus | null> {
+  return Effect.runPromise(readStatusEffect(store))
 }
 
 function hostname(): string {

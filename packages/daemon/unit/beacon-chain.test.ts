@@ -1,0 +1,61 @@
+/** #1075. The beacon's chain: ordered, alive after a bad link, and never rejecting. */
+import { Effect } from 'effect'
+import { describe, expect, it } from 'vitest'
+
+import { startBeacon, startBeaconOn } from '../src/control.ts'
+import type { Beat, DaemonStore } from '../src/store.ts'
+
+describe('the beacon chain', () => {
+  it('writes in the order asked for, though the store resolves them out of order', async () => {
+    const landed: string[] = []
+    const delays = [30, 20, 10, 5]
+    let calls = 0
+    const store = {
+      beat: async (b: Beat) => {
+        const ms = delays[calls++] ?? 1
+        await new Promise((r) => setTimeout(r, ms))
+        landed.push(b.state)
+      },
+      close: async () => {},
+    } as unknown as DaemonStore
+    const beacon = startBeacon('starting', { store, every: 3_600_000 })
+    void beacon.say('up')
+    void beacon.say('draining')
+    await beacon.stop('stopped')
+    expect(landed).toEqual(['starting', 'up', 'draining', 'stopped'])
+  })
+
+  it('leaves say resolved and the next beat fresh when the store dies, even with a non-Error throw', async () => {
+    const beats: Beat[] = []
+    let failures = 1
+    const store = {
+      beat: async (b: Beat) => {
+        beats.push(b)
+        if (failures-- > 0) throw 'gone'
+      },
+      close: async () => {},
+    } as unknown as DaemonStore
+    const beacon = startBeacon('starting', { store, every: 3_600_000 })
+    await expect(beacon.say('up')).resolves.toBeUndefined()
+    await beacon.stop()
+    expect(beats.map((b) => b.fresh)).toEqual([true, true])
+  })
+
+  it('stays alive when a link is interrupted: the next say writes, and stop resolves', async () => {
+    const words: string[] = []
+    let first = true
+    const port = {
+      beat: (word: string) => {
+        if (first) {
+          first = false
+          return Effect.interrupt
+        }
+        return Effect.sync(() => void words.push(word))
+      },
+    }
+    const beacon = startBeaconOn(port, 'starting', { every: 3_600_000 })
+    await beacon.say('up')
+    await expect(beacon.stop('stopped')).resolves.toBeUndefined()
+    expect(words).toEqual(['up', 'stopped'])
+  })
+})
