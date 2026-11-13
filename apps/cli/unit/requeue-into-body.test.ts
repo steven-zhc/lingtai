@@ -4,10 +4,11 @@ import { makeStream } from '@lingtai/domain/test/support'
 import { requeueNote } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { requeueHolding } from '../../../packages/conductor/src/approve.ts'
-import { editBodyAndRequeueHolding } from '../../../packages/conductor/src/edit-body.ts'
+import { requeueHoldingEffect } from '../../../packages/conductor/src/approve.ts'
+import { editBodyAndRequeueHoldingEffect } from '../../../packages/conductor/src/edit-body.ts'
 import { memoryTickets } from '../../../packages/conductor/test/memory-tickets.ts'
 import { requeueCommand } from '../src/requeue.ts'
 
@@ -30,7 +31,7 @@ async function blocked(store: EventStore, issue: number) {
   return { ticketId, waitId }
 }
 
-const loadProject = async () => ({ owner: 'steven' }) as ProjectState
+const loadProject = () => Effect.succeed({ owner: 'steven' } as ProjectState)
 const conductorNote = async () => null
 
 describe('requeue command', () => {
@@ -40,16 +41,18 @@ describe('requeue command', () => {
     await tickets.createIssue({ title: 'question', body: 'original', labels: [] })
     const { ticketId, waitId } = await blocked(store, 1)
     const lines: string[] = []
-    const code = await requeueCommand(
-      { project: 'lingtai', issue: 1, note: '', intoBody: 'Use the small helper', by: 'human:test' },
-      (line) => lines.push(line),
-      {
-        store,
-        client: tickets,
-        loadProject,
-        conductorNote,
-        editBodyAndRequeue: (options) => editBodyAndRequeueHolding(options, store, ticketId),
-      },
+    const code = await Effect.runPromise(
+      requeueCommand(
+        { project: 'lingtai', issue: 1, note: '', intoBody: 'Use the small helper', by: 'human:test' },
+        (line) => lines.push(line),
+        {
+          store,
+          client: tickets,
+          loadProject,
+          conductorNote,
+          editBodyAndRequeue: (options) => editBodyAndRequeueHoldingEffect(options, store, ticketId),
+        },
+      ),
     )
     expect(code).toBe(0)
     expect(lines.join('\n')).toContain('back in the queue, and the answer is in the body')
@@ -65,10 +68,12 @@ describe('requeue command', () => {
     const store = createMemoryEventStore()
     const { ticketId, waitId } = await blocked(store, 2)
     const lines: string[] = []
-    const code = await requeueCommand(
-      { project: 'lingtai', issue: 2, note: 'try again', by: 'human:test' },
-      (line) => lines.push(line),
-      { store, loadProject, conductorNote, requeue: (options) => requeueHolding(options, store, ticketId) },
+    const code = await Effect.runPromise(
+      requeueCommand(
+        { project: 'lingtai', issue: 2, note: 'try again', by: 'human:test' },
+        (line) => lines.push(line),
+        { store, loadProject, conductorNote, requeue: (options) => requeueHoldingEffect(options, store, ticketId) },
+      ),
     )
     expect(code).toBe(0)
     expect(reduceTicket(await store.read(ticketId)).lifecycle.status).toBe('backlog')

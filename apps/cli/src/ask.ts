@@ -14,9 +14,12 @@ import { userInfo } from 'node:os'
  * **Neither holds a projector** (0100 §13): the conductor lock's holder is the
  * board's only writer, so each says when none is up.
  */
-import { answer, ask, loadProject } from '@lingtai/conductor'
+import { answerEffect, askEffect } from '@lingtai/conductor/ask'
+import { loadProjectEffect } from '@lingtai/conductor/projects'
+import { Effect } from 'effect'
 
 import { noteConductor } from './conductor-note.ts'
+import { lift } from './exit.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface AskCommandOptions {
@@ -27,55 +30,57 @@ export interface AskCommandOptions {
   by?: string
 }
 
-async function decide(
+function decide(
   verb: 'ask' | 'answer',
   options: AskCommandOptions,
   progress: (line: string) => void,
-): Promise<Answered> {
-  // Refused here and not defaulted, for the reason `requeue` refuses an empty
-  // note: a question nobody wrote holds a ticket for nothing, and an answer
-  // nobody wrote is a block overruled in silence.
-  if (!options.text.trim()) {
-    return refusal(
-      2,
-      'blank',
-      verb === 'ask'
-        ? `lingtai ask <project> --issue <n> "<question>" — the question is the whole of the hold`
-        : `lingtai answer <project> --issue <n> "<choice>" — the answer is what every attempt is told`,
-    )
-  }
+): Effect.Effect<Answered, unknown> {
+  return Effect.gen(function* () {
+    // Refused here and not defaulted, for the reason `requeue` refuses an empty
+    // note: a question nobody wrote holds a ticket for nothing, and an answer
+    // nobody wrote is a block overruled in silence.
+    if (!options.text.trim()) {
+      return refusal(
+        2,
+        'blank',
+        verb === 'ask'
+          ? `lingtai ask <project> --issue <n> "<question>" — the question is the whole of the hold`
+          : `lingtai answer <project> --issue <n> "<choice>" — the answer is what every attempt is told`,
+      )
+    }
 
-  const project = await loadProject(options.project)
-  if (!project) {
-    return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
-  }
+    const project = yield* loadProjectEffect(options.project)
+    if (!project) {
+      return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
+    }
 
-  const append = async (): Promise<Answered> => {
-    // The local account, as `requeue` and the board record it (0007).
-    const by = options.by ?? `human:${userInfo().username}`
-    const outcome =
-      verb === 'ask'
-        ? await ask({ project: options.project, issue: options.issue, question: options.text, by })
-        : await answer({ project: options.project, issue: options.issue, answer: options.text, by })
-    return fromOutcome(outcome)
-  }
-  const answered = await append()
-  if (answered.code === 0) await noteConductor(progress)
-  return answered
+    const append = Effect.gen(function* () {
+      // The local account, as `requeue` and the board record it (0007).
+      const by = options.by ?? `human:${userInfo().username}`
+      const outcome =
+        verb === 'ask'
+          ? yield* askEffect({ project: options.project, issue: options.issue, question: options.text, by })
+          : yield* answerEffect({ project: options.project, issue: options.issue, answer: options.text, by })
+      return fromOutcome(outcome)
+    })
+    const answered: Answered = yield* append
+    if (answered.code === 0) yield* lift(() => noteConductor(progress))
+    return answered
+  })
 }
 
-export function askVerdict(options: AskCommandOptions, progress: (line: string) => void): Promise<Answered> {
+export function askVerdict(options: AskCommandOptions, progress: (line: string) => void) {
   return decide('ask', options, progress)
 }
 
-export function answerVerdict(options: AskCommandOptions, progress: (line: string) => void): Promise<Answered> {
+export function answerVerdict(options: AskCommandOptions, progress: (line: string) => void) {
   return decide('answer', options, progress)
 }
 
-export async function askCommand(options: AskCommandOptions, log = console.log): Promise<number> {
-  return logVerdict(VERBS['ask'], await askVerdict(options, log), log)
+export function askCommand(options: AskCommandOptions, log = console.log): Effect.Effect<number, unknown> {
+  return Effect.map(askVerdict(options, log), (answered) => logVerdict(VERBS['ask'], answered, log))
 }
 
-export async function answerCommand(options: AskCommandOptions, log = console.log): Promise<number> {
-  return logVerdict(VERBS.answer, await answerVerdict(options, log), log)
+export function answerCommand(options: AskCommandOptions, log = console.log): Effect.Effect<number, unknown> {
+  return Effect.map(answerVerdict(options, log), (answered) => logVerdict(VERBS.answer, answered, log))
 }

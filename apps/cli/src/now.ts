@@ -6,33 +6,37 @@
  * would replay the backlog first (`lingtai.ts`'s `controlCommand`, which this
  * was a branch of before #621).
  */
-import { type Guard, makeGuard, requestRun } from '@lingtai/daemon'
+import { type Guard, makeGuard } from '@lingtai/daemon'
+import { requestRunEffect } from '@lingtai/daemon/control'
 import { eventStore } from '@lingtai/event-store'
+import { Effect } from 'effect'
 
-import { refuseIfLocked, runEffect } from './project-pause.ts'
+import { refuseIfLocked } from './project-pause.ts'
 import { type Answered, refusal } from './verdict.ts'
 
-export async function nowVerdict(
+export function nowVerdict(
   project: string,
   issue: number,
   by: string,
-  request: typeof requestRun = requestRun,
+  request: typeof requestRunEffect = requestRunEffect,
   // Not the conductor-lock holder: it reads the ceiling lock and writes nothing (0126 §4).
   guard: Guard = makeGuard({ store: eventStore, ceiling: 'not-the-holder' }),
-): Promise<Answered> {
-  // A paused project is refused by name before anything is appended (#992).
-  const refused = await runEffect(refuseIfLocked(project, guard))
-  if (refused !== null) {
-    return refusal(1, 'locked', refused, { subject: `${project} #${issue}` })
-  }
-  await request(project, String(issue), by)
-  return {
-    code: 0,
-    verdict: {
-      outcome: 'accepted',
-      subject: `${project} #${issue}`,
-      detail: `requested ${project} #${issue}`,
-      extra: { project, issue, by },
-    },
-  }
+): Effect.Effect<Answered, unknown> {
+  return Effect.gen(function* () {
+    // A paused project is refused by name before anything is appended (#992).
+    const refused = yield* refuseIfLocked(project, guard)
+    if (refused !== null) {
+      return refusal(1, 'locked', refused, { subject: `${project} #${issue}` })
+    }
+    yield* request(project, String(issue), by)
+    return {
+      code: 0,
+      verdict: {
+        outcome: 'accepted',
+        subject: `${project} #${issue}`,
+        detail: `requested ${project} #${issue}`,
+        extra: { project, issue, by },
+      },
+    } satisfies Answered
+  })
 }

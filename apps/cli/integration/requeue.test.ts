@@ -18,6 +18,7 @@ import { projectStream, reduceTicket, type ToAppend, ticketStream } from '@lingt
 import { aClaim, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
+import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { requeueCommand } from '../src/requeue.ts'
@@ -97,7 +98,9 @@ beforeAll(async () => {
 describe('lingtai requeue', () => {
   it('puts a blocked item back in the queue, carrying the note', async () => {
     const said: string[] = []
-    const code = await requeueCommand({ project: PROJECT, issue: FROM_CLI, note: NOTE }, (l) => said.push(l))
+    const code = await Effect.runPromise(
+      requeueCommand({ project: PROJECT, issue: FROM_CLI, note: NOTE }, (l) => said.push(l)),
+    )
 
     expect(code).toBe(0)
     expect(said.join('\n')).toContain('back in the queue')
@@ -149,7 +152,9 @@ describe('lingtai requeue', () => {
 
   it('refuses by naming the state the item is actually in', async () => {
     const said: string[] = []
-    const code = await requeueCommand({ project: PROJECT, issue: RUNNING, note: NOTE }, (l) => said.push(l))
+    const code = await Effect.runPromise(
+      requeueCommand({ project: PROJECT, issue: RUNNING, note: NOTE }, (l) => said.push(l)),
+    )
 
     expect(code).toBe(1)
     // "not blocked" on its own sends nobody anywhere; the state it *is* in does.
@@ -166,7 +171,9 @@ describe('lingtai requeue', () => {
    */
   it('records an empty note as "", rather than inventing one', async () => {
     const said: string[] = []
-    const code = await requeueCommand({ project: PROJECT, issue: BLANK_NOTE, note: '  ' }, (l) => said.push(l))
+    const code = await Effect.runPromise(
+      requeueCommand({ project: PROJECT, issue: BLANK_NOTE, note: '  ' }, (l) => said.push(l)),
+    )
 
     expect(code).toBe(0)
     expect(said.join('\n')).toContain('back in the queue')
@@ -180,7 +187,9 @@ describe('lingtai requeue', () => {
 
   it('says so when the project was never added', async () => {
     const said: string[] = []
-    const code = await requeueCommand({ project: `${PROJECT}-typo`, issue: FROM_CLI, note: NOTE }, (l) => said.push(l))
+    const code = await Effect.runPromise(
+      requeueCommand({ project: `${PROJECT}-typo`, issue: FROM_CLI, note: NOTE }, (l) => said.push(l)),
+    )
 
     expect(code).toBe(1)
     expect(said.join('\n')).toContain('no project named')

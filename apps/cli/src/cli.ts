@@ -217,9 +217,7 @@ const approve = Command.make(
           })
         }
         const { approveVerdict } = yield* lift(() => import('./approve.ts'))
-        return yield* lift(() =>
-          approveVerdict({ project: args.project, issue: args.issue, note: given(args.note) }, progress),
-        )
+        return yield* approveVerdict({ project: args.project, issue: args.issue, note: given(args.note) }, progress)
       }),
     ),
 ).pipe(Command.withDescription(definitionOf('approve').task))
@@ -238,17 +236,15 @@ const requeue = Command.make(
     answerWith('requeue', args, (progress) =>
       Effect.gen(function* () {
         const { requeueVerdict } = yield* lift(() => import('./requeue.ts'))
-        return yield* lift(() =>
-          requeueVerdict(
-            {
-              project: args.project,
-              issue: args.issue,
-              // `--note` left off and `--note` with nothing after it both mean `""` (#424).
-              note: given(args.note) ?? '',
-              ...(args.intoBody._tag === 'Some' ? { intoBody: args.intoBody.value } : {}),
-            },
-            progress,
-          ),
+        return yield* requeueVerdict(
+          {
+            project: args.project,
+            issue: args.issue,
+            // `--note` left off and `--note` with nothing after it both mean `""` (#424).
+            note: given(args.note) ?? '',
+            ...(args.intoBody._tag === 'Some' ? { intoBody: args.intoBody.value } : {}),
+          },
+          progress,
         )
       }),
     ),
@@ -267,8 +263,9 @@ const grantFixRound = Command.make(
     answerWith('grant-fix-round', args, (progress) =>
       Effect.gen(function* () {
         const { grantFixRoundVerdict } = yield* lift(() => import('./grant-fix-round.ts'))
-        return yield* lift(() =>
-          grantFixRoundVerdict({ project: args.project, issue: args.issue, ifHead: given(args.ifHead) }, progress),
+        return yield* grantFixRoundVerdict(
+          { project: args.project, issue: args.issue, ifHead: given(args.ifHead) },
+          progress,
         )
       }),
     ),
@@ -281,9 +278,7 @@ const close = Command.make(
     answerWith('close', args, (progress) =>
       Effect.gen(function* () {
         const { closeVerdict } = yield* lift(() => import('./close.ts'))
-        return yield* lift(() =>
-          closeVerdict({ project: args.project, issue: args.issue, reason: args.text.join(' ') }, progress),
-        )
+        return yield* closeVerdict({ project: args.project, issue: args.issue, reason: args.text.join(' ') }, progress)
       }),
     ),
 ).pipe(Command.withDescription(definitionOf('close').task))
@@ -295,9 +290,7 @@ const ask = Command.make(
     answerWith('ask', args, (progress) =>
       Effect.gen(function* () {
         const { askVerdict } = yield* lift(() => import('./ask.ts'))
-        return yield* lift(() =>
-          askVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress),
-        )
+        return yield* askVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress)
       }),
     ),
 ).pipe(Command.withDescription(definitionOf('ask').task))
@@ -309,9 +302,7 @@ const answer = Command.make(
     answerWith('answer', args, (progress) =>
       Effect.gen(function* () {
         const { answerVerdict } = yield* lift(() => import('./ask.ts'))
-        return yield* lift(() =>
-          answerVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress),
-        )
+        return yield* answerVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress)
       }),
     ),
 ).pipe(Command.withDescription(definitionOf('answer').task))
@@ -331,7 +322,7 @@ const now = Command.make(
         const issue = args.issue._tag === 'Some' ? args.issue.value : Number(given(args.second) ?? Number.NaN)
         if (!Number.isInteger(issue)) return refusal(2, 'usage', 'lingtai now <project> --issue <n>')
         const { nowVerdict } = yield* lift(() => import('./now.ts'))
-        return yield* lift(() => nowVerdict(args.project, issue, `human:${process.env['USER'] ?? 'operator'}`))
+        return yield* nowVerdict(args.project, issue, `human:${process.env['USER'] ?? 'operator'}`)
       }),
     ),
 ).pipe(Command.withDescription(definitionOf('now').task))

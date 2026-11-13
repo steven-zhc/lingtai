@@ -21,11 +21,14 @@ import { userInfo } from 'node:os'
  * No GitHub App configured is a refusal here rather than a quiet half-close,
  * for the same reason `lingtai approve` refuses.
  */
-import { close, loadProject } from '@lingtai/conductor'
-import { projectClient } from '@lingtai/conductor/filter'
+import { closeEffect } from '@lingtai/conductor/close'
+import { projectClientEffect } from '@lingtai/conductor/filter'
+import { loadProjectEffect } from '@lingtai/conductor/projects'
 import { hasGitHubAuth } from '@lingtai/env'
+import { Effect } from 'effect'
 
 import { noteConductor } from './conductor-note.ts'
+import { lift } from './exit.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface CloseCommandOptions {
@@ -36,44 +39,50 @@ export interface CloseCommandOptions {
   by?: string
 }
 
-export async function closeVerdict(options: CloseCommandOptions, progress: (line: string) => void): Promise<Answered> {
-  if (!options.reason.trim()) {
-    return refusal(2, 'blank', `lingtai close <project> --issue <n> "<reason>" — nothing lifts a close, so say why`)
-  }
+export function closeVerdict(
+  options: CloseCommandOptions,
+  progress: (line: string) => void,
+): Effect.Effect<Answered, unknown> {
+  return Effect.gen(function* () {
+    if (!options.reason.trim()) {
+      return refusal(2, 'blank', `lingtai close <project> --issue <n> "<reason>" — nothing lifts a close, so say why`)
+    }
 
-  const project = await loadProject(options.project)
-  if (!project?.owner) {
-    return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
-  }
-  if (!hasGitHubAuth()) {
-    return refusal(
-      1,
-      'no-github-app',
-      'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
-    )
-  }
+    const project = yield* loadProjectEffect(options.project)
+    if (!project?.owner) {
+      return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
+    }
+    if (!hasGitHubAuth()) {
+      return refusal(
+        1,
+        'no-github-app',
+        'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
+      )
+    }
 
-  const { client, resolved } = await projectClient(project)
+    const { client, resolved } = yield* projectClientEffect(project)
 
-  const append = async (): Promise<Answered> => {
-    // The local account, as `requeue`, `ask` and the board record it (0007).
-    const by = options.by ?? `human:${userInfo().username}`
-    const outcome = await close({
-      project: options.project,
-      issue: options.issue,
-      reason: options.reason,
-      by,
-      state: project,
-      client,
-      recipe: async () => resolved,
+    const append = Effect.gen(function* () {
+      // The local account, as `requeue`, `ask` and the board record it (0007).
+      const by = options.by ?? `human:${userInfo().username}`
+      const outcome = yield* closeEffect({
+        project: options.project,
+        issue: options.issue,
+        reason: options.reason,
+        by,
+        state: project,
+        client,
+        // A value already held, handed over as the seam's promise thunk: no IO hides here.
+        recipe: () => Promise.resolve(resolved),
+      })
+      return fromOutcome(outcome)
     })
-    return fromOutcome(outcome)
-  }
-  const answered = await append()
-  if (answered.code === 0) await noteConductor(progress)
-  return answered
+    const answered: Answered = yield* append
+    if (answered.code === 0) yield* lift(() => noteConductor(progress))
+    return answered
+  })
 }
 
-export async function closeCommand(options: CloseCommandOptions, log = console.log): Promise<number> {
-  return logVerdict(VERBS['close'], await closeVerdict(options, log), log)
+export function closeCommand(options: CloseCommandOptions, log = console.log): Effect.Effect<number, unknown> {
+  return Effect.map(closeVerdict(options, log), (answered) => logVerdict(VERBS['close'], answered, log))
 }
