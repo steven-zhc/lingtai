@@ -72,8 +72,8 @@ interface Opened {
  * Close the process log when a command has finished. Idempotent; after it,
  * anything that asks for the log is refused with `ProcessLogClosedError`.
  */
-export function closeProcessLog(): Promise<void> {
-  return Effect.runPromise(process_.close())
+export function closeProcessLogEffect() {
+  return process_.close()
 }
 
 /**

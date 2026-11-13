@@ -38,18 +38,18 @@ describe('the process log', () => {
   it('refuses each way in after closeProcessLog()', async () => {
     vi.resetModules()
     const m = await import('../src/index.ts')
-    await expect(m.closeProcessLog()).resolves.toBeUndefined()
+    await expect(Effect.runPromise(m.closeProcessLogEffect())).resolves.toBeUndefined()
     await expect(m.processLog()).rejects.toBeInstanceOf(m.ProcessLogClosedError)
     await expect(m.processEventStore()).rejects.toBeInstanceOf(m.ProcessLogClosedError)
     await expect(m.processTicketSql()).rejects.toBeInstanceOf(m.ProcessLogClosedError)
-    await expect(m.closeProcessLog()).resolves.toBeUndefined()
+    await expect(Effect.runPromise(m.closeProcessLogEffect())).resolves.toBeUndefined()
   })
 
   it('reads the closed flag when the Effect port is run, not when it was built', async () => {
     vi.resetModules()
     const m = await import('../src/choose.ts')
     const { ProcessLogClosedError: Closed } = await import('../src/closable.ts')
-    await m.closeProcessLog()
+    await Effect.runPromise(m.closeProcessLogEffect())
     await expect(Effect.runPromise(Effect.flatMap(m.processEvents, (e) => e.head('x')))).rejects.toBeInstanceOf(Closed)
   })
 })

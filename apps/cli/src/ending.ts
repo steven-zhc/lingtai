@@ -4,49 +4,56 @@
  * for an idle connection to time out. Takes `close` as an argument so this file
  * imports nothing from the store and `entry.ts` stays lazy.
  */
+import { Cause, Effect, Fiber } from 'effect'
 
 /** A dead network must not hold a finished command: the close is given this long. */
 export const CLOSE_BUDGET_MS = 2000
 
-/** True when the close finished; false when it rejected or ran out of time. */
-async function closeBounded(close: () => Promise<void>): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timedOut = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`no answer in ${CLOSE_BUDGET_MS} ms`)), CLOSE_BUDGET_MS)
-    // An un-unref'd timer would itself hold the process open on the happy path.
-    timer.unref?.()
-  })
-  try {
-    await Promise.race([close(), timedOut])
-    return true
-  } catch (err) {
-    console.error(
-      `lingtai: the store's connections did not close (${err instanceof Error && err.message ? err.message : String(err)}); exiting anyway`,
-    )
-    return false
-  } finally {
-    clearTimeout(timer)
-  }
-}
+/**
+ * True when the close finished; false when it failed or ran out of time.
+ *
+ * The close is forked on its own and only the *wait* for it is timed. The stores close
+ * uninterruptibly (`closable.ts`: "only the waiting is interruptible"), so `Effect.timeout`
+ * over the close itself would wait for an interruption that a dead socket never grants, which is
+ * the hang #725 bounded.
+ */
+const closeBounded = (close: Effect.Effect<void, unknown>): Effect.Effect<boolean> =>
+  Effect.forkDetach(close).pipe(
+    Effect.flatMap((fiber) => Fiber.join(fiber)),
+    Effect.timeoutOrElse({
+      duration: CLOSE_BUDGET_MS,
+      orElse: () => Effect.fail(new Error(`no answer in ${CLOSE_BUDGET_MS} ms`)),
+    }),
+    Effect.as(true),
+    Effect.catchCause((cause) =>
+      Effect.sync(() => {
+        const err = Cause.squash(cause)
+        console.error(
+          `lingtai: the store's connections did not close (${err instanceof Error && err.message ? err.message : String(err)}); exiting anyway`,
+        )
+        return false
+      }),
+    ),
+  )
 
 /**
- * Settle `run`, close, then return its code; a rejection is re-thrown after the
- * close. Giving up on a close does not stop its socket holding the event loop,
- * so when it did not finish `exit` is called with the code the process will end
- * on (1 for a rejection), and is the caller's to make survive a pending write.
+ * Settle `run`, close, then return its code; a failure is re-raised, as the same cause, after the
+ * close. Giving up on a close does not stop its socket holding the event loop, so when it did not
+ * finish `exit` is called with the code the process will end on (1 for a failure), and is the
+ * caller's to make survive a pending write.
  */
-export async function finish(
-  run: () => Promise<number>,
-  close: () => Promise<void>,
+export const finishEffect = <E>(
+  run: Effect.Effect<number, E>,
+  close: Effect.Effect<void, unknown>,
   exit?: (code: number) => void,
-): Promise<number> {
-  let code: number
-  try {
-    code = await run()
-  } catch (err) {
-    if (!(await closeBounded(close))) exit?.(1)
-    throw err
-  }
-  if (!(await closeBounded(close))) exit?.(code)
-  return code
-}
+): Effect.Effect<number, E> =>
+  Effect.gen(function* () {
+    const settled = yield* Effect.exit(run)
+    const closed = yield* closeBounded(close)
+    if (settled._tag === 'Failure') {
+      if (!closed) exit?.(1)
+      return yield* Effect.failCause(settled.cause)
+    }
+    if (!closed) exit?.(settled.value)
+    return settled.value
+  })

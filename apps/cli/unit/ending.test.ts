@@ -1,11 +1,19 @@
+import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { finish } from '../src/ending.ts'
+import { finishEffect } from '../src/ending.ts'
 
 afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
+
+/** A run or a close written as a promise, as the cases below read better that way. */
+const finish = (
+  run: () => Promise<number>,
+  close: () => Promise<void>,
+  exit?: (code: number) => void,
+): Promise<number> => Effect.runPromise(finishEffect(Effect.promise(run), Effect.promise(close), exit))
 
 describe('finish', () => {
   it('closes after run settles and before the code returns', async () => {
@@ -70,6 +78,7 @@ describe('finish', () => {
     await vi.advanceTimersByTimeAsync(2000)
     expect(await done).toBe(4)
     expect(exit).toHaveBeenCalledWith(4)
+    vi.useRealTimers()
     const clean = vi.fn()
     await finish(
       async () => 0,
@@ -87,5 +96,33 @@ describe('finish', () => {
     )
     expect(code).toBe(7)
     expect(err).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives up on a close that cannot be interrupted, as the stores close, and asks for the exit', async () => {
+    vi.useFakeTimers()
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const exit = vi.fn()
+    const done = Effect.runPromise(finishEffect(Effect.succeed(5), Effect.uninterruptible(Effect.never), exit))
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(await done).toBe(5)
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('no answer in 2000 ms'))
+    expect(exit).toHaveBeenCalledWith(5)
+  })
+
+  it('asks for an exit with 1 when run rejects and the close hangs', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const exit = vi.fn()
+    const done = finish(
+      async () => {
+        throw new Error('pre-parse')
+      },
+      () => new Promise<void>(() => {}),
+      exit,
+    )
+    const settled = expect(done).rejects.toThrow('pre-parse')
+    await vi.advanceTimersByTimeAsync(2000)
+    await settled
+    expect(exit).toHaveBeenCalledWith(1)
   })
 })

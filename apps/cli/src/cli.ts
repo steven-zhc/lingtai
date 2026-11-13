@@ -1,7 +1,7 @@
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { coloured, paint } from '@lingtai/env/colour'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
-import { Console, Effect } from 'effect'
+import { Console, Effect, Result } from 'effect'
 /**
  * The `@effect/cli` side of the entry (#616). Loaded by `entry.ts` with a
  * dynamic `import()` and only for a command named in `commands.ts`, so a word
@@ -1445,91 +1445,94 @@ function withBacklogVerb(args: readonly string[]): string[] {
   return ['accept', 'decline', 'help'].includes(args[1] ?? '') ? [...args] : ['backlog', 'list', ...args.slice(1)]
 }
 
-/** `argv` is the full `process.argv` shape; resolves to the exit code. */
-export async function runCli(
+/**
+ * `argv` is the full `process.argv` shape; the Effect succeeds with the exit code, and does nothing until it is run.
+ * A handler's own failure is already the code 1 inside it: only what comes before the parser can fail the Effect.
+ */
+export const cli = (
   argv: readonly string[],
   deps: { board?: BoardRunner } & Partial<Runners> = {},
-): Promise<number> {
-  let args = argv.slice(2)
-  boardRunner = deps.board ?? liveBoardRunner
-  runners = { ...liveRunners, ...deps }
-  if (args[0] === 'backlog') {
-    if (args[1] === 'help') {
-      console.log((await import('./backlog.ts')).BACKLOG_USAGE)
-      return 0
+): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    let args = argv.slice(2)
+    boardRunner = deps.board ?? liveBoardRunner
+    runners = { ...liveRunners, ...deps }
+    if (args[0] === 'backlog') {
+      if (args[1] === 'help') {
+        console.log((yield* Effect.promise(() => import('./backlog.ts'))).BACKLOG_USAGE)
+        return 0
+      }
+      args = withBacklogVerb(args[1] === 'decline' ? ['backlog', ...withReasonFolded(args.slice(1))] : args)
+      argv = [...argv.slice(0, 2), ...args]
     }
-    args = withBacklogVerb(args[1] === 'decline' ? ['backlog', ...withReasonFolded(args.slice(1))] : args)
-    argv = [...argv.slice(0, 2), ...args]
-  }
-  if (args[0] === 'board' && args[1] === 'shutdown') {
-    const sentence =
-      'lingtai board shutdown does not exist — shutdown means finish the attempt in flight, and waits as long as the ' +
-      'wall limit for it. A board has no attempt to finish: pnpm lingtai board stop, which returns at once'
-    if (args.some(jsonOn)) printJsonError('board', 'usage', sentence)
-    else console.error(`${symbol.fail()} ${sentence}`)
-    return 2
-  }
-  if (args[0] === 'projection' && args[1] === 'run') {
-    // Gone, and answered by name rather than by a usage error. It was another name for
-    // `lingtai daemon`, and two names for one process is how "why is the board stale" gets a
-    // different answer depending on which name you happened to learn (0022).
+    if (args[0] === 'board' && args[1] === 'shutdown') {
+      const sentence =
+        'lingtai board shutdown does not exist — shutdown means finish the attempt in flight, and waits as long as the ' +
+        'wall limit for it. A board has no attempt to finish: pnpm lingtai board stop, which returns at once'
+      if (args.some(jsonOn)) printJsonError('board', 'usage', sentence)
+      else console.error(`${symbol.fail()} ${sentence}`)
+      return 2
+    }
+    if (args[0] === 'projection' && args[1] === 'run') {
+      // Gone, and answered by name rather than by a usage error. It was another name for
+      // `lingtai daemon`, and two names for one process is how "why is the board stale" gets a
+      // different answer depending on which name you happened to learn (0022).
+      if (args.includes('--no-color')) applyNoColor()
+      const sentence =
+        'lingtai projection run is gone — it was another name for lingtai daemon, which is the process that follows the projections. Use that.'
+      if (args.some(jsonOn)) printJsonError('projection', 'usage', sentence)
+      else console.error(`${symbol.fail()} ${sentence}`)
+      return 2
+    }
+    for (const { flag, sentence, trimmed } of TAKES[args[0] ?? ''] ?? []) {
+      const value = flagValue(args.slice(1), flag)
+      if (value !== undefined && !(trimmed ? value?.trim() : value)) {
+        if (args.some(jsonOn)) printJsonError(args[0]!, 'usage', sentence)
+        else console.error(sentence)
+        return 2
+      }
+    }
+    const refusal = integerRefusal(args)
+    if (refusal !== undefined) {
+      if (args.some(jsonOn)) printJsonError(args[0]!, 'usage', refusal)
+      else console.error(refusal)
+      return 2
+    }
+    if (args[0] === 'approve' || args[0] === 'requeue') {
+      argv = [...argv.slice(0, 2), ...withoutBareNote(args)]
+    }
+    if (args[0] === 'service' && args[1] === 'stop') {
+      // Gone rather than kept as an alias. It sent the supervisor's signal, and
+      // launchd SIGKILLed the drain that began twenty seconds in (#174).
+      console.error(
+        "lingtai service stop is gone — it was the supervisor's signal, which kills an attempt in flight 20 seconds in.",
+      )
+      console.error('pnpm lingtai service shutdown "why" drains through the log, waits for the attempt, then unloads.')
+      return 2
+    }
+    restartArgs = null
+    if (args[0] === 'restart') {
+      // Read first, and by the function that has always read this line: its refusals — `--anyway`,
+      // `--timeout`, a flag this command does not have — are sentences with exit code 2.
+      const parsed = parseRestartArgs(args.slice(1).filter((a) => a !== '--no-color'))
+      if (!parsed.ok) {
+        console.error(parsed.message)
+        return 2
+      }
+      restartArgs = parsed.args
+    }
     if (args.includes('--no-color')) applyNoColor()
-    const sentence =
-      'lingtai projection run is gone — it was another name for lingtai daemon, which is the process that follows the projections. Use that.'
-    if (args.some(jsonOn)) printJsonError('projection', 'usage', sentence)
-    else console.error(`${symbol.fail()} ${sentence}`)
-    return 2
-  }
-  for (const { flag, sentence, trimmed } of TAKES[args[0] ?? ''] ?? []) {
-    const value = flagValue(args.slice(1), flag)
-    if (value !== undefined && !(trimmed ? value?.trim() : value)) {
-      if (args.some(jsonOn)) printJsonError(args[0]!, 'usage', sentence)
-      else console.error(sentence)
-      return 2
+    const json = args.some(jsonOn)
+    if (args[0] === 'init' || args[0] === 'add') {
+      const valueless = valuelessFlag(args.slice(1))
+      if (valueless !== null) {
+        console.error(`lingtai ${args[0]}: --${valueless} takes a value`)
+        return 2
+      }
     }
-  }
-  const refusal = integerRefusal(args)
-  if (refusal !== undefined) {
-    if (args.some(jsonOn)) printJsonError(args[0]!, 'usage', refusal)
-    else console.error(refusal)
-    return 2
-  }
-  if (args[0] === 'approve' || args[0] === 'requeue') {
-    argv = [...argv.slice(0, 2), ...withoutBareNote(args)]
-  }
-  if (args[0] === 'service' && args[1] === 'stop') {
-    // Gone rather than kept as an alias. It sent the supervisor's signal, and
-    // launchd SIGKILLed the drain that began twenty seconds in (#174).
-    console.error(
-      "lingtai service stop is gone — it was the supervisor's signal, which kills an attempt in flight 20 seconds in.",
-    )
-    console.error('pnpm lingtai service shutdown "why" drains through the log, waits for the attempt, then unloads.')
-    return 2
-  }
-  restartArgs = null
-  if (args[0] === 'restart') {
-    // Read first, and by the function that has always read this line: its refusals — `--anyway`,
-    // `--timeout`, a flag this command does not have — are sentences with exit code 2.
-    const parsed = parseRestartArgs(args.slice(1).filter((a) => a !== '--no-color'))
-    if (!parsed.ok) {
-      console.error(parsed.message)
-      return 2
-    }
-    restartArgs = parsed.args
-  }
-  if (args.includes('--no-color')) applyNoColor()
-  const json = args.some(jsonOn)
-  if (args[0] === 'init' || args[0] === 'add') {
-    const valueless = valuelessFlag(args.slice(1))
-    if (valueless !== null) {
-      console.error(`lingtai ${args[0]}: --${valueless} takes a value`)
-      return 2
-    }
-  }
-  const errors: string[] = []
-  let handlerExited = false
-  const code = await Effect.runPromise(
-    run(argv.slice(2)).pipe(
+    const errors: string[] = []
+    let handlerExited = false
+    const code = yield* run(argv.slice(2)).pipe(
       Effect.provide(CliOutput.layerPresenter(USAGE_ERRORS_ONLY)),
       Effect.provideService(Console.Console, consoleFor(globalThis.console, json, errors)),
       Effect.provide(NodeServices.layer),
@@ -1539,12 +1542,23 @@ export async function runCli(
         return Effect.succeed(e.code)
       }),
       Effect.catchCause(() => Effect.succeed(1)),
-    ),
-  )
-  // A handler that failed on its own has already said so; `usage` is for what did not parse.
-  if (code !== 0 && json && !handlerExited) {
-    const command = args.find((a) => !a.startsWith('-')) ?? 'lingtai'
-    return printJsonError(command, 'usage', errors.join('\n') || 'invalid usage')
-  }
-  return code
-}
+    )
+    // A handler that failed on its own has already said so; `usage` is for what did not parse.
+    if (code !== 0 && json && !handlerExited) {
+      const command = args.find((a) => !a.startsWith('-')) ?? 'lingtai'
+      return printJsonError(command, 'usage', errors.join('\n') || 'invalid usage')
+    }
+    return code
+  })
+
+/**
+ * Both stores this process holds, closed at once — neither skipped because the other failed. The first failure is
+ * the one that fails the Effect, as `Promise.allSettled` and a re-throw did. Imported here and not in `entry.ts`,
+ * which stays free of anything that touches a store until a command is named.
+ */
+export const closeStores: Effect.Effect<void, unknown> = Effect.gen(function* () {
+  const { closeProcessLogEffect } = yield* Effect.promise(() => import('@lingtai/event-store'))
+  const { closeProcessProjectionsEffect } = yield* Effect.promise(() => import('@lingtai/projector'))
+  const settled = yield* Effect.all([closeProcessLogEffect(), closeProcessProjectionsEffect()], { mode: 'result' })
+  for (const r of settled) if (Result.isFailure(r)) return yield* Effect.fail(r.failure)
+})

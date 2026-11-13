@@ -4,7 +4,8 @@ import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { boardStatusJson, renderBoardStatus, type BoardStatus } from '../src/board.ts'
-import { runCli, type BoardRequest } from '../src/cli.ts'
+import { type BoardRequest } from '../src/cli.ts'
+import { runCli } from '../test/cli.ts'
 
 async function capture(
   args: string[],

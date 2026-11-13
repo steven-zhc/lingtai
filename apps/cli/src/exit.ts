@@ -2,7 +2,7 @@ import { Cause, Data, Effect, Option } from 'effect'
 
 import { printJsonError } from './output.ts'
 
-/** How a handler ends non-zero: `runCli` turns it into the exit code (#1088). */
+/** How a handler ends non-zero: `cli` turns it into the exit code (#1088). */
 export class CommandExit extends Data.TaggedError('CommandExit')<{ readonly code: number }> {}
 
 /** `Effect.void` on 0, a `CommandExit` otherwise. */

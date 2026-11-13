@@ -2,7 +2,8 @@
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { INTEGER_FLAGS, runCli } from '../src/cli.ts'
+import { INTEGER_FLAGS } from '../src/cli.ts'
+import { runCli } from '../test/cli.ts'
 
 const seen = vi.hoisted(() => ({ calls: [] as { command: string; options: unknown }[] }))
 

@@ -50,7 +50,7 @@ export {
 } from './store.ts'
 export { createFace, reduceFace, resetFace } from './store-face.ts'
 export {
-  closeProcessProjections,
+  closeProcessProjectionsEffect,
   ProcessProjectionsClosedError,
   openProjections,
   projectionStore,
