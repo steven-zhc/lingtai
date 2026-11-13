@@ -102,7 +102,7 @@ const doctor = Command.make(
         // and a restart is neither. Timed here, since `runDoctor` never sees it.
         progress.onProgress({ label: 'releases', phase: 'start', done: report.results.length })
         const t0 = performance.now()
-        const row = yield* lift(() => releaseCheck({ fetch, env: process.env, self: import.meta.filename }))
+        const row = yield* releaseCheck({ fetch, env: process.env, self: import.meta.filename })
         report.results.push({ ...row, ms: Math.round(performance.now() - t0) })
         Object.assign(report, tally(report.results))
         return report
@@ -570,13 +570,11 @@ const liveRunners: Runners = {
       const { envList, envSet, envUnset } = yield* lift(() => import('./env.ts'))
       switch (request.verb) {
         case 'list':
-          return yield* lift(() =>
-            envList({ project: request.project, json: request.json, columns: process.stdout.columns }),
-          )
+          return yield* envList({ project: request.project, json: request.json, columns: process.stdout.columns })
         case 'set':
-          return yield* lift(() => envSet(request))
+          return yield* envSet(request)
         case 'unset':
-          return yield* lift(() => envUnset(request))
+          return yield* envUnset(request)
       }
     }),
   projection: (request) =>
@@ -616,7 +614,7 @@ const liveRunners: Runners = {
     Effect.gen(function* () {
       const { upgrade } = yield* lift(() => import('./install.ts'))
       const { liveWorld } = yield* lift(() => import('./world.ts'))
-      return yield* lift(() => upgrade(request, liveWorld(import.meta.filename)))
+      return yield* upgrade(request, liveWorld(import.meta.filename))
     }),
   rollback: (request) =>
     Effect.gen(function* () {
@@ -628,7 +626,7 @@ const liveRunners: Runners = {
     Effect.gen(function* () {
       const { uninstall } = yield* lift(() => import('./install.ts'))
       const { liveWorld } = yield* lift(() => import('./world.ts'))
-      return yield* lift(() => uninstall(request, liveWorld(import.meta.filename)))
+      return yield* uninstall(request, liveWorld(import.meta.filename))
     }),
 }
 
@@ -813,16 +811,14 @@ const reportCommand = Command.make(
       if (args.noColor) applyNoColor()
       // Loaded here, for the reason `status` gives: the conductor and the store are not for `lingtai version`.
       const { runReport } = yield* lift(() => import('./report.ts'))
-      const code = yield* lift(() =>
-        runReport({
-          window: given(args.window),
-          from: given(args.from),
-          to: given(args.to),
-          kind: given(args.kind),
-          project: given(args.project),
-          json: args.json,
-        }),
-      )
+      const code = yield* runReport({
+        window: given(args.window),
+        from: given(args.from),
+        to: given(args.to),
+        kind: given(args.kind),
+        project: given(args.project),
+        json: args.json,
+      })
       yield* exitWith(code)
     }).pipe(orFailed('report', args.json)),
 ).pipe(Command.withDescription(definitionOf('report').task))

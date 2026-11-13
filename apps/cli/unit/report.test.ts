@@ -1,6 +1,7 @@
 /** `lingtai report` (0123 §6, #690): each flag, the refusals and `--json`'s shape, through the ports. */
 import type { ReportTicketRow } from '@lingtai/conductor/report'
 import type { ProjectionLag, TicketReportRow } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { COMMANDS } from '../src/commands.ts'
@@ -68,16 +69,18 @@ async function run(options: ReportOptions, ports: ReportPorts = {}) {
   let out = ''
   let err = ''
   const seen: { tickets: unknown[]; spend: unknown[] } = { tickets: [], spend: [] }
-  const code = await runReport(
-    options,
-    {
-      tickets: async (q) => (seen.tickets.push(q), [row()]),
-      spend: async (q) => (seen.spend.push(q), []),
-      lags: async () => [caughtUp('ticket_report'), caughtUp('spend')],
-      now: () => NOW,
-      ...ports,
-    },
-    { out: { write: (t) => ((out += t), true) }, err: { write: (t) => ((err += t), true) }, columns: undefined },
+  const code = await Effect.runPromise(
+    runReport(
+      options,
+      {
+        tickets: (q) => Effect.sync(() => (seen.tickets.push(q), [row()])),
+        spend: (q) => Effect.sync(() => (seen.spend.push(q), [])),
+        lags: () => Effect.succeed([caughtUp('ticket_report'), caughtUp('spend')]),
+        now: () => NOW,
+        ...ports,
+      },
+      { out: { write: (t) => ((out += t), true) }, err: { write: (t) => ((err += t), true) }, columns: undefined },
+    ),
   )
   return { code, out, err, seen }
 }
@@ -121,12 +124,12 @@ describe('lingtai report’s filters', () => {
       row({ ticket: 'ticket-lingtai-2', kind: 'feature' }),
       row({ ticket: 'ticket-lingtai-3', kind: null }),
     ]
-    const bug = JSON.parse((await run({ kind: 'bug', json: true }, { tickets: async () => tickets })).out)
+    const bug = JSON.parse((await run({ kind: 'bug', json: true }, { tickets: () => Effect.succeed(tickets) })).out)
     expect(bug.counts.landed).toBe(1)
     expect(bug.kinds.map((k: { kind: string | null }) => k.kind)).toEqual(['bug'])
     expect(bug.query.kind).toBe('bug')
 
-    const every = JSON.parse((await run({ json: true }, { tickets: async () => tickets })).out)
+    const every = JSON.parse((await run({ json: true }, { tickets: () => Effect.succeed(tickets) })).out)
     expect(every.counts.landed).toBe(3)
     expect(every.kinds.map((k: { kind: string | null }) => k.kind)).toEqual(['bug', 'feature', null])
   })
@@ -204,7 +207,7 @@ describe('lingtai report --json', () => {
   })
 
   it('is empty figures and exit 0 when nothing is in the window, never a NaN', async () => {
-    const r = await run({ json: true }, { tickets: async () => [] })
+    const r = await run({ json: true }, { tickets: () => Effect.succeed([]) })
     expect(r.code).toBe(0)
     const doc = JSON.parse(r.out)
     expect(doc.counts).toEqual({ landed: 0, closed: 0, open: 0 })
@@ -217,7 +220,7 @@ describe('lingtai report --json', () => {
 
 describe('lingtai report’s text', () => {
   it('says so in one line when nothing is in the window', async () => {
-    const r = await run({ window: 'today' }, { tickets: async () => [] })
+    const r = await run({ window: 'today' }, { tickets: () => Effect.succeed([]) })
     expect(r.code).toBe(0)
     expect(r.out).toBe('no tickets and no spend in 2026-10-28\n')
   })
@@ -226,11 +229,12 @@ describe('lingtai report’s text', () => {
     const r = await run(
       {},
       {
-        tickets: async () => [
-          row({
-            cost: { Work: { reportedCents: 150, reportedRuns: 1, estimatedUsd: 0.25, estimatedRuns: 1, unknown: 1 } },
-          }),
-        ],
+        tickets: () =>
+          Effect.succeed([
+            row({
+              cost: { Work: { reportedCents: 150, reportedRuns: 1, estimatedUsd: 0.25, estimatedRuns: 1, unknown: 1 } },
+            }),
+          ]),
       },
     )
     expect(r.code).toBe(0)
@@ -244,7 +248,7 @@ describe('lingtai report’s text', () => {
   })
 
   it('prints — for a figure with nothing behind it, and unclassified as its own row', async () => {
-    const r = await run({}, { tickets: async () => [row({ outcome: 'closed', kind: null })] })
+    const r = await run({}, { tickets: () => Effect.succeed([row({ outcome: 'closed', kind: null })]) })
     expect(r.out).toContain('(unclassified)')
     expect(r.out).toContain('mean —')
     expect(r.out).not.toMatch(/NaN/)
@@ -254,7 +258,10 @@ describe('lingtai report’s text', () => {
     const rounds = [0, 0, 12]
     const r = await run(
       {},
-      { tickets: async () => rounds.map((fixRounds, i) => row({ ticket: `ticket-lingtai-${i + 1}`, fixRounds })) },
+      {
+        tickets: () =>
+          Effect.succeed(rounds.map((fixRounds, i) => row({ ticket: `ticket-lingtai-${i + 1}`, fixRounds }))),
+      },
     )
     const line = r.out.split('\n').find((l) => /^\s*bug\s/.test(l))
     expect(r.out).toContain('median fix rounds')
@@ -273,7 +280,7 @@ describe('lingtai report’s text', () => {
       Work: { reportedCents: 100, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 },
       Answering: { reportedCents: 300, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 },
     }
-    const r = await run({}, { tickets: async () => [row({ waits: [wait], cost, fixRounds: 2 })] })
+    const r = await run({}, { tickets: () => Effect.succeed([row({ waits: [wait], cost, fixRounds: 2 })]) })
     expect(r.out).toContain('ticket-lingtai-1  bug  landed  $4.00 reported')
     expect(r.out).toContain('spent on: answering refusals 75% · work 25%')
     expect(r.out).toContain('waited for a decision on a refused check · triage: merge by hand · answered')
@@ -281,15 +288,16 @@ describe('lingtai report’s text', () => {
   })
 
   it('lists "most fix rounds" only for tickets with a fix round, and not at all when none had one', async () => {
-    const none = await run({}, { tickets: async () => [row({ fixRounds: 0 })] })
+    const none = await run({}, { tickets: () => Effect.succeed([row({ fixRounds: 0 })]) })
     expect(none.out).not.toContain('most fix rounds')
     const some = await run(
       {},
       {
-        tickets: async () => [
-          row({ ticket: 'ticket-lingtai-1', fixRounds: 2 }),
-          row({ ticket: 'ticket-lingtai-2', fixRounds: 0 }),
-        ],
+        tickets: () =>
+          Effect.succeed([
+            row({ ticket: 'ticket-lingtai-1', fixRounds: 2 }),
+            row({ ticket: 'ticket-lingtai-2', fixRounds: 0 }),
+          ]),
       },
     )
     const top = some.out.slice(some.out.indexOf('most fix rounds'))
@@ -301,28 +309,31 @@ describe('lingtai report’s text', () => {
     const review = { seq: '1', at: day(28, 9).toISOString(), round: 0, blocking: 1, cleared: false }
     const r = await run(
       { window: 'today' },
-      { tickets: async () => [row({ outcomeAt: day(29), reviews: [review], passTimes: [day(27).toISOString()] })] },
+      {
+        tickets: () =>
+          Effect.succeed([row({ outcomeAt: day(29), reviews: [review], passTimes: [day(27).toISOString()] })]),
+      },
     )
     expect(r.out).not.toContain('no tickets and no spend')
     expect(r.out).toContain('getting past review')
   })
 
   it('says how many attempts the machine time skipped', async () => {
-    const r = await run({}, { tickets: async () => [row({ intervalsEmpty: 2, intervalsOpen: 1 })] })
+    const r = await run({}, { tickets: () => Effect.succeed([row({ intervalsEmpty: 2, intervalsOpen: 1 })]) })
     expect(r.out).toContain('3 attempts left out of machine time: 2 with no sign of life, 1 still open')
   })
 })
 
 describe('lingtai report with a projection behind', () => {
   it('says so on stderr and still prints the figures', async () => {
-    const r = await run({}, { lags: async () => [caughtUp('ticket_report'), caughtUp('spend', 5n)] })
+    const r = await run({}, { lags: () => Effect.succeed([caughtUp('ticket_report'), caughtUp('spend', 5n)]) })
     expect(r.code).toBe(0)
     expect(r.err).toBe('spend is 5 events behind the log — figures may be older than it\n')
     expect(r.out).toContain('landed tickets (1)')
   })
 
   it('carries the lag in the document too, and a missing checkpoint is null', async () => {
-    const r = await run({ json: true }, { lags: async () => [caughtUp('spend', 5n)] })
+    const r = await run({ json: true }, { lags: () => Effect.succeed([caughtUp('spend', 5n)]) })
     expect(JSON.parse(r.out).lag).toEqual([
       { name: 'ticket_report', lag: null },
       { name: 'spend', lag: '5' },
@@ -331,8 +342,17 @@ describe('lingtai report with a projection behind', () => {
     expect(r.err).toContain('spend is 5 events behind')
   })
 
+  it('names a lag read that died, prints the report and exits 0', async () => {
+    const r = await run({}, { lags: () => Effect.die(new Error('down')) })
+    expect(r.code).toBe(0)
+    expect(r.err).toContain(
+      'could not read how far the projections are behind: down — figures may be older than the log',
+    )
+    expect(r.out).toContain('landed tickets')
+  })
+
   it('does not take a lag it could not read for a current projection', async () => {
-    const r = await run({ json: true }, { lags: async () => Promise.reject(new Error('no database')) })
+    const r = await run({ json: true }, { lags: () => Effect.fail(new Error('no database')) })
     expect(r.code).toBe(0)
     expect(r.err).toContain('could not read how far the projections are behind: no database')
     expect(JSON.parse(r.out).lag).toEqual([])

@@ -398,7 +398,7 @@ describe('lingtai doctor through @effect/cli', () => {
     // The real one asks GitHub.
     vi.doMock('../src/install.ts', async (orig) => ({
       ...(await orig<typeof import('../src/install.ts')>()),
-      releaseCheck: async () => ({ name: 'release: newest', status: 'ok' as const, detail: 'current' }),
+      releaseCheck: () => Effect.succeed({ name: 'release: newest', status: 'ok' as const, detail: 'current' }),
     }))
     const { runCli } = await import('../src/cli.ts')
     let out = ''
