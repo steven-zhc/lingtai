@@ -23,7 +23,8 @@ import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
-import { refusingOn, resolveWaitHolding } from '../src/resolve-wait.ts'
+import { refusingOn } from '../src/resolve-wait.ts'
+import { resolveWaitHolding } from '../test/promise-faces.ts'
 
 const PROJECT = 'lingtai'
 const SHA = 'a'.repeat(40)

@@ -44,7 +44,7 @@ describe('a recipe that could not be read at startup', () => {
       createSubscriberSet({
         ...options,
         filters: [unread('lingtai')],
-        reread: async () => [unread('lingtai')],
+        reread: () => Effect.succeed([unread('lingtai')]),
       }),
     )
 
@@ -62,7 +62,7 @@ describe('a recipe that could not be read at startup', () => {
       createSubscriberSet({
         ...options,
         filters: [unread('lingtai')],
-        reread: async (projects) => projects.map((p) => (reachable ? declaring(p) : unread(p))),
+        reread: (projects) => Effect.sync(() => projects.map((p) => (reachable ? declaring(p) : unread(p)))),
         log: (line) => said.push(line),
       }),
     )
@@ -83,10 +83,11 @@ describe('a recipe that could not be read at startup', () => {
       createSubscriberSet({
         ...options,
         filters: [declaring('lingtai')],
-        reread: async () => {
-          asked += 1
-          return []
-        },
+        reread: () =>
+          Effect.sync(() => {
+            asked += 1
+            return []
+          }),
       }),
     )
 
@@ -106,7 +107,7 @@ describe('a recipe that could not be read at startup', () => {
       createSubscriberSet({
         ...options,
         filters: [declaring('lingtai'), quiet],
-        reread: async () => [],
+        reread: () => Effect.succeed([]),
       }),
     )
 
@@ -124,7 +125,7 @@ describe('a recipe that could not be read at startup', () => {
           throw new Error('EACCES')
         }) as never,
         filters: [declaring('lingtai')],
-        reread: async () => [],
+        reread: () => Effect.succeed([]),
       }),
     )
 
@@ -165,7 +166,7 @@ describe('a board.port that is not a port number', () => {
         createSubscriberSet({
           ...options,
           filters: [declaring('lingtai')],
-          reread: async () => [],
+          reread: () => Effect.succeed([]),
         }),
       )
       expect(set.subscribers().map((s) => `${s.project}/${s.name}`)).toEqual(['lingtai/desktop'])

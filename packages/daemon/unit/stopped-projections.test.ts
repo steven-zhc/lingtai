@@ -9,7 +9,8 @@ import { ProjectionShapeError } from '@lingtai/projector'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { notTakingWork, startDaemon } from '../src/daemon.ts'
+import { notTakingWork } from '../src/daemon.ts'
+import { startDaemon } from '../test/promise-faces.ts'
 
 const base = {
   predatesHold: async () => null,

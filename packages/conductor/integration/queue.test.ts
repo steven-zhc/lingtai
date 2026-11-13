@@ -12,10 +12,12 @@ import { eventStore, type EventStore } from '@lingtai/event-store'
 import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
 import { taskViewProjection } from '@lingtai/projector'
 import { createProjectionRunner } from '@lingtai/projector/test/promise-runner'
+import { Effect } from 'effect'
 import pg from 'pg'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { answer, ask, heldUntil, inWords, requeue, selectRunnable } from '../src/index.ts'
+import { askEffect } from '../src/ask.ts'
+import { answer, heldUntil, inWords, requeue, selectRunnable } from '../src/index.ts'
 
 /**
  * An hour, as `source.backoff` resolves to for a recipe that does not mention
@@ -96,13 +98,18 @@ describe('selectRunnable', () => {
     const kinds = ['bug']
     created.add(`ticket-${project}-51`)
 
-    const asked = await ask({ project, issue: 51, question: 'which of the three designs?', by: 'human:steven', store })
+    const asked = await Effect.runPromise(
+      askEffect({ project, issue: 51, question: 'which of the three designs?', by: 'human:steven', store }),
+    )
     expect(asked.ok).toBe(true)
     await build()
     expect(await selectRunnable({ project, offered, kinds, backoffMs: HOUR })).toEqual([])
 
     // A second question is refused rather than replacing the first unanswered.
-    expect((await ask({ project, issue: 51, question: 'and another?', by: 'human:steven', store })).ok).toBe(false)
+    expect(
+      (await Effect.runPromise(askEffect({ project, issue: 51, question: 'and another?', by: 'human:steven', store })))
+        .ok,
+    ).toBe(false)
 
     // An answer to wording the item is no longer asking is refused, not kept
     // against the question it now asks — nothing is appended.

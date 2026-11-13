@@ -204,16 +204,16 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
       return { ok: true, updated: false, warnings: over.warnings ?? [], reach: { kind: 'gh', login: 'sam' } }
     })
     h.world.githubDeps = {
-      check: async () => null,
+      check: () => Effect.succeed(null),
       auth: () => 'gh',
       interactive: () => true,
-      ghAccess: async () => ({ login: 'sam', defaultBranch: 'main' }),
+      ghAccess: () => Effect.succeed({ login: 'sam', defaultBranch: 'main' }),
       picker: () => fx(async () => ({ installations: [], installUrl: null })),
       files,
       reader: () => fx(async () => SETUP_READER),
       ask: async () => '',
       runtimes: () => fx(async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }]),
-      history: async () => [],
+      history: () => Effect.succeed([]),
     }
     if (over.doctorFails === true) {
       h.world.doctor = () =>

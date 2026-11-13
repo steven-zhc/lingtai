@@ -28,7 +28,7 @@ import type { EventStore } from '@lingtai/event-store/store'
 import { Effect } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { releaseForeignClaimsEffect, reconcile } from '../src/reconcile.ts'
+import { releaseForeignClaimsEffect, reconcileEffect } from '../src/reconcile.ts'
 import type { DaemonStore, StreamQuery } from '../src/store.ts'
 
 const PROJECT = 'pureproj'
@@ -132,16 +132,18 @@ describe("a pass given a store reads that store's log", () => {
     const events = await logWithAClaim()
     const { store, asked } = recordingStore(events, [CLAIMED])
 
-    await reconcile({
-      daemonStore: store,
-      projects: [project],
-      worker: 'local:1',
-      dryRun: true,
-      home: emptyHome(),
-      // Enough for the GitHub check to run rather than be skipped. No client is
-      // registered, so nothing is written even if a divergence were found.
-      github: { projects: [project], clients: new Map() },
-    })
+    await Effect.runPromise(
+      reconcileEffect({
+        daemonStore: store,
+        projects: [project],
+        worker: 'local:1',
+        dryRun: true,
+        home: emptyHome(),
+        // Enough for the GitHub check to run rather than be skipped. No client is
+        // registered, so nothing is written even if a divergence were found.
+        github: { projects: [project], clients: new Map() },
+      }),
+    )
 
     // Both halves of one pass, through one store. Without the option being
     // forwarded, `findIssueDrift` builds a Postgres store of its own: on a

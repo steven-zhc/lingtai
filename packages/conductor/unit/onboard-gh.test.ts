@@ -1,12 +1,13 @@
+import { GitHubFailed, type GhStatus } from '@lingtai/github'
 /**
- * `checkGhAccess` and `add()` on a `gh` machine (#708, ADR 0114 §8): the saved
+ * `checkGhAccess` and `Effect.runPromise(addEffect())` on a `gh` machine (#708, ADR 0114 §8): the saved
  * login's scopes and `permissions.push` stand where the App's installation
  * does, and each refusal names its own cause.
  */
-import { GitHubFailed, type GhStatus } from '@lingtai/github'
+import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
-import { add, checkGhAccess, type GhAccessDeps } from '../src/onboard.ts'
+import { addEffect, checkGhAccessEffect, type GhAccessDeps } from '../src/onboard.ts'
 
 const SLUG = 'acme/widgets'
 const SIGNED_IN: GhStatus = { ok: true, login: 'sam', scopes: ['repo', 'workflow', 'read:org'] }
@@ -17,7 +18,10 @@ function run(status: GhStatus, repository: GhAccessDeps['repository']) {
   return {
     lines,
     repo,
-    result: () => checkGhAccess(SLUG, (l) => lines.push(l), { status: async () => status, repository: repo }),
+    result: () =>
+      Effect.runPromise(
+        checkGhAccessEffect(SLUG, (l) => lines.push(l), { status: () => Effect.succeed(status), repository: repo }),
+      ),
   }
 }
 
@@ -112,22 +116,26 @@ describe('checkGhAccess (#708)', () => {
 describe('add on a gh machine (#708)', () => {
   it('refuses with checkInstallation never called when the gh check refuses', async () => {
     const check = vi.fn()
-    const code = await add({ slug: SLUG }, () => {}, {
-      auth: () => 'gh',
-      checkGh: async () => null,
-      check,
-    })
+    const code = await Effect.runPromise(
+      addEffect({ slug: SLUG }, () => {}, {
+        auth: () => 'gh',
+        checkGh: () => Effect.succeed(null),
+        check,
+      }),
+    )
     expect(code).toEqual({ ok: false })
     expect(check).not.toHaveBeenCalled()
   })
 
   it('on an App machine asks checkInstallation and never gh', async () => {
     const checkGh = vi.fn()
-    const code = await add({ slug: SLUG }, () => {}, {
-      auth: () => 'app',
-      checkGh,
-      check: async () => null,
-    })
+    const code = await Effect.runPromise(
+      addEffect({ slug: SLUG }, () => {}, {
+        auth: () => 'app',
+        checkGh,
+        check: () => Effect.succeed(null),
+      }),
+    )
     expect(code).toEqual({ ok: false })
     expect(checkGh).not.toHaveBeenCalled()
   })

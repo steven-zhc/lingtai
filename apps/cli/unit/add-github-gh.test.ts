@@ -35,13 +35,14 @@ function depsFor(over: Partial<AskBeforeGithubAddDeps>) {
   const store: Record<string, string> = {}
   const reader: SetupReader = { has: () => Effect.succeed(false), read: () => Effect.succeed(null) }
   const deps: AskBeforeGithubAddDeps = {
-    check: async () => {
-      calls.check++
-      return null
-    },
+    check: () =>
+      Effect.sync(() => {
+        calls.check++
+        return null
+      }),
     auth: () => 'gh',
     interactive: () => true,
-    ghAccess: async () => ({ login: 'sam', defaultBranch: 'main' }),
+    ghAccess: () => fx(async () => ({ login: 'sam', defaultBranch: 'main' })),
     picker: () =>
       fx(async () => {
         calls.picker++
@@ -61,7 +62,7 @@ function depsFor(over: Partial<AskBeforeGithubAddDeps>) {
       }),
     ask: async () => '',
     runtimes: () => fx(async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }]),
-    history: async () => [],
+    history: () => Effect.succeed([]),
     ...over,
   }
   return { deps, calls }
@@ -84,10 +85,11 @@ describe('askBeforeGithubAdd on a gh machine (#708)', () => {
   it('refuses by name and writes nothing when the access check refuses', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { deps, calls } = depsFor({
-      ghAccess: async (_slug, log) => {
-        log('gh is signed in as sam without workflow — run `gh auth refresh --hostname github.com --scopes workflow`')
-        return null
-      },
+      ghAccess: (_slug, log) =>
+        fx(async () => {
+          log('gh is signed in as sam without workflow — run `gh auth refresh --hostname github.com --scopes workflow`')
+          return null
+        }),
     })
     const code = await askBeforeGithubAdd(SLUG, {}, deps)
     expect(code).toBe(1)

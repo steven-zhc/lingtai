@@ -76,7 +76,8 @@ import { Effect } from 'effect'
 
 import {
   outcomeOf,
-  runAttempt,
+  runAttemptEffect,
+  attemptPortsFrom,
   type AttemptEvent,
   type AttemptOptions,
   type StepBodies,
@@ -330,13 +331,17 @@ export async function carry(locator: string, cwd: string = NOWHERE): Promise<Car
       run: async () => PASSED,
     }))
 
-  const result = await runAttempt({
-    recipe: { steps: StepMap.parse(DECLARED) },
-    context: { runId: 'pass-1', onSha: 'abc1234def', cwd, env: {} },
-    emit: (event) => void events.push({ type: event.type, payload: JSON.stringify(event.data) }),
-    actionsAt,
-    bodies: PASSING,
-  })
+  const result = await Effect.runPromise(
+    runAttemptEffect(
+      attemptPortsFrom({
+        recipe: { steps: StepMap.parse(DECLARED) },
+        context: { runId: 'pass-1', onSha: 'abc1234def', cwd, env: {} },
+        emit: (event) => void events.push({ type: event.type, payload: JSON.stringify(event.data) }),
+        actionsAt,
+        bodies: PASSING,
+      }),
+    ),
+  )
 
   const endingAt = (step: Step): StepEnding | undefined =>
     result.steps.filter((visit) => visit.step === step).at(-1)?.ending

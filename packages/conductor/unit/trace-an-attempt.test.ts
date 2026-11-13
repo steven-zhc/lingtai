@@ -15,7 +15,7 @@ import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { installTracingEffect, type Tracing } from '../src/telemetry.ts'
-import { tellGitHubAbout } from '../src/tell.ts'
+import { tellGitHubAboutEffect } from '../src/tell.ts'
 import {
   HUMAN_BEFORE_THE_LANE,
   JUDGED_BY_AN_AGENT,
@@ -170,18 +170,20 @@ describe('with an endpoint', () => {
       updateBody: async () => undefined,
       deleteRef: async () => undefined,
       listRefs: async () => [],
-    } as unknown as Parameters<typeof tellGitHubAbout>[0]['github']
-    await tellGitHubAbout({
-      store,
-      github,
-      ticketId: 'ticket-p-7',
-      appended: [
-        {
-          type: 'EndActionsResolved',
-          data: { actions: [{ labels: ['x'] }, { close: true }] },
-        } as unknown as ToAppend,
-      ],
-    })
+    } as unknown as Parameters<typeof tellGitHubAboutEffect>[0]['github']
+    await Effect.runPromise(
+      tellGitHubAboutEffect({
+        store,
+        github,
+        ticketId: 'ticket-p-7',
+        appended: [
+          {
+            type: 'EndActionsResolved',
+            data: { actions: [{ labels: ['x'] }, { close: true }] },
+          } as unknown as ToAppend,
+        ],
+      }),
+    )
     await tracing.flush()
     expect(calls).toEqual(['labels', 'close'])
     const spans = exporter.getFinishedSpans()
@@ -202,18 +204,20 @@ describe('with an endpoint', () => {
       matchingRefs: refuse,
       setLabels: refuse,
       closeIssue: refuse,
-    } as unknown as Parameters<typeof tellGitHubAbout>[0]['github']
-    await tellGitHubAbout({
-      store: memoryStore(),
-      github,
-      ticketId: 'ticket-p-7',
-      appended: [
-        {
-          type: 'EndActionsResolved',
-          data: { actions: [{ labels: ['x'] }, { close: true }, { refs: true, branch: true }] },
-        } as unknown as ToAppend,
-      ],
-    })
+    } as unknown as Parameters<typeof tellGitHubAboutEffect>[0]['github']
+    await Effect.runPromise(
+      tellGitHubAboutEffect({
+        store: memoryStore(),
+        github,
+        ticketId: 'ticket-p-7',
+        appended: [
+          {
+            type: 'EndActionsResolved',
+            data: { actions: [{ labels: ['x'] }, { close: true }, { refs: true, branch: true }] },
+          } as unknown as ToAppend,
+        ],
+      }),
+    )
     await tracing.flush()
     const spans = exporter.getFinishedSpans()
     const actions = spans.filter((s) => s.name.startsWith('action '))

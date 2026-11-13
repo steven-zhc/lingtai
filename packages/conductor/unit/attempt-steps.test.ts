@@ -50,14 +50,8 @@ import {
   type Worked,
 } from '../src/attempt-steps.ts'
 import { BUILT_IN, BUILT_IN_FOR, judgeDeclaredAt } from '../src/judge.ts'
-import {
-  NEEDS_INPUT,
-  claimStep,
-  outcomeOf,
-  runAttempt,
-  type AttemptOptions,
-  type AttemptOver,
-} from '../src/run-attempt.ts'
+import { NEEDS_INPUT, outcomeOf, type AttemptOptions, type AttemptOver } from '../src/run-attempt.ts'
+import { claimStep, runAttempt } from '../test/promise-faces.ts'
 
 // --------------------------------------------------------------- fixtures ----
 

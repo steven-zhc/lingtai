@@ -30,8 +30,3 @@ export function liveHistoryEffect(project: string): Effect.Effect<readonly strin
     return [...wiStreams, ...dbTicketRows.map((t) => `db ticket #${t.number}`)]
   })
 }
-
-/** `liveHistoryEffect` as `packages/setup`'s promise `history` port. */
-export function liveHistory(project: string): Promise<readonly string[]> {
-  return Effect.runPromise(liveHistoryEffect(project))
-}

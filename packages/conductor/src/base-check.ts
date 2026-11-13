@@ -74,7 +74,7 @@ export type BaseCheckAnswer =
 
 export interface BaseCheckDeps {
   store: Pick<EventStore, 'read' | 'append'>
-  run: (options: RunCommandOptions) => Promise<CommandOutcome>
+  run: (options: RunCommandOptions) => Effect.Effect<CommandOutcome, unknown>
   worktreePath: (project: string, sha7: string, runId: string) => string
   /** The run-log line for a failed append or removal. */
   note: (line: string) => void
@@ -137,16 +137,14 @@ export function createBaseCheck(deps: BaseCheckDeps): {
         // aborts that come after it starts, so nothing may be started with the signal already down.
         if (q.signal.aborted) return { answer: unknownWith('the check was aborted') } as const
         const runIn = (c: BaseCheckCommand): Effect.Effect<CommandOutcome, unknown> =>
-          attempt(() =>
-            deps.run({
-              run: c.run,
-              timeoutMs: c.timeoutMs,
-              cwd: path,
-              env: c.env,
-              signal: q.signal,
-              ownGroup: true,
-            }),
-          )
+          deps.run({
+            run: c.run,
+            timeoutMs: c.timeoutMs,
+            cwd: path,
+            env: c.env,
+            signal: q.signal,
+            ownGroup: true,
+          })
         for (const prep of q.prepared) {
           const prepared = yield* runIn(prep)
           if (q.signal.aborted) return { answer: unknownWith('the check was aborted') } as const

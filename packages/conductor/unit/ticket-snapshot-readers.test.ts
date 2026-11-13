@@ -1,19 +1,20 @@
-/**
- * The readers that need only a ticket's state read it through the ticket snapshot (#877): with a snapshot
- * planted below the head they append at the head and answer as they do with none, and with a store passed in and
- * no `snapshots` they never touch the process log's.
- */
 import { reduceAll, reduceTicket, ticketReducer, ticketStream, type Envelope } from '@lingtai/domain'
 import { aClaim, anAttempt, anAttemptRef, aWait } from '@lingtai/domain/test/events'
 import { histories } from '@lingtai/domain/test/histories'
 import { makeStream } from '@lingtai/domain/test/support'
 import { log, type EventStore, type SnapshotStore } from '@lingtai/event-store'
 import { createMemoryEventStore, createMemorySnapshotStore, type MemoryEventStore } from '@lingtai/event-store/memory'
+/**
+ * The readers that need only a ticket's state read it through the ticket snapshot (#877): with a snapshot
+ * planted below the head they append at the head and answer as they do with none, and with a store passed in and
+ * no `snapshots` they never touch the process log's.
+ */
+import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { approveHolding, requeueHolding } from '../src/approve.ts'
-import { answerHolding, ask } from '../src/ask.ts'
-import { resolveWaitHolding } from '../src/resolve-wait.ts'
+import { approveHolding, requeueHoldingEffect } from '../src/approve.ts'
+import { answerHoldingEffect, askEffect } from '../src/ask.ts'
+import { resolveWaitHoldingEffect } from '../src/resolve-wait.ts'
 
 const PROJECT = 'lingtai'
 const SHA = 'a'.repeat(40)
@@ -96,7 +97,9 @@ describe('readers over a ticket snapshot planted below the head', () => {
         [discovered, ignored].map((e) => ({ type: e.type, actor: e.actor, data: e.data }) as never),
       )
       const snapshots = withSnapshot ? await plantBelowHead(store, ticketId) : undefined
-      const result = await ask({ project: PROJECT, issue: 1, question: 'which?', by: 'human:s', store, snapshots })
+      const result = await Effect.runPromise(
+        askEffect({ project: PROJECT, issue: 1, question: 'which?', by: 'human:s', store, snapshots }),
+      )
       const types = (await store.read(ticketId)).map((e) => e.type)
       return { result, types }
     }
@@ -128,24 +131,28 @@ describe('readers over a ticket snapshot planted below the head', () => {
   it("resolveWaitHolding's resolution and requeueHolding append at the head", async () => {
     const { store, ticketId } = await blockedAtSignoff(4)
     const snapshots = await plantBelowHead(store, ticketId)
-    const result = await requeueHolding({ by: 'human:s', note: 'again' }, store, ticketId, { snapshots })
+    const result = await Effect.runPromise(
+      requeueHoldingEffect({ by: 'human:s', note: 'again' }, store, ticketId, { snapshots }),
+    )
     expect(result).toMatchObject({ ok: true })
     expect(reduceTicket(await store.read(ticketId)).lifecycle.status).toBe('backlog')
 
     const second = await blockedAtSignoff(5)
     const planted = await plantBelowHead(second.store, second.ticketId)
-    const resolved = await resolveWaitHolding(
-      {
-        ticketId: second.ticketId,
-        issue: 5,
-        waitId: 'open' as never,
-        resolution: { _tag: 'Requeue' },
-        by: 'human:s',
-        note: '',
-        store: second.store,
-        snapshots: planted,
-      },
-      second.ticketId,
+    const resolved = await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId: second.ticketId,
+          issue: 5,
+          waitId: 'open' as never,
+          resolution: { _tag: 'Requeue' },
+          by: 'human:s',
+          note: '',
+          store: second.store,
+          snapshots: planted,
+        },
+        second.ticketId,
+      ),
     )
     // `open` is not a wait id: refused the way it is with no snapshot, and nothing appended.
     expect(resolved.ok).toBe(false)
@@ -154,11 +161,13 @@ describe('readers over a ticket snapshot planted below the head', () => {
   it('answerHolding passes its read on to the resolution', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 6)
-    await ask({ project: PROJECT, issue: 6, question: 'which?', by: 'human:s', store })
+    await Effect.runPromise(askEffect({ project: PROJECT, issue: 6, question: 'which?', by: 'human:s', store }))
     const snapshots = createMemorySnapshotStore(store)
-    const result = await answerHolding({ project: PROJECT, issue: 6, answer: 'this', by: 'human:s' }, store, ticketId, {
-      snapshots,
-    })
+    const result = await Effect.runPromise(
+      answerHoldingEffect({ project: PROJECT, issue: 6, answer: 'this', by: 'human:s' }, store, ticketId, {
+        snapshots,
+      }),
+    )
     expect(result).toMatchObject({ ok: true })
   })
 })
@@ -169,7 +178,9 @@ describe('a store passed in with no snapshots never touches the process log', ()
       throw new Error('the process log was touched')
     })
     const store = createMemoryEventStore()
-    expect(await ask({ project: PROJECT, issue: 7, question: 'q', by: 'human:s', store })).toMatchObject({ ok: true })
+    expect(
+      await Effect.runPromise(askEffect({ project: PROJECT, issue: 7, question: 'q', by: 'human:s', store })),
+    ).toMatchObject({ ok: true })
     const { store: blocked, ticketId } = await blockedAtSignoff(8)
     expect(
       await approveHolding(
@@ -178,7 +189,9 @@ describe('a store passed in with no snapshots never touches the process log', ()
       ),
     ).toMatchObject({ ok: true })
     const other = await blockedAtSignoff(9)
-    expect(await requeueHolding({ by: 'human:s', note: '' }, other.store, other.ticketId)).toMatchObject({ ok: true })
+    expect(
+      await Effect.runPromise(requeueHoldingEffect({ by: 'human:s', note: '' }, other.store, other.ticketId)),
+    ).toMatchObject({ ok: true })
     expect(latest).not.toHaveBeenCalled()
   })
 })

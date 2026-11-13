@@ -42,7 +42,7 @@ import { type TurnClient, type RunOnceResult, runOnce } from './conduct.ts'
 import { runnableNowEffect } from './discover.ts'
 import type { AgentHost, Repo } from './ports.ts'
 import { selectRunnable } from './queue.ts'
-import { readFixFiles, waitsFor } from './same-file.ts'
+import { readFixFilesEffect, waitsFor } from './same-file.ts'
 import type { Slots } from './slots.ts'
 
 export interface ScheduleOptions {
@@ -276,7 +276,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
           }
           // Read for the slot's own record, and to ask the collision question
           // only where there is something to collide with.
-          const files = yield* Effect.promise(() => readFixFiles(options.client, issue))
+          const files = yield* readFixFilesEffect(options.client, issue)
           const why = flying.length > 0 ? waitsFor(files, flying) : null
           if (why !== null) {
             waiting.add(entry.taskId)
@@ -440,14 +440,6 @@ export interface TurnTally {
   landed: number
   held: number
   stopped: number
-}
-
-export function tallyTurn(
-  ran: readonly RunOnceResult[],
-  store?: EventStore,
-  snapshots?: SnapshotStore,
-): Promise<TurnTally> {
-  return Effect.runPromise(tallyTurnEffect(ran, store, snapshots))
 }
 
 /** `tallyTurn` as an Effect. It never fails: a stream that cannot be read falls back to what this process saw. */

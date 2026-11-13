@@ -10,7 +10,7 @@ import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import { claimTicketEffect } from '../src/claim.ts'
-import { closeHolding } from '../src/close.ts'
+import { closeHoldingEffect } from '../src/close.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
 
 async function splitParent() {
@@ -103,16 +103,18 @@ describe('claimTicket on a split parent', () => {
     const now = await store.read(ticketId)
     await store.append(ticketId, now.length, aSplit(makeStream(ticketId), aWaitId(), [a.number]))
 
-    const closed = await closeHolding(
-      {
-        project: 'lingtai',
-        issue: Number(ticketId.split('-').pop()),
-        by: 'conductor',
-        reason: 'r',
-        ifVersion: checked,
-      },
-      store,
-      ticketId,
+    const closed = await Effect.runPromise(
+      closeHoldingEffect(
+        {
+          project: 'lingtai',
+          issue: Number(ticketId.split('-').pop()),
+          by: 'conductor',
+          reason: 'r',
+          ifVersion: checked,
+        },
+        store,
+        ticketId,
+      ),
     )
 
     expect(closed.ok).toBe(false)

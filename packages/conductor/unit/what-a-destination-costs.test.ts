@@ -1,3 +1,9 @@
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+
+import { NEEDS_INPUT, type Action, type ActionResult } from '@lingtai/actions'
+import { offerFor, type Proposal, type Step } from '@lingtai/domain'
+import { StepMap } from '@lingtai/recipe'
 /**
  * **A destination fails three ways, and each way costs something different** —
  * [0066](../../../doc/decisions-archive/0066-a-large-answer-is-a-locator-on-the-log.md)
@@ -47,18 +53,14 @@
  * and `doc/writing-a-plugin.md`'s *a plugin that keeps something somewhere fails
  * three ways* is the page that tells a plugin author the same table.
  */
-import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
-
-import { NEEDS_INPUT, type Action, type ActionResult } from '@lingtai/actions'
-import { offerFor, type Proposal, type Step } from '@lingtai/domain'
-import { StepMap } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { destinationOf } from '../src/proposed-route.ts'
 import {
   outcomeOf,
-  runAttempt,
+  runAttemptEffect,
+  attemptPortsFrom,
   type Ceilings,
   type AttemptEvent,
   type AttemptOptions,
@@ -103,15 +105,19 @@ function stepEndedFor(
 /** One pass with a destination at `design`, and the events it appended. */
 async function attemptWith(result: ActionResult): Promise<{ result: AttemptOver; events: AttemptEvent[] }> {
   const events: AttemptEvent[] = []
-  const passed = await runAttempt({
-    recipe: { steps: StepMap.parse({ design: [DESTINATION] }) },
-    context: { runId: 'pass-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} },
-    emit: (event) => void events.push(event),
-    actionsAt: answering(result),
-    // No `bodies`, so `NOT_BUILT_YET` answers — which is the floor 0066 §7's
-    // third row names in as many words: *with no judge declared, a person*.
-    ceilings: SPARE,
-  })
+  const passed = await Effect.runPromise(
+    runAttemptEffect(
+      attemptPortsFrom({
+        recipe: { steps: StepMap.parse({ design: [DESTINATION] }) },
+        context: { runId: 'pass-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} },
+        emit: (event) => void events.push(event),
+        actionsAt: answering(result),
+        // No `bodies`, so `NOT_BUILT_YET` answers — which is the floor 0066 §7's
+        // third row names in as many words: *with no judge declared, a person*.
+        ceilings: SPARE,
+      }),
+    ),
+  )
   return { result: passed, events }
 }
 

@@ -19,7 +19,8 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
-  runAttempt,
+  runAttemptEffect,
+  attemptPortsFrom,
   type AttemptEvent,
   type AttemptOptions,
   type StepBodies,
@@ -100,16 +101,20 @@ async function walk(
       ]
     return actions.map((a) => ({ name: a.name, kind: 'run', yields: 'verdict', run: async () => PASSED }) as Action)
   }
-  const result = await runAttempt({
-    recipe,
-    context,
-    emit: (event) => void events.push(event),
-    bodies,
-    actionsAt,
-    ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-    mergeBase,
-    ...(from === undefined ? {} : { from }),
-  })
+  const result = await Effect.runPromise(
+    runAttemptEffect(
+      attemptPortsFrom({
+        recipe,
+        context,
+        emit: (event) => void events.push(event),
+        bodies,
+        actionsAt,
+        ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+        mergeBase,
+        ...(from === undefined ? {} : { from }),
+      }),
+    ),
+  )
   const started = events.flatMap((e) => (e.type === 'StepStarted' ? [e.data] : []))
   return { result, events, landedOn, rounds, started, reviewSaw }
 }

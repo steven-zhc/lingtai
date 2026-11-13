@@ -51,7 +51,7 @@ import {
   startBeacon,
   readControl,
   recordStartEffect,
-  requestShutdownUnlessStanding,
+  requestShutdownUnlessStandingEffect,
   resumeConductor,
 } from '../src/control.ts'
 import { STALE_AFTER_MS, lastBeat, type Beat, type DaemonStore } from '../src/store.ts'
@@ -347,13 +347,17 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
 
     it('asks for one drain at a time, and a start ends it', async () => {
       await withStore(async ({ store }) => {
-        const asked = await requestShutdownUnlessStanding('human:ada', 'restarting', null, store.events)
+        const asked = await Effect.runPromise(
+          requestShutdownUnlessStandingEffect('human:ada', 'restarting', null, store.events),
+        )
         expect(asked.asked).toBe(true)
 
         // A second ask finds the first standing and appends nothing over it:
         // the reducer keeps the newest request, so hiding one would be a
         // request nobody decided to overrule.
-        const again = await requestShutdownUnlessStanding('human:bob', 'me too', null, store.events)
+        const again = await Effect.runPromise(
+          requestShutdownUnlessStandingEffect('human:bob', 'me too', null, store.events),
+        )
         expect(again.asked).toBe(false)
 
         const started = await recordStart(
@@ -379,7 +383,7 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
       // assertion — a start for the drain and a resume for the pause.
       await withStore(async ({ store }) => {
         await setupPause(store.events, 'and then the process was killed')
-        await requestShutdownUnlessStanding('human:ada', 'restarting', null, store.events)
+        await Effect.runPromise(requestShutdownUnlessStandingEffect('human:ada', 'restarting', null, store.events))
 
         await quiesceControl(store.events)
 
@@ -387,7 +391,9 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
         expect(state.shutdown).toBeNull()
         expect(state.paused).toBe(false)
         // Which is the thing that matters: the next run gets to ask.
-        const asked = await requestShutdownUnlessStanding('human:bob', 'mine', null, store.events)
+        const asked = await Effect.runPromise(
+          requestShutdownUnlessStandingEffect('human:bob', 'mine', null, store.events),
+        )
         expect(asked.asked).toBe(true)
       })
     })

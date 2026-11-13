@@ -8,6 +8,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
 import type { GitHubClient } from '@lingtai/github'
 import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
 /**
  * Closing a ticket nobody is going to do (#151).
  *
@@ -18,14 +19,14 @@ import { RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
  */
 import { describe, expect, it } from 'vitest'
 
-import { close, closeHolding, type CloseOptions } from '../src/close.ts'
+import { close, closeHoldingEffect, type CloseOptions } from '../src/close.ts'
 import { dbTickets } from '../src/db-tickets.ts'
 import { ticketedClientOf } from '../src/ticket-store.ts'
 import { fakeGitHub as fullFakeGitHub } from '../test/one-attempt.ts'
 
 /** `close()` takes the decide lock (the filesystem); this is the half underneath it, with the store and stream it derives. */
 const closeUnlocked = (o: CloseOptions) =>
-  closeHolding(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue))
+  Effect.runPromise(closeHoldingEffect(o, o.store ?? createMemoryEventStore(), ticketStream(o.project, o.issue)))
 
 const at = (n: number) => new Date(Date.UTC(2026, 8, 14, 12, n)).toISOString()
 

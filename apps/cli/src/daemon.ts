@@ -5,7 +5,7 @@
  */
 import { existsSync } from 'node:fs'
 
-import { createSlots, describeFilters, loadProjectsEffect, projectFilters } from '@lingtai/conductor'
+import { createSlots, describeFilters, loadProjectsEffect, projectFiltersEffect } from '@lingtai/conductor'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import {
@@ -496,7 +496,7 @@ export function daemonCommand(
     // into scrollback. A daemon that cannot read a recipe now says so in the
     // block you are already reading while it starts.
     if (registered.length === 0) console.log('no project registered — run lingtai add <owner>/<repo>')
-    const filters = yield* Effect.promise(() => projectFilters(registered))
+    const filters = yield* projectFiltersEffect(registered)
     for (const line of describeFilters(filters)) console.log(line)
 
     const { clients, unresolved } = yield* clientsForProjectsEffect(registered)
@@ -623,7 +623,8 @@ export function daemonCommand(
       // quiet, and asked again before each pass until it is.
       const declared = yield* createSubscriberSet({
         filters,
-        reread: (projects) => projectFilters(registered.filter((p) => projects.includes(p.project ?? '(unnamed)'))),
+        reread: (projects) =>
+          projectFiltersEffect(registered.filter((p) => projects.includes(p.project ?? '(unnamed)'))),
         subject: createSubjectResolver(undefined, { writer: writer ?? undefined }),
         // The daemon's own directory. There is no worktree for an event — it is
         // not about a diff — and a subscriber that wants one has to make it.
