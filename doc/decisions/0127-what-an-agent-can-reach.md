@@ -90,10 +90,13 @@ true.
     - `network.allow`, `write` and `deny` are add-only: they extend the policy
       and never remove from it.
     - A `write` that is, lies inside, or contains a protected path is refused
-      at resolve. Protected are: every path on §12's deny list, `$HOME`
-      itself, the state directory `~/.lingtai`, the mirror, the runtimes'
-      configuration directories (`~/.claude`, `~/.claude.json`, `~/.codex`),
-      and the host's tool and cache directories of §11.
+      at resolve. Protected are: every path on §12's deny list, the state
+      directory `~/.lingtai`, the mirror, the runtimes' configuration
+      directories (`~/.claude`, `~/.claude.json`, `~/.codex`), and the host's
+      tool and cache directories of §11. `$HOME` itself is protected only
+      against being written or containing: a `write` that is `$HOME` or
+      contains it is refused, and a `write` that merely lies inside `$HOME`,
+      such as `~/work/fixtures`, is not, because everything does.
     - A `deny` inside `<stateDir>/worktrees/<project>/` or the mirror is
       refused at resolve, because `srt`'s `allowRead` overrides `denyRead`.
     - The fallback is decided once per run, before it starts.
