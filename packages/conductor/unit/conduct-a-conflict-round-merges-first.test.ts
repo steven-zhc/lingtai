@@ -4,6 +4,7 @@
  * real `MERGE_HEAD` and markers on disk are an integration claim (0060 §1).
  */
 import type { Runtime } from '@lingtai/agent'
+import { ticketStream } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -30,7 +31,12 @@ runtime:
 
 const BASE = 'a'.repeat(40)
 
-async function conflictRound(inTree: NonNullable<FakeTree['inTree']>, laneBaseSha: string | null = BASE) {
+async function conflictRound(
+  inTree: NonNullable<FakeTree['inTree']>,
+  laneBaseSha: string | null = BASE,
+  seed?: (store: ReturnType<typeof memoryStore>) => Promise<unknown> | void,
+  wrap?: (store: ReturnType<typeof memoryStore>) => ReturnType<typeof memoryStore>,
+) {
   const did: string[] = []
   const fixPrompts: string[] = []
   let reviews = 0
@@ -66,7 +72,9 @@ async function conflictRound(inTree: NonNullable<FakeTree['inTree']>, laneBaseSh
       })
     },
   }
-  const store = memoryStore()
+  const inner = memoryStore()
+  await seed?.(inner)
+  const store = wrap === undefined ? inner : wrap(inner)
   const result = await once(
     {
       project,
@@ -162,5 +170,72 @@ describe('a conflict round', () => {
     const { did } = await conflictRound({ conflicts: ['src/fix.ts'], ancestor: true })
 
     expect(did.some((d) => d.startsWith('git diff --name-only -z ') && d.includes('..'))).toBe(true)
+  })
+})
+
+describe('a conflict round is briefed on what each side did (#1121)', () => {
+  const LANDED = 'c'.repeat(40)
+  const log = `${LANDED} Merge branch 'agent/1065' into HEAD\0${'d'.repeat(40)} Merge branch 'main' of x\0not-a-sha subject\0`
+  const inTree = { conflicts: ['src/fix.ts'], ancestor: true, log }
+  const discovered = (store: ReturnType<typeof memoryStore>) =>
+    store.append(ticketStream(project.project!, 1065), 0, [
+      {
+        type: 'TicketDiscovered',
+        actor: 'test',
+        data: {
+          project: project.project,
+          source: 'github-issue',
+          externalRef: '1065',
+          title: 'Reduce the thing',
+          kind: 'bug',
+          labels: ['bug'],
+        },
+      } as never,
+    ]) as unknown as Promise<unknown>
+
+  it('shows the tickets, both diffs, and reads through the one spelling with no fetch', async () => {
+    const { did, fixPrompts } = await conflictRound(inTree, BASE, discovered)
+    const e = 'e'.repeat(40)
+
+    expect(fixPrompts[0]).toContain('What landed here:')
+    expect(fixPrompts[0]).toContain('#1065 — Reduce the thing')
+    expect(fixPrompts[0]).toContain("Merge branch 'main' of x")
+    expect(fixPrompts[0]).toContain('- not-a-sha subject')
+    expect(fixPrompts[0]).toContain('What this branch did to it,')
+    expect(did).toContain(
+      `git diff --no-color --no-ext-diff --no-textconv --src-prefix=a/ --dst-prefix=b/ ${e} ${BASE} -- src/fix.ts`,
+    )
+    expect(did).toContain(
+      `git -c log.follow=false log --first-parent --no-color --no-show-signature --no-notes --format=%H %s -z ${e}..${BASE} -- src/fix.ts`,
+    )
+    const from = did.indexOf(`git merge --no-commit --no-ff ${BASE}`)
+    expect(
+      did
+        .slice(
+          from,
+          did.findIndex((d) => d.startsWith('note fix round')),
+        )
+        .some((d) => d.startsWith('git fetch')),
+    ).toBe(false)
+  })
+
+  it('says no title in this log when the stream has none', async () => {
+    const { fixPrompts } = await conflictRound(inTree)
+
+    expect(fixPrompts[0]).toContain('#1065 (no title for #1065 in this log)')
+  })
+
+  it('still dispatches, with the failure as text, when the title read rejects', async () => {
+    const { fixPrompts } = await conflictRound(inTree, BASE, undefined, (inner) => ({
+      ...inner,
+      read: async (streamId: string, from?: number) => {
+        if (streamId === ticketStream(project.project!, 1065)) throw new Error('log unreachable')
+        return inner.read(streamId, from)
+      },
+    }))
+
+    expect(fixPrompts).toHaveLength(1)
+    expect(fixPrompts[0]).toContain('#1065 (title not read:')
+    expect(fixPrompts[0]).toContain('log unreachable')
   })
 })

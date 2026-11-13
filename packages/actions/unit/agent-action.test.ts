@@ -34,6 +34,7 @@ import {
   createAgentAction,
   createDraftAction,
   landedOnBaseBlock,
+  landedPathsSection,
   parseDraft,
   parseFindings,
   verdictFor,
@@ -2119,6 +2120,100 @@ describe('a review after a base-moved merge (#594)', () => {
     expect(block).not.toContain('+c0')
     // The overlap is listed up front, even where its diff was cut.
     expect(block).toContain('a.ts, b.ts, c.ts')
+  })
+})
+
+describe('the landed block, per conflicted path (#1121)', () => {
+  const sha = (c: string) => c.repeat(40)
+  const moved = {
+    paths: ['a.ts', 'b.ts'],
+    fromSha: sha('f'),
+    toSha: sha('t'),
+    branchSha: sha('b'),
+    conflicted: ['a.ts'],
+  }
+
+  it('shows the commits, the base diff and the branch diff under the path', () => {
+    const block = landedOnBaseBlock(moved, [
+      {
+        path: 'a.ts',
+        diff: '+base',
+        branchDiff: '+branch',
+        commits: {
+          lines: [
+            {
+              sha: sha('1'),
+              subject: "Merge branch 'agent/1065' into HEAD",
+              ticket: { n: 1065, title: { known: 'T' } },
+            },
+            { sha: sha('2'), subject: "Merge branch 'agent/9' into HEAD", ticket: { n: 9, title: { none: true } } },
+            { sha: sha('3'), subject: "Merge branch 'agent/8' into HEAD", ticket: { n: 8, title: { failed: 'boom' } } },
+            { sha: sha('4'), subject: "Merge branch 'main' of x" },
+            { sha: '', subject: 'odd record' },
+          ],
+        },
+      },
+      { path: 'b.ts', diff: '+two' },
+    ])
+
+    expect(block).toContain('What landed here:')
+    expect(block).toContain('`1111111` #1065 — T')
+    expect(block).toContain('#9 (no title for #9 in this log)')
+    expect(block).toContain('#8 (title not read: boom)')
+    expect(block).toContain("`4444444` Merge branch 'main' of x")
+    expect(block).toContain('- odd record')
+    expect(block).toContain(`What this branch did to it, \`${'f'.repeat(7)}..${'b'.repeat(7)}\`:`)
+    expect(block).toContain('+branch')
+    expect(block).toContain('Did the resolution drop or undo any of these base changes?')
+  })
+
+  it('says what it found when there are no commits or no branch change, and when a read failed', () => {
+    const section = landedPathsSection(
+      moved,
+      [
+        { path: 'a.ts', diff: '+x', branchDiff: '', commits: { lines: [] } },
+        { path: 'c.ts', diff: '+y', branchDiff: '+z', commits: { failed: 'no git' } },
+      ],
+      400,
+    )
+
+    expect(section).toContain('(no first-parent commit in')
+    expect(section).toContain('(this branch did not change this path)')
+    expect(section).toContain('[could not read the commits: no git]')
+  })
+
+  it('counts commit lines and both diffs against one cap, and names what it cut and left out', () => {
+    const lines = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `+${tag}${i}`).join('\n')
+    const section = landedPathsSection(
+      moved,
+      [
+        {
+          path: 'a.ts',
+          diff: lines(5, 'a'),
+          branchDiff: lines(10, 'b'),
+          commits: { lines: [{ sha: sha('1'), subject: 's1' }] },
+        },
+        { path: 'b.ts', diff: lines(3, 'c') },
+      ],
+      8,
+    )
+
+    expect(section).toContain('Cut at 8 lines: a.ts (cut in: branch diff).')
+    expect(section).toContain('Left out, past the 8-line cap: b.ts.')
+    const cutInBase = landedPathsSection(
+      moved,
+      [{ path: 'a.ts', diff: lines(20, 'a'), branchDiff: lines(3, 'b'), commits: { lines: [] } }],
+      5,
+    )
+    expect(cutInBase).toContain('a.ts (cut in: base diff)')
+    expect(cutInBase).toContain('(not shown: past the cap)')
+    expect(cutInBase).not.toContain('+b0')
+  })
+
+  it('renders an entry without commits as #594 did', () => {
+    const block = landedOnBaseBlock({ paths: ['a.ts'], fromSha: 'f', toSha: 't' }, [{ path: 'a.ts', diff: '+one\n' }])
+
+    expect(block).toContain('### a.ts\n\n```diff\n+one\n```\n\nDoes what landed')
   })
 })
 
