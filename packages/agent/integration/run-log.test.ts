@@ -16,13 +16,14 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
   NO_RUN_LOG,
   RUN_LOG_END,
   RUN_LOG_MAX_BYTES,
-  openRunLog,
+  openRunLogEffect,
   runLogEnd,
   runLogEnded,
   runLogLine,
@@ -42,25 +43,25 @@ afterAll(async () => {
 describe("a run's log file", () => {
   it('is 0600, and creates the directory it needs', async () => {
     const path = join(home, 'runs', 'purecheck', 'run-mode.log')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
     log.note('Read', 'packages/agent/src/claude-code.ts')
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
 
     // `& 0o777` because the mode carries the file type bits too.
     expect((await stat(path)).mode & 0o777).toBe(0o600)
-    // The directory the conductor never made: `openRunLog` is handed a path and
+    // The directory the conductor never made: `openRunLogEffect` is handed a path and
     // is expected to be able to write to it.
     expect((await stat(join(home, 'runs', 'purecheck'))).isDirectory()).toBe(true)
   })
 
   it('writes one line per fact, timestamped, whatever the agent typed', async () => {
     const path = join(home, 'runs', 'purecheck', 'run-lines.log')
-    const log = await openRunLog({ path, started: new Date('2026-09-09T14:22:03.145Z') })
+    const log = await Effect.runPromise(openRunLogEffect({ path, started: new Date('2026-09-09T14:22:03.145Z') }))
     log.note('Read', 'packages/agent/src/claude-code.ts')
     // A `Bash` command with a newline in it would otherwise break `tail -f` and
     // every reader after it — including `#110`, which is a person.
     log.note('Bash', 'pnpm typecheck\n  && pnpm test')
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
 
     const lines = (await readFile(path, 'utf8')).split('\n').filter(Boolean)
     expect(lines[0]).toContain('2026-09-09T14:22:03.145Z')
@@ -72,13 +73,13 @@ describe("a run's log file", () => {
 
   it('stops at the cap and says so on the line it stops at', async () => {
     const path = join(home, 'runs', 'purecheck', 'run-cap.log')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
     // Nine megabytes of `Read`, against an eight megabyte cap.
     const fat = 'x'.repeat(90_000)
     for (let i = 0; i < 100; i += 1) log.note('Read', fat)
     log.note('Bash', 'this line is past the end and must not be here')
     log.note(RUN_LOG_END, runLogEnd(false))
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
 
     const text = await readFile(path, 'utf8')
     expect(text).toContain(`truncated: this log reached RUN_LOG_MAX_BYTES (${RUN_LOG_MAX_BYTES} bytes)`)
@@ -100,10 +101,10 @@ describe("a run's log file", () => {
     const kept = join(home, 'runs', 'purecheck', 'run-kept.log')
     const gone = join(home, 'runs', 'purecheck', 'run-gone.log')
 
-    const a = await openRunLog({ path: kept })
-    await a.close('keep')
-    const b = await openRunLog({ path: gone })
-    await b.close('delete')
+    const a = await Effect.runPromise(openRunLogEffect({ path: kept }))
+    await Effect.runPromise(a.close('keep'))
+    const b = await Effect.runPromise(openRunLogEffect({ path: gone }))
+    await Effect.runPromise(b.close('delete'))
 
     expect((await stat(kept)).isFile()).toBe(true)
     await expect(stat(gone)).rejects.toThrow()
@@ -119,7 +120,7 @@ describe("a run's log file", () => {
   it('has a shape that does nothing, for when there is no file', async () => {
     expect(NO_RUN_LOG.path).toBe('')
     NO_RUN_LOG.note('Read', 'nowhere')
-    await NO_RUN_LOG.close('delete')
+    await Effect.runPromise(NO_RUN_LOG.close('delete'))
   })
 
   it('formats a line the way 0034 §3 draws one', () => {

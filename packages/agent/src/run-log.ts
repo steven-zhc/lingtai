@@ -12,7 +12,7 @@
  * and only there; this file explains and never settles. The distinction has a
  * test: if some behaviour would change depending on this file's contents, the
  * design is wrong. So `reconcile` looks at whether one exists, never at what is
- * in it, and `followRunLog` below — the reading half, `#110` — takes exactly one
+ * in it, and `followRunLogStream` below — the reading half, `#110` — takes exactly one
  * thing from the contents and it is not about the run: `RUN_LOG_END` says the
  * writer has let go, so a tail may stop waiting. Everything else it does is
  * hand a line to a person unread.
@@ -33,7 +33,7 @@ import { mkdir, open, rm, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 
-import { Effect } from 'effect'
+import { Data, Effect, Option, Stream } from 'effect'
 
 import { AgentHostFailed } from './hook-config.ts'
 import {
@@ -122,7 +122,7 @@ export interface RunLog {
   readonly path: string
   /** One timestamped line. Returns immediately; the write is behind it. */
   note(label: string, detail?: string): void
-  close(fate: 'keep' | 'delete'): Promise<void>
+  close(fate: 'keep' | 'delete'): Effect.Effect<void>
 }
 
 /**
@@ -136,7 +136,7 @@ export interface RunLog {
 export const NO_RUN_LOG: RunLog = {
   path: '',
   note: () => {},
-  close: () => Promise.resolve(),
+  close: () => Effect.void,
 }
 
 /**
@@ -233,7 +233,8 @@ export const openRunLogEffect = Effect.fn('agent.runLog')(function* (options: Op
       push(line)
     },
 
-    close: (fate) => closeRunLogFile(handle, tail, path, fate),
+    // `tail` is read when the Effect runs, never when `close` is called.
+    close: (fate) => Effect.suspend(() => closeRunLogEffect(handle, tail, path, fate)),
   }
   return log
 })
@@ -254,27 +255,6 @@ export const closeRunLogEffect = (
     yield* Effect.promise(() => handle.close().catch(() => {}))
     if (fate === 'delete') yield* Effect.promise(() => rm(path, { force: true }).catch(() => {}))
   })
-
-/**
- * The close above, as the promise `RunLog.close` is (a listed face, #790).
- * `tail` is passed as it stands when `close` is called, never when the log opened.
- */
-export function closeRunLogFile(
-  handle: FileHandle,
-  tail: Promise<unknown>,
-  path: string,
-  fate: 'keep' | 'delete',
-): Promise<void> {
-  return Effect.runPromise(closeRunLogEffect(handle, tail, path, fate))
-}
-
-/**
- * The Effect above, as the promise `apps/cli/src/discuss.ts` awaits (a listed face, #790).
- * Its rejection is the `AgentHostFailed`, not the raw fs error.
- */
-export function openRunLog(options: OpenRunLogOptions): Promise<RunLog> {
-  return Effect.runPromise(openRunLogEffect(options))
-}
 
 /**
  * How often a follower looks for more.
@@ -327,6 +307,37 @@ export interface FollowRunLogOptions {
   signal?: AbortSignal
 }
 
+/** A read on a file that opened failed. Not `removed`: that claims the run landed. */
+export class RunLogFollowFailed extends Data.TaggedError('RunLogFollowFailed')<{
+  readonly path: string
+  readonly cause: unknown
+}> {}
+
+/**
+ * Whole lines out of what has been read so far, up to and including the first
+ * that ends the log. Pure, so the split-line and split-character claims can be
+ * held without a file. `pending` is what is left: an unfinished line.
+ */
+export function wholeLines(pending: string): {
+  readonly items: ReadonlyArray<RunLogFollowed>
+  readonly pending: string
+  readonly ended: boolean
+} {
+  const items: RunLogFollowed[] = []
+  let rest = pending
+  for (let nl = rest.indexOf('\n'); nl >= 0; nl = rest.indexOf('\n')) {
+    const line = rest.slice(0, nl)
+    rest = rest.slice(nl + 1)
+    items.push({ line })
+    const ended = runLogEnded(line)
+    if (ended) {
+      items.push({ ended })
+      return { items, pending: rest, ended: true }
+    }
+  }
+  return { items, pending: rest, ended: false }
+}
+
 /**
  * The file, from the beginning, and then as it grows.
  *
@@ -341,84 +352,97 @@ export interface FollowRunLogOptions {
  *
  * **Whole lines only.** A `read` lands wherever the disk left it, so both a
  * partial line and a partial UTF-8 character are ordinary, and half a line
- * yielded as a line is a fragment of a fact read as the whole one —
+ * emitted as a line is a fragment of a fact read as the whole one —
  * `lineReader` in `claude-code.ts` states the same rule for the same reason.
+ *
+ * The handle lives as long as the stream: it is closed on an ending, on
+ * interruption and when a consumer stops early. A signal that aborts ends the
+ * stream with no ending element. A failed open is an ending (`removed`); a
+ * failed read is a `RunLogFollowFailed`.
  */
-export async function* followRunLog(options: FollowRunLogOptions): AsyncGenerator<RunLogFollowed> {
+export const followRunLogStream = (options: FollowRunLogOptions): Stream.Stream<RunLogFollowed, RunLogFollowFailed> => {
   const pollMs = options.pollMs ?? RUN_LOG_POLL_MS
+  const path = options.path
+  const failed = (cause: unknown) => new RunLogFollowFailed({ path, cause })
 
-  let handle: FileHandle
-  try {
-    handle = await open(options.path, 'r')
-  } catch {
-    // Not there to begin with. `findRunLog` is how a caller tells this apart
-    // from a run id nobody has heard of; here it is simply an ending.
-    yield { ended: 'removed' }
-    return
+  const followHandle = (handle: FileHandle): Stream.Stream<RunLogFollowed, RunLogFollowFailed> => {
+    const decoder = new StringDecoder('utf8')
+    const buffer = Buffer.alloc(64 * 1024)
+    return Stream.unwrap(
+      Effect.gen(function* () {
+        // Which file this handle is, so a *new* file at the same path is seen as
+        // this one ending. `answerDiscussion` removes a dead daemon's leftover and
+        // opens its own a few milliseconds later, well inside one poll: `stat` on
+        // the path then succeeds, and a follower that asked only whether the path
+        // exists tails the unlinked leftover for the whole of the new answer (#132).
+        // The inode cannot be reused while this handle holds it open.
+        const own = yield* Effect.tryPromise({ try: () => handle.stat(), catch: failed })
+
+        // The wait belongs before a read, not after one: a pass that found lines
+        // hands them on at once and sleeps on the next pull.
+        const step = ([pending, first]: readonly [string, boolean]) =>
+          Effect.gen(function* () {
+            if (!first) yield* Effect.sleep(pollMs)
+            // Everything since the last pass. `position: null` advances the handle's
+            // own cursor, which is what makes this a tail and not a re-read.
+            let text = pending
+            for (;;) {
+              const { bytesRead } = yield* Effect.tryPromise({
+                try: () => handle.read(buffer, 0, buffer.length, null),
+                catch: failed,
+              })
+              if (bytesRead === 0) break
+              text += decoder.write(buffer.subarray(0, bytesRead))
+            }
+            const split = wholeLines(text)
+            if (split.ended) return [split.items, Option.none<readonly [string, boolean]>()] as const
+
+            // Read first, then ask. A run that landed writes its last line and then
+            // deletes the file, and in that order the last line is never lost — the
+            // handle above outlives the unlink, so the drain just above has already
+            // taken everything the writer wrote.
+            // Gone, or a different file where it was — both are this one ending.
+            const now = yield* Effect.promise(() => stat(path).catch(() => null))
+            if (now === null || now.ino !== own.ino || now.dev !== own.dev) {
+              return [
+                [...split.items, { ended: 'removed' } as const],
+                Option.none<readonly [string, boolean]>(),
+              ] as const
+            }
+            return [split.items, Option.some([split.pending, false] as const)] as const
+          })
+        return Stream.paginate(['', true] as const, step)
+      }),
+    )
   }
 
-  const decoder = new StringDecoder('utf8')
-  const buffer = Buffer.alloc(64 * 1024)
-  let pending = ''
+  const followed = Stream.unwrap(
+    Effect.tryPromise({ try: () => open(path, 'r'), catch: failed }).pipe(
+      // Not there to begin with. `findRunLog` is how a caller tells this apart
+      // from a run id nobody has heard of; here it is simply an ending.
+      Effect.map((handle): Stream.Stream<RunLogFollowed, RunLogFollowFailed> => {
+        return Stream.unwrap(
+          Effect.acquireRelease(Effect.succeed(handle), (h) => Effect.promise(() => h.close().catch(() => {}))).pipe(
+            Effect.map(followHandle),
+          ),
+        )
+      }),
+      Effect.catch(() => Effect.succeed(Stream.make<RunLogFollowed[]>({ ended: 'removed' }))),
+    ),
+  )
 
-  try {
-    // Which file this handle is, so a *new* file at the same path is seen as
-    // this one ending. `answerDiscussion` removes a dead daemon's leftover and
-    // opens its own a few milliseconds later, well inside one poll: `stat` on
-    // the path then succeeds, and a follower that asked only whether the path
-    // exists tails the unlinked leftover for the whole of the new answer (#132).
-    // The inode cannot be reused while this handle holds it open.
-    const own = await handle.stat()
-
-    for (;;) {
-      if (options.signal?.aborted) return
-
-      // Everything since the last pass. `position: null` advances the handle's
-      // own cursor, which is what makes this a tail and not a re-read.
-      for (;;) {
-        const { bytesRead } = await handle.read(buffer, 0, buffer.length, null)
-        if (bytesRead === 0) break
-        pending += decoder.write(buffer.subarray(0, bytesRead))
-      }
-
-      for (let nl = pending.indexOf('\n'); nl >= 0; nl = pending.indexOf('\n')) {
-        const line = pending.slice(0, nl)
-        pending = pending.slice(nl + 1)
-        yield { line }
-        const ended = runLogEnded(line)
-        if (ended) {
-          yield { ended }
-          return
-        }
-      }
-
-      // Read first, then ask. A run that landed writes its last line and then
-      // deletes the file, and in that order the last line is never lost — the
-      // handle above outlives the unlink, so the drain just above has already
-      // taken everything the writer wrote.
-      // Gone, or a different file where it was — both are this one ending.
-      const now = await stat(options.path).catch(() => null)
-      if (now === null || now.ino !== own.ino || now.dev !== own.dev) {
-        yield { ended: 'removed' }
-        return
-      }
-
-      await pause(pollMs, options.signal)
-    }
-  } finally {
-    await handle.close().catch(() => {})
-  }
-}
-
-/** `setTimeout`, cut short by an abort, because a reader leaving should not wait. */
-function pause(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const done = () => {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', done)
-      resolve()
-    }
-    const timer = setTimeout(done, ms)
-    signal?.addEventListener('abort', done, { once: true })
-  })
+  const signal = options.signal
+  if (!signal) return followed
+  // The reader went away: ends the follow with no ending, and a sleep in
+  // progress is cut short with it.
+  return followed.pipe(
+    Stream.interruptWhen(
+      Effect.callback<void>((resume) => {
+        if (signal.aborted) return resume(Effect.void)
+        const onAbort = () => resume(Effect.void)
+        signal.addEventListener('abort', onAbort, { once: true })
+        return Effect.sync(() => signal.removeEventListener('abort', onAbort))
+      }),
+    ),
+  )
 }

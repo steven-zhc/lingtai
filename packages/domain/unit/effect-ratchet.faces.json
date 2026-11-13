@@ -54,18 +54,6 @@
     "why": "Runtime.checkAuth callers and apps/board/src/lib/recipe.ts await it; 0101 §7 lets the board keep a promise face"
   },
   {
-    "file": "packages/agent/src/run-log.ts",
-    "fn": "closeRunLogFile",
-    "until": "#790",
-    "why": "RunLog.close is a promise method: packages/conductor/src/conduct.ts hands the inner log's own promise on, and apps/cli/src/discuss.ts:439 awaits it; until RunLog.close is an Effect"
-  },
-  {
-    "file": "packages/agent/src/run-log.ts",
-    "fn": "openRunLog",
-    "until": "#790",
-    "why": "apps/cli/src/discuss.ts awaits it, until CLI-16b"
-  },
-  {
     "file": "packages/agent/src/runtime.ts",
     "fn": "runtimeRun",
     "until": "#790",

@@ -41,7 +41,7 @@ import {
   meetsTier,
   missingForTier,
   neverStarted,
-  openRunLog,
+  openRunLogEffect,
   parseResult,
   renderSettings,
   sessionIdFor,
@@ -728,14 +728,14 @@ describe("the agent's output in the run log", () => {
    */
   it('interleaves with the hook trace in one readable file', async () => {
     const path = join(root, 'interleaved.log')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
     log.note('run', 'pass-01JX · ticket-lingtai-109 · agent/109 → main')
 
     const binary = await fakeStream(stream())
     await Effect.runPromise(createClaudeCodeRuntime({ binary }).run(request({ log })))
 
     log.note('run', 'did not land — this file is kept, and is the only account of why')
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
 
     const written = (await readFile(path, 'utf8')).split('\n')
     expect(written[0]).toContain('lingtai run log · started')

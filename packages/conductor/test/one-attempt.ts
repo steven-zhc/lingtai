@@ -941,7 +941,7 @@ export function fakePorts(
           return {
             path: o.path,
             note: (label: string, detail = '') => void did.push(`note ${label} ${detail}`.trimEnd()),
-            close: async (fate: 'keep' | 'delete') => void did.push(`runLog ${fate}`),
+            close: (fate: 'keep' | 'delete') => Effect.sync(() => void did.push(`runLog ${fate}`)),
           }
         }),
     },

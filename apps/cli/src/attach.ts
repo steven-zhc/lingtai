@@ -27,7 +27,14 @@
  * run's own, byte for byte, and so is each ending: a log is a trace somebody
  * greps, and painting it would make the file and the screen disagree.
  */
-import { findRunLog, followRunLog, listRunLogs } from '@lingtai/conductor/run-log'
+import {
+  findRunLogEffect,
+  followRunLogStream,
+  listRunLogsEffect,
+  type FollowRunLogOptions,
+  type RunLogFollowed,
+} from '@lingtai/conductor/run-log'
+import { Effect, Stream } from 'effect'
 
 import { heading, keyValues, symbol } from './output.ts'
 
@@ -39,62 +46,76 @@ export interface AttachOptions {
   err?: (line: string) => void
   /** Ends the follow the way Ctrl-C does. */
   signal?: AbortSignal
+  /** The file reads, overridable so a test needs no file (0060 §1). */
+  find?: typeof findRunLogEffect
+  list?: typeof listRunLogsEffect
+  follow?: (options: FollowRunLogOptions) => Stream.Stream<RunLogFollowed, unknown>
 }
 
-export async function attach(options: AttachOptions): Promise<number> {
-  const out = options.out ?? ((line: string) => console.log(line))
-  const err = options.err ?? ((line: string) => console.error(line))
+export const attach = (options: AttachOptions): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    const out = options.out ?? ((line: string) => console.log(line))
+    const err = options.err ?? ((line: string) => console.error(line))
 
-  const found = await findRunLog(options.runId, options.home)
-  if (!found) {
-    // Deliberately not "no such run". This command knows about files and not
-    // about runs, so the two things it cannot tell apart — a run id nobody has
-    // heard of, and a run that landed and took its log with it (0034 §4) — are
-    // named as the one question it can answer, with the list somebody wanting
-    // to attach almost always actually wanted.
-    err(`${symbol.fail()} no run log for ${options.runId}`)
-    err('Either the run landed — a log is deleted when its diff reaches the base branch — or the id is not one.')
-    const logs = await listRunLogs(options.home)
-    if (logs.length === 0) {
-      err('There are no run logs on this machine.')
-    } else {
-      err('')
-      err('Logs that are here, newest first:')
-      for (const log of logs.slice(0, ATTACH_LIST_MAX)) err(`  ${log.runId}\t${log.project}`)
-      if (logs.length > ATTACH_LIST_MAX) err(`  … and ${logs.length - ATTACH_LIST_MAX} more`)
+    const found = yield* (options.find ?? findRunLogEffect)(options.runId, options.home)
+    if (!found) {
+      // Deliberately not "no such run". This command knows about files and not
+      // about runs, so the two things it cannot tell apart — a run id nobody has
+      // heard of, and a run that landed and took its log with it (0034 §4) — are
+      // named as the one question it can answer, with the list somebody wanting
+      // to attach almost always actually wanted.
+      err(`${symbol.fail()} no run log for ${options.runId}`)
+      err('Either the run landed — a log is deleted when its diff reaches the base branch — or the id is not one.')
+      const logs = yield* (options.list ?? listRunLogsEffect)(options.home)
+      if (logs.length === 0) {
+        err('There are no run logs on this machine.')
+      } else {
+        err('')
+        err('Logs that are here, newest first:')
+        for (const log of logs.slice(0, ATTACH_LIST_MAX)) err(`  ${log.runId}\t${log.project}`)
+        if (logs.length > ATTACH_LIST_MAX) err(`  … and ${logs.length - ATTACH_LIST_MAX} more`)
+      }
+      return 1
     }
-    return 1
-  }
 
-  for (const line of attachHeader(found)) out(line)
+    for (const line of attachHeader(found)) out(line)
 
-  for await (const seen of followRunLog({
-    path: found.path,
-    ...(options.signal ? { signal: options.signal } : {}),
-  })) {
-    if ('line' in seen) {
-      out(seen.line)
-      continue
-    }
-    // The file's ending, which is not the run's verdict — see the header.
-    out(
-      seen.ended === 'removed'
-        ? '— the log is gone. Its run landed, or its work item did, and a landed run has nothing left to explain (0034 §4, §5)'
-        : `— the run log ends here. ${seen.ended === 'landed' ? 'It is about to be deleted' : `It is kept at ${found.path}`}`,
+    let ended = false
+    yield* (options.follow ?? followRunLogStream)({
+      path: found.path,
+      ...(options.signal ? { signal: options.signal } : {}),
+    }).pipe(
+      Stream.runForEach((seen) =>
+        Effect.sync(() => {
+          if ('line' in seen) {
+            out(seen.line)
+            return
+          }
+          ended = true
+          // The file's ending, which is not the run's verdict — see the header.
+          out(
+            seen.ended === 'removed'
+              ? '— the log is gone. Its run landed, or its work item did, and a landed run has nothing left to explain (0034 §4, §5)'
+              : `— the run log ends here. ${seen.ended === 'landed' ? 'It is about to be deleted' : `It is kept at ${found.path}`}`,
+          )
+        }),
+      ),
+      // A read that failed is the viewer's trouble, said once and not fatal to the exit status.
+      Effect.catch((cause) =>
+        Effect.sync(() => err(`${symbol.fail()} could not read ${found.path}: ${String(cause)}`)),
+      ),
     )
+
+    // Only reachable without an ending through the signal. Said out loud
+    // because a `tail` that simply stops looks the same as a run that simply
+    // stopped, and only one of those is happening.
+    if (!ended) out(`— detached. The run is still going; its log is at ${found.path}`)
+
+    // Zero for a follow that worked, whatever the run did. A viewer's exit status
+    // is about the viewing: making it carry the run's verdict would be this file
+    // settling something, which is the one thing 0034 §8 forbids it.
     return 0
-  }
-
-  // Only reachable through the signal: the loop above returns on an ending and
-  // otherwise waits. Said out loud because a `tail` that simply stops looks the
-  // same as a run that simply stopped, and only one of those is happening.
-  out(`— detached. The run is still going; its log is at ${found.path}`)
-
-  // Zero for a follow that worked, whatever the run did. A viewer's exit status
-  // is about the viewing: making it carry the run's verdict would be this file
-  // settling something, which is the one thing 0034 §8 forbids it.
-  return 0
-}
+  })
 
 /** The heading, where the log is, and one blank line before the run's own lines. */
 export function attachHeader(found: { project: string; path: string }): string[] {

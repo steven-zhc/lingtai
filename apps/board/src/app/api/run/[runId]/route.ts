@@ -26,7 +26,8 @@
  */
 import { stat } from 'node:fs/promises'
 
-import { findRunLog, followRunLog, RUN_LOG_POLL_MS, runLogQuiet } from '@lingtai/conductor/run-log'
+import { findRunLog, followRunLogStream, RUN_LOG_POLL_MS, runLogQuiet } from '@lingtai/conductor/run-log'
+import { Stream } from 'effect'
 
 export const dynamic = 'force-dynamic'
 
@@ -80,7 +81,9 @@ export async function GET(request: Request, context: { params: Promise<{ runId: 
       const looking = setInterval(() => void look(), RUN_LOG_POLL_MS * 4)
 
       try {
-        for await (const seen of followRunLog({ path: found.path, signal: detach.signal })) {
+        for await (const seen of Stream.toAsyncIterable(
+          followRunLogStream({ path: found.path, signal: detach.signal }),
+        )) {
           if ('line' in seen) {
             // JSON, so a line carrying anything at all — the agent printed it —
             // cannot break the frame it is inside.

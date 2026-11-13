@@ -1,10 +1,10 @@
 {
-  "apps/cli": { "async": 116, "run": 1 },
+  "apps/cli": { "async": 115, "run": 1 },
   "packages/event-store": { "async": 0, "run": 0 },
   "packages/projector": { "async": 0, "run": 0 },
   "packages/github": { "async": 0, "run": 0 },
   "packages/repo": { "async": 0, "run": 0 },
-  "packages/agent": { "async": 1, "run": 0 },
+  "packages/agent": { "async": 0, "run": 0 },
   "packages/actions": { "async": 0, "run": 0 },
   "packages/conductor": { "async": 0, "run": 0 },
   "packages/daemon": { "async": 0, "run": 0 },
