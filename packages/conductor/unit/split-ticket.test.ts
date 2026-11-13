@@ -398,6 +398,26 @@ describe('splitTicketHolding', () => {
     expect(splitProgressOf(await store.read(ticketId), { ...ME, running: false }).state).toBe('done')
   })
 
+  it('answers a second child whose createIssue throws as that step failing, and resolves rather than rejecting', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    const create = gh.client.createIssue
+    gh.client.createIssue = ((input: Parameters<typeof create>[0]) => {
+      // Thrown synchronously, not returned as a rejection.
+      if (input.title === 'part b') throw new Error('GitHub blipped')
+      return create(input)
+    }) as typeof create
+    const result = await go()
+    expect(result.ok).toBe(false)
+    expect(result.detail).toBe(
+      'write b failed: GitHub blipped. Nothing was finished — call again to write what is missing.',
+    )
+    expect(result.steps.find((s) => s.name === 'write b')).toMatchObject({ status: 'failed', detail: 'GitHub blipped' })
+    expect(result.children).toEqual([{ key: 'a', number: expect.any(Number) }])
+    const failed = (await store.read(ticketId)).filter((e) => e.type === 'SplitFailed')
+    expect(failed).toHaveLength(1)
+    expect(failed[0]!.data).toMatchObject({ step: 'write b' })
+  })
+
   it('leaves the page interrupted, not writing, when the final SplitFailed append throws', async () => {
     const { store, ticketId, gh, go, ME } = await setup()
     const real = store.append.bind(store)
