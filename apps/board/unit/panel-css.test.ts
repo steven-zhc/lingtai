@@ -49,3 +49,19 @@ describe('the panel rules', () => {
     expect(ask.filter((x) => /detail--(queued|running|framed)/.test(x))).toEqual([])
   })
 })
+
+describe('the sticky footer (#1123)', () => {
+  const block = (sel: string) =>
+    new RegExp(`(?:^|\\})\\s*${sel.replace(/[.()]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(css)?.[1] ?? ''
+
+  it('.footer is sticky at the bottom of the window', () => {
+    const b = block('.footer')
+    expect(b).toContain('position: sticky')
+    expect(b).toContain('bottom: 0')
+  })
+
+  it('.rfile leaves room for the footer, and only where one exists', () => {
+    expect(block('.rfile')).toContain('var(--footer-h')
+    expect(block(':root:has(.footer)')).toContain('--footer-h')
+  })
+})
