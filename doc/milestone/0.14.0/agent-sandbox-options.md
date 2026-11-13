@@ -177,7 +177,7 @@ Codex 这边已经有自带的 `workspace-write` 沙箱。加上 srt 之后，�
 
 ## 候选三：Lingtai 自己的 Docker 镜像（服务器场景）
 
-[vibe-kanban-demand-vs-lingtai.md](../../research/vibe-kanban-demand-vs-lingtai.md) 的 Docker 专题已经讨论过：把整个 Lingtai 连同 agent 放进一个容器部署到服务器。
+[vibe-kanban-demand-vs-lingtai.md](../0.16.0/vibe-kanban-demand-vs-lingtai.md) 的 Docker 专题已经讨论过：把整个 Lingtai 连同 agent 放进一个容器部署到服务器。
 
 - 容器本身就是边界：agent 看不到宿主机，只看得到挂进去的目录。这一层不需要 OpenSandbox。
 - 想在容器里再对每次运行做隔离会比较麻烦：bubblewrap 在没有特权的容器里经常起不来。所以服务器场景先只靠容器这一层就够了。
@@ -229,4 +229,4 @@ E2B、Daytona、Modal 之类把 agent 放到别人的云上跑。这和 Lingtai"
 ## 相关
 
 - [safety.md](../../safety.md)：今天每个运行时能读什么、能写什么，以及 #339 之前的状态。
-- [vibe-kanban-demand-vs-lingtai.md](../../research/vibe-kanban-demand-vs-lingtai.md)：Docker 专题里提到"放进容器能顺带隔离 agent"，本文把这条展开。
+- [vibe-kanban-demand-vs-lingtai.md](../0.16.0/vibe-kanban-demand-vs-lingtai.md)：Docker 专题里提到"放进容器能顺带隔离 agent"，本文把这条展开。

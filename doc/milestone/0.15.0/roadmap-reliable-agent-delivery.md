@@ -1,10 +1,10 @@
 # Lingtai Roadmap — Reliable, Simple, Transparent Agent Delivery
 
-**Status: Draft / Discussion · 2026-11-10** · **计划版本：0.15.0**（第 6 节的首个交付切片）。0.14.0 是安全，见 [agent-sandbox-options.md](../milestone/0.14.0/agent-sandbox-options.md)；0.16.0 是承接 Vibe Kanban 用户。
+**Status: Draft / Discussion · 2026-11-10** · **计划版本：0.15.0**（第 6 节的首个交付切片）。0.14.0 是安全，见 [agent-sandbox-options.md](../0.14.0/agent-sandbox-options.md)；0.16.0 是承接 Vibe Kanban 用户。
 
 让开发者放心地把任务交给 Lingtai：系统自主完成、可靠合并，并能解释每一次执行和交付决策。
 
-这是一份供后续讨论、核验和拆票使用的候选需求基线，不是已批准的实现计划，不代表下述能力全部缺失，也不替代现有 ADR、[roadmap](../roadmap.md) 或 [1.0 target](../design/1.0.md)。本次只新增此文件；不创建 GitHub Issues，不安排执行，不提交代码。
+这是一份供后续讨论、核验和拆票使用的候选需求基线，不是已批准的实现计划，不代表下述能力全部缺失，也不替代现有 ADR、[roadmap](../../roadmap.md) 或 [1.0 target](../../design/1.0.md)。本次只新增此文件；不创建 GitHub Issues，不安排执行，不提交代码。
 
 ## 1. 来源与阅读方式
 
@@ -20,11 +20,11 @@
 
 | 已有依据 | 对本稿的约束 | 后续核验 |
 | --- | --- | --- |
-| [CLAUDE.md](../../CLAUDE.md) 的自主合并、recipe、修复及恢复说明 | Direct Merge、可配置检查、人工介入、fix rounds / restarts 是已有基础，不另造工作流 | 在实际 recipe、事件及故障场景中确认适用边界 |
-| [0.12 release 文档](../milestone/0.12.0/0.12.md) 的 receipt 部分 | 文档记载 `/landed`、任务页、落地 Issue 评论已承载交付记录，且 #806 已结束；不以本稿自动重启该票 | 对照三个入口逐字段找证据缺口，再决定是否增加页面或数据 |
+| [CLAUDE.md](../../../CLAUDE.md) 的自主合并、recipe、修复及恢复说明 | Direct Merge、可配置检查、人工介入、fix rounds / restarts 是已有基础，不另造工作流 | 在实际 recipe、事件及故障场景中确认适用边界 |
+| [0.12 release 文档](../0.12.0/0.12.md) 的 receipt 部分 | 文档记载 `/landed`、任务页、落地 Issue 评论已承载交付记录，且 #806 已结束；不以本稿自动重启该票 | 对照三个入口逐字段找证据缺口，再决定是否增加页面或数据 |
 | 同一文档的未纳入范围 | “说明缺失证据”和“重新检查”曾被暂缓，需要明确需求；每票预算上限也不自动加入本轮 | 本稿提出候选方向，不覆盖此前取舍 |
-| [ADR 0123](../decisions/0123-the-report-counts-what-the-log-holds.md) | 报表读取记录中的事实；未知成本不能当作零，解释不应凭空生成事实 | 复用现有事实来源和 reducer，成本与证据分清完整性 |
-| [ADR 0115](../decisions/0115-unit-gates-integration-follows.md) | 单元检查与外部依赖集成验证分开；不能把全部集成测试塞入每个 Ticket 的 Gate | 恢复故障实验在独立环境完成；记录未运行、跳过和合并后验证 |
+| [ADR 0123](../../decisions/0123-the-report-counts-what-the-log-holds.md) | 报表读取记录中的事实；未知成本不能当作零，解释不应凭空生成事实 | 复用现有事实来源和 reducer，成本与证据分清完整性 |
+| [ADR 0115](../../decisions/0115-unit-gates-integration-follows.md) | 单元检查与外部依赖集成验证分开；不能把全部集成测试塞入每个 Ticket 的 Gate | 恢复故障实验在独立环境完成；记录未运行、跳过和合并后验证 |
 
 “已有基础”只表示找到文档或入口依据；“待核验”表示还没有证明满足本稿验收；“候选增强”表示讨论中的增量。三者可以同时适用于一个需求。这里不宣称存在已证实的实现缺陷。
 

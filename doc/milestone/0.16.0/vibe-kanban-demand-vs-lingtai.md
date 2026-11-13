@@ -37,8 +37,8 @@ Lingtai 接不住的有四块：
 
 | VK 的需求 | 👍 | Lingtai | 依据 |
 |---|---|---|---|
-| **只在本地用、自托管、不依赖云**（[VK#3396](https://github.com/BloopAI/vibe-kanban/issues/3396)、[VK#3354](https://github.com/BloopAI/vibe-kanban/issues/3354)、[VK#3399](https://github.com/BloopAI/vibe-kanban/issues/3399)） | 19+5+3 | ✅ | `lingtai init --store sqlite --local`，记录存在本机的 SQLite 文件里；任务可以存在本地数据库，不需要 GitHub（`lingtai ticket new`，`packages/conductor/src/db-tickets.ts`）；看板是本地应用（[0111](../decisions/0111-the-board-is-a-local-app.md)） |
-| **AI 自己循环、自我验证**（"Ralph Wiggum mode"，[VK#1946](https://github.com/BloopAI/vibe-kanban/issues/1946)） | 20 | ✅ 核心能力 | 构建检查 → 独立审查（reviewer 不是写代码的那个 agent）→ 不通过就再给 agent 一轮修改（[0103](../decisions/0103-a-pass-is-ten-fixed-steps.md)、[0108](../decisions/0108-a-refusal-buys-a-round.md)）；daemon 不停地从队列取任务 |
+| **只在本地用、自托管、不依赖云**（[VK#3396](https://github.com/BloopAI/vibe-kanban/issues/3396)、[VK#3354](https://github.com/BloopAI/vibe-kanban/issues/3354)、[VK#3399](https://github.com/BloopAI/vibe-kanban/issues/3399)） | 19+5+3 | ✅ | `lingtai init --store sqlite --local`，记录存在本机的 SQLite 文件里；任务可以存在本地数据库，不需要 GitHub（`lingtai ticket new`，`packages/conductor/src/db-tickets.ts`）；看板是本地应用（[0111](../../decisions/0111-the-board-is-a-local-app.md)） |
+| **AI 自己循环、自我验证**（"Ralph Wiggum mode"，[VK#1946](https://github.com/BloopAI/vibe-kanban/issues/1946)） | 20 | ✅ 核心能力 | 构建检查 → 独立审查（reviewer 不是写代码的那个 agent）→ 不通过就再给 agent 一轮修改（[0103](../../decisions/0103-a-pass-is-ten-fixed-steps.md)、[0108](../../decisions/0108-a-refusal-buys-a-round.md)）；daemon 不停地从队列取任务 |
 | **定时心跳 prompt**（[VK#3039](https://github.com/BloopAI/vibe-kanban/issues/3039)：瞬时错误后自动重试、自动整理看板） | 7 | 🟡 | daemon 本身就在循环，有退避后重试，`lingtai now` 可以跳过退避；但不能"每 X 分钟跑一段自定义 prompt" |
 | **自动导入 GitHub issues 作为任务、双向同步**（[VK#1677](https://github.com/BloopAI/vibe-kanban/issues/1677)、[VK#479](https://github.com/BloopAI/vibe-kanban/issues/479)） | 9+7 | ✅ | issues 本身就是队列（recipe 的 `source.kinds`，`packages/conductor/src/discover.ts`）；完成后的关 issue、改标签由 `end` 步骤的 `close:`、`labels:` 做 |
 | **任务依赖 / 任务链 / 子任务**（[VK#1700](https://github.com/BloopAI/vibe-kanban/issues/1700)、[VK#1922](https://github.com/BloopAI/vibe-kanban/issues/1922)、[VK#876](https://github.com/BloopAI/vibe-kanban/issues/876)） | 8+7+6 | ✅ GitHub 项目 · 🟡 本地项目 | 用 GitHub 原生的 *blocked by*，有未关闭的阻塞就跳过（`discover.ts:155`）；拆分计划会创建子 issue 并自动连成链（`packages/conductor/src/split-ticket.ts`）。**本地数据库里的任务没有依赖**：`dependencies` 恒为 `{ blockedBy: 0 }`（`db-tickets.ts:28`），拆分子任务也只对 GitHub 项目有效。见下面的专题 |
@@ -46,7 +46,7 @@ Lingtai 接不住的有四块：
 | **合并后删除分支**（[VK#2680](https://github.com/BloopAI/vibe-kanban/issues/2680)） | 6 | ✅ | recipe 里在 `end:` 写 `refs: true, branch: true`（`packages/recipe/src/recipe.ts:841`），由 `packages/conductor/src/tell.ts:313` 执行 |
 | **把 `.env` 等被 git 忽略的文件带进 worktree**（`.worktreeinclude`，[VK#1947](https://github.com/BloopAI/vibe-kanban/issues/1947)） | 9 | 🟡 | 会往 worktree 写一个 env 文件，变量来自 recipe 声明的名字（`packages/repo/src/worktree.ts:215`）；不能拷贝任意被忽略的文件 |
 | **规格驱动开发**（spec → plan → tasks，[VK#1848](https://github.com/BloopAI/vibe-kanban/issues/1848)） | 8 | 🟡 | 十个步骤里有 `design`；agent 遇到没定的地方可以停下来问人（`asked`）；能拆分成子任务。没有访谈式生成规格的流程 |
-| **支持 Claude Code 的 `AskUserQuestion`**（[VK#1220](https://github.com/BloopAI/vibe-kanban/issues/1220)） | 7 | 🟡 | 只有 `admit`、`design`、`implement` 三个步骤里的 agent 能停下来问人（`asked`，[0103](../decisions/0103-a-pass-is-ten-fixed-steps.md) §4），问完任务停在 `waiting` 等人处理 |
+| **支持 Claude Code 的 `AskUserQuestion`**（[VK#1220](https://github.com/BloopAI/vibe-kanban/issues/1220)） | 7 | 🟡 | 只有 `admit`、`design`、`implement` 三个步骤里的 agent 能停下来问人（`asked`，[0103](../../decisions/0103-a-pass-is-ten-fixed-steps.md) §4），问完任务停在 `waiting` 等人处理 |
 | **更多 agent**：Kiro、goose、任意 ACP 客户端、Kimi、Mistral、OpenCode、Antigravity…（[VK#1708](https://github.com/BloopAI/vibe-kanban/issues/1708)、[VK#2162](https://github.com/BloopAI/vibe-kanban/issues/2162)、[VK#2365](https://github.com/BloopAI/vibe-kanban/issues/2365)、[VK#2463](https://github.com/BloopAI/vibe-kanban/issues/2463)、[VK#1812](https://github.com/BloopAI/vibe-kanban/issues/1812)、[VK#3492](https://github.com/BloopAI/vibe-kanban/issues/3492)） | 合计 50+ | ❌ **最大差距** | `RuntimeId = z.enum(['claude-code', 'codex'])`（`packages/domain/src/events.ts:140`） |
 | **自托管 GitLab**（[VK#1697](https://github.com/BloopAI/vibe-kanban/issues/1697)，**第一名**） | 26 | 🟡 | `repo.remote` 接受任何 git 地址，合并是本地 `git merge` 加 push，不走 PR；任务可以放本地数据库。所以"GitLab 当 remote + 本地任务"按设计应该能跑（推断，未验证）。GitLab issues 不能作为任务来源。见下面的专题 |
 | **保留经典看板、拖拽操作、跨项目全局视图**（[VK#2730](https://github.com/BloopAI/vibe-kanban/issues/2730)、[VK#2509](https://github.com/BloopAI/vibe-kanban/issues/2509)、[VK#2021](https://github.com/BloopAI/vibe-kanban/issues/2021)） | 15+15+6 | 🟡 | 有看板，列是 排队 / 运行中 / 等你处理 / 已落地；但列是从记录算出来的状态，不能拖拽改；能在项目间筛选 |
@@ -54,7 +54,7 @@ Lingtai 接不住的有四块：
 | **项目级聊天窗口**（[VK#3038](https://github.com/BloopAI/vibe-kanban/issues/3038)） | 5 | 🟡 | 有针对单个任务的讨论（`lingtai ask` / `discuss:`）和自动分诊（`triage:`）；没有项目级、能直接建任务的聊天 |
 | **定时开始某个任务**（[VK#709](https://github.com/BloopAI/vibe-kanban/issues/709)） | 6 | ❌ | |
 | **检查点 / 撤销改动**（[VK#2106](https://github.com/BloopAI/vibe-kanban/issues/2106)） | 3 | ❌ | 事件记录可以重放，但没有代码层面的撤销 |
-| **官方 Docker 镜像**（[VK#2471](https://github.com/BloopAI/vibe-kanban/issues/2471)、[VK#3440](https://github.com/BloopAI/vibe-kanban/issues/3440)） | 8 | ❌ | 用安装脚本装版本化的二进制（[0113](../decisions/0113-distribution-is-a-versioned-binary.md)） |
+| **官方 Docker 镜像**（[VK#2471](https://github.com/BloopAI/vibe-kanban/issues/2471)、[VK#3440](https://github.com/BloopAI/vibe-kanban/issues/3440)） | 8 | ❌ | 用安装脚本装版本化的二进制（[0113](../../decisions/0113-distribution-is-a-versioned-binary.md)） |
 
 ## 两种产品，两类用户
 
@@ -83,17 +83,17 @@ VK 的需求因此分成两类：
 
 ### Lingtai 做起来有多难
 
-**打包本身很容易。** Lingtai 已经为 `linux-x64` 和 `linux-arm64` 发布不依赖 Node 的单文件二进制，看板也一起打包了（[0113](../decisions/0113-distribution-is-a-versioned-binary.md)）。所以镜像就是"基础镜像 + 这个二进制 + git"，在 `.github/workflows/release.yml` 里加一步推到 ghcr.io 就行。
+**打包本身很容易。** Lingtai 已经为 `linux-x64` 和 `linux-arm64` 发布不依赖 Node 的单文件二进制，看板也一起打包了（[0113](../../decisions/0113-distribution-is-a-versioned-binary.md)）。所以镜像就是"基础镜像 + 这个二进制 + git"，在 `.github/workflows/release.yml` 里加一步推到 ghcr.io 就行。
 
 **难的是容器里的几件事。** VK#3410 踩的正是这类坑：
 
 1. **agent 的登录状态。** agent 以你的身份运行，用的是本机已登录的 Claude Code 或 Codex。容器里要么挂载 `~/.claude`，要么在容器里登录一次，所以镜像还得装 Claude Code 或 Codex 的 CLI。
 2. **状态目录要持久化。** `~/.lingtai` 里有配置、recipe、SQLite 记录、镜像仓库和 worktree，必须挂成卷。否则容器一重建，记录就没了。
-3. **要在前台跑。** `lingtai service` 管的是宿主机上的系统服务，容器里应该直接在前台跑 `lingtai start`。另外，正在跑的 daemon 不会用上新代码，所以换镜像版本时要先停掉排空（`lingtai shutdown`，[0102](../decisions/0102-one-conductor-holds-the-lock.md)），而不是直接杀容器。
-4. **看板没有登录验证。** 看板默认监听 `0.0.0.0:17820`，而且没有认证（[0111](../decisions/0111-the-board-is-a-local-app.md) §2）：能访问它的人，就能以这台机器的身份批准、重新排队、回答问题。放到 VPS 上必须配反向代理和认证，或者走 VPN / SSH 隧道。这一条要在文档里写在最显眼的位置。
+3. **要在前台跑。** `lingtai service` 管的是宿主机上的系统服务，容器里应该直接在前台跑 `lingtai start`。另外，正在跑的 daemon 不会用上新代码，所以换镜像版本时要先停掉排空（`lingtai shutdown`，[0102](../../decisions/0102-one-conductor-holds-the-lock.md)），而不是直接杀容器。
+4. **看板没有登录验证。** 看板默认监听 `0.0.0.0:17820`，而且没有认证（[0111](../../decisions/0111-the-board-is-a-local-app.md) §2）：能访问它的人，就能以这台机器的身份批准、重新排队、回答问题。放到 VPS 上必须配反向代理和认证，或者走 VPN / SSH 隧道。这一条要在文档里写在最显眼的位置。
 5. **git 和 GitHub 的凭证**：GitHub App 的私钥，以及推送用的凭证，都要用 secret 传进容器。
 
-**反过来，Docker 对 Lingtai 还有一个额外的好处：安全。** [safety.md](../safety.md) 写明，默认情况下 Claude Code 能读你能读的任何文件，包括 `~/.ssh`，Lingtai 不提供文件系统沙箱。放进容器后，agent 能看到的就只有挂进去的东西。这正好补上了 safety.md 里说的"agent 出不去的沙箱"（#339）还没做完的那块。本机场景该用什么沙箱，另见 [agent-sandbox-options.md](../milestone/0.14.0/agent-sandbox-options.md)。
+**反过来，Docker 对 Lingtai 还有一个额外的好处：安全。** [safety.md](../../safety.md) 写明，默认情况下 Claude Code 能读你能读的任何文件，包括 `~/.ssh`，Lingtai 不提供文件系统沙箱。放进容器后，agent 能看到的就只有挂进去的东西。这正好补上了 safety.md 里说的"agent 出不去的沙箱"（#339）还没做完的那块。本机场景该用什么沙箱，另见 [agent-sandbox-options.md](../0.14.0/agent-sandbox-options.md)。
 
 ### 判断
 
@@ -128,7 +128,7 @@ VK 的需求因此分成两类：
 - **能运行一个完全没有工具的 agent**（`tools: 'none'`）。做不到的会被拒绝（`ToolsCannotBeDenied`，`packages/agent/src/runtimes.ts:64`），不会退而求其次。
 - **`guarded` 这一档**要求 agent 自带的 hook 在连不上 Lingtai 时能让运行失败，而不是悄悄继续（`canFailClosed`）。
 
-[0106](../decisions/0106-a-role-keeps-its-powers-across-runtimes.md) 还规定，一个角色换了运行时也要保持同样的权限。
+[0106](../../decisions/0106-a-role-keeps-its-powers-across-runtimes.md) 还规定，一个角色换了运行时也要保持同样的权限。
 
 ### ACP 可能是一条近路
 
@@ -226,7 +226,7 @@ VK 的需求因此分成两类：
 | VK 迁移 | 低到中 | 中，用户在找去处 | 先写概念对照，等依赖做完再做导入 | 0.16.0 |
 | Docker | 低 | 中，还能隔离 agent | 先写部署文档，再发布镜像 | 不在 0.14.0–0.16.0 之内 |
 
-版本安排：0.14.0 是安全（见 [agent-sandbox-options.md](../milestone/0.14.0/agent-sandbox-options.md)），0.15.0 是本地可靠交付（见 [roadmap-reliable-agent-delivery.md](roadmap-reliable-agent-delivery.md)），0.16.0 是承接 VK 用户。VK 最热的三样（只在本地用、GitLab、任务依赖）在 0.15.0 就齐了，所以引流可以从 0.15.0 开始，0.16.0 再补 ACP、导入和看板拖拽。
+版本安排：0.14.0 是安全（见 [agent-sandbox-options.md](../0.14.0/agent-sandbox-options.md)），0.15.0 是本地可靠交付（见 [roadmap-reliable-agent-delivery.md](../0.15.0/roadmap-reliable-agent-delivery.md)），0.16.0 是承接 VK 用户。VK 最热的三样（只在本地用、GitLab、任务依赖）在 0.15.0 就齐了，所以引流可以从 0.15.0 开始，0.16.0 再补 ACP、导入和看板拖拽。
 
 另外两项也放进 0.16.0：看板拖拽映射成已有操作（拖到"已落地"是批准，拖回"排队"是重新排队，拖到一边是挂起），以及官网的"从 Vibe Kanban 过来"页面。
 
@@ -234,4 +234,4 @@ VK 的需求因此分成两类：
 
 ## 相关
 
-- [market-opportunities.md](market-opportunities.md)：2026-09-03 的市场研究。它的结论是"更多模型、更多入口、更漂亮的任务板"会让 Lingtai 变成功能更少的同类品。本文建议的 ACP 运行时（更多 agent）和那条判断有张力：这里的理由是 VK 用户的明确需求，而不是追赶同类品，两者应一起权衡。
+- [market-opportunities.md](../../research/market-opportunities.md)：2026-09-03 的市场研究。它的结论是"更多模型、更多入口、更漂亮的任务板"会让 Lingtai 变成功能更少的同类品。本文建议的 ACP 运行时（更多 agent）和那条判断有张力：这里的理由是 VK 用户的明确需求，而不是追赶同类品，两者应一起权衡。
