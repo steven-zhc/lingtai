@@ -1,39 +1,15 @@
 [
   {
-    "file": "packages/actions/src/action.ts",
-    "fn": "actionRunFace",
-    "until": "#790",
-    "why": "the tests in packages/actions and packages/conductor that call `action.run` on a promise `Action` — `conduct.ts` builds ports and calls no `create<Kind>Action` (#1056), so nothing else holds one"
-  },
-  {
-    "file": "packages/actions/src/action.ts",
-    "fn": "runActionPipeline",
-    "until": "#790",
-    "why": "the tests in packages/actions, packages/conductor and packages/recipe call it; no production caller since the pass runs the pipeline inside its own fiber (#1053)"
-  },
-  {
-    "file": "packages/actions/src/command.ts",
-    "fn": "runCommand",
-    "until": "#790",
-    "why": "packages/conductor/src/conduct.ts:288 hands it to the base check, and packages/setup/src/trial-build.ts:57, :67 call it as a promise"
-  },
-  {
-    "file": "packages/agent/src/auth.ts",
-    "fn": "askEveryRuntime",
-    "until": "#790",
-    "why": "packages/setup/src/runtimes.ts awaits it until the setup row"
-  },
-  {
     "file": "packages/agent/src/auth.ts",
     "fn": "claudeCodeAuth",
-    "until": "#790",
-    "why": "Runtime.checkAuth callers (apps/cli doctor, packages/conductor projects.ts) await it until the apps/cli row"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, through the signed-in probe"
   },
   {
     "file": "packages/agent/src/auth.ts",
     "fn": "codexAuth",
-    "until": "#790",
-    "why": "Runtime.checkAuth callers and apps/board/src/lib/recipe.ts await it; 0101 §7 lets the board keep a promise face"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/recipe.ts, and apps/board/src/app/actions.ts through the signed-in probe"
   },
   {
     "file": "packages/conductor/src/approve.ts",
@@ -373,33 +349,9 @@
   },
   {
     "file": "packages/github/src/app.ts",
-    "fn": "appInstallations",
-    "until": "#790",
-    "why": "packages/setup list-repositories"
-  },
-  {
-    "file": "packages/github/src/app.ts",
-    "fn": "installationRepositories",
-    "until": "#790",
-    "why": "packages/setup list-repositories"
-  },
-  {
-    "file": "packages/github/src/app.ts",
     "fn": "runGitHub",
-    "until": "#790",
-    "why": "the promise GitHubClient, installationForRepo, createAppReader and createGitHubClient, until row 7 yields GitHub"
-  },
-  {
-    "file": "packages/github/src/gh.ts",
-    "fn": "ghStatus",
-    "until": "#790",
-    "why": "conductor onboard.ts and repository-list.ts still await it; apps/cli init yields ghStatusEffect"
-  },
-  {
-    "file": "packages/github/src/manifest.ts",
-    "fn": "convertManifest",
-    "until": "#790",
-    "why": "conductor create-app"
+    "until": "0101 §7",
+    "why": "the promise `GitHubClient` that `githubClientFor`, `projectClient` and `ownerlessClient` hand the board is built from it, and the board calls its members: apps/board/src/lib/task.ts, apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/projector/src/backlog.ts",
@@ -560,61 +512,43 @@
   {
     "file": "packages/recipe/src/files.ts",
     "fn": "readFileFace",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
+    "until": "0101 §7",
+    "why": "`diskFiles.read` is this, and the board calls it: apps/board/src/lib/recipe.ts"
   },
   {
     "file": "packages/recipe/src/files.ts",
     "fn": "replaceFileFace",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
-  },
-  {
-    "file": "packages/recipe/src/local.ts",
-    "fn": "resolveLocalRecipe",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
+    "until": "0101 §7",
+    "why": "`diskFiles.replace` is this, in the same `diskFiles` object the board imports: apps/board/src/lib/recipe.ts"
   },
   {
     "file": "packages/recipe/src/resolve.ts",
     "fn": "resolveRecipe",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
-  },
-  {
-    "file": "packages/recipe/src/write.ts",
-    "fn": "readRecipeKey",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/recipe.ts"
   },
   {
     "file": "packages/recipe/src/write.ts",
     "fn": "saveRecipeText",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
-  },
-  {
-    "file": "packages/recipe/src/write.ts",
-    "fn": "setRecipe",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/repo/src/git.ts",
     "fn": "git",
-    "until": "#790",
-    "why": "apps/board (actions, expand-prompts) keeps it by 0101 §7; packages/conductor git-refs calls it as a promise"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/lib/expand-prompts.ts"
   },
   {
     "file": "packages/repo/src/mirror.ts",
     "fn": "mirrorBranchSha",
-    "until": "#790",
-    "why": "apps/board task.ts, mocked by name in apps/board/unit/timing-load-task.test.ts"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/repo/src/mirror.ts",
     "fn": "refSha",
-    "until": "#790",
-    "why": "apps/board task.ts and app/actions.ts"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/task.ts"
   }
 ]

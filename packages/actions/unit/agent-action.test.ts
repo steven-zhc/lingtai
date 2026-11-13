@@ -18,21 +18,12 @@ import {
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import {
-  NEEDS_INPUT,
-  type Action,
-  type ActionContext,
-  type ActionEvent,
-  type ActionFinding,
-  runActionPipeline,
-} from '../src/action.ts'
+import { NEEDS_INPUT, type Action, type ActionContext, type ActionEvent, type ActionFinding } from '../src/action.ts'
 import {
   type AgentActionDeps,
   buildDesignPrompt,
   designPromptParts,
   buildReviewPrompt,
-  createAgentAction,
-  createDraftAction,
   landedOnBaseBlock,
   landedPathsSection,
   parseDraft,
@@ -40,6 +31,7 @@ import {
   verdictFor,
 } from '../src/agent-action.ts'
 import { REVIEW_THAT_DID_NOT_PARSE } from '../test/fixtures/review-269-attempt-3.ts'
+import { createAgentAction, createDraftAction, runActionPipeline } from '../test/promise-actions.ts'
 
 const ISSUE = { ref: '58', title: 'alias-aware skill merging', body: 'merge skills by alias' }
 

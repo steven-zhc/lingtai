@@ -69,8 +69,6 @@ import { Cause, Effect, Exit } from 'effect'
 import {
   NEEDS_INPUT,
   liftPromise,
-  promiseAction,
-  type Action,
   type ActionPort,
   type ActionContext,
   type ActionFinding,
@@ -1061,11 +1059,6 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
   }
 }
 
-/** The review as an `Action`: `makeAgentAction` over lifted deps. */
-export function createAgentAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
-  return promiseAction(makeAgentAction(spec, agentPortDepsFrom(deps)))
-}
-
 /**
  * **Every branch `createAgentAction` can return, pulled out so `spent` can be
  * attached once after every one of them rather than copied into each**
@@ -1648,11 +1641,6 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
         return { ...draftAnswer(outcome, deps.runtime.capabilities.id), spent: spentOf(outcome, deps.runtime) }
       }),
   }
-}
-
-/** The draft as an `Action`: `makeDraftAction` over lifted deps. */
-export function createDraftAction(spec: AgentActionSpec, deps: AgentActionDeps): Action {
-  return promiseAction(makeDraftAction(spec, agentPortDepsFrom(deps)))
 }
 
 /**

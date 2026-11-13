@@ -112,13 +112,8 @@
  */
 import { readdir, readFile } from 'node:fs/promises'
 
-import {
-  type AgentActionDeps,
-  ActionUnavailableError,
-  type ActionDeps,
-  actionsFromRecipe,
-  verdictFor,
-} from '@lingtai/actions'
+import { type AgentActionDeps, ActionUnavailableError, type ActionDeps, verdictFor } from '@lingtai/actions'
+import { actionsFromRecipe } from '@lingtai/actions/promise-actions'
 import { type Finding, SEVERITIES, STEPS, type Severity, type Step } from '@lingtai/domain'
 import { type ActionKind, type StepAction, JudgeWhen, StepMap, PLUGINS, servesStep, whyNoKindAt } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'

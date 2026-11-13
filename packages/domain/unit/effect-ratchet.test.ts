@@ -1,16 +1,16 @@
 /**
  * 0101 §6: every backend function that does IO is an Effect, and `Effect.run*`
- * runs only at a host's edge. #790 moves the packages below over one at a
- * time; this holds each package's `async` functions and `Effect.run*`
- * references to only go down (#792).
+ * runs only at a host's edge. #790 has ended: every package below is held at
+ * 0/0, and this keeps each package's `async` functions and `Effect.run*`
+ * references from rising again (#792).
  *
  * Counted with the TypeScript parser, one `createSourceFile` per file and no
  * `Program` (#785) — a comment that names `runPromise` is not a run.
  *
  * A promise face is not counted. A face is an exported function whose whole body is
  * `return Effect.runPromise(<call>)`, or the generic `return Effect.runPromise(<parameter>, { signal })`,
- * kept for callers not yet moved (#790), and listed in `effect-ratchet.faces.json` with the issue that
- * deletes it. The shape is checked, not trusted: an entry that does anything else, or whose function is
+ * kept where a host reads through it (`0101 §7`) or under a named issue still open, and listed in
+ * `effect-ratchet.faces.json` with which. The shape is checked, not trusted: an entry that does anything else, or whose function is
  * gone, is a red. Only `runPromise`: a face that inspects an `Exit` or runs synchronously is a caller
  * doing work, and is counted.
  *
@@ -468,7 +468,7 @@ export function checkFaces(
         if (read(h) === undefined) refusals.push(`${who}: \`why\` names ${h}, which does not exist.`)
       }
     } else if (!/^#\d+$/.test(entry.until)) {
-      refusals.push(`${who}: \`until\` must be an issue, as "#790", or "0101 §7" for a face a host reads.`)
+      refusals.push(`${who}: \`until\` must be an issue, as "#1118", or "0101 §7" for a face a host reads.`)
     }
     if (entry.why.trim() === '') refusals.push(`${who}: \`why\` is empty.`)
     const key = `${entry.file}\0${entry.fn}`
@@ -912,6 +912,13 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
       expect(notifyMayImport('@lingtai/event-store')).toBe(false)
       expect(notifyMayImport('../../../packages/extension/src/other.ts')).toBe(false)
     })
+  })
+
+  it('has no face waiting on #790, which has ended', () => {
+    const waiting = (faces as { file: string; fn: string; until: string }[])
+      .filter((e) => e.until === '#790')
+      .map((e) => `${e.file} ${e.fn}`)
+    expect(waiting).toEqual([])
   })
 
   it('has the counted packages as the baseline keys', () => {

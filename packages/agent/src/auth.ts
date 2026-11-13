@@ -169,7 +169,7 @@ export const claudeCodeAuthEffect = Effect.fn('agent.auth')(function* (binary: s
   return classifyClaudeAuth(yield* probe(binary, ['auth', 'status'], env))
 })
 
-/** The Effect above, as the promise `Runtime.checkAuth` still is (a listed face, #790). */
+/** The Effect above, as the promise `Runtime.checkAuth` still is. */
 export function claudeCodeAuth(binary: string, env: Record<string, string>): Promise<AuthStatus> {
   return Effect.runPromise(claudeCodeAuthEffect(binary, env))
 }
@@ -223,8 +223,3 @@ export const askEveryRuntimeEffect = (env: Record<string, string>) =>
   Effect.forEach(RuntimeId.options, (id) => AUTH_PROBES[id](env).pipe(Effect.map((status) => ({ id, status }))), {
     concurrency: 'unbounded',
   })
-
-/** The Effect above, as the promise `packages/setup` still awaits (a listed face, #790). */
-export function askEveryRuntime(env: Record<string, string>): Promise<{ id: RuntimeId; status: AuthStatus }[]> {
-  return Effect.runPromise(askEveryRuntimeEffect(env))
-}

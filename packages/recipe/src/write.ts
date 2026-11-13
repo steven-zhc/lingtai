@@ -184,14 +184,6 @@ export const setRecipeEffect = Effect.fn('recipe.set')(function* (
   return { path, text, written: true } satisfies SetRecipeResult
 })
 
-export function setRecipe(
-  project: string,
-  changes: readonly RecipeChange[],
-  options?: { home?: string; files?: RecipeFiles; said?: Said },
-) {
-  return Effect.runPromise(setRecipeEffect(project, changes, options))
-}
-
 /**
  * The value at `path` in a project's recipe, or null when the file is absent
  * or does not write that key.
@@ -213,14 +205,6 @@ export const readRecipeKeyEffect = Effect.fn('recipe.read-key')(function* (
   const value = parseDocument(text).getIn(path)
   return value === undefined ? null : isNode(value) ? value.toJSON() : value
 })
-
-export function readRecipeKey(
-  project: string,
-  path: readonly (string | number)[],
-  options?: { home?: string; files?: RecipeFiles },
-): Promise<unknown | null> {
-  return Effect.runPromise(readRecipeKeyEffect(project, path, options))
-}
 
 export type SaveRecipeTextResult =
   | { ok: true; path: string; written: boolean; /** The bytes the file holds now. */ content: string }

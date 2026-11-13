@@ -57,14 +57,7 @@
 import { whyThePathEscapes } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
-import {
-  liftPromise,
-  promiseAction,
-  type Action,
-  type ActionContext,
-  type ActionPort,
-  type ActionResult,
-} from './action.ts'
+import { liftPromise, type ActionContext, type ActionPort, type ActionResult } from './action.ts'
 import { sizeOf } from './file-action.ts'
 
 /**
@@ -206,7 +199,3 @@ export function makeFileBriefAction(spec: FileBriefActionSpec, deps: FileBriefPo
 export const fileBriefPortDepsFrom = (deps: FileBriefActionDeps): FileBriefPortDeps => ({
   read: (spec) => liftPromise(() => deps.read(spec)),
 })
-
-export function createFileBriefAction(spec: FileBriefActionSpec, deps: FileBriefActionDeps): Action {
-  return promiseAction(makeFileBriefAction(spec, fileBriefPortDepsFrom(deps)))
-}

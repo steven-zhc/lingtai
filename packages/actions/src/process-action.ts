@@ -15,7 +15,7 @@
 import { parseDuration } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
-import { promiseAction, type Action, type ActionContext, type ActionPort } from './action.ts'
+import { type ActionContext, type ActionPort } from './action.ts'
 import { commandEffect } from './command.ts'
 
 // Re-exported because they were part of this module's surface before the
@@ -81,8 +81,4 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
         }
       }),
   }
-}
-
-export function createProcessAction(spec: ProcessActionSpec): Action {
-  return promiseAction(makeProcessAction(spec))
 }

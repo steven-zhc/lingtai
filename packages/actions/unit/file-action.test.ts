@@ -14,17 +14,9 @@ import type { Runtime } from '@lingtai/agent'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import {
-  NO_DESIGN,
-  runActionPipeline,
-  type Action,
-  type ActionContext,
-  type ActionResult,
-  type TheDesign,
-} from '../src/action.ts'
-import { createDraftAction } from '../src/agent-action.ts'
-import { createFileAction, type KeptAnswer } from '../src/file-action.ts'
-import { actionsFromRecipe } from '../src/from-recipe.ts'
+import { NO_DESIGN, type Action, type ActionContext, type ActionResult, type TheDesign } from '../src/action.ts'
+import { type KeptAnswer } from '../src/file-action.ts'
+import { actionsFromRecipe, createDraftAction, createFileAction, runActionPipeline } from '../test/promise-actions.ts'
 
 const DOCUMENT = '## The shape\n\nSix bodies, one per step, and the seam is `StepWork`.'
 

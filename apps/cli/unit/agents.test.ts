@@ -3,7 +3,7 @@
  * it, as per-project recipe questions. A fake `QuestionWorld` with scripted
  * answers, and a `Map`-backed `RecipeFiles` — no filesystem, no terminal.
  */
-import { type RecipeFiles, recipePath, resolveLocalRecipe, setRecipe } from '@lingtai/recipe'
+import { type RecipeFiles, recipePath, resolveLocalRecipeEffect, setRecipeEffect } from '@lingtai/recipe'
 import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -558,8 +558,8 @@ describe('askAgents', () => {
       })
       if ('refused' in result) throw new Error(result.refused)
 
-      await setRecipe('app', result.changes, { home: HOME, files })
-      const written = await setRecipe('app', result.modelChanges, { home: HOME, files })
+      await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+      const written = await Effect.runPromise(setRecipeEffect('app', result.modelChanges, { home: HOME, files }))
       expect(written.text).not.toContain('model: opus')
       expect(written.text).not.toContain('opus, because the review prompt')
     })
@@ -579,15 +579,17 @@ describe('askAgents', () => {
       })
       if ('refused' in result) throw new Error(result.refused)
 
-      await setRecipe('app', result.changes, { home: HOME, files })
-      const written = await setRecipe('app', result.modelChanges, { home: HOME, files })
+      await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+      const written = await Effect.runPromise(setRecipeEffect('app', result.modelChanges, { home: HOME, files }))
 
       expect(written.text).toContain('the writer: this is the action that opens the branch')
-      const resolved = await resolveLocalRecipe('app', {
-        home: HOME,
-        read: files.read,
-        signedIn: async () => ['claude-code', 'codex'],
-      })
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect('app', {
+          home: HOME,
+          read: files.read,
+          signedIn: async () => ['claude-code', 'codex'],
+        }),
+      )
       expect((resolved.recipe.steps.implement[0] as { agent?: string }).agent).toBe('codex')
       expect((resolved.recipe.steps.implement[0] as { model?: string }).model).toBeUndefined()
     })
@@ -626,12 +628,14 @@ describe('askAgents', () => {
       if ('refused' in result) throw new Error(result.refused)
       expect(result.changes).toContainEqual({ path: ['runtime', 'agent'], value: 'claude-code' })
 
-      const written = await setRecipe('app', result.changes, { home: HOME, files })
-      const resolved = await resolveLocalRecipe('app', {
-        home: HOME,
-        read: files.read,
-        signedIn: async () => ['claude-code', 'codex'],
-      })
+      const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect('app', {
+          home: HOME,
+          read: files.read,
+          signedIn: async () => ['claude-code', 'codex'],
+        }),
+      )
       expect(written.written).toBe(true)
       expect(resolved.recipe.runtime.agent).toBe('claude-code')
     })
@@ -684,12 +688,14 @@ describe('askAgents', () => {
         files,
       })
       if ('refused' in result) throw new Error(result.refused)
-      const { text } = await setRecipe('app', result.changes, { home: HOME, files })
-      const resolved = await resolveLocalRecipe('app', {
-        home: HOME,
-        read: files.read,
-        signedIn: async () => ['claude-code', 'codex'],
-      })
+      const { text } = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect('app', {
+          home: HOME,
+          read: files.read,
+          signedIn: async () => ['claude-code', 'codex'],
+        }),
+      )
       expect(text).toBeDefined()
       expect(resolved.recipe.steps.review.some((a) => 'agent' in a)).toBe(false)
     })
@@ -707,13 +713,15 @@ describe('askAgents', () => {
     })
     if ('refused' in result) throw new Error(result.refused)
 
-    await setRecipe('app', result.changes, { home: HOME, files })
-    await setRecipe('app', result.modelChanges, { home: HOME, files })
-    const resolved = await resolveLocalRecipe('app', {
-      home: HOME,
-      read: files.read,
-      signedIn: async () => ['claude-code', 'codex'],
-    })
+    await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+    await Effect.runPromise(setRecipeEffect('app', result.modelChanges, { home: HOME, files }))
+    const resolved = await Effect.runPromise(
+      resolveLocalRecipeEffect('app', {
+        home: HOME,
+        read: files.read,
+        signedIn: async () => ['claude-code', 'codex'],
+      }),
+    )
 
     expect(resolved.recipe.runtime.agent).toBe('claude-code')
     expect(resolved.provenance?.['runtime.agent']).toContain(PATH)
@@ -736,7 +744,7 @@ describe('askAgents', () => {
         files,
       })
       if ('refused' in result) throw new Error(result.refused)
-      const written = await setRecipe('app', result.changes, { home: HOME, files })
+      const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
       expect(written.written).toBe(false)
     })
 
@@ -751,8 +759,8 @@ describe('askAgents', () => {
         files,
       })
       if ('refused' in result) throw new Error(result.refused)
-      await setRecipe('app', result.changes, { home: HOME, files })
-      const written = await setRecipe('app', result.modelChanges, { home: HOME, files })
+      await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+      const written = await Effect.runPromise(setRecipeEffect('app', result.modelChanges, { home: HOME, files }))
       expect(written.written).toBe(true)
       expect(written.text).toContain('model: x')
       expect(written.text).toContain('Read the ticket.')
@@ -769,12 +777,14 @@ describe('askAgents', () => {
         files,
       })
       if ('refused' in result) throw new Error(result.refused)
-      const written = await setRecipe('app', result.changes, { home: HOME, files })
-      const resolved = await resolveLocalRecipe('app', {
-        home: HOME,
-        read: files.read,
-        signedIn: async () => ['claude-code', 'codex'],
-      })
+      const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect('app', {
+          home: HOME,
+          read: files.read,
+          signedIn: async () => ['claude-code', 'codex'],
+        }),
+      )
       expect((resolved.recipe.steps.implement[0] as { prompt?: string } | undefined)?.prompt).toBe(
         'Read the ticket.\nWrite the change.\n',
       )

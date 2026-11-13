@@ -63,13 +63,16 @@ function refusalReasonOf(because: string | undefined): RefusalReasonNoConflict {
 
 // ------------------------------------------------------------- actionOf ----
 
+/** What an outcome reads of an action: who it is and what it yields, never how it runs. */
+export type ActionIdentity = Pick<Action, 'name' | 'kind' | 'yields'>
+
 /**
  * One action's result, by `yields` alone — `plugin` plays no part here,
  * because the forward direction never needs it: `ActionResult.verdict`
  * already carries the distinction `eventOf` has to recover from `plugin` on
  * the way back (see the header).
  */
-export function actionOf(action: Action, outcome: ActionOutcomeEntry | undefined, onSha: string): DomainAction {
+export function actionOf(action: ActionIdentity, outcome: ActionOutcomeEntry | undefined, onSha: string): DomainAction {
   if (outcome === undefined) return notReachedOf(action, onSha)
 
   const base = { plugin: action.kind, name: action.name, onSha, evidence: outcome.evidence }
@@ -91,7 +94,7 @@ export function actionOf(action: Action, outcome: ActionOutcomeEntry | undefined
   }
 }
 
-function notReachedOf(action: Action, onSha: string): DomainAction {
+function notReachedOf(action: ActionIdentity, onSha: string): DomainAction {
   const base = { plugin: action.kind, name: action.name, onSha, evidence: '' }
   const result = { _tag: 'NotReached' } as const
   switch (action.yields) {
@@ -331,7 +334,7 @@ export function outcomeOf(
   step: Step,
   round: number,
   onSha: string,
-  actions: readonly Action[],
+  actions: readonly ActionIdentity[],
   result: PipelineResult,
 ): StepOutcome {
   const built = actions.map((action, i) => actionOf(action, result.results[i], onSha))

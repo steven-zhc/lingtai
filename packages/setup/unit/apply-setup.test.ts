@@ -91,10 +91,10 @@ describe('applySetup (#968)', () => {
   it('a draft keeps every change and writes nothing to its base', async () => {
     const { files, store } = countingFiles()
     const draft = draftFiles(files, path)
-    const { setRecipe } = await import('@lingtai/recipe')
+    const { setRecipeEffect } = await import('@lingtai/recipe')
     const more: RecipeChange[] = [{ path: ['source', 'kinds'], value: ['bug', 'feature'] }]
-    await setRecipe('repo', CHANGES, { home: HOME, files: draft })
-    await setRecipe('repo', more, { home: HOME, files: draft })
+    await Effect.runPromise(setRecipeEffect('repo', CHANGES, { home: HOME, files: draft }))
+    await Effect.runPromise(setRecipeEffect('repo', more, { home: HOME, files: draft }))
     expect(store.size).toBe(0)
     expect(draft.changes()).toEqual([...CHANGES, ...more])
   })

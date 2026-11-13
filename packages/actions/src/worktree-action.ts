@@ -30,14 +30,7 @@
  */
 import { Effect } from 'effect'
 
-import {
-  liftPromise,
-  promiseAction,
-  type Action,
-  type ActionContext,
-  type ActionPort,
-  type ActionResult,
-} from './action.ts'
+import { liftPromise, type ActionContext, type ActionPort, type ActionResult } from './action.ts'
 
 /**
  * What the cut answers — three branches, and only two of them happen today.
@@ -126,7 +119,3 @@ export function makeWorktreeAction(spec: WorktreeActionSpec, deps: WorktreePortD
 export const worktreePortDepsFrom = (deps: WorktreeActionDeps): WorktreePortDeps => ({
   cut: (spec) => liftPromise(() => deps.cut(spec)),
 })
-
-export function createWorktreeAction(spec: WorktreeActionSpec, deps: WorktreeActionDeps): Action {
-  return promiseAction(makeWorktreeAction(spec, worktreePortDepsFrom(deps)))
-}

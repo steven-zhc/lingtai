@@ -16,10 +16,15 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { NO_DESIGN, runActionPipeline, type Action, type ActionContext, type TheDesign } from '../src/action.ts'
-import { createFileAction, type KeptAnswer } from '../src/file-action.ts'
-import { createFileBriefAction, type ReadAnswer } from '../src/file-brief-action.ts'
-import { actionsFromRecipe } from '../src/from-recipe.ts'
+import { NO_DESIGN, type Action, type ActionContext, type TheDesign } from '../src/action.ts'
+import { type KeptAnswer } from '../src/file-action.ts'
+import { type ReadAnswer } from '../src/file-brief-action.ts'
+import {
+  actionsFromRecipe,
+  createFileAction,
+  createFileBriefAction,
+  runActionPipeline,
+} from '../test/promise-actions.ts'
 
 const DOCUMENT = '## The shape\n\nSix bodies, one per step, and the seam is `StepWork`.'
 /** What the file on the branch says, where the test wants the two to differ. */

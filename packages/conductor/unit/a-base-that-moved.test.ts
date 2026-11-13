@@ -210,7 +210,7 @@ describe('a base that moved on the branch’s own files', () => {
 
 describe('what the lane’s result becomes', () => {
   const merge = (result: ActionResult) =>
-    outcomeOf('merge', 0, 'abc', [{ name: 'land', kind: 'merge', yields: 'merge', run: async () => result }], {
+    outcomeOf('merge', 0, 'abc', [{ name: 'land', kind: 'merge', yields: 'merge' }], {
       results: [{ ...result, name: 'land' }],
       stopped: true,
     } as never).actions[0]

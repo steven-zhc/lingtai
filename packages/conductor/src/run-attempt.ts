@@ -14,7 +14,6 @@ import {
   NEEDS_INPUT,
   NO_DESIGN,
   fromPromiseAction,
-  promiseAction,
   runActionPipelineEffect,
   type ActionPort,
   type PipelineOptions,
@@ -2324,13 +2323,7 @@ function runVisit(
       results = result.results
       leftTheTreeAt = headFrom(result)
       wroteTheDesign = designFrom(result)
-      outcome = stepOutcomeOf(
-        spec.step,
-        reaching.context.round ?? 0,
-        reaching.context.onSha,
-        pipelineActions.map(promiseAction),
-        result,
-      )
+      outcome = stepOutcomeOf(spec.step, reaching.context.round ?? 0, reaching.context.onSha, pipelineActions, result)
       const ending = endingOf(spec, result)
       // Not `continue`, and not a swallowed failure: a step whose plugins did
       // not pass has ended, and the body does not run.

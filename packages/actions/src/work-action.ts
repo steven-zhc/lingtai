@@ -45,8 +45,6 @@ import { Effect } from 'effect'
 import {
   NEEDS_INPUT,
   liftPromise,
-  promiseAction,
-  type Action,
   type ActionContext,
   type ActionPort,
   type ActionResult,
@@ -216,7 +214,3 @@ export function makeWorkAction(spec: WorkActionSpec, deps: WorkPortDeps): Action
 export const workPortDepsFrom = (deps: WorkActionDeps): WorkPortDeps => ({
   work: (spec, context) => liftPromise(() => deps.work(spec, context)),
 })
-
-export function createWorkAction(spec: WorkActionSpec, deps: WorkActionDeps): Action {
-  return promiseAction(makeWorkAction(spec, workPortDepsFrom(deps)))
-}

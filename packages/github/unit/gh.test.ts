@@ -1,7 +1,7 @@
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { ghExecOptions, ghSpawnOptions, ghStatus, ghTokenEffect, scrubbedEnv, type GhRun } from '../src/gh.ts'
+import { ghExecOptions, ghSpawnOptions, ghStatusEffect, ghTokenEffect, scrubbedEnv, type GhRun } from '../src/gh.ts'
 
 const TOKENS = { GH_TOKEN: 'a', GITHUB_TOKEN: 'b', GH_ENTERPRISE_TOKEN: 'c', GITHUB_ENTERPRISE_TOKEN: 'd' }
 
@@ -62,7 +62,7 @@ describe('ghStatus', () => {
       { state: 'success', active: false, login: 'old', scopes: 'repo' },
       { state: 'success', active: true, login: 'me', scopes: 'gist, project, read:org, repo, workflow' },
     ])
-    expect(await ghStatus(answer(out))).toEqual({
+    expect(await Effect.runPromise(ghStatusEffect(answer(out)))).toEqual({
       ok: true,
       login: 'me',
       scopes: ['gist', 'project', 'read:org', 'repo', 'workflow'],
@@ -71,16 +71,23 @@ describe('ghStatus', () => {
 
   it('reads empty scopes as none', async () => {
     const out = hosts([{ state: 'success', active: true, login: 'me', scopes: '' }])
-    expect(await ghStatus(answer(out))).toEqual({ ok: true, login: 'me', scopes: [] })
+    expect(await Effect.runPromise(ghStatusEffect(answer(out)))).toEqual({ ok: true, login: 'me', scopes: [] })
   })
 
   it('names missing, signed-out, no account, too old and unparsed', async () => {
-    expect(await ghStatus(async () => ({ missing: true }))).toMatchObject({ ok: false, reason: 'missing' })
-    expect(await ghStatus(answer(hosts([{ state: 'error', active: true, login: 'me' }]), 1))).toMatchObject({
+    expect(await Effect.runPromise(ghStatusEffect(async () => ({ missing: true })))).toMatchObject({
+      ok: false,
+      reason: 'missing',
+    })
+    expect(
+      await Effect.runPromise(ghStatusEffect(answer(hosts([{ state: 'error', active: true, login: 'me' }]), 1))),
+    ).toMatchObject({
       reason: 'signed-out',
     })
-    expect(await ghStatus(answer(hosts([])))).toMatchObject({ reason: 'no-account' })
-    expect(await ghStatus(answer('', 1, 'unknown flag: --json'))).toMatchObject({ reason: 'too-old' })
-    expect(await ghStatus(answer('', 0))).toMatchObject({ reason: 'unparsed' })
+    expect(await Effect.runPromise(ghStatusEffect(answer(hosts([]))))).toMatchObject({ reason: 'no-account' })
+    expect(await Effect.runPromise(ghStatusEffect(answer('', 1, 'unknown flag: --json')))).toMatchObject({
+      reason: 'too-old',
+    })
+    expect(await Effect.runPromise(ghStatusEffect(answer('', 0)))).toMatchObject({ reason: 'unparsed' })
   })
 })

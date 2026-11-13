@@ -14,7 +14,8 @@ import type { RunOutcome, RunRequest, Runtime } from '@lingtai/agent'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { actionsFromRecipe, ActionUnavailableError } from '../src/from-recipe.ts'
+import { ActionUnavailableError } from '../src/from-recipe.ts'
+import { actionsFromRecipe } from '../test/promise-actions.ts'
 
 const outcome: RunOutcome = {
   exitCode: 0,

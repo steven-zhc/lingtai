@@ -17,12 +17,13 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { GitHubFailed } from '../src/app.ts'
 import {
   buildManifest,
-  convertManifest,
+  convertManifestEffect,
   defaultPermissions,
   manifestFormAction,
   unreachableWebhook,
@@ -211,7 +212,7 @@ describe('the conversion', () => {
    * no caller can write one by accident.
    */
   it('keeps four values and drops client_id and client_secret', async () => {
-    const created = await convertManifest('code-1', { fetch: fakeFetch(response) })
+    const created = await Effect.runPromise(convertManifestEffect('code-1', { fetch: fakeFetch(response) }))
 
     expect(Object.keys(created).sort()).toEqual(['id', 'name', 'pem', 'slug', 'webhookSecret'])
     expect(JSON.stringify(created)).not.toContain('s3cr3t-oauth')
@@ -225,7 +226,7 @@ describe('the conversion', () => {
       return new Response(JSON.stringify(response), { status: 200 })
     }) as unknown as typeof fetch
 
-    await convertManifest('code-1', { fetch: spy })
+    await Effect.runPromise(convertManifestEffect('code-1', { fetch: spy }))
 
     expect(seen!.url).toBe('https://api.github.com/app-manifests/code-1/conversions')
     expect(seen!.init?.method).toBe('POST')
@@ -235,7 +236,7 @@ describe('the conversion', () => {
   /** The hour, lapsed. The caller turns this into a sentence; here it is a status. */
   it("throws with GitHub's status when the code is spent", async () => {
     await expect(
-      convertManifest('old-code', { fetch: fakeFetch({ message: 'Not Found' }, 422) }),
+      Effect.runPromise(convertManifestEffect('old-code', { fetch: fakeFetch({ message: 'Not Found' }, 422) })),
     ).rejects.toBeInstanceOf(GitHubFailed)
   })
 })

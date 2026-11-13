@@ -1,6 +1,6 @@
-import { boundedEvidence, runCommand } from '@lingtai/actions'
+import { boundedEvidence, commandEffect, type CommandOutcome, type RunCommandOptions } from '@lingtai/actions'
 import { resolveAgentEnv, runnableEnv, productionPatterns } from '@lingtai/agent-env'
-import { parseDuration, readRecipeKey, type RecipeFiles } from '@lingtai/recipe'
+import { parseDuration, readRecipeKeyEffect, type RecipeFiles } from '@lingtai/recipe'
 import { provisionWorktreeEffect, removeWorktreeEffect, type ProvisionOptions } from '@lingtai/repo'
 import { Data, Effect, Ref } from 'effect'
 
@@ -55,7 +55,7 @@ const DEFAULT_PLANT_AT = '.env.local'
 export interface TrialDeps {
   provision: (options: ProvisionOptions) => Effect.Effect<{ path: string }, unknown>
   remove: (options: { project: string; runId: string; home?: string }) => Effect.Effect<void, unknown>
-  run: typeof runCommand
+  run: (options: RunCommandOptions) => Effect.Effect<CommandOutcome>
   resolveEnv: typeof resolveAgentEnv
   /** Stable per-trial id, so the worktree path never collides with a pass's. */
   runId: () => string
@@ -65,7 +65,7 @@ export interface TrialDeps {
 export const liveTrialDeps = (log: (line: string) => void): TrialDeps => ({
   provision: provisionWorktreeEffect,
   remove: removeWorktreeEffect,
-  run: runCommand,
+  run: commandEffect,
   resolveEnv: resolveAgentEnv,
   runId: () => `setup-${Date.now()}`,
   log,
@@ -97,7 +97,7 @@ function asStrings(value: unknown): string[] | undefined {
 
 /** A recipe key, or `null` when it cannot be read. */
 const recipeKey = (at: TrialAt, path: string[]): Effect.Effect<unknown> =>
-  Effect.tryPromise(() => readRecipeKey(at.project, path, { home: at.home, files: at.files })).pipe(
+  readRecipeKeyEffect(at.project, path, { home: at.home, files: at.files }).pipe(
     Effect.catch(() => Effect.succeed(null)),
   )
 
@@ -232,22 +232,23 @@ export const runTrialEffect = Effect.fn('setup.trial')(function* (
             interrupted = true
             break
           }
-          // `Effect.promise`, not `tryPromise`: a throw is a defect carrying the
-          // runner's own error. Interrupting the fiber aborts the signal and
-          // resumes at once without awaiting the runner, so `remove` may start
-          // while the killed group is still exiting; a host that interrupts the
-          // fiber is where to make the run wait for its own kill.
-          const outcome = yield* Effect.promise((signal) =>
-            deps.run({
+          // A runner's throw is a defect carrying its own error, not a failure.
+          // Interrupting the fiber aborts the signal and resumes at once without
+          // awaiting the runner, so `remove` may start while the killed group is
+          // still exiting; a host that interrupts the fiber is where to make the
+          // run wait for its own kill.
+          const stop = new AbortController()
+          const outcome = yield* deps
+            .run({
               run: command.run,
               timeoutMs: parseDuration(command.timeout),
               timeoutLabel: command.timeout,
               cwd: path!,
               env: runnableEnv(env.values),
-              signal: at.interrupt ? AbortSignal.any([at.interrupt, signal]) : signal,
+              signal: at.interrupt ? AbortSignal.any([at.interrupt, stop.signal]) : stop.signal,
               ownGroup: true,
-            }),
-          )
+            })
+            .pipe(Effect.onInterrupt(() => Effect.sync(() => stop.abort())))
           if (at.interrupt?.aborted) {
             interrupted = true
             break

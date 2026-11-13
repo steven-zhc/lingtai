@@ -26,15 +26,8 @@ import type { RunRequest, Runtime } from '@lingtai/agent'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import {
-  ActionUnavailableError,
-  type ActionEvent,
-  type ProcessActionSpec,
-  createProcessAction,
-  actionsFromRecipe,
-  runActionPipeline,
-  tail,
-} from '../src/index.ts'
+import { ActionUnavailableError, type ActionEvent, type ProcessActionSpec, tail } from '../src/index.ts'
+import { actionsFromRecipe, createProcessAction, runActionPipeline } from '../test/promise-actions.ts'
 
 const context = {
   runId: 'pass-01JX',

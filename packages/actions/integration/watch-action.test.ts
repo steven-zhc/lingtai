@@ -16,10 +16,12 @@
 import { BadWatchPatternError, MIGRATION_WATCH, TAMPER_WATCH } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { runActionPipeline } from '../src/action.ts'
-import { createHumanAction } from '../src/human-action.ts'
-import { createProcessAction } from '../src/process-action.ts'
-import { createWatchAction } from '../src/watch-action.ts'
+import {
+  createHumanAction,
+  createProcessAction,
+  createWatchAction,
+  runActionPipeline,
+} from '../test/promise-actions.ts'
 
 const context = { runId: 'pass-1', onSha: 'b'.repeat(40), cwd: process.cwd(), env: {} }
 /** A `run:` action's own environment, since 0037 §1 — never the context's. */
