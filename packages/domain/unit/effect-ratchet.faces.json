@@ -90,6 +90,12 @@
     "why": "exported for the unit half (#487): `apps/cli/unit/requeue-into-body.test.ts` and `verbs-accept-refuse.test.ts`"
   },
   {
+    "file": "packages/conductor/src/arms.ts",
+    "fn": "armsOnOrigin",
+    "until": "#790",
+    "why": "`apps/board/src/lib/prompt.ts` awaits it; 0101 §7 lets the board keep a promise"
+  },
+  {
     "file": "packages/conductor/src/ask.ts",
     "fn": "answer",
     "until": "#790",
@@ -142,6 +148,18 @@
     "fn": "editBodyAndRequeueHolding",
     "until": "#790",
     "why": "exported for the unit half (#487): `apps/cli/unit/requeue-into-body.test.ts`"
+  },
+  {
+    "file": "packages/conductor/src/end-step.ts",
+    "fn": "appendEndActions",
+    "until": "#790",
+    "why": "`apps/cli/src/end.ts` awaits it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/end-step.ts",
+    "fn": "endedWithoutEndActions",
+    "until": "#790",
+    "why": "`apps/cli/src/end.ts` and `apps/cli/src/doctor.ts` await it, until the apps/cli row"
   },
   {
     "file": "packages/conductor/src/filter.ts",
@@ -268,6 +286,12 @@
     "fn": "splitTicketHolding",
     "until": "#790",
     "why": "apps/board/unit/split-instance.test.ts calls it with the lock out of the way"
+  },
+  {
+    "file": "packages/conductor/src/tell.ts",
+    "fn": "tellGitHubAbout",
+    "until": "#790",
+    "why": "`apps/cli/src/end.ts` awaits it, until the apps/cli row"
   },
   {
     "file": "packages/conductor/src/ticket-history.ts",

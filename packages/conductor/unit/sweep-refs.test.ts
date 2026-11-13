@@ -1,6 +1,7 @@
 import type { PayloadOf, ToAppend } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 /**
  * **`end`'s third effect, carried out** (`#240`) — the half `end-step.ts` does
  * not do.
@@ -29,7 +30,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { describe, expect, it } from 'vitest'
 
 import { agentBranch, armBranch } from '../src/branches.ts'
-import { type IssueChannel, type RefChannel, sweepRefs, tellGitHubAbout } from '../src/tell.ts'
+import { type IssueChannel, type RefChannel, sweepRefsEffect, tellGitHubAbout } from '../src/tell.ts'
 
 /** A remote's ref list, and what a sweep did to it. */
 function fakeRefs(refs: readonly string[], opts: { fail?: boolean; refuseFrom?: string } = {}) {
@@ -77,7 +78,9 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS)
 
-    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false })
+    await Effect.runPromise(
+      sweepRefsEffect({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false }),
+    )
 
     expect(remote.left()).toEqual([HEADS(BRANCH)])
     expect(await rows(store, 'ticket-lingtai-240')).toEqual([
@@ -95,7 +98,9 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS)
 
-    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: true })
+    await Effect.runPromise(
+      sweepRefsEffect({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: true }),
+    )
 
     expect(remote.left()).toEqual([])
   })
@@ -110,7 +115,9 @@ describe("sweeping a landed ticket's history refs", () => {
     const twoDigit = agentBranch(24)
     const remote = fakeRefs([...AFTER_FOUR_ATTEMPTS, HEADS(twoDigit), HEADS(armBranch(twoDigit, 1))])
 
-    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-24', andTheBranch: true })
+    await Effect.runPromise(
+      sweepRefsEffect({ store, github: remote.channel, ticketId: 'ticket-lingtai-24', andTheBranch: true }),
+    )
 
     expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort())
   })
@@ -125,7 +132,9 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs([HEADS(BRANCH)])
 
-    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false })
+    await Effect.runPromise(
+      sweepRefsEffect({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false }),
+    )
 
     expect(remote.left()).toEqual([HEADS(BRANCH)])
     expect((await rows(store, 'ticket-lingtai-240'))[0]).toMatchObject({
@@ -144,7 +153,9 @@ describe("sweeping a landed ticket's history refs", () => {
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { fail: true })
 
     await expect(
-      sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false }),
+      Effect.runPromise(
+        sweepRefsEffect({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false }),
+      ),
     ).resolves.toBeUndefined()
 
     expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort())
@@ -164,7 +175,9 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS)
 
-    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false })
+    await Effect.runPromise(
+      sweepRefsEffect({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false }),
+    )
 
     expect(remote.asked).toEqual([HEADS(BRANCH)])
   })
@@ -183,7 +196,9 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { refuseFrom: HEADS(armBranch(BRANCH, 3)) })
 
-    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false })
+    await Effect.runPromise(
+      sweepRefsEffect({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false }),
+    )
 
     expect(remote.left()).toEqual([HEADS(BRANCH), HEADS(armBranch(BRANCH, 3)), HEADS(armBranch(BRANCH, 4))].sort())
     const row = (await rows(store, 'ticket-lingtai-240'))[0]!
@@ -202,7 +217,9 @@ describe("sweeping a landed ticket's history refs", () => {
     const store = createMemoryEventStore()
     const remote = fakeRefs(AFTER_FOUR_ATTEMPTS, { refuseFrom: HEADS(armBranch(BRANCH, 1)) })
 
-    await sweepRefs({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false })
+    await Effect.runPromise(
+      sweepRefsEffect({ store, github: remote.channel, ticketId: 'ticket-lingtai-240', andTheBranch: false }),
+    )
 
     expect(remote.left()).toEqual([...AFTER_FOUR_ATTEMPTS].sort())
     expect((await rows(store, 'ticket-lingtai-240'))[0]).toMatchObject({

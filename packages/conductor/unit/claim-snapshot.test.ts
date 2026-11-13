@@ -5,9 +5,10 @@
 import { reduceAll, ticketReducer, ticketStream } from '@lingtai/domain'
 import { histories } from '@lingtai/domain/test/histories'
 import { createMemoryEventStore, createMemorySnapshotStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { claimTicket } from '../src/claim.ts'
+import { claimTicketEffect } from '../src/claim.ts'
 
 describe('claimTicket with a snapshot below the head', () => {
   it('appends at the head, and a second claim racing it loses', async () => {
@@ -41,8 +42,8 @@ describe('claimTicket with a snapshot below the head', () => {
     // Two claims racing from the same planted snapshot: both read the head, both append at it, and the store
     // lets one in. The loser is refused rather than double-claiming.
     const raced = await Promise.all([
-      claimTicket(ticketId, { runId: 'run-a', store, snapshots }),
-      claimTicket(ticketId, { runId: 'run-b', store, snapshots }),
+      Effect.runPromise(claimTicketEffect(ticketId, { runId: 'run-a', store, snapshots })),
+      Effect.runPromise(claimTicketEffect(ticketId, { runId: 'run-b', store, snapshots })),
     ])
     const won = raced.filter((r) => r.ok)
     expect(won).toHaveLength(1)

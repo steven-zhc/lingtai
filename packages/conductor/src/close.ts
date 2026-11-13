@@ -113,7 +113,7 @@ import { labelsFor } from './labels.ts'
 import { asFailure } from './port-face.ts'
 import { currentRecipe } from './projects.ts'
 import { resolveWaitHoldingEffect } from './resolve-wait.ts'
-import { tellGitHubAbout, type IssueChannel, type RefChannel } from './tell.ts'
+import { tellGitHubAboutEffect, type IssueChannel, type RefChannel } from './tell.ts'
 
 export interface CloseOutcome {
   ok: boolean
@@ -280,16 +280,12 @@ export function closeHoldingEffect(
     if (options.client) {
       const client = options.client
       yield* Effect.uninterruptible(
-        Effect.tryPromise({
-          try: () =>
-            tellGitHubAbout({
-              store,
-              github: client,
-              ticketId,
-              labels: labelsFor('closed'),
-              appended: ended,
-            }),
-          catch: asFailure,
+        tellGitHubAboutEffect({
+          store,
+          github: client,
+          ticketId,
+          labels: labelsFor('closed'),
+          appended: ended,
         }),
       )
     }

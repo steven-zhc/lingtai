@@ -36,6 +36,7 @@
 import { join } from 'node:path'
 
 import type { ReadAnswer } from '@lingtai/actions'
+import { Effect } from 'effect'
 
 /**
  * The filesystem, as the one thing this port needs from its caller.
@@ -77,12 +78,10 @@ export interface WhatIsUnderTheWorktree {
 export function readWhatAFileKept(
   cwd: string,
   underneath: WhatIsUnderTheWorktree,
-): (spec: { readonly path: string }) => Promise<ReadAnswer> {
-  return async (spec) => {
-    try {
-      return { document: await underneath.read(join(cwd, spec.path)) }
-    } catch (error) {
-      return { notRead: (error as Error).message }
-    }
-  }
+): (spec: { readonly path: string }) => Effect.Effect<ReadAnswer> {
+  return (spec) =>
+    Effect.tryPromise({ try: () => underneath.read(join(cwd, spec.path)), catch: (error) => error }).pipe(
+      Effect.map((document): ReadAnswer => ({ document })),
+      Effect.catch((error) => Effect.succeed<ReadAnswer>({ notRead: (error as Error).message })),
+    )
 }

@@ -6,9 +6,10 @@ import { ticketStream } from '@lingtai/domain'
 import { aSplit, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
-import { claimTicket } from '../src/claim.ts'
+import { claimTicketEffect } from '../src/claim.ts'
 import { closeHolding } from '../src/close.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
 
@@ -32,7 +33,7 @@ describe('claimTicket on a split parent', () => {
     await tickets.closeIssue(b.number, 'not_planned')
     const before = (await store.read(ticketId)).length
 
-    const result = await claimTicket(ticketId, { runId: 'r1', store, children: tickets })
+    const result = await Effect.runPromise(claimTicketEffect(ticketId, { runId: 'r1', store, children: tickets }))
 
     expect(result).toEqual({
       ok: false,
@@ -54,7 +55,7 @@ describe('claimTicket on a split parent', () => {
     await tickets.closeIssue(a.number)
     const before = (await store.read(ticketId)).length
 
-    const result = await claimTicket(ticketId, { runId: 'r1', store, children: tickets })
+    const result = await Effect.runPromise(claimTicketEffect(ticketId, { runId: 'r1', store, children: tickets }))
 
     expect(result).toEqual({ ok: false, refusal: { reason: 'split-open', open: [b.number] } })
     expect(await store.read(ticketId)).toHaveLength(before)
@@ -66,7 +67,7 @@ describe('claimTicket on a split parent', () => {
     await tickets.closeIssue(b.number)
     const getIssue = vi.fn(tickets.getIssue)
 
-    const result = await claimTicket(ticketId, { runId: 'r1', store, children: { getIssue } })
+    const result = await Effect.runPromise(claimTicketEffect(ticketId, { runId: 'r1', store, children: { getIssue } }))
 
     expect(result.ok === false && result.refusal.reason).toBe('split-done')
     expect(getIssue.mock.calls.map((c) => c[0]).sort()).toEqual([a.number, b.number].sort())
@@ -81,14 +82,14 @@ describe('claimTicket on a split parent', () => {
       },
     }
     const before = (await store.read(ticketId)).length
-    const result = await claimTicket(ticketId, { runId: 'r1', store, children })
+    const result = await Effect.runPromise(claimTicketEffect(ticketId, { runId: 'r1', store, children }))
     expect(result).toEqual({ ok: false, refusal: { reason: 'split-unreadable', detail: 'GitHub is down' } })
     expect(await store.read(ticketId)).toHaveLength(before)
   })
 
   it('claims exactly as before when no children source is given', async () => {
     const { store, ticketId } = await splitParent()
-    const result = await claimTicket(ticketId, { runId: 'r1', store })
+    const result = await Effect.runPromise(claimTicketEffect(ticketId, { runId: 'r1', store }))
     expect(result.ok).toBe(true)
   })
 
@@ -96,7 +97,7 @@ describe('claimTicket on a split parent', () => {
     const { store, tickets, ticketId, a, b } = await splitParent()
     await tickets.closeIssue(a.number)
     await tickets.closeIssue(b.number)
-    const result = await claimTicket(ticketId, { runId: 'r1', store, children: tickets })
+    const result = await Effect.runPromise(claimTicketEffect(ticketId, { runId: 'r1', store, children: tickets }))
     const checked = result.ok === false && result.refusal.reason === 'split-done' ? result.refusal.version : -1
     // Something else lands on the stream while the child reads were awaited.
     const now = await store.read(ticketId)
