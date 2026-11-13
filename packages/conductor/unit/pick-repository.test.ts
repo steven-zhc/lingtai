@@ -11,7 +11,7 @@ import { installLink, listRepositories as list, type Picker } from '@lingtai/set
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { alreadyOnboarded, choose, setupReturn, verifiedInstallation } from '../src/pick-repository.ts'
+import { alreadyOnboarded, choose, setupReturn, verifiedInstallationEffect } from '../src/pick-repository.ts'
 
 const WRITE = { issues: 'write', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' }
 
@@ -285,9 +285,9 @@ describe('the setup URL', () => {
   const reader = () => fakeReader([{ id: 7, account: 'steven-zhc', repositories: ['lingtai'] }])
 
   it("does not trust installation_id: one that is not this App's names nothing", async () => {
-    expect(await verifiedInstallation(reader(), '7')).toBe(7)
-    expect(await verifiedInstallation(reader(), '31337')).toBeNull()
-    expect(await verifiedInstallation(reader(), '7; drop')).toBeNull()
+    expect(await Effect.runPromise(verifiedInstallationEffect(reader(), '7'))).toBe(7)
+    expect(await Effect.runPromise(verifiedInstallationEffect(reader(), '31337'))).toBeNull()
+    expect(await Effect.runPromise(verifiedInstallationEffect(reader(), '7; drop'))).toBeNull()
     expect(await setupReturn(reader(), new URLSearchParams('installation_id=31337&setup_action=install&state=x'))).toBe(
       '/setup/repository',
     )

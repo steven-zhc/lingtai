@@ -138,6 +138,12 @@
     "why": "`apps/cli/unit/verbs-accept-refuse.test.ts` (#487)"
   },
   {
+    "file": "packages/conductor/src/create-app.ts",
+    "fn": "offerCreation",
+    "until": "#790",
+    "why": "apps/board's `setup/github-app/page.tsx`, `setup/github-app/start/route.ts` and `setup/repository/page.tsx` await it; 0101 §7 lets the board keep a promise"
+  },
+  {
     "file": "packages/conductor/src/discover.ts",
     "fn": "runnableNow",
     "until": "#790",
@@ -208,6 +214,12 @@
     "fn": "ownerlessClient",
     "until": "#790",
     "why": "apps/board actions and lib/task, apps/cli (requeue, grant-fix-round, conduct, approve, run) await it until the apps/cli rows"
+  },
+  {
+    "file": "packages/conductor/src/pick-repository.ts",
+    "fn": "setupReturn",
+    "until": "#790",
+    "why": "apps/board's `setup/repository/installed/route.ts` awaits it; 0101 §7 lets the board keep a promise"
   },
   {
     "file": "packages/conductor/src/port-face.ts",
