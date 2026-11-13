@@ -670,6 +670,53 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     ])
   })
   /**
+   * **A refused `appendNow` is reported as the store's refusal, and not as a step
+   * that threw** (#1081). The claim's own take goes through `claimTicket`, which
+   * answers a refusal as `claim-unconfirmed`; the first `appendNow` a pass makes
+   * is `RunStarted`, inside `implement`. `appendNow` remembers the refusal in
+   * `unappended` before it propagates, so the pass re-raises it with its own line.
+   */
+  it('reports a store that refused an append as that, once, and not as the step having thrown', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const said: string[] = []
+    const logged: string[] = []
+    let refused = 0
+    const refusing: typeof store = {
+      ...store,
+      append: async (streamId: string, expected: number, events: readonly ToAppend[]) => {
+        if (refused === 0 && events.some((e) => e.type === 'RunStarted')) {
+          refused += 1
+          throw new Error('terminating connection due to administrator command')
+        }
+        return store.append(streamId, expected, events) as Promise<Envelope[]>
+      },
+    }
+
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub(said, HUMAN_BEFORE_THE_LANE),
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store: refusing,
+        log: (line: string) => logged.push(line),
+      },
+      fakePorts(did, refusing, true),
+    )
+
+    expect(refused).toBe(1)
+    expect(result).toMatchObject({ ok: false, stage: 'unexpected' })
+    expect(logged.some((line) => line.startsWith('the store refused an append during the attempt'))).toBe(true)
+    const runStreams = (await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)
+    expect(runStreams).not.toContain('WaitStarted')
+  })
+
+  /**
    * **The sibling this test used to have is deleted, not adapted** (`#269`'s
    * *"appends nothing to an item it never claimed, when the take's own row was
    * refused"*).
