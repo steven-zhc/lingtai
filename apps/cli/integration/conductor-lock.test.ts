@@ -14,9 +14,13 @@
  * Its own key, so the suite does not fight the operator's daemon.
  */
 import { acquireDaemonLock, conductorLockHolder, createFileLocker } from '@lingtai/daemon'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { run } from '../src/run.ts'
+import { run as runEffect } from '../src/run.ts'
+
+/** `run` is an Effect; these tests ask for its exit code. */
+const run = (...args: Parameters<typeof runEffect>) => Effect.runPromise(runEffect(...args))
 
 const locker = createFileLocker()
 const key = () => `lingtai:test:${crypto.randomUUID().slice(0, 8)}`

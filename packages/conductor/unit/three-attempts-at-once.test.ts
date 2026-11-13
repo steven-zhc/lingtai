@@ -151,7 +151,7 @@ async function look(
   ports: RunPorts,
   rt: ReturnType<typeof barrier>,
   handed: Promise<boolean | void>[],
-  extra: { paused?: () => Promise<string | null>; log?: (l: string) => void } = {},
+  extra: { paused?: Effect.Effect<string | null>; log?: (l: string) => void } = {},
 ) {
   return Effect.runPromise(
     runQueue({
@@ -296,7 +296,7 @@ describe('three passes through runQueue with slots', () => {
     await until(() => rt.entered === 3)
     expect(slots.of(PROJECT)).toHaveLength(3)
 
-    const draining = await look(c, slots, ports, rt, handed, { paused: async () => 'draining' })
+    const draining = await look(c, slots, ports, rt, handed, { paused: Effect.succeed('draining') })
     expect(draining.stopped).toBe('paused')
     expect(handed).toHaveLength(3)
 

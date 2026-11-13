@@ -97,7 +97,7 @@ import {
 } from '@lingtai/event-store'
 import type { FollowCell } from '@lingtai/event-store/subscribe'
 import { follow } from '@lingtai/event-store/subscribe'
-import { Context, Effect, Exit, Scope } from 'effect'
+import { Cause, Context, Effect, Exit, Scope } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import { makeFailureRecorder, recordFailureFace } from './failure-recorder.ts'
@@ -210,7 +210,7 @@ export interface WorkLoopOptions {
    * the daemon hosts the loop, and the CLI knows how to build the world it runs
    * against.
    */
-  pass: (reason: TurnReason, started?: (pass: Promise<boolean | void>) => void) => Promise<void>
+  pass: (reason: TurnReason, started?: (pass: Promise<boolean | void>) => void) => Effect.Effect<void>
   /**
    * Whether the conductor is currently allowed to take work.
    *
@@ -524,8 +524,14 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
         passes += 1
         // A pass that throws must not take the loop with it: the next
         // completion event is exactly when you want it to try again.
-        yield* attempt(() => Promise.resolve(options.pass(reason, started))).pipe(
-          Effect.catch((err) => Effect.sync(() => tell(`turn failed: ${(err as Error).message}`))),
+        // `catchCause`, as the promise it replaces was a catch of everything: a defect in the
+        // pass (a store failure is one, 0101 §6) is told, not the end of the loop. An interruption passes.
+        yield* Effect.suspend(() => options.pass(reason, started)).pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.sync(() => tell(`turn failed: ${(Cause.squash(cause) as Error).message}`)),
+          ),
         )
         reason = 'completion'
       } while (again)

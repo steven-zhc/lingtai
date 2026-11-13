@@ -26,12 +26,12 @@ import {
   ownerlessClient,
   currentRecipe,
   declinedBeforeWork,
-  loadProjects,
+  loadProjectsEffect,
   ticketedClientOf,
-  readFixFiles,
+  readFixFilesEffect,
   runOnce,
   runQueue,
-  runnableNow,
+  runnableNowEffect,
   selectRunnable,
   ticketsFor,
   type TurnClient,
@@ -41,7 +41,7 @@ import {
   type Tickets,
   waitsFor,
 } from '@lingtai/conductor'
-import { readControl } from '@lingtai/daemon'
+import { readControlEffect } from '@lingtai/daemon'
 import { type ControlState, type ProjectState, turnTransition, projectStream, reduceProject } from '@lingtai/domain'
 import { waitMoves } from '@lingtai/domain/wait'
 import { githubClientAuth, hasGitHubAuth, machineDayCeiling, repoRoot } from '@lingtai/env'
@@ -54,6 +54,7 @@ import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
 import { stillOwed } from './continuing.ts'
+import { recovering } from './exit.ts'
 import { symbol } from './output.ts'
 import { tracedPorts } from './tracing.ts'
 import { waitCommand } from './wait-command.ts'
@@ -89,13 +90,13 @@ export interface ConductOptions {
    * pass, straight into the same wall. Scoped by the caller to what was
    * appended while it runs (#159), which is why it is handed in.
    */
-  paused?: () => Promise<string | null>
+  paused?: Effect.Effect<string | null>
   /**
    * Whether *this project* is locked now, as a sentence, or null (0126) —
    * built from the daemon's guard and asked at every gate that starts work,
    * after `paused`. A sentence skips this project and no other.
    */
-  locked?: (project: string) => Promise<string | null>
+  locked?: (project: string) => Effect.Effect<string | null>
   log?: (line: string) => void
   /**
    * The sink for a person (#766): the `taking` line, one line per ending, and the
@@ -173,8 +174,8 @@ export interface ConductWorkOptions {
   outcome: TurnOutcome
   max?: number
   merge?: boolean
-  paused?: () => Promise<string | null>
-  locked?: (project: string) => Promise<string | null>
+  paused?: Effect.Effect<string | null>
+  locked?: (project: string) => Effect.Effect<string | null>
   /** Absent, every pass is awaited, as it always was. */
   slots?: TurnSlots
   log: (line: string) => void
@@ -222,327 +223,344 @@ interface CommonPassOptions {
 export function conductWork(
   options: ConductWorkOptions,
   world: ConductWorld = liveConductWorld(),
-): (project: ProjectState, where: Where) => Promise<'looked' | 'looked-away'> {
+): (project: ProjectState, where: Where) => Effect.Effect<'looked' | 'looked-away'> {
   const store = options.store ?? eventStore
   // The default log's snapshots belong to the default store; a store passed in has none of its own.
   const stillOwedSnapshots = options.store === undefined ? theLog.snapshots : undefined
-  return async (project, where) => {
-    const name = project.project!
-    // Failures and sentences a person needs go to `tell`; absent, where they always went.
-    const say = options.tell ?? options.log
-    const tellEnding = (result: RunOnceResult): void => {
-      const line = options.tell ? endingLine(result, { project: name, prefixed: options.many === true }) : null
-      if (line !== null) options.tell!(line)
-    }
-    const tellTaking = (ref: string, title: string): void =>
-      options.tell?.(takingLine(ref, title, options.many === true ? name : undefined))
-
-    // `max: 0` means "look at the project and take nothing". Returned here
-    // rather than through `runQueue({ max: 0 })` because a nominated issue
-    // would otherwise still jump the queue and run. Nothing was read, so it
-    // says nothing about whether the project would be refused.
-    if (options.max === 0) return 'looked-away'
-
-    let common: CommonPassOptions
-    let resolved: ResolvedRecipe
-
-    if (project.owner === null) {
-      // A local registration always records `base` (`first-project.ts`). If it
-      // did not, the fallback is the recipe's own `repo.base` — never
-      // `client.defaultBranch()`, which there is no client to ask.
-      where.ref = project.base
-      resolved = await world.currentRecipe(project, undefined, where.ref ?? undefined)
-      options.onRecipe?.(name, resolved.recipe)
-      if (where.ref === null) where.ref = baseOf(resolved.recipe)
-
-      // Both before `where.looked()`: a refusal here — no `source.tickets:
-      // db`, no `repo.remote`, a `TicketSourceConflict` — is recorded as a
-      // `ProjectRefused` rather than a mid-run failure (#148).
-      const { client, remote } = await ownerlessClient(project, resolved.recipe, world.ticketsFor)
-      await where.looked()
-
-      common = {
-        project,
-        client,
-        runtime: createRuntime(resolved.recipe.runtime.agent),
-        hookBinary: options.hookBinary,
-        prompt: options.prompt,
-        promptVersion: `ticket@${options.prompt.length}`,
-        remote,
-        ...(options.merge === undefined ? {} : { merge: options.merge }),
-        ...(options.snapshotWriter ? { snapshotWriter: options.snapshotWriter } : {}),
-        log: options.log,
+  return (project, where) =>
+    Effect.gen(function* () {
+      // Taken here, inside the look's own fiber: a pass detached below is started with it, so it
+      // carries this fiber's tracer and parent span without being a child the look's end interrupts.
+      const services = yield* Effect.context()
+      const name = project.project!
+      // Failures and sentences a person needs go to `tell`; absent, where they always went.
+      const say = options.tell ?? options.log
+      const tellEnding = (result: RunOnceResult): void => {
+        const line = options.tell ? endingLine(result, { project: name, prefixed: options.many === true }) : null
+        if (line !== null) options.tell!(line)
       }
-    } else {
-      const client = await world.createGitHubClient({ auth: githubClientAuth(), owner: project.owner, repo: name })
-      where.ref = project.base ?? (await client.defaultBranch())
-      resolved = await world.currentRecipe(project, client, where.ref)
-      options.onRecipe?.(name, resolved.recipe)
-      // Where this project's tickets actually live (`ticketsFor`, `#382`) —
-      // **before `where.looked()`**, so a refusal here (a `db` project whose
-      // log already has GitHub-numbered work items) is durable: a throw after
-      // `looked()` is not recorded as a `ProjectRefused` (see below).
-      const tickets = await world.ticketsFor(project, resolved.recipe, client)
-      // Looked at, now — not when the run below returns, which can be an hour
-      // away, all of it with a refusal on record for a project being worked.
-      await where.looked()
+      const tellTaking = (ref: string, title: string): void =>
+        options.tell?.(takingLine(ref, title, options.many === true ? name : undefined))
 
-      common = {
-        project,
-        client: ticketedClientOf(client, tickets),
-        // **The runtime the recipe named** (`#313`).
-        runtime: createRuntime(resolved.recipe.runtime.agent),
-        // A function, not a snapshot: an installation token lasts an hour and a
-        // run's wall limit is two.
-        token: () => client.token(),
-        hookBinary: options.hookBinary,
-        prompt: options.prompt,
-        promptVersion: `ticket@${options.prompt.length}`,
-        ...(options.merge === undefined ? {} : { merge: options.merge }),
-        ...(options.snapshotWriter ? { snapshotWriter: options.snapshotWriter } : {}),
-        log: options.log,
-      }
-    }
+      // `max: 0` means "look at the project and take nothing". Returned here
+      // rather than through `runQueue({ max: 0 })` because a nominated issue
+      // would otherwise still jump the queue and run. Nothing was read, so it
+      // says nothing about whether the project would be refused.
+      if (options.max === 0) return 'looked-away' as const
 
-    // **An approval owed a continuation jumps the queue too, and before a
-    // hand-picked issue does** (#465, 0120 §6). `continueTicket` is the
-    // authority on whether this is still good — `not-approved`, `wrong-run`
-    // and `lost-race` are all read off the store at the moment of the claim,
-    // inside `runOnce` — so this is a dispatch rather than a second check:
-    // a stale row (the item was closed, requeued or already continued by
-    // another pass) is simply a `runOnce` that claims nothing, logged and
-    // moved past like any other `notClaimed`.
-    //
-    // **The row never expires on its own** — `ContinueRequested` has no
-    // "consumed" counterpart, the same choice `RunRequested` makes, so
-    // `control.continuing` only ever grows and a row an earlier pass already
-    // continued stays on the stream forever. Bounding it here costs one
-    // `runOnce` per pass per stranded row, which is cheap next to a second
-    // state machine that marks one "consumed" — and a row's ticket leaving
-    // `approved` (landed, requeued, moved to a new wait) already makes the
-    // next pass's fresh read skip it, so the only rows this loop spends
-    // anything on are ones genuinely still owed a continuation.
-    //
-    // **A declined claim must fall through to this project's own queue in
-    // the same pass**, not end the pass pretending nothing is runnable: a row
-    // whose ticket is still `approved` on the log but that GitHub stops
-    // offering (closed, `agent:hold` added, a new open blocker, a reassigned
-    // `take: mine`) matches on every pass for ever otherwise, since declining
-    // at claim appends nothing and releases nothing (`stage: 'claim'`, above)
-    // — the lifecycle stays `approved` and the row stays live. So this walks
-    // **every** live row for the project, in order, filtered the same way as
-    // before — the first for this project whose ticket is **still**
-    // `approved` on this run, read fresh rather than trusted from the reducer —
-    // and only a `runOnce` that actually claimed something ends the pass.
-    // One that declined at claim is logged and passed over, same as any other
-    // `notClaimed`, and the walk continues to the next row.
-    //
-    // **Detached** (0122 §1) only where a ceiling is configured and this project
-    // asks for more than one slot, or another project already has a pass in
-    // flight: every other look awaits its pass, which is today's behaviour.
-    const wanted = concurrencyOf(resolved.recipe)
-    const slots = options.slots
-    // No ceiling, one pass in all: a limit above one holds only while a ceiling is set.
-    const limit = slots && !slots.ceilingSet ? 1 : wanted
-    if (slots && wanted > 1 && !slots.ceilingSet) {
-      say(`${name}: runtime.concurrency ${wanted} is ignored — no daily ceiling is set, so one attempt runs in all`)
-    }
-    // Passes already in flight, in any project, keep the look detached even when the
-    // limit has since fallen to one or the ceiling has been removed: awaiting would
-    // ignore them, and the slot count and the same-file rule are what keep a lowered
-    // limit honest until they have drained.
-    const detached =
-      slots !== undefined && ((slots.ceilingSet && (limit > 1 || slots.anyMany === true)) || slots.set.size > 0)
-    // No ceiling means one pass in all: any pass in flight, in any project, fills the installation.
-    const isFull = (): boolean =>
-      detached && (slots.ceilingSet ? slots.set.of(name).length >= limit : slots.set.size >= 1)
+      let common: CommonPassOptions
+      let resolved: ResolvedRecipe
 
-    /** Whether the work loop should look again: a pass that declined before doing any work freed nothing. */
-    const report = (result: RunOnceResult): boolean => {
-      if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
-      else if (result.ok === 'held') options.log(`held at ${result.step}`)
-      else options.log(`stopped at ${result.stage}: ${result.detail}`)
-      tellEnding(result)
-      return !declinedBeforeWork(result)
-    }
-    /**
-     * Starts one pass into a slot and does not wait for it — unless its `Fix` row
-     * names a file a pass in flight names, in which case nothing starts and it says
-     * so (0122 §2). The same rule `runQueue` applies, for the rows that jump it.
-     */
-    const launch = async (issue: number, continuing?: { runId: string }): Promise<boolean> => {
-      // Asked before every start, as the awaited walk asks it before every pass: a pause
-      // recorded while an earlier pass of this look was starting must stop this one.
-      const paused = options.paused ? await options.paused() : null
-      if (paused !== null) {
-        say(`${name}: #${issue} not started — ${paused}`)
-        return false
+      if (project.owner === null) {
+        // A local registration always records `base` (`first-project.ts`). If it
+        // did not, the fallback is the recipe's own `repo.base` — never
+        // `client.defaultBranch()`, which there is no client to ask.
+        where.ref = project.base
+        resolved = yield* Effect.promise(() => world.currentRecipe(project, undefined, where.ref ?? undefined))
+        options.onRecipe?.(name, resolved.recipe)
+        if (where.ref === null) where.ref = baseOf(resolved.recipe)
+
+        // Both before `where.looked()`: a refusal here — no `source.tickets:
+        // db`, no `repo.remote`, a `TicketSourceConflict` — is recorded as a
+        // `ProjectRefused` rather than a mid-run failure (#148).
+        const { client, remote } = yield* Effect.promise(() =>
+          ownerlessClient(project, resolved.recipe, world.ticketsFor),
+        )
+        yield* where.looked
+
+        common = {
+          project,
+          client,
+          runtime: createRuntime(resolved.recipe.runtime.agent),
+          hookBinary: options.hookBinary,
+          prompt: options.prompt,
+          promptVersion: `ticket@${options.prompt.length}`,
+          remote,
+          ...(options.merge === undefined ? {} : { merge: options.merge }),
+          ...(options.snapshotWriter ? { snapshotWriter: options.snapshotWriter } : {}),
+          log: options.log,
+        }
+      } else {
+        const owner = project.owner
+        const client = yield* Effect.promise(() =>
+          world.createGitHubClient({ auth: githubClientAuth(), owner, repo: name }),
+        )
+        where.ref = project.base ?? (yield* Effect.promise(() => client.defaultBranch()))
+        const ref = where.ref
+        resolved = yield* Effect.promise(() => world.currentRecipe(project, client, ref))
+        options.onRecipe?.(name, resolved.recipe)
+        // Where this project's tickets actually live (`ticketsFor`, `#382`) —
+        // **before `where.looked()`**, so a refusal here (a `db` project whose
+        // log already has GitHub-numbered work items) is durable: a throw after
+        // `looked()` is not recorded as a `ProjectRefused` (see below).
+        const recipe = resolved.recipe
+        const tickets = yield* Effect.promise(() => world.ticketsFor(project, recipe, client))
+        // Looked at, now — not when the run below returns, which can be an hour
+        // away, all of it with a refusal on record for a project being worked.
+        yield* where.looked
+
+        common = {
+          project,
+          client: ticketedClientOf(client, tickets),
+          // **The runtime the recipe named** (`#313`).
+          runtime: createRuntime(resolved.recipe.runtime.agent),
+          // A function, not a snapshot: an installation token lasts an hour and a
+          // run's wall limit is two.
+          token: () => client.token(),
+          hookBinary: options.hookBinary,
+          prompt: options.prompt,
+          promptVersion: `ticket@${options.prompt.length}`,
+          ...(options.merge === undefined ? {} : { merge: options.merge }),
+          ...(options.snapshotWriter ? { snapshotWriter: options.snapshotWriter } : {}),
+          log: options.log,
+        }
       }
-      const lock = options.locked ? await options.locked(name) : null
-      if (lock !== null) {
-        say(`${name}: #${issue} not started — ${lock}`)
-        return false
+
+      // **An approval owed a continuation jumps the queue too, and before a
+      // hand-picked issue does** (#465, 0120 §6). `continueTicket` is the
+      // authority on whether this is still good — `not-approved`, `wrong-run`
+      // and `lost-race` are all read off the store at the moment of the claim,
+      // inside `runOnce` — so this is a dispatch rather than a second check:
+      // a stale row (the item was closed, requeued or already continued by
+      // another pass) is simply a `runOnce` that claims nothing, logged and
+      // moved past like any other `notClaimed`.
+      //
+      // **The row never expires on its own** — `ContinueRequested` has no
+      // "consumed" counterpart, the same choice `RunRequested` makes, so
+      // `control.continuing` only ever grows and a row an earlier pass already
+      // continued stays on the stream forever. Bounding it here costs one
+      // `runOnce` per pass per stranded row, which is cheap next to a second
+      // state machine that marks one "consumed" — and a row's ticket leaving
+      // `approved` (landed, requeued, moved to a new wait) already makes the
+      // next pass's fresh read skip it, so the only rows this loop spends
+      // anything on are ones genuinely still owed a continuation.
+      //
+      // **A declined claim must fall through to this project's own queue in
+      // the same pass**, not end the pass pretending nothing is runnable: a row
+      // whose ticket is still `approved` on the log but that GitHub stops
+      // offering (closed, `agent:hold` added, a new open blocker, a reassigned
+      // `take: mine`) matches on every pass for ever otherwise, since declining
+      // at claim appends nothing and releases nothing (`stage: 'claim'`, above)
+      // — the lifecycle stays `approved` and the row stays live. So this walks
+      // **every** live row for the project, in order, filtered the same way as
+      // before — the first for this project whose ticket is **still**
+      // `approved` on this run, read fresh rather than trusted from the reducer —
+      // and only a `runOnce` that actually claimed something ends the pass.
+      // One that declined at claim is logged and passed over, same as any other
+      // `notClaimed`, and the walk continues to the next row.
+      //
+      // **Detached** (0122 §1) only where a ceiling is configured and this project
+      // asks for more than one slot, or another project already has a pass in
+      // flight: every other look awaits its pass, which is today's behaviour.
+      const wanted = concurrencyOf(resolved.recipe)
+      const slots = options.slots
+      // No ceiling, one pass in all: a limit above one holds only while a ceiling is set.
+      const limit = slots && !slots.ceilingSet ? 1 : wanted
+      if (slots && wanted > 1 && !slots.ceilingSet) {
+        say(`${name}: runtime.concurrency ${wanted} is ignored — no daily ceiling is set, so one attempt runs in all`)
       }
-      const files = await readFixFiles(common.client, issue)
-      const why = waitsFor(files, slots!.set.of(name))
-      if (why !== null) {
-        options.log(`${name}: #${issue} ${why}`)
-        return false
+      // Passes already in flight, in any project, keep the look detached even when the
+      // limit has since fallen to one or the ceiling has been removed: awaiting would
+      // ignore them, and the slot count and the same-file rule are what keep a lowered
+      // limit honest until they have drained.
+      const detached =
+        slots !== undefined && ((slots.ceilingSet && (limit > 1 || slots.anyMany === true)) || slots.set.size > 0)
+      // No ceiling means one pass in all: any pass in flight, in any project, fills the installation.
+      const isFull = (): boolean =>
+        detached && (slots.ceilingSet ? slots.set.of(name).length >= limit : slots.set.size >= 1)
+
+      /** Whether the work loop should look again: a pass that declined before doing any work freed nothing. */
+      const report = (result: RunOnceResult): boolean => {
+        if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+        else if (result.ok === 'held') options.log(`held at ${result.step}`)
+        else options.log(`stopped at ${result.stage}: ${result.detail}`)
+        tellEnding(result)
+        return !declinedBeforeWork(result)
       }
-      // Asked again after the read: the issue fetch can take long enough for a
-      // pause to land, and the answer above is a fact about before it.
-      const pausedAfter = options.paused ? await options.paused() : null
-      const lockAfter = pausedAfter === null && options.locked ? await options.locked(name) : null
-      if (pausedAfter !== null || lockAfter !== null) {
-        say(`${name}: #${issue} not started — ${pausedAfter ?? lockAfter}`)
-        return false
-      }
-      const leave = slots!.set.enter({ project: name, issue: String(issue), files })
-      options.outcome.ran += 1
-      const pass = Effect.runPromise(
-        world.runOnce({ ...common, issue, ...(continuing ? { continuing } : {}) }).pipe(Effect.provide(tracedPorts)),
-      ).then(
-        (result) => {
-          const worked = report(result)
-          // A continuation declined at claim stays `approved` on the log, so the next look
-          // would pick it again and starve the queue. Remember it for a while, and wake
-          // once: whatever it kept out of its slot can go now.
-          if (!worked && continuing) {
-            declinedContinuations.set(`${name}#${issue}:${continuing.runId}`, Date.now())
-            return true
+      /**
+       * Starts one pass into a slot and does not wait for it — unless its `Fix` row
+       * names a file a pass in flight names, in which case nothing starts and it says
+       * so (0122 §2). The same rule `runQueue` applies, for the rows that jump it.
+       */
+      const launch = (issue: number, continuing?: { runId: string }): Effect.Effect<boolean> =>
+        Effect.gen(function* () {
+          // Asked before every start, as the awaited walk asks it before every pass: a pause
+          // recorded while an earlier pass of this look was starting must stop this one.
+          const paused = options.paused ? yield* options.paused : null
+          if (paused !== null) {
+            say(`${name}: #${issue} not started — ${paused}`)
+            return false
           }
-          return worked
-        },
-        (err: unknown) => {
-          say(`${name}: #${issue} failed — ${err instanceof Error ? err.message : String(err)}`)
-          return false
-        },
-      )
-      slots!.started(pass.finally(leave))
-      return true
-    }
+          const lock = options.locked ? yield* options.locked(name) : null
+          if (lock !== null) {
+            say(`${name}: #${issue} not started — ${lock}`)
+            return false
+          }
+          const files = yield* readFixFilesEffect(common.client, issue)
+          const why = waitsFor(files, slots!.set.of(name))
+          if (why !== null) {
+            options.log(`${name}: #${issue} ${why}`)
+            return false
+          }
+          // Asked again after the read: the issue fetch can take long enough for a
+          // pause to land, and the answer above is a fact about before it.
+          const pausedAfter = options.paused ? yield* options.paused : null
+          const lockAfter = pausedAfter === null && options.locked ? yield* options.locked(name) : null
+          if (pausedAfter !== null || lockAfter !== null) {
+            say(`${name}: #${issue} not started — ${pausedAfter ?? lockAfter}`)
+            return false
+          }
+          const leave = slots!.set.enter({ project: name, issue: String(issue), files })
+          options.outcome.ran += 1
+          // Run with the look's services and not forked: the pass outlives the look, which a child
+          // fiber would not, and the drain waits for it through `started` (0122 §4).
+          const pass = Effect.runPromiseWith(services)(
+            world
+              .runOnce({ ...common, issue, ...(continuing ? { continuing } : {}) })
+              .pipe(Effect.provide(tracedPorts)),
+          ).then(
+            (result) => {
+              const worked = report(result)
+              // A continuation declined at claim stays `approved` on the log, so the next look
+              // would pick it again and starve the queue. Remember it for a while, and wake
+              // once: whatever it kept out of its slot can go now.
+              if (!worked && continuing) {
+                declinedContinuations.set(`${name}#${issue}:${continuing.runId}`, Date.now())
+                return true
+              }
+              return worked
+            },
+            (err: unknown) => {
+              say(`${name}: #${issue} failed — ${err instanceof Error ? err.message : String(err)}`)
+              return false
+            },
+          )
+          slots!.started(pass.finally(leave))
+          return true
+        })
 
-    // Asked right before an awaited start, after the reads that precede it: the
-    // answer is a fact about the moment it is asked, not about before them.
-    const stoppedNow = (): Promise<string | null> =>
-      (options.paused ? options.paused() : Promise.resolve(null)).then((paused) =>
-        paused !== null || !options.locked ? paused : options.locked(name),
-      )
+      // Asked right before an awaited start, after the reads that precede it: the
+      // answer is a fact about the moment it is asked, not about before them.
+      const stoppedNow = Effect.gen(function* () {
+        const paused = options.paused ? yield* options.paused : null
+        return paused !== null || !options.locked ? paused : yield* options.locked(name)
+      })
 
-    for (const c of options.control.continuing) {
-      if (c.project !== name) continue
-      if (isFull() || (detached && slots.set.of(name).some((f) => f.issue === c.issue))) continue
-      if (
-        detached &&
-        Date.now() - (declinedContinuations.get(`${name}#${c.issue}:${c.runId}`) ?? -Infinity) < DECLINED_BACKOFF_MS
-      )
-        continue
-      if (!(await stillOwed(store, name, c, { snapshots: stillOwedSnapshots, writer: options.snapshotWriter })))
-        continue
-      options.log(`${name}: continuing #${c.issue} — asked for by ${c.by}`)
-      if (detached) {
-        // Not a reason to stop looking: one that is declined at claim, or that has to
-        // wait for a file, must leave the free slots to the rest of the project.
-        await launch(Number(c.issue), { runId: c.runId })
-        continue
-      }
-      const stopped = await stoppedNow()
-      if (stopped !== null) {
-        say(`${name}: #${c.issue} not started — ${stopped}`)
-        return 'looked'
-      }
-      const result: RunOnceResult = await Effect.runPromise(
-        world
+      for (const c of options.control.continuing) {
+        if (c.project !== name) continue
+        if (isFull() || (detached && slots.set.of(name).some((f) => f.issue === c.issue))) continue
+        if (
+          detached &&
+          Date.now() - (declinedContinuations.get(`${name}#${c.issue}:${c.runId}`) ?? -Infinity) < DECLINED_BACKOFF_MS
+        )
+          continue
+        if (!(yield* stillOwed(store, name, c, { snapshots: stillOwedSnapshots, writer: options.snapshotWriter })))
+          continue
+        options.log(`${name}: continuing #${c.issue} — asked for by ${c.by}`)
+        if (detached) {
+          // Not a reason to stop looking: one that is declined at claim, or that has to
+          // wait for a file, must leave the free slots to the rest of the project.
+          yield* launch(Number(c.issue), { runId: c.runId })
+          continue
+        }
+        const stopped = yield* stoppedNow
+        if (stopped !== null) {
+          say(`${name}: #${c.issue} not started — ${stopped}`)
+          return 'looked' as const
+        }
+        const result: RunOnceResult = yield* world
           .runOnce({
             ...common,
             issue: Number(c.issue),
             continuing: { runId: c.runId },
           })
-          .pipe(Effect.provide(tracedPorts)),
-      )
-      if (result.ok === false && result.stage === 'claim') {
-        options.log(`${name}: continuation of #${c.issue} declined at claim — ${result.detail}`)
-        continue
+          .pipe(Effect.provide(tracedPorts))
+        if (result.ok === false && result.stage === 'claim') {
+          options.log(`${name}: continuation of #${c.issue} declined at claim — ${result.detail}`)
+          continue
+        }
+        options.outcome.ran += 1
+        if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+        else if (result.ok === 'held') options.log(`held at ${result.step}`)
+        else options.log(`stopped at ${result.stage}: ${result.detail}`)
+        tellEnding(result)
+        return 'looked' as const
       }
-      options.outcome.ran += 1
-      if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
-      else if (result.ok === 'held') options.log(`held at ${result.step}`)
-      else options.log(`stopped at ${result.stage}: ${result.detail}`)
-      tellEnding(result)
-      return 'looked'
-    }
 
-    // A hand-picked issue jumps the queue.
-    //
-    // `lingtai now` used to append `RunRequested` and only *wake* the loop, which
-    // then took whatever was at the top — so the command's name promised
-    // something it did not do, and would have been wrong the moment the queue
-    // held more than one item.
-    //
-    // A request needs no separate "consumed" event: it is satisfied when the
-    // task stops being queued, which claiming it does. Filtering on that is
-    // what keeps the control stream from growing a second state machine.
-    // Asked, not read back: GitHub says what it is offering right now, so a
-    // request for an issue that was closed or relabelled by hand since it was
-    // made simply does not match.
-    //
-    // **`backoffMs: 0` — the command is called `now`** (0028). The backoff
-    // stops *blind* retries, and a person naming an issue is not blind; every
-    // other subtraction still applies, so a request for something already
-    // claimed or landed still matches nothing. Until #95 this said
-    // `source.backoff` like the pass below, and the two failures it produced
-    // were both silent: the request matched nothing, so the daemon ran
-    // whatever was at the top of the queue instead, and the request stayed
-    // pending — because the only thing that consumes one is the item ceasing
-    // to be queued.
-    const offered = await runnableNow({ client: common.client, queue: queueOf(resolved.recipe) })
-    // The rows and not a set of numbers. `selectRunnable` already carries the
-    // kind and the title, and the line below is read by somebody watching a
-    // pass decide what to spend an agent on: `taking #123` is a number they
-    // have to go and look up before it means anything (#258).
-    const queued = new Map(
-      (
-        await world.selectRunnable({
+      // A hand-picked issue jumps the queue.
+      //
+      // `lingtai now` used to append `RunRequested` and only *wake* the loop, which
+      // then took whatever was at the top — so the command's name promised
+      // something it did not do, and would have been wrong the moment the queue
+      // held more than one item.
+      //
+      // A request needs no separate "consumed" event: it is satisfied when the
+      // task stops being queued, which claiming it does. Filtering on that is
+      // what keeps the control stream from growing a second state machine.
+      // Asked, not read back: GitHub says what it is offering right now, so a
+      // request for an issue that was closed or relabelled by hand since it was
+      // made simply does not match.
+      //
+      // **`backoffMs: 0` — the command is called `now`** (0028). The backoff
+      // stops *blind* retries, and a person naming an issue is not blind; every
+      // other subtraction still applies, so a request for something already
+      // claimed or landed still matches nothing. Until #95 this said
+      // `source.backoff` like the pass below, and the two failures it produced
+      // were both silent: the request matched nothing, so the daemon ran
+      // whatever was at the top of the queue instead, and the request stayed
+      // pending — because the only thing that consumes one is the item ceasing
+      // to be queued.
+      // `orDie`: a listing that failed ends the look as it always did (a rejection, now a defect), never as an empty queue.
+      const offered = yield* runnableNowEffect({ client: common.client, queue: queueOf(resolved.recipe) }).pipe(
+        Effect.orDie,
+      )
+      const selected = yield* Effect.promise(() =>
+        world.selectRunnable({
           project: name,
           offered: offered.runnable,
           kinds: kindsOf(resolved.recipe),
           backoffMs: 0,
-        })
+        }),
       )
-        // The projection lags a claim: what is in flight here is taken already.
-        .filter((t) => !(detached && slots.set.of(name).some((f) => f.issue === t.issue)))
-        .map((t) => [t.issue, t] as const),
-    )
-    const asked = isFull()
-      ? undefined
-      : options.control.requested.find((r) => r.project === name && queued.has(r.issue))
+      // The rows and not a set of numbers. `selectRunnable` already carries the
+      // kind and the title, and the line below is read by somebody watching a
+      // pass decide what to spend an agent on: `taking #123` is a number they
+      // have to go and look up before it means anything (#258).
+      const queued = new Map(
+        selected
+          // The projection lags a claim: what is in flight here is taken already.
+          .filter((t) => !(detached && slots.set.of(name).some((f) => f.issue === t.issue)))
+          .map((t) => [t.issue, t] as const),
+      )
+      const asked = isFull()
+        ? undefined
+        : options.control.requested.find((r) => r.project === name && queued.has(r.issue))
 
-    if (asked) {
-      // Non-null because `queued.has` is what matched it. The shape is
-      // `lingtai status`'s — `#123  bug  the title`.
-      const task = queued.get(asked.issue)!
-      options.log(`${name}: taking #${asked.issue}  ${task.kind}  ${task.title} — asked for by ${asked.by}`)
-      tellTaking(asked.issue, task.title)
-      if (detached) await launch(Number(asked.issue))
-      else {
-        const stopped = await stoppedNow()
-        if (stopped !== null) say(`${name}: #${asked.issue} not started — ${stopped}`)
+      if (asked) {
+        // Non-null because `queued.has` is what matched it. The shape is
+        // `lingtai status`'s — `#123  bug  the title`.
+        const task = queued.get(asked.issue)!
+        options.log(`${name}: taking #${asked.issue}  ${task.kind}  ${task.title} — asked for by ${asked.by}`)
+        tellTaking(asked.issue, task.title)
+        if (detached) yield* launch(Number(asked.issue))
         else {
-          const result: RunOnceResult = await Effect.runPromise(
-            world.runOnce({ ...common, issue: Number(asked.issue) }).pipe(Effect.provide(tracedPorts)),
-          )
-          options.outcome.ran += 1
-          if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
-          else if (result.ok === 'held') options.log(`held at ${result.step}`)
-          else options.log(`stopped at ${result.stage}: ${result.detail}`)
-          tellEnding(result)
+          const stopped = yield* stoppedNow
+          if (stopped !== null) say(`${name}: #${asked.issue} not started — ${stopped}`)
+          else {
+            const result: RunOnceResult = yield* world
+              .runOnce({ ...common, issue: Number(asked.issue) })
+              .pipe(Effect.provide(tracedPorts))
+            options.outcome.ran += 1
+            if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+            else if (result.ok === 'held') options.log(`held at ${result.step}`)
+            else options.log(`stopped at ${result.stage}: ${result.detail}`)
+            tellEnding(result)
+          }
         }
       }
-    }
-    // Detached, a request and a continuation take a slot and the queue fills the rest.
-    if ((!asked || detached) && !isFull()) {
-      const ran: ScheduleResult = await Effect.runPromise(
-        world
+      // Detached, a request and a continuation take a slot and the queue fills the rest.
+      if ((!asked || detached) && !isFull()) {
+        const ran: ScheduleResult = yield* world
           .runQueue({
             ...common,
             ...(options.tell
@@ -560,12 +578,11 @@ export function conductWork(
             ...(options.paused ? { paused: options.paused } : {}),
             ...(options.locked ? { locked: options.locked } : {}),
           })
-          .pipe(Effect.provide(tracedPorts)),
-      )
-      options.outcome.ran += ran.started ?? ran.ran.length
-    }
-    return 'looked'
-  }
+          .pipe(Effect.provide(tracedPorts))
+        options.outcome.ran += ran.started ?? ran.ran.length
+      }
+      return 'looked' as const
+    })
 }
 
 /**
@@ -599,62 +616,72 @@ export function projectsForTurn(
  * `runPromise` at its own edge. The projector is the daemon's, held for as long
  * as the daemon runs, which is why there is no scope of that kind here.
  */
-export async function conductorTurn(options: ConductOptions = {}): Promise<TurnOutcome> {
-  const log = options.log ?? (() => {})
-  const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
+export function conductorTurn(options: ConductOptions = {}): Effect.Effect<TurnOutcome> {
+  return Effect.gen(function* () {
+    const log = options.log ?? (() => {})
+    const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
 
-  const hookBinary = options.hookBinary ?? resolve(root, 'packages/hook/bin/lingtai-hook')
-  try {
-    await readFile(hookBinary)
-  } catch {
-    // A run that records nothing must not start. Refusing the pass rather than
-    // the daemon: the projections stay current, which is what makes the reason
-    // visible on the board.
-    const detail = `no lingtai-hook binary at ${hookBinary}`
-    outcome.refused.push({ project: '*', detail })
-    ;(options.tell ?? log)(detail)
-    return outcome
-  }
+    const hookBinary = options.hookBinary ?? resolve(root, 'packages/hook/bin/lingtai-hook')
+    const hookThere = yield* Effect.promise(() =>
+      readFile(hookBinary).then(
+        () => true,
+        () => false,
+      ),
+    )
+    if (!hookThere) {
+      // A run that records nothing must not start. Refusing the pass rather than
+      // the daemon: the projections stay current, which is what makes the reason
+      // visible on the board.
+      const detail = `no lingtai-hook binary at ${hookBinary}`
+      outcome.refused.push({ project: '*', detail })
+      ;(options.tell ?? log)(detail)
+      return outcome
+    }
 
-  const promptPath = options.promptPath ?? resolve(root, 'prompts/ticket.md')
-  const prompt = await readFile(promptPath, 'utf8')
+    const promptPath = options.promptPath ?? resolve(root, 'prompts/ticket.md')
+    const prompt = yield* Effect.promise(() => readFile(promptPath, 'utf8'))
 
-  // Read once for the whole pass. A request that arrives mid-pass is answered
-  // by the next one — which the append itself triggers.
-  const control = await readControl(undefined, options.controlWriter ? { writer: options.controlWriter } : {})
+    // Read once for the whole pass. A request that arrives mid-pass is answered
+    // by the next one — which the append itself triggers.
+    // `orDie`: a read the store refused ends the turn, told as `turn failed` by the loop, as the rejection was.
+    const control = yield* readControlEffect(
+      undefined,
+      options.controlWriter ? { writer: options.controlWriter } : {},
+    ).pipe(Effect.orDie)
 
-  const registered = await loadProjects()
-  const projects = projectsForTurn(registered, hasGitHubAuth(), outcome)
+    const registered = yield* loadProjectsEffect()
+    const projects = projectsForTurn(registered, hasGitHubAuth(), outcome)
 
-  // Whether a look awaits its pass must not depend on which project is visited
-  // first, so with a ceiling and several projects each recipe is asked once up front.
-  const ceilingSet = machineDayCeiling() !== undefined
-  const anyMany = options.slots && ceilingSet && projects.length > 1 ? await anyWantsMany(projects) : false
+    // Whether a look awaits its pass must not depend on which project is visited
+    // first, so with a ceiling and several projects each recipe is asked once up front.
+    const ceilingSet = machineDayCeiling() !== undefined
+    const anyMany = options.slots && ceilingSet && projects.length > 1 ? yield* anyWantsMany(projects) : false
 
-  return conductProjects({
-    projects,
-    codeSha: options.codeSha ?? null,
-    outcome,
-    log,
-    ...(options.tell ? { tell: options.tell } : {}),
-    ...(options.paused ? { paused: options.paused } : {}),
-    ...(options.locked ? { locked: options.locked } : {}),
-    work: conductWork({
-      hookBinary,
-      prompt,
-      control,
+    return yield* conductProjects({
+      projects,
+      codeSha: options.codeSha ?? null,
       outcome,
-      max: options.max,
-      ...(options.merge === undefined ? {} : { merge: options.merge }),
-      ...(options.paused ? { paused: options.paused } : {}),
-      ...(options.locked ? { locked: options.locked } : {}),
-      ...(options.slots ? { slots: { ...options.slots, ceilingSet, anyMany } } : {}),
       log,
       ...(options.tell ? { tell: options.tell } : {}),
-      ...(options.many ? { many: true } : {}),
-      ...(options.onRecipe ? { onRecipe: options.onRecipe } : {}),
-      ...(options.controlWriter ? { snapshotWriter: options.controlWriter } : {}),
-    }),
+      ...(options.paused ? { paused: options.paused } : {}),
+      ...(options.locked ? { locked: options.locked } : {}),
+      work: conductWork({
+        hookBinary,
+        prompt,
+        control,
+        outcome,
+        max: options.max,
+        ...(options.merge === undefined ? {} : { merge: options.merge }),
+        ...(options.paused ? { paused: options.paused } : {}),
+        ...(options.locked ? { locked: options.locked } : {}),
+        ...(options.slots ? { slots: { ...options.slots, ceilingSet, anyMany } } : {}),
+        log,
+        ...(options.tell ? { tell: options.tell } : {}),
+        ...(options.many ? { many: true } : {}),
+        ...(options.onRecipe ? { onRecipe: options.onRecipe } : {}),
+        ...(options.controlWriter ? { snapshotWriter: options.controlWriter } : {}),
+      }),
+    })
   })
 }
 
@@ -701,30 +728,36 @@ export function endingLine(result: RunOnceResult, options: { project: string; pr
 }
 
 /** Whether any project's recipe asks for more than one slot. A recipe that cannot be read asks for one. */
-async function anyWantsMany(
+function anyWantsMany(
   projects: readonly ProjectState[],
   world: ConductWorld = liveConductWorld(),
-): Promise<boolean> {
-  for (const project of projects) {
-    if (!project.project) continue
-    try {
-      if (project.owner === null) {
-        const { recipe } = await world.currentRecipe(project, undefined, project.base ?? undefined)
-        if (concurrencyOf(recipe) > 1) return true
-      } else {
-        const client = await world.createGitHubClient({
-          auth: githubClientAuth(),
-          owner: project.owner,
-          repo: project.project,
-        })
-        const { recipe } = await world.currentRecipe(project, client, project.base ?? (await client.defaultBranch()))
-        if (concurrencyOf(recipe) > 1) return true
-      }
-    } catch {
-      // The walk meets the same refusal and records it; here it only means one slot.
+): Effect.Effect<boolean> {
+  return Effect.gen(function* () {
+    for (const project of projects) {
+      if (!project.project) continue
+      const name = project.project
+      const wantsMany = Effect.gen(function* () {
+        if (project.owner === null) {
+          const { recipe } = yield* Effect.promise(() =>
+            world.currentRecipe(project, undefined, project.base ?? undefined),
+          )
+          return concurrencyOf(recipe) > 1
+        }
+        const owner = project.owner
+        const client = yield* Effect.promise(() =>
+          world.createGitHubClient({ auth: githubClientAuth(), owner, repo: name }),
+        )
+        const base = project.base ?? (yield* Effect.promise(() => client.defaultBranch()))
+        const { recipe } = yield* Effect.promise(() => world.currentRecipe(project, client, base))
+        return concurrencyOf(recipe) > 1
+      }).pipe(
+        // The walk meets the same refusal and records it; here it only means one slot.
+        recovering(() => Effect.succeed(false)),
+      )
+      if (yield* wantsMany) return true
     }
-  }
-  return false
+    return false
+  })
 }
 
 /** How far a project's work got before it refused: the branch, once known. */
@@ -735,7 +768,7 @@ export interface Where {
    * the rest of the work — a run, up to `runtime.limits.wall` — is still ahead.
    * Idempotent, since `turnTransition` appends nothing once nothing is on record.
    */
-  looked: () => Promise<void>
+  looked: Effect.Effect<void>
 }
 
 export interface ProjectsOptions {
@@ -749,7 +782,7 @@ export interface ProjectsOptions {
    * once it has read enough to know it does not refuse; `"looked"` calls it on
    * return if the work did not.
    */
-  work: (project: ProjectState, where: Where) => Promise<'looked' | 'looked-away'>
+  work: (project: ProjectState, where: Where) => Effect.Effect<'looked' | 'looked-away'>
   codeSha: string | null
   outcome: TurnOutcome
   log: (line: string) => void
@@ -759,9 +792,9 @@ export interface ProjectsOptions {
    * not this: it locks one runtime, and reaches the next project through
    * `locked`, which reads `acct-` fresh for each.
    */
-  paused?: () => Promise<string | null>
+  paused?: Effect.Effect<string | null>
   /** Asked after `paused`; a sentence skips this project and carries on to the next. */
-  locked?: (project: string) => Promise<string | null>
+  locked?: (project: string) => Effect.Effect<string | null>
   store?: EventStore
   /** Where a refusal is said to a person; absent, `log`. */
   tell?: (line: string) => void
@@ -775,67 +808,72 @@ export interface ProjectsOptions {
  * without a GitHub App: that record is the claim of `#148`, and a claim about
  * the log is tested against the log.
  */
-export async function conductProjects(options: ProjectsOptions): Promise<TurnOutcome> {
-  const { outcome, log, store = eventStore } = options
-  const say = options.tell ?? log
+export function conductProjects(options: ProjectsOptions): Effect.Effect<TurnOutcome> {
+  return Effect.gen(function* () {
+    const { outcome, log, store = eventStore } = options
+    const say = options.tell ?? log
 
-  for (const project of options.projects) {
-    const name = project.project
-    // **No `!project.owner`** (`#355`) — `owner: null` is an ordinary,
-    // registered project now, not one this pass skips.
-    if (!name) continue
-    if (options.paused) {
-      const why = await options.paused()
-      if (why !== null) {
-        say(`${name}: not looked at — ${why}`)
-        break
+    for (const project of options.projects) {
+      const name = project.project
+      // **No `!project.owner`** (`#355`) — `owner: null` is an ordinary,
+      // registered project now, not one this pass skips.
+      if (!name) continue
+      if (options.paused) {
+        const why = yield* options.paused
+        if (why !== null) {
+          say(`${name}: not looked at — ${why}`)
+          break
+        }
+      }
+      if (options.locked) {
+        // One project's lock skips that project; the others are still looked at.
+        const why = yield* options.locked(name)
+        if (why !== null) {
+          say(`${name}: not looked at — ${why}`)
+          continue
+        }
+      }
+      outcome.projects += 1
+      let looked = false
+      const where: Where = {
+        ref: null,
+        looked: Effect.suspend(() => {
+          looked = true
+          return record(project, { refused: false, ref: where.ref, codeSha: options.codeSha }, { store, log: say })
+        }),
+      }
+
+      const failure = yield* Effect.gen(function* () {
+        if ((yield* options.work(project, where)) === 'looked') yield* where.looked
+        return null
+      }).pipe(recovering((err) => Effect.succeed({ err })))
+      if (failure !== null) {
+        const err = failure.err
+        // One project's problem is not the pass's. A misconfigured repository
+        // must not stop the others from being worked.
+        outcome.refused.push({ project: name, detail: err.message })
+        say(`${name}: ${err.message}`)
+        // **And on the log** (#148): this line was the whole record for hours
+        // while a daemon too old for its recipe refused every sweep. Appended on
+        // the transition only — `turnTransition` compares with what the stream
+        // already holds, so the next identical sweep appends nothing.
+        //
+        // **Only before the project was looked at.** A throw after `looked()` —
+        // an issue listing GitHub refuses, a merge lane's 502 — comes from a
+        // project that was read and worked, which is not what `ProjectRefused`
+        // says. Recorded, it would follow this sweep's `ProjectRecovered` with a
+        // refusal, and every later sweep would append the same pair again.
+        if (looked) continue
+        yield* record(
+          project,
+          { refused: true, detail: err.message, ref: where.ref, codeSha: options.codeSha },
+          { store, log: say },
+        )
       }
     }
-    if (options.locked) {
-      // One project's lock skips that project; the others are still looked at.
-      const why = await options.locked(name)
-      if (why !== null) {
-        say(`${name}: not looked at — ${why}`)
-        continue
-      }
-    }
-    outcome.projects += 1
-    let looked = false
-    const where: Where = {
-      ref: null,
-      looked: () => {
-        looked = true
-        return record(project, { refused: false, ref: where.ref, codeSha: options.codeSha }, { store, log: say })
-      },
-    }
 
-    try {
-      if ((await options.work(project, where)) === 'looked') await where.looked()
-    } catch (err) {
-      // One project's problem is not the pass's. A misconfigured repository
-      // must not stop the others from being worked.
-      outcome.refused.push({ project: name, detail: (err as Error).message })
-      say(`${name}: ${(err as Error).message}`)
-      // **And on the log** (#148): this line was the whole record for hours
-      // while a daemon too old for its recipe refused every sweep. Appended on
-      // the transition only — `turnTransition` compares with what the stream
-      // already holds, so the next identical sweep appends nothing.
-      //
-      // **Only before the project was looked at.** A throw after `looked()` —
-      // an issue listing GitHub refuses, a merge lane's 502 — comes from a
-      // project that was read and worked, which is not what `ProjectRefused`
-      // says. Recorded, it would follow this sweep's `ProjectRecovered` with a
-      // refusal, and every later sweep would append the same pair again.
-      if (looked) continue
-      await record(
-        project,
-        { refused: true, detail: (err as Error).message, ref: where.ref, codeSha: options.codeSha },
-        { store, log: say },
-      )
-    }
-  }
-
-  return outcome
+    return outcome
+  })
 }
 
 /**
@@ -843,20 +881,20 @@ export async function conductProjects(options: ProjectsOptions): Promise<TurnOut
  * could not be written must not become the refusal of every project after this
  * one, and the next pass re-reads the stream and decides again.
  */
-async function record(
+function record(
   project: ProjectState,
   seen: Parameters<typeof turnTransition>[1],
   options: { store: EventStore; log: (line: string) => void },
-): Promise<void> {
+): Effect.Effect<void> {
   const { store, log } = options
   const name = project.project!
-  try {
+  return Effect.gen(function* () {
     // Re-read rather than trusting the state the pass began with: a run can
     // last an hour, and what matters is what the stream holds now.
-    const current = reduceProject(await store.read(projectStream(name)))
+    const current = reduceProject(yield* Effect.promise(() => store.read(projectStream(name))))
     const next = turnTransition(current, seen)
-    if (next) await store.append(projectStream(name), current.version, [next])
-  } catch (err) {
-    log(`${name}: could not record the attempt on the log — ${(err as Error).message}`)
-  }
+    if (next) yield* Effect.promise(() => store.append(projectStream(name), current.version, [next]))
+  }).pipe(
+    recovering((err) => Effect.sync(() => log(`${name}: could not record the attempt on the log — ${err.message}`))),
+  )
 }

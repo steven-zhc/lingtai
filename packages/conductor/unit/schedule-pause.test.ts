@@ -62,10 +62,10 @@ describe('runQueue under a pause', () => {
         hookBinary: '/nonexistent',
         prompt: 'p',
         recipe: untouched<Recipe>('recipe'),
-        paused: async () => {
+        paused: Effect.sync(() => {
           asked += 1
           return 'paused by human:ops — migrating the database'
-        },
+        }),
         log: (l) => lines.push(l),
       }).pipe(
         Effect.provide(
@@ -106,10 +106,10 @@ describe('runQueue under a pause', () => {
         hookBinary: '/nonexistent',
         prompt: 'p',
         recipe: {} as Recipe,
-        paused: async () => {
+        paused: Effect.sync(() => {
           asked += 1
           return asked === 1 ? null : 'task_view stopped — nothing is claimed'
-        },
+        }),
         failed: (why) => failed.push(why),
         log: (l) => lines.push(l),
       }).pipe(

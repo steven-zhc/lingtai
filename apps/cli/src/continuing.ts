@@ -1,6 +1,6 @@
-import { readState } from '@lingtai/conductor'
 import { type ControlState, ticketReducer, ticketStream } from '@lingtai/domain'
-import type { EventStore, SnapshotReadOptions } from '@lingtai/event-store'
+import { type EventStore, readThroughSnapshot, type SnapshotReadOptions } from '@lingtai/event-store'
+import { Effect } from 'effect'
 
 /**
  * Whether this `control.continuing` row is still owed a continuation in
@@ -15,18 +15,24 @@ import type { EventStore, SnapshotReadOptions } from '@lingtai/event-store'
  * The ticket is read through a snapshot where the caller has one (0124, #876): the list above only grows, and
  * this is asked of every row on every pass.
  *
+ * An Effect that never fails: a read the store refused is a defect (0101 §6), which a caller that
+ * must refuse in words (`lingtai run`) catches with `catchCause`, and one that must not stop
+ * (the daemon's look) leaves to the project's own catch.
+ *
  * The reducer defaults an absent `runId` or `issue` to `''`; `Number('')` is `0`,
  * which would read a stream nobody owns, so such a row is not owed.
  */
-export async function stillOwed(
+export function stillOwed(
   store: EventStore,
   project: string,
   row: ControlState['continuing'][number],
   snapshots: SnapshotReadOptions = {},
-): Promise<boolean> {
-  if (row.project !== project) return false
+): Effect.Effect<boolean> {
+  if (row.project !== project) return Effect.succeed(false)
   const issue = Number(row.issue)
-  if (row.runId === '' || !Number.isInteger(issue) || issue <= 0) return false
-  const ticket = await readState(store, ticketReducer, ticketStream(project, issue), 'all', snapshots)
-  return ticket.lifecycle.status === 'approved' && ticket.lifecycle.runId === row.runId
+  if (row.runId === '' || !Number.isInteger(issue) || issue <= 0) return Effect.succeed(false)
+  return readThroughSnapshot(store, ticketReducer, ticketStream(project, issue), 'all', snapshots).pipe(
+    Effect.map((ticket) => ticket.lifecycle.status === 'approved' && ticket.lifecycle.runId === row.runId),
+    Effect.orDie,
+  )
 }

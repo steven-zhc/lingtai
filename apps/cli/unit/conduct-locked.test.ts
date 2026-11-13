@@ -3,13 +3,20 @@
  * pause still ends the whole pass.
  */
 import { loadProject, reachAccountLimit } from '@lingtai/conductor'
-import { lockedBy, makeGuard } from '@lingtai/daemon'
+import { lockedEffect, makeGuard } from '@lingtai/daemon'
 import { accountStream, projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { conductProjects } from '../src/conduct.ts'
+
+const runConduct = (o: Parameters<typeof conductProjects>[0]) => Effect.runPromise(conductProjects(o))
+/** The ports are Effects; these fakes are written as promises. */
+const effectOf =
+  <A extends unknown[], B extends string | null>(f: (...a: A) => Promise<B>) =>
+  (...a: A) =>
+    Effect.promise(() => f(...a))
 
 async function twoProjects() {
   const store = createMemoryEventStore()
@@ -35,17 +42,17 @@ describe('a pass with one project locked', () => {
     const { store, projects } = await twoProjects()
     const entered: string[] = []
     const lines: string[] = []
-    const outcome = await conductProjects({
+    const outcome = await runConduct({
       projects,
       codeSha: null,
       store,
       outcome: { projects: 0, ran: 0, refused: [] },
       log: (l) => lines.push(l),
-      locked: async (name) => (name === 'first' ? 'first is paused by human:a since then' : null),
-      work: async (project) => {
+      locked: effectOf(async (name) => (name === 'first' ? 'first is paused by human:a since then' : null)),
+      work: effectOf(async (project) => {
         entered.push(project.project!)
         return 'looked-away'
-      },
+      }),
     })
     expect(entered).toEqual(['second', 'third'])
     expect(outcome.projects).toBe(2)
@@ -55,17 +62,17 @@ describe('a pass with one project locked', () => {
   it('a read that failed skips that project too', async () => {
     const { store, projects } = await twoProjects()
     const entered: string[] = []
-    await conductProjects({
+    await runConduct({
       projects,
       codeSha: null,
       store,
       outcome: { projects: 0, ran: 0, refused: [] },
       log: () => {},
-      locked: async (name) => (name === 'second' ? 'could not read whether second is paused — x' : null),
-      work: async (project) => {
+      locked: effectOf(async (name) => (name === 'second' ? 'could not read whether second is paused — x' : null)),
+      work: effectOf(async (project) => {
         entered.push(project.project!)
         return 'looked-away'
-      },
+      }),
     })
     expect(entered).toEqual(['first', 'third'])
   })
@@ -74,18 +81,18 @@ describe('a pass with one project locked', () => {
     const { store, projects } = await twoProjects()
     const entered: string[] = []
     const lines: string[] = []
-    await conductProjects({
+    await runConduct({
       projects,
       codeSha: null,
       store,
       outcome: { projects: 0, ran: 0, refused: [] },
       log: (l) => lines.push(l),
-      paused: async () => 'paused by human:ops — migrating',
-      locked: async () => null,
-      work: async (project) => {
+      paused: Effect.promise(async () => 'paused by human:ops — migrating'),
+      locked: effectOf(async () => null),
+      work: effectOf(async (project) => {
         entered.push(project.project!)
         return 'looked-away'
-      },
+      }),
     })
     expect(entered).toEqual([])
     expect(lines).toEqual(['first: not looked at — paused by human:ops — migrating'])
@@ -116,17 +123,17 @@ describe('a pass with one project locked', () => {
     })
     const entered: string[] = []
     const lines: string[] = []
-    await conductProjects({
+    await runConduct({
       projects: projects.slice(0, 2),
       codeSha: null,
       store,
       outcome: { projects: 0, ran: 0, refused: [] },
       log: (l) => lines.push(l),
-      locked: lockedBy(guard),
-      work: async (project) => {
+      locked: lockedEffect(guard),
+      work: effectOf(async (project) => {
         entered.push(project.project!)
         return 'looked-away'
-      },
+      }),
     })
     expect(entered).toEqual(['second'])
     expect(lines.find((l) => l.startsWith('first: not looked at'))).toContain("claude-code's usage limit")
@@ -147,14 +154,14 @@ describe('a pass with one project locked', () => {
     })
     const entered: string[] = []
     const lines: string[] = []
-    await conductProjects({
+    await runConduct({
       projects,
       codeSha: null,
       store,
       outcome: { projects: 0, ran: 0, refused: [] },
       log: (l) => lines.push(l),
-      locked: lockedBy(guard),
-      work: async (project) => {
+      locked: lockedEffect(guard),
+      work: effectOf(async (project) => {
         entered.push(project.project!)
         // What the attempt that met the wall does: it locks the runtime it dispatched.
         if (project.project === 'first') {
@@ -167,7 +174,7 @@ describe('a pass with one project locked', () => {
           )
         }
         return 'looked-away'
-      },
+      }),
     })
     expect(entered).toEqual(['first', 'second'])
     expect(lines.find((l) => l.startsWith('third: not looked at'))).toContain("claude-code's usage limit")

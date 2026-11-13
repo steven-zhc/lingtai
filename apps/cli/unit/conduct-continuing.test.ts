@@ -9,6 +9,13 @@ import { describe, expect, it } from 'vitest'
 
 import { conductProjects, conductWork, type ConductWorld, type TurnOutcome } from '../src/conduct.ts'
 
+const runConduct = (o: Parameters<typeof conductProjects>[0]) => Effect.runPromise(conductProjects(o))
+/** The ports are Effects; these fakes are written as promises. */
+const effectOf =
+  <A extends unknown[], B extends string | null>(f: (...a: A) => Promise<B>) =>
+  (...a: A) =>
+    Effect.promise(() => f(...a))
+
 /**
  * `conductWork`'s own `continuing` dispatch (#465, 0120 §6).
  *
@@ -144,7 +151,7 @@ describe('conductWork: a continuing row that has gone stale', () => {
       world,
     )
 
-    await conductProjects({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
+    await runConduct({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
 
     expect(runOnceCalls).toEqual([])
     expect(runQueueCalls).toEqual(['lingtai'])
@@ -197,7 +204,7 @@ describe('conductWork: a continuing row declined at claim', () => {
       world,
     )
 
-    await conductProjects({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
+    await runConduct({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
 
     expect(runQueueCalls).toEqual(['lingtai'])
     expect(outcome.ran).toBe(0)
@@ -251,7 +258,7 @@ describe('conductWork: two continuing rows for the same project', () => {
       world,
     )
 
-    await conductProjects({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
+    await runConduct({ projects: [PROJECT], codeSha: null, outcome, log: () => {}, work })
 
     expect(runOnceCalls).toEqual([{ issue: 470, continuing: { runId: 'pass-470' }, merge: false }])
     expect(outcome.ran).toBe(1)

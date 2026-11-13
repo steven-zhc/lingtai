@@ -34,6 +34,7 @@ import { SUBSCRIBER_STREAM, ticketStream } from '@lingtai/domain'
 import { boardUrl } from '@lingtai/env'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { resolveRecipe, type Subscriber as SubscriberSpec } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { buildSubscribers, createSubjectResolver } from '../src/subscribers.ts'
@@ -134,7 +135,7 @@ async function started(port: number, spec: Partial<SubscriberSpec> = {}, token =
     resolveEnv: (options) => resolveAgentEnv({ ...options, home }),
   })
   expect(unread).toEqual([])
-  loop = createWorkLoop({ sweepMs: 0, store, subscribers: built.map((b) => b.subscriber), pass: async () => {} })
+  loop = createWorkLoop({ sweepMs: 0, store, subscribers: built.map((b) => b.subscriber), pass: () => Effect.void })
   await loop.start()
   return { file }
 }

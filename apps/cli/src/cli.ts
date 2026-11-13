@@ -484,7 +484,7 @@ const liveRunners: Runners = {
   run: (request) =>
     Effect.gen(function* () {
       const { run: runAttempt } = yield* lift(() => import('./run.ts'))
-      return yield* lift(() => runAttempt(request))
+      return yield* runAttempt(request)
     }),
   attach: (request) =>
     Effect.gen(function* () {

@@ -18,9 +18,17 @@ import { loadProject } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon/control'
 import { CONTROL_STREAM, projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { conductProjects } from '../src/conduct.ts'
+
+const runConduct = (o: Parameters<typeof conductProjects>[0]) => Effect.runPromise(conductProjects(o))
+/** The ports are Effects; these fakes are written as promises. */
+const effectOf =
+  <A extends unknown[], B extends string | null>(f: (...a: A) => Promise<B>) =>
+  (...a: A) =>
+    Effect.promise(() => f(...a))
 
 describe('a pass across several projects', () => {
   it('asks whether the conductor is paused before each project, not once for the pass', async () => {
@@ -38,17 +46,17 @@ describe('a pass across several projects', () => {
 
     const entered: string[] = []
     const lines: string[] = []
-    const outcome = await conductProjects({
+    const outcome = await runConduct({
       projects,
       codeSha: null,
       store,
       outcome: { projects: 0, ran: 0, refused: [] },
       log: (line) => lines.push(line),
-      paused: async () => {
+      paused: Effect.promise(async () => {
         const c = await readControl(store)
         return c.paused ? `paused by ${c.by} — ${c.reason}` : null
-      },
-      work: async (project, where) => {
+      }),
+      work: effectOf(async (project, where) => {
         entered.push(project.project!)
         where.ref = 'main'
         // What `pauseConductorOnce` appends over a tier a runtime cannot provide:
@@ -61,7 +69,7 @@ describe('a pass across several projects', () => {
           },
         ])
         return 'looked'
-      },
+      }),
     })
 
     expect(entered).toEqual(['first'])

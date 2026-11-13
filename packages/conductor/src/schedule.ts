@@ -87,13 +87,13 @@ export interface ScheduleOptions {
    * that works the queue lives as long as the queue does, and a pause issued
    * while its first ticket runs has to stop it taking the second (#166).
    */
-  paused?: () => Promise<string | null>
+  paused?: Effect.Effect<string | null>
   /**
    * Whether *this project* is locked now, as a sentence, or null (0126). Asked
    * at the same two points as `paused`, after it; a sentence ends this
    * project's queue and no other. Never rejects.
    */
-  locked?: (project: string) => Promise<string | null>
+  locked?: (project: string) => Effect.Effect<string | null>
   /**
    * Fills this project's free slots and returns without waiting for the passes
    * (0122 §1). Absent, every item is awaited in turn, exactly as before.
@@ -202,8 +202,8 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       if (!options.paused && !options.locked) return undefined
       const asked = options.paused
       const askedLock = options.locked
-      let why = asked ? yield* Effect.promise(() => asked()) : null
-      if (why === null && askedLock) why = yield* Effect.promise(() => askedLock(name))
+      let why = asked ? yield* asked : null
+      if (why === null && askedLock) why = yield* askedLock(name)
       if (why === null) return undefined
       log(why)
       told(() => options.failed?.(why))

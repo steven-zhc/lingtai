@@ -11,7 +11,7 @@ import {
   reduceProject,
 } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, type SnapshotStore } from '@lingtai/event-store'
-import { Context, Data, Effect } from 'effect'
+import { Cause, Context, Data, Effect } from 'effect'
 
 import { readControlEffect } from './control.ts'
 
@@ -174,5 +174,22 @@ export const lockedBy =
       guard.locksFor(project).pipe(
         Effect.map((locks) => lockSentence(project, locks)),
         Effect.catch((err) => Effect.succeed<string | null>(lockFailure(project, err))),
+      ),
+    )
+
+/**
+ * `lockedBy` as an Effect, for the conductors that yield it. It never fails: a read that fails
+ * *or dies* answers the same sentence (`catchCause`, not `Effect.catch`), so a check that throws
+ * is a project not started rather than a look that ends. An interruption passes through.
+ */
+export const lockedEffect =
+  (guard: Guard): ((project: string) => Effect.Effect<string | null>) =>
+  (project) =>
+    guard.locksFor(project).pipe(
+      Effect.map((locks) => lockSentence(project, locks)),
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause as Cause.Cause<never>)
+          : Effect.succeed<string | null>(lockFailure(project, Cause.squash(cause) as Error)),
       ),
     )
