@@ -44,13 +44,13 @@ function freshLog() {
   const path = join(dir, 'log.db')
   const db = openSqliteLog(path)
   opened.push(db)
-  return createSqliteLog({ db, path })
+  return { log: createSqliteLog({ db, path }), db }
 }
 
 const LIVE = 'esctest-live'
 const PENDING = 'esctest-pending'
 
-let log: ReturnType<typeof freshLog>
+let log: ReturnType<typeof freshLog>['log']
 
 beforeAll(async () => {
   // Every name `postgresUrl()` and `directPostgresUrl()` read. With these gone
@@ -64,7 +64,8 @@ beforeAll(async () => {
     vi.stubEnv(name, undefined as unknown as string)
   }
 
-  log = freshLog()
+  const fresh = freshLog()
+  log = fresh.log
   await log.store.append(projectStream(LIVE), 0, [
     {
       type: 'ProjectConfigured',
@@ -78,17 +79,23 @@ beforeAll(async () => {
       }),
     },
   ])
-  await log.store.append(projectStream(PENDING), 0, [
-    {
-      type: 'ProjectOnboardingStarted',
-      actor: 'human:esctest',
-      data: parsePayload('ProjectOnboardingStarted', {
-        slug: `steven-zhc/${PENDING}`,
-        base: 'develop',
-        by: 'human:esctest',
-      }),
-    },
-  ])
+  // `ProjectOnboardingStarted` is retired, so a store refuses to append it; old
+  // logs still hold it, and that is what this row stands for.
+  fresh.db
+    .prepare(
+      `INSERT INTO events (stream_id, version, type, schema_ver, data, actor, causation)
+       VALUES (?, 1, 'ProjectOnboardingStarted', 1, ?, 'human:esctest', NULL)`,
+    )
+    .run(
+      projectStream(PENDING),
+      JSON.stringify(
+        parsePayload('ProjectOnboardingStarted', {
+          slug: `steven-zhc/${PENDING}`,
+          base: 'develop',
+          by: 'human:esctest',
+        }),
+      ),
+    )
 })
 
 afterAll(() => {

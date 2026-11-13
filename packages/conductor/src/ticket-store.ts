@@ -58,7 +58,7 @@ export type Ticket = TicketDetail & { url: string | null }
  * silently until `pnpm typecheck` next ran.
  *
  * **Not every write Lingtai makes against GitHub goes through a verb here.**
- * GitHub's additive label write has no typed method on `GitHubClient` and no
+ * GitHub's additive label write is `GitHubClient.addLabels`, and has no
  * equivalent here, because this interface's `setLabels` replaces, which is
  * wrong for a caller that must add a label to whatever is already there.
  *
