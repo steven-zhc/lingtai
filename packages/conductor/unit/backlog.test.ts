@@ -14,7 +14,7 @@ import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
 import type { GitHubClient, Issue } from '@lingtai/github'
 import type { BacklogEntry } from '@lingtai/projector'
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { acceptFinding, declineFinding, proposalFor } from '../src/backlog.ts'
@@ -217,6 +217,30 @@ describe('githubTicketStore', () => {
     // A different key is a different ticket.
     await Effect.runPromise(store.propose({ ...ticket, key: 'k2' }))
     expect(gh.issues).toHaveLength(2)
+  })
+
+  it('finishes a create that was interrupted: no duplicate is left open', async () => {
+    let release!: () => void
+    const held = new Promise<void>((r) => (release = r))
+    let first = true
+    const gh = fakeGitHub({
+      beforeCreate: async () => {
+        if (first) {
+          first = false
+          await held
+        }
+      },
+    })
+    const store = githubTicketStore(gh.client)
+    const fiber = Effect.runFork(store.propose(ticket))
+    await new Promise((r) => setTimeout(r, 10))
+    // The interruption waits for the sent create to be reconciled; it does not abandon it.
+    const interrupted = Effect.runPromise(Fiber.interrupt(fiber))
+    const retry = await Effect.runPromise(store.propose(ticket))
+    release()
+    await interrupted
+    expect(gh.open()).toHaveLength(1)
+    expect(retry.externalRef).toBeDefined()
   })
 
   it('converges when two proposes race: the newer issue is closed as a duplicate of the older', async () => {

@@ -183,28 +183,32 @@ export function githubTicketStore(
     source: 'github-issue',
     withdraw,
 
+    // Uninterruptible: a create already sent cannot be taken back, so an interruption
+    // that abandoned the reconciliation would leave its duplicate open.
     propose: (ticket) =>
-      Effect.gen(function* () {
-        const existing = yield* carrying(ticket.key, ticket.since)
-        if (existing) return ref(existing, false)
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const existing = yield* carrying(ticket.key, ticket.since)
+          if (existing) return ref(existing, false)
 
-        const labels = [...new Set([ticket.kind, ...ticket.labels].filter((l) => l.trim() !== ''))]
-        const body = `${ticket.body.trimEnd()}\n\n${keyMarker(ticket.key)}\n`
-        const opened = yield* lift(() => client.createIssue({ title: ticket.title, body, labels }))
+          const labels = [...new Set([ticket.kind, ...ticket.labels].filter((l) => l.trim() !== ''))]
+          const body = `${ticket.body.trimEnd()}\n\n${keyMarker(ticket.key)}\n`
+          const opened = yield* lift(() => client.createIssue({ title: ticket.title, body, labels }))
 
-        // Look again. A call that raced this one may have opened its own in the
-        // meantime; the older issue is the key's, so the newer withdraws.
-        const first = yield* carrying(ticket.key, ticket.since)
-        if (first && first.number < opened.number) {
-          yield* withdraw(
-            String(opened.number),
-            String(first.number),
-            'two accepts of the same finding opened an issue at once, and the older one is kept',
-          )
-          return ref(first, false)
-        }
-        return ref(opened, true)
-      }),
+          // Look again. A call that raced this one may have opened its own in the
+          // meantime; the older issue is the key's, so the newer withdraws.
+          const first = yield* carrying(ticket.key, ticket.since)
+          if (first && first.number < opened.number) {
+            yield* withdraw(
+              String(opened.number),
+              String(first.number),
+              'two accepts of the same finding opened an issue at once, and the older one is kept',
+            )
+            return ref(first, false)
+          }
+          return ref(opened, true)
+        }),
+      ),
   }
 }
 

@@ -316,55 +316,60 @@ export function splitTicketHoldingEffect(
       `${child.body.trimEnd()}\n\n${splitMarker(waitId, child.key)}\n`
 
     /** Create (unless a marker answers), attach, record — and only then is the next child started. */
+    // Uninterruptible: a create already sent cannot be taken back, so an interruption
+    // must not release the decide lock before the child is found and recorded.
     const writeChild = (child: SplitPlanInput['children'][number]): Effect.Effect<StepStatus, Error> =>
-      Effect.gen(function* () {
-        let status: StepStatus = 'skipped'
-        if (!found.has(child.key)) {
-          yield* lift(() =>
-            github.createIssue({
-              title: child.title.trim(),
-              body: expectedBody(child),
-              labels: [child.kind],
-            }),
-          ).pipe(
-            Effect.map((opened) => {
-              found.set(child.key, opened.number)
-            }),
-            Effect.catchIf(
-              () => true,
-              (err) =>
-                // A timed-out create is not proof of absence: look by marker before failing.
-                findMarked.pipe(
-                  Effect.catchIf(
-                    () => true,
-                    () => Effect.fail(err),
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          let status: StepStatus = 'skipped'
+          if (!found.has(child.key)) {
+            yield* lift(() =>
+              github.createIssue({
+                title: child.title.trim(),
+                body: expectedBody(child),
+                labels: [child.kind],
+              }),
+            ).pipe(
+              Effect.map((opened) => {
+                found.set(child.key, opened.number)
+              }),
+              Effect.catchIf(
+                () => true,
+                (err) =>
+                  // A timed-out create is not proof of absence: look by marker before failing.
+                  findMarked.pipe(
+                    Effect.catchIf(
+                      () => true,
+                      () => Effect.fail(err),
+                    ),
+                    Effect.flatMap(() => (found.has(child.key) ? Effect.void : Effect.fail(err))),
                   ),
-                  Effect.flatMap(() => (found.has(child.key) ? Effect.void : Effect.fail(err))),
-                ),
-            ),
+              ),
+            )
+            status = 'done'
+          }
+          const number = numberOf(child.key)
+          const attached = yield* ensure(
+            () => github.listSubIssues(options.issue),
+            () => github.addSubIssue(options.issue, number),
+            number,
           )
-          status = 'done'
-        }
-        const number = numberOf(child.key)
-        const attached = yield* ensure(
-          () => github.listSubIssues(options.issue),
-          () => github.addSubIssue(options.issue, number),
-          number,
-        )
-        if (attached === 'done') status = 'done'
-        // Written means attached; GitHub's `id` is only on the sub-issue listing.
-        if (known.get(child.key) !== number) {
-          const sub = (yield* lift(() => github.listSubIssues(options.issue))).find(
-            (s) => here(s) && s.number === number,
-          )
-          if (sub === undefined) return yield* Effect.fail(new Error(`#${number} is not a sub-issue on read-back`))
-          yield* note('SplitChildWritten', { waitId, key: child.key, number: sub.number, id: sub.id })
-          // The key names another issue now, so links recorded for the old one are stale.
-          if (known.has(child.key)) for (const l of linked) if (l.split('\u0000').includes(child.key)) linked.delete(l)
-          known.set(child.key, number)
-        }
-        return status
-      })
+          if (attached === 'done') status = 'done'
+          // Written means attached; GitHub's `id` is only on the sub-issue listing.
+          if (known.get(child.key) !== number) {
+            const sub = (yield* lift(() => github.listSubIssues(options.issue))).find(
+              (s) => here(s) && s.number === number,
+            )
+            if (sub === undefined) return yield* Effect.fail(new Error(`#${number} is not a sub-issue on read-back`))
+            yield* note('SplitChildWritten', { waitId, key: child.key, number: sub.number, id: sub.id })
+            // The key names another issue now, so links recorded for the old one are stale.
+            if (known.has(child.key))
+              for (const l of linked) if (l.split('\u0000').includes(child.key)) linked.delete(l)
+            known.set(child.key, number)
+          }
+          return status
+        }),
+      )
 
     const writeDoneWhen: Effect.Effect<StepStatus, Error> = Effect.gen(function* () {
       const numbers = plan.children.map((c) => numberOf(c.key))

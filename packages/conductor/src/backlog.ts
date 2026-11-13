@@ -165,7 +165,10 @@ export interface DecideOptions {
   by: string
   events?: EventStore
   /** The entry, as the backlog has it. Defaults to reading the projection. */
-  entry?: (project: string, key: string) => Promise<BacklogEntry | undefined>
+  entry?: (
+    project: string,
+    key: string,
+  ) => Promise<BacklogEntry | undefined> | Effect.Effect<BacklogEntry | undefined, Error>
 }
 
 function decidedDetail(key: string, state: FindingState): string {
@@ -199,7 +202,10 @@ const readEntry = (
       return `a backlog entry is decided by a person, and ${options.by} is not one`
     }
     const read = options.entry ?? ((project: string, key: string) => readBacklog({ project, key }).then((r) => r[0]))
-    const entry = yield* lift(() => read(options.project, options.key))
+    const entry = yield* Effect.suspend(() => {
+      const got = read(options.project, options.key)
+      return Effect.isEffect(got) ? got : lift(() => got)
+    })
     if (!entry) return `no backlog entry ${options.key} in ${options.project}`
     const events = options.events ?? eventStore
     // The log settles it, not the projection: a decision a moment old may not be reduced yet.
@@ -312,7 +318,7 @@ const open = (
 ): Effect.Effect<BacklogDecision, Error> =>
   Effect.gen(function* () {
     const streamId = backlogStream(options.project, options.key)
-    const proposed = yield* caught(options.tickets.propose(proposalFor(entry, decision, since)))
+    const proposed = yield* caught(Effect.suspend(() => options.tickets.propose(proposalFor(entry, decision, since))))
     if (!proposed.ok) {
       return {
         ok: false,
@@ -384,10 +390,12 @@ const settle = (
       return { ok: true, detail: `${options.key} is ${is}`, externalRef: recorded.externalRef, url: recorded.url }
     }
     const withdrawn = yield* caught(
-      options.tickets.withdraw(
-        ref.externalRef,
-        recorded.externalRef,
-        `the backlog recorded #${recorded.externalRef} as finding ${options.key}'s issue while this one was being opened`,
+      Effect.suspend(() =>
+        options.tickets.withdraw(
+          ref.externalRef,
+          recorded.externalRef,
+          `the backlog recorded #${recorded.externalRef} as finding ${options.key}'s issue while this one was being opened`,
+        ),
       ),
     )
     if (!withdrawn.ok) {
