@@ -37,8 +37,8 @@ const REPO: Record<string, string> = {
   'pnpm-lock.yaml': '',
 }
 const reader: SetupReader = {
-  has: async (p) => p in REPO,
-  read: async (p) => REPO[p] ?? null,
+  has: (p) => Effect.succeed(p in REPO),
+  read: (p) => Effect.succeed(REPO[p] ?? null),
 }
 
 const RUNTIMES: readonly RuntimeFound[] = [

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { ProjectState } from '@lingtai/domain'
 import { storeChoice } from '@lingtai/env'
 import { recipePath, type RecipeFiles } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { type GitResult, pathExists } from '../src/first-project.ts'
@@ -203,7 +204,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
       // `/repo` is the repository `LOCAL_REPO_GIT` plans git for; it is not on
       // this machine, and `--local` refuses a directory that is not.
       exists: async (path) => path === '/repo' || pathExists(path),
-      setupReader: () => ({ has: async () => false, read: async () => null }),
+      setupReader: () => ({ has: () => Effect.succeed(false), read: () => Effect.succeed(null) }),
       database: async (url) => {
         seen.connected.push(url)
         if (!(script.answering ?? [URL_]).includes(url)) return { ok: false, why: 'connection refused' }

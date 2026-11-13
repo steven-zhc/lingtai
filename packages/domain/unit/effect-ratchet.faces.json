@@ -411,7 +411,7 @@
     "file": "packages/conductor/src/ticket-history.ts",
     "fn": "liveHistory",
     "until": "#790",
-    "why": "`packages/setup`'s promise `history` port (`propose-setup.ts:66`), handed over by apps/cli add-github, init, first-project and `add-from-page.ts`"
+    "why": "apps/cli add-github, init and first-project hand it over as a promise"
   },
   {
     "file": "packages/conductor/src/ticket-store.ts",
@@ -1032,21 +1032,9 @@
     "why": "apps/board task.ts and app/actions.ts"
   },
   {
-    "file": "packages/repo/src/worktree.ts",
-    "fn": "provisionWorktree",
-    "until": "#790",
-    "why": "packages/setup trial-build.ts and apps/cli/scripts/rung-1.ts"
-  },
-  {
-    "file": "packages/repo/src/worktree.ts",
-    "fn": "removeWorktree",
-    "until": "#790",
-    "why": "packages/setup trial-build.ts and apps/cli/scripts/rung-1.ts"
-  },
-  {
     "file": "packages/setup/src/runtimes.ts",
     "fn": "askRuntimes",
     "until": "#790",
-    "why": "apps/cli (add-github, first-project, init) and packages/conductor/src/add-from-page.ts call it as a promise; goes with the later of the apps/cli setup group and the conductor rest"
+    "why": "apps/cli (add-github, first-project, init) call it as a promise; goes with the later of the apps/cli setup group and the conductor rest"
   }
 ]

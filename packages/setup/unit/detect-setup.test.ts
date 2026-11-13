@@ -7,14 +7,17 @@ import { describe, expect, it } from 'vitest'
 
 import { DETECTORS, detectSetupEffect, type SetupReader, type StackDetector } from '../src/detect-setup.ts'
 
+/** A fake port written as a promise, handed over as the Effect the port wants; a throw is the port's failure. */
+const lift = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
+
 const detectSetup = (r: SetupReader, detectors?: readonly StackDetector[]) =>
   Effect.runPromise(detectSetupEffect(r, detectors))
 
 function reader(files: Record<string, string>, opts: { haveNotRead?: string[] } = {}): SetupReader {
   const haveNotRead = new Set(opts.haveNotRead ?? [])
   return {
-    has: async (path) => path in files || haveNotRead.has(path),
-    read: async (path) => (haveNotRead.has(path) ? null : (files[path] ?? null)),
+    has: (path) => lift(async () => path in files || haveNotRead.has(path)),
+    read: (path) => lift(async () => (haveNotRead.has(path) ? null : (files[path] ?? null))),
   }
 }
 
@@ -285,10 +288,11 @@ describe('the Python detector', () => {
     const base = reader({ 'uv.lock': '', 'pyproject.toml': RUFF })
     const result = await detectSetup({
       ...base,
-      has: async (path) => {
-        if (path === 'mypy.ini') throw new Error('network')
-        return base.has(path)
-      },
+      has: (path) =>
+        lift(async () => {
+          if (path === 'mypy.ini') throw new Error('network')
+          return Effect.runPromise(base.has(path))
+        }),
     })
     expect(result.notes).toContain('could not tell whether mypy.ini is at the root')
     expect(result.build.map((b) => b.name)).toEqual(['format', 'lint'])
@@ -318,10 +322,11 @@ describe('the Python detector', () => {
     const base = reader(files)
     const unknown = await detectSetup({
       ...base,
-      has: async (path) => {
-        if (path === 'mypy.ini') throw new Error('network')
-        return base.has(path)
-      },
+      has: (path) =>
+        lift(async () => {
+          if (path === 'mypy.ini') throw new Error('network')
+          return Effect.runPromise(base.has(path))
+        }),
     })
     expect(unknown.build.find((b) => b.name === 'typecheck')).toBeUndefined()
     expect(unknown.notes).toContain('could not tell whether mypy.ini is at the root')
@@ -331,10 +336,11 @@ describe('the Python detector', () => {
     const base = reader({ 'requirements.txt': '' })
     const result = await detectSetup({
       ...base,
-      has: async (path) => {
-        if (path === 'uv.lock') throw new Error('network')
-        return base.has(path)
-      },
+      has: (path) =>
+        lift(async () => {
+          if (path === 'uv.lock') throw new Error('network')
+          return Effect.runPromise(base.has(path))
+        }),
     })
     expect(result.install).toBeNull()
     expect(result.notes).toContain('could not tell whether uv.lock is at the root')
@@ -420,11 +426,12 @@ describe('the Go detector', () => {
   it('a rejected lookup of an earlier config withholds lint rather than falling to a later file', async () => {
     const files: Record<string, string> = { ...GO, '.golangci.yaml': 'a: 1\n' }
     const result = await detectSetup({
-      has: async (p) => {
-        if (p === '.golangci.yml') throw new Error('no')
-        return p in files
-      },
-      read: async (p) => files[p] ?? null,
+      has: (p) =>
+        lift(async () => {
+          if (p === '.golangci.yml') throw new Error('no')
+          return p in files
+        }),
+      read: (p) => lift(async () => files[p] ?? null),
     })
     expect(result.build.map((b) => b.name)).not.toContain('lint')
     expect(result.notes).toContain('could not tell whether .golangci.yml is at the root')
@@ -432,10 +439,11 @@ describe('the Go detector', () => {
 
   it('has(go.mod) rejecting is could-not-tell', async () => {
     const result = await detectSetup({
-      has: async () => {
-        throw new Error('no')
-      },
-      read: async () => null,
+      has: () =>
+        lift(async () => {
+          throw new Error('no')
+        }),
+      read: () => lift(async () => null),
     })
     expect(result.install).toBeNull()
     expect(result.notes).toContain('could not tell whether a Go module is at the root')
@@ -459,11 +467,12 @@ describe('detectSetup — Java', () => {
   const POM = '<?xml version="1.0"?><project><modelVersion>4.0.0</modelVersion><!-- <x> --></project>'
   const GRADLE = 'plugins { id \'java\' }\n// }\ndependencies { implementation("a:b:1") }\n'
   const rejecting = (bad: string, files: Record<string, string>): SetupReader => ({
-    has: async (path) => {
-      if (path === bad) throw new Error('no')
-      return path in files
-    },
-    read: async (path) => files[path] ?? null,
+    has: (path) =>
+      lift(async () => {
+        if (path === bad) throw new Error('no')
+        return path in files
+      }),
+    read: (path) => lift(async () => files[path] ?? null),
   })
   const commands = (r: Awaited<ReturnType<typeof detectSetup>>) => [r.install?.run ?? '', ...r.build.map((b) => b.run)]
 
@@ -570,10 +579,11 @@ describe('detectSetup — Java', () => {
     '%s is never read, so a broken script still gets gradle test',
     async (file) => {
       const r = await detectSetup({
-        has: async (path) => path === file,
-        read: async () => {
-          throw new Error('a Gradle script is not read')
-        },
+        has: (path) => lift(async () => path === file),
+        read: () =>
+          lift(async () => {
+            throw new Error('a Gradle script is not read')
+          }),
       })
       expect(r.build.map((b) => b.run)).toEqual(['gradle test'])
       expect(r.notes.some((n) => n.includes('parse') || n.includes('read'))).toBe(false)
@@ -629,11 +639,12 @@ describe('detectSetup — Rust', () => {
 
   it('an unknown Cargo.lock leaves --locked off and says so', async () => {
     const r = await detectSetup({
-      has: async (path) => {
-        if (path === 'Cargo.lock') throw new Error('no')
-        return path === 'Cargo.toml'
-      },
-      read: async () => TOML,
+      has: (path) =>
+        lift(async () => {
+          if (path === 'Cargo.lock') throw new Error('no')
+          return path === 'Cargo.toml'
+        }),
+      read: () => lift(async () => TOML),
     })
     expect(r.install?.run).toBe('cargo fetch')
     expect(r.notes).toContain('could not tell whether Cargo.lock is at the root; --locked was left off')
@@ -654,10 +665,11 @@ describe('detectSetup — Rust', () => {
 
   it('a has() that rejects is could-not-tell, not absent', async () => {
     const r = await detectSetup({
-      has: async () => {
-        throw new Error('no')
-      },
-      read: async () => null,
+      has: () =>
+        lift(async () => {
+          throw new Error('no')
+        }),
+      read: () => lift(async () => null),
     })
     expect(r.notes).toContain('could not tell whether a Cargo project is at the root')
   })
@@ -672,10 +684,11 @@ describe('detectSetup — Rust', () => {
 describe('detectSetupEffect', () => {
   it('a read that rejects where nothing catches it is SetupFailed, never an empty detection', async () => {
     const failing: SetupReader = {
-      has: async (path) => path === 'package.json',
-      read: async () => {
-        throw new Error('boom')
-      },
+      has: (path) => lift(async () => path === 'package.json'),
+      read: () =>
+        lift(async () => {
+          throw new Error('boom')
+        }),
     }
     const result = await Effect.runPromise(Effect.result(detectSetupEffect(failing)))
     expect(result._tag).toBe('Failure')

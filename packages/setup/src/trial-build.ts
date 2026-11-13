@@ -1,7 +1,7 @@
 import { boundedEvidence, runCommand } from '@lingtai/actions'
 import { resolveAgentEnv, runnableEnv, productionPatterns } from '@lingtai/agent-env'
 import { parseDuration, readRecipeKey, type RecipeFiles } from '@lingtai/recipe'
-import { provisionWorktree, removeWorktree, type ProvisionOptions } from '@lingtai/repo'
+import { provisionWorktreeEffect, removeWorktreeEffect, type ProvisionOptions } from '@lingtai/repo'
 import { Data, Effect, Ref } from 'effect'
 
 /**
@@ -17,6 +17,7 @@ import { Data, Effect, Ref } from 'effect'
  * question.
  */
 import { messageOf } from './failure.ts'
+import { portCause } from './port-cause.ts'
 
 /**
  * One command the trial run tried, and how it went. A command the trial never
@@ -52,8 +53,8 @@ const RUN_TIMEOUT = '15m'
 const DEFAULT_PLANT_AT = '.env.local'
 
 export interface TrialDeps {
-  provision: (options: ProvisionOptions) => Promise<{ path: string }>
-  remove: (options: { project: string; runId: string; home?: string }) => Promise<void>
+  provision: (options: ProvisionOptions) => Effect.Effect<{ path: string }, unknown>
+  remove: (options: { project: string; runId: string; home?: string }) => Effect.Effect<void, unknown>
   run: typeof runCommand
   resolveEnv: typeof resolveAgentEnv
   /** Stable per-trial id, so the worktree path never collides with a pass's. */
@@ -62,8 +63,8 @@ export interface TrialDeps {
 }
 
 export const liveTrialDeps = (log: (line: string) => void): TrialDeps => ({
-  provision: provisionWorktree,
-  remove: removeWorktree,
+  provision: provisionWorktreeEffect,
+  remove: removeWorktreeEffect,
   run: runCommand,
   resolveEnv: resolveAgentEnv,
   runId: () => `setup-${Date.now()}`,
@@ -194,24 +195,22 @@ export const runTrialEffect = Effect.fn('setup.trial')(function* (
         // Uninterruptible: `remove` must not start while git is still writing.
         // Ctrl+C reaches git through its process group, not through the fiber.
         const cutting = yield* Effect.uninterruptible(
-          Effect.tryPromise({
-            try: () =>
-              deps.provision({
-                project: at.project,
-                owner: at.owner,
-                repo: at.repo,
-                base: cut.base,
-                branch: 'setup-trial',
-                runId,
-                submodules: cut.submodules,
-                plantAt,
-                env: env.values,
-                token: at.token,
-                remote: at.remote,
-                home: at.home,
-              }),
-            catch: (err) => err,
-          }),
+          portCause(() =>
+            deps.provision({
+              project: at.project,
+              owner: at.owner,
+              repo: at.repo,
+              base: cut.base,
+              branch: 'setup-trial',
+              runId,
+              submodules: cut.submodules,
+              plantAt,
+              env: env.values,
+              token: at.token,
+              remote: at.remote,
+              home: at.home,
+            }),
+          ),
         ).pipe(
           Effect.match({
             onSuccess: (wt) => ({ path: wt.path as string | null, error: null as unknown }),
@@ -265,10 +264,10 @@ export const runTrialEffect = Effect.fn('setup.trial')(function* (
     (runId) =>
       // A failed cleanup must not replace the failure it cleans up after — and
       // must not be hidden either: the checkout holds a planted env file.
-      Effect.tryPromise(() => deps.remove({ project: at.project, runId, home: at.home })).pipe(
+      portCause(() => deps.remove({ project: at.project, runId, home: at.home })).pipe(
         Effect.catch((err) =>
           Effect.gen(function* () {
-            const why = messageOf(err.cause)
+            const why = messageOf(err)
             yield* Ref.set(leftBehind, why)
             deps.log(`could not remove the throwaway checkout (${runId}): ${why}`)
             deps.log('it may still hold the env file setup planted — remove it by hand')

@@ -13,9 +13,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { provisionWorktree, removeWorktree } from '../src/index.ts'
+import { provisionWorktreeEffect, removeWorktreeEffect } from '../src/index.ts'
+
+const provisionWorktree = (o: Parameters<typeof provisionWorktreeEffect>[0]) =>
+  Effect.runPromise(provisionWorktreeEffect(o))
+const removeWorktree = (o: Parameters<typeof removeWorktreeEffect>[0]) => Effect.runPromise(removeWorktreeEffect(o))
 
 const exec = promisify(execFile)
 const git = (args: string[], cwd: string) =>

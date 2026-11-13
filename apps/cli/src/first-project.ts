@@ -838,18 +838,22 @@ async function runLocalBranch(
       { kind: 'local', path: toplevel },
       {
         setupReader: world.setupReader(toplevel),
-        defaultBranch: () => Promise.resolve(base),
-        runtimes: () => Promise.resolve(runtimes),
-        history: world.history,
+        defaultBranch: () => Effect.succeed(base),
+        runtimes: () => Effect.succeed(runtimes),
+        history: (project) => Effect.tryPromise({ try: () => world.history(project), catch: (e) => e }),
         // No `origin` is an answer (null); a git that failed is not.
         origin: (path) =>
-          world.git(path, ['remote']).then((remotes) => {
-            if (!remotes.ok) throw new Error(remotes.stderr.trim() || 'git remote failed')
-            if (!remotes.stdout.split('\n').some((r) => r.trim() === 'origin')) return null
-            return world.git(path, ['remote', 'get-url', 'origin']).then((url) => {
-              if (!url.ok) throw new Error(url.stderr.trim() || 'git remote get-url origin failed')
-              return url.stdout.trim() || null
-            })
+          Effect.tryPromise({
+            try: () =>
+              world.git(path, ['remote']).then((remotes) => {
+                if (!remotes.ok) throw new Error(remotes.stderr.trim() || 'git remote failed')
+                if (!remotes.stdout.split('\n').some((r) => r.trim() === 'origin')) return null
+                return world.git(path, ['remote', 'get-url', 'origin']).then((url) => {
+                  if (!url.ok) throw new Error(url.stderr.trim() || 'git remote get-url origin failed')
+                  return url.stdout.trim() || null
+                })
+              }),
+            catch: (e) => e,
           }),
       },
     ),
@@ -1275,14 +1279,9 @@ export function liveRepositoryList(auth: 'app' | 'gh'): Promise<RepositoryList> 
  */
 export function liveSetupReader(dir: string): SetupReader {
   return {
-    has: async (path) => existsSync(join(dir, path)),
-    read: async (path) => {
-      try {
-        return await readFile(join(dir, path), 'utf8')
-      } catch {
-        return null
-      }
-    },
+    has: (path) => Effect.sync(() => existsSync(join(dir, path))),
+    read: (path) =>
+      Effect.tryPromise(() => readFile(join(dir, path), 'utf8')).pipe(Effect.orElseSucceed((): string | null => null)),
   }
 }
 

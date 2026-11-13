@@ -15,8 +15,8 @@
  * ownerless project whose recipe says `github` — so `localTicketsOf` is where
  * the page overrides it, and #977 deletes that function with the rule.
  *
- * **Every read is an Effect.** The ports `@lingtai/setup` types as promises are
- * filled with `runPort`, one call per member, until they are Effect ports.
+ * **Every read is an Effect.** The ports `@lingtai/setup` types are Effects, so
+ * each member here is one.
  */
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -32,7 +32,7 @@ import {
   alreadyAdded,
   alreadyAddedSentence,
   applySetup,
-  askRuntimes,
+  askRuntimesEffect,
   keptSentence,
   LINGTAI_BASE,
   previewSetup,
@@ -50,9 +50,9 @@ import {
 import { Effect } from 'effect'
 
 import { addEffect, addLocalEffect } from './onboard.ts'
-import { asFailure, runPort } from './port-face.ts'
+import { asFailure } from './port-face.ts'
 import { loadAllProjects, signedInHere } from './projects.ts'
-import { liveHistory } from './ticket-history.ts'
+import { liveHistoryEffect } from './ticket-history.ts'
 
 const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
@@ -95,16 +95,12 @@ const githubFor = (owner: string, repo: string) =>
 /** Files in a checkout on this machine. */
 const diskReader = (dir: string): SetupReader => ({
   has: (path) =>
-    runPort(
-      Effect.tryPromise(() => stat(join(dir, path))).pipe(
-        Effect.as(true),
-        Effect.orElseSucceed(() => false),
-      ),
+    Effect.tryPromise(() => stat(join(dir, path))).pipe(
+      Effect.as(true),
+      Effect.orElseSucceed(() => false),
     ),
   read: (path) =>
-    runPort(
-      Effect.tryPromise(() => readFile(join(dir, path), 'utf8')).pipe(Effect.orElseSucceed((): string | null => null)),
-    ),
+    Effect.tryPromise(() => readFile(join(dir, path), 'utf8')).pipe(Effect.orElseSucceed((): string | null => null)),
 })
 
 /**
@@ -120,29 +116,25 @@ function githubReader(
 ): SetupReader {
   return {
     has: (path) =>
-      runPort(
-        Effect.gen(function* () {
-          const g = yield* client
-          const branch = yield* ref
-          return yield* g
-            .request('GET', `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`)
-            .pipe(
-              Effect.as(true),
-              Effect.catchIf(
-                (err) => err instanceof GitHubFailed && err.status === 404,
-                () => Effect.succeed(false),
-              ),
-            )
-        }),
-      ),
+      Effect.gen(function* () {
+        const g = yield* client
+        const branch = yield* ref
+        return yield* g
+          .request('GET', `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`)
+          .pipe(
+            Effect.as(true),
+            Effect.catchIf(
+              (err) => err instanceof GitHubFailed && err.status === 404,
+              () => Effect.succeed(false),
+            ),
+          )
+      }),
     read: (path) =>
-      runPort(
-        Effect.gen(function* () {
-          const g = yield* client
-          const branch = yield* ref
-          return yield* g.fileAt(path, branch)
-        }).pipe(Effect.orElseSucceed((): string | null => null)),
-      ),
+      Effect.gen(function* () {
+        const g = yield* client
+        const branch = yield* ref
+        return yield* g.fileAt(path, branch)
+      }).pipe(Effect.orElseSucceed((): string | null => null)),
   }
 }
 
@@ -155,23 +147,21 @@ export function liveReaders(target: SetupTarget): Effect.Effect<ProposalReaders>
       const ref = yield* Effect.cached(Effect.flatMap(client, (g) => g.defaultBranch()))
       return {
         setupReader: githubReader(client, ref, owner, repo),
-        defaultBranch: () => runPort(ref),
-        runtimes: askRuntimes,
-        history: liveHistory,
-        origin: () => Promise.resolve(null),
+        defaultBranch: () => ref,
+        runtimes: askRuntimesEffect,
+        history: liveHistoryEffect,
+        origin: () => Effect.succeed(null),
       }
     })
   }
   return Effect.succeed({
     setupReader: diskReader(target.path),
     // A directory lands on `lingtai-base`, made from the branch it is on (0104 §15), not on the branch checked out.
-    defaultBranch: () => Promise.resolve(LINGTAI_BASE),
-    runtimes: askRuntimes,
-    history: liveHistory,
+    defaultBranch: () => Effect.succeed(LINGTAI_BASE),
+    runtimes: askRuntimesEffect,
+    history: liveHistoryEffect,
     origin: (path) =>
-      runPort(
-        gitIn(path, ['remote', 'get-url', 'origin']).pipe(Effect.map((r) => (r.ok && r.out !== '' ? r.out : null))),
-      ),
+      gitIn(path, ['remote', 'get-url', 'origin']).pipe(Effect.map((r) => (r.ok && r.out !== '' ? r.out : null))),
   })
 }
 

@@ -31,6 +31,7 @@ import { diskFiles, readRecipeKey, recipePath, type RecipeChange, type RecipeFil
 import { type Answers, EMPTY_SETUP_READER, type Picker, type SetupReader } from '@lingtai/setup'
 import { askRuntimes, proposeSetup, type RuntimeFound } from '@lingtai/setup'
 import { liveTrialBuild } from '@lingtai/setup'
+import { Effect } from 'effect'
 
 import { livePicker, runEffect } from './first-project.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
@@ -102,26 +103,23 @@ async function liveGithubReader(
         ? await createGitHubClient({ auth: { kind: 'gh' }, owner, repo })
         : await createGitHubClient({ auth: githubApp(), owner, repo, installation: reach.installation })
     return {
-      has: async (path) => {
-        try {
-          await client.request('GET', `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`)
-          return true
-        } catch (err) {
+      has: (path) =>
+        Effect.tryPromise({
+          try: () => client.request('GET', `/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`),
+          catch: (err) => err,
+        }).pipe(
+          Effect.as(true),
           // A missing file is an answer; anything else (a 403, a 500) is not
           // one — `fileAt` draws the same line at `client.ts:420`, and
           // swallowing both the same way read a transient failure as a
           // confirmed absence (#431 fix round, finding 2).
-          if (err instanceof GitHubFailed && err.status === 404) return false
-          throw err
-        }
-      },
-      read: async (path) => {
-        try {
-          return await client.fileAt(path, ref)
-        } catch {
-          return null
-        }
-      },
+          Effect.catchIf(
+            (err) => err instanceof GitHubFailed && err.status === 404,
+            () => Effect.succeed(false),
+          ),
+        ),
+      read: (path) =>
+        Effect.tryPromise(() => client.fileAt(path, ref)).pipe(Effect.orElseSucceed((): string | null => null)),
     }
   } catch {
     return EMPTY_SETUP_READER
@@ -381,10 +379,10 @@ export async function askBeforeGithubAdd(
       { kind: 'github', owner, repo },
       {
         setupReader: reader,
-        defaultBranch,
-        runtimes: () => Promise.resolve(runtimes),
-        history: deps.history,
-        origin: () => Promise.resolve(null),
+        defaultBranch: () => Effect.tryPromise({ try: defaultBranch, catch: (e) => e }),
+        runtimes: () => Effect.succeed(runtimes),
+        history: (project) => Effect.tryPromise({ try: () => deps.history(project), catch: (e) => e }),
+        origin: () => Effect.succeed(null),
       },
     ),
   )

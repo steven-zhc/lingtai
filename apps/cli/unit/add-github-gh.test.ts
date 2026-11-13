@@ -31,7 +31,7 @@ afterEach(() => {
 function depsFor(over: Partial<AskBeforeGithubAddDeps>) {
   const calls = { check: 0, picker: 0, writes: 0, reach: [] as unknown[] }
   const store: Record<string, string> = {}
-  const reader: SetupReader = { has: async () => false, read: async () => null }
+  const reader: SetupReader = { has: () => Effect.succeed(false), read: () => Effect.succeed(null) }
   const deps: AskBeforeGithubAddDeps = {
     check: async () => {
       calls.check++

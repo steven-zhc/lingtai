@@ -55,10 +55,10 @@ function trial(
 const askInstallAndBuild = (world: SetupWorld, input: AskInstallAndBuildInput) =>
   Effect.runPromise(askInstallAndBuildEffect(world, input))
 
-const EMPTY_READER: SetupReader = { has: async () => false, read: async () => null }
+const EMPTY_READER: SetupReader = { has: () => Effect.succeed(false), read: () => Effect.succeed(null) }
 
 function reader(files: Record<string, string>): SetupReader {
-  return { has: async (path) => path in files, read: async (path) => files[path] ?? null }
+  return { has: (path) => Effect.succeed(path in files), read: (path) => Effect.succeed(files[path] ?? null) }
 }
 
 interface RecordingFiles extends RecipeFiles {

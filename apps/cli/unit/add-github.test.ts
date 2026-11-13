@@ -119,7 +119,7 @@ function countedDeps(
     // A test that reaches an absent file's creation needs a reader
     // `askInstallAndBuild` can call without throwing — overridden by any
     // test that cares what it finds.
-    reader: async () => ({ has: async () => false, read: async () => null }),
+    reader: async () => ({ has: () => Effect.succeed(false), read: () => Effect.succeed(null) }),
     ask: async () => {
       counted.asks++
       return null

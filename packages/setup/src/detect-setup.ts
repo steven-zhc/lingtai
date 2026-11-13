@@ -15,6 +15,7 @@ import { parse as parseToml } from 'smol-toml'
 import { parse as parseYaml } from 'yaml'
 
 import { messageOf, SetupFailed } from './failure.ts'
+import { portCause } from './port-cause.ts'
 
 /** The file seam: a local directory or a GitHub default branch. */
 export interface SetupReader {
@@ -24,12 +25,12 @@ export interface SetupReader {
    * 100 MB — a monorepo's `pnpm-lock.yaml` is often that size, and a `has`
    * built on `read` alone would call the biggest lockfiles absent.
    */
-  has(path: string): Promise<boolean>
-  read(path: string): Promise<string | null>
+  has(path: string): Effect.Effect<boolean, unknown>
+  read(path: string): Effect.Effect<string | null, unknown>
 }
 
 /**
- * Suggests nothing: `has` rejects rather than resolving `false`, so
+ * Suggests nothing: `has` fails rather than answering `false`, so
  * `detectInstall`/`detectSetup` below read every path through it as "could
  * not tell" rather than a confirmed absence — resolving `false` the way a
  * real check's negative does would print a lockfile or a `package.json` as
@@ -38,8 +39,8 @@ export interface SetupReader {
  * answer.
  */
 export const EMPTY_SETUP_READER: SetupReader = {
-  has: () => Promise.reject(new Error('nothing can be read here')),
-  read: () => Promise.resolve(null),
+  has: () => Effect.fail(new Error('nothing can be read here')),
+  read: () => Effect.succeed(null),
 }
 
 export interface DetectedSetup {
@@ -110,7 +111,7 @@ const failed = (e: unknown): SetupFailed => new SetupFailed({ operation: 'detect
 
 /** A read through the port; a rejection is `SetupFailed`. */
 const readPath = (reader: SetupReader, path: string): Effect.Effect<string | null, SetupFailed> =>
-  Effect.tryPromise({ try: () => reader.read(path), catch: failed })
+  portCause(() => reader.read(path)).pipe(Effect.mapError(failed))
 
 /** A read a detector survives: a rejection is "could not get this content". */
 const readOrNull = (reader: SetupReader, path: string): Effect.Effect<string | null> =>
@@ -118,9 +119,7 @@ const readOrNull = (reader: SetupReader, path: string): Effect.Effect<string | n
 
 /** Tri-state: `has` rejecting is "could not tell", never absent. */
 const hasOrUnknown = (reader: SetupReader, path: string): Effect.Effect<boolean | 'unknown'> =>
-  Effect.tryPromise({ try: () => reader.has(path), catch: failed }).pipe(
-    Effect.catch(() => Effect.succeed('unknown' as const)),
-  )
+  portCause(() => reader.has(path)).pipe(Effect.catch(() => Effect.succeed('unknown' as const)))
 
 const detectInstall = (
   reader: SetupReader,
