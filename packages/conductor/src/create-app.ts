@@ -767,7 +767,7 @@ function convertAndWriteEffect(
  */
 function writeKeyEffect(wanted: string, pem: string, distinguish: string): Effect.Effect<string, Error> {
   return Effect.gen(function* () {
-    const absolute = resolvePath(wanted)
+    const absolute = yield* sync(() => resolvePath(wanted))
     yield* io(() => mkdir(dirname(absolute), { recursive: true, mode: KEY_DIR_MODE }))
 
     let path = wanted
@@ -855,8 +855,12 @@ function writeMachineConfigEffect(file: string, values: Record<string, string>):
       return yield* Effect.fail(new Error(`${file} is not a YAML mapping`))
     if (created)
       doc.commentBefore = " Lingtai's own configuration. The github: section was written by the board's setup page."
-    for (const [name, value] of Object.entries(values)) doc.setIn(['github', name], value)
-    const text = doc.toString()
+    // Synchronous and able to throw (`github: null` makes `setIn` throw), so it is
+    // lifted into the failure channel where the old `try` caught it.
+    const text = yield* sync(() => {
+      for (const [name, value] of Object.entries(values)) doc.setIn(['github', name], value)
+      return doc.toString()
+    })
 
     yield* io(() => mkdir(dirname(file), { recursive: true }))
     // As late as there is anywhere to put it. What arrived in between is
