@@ -513,13 +513,14 @@ export interface RunOnceOptions {
    */
   runtimeFor?: (id: RuntimeId) => Runtime
   /**
-   * **What this machine is signed in to**, asked only where a step names a
-   * runtime other than the pass's own (`#314`, 0070 §7).
+   * **What this machine is signed in to**, asked only where `runtime.agent` is
+   * the pass's own runtime and a step names a different one (`#314`, 0070 §7).
    *
    * `signedInHere` unless a test says otherwise — the same cached probe the
    * board and `resolveLocalRecipe` use, one process per runtime and remembered
-   * for a minute. A unit test that names one runtime never reaches it, which is
-   * what keeps the probe out of the half of the suite that may not spawn
+   * for a minute. A `runtime.agent` that is not the pass's own is refused
+   * without it, and a unit test that names one runtime never reaches it, which
+   * is what keeps the probe out of the half of the suite that may not spawn
    * (0060 §1).
    */
   signedIn?: () => Promise<readonly RuntimeId[]>
@@ -861,11 +862,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * where there is nothing to decide would be a spawn bought by a feature the
      * recipe did not use. Empty also means `agentRefusal`'s loop below never
      * reads the list, so the two facts stay one branch.
+     *
+     * **A `runtime.agent` other than the pass's own is refused without the
+     * probe**: `agentRefusal`'s first branch never reads the list, so the probe
+     * is asked only where `runtime.agent` is the pass's own runtime.
      */
     const ownRuntime = options.runtime.capabilities.id as RuntimeId
     const secondRuntimes = new Set<RuntimeId>(runtimesOf(recipe).filter((r) => r !== ownRuntime))
     const dispatchable: readonly string[] =
-      secondRuntimes.size === 0
+      secondRuntimes.size === 0 || recipe.runtime.agent !== ownRuntime
         ? []
         : yield* Effect.promise<readonly RuntimeId[]>(() => (options.signedIn ?? signedInHere)())
     const wrongAgent = agentRefusal(resolved, options.runtime.capabilities.id, dispatchable)
