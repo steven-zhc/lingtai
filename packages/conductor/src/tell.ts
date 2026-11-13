@@ -295,7 +295,12 @@ function write(github: IssueChannel, issue: number, change: IssueWrite): Effect.
  * rather than a permanent warning — the resolution is deduped per outcome
  * (`end-step.ts`) and nothing ever runs this function again for the same item.
  */
-export function sweepRefsEffect(options: {
+export function sweepRefsEffect(options: Parameters<typeof sweepRefsHeldEffect>[0]): Effect.Effect<void> {
+  return sweepRefsHeldEffect(options).pipe(Effect.asVoid)
+}
+
+/** `sweepRefsEffect`, saying whether the sweep finished — for the span that measures it (#791). */
+function sweepRefsHeldEffect(options: {
   store: EventStore
   github: RefChannel
   /** `ticket-<project>-<issue>`. */
@@ -790,7 +795,7 @@ export function tellGitHubAboutEffect(options: TellAboutOptions): Effect.Effect<
                   ? tell({ kind: 'closed' }).pipe(Effect.map(held))
                   : 'labels' in action
                     ? tell({ kind: 'labels', labels: action.labels }).pipe(Effect.map(held))
-                    : sweepRefsEffect({ store, github, ticketId, andTheBranch: action.branch }),
+                    : sweepRefsHeldEffect({ store, github, ticketId, andTheBranch: action.branch }),
               (ok) => !ok,
             )
             all = all && ok
