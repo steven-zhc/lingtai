@@ -344,7 +344,7 @@ export function run(
      * projector — which creates tables and replays to the head — cannot.
      */
     yield* ConductorLock
-    startRates()
+    yield* startRates()
 
     const project = yield* Effect.tryPromise({
       try: () => world.loadProject(options.project),
@@ -707,7 +707,7 @@ export function run(
   // The edge, once. Everything above is a description; this is where it runs,
   // and where a `Refused` becomes the line and the exit code it always was.
   const edge = heedThePause(options.store).pipe(
-    Effect.andThen(program.pipe(Effect.ensuring(Effect.promise(() => ratesSettled())), Effect.provide(world.lock))),
+    Effect.andThen(program.pipe(Effect.ensuring(ratesSettled), Effect.provide(world.lock))),
     // Exit 0, as for the lock below: nothing went wrong, a person decided
     // this. Who and why, because a pause nobody remembers is the one this
     // line is for.

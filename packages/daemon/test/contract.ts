@@ -267,9 +267,8 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
       // (`beacon.test.ts`) because it is the whole of how either store reports
       // a daemon that is gone.
       await withStore(async ({ store }) => {
-        const beacon = startBeacon('up', { store, every: 50 })
-        await beacon.stop('stopping')
-
+        const beacon = await Effect.runPromise(startBeacon('up', { store, every: 50 }))
+        await Effect.runPromise(beacon.stop('stopping'))
         const stopped = await Effect.runPromise(store.status())
         expect(stopped!.state).toBe('stopping')
 

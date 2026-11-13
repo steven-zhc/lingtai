@@ -19,10 +19,10 @@ describe('the beacon chain', () => {
         }),
       close: () => Effect.void,
     } as unknown as DaemonStore
-    const beacon = startBeacon('starting', { store, every: 3_600_000 })
-    void beacon.say('up')
-    void beacon.say('draining')
-    await beacon.stop('stopped')
+    const beacon = await Effect.runPromise(startBeacon('starting', { store, every: 3_600_000 }))
+    void Effect.runPromise(beacon.say('up'))
+    void Effect.runPromise(beacon.say('draining'))
+    await Effect.runPromise(beacon.stop('stopped'))
     expect(landed).toEqual(['starting', 'up', 'draining', 'stopped'])
   })
 
@@ -37,9 +37,9 @@ describe('the beacon chain', () => {
         }),
       close: () => Effect.void,
     } as unknown as DaemonStore
-    const beacon = startBeacon('starting', { store, every: 3_600_000 })
-    await expect(beacon.say('up')).resolves.toBeUndefined()
-    await beacon.stop()
+    const beacon = await Effect.runPromise(startBeacon('starting', { store, every: 3_600_000 }))
+    await expect(Effect.runPromise(beacon.say('up'))).resolves.toBeUndefined()
+    await Effect.runPromise(beacon.stop())
     expect(beats.map((b) => b.fresh)).toEqual([true, true])
   })
 
@@ -55,9 +55,9 @@ describe('the beacon chain', () => {
         return Effect.sync(() => void words.push(word))
       },
     }
-    const beacon = startBeaconOn(port, 'starting', { every: 3_600_000 })
-    await beacon.say('up')
-    await expect(beacon.stop('stopped')).resolves.toBeUndefined()
+    const beacon = await Effect.runPromise(startBeaconOn(port, 'starting', { every: 3_600_000 }))
+    await Effect.runPromise(beacon.say('up'))
+    await expect(Effect.runPromise(beacon.stop('stopped'))).resolves.toBeUndefined()
     expect(words).toEqual(['up', 'stopped'])
   })
 })

@@ -585,6 +585,61 @@ async function walk(dir: string): Promise<string[]> {
   return found.sort()
 }
 
+/**
+ * A listed face that nothing references. `sources` is every `.ts`/`.tsx` under `apps/` and `packages/`; a
+ * reference is an identifier token spelled `fn` in code — a comment or a string is not one, the JSON is not
+ * TypeScript, and the entry's own declaration (its `function` name or `const` name in `entry.file`) is not
+ * one either. A call in the declaring file counts: most faces are reached through a sibling in their own file.
+ */
+export function unreferencedFaces(entries: readonly FaceEntry[], sources: ReadonlyMap<string, string>): string[] {
+  const parsed = new Map<string, ts.SourceFile>()
+  const tree = (file: string): ts.SourceFile | undefined => {
+    const text = sources.get(file)
+    if (text === undefined) return undefined
+    if (!parsed.has(file)) parsed.set(file, parse(file, text))
+    return parsed.get(file)
+  }
+  const refused: string[] = []
+  for (const entry of entries) {
+    let found = false
+    for (const [file, text] of sources) {
+      if (!text.includes(entry.fn)) continue
+      const sf = tree(file)
+      if (sf === undefined) continue
+      const visit = (node: ts.Node): void => {
+        if (found) return
+        if (ts.isIdentifier(node) && node.text === entry.fn) {
+          const p = node.parent
+          const declaration =
+            file === entry.file &&
+            ((ts.isFunctionDeclaration(p) && p.name === node) || (ts.isVariableDeclaration(p) && p.name === node))
+          if (!declaration) found = true
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(sf)
+      if (found) break
+    }
+    if (!found) {
+      refused.push(
+        `effect-ratchet.faces.json: ${entry.file} ${entry.fn} has no reference in apps/ or packages/ besides its declaration — delete the face and its entry.`,
+      )
+    }
+  }
+  return refused
+}
+
+async function walkSources(dir: string): Promise<string[]> {
+  const found: string[] = []
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name.startsWith('.')) continue
+    const path = `${dir}/${entry.name}`
+    if (entry.isDirectory()) found.push(...(await walkSources(path)))
+    else if (/\.tsx?$/.test(entry.name) && !entry.name.endsWith('.d.ts')) found.push(path)
+  }
+  return found.sort()
+}
+
 describe('the Effect ratchet (0101 §6, #792)', () => {
   it('does not count an async in a comment or a string', () => {
     const c = count('a.ts', `// async function f() {}\nconst s = "async () => 1"\n/* async */\n`)
@@ -846,6 +901,33 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
     })
   })
 
+  describe('unreferencedFaces', () => {
+    const entry = (fn: string, file = 'packages/repo/src/a.ts'): FaceEntry => ({ file, fn, until: '0101 §7', why: 'x' })
+    const decl = `export const f = () => Effect.runPromise(g())\n`
+    it('refuses, by name, an entry only its declaration, a comment and a string mention', () => {
+      const sources = new Map([
+        ['packages/repo/src/a.ts', `${decl}// f is called by nobody\nconst s = "f()"\n`],
+        ['packages/repo/src/b.ts', `/** f */\nexport const h = 1\n`],
+      ])
+      expect(unreferencedFaces([entry('f')], sources)).toEqual([
+        'effect-ratchet.faces.json: packages/repo/src/a.ts f has no reference in apps/ or packages/ besides its declaration — delete the face and its entry.',
+      ])
+    })
+    it('counts a call in the declaring file and a call from another file', () => {
+      const same = new Map([['packages/repo/src/a.ts', `${decl}export const k = () => f()\n`]])
+      expect(unreferencedFaces([entry('f')], same)).toEqual([])
+      const other = new Map([
+        ['packages/repo/src/a.ts', decl],
+        ['apps/cli/src/b.ts', `import { f } from '@lingtai/repo/a'\nvoid f()\n`],
+      ])
+      expect(unreferencedFaces([entry('f')], other)).toEqual([])
+    })
+    it('counts a function declaration as a declaration, not a reference', () => {
+      const sources = new Map([['packages/repo/src/a.ts', `export function f() { return Effect.runPromise(g()) }\n`]])
+      expect(unreferencedFaces([entry('f')], sources)).toHaveLength(1)
+    })
+  })
+
   describe('checkExclusions', () => {
     const E = `import { Effect } from 'effect'\n`
     const path = 'apps/cli/src/x.ts'
@@ -912,6 +994,17 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
       expect(notifyMayImport('@lingtai/event-store')).toBe(false)
       expect(notifyMayImport('../../../packages/extension/src/other.ts')).toBe(false)
     })
+  })
+
+  it('lists no face that nothing references', async () => {
+    const root = fileURLToPath(new URL('../../../', import.meta.url))
+    const sources = new Map<string, string>()
+    for (const top of ['apps', 'packages']) {
+      for (const full of await walkSources(`${root}${top}`)) {
+        sources.set(full.slice(root.length), await readFile(full, 'utf8'))
+      }
+    }
+    expect(unreferencedFaces(faces as FaceEntry[], sources)).toEqual([])
   })
 
   it('has no face waiting on #790, which has ended', () => {

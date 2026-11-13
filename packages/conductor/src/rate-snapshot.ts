@@ -17,7 +17,7 @@ import { join } from 'node:path'
 
 import { LITELLM_URL, mergeSnapshot, ratesFromLiteLLM, shipped, type RateRow } from '@lingtai/domain/rate-card'
 import { rateDir, readJson, readRateSnapshot, snapshotPath } from '@lingtai/projector'
-import { Cause, Effect } from 'effect'
+import { Cause, Deferred, Effect } from 'effect'
 
 /** What the last attempt said, for `doctor` — separate from the snapshot so a failure leaves that byte-for-byte alone. */
 export interface FetchNote {
@@ -114,31 +114,42 @@ export const realRatePorts = (
   now: () => new Date(),
 })
 
-let inflight: Promise<void> | null = null
+let inflight: Deferred.Deferred<void> | null = null
 
 /**
  * Fetch prices for the wanted models the shipped card cannot price and merge
  * them into the snapshot. Never throws. A second caller while one is running
- * gets the same promise, so two passes make one fetch and one write.
+ * joins the same refresh, so two passes make one fetch and one write.
  */
-export function refreshRates(ports: RatePorts): Promise<void> {
-  inflight ??= refreshOnce(ports).finally(() => {
-    inflight = null
+export const refreshRates = (ports: RatePorts): Effect.Effect<void> =>
+  Effect.suspend(() => {
+    if (inflight !== null) return Deferred.await(inflight)
+    // Claimed in this same step, so two callers cannot both find it free.
+    const mine = Deferred.makeUnsafe<void>()
+    inflight = mine
+    return refreshRatesEffect(ports).pipe(
+      Effect.ensuring(
+        // A turn after the work, as the promise's `.finally` was: a caller in the same tick still joins it.
+        Effect.yieldNow.pipe(
+          Effect.andThen(
+            Effect.suspend(() => {
+              inflight = null
+              return Deferred.succeed(mine, undefined)
+            }),
+          ),
+        ),
+      ),
+    )
   })
-  return inflight
-}
 
 /** Resolves when no refresh is running — what a conductor awaits before it releases its lock. */
-export const ratesSettled = (): Promise<void> => inflight ?? Promise.resolve()
+export const ratesSettled: Effect.Effect<void> = Effect.suspend(() =>
+  inflight === null ? Effect.void : Deferred.await(inflight),
+)
 
 /** Whether the last attempt (successful or not) is before today's UTC day. */
 export function ratesDue(now: Date, note: FetchNote | null = readFetchNote()): boolean {
   return note === null || note.at.slice(0, 10) < now.toISOString().slice(0, 10)
-}
-
-/** One refresh, run to the end. The only run of `refreshRatesEffect`; `refreshRates` adds the in-flight dedupe. */
-export function refreshOnce(ports: RatePorts): Promise<void> {
-  return Effect.runPromise(refreshRatesEffect(ports))
 }
 
 /** `refreshRates` without the dedupe, as an Effect. It never fails: every cause becomes the note. */

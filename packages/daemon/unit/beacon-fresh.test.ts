@@ -17,11 +17,10 @@ describe('startBeacon', () => {
       beat: (b: Beat) => Effect.sync(() => void beats.push(b)),
       close: () => Effect.void,
     } as unknown as DaemonStore
-    const beacon = startBeacon('starting', { store, every: 3_600_000 })
-    await beacon.say('up')
-    await beacon.say('draining')
-    await beacon.stop('stopped')
-
+    const beacon = await Effect.runPromise(startBeacon('starting', { store, every: 3_600_000 }))
+    await Effect.runPromise(beacon.say('up'))
+    await Effect.runPromise(beacon.say('draining'))
+    await Effect.runPromise(beacon.stop('stopped'))
     expect(beats.map((b) => b.state)).toEqual(['starting', 'up', 'draining', 'stopped'])
     expect(beats.map((b) => b.fresh)).toEqual([true, false, false, false])
   })
@@ -37,11 +36,10 @@ describe('startBeacon', () => {
         }),
       close: () => Effect.void,
     } as unknown as DaemonStore
-    const beacon = startBeacon('starting', { store, every: 3_600_000 })
-    await beacon.say('up')
-    await beacon.say('draining')
-    await beacon.stop('stopped')
-
+    const beacon = await Effect.runPromise(startBeacon('starting', { store, every: 3_600_000 }))
+    await Effect.runPromise(beacon.say('up'))
+    await Effect.runPromise(beacon.say('draining'))
+    await Effect.runPromise(beacon.stop('stopped'))
     expect(beats.map((b) => b.fresh)).toEqual([true, true, false, false])
     // Given no start, every beat leaves the dating to the store's clock, the one events are dated by.
     expect(beats.every((b) => b.startedAt === null)).toBe(true)
@@ -54,8 +52,8 @@ describe('startBeacon', () => {
       close: () => Effect.void,
     } as unknown as DaemonStore
     const startedAt = new Date('2026-10-20T12:00:00Z')
-    const beacon = startBeacon('starting', { store, every: 3_600_000, startedAt })
-    await beacon.stop('stopped')
+    const beacon = await Effect.runPromise(startBeacon('starting', { store, every: 3_600_000, startedAt }))
+    await Effect.runPromise(beacon.stop('stopped'))
     expect(beats.every((b) => b.startedAt === startedAt)).toBe(true)
   })
 })

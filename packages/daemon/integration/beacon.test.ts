@@ -59,7 +59,7 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
   describe('the beacon', () => {
     it('keeps the row fresh through a startup slower than three missed beats', async () => {
       await Effect.runPromise(createStatusTableEffect())
-      const beacon = startBeacon('starting')
+      const beacon = await Effect.runPromise(startBeacon('starting'))
 
       try {
         // Standing in for the slow half of startup: a recipe read per project and
@@ -79,7 +79,7 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
         // difference between a timer that ran and one that ran once.
         expect(beat.ageMs).toBeLessThan(HEARTBEAT_MS * 2)
       } finally {
-        await beacon.stop()
+        await Effect.runPromise(beacon.stop())
       }
     }, 60_000)
 
@@ -88,14 +88,14 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
       // Faster than production only so that several beats land inside a test;
       // what is being asserted is the ordering, which is not a function of the
       // period.
-      const beacon = startBeacon('starting', { every: 50 })
+      const beacon = await Effect.runPromise(startBeacon('starting', { every: 50 }))
 
       try {
-        await beacon.say('up')
+        await Effect.runPromise(beacon.say('up'))
         expect(beacon.state).toBe('up')
         expect((await readStatus())?.state).toBe('up')
 
-        await beacon.say('draining')
+        await Effect.runPromise(beacon.say('draining'))
         expect((await readStatus())?.state).toBe('draining')
 
         // Two beats' worth of ticks, each carrying the word the beacon holds
@@ -104,15 +104,14 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
         await wait(200)
         expect((await readStatus())?.state).toBe('draining')
       } finally {
-        await beacon.stop()
+        await Effect.runPromise(beacon.stop())
       }
     })
 
     it('says a last word and then nothing at all', async () => {
       await Effect.runPromise(createStatusTableEffect())
-      const beacon = startBeacon('up', { every: 50 })
-      await beacon.stop('stopping')
-
+      const beacon = await Effect.runPromise(startBeacon('up', { every: 50 }))
+      await Effect.runPromise(beacon.stop('stopping'))
       const stopped = await readStatus()
       expect(stopped?.state).toBe('stopping')
 
@@ -126,8 +125,8 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
 
       // Idempotent, and a word after the stop is not written: the drain calls
       // `stop` and so does a second Ctrl+C on its way past.
-      await beacon.say('up')
-      await beacon.stop('stopping')
+      await Effect.runPromise(beacon.say('up'))
+      await Effect.runPromise(beacon.stop('stopping'))
       expect((await readStatus())?.state).toBe('stopping')
     })
   })

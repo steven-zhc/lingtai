@@ -247,12 +247,12 @@ export function daemonStopping(ports: StoppingPorts) {
       Effect.gen(function* () {
         // The last word, and the timer off with it — `stop` does both, in that
         // order, so nothing lands after it.
-        yield* Effect.promise(() => ports.beacon.stop('stopping'))
+        yield* ports.beacon.stop('stopping')
         // The projections are stopped and the lock is released by this; what it
         // does not do, and must not, is wait for the pass.
         yield* ports.daemon.stop()
         yield* ports.daemon.stopped()
-        yield* Effect.promise(() => ratesSettled())
+        yield* ratesSettled
         exit(code)
       }),
     )
@@ -297,7 +297,7 @@ export function daemonStopping(ports: StoppingPorts) {
             : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
         ),
       )
-      yield* Effect.promise(() => ports.beacon.say('draining'))
+      yield* ports.beacon.say('draining')
 
       let timer: ReturnType<typeof setTimeout> | undefined
       if (timeoutMs !== null) {
@@ -318,7 +318,7 @@ export function daemonStopping(ports: StoppingPorts) {
       clearTimeout(timer)
       if (stopping) return
       stopping = true
-      yield* Effect.promise(() => ports.beacon.stop('stopping'))
+      yield* ports.beacon.stop('stopping')
       yield* ports.daemon.stop()
     })
   }
@@ -438,14 +438,14 @@ export function daemonCommand(
     // daemon whose lock it printed on the next line. `startBeacon` keeps one
     // timer for the whole life of the process, so there is no stretch of it
     // during which nothing says "still here".
-    const beacon = startBeacon('starting', { code, stoppedProjections: () => started.daemon.stoppedProjections })
+    const beacon = yield* startBeacon('starting', { code, stoppedProjections: () => started.daemon.stoppedProjections })
     // This process's own start, dated by the store's clock and not this host's:
     // `TriageStarted` is dated by the store, and a database ahead of this host
     // would read an attempt a previous conductor cut off as `Running` (#576). The
     // row's first beat is `fresh` and the lock is held, so the row it leaves is
     // this process's; where it cannot be read, or is another pid's because the
     // beat failed, triage asks again rather than use this host's clock (#583).
-    yield* Effect.promise(() => beacon.say('starting'))
+    yield* beacon.say('starting')
     const daemonStartedAt = memoDaemonStartedAt(readStatus)
     console.log(startLine(code, versionFacts()))
 
@@ -542,7 +542,8 @@ export function daemonCommand(
     if (found.length > 0) console.log(paint.pass(`reconciled ${found.length} divergence(s)`))
     // The slow half is done. The timer has been running throughout it; this is
     // the word changing, not the beating starting.
-    void beacon.say('up')
+    // Asked on this line, and not waited for: a later `draining` must queue behind it.
+    yield* Effect.forkDetach(beacon.say('up'), { startImmediately: true })
 
     /**
      * How a daemon that takes no work hears a shutdown. Unset while it takes work,
@@ -776,9 +777,9 @@ export function daemonCommand(
         yield* drain(`asked by ${state.asked.by} — ${state.asked.reason}`, state.asked.timeoutMs)
       } else {
         yield* loop.start()
-        startRates()
+        yield* startRates()
         // A daemon outlives a UTC day: look again hourly; `ratesDue` makes that one fetch a day.
-        setInterval(() => startRates(), 3_600_000).unref()
+        setInterval(() => void Effect.runForkWith(services)(startRates()), 3_600_000).unref()
         // The subscription is live; a wait made during this scan is delivered by its live handler.
         const projects = yield* loadProjectsEffect()
         yield* catchUpRegisteredTriage(
@@ -838,7 +839,7 @@ export function daemonCommand(
     yield* started.daemon.stopped()
     // After a drain and not on `stopNow`, which promised to stop now (#791).
     yield* flushTracing
-    yield* Effect.promise(() => ratesSettled())
+    yield* ratesSettled
     console.log('stopped')
     return 0
   })

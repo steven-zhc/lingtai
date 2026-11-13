@@ -156,12 +156,6 @@
     "why": "apps/board/src/lib/board.ts, apps/board/src/lib/queued.ts"
   },
   {
-    "file": "packages/conductor/src/rate-snapshot.ts",
-    "fn": "refreshOnce",
-    "until": "#1118",
-    "why": "`refreshRates` (apps/cli/src/rates.ts, not a host) is its only caller and dedupes a promise; moving it needs `rates.ts` to run the Effect"
-  },
-  {
     "file": "packages/conductor/src/read-ticket.ts",
     "fn": "readProjectTicket",
     "until": "0101 §7",
@@ -196,12 +190,6 @@
     "fn": "splitTicketHolding",
     "until": "0101 §7",
     "why": "a board test calls it: apps/board/unit/split-instance.test.ts"
-  },
-  {
-    "file": "packages/daemon/src/control.ts",
-    "fn": "beaconBeatFace",
-    "until": "#1118",
-    "why": "the beacon's own timer in `startBeaconOn`, which `apps/cli/src/daemon.ts` starts with promise `say`/`stop`, and apps/cli/integration/doctor.test.ts, until the apps/cli row"
   },
   {
     "file": "packages/daemon/src/control.ts",
