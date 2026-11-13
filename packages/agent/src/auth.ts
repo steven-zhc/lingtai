@@ -1,7 +1,7 @@
 /**
  * Whether a runtime is signed in, asked of the runtime itself.
  *
- * Its own file, importing nothing but `node:child_process`, because
+ * Its own file, importing nothing but Node built-ins, because
  * `lingtai init` asks before there is a log (#186): the package's barrel loads
  * `hook-socket.ts`, which loads `@lingtai/event-store`, whose client is built at
  * module scope and throws without a database URL. So a machine that has only
@@ -9,6 +9,9 @@
  * database it wants — the order the ticket forbids.
  */
 import { spawn } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 import { RuntimeId } from '@lingtai/domain'
 import { Effect } from 'effect'
@@ -154,10 +157,106 @@ export const runtimeVersionEffect = Effect.fn('agent.version')(function* (
 })
 
 /**
- * `claude auth status`, in the environment a run would actually get.
+ * What the credential store says about when the login's token expires. Never
+ * the token: `why` is a phrase this file chose, never text read from a store or
+ * from an error, because both can carry a fragment of the secret.
+ */
+export type StoredExpiry =
+  | { kind: 'expires'; at: number; from: 'keychain' | 'file' }
+  | { kind: 'unreadable'; why: string }
+
+/**
+ * `claudeAiOauth.expiresAt` out of a credentials blob (epoch ms), or `null`
+ * when the text is not JSON, has no `claudeAiOauth`, or has no finite
+ * `expiresAt`. Nothing else is returned from it.
+ */
+export function expiryFromCredentials(text: string): number | null {
+  const brace = text.indexOf('{')
+  if (brace < 0) return null
+  try {
+    const parsed = JSON.parse(text.slice(brace)) as { claudeAiOauth?: { expiresAt?: unknown } | null }
+    const at = parsed.claudeAiOauth?.expiresAt
+    return typeof at === 'number' && Number.isFinite(at) ? at : null
+  } catch {
+    // Not the error's message: V8 quotes the text it choked on.
+    return null
+  }
+}
+
+/** Whether `auth status`'s answer is one a stored expiry can overrule. */
+export function needsStoredExpiry(status: AuthStatus): boolean {
+  return status.state === 'signed-in' && status.method === 'claude.ai'
+}
+
+/**
+ * `claude auth status` says `loggedIn: true` for a token that expired and
+ * cannot refresh (017). A stored expiry in the past, read **after** that call,
+ * makes it signed out. A store nobody could read changes nothing (#735).
+ */
+export function withStoredExpiry(status: AuthStatus, stored: StoredExpiry, now: number): AuthStatus {
+  if (!needsStoredExpiry(status) || stored.kind !== 'expires' || stored.at > now) return status
+  const where = stored.from === 'keychain' ? 'the Keychain' : '~/.claude/.credentials.json'
+  return {
+    state: 'signed-out',
+    loggedIn: false,
+    method: status.method,
+    detail: `signed in via claude.ai, but the token in ${where} expired at ${new Date(stored.at).toISOString()} and did not refresh — sign in again: run \`claude\`, then /login`,
+  }
+}
+
+/**
+ * Judge `claude auth status`, and only when it says signed in ask the store —
+ * after it, never before, because that call refreshes a token that can be.
+ */
+export const claudeAuthThenStore = Effect.fn('agent.auth.store')(function* (
+  askStatus: Effect.Effect<ProbeEnd>,
+  readStore: Effect.Effect<StoredExpiry>,
+  now: () => number = Date.now,
+) {
+  const judged = classifyClaudeAuth(yield* askStatus)
+  if (!needsStoredExpiry(judged)) return judged
+  return withStoredExpiry(judged, yield* readStore, now())
+})
+
+/**
+ * Where this session's Claude Code keeps its login: on macOS the Keychain item
+ * when it answers, otherwise `~/.claude/.credentials.json` (017). The probe's
+ * own `env`, because macOS finds an item by who is asking. IO, no unit test.
+ */
+const readClaudeStoredExpiry = (env: Record<string, string>): Effect.Effect<StoredExpiry> =>
+  Effect.gen(function* () {
+    if (process.platform === 'darwin') {
+      const end = yield* probe('security', ['find-generic-password', '-s', 'Claude Code-credentials', '-w'], env, {
+        timeoutMs: 5_000,
+      })
+      if (end.kind === 'exited' && end.code === 0 && end.out.includes('claudeAiOauth')) {
+        const at = expiryFromCredentials(end.out)
+        // The desktop session ignores the file when the Keychain holds a login.
+        return at === null
+          ? ({ kind: 'unreadable', why: 'no claudeAiOauth.expiresAt in the Keychain item' } as const)
+          : ({ kind: 'expires', at, from: 'keychain' } as const)
+      }
+    }
+    const path = join(env.HOME ?? homedir(), '.claude', '.credentials.json')
+    const text = yield* Effect.tryPromise(() => readFile(path, 'utf8')).pipe(Effect.option)
+    if (text._tag === 'None') return { kind: 'unreadable', why: 'credentials file unreadable' } as const
+    const at = expiryFromCredentials(text.value)
+    return at === null
+      ? ({ kind: 'unreadable', why: 'no claudeAiOauth.expiresAt in the file' } as const)
+      : ({ kind: 'expires', at, from: 'file' } as const)
+  })
+
+/**
+ * `claude auth status`, in the environment a run would actually get, and then
+ * the stored token's expiry.
  *
- * Free — it reads the credential and does not call the API. Verified
- * against both environments: without `USER` it answers
+ * **Not free, and `loggedIn` is not validity** (017). `claude auth status` may
+ * refresh a refreshable token, which is a call to `platform.claude.com` though
+ * not to the model; and it answers `loggedIn: true` for a token that expired
+ * and cannot refresh. So the store is read after it — before it, every login
+ * merely due for refresh would read as signed out — and an `expiresAt` in the
+ * past makes it signed out. A store that cannot be read leaves the answer as
+ * it was. Verified against both environments: without `USER` it answers
  * `{loggedIn: false, authMethod: "none"}`, with it
  * `{loggedIn: true, authMethod: "claude.ai"}`.
  *
@@ -166,7 +265,7 @@ export const runtimeVersionEffect = Effect.fn('agent.version')(function* (
  * the situation it exists to catch.
  */
 export const claudeCodeAuthEffect = Effect.fn('agent.auth')(function* (binary: string, env: Record<string, string>) {
-  return classifyClaudeAuth(yield* probe(binary, ['auth', 'status'], env))
+  return yield* claudeAuthThenStore(probe(binary, ['auth', 'status'], env), readClaudeStoredExpiry(env))
 })
 
 /** The Effect above, as the promise `Runtime.checkAuth` still is. */
