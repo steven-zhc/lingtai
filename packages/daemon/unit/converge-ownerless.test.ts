@@ -1,6 +1,7 @@
 import { memoryTickets } from '@lingtai/conductor/memory-tickets'
 import type { ProjectState } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 /**
@@ -19,8 +20,11 @@ import { describe, expect, it } from 'vitest'
  * Unit, by 0060 §1: a memory log, a `memoryTickets()` store, and a
  * `clientFor` this test never expects to be called.
  */
-import { clientsForProjects, convergeIssues } from '../src/converge.ts'
+import { clientsForProjects, convergeIssuesEffect } from '../src/converge.ts'
 import type { DaemonStore } from '../src/store.ts'
+
+const convergeIssues = (options: Parameters<typeof convergeIssuesEffect>[0]) =>
+  Effect.runPromise(convergeIssuesEffect(options))
 
 const PROJECT = 'local-proj'
 

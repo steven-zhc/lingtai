@@ -129,7 +129,7 @@
   },
   {
     "file": "packages/daemon/src/converge.ts",
-    "function": "findIssueDrift",
+    "function": "findIssueDriftEffect",
     "type": "EndActionsResolved",
     "count": 1,
     "class": "select",

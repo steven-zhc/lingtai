@@ -37,7 +37,8 @@
  * the ref as your last fetch left it, and saying so is better than a diagnostic
  * that reaches for the network.
  */
-import { git } from '@lingtai/repo'
+import { gitEffect } from '@lingtai/repo'
+import { Effect } from 'effect'
 
 /** What a process recorded about the code it was loaded from. */
 export interface CodeVersion {
@@ -97,60 +98,67 @@ export function codeRoot(): string {
  * it is now, which is precisely the thing that has moved on underneath the
  * loaded modules. The whole point is the value the process froze.
  */
-export async function readCodeVersion(cwd: string = codeRoot()): Promise<CodeVersion> {
-  try {
-    const sha = await git(['rev-parse', 'HEAD'], { cwd })
-    const dirty = (await git(['status', '--porcelain'], { cwd })) !== ''
+export const readCodeVersionEffect = (cwd: string = codeRoot()): Effect.Effect<CodeVersion> =>
+  Effect.gen(function* () {
+    const sha = yield* gitEffect(['rev-parse', 'HEAD'], { cwd })
+    const dirty = (yield* gitEffect(['status', '--porcelain'], { cwd })) !== ''
     return { sha, dirty }
-  } catch {
+  }).pipe(
     // Not a checkout — an installed copy, or a tarball. Nothing to compare
     // against is a state to report, not an error to throw at a caller who only
-    // wanted to draw a chip.
-    return { sha: null, dirty: false }
-  }
+    // wanted to draw a chip. A missing `git` binary is a `RepoFailed` too, not a defect.
+    Effect.catchTag('RepoFailed', () => Effect.succeed<CodeVersion>({ sha: null, dirty: false })),
+  )
+
+/** `readCodeVersionEffect` as a promise (a listed face, #790). */
+export function readCodeVersion(cwd?: string): Promise<CodeVersion> {
+  return Effect.runPromise(readCodeVersionEffect(cwd))
 }
 
-async function baseRef(cwd: string): Promise<string> {
-  try {
-    return await git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], { cwd })
-  } catch {
-    return FALLBACK_BASE
-  }
-}
+const baseRef = (cwd: string): Effect.Effect<string> =>
+  gitEffect(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], { cwd }).pipe(
+    Effect.catchTag('RepoFailed', () => Effect.succeed(FALLBACK_BASE)),
+  )
 
 /** What the running code is missing. `behind` empty and `unknown` null is current. */
-export async function codeCurrency(running: CodeVersion, options: CurrencyOptions = {}): Promise<Currency> {
-  const cwd = options.cwd ?? codeRoot()
-  const base = options.base ?? (await baseRef(cwd))
-  const blank: Currency = {
-    running: running.sha,
-    dirty: running.dirty,
-    base,
-    baseSha: null,
-    behind: [],
-    unknown: null,
-  }
-  if (!running.sha) return { ...blank, unknown: 'the process recorded no commit' }
+export const codeCurrencyEffect = (running: CodeVersion, options: CurrencyOptions = {}): Effect.Effect<Currency> =>
+  Effect.gen(function* () {
+    const cwd = options.cwd ?? codeRoot()
+    const base = options.base ?? (yield* baseRef(cwd))
+    const blank: Currency = {
+      running: running.sha,
+      dirty: running.dirty,
+      base,
+      baseSha: null,
+      behind: [],
+      unknown: null,
+    }
+    if (!running.sha) return { ...blank, unknown: 'the process recorded no commit' }
 
-  try {
-    const baseSha = await git(['rev-parse', base], { cwd })
-    // `A..B` is commits reachable from the base and not from the running sha,
-    // which stays the right question when the two have diverged rather than
-    // one being an ancestor of the other.
-    const log = await git(['log', '--format=%h\t%s', `${running.sha}..${base}`], { cwd })
-    const behind = log
-      .split('\n')
-      .filter((line) => line !== '')
-      .map((line) => {
-        const tab = line.indexOf('\t')
-        return { sha: line.slice(0, tab), subject: line.slice(tab + 1) }
-      })
-    return { ...blank, baseSha, behind }
-  } catch (err) {
-    // A sha the checkout no longer holds, or a base ref that was never
-    // fetched. Both are answers; neither is a reason to fail a diagnostic.
-    return { ...blank, unknown: (err as Error).message }
-  }
+    return yield* Effect.gen(function* () {
+      const baseSha = yield* gitEffect(['rev-parse', base], { cwd })
+      // `A..B` is commits reachable from the base and not from the running sha,
+      // which stays the right question when the two have diverged rather than
+      // one being an ancestor of the other.
+      const log = yield* gitEffect(['log', '--format=%h\t%s', `${running.sha}..${base}`], { cwd })
+      const behind = log
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => {
+          const tab = line.indexOf('\t')
+          return { sha: line.slice(0, tab), subject: line.slice(tab + 1) }
+        })
+      return { ...blank, baseSha, behind }
+    }).pipe(
+      // A sha the checkout no longer holds, or a base ref that was never
+      // fetched. Both are answers; neither is a reason to fail a diagnostic.
+      Effect.catchTag('RepoFailed', (err) => Effect.succeed({ ...blank, unknown: err.message })),
+    )
+  })
+
+/** `codeCurrencyEffect` as a promise (a listed face, #790). */
+export function codeCurrency(running: CodeVersion, options: CurrencyOptions = {}): Promise<Currency> {
+  return Effect.runPromise(codeCurrencyEffect(running, options))
 }
 
 /**
@@ -221,26 +229,30 @@ export interface Identity {
  * means the ref as your last fetch left it, and a start refused because the
  * fetch is old is a refusal a `git fetch` answers.
  */
-export async function codeIdentity(options: CurrencyOptions = {}): Promise<Identity> {
-  const cwd = options.cwd ?? codeRoot()
-  const base = options.base ?? (await baseRef(cwd))
-  const version = await readCodeVersion(cwd)
-  const blank: Identity = { ...version, base, pushed: null, unknown: null }
-  if (!version.sha) return { ...blank, unknown: 'there is no checkout here to read a commit from' }
+export const codeIdentityEffect = (options: CurrencyOptions = {}): Effect.Effect<Identity> =>
+  Effect.gen(function* () {
+    const cwd = options.cwd ?? codeRoot()
+    const base = options.base ?? (yield* baseRef(cwd))
+    const version = yield* readCodeVersionEffect(cwd)
+    const blank: Identity = { ...version, base, pushed: null, unknown: null }
+    if (!version.sha) return { ...blank, unknown: 'there is no checkout here to read a commit from' }
 
-  try {
     // `base..sha` is what the head has and the base does not, so empty is
     // "reachable from the base" — the same shape `codeCurrency` uses for the
     // opposite direction, and one that stays right when the two have diverged.
-    const ahead = await git(['rev-list', '--count', `${base}..${version.sha}`], { cwd })
-    return { ...blank, pushed: ahead.trim() === '0' }
-  } catch (err) {
-    // A base ref that was never fetched, most often. An answer, not a throw —
-    // the caller decides what an unknown is worth, and `lingtai restart` treats
-    // it as a refusal because "we cannot tell" and "it is fine" are not the
-    // same sentence.
-    return { ...blank, unknown: (err as Error).message }
-  }
+    return yield* gitEffect(['rev-list', '--count', `${base}..${version.sha}`], { cwd }).pipe(
+      Effect.map((ahead): Identity => ({ ...blank, pushed: ahead.trim() === '0' })),
+      // A base ref that was never fetched, most often. An answer, not a throw —
+      // the caller decides what an unknown is worth, and `lingtai restart` treats
+      // it as a refusal because "we cannot tell" and "it is fine" are not the
+      // same sentence. Never `pushed: true` on a failed read.
+      Effect.catchTag('RepoFailed', (err) => Effect.succeed<Identity>({ ...blank, unknown: err.message })),
+    )
+  })
+
+/** `codeIdentityEffect` as a promise (a listed face, #790). */
+export function codeIdentity(options: CurrencyOptions = {}): Promise<Identity> {
+  return Effect.runPromise(codeIdentityEffect(options))
 }
 
 /** One reason a process started from here could not be accounted for later. */

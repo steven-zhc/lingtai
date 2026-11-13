@@ -13,10 +13,14 @@ import { aClaim, aResolution, aWait, aWaitId } from '@lingtai/domain/test/events
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { findIssueDrift } from '../src/converge.ts'
+import { findIssueDriftEffect } from '../src/converge.ts'
 import type { DaemonStore } from '../src/store.ts'
+
+const findIssueDrift = (options: Parameters<typeof findIssueDriftEffect>[0]) =>
+  Effect.runPromise(findIssueDriftEffect(options))
 
 const PROJECT = 'lingtai'
 const ISSUE = 465

@@ -97,7 +97,7 @@ import { Cause, Effect } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import { CONTROL_STREAM } from './control.ts'
-import { type ConvergeOptions, convergeIssues } from './converge.ts'
+import { type ConvergeOptions, convergeIssuesEffect } from './converge.ts'
 import { DAEMON_LOCK_KEY } from './lock.ts'
 import type { DaemonStore } from './store.ts'
 
@@ -797,22 +797,19 @@ export const reconcileEffect = Effect.fn('daemon.reconcile')(function* (options:
   // GitHub with, rather than guessed at.
   if (options.github) {
     const github = options.github
-    // Lifted until DAEMON-4.
-    const { divergences, converged } = yield* Effect.promise(() =>
-      convergeIssues({
-        ...github,
-        store,
-        ...(options.url === undefined ? {} : { url: options.url }),
-        ...(options.dryRun === undefined ? {} : { dryRun: options.dryRun }),
-        // Handed on for the same reason `store` is: without it the converge half
-        // opens a store of its own, so a pass given a working store would still
-        // be refused on a machine that has written no choice — and where it did
-        // open one, it would be asking a second log which streams the first
-        // one's findings are about.
-        ...(options.daemonStore === undefined ? {} : { daemonStore: options.daemonStore }),
-        log,
-      }),
-    )
+    const { divergences, converged } = yield* convergeIssuesEffect({
+      ...github,
+      store,
+      ...(options.url === undefined ? {} : { url: options.url }),
+      ...(options.dryRun === undefined ? {} : { dryRun: options.dryRun }),
+      // Handed on for the same reason `store` is: without it the converge half
+      // opens a store of its own, so a pass given a working store would still
+      // be refused on a machine that has written no choice — and where it did
+      // open one, it would be asking a second log which streams the first
+      // one's findings are about.
+      ...(options.daemonStore === undefined ? {} : { daemonStore: options.daemonStore }),
+      log,
+    })
     const done = new Set(converged.map((d) => `${d.ticketId}:${d.change}`))
     for (const d of divergences) {
       scanned.push({
