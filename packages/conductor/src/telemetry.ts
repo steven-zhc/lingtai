@@ -2,7 +2,9 @@ import { FAILED, SCOPE, newSink, withSink } from '@lingtai/actions/spans'
 import { machineOtlpEndpoint, type MachineFile } from '@lingtai/env'
 import { ROOT_CONTEXT, SpanStatusCode, context, trace, type Span as OtelSpan } from '@opentelemetry/api'
 import type { SpanExporter } from '@opentelemetry/sdk-trace-base'
-import { Context, Exit, Layer, Option, Tracer } from 'effect'
+import { Context, Effect, Exit, Layer, Option, Tracer } from 'effect'
+
+import { runPort } from './port-face.ts'
 
 /**
  * A pass as one OTLP trace (#791), when `telemetry.otlp_endpoint` is set.
@@ -135,97 +137,100 @@ export type Tracing = {
   readonly shutdown: (ms?: number) => Promise<void>
 }
 
-/** The SDK, loaded by these specifiers alone — production and the tests share them. */
-export const loadSdk = () =>
+/**
+ * The SDK, loaded by these specifiers alone — production and the tests share
+ * them. Dynamic on purpose: nothing loads unless an endpoint is set, and the
+ * SDK's own advice is not to import `http.Agent` or `https.Agent` statically.
+ */
+export const loadSdkEffect = Effect.tryPromise(() =>
   Promise.all([
     import('@opentelemetry/sdk-trace-base'),
     import('@opentelemetry/exporter-trace-otlp-http'),
     import('@opentelemetry/context-async-hooks'),
     import('@opentelemetry/resources'),
-  ]).then(([base, http, hooks, resources]) => ({ base, http, hooks, resources }))
+    import('node:http'),
+    import('node:https'),
+  ]),
+)
 
 const EXPORT_MS = 3000
 
-/** Bounded, and a timeout or a refusal is dropped. */
-const bounded = (flushing: () => Promise<void>, ms: number, cancel: () => void = () => {}): Promise<void> =>
-  new Promise<void>((resolve) => {
-    // The budget ran out: cancel what is still in flight, and not only stop
-    // waiting for it — `timeoutMillis` is the socket's inactivity, so a collector
-    // that trickles bytes would otherwise hold the process past the budget.
-    const timer = setTimeout(() => {
-      cancel()
-      resolve()
-    }, ms)
-    flushing().then(
-      () => {
-        clearTimeout(timer)
-        resolve()
-      },
-      () => {
-        clearTimeout(timer)
-        resolve()
-      },
-    )
-  })
+/**
+ * Bounded, and a timeout or a refusal is dropped. When the budget runs out,
+ * `cancel` runs: it destroys what is still in flight, and not only stops
+ * waiting for it — `timeoutMillis` is the socket's inactivity, so a collector
+ * that trickles bytes would otherwise hold the process past the budget.
+ */
+const boundedEffect = (flushing: () => Promise<void>, ms: number, cancel: () => void = () => {}) =>
+  Effect.tryPromise(flushing).pipe(
+    Effect.ignore,
+    Effect.timeoutOption(ms),
+    Effect.flatMap((done) => (Option.isNone(done) ? Effect.sync(cancel) : Effect.void)),
+  )
 
 /**
  * Reads the endpoint once; with none (or a refused one) installs nothing, loads
- * nothing and prints nothing. Once per process, at the command's entry: the
- * provider lives as long as the process and the layer only points at it. The
- * exporter is injectable so a test opens no socket.
- *
- * Promise chains and not `async`: 0101 §6's ratchet (#792) counts the keyword.
+ * nothing and prints nothing. A tracer that fails to install installs nothing
+ * and fails nothing: a trace is never worth a pass. Once per process, at the
+ * command's entry: the provider lives as long as the process and the layer only
+ * points at it. The exporter is injectable so a test opens no socket.
  */
+export const installTracingEffect = (
+  from: NodeJS.ProcessEnv,
+  file?: MachineFile,
+  exporter?: SpanExporter,
+): Effect.Effect<Tracing | undefined> =>
+  Effect.gen(function* () {
+    const url = yield* Effect.try(() => machineOtlpEndpoint(from, file)).pipe(Effect.orElseSucceed(() => undefined))
+    if (url === undefined) return undefined
+    const loaded = yield* Effect.option(loadSdkEffect)
+    if (Option.isNone(loaded)) return undefined
+    const [base, http, hooks, resources, nodeHttp, nodeHttps] = loaded.value
+    // Every agent the exporter makes, so a flush that ran out of time can destroy
+    // their sockets — destroying a socket errors the request it carries and ends
+    // its timers, which `forceFlush`/`shutdown` do not.
+    const agents: Array<{ destroy(): void }> = []
+    const cancel = () => {
+      for (const agent of agents) agent.destroy()
+    }
+    return yield* Effect.sync((): Tracing => {
+      const provider = new base.BasicTracerProvider({
+        // Given a resource, the provider does not fall back to the default one,
+        // whose service.name is `unknown_service:<argv0>` — a path off this machine.
+        resource: resources.resourceFromAttributes({ 'service.name': SCOPE }),
+        // Both bounded to the flush's own budget, so a slow collector leaves no
+        // request or export timer holding the process past it.
+        spanProcessors: [
+          new base.BatchSpanProcessor(
+            exporter ??
+              new http.OTLPTraceExporter({
+                url,
+                timeoutMillis: EXPORT_MS,
+                httpAgentOptions: (protocol: string) => {
+                  const agent = new (protocol === 'http:' ? nodeHttp : nodeHttps).Agent({ keepAlive: true })
+                  agents.push(agent)
+                  return agent
+                },
+              }),
+            { exportTimeoutMillis: EXPORT_MS },
+          ),
+        ],
+      })
+      trace.setGlobalTracerProvider(provider)
+      context.setGlobalContextManager(new hooks.AsyncLocalStorageContextManager().enable())
+      return {
+        layer: tracingLayer,
+        flush: (ms = EXPORT_MS) => runPort(boundedEffect(() => provider.forceFlush(), ms, cancel)),
+        shutdown: (ms = EXPORT_MS) => runPort(boundedEffect(() => provider.shutdown(), ms, cancel)),
+      }
+    })
+  })
+
+/** The promise face of `installTracingEffect`, for `apps/cli/src/tracing.ts` and the tests, until #790. */
 export function installTracing(
   from: NodeJS.ProcessEnv,
   file?: MachineFile,
   exporter?: SpanExporter,
 ): Promise<Tracing | undefined> {
-  let url: string | undefined
-  try {
-    url = machineOtlpEndpoint(from, file)
-  } catch {
-    return Promise.resolve(undefined)
-  }
-  if (url === undefined) return Promise.resolve(undefined)
-  const endpoint = url
-  // Every agent the exporter makes, so a flush that ran out of time can destroy
-  // their sockets — destroying a socket errors the request it carries and ends
-  // its timers, which `forceFlush`/`shutdown` do not.
-  const agents: Array<{ destroy(): void }> = []
-  const cancel = () => {
-    for (const agent of agents) agent.destroy()
-  }
-  return loadSdk().then((sdk): Tracing => {
-    const provider = new sdk.base.BasicTracerProvider({
-      // Given a resource, the provider does not fall back to the default one,
-      // whose service.name is `unknown_service:<argv0>` — a path off this machine.
-      resource: sdk.resources.resourceFromAttributes({ 'service.name': SCOPE }),
-      // Both bounded to the flush's own budget, so a slow collector leaves no
-      // request or export timer holding the process past it.
-      spanProcessors: [
-        new sdk.base.BatchSpanProcessor(
-          exporter ??
-            new sdk.http.OTLPTraceExporter({
-              url: endpoint,
-              timeoutMillis: EXPORT_MS,
-              httpAgentOptions: (protocol: string) =>
-                import(protocol === 'http:' ? 'node:http' : 'node:https').then(({ Agent }) => {
-                  const agent = new Agent({ keepAlive: true })
-                  agents.push(agent)
-                  return agent
-                }),
-            }),
-          { exportTimeoutMillis: EXPORT_MS },
-        ),
-      ],
-    })
-    trace.setGlobalTracerProvider(provider)
-    context.setGlobalContextManager(new sdk.hooks.AsyncLocalStorageContextManager().enable())
-    return {
-      layer: tracingLayer,
-      flush: (ms = EXPORT_MS) => bounded(() => provider.forceFlush(), ms, cancel),
-      shutdown: (ms = EXPORT_MS) => bounded(() => provider.shutdown(), ms, cancel),
-    }
-  })
+  return Effect.runPromise(installTracingEffect(from, file, exporter))
 }
