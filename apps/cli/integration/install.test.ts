@@ -15,6 +15,7 @@ import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { Effect } from 'effect'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -24,15 +25,21 @@ import {
   installPaths,
   installPlatform,
   pointShim,
-  releaseCheck,
+  releaseCheck as releaseCheckEffect,
   rollback,
   runningFrom,
-  uninstall,
-  upgrade,
-  unpackRelease,
+  uninstall as uninstallEffect,
+  upgrade as upgradeEffect,
+  unpackRelease as unpackReleaseEffect,
   type Drained,
   type World,
 } from '../src/install.ts'
+
+// The commands are Effects; each test runs one to its end, as the CLI's edge does.
+const releaseCheck = (...a: Parameters<typeof releaseCheckEffect>) => Effect.runPromise(releaseCheckEffect(...a))
+const uninstall = (...a: Parameters<typeof uninstallEffect>) => Effect.runPromise(uninstallEffect(...a))
+const upgrade = (...a: Parameters<typeof upgradeEffect>) => Effect.runPromise(upgradeEffect(...a))
+const unpackRelease = (...a: Parameters<typeof unpackReleaseEffect>) => Effect.runPromise(unpackReleaseEffect(...a))
 
 /**
  * `install.sh`, `lingtai upgrade`, `rollback` and `uninstall` (#184), against a

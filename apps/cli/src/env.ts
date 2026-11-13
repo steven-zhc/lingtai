@@ -22,8 +22,12 @@
  * wholesale is exactly how a `PROD_DATABASE_URL` reaches an agent; a value at a
  * time is the point, not an inconvenience to be optimised away.
  */
-import { type ProjectEnvListing, projectEnvNames, setProjectEnv, unsetProjectEnv } from '@lingtai/agent-env'
+import { text } from 'node:stream/consumers'
 
+import { type ProjectEnvListing, projectEnvNames, setProjectEnv, unsetProjectEnv } from '@lingtai/agent-env'
+import { Effect } from 'effect'
+
+import { lift } from './exit.ts'
 import { heading, keyValues, printJson, symbol, table } from './output.ts'
 
 const DEFERRED = 'project file — asks for a secret source (a "!" value), which is not built yet'
@@ -74,36 +78,39 @@ export function envListJson(project: string, listing: ProjectEnvListing): Record
  * minus the newline the shell adds. Both are the same promise: the value is
  * never a word in a command line, so it is never in shell history.
  */
-async function readValueFromStdin(name: string): Promise<string> {
+const readValueFromStdin = (name: string): Effect.Effect<string, unknown> => {
   const stdin = process.stdin
 
-  if (!stdin.isTTY) {
+  if (!stdin.isTTY)
+    return Effect.map(
+      lift(() => text(stdin)),
+      (data) => data.replace(/\r?\n$/, ''),
+    )
+
+  return Effect.callback<string, Error>((resume) => {
+    process.stderr.write(`value for ${name} (not echoed): `)
+    stdin.setRawMode(true)
+    stdin.resume()
     stdin.setEncoding('utf8')
-    let data = ''
-    for await (const chunk of stdin) data += chunk as string
-    return data.replace(/\r?\n$/, '')
-  }
 
-  process.stderr.write(`value for ${name} (not echoed): `)
-  stdin.setRawMode(true)
-  stdin.resume()
-  stdin.setEncoding('utf8')
-
-  return new Promise<string>((resolve, reject) => {
     let buffer = ''
-    const done = (finish: () => void) => {
+    // The one way out of raw mode: an answer, a Ctrl-C and an interruption all end here.
+    const restore = () => {
       stdin.removeListener('data', onData)
       stdin.setRawMode(false)
       stdin.pause()
+    }
+    const done = (finish: () => void) => {
+      restore()
       process.stderr.write('\n')
       finish()
     }
     const onData = (chunk: string) => {
       for (const ch of chunk) {
         // Enter, or EOT: that is the value.
-        if (ch === '\n' || ch === '\r' || ch === '\u0004') return done(() => resolve(buffer))
+        if (ch === '\n' || ch === '\r' || ch === '\u0004') return done(() => resume(Effect.succeed(buffer)))
         // Ctrl-C has to stay Ctrl-C — raw mode means nobody else will deliver it.
-        if (ch === '\u0003') return done(() => reject(new Error('cancelled — nothing was written')))
+        if (ch === '\u0003') return done(() => resume(Effect.fail(new Error('cancelled — nothing was written'))))
         if (ch === '\u007f' || ch === '\b') {
           buffer = buffer.slice(0, -1)
           continue
@@ -112,47 +119,51 @@ async function readValueFromStdin(name: string): Promise<string> {
       }
     }
     stdin.on('data', onData)
+    return Effect.sync(restore)
   })
 }
 
 /** `env list`: reads, renders, prints. A project the machine does not know throws, and the caller answers it. */
-export async function envList(request: {
+export const envList = (request: {
   project: string
   json: boolean
   columns?: number | undefined
-}): Promise<number> {
-  const listing = await projectEnvNames({ project: request.project })
-  if (request.json) printJson('env list', envListJson(request.project, listing))
-  else for (const line of renderEnvList(listing, request.project, { columns: request.columns })) console.log(line)
-  return 0
-}
+}): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const listing = yield* lift(() => projectEnvNames({ project: request.project }))
+    if (request.json) printJson('env list', envListJson(request.project, listing))
+    else for (const line of renderEnvList(listing, request.project, { columns: request.columns })) console.log(line)
+    return 0
+  })
 
 /** `env set`: `KEY=VALUE` writes, a bare `KEY` reads the value from stdin. */
-export async function envSet(request: { project: string; argument: string }): Promise<number> {
-  const { project, argument } = request
-  // The first `=` and no other: a value may hold as many as it likes, and
-  // splitting on all of them is how a base64 secret loses its padding.
-  const eq = argument.indexOf('=')
-  const name = eq === -1 ? argument : argument.slice(0, eq)
-  const value = eq === -1 ? await readValueFromStdin(name) : argument.slice(eq + 1)
+export const envSet = (request: { project: string; argument: string }): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const { project, argument } = request
+    // The first `=` and no other: a value may hold as many as it likes, and
+    // splitting on all of them is how a base64 secret loses its padding.
+    const eq = argument.indexOf('=')
+    const name = eq === -1 ? argument : argument.slice(0, eq)
+    const value = eq === -1 ? yield* readValueFromStdin(name) : argument.slice(eq + 1)
 
-  const { file, created, replaced } = await setProjectEnv({ project, name, value })
-  console.log(
-    `${symbol.pass()} ${name} ${replaced ? 'replaced in' : 'written to'} ${file}${created ? ' (created, 0600)' : ''}`,
-  )
-  return 0
-}
+    const { file, created, replaced } = yield* lift(() => setProjectEnv({ project, name, value }))
+    console.log(
+      `${symbol.pass()} ${name} ${replaced ? 'replaced in' : 'written to'} ${file}${created ? ' (created, 0600)' : ''}`,
+    )
+    return 0
+  })
 
 /** `env unset`: non-zero for a name that was not there. */
-export async function envUnset(request: { project: string; name: string }): Promise<number> {
-  const { file, removed } = await unsetProjectEnv({ project: request.project, name: request.name })
-  console.log(
-    removed
-      ? `${symbol.pass()} ${request.name} removed from ${file}`
-      : `${symbol.fail()} ${request.name} was not set in ${file}`,
-  )
-  // Non-zero for a name that was not there: "I removed it" and "there was
-  // nothing to remove" are different answers, and the second is the one you
-  // want to hear about when you have spelled the name wrong.
-  return removed ? 0 : 1
-}
+export const envUnset = (request: { project: string; name: string }): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const { file, removed } = yield* lift(() => unsetProjectEnv({ project: request.project, name: request.name }))
+    console.log(
+      removed
+        ? `${symbol.pass()} ${request.name} removed from ${file}`
+        : `${symbol.fail()} ${request.name} was not set in ${file}`,
+    )
+    // Non-zero for a name that was not there: "I removed it" and "there was
+    // nothing to remove" are different answers, and the second is the one you
+    // want to hear about when you have spelled the name wrong.
+    return removed ? 0 : 1
+  })

@@ -194,7 +194,7 @@ describe('lingtai doctor through runCli (#716)', () => {
     }))
     vi.doMock('../src/install.ts', async (orig) => ({
       ...(await orig<typeof import('../src/install.ts')>()),
-      releaseCheck: async () => ({ name: 'release: newest', status: 'ok' as const, detail: 'current' }),
+      releaseCheck: () => Effect.succeed({ name: 'release: newest', status: 'ok' as const, detail: 'current' }),
     }))
     vi.doMock('../src/steps.ts', async (orig) => ({
       ...(await orig<typeof import('../src/steps.ts')>()),
