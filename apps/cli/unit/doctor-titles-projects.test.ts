@@ -1,6 +1,7 @@
 import type { RecipeFor } from '@lingtai/conductor'
 import { currentRecipe } from '@lingtai/conductor'
 import type { ProjectState } from '@lingtai/domain'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -26,7 +27,7 @@ const firstLine = (r: CheckResult) => r.detail.split('\n')[0]!
 
 describe('runtime: other settings in scope', () => {
   it('titles a settings file that does not parse, with the parser message on line 2', async () => {
-    const row = await settingsSources(async () => '{ not json')
+    const row = await Effect.runPromise(settingsSources(() => Effect.succeed('{ not json')))
     expect(row).toMatchObject({ name: 'runtime: other settings in scope', status: 'warn' })
     PLAIN(row.title)
     expect(row.fix).toBeUndefined()
@@ -36,14 +37,16 @@ describe('runtime: other settings in scope', () => {
 
 describe('runtime: signed in', () => {
   it('titles the machine with nothing signed in, and offers no invented login command', async () => {
-    const row = await runtimeAuth(
-      () =>
-        [
-          {
-            capabilities: { id: 'claude-code' },
-            checkAuth: async () => ({ state: 'signed-out', loggedIn: false, method: null, detail: 'not logged in' }),
-          },
-        ] as never,
+    const row = await Effect.runPromise(
+      runtimeAuth(
+        () =>
+          [
+            {
+              capabilities: { id: 'claude-code' },
+              checkAuth: async () => ({ state: 'signed-out', loggedIn: false, method: null, detail: 'not logged in' }),
+            },
+          ] as never,
+      ),
     )
     expect(row).toMatchObject({ name: 'runtime: signed in', status: 'fail' })
     PLAIN(row.title)

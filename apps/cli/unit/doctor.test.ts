@@ -74,16 +74,16 @@ const signedInRuntime = {
  * yet, and no `~/.claude/settings.json` exists.
  */
 const reach: DoctorReach = {
-  status: async () => null,
-  pause: async () => null,
-  lags: async () => [],
-  shapes: async (p: Projection) => ({ projection: p.name, matched: [], absent: [], drift: [] }),
+  status: () => Effect.succeed(null),
+  pause: () => Effect.succeed(null),
+  lags: () => Effect.succeed([]),
+  shapes: (p: Projection) => Effect.succeed({ projection: p.name, matched: [], absent: [], drift: [] }),
   lockHolder: async () => null,
   orphans: async () => [],
   snapshots: async () => [],
   titles: async () => [],
-  settings: async () => null,
-  accounts: async () => [],
+  settings: () => Effect.succeed(null),
+  accounts: () => Effect.succeed([]),
   runtimes: () => [signedInRuntime],
   // No store is opened: today is empty and no ceiling is set.
   spend: async () => ({
@@ -128,7 +128,7 @@ describe('lingtai doctor — the settings row (#718)', () => {
       async () => [],
       {
         ...reach,
-        settings: async () => raw,
+        settings: () => Effect.succeed(raw),
       },
     )
     return find(report.results, 'runtime: other settings in scope')
@@ -583,11 +583,13 @@ describe('github: gh login', () => {
     })
 
   it('is absent on a machine that is not on gh', async () => {
-    expect(await ghLogin({ LINGTAI_HOME: '/nonexistent/lingtai-home' }, signedIn('repo,workflow'))).toBeNull()
+    expect(
+      await Effect.runPromise(ghLogin({ LINGTAI_HOME: '/nonexistent/lingtai-home' }, signedIn('repo,workflow'))),
+    ).toBeNull()
   })
 
   it('is ok signed in with repo and workflow', async () => {
-    const row = await ghLogin(GH_MACHINE, signedIn('gist, repo, workflow'))
+    const row = await Effect.runPromise(ghLogin(GH_MACHINE, signedIn('gist, repo, workflow')))
     expect(row).toMatchObject({ name: 'github: gh login', status: 'ok' })
   })
 
@@ -597,13 +599,13 @@ describe('github: gh login', () => {
       stdout: hosts({ state: 'error', active: true }),
       stderr: '',
     })
-    const row = await ghLogin(GH_MACHINE, out)
+    const row = await Effect.runPromise(ghLogin(GH_MACHINE, out))
     expect(row?.status).toBe('fail')
     expect(row?.fix).toBe('gh auth login')
   })
 
   it('fails naming the refresh command when workflow is missing', async () => {
-    const row = await ghLogin(GH_MACHINE, signedIn('repo'))
+    const row = await Effect.runPromise(ghLogin(GH_MACHINE, signedIn('repo')))
     expect(row?.status).toBe('fail')
     expect(row?.fix).toBe('gh auth refresh --hostname github.com --scopes workflow')
     expect(row?.detail).not.toContain('gh auth refresh')

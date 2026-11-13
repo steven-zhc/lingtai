@@ -1,4 +1,4 @@
-import { readControl } from '@lingtai/daemon/control'
+import { readControlEffect } from '@lingtai/daemon/control'
 /**
  * `lingtai run` is a conductor, and a pause stops conductors (#166).
  *
@@ -17,6 +17,7 @@ import { readControl } from '@lingtai/daemon/control'
 import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { daemonLiveness } from '../src/doctor.ts'
@@ -73,9 +74,11 @@ describe('lingtai run under a standing pause', () => {
     const store = createMemoryEventStore()
     await plantSetupPause(store, 'migrating the database')
 
-    const liveness = await daemonLiveness(
-      async () => null,
-      () => readControl(store),
+    const liveness = await Effect.runPromise(
+      daemonLiveness(
+        () => Effect.succeed(null),
+        () => readControlEffect(store),
+      ),
     )
     expect(liveness.detail).toContain('paused by lingtai (migrating the database)')
     expect(liveness.detail).toContain(RUN_UNDER_A_PAUSE)

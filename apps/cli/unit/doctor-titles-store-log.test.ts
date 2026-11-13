@@ -1,5 +1,6 @@
 import type { LogQueries } from '@lingtai/event-store'
 import type { ProjectionShape } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -57,7 +58,7 @@ describe('doctor titles: store and log', () => {
         throw new Error('disk is full')
       },
     } as unknown as LogQueries
-    const r = await logReachable('the log file', queries)
+    const r = await Effect.runPromise(logReachable('the log file', queries))
     expect(r.name).toBe('log: reachable')
     expect(r.status).toBe('fail')
     plain(r)
@@ -119,9 +120,7 @@ describe('doctor titles: store and log', () => {
   })
 
   it('projections: lag has a title and no fix when it cannot be read', async () => {
-    const r = await projections(undefined, async () => {
-      throw new Error('no table')
-    })
+    const r = await Effect.runPromise(projections(undefined, () => Effect.die(new Error('no table'))))
     expect(r.name).toBe('projections: lag')
     expect(r.status).toBe('fail')
     plain(r)
@@ -135,7 +134,9 @@ describe('doctor titles: store and log', () => {
       absent: [],
       drift: drifts ? [{ table: 't', missing: ['c'], unexpected: [] }] : [],
     })
-    const r = await projectionShapes(undefined, async (p) => shape(p.name, p.name === 'finding_backlog'))
+    const r = await Effect.runPromise(
+      projectionShapes(undefined, (p) => Effect.succeed(shape(p.name, p.name === 'finding_backlog'))),
+    )
     expect(r.name).toBe('projections: shape')
     expect(r.status).toBe('fail')
     plain(r)
@@ -144,9 +145,7 @@ describe('doctor titles: store and log', () => {
   })
 
   it('projections: shape that cannot be read has a title and no fix', async () => {
-    const r = await projectionShapes(undefined, async () => {
-      throw new Error('gone')
-    })
+    const r = await Effect.runPromise(projectionShapes(undefined, () => Effect.die(new Error('gone'))))
     plain(r)
     expect(r.fix).toBeUndefined()
   })

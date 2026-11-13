@@ -22,7 +22,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { readControl, readStatus } from '@lingtai/daemon/control'
+import { readControlEffect, readStatus, readStatusEffect } from '@lingtai/daemon/control'
 import { createSqliteDaemonStore, openSqliteDaemon } from '@lingtai/daemon/sqlite'
 import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
 import { Effect } from 'effect'
@@ -46,11 +46,13 @@ describe('the daemon rows, read from a beacon in a file', () => {
   it('says no daemon has run where none ever has', async () => {
     const store = freshStore()
     try {
-      const liveness = await daemonLiveness(
-        () => readStatus(store),
-        // The control stream is the same file's log, which is the other half
-        // of what one store names.
-        () => readControl(store.events),
+      const liveness = await Effect.runPromise(
+        daemonLiveness(
+          () => readStatusEffect(store),
+          // The control stream is the same file's log, which is the other half
+          // of what one store names.
+          () => readControlEffect(store.events),
+        ),
       )
       expect(liveness.status).toBe('ok')
       expect(liveness.detail).toContain('no daemon has run')
@@ -81,9 +83,11 @@ describe('the daemon rows, read from a beacon in a file', () => {
         }),
       )
 
-      const liveness = await daemonLiveness(
-        () => readStatus(store),
-        () => readControl(store.events),
+      const liveness = await Effect.runPromise(
+        daemonLiveness(
+          () => readStatusEffect(store),
+          () => readControlEffect(store.events),
+        ),
       )
       expect(liveness.detail).toContain('starting')
       expect(liveness.detail).not.toContain('not running')
@@ -116,9 +120,11 @@ describe('the daemon rows, read from a beacon in a file', () => {
         },
       ])
 
-      const liveness = await daemonLiveness(
-        () => readStatus(store),
-        () => readControl(store.events),
+      const liveness = await Effect.runPromise(
+        daemonLiveness(
+          () => readStatusEffect(store),
+          () => readControlEffect(store.events),
+        ),
       )
       expect(liveness.detail).toContain('paused by lingtai (migrating)')
     } finally {

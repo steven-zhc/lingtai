@@ -32,14 +32,14 @@ const signedInRuntime = {
 } as unknown as Runtime
 
 const reach: DoctorReach = {
-  status: async () => null,
-  pause: async () => null,
-  lags: async () => [],
-  shapes: async (p: Projection) => ({ projection: p.name, matched: [], absent: [], drift: [] }),
+  status: () => Effect.succeed(null),
+  pause: () => Effect.succeed(null),
+  lags: () => Effect.succeed([]),
+  shapes: (p: Projection) => Effect.succeed({ projection: p.name, matched: [], absent: [], drift: [] }),
   lockHolder: async () => null,
   orphans: async () => [],
   titles: async () => [],
-  settings: async () => null,
+  settings: () => Effect.succeed(null),
   runtimes: () => [signedInRuntime],
   sea: () => ({ can: true }),
   recipe: () => {
@@ -71,9 +71,7 @@ describe('runDoctor reports its steps (#716)', () => {
         async () => [],
         {
           ...reach,
-          status: async () => {
-            throw new Error('beacon gone')
-          },
+          status: () => Effect.die(new Error('beacon gone')),
           onProgress: (p) => seen.push(p),
         },
       ),
