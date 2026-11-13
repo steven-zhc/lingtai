@@ -222,6 +222,34 @@ describe('triage catch-up', () => {
     expect(finished).toBe(true)
   })
 
+  it('catches up every project on a lifted day though one project’s recipe read is stalled', async () => {
+    const f = fixture()
+    const hold = Deferred.makeUnsafe<void>()
+    const scanned: string[] = []
+    const live: TriageTriggerPorts = {
+      store: f.deps.store,
+      projects: () => Effect.succeed(['a', 'b']),
+      triageFor: (project) => (project === 'a' ? Effect.as(Deferred.await(hold), triage) : Effect.succeed(triage)),
+      daemonStartedAt: () => Effect.succeed(startedAt),
+      run: () => Effect.void,
+    }
+    const lifted = { type: 'DayCeilingLifted', streamId: 'x', data: {} } as never
+    await onWaitStarted(lifted, {
+      ...f.deps,
+      ...live,
+      store: f.deps.store,
+      readTasks: (project) => {
+        scanned.push(project)
+        return Effect.succeed([])
+      },
+    })
+    await drained()
+    expect(scanned).toEqual(['b'])
+    Deferred.doneUnsafe(hold, Effect.void)
+    await drained()
+    expect(scanned).toEqual(['b', 'a'])
+  })
+
   describe('memoDaemonStartedAt', () => {
     const row = { pid: 7, startedAt }
     it('rejects for another pid’s row and for a failed read, then resolves and stops reading', async () => {

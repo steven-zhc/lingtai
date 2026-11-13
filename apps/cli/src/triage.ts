@@ -342,9 +342,12 @@ export const onWaitStarted = (
       yield* Effect.forkDetach(
         Effect.gen(function* () {
           const names = deps.projects ? yield* deps.projects() : []
+          // One fiber per project: a read that stalls for one must not hold back the others.
           for (const project of names) {
-            yield* catchUpProject(project, deps).pipe(
-              recoverWith((err) => Effect.sync(() => deps.log?.(`triage catch-up ${project}: ${messageOf(err)}`))),
+            yield* Effect.forkDetach(
+              catchUpProject(project, deps).pipe(
+                recoverWith((err) => Effect.sync(() => deps.log?.(`triage catch-up ${project}: ${messageOf(err)}`))),
+              ),
             )
           }
         }).pipe(recoverWith((err) => Effect.sync(() => deps.log?.(`triage catch-up: ${messageOf(err)}`)))),

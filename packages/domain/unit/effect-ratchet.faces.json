@@ -291,7 +291,7 @@
     "file": "packages/conductor/src/read-ticket.ts",
     "fn": "readProjectTicket",
     "until": "#790",
-    "why": "apps/board lib/task, apps/cli discuss.ts awaits it; 0101 §7 lets the board keep promises"
+    "why": "apps/board lib/task awaits it; 0101 §7 lets the board keep promises"
   },
   {
     "file": "packages/conductor/src/resolve-wait.ts",
