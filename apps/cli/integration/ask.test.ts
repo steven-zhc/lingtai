@@ -87,7 +87,7 @@ describe('lingtai ask / answer', () => {
 
     await reduce()
     const listed: string[] = []
-    await status({ project: PROJECT }, (l) => listed.push(l))
+    await Effect.runPromise(status({ project: PROJECT }, (l) => listed.push(l)))
     const out = listed.join('\n')
     expect(out).toContain(QUESTION)
     expect(out).toContain('waiting for your answer')
