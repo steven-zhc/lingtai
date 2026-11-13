@@ -179,8 +179,10 @@ Read from the package, not built:
   (`dist/sandbox/mxc-sandbox-utils.js:98`), so a bundle can leave it out.
 - On Linux srt runs a 742 KB static `apply-seccomp` binary, which it finds
   relative to its own file (`dist/sandbox/generate-seccomp-filter.js:119-123`).
-  A bundle has to write that binary to disk and name it with
-  `seccomp.applyPath`.
+  Corrected 2026-11-13: with `allowAllUnixSockets: true` srt skips the seccomp
+  filter entirely (0.0.83 `linux-sandbox-utils.js`, *Skipped when
+  allowAllUnixSockets is true*), so Lingtai never runs it; a bundle that copies
+  `vendor/` beside itself lets srt's own lookup find it and the Java proxy jar.
 - `bwrap`, `socat` and `rg` on Linux, and `rg` on macOS, stay host
   requirements.
 
@@ -493,7 +495,7 @@ now turns it on for every macOS run.
 8. **The wrap goes outside the environment filter.** srt's proxy variables
    are added after `runnableEnv` has chosen what a run gets, or every network
    call a run makes hangs on Linux.
-9. **Bundling is feasible**, with `apply-seccomp` extracted at start.
+9. **Bundling is feasible**: `vendor/` copied beside the bundle, nothing extracted at start (corrected above).
 10. **On macOS the deny list includes `~/Library/Keychains`**, or a run can
     read the operator's Claude Code login through `security`.
 11. **A project's allowlist is registered per run.** One srt per process;
