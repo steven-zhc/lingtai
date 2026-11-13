@@ -1,5 +1,4 @@
 import { conductorWorker } from '@lingtai/conductor/claim'
-import { readState } from '@lingtai/conductor/snapshot-state'
 import {
   CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
@@ -71,10 +70,20 @@ Control holds the drain, the requests and the setup's pause: a recipe that asks
 for a tier one of its runtimes cannot provide stops every project until a person
 runs `lingtai resume`. Every other stop is a lock on its own stream (0126).
  */
-import { ConcurrencyError, type EventStore, eventStore, log, type SnapshotStore } from '@lingtai/event-store'
+import {
+  ConcurrencyError,
+  type EventStore,
+  type EventsPort,
+  eventStore,
+  fromPromiseStore,
+  log,
+  processEvents,
+  readThroughSnapshot,
+  type SnapshotStore,
+} from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
-import { readTasks, type TaskCard } from '@lingtai/projector'
-import { Effect } from 'effect'
+import { readTasksEffect, type TaskCard } from '@lingtai/projector'
+import { Cause, Effect } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import type { CodeVersion } from './currency.ts'
@@ -105,19 +114,34 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * Every caller — the conductor, the board, `doctor`, `status` — reads the same
  * state.
  */
-export async function readControl(
+export const readControlEffect = (
   store?: EventStore,
   cache: { snapshots?: SnapshotStore; writer?: Pick<SnapshotWriter, 'offer'> } = {},
-): Promise<ControlState> {
-  const events = store ?? eventStore
+): Effect.Effect<ControlState, unknown> => {
   // The default snapshots belong to the default store's log; a store passed in has none of its own.
   const snapshots = cache.snapshots ?? (store === undefined ? log.snapshots : undefined)
-  const state = await readState<ControlState>(events, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
+  return readThroughSnapshot<ControlState>(store ?? eventStore, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
     snapshots,
     writer: cache.writer,
   })
-  return state
 }
+
+export function readControl(
+  store?: EventStore,
+  cache: { snapshots?: SnapshotStore; writer?: Pick<SnapshotWriter, 'offer'> } = {},
+): Promise<ControlState> {
+  return Effect.runPromise(readControlEffect(store, cache))
+}
+
+/**
+ * The events port a verb writes through. The process's own when the store is
+ * the process store (the verbs default to it), resolved inside each attempt
+ * because opening it is itself an IO that can be refused; `fromPromiseStore`
+ * only for a store a caller handed in, never for `eventStore` (Effect → face →
+ * Effect).
+ */
+const portFor = (store: EventStore): Effect.Effect<EventsPort> =>
+  store === eventStore ? processEvents : Effect.succeed(fromPromiseStore(store))
 
 /**
  * Where the control stream is now — the watermark a starting daemon keeps.
@@ -125,21 +149,35 @@ export async function readControl(
  * Read once, before the loop, and never again: it is the boundary between
  * "somebody told the daemon before me" and "somebody is telling me".
  */
-export async function controlWatermark(store: EventStore = eventStore): Promise<number> {
-  return store.head(CONTROL_STREAM)
+export const controlWatermarkEffect = (store: EventStore = eventStore): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    const events = yield* portFor(store)
+    return yield* events.head(CONTROL_STREAM)
+  })
+
+export function controlWatermark(store: EventStore = eventStore): Promise<number> {
+  return Effect.runPromise(controlWatermarkEffect(store))
 }
 
 /** Appends one event and returns the version it landed at. */
-async function append(type: string, data: unknown, store: EventStore, at?: number): Promise<number> {
-  const expected = at ?? (await store.head(CONTROL_STREAM))
-  await store.append(CONTROL_STREAM, expected, [
-    { type, actor: (data as { by: string }).by, data: parsePayload(type as never, data) },
-  ])
-  return expected + 1
-}
+const append = (type: string, data: unknown, store: EventStore, at?: number): Effect.Effect<number, ConcurrencyError> =>
+  Effect.gen(function* () {
+    const events = yield* portFor(store)
+    const expected = at ?? (yield* events.head(CONTROL_STREAM))
+    yield* events.append(CONTROL_STREAM, expected, [
+      { type, actor: (data as { by: string }).by, data: parsePayload(type as never, data) },
+    ])
+    return expected + 1
+  })
 
-export async function resumeConductor(by: string, store: EventStore = eventStore, at?: number): Promise<void> {
-  await append('ConductorResumed', { by }, store, at)
+export const resumeConductorEffect = (
+  by: string,
+  store: EventStore = eventStore,
+  at?: number,
+): Effect.Effect<void, ConcurrencyError> => append('ConductorResumed', { by }, store, at).pipe(Effect.asVoid)
+
+export function resumeConductor(by: string, store: EventStore = eventStore, at?: number): Promise<void> {
+  return Effect.runPromise(resumeConductorEffect(by, store, at))
 }
 
 /** What `raiseDayCeiling` did: the version the lift landed at, or the refusal, by name. */
@@ -163,10 +201,7 @@ export const raiseDayCeiling = (input: {
   const store = input.store ?? eventStore
   const attempt = Effect.gen(function* () {
     const at = yield* Effect.tryPromise({ try: () => store.head(CONTROL_STREAM), catch: (e) => e })
-    const state = yield* Effect.tryPromise({
-      try: () => readControl(store, { snapshots: store === eventStore ? log.snapshots : undefined }),
-      catch: (e) => e,
-    })
+    const state = yield* readControlEffect(store, { snapshots: store === eventStore ? log.snapshots : undefined })
     const verdict = raiseTransition({
       state,
       now: input.now ?? new Date(),
@@ -188,17 +223,26 @@ export const raiseDayCeiling = (input: {
  * already reads `paused` — before every pass — so the request lands without
  * anybody restarting anything, and a daemon that is down finds it waiting.
  */
-export async function requestShutdown(
+export const requestShutdownEffect = (
   by: string,
   reason: string,
   timeoutMs: number | null = null,
   store: EventStore = eventStore,
   /** Stop without draining the pass in flight. Defaulted, because safe is the default (`#159`). */
   force = false,
-): Promise<number> {
+): Effect.Effect<number, ConcurrencyError> =>
   // The version is what names the request, so a caller that means to withdraw
   // it later — `lingtai restart` — can withdraw that one and no other.
-  return append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store)
+  append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store)
+
+export function requestShutdown(
+  by: string,
+  reason: string,
+  timeoutMs: number | null = null,
+  store: EventStore = eventStore,
+  force = false,
+): Promise<number> {
+  return Effect.runPromise(requestShutdownEffect(by, reason, timeoutMs, store, force))
 }
 
 /** What `requestShutdownUnlessStanding` found, and so what it did. */
@@ -221,26 +265,39 @@ export type Asking =
  * So the append is at the version of the read that decided it, as
  * `withdrawShutdown`'s is; if the stream moved, it is read and asked again.
  */
-export async function requestShutdownUnlessStanding(
+export const requestShutdownUnlessStandingEffect = (
   by: string,
   reason: string,
   timeoutMs: number | null = null,
   store: EventStore = eventStore,
   /** As `requestShutdown`. A restart passes its own. */
   force = false,
+): Effect.Effect<Asking, unknown> => {
+  const attempt = (n: number): Effect.Effect<Asking, unknown> =>
+    Effect.gen(function* () {
+      const events = yield* portFor(store)
+      const at = yield* events.head(CONTROL_STREAM)
+      const standing = (yield* readControlEffect(store, {
+        snapshots: store === eventStore ? log.snapshots : undefined,
+      })).shutdown
+      if (standing !== null) return { asked: false, standing } as Asking
+      // Only the append is retried, and only on a concurrency conflict.
+      return yield* append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store, at).pipe(
+        Effect.map((version): Asking => ({ asked: true, version })),
+        Effect.catchTag('ConcurrencyError', (err) => (n >= 4 ? Effect.fail(err) : attempt(n + 1))),
+      )
+    })
+  return attempt(0)
+}
+
+export function requestShutdownUnlessStanding(
+  by: string,
+  reason: string,
+  timeoutMs: number | null = null,
+  store: EventStore = eventStore,
+  force = false,
 ): Promise<Asking> {
-  for (let attempt = 0; ; attempt++) {
-    const at = await store.head(CONTROL_STREAM)
-    const standing = (await readControl(store, { snapshots: store === eventStore ? log.snapshots : undefined }))
-      .shutdown
-    if (standing !== null) return { asked: false, standing }
-    try {
-      const version = await append('ConductorShutdownRequested', { by, reason, timeoutMs, force }, store, at)
-      return { asked: true, version }
-    } catch (err) {
-      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err
-    }
-  }
+  return Effect.runPromise(requestShutdownUnlessStandingEffect(by, reason, timeoutMs, store, force))
 }
 
 /**
@@ -267,30 +324,44 @@ export async function requestShutdownUnlessStanding(
  * are one write at the head the decision was read at, so a request landing
  * between the two fails the append and is read again, never ended unseen.
  */
-export async function recordStart(
+export const recordStartEffect = (
+  by: string,
+  reason: string | null,
+  code: CodeVersion,
+  since: number,
+  store: EventStore = eventStore,
+): Effect.Effect<{ recorded: true } | { recorded: false; standing: ShutdownRequest }, unknown> => {
+  type Recording = { recorded: true } | { recorded: false; standing: ShutdownRequest }
+  const attempt = (n: number): Effect.Effect<Recording, unknown> =>
+    Effect.gen(function* () {
+      const events = yield* portFor(store)
+      const at = yield* events.head(CONTROL_STREAM)
+      const standing = (yield* readControlEffect(store, {
+        snapshots: store === eventStore ? log.snapshots : undefined,
+      })).shutdown
+      if (standing !== null && standing.version > since) return { recorded: false, standing } as Recording
+      // The decision and the append are one write at `at`; only a conflict reads and decides again.
+      return yield* append(
+        'ConductorStarted',
+        { by, reason, sha: code.sha, dirty: code.dirty, worker: conductorWorker(), handoff: null },
+        store,
+        at,
+      ).pipe(
+        Effect.map((): Recording => ({ recorded: true })),
+        Effect.catchTag('ConcurrencyError', (err) => (n >= 4 ? Effect.fail(err) : attempt(n + 1))),
+      )
+    })
+  return attempt(0)
+}
+
+export function recordStart(
   by: string,
   reason: string | null,
   code: CodeVersion,
   since: number,
   store: EventStore = eventStore,
 ): Promise<{ recorded: true } | { recorded: false; standing: ShutdownRequest }> {
-  for (let attempt = 0; ; attempt++) {
-    const at = await store.head(CONTROL_STREAM)
-    const standing = (await readControl(store, { snapshots: store === eventStore ? log.snapshots : undefined }))
-      .shutdown
-    if (standing !== null && standing.version > since) return { recorded: false, standing }
-    try {
-      await append(
-        'ConductorStarted',
-        { by, reason, sha: code.sha, dirty: code.dirty, worker: conductorWorker(), handoff: null },
-        store,
-        at,
-      )
-      return { recorded: true }
-    } catch (err) {
-      if (!(err instanceof ConcurrencyError) || attempt >= 4) throw err
-    }
-  }
+  return Effect.runPromise(recordStartEffect(by, reason, code, since, store))
 }
 
 /** A `ConductorStarted`, as the log has it. */
@@ -315,19 +386,28 @@ export interface RecordedStart {
  * asked for and not that a daemon won the lock and took work: a copy that loses
  * the lock records nothing and exits 0.
  */
-export async function startAfter(version: number, store: EventStore = eventStore): Promise<RecordedStart | null> {
-  const found = (await store.readTypes(CONTROL_STREAM, ['ConductorStarted'], version + 1))[0]
-  if (!found) return null
-  const d = (found.data ?? {}) as Record<string, unknown>
-  return {
-    by: typeof d['by'] === 'string' ? d['by'] : '',
-    reason: typeof d['reason'] === 'string' ? d['reason'] : null,
-    sha: typeof d['sha'] === 'string' ? d['sha'] : null,
-    dirty: d['dirty'] === true,
-    worker: typeof d['worker'] === 'string' ? d['worker'] : '',
-    version: found.version,
-    at: found.at,
-  }
+export const startAfterEffect = (
+  version: number,
+  store: EventStore = eventStore,
+): Effect.Effect<RecordedStart | null> =>
+  Effect.gen(function* () {
+    const events = yield* portFor(store)
+    const found = (yield* events.readTypes(CONTROL_STREAM, ['ConductorStarted'], version + 1))[0]
+    if (!found) return null
+    const d = (found.data ?? {}) as Record<string, unknown>
+    return {
+      by: typeof d['by'] === 'string' ? d['by'] : '',
+      reason: typeof d['reason'] === 'string' ? d['reason'] : null,
+      sha: typeof d['sha'] === 'string' ? d['sha'] : null,
+      dirty: d['dirty'] === true,
+      worker: typeof d['worker'] === 'string' ? d['worker'] : '',
+      version: found.version,
+      at: found.at,
+    }
+  })
+
+export function startAfter(version: number, store: EventStore = eventStore): Promise<RecordedStart | null> {
+  return Effect.runPromise(startAfterEffect(version, store))
 }
 
 /**
@@ -373,9 +453,17 @@ export function held(tasks: readonly Pick<TaskCard, 'project' | 'issue' | 'state
  * question is asked by three different processes — the draining daemon, the
  * board's chip and `lingtai doctor` — and only one of them is the daemon.
  */
-export async function inFlight(url?: string): Promise<string[]> {
-  const tasks = await readTasks(url === undefined ? {} : { url }).catch(() => [])
-  return held(tasks)
+export const inFlightEffect = (url?: string): Effect.Effect<string[]> =>
+  Effect.suspend(() => readTasksEffect(url === undefined ? {} : { url })).pipe(
+    // The projector's store failures are defects, so any non-interrupt cause is "nothing in flight".
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause as Cause.Cause<never>) : Effect.succeed<TaskCard[]>([]),
+    ),
+    Effect.map(held),
+  )
+
+export function inFlight(url?: string): Promise<string[]> {
+  return Effect.runPromise(inFlightEffect(url))
 }
 
 /** The sentence a drain leads with, for whoever is doing the draining. */
@@ -385,13 +473,15 @@ export function describeInFlight(items: readonly string[]): string {
   return `finishing ${items.length} attempts: ${items.join(', ')}`
 }
 
-export async function requestRun(
+export const requestRunEffect = (
   project: string,
   issue: string,
   by: string,
   store: EventStore = eventStore,
-): Promise<void> {
-  await append('RunRequested', { project, issue, by }, store)
+): Effect.Effect<void, ConcurrencyError> => append('RunRequested', { project, issue, by }, store).pipe(Effect.asVoid)
+
+export function requestRun(project: string, issue: string, by: string, store: EventStore = eventStore): Promise<void> {
+  return Effect.runPromise(requestRunEffect(project, issue, by, store))
 }
 
 // ------------------------------------------------------------- liveness ----

@@ -13,7 +13,7 @@ import {
 import { ConcurrencyError, type EventStore, type SnapshotStore } from '@lingtai/event-store'
 import { Context, Data, Effect } from 'effect'
 
-import { readControl } from './control.ts'
+import { readControlEffect } from './control.ts'
 
 /**
  * The one entry every gate asks before it starts work (0126 §4).
@@ -87,7 +87,7 @@ const projectPause: Check = ({ store }, project) =>
 const dayCeiling: Check = ({ store, snapshots, ceiling, now }) =>
   Effect.gen(function* () {
     const readState = (): Effect.Effect<ControlState, Error> =>
-      Effect.tryPromise({ try: () => readControl(store, { snapshots }), catch: asError })
+      readControlEffect(store, { snapshots }).pipe(Effect.mapError(asError))
     if (ceiling === 'not-the-holder') return locksOn({ control: yield* readState(), accounts: NO_ACCOUNTS })
 
     const at = (now ?? (() => new Date()))()
