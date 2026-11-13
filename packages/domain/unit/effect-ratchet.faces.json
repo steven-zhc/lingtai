@@ -180,6 +180,24 @@
     "why": "apps/cli (conduct, run, ticket) and `packages/daemon/src/converge.ts:187`"
   },
   {
+    "file": "packages/daemon/src/daemon.ts",
+    "fn": "daemonStopFace",
+    "until": "#790",
+    "why": "apps/cli/src/daemon.ts (`openDaemon`) and apps/cli/unit/log-predates-hold.test.ts hold a promise `Daemon` until the apps/cli row"
+  },
+  {
+    "file": "packages/daemon/src/daemon.ts",
+    "fn": "daemonStoppedFace",
+    "until": "#790",
+    "why": "apps/cli/src/daemon.ts (`openDaemon`) and apps/cli/unit/log-predates-hold.test.ts hold a promise `Daemon` until the apps/cli row"
+  },
+  {
+    "file": "packages/daemon/src/daemon.ts",
+    "fn": "startDaemon",
+    "until": "#790",
+    "why": "apps/cli/src/daemon.ts (`openDaemon`) and apps/cli/unit/log-predates-hold.test.ts hold a promise `Daemon` until the apps/cli row"
+  },
+  {
     "file": "packages/daemon/src/failure-recorder.ts",
     "fn": "recordFailureFace",
     "until": "#790",
@@ -213,7 +231,7 @@
     "file": "packages/event-store/src/choose.ts",
     "fn": "processLog",
     "until": "#790",
-    "why": "apps/cli `projector.ts`, and `packages/daemon/src/daemon.ts` until DAEMON-2"
+    "why": "apps/cli `projector.ts` only"
   },
   {
     "file": "packages/event-store/src/choose.ts",
@@ -291,7 +309,7 @@
     "file": "packages/event-store/src/store-face.ts",
     "fn": "logPredatesHold",
     "until": "#790",
-    "why": "apps/cli (doctor, projection, projector) and packages/daemon call it as a promise"
+    "why": "apps/cli (doctor, projection, projector) call it as a promise"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
@@ -435,37 +453,37 @@
     "file": "packages/projector/src/runner-face.ts",
     "fn": "runnerCloseFace",
     "until": "#790",
-    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
+    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
   },
   {
     "file": "packages/projector/src/runner-face.ts",
     "fn": "runnerLagFace",
     "until": "#790",
-    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
+    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
   },
   {
     "file": "packages/projector/src/runner-face.ts",
     "fn": "runnerRebuildFace",
     "until": "#790",
-    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
+    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
   },
   {
     "file": "packages/projector/src/runner-face.ts",
     "fn": "runnerShapeFace",
     "until": "#790",
-    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
+    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
   },
   {
     "file": "packages/projector/src/runner-face.ts",
     "fn": "runnerStartFace",
     "until": "#790",
-    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
+    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
   },
   {
     "file": "packages/projector/src/runner-face.ts",
     "fn": "runnerStopFace",
     "until": "#790",
-    "why": "`packages/daemon/src/daemon.ts` (row 9) and `apps/cli` (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`; rows 11+) hold a promise runner."
+    "why": "apps/cli (`projector.ts`, `projection.ts`, `live-spend.ts`, `rates.ts`, `cli.ts`) holds a promise runner, among them the one the daemon hands to `onRunner`; rows 11+"
   },
   {
     "file": "packages/projector/src/shape.ts",

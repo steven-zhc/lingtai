@@ -37,9 +37,10 @@
  * run until the wrong event arrives (#90).
  */
 import { paint } from '@lingtai/env/colour'
-import { type LogPredatesHoldError, logPredatesHold, processLog } from '@lingtai/event-store'
-import type { Projection, ProjectionRunner } from '@lingtai/projector'
-import { ProjectionShapeError, createProjectionRunner } from '@lingtai/projector'
+import { type LogPredatesHoldError, logPredatesHoldEffect, processQueries } from '@lingtai/event-store'
+import type { Projection, ProjectionRunner, ProjectionRunnerOptions, ProjectionRunnerPort } from '@lingtai/projector'
+import { ProjectionShapeError, makeRunner, promiseRunner } from '@lingtai/projector'
+import { Cause, Deferred, Effect, Exit, Fiber } from 'effect'
 
 import { controlWatermark } from './control.ts'
 import {
@@ -72,8 +73,8 @@ export interface DaemonOptions {
   predatesHold?: () => Promise<LogPredatesHoldError | null>
   /** Told of each runner as it starts, so the process can stand one down around a rebuild (#680). */
   onRunner?: (projection: Projection, runner: ProjectionRunner) => void
-  /** `createProjectionRunner`. Replaceable so a reducer that throws can be staged without a database (#839). */
-  runnerFor?: (projection: Projection, onError: (error: unknown, phase: string) => void) => ProjectionRunner
+  /** `defaultRunnerFor`. Replaceable so a reducer that throws can be staged without a database (#839). */
+  runnerFor?: (projection: Projection, onError: (error: unknown, phase: string) => void) => ProjectionRunnerPort
 }
 
 export type { StoppedProjection } from './store.ts'
@@ -96,10 +97,10 @@ export function notTakingWork(stopped: readonly StoppedProjection[]): string | n
 /** How long start waits for a stopped projection's checkpoint before it goes undated. */
 const CHECKPOINT_WAIT_MS = 2000
 
-export type DaemonStart =
+type Started<D> =
   | {
       ok: true
-      daemon: Daemon
+      daemon: D
       /**
        * Where the control stream stood **before** the lock was taken — the
        * `since` every signal this daemon obeys is read from (#159). See the
@@ -131,6 +132,20 @@ export interface Daemon {
   readonly stoppedProjections: readonly StoppedProjection[]
 }
 
+export type DaemonStart = Started<Daemon>
+
+/** As `DaemonStart`, holding the Effect port rather than the promise face. */
+export type DaemonStartPort = Started<DaemonPort>
+
+/** The daemon as Effects: what `startDaemonEffect` builds and the promise `Daemon` is a face over (0101 §7). */
+export interface DaemonPort {
+  /** Completes when the daemon has stopped, with why. */
+  stopped(): Effect.Effect<StopReason>
+  /** Every runner stopped and closed, then the lock released. Uninterruptible; a second call is a no-op. */
+  stop(): Effect.Effect<void>
+  readonly stoppedProjections: readonly StoppedProjection[]
+}
+
 export type StopReason = 'asked'
 
 /** Stands in for `locker` where `acquire` is replaced and never reads it. */
@@ -138,170 +153,231 @@ const NO_LOCKER: Locker = {
   tryLock: () => Promise.reject(new Error('no locker configured: this daemon was started with acquire replaced')),
 }
 
-export async function startDaemon(options: DaemonOptions): Promise<DaemonStart> {
-  const log = options.log ?? (() => {})
-  const tell = options.tell ?? log
+/** A runner on its own scope, outliving the fiber that started it: the face's fiber ends when it resolves. */
+export const defaultRunnerFor = (
+  p: Projection,
+  e: (error: unknown, phase: string) => void,
+  /** What a test lands the runner on; production passes nothing and the machine's choice applies. */
+  within: Partial<ProjectionRunnerOptions> = {},
+): ProjectionRunnerPort => makeRunner({ ...within, projection: p, onError: e }, { detached: true })
 
-  // **Before the watermark and before the lock** (#451). A refusal here takes
-  // no lock and reads no control stream — the two are read by the pattern this
-  // function already follows for `watermark`, and a log too old to reduce has to
-  // be caught before either does any work against it.
-  const predates = await (options.predatesHold ?? (async () => logPredatesHold((await processLog()).queries)))()
-  if (predates) return { ok: false, reason: 'log-predates-hold', detail: predates.message }
+/** Errors of a teardown step are ignored, as they were when each was a `.catch(() => {})`. */
+const quiet = <A>(effect: Effect.Effect<A>): Effect.Effect<void> =>
+  effect.pipe(
+    Effect.asVoid,
+    Effect.catchCause(() => Effect.void),
+  )
 
-  // **The watermark, then the lock, and never the other way round** (#174). A
-  // daemon ignores every control event at or below its watermark, and a holder
-  // of the lock is what `lingtai service shutdown` and `lingtai restart` wait
-  // on. Read after the lock, a request appended in between — while this was
-  // starting its projections — was invisible to the one process that had to
-  // obey it: it claimed ticket after ticket and the command waiting on it
-  // waited for ever. Read before, anything appended once this holds the lock
-  // is above the watermark by construction. The cost is the other direction —
-  // a request appended in the instant before the lock is obeyed by this daemon
-  // too — and that request was asked while this one was starting, so it is
-  // this one's.
-  const since = await (options.watermark ?? (() => controlWatermark()))()
+export function startDaemonEffect(options: DaemonOptions): Effect.Effect<DaemonStartPort> {
+  return Effect.gen(function* () {
+    const log = options.log ?? (() => {})
+    const tell = options.tell ?? log
+    // Carried into the fibers `onError` and the checkpoint reads fork, which
+    // outlive this one: they keep this start's services, its clock among them.
+    const runFork = Effect.runForkWith(yield* Effect.context<never>())
 
-  const held = await (options.acquire ?? acquireDaemonLock)({
-    // Named, so that a `lingtai run` turned away by this lock — and
-    // `lingtai doctor` — says *daemon* rather than a bare pid (#93).
-    name: 'lingtai daemon',
-    // `createFileLocker()` is this machine's lock file, and a test that
-    // replaces `acquire` never reads it — so it is built only for the default
-    // `acquireDaemonLock`, which does. Built unconditionally, a unit test that
-    // replaces `acquire` and names no `locker` of its own (`unit/start.test.ts`)
-    // would construct this machine's real locker for nothing, which under test
-    // has nowhere of its own to resolve to (`lockDir()`, #273).
-    locker: options.locker ?? (options.acquire ? NO_LOCKER : createFileLocker()),
-    ...(options.lockKey === undefined ? {} : { key: options.lockKey }),
-  })
-  if (!held.ok) return { ok: false, reason: 'already-running', holder: held.holder }
+    // **Before the watermark and before the lock** (#451). A refusal here takes
+    // no lock and reads no control stream — the two are read by the pattern this
+    // function already follows for `watermark`, and a log too old to reduce has to
+    // be caught before either does any work against it.
+    const predates = yield* options.predatesHold
+      ? Effect.promise(options.predatesHold)
+      : Effect.flatMap(processQueries, logPredatesHoldEffect)
+    if (predates) return { ok: false, reason: 'log-predates-hold', detail: predates.message } as const
 
-  const lock: DaemonLock = held.lock
-  const stoppedList: StoppedProjection[] = []
-  /** By name, so that the handler error and the rejected `start()` it causes record once. */
-  const recording = new Map<string, Promise<void>>()
-  const runners: ProjectionRunner[] = []
+    // **The watermark, then the lock, and never the other way round** (#174). A
+    // daemon ignores every control event at or below its watermark, and a holder
+    // of the lock is what `lingtai service shutdown` and `lingtai restart` wait
+    // on. Read after the lock, a request appended in between — while this was
+    // starting its projections — was invisible to the one process that had to
+    // obey it: it claimed ticket after ticket and the command waiting on it
+    // waited for ever. Read before, anything appended once this holds the lock
+    // is above the watermark by construction. The cost is the other direction —
+    // a request appended in the instant before the lock is obeyed by this daemon
+    // too — and that request was asked while this one was starting, so it is
+    // this one's.
+    const since = yield* Effect.promise(options.watermark ?? (() => controlWatermark()))
 
-  let settle: (reason: StopReason) => void = () => {}
-  const stopped = new Promise<StopReason>((resolve) => {
-    settle = resolve
-  })
-
-  let stopping = false
-  const shutdown = (reason: StopReason): void => {
-    if (stopping) return
-    stopping = true
-    void (async () => {
-      for (const runner of runners) {
-        await runner.stop().catch(() => {})
-        await runner.close().catch(() => {})
-      }
-      await lock.release()
-      settle(reason)
-    })()
-  }
-
-  /**
-   * Records a stopped projection once. The checkpoint is read from the runner,
-   * not from the event that threw: the batch's first event can be hundreds
-   * before the one that did, and the checkpoint is exact. A read that fails
-   * leaves the entry undated rather than losing the fact that it stopped.
-   */
-  const recordStopped = (name: string, runner: () => ProjectionRunner, error: unknown): Promise<void> => {
-    const existing = recording.get(name)
-    if (existing) return existing
-    // Listed at once and undated: the checkpoint is a store read that can stall,
-    // and a failure is not to wait on a diagnostic. The read fills it in later.
-    const at = stoppedList.push({ name, checkpoint: null, error: String(error) }) - 1
-    tell(paint.fail(`${name} stopped: ${String(error)}`))
-    const done = runner()
-      .lag()
-      .then(
-        (lag): bigint | null => lag.lastSeq,
-        (): bigint | null => null,
-      )
-      .then((checkpoint) => {
-        stoppedList[at] = { ...stoppedList[at]!, checkpoint }
-      })
-    recording.set(name, done)
-    return done
-  }
-
-  /** At start, gives the checkpoint a moment to arrive for the first beat, and no longer. */
-  const dated = (done: Promise<void>): Promise<void> => {
-    let timer: ReturnType<typeof setTimeout> | undefined
-    return Promise.race([
-      done,
-      new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, CHECKPOINT_WAIT_MS)
+    const held = yield* Effect.promise(() =>
+      (options.acquire ?? acquireDaemonLock)({
+        // Named, so that a `lingtai run` turned away by this lock — and
+        // `lingtai doctor` — says *daemon* rather than a bare pid (#93).
+        name: 'lingtai daemon',
+        // `createFileLocker()` is this machine's lock file, and a test that
+        // replaces `acquire` never reads it — so it is built only for the default
+        // `acquireDaemonLock`, which does. Built unconditionally, a unit test that
+        // replaces `acquire` and names no `locker` of its own (`unit/start.test.ts`)
+        // would construct this machine's real locker for nothing, which under test
+        // has nowhere of its own to resolve to (`lockDir()`, #273).
+        locker: options.locker ?? (options.acquire ? NO_LOCKER : createFileLocker()),
+        ...(options.lockKey === undefined ? {} : { key: options.lockKey }),
       }),
-    ]).then(() => clearTimeout(timer))
-  }
+    )
+    if (!held.ok) return { ok: false, reason: 'already-running', holder: held.holder } as const
 
-  try {
-    for (const projection of options.projections) {
-      // Assigned before `runnerFor` returns and read only after, from `onError`.
-      let runner: ProjectionRunner
-      const onError = (error: unknown, phase: string): void => {
-        // A connection error retries inside `subscribe`; a handler error has
-        // already stopped that runner. The rest keep running (#839).
-        if (phase !== 'handler') return
-        void recordStopped(projection.name, () => runner, error)
-      }
-      runner = (options.runnerFor ?? ((p, e) => createProjectionRunner({ projection: p, onError: e })))(
-        projection,
-        onError,
+    const lock: DaemonLock = held.lock
+    const release = Effect.promise(() => lock.release())
+    const stoppedList: StoppedProjection[] = []
+    /** By name, so that the handler error and the rejected `start()` it causes record once. */
+    const recording = new Map<string, Fiber.Fiber<void>>()
+    const runners: ProjectionRunnerPort[] = []
+    const stoppedSignal = yield* Deferred.make<StopReason>()
+
+    let stopping = false
+    const stop = Effect.suspend(() => {
+      if (stopping) return Effect.void
+      stopping = true
+      return Effect.forEach(runners, (runner) => quiet(runner.stop()).pipe(Effect.andThen(quiet(runner.close()))), {
+        discard: true,
+      }).pipe(
+        Effect.andThen(release),
+        Effect.andThen(Deferred.succeed(stoppedSignal, 'asked')),
+        // Half-way would leave a lock file naming a dead pid until the next acquire.
+        Effect.uninterruptible,
       )
-      runners.push(runner)
-      try {
-        await runner.start()
-        options.onRunner?.(projection, runner)
-      } catch (err) {
-        // Said here, beside the lag, rather than left to the throw on the way
-        // out. A shape that has drifted from its table is the one projection
-        // failure a daemon can see *before* it costs anything: #84's column
-        // landed, the daemon came up green, and it stopped eight events later
-        // with a run in flight and nothing on the board saying why (#90).
-        if (err instanceof ProjectionShapeError)
-          tell(paint.fail(`${projection.name}\twill not follow — ${err.message}`))
-        // A handler error during catch-up, which is what a restart under the
-        // supervisor meets first, and a shape that has drifted from its table
-        // (a rebuild not yet run after a column was dropped, 0100 §13): stop that
-        // projection alone and bring the daemon up with the rest (#839).
-        if (err instanceof ProjectionShapeError || runner.failure !== null) {
-          await dated(
-            recordStopped(projection.name, () => runner, err instanceof ProjectionShapeError ? err : runner.failure),
-          )
-          options.onRunner?.(projection, runner)
-          continue
-        }
-        throw err
-      }
-      const lag = await runner.lag()
-      // Chrome: a name and two sequence numbers. Dim, so that the refusal above
-      // it is what the eye lands on when there is one.
-      log(paint.muted(`${projection.name}\tfollowing at ${lag.lastSeq}/${lag.headSeq}`))
+    })
+
+    /**
+     * Records a stopped projection once. The checkpoint is read from the runner,
+     * not from the event that threw: the batch's first event can be hundreds
+     * before the one that did, and the checkpoint is exact. A read that fails
+     * leaves the entry undated rather than losing the fact that it stopped.
+     *
+     * The entry is pushed and told at once, in plain code: `follow` calls this
+     * synchronously and nothing may depend on a fiber being scheduled. Only the
+     * read is forked, detached, and its fiber is the memo.
+     */
+    const recordStopped = (name: string, runner: () => ProjectionRunnerPort, error: unknown): Fiber.Fiber<void> => {
+      const existing = recording.get(name)
+      if (existing) return existing
+      // Listed at once and undated: the checkpoint is a store read that can stall,
+      // and a failure is not to wait on a diagnostic. The read fills it in later.
+      const at = stoppedList.push({ name, checkpoint: null, error: String(error) }) - 1
+      tell(paint.fail(`${name} stopped: ${String(error)}`))
+      const read = runner()
+        .lag()
+        .pipe(
+          Effect.map((lag): bigint | null => lag.lastSeq),
+          Effect.catchCause(() => Effect.succeed<bigint | null>(null)),
+          Effect.map((checkpoint) => {
+            stoppedList[at] = { ...stoppedList[at]!, checkpoint }
+          }),
+        )
+      const fiber = runFork(read)
+      recording.set(name, fiber)
+      return fiber
     }
-  } catch (err) {
-    // Started nothing useful. Release rather than sit on the lock and keep the
-    // next daemon out.
-    for (const runner of runners) await runner.close().catch(() => {})
-    await lock.release()
-    throw err
-  }
 
-  log(paint.accent(`daemon up — ${runners.length} projection(s)`))
+    /**
+     * At start, gives the checkpoint a moment to arrive for the first beat, and
+     * no longer. The timeout is on the **await**: interrupting an await leaves
+     * the read running, so the entry is still dated when it lands.
+     */
+    const dated = (fiber: Fiber.Fiber<void>): Effect.Effect<void> =>
+      Fiber.await(fiber).pipe(Effect.timeout(CHECKPOINT_WAIT_MS), Effect.ignore)
 
-  return {
-    ok: true,
-    since,
-    daemon: {
-      stopped,
-      stop: () => shutdown('asked'),
-      get stoppedProjections() {
-        return [...stoppedList]
+    const startAll = Effect.gen(function* () {
+      for (const projection of options.projections) {
+        // Assigned before `runnerFor` returns and read only after, from `onError`.
+        let port: ProjectionRunnerPort
+        const onError = (error: unknown, phase: string): void => {
+          // A connection error retries inside `subscribe`; a handler error has
+          // already stopped that runner. The rest keep running (#839).
+          if (phase !== 'handler') return
+          recordStopped(projection.name, () => port, error)
+        }
+        port = (options.runnerFor ?? defaultRunnerFor)(projection, onError)
+        // One face per port, handed to `onRunner` on both paths: a caller that
+        // keeps runners in a set looks them up by identity.
+        const face: ProjectionRunner = promiseRunner(port)
+        runners.push(port)
+        const outcome = yield* port.start().pipe(
+          Effect.as('followed' as const),
+          Effect.catchCause((cause) => {
+            // An interrupted start is not a stopped projection: it reaches `onExit`.
+            if (Cause.hasInterrupts(cause)) return Effect.failCause(cause)
+            const err = Cause.squash(cause)
+            // A handler error during catch-up, which is what a restart under the
+            // supervisor meets first, and a shape that has drifted from its table
+            // (a rebuild not yet run after a column was dropped, 0100 §13): stop that
+            // projection alone and bring the daemon up with the rest (#839).
+            if (!(err instanceof ProjectionShapeError) && port.failure === null) return Effect.failCause(cause)
+            // Said here, beside the lag, rather than left to the throw on the way
+            // out. A shape that has drifted from its table is the one projection
+            // failure a daemon can see *before* it costs anything: #84's column
+            // landed, the daemon came up green, and it stopped eight events later
+            // with a run in flight and nothing on the board saying why (#90).
+            if (err instanceof ProjectionShapeError)
+              tell(paint.fail(`${projection.name}\twill not follow — ${err.message}`))
+            return dated(
+              recordStopped(projection.name, () => port, err instanceof ProjectionShapeError ? err : port.failure),
+            ).pipe(Effect.as('stopped' as const))
+          }),
+          // A start that fails here is a start that fails: the face rejects with the original.
+          Effect.orDie,
+        )
+        options.onRunner?.(projection, face)
+        if (outcome === 'stopped') continue
+        const lag = yield* port.lag()
+        // Chrome: a name and two sequence numbers. Dim, so that the refusal above
+        // it is what the eye lands on when there is one.
+        log(paint.muted(`${projection.name}\tfollowing at ${lag.lastSeq}/${lag.headSeq}`))
+      }
+    })
+
+    // Started nothing useful — a failure, a defect or an interruption. Release
+    // rather than sit on the lock and keep the next daemon out.
+    yield* startAll.pipe(
+      Effect.onExit((exit) =>
+        Exit.isSuccess(exit)
+          ? Effect.void
+          : Effect.forEach(runners, (runner) => quiet(runner.close()), { discard: true }).pipe(Effect.andThen(release)),
+      ),
+    )
+
+    log(paint.accent(`daemon up — ${runners.length} projection(s)`))
+
+    return {
+      ok: true,
+      since,
+      daemon: {
+        stopped: () => Deferred.await(stoppedSignal),
+        stop: () => stop,
+        get stoppedProjections() {
+          return [...stoppedList]
+        },
       },
-    },
-  }
+    } as const
+  })
+}
+
+/** `startDaemonEffect`'s arm with the promise `Daemon` over its port. */
+function startDaemonFaced(options: DaemonOptions): Effect.Effect<DaemonStart> {
+  return Effect.map(startDaemonEffect(options), (started): DaemonStart => {
+    if (!started.ok) return started
+    const port = started.daemon
+    return {
+      ok: true,
+      since: started.since,
+      daemon: {
+        stopped: daemonStoppedFace(port),
+        stop: () => void daemonStopFace(port),
+        get stoppedProjections() {
+          return port.stoppedProjections
+        },
+      },
+    }
+  })
+}
+
+export function daemonStopFace(port: DaemonPort) {
+  return Effect.runPromise(port.stop())
+}
+
+export function daemonStoppedFace(port: DaemonPort) {
+  return Effect.runPromise(port.stopped())
+}
+
+export function startDaemon(options: DaemonOptions) {
+  return Effect.runPromise(startDaemonFaced(options))
 }

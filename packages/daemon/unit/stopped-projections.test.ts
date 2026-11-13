@@ -4,8 +4,9 @@
  * does — `onError`, then `failure`, then a rejected `start()` — because a fake
  * that only rejects tests an order production never produces.
  */
-import type { Projection, ProjectionRunner } from '@lingtai/projector'
+import type { Projection, ProjectionRunnerPort } from '@lingtai/projector'
 import { ProjectionShapeError } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { notTakingWork, startDaemon } from '../src/daemon.ts'
@@ -19,13 +20,13 @@ const base = {
 const projection = (name: string): Projection => ({ name }) as Projection
 
 interface Fake {
-  runner: ProjectionRunner
+  runner: ProjectionRunnerPort
   fail(error: unknown): void
 }
 
 function fakes(opts: { throwAtStart?: readonly string[]; shape?: string; checkpoint?: bigint } = {}) {
   const made = new Map<string, Fake>()
-  const runnerFor = (p: Projection, onError: (error: unknown, phase: string) => void): ProjectionRunner => {
+  const runnerFor = (p: Projection, onError: (error: unknown, phase: string) => void): ProjectionRunnerPort => {
     let failure: unknown = null
     let running = false
     const runner = {
@@ -36,21 +37,23 @@ function fakes(opts: { throwAtStart?: readonly string[]; shape?: string; checkpo
       get running() {
         return running
       },
-      async start() {
-        if (opts.shape === p.name) throw new ProjectionShapeError(p.name, [])
-        if (opts.throwAtStart?.includes(p.name)) {
-          failure = new Error(`${p.name} reduce`)
-          onError(failure, 'handler')
-          throw new Error('subscription stopped before it caught up')
-        }
-        running = true
-      },
-      async stop() {
-        running = false
-      },
-      async close() {},
-      lag: async () => ({ name: p.name, lastSeq: opts.checkpoint ?? 41n, headSeq: 50n, lag: 9n }),
-    } as unknown as ProjectionRunner
+      start: () =>
+        Effect.gen(function* () {
+          if (opts.shape === p.name) return yield* Effect.fail(new ProjectionShapeError(p.name, []))
+          if (opts.throwAtStart?.includes(p.name)) {
+            failure = new Error(`${p.name} reduce`)
+            onError(failure, 'handler')
+            return yield* Effect.fail(new Error('subscription stopped before it caught up'))
+          }
+          running = true
+        }),
+      stop: () =>
+        Effect.sync(() => {
+          running = false
+        }),
+      close: () => Effect.void,
+      lag: () => Effect.succeed({ name: p.name, lastSeq: opts.checkpoint ?? 41n, headSeq: 50n, lag: 9n }),
+    } as unknown as ProjectionRunnerPort
     made.set(p.name, {
       runner,
       fail: (error) => {

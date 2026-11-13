@@ -4,7 +4,8 @@
  * it and write it back over one shared checkpoint race (#838, #834), so a
  * command that only appends builds none.
  *
- * The list below is every `src/` file that contains `createProjectionRunner(`,
+ * The list below is every `src/` file that contains `createProjectionRunner(` or
+ * `makeRunner(` (the daemon builds its runners as ports since #1071),
  * each with why it may. It is compared for **equality**, so a file that drops
  * off the list fails too and the list cannot go stale. Adding a line is a
  * decision a reviewer sees. `apps/board/unit/read-not-reduce.test.ts` holds the
@@ -46,7 +47,7 @@ it('only the conductor lock holder builds a projection runner', () => {
         return []
       }
     })
-    .filter((f) => readFileSync(f, 'utf8').includes('createProjectionRunner('))
+    .filter((f) => /\b(createProjectionRunner|makeRunner)\(/.test(readFileSync(f, 'utf8')))
     .map((f) => relative(root, f))
     .sort()
   expect(found).toEqual(Object.keys(MAY_BUILD_A_RUNNER).sort())

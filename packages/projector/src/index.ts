@@ -24,6 +24,9 @@
  */
 export {
   createProjectionRunner,
+  makeRunner,
+  promiseRunner,
+  type ProjectionRunnerPort,
   projectionLag,
   projectionLagEffect,
   readLag,
