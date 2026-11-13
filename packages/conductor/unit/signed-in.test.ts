@@ -1,5 +1,6 @@
 import { CLAUDE_CODE_CAPABILITIES, CODEX_CAPABILITIES } from '@lingtai/agent'
-import { AgentUnresolvedError, recipePath, resolveLocalRecipe } from '@lingtai/recipe'
+import { AgentUnresolvedError, recipePath, resolveLocalRecipeEffect } from '@lingtai/recipe'
+import { Effect } from 'effect'
 /**
  * Which runtimes are signed in here (0046 §3, #180) — the real detector's
  * shape, with the probes faked and the clock a number.
@@ -43,11 +44,13 @@ describe('signedInProbe', () => {
 
     expect(await signedIn()).toEqual(['claude-code', 'codex'])
     await expect(
-      resolveLocalRecipe('app', {
-        home: HOME,
-        signedIn,
-        read: async (path) => (path === recipePath('app', HOME) ? RECIPE : null),
-      }),
+      Effect.runPromise(
+        resolveLocalRecipeEffect('app', {
+          home: HOME,
+          signedIn,
+          read: async (path) => (path === recipePath('app', HOME) ? RECIPE : null),
+        }),
+      ),
     ).rejects.toThrow(AgentUnresolvedError)
   })
 

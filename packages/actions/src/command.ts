@@ -281,11 +281,6 @@ export const commandEffect = (options: RunCommandOptions): Effect.Effect<Command
     } satisfies CommandOutcome
   })
 
-/** Promise face of `commandEffect`. */
-export function runCommand(options: RunCommandOptions): Promise<CommandOutcome> {
-  return Effect.runPromise(commandEffect(options))
-}
-
 /** How `spawnCommand` ends: an exit code to be read, or an outcome already built. */
 type CommandEnd =
   | { kind: 'exited'; code: number | null; endedAt: number; started: number; run: string; out: string }

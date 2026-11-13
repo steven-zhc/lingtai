@@ -7,11 +7,9 @@ import type { AuthState } from '@lingtai/agent'
  * business asking about (`doc/design/398.md`).
  */
 import { runnableEnv } from '@lingtai/agent-env'
-import { askEveryRuntime } from '@lingtai/agent/auth'
+import { askEveryRuntimeEffect } from '@lingtai/agent/auth'
 import { RuntimeId } from '@lingtai/domain'
 import { Effect } from 'effect'
-
-import { messageOf, SetupFailed } from './failure.ts'
 
 /** `RuntimeId`, and not a list of its members written out again (`#313`). */
 export type RuntimeName = RuntimeId
@@ -33,10 +31,7 @@ export interface RuntimeFound {
  * Codex's answer under Claude Code's name.
  */
 export const askRuntimesEffect = Effect.fn('setup.runtimes')(function* () {
-  const every = yield* Effect.tryPromise({
-    try: () => askEveryRuntime(runnableEnv({})),
-    catch: (e) => new SetupFailed({ operation: 'runtimes', message: messageOf(e), cause: e }),
-  })
+  const every = yield* askEveryRuntimeEffect(runnableEnv({}))
   return every.map(({ id, status }): RuntimeFound => ({
     id,
     state: status.state,

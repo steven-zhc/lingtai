@@ -1,7 +1,3 @@
-/**
- * `resolveWait` (#465, 0118 §11): the sole writer of `WaitResolved`, checked
- * against `createMemoryEventStore()` — no filesystem, no network (0060 §1).
- */
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
@@ -21,9 +17,14 @@ import { histories } from '@lingtai/domain/test/histories'
 import { makeStream } from '@lingtai/domain/test/support'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+/**
+ * `resolveWait` (#465, 0118 §11): the sole writer of `WaitResolved`, checked
+ * against `createMemoryEventStore()` — no filesystem, no network (0060 §1).
+ */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { refusingOn, resolveWaitHolding } from '../src/resolve-wait.ts'
+import { refusingOn, resolveWaitHoldingEffect } from '../src/resolve-wait.ts'
 
 const PROJECT = 'lingtai'
 const SHA = 'a'.repeat(40)
@@ -80,9 +81,11 @@ describe('resolveWaitHolding, Split (#560)', () => {
       ...aWait(item, { _tag: 'NothingProduced', run: anAttemptRef(run.runId), said: null }, waitId),
     ])
     const split = (resolution: unknown, kinds?: readonly string[]) =>
-      resolveWaitHolding(
-        { ticketId, waitId, resolution: resolution as never, by: 'human:steven', kinds, store },
-        ticketId,
+      Effect.runPromise(
+        resolveWaitHoldingEffect(
+          { ticketId, waitId, resolution: resolution as never, by: 'human:steven', kinds, store },
+          ticketId,
+        ),
       )
     return { store, ticketId, waitId, split }
   }
@@ -167,17 +170,19 @@ describe('resolveWait', () => {
       }),
     ])
     const grant = (remote: string | null, selectedStore: EventStore = store) =>
-      resolveWaitHolding(
-        {
+      Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId,
+            issue: 539,
+            waitId,
+            resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+            by: 'human:steven',
+            client: fakeClient(remote),
+            store: selectedStore,
+          },
           ticketId,
-          issue: 539,
-          waitId,
-          resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
-          by: 'human:steven',
-          client: fakeClient(remote),
-          store: selectedStore,
-        },
-        ticketId,
+        ),
       )
     expect(await grant(SHA2)).toMatchObject({
       ok: false,
@@ -202,17 +207,19 @@ describe('resolveWait', () => {
     ])
     expect(await grant(SHA2)).toMatchObject({ ok: false, reason: 'stale' })
     expect(
-      await resolveWaitHolding(
-        {
+      await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId,
+            issue: 539,
+            waitId,
+            resolution: { _tag: 'GrantFixRound', onSha: SHA2, ref: '' },
+            by: 'human:steven',
+            client: fakeClient(SHA),
+            store,
+          },
           ticketId,
-          issue: 539,
-          waitId,
-          resolution: { _tag: 'GrantFixRound', onSha: SHA2, ref: '' },
-          by: 'human:steven',
-          client: fakeClient(SHA),
-          store,
-        },
-        ticketId,
+        ),
       ),
     ).toMatchObject({ ok: false, reason: 'stale', detail: expect.stringContaining('displayed') })
     const unschedulable: EventStore = {
@@ -235,17 +242,19 @@ describe('resolveWait', () => {
       grantRef: 'agent/539',
     })
     expect(
-      await resolveWaitHolding(
-        {
+      await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId,
+            issue: 539,
+            waitId,
+            resolution: { _tag: 'GrantFixRound', onSha: SHA2, ref: '' },
+            by: 'human:steven',
+            client: fakeClient(SHA),
+            store,
+          },
           ticketId,
-          issue: 539,
-          waitId,
-          resolution: { _tag: 'GrantFixRound', onSha: SHA2, ref: '' },
-          by: 'human:steven',
-          client: fakeClient(SHA),
-          store,
-        },
-        ticketId,
+        ),
       ),
     ).toMatchObject({ ok: false, reason: 'not-blocked' })
     expect(await grant(SHA)).toEqual({ ok: true, ticketId })
@@ -285,17 +294,19 @@ describe('resolveWait', () => {
         }),
       ])
       const grant = (onSha: string, selectedStore: EventStore = store) =>
-        resolveWaitHolding(
-          {
+        Effect.runPromise(
+          resolveWaitHoldingEffect(
+            {
+              ticketId,
+              issue,
+              waitId,
+              resolution: { _tag: 'GrantFixRound', onSha, ref: '' },
+              by: 'human:steven',
+              client: fakeClient(HEAD),
+              store: selectedStore,
+            },
             ticketId,
-            issue,
-            waitId,
-            resolution: { _tag: 'GrantFixRound', onSha, ref: '' },
-            by: 'human:steven',
-            client: fakeClient(HEAD),
-            store: selectedStore,
-          },
-          ticketId,
+          ),
         )
       return { store, ticketId, grant }
     }
@@ -375,17 +386,19 @@ describe('resolveWait', () => {
         detail: 'issue branch lease refused',
       }),
     ])
-    const result = await resolveWaitHolding(
-      {
+    const result = await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId,
+          issue: 540,
+          waitId,
+          resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store,
+        },
         ticketId,
-        issue: 540,
-        waitId,
-        resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
-        by: 'human:steven',
-        client: fakeClient(SHA),
-        store,
-      },
-      ticketId,
+      ),
     )
     expect(result).toMatchObject({
       ok: false,
@@ -412,9 +425,11 @@ describe('resolveWait', () => {
         ),
       ])
       const before = reduceTicket(await store.read(ticketId)).restarts.length
-      const result = await resolveWaitHolding(
-        { ticketId, issue: 578, waitId, resolution: { _tag: resolution }, by: 'human:steven', store },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          { ticketId, issue: 578, waitId, resolution: { _tag: resolution }, by: 'human:steven', store },
+          ticketId,
+        ),
       )
       return { store, ticketId, waitId, before, result }
     }
@@ -446,9 +461,11 @@ describe('resolveWait', () => {
         ...aWait(item, { _tag: 'OwnQuestion', question: 'which?', by: 'human:steven' }, waitId),
       ])
 
-      const result = await resolveWaitHolding(
-        { ticketId, issue: 579, waitId, resolution: { _tag: 'Requeue' }, by: 'human:steven', store },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          { ticketId, issue: 579, waitId, resolution: { _tag: 'Requeue' }, by: 'human:steven', store },
+          ticketId,
+        ),
       )
 
       expect(result.ok).toBe(true)
@@ -470,16 +487,18 @@ describe('resolveWait', () => {
       }),
     ])
 
-    const result = await resolveWaitHolding(
-      {
-        ticketId: ticketStream(PROJECT, 1),
-        issue: 1,
-        waitId: aWaitId(),
-        resolution: { _tag: 'Requeue' },
-        by: 'human:steven',
-        store,
-      },
-      ticketId,
+    const result = await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId: ticketStream(PROJECT, 1),
+          issue: 1,
+          waitId: aWaitId(),
+          resolution: { _tag: 'Requeue' },
+          by: 'human:steven',
+          store,
+        },
+        ticketId,
+      ),
     )
     expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
     expect((await store.read(ticketId)).some((e) => e.type === 'WaitResolved')).toBe(false)
@@ -488,16 +507,18 @@ describe('resolveWait', () => {
   it('refuses an item nothing is blocking', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 2)
-    const result = await resolveWaitHolding(
-      {
-        ticketId: ticketStream(PROJECT, 2),
-        issue: 2,
-        waitId: aWaitId(),
-        resolution: { _tag: 'Requeue' },
-        by: 'human:steven',
-        store,
-      },
-      ticketId,
+    const result = await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId: ticketStream(PROJECT, 2),
+          issue: 2,
+          waitId: aWaitId(),
+          resolution: { _tag: 'Requeue' },
+          by: 'human:steven',
+          store,
+        },
+        ticketId,
+      ),
     )
     expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
   })
@@ -517,16 +538,18 @@ describe('resolveWait', () => {
         ),
       ])
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 3),
-          issue: 3,
-          waitId,
-          resolution: { _tag: 'AnswerQuestion', choice: 'the first' },
-          by: 'human:steven',
-          store,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 3),
+            issue: 3,
+            waitId,
+            resolution: { _tag: 'AnswerQuestion', choice: 'the first' },
+            by: 'human:steven',
+            store,
+          },
+          ticketId,
+        ),
       )
       expect(result).toMatchObject({
         ok: false,
@@ -555,16 +578,18 @@ describe('resolveWait', () => {
         ),
       ])
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 4),
-          issue: 4,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          store,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 4),
+            issue: 4,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            store,
+          },
+          ticketId,
+        ),
       )
       expect(result).toMatchObject({
         ok: false,
@@ -593,16 +618,18 @@ describe('resolveWait', () => {
         ),
       ])
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 5),
-          issue: 5,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          store,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 5),
+            issue: 5,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            store,
+          },
+          ticketId,
+        ),
       )
       expect(result).toMatchObject({ ok: false, reason: 'not-offered' })
     })
@@ -629,16 +656,18 @@ describe('resolveWait', () => {
         ),
       ])
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 6),
-          issue: 6,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          store,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 6),
+            issue: 6,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            store,
+          },
+          ticketId,
+        ),
       )
       expect(result).toMatchObject({ ok: false, reason: 'not-awaiting-approval' })
     })
@@ -665,15 +694,17 @@ describe('resolveWait', () => {
       ])
       await seed(store, 'pass-31', run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 31),
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          store,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 31),
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            store,
+          },
+          ticketId,
+        ),
       )
       expect(result).toMatchObject({ ok: false, reason: 'no-client' })
       expect((await store.read(ticketId)).some((e) => e.type === 'WaitResolved')).toBe(false)
@@ -701,17 +732,19 @@ describe('resolveWait', () => {
       ])
       await seed(store, 'pass-7', run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 7),
-          issue: 7,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA2 },
-          by: 'human:steven',
-          client: fakeClient(SHA),
-          store,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 7),
+            issue: 7,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA2 },
+            by: 'human:steven',
+            client: fakeClient(SHA),
+            store,
+          },
+          ticketId,
+        ),
       )
       expect(result).toMatchObject({ ok: false, reason: 'stale' })
       expect((await store.read(ticketId)).some((e) => e.type === 'WaitResolved')).toBe(false)
@@ -739,17 +772,19 @@ describe('resolveWait', () => {
       ])
       await seed(store, 'pass-8', run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 8),
-          issue: 8,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          client: fakeClient(SHA2),
-          store,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 8),
+            issue: 8,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            client: fakeClient(SHA2),
+            store,
+          },
+          ticketId,
+        ),
       )
       expect(result).toMatchObject({ ok: false, reason: 'stale' })
       expect((await store.read(ticketId)).some((e) => e.type === 'WaitResolved')).toBe(false)
@@ -777,17 +812,19 @@ describe('resolveWait', () => {
       ])
       await seed(store, 'pass-9', run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }))
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 9),
-          issue: 9,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          client: fakeClient(SHA),
-          store,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 9),
+            issue: 9,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            client: fakeClient(SHA),
+            store,
+          },
+          ticketId,
+        ),
       )
       expect(result).toEqual({ ok: true, ticketId })
 
@@ -861,17 +898,19 @@ describe('resolveWait', () => {
         },
       }
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 32),
-          issue: 32,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          client: fakeClient(SHA),
-          store: flaky,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 32),
+            issue: 32,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            client: fakeClient(SHA),
+            store: flaky,
+          },
+          ticketId,
+        ),
       )
       expect(result).toEqual({ ok: true, ticketId })
       expect(racedOnce).toBe(true)
@@ -919,17 +958,19 @@ describe('resolveWait', () => {
         },
       }
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 33),
-          issue: 33,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          client: fakeClient(SHA),
-          store: alwaysLosesTheRace,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 33),
+            issue: 33,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            client: fakeClient(SHA),
+            store: alwaysLosesTheRace,
+          },
+          ticketId,
+        ),
       )
       expect(result.ok).toBe(true)
       expect(result).toMatchObject({ ok: true, ticketId, unscheduled: expect.any(String) })
@@ -981,17 +1022,19 @@ describe('resolveWait', () => {
         },
       }
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 34),
-          issue: 34,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          client: fakeClient(SHA),
-          store: flaky,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 34),
+            issue: 34,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            client: fakeClient(SHA),
+            store: flaky,
+          },
+          ticketId,
+        ),
       )
       expect(result).toEqual({ ok: true, ticketId })
       expect(readFailedOnce).toBe(true)
@@ -1036,17 +1079,19 @@ describe('resolveWait', () => {
         },
       }
 
-      const result = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 35),
-          issue: 35,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          client: fakeClient(SHA),
-          store: flaky,
-        },
-        ticketId,
+      const result = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 35),
+            issue: 35,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            client: fakeClient(SHA),
+            store: flaky,
+          },
+          ticketId,
+        ),
       )
       expect(result).toEqual({ ok: true, ticketId })
       expect(appendFailedOnce).toBe(true)
@@ -1092,32 +1137,36 @@ describe('resolveWait', () => {
         },
       }
 
-      const first = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 36),
-          issue: 36,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          client: fakeClient(SHA),
-          store: neverSchedules,
-        },
-        ticketId,
+      const first = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 36),
+            issue: 36,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            client: fakeClient(SHA),
+            store: neverSchedules,
+          },
+          ticketId,
+        ),
       )
       expect(first).toMatchObject({ ok: true, ticketId, unscheduled: expect.any(String) })
       expect((await store.read(CONTROL_STREAM)).some((e) => e.type === 'ContinueRequested')).toBe(false)
 
-      const second = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 36),
-          issue: 36,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          client: fakeClient(SHA),
-          store,
-        },
-        ticketId,
+      const second = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 36),
+            issue: 36,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            client: fakeClient(SHA),
+            store,
+          },
+          ticketId,
+        ),
       )
       expect(second).toEqual({ ok: true, ticketId })
 
@@ -1154,33 +1203,37 @@ describe('resolveWait', () => {
         ...run.aStepEnded({ step: 'merge', round: 0, actions: [signoffAsks(SHA)] }),
       ])
 
-      const withoutNote = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 10),
-          issue: 10,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          client: fakeClient(SHA),
-          store,
-        },
-        ticketId,
+      const withoutNote = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 10),
+            issue: 10,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            client: fakeClient(SHA),
+            store,
+          },
+          ticketId,
+        ),
       )
       expect(withoutNote).toMatchObject({ ok: false, reason: 'reason-required' })
       expect((await store.read(ticketId)).some((e) => e.type === 'WaitResolved')).toBe(false)
 
-      const withNote = await resolveWaitHolding(
-        {
-          ticketId: ticketStream(PROJECT, 10),
-          issue: 10,
-          waitId,
-          resolution: { _tag: 'Approve', onSha: SHA },
-          by: 'human:steven',
-          note: 'waiving the build failure',
-          client: fakeClient(SHA),
-          store,
-        },
-        ticketId,
+      const withNote = await Effect.runPromise(
+        resolveWaitHoldingEffect(
+          {
+            ticketId: ticketStream(PROJECT, 10),
+            issue: 10,
+            waitId,
+            resolution: { _tag: 'Approve', onSha: SHA },
+            by: 'human:steven',
+            note: 'waiving the build failure',
+            client: fakeClient(SHA),
+            store,
+          },
+          ticketId,
+        ),
       )
       expect(withNote).toEqual({ ok: true, ticketId })
     })
@@ -1210,17 +1263,19 @@ describe('resolveWait', () => {
       run.event('RunProposedCompletion', { headSha: SHA }),
     ])
 
-    const result = await resolveWaitHolding(
-      {
+    const result = await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId,
+          issue: 12,
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          client: fakeClient(SHA),
+          store,
+        },
         ticketId,
-        issue: 12,
-        waitId,
-        resolution: { _tag: 'Approve', onSha: SHA },
-        by: 'human:steven',
-        client: fakeClient(SHA),
-        store,
-      },
-      ticketId,
+      ),
     )
     expect(result).toEqual({ ok: true, ticketId })
   })
@@ -1248,16 +1303,18 @@ describe('resolveWait', () => {
       },
     ])
 
-    const result = await resolveWaitHolding(
-      {
-        ticketId: ticketStream(PROJECT, 11),
-        issue: 11,
-        waitId,
-        resolution: { _tag: 'EditBodyAndRequeue' },
-        by: 'human:steven',
-        store,
-      },
-      ticketId,
+    const result = await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId: ticketStream(PROJECT, 11),
+          issue: 11,
+          waitId,
+          resolution: { _tag: 'EditBodyAndRequeue' },
+          by: 'human:steven',
+          store,
+        },
+        ticketId,
+      ),
     )
     expect(result).toMatchObject({ ok: false, reason: 'not-blocked' })
   })

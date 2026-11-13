@@ -25,9 +25,9 @@ import {
   type Installation,
   type PermissionGap,
   type VisibleRepository,
-  appInstallations,
+  appInstallationsEffect,
   ghScopeGap,
-  installationRepositories,
+  installationRepositoriesEffect,
   permissionGaps,
 } from '@lingtai/github'
 import { Effect } from 'effect'
@@ -161,23 +161,17 @@ export interface ListOptions {
   }
   gh?: {
     /** `ghStatus()`, injected so a test needs no `gh`. */
-    status: () => Promise<GhStatus>
+    status: () => Effect.Effect<GhStatus, Error>
     reader: GhReader
   }
 }
 
 const listApp = (options: ListOptions, app: NonNullable<ListOptions['app']>) =>
   Effect.gen(function* () {
-    const installations = yield* Effect.tryPromise({
-      try: () => appInstallations(app.reader),
-      catch: (err) => err as Error,
-    })
+    const installations = yield* appInstallationsEffect(app.reader)
     const fetched = yield* Effect.all(
       installations.map((installation) =>
-        Effect.tryPromise({
-          try: () => installationRepositories(app.reader, installation.id),
-          catch: (err) => err as Error,
-        }).pipe(
+        installationRepositoriesEffect(app.reader, installation.id).pipe(
           Effect.match({
             onSuccess: (repositories) => ({ installation, repositories, unanswered: null as string | null }),
             onFailure: (err) => ({ installation, repositories: [] as VisibleRepository[], unanswered: err.message }),
@@ -204,7 +198,7 @@ const listApp = (options: ListOptions, app: NonNullable<ListOptions['app']>) =>
 
 const listGh = (options: ListOptions, gh: NonNullable<ListOptions['gh']>) =>
   Effect.gen(function* () {
-    const status = yield* Effect.tryPromise({ try: () => gh.status(), catch: (err) => err as Error })
+    const status = yield* gh.status()
     // The sentences `checkGhAccess` gives: this is the same machine failing the same way.
     if (!status.ok) return yield* Effect.fail(new Error(`${status.detail} — run \`gh auth login\``))
     // Without `repo`, private repositories vanish from `/user/repos` and the list

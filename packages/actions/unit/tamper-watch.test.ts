@@ -1,3 +1,7 @@
+import { readdir, readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+
+import { type StepAction, RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
 /**
  * The `tamper` watch (#31): the action cannot be allowed to edit the action.
  *
@@ -14,14 +18,14 @@
  * block. Everything else below judges the documented list against the real
  * action code.
  */
-import { readdir, readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
-
-import { type StepAction, RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { runActionPipeline } from '../src/action.ts'
+import { portOptions, runActionPipelineEffect } from '../src/action.ts'
 import { actionsFromRecipe } from '../src/from-recipe.ts'
+
+const runActionPipeline = (options: Parameters<typeof portOptions>[0]) =>
+  Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 const context = { runId: 'pass-1', onSha: 'b'.repeat(40), cwd: root, env: {} }

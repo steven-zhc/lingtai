@@ -2,488 +2,248 @@
   {
     "file": "packages/actions/src/action.ts",
     "fn": "actionRunFace",
-    "until": "#790",
+    "until": "#1118",
     "why": "the tests in packages/actions and packages/conductor that call `action.run` on a promise `Action` — `conduct.ts` builds ports and calls no `create<Kind>Action` (#1056), so nothing else holds one"
-  },
-  {
-    "file": "packages/actions/src/action.ts",
-    "fn": "runActionPipeline",
-    "until": "#790",
-    "why": "the tests in packages/actions, packages/conductor and packages/recipe call it; no production caller since the pass runs the pipeline inside its own fiber (#1053)"
-  },
-  {
-    "file": "packages/actions/src/command.ts",
-    "fn": "runCommand",
-    "until": "#790",
-    "why": "packages/conductor/src/conduct.ts:288 hands it to the base check, and packages/setup/src/trial-build.ts:57, :67 call it as a promise"
-  },
-  {
-    "file": "packages/agent/src/auth.ts",
-    "fn": "askEveryRuntime",
-    "until": "#790",
-    "why": "packages/setup/src/runtimes.ts awaits it until the setup row"
   },
   {
     "file": "packages/agent/src/auth.ts",
     "fn": "claudeCodeAuth",
-    "until": "#790",
+    "until": "#1118",
     "why": "Runtime.checkAuth callers (apps/cli doctor, packages/conductor projects.ts) await it until the apps/cli row"
   },
   {
     "file": "packages/agent/src/auth.ts",
     "fn": "codexAuth",
-    "until": "#790",
-    "why": "Runtime.checkAuth callers and apps/board/src/lib/recipe.ts await it; 0101 §7 lets the board keep a promise face"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/recipe.ts"
   },
   {
     "file": "packages/conductor/src/approve.ts",
     "fn": "approve",
-    "until": "#790",
-    "why": "the board's actions (`apps/board/src/app/actions.ts`) and `apps/cli/src/approve.ts` (`approveRun`) await it, until the board and apps/cli rows"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/approve.ts",
     "fn": "approveHolding",
-    "until": "#790",
-    "why": "exported for the unit half (#487): `apps/board/unit/triage-move.test.tsx`, `schedule-continuation-stale.test.ts` and `apps/cli/unit/verbs-accept-refuse.test.ts`"
+    "until": "0101 §7",
+    "why": "a board test calls it: apps/board/unit/schedule-continuation-stale.test.ts, apps/board/unit/triage-move.test.tsx"
   },
   {
     "file": "packages/conductor/src/approve.ts",
     "fn": "requeue",
-    "until": "#790",
-    "why": "`apps/board/src/app/actions.ts` and `apps/cli/src/requeue.ts` await it, until the board and apps/cli rows"
-  },
-  {
-    "file": "packages/conductor/src/approve.ts",
-    "fn": "requeueHolding",
-    "until": "#790",
-    "why": "exported for the unit half (#487): `apps/cli/unit/requeue-into-body.test.ts` and `verbs-accept-refuse.test.ts`"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/arms.ts",
     "fn": "armsOnOrigin",
-    "until": "#790",
-    "why": "`apps/board/src/lib/prompt.ts` awaits it; 0101 §7 lets the board keep a promise"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/prompt.ts"
   },
   {
     "file": "packages/conductor/src/ask.ts",
     "fn": "answer",
-    "until": "#790",
-    "why": "`apps/board/src/app/actions.ts` and `apps/cli/src/ask.ts` await it, until the board and apps/cli rows"
-  },
-  {
-    "file": "packages/conductor/src/ask.ts",
-    "fn": "answerHolding",
-    "until": "#790",
-    "why": "exported for the unit half (#487): `apps/cli/unit/verbs-accept-refuse.test.ts`"
-  },
-  {
-    "file": "packages/conductor/src/ask.ts",
-    "fn": "ask",
-    "until": "#790",
-    "why": "`apps/cli/src/ask.ts` awaits it, until the apps/cli row"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/backlog.ts",
     "fn": "acceptFinding",
-    "until": "#790",
-    "why": "the board's backlog action"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/backlog.ts",
     "fn": "declineFinding",
-    "until": "#790",
-    "why": "the board's backlog action"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/close.ts",
     "fn": "close",
-    "until": "#790",
-    "why": "`apps/board/src/app/actions.ts` and `apps/cli/src/close.ts` await it, until the board and apps/cli rows"
-  },
-  {
-    "file": "packages/conductor/src/close.ts",
-    "fn": "closeHolding",
-    "until": "#790",
-    "why": "`apps/cli/unit/verbs-accept-refuse.test.ts` (#487)"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/create-app.ts",
     "fn": "offerCreation",
-    "until": "#790",
-    "why": "apps/board's `setup/github-app/page.tsx`, `setup/github-app/start/route.ts` and `setup/repository/page.tsx` await it; 0101 §7 lets the board keep a promise"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/setup/github-app/page.tsx, apps/board/src/app/setup/github-app/start/route.ts, apps/board/src/app/setup/repository/page.tsx"
   },
   {
     "file": "packages/conductor/src/discover.ts",
     "fn": "runnableNow",
-    "until": "#790",
-    "why": "apps/board (board.ts, queued.ts), and apps/cli (status.ts) await it"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/board.ts, apps/board/src/lib/queued.ts"
   },
   {
     "file": "packages/conductor/src/discuss.ts",
     "fn": "concludeDiscussion",
-    "until": "#790",
-    "why": "apps/board `actions.ts` awaits it, until the board row"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/edit-body.ts",
     "fn": "editBodyAndRequeue",
-    "until": "#790",
-    "why": "`apps/board/src/app/actions.ts` and `apps/cli/src/requeue.ts` await it, until the board and apps/cli rows"
-  },
-  {
-    "file": "packages/conductor/src/edit-body.ts",
-    "fn": "editBodyAndRequeueHolding",
-    "until": "#790",
-    "why": "exported for the unit half (#487): `apps/cli/unit/requeue-into-body.test.ts`"
-  },
-  {
-    "file": "packages/conductor/src/end-step.ts",
-    "fn": "endedWithoutEndActions",
-    "until": "#790",
-    "why": "the apps/cli unit tests (`doctor`, `doctor-progress`, `doctor-titles-projects`, `log-predates-hold`) fake or call it"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/filter.ts",
     "fn": "githubClientFor",
-    "until": "#790",
-    "why": "apps/board (actions, lib/prompt, lib/task) and `add-from-page.ts:129` call it as a promise; 0101 §7 lets the board keep promises"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/lib/prompt.ts, apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/conductor/src/filter.ts",
     "fn": "projectClient",
-    "until": "#790",
-    "why": "apps/board actions and lib/task, and apps/cli (requeue, grant-fix-round, close, approve) await it until the apps/cli rows"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/conductor/src/filter.ts",
     "fn": "projectFilter",
-    "until": "#790",
-    "why": "apps/board lib/prompt, lib/queued and lib/task, and apps/cli status.ts await it; 0101 §7 lets the board keep promises"
-  },
-  {
-    "file": "packages/conductor/src/filter.ts",
-    "fn": "projectFilters",
-    "until": "#790",
-    "why": "apps/cli `daemon.ts` (startup, behind `Effect.promise`) and the `reread` port `subscribers.ts` hands `createSubscriberSet`, which is a promise until the recipe read moves"
-  },
-  {
-    "file": "packages/conductor/src/onboard.ts",
-    "fn": "add",
-    "until": "#790",
-    "why": "no caller is left in apps/cli/src after CLI-21; it goes with the conductor rest"
-  },
-  {
-    "file": "packages/conductor/src/onboard.ts",
-    "fn": "checkGhAccess",
-    "until": "#790",
-    "why": "`apps/cli/src/add-github.ts` and `liveAddDeps` await it, until the apps/cli row"
-  },
-  {
-    "file": "packages/conductor/src/onboard.ts",
-    "fn": "checkInstallation",
-    "until": "#790",
-    "why": "`apps/cli/src/add-github.ts` (the `check` port, typed `typeof checkInstallation`) and `liveAddDeps` await it, until the apps/cli row"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/board.ts, apps/board/src/lib/prompt.ts, apps/board/src/lib/queued.ts, apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/conductor/src/onboard.ts",
     "fn": "recheck",
-    "until": "#790",
-    "why": "`apps/board/src/app/actions.ts` awaits it; 0101 §7 lets the board keep a promise"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/ownerless.ts",
     "fn": "ownerlessClient",
-    "until": "#790",
-    "why": "apps/board actions and lib/task, apps/cli (requeue, grant-fix-round, conduct, approve, run) await it until the apps/cli rows"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/conductor/src/pick-repository.ts",
     "fn": "setupReturn",
-    "until": "#790",
-    "why": "apps/board's `setup/repository/installed/route.ts` awaits it; 0101 §7 lets the board keep a promise"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/setup/repository/installed/route.ts"
   },
   {
     "file": "packages/conductor/src/port-face.ts",
     "fn": "runPort",
-    "until": "#790",
-    "why": "the promise members of the `Tickets` this package builds (`dbTickets`), and the `@lingtai/setup` readers and the `Tracing` flush/shutdown (`add-from-page.ts`, `telemetry.ts`), until those are Effect ports"
+    "until": "0101 §7",
+    "why": "the promise `Tickets` and `RefChannel` that `ownerlessClient` and `projectFilter` build are each one call of it, and the board calls their members: apps/board/src/lib/task.ts, apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/projects.ts",
     "fn": "currentRecipe",
-    "until": "#790",
-    "why": "apps/board (actions, lib/task, lib/recipe, lib/board), apps/cli verbs and `close.ts:176` (CONDUCT8-3) await it"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/app/setup/repository/added/page.tsx, apps/board/src/lib/board.ts, apps/board/src/lib/recipe.ts, apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/conductor/src/projects.ts",
     "fn": "loadAllProjects",
-    "until": "#790",
-    "why": "apps/board (actions, lib/board, setup pages), and `repository-list.ts`/`add-from-page.ts` await it"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/app/setup/repository/read/page.tsx, apps/board/src/lib/board.ts"
   },
   {
     "file": "packages/conductor/src/projects.ts",
     "fn": "loadProject",
-    "until": "#790",
-    "why": "apps/board (actions, lib/task, lib/prompt, lib/queued) and apps/cli verbs await it; 0101 §7 lets the board keep promises"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/app/setup/repository/added/page.tsx, apps/board/src/lib/prompt.ts, apps/board/src/lib/queued.ts, apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/conductor/src/projects.ts",
     "fn": "loadProjects",
-    "until": "#790",
-    "why": "apps/board (search, landed, locks), apps/cli (rates, status) await it"
-  },
-  {
-    "file": "packages/conductor/src/projects.ts",
-    "fn": "signedInIds",
-    "until": "#790",
-    "why": "`@lingtai/recipe`'s promise `SignedIn` port, through `signedInProbe`"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/api/search/route.ts, apps/board/src/lib/landed.ts, apps/board/src/lib/locks.ts"
   },
   {
     "file": "packages/conductor/src/queue.ts",
     "fn": "selectRunnable",
-    "until": "#790",
-    "why": "apps/board `queued.ts`, apps/cli `status.ts`, `packages/daemon/integration/reconcile.test.ts` await it"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/board.ts, apps/board/src/lib/queued.ts"
   },
   {
     "file": "packages/conductor/src/rate-snapshot.ts",
     "fn": "refreshOnce",
-    "until": "#790",
-    "why": "`refreshRates` keeps the in-flight dedupe over it, and apps/cli `rates.ts` awaits that"
+    "until": "#1118",
+    "why": "`refreshRates` (apps/cli/src/rates.ts, not a host) is its only caller and dedupes a promise; moving it needs `rates.ts` to run the Effect"
   },
   {
     "file": "packages/conductor/src/read-ticket.ts",
     "fn": "readProjectTicket",
-    "until": "#790",
-    "why": "apps/board lib/task awaits it; 0101 §7 lets the board keep promises"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/conductor/src/resolve-wait.ts",
     "fn": "resolveWait",
-    "until": "#790",
-    "why": "`apps/board/src/app/actions.ts` and `apps/cli/src/grant-fix-round.ts` await it, until the board and apps/cli rows"
-  },
-  {
-    "file": "packages/conductor/src/resolve-wait.ts",
-    "fn": "resolveWaitHolding",
-    "until": "#790",
-    "why": "the unit tests that resolve a wait directly (#487's exported-for-the-unit-half reason)"
-  },
-  {
-    "file": "packages/conductor/src/run-attempt.ts",
-    "fn": "claimStep",
-    "until": "#790",
-    "why": "the tests that run a pass with promise ports: packages/conductor/unit/run-attempt.test.ts, attempt-steps.test.ts, a-base-that-is-red-buys-no-round.test.ts, a-base-that-moved.test.ts, what-a-destination-costs.test.ts and test/a-url-destination.ts; no production caller"
-  },
-  {
-    "file": "packages/conductor/src/run-attempt.ts",
-    "fn": "runAttempt",
-    "until": "#790",
-    "why": "the tests that run a pass with promise ports: packages/conductor/unit/run-attempt.test.ts, attempt-steps.test.ts, a-base-that-is-red-buys-no-round.test.ts, a-base-that-moved.test.ts, what-a-destination-costs.test.ts and test/a-url-destination.ts; no production caller"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/run-log.ts",
     "fn": "findRunLog",
-    "until": "#790",
-    "why": "apps/board's run route and apps/cli attach.ts await it"
-  },
-  {
-    "file": "packages/conductor/src/run-log.ts",
-    "fn": "listRunLogs",
-    "until": "#790",
-    "why": "apps/cli attach.ts awaits it"
-  },
-  {
-    "file": "packages/conductor/src/same-file.ts",
-    "fn": "readFixFiles",
-    "until": "#790",
-    "why": "apps/cli `status.ts` awaits it"
-  },
-  {
-    "file": "packages/conductor/src/schedule.ts",
-    "fn": "tallyTurn",
-    "until": "#790",
-    "why": "apps/cli `run.ts` hands it over as `tallyPass`"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/api/run/[runId]/route.ts"
   },
   {
     "file": "packages/conductor/src/snapshot-state.ts",
     "fn": "readState",
-    "until": "#790",
-    "why": "apps/cli (requeue, subscribers, status, grant-fix-round, approve) and apps/board read a reducer's state as a promise"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/lib/board.ts"
   },
   {
     "file": "packages/conductor/src/split-ticket.ts",
     "fn": "splitTicket",
-    "until": "#790",
-    "why": "the board's split action (apps/board/src/app/actions.ts, 0101 §7)"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/conductor/src/split-ticket.ts",
     "fn": "splitTicketHolding",
-    "until": "#790",
-    "why": "apps/board/unit/split-instance.test.ts calls it with the lock out of the way"
-  },
-  {
-    "file": "packages/conductor/src/tell.ts",
-    "fn": "tellGitHubAbout",
-    "until": "#790",
-    "why": "the conductor unit tests (`sweep-refs`, `edit-ended-waits`, `trace-an-attempt`, `landing-comment`) call it"
-  },
-  {
-    "file": "packages/conductor/src/ticket-history.ts",
-    "fn": "liveHistory",
-    "until": "#790",
-    "why": "apps/cli add-github hands it over as a promise"
-  },
-  {
-    "file": "packages/conductor/src/ticket-store.ts",
-    "fn": "ticketsFor",
-    "until": "#790",
-    "why": "apps/cli (conduct, run)"
-  },
-  {
-    "file": "packages/daemon/src/choose.ts",
-    "fn": "processDaemonStore",
-    "until": "#790",
-    "why": "packages/daemon/integration/the-written-choice.test.ts opens it in a spawned script"
+    "until": "0101 §7",
+    "why": "a board test calls it: apps/board/unit/split-instance.test.ts"
   },
   {
     "file": "packages/daemon/src/control.ts",
     "fn": "beaconBeatFace",
-    "until": "#790",
+    "until": "#1118",
     "why": "the beacon's own timer in `startBeaconOn`, which `apps/cli/src/daemon.ts` starts with promise `say`/`stop`, and apps/cli/integration/doctor.test.ts, until the apps/cli row"
   },
   {
     "file": "packages/daemon/src/control.ts",
-    "fn": "beat",
-    "until": "#790",
-    "why": "apps/cli/integration/doctor.test.ts and the beacon's own writes, until the apps/cli row"
-  },
-  {
-    "file": "packages/daemon/src/control.ts",
-    "fn": "controlWatermark",
-    "until": "#790",
-    "why": "apps/cli (restart, status, doctor, run, conduct, world, project-pause, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7; packages/daemon (daemon.ts watermark default)"
-  },
-  {
-    "file": "packages/daemon/src/control.ts",
     "fn": "inFlight",
-    "until": "#790",
-    "why": "apps/cli (status, doctor, run, conduct, world, project-pause, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/draining.tsx"
   },
   {
     "file": "packages/daemon/src/control.ts",
     "fn": "readControl",
-    "until": "#790",
-    "why": "apps/cli (status, world, project-pause, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/locks.ts, apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/daemon/src/control.ts",
     "fn": "readStatus",
-    "until": "#790",
-    "why": "apps/cli (daemon's `memoDaemonStartedAt`, status, cli, restart) and apps/board (draining, health, board, task); the board keeps a face by 0101 §7"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/draining.tsx, apps/board/src/app/health.tsx, apps/board/src/lib/board.ts, apps/board/src/lib/health.ts, apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/daemon/src/control.ts",
     "fn": "requestRun",
-    "until": "#790",
-    "why": "apps/cli (daemon, restart, status, doctor, run, conduct, world, project-pause, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
-  },
-  {
-    "file": "packages/daemon/src/control.ts",
-    "fn": "requestShutdown",
-    "until": "#790",
-    "why": "apps/cli (daemon, restart, status, doctor, run, conduct, world, project-pause, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
-  },
-  {
-    "file": "packages/daemon/src/control.ts",
-    "fn": "requestShutdownUnlessStanding",
-    "until": "#790",
-    "why": "apps/cli (daemon, restart, status, doctor, run, conduct, world, project-pause, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/daemon/src/control.ts",
     "fn": "resumeConductor",
-    "until": "#790",
-    "why": "apps/cli (daemon, restart, status, doctor, run, conduct, world, project-pause, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
-  },
-  {
-    "file": "packages/daemon/src/control.ts",
-    "fn": "startAfter",
-    "until": "#790",
-    "why": "apps/cli (daemon, restart, status, doctor, run, conduct, world, project-pause, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
-  },
-  {
-    "file": "packages/daemon/src/converge.ts",
-    "fn": "clientsForProjects",
-    "until": "#790",
-    "why": "apps/cli/src/doctor.ts awaits it until the apps/cli rows"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/daemon/src/currency.ts",
     "fn": "codeCurrency",
-    "until": "#790",
-    "why": "apps/cli (daemon, restart) and apps/board health.tsx await them; the board keeps a face by 0101 §7"
-  },
-  {
-    "file": "packages/daemon/src/currency.ts",
-    "fn": "codeIdentity",
-    "until": "#790",
-    "why": "apps/cli (daemon, doctor, restart) and apps/board health.tsx await them; the board keeps a face by 0101 §7"
-  },
-  {
-    "file": "packages/daemon/src/daemon.ts",
-    "fn": "daemonStopFace",
-    "until": "#790",
-    "why": "packages/daemon's own tests and apps/cli/unit/log-predates-hold.test.ts hold a promise `Daemon` until they move; the daemon's start is `startDaemonEffect`"
-  },
-  {
-    "file": "packages/daemon/src/daemon.ts",
-    "fn": "daemonStoppedFace",
-    "until": "#790",
-    "why": "packages/daemon's own tests and apps/cli/unit/log-predates-hold.test.ts hold a promise `Daemon` until they move; the daemon's start is `startDaemonEffect`"
-  },
-  {
-    "file": "packages/daemon/src/daemon.ts",
-    "fn": "startDaemon",
-    "until": "#790",
-    "why": "packages/daemon's own tests and apps/cli/unit/log-predates-hold.test.ts hold a promise `Daemon` until they move; the daemon's start is `startDaemonEffect`"
-  },
-  {
-    "file": "packages/daemon/src/failure-recorder.ts",
-    "fn": "recordFailureFace",
-    "until": "#790",
-    "why": "`deliver`'s promise callbacks in `packages/daemon/src/work-loop.ts`, which settle a subscriber's Effect through a promise so its timeout can report without cancelling it"
-  },
-  {
-    "file": "packages/daemon/src/reconcile.ts",
-    "fn": "findOrphanLogs",
-    "until": "#790",
-    "why": "packages/daemon/integration/reconcile.test.ts"
-  },
-  {
-    "file": "packages/daemon/src/reconcile.ts",
-    "fn": "findOrphans",
-    "until": "#790",
-    "why": "packages/daemon/integration/reconcile.test.ts"
-  },
-  {
-    "file": "packages/daemon/src/reconcile.ts",
-    "fn": "reconcile",
-    "until": "#790",
-    "why": "apps/cli/src/doctor.ts (dry run) awaits it until the apps/cli row"
-  },
-  {
-    "file": "packages/daemon/src/work-loop.ts",
-    "fn": "workLoopStartFace",
-    "until": "#790",
-    "why": "`createWorkLoop`, which the daemon's own tests hold a promise `WorkLoop` through until they move; the daemon's loop is `makeWorkLoop`"
-  },
-  {
-    "file": "packages/daemon/src/work-loop.ts",
-    "fn": "workLoopStopFace",
-    "until": "#790",
-    "why": "`createWorkLoop`, which the daemon's own tests hold a promise `WorkLoop` through until they move; the daemon's loop is `makeWorkLoop`"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/health.tsx"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
@@ -595,33 +355,9 @@
   },
   {
     "file": "packages/github/src/app.ts",
-    "fn": "appInstallations",
-    "until": "#790",
-    "why": "packages/setup list-repositories"
-  },
-  {
-    "file": "packages/github/src/app.ts",
-    "fn": "installationRepositories",
-    "until": "#790",
-    "why": "packages/setup list-repositories"
-  },
-  {
-    "file": "packages/github/src/app.ts",
     "fn": "runGitHub",
-    "until": "#790",
-    "why": "the promise GitHubClient, installationForRepo, createAppReader and createGitHubClient, until row 7 yields GitHub"
-  },
-  {
-    "file": "packages/github/src/gh.ts",
-    "fn": "ghStatus",
-    "until": "#790",
-    "why": "conductor onboard.ts and repository-list.ts still await it; apps/cli init yields ghStatusEffect"
-  },
-  {
-    "file": "packages/github/src/manifest.ts",
-    "fn": "convertManifest",
-    "until": "#790",
-    "why": "conductor create-app"
+    "until": "0101 §7",
+    "why": "the promise `GitHubClient` that `githubClientFor`, `projectClient` and `ownerlessClient` hand the board is built from it, and the board calls its members: apps/board/src/lib/task.ts, apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/projector/src/backlog.ts",
@@ -782,61 +518,43 @@
   {
     "file": "packages/recipe/src/files.ts",
     "fn": "readFileFace",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
+    "until": "0101 §7",
+    "why": "`diskFiles.read` is this, and the board calls it: apps/board/src/lib/recipe.ts"
   },
   {
     "file": "packages/recipe/src/files.ts",
     "fn": "replaceFileFace",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
-  },
-  {
-    "file": "packages/recipe/src/local.ts",
-    "fn": "resolveLocalRecipe",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
+    "until": "0101 §7",
+    "why": "`diskFiles.replace` is this, in the same `diskFiles` object the board imports: apps/board/src/lib/recipe.ts"
   },
   {
     "file": "packages/recipe/src/resolve.ts",
     "fn": "resolveRecipe",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
-  },
-  {
-    "file": "packages/recipe/src/write.ts",
-    "fn": "readRecipeKey",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/recipe.ts"
   },
   {
     "file": "packages/recipe/src/write.ts",
     "fn": "saveRecipeText",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
-  },
-  {
-    "file": "packages/recipe/src/write.ts",
-    "fn": "setRecipe",
-    "until": "#790",
-    "why": "the `apps/cli` setup and control groups, the `conductor` rest (row 8), `packages/setup`'s `Effect.tryPromise` wrappers and the board, which 0101 §7 lets keep a face; the tests that pass a promise port"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/repo/src/git.ts",
     "fn": "git",
-    "until": "#790",
-    "why": "apps/board (actions, expand-prompts) keeps it by 0101 §7; packages/conductor git-refs calls it as a promise"
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/lib/expand-prompts.ts"
   },
   {
     "file": "packages/repo/src/mirror.ts",
     "fn": "mirrorBranchSha",
-    "until": "#790",
-    "why": "apps/board task.ts, mocked by name in apps/board/unit/timing-load-task.test.ts"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/task.ts"
   },
   {
     "file": "packages/repo/src/mirror.ts",
     "fn": "refSha",
-    "until": "#790",
-    "why": "apps/board task.ts and app/actions.ts"
+    "until": "0101 §7",
+    "why": "apps/board/src/lib/task.ts"
   }
 ]

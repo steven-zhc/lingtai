@@ -26,7 +26,7 @@ import { ownerlessRefusal, ticketsOfSeam } from './filter.ts'
 import { gitRefChannel, gitRefShaEffect } from './git-refs.ts'
 import { runPort } from './port-face.ts'
 import type { RefChannel } from './tell.ts'
-import type { ticketsFor } from './ticket-store.ts'
+import type { TicketsFor } from './ticket-store.ts'
 import { ticketsForEffect, type Tickets } from './ticket-store.ts'
 
 export interface OwnerlessClient {
@@ -79,10 +79,6 @@ export function ownerlessClientEffect(
 }
 
 /** `ownerlessClientEffect` as the promise the CLI, the board and the daemon's converge await (a listed face, #790). */
-export function ownerlessClient(
-  state: ProjectState,
-  recipe: Recipe,
-  ticketsOf?: typeof ticketsFor,
-): Promise<OwnerlessClient> {
+export function ownerlessClient(state: ProjectState, recipe: Recipe, ticketsOf?: TicketsFor): Promise<OwnerlessClient> {
   return Effect.runPromise(ownerlessClientEffect(state, recipe, ticketsOfSeam(ticketsOf)))
 }

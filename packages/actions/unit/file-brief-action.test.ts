@@ -14,12 +14,23 @@
  * integration test and this file is about what the action *decides*. What the
  * conductor's own read does with the one field is `conduct.ts`'s `read`.
  */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { NO_DESIGN, runActionPipeline, type Action, type ActionContext, type TheDesign } from '../src/action.ts'
+import {
+  NO_DESIGN,
+  portOptions,
+  runActionPipelineEffect,
+  type Action,
+  type ActionContext,
+  type TheDesign,
+} from '../src/action.ts'
 import { createFileAction, type KeptAnswer } from '../src/file-action.ts'
 import { createFileBriefAction, type ReadAnswer } from '../src/file-brief-action.ts'
 import { actionsFromRecipe } from '../src/from-recipe.ts'
+
+const runActionPipeline = (options: Parameters<typeof portOptions>[0]) =>
+  Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 
 const DOCUMENT = '## The shape\n\nSix bodies, one per step, and the seam is `StepWork`.'
 /** What the file on the branch says, where the test wants the two to differ. */

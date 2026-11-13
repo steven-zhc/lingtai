@@ -1,6 +1,6 @@
 export {
-  runActionPipeline,
   runActionPipelineEffect,
+  portOptions,
   promiseAction,
   fromPromiseAction,
   type ActionPort,
@@ -141,7 +141,6 @@ export {
   commandEffect,
   parseResult,
   readResultEffect,
-  runCommand,
   type CommandOutcome,
   type RunCommandOptions,
 } from './command.ts'

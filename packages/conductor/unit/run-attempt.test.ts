@@ -32,7 +32,8 @@ import {
   ATTEMPT,
   REFUSING_STEPS,
   outcomeOf,
-  runAttempt,
+  runAttemptEffect,
+  attemptPortsFrom,
   type AttemptEvent,
   type AttemptOptions,
   type StepBodies,
@@ -328,7 +329,9 @@ describe('the file may omit a step; the resolved recipe may not', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toBeNull()
     expect(result.unanswered).toBe(false)
@@ -371,7 +374,9 @@ describe('a step that was configured is never skipped', () => {
     const { actionsAt, ran } = watchingActions()
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toBeNull()
     // The eight steps `runAttempt` itself hands to `actionsAt` — `claim` ran
@@ -425,7 +430,7 @@ describe('a step that was configured is never skipped', () => {
     })
     const { emit, seen } = events()
 
-    await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    await Effect.runPromise(runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })))
 
     expect(entered).toBe(1)
     // **Only one action ever ran**, which is what this test is about — not
@@ -509,7 +514,9 @@ describe('four steps may refuse, and the other six may not', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toMatchObject({
       step: 'admit',
@@ -534,7 +541,9 @@ describe('four steps may refuse, and the other six may not', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toMatchObject({
       step: 'merge',
@@ -587,7 +596,9 @@ describe('four steps may refuse, and the other six may not', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toEqual({
       step: 'implement',
@@ -637,7 +648,9 @@ describe('four steps may refuse, and the other six may not', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     const reviewed = result.steps.find((s) => s.step === 'review')
     expect(reviewed?.ending).toEqual({ ending: 'passed' })
@@ -663,7 +676,9 @@ describe('four steps may refuse, and the other six may not', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped?.ending).toEqual({
       ending: 'refused',
@@ -680,7 +695,9 @@ describe('four steps may refuse, and the other six may not', () => {
     const { actionsAt } = watchingActions(at)
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toEqual({
       step: 'prepared',
@@ -716,7 +733,9 @@ describe('four steps may refuse, and the other six may not', () => {
     const { actionsAt } = watchingActions(at)
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(result.steps.map((s) => s.step)).toContain('proposed')
     expect(result.routes).toMatchObject([{ from: 'prepared', to: 'waiting' }])
@@ -774,7 +793,9 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     // What happened arrived intact (0058 §3c) — the step, what refused, and
     // why — read off `steps` itself, since routing no longer calls
@@ -820,14 +841,18 @@ describe('every step that does not pass arrives at proposed', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({}),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+        }),
+      ),
+    )
 
     // 0058 §3c: *that step again with "state your assumption"*, or a person —
     // and with no judge built for `needs-input` (`BUILT_IN_FOR`), the pass
@@ -906,15 +931,19 @@ describe('every step that does not pass arrives at proposed', () => {
     const { bodies } = watching()
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe: recipeWith({ design: [{ name: 'draft', agent: 'claude-code', prompt: 'shape' }] }),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-      judge: async () => ({ next: 'design', named: 'test', why: 'because a test said so' }),
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({ design: [{ name: 'draft', agent: 'claude-code', prompt: 'shape' }] }),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+          judge: async () => ({ next: 'design', named: 'test', why: 'because a test said so' }),
+        }),
+      ),
+    )
 
     // The route 0058 §3c names, and the step that asked is the step it went to:
     // nobody but `design` knows the question, so nothing else was on offer.
@@ -986,13 +1015,17 @@ describe('every step that does not pass arrives at proposed', () => {
         merge: [lands('land it')],
       })
       const { emit } = events()
-      const result = await runAttempt({
-        recipe: declaring(results.map((_, i) => `draft ${i}`)),
-        context,
-        emit,
-        bodies,
-        actionsAt,
-      })
+      const result = await Effect.runPromise(
+        runAttemptEffect(
+          attemptPortsFrom({
+            recipe: declaring(results.map((_, i) => `draft ${i}`)),
+            context,
+            emit,
+            bodies,
+            actionsAt,
+          }),
+        ),
+      )
       return { result, handed: seen[0] }
     }
 
@@ -1103,13 +1136,17 @@ describe('every step that does not pass arrives at proposed', () => {
       })
       const { emit } = events()
 
-      const result = await runAttempt({
-        recipe: declaring(['draft']),
-        context,
-        emit,
-        bodies,
-        actionsAt,
-      })
+      const result = await Effect.runPromise(
+        runAttemptEffect(
+          attemptPortsFrom({
+            recipe: declaring(['draft']),
+            context,
+            emit,
+            bodies,
+            actionsAt,
+          }),
+        ),
+      )
 
       expect(read).toEqual(['## The shape'])
       expect(result.stopped).toBeNull()
@@ -1144,7 +1181,9 @@ describe('every step that does not pass arrives at proposed', () => {
       })
       const { emit } = events()
 
-      const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+      const result = await Effect.runPromise(
+        runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+      )
 
       expect(seen[0]).toEqual(NO_DESIGN)
       expect(seen[0]?.locator).toBeUndefined()
@@ -1172,7 +1211,9 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     // `build` refused before the spine ever reached `proposed`'s own
     // inspection, so the declared `human:` action was never built and nobody
@@ -1220,7 +1261,9 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
@@ -1248,7 +1291,9 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
@@ -1280,7 +1325,9 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(ran.filter((r) => r.step === 'proposed')).toHaveLength(1)
     expect(result.steps.filter((s) => s.step === 'proposed').map((s) => s.ending.ending)).toEqual(['passed', 'routed'])
@@ -1299,7 +1346,9 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
@@ -1351,18 +1400,22 @@ describe('every step that does not pass arrives at proposed', () => {
     }
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe,
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-      judge: async (on) =>
-        on.when === 'findings'
-          ? { next: 'implement', named: 'test', why: 'the lines, not the approach' }
-          : { noJudge: true },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe,
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+          judge: async (on) =>
+            on.when === 'findings'
+              ? { next: 'implement', named: 'test', why: 'the lines, not the approach' }
+              : { noJudge: true },
+        }),
+      ),
+    )
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.end).toMatchObject({
@@ -1395,7 +1448,9 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(ran.filter((r) => r.step === 'proposed')).toHaveLength(1)
     expect(result.steps.filter((s) => s.step === 'proposed').map((s) => s.ending.ending)).toEqual(['passed', 'routed'])
@@ -1426,7 +1481,9 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
@@ -1454,14 +1511,18 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe,
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe,
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+        }),
+      ),
+    )
 
     expect(result.stopped).toMatchObject({ step: 'proposed', ending: { ending: 'refused' } })
     expect(result.routes).toMatchObject([{ from: 'proposed', to: 'waiting' }])
@@ -1502,14 +1563,18 @@ describe('every step that does not pass arrives at proposed', () => {
       })
       const { emit } = events()
 
-      const result = await runAttempt({
-        recipe,
-        context,
-        emit,
-        bodies,
-        actionsAt,
-        ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
-      })
+      const result = await Effect.runPromise(
+        runAttemptEffect(
+          attemptPortsFrom({
+            recipe,
+            context,
+            emit,
+            bodies,
+            actionsAt,
+            ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+          }),
+        ),
+      )
 
       expect(result.stopped).toMatchObject({ step: 'merge', ending: { ending } })
       expect(result.routes).toEqual(routes ? [expect.objectContaining({ from: 'merge' })] : [])
@@ -1527,14 +1592,18 @@ describe('every step that does not pass arrives at proposed', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({}),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+        }),
+      ),
+    )
 
     expect(result.stopped).toMatchObject({
       step: 'implement',
@@ -1562,20 +1631,24 @@ describe('a granted fix round', () => {
       build: [canned('check', { verdict: 'failed', evidence: 'still red', findings: [] })],
     })
 
-    const result = await runAttempt({
-      recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
-      from: {
-        step: 'implement',
-        waive: [],
-        roundsSpent: 1,
-        grant: { why: 'human grant', asked: null, printed: { step: 'review', detail: 'fix findings' } },
-      },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
+          from: {
+            step: 'implement',
+            waive: [],
+            roundsSpent: 1,
+            grant: { why: 'human grant', asked: null, printed: { step: 'review', detail: 'fix findings' } },
+          },
+        }),
+      ),
+    )
 
     expect(implementations).toBe(1)
     expect(seen.filter((event) => event.type === 'StepStarted' && event.data.step === 'implement')).toMatchObject([
@@ -1602,15 +1675,19 @@ describe('a granted fix round', () => {
       build: [canned('check', { verdict: 'failed', evidence: 'still red', findings: [] })],
     })
 
-    const result = await runAttempt({
-      recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
-      from: { step: 'build', waive: [], roundsSpent: 1, roundLimit: 1 },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
+          from: { step: 'build', waive: [], roundsSpent: 1, roundLimit: 1 },
+        }),
+      ),
+    )
 
     expect(implementations).toBe(0)
     expect(result.end._tag).toBe('WaitOnPerson')
@@ -1635,24 +1712,28 @@ describe('a granted fix round', () => {
       let asked = 0
       const { bodies } = watching()
       const { emit } = events()
-      const result = await runAttempt({
-        recipe: recipeWith({}),
-        context,
-        emit,
-        bodies,
-        actionsAt: refusing().actionsAt,
-        ceilings,
-        from: {
-          step: 'review',
-          waive: [],
-          roundsSpent: 1,
-          grant: { why: 'human grant', asked: null, printed: { step: 'review', detail: 'fix findings' } },
-        },
-        judge: async () => {
-          asked += 1
-          return { next: 'claim', named: 'test', why: 'restart it' }
-        },
-      })
+      const result = await Effect.runPromise(
+        runAttemptEffect(
+          attemptPortsFrom({
+            recipe: recipeWith({}),
+            context,
+            emit,
+            bodies,
+            actionsAt: refusing().actionsAt,
+            ceilings,
+            from: {
+              step: 'review',
+              waive: [],
+              roundsSpent: 1,
+              grant: { why: 'human grant', asked: null, printed: { step: 'review', detail: 'fix findings' } },
+            },
+            judge: async () => {
+              asked += 1
+              return { next: 'claim', named: 'test', why: 'restart it' }
+            },
+          }),
+        ),
+      )
 
       expect(asked).toBe(0)
       expect(result.end._tag).toBe('WaitOnPerson')
@@ -1661,16 +1742,20 @@ describe('a granted fix round', () => {
     it('keeps the recipe restarts on a continuation from an approval without a grant', async () => {
       const { bodies } = watching()
       const { emit } = events()
-      const result = await runAttempt({
-        recipe: recipeWith({}),
-        context,
-        emit,
-        bodies,
-        actionsAt: refusing().actionsAt,
-        ceilings,
-        from: { step: 'review', waive: [], roundsSpent: 1, roundLimit: 1 },
-        judge: async () => ({ next: 'claim', named: 'test', why: 'restart it' }),
-      })
+      const result = await Effect.runPromise(
+        runAttemptEffect(
+          attemptPortsFrom({
+            recipe: recipeWith({}),
+            context,
+            emit,
+            bodies,
+            actionsAt: refusing().actionsAt,
+            ceilings,
+            from: { step: 'review', waive: [], roundsSpent: 1, roundLimit: 1 },
+            judge: async () => ({ next: 'claim', named: 'test', why: 'restart it' }),
+          }),
+        ),
+      )
 
       expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
     })
@@ -1678,15 +1763,19 @@ describe('a granted fix round', () => {
     it('still restarts an ungranted pass with the same proposal', async () => {
       const { bodies } = watching()
       const { emit } = events()
-      const result = await runAttempt({
-        recipe: recipeWith({}),
-        context,
-        emit,
-        bodies,
-        actionsAt: refusing().actionsAt,
-        ceilings,
-        judge: async () => ({ next: 'claim', named: 'test', why: 'restart it' }),
-      })
+      const result = await Effect.runPromise(
+        runAttemptEffect(
+          attemptPortsFrom({
+            recipe: recipeWith({}),
+            context,
+            emit,
+            bodies,
+            actionsAt: refusing().actionsAt,
+            ceilings,
+            judge: async () => ({ next: 'claim', named: 'test', why: 'restart it' }),
+          }),
+        ),
+      )
 
       expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
     })
@@ -1731,15 +1820,19 @@ describe('proposed routes on the way through as well as on the way back', () => 
             : []
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-      judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({}),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+          judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
+        }),
+      ),
+    )
 
     // The step ends `passed` both times — a review that refuses still does
     // (0058 §3) — and the pass still bought a round on the first one's
@@ -1780,7 +1873,9 @@ describe('proposed routes on the way through as well as on the way back', () => 
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, actionsAt })),
+    )
 
     expect(result.routes).toEqual([])
     expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'claim'))
@@ -1811,14 +1906,18 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
           : []
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe,
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe,
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+        }),
+      ),
+    )
 
     expect(result.stopped).toBeNull()
     expect(result.unanswered).toBe(false)
@@ -1875,14 +1974,18 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     })
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe,
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe,
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+        }),
+      ),
+    )
 
     expect(result.routes.map((r) => r.to)).toEqual(['implement', 'implement', 'waiting'])
     expect(result.steps.filter((s) => s.step === 'build')).toHaveLength(3)
@@ -1910,18 +2013,22 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     const { emit } = events()
     let dispatched = 0
 
-    const result = await runAttempt({
-      recipe,
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-      judge: async () => {
-        dispatched += 1
-        return { noJudge: true }
-      },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe,
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+          judge: async () => {
+            dispatched += 1
+            return { noJudge: true }
+          },
+        }),
+      ),
+    )
 
     expect(dispatched).toBe(0)
     expect(result.routes[0]).toMatchObject({ chose: 'waiting', to: 'waiting', ceiling: null })
@@ -1951,15 +2058,19 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
     })
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 1, restartsSpent: 0 },
-      judge: async () => ({ next: 'claim', named: 'test', why: 'because a test said so' }),
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({}),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 1, restartsSpent: 0 },
+          judge: async () => ({ next: 'claim', named: 'test', why: 'because a test said so' }),
+        }),
+      ),
+    )
 
     expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
     // `toMatchObject`, not `toEqual` — see the sibling pin above.
@@ -2001,14 +2112,18 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
     const { actionsAt } = watchingActions({ merge: [lands('land it')] })
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe,
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      from: { step: 'merge', waive: [] },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe,
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          from: { step: 'merge', waive: [] },
+        }),
+      ),
+    )
 
     expect(seen.map((s) => s.step)).toEqual(['admit', 'prepared', 'merge', 'end'])
     expect(result.steps.map((s) => s.step)).toEqual(['admit', 'prepared', 'merge', 'end'])
@@ -2024,14 +2139,18 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe,
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      from: { step: 'merge', waive: [{ name: 'human:land', waitId: 'wait-1' as never }] },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe,
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          from: { step: 'merge', waive: [{ name: 'human:land', waitId: 'wait-1' as never }] },
+        }),
+      ),
+    )
 
     expect(calls).toEqual([]) // the signoff action was never called
     const merge = result.steps.find((s) => s.step === 'merge')
@@ -2071,19 +2190,23 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
     }
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe,
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
-      from: { step: 'merge', waive: [{ name: 'watch:ci', waitId: 'wait-1' as never }] },
-      // `check-refused` has no built-in (`BUILT_IN_FOR`, `judge.ts`) — a
-      // declared judge is what sends it to `implement` here, same as a
-      // recipe's own `judge:` would.
-      judge: async () => ({ next: 'implement', named: 'test', why: 'test fix round' }),
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe,
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+          from: { step: 'merge', waive: [{ name: 'watch:ci', waitId: 'wait-1' as never }] },
+          // `check-refused` has no built-in (`BUILT_IN_FOR`, `judge.ts`) — a
+          // declared judge is what sends it to `implement` here, same as a
+          // recipe's own `judge:` would.
+          judge: async () => ({ next: 'implement', named: 'test', why: 'test fix round' }),
+        }),
+      ),
+    )
 
     // Waived on the first visit — never called — and genuinely run on the
     // second, once the fix round sends the walk back through `merge`.
@@ -2112,20 +2235,24 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe,
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      from: {
-        step: 'proposed',
-        waive: [
-          { name: 'tamper', waitId: 'wait-1' as never },
-          { name: 'approval', waitId: 'wait-2' as never },
-        ],
-      },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe,
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          from: {
+            step: 'proposed',
+            waive: [
+              { name: 'tamper', waitId: 'wait-1' as never },
+              { name: 'approval', waitId: 'wait-2' as never },
+            ],
+          },
+        }),
+      ),
+    )
 
     expect(calls).toEqual([]) // neither signoff action ran
     const proposed = result.steps.find((s) => s.step === 'proposed')
@@ -2159,7 +2286,9 @@ describe('a visit is judged against the head the walk has reached', () => {
     const { actionsAt, judged } = judging((step) => (step === 'implement' ? { ...PASSED, head: 'b2b2b2b' } : PASSED))
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toBeNull()
     expect(judged.map((j) => [j.step, j.onSha])).toEqual([
@@ -2186,7 +2315,9 @@ describe('a visit is judged against the head the walk has reached', () => {
     const { actionsAt, judged } = judging()
     const { emit } = events()
 
-    await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(judged.every((j) => j.onSha === 'abc1234def')).toBe(true)
   })
@@ -2207,14 +2338,18 @@ describe('a visit is judged against the head the walk has reached', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({}),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+        }),
+      ),
+    )
 
     expect(result.stopped).toBeNull()
     expect(judged.filter((j) => j.step === 'build').map((j) => j.onSha)).toEqual(['b2b2b2b', 'c3c3c3c'])
@@ -2235,7 +2370,9 @@ describe('a visit is judged against the head the walk has reached', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toBeNull()
     expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({ ending: 'passed', head: 'c3c3c3c' })
@@ -2250,7 +2387,9 @@ describe('a visit is judged against the head the walk has reached', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toBeNull()
     expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({ ending: 'passed', head: 'b2b2b2b' })
@@ -2269,7 +2408,9 @@ describe('a visit is judged against the head the walk has reached', () => {
     const { actionsAt } = watchingActions({ implement: [committedSomething('write the change', 'actionreported')] })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toBeNull()
     expect(result.steps.find((s) => s.step === 'implement')?.ending).toEqual({
@@ -2298,14 +2439,18 @@ describe('a visit is judged in the round the pass is in', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({}),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+        }),
+      ),
+    )
 
     // `toMatchObject`, not `toEqual` — see the sibling pin above.
     expect(result.routes).toMatchObject([
@@ -2367,15 +2512,19 @@ describe('the round a pass buys is bought on something', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-      judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({}),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+          judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
+        }),
+      ),
+    )
 
     expect(result.stopped).toBeNull()
     // The first review was asked about nothing; the second is asked about the
@@ -2402,14 +2551,18 @@ describe('the round a pass buys is bought on something', () => {
     })
     const { emit } = events()
 
-    await runAttempt({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-    })
+    await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({}),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+        }),
+      ),
+    )
 
     expect(judged.filter((j) => j.step === 'build').map((j) => j.recheck)).toEqual([[], [finding]])
   })
@@ -2452,7 +2605,7 @@ describe('a body can read what the steps before it said', () => {
     })
     const { emit } = events()
 
-    await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    await Effect.runPromise(runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })))
 
     expect(atProposed.map((s) => s.step)).toEqual(['admit', 'prepared', 'design', 'implement', 'build', 'review'])
     expect(atProposed.find((s) => s.step === 'prepared')?.results).toEqual([
@@ -2469,7 +2622,9 @@ describe('a body can read what the steps before it said', () => {
     const { actionsAt } = watchingActions(at)
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(result.steps.find((s) => s.step === 'prepared')?.results).toEqual([
       { action: 'install', verdict: 'failed', evidence: 'exited 1', findings: [] },
@@ -2496,7 +2651,9 @@ describe('a step that did not finish is not a step that refused', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped?.ending).toEqual({
       ending: 'did-not-finish',
@@ -2519,7 +2676,9 @@ describe('a step that did not finish is not a step that refused', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped?.ending).toEqual({
       ending: 'never-ran',
@@ -2538,7 +2697,9 @@ describe('a step that did not finish is not a step that refused', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped?.ending).toEqual({ ending: 'held', at: 'sign off', question: 'ship it?' })
   })
@@ -2553,7 +2714,9 @@ describe('end runs on every ending and cannot refuse', () => {
     const { actionsAt } = watchingActions(at)
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+    )
 
     expect(seen.at(-1)?.step).toBe('end')
     expect(result.steps.at(-1)?.step).toBe('end')
@@ -2568,7 +2731,9 @@ describe('end runs on every ending and cannot refuse', () => {
       })
       const { emit } = events()
 
-      const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+      const result = await Effect.runPromise(
+        runAttemptEffect(attemptPortsFrom({ recipe, context, emit, bodies, actionsAt })),
+      )
 
       expect(seen.at(-1)?.step).toBe('end')
       expect(result.steps.map((s) => s.step).filter((s) => s === 'end')).toEqual(['end'])
@@ -2593,7 +2758,9 @@ describe('end runs on every ending and cannot refuse', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toEqual({
       step: 'implement',
@@ -2617,7 +2784,9 @@ describe('end runs on every ending and cannot refuse', () => {
     }
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.stopped).toMatchObject({
       step: 'prepared',
@@ -2644,7 +2813,9 @@ describe('end runs on every ending and cannot refuse', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(seen.filter((s) => s.step === 'end')).toHaveLength(1)
     expect(result.steps.filter((s) => s.step === 'end')).toHaveLength(1)
@@ -2673,7 +2844,9 @@ describe('end runs on every ending and cannot refuse', () => {
     const { actionsAt } = watchingActions({ merge: [lands('land it')] })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     // What the body was told and what a caller reads back are one answer.
     expect(seen.at(-1)).toMatchObject({ step: 'end', outcome: 'landed' })
@@ -2703,7 +2876,9 @@ describe('end is told which of the four endings it is running for', () => {
     const { bodies, seen } = watching()
     const { actionsAt } = watchingActions(at)
     const { emit } = events()
-    await runAttempt({ recipe: recipeWith(steps), context, emit, bodies, actionsAt })
+    await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith(steps), context, emit, bodies, actionsAt })),
+    )
     return seen.filter((s) => s.step === 'end').at(-1)?.outcome
   }
 
@@ -2734,7 +2909,9 @@ describe('end is told which of the four endings it is running for', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(seen.filter((s) => s.outcome !== null).map((s) => s.step)).toEqual(['end'])
   })
@@ -2759,7 +2936,9 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
     const { actionsAt } = watchingActions()
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, actionsAt })),
+    )
 
     expect(result.stopped).toBeNull()
     expect(result.steps.map((s) => s.step)).toEqual(STEPS.filter((s) => s !== 'claim'))
@@ -2782,7 +2961,7 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, actionsAt })
+    const result = await Effect.runPromise(runAttemptEffect(attemptPortsFrom({ recipe, context, emit, actionsAt })))
 
     expect(result.steps.map((s) => s.step)).toEqual([
       'admit',
@@ -2812,7 +2991,7 @@ describe('the ten bodies are empty, and the two that are not silent', () => {
     const { actionsAt } = watchingActions({ merge: [lands('land it')] })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, actionsAt })
+    const result = await Effect.runPromise(runAttemptEffect(attemptPortsFrom({ recipe, context, emit, actionsAt })))
 
     // Reported as the step's ending rather than thrown out of the pass, which
     // is the same rule one turn on: a pass that vanished must not look like
@@ -2989,15 +3168,19 @@ describe('a route names the StepEnded it was taken from', () => {
             : []
     const { emit, seen } = numbering()
 
-    const result = await runAttempt({
-      recipe: recipeWith({}),
-      context,
-      emit,
-      bodies,
-      actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
-      judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith({}),
+          context,
+          emit,
+          bodies,
+          actionsAt,
+          ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+          judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
+        }),
+      ),
+    )
 
     expect(result.routes.map((r) => r.offer.proposal._tag)).toEqual(['ReviewFindings', 'ReviewFindings', 'BuildRed'])
     const versions = result.routes.map((r) => r.ended?.version)
@@ -3021,7 +3204,9 @@ describe('a route names the StepEnded it was taken from', () => {
     const { actionsAt } = watchingActions()
     const { emit } = numbering()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.routes).toHaveLength(1)
     expect(result.routes[0]!.ended).toBeNull()
@@ -3034,7 +3219,9 @@ describe('a route names the StepEnded it was taken from', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    const result = await Effect.runPromise(
+      runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+    )
 
     expect(result.routes.map((r) => r.ended)).toEqual([null])
   })

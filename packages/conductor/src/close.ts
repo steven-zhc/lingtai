@@ -144,16 +144,6 @@ export function closeEffect(options: CloseOptions): Effect.Effect<CloseOutcome, 
   )
 }
 
-/**
- * **Exported for the unit half alone**, like `approveHolding`: `close()` takes
- * `createFileLocker()` (`decidingEffect`), which is the filesystem, so by 0060 §1 it
- * cannot be unit-tested — this function underneath it can. `index.ts` does not
- * re-export it.
- */
-export function closeHolding(options: CloseOptions, store: EventStore, ticketId: string): Promise<CloseOutcome> {
-  return Effect.runPromise(closeHoldingEffect(options, store, ticketId))
-}
-
 export function closeHoldingEffect(
   options: CloseOptions,
   store: EventStore,

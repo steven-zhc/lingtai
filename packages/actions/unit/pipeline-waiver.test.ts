@@ -8,9 +8,19 @@
  * approval, or a continuation that remembers only the latest loops between
  * them forever.
  */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { runActionPipeline, type Action, type ActionContext, type ActionResult } from '../src/action.ts'
+import {
+  portOptions,
+  runActionPipelineEffect,
+  type Action,
+  type ActionContext,
+  type ActionResult,
+} from '../src/action.ts'
+
+const runActionPipeline = (options: Parameters<typeof portOptions>[0]) =>
+  Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 
 const context: ActionContext = { runId: 'pass-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
 

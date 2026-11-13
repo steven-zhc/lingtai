@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 import { notTakingWork } from '../src/daemon.ts'
 import type { DaemonStore } from '../src/store.ts'
-import { createWorkLoop } from '../src/work-loop.ts'
+import { createWorkLoop } from '../test/promise-faces.ts'
 
 /** The work loop's `pass` is an Effect; these fakes are written as promises. */
 const asEffect =

@@ -1,3 +1,4 @@
+import { BadWatchPatternError, MIGRATION_WATCH, TAMPER_WATCH } from '@lingtai/recipe'
 /**
  * The `watch` action, the `human` action, and the third verdict they both produce.
  *
@@ -13,13 +14,16 @@
  * move: they were chosen against vitest's 5000ms default, and the project this
  * file now runs in already allows a spawn the time one takes (#225).
  */
-import { BadWatchPatternError, MIGRATION_WATCH, TAMPER_WATCH } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { runActionPipeline } from '../src/action.ts'
+import { portOptions, runActionPipelineEffect } from '../src/action.ts'
 import { createHumanAction } from '../src/human-action.ts'
 import { createProcessAction } from '../src/process-action.ts'
 import { createWatchAction } from '../src/watch-action.ts'
+
+const runActionPipeline = (options: Parameters<typeof portOptions>[0]) =>
+  Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 
 const context = { runId: 'pass-1', onSha: 'b'.repeat(40), cwd: process.cwd(), env: {} }
 /** A `run:` action's own environment, since 0037 §1 — never the context's. */

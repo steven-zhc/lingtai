@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   type AddOptions,
-  checkInstallation,
+  checkInstallationEffect,
   governingEffect,
   otherOwner,
   recheck,
@@ -199,10 +199,11 @@ describe('Recheck', () => {
         asked.push(`${owner}/${repo}`)
         throw new NotInstalledError(owner, repo)
       },
-      register: async (options) => {
-        registered.push(options)
-        return { ok: true, updated: false, warnings: [], reach: { kind: 'app', slug: null } } as const
-      },
+      register: (options) =>
+        Effect.sync(() => {
+          registered.push(options)
+          return { ok: true, updated: false, warnings: [], reach: { kind: 'app', slug: null } } as const
+        }),
     })
 
     expect(asked).toEqual([SLUG])
@@ -219,11 +220,12 @@ describe('Recheck', () => {
     const registered: AddOptions[] = []
     const result = await recheck(RECORDED, {
       installation: async () => INSTALLED,
-      register: async (options, log) => {
-        registered.push(options)
-        log('recipe: ~/.lingtai/nextloom-ai-admin/recipe.yml')
-        return { ok: true, updated: false, warnings: [], reach: { kind: 'app', slug: null } } as const
-      },
+      register: (options, log) =>
+        Effect.sync(() => {
+          registered.push(options)
+          log('recipe: ~/.lingtai/nextloom-ai-admin/recipe.yml')
+          return { ok: true, updated: false, warnings: [], reach: { kind: 'app', slug: null } } as const
+        }),
     })
 
     expect(registered).toEqual([{ ...resumeOnboarding(RECORDED), installation: INSTALLED }])
@@ -233,11 +235,12 @@ describe('Recheck', () => {
   it('hands back everything add said when it refuses an installed repository', async () => {
     const result = await recheck(RECORDED, {
       installation: async () => INSTALLED,
-      register: async (_options, log) => {
-        log('the installation is missing permissions:')
-        log('  issues: have read, need write — reading work items')
-        return { ok: false }
-      },
+      register: (_options, log) =>
+        Effect.sync(() => {
+          log('the installation is missing permissions:')
+          log('  issues: have read, need write — reading work items')
+          return { ok: false } as const
+        }),
     })
 
     expect(result).toEqual({
@@ -253,7 +256,8 @@ describe('Recheck', () => {
         installation: async () => {
           throw new Error('502 on /repos/steven-zhc/nextloom-ai-admin/installation: Bad Gateway')
         },
-        register: async () => ({ ok: true, updated: false, warnings: [], reach: { kind: 'app', slug: null } }),
+        register: () =>
+          Effect.succeed({ ok: true, updated: false, warnings: [], reach: { kind: 'app', slug: null } } as const),
       }),
     ).rejects.toThrow('502')
   })
@@ -277,7 +281,7 @@ describe('checkInstallation', () => {
 
   it('returns null and logs the gap when a known installation is missing a permission', async () => {
     const said: string[] = []
-    const result = await checkInstallation(SLUG, (line) => said.push(line), INSTALLED)
+    const result = await Effect.runPromise(checkInstallationEffect(SLUG, (line) => said.push(line), INSTALLED))
 
     expect(result).toBeNull()
     expect(said.join('\n')).toContain('the installation is missing permissions:')
@@ -286,13 +290,15 @@ describe('checkInstallation', () => {
 
   it('rethrows a failure that is not NotInstalledError rather than reading it as "not installed"', async () => {
     await expect(
-      checkInstallation(
-        SLUG,
-        () => {},
-        undefined,
-        async () => {
-          throw new Error('502 on /repos/steven-zhc/nextloom-ai-admin/installation: Bad Gateway')
-        },
+      Effect.runPromise(
+        checkInstallationEffect(
+          SLUG,
+          () => {},
+          undefined,
+          async () => {
+            throw new Error('502 on /repos/steven-zhc/nextloom-ai-admin/installation: Bad Gateway')
+          },
+        ),
       ),
     ).rejects.toThrow('502')
   })

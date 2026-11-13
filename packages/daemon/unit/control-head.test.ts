@@ -9,7 +9,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { readControl, recordStartEffect, requestShutdownUnlessStanding } from '../src/control.ts'
+import { readControl, recordStartEffect, requestShutdownUnlessStandingEffect } from '../src/control.ts'
 
 /** A store whose first `readTypes` of the control stream appends `event` behind the reader's back. */
 function racing(real: EventStore, event: { type: string; actor: string; data: unknown }) {
@@ -36,7 +36,7 @@ describe('control appends decide at the head they read first', () => {
       actor: 'human:p',
       data: { by: 'a person', reason: 'x', until: null, holdsAcrossStarts: false, cause: 'person' },
     })
-    const answer = await requestShutdownUnlessStanding('human:me', 'why', null, store)
+    const answer = await Effect.runPromise(requestShutdownUnlessStandingEffect('human:me', 'why', null, store))
     expect(raced()).toBe(true)
     expect(answer.asked).toBe(true)
     expect((await real.read(CONTROL_STREAM)).map((e) => e.type)).toEqual([

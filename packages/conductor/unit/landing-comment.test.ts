@@ -1,12 +1,13 @@
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 /**
  * **A landing posts one comment on the issue, with the reviewer's summary** (#896).
  *
  * Memory event store and memory `Tickets`: no network, no Postgres.
  */
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type RefChannel, landingComment, tellGitHubAbout, unmention } from '../src/tell.ts'
+import { type RefChannel, landingComment, tellGitHubAboutEffect, unmention } from '../src/tell.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
 
 const ticketId = 'ticket-p-1'
@@ -36,7 +37,7 @@ async function world(failing = false) {
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'ab5848a1234', base: 'main' } },
   ])
   const tell = (extra: Record<string, unknown> = {}) =>
-    tellGitHubAbout({ store, github, ticketId, landed, ...extra } as never)
+    Effect.runPromise(tellGitHubAboutEffect({ store, github, ticketId, landed, ...extra } as never))
   return { store, tickets, tell, order }
 }
 

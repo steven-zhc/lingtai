@@ -301,7 +301,3 @@ export const convertManifestEffect = Effect.fn('github.convertManifest')(functio
     return created
   }).pipe(Effect.ensuring(Effect.sync(() => controller.abort())))
 })
-
-export function convertManifest(code: string, deps: { fetch?: typeof fetch } = {}): Promise<CreatedApp> {
-  return Effect.runPromise(convertManifestEffect(code, deps))
-}

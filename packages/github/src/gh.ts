@@ -126,10 +126,6 @@ export const ghStatusEffect = Effect.fn('github.ghStatus')(function* (run: GhRun
   return statusFrom(result)
 })
 
-export function ghStatus(run: GhRun = liveGh, signal?: AbortSignal): Promise<GhStatus> {
-  return Effect.runPromise(ghStatusEffect(run), { signal })
-}
-
 function statusFrom(result: GhRunResult): GhStatus {
   if ('missing' in result) return { ok: false, reason: 'missing', detail: 'gh is not installed' }
   // A signed-out host may exit non-zero and still print JSON, so the code is not read first.

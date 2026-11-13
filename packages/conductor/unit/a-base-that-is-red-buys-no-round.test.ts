@@ -12,7 +12,13 @@ import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createBaseCheck } from '../src/base-check.ts'
-import { runAttempt, type AttemptOptions, type StepBodies, type StepEnding } from '../src/run-attempt.ts'
+import {
+  runAttemptEffect,
+  attemptPortsFrom,
+  type AttemptOptions,
+  type StepBodies,
+  type StepEnding,
+} from '../src/run-attempt.ts'
 
 const context: ActionContext = { runId: 'pass-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} }
 const SHA = 'a'.repeat(40)
@@ -43,15 +49,19 @@ const actionsAt =
   }
 
 const run = (ceilings: { rounds: number }, over: Partial<AttemptOptions>) =>
-  runAttempt({
-    recipe: { steps: StepMap.parse({}) },
-    context,
-    emit: () => {},
-    bodies,
-    actionsAt: actionsAt(),
-    ceilings: { rounds: ceilings.rounds, restarts: 0, restartsSpent: 0 },
-    ...over,
-  })
+  Effect.runPromise(
+    runAttemptEffect(
+      attemptPortsFrom({
+        recipe: { steps: StepMap.parse({}) },
+        context,
+        emit: () => {},
+        bodies,
+        actionsAt: actionsAt(),
+        ceilings: { rounds: ceilings.rounds, restarts: 0, restartsSpent: 0 },
+        ...over,
+      }),
+    ),
+  )
 
 const red = { red: { command: 'pnpm test', base: 'main', baseSha: SHA, evidence: 'base: 58 errors' } }
 
@@ -103,7 +113,7 @@ describe('a build refusal the base shares', () => {
     }))
     const check = createBaseCheck({
       store: createMemoryEventStore(),
-      run: exits,
+      run: () => Effect.promise(() => exits()),
       worktreePath: (p, sha7, id) => `/wt/${p}/base-${sha7}-${id}`,
       note: () => {},
     })

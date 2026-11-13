@@ -26,7 +26,14 @@ import type { ProjectState } from '@lingtai/domain'
 import { githubApp, githubClientAuth } from '@lingtai/env'
 import { createFileLocker, type Locker } from '@lingtai/env/lock'
 import { GitHubFailed, makeGitHub, type GitHub } from '@lingtai/github'
-import { baseOf, diskFiles, type RecipeFiles, recipePath, resolveLocalRecipe, resolveSource } from '@lingtai/recipe'
+import {
+  baseOf,
+  diskFiles,
+  type RecipeFiles,
+  recipePath,
+  resolveLocalRecipeEffect,
+  resolveSource,
+} from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
 import {
   alreadyAdded,
@@ -328,10 +335,9 @@ export function liveRegister(target: SetupTarget, home?: string): AddPorts['regi
       }
       const tip = yield* gitIn(dir, ['rev-parse', '--verify', `refs/heads/${form.base}^{commit}`])
       if (!tip.ok) return yield* Effect.fail(new Error(`could not read ${form.base} in ${dir} — ${tip.out}`))
-      const resolved = yield* Effect.tryPromise({
-        try: () => resolveLocalRecipe(form.project, { home, signedIn: signedInHere }),
-        catch: (e) => new Error(reasonOf(e)),
-      })
+      const resolved = yield* resolveLocalRecipeEffect(form.project, { home, signedIn: signedInHere }).pipe(
+        Effect.mapError((e) => new Error(reasonOf(e))),
+      )
       yield* addLocalEffect(
         {
           project: form.project,

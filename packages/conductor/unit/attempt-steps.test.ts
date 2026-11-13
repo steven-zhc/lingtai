@@ -52,9 +52,10 @@ import {
 import { BUILT_IN, BUILT_IN_FOR, judgeDeclaredAt } from '../src/judge.ts'
 import {
   NEEDS_INPUT,
-  claimStep,
+  claimStepEffect,
+  attemptPortsFrom,
   outcomeOf,
-  runAttempt,
+  runAttemptEffect,
   type AttemptOptions,
   type AttemptOver,
 } from '../src/run-attempt.ts'
@@ -529,8 +530,8 @@ async function pass(
       return step === 'merge' ? [landing()] : []
     },
   }
-  await claimStep(passOptions)
-  const result = await runAttempt(passOptions)
+  await Effect.runPromise(claimStepEffect(attemptPortsFrom(passOptions)))
+  const result = await Effect.runPromise(runAttemptEffect(attemptPortsFrom(passOptions)))
   return { result, asked, ports }
 }
 
@@ -582,13 +583,17 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
     const { ports, asked, taking } = portsAnswering({ take: answer })
     const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
 
-    const claimed = await claimStep({
-      recipe: recipeWith(),
-      context,
-      emit: () => {},
-      bodies: bodiesFor(ports),
-      actionsAt: (step) => (step === 'claim' ? [claiming] : []),
-    })
+    const claimed = await Effect.runPromise(
+      claimStepEffect(
+        attemptPortsFrom({
+          recipe: recipeWith(),
+          context,
+          emit: () => {},
+          bodies: bodiesFor(ports),
+          actionsAt: (step) => (step === 'claim' ? [claiming] : []),
+        }),
+      ),
+    )
 
     // The action's own `because`, travelling — `endingOf` reads it off the result
     // and `at` is the action that said it, where the body used to answer `null`.
@@ -621,13 +626,17 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
     })
     const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
 
-    const claimed = await claimStep({
-      recipe: recipeWith(),
-      context,
-      emit: () => {},
-      bodies: bodiesFor(ports),
-      actionsAt: (step) => (step === 'claim' ? [claiming] : []),
-    })
+    const claimed = await Effect.runPromise(
+      claimStepEffect(
+        attemptPortsFrom({
+          recipe: recipeWith(),
+          context,
+          emit: () => {},
+          bodies: bodiesFor(ports),
+          actionsAt: (step) => (step === 'claim' ? [claiming] : []),
+        }),
+      ),
+    )
 
     expect(claimed.ending).toMatchObject({ ending: 'did-not-finish', because: 'claim-unconfirmed' })
     const detail = 'detail' in claimed.ending ? claimed.ending.detail : ''
@@ -671,8 +680,10 @@ describe('claim runs the `queue:` plugin, and cannot refuse', () => {
     }
     // Mirrors `conduct.ts`: `runAttempt` runs only once `claimStep` answers `passed`.
     const run = async () => {
-      const claimed = await claimStep(passOptions)
-      return claimed.ending.ending === 'passed' ? await runAttempt(passOptions) : null
+      const claimed = await Effect.runPromise(claimStepEffect(attemptPortsFrom(passOptions)))
+      return claimed.ending.ending === 'passed'
+        ? await Effect.runPromise(runAttemptEffect(attemptPortsFrom(passOptions)))
+        : null
     }
 
     await run()
@@ -1137,32 +1148,36 @@ describe('implement dispatches the one agent, and reports what it committed', ()
       },
     })
     const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
-    const result = await runAttempt({
-      recipe: recipeWith(),
-      context,
-      emit: () => {},
-      bodies: bodiesFor(ports),
-      judge: async (on) =>
-        on.when === 'needs-input'
-          ? { next: 'implement', named: 'test', why: 'state your assumption and carry on' }
-          : { noJudge: true },
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
-      // `claim`'s default, because the body takes nothing since `#269` and a pass
-      // that claimed no item cannot brief an agent.
-      actionsAt: (step, actions) =>
-        step === 'claim'
-          ? [claiming]
-          : step === 'implement'
-            ? [createWorkAction({ name: 'write the change', prompt: '' }, working)]
-            : step === 'merge'
-              ? [
-                  createMergeAction(
-                    { name: 'land the branch', strategy: 'merge-commit' },
-                    { land: async () => ({ merged: MERGED }) },
-                  ),
-                ]
-              : actions.map((a) => canned(a.name, PASSED)),
-    })
+    const result = await Effect.runPromise(
+      runAttemptEffect(
+        attemptPortsFrom({
+          recipe: recipeWith(),
+          context,
+          emit: () => {},
+          bodies: bodiesFor(ports),
+          judge: async (on) =>
+            on.when === 'needs-input'
+              ? { next: 'implement', named: 'test', why: 'state your assumption and carry on' }
+              : { noJudge: true },
+          ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+          // `claim`'s default, because the body takes nothing since `#269` and a pass
+          // that claimed no item cannot brief an agent.
+          actionsAt: (step, actions) =>
+            step === 'claim'
+              ? [claiming]
+              : step === 'implement'
+                ? [createWorkAction({ name: 'write the change', prompt: '' }, working)]
+                : step === 'merge'
+                  ? [
+                      createMergeAction(
+                        { name: 'land the branch', strategy: 'merge-commit' },
+                        { land: async () => ({ merged: MERGED }) },
+                      ),
+                    ]
+                  : actions.map((a) => canned(a.name, PASSED)),
+        }),
+      ),
+    )
 
     expect(walk(result)).toEqual([
       'admit:passed',

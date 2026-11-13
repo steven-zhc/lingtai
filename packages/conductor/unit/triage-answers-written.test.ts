@@ -1,18 +1,19 @@
-/**
- * #921: `GrantFixRound` and `Requeue` write the wait's triage answers into the
- * ticket's body before they resolve it. `createMemoryEventStore()` and
- * `memoryTickets()` — no filesystem, no network (0060 §1).
- */
 import { reduceTicket, ticketStream, waitsOf, type Envelope, type WaitId } from '@lingtai/domain'
 import { aClaim, anAttempt, anAttemptRef, aTriaged, aTriageStart, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+/**
+ * #921: `GrantFixRound` and `Requeue` write the wait's triage answers into the
+ * ticket's body before they resolve it. `createMemoryEventStore()` and
+ * `memoryTickets()` — no filesystem, no network (0060 §1).
+ */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { requeueHolding } from '../src/approve.ts'
-import { editBodyAndRequeueHolding } from '../src/edit-body.ts'
-import { resolveWaitHolding } from '../src/resolve-wait.ts'
+import { requeueHoldingEffect } from '../src/approve.ts'
+import { editBodyAndRequeueHoldingEffect } from '../src/edit-body.ts'
+import { resolveWaitHoldingEffect } from '../src/resolve-wait.ts'
 import type { IssueChannel } from '../src/tell.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
 
@@ -81,18 +82,20 @@ async function blocked(cause: object | null) {
     }),
   ])
   const grant = (extra: { github?: IssueChannel; picks?: Record<number, string> } = {}, s: EventStore = store) =>
-    resolveWaitHolding(
-      {
+    Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId,
+          issue: ISSUE,
+          waitId,
+          resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+          by: 'human:steven',
+          client: { refSha: async () => SHA },
+          store: s,
+          ...extra,
+        },
         ticketId,
-        issue: ISSUE,
-        waitId,
-        resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
-        by: 'human:steven',
-        client: { refSha: async () => SHA },
-        store: s,
-        ...extra,
-      },
-      ticketId,
+      ),
     )
   return { store, tickets, ticketId, waitId, grant }
 }
@@ -174,29 +177,33 @@ describe('GrantFixRound writes the triage answers first (#921)', () => {
 
   it('does not write for Approve or Close', async () => {
     const { store, tickets, ticketId, waitId } = await blocked(undecided)
-    await resolveWaitHolding(
-      {
+    await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId,
+          waitId,
+          resolution: { _tag: 'Approve', onSha: SHA },
+          by: 'human:steven',
+          github: tickets,
+          client: { refSha: async () => SHA },
+          store,
+        },
         ticketId,
-        waitId,
-        resolution: { _tag: 'Approve', onSha: SHA },
-        by: 'human:steven',
-        github: tickets,
-        client: { refSha: async () => SHA },
-        store,
-      },
-      ticketId,
+      ),
     )
     expect((await tickets.getIssue(ISSUE)).body).toBe('the ticket')
-    await resolveWaitHolding(
-      {
+    await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId,
+          waitId,
+          resolution: { _tag: 'Close' },
+          by: 'human:steven',
+          github: tickets,
+          store,
+        },
         ticketId,
-        waitId,
-        resolution: { _tag: 'Close' },
-        by: 'human:steven',
-        github: tickets,
-        store,
-      },
-      ticketId,
+      ),
     )
     expect((await tickets.getIssue(ISSUE)).body).toBe('the ticket')
   })
@@ -205,11 +212,15 @@ describe('GrantFixRound writes the triage answers first (#921)', () => {
 describe('Requeue writes the triage answers first (#921)', () => {
   it('through requeue(): section, then WaitResolved; no client is refused', async () => {
     const { store, tickets, ticketId } = await blocked(undecided)
-    expect(await requeueHolding({ by: 'human:steven', note: '' }, store, ticketId)).toMatchObject({
+    expect(
+      await Effect.runPromise(requeueHoldingEffect({ by: 'human:steven', note: '' }, store, ticketId)),
+    ).toMatchObject({
       ok: false,
       reason: 'no-github',
     })
-    expect(await requeueHolding({ by: 'human:steven', note: '', github: tickets }, store, ticketId)).toMatchObject({
+    expect(
+      await Effect.runPromise(requeueHoldingEffect({ by: 'human:steven', note: '', github: tickets }, store, ticketId)),
+    ).toMatchObject({
       ok: true,
     })
     expect((await tickets.getIssue(ISSUE)).body).toContain('which helper? — use ora')
@@ -220,17 +231,21 @@ describe('Requeue writes the triage answers first (#921)', () => {
 
   it('a requeue with no triage needs no client', async () => {
     const { store, ticketId } = await blocked(null)
-    expect(await requeueHolding({ by: 'human:steven', note: '' }, store, ticketId)).toMatchObject({ ok: true })
+    expect(
+      await Effect.runPromise(requeueHoldingEffect({ by: 'human:steven', note: '' }, store, ticketId)),
+    ).toMatchObject({ ok: true })
   })
 })
 
 describe('EditBodyAndRequeue keeps its own text (#921)', () => {
   it('is not overwritten by the composed answers', async () => {
     const { store, tickets, ticketId, waitId } = await blocked(undecided)
-    const result = await editBodyAndRequeueHolding(
-      { project: PROJECT, issue: ISSUE, waitId, text: 'my own words', by: 'human:steven', github: tickets },
-      store,
-      ticketId,
+    const result = await Effect.runPromise(
+      editBodyAndRequeueHoldingEffect(
+        { project: PROJECT, issue: ISSUE, waitId, text: 'my own words', by: 'human:steven', github: tickets },
+        store,
+        ticketId,
+      ),
     )
     expect(result.ok).toBe(true)
     const body = (await tickets.getIssue(ISSUE)).body
@@ -243,7 +258,9 @@ describe('Requeue writes the person’s picks (#922)', () => {
   it('writes a non-recommended pick, and refuses a stale one writing nothing', async () => {
     const one = await blocked(undecided)
     const requeue = (picks: Record<number, string>, ctx: typeof one) =>
-      requeueHolding({ by: 'human:steven', note: '', github: ctx.tickets, picks }, ctx.store, ctx.ticketId)
+      Effect.runPromise(
+        requeueHoldingEffect({ by: 'human:steven', note: '', github: ctx.tickets, picks }, ctx.store, ctx.ticketId),
+      )
     expect(await requeue({ 0: 'b' }, one)).toMatchObject({ ok: true })
     expect((await one.tickets.getIssue(ISSUE)).body).toContain('which helper? — use nothing')
 
@@ -273,26 +290,30 @@ describe('WaitResolved carries what was written (#924)', () => {
 
   it('a Close records no answers at all', async () => {
     const { store, tickets, ticketId, waitId } = await blocked(undecided)
-    await resolveWaitHolding(
-      {
+    await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId,
+          waitId,
+          resolution: { _tag: 'Close' },
+          by: 'human:steven',
+          github: tickets,
+          store,
+        },
         ticketId,
-        waitId,
-        resolution: { _tag: 'Close' },
-        by: 'human:steven',
-        github: tickets,
-        store,
-      },
-      ticketId,
+      ),
     )
     expect(await resolvedData(store, ticketId)).not.toHaveProperty('answers')
   })
 
   it('EditBodyAndRequeue records the person’s text and no picks', async () => {
     const { store, tickets, ticketId, waitId } = await blocked(undecided)
-    await editBodyAndRequeueHolding(
-      { project: PROJECT, issue: ISSUE, waitId, text: 'my own words', by: 'human:steven', github: tickets },
-      store,
-      ticketId,
+    await Effect.runPromise(
+      editBodyAndRequeueHoldingEffect(
+        { project: PROJECT, issue: ISSUE, waitId, text: 'my own words', by: 'human:steven', github: tickets },
+        store,
+        ticketId,
+      ),
     )
     expect((await resolvedData(store, ticketId)).answers).toEqual({ picks: [], section: 'my own words' })
   })

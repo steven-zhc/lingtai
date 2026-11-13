@@ -22,12 +22,12 @@
  * registration, or the exit code to stop with. A local project, and a
  * GitHub one picked on the board, reach none of this yet.
  */
-import { checkGhAccess, checkInstallation, type GhAccess } from '@lingtai/conductor/onboard'
+import { checkGhAccessEffect, checkInstallationEffect, type GhAccess } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, type Choice, refusalLines } from '@lingtai/conductor/pick-repository'
-import { liveHistory } from '@lingtai/conductor/ticket-history'
+import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp } from '@lingtai/env'
 import { createGitHubClient, GitHubFailed, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
-import { diskFiles, readRecipeKey, recipePath, type RecipeChange, type RecipeFiles } from '@lingtai/recipe'
+import { diskFiles, readRecipeKeyEffect, recipePath, type RecipeChange, type RecipeFiles } from '@lingtai/recipe'
 import { type Answers, EMPTY_SETUP_READER, type Picker, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
 import { liveTrialBuild } from '@lingtai/setup'
@@ -126,13 +126,13 @@ const liveGithubReader = (
 }
 
 export interface AskBeforeGithubAddDeps {
-  check: typeof checkInstallation
+  check: typeof checkInstallationEffect
   /** The machine's elected auth — `null` where nothing is configured. Throws where `github.auth` is refused. */
   auth: () => 'app' | 'gh' | null
   /** Whether there is a terminal to ask at. */
   interactive: () => boolean
   /** On a `gh` machine, `check`'s counterpart: scopes, then `GET /repos` and `permissions.push`. */
-  ghAccess: (slug: string, log: (line: string) => void) => Promise<GhAccess | null>
+  ghAccess: (slug: string, log: (line: string) => void) => Effect.Effect<GhAccess | null, unknown>
   /**
    * `choose()`'s own picker — asked only once `deps.check` has already
    * refused, to turn that refusal into the sentence and deep link
@@ -153,24 +153,24 @@ export interface AskBeforeGithubAddDeps {
   /** `askRecipe`'s `runtimes` — already probed, never by this function itself. */
   runtimes: () => Effect.Effect<readonly RuntimeFound[], unknown>
   /** `askRecipe`'s `history` — `ticket-<project>-*` streams already in the log for this project. */
-  history: (project: string) => Promise<readonly string[]>
+  history: (project: string) => Effect.Effect<readonly string[], unknown>
 }
 
 const liveDeps: AskBeforeGithubAddDeps = {
-  check: checkInstallation,
+  check: checkInstallationEffect,
   auth: () => githubAuthKind(),
   interactive: () => {
     const how = interactivity(false)
     return how.stdinIsTTY && how.stdoutIsTTY
   },
-  ghAccess: (slug, log) => checkGhAccess(slug, log),
+  ghAccess: (slug, log) => checkGhAccessEffect(slug, log),
   picker: livePickerEffect,
   files: diskFiles,
   reader: liveGithubReader,
   ask: liveAsk,
   spin: liveSpin,
   runtimes: askRuntimesEffect,
-  history: liveHistory,
+  history: liveHistoryEffect,
 }
 
 /** What the questions came to when the add goes on: the trial and the hints, for the card `add` ends on. */
@@ -256,7 +256,7 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   let ghDefaultBranch: string | null = null
   if (kind === 'gh') {
     const checked: string[] = []
-    const read = yield* attempt(lift(() => deps.ghAccess(slug, (line) => checked.push(line))))
+    const read = yield* attempt(deps.ghAccess(slug, (line) => checked.push(line)))
     let access: GhAccess | null = null
     if ('threw' in read) checked.push(`could not check ${slug} — ${read.threw.message}`)
     else access = read.ok
@@ -270,7 +270,7 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
 
   if (kind !== 'gh' && hasGitHubApp()) {
     const checked: string[] = []
-    const looked = yield* attempt(lift(() => deps.check(slug, (line) => checked.push(line))))
+    const looked = yield* attempt(deps.check(slug, (line) => checked.push(line)))
     if ('threw' in looked) {
       // `githubApp()`, inside `deps.check`'s lookup, rethrows anything that
       // is not `NotInstalledError` — a malformed key, a revoked key (401), an
@@ -364,8 +364,8 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     // `widenStepsIfNeeded`). Named here, before `askRecipe`'s first question,
     // because showing that to a person is this caller's line to print, not
     // `agents.ts`'s.
-    const extendsPreset = yield* lift(() => readRecipeKey(repo, ['extends']))
-    const stepsWritten = yield* lift(() => readRecipeKey(repo, ['steps']))
+    const extendsPreset = yield* readRecipeKeyEffect(repo, ['extends'])
+    const stepsWritten = yield* readRecipeKeyEffect(repo, ['steps'])
     if (typeof extendsPreset === 'string' && stepsWritten === null) {
       console.log(
         `${path} extends ${extendsPreset} and writes no steps: of its own — the first answer here pins that ` +
@@ -384,7 +384,7 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
       setupReader: reader,
       defaultBranch: () => defaultBranch,
       runtimes: () => Effect.succeed(runtimes),
-      history: (project) => lift(() => deps.history(project)),
+      history: (project) => deps.history(project),
       origin: () => Effect.succeed(null),
     },
   )
@@ -422,7 +422,7 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
               files: draft,
             }),
         }),
-    history: deps.history,
+    history: (project) => run(deps.history(project)),
     seeds,
     again: `lingtai add ${owner}/${repo}`,
     keptBeforeWrite: 'Nothing was written',

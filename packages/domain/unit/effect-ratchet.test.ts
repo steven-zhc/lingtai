@@ -1,7 +1,7 @@
 /**
  * 0101 §6: every backend function that does IO is an Effect, and `Effect.run*`
- * runs only at a host's edge. #790 moves the packages below over one at a
- * time; this holds each package's `async` functions and `Effect.run*`
+ * runs only at a host's edge. #790 is done: no face waits on it, and `NOT_COUNTED` and `HOST_EDGES` are the
+ * only exceptions below. This holds each package's `async` functions and `Effect.run*`
  * references to only go down (#792).
  *
  * Counted with the TypeScript parser, one `createSourceFile` per file and no
@@ -9,7 +9,7 @@
  *
  * A promise face is not counted. A face is an exported function whose whole body is
  * `return Effect.runPromise(<call>)`, or the generic `return Effect.runPromise(<parameter>, { signal })`,
- * kept for callers not yet moved (#790), and listed in `effect-ratchet.faces.json` with the issue that
+ * kept for a host's promise callers (0101 §7) or an open issue, and listed in `effect-ratchet.faces.json` with the issue that
  * deletes it. The shape is checked, not trusted: an entry that does anything else, or whose function is
  * gone, is a red. Only `runPromise`: a face that inspects an `Exit` or runs synchronously is a caller
  * doing work, and is counted.
@@ -467,8 +467,10 @@ export function checkFaces(
       for (const h of hosts) {
         if (read(h) === undefined) refusals.push(`${who}: \`why\` names ${h}, which does not exist.`)
       }
+    } else if (entry.until === '#790') {
+      refusals.push(`${who}: #790 is done; a face is a host's ("0101 §7") or waits on an open issue of its own.`)
     } else if (!/^#\d+$/.test(entry.until)) {
-      refusals.push(`${who}: \`until\` must be an issue, as "#790", or "0101 §7" for a face a host reads.`)
+      refusals.push(`${who}: \`until\` must be an issue, as "#1200", or "0101 §7" for a face a host reads.`)
     }
     if (entry.why.trim() === '') refusals.push(`${who}: \`why\` is empty.`)
     const key = `${entry.file}\0${entry.fn}`
@@ -804,9 +806,12 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
       'packages/repo/src/a.ts': `import { Effect } from 'effect'\nexport function f() { return Effect.runPromise(g()) }\n`,
     }
     const read = (f: string): string | undefined => src[f]
-    const ok = { file: 'packages/repo/src/a.ts', fn: 'f', until: '#790', why: 'callers' }
+    const ok = { file: 'packages/repo/src/a.ts', fn: 'f', until: '#1200', why: 'callers' }
     const run = (entries: unknown): string => checkFaces(entries, read).refusals.join('\n')
 
+    it('refuses, by name, an entry that still waits on #790', () => {
+      expect(run([{ ...ok, until: '#790' }])).toContain('packages/repo/src/a.ts f: #790 is done')
+    })
     it('accepts a good entry and exempts the position of its run', () => {
       const r = checkFaces([ok], read)
       expect(r.refusals).toEqual([])

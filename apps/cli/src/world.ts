@@ -329,10 +329,10 @@ const liveApp = (): Effect.Effect<AppFacts | null, unknown> =>
     const app = yield* lift(() =>
       reader.request<{ slug: string; owner: { login: string; type: string } }>('GET', '/app', 'app'),
     )
-    const installations = yield* lift(() => github.appInstallations(reader))
+    const installations = yield* github.appInstallationsEffect(reader)
     let repositories = 0
     for (const installation of installations) {
-      repositories += (yield* lift(() => github.installationRepositories(reader, installation.id))).length
+      repositories += (yield* github.installationRepositoriesEffect(reader, installation.id)).length
     }
     return {
       slug: app.slug,

@@ -3,12 +3,7 @@
  * nothing here withdraws it (0126: the next start ends it), and that a request
  * left standing by an earlier upgrade is waited on and left unsaid of nothing.
  */
-import {
-  readControl,
-  readControlEffect,
-  requestShutdownUnlessStanding,
-  requestShutdownUnlessStandingEffect,
-} from '@lingtai/daemon/control'
+import { readControl, readControlEffect, requestShutdownUnlessStandingEffect } from '@lingtai/daemon/control'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -60,7 +55,7 @@ describe("lingtai upgrade's drain", () => {
 
   it('leaves a drain somebody else asked for where it is when nothing conducts', async () => {
     const store = createMemoryEventStore()
-    await requestShutdownUnlessStanding('human:alice', 'maintenance', null, store)
+    await Effect.runPromise(requestShutdownUnlessStandingEffect('human:alice', 'maintenance', null, store))
 
     const drained = await drainForUpgrade(how(store))
     expect(drained.ok).toBe(true)
@@ -109,7 +104,7 @@ describe("lingtai upgrade's drain", () => {
 
   it("refuses on somebody else's drain while something conducts, and asks nothing", async () => {
     const store = createMemoryEventStore()
-    await requestShutdownUnlessStanding('human:alice', 'maintenance', null, store)
+    await Effect.runPromise(requestShutdownUnlessStandingEffect('human:alice', 'maintenance', null, store))
     const lines: string[] = []
     const drained = await drainForUpgrade(
       how(store, { holder: Effect.succeed('steven@host pid 777'), log: (l) => lines.push(l) }),

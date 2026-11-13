@@ -732,11 +732,6 @@ export type TellAboutOptions = {
   landed?: Landed
 } & SnapshotReadOptions
 
-/** `tellGitHubAboutEffect` as a promise, for `lingtai end` (apps/cli) until its row of #790. */
-export function tellGitHubAbout(options: TellAboutOptions): Promise<void> {
-  return Effect.runPromise(tellGitHubAboutEffect(options))
-}
-
 export function tellGitHubAboutEffect(options: TellAboutOptions): Effect.Effect<void> {
   // Read here, synchronously, when the Effect is built and never inside the
   // fiber (`inSpanEffect`'s rule): the `end` step's span is a child of this.

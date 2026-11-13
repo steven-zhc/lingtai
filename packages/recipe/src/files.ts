@@ -72,11 +72,13 @@ export const replaceRecipeFile = (path: string, text: string): Effect.Effect<voi
     yield* Effect.tryPromise({ try: () => rename(partial, path), catch: failed('replace') })
   }).pipe(Effect.uninterruptible)
 
-export function readFileFace(path: string) {
+/** The file seam's disk read, as the promise `diskFiles` holds it. */
+export function readFileFace(path: string): Promise<string | null> {
   return Effect.runPromise(readRecipeFile(path))
 }
 
-export function replaceFileFace(path: string, text: string) {
+/** The file seam's disk write, as the promise `diskFiles` holds it. */
+export function replaceFileFace(path: string, text: string): Promise<void> {
   return Effect.runPromise(replaceRecipeFile(path, text))
 }
 

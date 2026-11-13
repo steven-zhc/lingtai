@@ -23,7 +23,7 @@ import type { GitHubClient } from '@lingtai/github'
  */
 import { describe, expect, it } from 'vitest'
 
-import { clientsForProjects } from '../src/converge.ts'
+import { clientsForProjects } from '../test/promise-faces.ts'
 
 const OK: ProjectState = {
   project: 'ok',

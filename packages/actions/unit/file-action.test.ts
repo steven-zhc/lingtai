@@ -16,7 +16,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   NO_DESIGN,
-  runActionPipeline,
+  portOptions,
+  runActionPipelineEffect,
   type Action,
   type ActionContext,
   type ActionResult,
@@ -25,6 +26,9 @@ import {
 import { createDraftAction } from '../src/agent-action.ts'
 import { createFileAction, type KeptAnswer } from '../src/file-action.ts'
 import { actionsFromRecipe } from '../src/from-recipe.ts'
+
+const runActionPipeline = (options: Parameters<typeof portOptions>[0]) =>
+  Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 
 const DOCUMENT = '## The shape\n\nSix bodies, one per step, and the seam is `StepWork`.'
 

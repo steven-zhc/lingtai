@@ -9,7 +9,7 @@
  * `offerCreation`. Fails with the sentence to show; never an empty list.
  */
 import { githubApp } from '@lingtai/env'
-import { createAppReader, createGhReader, ghStatus } from '@lingtai/github'
+import { createAppReader, createGhReader, ghStatusEffect } from '@lingtai/github'
 import { listRepositories, type RepositoryList } from '@lingtai/setup'
 import { Effect } from 'effect'
 
@@ -27,7 +27,7 @@ export function repositoryList(auth: 'app' | 'gh', ports: RepositoryListPorts): 
       return yield* listRepositories({
         auth,
         projects,
-        gh: { status: () => ghStatus(), reader: createGhReader() },
+        gh: { status: () => ghStatusEffect(), reader: createGhReader() },
       })
     }
     const credentials = yield* Effect.try({ try: () => githubApp(), catch: (err) => err as Error })

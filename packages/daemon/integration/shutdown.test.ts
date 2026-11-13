@@ -21,7 +21,7 @@ import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { readControl, recordStartEffect, requestShutdownUnlessStanding } from '../src/control.ts'
+import { readControl, recordStartEffect, requestShutdownUnlessStandingEffect } from '../src/control.ts'
 import { killWorkerEffect } from '../src/reconcile.ts'
 
 /** Just enough of a store to reduce. `readControl` reads one stream and nothing else. */
@@ -234,7 +234,9 @@ describe('asking for and ending a drain', () => {
         data: { by: 'human:ops', reason: 'moving the database', timeoutMs: null },
       })
 
-    const asked = await requestShutdownUnlessStanding('human:steven', 'restarting', null, store)
+    const asked = await Effect.runPromise(
+      requestShutdownUnlessStandingEffect('human:steven', 'restarting', null, store),
+    )
 
     expect(asked).toMatchObject({ asked: false, standing: { by: 'human:ops', version: 1 } })
     expect(appended).toEqual([])
@@ -247,7 +249,9 @@ describe('asking for and ending a drain', () => {
       { type: 'ConductorPaused', data: { by: 'human:ops', reason: 'x', until: null } },
     ])
 
-    expect(await requestShutdownUnlessStanding('human:steven', 'restarting', 300_000, store)).toEqual({
+    expect(
+      await Effect.runPromise(requestShutdownUnlessStandingEffect('human:steven', 'restarting', 300_000, store)),
+    ).toEqual({
       asked: true,
       version: 2,
     })

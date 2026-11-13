@@ -55,18 +55,6 @@ export function collision(a: readonly string[], b: readonly string[]): { file: s
   return null
 }
 
-/**
- * What a ticket's `Fix` row names, or null when the ticket could not be read.
- * Null is not empty: a ticket whose body is unknown is not known to be safe to
- * run beside another.
- */
-export function readFixFiles(
-  source: { getIssue(number: number): Promise<{ body: string }> },
-  issue: number,
-): Promise<string[] | null> {
-  return Effect.runPromise(readFixFilesEffect(source, issue))
-}
-
 /** `readFixFiles` as an Effect: it never fails, and a read that threw is null. */
 export function readFixFilesEffect(
   source: { getIssue(number: number): Promise<{ body: string }> },

@@ -105,13 +105,3 @@ export function makeFailureRecorder(options: FailureRecorderOptions): FailureRec
     },
   }
 }
-
-export function recordFailureFace(
-  recorder: FailureRecorder,
-  name: string,
-  event: Envelope,
-  reason: string,
-  owner: string | undefined,
-) {
-  return Effect.runPromise(recorder.record(name, event, reason, owner))
-}

@@ -32,9 +32,13 @@ import {
   type ProcessActionSpec,
   createProcessAction,
   actionsFromRecipe,
-  runActionPipeline,
+  portOptions,
+  runActionPipelineEffect,
   tail,
 } from '../src/index.ts'
+
+const runActionPipeline = (options: Parameters<typeof portOptions>[0]) =>
+  Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 
 const context = {
   runId: 'pass-01JX',

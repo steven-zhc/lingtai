@@ -874,7 +874,7 @@ export function fromPromiseAction(action: Action): ActionPort {
 /** `PipelineOptions` over ports. `emit` and `recordPrompt` stay promises: they are the pass's own. */
 export type PortPipelineOptions = Omit<PipelineOptions, 'actions'> & { actions: readonly ActionPort[] }
 
-const portOptions = (options: PipelineOptions): PortPipelineOptions => ({
+export const portOptions = (options: PipelineOptions): PortPipelineOptions => ({
   ...options,
   actions: options.actions.map(fromPromiseAction),
 })
@@ -1230,9 +1230,4 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
 function elapsed(ms: number): string {
   const s = Math.round(ms / 1000)
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
-}
-
-/** The promise shape of `runActionPipelineEffect`: the same pipeline, awaited. */
-export function runActionPipeline(options: PipelineOptions): Promise<PipelineResult> {
-  return Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 }

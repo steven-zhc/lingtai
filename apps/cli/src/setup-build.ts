@@ -14,7 +14,7 @@ import {
   diskFiles,
   type RecipeChange,
   type RecipeFiles,
-  readRecipeKey,
+  readRecipeKeyEffect,
   recipePath,
   resolveSource,
 } from '@lingtai/recipe'
@@ -87,7 +87,7 @@ function currentRunActions(
   options: { home?: string; files?: RecipeFiles },
 ): Effect.Effect<NamedRun[], unknown> {
   return Effect.gen(function* () {
-    const value = yield* lift(() => readRecipeKey(project, path, options))
+    const value = yield* readRecipeKeyEffect(project, path, options)
     if (!Array.isArray(value)) return []
     return value.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
   })
@@ -426,12 +426,10 @@ function askBuild(
   previous?: NamedRun[],
 ): Effect.Effect<{ build: NamedRun[] } | { refused: string }, unknown> {
   return Effect.gen(function* () {
-    const originalBuild = (yield* lift(() =>
-      readRecipeKey(input.project, ['steps', 'build'], {
-        home: input.home,
-        files: input.files,
-      }),
-    )) as unknown[] | null
+    const originalBuild = (yield* readRecipeKeyEffect(input.project, ['steps', 'build'], {
+      home: input.home,
+      files: input.files,
+    })) as unknown[] | null
     const current =
       previous ??
       (yield* currentRunActions(input.project, ['steps', 'build'], { home: input.home, files: input.files }))
@@ -546,7 +544,7 @@ export function askInstallAndBuildEffect(
     const effectiveInstall = yield* resolvedRunActions(input.project, 'prepared', fileOptions)
     const effectiveInstallRun = effectiveInstall?.[0]?.run ?? null
     if (effectiveInstall === null || install.run !== effectiveInstallRun) {
-      const originalPrepared = (yield* lift(() => readRecipeKey(input.project, ['steps', 'prepared'], fileOptions))) as
+      const originalPrepared = (yield* readRecipeKeyEffect(input.project, ['steps', 'prepared'], fileOptions)) as
         | unknown[]
         | null
       const wanted = install.run === null ? [] : [{ name: 'install', run: install.run }]
@@ -559,7 +557,7 @@ export function askInstallAndBuildEffect(
       effectiveBuild.length === build.build.length &&
       effectiveBuild.every((a, i) => a.run === build.build[i]!.run)
     if (!sameBuild) {
-      const originalBuild = (yield* lift(() => readRecipeKey(input.project, ['steps', 'build'], fileOptions))) as
+      const originalBuild = (yield* readRecipeKeyEffect(input.project, ['steps', 'build'], fileOptions)) as
         | unknown[]
         | null
       changes.push({ path: ['steps', 'build'], value: mergeRunActions(originalBuild ?? [], build.build) })

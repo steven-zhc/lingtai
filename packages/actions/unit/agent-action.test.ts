@@ -24,7 +24,8 @@ import {
   type ActionContext,
   type ActionEvent,
   type ActionFinding,
-  runActionPipeline,
+  portOptions,
+  runActionPipelineEffect,
 } from '../src/action.ts'
 import {
   type AgentActionDeps,
@@ -40,6 +41,9 @@ import {
   verdictFor,
 } from '../src/agent-action.ts'
 import { REVIEW_THAT_DID_NOT_PARSE } from '../test/fixtures/review-269-attempt-3.ts'
+
+const runActionPipeline = (options: Parameters<typeof portOptions>[0]) =>
+  Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 
 const ISSUE = { ref: '58', title: 'alias-aware skill merging', body: 'merge skills by alias' }
 

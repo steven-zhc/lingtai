@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   fromPromiseAction,
   promiseAction,
-  runActionPipeline,
+  portOptions,
   runActionPipelineEffect,
   type Action,
   type ActionContext,
@@ -22,6 +22,9 @@ import {
 } from '../src/action.ts'
 import { newSink, withSink } from '../src/spans.ts'
 import { createWorktreeAction, makeWorktreeAction, type WorktreeActionDeps } from '../src/worktree-action.ts'
+
+const runActionPipeline = (options: Parameters<typeof portOptions>[0]) =>
+  Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 
 const ctx: ActionContext = { runId: 'pass-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
 const PASSED: ActionResult = { verdict: 'passed', evidence: 'ok', findings: [] }

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 /**
  * An action's evidence is plain text (#156, 0043).
  *
@@ -15,13 +18,14 @@
  * here names `node:child_process`; the spawn is three modules down the barrel,
  * which is how the file was read as unit at first (#225).
  */
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { plain } from '../src/command.ts'
-import { createProcessAction, runActionPipeline, tail } from '../src/index.ts'
+import { createProcessAction, portOptions, runActionPipelineEffect, tail } from '../src/index.ts'
+
+const runActionPipeline = (options: Parameters<typeof portOptions>[0]) =>
+  Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 
 const fixture = join(import.meta.dirname, '..', 'test', 'fixtures', 'vitest-caused-by.ansi.txt')
 const coloured = readFileSync(fixture, 'utf8')

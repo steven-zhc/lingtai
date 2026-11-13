@@ -4,9 +4,10 @@
  */
 import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { controlWatermark, readControl, resumeConductor } from '../src/control.ts'
+import { controlWatermarkEffect, readControl, resumeConductor } from '../src/control.ts'
 
 const pause = (data: Record<string, unknown>) => ({
   type: 'ConductorPaused',
@@ -21,7 +22,7 @@ describe('readControl and the pauses on the log', () => {
       pause({ reason: 'no tier', cause: 'setup', holdsAcrossStarts: true }),
     ] as never)
     // What a daemon keeps as its watermark: the pause is below it, and still read.
-    expect(await controlWatermark(store)).toBe(1)
+    expect(await Effect.runPromise(controlWatermarkEffect(store))).toBe(1)
 
     const state = await readControl(store)
     expect(state.paused).toBe(true)

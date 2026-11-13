@@ -11,7 +11,7 @@ import {
   createGitHubClient,
   gapRemedyLines,
   ghScopeGap,
-  ghStatus,
+  ghStatusEffect,
   installationForRepo,
   parseSlug,
   permissionGaps,
@@ -22,7 +22,7 @@ import {
   baseOf,
   baseWrittenAt,
   recipePath,
-  resolveLocalRecipe,
+  resolveLocalRecipeEffect,
   resolveRecipe,
   type ReadAtRef,
   type ResolvedRecipe,
@@ -131,7 +131,7 @@ export interface RecheckDeps {
   /** `installationForRepo` against the App this machine has. */
   installation: (owner: string, repo: string) => Promise<Installation>
   /** `add`. */
-  register: (options: AddOptions, log: (line: string) => void) => Promise<Added>
+  register: (options: AddOptions, log: (line: string) => void) => ReturnType<typeof addEffect>
 }
 
 /**
@@ -163,7 +163,7 @@ export function recheck(
 
 const liveRecheckDeps: RecheckDeps = {
   installation: (owner, repo) => installationForRepo(githubApp(), owner, repo),
-  register: (options, log) => add(options, log),
+  register: (options, log) => addEffect(options, log),
 }
 
 export const recheckEffect = Effect.fn('onboard.recheck')(function* (
@@ -185,9 +185,7 @@ export const recheckEffect = Effect.fn('onboard.recheck')(function* (
   }
 
   const said: string[] = []
-  const outcome = yield* lift(() =>
-    deps.register({ ...resumeOnboarding(recorded), installation }, (line) => said.push(line)),
-  )
+  const outcome = yield* deps.register({ ...resumeOnboarding(recorded), installation }, (line) => said.push(line))
   if (outcome.ok) return { ok: true, detail: `${recorded.project} is live` } satisfies Rechecked as Rechecked
   // **Everything it said, not the last line.** A permission gap is one line per
   // scope with what each is for; a rule here about which line is the refusal
@@ -269,36 +267,6 @@ export const governingEffect = Effect.fn('onboard.governing')(function* (
   return { ok: true, resolved: atDeclared, adoptedFrom: from.ref } as Governing
 })
 
-/**
- * Steps 1 and 2 of onboarding, and the whole of what a check needs before a
- * recipe can be asked about or written: is the App installed on this
- * repository, and does it grant what Lingtai needs. Lifted out of `add` so
- * `askBeforeGithubAdd` (`apps/cli/src/add-github.ts`) can run it before it
- * asks a single question or writes a single answer (#402) — not just before
- * `add` reads or registers a recipe, which is as far as `add` alone ever
- * reached.
- *
- * `known` skips the lookup, exactly as `options.installation` does in `add`
- * below, but never the permission check: a `Recheck` or an early check that
- * already asked GitHub for the installation must not be allowed to also skip
- * asking whether it grants what Lingtai needs.
- *
- * Returns the installation on success, or null having already logged the same
- * lines `add` always has — `NotInstalledError`'s message, or the gap list
- * ending "Fix them in the App's settings, then re-run." Any other error is
- * rethrown rather than read as "not installed": a 502 is not a missing
- * installation, and swallowing it here would hide an outage behind onboarding
- * advice that does not apply.
- */
-export function checkInstallation(
-  slug: string,
-  log: (line: string) => void,
-  known?: Installation,
-  lookup: (owner: string, repo: string) => Promise<Installation> = liveLookup,
-): Promise<Installation | null> {
-  return Effect.runPromise(checkInstallationEffect(slug, log, known, lookup))
-}
-
 const liveLookup = (owner: string, repo: string): Promise<Installation> => installationForRepo(githubApp(), owner, repo)
 
 export const checkInstallationEffect = Effect.fn('onboard.checkInstallation')(function* (
@@ -344,7 +312,7 @@ export interface GhAccess {
 }
 
 export interface GhAccessDeps {
-  status: typeof ghStatus
+  status: () => ReturnType<typeof ghStatusEffect>
   /** `GET /repos/{owner}/{repo}` with the saved login's token. */
   repository: (
     owner: string,
@@ -353,7 +321,7 @@ export interface GhAccessDeps {
 }
 
 const liveGhAccessDeps = (gh?: GhRun): GhAccessDeps => ({
-  status: () => ghStatus(gh),
+  status: () => ghStatusEffect(gh),
   // A port's live value, not a function being converted: `.then` here is the promise port, lifted where it is called.
   repository: (owner, repo) =>
     createGitHubClient({ auth: { kind: 'gh' }, owner, repo, ...(gh === undefined ? {} : { gh }) }).then((client) =>
@@ -361,34 +329,13 @@ const liveGhAccessDeps = (gh?: GhRun): GhAccessDeps => ({
     ),
 })
 
-/**
- * `checkInstallation`'s counterpart on a `gh` machine (ADR 0114 §8): the saved
- * login has `repo` and `workflow`, and can push to this repository. Logs its
- * lines and returns null having refused, as `checkInstallation` does; logs
- * nothing on success.
- *
- * Scopes are checked before the repository is read, because without `repo` a
- * private repository answers 404 and the refusal would blame visibility for
- * what is a missing scope. Each failure is named from the response's own
- * `message` and never guessed: a 404, an organisation's OAuth-app restriction,
- * SAML enforcement and any other 403 are four different sentences, and a read
- * that failed on the network is never reported as no access.
- */
-export function checkGhAccess(
-  slug: string,
-  log: (line: string) => void,
-  deps: GhAccessDeps = liveGhAccessDeps(),
-): Promise<GhAccess | null> {
-  return Effect.runPromise(checkGhAccessEffect(slug, log, deps))
-}
-
 export const checkGhAccessEffect = Effect.fn('onboard.checkGhAccess')(function* (
   slug: string,
   log: (line: string) => void,
   deps: GhAccessDeps = liveGhAccessDeps(),
 ) {
   const { owner, repo } = yield* attempt(() => parseSlug(slug))
-  const status = yield* lift(() => deps.status())
+  const status = yield* deps.status()
   if (!status.ok) {
     log(`${status.detail} — run \`gh auth login\``)
     return null
@@ -524,14 +471,19 @@ export const warnIfProtectedEffect = Effect.fn('onboard.warnIfProtected')(functi
 
 export interface AddDeps {
   auth: () => 'app' | 'gh' | null
-  checkGh: (slug: string, log: (line: string) => void) => Promise<GhAccess | null>
-  check: typeof checkInstallation
+  checkGh: (slug: string, log: (line: string) => void) => ReturnType<typeof checkGhAccessEffect>
+  check: (
+    slug: string,
+    log: (line: string) => void,
+    known?: Installation,
+    lookup?: (owner: string, repo: string) => Promise<Installation>,
+  ) => ReturnType<typeof checkInstallationEffect>
 }
 
 const liveAddDeps: AddDeps = {
   auth: () => githubAuthKind(),
-  checkGh: (slug, log) => checkGhAccess(slug, log),
-  check: (slug, log, known, lookup) => checkInstallation(slug, log, known, lookup),
+  checkGh: (slug, log) => checkGhAccessEffect(slug, log),
+  check: (slug, log, known, lookup) => checkInstallationEffect(slug, log, known, lookup),
 }
 
 /** How this machine reached GitHub for an add: the saved `gh` login (unknown when it said none), or the App. */
@@ -544,10 +496,6 @@ export type GithubReach = { kind: 'gh'; login: string | null } | { kind: 'app'; 
  * nothing downstream tells a warning from the rest by its words (#755).
  */
 export type Added = { ok: true; updated: boolean; warnings: readonly string[]; reach: GithubReach } | { ok: false }
-
-export function add(options: AddOptions, log = console.log, deps: AddDeps = liveAddDeps): Promise<Added> {
-  return Effect.runPromise(addEffect(options, log, deps))
-}
 
 export const addEffect = Effect.fn('onboard.add')(function* (
   options: AddOptions,
@@ -563,11 +511,11 @@ export const addEffect = Effect.fn('onboard.add')(function* (
   let installation: Installation | undefined
   let reach: GithubReach
   if (onGh) {
-    const access = yield* lift(() => deps.checkGh(options.slug, log))
+    const access = yield* deps.checkGh(options.slug, log)
     if (access === null) return { ok: false } as Added
     reach = { kind: 'gh', login: access.login === '' ? null : access.login }
   } else {
-    const found = yield* lift(() => deps.check(options.slug, log, options.installation))
+    const found = yield* deps.check(options.slug, log, options.installation)
     if (found === null) return { ok: false } as Added
     installation = found
     reach = { kind: 'app', slug: found.appSlug }
@@ -586,7 +534,7 @@ export const addEffect = Effect.fn('onboard.add')(function* (
   //    command's. A `--base` a person typed and the file contradicts is refused
   //    by name rather than overruled (#75); a remembered one is a hint, and the
   //    file's `repo.base` is adopted over it (#163).
-  const local = yield* lift(() => resolveLocalRecipe(repo, { signedIn: signedInHere })).pipe(
+  const local = yield* resolveLocalRecipeEffect(repo, { signedIn: signedInHere }).pipe(
     Effect.map((recipe) => ({ recipe }) as const),
     Effect.catch((err) => Effect.succeed({ err } as const)),
   )
