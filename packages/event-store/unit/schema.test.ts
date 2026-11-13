@@ -2,9 +2,13 @@ import { readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { MIGRATIONS, NOTIFY_SQL, type Queryable, SHAPE, createSchema } from '../src/schema.ts'
+import { MIGRATIONS, NOTIFY_SQL, type Queryable, SHAPE, createSchemaEffect } from '../src/schema.ts'
+
+/** `createSchemaEffect`, run: a defect is what it rejects with. */
+const createSchema = (client: Queryable) => Effect.runPromise(createSchemaEffect(client))
 
 const here = dirname(fileURLToPath(import.meta.url))
 

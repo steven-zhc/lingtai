@@ -30,11 +30,6 @@ export const checkAppEffect = (): Effect.Effect<AppCheck> =>
     }).pipe(recovering((err) => Effect.succeed({ configured: true, ok: false, why: err.message } as AppCheck)))
   })
 
-/** The face of `checkAppEffect` for `first-project.ts` and `init.ts`, which still await it. */
-export function checkApp(): Promise<AppCheck> {
-  return Effect.runPromise(checkAppEffect())
-}
-
 /**
  * Resolves once an App is configured and answers; checks at once, then again
  * every two seconds for as long as the fiber lives — the loser of a race
@@ -53,14 +48,3 @@ export const pollForAppEffect = (): Effect.Effect<{ slug: string; owner: string 
         : Effect.die(new Error('the repeat ends only on an App that answers')),
     ),
   )
-
-/**
- * The face of `pollForAppEffect` for `InitWorld.appeared` (`init.ts`) and
- * `first-project.ts`. Once `signal` aborts this *rejects* with an interruption
- * where the loop it replaces left its promise pending; the only consumer is
- * `waitForApp`'s race, which lifts it and has by then interrupted the fiber, so
- * nothing reports it. Not a bug for CLI-21 to chase.
- */
-export function pollForApp(signal: AbortSignal): Promise<{ slug: string; owner: string }> {
-  return Effect.runPromise(pollForAppEffect(), { signal })
-}

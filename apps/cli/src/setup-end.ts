@@ -34,11 +34,6 @@ export const liveSetupDoctorEffect = (): Effect.Effect<SetupDoctor> =>
     return { report, toFix: toFixSummary(report), blocks: formatReport(report), next: nextOf(report.results) }
   })
 
-/** The face of `liveSetupDoctorEffect` for `init.ts` and `add.ts`, which hand their world a promise `doctor`. */
-export function liveSetupDoctor(): Promise<SetupDoctor> {
-  return Effect.runPromise(liveSetupDoctorEffect())
-}
-
 /** The command a failed doctor closes on: its first fix, or `lingtai doctor --verbose` when it gave none or did not finish. */
 export const DOCTOR_VERBOSE = 'lingtai doctor --verbose'
 
@@ -79,18 +74,3 @@ export const printSetupEndEffect = (
     if (blocks !== null) world.log(blocks)
     return fix === undefined ? { failed } : { failed, fix }
   })
-
-/** Wraps a promise `doctor` for `printSetupEndEffect`; a rejection keeps the value it threw. */
-const liftDoctor = (world: { log: (line: string) => void; doctor: () => Promise<SetupDoctor> }) => ({
-  log: world.log,
-  doctor: () => Effect.tryPromise({ try: () => world.doctor(), catch: (e) => e }),
-})
-
-/** The face of `printSetupEndEffect` for `init.ts` and `add.ts`, whose worlds hold a promise `doctor`. */
-export function printSetupEnd(
-  world: { log: (line: string) => void; doctor: () => Promise<SetupDoctor> },
-  facts: SetupCardFacts,
-  hints: readonly string[],
-): Promise<{ failed: boolean; fix?: string }> {
-  return Effect.runPromise(printSetupEndEffect(liftDoctor(world), facts, hints))
-}

@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 
 import { initKept } from '../src/init.ts'
 import { stoppedAtQuestion } from '../src/prompt.ts'
-import { question, type AskShape } from '../src/question.ts'
+import type { AskShape } from '../src/question.ts'
+import { question } from '../test/question.ts'
 
 describe('stoppedAtQuestion', () => {
   it('names kept, the command and the start-over sentence', () => {

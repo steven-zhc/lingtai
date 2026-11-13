@@ -45,11 +45,6 @@ export const askRuntimesEffect = Effect.fn('setup.runtimes')(function* () {
   }))
 })
 
-/** The promise face, for callers outside this package that have not moved yet (#790). */
-export function askRuntimes(): Promise<RuntimeFound[]> {
-  return Effect.runPromise(askRuntimesEffect())
-}
-
 /** The first non-empty line of what a runtime printed. */
 export function firstLine(detail: string): string {
   return (

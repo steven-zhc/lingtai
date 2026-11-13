@@ -155,11 +155,6 @@ export const pathExistsEffect = (path: string): Effect.Effect<boolean> =>
     return !(code === 'ENOENT' || code === 'ENOTDIR')
   })
 
-/** `pathExistsEffect`, for `init.ts` until CLI-22b. */
-export function pathExists(path: string): Promise<boolean> {
-  return Effect.runPromise(pathExistsEffect(path))
-}
-
 /**
  * Every IO member returns an Effect; `ask`, `log` and `spin` are clack's and stay as `QuestionWorld` has them.
  * A rejection or a throw inside a member is a failure or a defect, and the refusals below treat both alike.
@@ -376,16 +371,6 @@ function askProjectKind(
     }
     return { kind: 'github' as const }
   })
-}
-
-/** The face of `chooseFirstProjectEffect` for `init.ts` and `add.ts`, which still await it (CLI-22a, CLI-22b). */
-export function chooseFirstProject(
-  world: FirstProjectWorld,
-  flags: Record<string, string>,
-  buildFlags: readonly string[] = [],
-  deferRecipeFlags = false,
-): Promise<FirstProjectOutcome> {
-  return Effect.runPromise(chooseFirstProjectEffect(world, flags, buildFlags, deferRecipeFlags))
 }
 
 export function chooseFirstProjectEffect(
@@ -1272,11 +1257,6 @@ export const liveGitEffect = (dir: string, args: readonly string[]): Effect.Effe
       return { ok: false, stdout: failed.stdout ?? '', stderr: failed.stderr ?? failed.message }
     },
   )
-
-/** Exported for `init.ts`'s `liveInitWorld()` until CLI-22b — one real `git`, not two. */
-export function liveGit(dir: string, args: readonly string[]): Promise<GitResult> {
-  return Effect.runPromise(liveGitEffect(dir, args))
-}
 
 /** Opens a browser; false when none could be. Never rejects. */
 export function liveOpen(url: string): Promise<boolean> {

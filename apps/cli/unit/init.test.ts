@@ -7,8 +7,10 @@ import { parseDocument } from 'yaml'
 import type { GitResult } from '../src/first-project.ts'
 import {
   type AppCheck,
+  type DatabaseClient,
   type InitWorld,
   type RuntimeFound,
+  databaseCheck,
   initCommandEffect,
   machineRuntimeRefusal,
 } from '../src/init.ts'
@@ -687,5 +689,49 @@ describe('init on a machine that already has projects names the directory it was
     expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
     expectClosesOnLine(logged, 'lingtai init')
     expect(lines(logged).join('\n')).not.toContain('is not a project here')
+  })
+})
+
+describe('the database check answers { ok: false, why } for a defect too (#1114)', () => {
+  const URL_ = 'postgres://me:secret@db.example:5432/lingtai'
+  /** A client whose first query throws before it returns a promise — `createSchemaEffect` makes that a defect. */
+  const dying = (ended: { count: number }): DatabaseClient => ({
+    query: () => {
+      throw new Error('connection dropped')
+    },
+    connect: async () => {},
+    end: async () => {
+      ended.count++
+    },
+  })
+
+  it('a client that dies is { ok: false, why }, and is ended', async () => {
+    const ended = { count: 0 }
+    const check = await Effect.runPromise(databaseCheck(URL_, () => Effect.succeed(dying(ended))))
+    expect(check).toEqual({ ok: false, why: 'connection dropped' })
+    expect(ended.count).toBe(1)
+  })
+
+  it('a client that will not connect is { ok: false, why }', async () => {
+    const client: DatabaseClient = {
+      ...dying({ count: 0 }),
+      connect: async () => {
+        throw new Error('connection refused')
+      },
+    }
+    expect(await Effect.runPromise(databaseCheck(URL_, () => Effect.succeed(client)))).toEqual({
+      ok: false,
+      why: 'connection refused',
+    })
+  })
+
+  it('chooseStore prints the sentence it printed when the check came back a refusal', async () => {
+    const { world, logged } = harness()
+    world.database = (url) => databaseCheck(url, () => Effect.succeed(dying({ count: 0 })))
+    const code = await initCommand(flagsFromArgv(['--database-url', URL_]), world)
+    expect(code).toBe(1)
+    expect(lines(logged).at(-1)).toContain(
+      'postgres://me:***@db.example:5432/lingtai does not answer — connection dropped. Nothing was written',
+    )
   })
 })

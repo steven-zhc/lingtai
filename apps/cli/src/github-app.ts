@@ -10,7 +10,6 @@
 import { paint } from '@lingtai/env/colour'
 import { Effect } from 'effect'
 
-import { lift } from './exit.ts'
 import { questionEffect, type QuestionWorld } from './question.ts'
 
 /** A person reading GitHub's manifest page gets this long before coming back. */

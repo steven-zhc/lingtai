@@ -46,11 +46,6 @@ export const boardAtEffect = (port: number, reach: string): Effect.Effect<string
   ).pipe(Effect.orElseSucceed(() => null))
 }
 
-/** `boardAtEffect`, for the callers that are still promises. */
-export function boardAt(port: number, reach: string): Promise<string | null> {
-  return Effect.runPromise(boardAtEffect(port, reach))
-}
-
 /**
  * Where `pnpm build` put the board — **two places, because there are two ways
  * to be running**.
@@ -310,11 +305,6 @@ const liveServeDeps: ServeDeps = {
 }
 
 export const serveBoardEffect: (options: BoardOptions) => Effect.Effect<void, Error> = serveBoardWith(liveServeDeps)
-
-/** `serveBoardEffect`, for the callers that are still promises. */
-export function serveBoard(options: BoardOptionsPromise): Promise<void> {
-  return Effect.runPromise(serveBoardEffect({ ...options, release: Effect.promise(options.release) }))
-}
 
 // ---------------------------------------------------------- the lifecycle --
 
