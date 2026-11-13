@@ -15,7 +15,7 @@ import {
   ticketReportProjection,
   type ProjectionLag,
 } from '@lingtai/projector'
-import { Effect } from 'effect'
+import { Effect, type Scope } from 'effect'
 
 import { recovering } from './exit.ts'
 import { holdLiveSpend } from './live-spend.ts'
@@ -143,12 +143,14 @@ export const rebuildEstimates = (priced: string[]): Effect.Effect<string, unknow
     return `priced ${priced.join(', ')}; ${lines.join('; ')}`
   })
 
-/** Starts a refresh if one is due. Never throws and is not awaited. */
-export const startRates = (now: Date = new Date()): Effect.Effect<void> =>
+/**
+ * Starts a refresh if one is due. Never fails and is not awaited. The refresh is a fiber of the caller's
+ * `Scope`: it outlives the pass that asked, `ratesSettled` is what waits for it, and closing the scope — or
+ * interrupting whoever owns it — interrupts it.
+ */
+export const startRates = (now: Date = new Date()): Effect.Effect<void, never, Scope.Scope> =>
   ratesDue(now)
-    ? // Detached: the refresh outlives the pass that asked, and `ratesSettled` is what waits for it. On a daemon's
-      // interrupt the process ends (`stopNow` exits), which is what stops it.
-      Effect.forkDetach(refreshRates(realRatePorts(modelsSeenInSpend, process.env, rebuildEstimates)), {
+    ? Effect.forkScoped(refreshRates(realRatePorts(modelsSeenInSpend, process.env, rebuildEstimates)), {
         startImmediately: true,
       }).pipe(Effect.asVoid)
     : Effect.void

@@ -17,7 +17,7 @@
  */
 import { directPostgresUrl } from '@lingtai/env'
 import { postgresUnderTest } from '@lingtai/event-store/test/postgres'
-import { Effect } from 'effect'
+import { Effect, Scope } from 'effect'
 import pg from 'pg'
 import { afterAll, describe, expect, it } from 'vitest'
 
@@ -59,7 +59,9 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
   describe('the beacon', () => {
     it('keeps the row fresh through a startup slower than three missed beats', async () => {
       await Effect.runPromise(createStatusTableEffect())
-      const beacon = await Effect.runPromise(startBeacon('starting'))
+      const beacon = await Effect.runPromise(
+        Effect.provideService(startBeacon('starting'), Scope.Scope, Scope.makeUnsafe()),
+      )
 
       try {
         // Standing in for the slow half of startup: a recipe read per project and
@@ -88,7 +90,9 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
       // Faster than production only so that several beats land inside a test;
       // what is being asserted is the ordering, which is not a function of the
       // period.
-      const beacon = await Effect.runPromise(startBeacon('starting', { every: 50 }))
+      const beacon = await Effect.runPromise(
+        Effect.provideService(startBeacon('starting', { every: 50 }), Scope.Scope, Scope.makeUnsafe()),
+      )
 
       try {
         await Effect.runPromise(beacon.say('up'))
@@ -110,7 +114,9 @@ describe.skipIf(!postgresUnderTest())('against the real row', () => {
 
     it('says a last word and then nothing at all', async () => {
       await Effect.runPromise(createStatusTableEffect())
-      const beacon = await Effect.runPromise(startBeacon('up', { every: 50 }))
+      const beacon = await Effect.runPromise(
+        Effect.provideService(startBeacon('up', { every: 50 }), Scope.Scope, Scope.makeUnsafe()),
+      )
       await Effect.runPromise(beacon.stop('stopping'))
       const stopped = await readStatus()
       expect(stopped?.state).toBe('stopping')

@@ -44,7 +44,7 @@
  */
 import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
-import { Effect } from 'effect'
+import { Effect, Scope } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -267,7 +267,9 @@ export function describeDaemonStoreContract(name: string, open: () => Promise<Da
       // (`beacon.test.ts`) because it is the whole of how either store reports
       // a daemon that is gone.
       await withStore(async ({ store }) => {
-        const beacon = await Effect.runPromise(startBeacon('up', { store, every: 50 }))
+        const beacon = await Effect.runPromise(
+          Effect.provideService(startBeacon('up', { store, every: 50 }), Scope.Scope, Scope.makeUnsafe()),
+        )
         await Effect.runPromise(beacon.stop('stopping'))
         const stopped = await Effect.runPromise(store.status())
         expect(stopped!.state).toBe('stopping')

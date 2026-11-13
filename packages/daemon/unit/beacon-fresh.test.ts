@@ -1,4 +1,4 @@
-import { Effect } from 'effect'
+import { Effect, Scope } from 'effect'
 /**
  * #576. The row's `started_at` is what an interrupted triage is read against,
  * so it has to be this process's and not the first daemon's ever: only the first
@@ -17,7 +17,9 @@ describe('startBeacon', () => {
       beat: (b: Beat) => Effect.sync(() => void beats.push(b)),
       close: () => Effect.void,
     } as unknown as DaemonStore
-    const beacon = await Effect.runPromise(startBeacon('starting', { store, every: 3_600_000 }))
+    const beacon = await Effect.runPromise(
+      Effect.provideService(startBeacon('starting', { store, every: 3_600_000 }), Scope.Scope, Scope.makeUnsafe()),
+    )
     await Effect.runPromise(beacon.say('up'))
     await Effect.runPromise(beacon.say('draining'))
     await Effect.runPromise(beacon.stop('stopped'))
@@ -36,7 +38,9 @@ describe('startBeacon', () => {
         }),
       close: () => Effect.void,
     } as unknown as DaemonStore
-    const beacon = await Effect.runPromise(startBeacon('starting', { store, every: 3_600_000 }))
+    const beacon = await Effect.runPromise(
+      Effect.provideService(startBeacon('starting', { store, every: 3_600_000 }), Scope.Scope, Scope.makeUnsafe()),
+    )
     await Effect.runPromise(beacon.say('up'))
     await Effect.runPromise(beacon.say('draining'))
     await Effect.runPromise(beacon.stop('stopped'))
@@ -52,7 +56,13 @@ describe('startBeacon', () => {
       close: () => Effect.void,
     } as unknown as DaemonStore
     const startedAt = new Date('2026-10-20T12:00:00Z')
-    const beacon = await Effect.runPromise(startBeacon('starting', { store, every: 3_600_000, startedAt }))
+    const beacon = await Effect.runPromise(
+      Effect.provideService(
+        startBeacon('starting', { store, every: 3_600_000, startedAt }),
+        Scope.Scope,
+        Scope.makeUnsafe(),
+      ),
+    )
     await Effect.runPromise(beacon.stop('stopped'))
     expect(beats.every((b) => b.startedAt === startedAt)).toBe(true)
   })

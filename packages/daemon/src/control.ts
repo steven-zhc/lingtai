@@ -83,7 +83,7 @@ import {
 } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { readTasksEffect, type TaskCard } from '@lingtai/projector'
-import { Cause, Deferred, Effect, Fiber } from 'effect'
+import { Cause, Deferred, Effect, Fiber, Scope } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import type { CodeVersion } from './currency.ts'
@@ -609,7 +609,8 @@ export const makeBeacon = (options: Omit<BeaconOptions, 'every'> = {}): BeaconPo
   }
 }
 
-export function startBeacon(state: string, options: BeaconOptions = {}): Effect.Effect<Beacon> {
+/** The timer and every write are fibers of the caller's `Scope`: closing it, or interrupting its owner, ends them. */
+export function startBeacon(state: string, options: BeaconOptions = {}): Effect.Effect<Beacon, never, Scope.Scope> {
   const { every, ...rest } = options
   return startBeaconOn(makeBeacon(rest), state, every === undefined ? {} : { every })
 }
@@ -618,8 +619,9 @@ export const startBeaconOn = (
   port: BeaconPort,
   state: string,
   options: { every?: number } = {},
-): Effect.Effect<Beacon> =>
+): Effect.Effect<Beacon, never, Scope.Scope> =>
   Effect.gen(function* () {
+    const scope = yield* Effect.scope
     const { every = HEARTBEAT_MS } = options
     let current = state
     let stopped = false
@@ -632,8 +634,8 @@ export const startBeaconOn = (
     /**
      * Asking and queueing happen in one synchronous step, so the order of the writes is the order they were
      * asked for. Each write is a fiber of its own: the port swallows everything but an interruption, and an
-     * interruption must end that one write and not the ones behind it. Detached, because a drain and a stop
-     * ask from root fibers that may end before the write lands.
+     * interruption must end that one write and not the ones behind it. In the beacon's scope and not the
+     * asker's, because a drain and a stop ask from root fibers that may end before the write lands.
      */
     const write = (word: string): Effect.Effect<void> =>
       Effect.suspend(() => {
@@ -641,7 +643,7 @@ export const startBeaconOn = (
         const prev = tail
         const mine = Deferred.makeUnsafe<void>()
         tail = mine
-        return Effect.forkDetach(
+        return Effect.forkIn(
           Deferred.await(prev).pipe(
             Effect.andThen(port.beat(word)),
             Effect.ensuring(
@@ -651,6 +653,7 @@ export const startBeaconOn = (
               }),
             ),
           ),
+          scope,
           { startImmediately: true },
         ).pipe(Effect.andThen(Deferred.await(mine)))
       })
@@ -658,17 +661,18 @@ export const startBeaconOn = (
     // Announced before the timer, so the row is the new daemon's from the first
     // moment it can be — and then again every `every` milliseconds, whatever the
     // process is doing in between.
-    yield* Effect.forkDetach(write(current), { startImmediately: true })
-    const tick = yield* Effect.forkDetach(
+    yield* Effect.forkIn(write(current), scope, { startImmediately: true })
+    const tick = yield* Effect.forkIn(
       Effect.forever(
         Effect.sleep(every).pipe(
           Effect.andThen(
             Effect.suspend(() =>
-              owed === 0 ? Effect.forkDetach(write(current), { startImmediately: true }) : Effect.void,
+              owed === 0 ? Effect.forkIn(write(current), scope, { startImmediately: true }) : Effect.void,
             ),
           ),
         ),
       ),
+      scope,
     )
 
     const beacon: Beacon = {
@@ -686,7 +690,7 @@ export const startBeaconOn = (
           yield* Fiber.interrupt(tick)
           if (!stopped && last !== undefined) {
             current = last
-            yield* Effect.forkDetach(write(last), { startImmediately: true })
+            yield* Effect.forkIn(write(last), scope, { startImmediately: true })
           }
           stopped = true
           // Everything scheduled, including the last word, has landed by here.

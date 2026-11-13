@@ -1,8 +1,8 @@
 /** #1075. The beacon's chain: ordered, alive after a bad link, and never rejecting. */
-import { Effect } from 'effect'
+import { Effect, Fiber, Scope } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { startBeacon, startBeaconOn } from '../src/control.ts'
+import { startBeacon, startBeaconOn, type BeaconPort } from '../src/control.ts'
 import type { Beat, DaemonStore } from '../src/store.ts'
 
 describe('the beacon chain', () => {
@@ -19,7 +19,9 @@ describe('the beacon chain', () => {
         }),
       close: () => Effect.void,
     } as unknown as DaemonStore
-    const beacon = await Effect.runPromise(startBeacon('starting', { store, every: 3_600_000 }))
+    const beacon = await Effect.runPromise(
+      Effect.provideService(startBeacon('starting', { store, every: 3_600_000 }), Scope.Scope, Scope.makeUnsafe()),
+    )
     void Effect.runPromise(beacon.say('up'))
     void Effect.runPromise(beacon.say('draining'))
     await Effect.runPromise(beacon.stop('stopped'))
@@ -37,7 +39,9 @@ describe('the beacon chain', () => {
         }),
       close: () => Effect.void,
     } as unknown as DaemonStore
-    const beacon = await Effect.runPromise(startBeacon('starting', { store, every: 3_600_000 }))
+    const beacon = await Effect.runPromise(
+      Effect.provideService(startBeacon('starting', { store, every: 3_600_000 }), Scope.Scope, Scope.makeUnsafe()),
+    )
     await expect(Effect.runPromise(beacon.say('up'))).resolves.toBeUndefined()
     await Effect.runPromise(beacon.stop())
     expect(beats.map((b) => b.fresh)).toEqual([true, true])
@@ -55,9 +59,30 @@ describe('the beacon chain', () => {
         return Effect.sync(() => void words.push(word))
       },
     }
-    const beacon = await Effect.runPromise(startBeaconOn(port, 'starting', { every: 3_600_000 }))
+    const beacon = await Effect.runPromise(
+      Effect.provideService(startBeaconOn(port, 'starting', { every: 3_600_000 }), Scope.Scope, Scope.makeUnsafe()),
+    )
     await Effect.runPromise(beacon.say('up'))
     await expect(Effect.runPromise(beacon.stop('stopped'))).resolves.toBeUndefined()
     expect(words).toEqual(['up', 'stopped'])
+  })
+
+  it('stops writing when its owner is interrupted, with no stop asked for', async () => {
+    let writes = 0
+    const port: BeaconPort = { beat: () => Effect.sync(() => void (writes += 1)) }
+    const owner = Effect.runFork(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* startBeaconOn(port, 'starting', { every: 10 })
+          yield* Effect.never
+        }),
+      ),
+    )
+    await new Promise((r) => setTimeout(r, 60))
+    expect(writes).toBeGreaterThan(1)
+    await Effect.runPromise(Fiber.interrupt(owner))
+    const settled = writes
+    await new Promise((r) => setTimeout(r, 60))
+    expect(writes).toBe(settled)
   })
 })
