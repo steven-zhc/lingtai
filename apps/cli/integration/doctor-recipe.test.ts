@@ -9,8 +9,9 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { projectFilter } from '@lingtai/conductor'
+import { projectFilterEffect } from '@lingtai/conductor/filter'
 import type { ProjectState } from '@lingtai/domain'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { declaredEnvironment, recipeClientFor, recipeGovernsItsBase, recipeRow } from '../src/doctor.ts'
@@ -48,7 +49,7 @@ describe('the recipe row, with no App configured', () => {
 
   it("resolves the machine's recipe and says where each value came from", async () => {
     const state = { project: 'app', owner: 'me', base: 'main' } as ProjectState
-    const filter = await projectFilter(state, recipeClientFor({}))
+    const filter = await Effect.runPromise(projectFilterEffect(state, recipeClientFor({})))
 
     if (!filter.ok) throw new Error(filter.problem)
     expect(filter.kinds).toEqual(['bug'])
@@ -64,7 +65,7 @@ describe('the recipe row, with no App configured', () => {
   it('fails when runtime.agent names a runtime this conductor does not dispatch', async () => {
     await writeFile(join(home, 'app', 'recipe.yml'), RECIPE.replace('agent: claude-code', 'agent: codex'))
     const state = { project: 'app', owner: 'me', base: 'main' } as ProjectState
-    const filter = await projectFilter(state, recipeClientFor({}))
+    const filter = await Effect.runPromise(projectFilterEffect(state, recipeClientFor({})))
 
     const row = recipeRow(filter, 'claude-code')
     expect(row.status).toBe('fail')
@@ -72,7 +73,9 @@ describe('the recipe row, with no App configured', () => {
     expect(row.detail).toContain('this conductor runs claude-code')
 
     await writeFile(join(home, 'app', 'recipe.yml'), RECIPE)
-    expect(recipeRow(await projectFilter(state, recipeClientFor({})), 'claude-code').status).toBe('ok')
+    expect(
+      recipeRow(await Effect.runPromise(projectFilterEffect(state, recipeClientFor({}))), 'claude-code').status,
+    ).toBe('ok')
   })
 
   /**
@@ -93,7 +96,7 @@ describe('the recipe row, with no App configured', () => {
     )
     const state = { project: 'app', owner: 'me', base: 'main' } as ProjectState
 
-    const row = recipeRow(await projectFilter(state, recipeClientFor({})), 'claude-code')
+    const row = recipeRow(await Effect.runPromise(projectFilterEffect(state, recipeClientFor({}))), 'claude-code')
     expect(row.status).toBe('fail')
     expect(row.detail).toContain('steps.proposed\'s "review" action names agent codex')
     // The remedy: this action, in the file it is written in. Since `#314` a
@@ -108,11 +111,16 @@ describe('the recipe row, with no App configured', () => {
     expect(row.detail).not.toContain('Name runtime.agent:')
 
     // And signed in to it, the same recipe is dispatched rather than refused.
-    expect(recipeRow(await projectFilter(state, recipeClientFor({})), 'claude-code', ['codex']).status).toBe('ok')
+    expect(
+      recipeRow(await Effect.runPromise(projectFilterEffect(state, recipeClientFor({}))), 'claude-code', ['codex'])
+        .status,
+    ).toBe('ok')
 
     const fixed = `${RECIPE}    - { name: review, agent: claude-code, prompt: "look at it coldly" }\n`
     await writeFile(join(home, 'app', 'recipe.yml'), fixed)
-    expect(recipeRow(await projectFilter(state, recipeClientFor({})), 'claude-code').status).toBe('ok')
+    expect(
+      recipeRow(await Effect.runPromise(projectFilterEffect(state, recipeClientFor({}))), 'claude-code').status,
+    ).toBe('ok')
   })
 
   /**
@@ -121,14 +129,14 @@ describe('the recipe row, with no App configured', () => {
    */
   it('checks the declared environment and the base against that same file', async () => {
     const state = { project: 'app', owner: 'me', base: 'develop' } as ProjectState
-    const load = async () => [state]
+    const load = () => Effect.succeed([state])
 
-    const envRows = await declaredEnvironment({}, load)
+    const envRows = await Effect.runPromise(declaredEnvironment({}, load))
     expect(envRows.map((r) => r.name)).toContain('env: app')
     for (const row of envRows) expect(row.detail).not.toContain('no App configured')
     expect(envRows.find((r) => r.name === 'env: app')?.status).toBe('ok')
 
-    const [base] = await recipeGovernsItsBase({}, load)
+    const [base] = await Effect.runPromise(recipeGovernsItsBase({}, load))
     expect(base?.name).toBe('base: app')
     // Registered against develop, and the machine's recipe says main.
     expect(base?.status).toBe('fail')
