@@ -16,17 +16,33 @@ const REACHED = { day: localDay(NOW), reportedUsd: 20, estimatedUsd: 5, ceilingU
 const run = <A>(effect: Effect.Effect<A, unknown>) => Effect.runPromise(effect)
 
 describe('raiseDayCeiling', () => {
-  it('answers not-reached and appends nothing when nothing stands', async () => {
+  it('refuses no-ceiling and appends nothing when none is configured', async () => {
     const store = createMemoryEventStore()
-    const answer = await run(raiseDayCeiling({ toUsd: 40, by: 'human:steven', spentCents: 2500, store, now: NOW }))
-    expect(answer).toEqual({ raised: false, refused: 'not-reached' })
+    const answer = await run(
+      raiseDayCeiling({ toUsd: 40, by: 'human:steven', spentCents: 2500, configuredUsd: undefined, store, now: NOW }),
+    )
+    expect(answer).toEqual({ raised: false, refused: 'no-ceiling' })
     expect(await store.read(CONTROL_STREAM)).toEqual([])
+  })
+
+  it('raises with nothing standing, from today’s configured figure', async () => {
+    const store = createMemoryEventStore()
+    const answer = await run(
+      raiseDayCeiling({ toUsd: 40, by: 'human:steven', spentCents: 1500, configuredUsd: 25, store, now: NOW }),
+    )
+    expect(answer).toEqual({ raised: true, version: 1 })
+    const events = await store.read(CONTROL_STREAM)
+    expect(events.map((e) => e.data)).toEqual([
+      { day: REACHED.day, why: 'person', by: 'human:steven', toUsd: 40, fromUsd: 25 },
+    ])
   })
 
   it('appends one person lift when today’s ceiling stands', async () => {
     const store = createMemoryEventStore()
     await store.append(CONTROL_STREAM, 0, [{ type: 'DayCeilingReached', actor: 'conductor', data: REACHED }])
-    const answer = await run(raiseDayCeiling({ toUsd: 40, by: 'human:steven', spentCents: 2500, store, now: NOW }))
+    const answer = await run(
+      raiseDayCeiling({ toUsd: 40, by: 'human:steven', spentCents: 2500, configuredUsd: 25, store, now: NOW }),
+    )
     expect(answer).toEqual({ raised: true, version: 2 })
     const events = await store.read(CONTROL_STREAM)
     expect(events.map((e) => e.type)).toEqual(['DayCeilingReached', 'DayCeilingLifted'])
@@ -42,12 +58,14 @@ describe('raiseDayCeiling', () => {
   it('refuses a figure not above the ceiling that was reached', async () => {
     const store = createMemoryEventStore()
     await store.append(CONTROL_STREAM, 0, [{ type: 'DayCeilingReached', actor: 'conductor', data: REACHED }])
-    const answer = await run(raiseDayCeiling({ toUsd: 25, by: 'human:steven', spentCents: 2000, store, now: NOW }))
+    const answer = await run(
+      raiseDayCeiling({ toUsd: 25, by: 'human:steven', spentCents: 2000, configuredUsd: 25, store, now: NOW }),
+    )
     expect(answer).toEqual({ raised: false, refused: 'not-above-ceiling' })
     expect(await store.read(CONTROL_STREAM)).toHaveLength(1)
   })
 
-  it('reads again once when another raise lands first, then is refused over it', async () => {
+  it('reads again once when another raise lands first, then compares against its figure', async () => {
     const real = createMemoryEventStore()
     await real.append(CONTROL_STREAM, 0, [{ type: 'DayCeilingReached', actor: 'conductor', data: REACHED }])
     let raced = false
@@ -68,10 +86,15 @@ describe('raiseDayCeiling', () => {
         return head
       },
     } as typeof real
-    const answer = await run(raiseDayCeiling({ toUsd: 40, by: 'human:steven', spentCents: 2500, store, now: NOW }))
-    // The first raise lifted the lock; on the re-read nothing stands.
+    const answer = await run(
+      raiseDayCeiling({ toUsd: 40, by: 'human:steven', spentCents: 2500, configuredUsd: 25, store, now: NOW }),
+    )
+    // The re-read sees today's figure as 30, so the raise to 40 is from 30.
     expect(raced).toBe(true)
-    expect(answer).toEqual({ raised: false, refused: 'not-reached' })
+    expect(answer).toEqual({ raised: true, version: 3 })
+    const events = await real.read(CONTROL_STREAM)
+    expect(events.map((e) => e.type)).toEqual(['DayCeilingReached', 'DayCeilingLifted', 'DayCeilingLifted'])
+    expect(events[2]!.data).toMatchObject({ toUsd: 40, fromUsd: 30 })
   })
 
   it('re-reads once when the append itself loses the race, then raises', async () => {
@@ -91,7 +114,9 @@ describe('raiseDayCeiling', () => {
         return real.append(...args)
       },
     } as typeof real
-    const answer = await run(raiseDayCeiling({ toUsd: 40, by: 'human:steven', spentCents: 2500, store, now: NOW }))
+    const answer = await run(
+      raiseDayCeiling({ toUsd: 40, by: 'human:steven', spentCents: 2500, configuredUsd: 25, store, now: NOW }),
+    )
     expect(raced).toBe(true)
     expect(answer).toEqual({ raised: true, version: 3 })
   })

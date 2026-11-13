@@ -117,7 +117,9 @@ describe('continueTodayWith', () => {
     day: cents === null ? null : { reportedCents: cents, estimatedCents: 0 },
   })
   const run = (store: Awaited<ReturnType<typeof reachedToday>>, toUsd: number, cents: number | null = 20000) =>
-    Effect.runPromise(continueTodayWith({ store, toUsd, by: 'human:steven', now, readSpend: spend(cents) }))
+    Effect.runPromise(
+      continueTodayWith({ store, toUsd, by: 'human:steven', now, readSpend: spend(cents), configuredUsd: () => 200 }),
+    )
   const types = async (store: Awaited<ReturnType<typeof reachedToday>>) =>
     (await store.read(CONTROL_STREAM)).map((e) => e.type)
 
@@ -140,6 +142,27 @@ describe('continueTodayWith', () => {
     expect(await run(store, 250, null)).toEqual({
       ok: false,
       detail: "today's spend could not be read — nothing raised",
+    })
+    expect(await types(store)).toEqual(['DayCeilingReached'])
+  })
+
+  it('refuses and appends nothing when limits.day_usd cannot be read', async () => {
+    const store = await reachedToday()
+    const result = await Effect.runPromise(
+      continueTodayWith({
+        store,
+        toUsd: 250,
+        by: 'human:steven',
+        now,
+        readSpend: spend(20000),
+        configuredUsd: () => {
+          throw new Error('not a positive number')
+        },
+      }),
+    )
+    expect(result).toEqual({
+      ok: false,
+      detail: 'could not read limits.day_usd: not a positive number — nothing raised',
     })
     expect(await types(store)).toEqual(['DayCeilingReached'])
   })

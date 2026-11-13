@@ -195,6 +195,7 @@ export const raiseDayCeiling = (input: {
   toUsd: number
   by: string
   spentCents: number
+  configuredUsd: number | undefined
   store?: EventStore
   now?: Date
 }): Effect.Effect<Raising, unknown> => {
@@ -208,6 +209,7 @@ export const raiseDayCeiling = (input: {
       toUsd: input.toUsd,
       by: input.by,
       spentCents: input.spentCents,
+      configuredUsd: input.configuredUsd,
     })
     if (!verdict.ok) return { raised: false, refused: verdict.refused } as Raising
     yield* Effect.tryPromise({ try: () => store.append(CONTROL_STREAM, at, [verdict.event]), catch: (e) => e })
