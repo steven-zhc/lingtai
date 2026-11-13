@@ -2195,19 +2195,41 @@ describe('the landed block, per conflicted path (#1121)', () => {
         },
         { path: 'b.ts', diff: lines(3, 'c') },
       ],
-      8,
+      26,
     )
 
-    expect(section).toContain('Cut at 8 lines: a.ts (cut in: branch diff).')
-    expect(section).toContain('Left out, past the 8-line cap: b.ts.')
+    expect(section).toContain('Cut at 26 lines: a.ts (cut in: branch diff).')
+    expect(section).toContain('Left out, past the 26-line cap: b.ts.')
+    expect(section.split('\n').length).toBeLessThanOrEqual(26)
     const cutInBase = landedPathsSection(
       moved,
       [{ path: 'a.ts', diff: lines(20, 'a'), branchDiff: lines(3, 'b'), commits: { lines: [] } }],
-      5,
+      20,
     )
     expect(cutInBase).toContain('a.ts (cut in: base diff)')
     expect(cutInBase).toContain('(not shown: past the cap)')
     expect(cutInBase).not.toContain('+b0')
+  })
+
+  it('keeps the whole block, structure and multi-line details included, within the cap', () => {
+    const paths = Array.from({ length: 40 }, (_, i) => `p${i}.ts`)
+    const per = paths.map((path, i) => ({
+      path,
+      diff: '+a\n+b',
+      branchDiff: '+c',
+      commits:
+        i === 0
+          ? { failed: 'line1\nline2\nline3' }
+          : {
+              lines: [
+                { sha: sha('1'), subject: "Merge branch 'agent/1' into HEAD", ticket: { n: 1, title: { known: 'T' } } },
+              ],
+            },
+    }))
+    const section = landedPathsSection({ ...moved, paths, conflicted: paths }, per, 400)
+
+    expect(section.split('\n').length).toBeLessThanOrEqual(400)
+    expect(section).toContain('Left out, past the 400-line cap:')
   })
 
   it('renders an entry without commits as #594 did', () => {

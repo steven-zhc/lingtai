@@ -471,67 +471,85 @@ const commitLine = (c: LandedCommit): string => {
 const NOT_SHOWN = '(not shown: past the cap)'
 
 /**
- * The per-path sections of the block, under one budget (#594, #1121): `capLines`
- * counts every rendered line of every path, commit lines and both diffs. The
+ * The per-path sections of the block, under one budget (#594, #1121): for a block
+ * with commits or branch sides, `capLines` bounds the whole rendered text, every
+ * heading, label, fence, separator, commit line and diff line, notes included; a
+ * #594 block (diffs only) counts diff lines alone, as it did. The
  * caller orders `per` (conflicted paths first); this does not sort. The path the
  * cap lands in is marked cut — with the section, for a path that has commits —
  * and every later section of it prints `(not shown: past the cap)`; every later
  * path is named as left out. A path without `commits` renders as #594 did.
  */
 export function landedPathsSection(moved: LandedMoved, per: readonly LandedPath[], capLines: number): string {
-  let left = capLines
-  const shown: string[] = []
+  const range = (to: string | undefined) => `\`${moved.fromSha.slice(0, 7)}..${(to ?? '').slice(0, 7)}\``
+  // A block of #594's kind (no commits, no branch side) keeps its old count: diff lines only.
+  const counted = per.some((e) => e.commits !== undefined || e.branchDiff !== undefined)
   const cut: string[] = []
   const omitted: string[] = []
-  const range = (to: string | undefined) => `\`${moved.fromSha.slice(0, 7)}..${(to ?? '').slice(0, 7)}\``
-  for (const entry of per) {
-    if (left <= 0) {
-      omitted.push(entry.path)
-      continue
-    }
-    let cutIn: string | null = null
-    const fenced = (label: string, text: string): string => {
+  const shown: string[] = []
+  if (!counted) {
+    let left = capLines
+    for (const { path, diff } of per) {
       if (left <= 0) {
-        cutIn ??= label
-        return NOT_SHOWN
+        omitted.push(path)
+        continue
       }
-      const lines = text.replace(/\n$/, '').split('\n')
+      const lines = diff.replace(/\n$/, '').split('\n')
       const take = lines.slice(0, left)
       left -= take.length
-      if (take.length < lines.length) cutIn ??= label
-      return `\`\`\`diff\n${take.join('\n')}\n\`\`\``
+      if (take.length < lines.length) cut.push(path)
+      shown.push(`### ${path}\n\n\`\`\`diff\n${take.join('\n')}\n\`\`\``)
     }
-    const plain = (label: string, lines: readonly string[]): string => {
-      if (left <= 0) {
-        cutIn ??= label
-        return NOT_SHOWN
+  } else {
+    // Every rendered line is charged: headings, labels, fences, blank separators and commit lines
+    // (a multi-line detail is several). What is held back is the two note lines and a two-line
+    // placeholder for each of the three sections a cut path can still owe.
+    let left = capLines - 8
+    const ENTRY_MIN = 6
+    for (const entry of per) {
+      if (left < ENTRY_MIN) {
+        omitted.push(entry.path)
+        continue
       }
-      const take = lines.slice(0, left)
-      left -= take.length
-      if (take.length < lines.length) cutIn ??= label
-      return take.join('\n')
+      let cutIn: string | null = null
+      const out: string[] = [`### ${entry.path}`]
+      left -= out.length + (shown.length > 0 ? 1 : 0)
+      const section = (label: string, head: string | null, body: readonly string[], fence: boolean) => {
+        const overhead = 1 + (head === null ? 0 : 2) + (fence ? 2 : 0)
+        if (cutIn !== null || left < overhead + 1) {
+          cutIn ??= label
+          out.push('', NOT_SHOWN)
+          return
+        }
+        const take = body.slice(0, left - overhead)
+        left -= overhead + take.length
+        if (take.length < body.length) cutIn ??= label
+        out.push('')
+        if (head !== null) out.push(head, '')
+        if (fence) out.push('```diff', ...take, '```')
+        else out.push(...take)
+      }
+      const split = (text: string) => text.replace(/\n$/, '').split('\n')
+      if (entry.commits !== undefined) {
+        const c = entry.commits
+        const lines =
+          'failed' in c
+            ? split(`[could not read the commits: ${c.failed}]`)
+            : c.lines.length === 0
+              ? [`(no first-parent commit in ${range(moved.toSha)} touched this path)`]
+              : c.lines.flatMap((l) => split(commitLine(l)))
+        section('commits', 'What landed here:', lines, false)
+      }
+      section('base diff', null, split(entry.diff), true)
+      if (entry.branchDiff !== undefined) {
+        const head = `What this branch did to it, ${range(moved.branchSha)}:`
+        if (entry.branchDiff.trim() === '')
+          section('branch diff', head, ['(this branch did not change this path)'], false)
+        else section('branch diff', head, split(entry.branchDiff), true)
+      }
+      if (cutIn !== null) cut.push(entry.commits === undefined ? entry.path : `${entry.path} (cut in: ${cutIn})`)
+      shown.push(out.join('\n'))
     }
-    const parts: string[] = [`### ${entry.path}`]
-    if (entry.commits !== undefined) {
-      const c = entry.commits
-      const lines =
-        'failed' in c
-          ? [`[could not read the commits: ${c.failed}]`]
-          : c.lines.length === 0
-            ? [`(no first-parent commit in ${range(moved.toSha)} touched this path)`]
-            : c.lines.map(commitLine)
-      parts.push(`What landed here:\n\n${plain('commits', lines)}`)
-    }
-    parts.push(fenced('base diff', entry.diff))
-    if (entry.branchDiff !== undefined) {
-      const body =
-        entry.branchDiff.trim() === ''
-          ? plain('branch diff', ['(this branch did not change this path)'])
-          : fenced('branch diff', entry.branchDiff)
-      parts.push(`What this branch did to it, ${range(moved.branchSha)}:\n\n${body}`)
-    }
-    if (cutIn !== null) cut.push(entry.commits === undefined ? entry.path : `${entry.path} (cut in: ${cutIn})`)
-    shown.push(parts.join('\n\n'))
   }
   const notes = [
     cut.length > 0 ? `Cut at ${capLines} lines: ${cut.join(', ')}.` : '',
