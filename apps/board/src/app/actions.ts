@@ -663,7 +663,7 @@ export async function askDiscussion(input: {
  *
  * The ticket's body is read here only to satisfy `ConcludeOptions.ticket`'s
  * `body` field — `concludeDiscussion` no longer reads it, because the write
- * itself is `writeSection` (`edit-body.ts`, #422), which reads the body
+ * itself is `writeSectionEffect` (`write-section.ts`, #422), which reads the body
  * itself and composes its replacement.
  */
 export async function concludeChat(input: {

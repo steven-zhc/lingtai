@@ -28,6 +28,7 @@ import { BUILT_IN_JUDGES, JudgeWhen, StepMap, judgePlugin, readFields } from '@l
  * Unit, under `--project unit`: nothing here reads a database, spawns anything
  * or touches the filesystem.
  */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -38,11 +39,14 @@ import {
   type Destination,
   type Judge,
   type JudgeBrief,
-  askJudge,
+  askJudgeEffect,
   briefFor,
   judgeDeclaredAt,
   stepsOnOffer,
 } from '../src/judge.ts'
+
+const askJudge = (named: string, judge: Judge, brief: JudgeBrief) =>
+  Effect.runPromise(askJudgeEffect(named, judge, brief))
 
 const FINDING: ActionFinding = {
   file: 'packages/conductor/src/conduct.ts',

@@ -43,10 +43,6 @@ function sectionTextFor(key: string, text: string): string {
  * the PATCH committed), and the read-back finds the section anyway — that is
  * found, not retried, with a second `IssueUpdated` saying so.
  */
-export function writeSection(options: WriteSectionOptions): Promise<WriteSectionResult> {
-  return Effect.runPromise(writeSectionEffect(options))
-}
-
 interface WriteSectionOptions {
   store: EventStore
   github: IssueChannel

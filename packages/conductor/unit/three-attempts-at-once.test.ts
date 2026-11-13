@@ -38,7 +38,7 @@ const client0 = fakeGitHub([], RECIPE)
 // under `~/.lingtai` — the filesystem. The recipe is the fake client's instead.
 vi.mock('../src/projects.ts', async (original) => ({
   ...(await original<typeof import('../src/projects.ts')>()),
-  currentRecipe: () => resolveRecipe((p, r) => client0.fileAt(p, r), 'main'),
+  currentRecipeEffect: () => Effect.promise(() => resolveRecipe((p, r) => client0.fileAt(p, r), 'main')),
 }))
 
 // The queue projection is Postgres. Its answer here is the shared store's: a

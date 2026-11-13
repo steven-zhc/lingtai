@@ -11,7 +11,7 @@
  * Those two halves are in this file and they do not touch. `stepsOnOffer` is
  * the workflow's: it reads the ceilings, counts what is spent, looks at how far
  * the pass got, and answers **the set**. A judge is handed that set and answers
- * *which of these*. `askJudge` is the seam between them, and it refuses an
+ * *which of these*. `askJudgeEffect` is the seam between them, and it refuses an
  * answer outside the set by name rather than obeying it.
  *
  *     the pass refuses            reason: red · verify-failed · conflict ·
@@ -57,7 +57,7 @@
  * `Declared` below — and `conduct.ts` dispatches one, which is the half that was
  * missing while `JudgeName` had no runtime in it.
  *
- * What is still ahead of its callers is `askJudge`, and it is one function rather
+ * What is still ahead of its callers is `askJudgeEffect`, and it is one function rather
  * than the file: the seam it is, `judged` in `attempt-steps.ts` is again in the
  * pass's own vocabulary, because `stepsOnOffer` is `onOffer`'s rule in *this*
  * file's until T5 makes the two `Destination`s one. Both hold an answer to the
@@ -77,6 +77,7 @@
 import type { ActionFinding } from '@lingtai/actions'
 import { STEPS, type RuntimeId, type Step } from '@lingtai/domain'
 import { isBuiltInJudge, type BuiltInJudge, type JudgeWhen, type StepAction } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
 /**
  * **What the recipe declared for this direction, or null** — the whole of what
@@ -522,13 +523,24 @@ export interface Judgement {
  * A wrong answer therefore costs one pass and stops, which is the asymmetry at
  * the head of this file paid out — a misconfiguration that fails is cheap.
  */
-export async function askJudge(
+export function askJudgeEffect(
   /** The name a recipe wrote, so the refusal can say which entry to fix. */
   named: string,
   judge: Judge,
   brief: JudgeBrief,
-): Promise<Judgement> {
-  const answer = await judge(brief)
+): Effect.Effect<Judgement, unknown> {
+  // A built-in answers synchronously, which is how it promises to spend nothing; a runtime's answers late.
+  return Effect.try({ try: () => judge(brief), catch: (error) => error }).pipe(
+    Effect.flatMap((answered) =>
+      typeof answered === 'string'
+        ? Effect.succeed(answered)
+        : Effect.tryPromise({ try: () => answered, catch: (error) => error }),
+    ),
+    Effect.map((answer): Judgement => answerOf(named, brief, answer)),
+  )
+}
+
+function answerOf(named: string, brief: JudgeBrief, answer: Destination): Judgement {
   if (brief.offer.includes(answer)) return { next: answer, refused: null }
   return {
     next: 'human',

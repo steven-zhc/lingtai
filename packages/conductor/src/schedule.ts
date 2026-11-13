@@ -1,6 +1,6 @@
 import type { Runtime } from '@lingtai/agent'
 import { type ProjectState, ticketReducer } from '@lingtai/domain'
-import { type EventStore, eventStore, log, type SnapshotStore } from '@lingtai/event-store'
+import { type EventStore, eventStore, log, readThroughSnapshot, type SnapshotStore } from '@lingtai/event-store'
 /**
  * Taking the queue, rather than one issue somebody named.
  *
@@ -39,12 +39,11 @@ import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
 import { type TurnClient, type RunOnceResult, runOnce } from './conduct.ts'
-import { runnableNow } from './discover.ts'
+import { runnableNowEffect } from './discover.ts'
 import type { AgentHost, Repo } from './ports.ts'
 import { selectRunnable } from './queue.ts'
 import { readFixFiles, waitsFor } from './same-file.ts'
 import type { Slots } from './slots.ts'
-import { readState } from './snapshot-state.ts'
 
 export interface ScheduleOptions {
   project: ProjectState
@@ -225,8 +224,9 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       // Once a pass, not once: an issue closed by hand or relabelled while the
       // pass is running changes the answer, and the old cached queue would have
       // taken it anyway.
-      const offered = yield* Effect.promise(() =>
-        runnableNow({ client: options.client, queue: queueOf(options.recipe) }),
+      // `orDie`: a listing that failed ends the pass as it always did (a defect), never as an empty queue.
+      const offered = yield* runnableNowEffect({ client: options.client, queue: queueOf(options.recipe) }).pipe(
+        Effect.orDie,
       )
       // Once, not once round the loop. It is a fact about the repository and
       // the same sentence would be true of every ticket in the queue — the
@@ -442,35 +442,48 @@ export interface TurnTally {
   stopped: number
 }
 
-export async function tallyTurn(
+export function tallyTurn(
   ran: readonly RunOnceResult[],
   store?: EventStore,
   snapshots?: SnapshotStore,
 ): Promise<TurnTally> {
-  const reader = store ?? eventStore
-  const snaps = snapshots ?? (store === undefined ? log.snapshots : undefined)
-  const tally: TurnTally = { landed: 0, held: 0, stopped: 0 }
+  return Effect.runPromise(tallyTurnEffect(ran, store, snapshots))
+}
 
-  for (const result of ran) {
-    // A refusal before anything was claimed — an unreadable recipe — has no
-    // stream to read. It stopped, and there is nowhere else to check.
-    const ticket = result.ticketId
-      ? await readState(reader, ticketReducer, result.ticketId, 'all', { snapshots: snaps }).catch(() => null)
-      : null
-    if (ticket === null) {
-      // Either no work item, or the log could not be read. Fall back to what
-      // this process saw rather than lose the summary to a failing read.
-      if (result.ok === true) tally.landed += 1
-      else if (result.ok === 'held') tally.held += 1
+/** `tallyTurn` as an Effect. It never fails: a stream that cannot be read falls back to what this process saw. */
+export function tallyTurnEffect(
+  ran: readonly RunOnceResult[],
+  store?: EventStore,
+  snapshots?: SnapshotStore,
+): Effect.Effect<TurnTally> {
+  return Effect.gen(function* () {
+    const reader = store ?? eventStore
+    const snaps = snapshots ?? (store === undefined ? log.snapshots : undefined)
+    const tally: TurnTally = { landed: 0, held: 0, stopped: 0 }
+
+    for (const result of ran) {
+      // A refusal before anything was claimed — an unreadable recipe — has no
+      // stream to read. It stopped, and there is nowhere else to check.
+      const ticket = result.ticketId
+        ? yield* readThroughSnapshot(reader, ticketReducer, result.ticketId, 'all', { snapshots: snaps }).pipe(
+            Effect.catch(() => Effect.succeed(null)),
+          )
+        : null
+      if (ticket === null) {
+        // Either no work item, or the log could not be read. Fall back to what
+        // this process saw rather than lose the summary to a failing read.
+        if (result.ok === true) tally.landed += 1
+        else if (result.ok === 'held') tally.held += 1
+        else tally.stopped += 1
+        continue
+      }
+
+      const status = ticket.lifecycle.status
+      if (status === 'landed') tally.landed += 1
+      else if (status === 'blocked') tally.held += 1
       else tally.stopped += 1
-      continue
     }
 
-    const status = ticket.lifecycle.status
-    if (status === 'landed') tally.landed += 1
-    else if (status === 'blocked') tally.held += 1
-    else tally.stopped += 1
-  }
-
-  return tally
+    return tally
+  })
 }

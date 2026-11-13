@@ -12,6 +12,7 @@
  */
 import { ticketStream } from '@lingtai/domain'
 import { readTasks } from '@lingtai/projector'
+import { Effect } from 'effect'
 
 /** What a caller needs to run one: enough to nominate it, and nothing more. */
 export interface Runnable {
@@ -68,42 +69,50 @@ export interface RunnableOptions {
  * is stored — the offer is asked for at the moment it is needed, and the log's
  * side is this table, which is now nothing but a reducer.
  */
-export async function selectRunnable(options: RunnableOptions): Promise<Runnable[]> {
-  const kinds = options.kinds.length > 0 ? [...options.kinds] : ['bug']
-  // Every row, not just the queued ones: a row's *existence* is what says the
-  // log has an opinion about this issue, and its state is that opinion.
-  const seen = new Map(
-    (
-      await readTasks({
-        project: options.project,
-        retentionDays: 36_500,
-        ...(options.url === undefined ? {} : { url: options.url }),
+export function selectRunnable(options: RunnableOptions): Promise<Runnable[]> {
+  return Effect.runPromise(selectRunnableEffect(options))
+}
+
+/** `selectRunnable` as an Effect: an unreadable `task_view` is the failure, with the projector's own error. */
+export function selectRunnableEffect(options: RunnableOptions): Effect.Effect<Runnable[], unknown> {
+  return Effect.gen(function* () {
+    const kinds = options.kinds.length > 0 ? [...options.kinds] : ['bug']
+    // Every row, not just the queued ones: a row's *existence* is what says the
+    // log has an opinion about this issue, and its state is that opinion.
+    const rows = yield* Effect.tryPromise({
+      try: () =>
+        readTasks({
+          project: options.project,
+          retentionDays: 36_500,
+          ...(options.url === undefined ? {} : { url: options.url }),
+        }),
+      catch: (error) => error,
+    })
+    const seen = new Map(rows.map((t) => [t.issue, t]))
+
+    const now = (options.now ?? new Date()).getTime()
+    const backoff = options.backoffMs
+
+    return options.offered
+      .filter((o) => kinds.includes(o.kind))
+      .filter((o) => {
+        const row = seen.get(o.ref)
+        // No row: Lingtai has never touched it, and GitHub is offering it.
+        if (!row) return true
+        // A row that is not `queued` is one the log says is claimed, waiting on a
+        // person, or finished. GitHub still listing the issue does not overrule
+        // the log about what Lingtai is doing with it.
+        if (row.state !== 'queued') return false
+        return heldUntil(row, backoff, now) === null
       })
-    ).map((t) => [t.issue, t]),
-  )
-
-  const now = (options.now ?? new Date()).getTime()
-  const backoff = options.backoffMs
-
-  return options.offered
-    .filter((o) => kinds.includes(o.kind))
-    .filter((o) => {
-      const row = seen.get(o.ref)
-      // No row: Lingtai has never touched it, and GitHub is offering it.
-      if (!row) return true
-      // A row that is not `queued` is one the log says is claimed, waiting on a
-      // person, or finished. GitHub still listing the issue does not overrule
-      // the log about what Lingtai is doing with it.
-      if (row.state !== 'queued') return false
-      return heldUntil(row, backoff, now) === null
-    })
-    .map((o) => ({ taskId: ticketStream(options.project, o.ref), issue: o.ref, title: o.title, kind: o.kind }))
-    .sort((a, b) => {
-      const byKind = kinds.indexOf(a.kind) - kinds.indexOf(b.kind)
-      if (byKind !== 0) return byKind
-      // Numerically, not lexically: #402 comes before #409 and both before #4100.
-      return Number(a.issue) - Number(b.issue)
-    })
+      .map((o) => ({ taskId: ticketStream(options.project, o.ref), issue: o.ref, title: o.title, kind: o.kind }))
+      .sort((a, b) => {
+        const byKind = kinds.indexOf(a.kind) - kinds.indexOf(b.kind)
+        if (byKind !== 0) return byKind
+        // Numerically, not lexically: #402 comes before #409 and both before #4100.
+        return Number(a.issue) - Number(b.issue)
+      })
+  })
 }
 
 /** The bit of a `task_view` row the backoff reads, and nothing more. */

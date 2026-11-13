@@ -147,7 +147,6 @@ export { ANSWER_CLOSE_MARKER, answerOpenMarker, upsertSection } from './body-sec
 export {
   editBodyAndRequeue,
   editBodyAndRequeueHolding,
-  writeSection,
   type EditBodyAndRequeueOptions,
   type EditBodyAndRequeueResult,
   type WriteSectionResult,

@@ -73,15 +73,15 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
   },
   {
     event: 'DiscussionAsked',
-    why: "type is a string argument of the module's own `append`",
+    why: "type is a string argument of the module's own `appendEvent`",
     file: 'packages/conductor/src/discuss.ts',
-    anchor: "await append(ports.store, stream, before.length, options.by, 'DiscussionAsked', {",
+    anchor: "yield* appendEvent(ports.store, stream, before.length, options.by, 'DiscussionAsked', {",
   },
   {
     event: 'DiscussionAnswered',
-    why: "type is a string argument of the module's own `append`",
+    why: "type is a string argument of the module's own `appendEvent`",
     file: 'packages/conductor/src/discuss.ts',
-    anchor: "append(ports.store, stream, -1, `agent:${options.chatId}`, 'DiscussionAnswered', {",
+    anchor: "appendEvent(ports.store, stream, -1, `agent:${options.chatId}`, 'DiscussionAnswered', {",
   },
   {
     event: 'EndActionsResolved',
