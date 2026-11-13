@@ -466,6 +466,30 @@ change them. With one instance per process, every run gets the same socket
 rule and, on macOS, the same weaker network isolation. That is why decision 9
 now turns it on for every macOS run.
 
+## When `claude auth status` refreshes
+
+Measured 2026-11-13 on foundry over SSH (file store), Claude Code 2.1.312.
+Each case is a copy of the operator's login in its own `CLAUDE_CONFIG_DIR`,
+with only its local `expiresAt` rewritten; the token itself was valid for
+another 479 minutes. Whenever a copy refreshed, its new credentials were
+written back to the operator's file, because the refresh rotates the refresh
+token (case B above). Tokens were compared by sha256 prefix only.
+
+| the copy's `expiresAt` says | `auth status` refreshed? |
+|---|---|
+| 470 min left | no |
+| 120 min left | no |
+| 30 min left | no |
+| 10 min left | no |
+| 4 min left | **yes**: a new access token and a new refresh token, 479 min |
+| expired, with a refresh token another copy had already rotated | no, and `loggedIn: true` all the same |
+
+So `auth status` refreshes only within roughly the last five minutes, judged
+by the local `expiresAt`, and there is no flag to ask for it sooner. A refresh
+*early* is therefore not available through `auth status`. `claude setup-token`
+(2.1.325: *Set up a long-lived authentication token, requires Claude
+subscription*) is the documented way to a token that needs no refresh.
+
 ## What this changes in 0.14.md
 
 1. **The hook socket on Linux needs `allowAllUnixSockets`.** seccomp cannot
