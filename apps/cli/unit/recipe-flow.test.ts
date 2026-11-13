@@ -13,7 +13,9 @@ import { describe, expect, it } from 'vitest'
 import { isMap, isScalar, parseDocument, type Node, type YAMLMap } from 'yaml'
 
 import type { QuestionWorld } from '../src/question.ts'
-import { askRecipe, ENV_PLANT_AT, SAID, type RecipeAt } from '../src/recipe-flow.ts'
+import { askRecipeEffect, ENV_PLANT_AT, SAID, type RecipeAt } from '../src/recipe-flow.ts'
+
+const askRecipe = (world: QuestionWorld, at: RecipeAt) => Effect.runPromise(askRecipeEffect(world, at))
 
 const HOME = '/home/me/.lingtai'
 

@@ -8,11 +8,13 @@ import { applySetup } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { askBeforeGithubAdd as askBeforeGithubAddDraft, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
+import { askBeforeGithubAddEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
+
+const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 
 /** `askBeforeGithubAdd` writes nothing (#968); `applySetup` does, just before the registration — done here in its place. */
-async function askBeforeGithubAdd(...args: Parameters<typeof askBeforeGithubAddDraft>) {
-  const result = await askBeforeGithubAddDraft(...args)
+async function askBeforeGithubAdd(...args: Parameters<typeof askBeforeGithubAddEffect>) {
+  const result = await Effect.runPromise(askBeforeGithubAddEffect(...args))
   const deps = args[2]
   if (typeof result === 'object' && deps !== undefined) {
     await Effect.runPromise(applySetup({ files: deps.files }, result.answers, Effect.void))
@@ -40,10 +42,11 @@ function depsFor(over: Partial<AskBeforeGithubAddDeps>) {
     auth: () => 'gh',
     interactive: () => true,
     ghAccess: async () => ({ login: 'sam', defaultBranch: 'main' }),
-    picker: async () => {
-      calls.picker++
-      throw new Error('no picker')
-    },
+    picker: () =>
+      fx(async () => {
+        calls.picker++
+        throw new Error('no picker')
+      }),
     files: {
       read: async (path) => store[path] ?? null,
       replace: async (path, text) => {
@@ -51,12 +54,13 @@ function depsFor(over: Partial<AskBeforeGithubAddDeps>) {
         store[path] = text
       },
     },
-    reader: async (_o, _r, reach) => {
-      calls.reach.push(reach)
-      return reader
-    },
+    reader: (_o, _r, reach) =>
+      fx(async () => {
+        calls.reach.push(reach)
+        return reader
+      }),
     ask: async () => '',
-    runtimes: async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }],
+    runtimes: () => fx(async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }]),
     history: async () => [],
     ...over,
   }

@@ -19,7 +19,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { QuestionWorld } from '../src/question.ts'
-import { askRecipe } from '../src/recipe-flow.ts'
+import { askRecipeEffect, type RecipeAt } from '../src/recipe-flow.ts'
 import { ENV_PLANT_AT } from '../src/recipe-flow.ts'
 
 const HOME = '/home/me/.lingtai'
@@ -58,6 +58,7 @@ function mapFiles(): RecipeFiles & { store: Map<string, string> } {
 }
 
 const world: QuestionWorld = { ask: async () => '', log: () => {} }
+const askRecipe = (w: QuestionWorld, at: RecipeAt) => Effect.runPromise(askRecipeEffect(w, at))
 
 async function viaAdd(project: string, local: boolean, seeds: SetupForm['target'] extends never ? never : unknown[]) {
   const files = mapFiles()

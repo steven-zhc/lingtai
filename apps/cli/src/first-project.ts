@@ -81,7 +81,7 @@ import {
   previewSetup,
   SetupWriteError,
 } from '@lingtai/setup'
-import { Cause, Context, Effect } from 'effect'
+import { Cause, Effect } from 'effect'
 
 import { noRuntimesSignedInRefusal } from './agents.ts'
 import { checkAppEffect, pollForApp, type AppCheck } from './app-check.ts'
@@ -1306,25 +1306,6 @@ export const livePickerEffect = (): Effect.Effect<Picker, unknown> =>
   )
 
 /**
- * `lingtai add`'s own — `init` never gives `chooseFirstProject` a slug, so it
- * never reaches this (#394). Exported for `add-github.ts`'s early check,
- * which calls `choose()` on the same picker to name a refused slug by the
- * same sentence and deep link this module's own `runGithubBranch` would have
- * (#402 fix round 3).
- */
-export function livePicker(): Promise<Picker> {
-  return Effect.runPromise(livePickerEffect())
-}
-
-/**
- * Runs an Effect at this host's edge. The list needs no services, so the
- * context is empty; `runPromiseWith` is the run the ratchet does not count, and
- * it starts no fiber of a caller's tracer because there is no caller here.
- * `add.ts` and `add-github.ts` still import it, until CLI-22a.
- */
-export const runEffect = Effect.runPromiseWith(Context.empty())
-
-/**
  * What a person can pick from on this machine (#969): the App's installations,
  * or the repositories the saved `gh` login can push to. Fails with the
  * sentence to print when the read failed — never an empty list.
@@ -1337,11 +1318,6 @@ export const liveRepositoryListEffect = (auth: 'app' | 'gh'): Effect.Effect<Repo
       installUrl: () => Effect.runPromiseWith(services)(liveInstallUrlEffect()),
     })
   })
-
-/** `liveRepositoryListEffect`, for `add.ts` until CLI-22a. */
-export function liveRepositoryList(auth: 'app' | 'gh'): Promise<RepositoryList> {
-  return Effect.runPromise(liveRepositoryListEffect(auth))
-}
 
 /**
  * `askRecipe`'s `reader`, for a local directory: `has` over `node:fs`'s

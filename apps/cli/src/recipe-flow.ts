@@ -199,10 +199,6 @@ function writeOrRefuse(
 
 type Recipe = { ok: true; trial: TrialOutcome; hints: string[]; answers: Answers } | { refused: string }
 
-export function askRecipe(world: QuestionWorld, at: RecipeAt): Promise<Recipe> {
-  return Effect.runPromise(askRecipeEffect(world, at))
-}
-
 export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   world: QuestionWorld,
   at: RecipeAt,
