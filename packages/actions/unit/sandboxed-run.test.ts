@@ -2,7 +2,8 @@
  * Every step `runPlugin` serves, with a *sandboxed* decision and without one (#1152). The wrap and the runner are
  * fakes that record: no process starts, and the real `Sandbox` is never loaded.
  */
-import { runPlugin, type SandboxDecision, type Step } from '@lingtai/recipe'
+import type { Step } from '@lingtai/domain'
+import { runPlugin, type SandboxDecision } from '@lingtai/recipe'
 import { SandboxUnavailable, SandboxWrapFailed, type Wrapped } from '@lingtai/sandbox'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -14,7 +15,7 @@ import type { RunSandbox } from '../src/process-action.ts'
 
 const STEPS = Object.keys(runPlugin.at) as Step[]
 const context: ActionContext = { runId: 'pass-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: { SECRET: 'agent' } }
-const action = { name: 'check', run: 'pnpm test', env: [] as string[] }
+const action = { name: 'check', run: 'pnpm test', timeout: '15m', env: [] as string[] }
 
 const sandboxed: SandboxDecision = {
   kind: 'sandboxed',
@@ -28,7 +29,11 @@ function fakes(failWith?: SandboxUnavailable | SandboxWrapFailed) {
     wrap: (command, worktree, env) => {
       wraps.push({ command, worktree, env })
       if (failWith) return Effect.fail(failWith)
-      return Effect.succeed({ argv: ['/wrap', ...command], env: { ...env, WRAPPED: '1' }, commandId: 'id' } satisfies Wrapped)
+      return Effect.succeed({
+        argv: ['/wrap', ...command],
+        env: { ...env, WRAPPED: '1' },
+        commandId: 'id',
+      } satisfies Wrapped)
     },
   }
   const command = (options: RunCommandOptions): Effect.Effect<CommandOutcome> => {
@@ -77,21 +82,24 @@ describe('a decision that is not sandboxed', () => {
     { kind: 'unsandboxed', reason: 'off by choice' },
     { kind: 'unsandboxed', reason: 'degraded', why: 'no bwrap' },
   ]
-  it.each(unsandboxed.map((d) => [d?.kind ?? 'absent', d] as const))('%s never wraps and hands today’s options', async (_n, decision) => {
-    for (const step of STEPS) {
-      const f = fakes()
-      const [port] = actionPortsFromRecipe(step, [action], {
-        ...f.deps,
-        ...(decision ? { sandboxDecision: decision } : {}),
-        sandbox: f.sandbox,
-      })
-      await Effect.runPromise(port!.run(context))
-      expect(f.wraps).toEqual([])
-      expect(f.spawns[0]).not.toHaveProperty('wrapped')
-      expect(f.spawns[0]).not.toHaveProperty('ownGroup')
-      expect(f.spawns[0]).toMatchObject({ run: 'pnpm test', env: { PATH: '/bin' } })
-    }
-  })
+  it.each(unsandboxed.map((d) => [d?.kind ?? 'absent', d] as const))(
+    '%s never wraps and hands today’s options',
+    async (_n, decision) => {
+      for (const step of STEPS) {
+        const f = fakes()
+        const [port] = actionPortsFromRecipe(step, [action], {
+          ...f.deps,
+          ...(decision ? { sandboxDecision: decision } : {}),
+          sandbox: f.sandbox,
+        })
+        await Effect.runPromise(port!.run(context))
+        expect(f.wraps).toEqual([])
+        expect(f.spawns[0]).not.toHaveProperty('wrapped')
+        expect(f.spawns[0]).not.toHaveProperty('ownGroup')
+        expect(f.spawns[0]).toMatchObject({ run: 'pnpm test', env: { PATH: '/bin' } })
+      }
+    },
+  )
 })
 
 describe('fail closed', () => {
@@ -115,7 +123,11 @@ describe('a wrap that fails', () => {
     [new SandboxWrapFailed({ cause: new Error('srt said no') }), 'srt said no'],
   ])('fails the action with its sentence and spawns nothing', async (error, sentence) => {
     const f = fakes(error)
-    const [port] = actionPortsFromRecipe('build', [action], { ...f.deps, sandboxDecision: sandboxed, sandbox: f.sandbox })
+    const [port] = actionPortsFromRecipe('build', [action], {
+      ...f.deps,
+      sandboxDecision: sandboxed,
+      sandbox: f.sandbox,
+    })
     const result = await Effect.runPromise(port!.run(context))
     expect(result.verdict).toBe('failed')
     expect(result.evidence).toContain(sentence)

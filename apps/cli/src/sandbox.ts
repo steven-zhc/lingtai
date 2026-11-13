@@ -17,12 +17,12 @@ import { Context, Effect, Layer, Scope, Semaphore } from 'effect'
  * is held by the pass's refusal, and one that does not is *degraded* with the sentence. Never unwrapped silently.
  */
 let built: SandboxApi | undefined
-const gate = Semaphore.makeUnsafe(1)
+const building = Semaphore.makeUnsafe(1)
 const held = Scope.makeUnsafe()
 
 const load: Effect.Effect<SandboxApi, SandboxUnavailable> = Effect.suspend(() => {
   if (built !== undefined) return Effect.succeed(built)
-  return gate.withPermits(1)(
+  return building.withPermits(1)(
     Effect.suspend(() => {
       if (built !== undefined) return Effect.succeed(built)
       return Effect.tryPromise(() => import('@lingtai/sandbox/live')).pipe(
