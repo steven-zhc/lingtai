@@ -65,6 +65,7 @@ import {
   conductorLockHolder,
   describeCurrency,
   describeInFlight,
+  findOrphanClaudeDirsEffect,
   findOrphanLogsEffect,
   findOrphansEffect,
   held as heldPasses,
@@ -98,6 +99,7 @@ import {
   hasGitHubApp,
   hasGitHubAuth,
   machineDatabaseUrl,
+  claudeOauthToken,
   codexTextConfig,
   type CodexTextConfig,
   postgresUrlIfSet,
@@ -1265,6 +1267,12 @@ export interface DoctorReach {
   /** Model-only Codex configuration, injectable so doctor tests never read machine credentials. */
   codexText?: () => CodexTextConfig | undefined
   /**
+   * Whether a long-lived Claude token is configured — *whether*, never the
+   * value, so doctor never holds it and no row can print it (0127 §8).
+   * Injectable so a test reads no machine file.
+   */
+  claudeToken?: () => Effect.Effect<boolean, unknown>
+  /**
    * As `probeSeaBuild` answers it — required rather than optional, and
    * `runDoctor`'s own `reach` parameter picks this one key out with `Pick` so
    * the requirement reaches that call boundary too, not just a literal typed
@@ -1845,9 +1853,11 @@ function conductorLock(
  */
 function orphans(
   fetch: () => Effect.Effect<Orphan[], unknown> = () =>
-    Effect.all([findOrphansEffect({ dryRun: true }), findOrphanLogsEffect({ dryRun: true })]).pipe(
-      Effect.map((both) => both.flat()),
-    ),
+    Effect.all([
+      findOrphansEffect({ dryRun: true }),
+      findOrphanLogsEffect({ dryRun: true }),
+      findOrphanClaudeDirsEffect({ dryRun: true }),
+    ]).pipe(Effect.map((both) => both.flat())),
 ): Effect.Effect<CheckResult> {
   return Effect.map(
     recovering(fetch(), () => null),
@@ -3014,6 +3024,33 @@ export function codexRoleRow(
   }
 }
 
+/**
+ * Whether a sandboxed Claude Code run has a long-lived token to hold (0127 §8).
+ * `ok` either way: nothing needs it until a recipe requires a sandbox for
+ * `claude-code`, and a warning on every machine would be noise. The value is
+ * never read here — `reach.claudeToken` answers a boolean.
+ */
+export function claudeTokenRow(
+  read: () => Effect.Effect<boolean, unknown> = () => Effect.try(() => claudeOauthToken() !== undefined),
+): Effect.Effect<CheckResult> {
+  const name = 'claude: long-lived token'
+  return read().pipe(
+    Effect.map((set): CheckResult =>
+      set
+        ? { name, status: 'ok', detail: 'set' }
+        : {
+            name,
+            status: 'ok',
+            detail: 'not set — `claude setup-token`, then `claude.oauth_token` in ~/.lingtai/config.yml',
+          },
+    ),
+    // The reader's sentence names the path and quotes nothing; it is safe to show.
+    Effect.catch((err) =>
+      Effect.succeed<CheckResult>({ name, status: 'fail', detail: (err as Error).message ?? 'could not be read' }),
+    ),
+  )
+}
+
 /** `codexRoleRow`'s own marker for a role with no `codex_text` to run on, so the two throws get two titles. */
 class NoCodexText extends Error {
   override readonly cause: Error
@@ -3729,6 +3766,12 @@ export function runDoctor(
     yield* step('settings', settingsSources(reach.settings).pipe(Effect.map(push)))
     yield* step('runtimes', runtimeAuth(reach.runtimes).pipe(Effect.map(push)))
     yield* step(
+      'claude token',
+      claudeTokenRow(reach.claudeToken ?? (() => Effect.try(() => claudeOauthToken(env) !== undefined))).pipe(
+        Effect.map(push),
+      ),
+    )
+    yield* step(
       'deferred',
       Effect.sync(() => {
         for (const d of DEFERRED) results.push({ ...d, status: 'skip', deferred: true })
@@ -3824,7 +3867,7 @@ const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
   ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers', 'spend', 'rates', 'account']],
   ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],
   ['GitHub', ['github']],
-  ['Runtimes', ['runtime']],
+  ['Runtimes', ['runtime', 'claude']],
 ]
 
 /** The section of one check. A deferred row is *not implemented here* whatever its prefix; an unknown prefix is `Other`, never dropped. */

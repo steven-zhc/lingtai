@@ -96,6 +96,7 @@ export {
 export {
   existsEffect,
   findLaggingProjectionsEffect,
+  findOrphanClaudeDirsEffect,
   findOrphanLogsEffect,
   findOrphansEffect,
   killWorkerEffect,
