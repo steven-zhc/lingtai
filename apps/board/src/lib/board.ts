@@ -91,7 +91,7 @@ import {
   type Bill,
   type SpendCurrency,
 } from './spend.ts'
-import { timed } from './timing.ts'
+import { timed, traced } from './timing.ts'
 import { presentCause, type CausePresentation } from './triage-cause.ts'
 
 /**
@@ -1309,11 +1309,13 @@ export async function githubQueue(
   // All of them at once, for the reason `queueFilters` gives (#112).
   const asked = await Promise.all(
     askable.map((filter) =>
-      ask(filter).catch((err: unknown): ProjectQueue => ({
-        state: 'unanswered',
-        filter,
-        problem: err instanceof Error ? err.message : String(err),
-      })),
+      traced('queue.project', () => ask(filter), { 'lingtai.project': filter.project }).catch(
+        (err: unknown): ProjectQueue => ({
+          state: 'unanswered',
+          filter,
+          problem: err instanceof Error ? err.message : String(err),
+        }),
+      ),
     ),
   )
 
@@ -1502,11 +1504,13 @@ async function laneProgress(
   }
   // Both branches need only the attempt's state, so it is read through a snapshot (0124, #878). The board
   // offers snapshots through its writer; one lookup for all the cards.
-  const read = { snapshots: log.snapshots, writer: await boardWriterOrNone() }
+  const read = { snapshots: log.snapshots, writer: await traced('snapshot.writer', () => boardWriterOrNone()) }
   const reduced = await Promise.all([
     ...railed.map(async ({ task, over }) => {
       try {
-        const state = await readState(eventStore, attemptReducer, task.runId as string, 'all', read)
+        const state = await traced('attempt.state', () =>
+          readState(eventStore, attemptReducer, task.runId as string, 'all', read),
+        )
         // The saved head rides on the read already made, for the waiting cards
         // only; the remote-ref check stays in the action (#647).
         const progress = progressOf(state, plans.get(task.project), over)
@@ -1519,7 +1523,9 @@ async function laneProgress(
     }),
     ...headOnly.map(async (task) => {
       try {
-        const state = await readState(eventStore, attemptReducer, task.runId as string, 'all', read)
+        const state = await traced('attempt.state', () =>
+          readState(eventStore, attemptReducer, task.runId as string, 'all', read),
+        )
         return [task.taskId, null, headOf(task, state), null] as const
       } catch {
         return [task.taskId, null, null, null] as const
@@ -1600,8 +1606,8 @@ export async function loadBoard(project?: string): Promise<Board> {
     // Null is not `[]`: the queue goes quiet on a failed read as it always
     // did, but triage's status must not be derived from projects it was never
     // told about (#583).
-    loadAllProjects().catch(() => null),
-    onBoardProjects(),
+    timed('projects.all', () => loadAllProjects()).catch(() => null),
+    timed('projects.onboard', () => onBoardProjects()),
   ])
   const { registered, pending } = splitRegister(all ?? [])
   const names = registered.map((p) => p.project).filter((p): p is string => p !== null)
@@ -1631,18 +1637,20 @@ export async function loadBoard(project?: string): Promise<Board> {
     // The beacon's row, once for the board: the page reads the same one, and
     // a failed read reaches the board as an error there as it does on the page,
     // rather than leaving the cards to say less than the page will.
-    readStatus(),
+    timed('daemon.status', () => readStatus()),
     // Which projects declare `triage:`, read from the recipe as the page reads
     // it (`loadCurrentTriageStatus`) and not off the queue filter, whose GitHub
     // client can fail for a project whose recipe is perfectly readable.
     all === null
       ? Promise.resolve(null)
-      : declaredTriage(registered.filter((p) => project === undefined || p.project === project)),
+      : timed('triage.declared', () =>
+          declaredTriage(registered.filter((p) => project === undefined || p.project === project)),
+        ),
   ])
   // After the recipes too, and for the same reason: a gate's timeout is the
   // denominator a running card measures against, and it is in the recipe this
   // just read.
-  const { progress, fixHeads, roundsOpened } = await laneProgress(tasks, queued.plans)
+  const { progress, fixHeads, roundsOpened } = await timed('board.progress', () => laneProgress(tasks, queued.plans))
   // Keyed by project, for `held`'s fallback when a run's own stream named no
   // ceiling of its own — this loop already resolved every recipe, and reading
   // one twice is how a render gets expensive (`queued.limits`'s own doc).

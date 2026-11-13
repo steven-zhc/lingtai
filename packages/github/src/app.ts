@@ -28,6 +28,7 @@ import { createSign } from 'node:crypto'
 import { Data, Effect, Ref, Semaphore } from 'effect'
 
 import type { BodyChanged } from './client.ts'
+import { observedRequest, remainingOf } from './observe.ts'
 
 export const GITHUB_API = 'https://api.github.com'
 
@@ -168,25 +169,28 @@ export const githubJson = <T>(
     // body, so an interruption after the headers still aborts the transfer.
     const result = yield* Effect.tryPromise({
       try: (signal) =>
-        fetch(`${GITHUB_API}${path}`, {
-          method,
-          headers: {
-            accept: 'application/vnd.github+json',
-            'x-github-api-version': '2022-11-28',
-            // GitHub rejects a request with no User-Agent, with a message that
-            // does not say so.
-            'user-agent': 'lingtai',
-            authorization: `Bearer ${token}`,
-            ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-          },
-          body: body === undefined ? undefined : JSON.stringify(body),
-          signal,
-        }).then((response): Promise<{ ok: true; data: unknown } | { ok: false; status: number; text: string }> =>
-          !response.ok
-            ? response.text().then((text) => ({ ok: false, status: response.status, text }))
-            : response.status === 204
-              ? Promise.resolve({ ok: true, data: undefined })
-              : response.json().then((data: unknown) => ({ ok: true, data })),
+        observedRequest(method, path, (report) =>
+          fetch(`${GITHUB_API}${path}`, {
+            method,
+            headers: {
+              accept: 'application/vnd.github+json',
+              'x-github-api-version': '2022-11-28',
+              // GitHub rejects a request with no User-Agent, with a message that
+              // does not say so.
+              'user-agent': 'lingtai',
+              authorization: `Bearer ${token}`,
+              ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+            },
+            body: body === undefined ? undefined : JSON.stringify(body),
+            signal,
+          }).then((response): Promise<{ ok: true; data: unknown } | { ok: false; status: number; text: string }> => {
+            report(remainingOf(response))
+            return !response.ok
+              ? response.text().then((text) => ({ ok: false, status: response.status, text }))
+              : response.status === 204
+                ? Promise.resolve({ ok: true, data: undefined })
+                : response.json().then((data: unknown) => ({ ok: true, data }))
+          }),
         ),
       catch: failed(path),
     })

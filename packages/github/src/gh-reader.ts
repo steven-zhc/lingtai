@@ -14,6 +14,7 @@ import { Effect } from 'effect'
 
 import { GITHUB_API, GitHubFailed } from './app.ts'
 import { type GhRun, ghTokenEffect, liveGh } from './gh.ts'
+import { observedRequest, remainingOf } from './observe.ts'
 
 const TIMEOUT = '15 seconds'
 
@@ -31,15 +32,20 @@ export function createGhReader(run: GhRun = liveGh): GhReader {
         const token = yield* ghTokenEffect(run)
         const response = yield* Effect.tryPromise({
           try: (signal) =>
-            fetch(`${GITHUB_API}${path}`, {
-              signal,
-              headers: {
-                accept: 'application/vnd.github+json',
-                'x-github-api-version': '2022-11-28',
-                'user-agent': 'lingtai',
-                authorization: `Bearer ${token}`,
-              },
-            }),
+            observedRequest('GET', path, (report) =>
+              fetch(`${GITHUB_API}${path}`, {
+                signal,
+                headers: {
+                  accept: 'application/vnd.github+json',
+                  'x-github-api-version': '2022-11-28',
+                  'user-agent': 'lingtai',
+                  authorization: `Bearer ${token}`,
+                },
+              }).then((response) => {
+                report(remainingOf(response))
+                return response
+              }),
+            ),
           catch: (err) => new Error(`could not reach GitHub: ${asError(err).message}`),
         })
         if (!response.ok) {

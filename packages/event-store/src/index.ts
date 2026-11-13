@@ -40,7 +40,7 @@ export {
   Snapshots,
   type SnapshotsPort,
 } from './snapshots.ts'
-export { readThroughSnapshot, type SnapshotReadOptions } from './snapshot-read.ts'
+export { readThroughSnapshot, type SnapshotReadObserver, type SnapshotReadOptions } from './snapshot-read.ts'
 export { type Log, type PostgresLogOptions } from './log.ts'
 export {
   type EndedOutcome,

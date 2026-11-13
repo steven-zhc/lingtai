@@ -46,6 +46,7 @@ export {
   type TaskQuery,
   type TicketReportQuery,
 } from './store.ts'
+export { type AcquireObserver, setAcquireObserver } from './acquire.ts'
 export { createFace, reduceFace } from './store-face.ts'
 export {
   closeProcessProjectionsEffect,

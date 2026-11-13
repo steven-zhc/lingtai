@@ -79,6 +79,7 @@ import {
   log,
   processEvents,
   readThroughSnapshot,
+  type SnapshotReadObserver,
   type SnapshotStore,
 } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
@@ -102,6 +103,13 @@ export { CONTROL_STREAM, type ControlState, type ShutdownRequest } from '@lingta
 // is not a reason to touch the board, `doctor` and `restart`.
 export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus } from './store.ts'
 
+/** What a control read may be handed: its snapshots, a writer, and an observer of the read (#1144). */
+export type ReadCache = {
+  snapshots?: SnapshotStore
+  writer?: Pick<SnapshotWriter, 'offer'>
+  observe?: SnapshotReadObserver
+}
+
 /**
  * Reduces the control stream. Cheap: it is a handful of events, not a history.
  *
@@ -114,22 +122,17 @@ export { HEARTBEAT_MS, STALE_AFTER_MS, lastBeat, type Beating, type DaemonStatus
  * Every caller — the conductor, the board, `doctor`, `status` — reads the same
  * state.
  */
-export const readControlEffect = (
-  store?: EventStore,
-  cache: { snapshots?: SnapshotStore; writer?: Pick<SnapshotWriter, 'offer'> } = {},
-): Effect.Effect<ControlState, unknown> => {
+export const readControlEffect = (store?: EventStore, cache: ReadCache = {}): Effect.Effect<ControlState, unknown> => {
   // The default snapshots belong to the default store's log; a store passed in has none of its own.
   const snapshots = cache.snapshots ?? (store === undefined ? log.snapshots : undefined)
   return readThroughSnapshot<ControlState>(store ?? eventStore, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
     snapshots,
     writer: cache.writer,
+    observe: cache.observe,
   })
 }
 
-export function readControl(
-  store?: EventStore,
-  cache: { snapshots?: SnapshotStore; writer?: Pick<SnapshotWriter, 'offer'> } = {},
-): Promise<ControlState> {
+export function readControl(store?: EventStore, cache: ReadCache = {}): Promise<ControlState> {
   return Effect.runPromise(readControlEffect(store, cache))
 }
 

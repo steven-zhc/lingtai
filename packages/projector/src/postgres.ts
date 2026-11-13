@@ -18,6 +18,7 @@ import { postgresUrl } from '@lingtai/env'
 import { Effect, Exit } from 'effect'
 import pg from 'pg'
 
+import { acquireObserver } from './acquire.ts'
 import type { BacklogEntry } from './backlog.ts'
 import { grantOfFor, type SpendRow } from './spend.ts'
 import { promiseProjectionStore } from './store-face.ts'
@@ -243,6 +244,31 @@ export function createPostgresProjectionStore(options: PostgresProjectionStoreOp
 
 const codeOf = (err: unknown) => (err as { code?: string }).code
 
+/** The part of a `pg.Pool` a read needs, so a test can hand a fake one. */
+export type QueryPool = Pick<pg.Pool, 'connect' | 'query'>
+
+/**
+ * One read. With an observer installed it takes the connection itself, which is
+ * what `Pool.query` does underneath, so the checkout is its own step; a driver
+ * error discards the client (`release(err)`), as `Pool.query` does.
+ */
+export function queryRows(pool: QueryPool, text: string, args?: unknown[]): Promise<pg.QueryResultRow[]> {
+  const around = acquireObserver()
+  if (around === undefined) return pool.query(text, args).then((r) => r.rows)
+  return around(() => pool.connect()).then((client) =>
+    client.query(text, args).then(
+      (r) => {
+        client.release()
+        return r.rows
+      },
+      (err: unknown) => {
+        client.release(err instanceof Error ? err : true)
+        throw err
+      },
+    ),
+  )
+}
+
 /** `Projections` over a `pg.Pool`. A driver error is a defect, as itself. */
 export function makePostgresProjections(options: PostgresProjectionStoreOptions = {}): ProjectionsPort {
   const pool = new pg.Pool({
@@ -252,13 +278,13 @@ export function makePostgresProjections(options: PostgresProjectionStoreOptions 
   })
   listenForIdleErrors(pool)
 
-  const rows = (text: string, args?: unknown[]) => Effect.promise(() => pool.query(text, args).then((r) => r.rows))
+  const rows = (text: string, args?: unknown[]) => Effect.promise(() => queryRows(pool, text, args))
 
   /** A read whose missing table (`42P01`) is no rows rather than a failure. */
   const rowsOrNone = (text: string, args?: unknown[]) =>
     Effect.promise(() =>
-      pool.query(text, args).then(
-        (r) => r.rows,
+      queryRows(pool, text, args).then(
+        (r) => r,
         (err: unknown) => {
           if (codeOf(err) === '42P01') return []
           throw err
