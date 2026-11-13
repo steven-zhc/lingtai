@@ -15,7 +15,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "fmt": "oxfmt 'packages/**/*.ts' 'packages/**/*.tsx' 'apps/**/*.ts' 'apps/**/*.tsx' 'vitest.config.ts' 'doc/events.json'",
     "fmt:check": "oxfmt --check 'packages/**/*.ts' 'packages/**/*.tsx' 'apps/**/*.ts' 'apps/**/*.tsx' 'vitest.config.ts' 'doc/events.json'",
-    "lint": "oxlint --deny-warnings",
+    "lint": "oxlint --type-aware --deny-warnings",
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:db": "pnpm test:integration",
@@ -33,6 +33,7 @@
   "devDependencies": {
     "oxfmt": "0.71.0",
     "oxlint": "1.86.0",
+    "oxlint-tsgolint": "7.0.2007",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   }
