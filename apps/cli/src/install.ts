@@ -347,13 +347,23 @@ export const newestRelease = (
   })
 
 /**
- * A failure of any kind — typed or defect — answered by `onError` with the error a person should read; an
- * interruption passes. What a `try { await … } catch` was.
+ * A failure of any kind — typed or defect, an `Error` or whatever was thrown — settled into a value a person can
+ * read; an interruption passes. What a `try { await … } catch` was. The outcome is tagged, so a rejection that is
+ * not an `Error` (or is `null`) is still a failure and never a success.
  */
-const orElseWith = <A, B>(self: Effect.Effect<A, unknown>, onError: (err: Error) => B): Effect.Effect<A | B, unknown> =>
-  Effect.catchCause(self, (cause) =>
-    Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.succeed(onError(Cause.squash(cause) as Error)),
-  )
+type Settled<A> = { ok: true; value: A } | { ok: false; error: Error }
+const settle = <A>(self: Effect.Effect<A, unknown>): Effect.Effect<Settled<A>, unknown> =>
+  Effect.matchCauseEffect(self, {
+    onSuccess: (value) => Effect.succeed<Settled<A>>({ ok: true, value }),
+    onFailure: (cause) => {
+      if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+      const thrown = Cause.squash(cause)
+      return Effect.succeed<Settled<A>>({
+        ok: false,
+        error: thrown instanceof Error ? thrown : new Error(String(thrown)),
+      })
+    },
+  })
 
 /** `<hex>  <name>` per line, as `shasum -a 256` and `sha256sum` both write. */
 export function parseChecksums(text: string): Map<string, string> {
@@ -493,11 +503,14 @@ export const upgrade = (
     const platform = installPlatform()
     if (typeof platform !== 'string') return refuse(world, `not upgrading: ${platform.refused}`)
 
-    const asked = yield* orElseWith(newestRelease(world), (err) => err)
-    if (asked instanceof Error) {
-      return refuse(world, `could not ask GitHub Releases which version is newest — ${asked.message}. Nothing changed`)
+    const asked = yield* settle(newestRelease(world))
+    if (!asked.ok) {
+      return refuse(
+        world,
+        `could not ask GitHub Releases which version is newest — ${asked.error.message}. Nothing changed`,
+      )
     }
-    const release = asked
+    const release = asked.value
     const pointed = shim ?? current
     if (compareVersions(release.version, pointed) <= 0) {
       world.log(
@@ -506,8 +519,9 @@ export const upgrade = (
       return 0
     }
 
-    const unpacked = yield* orElseWith(unpackRelease(world, paths, release, platform), (err) => err)
-    if (unpacked instanceof Error) return refuse(world, `not upgrading: ${unpacked.message}`)
+    const settled = yield* settle(unpackRelease(world, paths, release, platform))
+    if (!settled.ok) return refuse(world, `not upgrading: ${settled.error.message}`)
+    const unpacked = settled.value
     world.log(
       unpacked === 'present'
         ? paint.muted(
@@ -615,12 +629,9 @@ export const uninstall = (
     // on a machine with no log configured at all. That is why there is no second
     // question below about a lock nobody could ask: this one is the question.
     let holder: string | null
-    const asked = yield* orElseWith(
-      lift(() => world.conducting()),
-      (err) => err,
-    )
-    if (asked instanceof Error) {
-      const err = asked
+    const asked = yield* settle(lift(() => world.conducting()))
+    if (!asked.ok) {
+      const err = asked.error
       // A read that failed is not a no (`daemon/src/lock.ts`), and nothing an
       // operator can set makes an unreadable file readable — so the remedy
       // offered is the one that works: fix the file, or answer for it.
@@ -633,7 +644,7 @@ export const uninstall = (
         )
       }
       holder = null
-    } else holder = asked
+    } else holder = asked.value
     if (holder !== null) {
       world.log(
         `${symbol.fail()} ${paint.fail(
@@ -648,10 +659,8 @@ export const uninstall = (
     // *no* and that has to be said before the question, not after the `rmSync`.
     const where = world.logWhere()
 
-    const app = yield* orElseWith(
-      lift(() => world.app()),
-      (err) => ({ unread: err.message }),
-    )
+    const appAsked = yield* settle(lift(() => world.app()))
+    const app = appAsked.ok ? appAsked.value : { unread: appAsked.error.message }
 
     const what = ownShim ? `everything under ${paths.home}, and ${paths.shim}` : `everything under ${paths.home}`
     // **Before the question, and before `--yes` can answer it.** On a machine
@@ -795,10 +804,8 @@ export const releaseCheck = (
         detail: 'a checkout, not an installed copy — git pull is its upgrade, and GitHub was not asked',
       }
     }
-    return yield* orElseWith(
-      Effect.map(newestRelease(world, 5_000), (newest) => releaseRow(current, newest)),
-      (err) => releaseRow(current, err),
-    )
+    const newest = yield* settle(newestRelease(world, 5_000))
+    return newest.ok ? releaseRow(current, newest.value) : releaseRow(current, newest.error)
   })
 
 // ------------------------------------------------------------------ live --

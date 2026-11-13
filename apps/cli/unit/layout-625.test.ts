@@ -347,6 +347,30 @@ describe('the install commands, laid out', () => {
     )
   })
 
+  it('treats a rejection that is not an Error as a failure, never as an answer', async () => {
+    const lines: string[] = []
+    const home = mkdtempSync(join(tmpdir(), 'lingtai-nonerror-'))
+    const self = join(home, 'versions', '0.10.0', 'lingtai')
+    mkdirSync(dirname(self), { recursive: true })
+    writeFileSync(self, '')
+    const w = world({ ...NOWHERE, LINGTAI_HOME: home }, lines, self)
+    w.fetch = (async () => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw 'down'
+    }) as unknown as typeof fetch
+    const code = await Effect.runPromise(upgrade({ despiteDoctor: false }, w, { form: 'binary', lingtai: '0.10.0' }))
+    expect(code).toBe(1)
+    expect(lines.at(-1)).toContain('could not ask GitHub Releases which version is newest — down. Nothing changed')
+
+    const un: string[] = []
+    const w2 = world({ ...NOWHERE, LINGTAI_HOME: home }, un)
+    w2.conducting = () => Promise.reject(null)
+    const kept = await Effect.runPromise(uninstall({ yes: true, nothingConducts: false }, w2))
+    expect(kept).toBe(1)
+    expect(un.at(-1)).toContain('could not be read')
+    rmSync(home, { recursive: true, force: true })
+  })
+
   it('put ✓ on "nothing is installed", and print no escape code in plain mode', async () => {
     const lines: string[] = []
     expect(await Effect.runPromise(uninstall({ yes: true, nothingConducts: false }, world(NOWHERE, lines)))).toBe(0)
