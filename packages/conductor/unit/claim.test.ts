@@ -8,9 +8,10 @@ import { aClaim, anAttempt, anAttemptRef, aWait, aWaitId } from '@lingtai/domain
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { claimTicket, continueTicket } from '../src/claim.ts'
+import { claimTicketEffect, continueTicketEffect } from '../src/claim.ts'
 import { resolveWaitHolding } from '../src/resolve-wait.ts'
 
 const PROJECT = 'lingtai'
@@ -67,7 +68,7 @@ describe('continueTicket', () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 1)
 
-    const result = await continueTicket(ticketId, 'pass-1', { store })
+    const result = await Effect.runPromise(continueTicketEffect(ticketId, 'pass-1', { store }))
 
     expect(result).toEqual({ ok: false, refusal: { reason: 'not-approved', status: 'backlog' } })
   })
@@ -75,7 +76,7 @@ describe('continueTicket', () => {
   it('refuses a run that is not the one approved', async () => {
     const { store, ticketId } = await approvedTicket(2, 'pass-2')
 
-    const result = await continueTicket(ticketId, 'pass-wrong', { store })
+    const result = await Effect.runPromise(continueTicketEffect(ticketId, 'pass-wrong', { store }))
 
     expect(result).toEqual({ ok: false, refusal: { reason: 'wrong-run', runId: 'pass-2' } })
   })
@@ -83,7 +84,7 @@ describe('continueTicket', () => {
   it('continues the approved run with a TicketContinued, and writes no second TicketClaimed', async () => {
     const { store, ticketId } = await approvedTicket(3, 'pass-3')
 
-    const result = await continueTicket(ticketId, 'pass-3', { worker: 'daemon:1', store })
+    const result = await Effect.runPromise(continueTicketEffect(ticketId, 'pass-3', { worker: 'daemon:1', store }))
 
     expect(result).toMatchObject({ ok: true, claim: { ticketId, runId: 'pass-3', worker: 'daemon:1' } })
     const state = reduceTicket(await store.read(ticketId))
@@ -106,7 +107,7 @@ describe('continueTicket', () => {
     ])
     const staleRead: EventStore = { ...store, read: async () => stale }
 
-    const result = await continueTicket(ticketId, 'pass-4', { store: staleRead })
+    const result = await Effect.runPromise(continueTicketEffect(ticketId, 'pass-4', { store: staleRead }))
 
     expect(result).toEqual({ ok: false, refusal: { reason: 'lost-race' } })
   })
@@ -118,8 +119,8 @@ describe('claimTicket under a race', () => {
     const ticketId = ticketStream(PROJECT, 9)
 
     const [a, b] = await Promise.all([
-      claimTicket(ticketId, { runId: 'pass-a', store }),
-      claimTicket(ticketId, { runId: 'pass-b', store }),
+      Effect.runPromise(claimTicketEffect(ticketId, { runId: 'pass-a', store })),
+      Effect.runPromise(claimTicketEffect(ticketId, { runId: 'pass-b', store })),
     ])
 
     expect([a.ok, b.ok].sort()).toEqual([false, true])

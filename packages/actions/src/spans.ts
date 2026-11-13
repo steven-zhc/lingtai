@@ -105,12 +105,31 @@ export function inSpanEffect<A>(
   body: Effect.Effect<A>,
   failed: (value: A) => boolean = () => false,
 ): Effect.Effect<A> {
+  return inSpanEffectIn(captured, name, attributes, () => body, failed)
+}
+
+/**
+ * `inSpanEffect` for a body that opens spans of its own (`tell.ts`'s `step end`,
+ * whose actions are children of it): the body is handed the context *with this
+ * span active and its own sink*, to pass as `captured` to the spans under it. A
+ * child that ends in error reaches this span through that sink, as it does for
+ * `inSpan`; nothing is made active around the body itself, so it is the caller
+ * who carries `inner` to its children, never the fiber.
+ */
+export function inSpanEffectIn<A>(
+  captured: ReturnType<typeof context.active>,
+  name: string,
+  attributes: Readonly<Record<string, number>>,
+  body: (inner: ReturnType<typeof context.active>) => Effect.Effect<A>,
+  failed: (value: A) => boolean = () => false,
+): Effect.Effect<A> {
   return Effect.suspend(() => {
     const parent = captured.getValue(SINK) as Sink | undefined
+    const mine = newSink()
     const span = trace.getTracer(SCOPE).startSpan(name, { attributes }, captured)
-    return Effect.onExit(body, (exit) =>
+    return Effect.onExit(body(withSink(trace.setSpan(captured, span), mine)), (exit) =>
       Effect.sync(() => {
-        if (exit._tag === 'Failure' || failed(exit.value)) {
+        if (exit._tag === 'Failure' || failed(exit.value) || mine.errored) {
           span.setStatus({ code: SpanStatusCode.ERROR })
           if (parent !== undefined) parent.errored = true
         }

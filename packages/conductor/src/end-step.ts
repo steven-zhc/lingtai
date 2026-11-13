@@ -44,6 +44,7 @@ import type { LogQueries } from '@lingtai/event-store/log'
 // builds a Postgres client at import.
 import type { EventStore } from '@lingtai/event-store/store'
 import { type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
 /**
  * The outcomes `end` fires on. The recipe's `when:` is one of these or `any`.
@@ -158,21 +159,33 @@ export function resolveEndActions(
  * `releaseTicket`, which owns its own read and version. Everything else
  * should use `resolveEndActions` and keep the two facts in one transaction.
  */
-export async function appendEndActions(
+export function appendEndActionsEffect(
+  store: EventStore,
+  ticketId: string,
+  actions: readonly StepAction[],
+  outcome: TerminalOutcome,
+): Effect.Effect<ToAppend[], unknown> {
+  return Effect.gen(function* () {
+    if (actions.length === 0) return []
+    const events = yield* Effect.tryPromise({ try: () => store.read(ticketId), catch: (error) => error })
+    const toAppend = resolveEndActions(events, actions, outcome)
+    if (toAppend.length === 0) return []
+    yield* Effect.tryPromise({ try: () => store.append(ticketId, events.length, toAppend), catch: (error) => error })
+    // Returned so the caller can carry them out. Resolving and doing are two
+    // steps on purpose — the resolution is a fact and belongs in one transaction
+    // with the outcome, and the doing is I/O that must not be able to undo it.
+    return toAppend
+  })
+}
+
+/** `appendEndActionsEffect` as a promise, for `lingtai end` (apps/cli) until its row of #790. */
+export function appendEndActions(
   store: EventStore,
   ticketId: string,
   actions: readonly StepAction[],
   outcome: TerminalOutcome,
 ): Promise<ToAppend[]> {
-  if (actions.length === 0) return []
-  const events = await store.read(ticketId)
-  const toAppend = resolveEndActions(events, actions, outcome)
-  if (toAppend.length === 0) return []
-  await store.append(ticketId, events.length, toAppend)
-  // Returned so the caller can carry them out. Resolving and doing are two
-  // steps on purpose — the resolution is a fact and belongs in one transaction
-  // with the outcome, and the doing is I/O that must not be able to undo it.
-  return toAppend
+  return Effect.runPromise(appendEndActionsEffect(store, ticketId, actions, outcome))
 }
 
 // ------------------------------------------------------- what did not run ----
@@ -237,14 +250,23 @@ export function splitTicket(streamId: string): { project: string; issue: number 
  * Read by `lingtai doctor`, which reports it, and by `lingtai end replay`,
  * which repairs it by appending what should have been appended at the time.
  */
-export async function endedWithoutEndActions(queries?: LogQueries): Promise<UnresolvedEnd[]> {
-  // The comparison is the store's since #221 — an anti-join that returns only
-  // the offending items — and the naming is still this file's: `ticket-lingtai-52`
-  // becomes a project and an issue here, where `splitTicket` is.
-  const ask = queries ?? (await import('@lingtai/event-store')).log.queries
-  const found = await ask.endedWithoutEndActions()
-  return found.flatMap((row) => {
-    const split = splitTicket(row.streamId)
-    return split === null ? [] : [{ ticketId: row.streamId, outcome: row.outcome, ...split }]
+export function endedWithoutEndActionsEffect(queries?: LogQueries): Effect.Effect<UnresolvedEnd[], unknown> {
+  return Effect.gen(function* () {
+    // The comparison is the store's since #221 — an anti-join that returns only
+    // the offending items — and the naming is still this file's: `ticket-lingtai-52`
+    // becomes a project and an issue here, where `splitTicket` is.
+    const ask =
+      queries ??
+      (yield* Effect.tryPromise({ try: () => import('@lingtai/event-store'), catch: (error) => error })).log.queries
+    const found = yield* Effect.tryPromise({ try: () => ask.endedWithoutEndActions(), catch: (error) => error })
+    return found.flatMap((row) => {
+      const split = splitTicket(row.streamId)
+      return split === null ? [] : [{ ticketId: row.streamId, outcome: row.outcome, ...split }]
+    })
   })
+}
+
+/** `endedWithoutEndActionsEffect` as a promise, for `lingtai end` and `lingtai doctor` until their rows of #790. */
+export function endedWithoutEndActions(queries?: LogQueries): Promise<UnresolvedEnd[]> {
+  return Effect.runPromise(endedWithoutEndActionsEffect(queries))
 }

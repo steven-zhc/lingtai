@@ -28,6 +28,7 @@
 import { type CommandOutcome, type RunCommandOptions, boundedEvidence } from '@lingtai/actions'
 import { integrationStream, parsePayload } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
+import { Effect, Fiber, Result } from 'effect'
 
 export interface BaseCheckQuestion {
   project: string
@@ -81,123 +82,159 @@ export interface BaseCheckDeps {
 
 const ATTEMPTS = 8
 
-export function createBaseCheck(deps: BaseCheckDeps): { ask: (q: BaseCheckQuestion) => Promise<BaseCheckAnswer> } {
-  const inFlight = new Map<string, Promise<BaseCheckAnswer>>()
+/** A port's promise as an Effect whose failure is whatever it rejected with. */
+const attempt = <A>(call: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: call, catch: (error) => error })
 
-  async function check(q: BaseCheckQuestion, stream: string): Promise<BaseCheckAnswer> {
-    let events
-    try {
-      events = await deps.store.read(stream)
-    } catch (err) {
-      return { verdict: 'unknown', why: `the log could not be read: ${(err as Error).message}` }
-    }
-    for (const event of [...events].reverse()) {
-      if (event.type !== 'BaseChecked') continue
-      const data = event.data as {
-        baseSha?: string
-        command?: string
-        ok?: boolean
-        exitCode?: number
-        evidence?: string
-      }
-      if (data.baseSha !== q.baseSha || data.command !== q.command) continue
-      return data.ok
-        ? { verdict: 'green', exitCode: 0, from: 'log' }
-        : { verdict: 'red', exitCode: data.exitCode ?? 1, evidence: data.evidence ?? '', from: 'log' }
-    }
+const answered = (answer: BaseCheckAnswer): BaseCheckAnswer => answer
 
-    const path = deps.worktreePath(q.project, q.baseSha.slice(0, 7), q.runId)
-    let outcome!: CommandOutcome
-    try {
-      try {
-        await q.tree.cut(path, q.baseSha)
-      } catch (err) {
-        return { verdict: 'unknown', why: `the worktree could not be cut at ${q.baseSha}: ${(err as Error).message}` }
+const unknownWith = (why: string): BaseCheckAnswer => ({ verdict: 'unknown', why })
+
+export function createBaseCheck(deps: BaseCheckDeps): {
+  ask: (q: BaseCheckQuestion) => Effect.Effect<BaseCheckAnswer>
+} {
+  // Fibers, not Effects: two passes asking one question join one run (#744). They are
+  // detached, so the run goes on to the end whoever stops waiting for it — a pass
+  // interrupted mid-check must not take the answer, or the cut worktree's removal, with it.
+  const inFlight = new Map<string, Fiber.Fiber<BaseCheckAnswer>>()
+
+  function check(q: BaseCheckQuestion, stream: string): Effect.Effect<BaseCheckAnswer, unknown> {
+    return Effect.gen(function* () {
+      const read = yield* Effect.result(attempt(() => deps.store.read(stream)))
+      if (Result.isFailure(read)) {
+        return unknownWith(`the log could not be read: ${(read.failure as Error).message}`)
       }
-      try {
-        await q.tree.plant(path)
-      } catch (err) {
-        return { verdict: 'unknown', why: `the env file could not be planted: ${(err as Error).message}` }
-      }
-      // An abort that landed while the cut or the plant was pending: `runCommand` only hears
-      // aborts that come after it starts, so nothing may be started with the signal already down.
-      if (q.signal.aborted) return { verdict: 'unknown', why: 'the check was aborted' }
-      const runIn = (c: BaseCheckCommand): Promise<CommandOutcome> =>
-        deps.run({
-          run: c.run,
-          timeoutMs: c.timeoutMs,
-          cwd: path,
-          env: c.env,
-          signal: q.signal,
-          ownGroup: true,
-        })
-      for (const prep of q.prepared) {
-        const prepared = await runIn(prep)
-        if (q.signal.aborted) return { verdict: 'unknown', why: 'the check was aborted' }
-        if (prepared.timedOut || prepared.exitCode !== 0) {
-          return { verdict: 'unknown', why: `\`${prep.run}\` did not succeed: ${prepared.evidence}` }
+      for (const event of [...read.success].reverse()) {
+        if (event.type !== 'BaseChecked') continue
+        const data = event.data as {
+          baseSha?: string
+          command?: string
+          ok?: boolean
+          exitCode?: number
+          evidence?: string
         }
+        if (data.baseSha !== q.baseSha || data.command !== q.command) continue
+        return data.ok
+          ? answered({ verdict: 'green', exitCode: 0, from: 'log' })
+          : answered({ verdict: 'red', exitCode: data.exitCode ?? 1, evidence: data.evidence ?? '', from: 'log' })
       }
-      outcome = await runIn({ run: q.command, env: q.env, timeoutMs: q.timeoutMs })
-    } finally {
-      await q.tree.remove(path).catch((err: Error) => {
-        deps.note(`base check: could not remove ${path}: ${err.message} — it may hold the planted env file`)
-      })
-    }
 
-    if (q.signal.aborted) return { verdict: 'unknown', why: 'the check was aborted' }
-    if (outcome.timedOut || outcome.exitCode === null) {
-      return { verdict: 'unknown', why: `\`${q.command}\` did not run to an exit code: ${outcome.evidence}` }
-    }
-    const ok = outcome.exitCode === 0
-    const evidence = ok ? '' : boundedEvidence(outcome.evidence)
-    const data = {
-      base: q.base,
-      baseSha: q.baseSha,
-      command: q.command,
-      ok,
-      exitCode: outcome.exitCode,
-      durationMs: Math.max(0, Math.round(outcome.durationMs)),
-      evidence,
-      runId: q.runId,
-    }
-    try {
-      await record(stream, data)
-    } catch (err) {
-      deps.note(`base check: could not record BaseChecked on ${stream}: ${(err as Error).message}`)
-    }
-    return ok
-      ? { verdict: 'green', exitCode: 0, from: 'ran' }
-      : { verdict: 'red', exitCode: outcome.exitCode, evidence, from: 'ran' }
+      const path = deps.worktreePath(q.project, q.baseSha.slice(0, 7), q.runId)
+      const ran = yield* Effect.gen(function* () {
+        const cut = yield* Effect.result(attempt(() => q.tree.cut(path, q.baseSha)))
+        if (Result.isFailure(cut)) {
+          return {
+            answer: unknownWith(`the worktree could not be cut at ${q.baseSha}: ${(cut.failure as Error).message}`),
+          } as const
+        }
+        const planted = yield* Effect.result(attempt(() => q.tree.plant(path)))
+        if (Result.isFailure(planted)) {
+          return {
+            answer: unknownWith(`the env file could not be planted: ${(planted.failure as Error).message}`),
+          } as const
+        }
+        // An abort that landed while the cut or the plant was pending: `runCommand` only hears
+        // aborts that come after it starts, so nothing may be started with the signal already down.
+        if (q.signal.aborted) return { answer: unknownWith('the check was aborted') } as const
+        const runIn = (c: BaseCheckCommand): Effect.Effect<CommandOutcome, unknown> =>
+          attempt(() =>
+            deps.run({
+              run: c.run,
+              timeoutMs: c.timeoutMs,
+              cwd: path,
+              env: c.env,
+              signal: q.signal,
+              ownGroup: true,
+            }),
+          )
+        for (const prep of q.prepared) {
+          const prepared = yield* runIn(prep)
+          if (q.signal.aborted) return { answer: unknownWith('the check was aborted') } as const
+          if (prepared.timedOut || prepared.exitCode !== 0) {
+            return { answer: unknownWith(`\`${prep.run}\` did not succeed: ${prepared.evidence}`) } as const
+          }
+        }
+        const outcome = yield* runIn({ run: q.command, env: q.env, timeoutMs: q.timeoutMs })
+        return { outcome } as const
+      }).pipe(
+        Effect.ensuring(
+          attempt(() => q.tree.remove(path)).pipe(
+            Effect.catch((err) =>
+              Effect.sync(() => {
+                deps.note(
+                  `base check: could not remove ${path}: ${(err as Error).message} — it may hold the planted env file`,
+                )
+              }),
+            ),
+          ),
+        ),
+      )
+      if (ran.outcome === undefined) return ran.answer
+      const outcome = ran.outcome
+
+      if (q.signal.aborted) return unknownWith('the check was aborted')
+      if (outcome.timedOut || outcome.exitCode === null) {
+        return unknownWith(`\`${q.command}\` did not run to an exit code: ${outcome.evidence}`)
+      }
+      const ok = outcome.exitCode === 0
+      const evidence = ok ? '' : boundedEvidence(outcome.evidence)
+      const data = {
+        base: q.base,
+        baseSha: q.baseSha,
+        command: q.command,
+        ok,
+        exitCode: outcome.exitCode,
+        durationMs: Math.max(0, Math.round(outcome.durationMs)),
+        evidence,
+        runId: q.runId,
+      }
+      const recorded = yield* Effect.result(record(stream, data).pipe(Effect.catchDefect((d) => Effect.fail(d))))
+      if (Result.isFailure(recorded)) {
+        deps.note(`base check: could not record BaseChecked on ${stream}: ${(recorded.failure as Error).message}`)
+      }
+      return ok
+        ? answered({ verdict: 'green', exitCode: 0, from: 'ran' })
+        : answered({ verdict: 'red', exitCode: outcome.exitCode, evidence, from: 'ran' })
+    })
   }
 
-  async function record(stream: string, data: unknown): Promise<void> {
-    for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
-      const at = (await deps.store.read(stream)).length
-      try {
-        await deps.store.append(stream, at, [
-          { type: 'BaseChecked', actor: 'conductor', data: parsePayload('BaseChecked', data) },
-        ])
-        return
-      } catch (err) {
-        if (!(err instanceof ConcurrencyError)) throw err
-        await new Promise((r) => setTimeout(r, 20 * (attempt + 1)))
+  function record(stream: string, data: unknown): Effect.Effect<void, unknown> {
+    return Effect.gen(function* () {
+      for (let attemptNo = 0; attemptNo < ATTEMPTS; attemptNo++) {
+        const at = (yield* attempt(() => deps.store.read(stream))).length
+        const appended = yield* Effect.result(
+          attempt(() =>
+            deps.store.append(stream, at, [
+              { type: 'BaseChecked', actor: 'conductor', data: parsePayload('BaseChecked', data) },
+            ]),
+          ),
+        )
+        if (Result.isSuccess(appended)) return
+        if (!(appended.failure instanceof ConcurrencyError)) return yield* Effect.fail(appended.failure)
+        yield* Effect.sleep(20 * (attemptNo + 1))
       }
-    }
-    throw new Error(`could not record BaseChecked on ${stream} after ${ATTEMPTS} attempts`)
+      return yield* Effect.fail(new Error(`could not record BaseChecked on ${stream} after ${ATTEMPTS} attempts`))
+    })
   }
 
   return {
     ask(q) {
-      const stream = integrationStream(q.project, q.base)
-      const key = JSON.stringify([stream, q.baseSha, q.command])
-      const shared = inFlight.get(key)
-      if (shared) return shared
-      const promise = check(q, stream)
-        .catch((err: Error): BaseCheckAnswer => ({ verdict: 'unknown', why: err.message }))
-        .finally(() => inFlight.delete(key))
-      inFlight.set(key, promise)
-      return promise
+      return Effect.suspend(() => {
+        const stream = integrationStream(q.project, q.base)
+        const key = JSON.stringify([stream, q.baseSha, q.command])
+        const shared = inFlight.get(key)
+        if (shared) return Fiber.join(shared)
+        const running = check(q, stream).pipe(
+          // A throw anywhere in the run is an answer of *unknown*, never a failed ask.
+          Effect.catchDefect((defect) => Effect.fail(defect)),
+          Effect.catch((err) => Effect.succeed(unknownWith((err as Error).message))),
+          Effect.ensuring(Effect.sync(() => inFlight.delete(key))),
+        )
+        return Effect.forkDetach(running).pipe(
+          Effect.tap((fiber) => Effect.sync(() => inFlight.set(key, fiber))),
+          Effect.flatMap(Fiber.join),
+        )
+      })
     },
   }
 }

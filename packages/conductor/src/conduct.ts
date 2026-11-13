@@ -228,7 +228,7 @@ import { ticketOfLandingSubject } from '@lingtai/repo/landing-subject'
 import { type Duration, Effect, Exit, Result } from 'effect'
 
 import { reachAccountLimit } from './account.ts'
-import { armsOnOrigin } from './arms.ts'
+import { armsOnOriginEffect } from './arms.ts'
 import {
   type Brief,
   type Claimed,
@@ -241,7 +241,7 @@ import {
 import { armForState, conflictResolvedOf, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
 import { createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
-import { claimTicket, continueTicket, releaseTicket, type SplitChildState } from './claim.ts'
+import { claimTicketEffect, continueTicketEffect, releaseTicketEffect, type SplitChildState } from './claim.ts'
 import { closeHolding } from './close.ts'
 import { runnableNow, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
@@ -276,7 +276,7 @@ import {
 import { RUN_LOG_END, runLogEnd, runLogPath } from './run-log.ts'
 import { runtimesOf } from './runtimes-of.ts'
 import { recordRecipe, stepsResolved } from './steps-resolved.ts'
-import { type RefChannel, editEndedWaits, tellGitHub, tellGitHubAbout } from './tell.ts'
+import { type RefChannel, editEndedWaitsEffect, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
 
 /** A run's cost in words: dollars to the cent, or `cost unknown` — never `$0.00` for a cost nobody reported (0110 §7). */
@@ -1326,7 +1326,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       : null
     // Asked of `origin` and only for a requeued pass (#315): a first attempt has
     // no arm to name and makes no request, which keeps its prompt byte-identical.
-    const arms = previous ? yield* Effect.promise(() => armsOnOrigin(options.client, branch)) : null
+    const arms = previous ? yield* armsOnOriginEffect(options.client, branch) : null
     if (previous && arms === null) {
       log(`could not list ${branch}'s arms on origin — the brief names none`)
     }
@@ -1521,26 +1521,36 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           return Effect.void
         }
         released = true
-        return Effect.tryPromise({
-          try: async () => {
+        // **The whole of it, or none of it.** It was one promise that ran to the end
+        // when the fiber was interrupted; as steps an interrupt between
+        // `TicketReleased` and the end actions would leave the item back in the queue,
+        // its end actions unrecorded and GitHub still saying `working` — and `released`
+        // is already set, so nothing would run it again.
+        return Effect.uninterruptible(
+          Effect.gen(function* () {
             /** Whether the release reached the log — the gate on the append after it. */
             let backInTheQueue = true
-            await releaseTicket(ticketId, runId, reason, store, cause, ticketSnapshots).catch((err: unknown) => {
+            const gave = yield* Effect.result(
+              releaseTicketEffect(ticketId, runId, reason, store, cause, ticketSnapshots),
+            )
+            if (Result.isFailure(gave)) {
               backInTheQueue = false
-              log(`the item was not released: ${whyOf(err)}`)
-            })
+              log(`the item was not released: ${whyOf(gave.failure)}`)
+            }
             if (backInTheQueue && endedAs === 'failed' && endPlan.length > 0) {
-              try {
-                await appendAt(ticketId, endPlan)
-                endResolved = endPlan
-              } catch (defect) {
+              const recorded = yield* Effect.result(
+                Effect.tryPromise({ try: () => appendAt(ticketId, endPlan), catch: (defect) => defect }),
+              )
+              if (Result.isFailure(recorded)) {
                 // Said rather than raised: the run has already ended and the item
                 // is already back, and a throw here would replace the reason it
                 // ended with the reason the bookkeeping did.
-                log(`end actions not recorded: ${whyOf(defect)}`)
+                log(`end actions not recorded: ${whyOf(recorded.failure)}`)
+              } else {
+                endResolved = endPlan
               }
             }
-            await tellGitHubAbout({
+            yield* tellGitHubAboutEffect({
               store,
               github: options.client,
               ticketId,
@@ -1549,12 +1559,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               editEnded: true,
               appended: endResolved,
             })
-          },
-          catch: (err) => err,
-        }).pipe(
+          }),
+        ).pipe(
           // A release is the last thing a failing run does, and one that threw
           // would replace the reason the run ended with the reason the cleanup did.
-          Effect.ignore,
+          // Outside the uninterruptible region, so a defect still stops the body.
+          Effect.catchCause(() => Effect.void),
         )
       })
 
@@ -2682,28 +2692,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // `continuation` (above) is what makes this branch `null` rather
               // than acted on wrongly when the request has gone stale.
               const attempting: Effect.Effect<
-                Awaited<ReturnType<typeof claimTicket>> | Awaited<ReturnType<typeof continueTicket>>,
+                | Effect.Success<ReturnType<typeof claimTicketEffect>>
+                | Effect.Success<ReturnType<typeof continueTicketEffect>>,
                 unknown
               > =
                 options.continuing !== undefined && continuation !== null
-                  ? Effect.tryPromise({
-                      try: () => continueTicket(ticketId, runId, { store, ...ticketSnapshots, body: issue.body }),
-                      catch: (error) => error,
-                    })
+                  ? continueTicketEffect(ticketId, runId, { store, ...ticketSnapshots, body: issue.body })
                   : // The claim carries what the task is, because it is now the
                     // only place a title enters the log at all.
-                    Effect.tryPromise({
-                      try: () =>
-                        claimTicket(ticketId, {
-                          runId,
-                          store,
-                          ...ticketSnapshots,
-                          title: runnable.title,
-                          kind: runnable.kind,
-                          body: issue.body,
-                          children: options.client,
-                        }),
-                      catch: (error) => error,
+                    claimTicketEffect(ticketId, {
+                      runId,
+                      store,
+                      ...ticketSnapshots,
+                      title: runnable.title,
+                      kind: runnable.kind,
+                      body: issue.body,
+                      children: options.client,
                     })
               const attempted = yield* Effect.result(attempting)
               if (Result.isFailure(attempted)) {
@@ -2741,27 +2745,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 if (closed.ok) {
                   // The split's wait is over (`WaitResolved{Split}` is on the stream).
                   // This path calls `tellGitHub` directly, so it edits here (#750).
-                  yield* Effect.promise(() =>
-                    editEndedWaits({ store, github: options.client, ticketId, ...ticketSnapshots }),
-                  )
+                  yield* editEndedWaitsEffect({ store, github: options.client, ticketId, ...ticketSnapshots })
                   // Said before the close, not after it: the comment has no record of
                   // its own to retry from, and a close that fails here is finished later
                   // by reconciliation — which would close the issue without ever
                   // having said why. A failed comment is `IssueUpdateFailed` on the log.
-                  yield* Effect.promise(() =>
-                    tellGitHub({
-                      store,
-                      github: options.client,
-                      ticketId,
-                      change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
-                    }),
-                  )
+                  yield* tellGitHubEffect({
+                    store,
+                    github: options.client,
+                    ticketId,
+                    change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
+                  })
                   // The recipe's `end` may not close the issue (`end: []`, or a close
                   // restricted to `when: landed`); a terminal event with the issue
                   // still open would be announced and never finished.
-                  yield* Effect.promise(() =>
-                    tellGitHub({ store, github: options.client, ticketId, change: { kind: 'closed' } }),
-                  )
+                  yield* tellGitHubEffect({ store, github: options.client, ticketId, change: { kind: 'closed' } })
                 }
               }
               if (!claim.ok)
@@ -2793,19 +2791,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // The issue says what the log says, from here on. Inline rather than
           // queued (0022): a call that does not land is written down and converged
           // later rather than retried.
-          yield* Effect.promise(() =>
-            tellGitHubAbout({
-              store,
-              github: options.client,
-              ticketId,
-              ...ticketSnapshots,
-              labels: labelsFor('running'),
-              // A continuation is the same work going on: the landing, the next
-              // hold or the release edits that wait's comment with the real
-              // outcome. Editing it here would spend the one edit on *Approved*.
-              editEnded: !(options.continuing !== undefined && continuation !== null),
-            }),
-          )
+          yield* tellGitHubAboutEffect({
+            store,
+            github: options.client,
+            ticketId,
+            ...ticketSnapshots,
+            labels: labelsFor('running'),
+            // A continuation is the same work going on: the landing, the next
+            // hold or the release edits that wait's comment with the real
+            // outcome. Editing it here would spend the one edit on *Approved*.
+            editEnded: !(options.continuing !== undefined && continuation !== null),
+          })
           return { taken: { ticketId, kind: runnable.kind } }
         })
 
@@ -3675,57 +3671,55 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
           const baseSha = asked.mergedOnto ?? continuation?.diffBaseSha ?? worktree?.baseSha ?? null
           if (baseSha === null) return { notRed: 'no base commit was cut' }
-          const answer = yield* Effect.promise(() =>
-            baseCheckFor(store, log, home).ask({
-              project,
-              base,
-              baseSha,
-              command: action.run,
-              prepared: recipe.steps.prepared.flatMap((a) =>
-                'run' in a ? [{ run: a.run, env: envForExtension(a.env), timeoutMs: parseDuration(a.timeout) }] : [],
-              ),
-              env: envForExtension(action.env),
-              runId,
-              signal: baseAbort.signal,
-              timeoutMs: parseDuration(action.timeout),
-              tree: {
-                cut: (path, sha) =>
-                  detached(
-                    Effect.gen(function* () {
-                      const cut = yield* mirrorWrite(
-                        mirrorPathFor(project, home),
-                        gitAskedEffect(['worktree', 'add', '--force', '--detach', path, sha]),
-                      )
-                      if (Result.isFailure(cut)) return yield* Effect.die(new Error(cut.failure.detail))
-                      if (submodulesOf(recipe)) {
-                        // `worktree add` leaves submodule directories empty, as `provisionWorktree` says.
-                        yield* repo.git(['submodule', 'update', '--init', '--recursive'], {
-                          token: options.token,
-                          env: options.gitEnv,
-                          cwd: path,
-                        })
-                      }
-                    }),
-                  ),
-                remove: (path) =>
-                  detached(
-                    Effect.gen(function* () {
-                      const gone = yield* mirrorWrite(
-                        mirrorPathFor(project, home),
-                        gitAskedEffect(['worktree', 'remove', '--force', path]),
-                      )
-                      if (Result.isFailure(gone)) return yield* Effect.die(new Error(gone.failure.detail))
-                    }),
-                  ),
-                plant: (path) => {
-                  const plantedAt = resolve(path, recipe.env.plantAt)
-                  return mkdir(dirname(plantedAt), { recursive: true }).then(() =>
-                    writeFile(plantedAt, renderEnvFile(env.values), { mode: 0o600 }),
-                  )
-                },
+          const answer = yield* baseCheckFor(store, log, home).ask({
+            project,
+            base,
+            baseSha,
+            command: action.run,
+            prepared: recipe.steps.prepared.flatMap((a) =>
+              'run' in a ? [{ run: a.run, env: envForExtension(a.env), timeoutMs: parseDuration(a.timeout) }] : [],
+            ),
+            env: envForExtension(action.env),
+            runId,
+            signal: baseAbort.signal,
+            timeoutMs: parseDuration(action.timeout),
+            tree: {
+              cut: (path, sha) =>
+                detached(
+                  Effect.gen(function* () {
+                    const cut = yield* mirrorWrite(
+                      mirrorPathFor(project, home),
+                      gitAskedEffect(['worktree', 'add', '--force', '--detach', path, sha]),
+                    )
+                    if (Result.isFailure(cut)) return yield* Effect.die(new Error(cut.failure.detail))
+                    if (submodulesOf(recipe)) {
+                      // `worktree add` leaves submodule directories empty, as `provisionWorktree` says.
+                      yield* repo.git(['submodule', 'update', '--init', '--recursive'], {
+                        token: options.token,
+                        env: options.gitEnv,
+                        cwd: path,
+                      })
+                    }
+                  }),
+                ),
+              remove: (path) =>
+                detached(
+                  Effect.gen(function* () {
+                    const gone = yield* mirrorWrite(
+                      mirrorPathFor(project, home),
+                      gitAskedEffect(['worktree', 'remove', '--force', path]),
+                    )
+                    if (Result.isFailure(gone)) return yield* Effect.die(new Error(gone.failure.detail))
+                  }),
+                ),
+              plant: (path) => {
+                const plantedAt = resolve(path, recipe.env.plantAt)
+                return mkdir(dirname(plantedAt), { recursive: true }).then(() =>
+                  writeFile(plantedAt, renderEnvFile(env.values), { mode: 0o600 }),
+                )
               },
-            }),
-          )
+            },
+          })
           if (answer.verdict === 'red') {
             return { red: { command: action.run, base, baseSha, evidence: answer.evidence } }
           }
@@ -3861,8 +3855,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * still `readFile` and nothing else.
        */
       const read = readWhatAFileKept(cwd, { read: (at) => readFile(at, 'utf8') })
-      /** …as the Effect the action holds; `readWhatAFileKept` is still a promise (row 8). */
-      const readPort = (spec: Parameters<typeof read>[0]) => Effect.promise(() => read(spec))
+      /** …which is already the Effect the action holds. */
+      const readPort = read
 
       /** `implement`'s dispatch, in the action's own fiber. An arrow: `dispatch` is declared below. */
       const workPort: WorkPortDeps = {
@@ -5282,18 +5276,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             .then((events) => reduceTicket(events).runs.indexOf(runId) + 1 || 1)
             .catch(() => 1),
         )
-        yield* Effect.promise(() =>
-          tellGitHubAbout({
-            store,
-            github: options.client,
-            ticketId,
-            ...ticketSnapshots,
-            labels: labelsFor('landed'),
-            editEnded: true,
-            appended: endResolved,
-            landed: { mergeCommit: merged, base, attempt, summary },
-          }),
-        )
+        yield* tellGitHubAboutEffect({
+          store,
+          github: options.client,
+          ticketId,
+          ...ticketSnapshots,
+          labels: labelsFor('landed'),
+          editEnded: true,
+          appended: endResolved,
+          landed: { mergeCommit: merged, base, attempt, summary },
+        })
         log(`landed ${merged.slice(0, 7)} on ${base}`)
         // **Every kept ref for this ticket, not only this run's own** (`#421`)
         // — an earlier run of the same ticket may have left one too, and a
@@ -5545,19 +5537,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         )
         endResolved = endPlan
         released = true
-        yield* Effect.promise(() =>
-          tellGitHubAbout({
-            store,
-            github: options.client,
-            ticketId,
-            ...ticketSnapshots,
-            question,
-            waitId,
-            editEnded: true,
-            labels: labelsFor('waiting'),
-            appended: endResolved,
-          }),
-        )
+        yield* tellGitHubAboutEffect({
+          store,
+          github: options.client,
+          ticketId,
+          ...ticketSnapshots,
+          question,
+          waitId,
+          editEnded: true,
+          labels: labelsFor('waiting'),
+          appended: endResolved,
+        })
         // #655: a run that started and met the account's limit. The wait above is
         // the ticket's and is already written; this only locks the account.
         const walled = reason._tag === 'AgentCrashed' && reason.cause === 'crash' ? accountWallOf(reason.detail) : null

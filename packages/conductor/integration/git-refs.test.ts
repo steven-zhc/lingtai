@@ -23,7 +23,7 @@ import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { gitRefChannel, gitRefShaEffect } from '../src/git-refs.ts'
-import { sweepRefs } from '../src/tell.ts'
+import { sweepRefsEffect } from '../src/tell.ts'
 
 const exec = promisify(execFile)
 const authored = {
@@ -92,7 +92,7 @@ describe('sweepRefs, over a gitRefChannel', () => {
     const channel = gitRefChannel({ remote })
     const ticketId = ticketStream('esctest', 24)
 
-    await sweepRefs({ store, github: channel, ticketId, andTheBranch: false })
+    await Effect.runPromise(sweepRefsEffect({ store, github: channel, ticketId, andTheBranch: false }))
 
     const left = await channel.matchingRefs('heads/agent/')
     expect(left).not.toContain('heads/agent/24-attempt-1')

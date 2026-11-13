@@ -1,4 +1,4 @@
-import { inSpan } from '@lingtai/actions/spans'
+import { inSpanEffectIn } from '@lingtai/actions/spans'
 /**
  * Telling GitHub what the log now says about one issue.
  *
@@ -29,11 +29,12 @@ import { inSpan } from '@lingtai/actions/spans'
  */
 import { landingCommentTriedOf, parseTicketStream, ticketReducer } from '@lingtai/domain'
 import { type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
-import type { EventStore, SnapshotReadOptions } from '@lingtai/event-store'
+import { readThroughSnapshot, type EventStore, type SnapshotReadOptions } from '@lingtai/event-store'
+import { context } from '@opentelemetry/api'
+import { Effect, Result } from 'effect'
 
 import { agentBranch, armPrefix } from './branches.ts'
 import { foreignLabels } from './labels.ts'
-import { readState } from './snapshot-state.ts'
 import type { Tickets } from './ticket-store.ts'
 
 /** What this needs of GitHub, and nothing more. */
@@ -164,77 +165,92 @@ export type Told = { recorded: 'IssueUpdated' } | { recorded: 'IssueUpdateFailed
  * selection criteria. A label somebody adds inside the round trip is lost, and
  * that is a far smaller wrong than deleting all of them.
  */
-export async function tellGitHub(options: TellOptions): Promise<Told> {
-  const { store, github, ticketId, change } = options
-  const target = split(ticketId)
-  if (target === null) return { recorded: null }
-  const { project, issue } = target
+export function tellGitHubEffect(options: TellOptions): Effect.Effect<Told> {
+  return Effect.gen(function* () {
+    const { store, github, ticketId, change } = options
+    const target = split(ticketId)
+    if (target === null) return { recorded: null } as const
+    const { project, issue } = target
 
-  let detail = ''
-  try {
+    // A defect inside the write (a malformed answer from the port) is a failed
+    // write like a rejection: nothing here ever throws.
+    const written = yield* Effect.result(
+      write(github, issue, change).pipe(Effect.catchDefect((defect) => Effect.fail(defect))),
+    )
+    if (Result.isFailure(written)) {
+      const err = written.failure
+      yield* recordEffect(
+        store,
+        ticketId,
+        'IssueUpdateFailed', // the update threw
+        {
+          project,
+          issue: String(issue),
+          change: change.kind,
+          error: (err as Error).message,
+          ...(change.kind === 'comment-edited' || (change.kind === 'comment' && change.waitId !== undefined)
+            ? { waitId: change.waitId! }
+            : {}),
+        },
+      )
+      return { recorded: 'IssueUpdateFailed', error: err } as const
+    }
+    const detail = written.success
+    yield* recordEffect(store, ticketId, 'IssueUpdated', {
+      project,
+      issue: String(issue),
+      change: change.kind,
+      detail,
+      ...(change.kind === 'comment' || change.kind === 'comment-edited'
+        ? {
+            ...(change.waitId !== undefined ? { waitId: change.waitId } : {}),
+            ...(change.kind === 'comment' && change.question !== undefined ? { question: change.question } : {}),
+          }
+        : {}),
+    })
+    return { recorded: 'IssueUpdated' } as const
+  })
+}
+
+/** A port's promise as an Effect whose failure is whatever it rejected with. */
+const attempt = <A>(call: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: call, catch: (error) => error })
+
+/** The one write `change` asks of GitHub; what it answers is the `detail` that is recorded. */
+function write(github: IssueChannel, issue: number, change: IssueWrite): Effect.Effect<string, unknown> {
+  return Effect.gen(function* () {
     switch (change.kind) {
       case 'comment': {
-        const { id } = await github.comment(issue, change.body)
-        detail = String(id)
-        break
+        const { id } = yield* attempt(() => github.comment(issue, change.body))
+        return String(id)
       }
       case 'comment-edited':
-        await github.editComment(issue, change.commentId, change.body)
-        detail = String(change.commentId)
-        break
+        yield* attempt(() => github.editComment(issue, change.commentId, change.body))
+        return String(change.commentId)
       case 'labels': {
-        const current = await github.getIssue(issue)
+        const current = yield* attempt(() => github.getIssue(issue))
         const carried = current.labels.map((l) => l.name)
         const whole = [...new Set([...foreignLabels(carried), ...change.labels])]
-        await github.setLabels(issue, whole)
-        detail = change.labels.join(',')
-        break
+        yield* attempt(() => github.setLabels(issue, whole))
+        return change.labels.join(',')
       }
       case 'closed':
-        await github.closeIssue(issue)
-        break
+        yield* attempt(() => github.closeIssue(issue))
+        return ''
       case 'body':
-        await github.updateBody(
-          issue,
-          change.body,
-          change.ifUnchanged !== undefined ? { ifUnchanged: change.ifUnchanged } : undefined,
+        yield* attempt(() =>
+          github.updateBody(
+            issue,
+            change.body,
+            change.ifUnchanged !== undefined ? { ifUnchanged: change.ifUnchanged } : undefined,
+          ),
         )
         // The size, not the text. The body is on GitHub and the sentence that
         // was added is on the log already — `PromptEdited` or the discussion
         // that proposed it — and a third copy here is one that can disagree.
-        detail = `${change.body.length} bytes`
-        break
+        return `${change.body.length} bytes`
     }
-  } catch (err) {
-    await record(
-      store,
-      ticketId,
-      'IssueUpdateFailed', // the update threw
-      {
-        project,
-        issue: String(issue),
-        change: change.kind,
-        error: (err as Error).message,
-        ...(change.kind === 'comment-edited' || (change.kind === 'comment' && change.waitId !== undefined)
-          ? { waitId: change.waitId! }
-          : {}),
-      },
-    )
-    return { recorded: 'IssueUpdateFailed', error: err }
-  }
-  await record(store, ticketId, 'IssueUpdated', {
-    project,
-    issue: String(issue),
-    change: change.kind,
-    detail,
-    ...(change.kind === 'comment' || change.kind === 'comment-edited'
-      ? {
-          ...(change.waitId !== undefined ? { waitId: change.waitId } : {}),
-          ...(change.kind === 'comment' && change.question !== undefined ? { question: change.question } : {}),
-        }
-      : {}),
   })
-  return { recorded: 'IssueUpdated' }
 }
 
 /**
@@ -279,58 +295,57 @@ export async function tellGitHub(options: TellOptions): Promise<Told> {
  * rather than a permanent warning — the resolution is deduped per outcome
  * (`end-step.ts`) and nothing ever runs this function again for the same item.
  */
-export function sweepRefs(options: Parameters<typeof sweepRefsHeld>[0]): Promise<void> {
-  // A chain and not `async`: 0101 §6's ratchet (#792) counts the keyword.
-  return sweepRefsHeld(options).then(() => undefined)
-}
-
-/** `sweepRefs`, saying whether the sweep finished — for the span that measures it (#791). */
-async function sweepRefsHeld(options: {
+export function sweepRefsEffect(options: {
   store: EventStore
   github: RefChannel
   /** `ticket-<project>-<issue>`. */
   ticketId: string
   /** `agent/<n>` itself, on top of its arms. */
   andTheBranch: boolean
-}): Promise<boolean> {
-  const { store, github, ticketId } = options
-  const target = split(ticketId)
-  if (target === null) return true
-  const { project, issue } = target
+}): Effect.Effect<boolean> {
+  return Effect.gen(function* () {
+    const { store, github, ticketId } = options
+    const target = split(ticketId)
+    if (target === null) return true
+    const { project, issue } = target
 
-  const branch = agentBranch(issue)
-  const arms = armPrefix(branch)
-  // Appended to as each delete comes back, so both endings can name it: the
-  // row is written *after* the loop either way, and a `doomed` the loop did not
-  // finish would describe refs that are still on `origin`.
-  const gone: string[] = []
-  try {
-    const found = await github.matchingRefs(`heads/${branch}`)
-    const doomed = found.filter(
-      (ref) => ref.startsWith(`heads/${arms}`) || (options.andTheBranch && ref === `heads/${branch}`),
+    const branch = agentBranch(issue)
+    const arms = armPrefix(branch)
+    // Appended to as each delete comes back, so both endings can name it: the
+    // row is written *after* the loop either way, and a `doomed` the loop did not
+    // finish would describe refs that are still on `origin`.
+    const gone: string[] = []
+    const swept = yield* Effect.result(
+      Effect.gen(function* () {
+        const found = yield* attempt(() => github.matchingRefs(`heads/${branch}`))
+        const doomed = found.filter(
+          (ref) => ref.startsWith(`heads/${arms}`) || (options.andTheBranch && ref === `heads/${branch}`),
+        )
+        for (const ref of doomed) {
+          yield* attempt(() => github.deleteRef(ref))
+          gone.push(ref)
+        }
+      }).pipe(Effect.catchDefect((defect) => Effect.fail(defect))),
     )
-    for (const ref of doomed) {
-      await github.deleteRef(ref)
-      gone.push(ref)
+    if (Result.isFailure(swept)) {
+      yield* recordEffect(store, ticketId, 'IssueUpdateFailed', {
+        project,
+        issue: String(issue),
+        change: 'refs',
+        error: sweepFailure(swept.failure, gone),
+      })
+      return false
     }
-  } catch (err) {
-    await record(store, ticketId, 'IssueUpdateFailed', {
+    yield* recordEffect(store, ticketId, 'IssueUpdated', {
       project,
       issue: String(issue),
       change: 'refs',
-      error: sweepFailure(err, gone),
+      // The names and not the count, because *which* arms went is the only thing
+      // a reader coming back to this row can no longer get from the remote.
+      detail: gone.length === 0 ? 'none' : gone.join(','),
     })
-    return false
-  }
-  await record(store, ticketId, 'IssueUpdated', {
-    project,
-    issue: String(issue),
-    change: 'refs',
-    // The names and not the count, because *which* arms went is the only thing
-    // a reader coming back to this row can no longer get from the remote.
-    detail: gone.length === 0 ? 'none' : gone.join(','),
+    return true
   })
-  return true
 }
 
 /**
@@ -366,18 +381,21 @@ export function sweepFailure(err: unknown, gone: readonly string[]): string {
  * second `IssueUpdated` when a write `tellGitHub` recorded as failed is found
  * on the read-back anyway — the call threw, but it had already landed.
  */
-export async function record(
+export function recordEffect(
   store: EventStore,
   ticketId: string,
   type: 'IssueUpdated' | 'IssueUpdateFailed',
   data: Record<string, string>,
-): Promise<void> {
-  try {
-    const at = (await store.read(ticketId)).length
-    await store.append(ticketId, at, [{ type, actor: 'conductor', data: parsePayload(type, data) }])
-  } catch {
+): Effect.Effect<void> {
+  return attempt(() => store.read(ticketId)).pipe(
+    Effect.flatMap((events) =>
+      attempt(() =>
+        store.append(ticketId, events.length, [{ type, actor: 'conductor', data: parsePayload(type, data) }]),
+      ),
+    ),
     // Deliberately silent: see above.
-  }
+    Effect.catchCause(() => Effect.void),
+  )
 }
 
 function firstLine(text: string): string {
@@ -448,16 +466,16 @@ function resolutionWords(resolution: PayloadOf<'WaitResolved'>['resolution'], by
  * Never throws, like everything here: a stream that cannot be read edits
  * nothing and records nothing, and the next call tries again.
  */
-export async function editEndedWaits(
+export function editEndedWaitsEffect(
   options: {
     store: EventStore
     github: IssueChannel
     ticketId: string
   } & SnapshotReadOptions,
-): Promise<void> {
+): Effect.Effect<void> {
   const { store, github, ticketId } = options
-  try {
-    const state = await readState(store, ticketReducer, ticketId, 'all', options)
+  return Effect.gen(function* () {
+    const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options)
     const ledger = state.github
     const edited = new Set<string>(ledger.edited)
     const posted = ledger.comments
@@ -477,16 +495,17 @@ export async function editEndedWaits(
       else if (wait.closed !== null) outcome = sentence('Closed', wait.closed.by)
       else continue
       const body = `**${outcome}**${p.question === '' ? '' : `\n\n> ${p.question}`}`
-      await tellGitHub({
+      yield* tellGitHubEffect({
         store,
         github,
         ticketId,
         change: { kind: 'comment-edited', waitId: p.waitId, commentId: p.commentId, body },
       })
     }
-  } catch {
+  }).pipe(
     // Deliberately silent: see above.
-  }
+    Effect.catchCause(() => Effect.void),
+  )
 }
 
 /**
@@ -633,17 +652,21 @@ export function landingComment(landed: Landed): string {
  * the two) is not searched for and not re-posted: the same accepted cost as the
  * waiting comment. A stream that cannot be read posts nothing.
  */
-function postLanding(store: EventStore, github: IssueChannel, ticketId: string, landed: Landed): Promise<void> {
-  return store
-    .read(ticketId)
-    .then((events) =>
+function postLandingEffect(
+  store: EventStore,
+  github: IssueChannel,
+  ticketId: string,
+  landed: Landed,
+): Effect.Effect<void> {
+  return attempt(() => store.read(ticketId)).pipe(
+    Effect.flatMap((events) =>
       landingCommentTriedOf(events)
-        ? undefined
-        : tellGitHub({ store, github, ticketId, change: { kind: 'comment', body: landingComment(landed) } }).then(
-            () => undefined,
-          ),
-    )
-    .catch(() => undefined) // Deliberately silent: nothing here throws.
+        ? Effect.void
+        : tellGitHubEffect({ store, github, ticketId, change: { kind: 'comment', body: landingComment(landed) } }),
+    ),
+    Effect.asVoid,
+    Effect.catchCause(() => Effect.void), // Deliberately silent: nothing here throws.
+  )
 }
 
 /**
@@ -668,101 +691,113 @@ function postLanding(store: EventStore, github: IssueChannel, ticketId: string, 
  * the recipe's own `end` actions run last and may set labels of their own, and
  * a recipe must be able to overrule a default.
  */
-export async function tellGitHubAbout(
-  options: {
-    store: EventStore
-    /**
-     * Both ports, because this is the one function that carries out an
-     * `EndActionsResolved` and `refs:` is one of the three things it may hold
-     * (`#240`). Required rather than optional: a channel that silently cannot
-     * delete is a recipe that resolved an effect nothing ran, which is `#61`.
-     */
-    github: IssueChannel & RefChannel
-    ticketId: string
-    /** Lingtai's own labels for this state, or `null` to leave them alone. */
-    labels?: readonly string[] | null
-    /** The question, when a person is now the thing being waited on. */
-    question?: string
-    /** The wait `question` announces; recorded so the comment can be edited when the wait ends (#750). */
-    waitId?: string
-    /**
-     * First rewrite the waiting comment of every wait the log shows is over (#750).
-     * Passed by `conduct.ts` alone: the CLI and the board never edit, so that a
-     * comment has one writer.
-     */
-    editEnded?: boolean
-    /** The events just appended; any `EndActionsResolved` among them is carried out. */
-    appended?: readonly ToAppend[]
-    /** The landing, when this call tells of one: one comment, posted before `appended`'s close (#896). */
-    landed?: Landed
-  } & SnapshotReadOptions,
-): Promise<void> {
-  const { store, github, ticketId } = options
-  // `IssueWrite` and not `IssueChange`: the `refs` member is `sweepRefs`'s, and
-  // a helper that took the wider union would let one reach `tellGitHub`, whose
-  // `switch` has a case for each of the four issue writes and no default — so a
-  // `refs` change there falls straight through and records an `IssueUpdated`
-  // for a sweep that never ran. That is `#61`'s failure inside one function.
-  const tell = (change: IssueWrite) => tellGitHub({ store, github, ticketId, change })
+export type TellAboutOptions = {
+  store: EventStore
+  /**
+   * Both ports, because this is the one function that carries out an
+   * `EndActionsResolved` and `refs:` is one of the three things it may hold
+   * (`#240`). Required rather than optional: a channel that silently cannot
+   * delete is a recipe that resolved an effect nothing ran, which is `#61`.
+   */
+  github: IssueChannel & RefChannel
+  ticketId: string
+  /** Lingtai's own labels for this state, or `null` to leave them alone. */
+  labels?: readonly string[] | null
+  /** The question, when a person is now the thing being waited on. */
+  question?: string
+  /** The wait `question` announces; recorded so the comment can be edited when the wait ends (#750). */
+  waitId?: string
+  /**
+   * First rewrite the waiting comment of every wait the log shows is over (#750).
+   * Passed by `conduct.ts` alone: the CLI and the board never edit, so that a
+   * comment has one writer.
+   */
+  editEnded?: boolean
+  /** The events just appended; any `EndActionsResolved` among them is carried out. */
+  appended?: readonly ToAppend[]
+  /** The landing, when this call tells of one: one comment, posted before `appended`'s close (#896). */
+  landed?: Landed
+} & SnapshotReadOptions
 
-  if (options.editEnded === true)
-    await editEndedWaits({
-      store,
-      github,
-      ticketId,
-      ...(options.snapshots === undefined ? {} : { snapshots: options.snapshots }),
-      ...(options.writer === undefined ? {} : { writer: options.writer }),
-    })
+/** `tellGitHubAboutEffect` as a promise, for `lingtai end` (apps/cli) until its row of #790. */
+export function tellGitHubAbout(options: TellAboutOptions): Promise<void> {
+  return Effect.runPromise(tellGitHubAboutEffect(options))
+}
 
-  if (options.question !== undefined) {
-    const first = firstLine(options.question)
-    await tell({
-      kind: 'comment',
-      body: `**Lingtai is waiting on you.**\n\n${options.question}`,
-      ...(options.waitId !== undefined ? { waitId: options.waitId } : {}),
-      ...(options.waitId !== undefined && first !== '' ? { question: first } : {}),
-    })
-  }
-  if (options.labels != null) await tell({ kind: 'labels', labels: options.labels })
-  if (options.landed !== undefined) await postLanding(store, github, ticketId, options.landed)
+export function tellGitHubAboutEffect(options: TellAboutOptions): Effect.Effect<void> {
+  // Read here, synchronously, when the Effect is built and never inside the
+  // fiber (`inSpanEffect`'s rule): the `end` step's span is a child of this.
+  const captured = context.active()
+  return Effect.gen(function* () {
+    const { store, github, ticketId } = options
+    // `IssueWrite` and not `IssueChange`: the `refs` member is `sweepRefsEffect`'s, and
+    // a helper that took the wider union would let one reach `tellGitHubEffect`, whose
+    // `switch` has a case for each of the four issue writes and no default — so a
+    // `refs` change there falls straight through and records an `IssueUpdated`
+    // for a sweep that never ran. That is `#61`'s failure inside one function.
+    const tell = (change: IssueWrite) => tellGitHubEffect({ store, github, ticketId, change })
 
-  for (const e of options.appended ?? []) {
-    if (e.type !== 'EndActionsResolved') continue
-    const d = e.data as PayloadOf<'EndActionsResolved'>
-    // **The sweep goes last within the item, and this line is what makes that
-    // true** rather than what a recipe happened to declare. It is the only
-    // irreversible effect, and a failure anywhere before it must not have
-    // already deleted the branches somebody would use to work out what went
-    // wrong — so `end: [{refs}, {labels}]` runs the label write first, as
-    // `end: [{labels}, {refs}]` does. Order *among* the writes is still the
-    // recipe's, because close-then-label and label-then-close differ: an issue
-    // closed and then labelled can come back open.
-    const writes = d.actions.filter((a) => !('refs' in a))
-    const sweeps = d.actions.filter((a) => 'refs' in a)
-    // The `end` step's work as it runs (#791): `runStep` only resolves these, so
-    // the span that measures them is here, named by kind and never by content.
-    const ordered = [...writes, ...sweeps]
-    // A write GitHub refused is a *returned* `IssueUpdateFailed`, not a throw, so
-    // each body says whether it held and the spans are told.
-    const held = (told: Told) => told.recorded !== 'IssueUpdateFailed'
-    await inSpan('step end', {}, () =>
-      ordered.reduce<Promise<boolean>>(
-        (before, action, index) =>
-          before.then((all) =>
-            inSpan(
+    if (options.editEnded === true)
+      yield* editEndedWaitsEffect({
+        store,
+        github,
+        ticketId,
+        ...(options.snapshots === undefined ? {} : { snapshots: options.snapshots }),
+        ...(options.writer === undefined ? {} : { writer: options.writer }),
+      })
+
+    if (options.question !== undefined) {
+      const first = firstLine(options.question)
+      yield* tell({
+        kind: 'comment',
+        body: `**Lingtai is waiting on you.**\n\n${options.question}`,
+        ...(options.waitId !== undefined ? { waitId: options.waitId } : {}),
+        ...(options.waitId !== undefined && first !== '' ? { question: first } : {}),
+      })
+    }
+    if (options.labels != null) yield* tell({ kind: 'labels', labels: options.labels })
+    if (options.landed !== undefined) yield* postLandingEffect(store, github, ticketId, options.landed)
+
+    for (const e of options.appended ?? []) {
+      if (e.type !== 'EndActionsResolved') continue
+      const d = e.data as PayloadOf<'EndActionsResolved'>
+      // **The sweep goes last within the item, and this line is what makes that
+      // true** rather than what a recipe happened to declare. It is the only
+      // irreversible effect, and a failure anywhere before it must not have
+      // already deleted the branches somebody would use to work out what went
+      // wrong — so `end: [{refs}, {labels}]` runs the label write first, as
+      // `end: [{labels}, {refs}]` does. Order *among* the writes is still the
+      // recipe's, because close-then-label and label-then-close differ: an issue
+      // closed and then labelled can come back open.
+      const writes = d.actions.filter((a) => !('refs' in a))
+      const sweeps = d.actions.filter((a) => 'refs' in a)
+      // The `end` step's work as it runs (#791): `runStep` only resolves these, so
+      // the span that measures them is here, named by kind and never by content.
+      const ordered = [...writes, ...sweeps]
+      // A write GitHub refused is a *returned* `IssueUpdateFailed`, not a throw, so
+      // each body says whether it held and the spans are told.
+      const held = (told: Told) => told.recorded !== 'IssueUpdateFailed'
+      yield* inSpanEffectIn(captured, 'step end', {}, (inner) =>
+        Effect.gen(function* () {
+          let all = true
+          for (const [index, action] of ordered.entries()) {
+            const ok = yield* inSpanEffectIn(
+              inner,
               `action ${'close' in action ? 'close' : 'labels' in action ? 'labels' : 'refs'}`,
               { 'lingtai.index': index },
               () =>
                 'close' in action
-                  ? tell({ kind: 'closed' }).then(held)
+                  ? tell({ kind: 'closed' }).pipe(Effect.map(held))
                   : 'labels' in action
-                    ? tell({ kind: 'labels', labels: action.labels }).then(held)
-                    : sweepRefsHeld({ store, github, ticketId, andTheBranch: action.branch }),
+                    ? tell({ kind: 'labels', labels: action.labels }).pipe(Effect.map(held))
+                    : sweepRefsEffect({ store, github, ticketId, andTheBranch: action.branch }),
               (ok) => !ok,
-            ).then((ok) => all && ok),
-          ),
-        Promise.resolve(true),
-      ),
-    )
-  }
+            )
+            all = all && ok
+          }
+          return all
+        }),
+      )
+    }
+  })
 }
