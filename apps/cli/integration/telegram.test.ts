@@ -29,7 +29,7 @@ import { join } from 'node:path'
 
 import { projectEnvPath, resolveAgentEnv } from '@lingtai/agent-env'
 import type { ProjectFilter } from '@lingtai/conductor'
-import { createWorkLoop, type WorkLoop } from '@lingtai/daemon'
+import { makeWorkLoop, type WorkLoopPort } from '@lingtai/daemon'
 import { SUBSCRIBER_STREAM, ticketStream } from '@lingtai/domain'
 import { boardUrl } from '@lingtai/env'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
@@ -56,9 +56,9 @@ beforeAll(async () => {
 })
 
 let server: Server | undefined
-let loop: WorkLoop | undefined
+let loop: WorkLoopPort | undefined
 afterEach(async () => {
-  await loop?.stop()
+  if (loop) await Effect.runPromise(loop.stop())
   loop = undefined
   server?.closeAllConnections()
   await new Promise<void>((r) => (server ? server.close(() => r()) : r()))
@@ -128,15 +128,17 @@ async function started(port: number, spec: Partial<SubscriberSpec> = {}, token =
   await mkdir(join(home, 'env'), { recursive: true })
   await writeFile(file, envLines(port, token))
   const declared = { ...shipped, env: [...shipped.env, 'TELEGRAM_API_ROOT'], ...spec }
-  const { built, unread } = await buildSubscribers({
-    filters: [{ project: PROJECT, ok: true, recipe: { subscribers: [declared] } } as unknown as ProjectFilter],
-    cwd: ROOT,
-    subject: createSubjectResolver(store),
-    resolveEnv: (options) => resolveAgentEnv({ ...options, home }),
-  })
+  const { built, unread } = await Effect.runPromise(
+    buildSubscribers({
+      filters: [{ project: PROJECT, ok: true, recipe: { subscribers: [declared] } } as unknown as ProjectFilter],
+      cwd: ROOT,
+      subject: createSubjectResolver(store),
+      resolveEnv: (options) => resolveAgentEnv({ ...options, home }),
+    }),
+  )
   expect(unread).toEqual([])
-  loop = createWorkLoop({ sweepMs: 0, store, subscribers: built.map((b) => b.subscriber), pass: () => Effect.void })
-  await loop.start()
+  loop = makeWorkLoop({ sweepMs: 0, store, subscribers: built.map((b) => b.subscriber), pass: () => Effect.void })
+  await Effect.runPromise(loop.start())
   return { file }
 }
 

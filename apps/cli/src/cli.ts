@@ -1063,14 +1063,12 @@ function startCommand(name: 'start' | 'daemon') {
           }
           // Said when the lock is won; a daemon that did not start has said why, and says nothing more.
           // `another daemon holds the lock — nothing to do` stays a quiet line, not a failure (0121 §1).
-          return yield* lift(() =>
-            daemonCommand(
-              flags,
-              null,
-              name === 'start' ? () => console.log(`${symbol.pass()} started`) : null,
-              startIsVerbose(name, args.verbose),
-              writer,
-            ),
+          return yield* daemonCommand(
+            flags,
+            null,
+            name === 'start' ? () => console.log(`${symbol.pass()} started`) : null,
+            startIsVerbose(name, args.verbose),
+            writer,
           )
         }),
       ),

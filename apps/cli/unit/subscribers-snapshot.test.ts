@@ -6,6 +6,7 @@ import { attemptReducer, reduceAll } from '@lingtai/domain'
 import { histories } from '@lingtai/domain/test/histories'
 import { log } from '@lingtai/event-store'
 import { createMemoryEventStore, createMemorySnapshotStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createSubjectResolver } from '../src/subscribers.ts'
@@ -39,9 +40,9 @@ describe('createSubjectResolver', () => {
       lastAt: at.at,
       state: attemptReducer.encode(reduceAll(attemptReducer, stored.slice(0, 3))),
     })
-    const plain = await createSubjectResolver(store)(head)
+    const plain = await Effect.runPromise(createSubjectResolver(store)(head))
     expect(plain).not.toBeNull()
-    expect(await createSubjectResolver(store, { snapshots })(head)).toEqual(plain)
+    expect(await Effect.runPromise(createSubjectResolver(store, { snapshots })(head))).toEqual(plain)
   })
 
   it('reads only the store it was given when it is given no snapshots', async () => {
@@ -49,7 +50,7 @@ describe('createSubjectResolver', () => {
       throw new Error('the process log was touched')
     })
     const { store, head } = await seeded()
-    expect(await createSubjectResolver(store)(head)).not.toBeNull()
+    expect(await Effect.runPromise(createSubjectResolver(store)(head))).not.toBeNull()
     expect(latest).not.toHaveBeenCalled()
   })
 })

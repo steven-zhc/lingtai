@@ -7,7 +7,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { CommandOutcome } from '../src/command.ts'
-import { createSubscriber, SubscriberFailed, subjectOf } from '../src/subscriber.ts'
+import { makeSubscriber, SubscriberFailed, subjectOf } from '../src/subscriber.ts'
 
 const event = {
   seq: 1n,
@@ -29,18 +29,20 @@ const outcome = (ok: boolean, evidence: string): CommandOutcome => ({
   exitCode: ok ? 0 : 1,
 })
 
-const subscriber = (result: CommandOutcome) =>
-  createSubscriber({
+const subscriber = (result: CommandOutcome) => {
+  const port = makeSubscriber({
     project: 'p',
     spec: { name: 'notify', run: 'true', on: ['StepEnded'] } as never,
-    subject: async () => subjectOf('p', '1'),
+    subject: () => Effect.succeed(subjectOf('p', '1')),
     cwd: '/',
-    env: {},
+    env: Effect.succeed({}),
     board: 'http://board',
     command: () => Effect.succeed(result),
   })
+  return { deliver: (e: typeof event) => Effect.runPromise(port.deliver(e)) }
+}
 
-describe('createSubscriber over an injected command', () => {
+describe('makeSubscriber over an injected command', () => {
   it('rejects with the SubscriberFailed itself, its message the evidence', async () => {
     const error = await subscriber(outcome(false, 'boom'))
       .deliver(event)

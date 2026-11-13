@@ -87,7 +87,7 @@ describe('the work loop as Effects', () => {
     port = makeWorkLoop(
       base({
         sweepMs: 60_000,
-        shutdown: async () => 'test',
+        shutdown: Effect.succeed('test'),
         onShutdown: () => {
           stopping = Effect.runPromise(port.stop())
         },
@@ -106,7 +106,7 @@ describe('the work loop as Effects', () => {
       base({
         sweepMs: 60_000,
         eventLog: log,
-        subscribers: [{ name: 's', deliver: async (e) => void delivered.push(e.type) }],
+        subscribers: [{ name: 's', deliver: (e) => Effect.sync(() => void delivered.push(e.type)) }],
       }),
     )
     await Effect.runPromise(port.start())

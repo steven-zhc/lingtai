@@ -5,21 +5,19 @@
  */
 import { existsSync } from 'node:fs'
 
-import { createSlots, currentRecipe, describeFilters, loadProjects, projectFilters } from '@lingtai/conductor'
+import { createSlots, currentRecipe, describeFilters, loadProjectsEffect, projectFilters } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import {
-  clientsForProjects,
-  createStatusTable,
-  createWorkLoop,
+  clientsForProjectsEffect,
+  createStatusTableEffect,
   describeInFlight,
-  inFlight,
   inFlightEffect,
-  readCodeVersion,
-  readControl,
+  makeWorkLoop,
+  readCodeVersionEffect,
   readStatus,
   readStatusEffect,
-  recordStart,
-  reconcile,
+  recordStartEffect,
+  reconcileEffect,
   requestShutdownEffect,
   requestShutdownUnlessStandingEffect,
   controlWatermarkEffect,
@@ -27,15 +25,19 @@ import {
   readControlEffect,
   HEARTBEAT_MS,
   startBeacon,
-  startDaemon,
+  startDaemonEffect,
   lockedBy,
   lockedEffect,
   makeGuard,
   notTakingWork,
+  type Beacon,
   type CodeVersion,
   type ControlState,
+  type DaemonPort,
   type ShutdownRequest,
+  type WorkLoopPort,
 } from '@lingtai/daemon'
+import type { ProjectState } from '@lingtai/domain'
 import { BOARD_PORT, boardOrigin } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
@@ -43,14 +45,14 @@ import { eventStore } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
-import { Cause, Effect } from 'effect'
+import { Cause, type Context, Effect } from 'effect'
 
 import { boardAtEffect, boardEntry, boardLock, boardPortOrWhy, builtBoardDir } from './board.ts'
 import { conductorTurn } from './conduct.ts'
 import { ceilingPort } from './day-ceiling.ts'
 import { answerOutstandingQueued, onDiscussionRequested } from './discuss.ts'
 import { daemonLiveness } from './doctor.ts'
-import { lift } from './exit.ts'
+import { lift, recovering } from './exit.ts'
 import { configPath } from './init.ts'
 import { trackLiveSpend } from './live-spend.ts'
 import { symbol } from './output.ts'
@@ -188,9 +190,167 @@ export function startLine(
  */
 export function daemonControlRead(
   writer: Pick<SnapshotWriter, 'offer'> | null,
-  read: typeof readControl = readControl,
-): () => Promise<ControlState> {
+  read: typeof readControlEffect = readControlEffect,
+): () => Effect.Effect<ControlState, unknown> {
   return () => read(undefined, writer ? { writer } : {})
+}
+
+/** What `daemonStopping` needs of the process around it; all of it is replaceable in a test. */
+export interface StoppingPorts {
+  /** The beacon's two words; neither rejects. */
+  beacon: Pick<Beacon, 'say' | 'stop'>
+  daemon: DaemonPort
+  /** The loop, once there is one: `drain` waits for it, with no timeout (0030 §6). */
+  loop: () => { stop(): Effect.Effect<void> } | null
+  inFlight: () => Effect.Effect<string[], unknown>
+  /** Stops the `--no-conduct` listener, if any. */
+  clearListening: () => void
+  /** The services every fiber started from a callback carries (`Effect.context()`). */
+  services: Context.Context<never>
+  /** `process.exit`, because a pass in flight holds the event loop open. */
+  exit?: (code: number) => void
+}
+
+/**
+ * Stopping: the first Ctrl+C drains, the second (or a `--timeout`, or `--force`) stops now.
+ *
+ * **Every drain and every stop is a root fiber** (`Effect.runForkWith(services)`), never a child of
+ * whoever asked: `onShutdown` is called from inside the loop's own look, and a drain waits for
+ * `loop.stop()`, which waits for that look. A child of it would wait on its parent or be interrupted
+ * with it. **Nothing interrupts a drain**, and there is no timeout around its wait (0030 §6).
+ *
+ * The flags are plain `let`s read and set synchronously, at the call and not when the fiber runs.
+ */
+export function daemonStopping(ports: StoppingPorts) {
+  const exit = ports.exit ?? ((code: number) => process.exit(code))
+  const fork = Effect.runForkWith(ports.services)
+  /** The request the loop read, when the log is what began this; and a start that could not record itself. */
+  const state: { asked: ShutdownRequest | null; failedStart: string | null } = { asked: null, failedStart: null }
+  let draining = false
+  let stopping = false
+
+  /**
+   * Stop now, without waiting.
+   *
+   * The second Ctrl+C and the `--timeout` that trips both come here, and both
+   * knowingly leave the agent running: it is detached, so it survives this
+   * process, and the next conductor's reconcile kills it before releasing its
+   * claim (0030 §5). Ending with `process.exit` because the pass in flight is
+   * holding the event loop open — returning would be a daemon that says it has
+   * stopped and has not.
+   */
+  const stopNow = (why: string, code = 0): void => {
+    if (stopping) return
+    stopping = true
+    console.log(paint.held(why))
+    fork(
+      Effect.gen(function* () {
+        // The last word, and the timer off with it — `stop` does both, in that
+        // order, so nothing lands after it.
+        yield* Effect.promise(() => ports.beacon.stop('stopping'))
+        // The projections are stopped and the lock is released by this; what it
+        // does not do, and must not, is wait for the pass.
+        yield* ports.daemon.stop()
+        yield* ports.daemon.stopped()
+        yield* Effect.promise(() => ratesSettled())
+        exit(code)
+      }),
+    )
+  }
+
+  /**
+   * Finish the pass in flight, then stop — and say so before waiting.
+   *
+   * The first Ctrl+C prints what is draining and what a second one costs. Both
+   * sentences are honest only because the agent is in its own process group
+   * (§3): before that, the signal that began the shutdown killed the agent in
+   * the same instant, and there was nothing left to finish.
+   */
+  const drain = (why: string, timeoutMs: number | null): Effect.Effect<void> => {
+    if (draining) return Effect.void
+    draining = true
+    return Effect.gen(function* () {
+      const held = yield* ports.inFlight().pipe(recovering(() => Effect.succeed([] as string[])))
+      // The held colour, which is the board's own answer for this exact fact:
+      // `draining.tsx` wears `chip held` with the comment "Held rather than
+      // warned: nothing is broken, and a red chip would send…". A shutdown is a
+      // person's word, and a person's word is never the green one nor the red.
+      console.log(paint.held(`draining — ${describeInFlight(held)}, then stopping (${why}).`))
+      console.log(paint.muted('press ctrl-c again to stop now, leaving its agent orphaned.'))
+      console.log(
+        paint.muted(
+          timeoutMs === null
+            ? // **A pass is no longer one agent**, and this sentence has now been
+              // wrong twice for the same reason. It first said one
+              // `runtime.limits.wall`, which the fix loop made an understatement.
+              // It was then rewritten as *each with its own <wall>, so several
+              // times that* — a multiple, to avoid naming a number this line cannot
+              // know. `#141` then made `WALL_LIMIT` a whole sentence rather than a
+              // phrase, and the two collided into "each with its own the recipe's
+              // runtime.limits — by default, up to 3 agent runs".
+              //
+              // It says the product now, because `attemptCeiling` computes one and
+              // there is no longer anything to approximate: the multiple *is* the
+              // number, and asking the reader to multiply was only ever the cost of
+              // not having it.
+              `an attempt is the agents, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
+            : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
+        ),
+      )
+      yield* Effect.promise(() => ports.beacon.say('draining'))
+
+      let timer: ReturnType<typeof setTimeout> | undefined
+      if (timeoutMs !== null) {
+        timer = setTimeout(
+          () =>
+            stopNow(
+              `--timeout reached — leaving the agent running. The next conductor kills it and releases the claim (lingtai doctor names it).`,
+            ),
+          timeoutMs,
+        )
+        timer.unref?.()
+      }
+
+      ports.clearListening()
+      // The drain itself. No timeout around this one on purpose (§6).
+      const loop = ports.loop()
+      if (loop) yield* loop.stop()
+      clearTimeout(timer)
+      if (stopping) return
+      stopping = true
+      yield* Effect.promise(() => ports.beacon.stop('stopping'))
+      yield* ports.daemon.stop()
+    })
+  }
+
+  // The first signal drains and says so; the second stops now. `kill <pid>` is
+  // the same two presses, because it used to be the worse of the two: it
+  // reached the daemon alone, orphaned the agent, and took with it the code
+  // that would have appended the outcome (#87).
+  let signals = 0
+  const onSignal = (signal: string): void => {
+    signals += 1
+    if (signals === 1) {
+      fork(drain(signal === 'SIGINT' ? 'ctrl-c' : signal, null))
+      return
+    }
+    stopNow('stopping now — its agent is left running, and the next conductor kills it.')
+  }
+
+  return {
+    drain,
+    stopNow,
+    onSignal,
+    /** A drain forked as a root fiber, for the callers inside a look. */
+    drainInBackground: (why: string, timeoutMs: number | null): void => void fork(drain(why, timeoutMs)),
+    state,
+    get draining() {
+      return draining
+    },
+    get stopping() {
+      return stopping
+    },
+  }
 }
 
 /**
@@ -212,8 +372,12 @@ export function daemonControlRead(
  * **The one place a daemon is started**, and that is deliberate: the beacon, the
  * reconcile, the `ConductorStarted` append and the drain handlers are one
  * sequence, and a second way in would be a second place for them to drift apart.
+ *
+ * An Effect run on the CLI's main fiber, which nothing interrupts: the signal
+ * handlers below are `process.on` callbacks outside any fiber, and each starts
+ * its drain as a fiber of its own (`daemonStopping`).
  */
-export async function daemonCommand(
+export function daemonCommand(
   flags: Record<string, string> = {},
   /** Who asked for this start, why, and the code their checks examined — when it is a restart. */
   restart: { by: string; reason: string; examined: CodeVersion } | null = null,
@@ -227,543 +391,465 @@ export async function daemonCommand(
   verbose = true,
   /** The snapshot writer held for this daemon's lifetime; only the default log's control reads are given it. */
   writer: Pick<SnapshotWriter, 'offer'> | null = null,
-): Promise<number> {
-  const controlRead = daemonControlRead(writer)
-  const trace = verbose ? (line: string) => console.log(line) : () => {}
-  await startTracing()
-  // The lock, the status table, the code this process loaded, and — for a
-  // restart — the refusals only a started daemon can be asked. One function for
-  // all of it, so the terminal restart's side of `RESTART_GUARDS` is the code
-  // `integration/restart.test.ts` runs and not a copy of it (#167).
-  const opened = await openDaemon(restart, {
-    start: () =>
-      startDaemon({
-        projections: PROJECTIONS,
-        log: trace,
-        tell: (line) => console.log(line),
-        onRunner: trackLiveSpend,
-      }),
-    code: async () => {
-      // The beacon. One timer in the whole system, and it decides nothing — it
-      // says "still here", which is the difference between a board that is behind
-      // and a board that is broken. Two work items merged for real while their
-      // cards sat still and nothing reported it; this is what makes that a glance.
-      await createStatusTable()
-      // Read once, here, and carried on every beat afterwards. Node caches a module
-      // at import, so this process runs whatever `HEAD` pointed at now for as long
-      // as it lives — a merge into `main` reaches the CLI, the gates and the board
-      // and does not reach this. #88 landed thirty-nine minutes after a daemon
-      // started and never executed once; nothing in the beacon could have said so.
-      return readCodeVersion()
-    },
-    control: () => readControl(),
-    log: (line) => console.log(line),
-  })
-  if (!opened.ok) return opened.code
-  announce?.()
-  const { started, code } = opened
-  // **Beating from here**, and not from after the reconcile below — which is
-  // what `#144` was. The two lines that follow this one read a recipe per
-  // project over the network, and the reconcile after them writes GitHub
-  // labels; a startup with two divergences to fix crossed fifteen seconds, and
-  // for the second half of it `lingtai doctor` said `not running` about a
-  // daemon whose lock it printed on the next line. `startBeacon` keeps one
-  // timer for the whole life of the process, so there is no stretch of it
-  // during which nothing says "still here".
-  const beacon = startBeacon('starting', { code, stoppedProjections: () => started.daemon.stoppedProjections })
-  // This process's own start, dated by the store's clock and not this host's:
-  // `TriageStarted` is dated by the store, and a database ahead of this host
-  // would read an attempt a previous conductor cut off as `Running` (#576). The
-  // row's first beat is `fresh` and the lock is held, so the row it leaves is
-  // this process's; where it cannot be read, or is another pid's because the
-  // beat failed, triage asks again rather than use this host's clock (#583).
-  await beacon.say('starting')
-  const daemonStartedAt = memoDaemonStartedAt(readStatus)
-  console.log(startLine(code, versionFacts()))
-
-  // And in the log, where the beacon cannot help: a beacon is one mutable row
-  // that the next start overwrites, so it says a daemon is up and never said
-  // that one *started*, from what code, or at whose hand. A restart at 23:06 on
-  // 2026-09-09 is unattributable for exactly that reason (0042).
-  //
-  // **A start that cannot record itself takes no work** (0126): it says why and
-  // exits non-zero, and a supervisor or a person starts it again. The record is
-  // also what ends a drain from before this daemon, so a daemon that did not
-  // make it would leave that drain standing for every other reader.
-  //
-  // **A person only where a person's hand is on it**, and whose hand is
-  // `attributeStart`'s to decide: `lingtai restart` here, a terminal, or
-  // nobody's — launchd's and systemd's starts included (0048).
-  //
-  // **Not made here, but first.** `recordStart` reads, decides and appends at
-  // that read's head, so it is the first thing the loop's shutdown check or the
-  // `--no-conduct` listener does with the control stream (`startRecorder`): a
-  // request that landed while this daemon was starting is obeyed, never ended.
-  const noteStart = startRecorder({
-    restart,
-    tty: Boolean(process.stdin.isTTY),
-    user: process.env['USER'] ?? 'operator',
-    record: (a) => recordStart(a.by, a.reason, code, started.since),
-    log: (line) => console.log(line),
-  })
-
-  // Before anything is taken. A worktree left by a killed daemon is holding a
-  // branch checked out, which stops git updating that ref on the next attempt —
-  // so the tidy-up has to happen before the next attempt, not after it fails.
-  // All four checks, GitHub included (`#69`). The clients are built here and
-  // injected rather than reached for inside `reconcile`, so a reconcile in a
-  // test — or on a machine with no App — still does the other three.
-  const registered = await loadProjects().catch(() => [])
-
-  // What this daemon will and will not take, per project, **before it takes
-  // anything**. The same lines `lingtai status` prints, from the same function,
-  // so the two cannot disagree about whether a queue is empty or unreadable.
-  //
-  // #76 is why this is at startup rather than only in a pass. A recipe on
-  // `main` naming a label the core did not know stopped parsing, every issue in
-  // the project left the queue, and the only place that said so was a `lingtai
-  // status` nobody ran — `conduct.ts` put it in `outcome.refused` and the loop
-  // logged one `pass failed:` line, but only once a pass had run, and one line
-  // into scrollback. A daemon that cannot read a recipe now says so in the
-  // block you are already reading while it starts.
-  if (registered.length === 0) console.log('no project registered — run lingtai add <owner>/<repo>')
-  const filters = await projectFilters(registered)
-  for (const line of describeFilters(filters)) console.log(line)
-
-  const { clients, unresolved } = await clientsForProjects(registered)
-  // **Report, don't repair** (#389). A project whose client will not build —
-  // a recipe that will not resolve, or (`#355`) a no-owner project's own
-  // `ownerlessRefusal`, whose recipe resolves fine — is dropped from
-  // `clients` rather than falling back to the raw client — see
-  // `clientsForProjects`' own doc comment — and the consequence is said here,
-  // once per project per daemon start, because `reconcile(` has one caller
-  // and nothing on the work loop reaches this line again until the next
-  // start. `doctor` reads the same filter live, which is the per-sweep half
-  // of this report. `u.problem` already names the specific cause, so the
-  // line around it says only that reconcile is skipped — never "its recipe
-  // will not resolve", which is false for the ownerless case.
-  for (const u of unresolved) {
-    console.log(
-      paint.fail(
-        `reconcile skipped ${u.project}: ${u.problem}. ` +
-          'Labels, closes and leftover arms are not converged while this stands.',
-      ),
-    )
-  }
-  const found = await reconcile({
-    log: (line) => console.log(line),
-    // Told what world it is repairing: which projections should be current,
-    // which projects' claims are ours, and how to reach GitHub. Each check
-    // no-ops without its own input rather than guessing at a global scan.
-    projections: PROJECTIONS.map((p) => p.name),
-    projects: registered,
-    github: { projects: registered, clients },
-    writer: writer ?? undefined,
-  }).catch((err: unknown) => {
-    // Reported, never fatal. Refusing to start because a directory could not be
-    // removed would turn a mess into an outage.
-    console.error(`reconcile failed: ${(err as Error).message}`)
-    return []
-  })
-  if (found.length > 0) console.log(paint.pass(`reconciled ${found.length} divergence(s)`))
-  // The slow half is done. The timer has been running throughout it; this is
-  // the word changing, not the beating starting.
-  void beacon.say('up')
-
-  /**
-   * How a daemon that takes no work hears a shutdown. Unset while it takes work,
-   * because then the loop reads the control stream itself.
-   *
-   * The loop is what reads the control stream, so a `--no-conduct` daemon was
-   * deaf to `lingtai shutdown` entirely — the request landed, nothing read it,
-   * and the process stayed up. That was invisible while stopping was the whole
-   * of the command; `lingtai restart` waits for the drain it asked for, and a
-   * drain nothing will ever perform is a wait that never ends (0042).
-   *
-   * On the beacon's period, and deciding nothing about work — only when to stop.
-   */
-  let listening: ReturnType<typeof setInterval> | undefined
-
-  // Taking work is the default now that there is a way to stop it (#45).
-  // `--no-conduct` is for a daemon you want keeping the board current while
-  // you work on something else.
-  let loop: ReturnType<typeof createWorkLoop> | null = null
-
-  // ------------------------------------------------------------ stopping ----
-  //
-  // Two ways in and one behaviour, from
-  // [0030](../../../doc/decisions-archive/0030-shutting-down-safely.md): `lingtai
-  // shutdown` reaches the loop through the log, a signal reaches this handler,
-  // and both drain. **Draining is waiting for the pass**, which spans the
-  // agent, the gates, the merge lane and the `end` point — not for the agent's
-  // exit, which is only the first of those.
-
-  /** The request the loop read, when the log is what began this. */
-  let asked: ShutdownRequest | null = null
-  // Set when the start could not record itself: `onShutdown` then stops non-zero.
-  let failedStart: string | null = null
-  let draining = false
-  let stopping = false
-
-  /**
-   * Stop now, without waiting.
-   *
-   * The second Ctrl+C and the `--timeout` that trips both come here, and both
-   * knowingly leave the agent running: it is detached, so it survives this
-   * process, and the next conductor's reconcile kills it before releasing its
-   * claim (0030 §5). Ending with `process.exit` because the pass in flight is
-   * holding the event loop open — returning would be a daemon that says it has
-   * stopped and has not.
-   */
-  const stopNow = (why: string, code = 0): void => {
-    if (stopping) return
-    stopping = true
-    console.log(paint.held(why))
-    void (async () => {
-      // The last word, and the timer off with it — `stop` does both, in that
-      // order, so nothing lands after it.
-      await beacon.stop('stopping')
-      started.daemon.stop()
-      // The projections are stopped and the lock is released by this; what it
-      // does not do, and must not, is wait for the pass.
-      await started.daemon.stopped
-      await ratesSettled()
-      process.exit(code)
-    })()
-  }
-
-  /**
-   * Finish the pass in flight, then stop — and say so before waiting.
-   *
-   * The first Ctrl+C prints what is draining and what a second one costs. Both
-   * sentences are honest only because the agent is in its own process group
-   * (§3): before that, the signal that began the shutdown killed the agent in
-   * the same instant, and there was nothing left to finish.
-   */
-  const drain = async (why: string, timeoutMs: number | null): Promise<void> => {
-    if (draining) return
-    draining = true
-
-    const held = await inFlight().catch(() => [])
-    // The held colour, which is the board's own answer for this exact fact:
-    // `draining.tsx` wears `chip held` with the comment "Held rather than
-    // warned: nothing is broken, and a red chip would send…". A shutdown is a
-    // person's word, and a person's word is never the green one nor the red.
-    console.log(paint.held(`draining — ${describeInFlight(held)}, then stopping (${why}).`))
-    console.log(paint.muted('press ctrl-c again to stop now, leaving its agent orphaned.'))
-    console.log(
-      paint.muted(
-        timeoutMs === null
-          ? // **A pass is no longer one agent**, and this sentence has now been
-            // wrong twice for the same reason. It first said one
-            // `runtime.limits.wall`, which the fix loop made an understatement.
-            // It was then rewritten as *each with its own <wall>, so several
-            // times that* — a multiple, to avoid naming a number this line cannot
-            // know. `#141` then made `WALL_LIMIT` a whole sentence rather than a
-            // phrase, and the two collided into "each with its own the recipe's
-            // runtime.limits — by default, up to 3 agent runs".
-            //
-            // It says the product now, because `attemptCeiling` computes one and
-            // there is no longer anything to approximate: the multiple *is* the
-            // number, and asking the reader to multiply was only ever the cost of
-            // not having it.
-            `an attempt is the agents, the steps and the merge lane. What one may spend is ${WALL_LIMIT}. It is waiting, not hung.`
-          : `giving up after ${Math.round(timeoutMs / 1000)}s if it has not finished, which leaves the agent running.`,
-      ),
-    )
-    await beacon.say('draining')
-
-    let timer: ReturnType<typeof setTimeout> | undefined
-    if (timeoutMs !== null) {
-      timer = setTimeout(
-        () =>
-          stopNow(
-            `--timeout reached — leaving the agent running. The next conductor kills it and releases the claim (lingtai doctor names it).`,
-          ),
-        timeoutMs,
-      )
-      timer.unref?.()
-    }
-
-    clearInterval(listening)
-    // The drain itself. No timeout around this one on purpose (§6).
-    await loop?.stop()
-    clearTimeout(timer)
-    if (stopping) return
-    stopping = true
-    await beacon.stop('stopping')
-    started.daemon.stop()
-  }
-
-  // **Where the control stream was when this daemon started** (`#159`).
-  // A shutdown is not scoped by it (0126): a request is ended by the next
-  // `ConductorStarted`, and the watermark survives only as the line `recordStart`
-  // decides by — at or below it, the request was asked of an earlier process and
-  // the record ends it; above it, it is this daemon's to obey. **The one pause
-  // left is the setup's, and it holds across starts** (`#405`): a restart loads
-  // the same setup that could not provide the tier, so every read of it is the
-  // whole stream's. `lingtai resume` is what lifts it.
-  //
-  // **Read by `startDaemon`, before the lock** (#174). It used to be read here,
-  // after the lock and the projections, and a `service shutdown` appended in
-  // that gap was below the watermark of the only daemon holding the lock — so
-  // nothing ever obeyed it, and the command waiting for the lock waited for ever.
-  const triageHashes = new Map<string, string>()
-  // One `locked`, asked by every gate that starts an agent (0126 §5); it caches nothing.
-  const guard = makeGuard({ store: eventStore, ceiling: ceilingPort(undefined, {}) })
-  const locked = lockedBy(guard)
-  const scanTriage = async (project: string, triage: Triage | null): Promise<void> => {
-    try {
-      await catchUpChangedTriage(
-        project,
-        triage,
-        triageHashes,
-        daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
-      )
-    } catch (err) {
-      console.error(`triage catch-up ${project}: ${(err as Error).message}`)
-    }
-  }
-
-  if (!('no-conduct' in flags)) {
-    // Who is told what happened, straight off the recipes and named nowhere
-    // here (`#123`). This block used to construct `macNotifier()` by name,
-    // which is what 0037 §3 exists to remove: Lingtai's own desktop
-    // notification is now a `run:` line in a `subscribers:` block, started by
-    // exactly the code that will start somebody else's.
-    //
-    // Fire and forget, as it always was: a notification retried later, about a
-    // decision already made, trains you to ignore the next one.
-    //
-    // A project whose recipe could not be read here is said to be unread, not
-    // quiet, and asked again before each pass until it is.
-    const declared = await createSubscriberSet({
-      filters,
-      reread: (projects) => projectFilters(registered.filter((p) => projects.includes(p.project ?? '(unnamed)'))),
-      subject: createSubjectResolver(undefined, { writer: writer ?? undefined }),
-      // The daemon's own directory. There is no worktree for an event — it is
-      // not about a diff — and a subscriber that wants one has to make it.
-      cwd: process.cwd(),
-      log: trace,
-      tell: (line) => console.log(line),
+): Effect.Effect<number> {
+  return Effect.gen(function* () {
+    const controlRead = daemonControlRead(writer)
+    const trace = verbose ? (line: string) => console.log(line) : () => {}
+    yield* Effect.promise(() => startTracing())
+    // The lock, the status table, the code this process loaded, and — for a
+    // restart — the refusals only a started daemon can be asked. One function for
+    // all of it, so the terminal restart's side of `RESTART_GUARDS` is the code
+    // `integration/restart.test.ts` runs and not a copy of it (#167).
+    const opened = yield* openDaemon(restart, {
+      start: () =>
+        startDaemonEffect({
+          projections: PROJECTIONS,
+          log: trace,
+          tell: (line) => console.log(line),
+          onRunner: trackLiveSpend,
+        }),
+      code: () =>
+        Effect.gen(function* () {
+          // The beacon. One timer in the whole system, and it decides nothing — it
+          // says "still here", which is the difference between a board that is behind
+          // and a board that is broken. Two work items merged for real while their
+          // cards sat still and nothing reported it; this is what makes that a glance.
+          yield* createStatusTableEffect()
+          // Read once, here, and carried on every beat afterwards. Node caches a module
+          // at import, so this process runs whatever `HEAD` pointed at now for as long
+          // as it lives — a merge into `main` reaches the CLI, the gates and the board
+          // and does not reach this. #88 landed thirty-nine minutes after a daemon
+          // started and never executed once; nothing in the beacon could have said so.
+          return yield* readCodeVersionEffect()
+        }),
+      control: () => readControlEffect(),
+      log: (line) => console.log(line),
     })
-    // A recipe that could not be read is why nothing is told: not trace.
-    const unreadNow = new Set(declared.problems())
-    for (const line of declared.describe()) (unreadNow.has(line) ? console.log : trace)(line)
+    if (!opened.ok) return opened.code
+    announce?.()
+    const { started, code } = opened
+    // The services every callback below starts its fiber with: taken once, now the lock is won.
+    const services = yield* Effect.context<never>()
+    // **Beating from here**, and not from after the reconcile below — which is
+    // what `#144` was. The two lines that follow this one read a recipe per
+    // project over the network, and the reconcile after them writes GitHub
+    // labels; a startup with two divergences to fix crossed fifteen seconds, and
+    // for the second half of it `lingtai doctor` said `not running` about a
+    // daemon whose lock it printed on the next line. `startBeacon` keeps one
+    // timer for the whole life of the process, so there is no stretch of it
+    // during which nothing says "still here".
+    const beacon = startBeacon('starting', { code, stoppedProjections: () => started.daemon.stoppedProjections })
+    // This process's own start, dated by the store's clock and not this host's:
+    // `TriageStarted` is dated by the store, and a database ahead of this host
+    // would read an attempt a previous conductor cut off as `Running` (#576). The
+    // row's first beat is `fresh` and the lock is held, so the row it leaves is
+    // this process's; where it cannot be read, or is another pid's because the
+    // beat failed, triage asks again rather than use this host's clock (#583).
+    yield* Effect.promise(() => beacon.say('starting'))
+    const daemonStartedAt = memoDaemonStartedAt(readStatus)
+    console.log(startLine(code, versionFacts()))
 
-    // One hook for the loop and the pass, so the two cannot drift (#210). A
-    // stopped task_view comes first and in memory: a person's Resume must not
-    // lift it, and it appends nothing (#841).
-    // The stop is read again after the asynchronous reads: a task_view that
-    // stops while they are in flight must still stop this claim.
-    const claiming = (): Promise<string | null> => {
-      const before = notTakingWork(started.daemon.stoppedProjections)
-      if (before !== null) return Promise.resolve(before)
-      return pausedSentence({ control: () => controlRead() }).then(
-        (paused) => notTakingWork(started.daemon.stoppedProjections) ?? paused,
+    // And in the log, where the beacon cannot help: a beacon is one mutable row
+    // that the next start overwrites, so it says a daemon is up and never said
+    // that one *started*, from what code, or at whose hand. A restart at 23:06 on
+    // 2026-09-09 is unattributable for exactly that reason (0042).
+    //
+    // **A start that cannot record itself takes no work** (0126): it says why and
+    // exits non-zero, and a supervisor or a person starts it again. The record is
+    // also what ends a drain from before this daemon, so a daemon that did not
+    // make it would leave that drain standing for every other reader.
+    //
+    // **A person only where a person's hand is on it**, and whose hand is
+    // `attributeStart`'s to decide: `lingtai restart` here, a terminal, or
+    // nobody's — launchd's and systemd's starts included (0048).
+    //
+    // **Not made here, but first.** `recordStart` reads, decides and appends at
+    // that read's head, so it is the first thing the loop's shutdown check or the
+    // `--no-conduct` listener does with the control stream (`startRecorder`): a
+    // request that landed while this daemon was starting is obeyed, never ended.
+    const noteStart = startRecorder({
+      restart,
+      tty: Boolean(process.stdin.isTTY),
+      user: process.env['USER'] ?? 'operator',
+      record: (a) => Effect.runPromiseWith(services)(recordStartEffect(a.by, a.reason, code, started.since)),
+      log: (line) => console.log(line),
+    })
+    const noted = Effect.promise(() => noteStart())
+
+    // Before anything is taken. A worktree left by a killed daemon is holding a
+    // branch checked out, which stops git updating that ref on the next attempt —
+    // so the tidy-up has to happen before the next attempt, not after it fails.
+    // All four checks, GitHub included (`#69`). The clients are built here and
+    // injected rather than reached for inside `reconcile`, so a reconcile in a
+    // test — or on a machine with no App — still does the other three.
+    const registered = yield* loadProjectsEffect().pipe(recovering(() => Effect.succeed([] as ProjectState[])))
+
+    // What this daemon will and will not take, per project, **before it takes
+    // anything**. The same lines `lingtai status` prints, from the same function,
+    // so the two cannot disagree about whether a queue is empty or unreadable.
+    //
+    // #76 is why this is at startup rather than only in a pass. A recipe on
+    // `main` naming a label the core did not know stopped parsing, every issue in
+    // the project left the queue, and the only place that said so was a `lingtai
+    // status` nobody ran — `conduct.ts` put it in `outcome.refused` and the loop
+    // logged one `pass failed:` line, but only once a pass had run, and one line
+    // into scrollback. A daemon that cannot read a recipe now says so in the
+    // block you are already reading while it starts.
+    if (registered.length === 0) console.log('no project registered — run lingtai add <owner>/<repo>')
+    const filters = yield* Effect.promise(() => projectFilters(registered))
+    for (const line of describeFilters(filters)) console.log(line)
+
+    const { clients, unresolved } = yield* clientsForProjectsEffect(registered)
+    // **Report, don't repair** (#389). A project whose client will not build —
+    // a recipe that will not resolve, or (`#355`) a no-owner project's own
+    // `ownerlessRefusal`, whose recipe resolves fine — is dropped from
+    // `clients` rather than falling back to the raw client — see
+    // `clientsForProjects`' own doc comment — and the consequence is said here,
+    // once per project per daemon start, because `reconcile(` has one caller
+    // and nothing on the work loop reaches this line again until the next
+    // start. `doctor` reads the same filter live, which is the per-sweep half
+    // of this report. `u.problem` already names the specific cause, so the
+    // line around it says only that reconcile is skipped — never "its recipe
+    // will not resolve", which is false for the ownerless case.
+    for (const u of unresolved) {
+      console.log(
+        paint.fail(
+          `reconcile skipped ${u.project}: ${u.problem}. ` +
+            'Labels, closes and leftover arms are not converged while this stands.',
+        ),
       )
     }
+    const found = yield* reconcileEffect({
+      log: (line) => console.log(line),
+      // Told what world it is repairing: which projections should be current,
+      // which projects' claims are ours, and how to reach GitHub. Each check
+      // no-ops without its own input rather than guessing at a global scan.
+      projections: PROJECTIONS.map((p) => p.name),
+      projects: registered,
+      github: { projects: registered, clients },
+      writer: writer ?? undefined,
+    }).pipe(
+      // Reported, never fatal. Refusing to start because a directory could not be
+      // removed would turn a mess into an outage. A store failure here is a
+      // defect; an interruption is not a failure to report.
+      recovering((err) =>
+        Effect.sync(() => {
+          console.error(`reconcile failed: ${err.message}`)
+          return []
+        }),
+      ),
+    )
+    if (found.length > 0) console.log(paint.pass(`reconciled ${found.length} divergence(s)`))
+    // The slow half is done. The timer has been running throughout it; this is
+    // the word changing, not the beating starting.
+    void beacon.say('up')
 
-    // The passes in flight, held across looks (0122 §1): a look that starts
-    // several returns, and the next look must still know they are running.
-    const slots = createSlots()
-    loop = createWorkLoop({
-      log: trace,
-      tell: (line) => console.log(line),
-      subscribers: () => declared.subscribers(),
-      // The third kind of agent, hosted here because the daemon is where money
-      // is spent (0033 §3). Off the pass path: a question must not queue behind
-      // a run, and it takes no claim and provisions nothing that would need to.
-      discuss: (event) => onDiscussionRequested(event, (line) => console.log(line), locked),
-      triage: (event) =>
-        onWaitStarted(
-          event,
+    /**
+     * How a daemon that takes no work hears a shutdown. Unset while it takes work,
+     * because then the loop reads the control stream itself.
+     *
+     * The loop is what reads the control stream, so a `--no-conduct` daemon was
+     * deaf to `lingtai shutdown` entirely — the request landed, nothing read it,
+     * and the process stayed up. That was invisible while stopping was the whole
+     * of the command; `lingtai restart` waits for the drain it asked for, and a
+     * drain nothing will ever perform is a wait that never ends (0042).
+     *
+     * On the beacon's period, and deciding nothing about work — only when to stop.
+     */
+    let listening: ReturnType<typeof setInterval> | undefined
+
+    // Taking work is the default now that there is a way to stop it (#45).
+    // `--no-conduct` is for a daemon you want keeping the board current while
+    // you work on something else.
+    let loop: WorkLoopPort | null = null
+
+    // ------------------------------------------------------------ stopping ----
+    //
+    // Two ways in and one behaviour, from
+    // [0030](../../../doc/decisions-archive/0030-shutting-down-safely.md): `lingtai
+    // shutdown` reaches the loop through the log, a signal reaches this handler,
+    // and both drain. **Draining is waiting for the pass**, which spans the
+    // agent, the gates, the merge lane and the `end` point — not for the agent's
+    // exit, which is only the first of those.
+    const stopping = daemonStopping({
+      beacon,
+      daemon: started.daemon,
+      loop: () => loop,
+      inFlight: () => inFlightEffect(),
+      clearListening: () => clearInterval(listening),
+      services,
+    })
+    const { state, stopNow, drain } = stopping
+
+    // **Where the control stream was when this daemon started** (`#159`).
+    // A shutdown is not scoped by it (0126): a request is ended by the next
+    // `ConductorStarted`, and the watermark survives only as the line `recordStart`
+    // decides by — at or below it, the request was asked of an earlier process and
+    // the record ends it; above it, it is this daemon's to obey. **The one pause
+    // left is the setup's, and it holds across starts** (`#405`): a restart loads
+    // the same setup that could not provide the tier, so every read of it is the
+    // whole stream's. `lingtai resume` is what lifts it.
+    //
+    // **Read by `startDaemon`, before the lock** (#174). It used to be read here,
+    // after the lock and the projections, and a `service shutdown` appended in
+    // that gap was below the watermark of the only daemon holding the lock — so
+    // nothing ever obeyed it, and the command waiting for the lock waited for ever.
+    const triageHashes = new Map<string, string>()
+    // One `locked`, asked by every gate that starts an agent (0126 §5); it caches nothing.
+    const guard = makeGuard({ store: eventStore, ceiling: ceilingPort(undefined, {}) })
+    const locked = lockedBy(guard)
+    const scanTriage = (project: string, triage: Triage | null): Effect.Effect<void> =>
+      lift(() =>
+        catchUpChangedTriage(
+          project,
+          triage,
+          triageHashes,
           daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
         ),
-      // Asked from the log every pass. A pause issued while a run is in flight
-      // has to land at the next opportunity without anybody restarting this.
-      paused: claiming,
-      // And a shutdown in the same breath, from the same reduce (0030 §2). The
-      // command appends and returns; this is where it lands.
-      shutdown: async () => {
-        // The start is recorded first, off its own read, and decides whether this
-        // daemon takes work at all (`startRecorder`): a request asked of it is
-        // obeyed, one from before it is ended by the record, and a start that
-        // cannot record itself takes nothing.
-        const start = await noteStart()
-        if ('failed' in start) {
-          failedStart = start.failed
-          return `the start could not be recorded: ${start.failed}`
-        }
-        if (!start.take) {
-          asked = start.standing
-          return `asked by ${asked.by} — ${asked.reason}`
-        }
-        // Later reads are the whole stream's: this daemon's own record has ended
-        // everything from before it. Reaching a request here means somebody
-        // asked *this* daemon to stop, and they know they did.
-        const control = await controlRead()
-        asked = control.shutdown
-        return asked ? `asked by ${asked.by} — ${asked.reason}` : null
-      },
-      // The loop has stopped taking work. What it cannot do is exit the
-      // process, so the host does — after the drain `stop()` performs.
-      // `--force` takes the other exit. `stopNow` is not new: it is where
-      // `--timeout` already went when it tripped, so forcing asks for a state
-      // the system already knows how to be in rather than inventing one.
-      onShutdown: (why) =>
-        failedStart !== null
-          ? // Nothing is in flight on the first check, so stopping now costs nothing.
-            stopNow(why, 1)
-          : asked?.force === true
-            ? stopNow(
-                `${why} — forced, so the attempt is not finished. The agent is left running for the next conductor to kill.`,
-              )
-            : void drain(why, asked?.timeoutMs ?? null),
+      ).pipe(
+        // Said and never fatal; an interruption passes.
+        recovering((err) => Effect.sync(() => console.error(`triage catch-up ${project}: ${err.message}`))),
+      )
 
-      pass: (reason, started) =>
-        Effect.gen(function* () {
-          yield* Effect.promise(() => declared.retry())
-          const recipes = new Map<string, Triage | null>()
-          const outcome = yield* conductorTurn({
-            merge: !('no-merge' in flags),
-            controlWriter: writer ?? undefined,
-            // The commit read at startup, so a refusal on the log says which
-            // process refused (#148).
-            codeSha: code.sha,
-            // Asked again inside the pass, before each project and ticket, with
-            // the same scope as the loop's own (#159): a run that stands the
-            // conductor down must stop the next claim in this pass, not the next
-            // pass (#210).
-            // A promise port until CLI-14 moves `claiming`; read fresh at every ask, never once at wiring time.
-            paused: Effect.promise(() => claiming()),
-            // One project's pause (0126): asked of the guard, which is the only
-            // reader of `prj-` — a gate never reads it itself.
-            locked: lockedEffect(guard),
-            log: trace,
-            tell: (line) => console.log(line),
-            many: registered.length > 1,
-            ...(started ? { slots: { set: slots, started } } : {}),
-            onRecipe: (project, recipe) => recipes.set(project, recipe.triage ?? null),
-          })
-          for (const [project, triage] of recipes) yield* Effect.promise(() => scanTriage(project, triage))
-          // The run told GitHub as it went (0022), so there is nothing left
-          // here to send and nothing to report about sending it.
-          // A routine pass, in the accent — structure, not a verdict. What the
-          // pass *decided* is coloured line by line above this; this one only
-          // says the loop went round.
-          const attemptLine = (refused: boolean): string =>
-            paint.accent(
-              `turn (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
-                (refused && outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ''),
-            )
-          if (verbose) console.log(attemptLine(true))
-          // A refusal is not trace: a quiet start must still say why nothing was taken.
-          else if (outcome.refused.length > 0) {
-            console.log(
-              `${outcome.refused.length} project(s) refused this turn — lingtai start --verbose, or lingtai status`,
-            )
+    if (!('no-conduct' in flags)) {
+      // Who is told what happened, straight off the recipes and named nowhere
+      // here (`#123`). This block used to construct `macNotifier()` by name,
+      // which is what 0037 §3 exists to remove: Lingtai's own desktop
+      // notification is now a `run:` line in a `subscribers:` block, started by
+      // exactly the code that will start somebody else's.
+      //
+      // Fire and forget, as it always was: a notification retried later, about a
+      // decision already made, trains you to ignore the next one.
+      //
+      // A project whose recipe could not be read here is said to be unread, not
+      // quiet, and asked again before each pass until it is.
+      const declared = yield* createSubscriberSet({
+        filters,
+        reread: (projects) => projectFilters(registered.filter((p) => projects.includes(p.project ?? '(unnamed)'))),
+        subject: createSubjectResolver(undefined, { writer: writer ?? undefined }),
+        // The daemon's own directory. There is no worktree for an event — it is
+        // not about a diff — and a subscriber that wants one has to make it.
+        cwd: process.cwd(),
+        log: trace,
+        tell: (line) => console.log(line),
+      })
+      // A recipe that could not be read is why nothing is told: not trace.
+      const unreadNow = new Set(declared.problems())
+      for (const line of declared.describe()) (unreadNow.has(line) ? console.log : trace)(line)
+
+      // One hook for the loop and the pass, so the two cannot drift (#210). A
+      // stopped task_view comes first and in memory: a person's Resume must not
+      // lift it, and it appends nothing (#841).
+      // The stop is read again after the asynchronous reads: a task_view that
+      // stops while they are in flight must still stop this claim. An Effect, so
+      // every ask reads afresh and never a value taken once at wiring time.
+      const claiming: Effect.Effect<string | null> = Effect.suspend(() => {
+        const before = notTakingWork(started.daemon.stoppedProjections)
+        if (before !== null) return Effect.succeed(before)
+        return pausedSentence({ control: () => controlRead() }).pipe(
+          Effect.map((paused) => notTakingWork(started.daemon.stoppedProjections) ?? paused),
+        )
+      })
+
+      // The passes in flight, held across looks (0122 §1): a look that starts
+      // several returns, and the next look must still know they are running.
+      const slots = createSlots()
+      loop = makeWorkLoop({
+        log: trace,
+        tell: (line) => console.log(line),
+        subscribers: () => declared.subscribers(),
+        // The third kind of agent, hosted here because the daemon is where money
+        // is spent (0033 §3). Off the pass path: a question must not queue behind
+        // a run, and it takes no claim and provisions nothing that would need to.
+        discuss: (event) => onDiscussionRequested(event, (line) => console.log(line), locked),
+        triage: (event) =>
+          onWaitStarted(
+            event,
+            daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
+          ),
+        // Asked from the log every pass. A pause issued while a run is in flight
+        // has to land at the next opportunity without anybody restarting this.
+        paused: claiming,
+        // And a shutdown in the same breath, from the same reduce (0030 §2). The
+        // command appends and returns; this is where it lands. A read that fails
+        // is a defect, which the loop tells as `loop failed:` and carries on.
+        shutdown: Effect.gen(function* () {
+          // The start is recorded first, off its own read, and decides whether this
+          // daemon takes work at all (`startRecorder`): a request asked of it is
+          // obeyed, one from before it is ended by the record, and a start that
+          // cannot record itself takes nothing.
+          const start = yield* noted
+          if ('failed' in start) {
+            state.failedStart = start.failed
+            return `the start could not be recorded: ${start.failed}`
           }
+          if (!start.take) {
+            state.asked = start.standing
+            return `asked by ${state.asked.by} — ${state.asked.reason}`
+          }
+          // Later reads are the whole stream's: this daemon's own record has ended
+          // everything from before it. Reaching a request here means somebody
+          // asked *this* daemon to stop, and they know they did.
+          const control = yield* controlRead().pipe(Effect.orDie)
+          state.asked = control.shutdown
+          return state.asked ? `asked by ${state.asked.by} — ${state.asked.reason}` : null
         }),
-    })
-    // The whole stream's, like the loop's: the one pause left is the setup's,
-    // and it holds across starts, so a daemon that has just started announces
-    // it and obeys it. `lingtai status` answers *what is standing* from the
-    // same state.
-    const control = await controlRead()
-    // Held, for the same reason `paused.tsx` wears `chip held`: nothing is
-    // broken and a person stopped it.
-    if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`))
-    // **The start is decided before anything that can spend money is switched
-    // on** (0126). `loop.start()` opens the subscription that delivers
-    // discussions and waits, so a start that is still recording would already be
-    // taking work. Nothing is in flight until this resolves, so stopping on a
-    // failed or declined record costs nothing and orphans nothing.
-    const start = await noteStart()
-    if ('failed' in start) {
-      stopNow(`the start could not be recorded: ${start.failed}`, 1)
-    } else if (!start.take) {
-      asked = start.standing
-      await drain(`asked by ${asked.by} — ${asked.reason}`, asked.timeoutMs)
+        // The loop has stopped taking work. What it cannot do is exit the
+        // process, so the host does — after the drain `stop()` performs. This is
+        // called from inside the look, so the drain is a root fiber of its own.
+        // `--force` takes the other exit. `stopNow` is not new: it is where
+        // `--timeout` already went when it tripped, so forcing asks for a state
+        // the system already knows how to be in rather than inventing one.
+        onShutdown: (why) =>
+          state.failedStart !== null
+            ? // Nothing is in flight on the first check, so stopping now costs nothing.
+              stopNow(why, 1)
+            : state.asked?.force === true
+              ? stopNow(
+                  `${why} — forced, so the attempt is not finished. The agent is left running for the next conductor to kill.`,
+                )
+              : stopping.drainInBackground(why, state.asked?.timeoutMs ?? null),
+
+        pass: (reason, startedPass) =>
+          Effect.gen(function* () {
+            yield* declared.retry()
+            const recipes = new Map<string, Triage | null>()
+            const outcome = yield* conductorTurn({
+              merge: !('no-merge' in flags),
+              controlWriter: writer ?? undefined,
+              // The commit read at startup, so a refusal on the log says which
+              // process refused (#148).
+              codeSha: code.sha,
+              // Asked again inside the pass, before each project and ticket, with
+              // the same scope as the loop's own (#159): a run that stands the
+              // conductor down must stop the next claim in this pass, not the next
+              // pass (#210).
+              paused: claiming,
+              // One project's pause (0126): asked of the guard, which is the only
+              // reader of `prj-` — a gate never reads it itself.
+              locked: lockedEffect(guard),
+              log: trace,
+              tell: (line) => console.log(line),
+              many: registered.length > 1,
+              ...(startedPass ? { slots: { set: slots, started: startedPass } } : {}),
+              onRecipe: (project, recipe) => recipes.set(project, recipe.triage ?? null),
+            })
+            for (const [project, triage] of recipes) yield* scanTriage(project, triage)
+            // The run told GitHub as it went (0022), so there is nothing left
+            // here to send and nothing to report about sending it.
+            // A routine pass, in the accent — structure, not a verdict. What the
+            // pass *decided* is coloured line by line above this; this one only
+            // says the loop went round.
+            const attemptLine = (refused: boolean): string =>
+              paint.accent(
+                `turn (${reason}): ${outcome.projects} project(s), ${outcome.ran} run(s)` +
+                  (refused && outcome.refused.length > 0 ? `, ${outcome.refused.length} refused` : ''),
+              )
+            if (verbose) console.log(attemptLine(true))
+            // A refusal is not trace: a quiet start must still say why nothing was taken.
+            else if (outcome.refused.length > 0) {
+              console.log(
+                `${outcome.refused.length} project(s) refused this turn — lingtai start --verbose, or lingtai status`,
+              )
+            }
+          }),
+      })
+      // The whole stream's, like the loop's: the one pause left is the setup's,
+      // and it holds across starts, so a daemon that has just started announces
+      // it and obeys it. `lingtai status` answers *what is standing* from the
+      // same state.
+      const control = yield* controlRead().pipe(Effect.orDie)
+      // Held, for the same reason `paused.tsx` wears `chip held`: nothing is
+      // broken and a person stopped it.
+      if (control.paused) console.log(paint.held(`paused by ${control.by} — ${control.reason}`))
+      // **The start is decided before anything that can spend money is switched
+      // on** (0126). `loop.start()` opens the subscription that delivers
+      // discussions and waits, so a start that is still recording would already be
+      // taking work. Nothing is in flight until this resolves, so stopping on a
+      // failed or declined record costs nothing and orphans nothing.
+      const start = yield* noted
+      if ('failed' in start) {
+        stopNow(`the start could not be recorded: ${start.failed}`, 1)
+      } else if (!start.take) {
+        state.asked = start.standing
+        // On the main fiber, which is not inside a look: the drain may be waited for here.
+        yield* drain(`asked by ${state.asked.by} — ${state.asked.reason}`, state.asked.timeoutMs)
+      } else {
+        yield* loop.start()
+        startRates()
+        // A daemon outlives a UTC day: look again hourly; `ratesDue` makes that one fetch a day.
+        setInterval(() => startRates(), 3_600_000).unref()
+        // The subscription is live; a wait made during this scan is delivered by its live handler.
+        const projects = yield* loadProjectsEffect()
+        yield* Effect.promise(() =>
+          catchUpRegisteredTriage(
+            projects,
+            (project) => currentRecipe(project).then((resolved) => resolved.recipe.triage ?? null),
+            (project, triage) => Effect.runPromiseWith(services)(scanTriage(project, triage)),
+            (line) => console.error(line),
+          ),
+        )
+        // A question asked while nothing was listening is waiting in the stream,
+        // exactly as a pause is (0013). After `start`, so the subscription is
+        // already up and a question that arrives during this one is not missed.
+        const waiting = yield* Effect.promise(() =>
+          answerOutstandingQueued({ log: (line) => console.log(line), locked }),
+        ).pipe(
+          recovering((err) =>
+            Effect.sync(() => {
+              console.error(`discussions: ${err.message}`)
+              return { answered: 0, heldBack: 0 }
+            }),
+          ),
+        )
+        if (waiting.answered > 0) console.log(`answered ${waiting.answered} discussion(s) that were waiting`)
+        if (waiting.heldBack > 0) {
+          console.log(`${waiting.heldBack} held back by a lock — answered when the project is resumed`)
+        }
+      }
     } else {
-      await loop.start()
-      startRates()
-      // A daemon outlives a UTC day: look again hourly; `ratesDue` makes that one fetch a day.
-      setInterval(() => startRates(), 3_600_000).unref()
-      // The subscription is live; a wait made during this scan is delivered by its live handler.
-      await catchUpRegisteredTriage(
-        await loadProjects(),
-        async (state) => (await currentRecipe(state)).recipe.triage ?? null,
-        scanTriage,
-        (line) => console.error(line),
-      )
-      // A question asked while nothing was listening is waiting in the stream,
-      // exactly as a pause is (0013). After `start`, so the subscription is
-      // already up and a question that arrives during this one is not missed.
-      const waiting = await answerOutstandingQueued({ log: (line) => console.log(line), locked }).catch(
-        (err: unknown) => {
-          console.error(`discussions: ${(err as Error).message}`)
-          return { answered: 0, heldBack: 0 }
-        },
-      )
-      if (waiting.answered > 0) console.log(`answered ${waiting.answered} discussion(s) that were waiting`)
-      if (waiting.heldBack > 0) {
-        console.log(`${waiting.heldBack} held back by a lock — answered when the project is resumed`)
+      // Discussions go with the conductor, and that is what this flag says: they
+      // spend money and 0033 §3 puts everything that spends money in the process
+      // that takes work. A daemon told to take none answers none either.
+      console.log(paint.muted('projections only — no work will be taken and no question answered'))
+
+      // It still stops when it is told to. Nothing is in flight here — there is
+      // no pass to finish — so this drain is over as soon as it begins, which is
+      // the honest shape of "finish what you are holding" for a daemon holding
+      // nothing.
+      const hearShutdown: Effect.Effect<void> = Effect.gen(function* () {
+        // The recovery is for the ticks only: it never stands in for the start's
+        // decision, and a failed read is not taken as *nothing stands*.
+        const control = yield* controlRead().pipe(recovering(() => Effect.succeed(null)))
+        const standing = control?.shutdown ?? null
+        if (standing) yield* drain(`asked by ${standing.by} — ${standing.reason}`, standing.timeoutMs)
+      })
+      // The start first, before the first tick: a drain asked of this daemon goes
+      // straight back out, one from before it is ended by the record, and a start
+      // that cannot record itself takes nothing.
+      const start = yield* noted
+      if ('failed' in start) {
+        stopNow(`the start could not be recorded: ${start.failed}`, 1)
+      } else if (!start.take) {
+        yield* drain(`asked by ${start.standing.by} — ${start.standing.reason}`, start.standing.timeoutMs)
+      }
+      // Not once a drain or a stop has begun: it has already cleared the timers, and
+      // an interval installed after it would hold the process open for ever.
+      if (!stopping.draining && !stopping.stopping) {
+        listening = setInterval(() => void Effect.runForkWith(services)(hearShutdown), HEARTBEAT_MS)
       }
     }
-  } else {
-    // Discussions go with the conductor, and that is what this flag says: they
-    // spend money and 0033 §3 puts everything that spends money in the process
-    // that takes work. A daemon told to take none answers none either.
-    console.log(paint.muted('projections only — no work will be taken and no question answered'))
 
-    // It still stops when it is told to. Nothing is in flight here — there is
-    // no pass to finish — so this drain is over as soon as it begins, which is
-    // the honest shape of "finish what you are holding" for a daemon holding
-    // nothing.
-    const hearShutdown = async (): Promise<void> => {
-      // The `.catch` is for the ticks only: it never stands in for the start's
-      // decision, and a failed read is not taken as *nothing stands*.
-      const control = await controlRead().catch(() => null)
-      const standing = control?.shutdown ?? null
-      if (standing) await drain(`asked by ${standing.by} — ${standing.reason}`, standing.timeoutMs)
-    }
-    // The start first, before the first tick: a drain asked of this daemon goes
-    // straight back out, one from before it is ended by the record, and a start
-    // that cannot record itself takes nothing.
-    const start = await noteStart()
-    if ('failed' in start) {
-      stopNow(`the start could not be recorded: ${start.failed}`, 1)
-    } else if (!start.take) {
-      await drain(`asked by ${start.standing.by} — ${start.standing.reason}`, start.standing.timeoutMs)
-    }
-    // Not once a drain or a stop has begun: it has already cleared the timers, and
-    // an interval installed after it would hold the process open for ever.
-    if (!draining && !stopping) listening = setInterval(() => void hearShutdown(), HEARTBEAT_MS)
-  }
+    process.on('SIGINT', () => stopping.onSignal('SIGINT'))
+    process.on('SIGTERM', () => stopping.onSignal('SIGTERM'))
 
-  // The first signal drains and says so; the second stops now. `kill <pid>` is
-  // the same two presses, because it used to be the worse of the two: it
-  // reached the daemon alone, orphaned the agent, and took with it the code
-  // that would have appended the outcome (#87).
-  let signals = 0
-  const stop = (signal: string) => {
-    signals += 1
-    if (signals === 1) {
-      void drain(signal === 'SIGINT' ? 'ctrl-c' : signal, null)
-      return
-    }
-    stopNow('stopping now — its agent is left running, and the next conductor kills it.')
-  }
-  process.on('SIGINT', () => stop('SIGINT'))
-  process.on('SIGTERM', () => stop('SIGTERM'))
-
-  await started.daemon.stopped
-  // After a drain and not on `stopNow`, which promised to stop now (#791).
-  await flushTracing()
-  await ratesSettled()
-  console.log('stopped')
-  return 0
+    yield* started.daemon.stopped()
+    // After a drain and not on `stopNow`, which promised to stop now (#791).
+    yield* Effect.promise(() => flushTracing())
+    yield* Effect.promise(() => ratesSettled())
+    console.log('stopped')
+    return 0
+  })
 }
 
 /**
@@ -964,8 +1050,12 @@ const restartSteps = (
       ...(args.noMerge ? { 'no-merge': '' } : {}),
     }
     steps.begin('starting')
-    return yield* lift(() =>
-      daemonCommand(flags, prepared, () => restarted(prepared.examined.sha?.slice(0, 7) ?? null), true, writer),
+    return yield* daemonCommand(
+      flags,
+      prepared,
+      () => restarted(prepared.examined.sha?.slice(0, 7) ?? null),
+      true,
+      writer,
     )
   })
 
@@ -976,11 +1066,12 @@ const restartSteps = (
  * setup's, the only one the control reducer still makes (#1013).
  */
 export function pausedSentence(ports: {
-  control: () => Promise<{ paused: boolean; by?: string | null; reason?: string | null }>
-}): Promise<string | null> {
-  return ports.control().then(
-    (c) => (c.paused ? `paused by ${c.by} — ${c.reason}` : null),
-    // Not "not paused": a pause that could not be read is not consent.
-    (err: Error) => `could not read whether the conductor is paused: ${err.message}`,
+  control: () => Effect.Effect<{ paused: boolean; by?: string | null; reason?: string | null }, unknown>
+}): Effect.Effect<string | null> {
+  return ports.control().pipe(
+    Effect.map((c) => (c.paused ? `paused by ${c.by} — ${c.reason}` : null)),
+    // Not "not paused": a pause that could not be read is not consent. A store failure is a defect
+    // (0101 §6), so this is `recovering`; an interruption is not a pause that could not be read.
+    recovering((err) => Effect.succeed(`could not read whether the conductor is paused: ${err.message}`)),
   )
 }

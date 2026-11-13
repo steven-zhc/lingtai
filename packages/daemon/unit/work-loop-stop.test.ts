@@ -110,7 +110,7 @@ describe('the work loop drain', () => {
       sweepMs: 0,
       eventLog: log,
       daemonStore: { head: () => Effect.succeed(0n) } as unknown as DaemonStore,
-      paused: async () => notTakingWork(stopped),
+      paused: Effect.sync(() => notTakingWork(stopped)),
       pass: asEffect(async (reason) => {
         reasons.push(reason)
       }),

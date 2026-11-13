@@ -1,4 +1,4 @@
-import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from '@lingtai/actions'
+import { makeSubscriber, subjectOf, type EventSubject, type SubscriberPort } from '@lingtai/actions'
 /**
  * Building the daemon's subscribers out of the recipes, and answering which
  * project an event is about.
@@ -37,10 +37,10 @@ import { createSubscriber, subjectOf, type EventSubject, type Subscriber } from 
  */
 import { runnableEnv, extensionEnv, resolveAgentEnv } from '@lingtai/agent-env'
 import type { ProjectFilter } from '@lingtai/conductor'
-import { readState } from '@lingtai/conductor/snapshot-state'
 import { attemptReducer, type Envelope, isAttemptStream, ticketOf } from '@lingtai/domain'
 import { BOARD_PORT, boardUrl } from '@lingtai/env'
-import { type EventStore, type SnapshotReadOptions, eventStore, log } from '@lingtai/event-store'
+import { type EventStore, type SnapshotReadOptions, eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
+import { Cause, Effect } from 'effect'
 
 /**
  * The board's address on the one machine this runs on
@@ -87,18 +87,23 @@ export function boardAddress(env: NodeJS.ProcessEnv = process.env): string {
  * **An unreadable log is not that, and is not answered null.** A null resolves
  * the delivery as a success, so a read that failed would drop the notification
  * with no `PluginFailed` and no line — the silent notifier 0037 §7 exists to
- * prevent. The read's rejection is left to reach `createSubscriber`'s `deliver`,
- * which rejects with it, and `work-loop.ts`'s boundary records it.
+ * prevent. The read's failure is made a defect (`Effect.orDie`), which `makeSubscriber`'s
+ * `deliver` does not recover, so it fails the delivery with the read's own error and
+ * `work-loop.ts`'s boundary records it.
  */
-async function runSubject(
+function runSubject(
   streamId: string,
   store: EventStore,
   options: SnapshotReadOptions,
-): Promise<EventSubject | null> {
-  const { ticketId } = await readState(store, attemptReducer, streamId, 'all', options)
-  if (ticketId === null) return null
-  const named = ticketOf({ streamId, data: { ticketId } })
-  return named === null ? null : subjectOf(named.project, named.issue)
+): Effect.Effect<EventSubject | null> {
+  return readThroughSnapshot(store, attemptReducer, streamId, 'all', options).pipe(
+    Effect.map(({ ticketId }) => {
+      if (ticketId === null) return null
+      const named = ticketOf({ streamId, data: { ticketId } })
+      return named === null ? null : subjectOf(named.project, named.issue)
+    }),
+    Effect.orDie,
+  )
 }
 
 /**
@@ -110,16 +115,17 @@ async function runSubject(
 export function createSubjectResolver(
   store?: EventStore,
   options: SnapshotReadOptions = {},
-): (event: Envelope) => Promise<EventSubject | null> {
+): (event: Envelope) => Effect.Effect<EventSubject | null> {
   // A store passed in has no snapshots of its own (0124 §5): only the default log's are read.
   const read = { ...options, snapshots: options.snapshots ?? (store === undefined ? log.snapshots : undefined) }
   const from = store ?? eventStore
-  return async (event) => {
-    const named = ticketOf(event)
-    if (named !== null) return subjectOf(named.project, named.issue)
-    if (!isAttemptStream(event.streamId)) return null
-    return runSubject(event.streamId, from, read)
-  }
+  return (event) =>
+    Effect.suspend(() => {
+      const named = ticketOf(event)
+      if (named !== null) return Effect.succeed(subjectOf(named.project, named.issue))
+      if (!isAttemptStream(event.streamId)) return Effect.succeed(null)
+      return runSubject(event.streamId, from, read)
+    })
 }
 
 export interface BuildSubscribersOptions {
@@ -129,7 +135,7 @@ export interface BuildSubscribersOptions {
   filters: readonly ProjectFilter[]
   /** Where a subscriber's process runs. The daemon's own directory; there is no worktree for an event. */
   cwd: string
-  subject: (event: Envelope) => Promise<EventSubject | null>
+  subject: (event: Envelope) => Effect.Effect<EventSubject | null>
   board?: string
   /** Reads `~/.lingtai/env/<project>.env` over the machine's file. Replaced only by a test. */
   resolveEnv?: typeof resolveAgentEnv
@@ -140,7 +146,7 @@ export interface BuildSubscribersOptions {
 
 /** One built subscriber and the declaration it came from, for the line the daemon prints. */
 export interface BuiltSubscriber {
-  subscriber: Subscriber
+  subscriber: SubscriberPort
   /** As the recipe wrote it, so the operator can see what it will and will not hear. */
   on: readonly string[]
 }
@@ -190,68 +196,79 @@ export interface SubscriberBuild {
  * the answer is still cheap; an operator's typo does not belong between an
  * event and the person waiting to hear about it.
  */
-export async function buildSubscribers(options: BuildSubscribersOptions): Promise<SubscriberBuild> {
-  const resolve = options.resolveEnv ?? resolveAgentEnv
-  const built: BuiltSubscriber[] = []
-  const quiet: string[] = []
-  const unread: UnreadProject[] = []
+export function buildSubscribers(options: BuildSubscribersOptions): Effect.Effect<SubscriberBuild> {
+  return Effect.gen(function* () {
+    const resolve = options.resolveEnv ?? resolveAgentEnv
+    const built: BuiltSubscriber[] = []
+    const quiet: string[] = []
+    const unread: UnreadProject[] = []
 
-  for (const filter of options.filters) {
-    if (!filter.ok) {
-      unread.push({ project: filter.project, problem: filter.problem })
-      continue
+    for (const filter of options.filters) {
+      if (!filter.ok) {
+        unread.push({ project: filter.project, problem: filter.problem })
+        continue
+      }
+      if (filter.recipe.subscribers.length === 0) {
+        quiet.push(filter.project)
+        continue
+      }
+      const declared = [...new Set(filter.recipe.subscribers.flatMap((s) => s.env))]
+
+      // One read of the two files per project, not one per subscriber: `merged`
+      // is the same data for all of them, and `extensionEnv` is what narrows it
+      // to each one's own names. `required: []` because `env.required` is the
+      // *agent's* declaration and refuses a whole pass when a name is absent
+      // (0020) — one missing agent credential silencing every notification is a
+      // different decision from the one that was made.
+      const env = yield* Effect.tryPromise({
+        try: () => resolve({ project: filter.project, required: [], allow: declared }),
+        catch: (err) => err,
+      }).pipe(
+        Effect.catch((err) =>
+          Effect.sync(() => {
+            // Returned as unread, and then this project's subscribers are not built.
+            // Silence is the one thing a notifier must not fail into, so it is said
+            // rather than swallowed — and it is not fatal, because the daemon's job
+            // is to conduct and a subscriber has never been allowed to stop it.
+            unread.push({
+              project: filter.project,
+              problem: `declares ${declared.length} name(s) and none could be read — ${(err as Error).message}`,
+            })
+            return null
+          }),
+        ),
+      )
+      if (env === null) continue
+
+      for (const spec of filter.recipe.subscribers) {
+        const project = filter.project
+        built.push({
+          on: spec.on,
+          subscriber: makeSubscriber({
+            project,
+            spec,
+            subject: options.subject,
+            cwd: options.cwd,
+            // Read again per delivery, not kept from the read above. The recipe is
+            // what a running daemon holds until it restarts; the env file is not:
+            // `lingtai env set` is what a missing name's `PluginFailed` tells the
+            // operator to run, and a subscriber that went on spawning with the
+            // env it was built with would keep telling them to run it after they
+            // had. The read above stays, as the startup answer to *unread*. A
+            // read that rejects is a defect, so the delivery fails with it.
+            env: Effect.suspend(() =>
+              Effect.promise(() => resolve({ project, required: [], allow: declared })).pipe(
+                Effect.map((now) => runnableEnv(extensionEnv(now.merged, spec.env).values)),
+              ),
+            ),
+            board: options.board ?? boardAddress(),
+          }),
+        })
+      }
     }
-    if (filter.recipe.subscribers.length === 0) {
-      quiet.push(filter.project)
-      continue
-    }
-    const declared = [...new Set(filter.recipe.subscribers.flatMap((s) => s.env))]
 
-    // One read of the two files per project, not one per subscriber: `merged`
-    // is the same data for all of them, and `extensionEnv` is what narrows it
-    // to each one's own names. `required: []` because `env.required` is the
-    // *agent's* declaration and refuses a whole pass when a name is absent
-    // (0020) — one missing agent credential silencing every notification is a
-    // different decision from the one that was made.
-    const env = await resolve({ project: filter.project, required: [], allow: declared }).catch((err: unknown) => {
-      // Returned as unread, and then this project's subscribers are not built.
-      // Silence is the one thing a notifier must not fail into, so it is said
-      // rather than swallowed — and it is not fatal, because the daemon's job
-      // is to conduct and a subscriber has never been allowed to stop it.
-      unread.push({
-        project: filter.project,
-        problem: `declares ${declared.length} name(s) and none could be read — ${(err as Error).message}`,
-      })
-      return null
-    })
-    if (env === null) continue
-
-    for (const spec of filter.recipe.subscribers) {
-      const project = filter.project
-      built.push({
-        on: spec.on,
-        subscriber: createSubscriber({
-          project,
-          spec,
-          subject: options.subject,
-          cwd: options.cwd,
-          // Read again per delivery, not kept from the read above. The recipe is
-          // what a running daemon holds until it restarts; the env file is not:
-          // `lingtai env set` is what a missing name's `PluginFailed` tells the
-          // operator to run, and a subscriber that went on spawning with the
-          // env it was built with would keep telling them to run it after they
-          // had. The read above stays, as the startup answer to *unread*.
-          env: async () => {
-            const now = await resolve({ project, required: [], allow: declared })
-            return runnableEnv(extensionEnv(now.merged, spec.env).values)
-          },
-          board: options.board ?? boardAddress(),
-        }),
-      })
-    }
-  }
-
-  return { built, quiet, unread }
+    return { built, quiet, unread }
+  })
 }
 
 /**
@@ -304,16 +321,16 @@ export interface SubscriberSetOptions extends BuildSubscribersOptions {
 /** The daemon's subscribers, as they are now — which a later pass can add to. */
 export interface SubscriberSet {
   /** Asked on every event, so a project built after startup is told about what follows. */
-  subscribers(): readonly Subscriber[]
+  subscribers(): readonly SubscriberPort[]
   /** The lines the daemon prints at startup. */
   describe(): string[]
   /** The lines of `describe` about a recipe that could not be read, which a person needs. */
   problems(): string[]
   /**
    * Reads every unread project's recipe again, and builds what it declares.
-   * Costs nothing once every project has been read. Never rejects.
+   * Costs nothing once every project has been read. Never fails.
    */
-  retry(): Promise<void>
+  retry(): Effect.Effect<void>
 }
 
 /**
@@ -331,45 +348,58 @@ export interface SubscriberSet {
  * `subscribers:` promises. What it declared, not the values: each delivery
  * reads the project's env file again, so `lingtai env set` needs no restart.
  */
-export async function createSubscriberSet(options: SubscriberSetOptions): Promise<SubscriberSet> {
-  const log = options.log ?? (() => {})
-  const tell = options.tell ?? log
-  let current = await buildSubscribers(options)
-  // What a person was last told about each unread project, so a pass that asks again says nothing new.
-  const told = new Map<string, string>(current.unread.map((u) => [u.project, u.problem]))
+export function createSubscriberSet(options: SubscriberSetOptions): Effect.Effect<SubscriberSet> {
+  return Effect.gen(function* () {
+    const log = options.log ?? (() => {})
+    const tell = options.tell ?? log
+    let current = yield* buildSubscribers(options)
+    // What a person was last told about each unread project, so a pass that asks again says nothing new.
+    const told = new Map<string, string>(current.unread.map((u) => [u.project, u.problem]))
 
-  return {
-    subscribers: () => current.built.map((b) => b.subscriber),
-    describe: () => describeSubscribers(current),
-    problems: () => unreadLines(current.unread),
-    async retry() {
-      if (current.unread.length === 0) return
-      try {
-        const filters = await options.reread(current.unread.map((u) => u.project))
-        const next = await buildSubscribers({ ...options, filters })
-        const still = new Set(next.unread.map((u) => u.project))
-        for (const { project } of current.unread) {
-          if (still.has(project)) continue
-          const mine = next.built.filter((b) => b.subscriber.project === project)
-          if (mine.length === 0) log(`subscribers: ${project} read — it declares none`)
-          for (const { subscriber, on } of mine) {
-            log(`subscriber ${subscriber.project}/${subscriber.name} on ${on.join(', ')}`)
+    return {
+      subscribers: () => current.built.map((b) => b.subscriber),
+      describe: () => describeSubscribers(current),
+      problems: () => unreadLines(current.unread),
+      retry: () =>
+        Effect.gen(function* () {
+          if (current.unread.length === 0) return
+          const filters = yield* Effect.tryPromise({
+            try: () => options.reread(current.unread.map((u) => u.project)),
+            catch: (err) => err,
+          })
+          const next = yield* buildSubscribers({ ...options, filters })
+          const still = new Set(next.unread.map((u) => u.project))
+          for (const { project } of current.unread) {
+            if (still.has(project)) continue
+            const mine = next.built.filter((b) => b.subscriber.project === project)
+            if (mine.length === 0) log(`subscribers: ${project} read — it declares none`)
+            for (const { subscriber, on } of mine) {
+              log(`subscriber ${subscriber.project}/${subscriber.name} on ${on.join(', ')}`)
+            }
           }
-        }
-        // Replaced, not mutated: `subscribers()` may be mid-iteration on an event.
-        current = {
-          built: [...current.built, ...next.built],
-          quiet: [...current.quiet, ...next.quiet],
-          unread: next.unread,
-        }
-        for (const u of next.unread) {
-          if (told.get(u.project) === u.problem) continue
-          told.set(u.project, u.problem)
-          for (const line of unreadLines([u])) tell(line)
-        }
-      } catch (err) {
-        tell(`subscribers: could not ask the unread recipes again — ${(err as Error).message}`)
-      }
-    },
-  }
+          // Replaced, not mutated: `subscribers()` may be mid-iteration on an event.
+          current = {
+            built: [...current.built, ...next.built],
+            quiet: [...current.quiet, ...next.quiet],
+            unread: next.unread,
+          }
+          for (const u of next.unread) {
+            if (told.get(u.project) === u.problem) continue
+            told.set(u.project, u.problem)
+            for (const line of unreadLines([u])) tell(line)
+          }
+        }).pipe(
+          // Never fails, whatever it read or built: said, and the next pass asks again. An interruption passes.
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause as Cause.Cause<never>)
+              : Effect.sync(() =>
+                  tell(
+                    `subscribers: could not ask the unread recipes again — ${(Cause.squash(cause) as Error).message}`,
+                  ),
+                ),
+          ),
+        ),
+    }
+  })
 }

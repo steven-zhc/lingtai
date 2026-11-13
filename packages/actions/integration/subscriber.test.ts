@@ -18,9 +18,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { Envelope } from '@lingtai/domain'
+import { Effect } from 'effect'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { createSubscriber, subjectOf, type EventSubject, type SubscriberPayload } from '../src/index.ts'
+import { makeSubscriber, subjectOf, type EventSubject, type SubscriberPayload } from '../src/index.ts'
 
 const env = { PATH: process.env['PATH'] ?? '' }
 let cwd: string
@@ -51,15 +52,18 @@ const spec = (over: Partial<{ name: string; on: string[]; run: string; env: stri
   ...over,
 })
 
-const build = (subject: (e: Envelope) => Promise<EventSubject | null>, over: Parameters<typeof spec>[0] = {}) =>
-  createSubscriber({
+const build = (subject: (e: Envelope) => Promise<EventSubject | null>, over: Parameters<typeof spec>[0] = {}) => {
+  const port = makeSubscriber({
     project: 'lingtai',
     spec: spec(over),
-    subject,
+    // A read that rejects is a defect, as the host makes it: it still fails the delivery.
+    subject: (e) => Effect.promise(() => subject(e)),
     cwd,
-    env,
+    env: Effect.succeed(env),
     board: 'http://localhost:3200',
   })
+  return { deliver: (e: Envelope) => Effect.runPromise(port.deliver(e)) }
+}
 
 const delivered = async (): Promise<SubscriberPayload> =>
   JSON.parse(await readFile(join(cwd, 'payload.json'), 'utf8')) as SubscriberPayload

@@ -6,6 +6,7 @@
 import { subjectOf } from '@lingtai/actions'
 import { type Envelope, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { createSubjectResolver } from '../src/subscribers.ts'
@@ -35,7 +36,7 @@ describe('runSubject reads the run stream through reduceAttempt (#846)', () => {
     const runId = `pass-${crypto.randomUUID()}`
     await store.append(runId, 0, [started])
     const head = later(runId)
-    expect(await createSubjectResolver(store)(head)).toEqual(subjectOf('acme/app', '7'))
+    expect(await Effect.runPromise(createSubjectResolver(store)(head))).toEqual(subjectOf('acme/app', '7'))
   })
 
   it('answers null for a run stream with no RunStarted', async () => {
@@ -43,7 +44,7 @@ describe('runSubject reads the run stream through reduceAttempt (#846)', () => {
     const runId = `pass-${crypto.randomUUID()}`
     await store.append(runId, 0, [{ type: 'RunAwaitingInput', actor: 'conductor', data: { prompt: 'which base?' } }])
     const head = later(runId)
-    expect(await createSubjectResolver(store)(head)).toBeNull()
+    expect(await Effect.runPromise(createSubjectResolver(store)(head))).toBeNull()
   })
 
   it('rejects with the read’s own error, and does not answer null', async () => {
@@ -52,6 +53,6 @@ describe('runSubject reads the run stream through reduceAttempt (#846)', () => {
     await store.append(runId, 0, [started])
     const head = later(runId)
     const failing = { ...store, read: () => Promise.reject(new Error('log unreadable')) }
-    await expect(createSubjectResolver(failing)(head)).rejects.toThrow('log unreadable')
+    await expect(Effect.runPromise(createSubjectResolver(failing)(head))).rejects.toThrow('log unreadable')
   })
 })

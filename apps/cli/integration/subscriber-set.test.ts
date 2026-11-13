@@ -16,6 +16,7 @@ import { join } from 'node:path'
 
 import type { ProjectFilter } from '@lingtai/conductor'
 import { boardUrl } from '@lingtai/env'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { boardAddress, createSubscriberSet } from '../src/subscribers.ts'
@@ -33,17 +34,19 @@ const declaring = (project: string): ProjectFilter =>
 
 const options = {
   cwd: process.cwd(),
-  subject: async () => null,
+  subject: () => Effect.succeed(null),
   resolveEnv: (async () => ({ merged: {} })) as never,
 }
 
 describe('a recipe that could not be read at startup', () => {
   it('is said to be unread, not declared none', async () => {
-    const set = await createSubscriberSet({
-      ...options,
-      filters: [unread('lingtai')],
-      reread: async () => [unread('lingtai')],
-    })
+    const set = await Effect.runPromise(
+      createSubscriberSet({
+        ...options,
+        filters: [unread('lingtai')],
+        reread: async () => [unread('lingtai')],
+      }),
+    )
 
     const lines = set.describe()
     expect(set.subscribers()).toEqual([])
@@ -55,18 +58,20 @@ describe('a recipe that could not be read at startup', () => {
   it('is built on a later pass, once the recipe reads', async () => {
     let reachable = false
     const said: string[] = []
-    const set = await createSubscriberSet({
-      ...options,
-      filters: [unread('lingtai')],
-      reread: async (projects) => projects.map((p) => (reachable ? declaring(p) : unread(p))),
-      log: (line) => said.push(line),
-    })
+    const set = await Effect.runPromise(
+      createSubscriberSet({
+        ...options,
+        filters: [unread('lingtai')],
+        reread: async (projects) => projects.map((p) => (reachable ? declaring(p) : unread(p))),
+        log: (line) => said.push(line),
+      }),
+    )
 
-    await set.retry()
+    await Effect.runPromise(set.retry())
     expect(set.subscribers()).toEqual([])
 
     reachable = true
-    await set.retry()
+    await Effect.runPromise(set.retry())
     expect(set.subscribers().map((s) => `${s.project}/${s.name}`)).toEqual(['lingtai/desktop'])
     expect(said.join('\n')).toContain('subscriber lingtai/desktop on StepEnded, WaitStarted')
     expect(set.describe().join('\n')).not.toContain('unknown')
@@ -74,16 +79,18 @@ describe('a recipe that could not be read at startup', () => {
 
   it('does not ask again about a project that was read', async () => {
     let asked = 0
-    const set = await createSubscriberSet({
-      ...options,
-      filters: [declaring('lingtai')],
-      reread: async () => {
-        asked += 1
-        return []
-      },
-    })
+    const set = await Effect.runPromise(
+      createSubscriberSet({
+        ...options,
+        filters: [declaring('lingtai')],
+        reread: async () => {
+          asked += 1
+          return []
+        },
+      }),
+    )
 
-    await set.retry()
+    await Effect.runPromise(set.retry())
     expect(asked).toBe(0)
     expect(set.subscribers()).toHaveLength(1)
   })
@@ -95,11 +102,13 @@ describe('a recipe that could not be read at startup', () => {
    */
   it('names a project that declares none, even when another project declares one', async () => {
     const quiet = { project: 'admin', ok: true, recipe: { subscribers: [] } } as unknown as ProjectFilter
-    const set = await createSubscriberSet({
-      ...options,
-      filters: [declaring('lingtai'), quiet],
-      reread: async () => [],
-    })
+    const set = await Effect.runPromise(
+      createSubscriberSet({
+        ...options,
+        filters: [declaring('lingtai'), quiet],
+        reread: async () => [],
+      }),
+    )
 
     const lines = set.describe().join('\n')
     expect(lines).toContain('subscriber lingtai/desktop on StepEnded, WaitStarted')
@@ -108,14 +117,16 @@ describe('a recipe that could not be read at startup', () => {
 
   /** The per-project env failure: said, not followed by "no subscriber declared". */
   it('says so when the env files could not be read, rather than declaring none', async () => {
-    const set = await createSubscriberSet({
-      ...options,
-      resolveEnv: (async () => {
-        throw new Error('EACCES')
-      }) as never,
-      filters: [declaring('lingtai')],
-      reread: async () => [],
-    })
+    const set = await Effect.runPromise(
+      createSubscriberSet({
+        ...options,
+        resolveEnv: (async () => {
+          throw new Error('EACCES')
+        }) as never,
+        filters: [declaring('lingtai')],
+        reread: async () => [],
+      }),
+    )
 
     const lines = set.describe().join('\n')
     expect(lines).not.toContain('no subscriber declared')
@@ -150,11 +161,13 @@ describe('a board.port that is not a port number', () => {
       expect(() => boardUrl()).toThrow(/not a port number/)
       expect(boardAddress()).toBe('http://127.0.0.1:17820')
       // And the daemon's own call: no `board` is passed at that call site.
-      const set = await createSubscriberSet({
-        ...options,
-        filters: [declaring('lingtai')],
-        reread: async () => [],
-      })
+      const set = await Effect.runPromise(
+        createSubscriberSet({
+          ...options,
+          filters: [declaring('lingtai')],
+          reread: async () => [],
+        }),
+      )
       expect(set.subscribers().map((s) => `${s.project}/${s.name}`)).toEqual(['lingtai/desktop'])
     } finally {
       if (was === undefined) delete process.env['LINGTAI_HOME']
