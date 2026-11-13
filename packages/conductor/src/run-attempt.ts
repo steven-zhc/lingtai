@@ -992,6 +992,7 @@ export interface AttemptOptions {
       readonly fromSha: string
       readonly toSha: string
       readonly conflicted?: readonly string[]
+      readonly branchSha?: string
     }
     /**
      * A granted conflict round's proof (#1120): the base the lane found conflicting. Absent
@@ -1025,6 +1026,8 @@ export type ConflictMergeAnswer =
         readonly paths: readonly string[]
         readonly fromSha: string
         readonly overlap?: readonly string[]
+        /** `HEAD` before the merge was started (#1121). */
+        readonly branchSha?: string
       }
     }
   | { readonly failed: string }
@@ -1056,9 +1059,11 @@ export interface AttemptPortOptions {
    */
   readonly mergeForConflict?: (baseSha: string) => Effect.Effect<ConflictMergeAnswer>
   /** Rebuilds a committed conflict merge's fork point and overlap for a resumed review (#1120). */
-  readonly conflictEvidence?: (
-    baseSha: string,
-  ) => Effect.Effect<{ readonly fromSha: string; readonly overlap: readonly string[] } | null>
+  readonly conflictEvidence?: (baseSha: string) => Effect.Effect<{
+    readonly fromSha: string
+    readonly overlap: readonly string[]
+    readonly branchSha?: string
+  } | null>
   readonly baseIsRed?: (asked: BaseIsRedAsked) => Effect.Effect<BaseIsRedAnswer>
 }
 
@@ -1368,9 +1373,10 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       fromSha: string
       toSha: string
       conflicted?: readonly string[]
+      branchSha?: string
     } | null = options.from?.landedOnBase ?? null
     /** The merge standing in the worktree for the conflict round in flight (#1120); cleared by the next fix round or base merge. */
-    let conflictMerge: { baseSha: string; fromSha: string; paths: readonly string[] } | null = null
+    let conflictMerge: { baseSha: string; fromSha: string; paths: readonly string[]; branchSha?: string } | null = null
     /** The commit the last base merge brought in; kept for the rest of the pass, so later reviews diff against it (#594). */
     let mergedOnto: string | null = options.from?.landedOnBase?.toSha ?? null
     /**
@@ -1449,11 +1455,17 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         conflicted: paths,
         fromSha: got.fromSha,
         toSha: baseSha,
+        ...(got.branchSha === undefined ? {} : { branchSha: got.branchSha }),
       }
       mergedOnto = baseSha
       reviewedSha = null
       approvedAt = null
-      conflictMerge = { baseSha, fromSha: got.fromSha, paths }
+      conflictMerge = {
+        baseSha,
+        fromSha: got.fromSha,
+        paths,
+        ...(got.branchSha === undefined ? {} : { branchSha: got.branchSha }),
+      }
     }
     /** A conflict round that cannot be started is a person's, through the router's own shape. */
     const conflictNotStarted = (proposal: Proposal, why: string): AttemptEnd => ({
@@ -1720,6 +1732,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               conflicted: asked.paths,
               fromSha: found.fromSha,
               toSha: asked.baseSha,
+              ...(found.branchSha === undefined ? {} : { branchSha: found.branchSha }),
             }
             mergedOnto = asked.baseSha
           }
