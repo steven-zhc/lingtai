@@ -1,5 +1,6 @@
 /** `lingtai board` through `@effect/cli` (#623): the arguments, `board status`'s layout, and its `--json`. */
 
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { boardStatusJson, renderBoardStatus, type BoardStatus } from '../src/board.ts'
@@ -7,7 +8,7 @@ import { runCli, type BoardRequest } from '../src/cli.ts'
 
 async function capture(
   args: string[],
-  board: (request: BoardRequest) => Promise<number> = async () => 0,
+  board: (request: BoardRequest) => Effect.Effect<number, unknown> = () => Effect.succeed(0),
 ): Promise<{ code: number; out: string; err: string }> {
   let out = ''
   let err = ''
@@ -44,7 +45,7 @@ const status = (over: Partial<BoardStatus> = {}): BoardStatus => ({
 describe('lingtai board, the arguments', () => {
   it('is start when no verb is named, as it was before it had verbs', async () => {
     const seen: BoardRequest[] = []
-    const run = async (r: BoardRequest) => (seen.push(r), 0)
+    const run = (r: BoardRequest) => Effect.sync(() => (seen.push(r), 0))
     expect((await capture([], run)).code).toBe(0)
     await capture(['--port', '18080', '--no-open'], run)
     await capture(['start', '--dir', '/x'], run)
@@ -57,7 +58,7 @@ describe('lingtai board, the arguments', () => {
 
   it('reads each verb, and `stop`, `restart` and `status` take --port', async () => {
     const seen: BoardRequest[] = []
-    const run = async (r: BoardRequest) => (seen.push(r), 0)
+    const run = (r: BoardRequest) => Effect.sync(() => (seen.push(r), 0))
     await capture(['stop', '--port', '18080'], run)
     await capture(['restart', '--no-open'], run)
     await capture(['status', '--port', '18080', '--json'], run)
@@ -80,7 +81,7 @@ describe('lingtai board, the arguments', () => {
 
   it.each(['no', '99999', '0'])('refuses a port that is not one (%s), and runs nothing', async (port) => {
     let ran = false
-    const r = await capture(['start', '--port', port], async () => ((ran = true), 0))
+    const r = await capture(['start', '--port', port], () => Effect.sync(() => ((ran = true), 0)))
     expect(r.code === 2 || r.code === 1).toBe(true)
     expect(ran).toBe(false)
   })
@@ -93,6 +94,26 @@ describe('lingtai board, the arguments', () => {
 
   it('gives `--json` to status alone', async () => {
     expect((await capture(['stop', '--json'])).code).toBe(1)
+  })
+})
+
+describe('a handler that ends on its own', () => {
+  it('resolves to the code a CommandExit carries', async () => {
+    expect((await capture(['status'], () => Effect.succeed(3))).code).toBe(3)
+  })
+
+  it('prints the unavailable document once, no usage document, and exits 1', async () => {
+    const r = await capture(['status', '--json'], () => Effect.fail(new Error('no store')))
+    expect(r.code).toBe(1)
+    expect(r.out.match(/"code":\s*"unavailable"/g)).toHaveLength(1)
+    expect(r.out).not.toContain('"usage"')
+    expect(r.out).toContain('no store')
+  })
+
+  it('does not print a usage document for a runner that exits 3 under --json', async () => {
+    const r = await capture(['status', '--json'], () => Effect.succeed(3))
+    expect(r.code).toBe(3)
+    expect(r.out).not.toContain('"usage"')
   })
 })
 
