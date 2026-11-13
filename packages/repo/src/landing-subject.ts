@@ -9,3 +9,11 @@
 export function landingSubject(branch: string): string {
   return `Merge branch '${branch}' into HEAD`
 }
+
+const LANDING = /^Merge branch 'agent\/(\d+)' into HEAD$/
+
+/** The ticket a landing's subject names, or `null` for any other subject. The one parser of `landingSubject`'s output. */
+export function ticketOfLandingSubject(subject: string): number | null {
+  const m = LANDING.exec(subject)
+  return m === null ? null : Number(m[1])
+}

@@ -57,7 +57,8 @@
  * rule about spending money that lives inside an `if` in a 1,500-line file is a
  * rule nobody can check.
  */
-import type { ActionFinding } from '@lingtai/actions'
+import { LANDED_DIFF_LINES, landedPathsSection } from '@lingtai/actions'
+import type { ActionFinding, LandedPath } from '@lingtai/actions'
 import {
   type Envelope,
   type PromptPart,
@@ -487,7 +488,7 @@ export function fixBriefParts(input: {
         paths: string
         findings: readonly ActionFinding[]
         /** The merge the conductor already started in this tree (#1120); absent renders the brief that tells the agent to merge. */
-        merged?: { readonly baseSha: string; readonly fromSha: string; readonly paths: readonly string[] }
+        merged?: MergedConflict
       }
   round: number
   of: number
@@ -858,15 +859,51 @@ that is ordinary, and it is bounded by the rounds above.`,
 }
 
 /**
+ * The merge the conductor stood up for a conflict round (#1120), and what it read about
+ * each side of it (#1121): `landed` is the block's entries, conflicted paths first.
+ */
+export interface MergedConflict {
+  readonly baseSha: string
+  readonly fromSha: string
+  readonly paths: readonly string[]
+  readonly branchSha?: string
+  readonly landed?: readonly LandedPath[]
+}
+
+/** What the brief says landed: the block when it was read, else the commands that show it. */
+function landedText(merged: MergedConflict): string {
+  const range = `${merged.fromSha.slice(0, 7)}..${merged.baseSha.slice(0, 7)}`
+  if (merged.landed === undefined) {
+    return `What landed on the base is \`${range}\`
+(\`git log ${range}\` and \`git diff ${merged.fromSha.slice(0, 7)} ${merged.baseSha.slice(0, 7)}\` show it).`
+  }
+  const section = landedPathsSection(
+    {
+      paths: merged.landed.map((e) => e.path),
+      fromSha: merged.fromSha,
+      toSha: merged.baseSha,
+      conflicted: merged.paths,
+      ...(merged.branchSha === undefined ? {} : { branchSha: merged.branchSha }),
+    },
+    merged.landed,
+    LANDED_DIFF_LINES,
+  )
+  return `## What each side did to the conflicted paths
+
+What landed on the base is \`${range}\`. For each path: the commits that touched it, the base's
+diff, and this branch's diff, conflicted paths first. They are why each side changed
+those lines, so a resolution has to keep what both were for.
+
+${section}`
+}
+
+/**
  * A conflict round whose merge the conductor already started (#1120). The tree the
  * agent stands in holds `MERGE_HEAD` and the markers, so there is nothing to run
  * and the one thing it must not do is throw the merge away. What counts as done
  * stays `conflictHalf`'s, and so do the `--ours`/`--theirs` and ask-first rules.
  */
-function mergedConflictHalf(
-  base: string,
-  merged: { readonly baseSha: string; readonly fromSha: string; readonly paths: readonly string[] },
-): { evidence: string; criterion: string } {
+function mergedConflictHalf(base: string, merged: MergedConflict): { evidence: string; criterion: string } {
   const files =
     merged.paths.length === 0 ? '(git named no files; `git status` names what is unmerged)' : merged.paths.join('\n')
   return {
@@ -876,8 +913,7 @@ not merge into it cleanly. The conductor already ran
 conflict markers are standing now. Do not run \`git merge --abort\` and do not merge
 again; resolve what is in front of you.
 
-What landed on the base is \`${merged.fromSha.slice(0, 7)}..${merged.baseSha.slice(0, 7)}\`
-(\`git log ${merged.fromSha.slice(0, 7)}..${merged.baseSha.slice(0, 7)}\` and \`git diff ${merged.fromSha.slice(0, 7)} ${merged.baseSha.slice(0, 7)}\` show it).
+${landedText(merged)}
 
 ## What conflicts
 

@@ -545,13 +545,21 @@ export interface ActionContext {
     readonly toSha: string
     /** Set when the base was merged in by resolving a conflict (#1120): the marked paths, within `paths`. */
     readonly conflicted?: readonly string[]
+    /** The attempt's `HEAD` just before that merge (#1121): the branch side of the block. Absent when it is not known. */
+    readonly branchSha?: string
   }
   /**
    * The merge the conductor started in the worktree before a conflict round's
    * agent began (#1120): `MERGE_HEAD` and the markers are standing. Replaced or
    * cleared by the next fix round or base merge. A fact about this run.
    */
-  conflictMerge?: { readonly baseSha: string; readonly fromSha: string; readonly paths: readonly string[] }
+  conflictMerge?: {
+    readonly baseSha: string
+    readonly fromSha: string
+    readonly paths: readonly string[]
+    /** The attempt's `HEAD` just before the merge (#1121). */
+    readonly branchSha?: string
+  }
   /**
    * The commit a `base-moved` merge brought in (#594). Unlike `landedOnBase` it
    * is not dropped by a fix round: the original cut stays an ancestor of `HEAD`,

@@ -23,6 +23,7 @@ import {
   makeWorktreeAction,
   runCommand,
 } from '@lingtai/actions'
+import type { LandedCommit, LandedPath, LandedTitle } from '@lingtai/actions'
 import { FAILED, markFailed } from '@lingtai/actions/spans'
 import {
   NO_RUN_LOG,
@@ -222,6 +223,7 @@ import {
   type TokenSource,
   type Worktree,
 } from '@lingtai/repo'
+import { ticketOfLandingSubject } from '@lingtai/repo/landing-subject'
 import { type Duration, Effect, Exit, Result } from 'effect'
 
 import { reachAccountLimit } from './account.ts'
@@ -3377,6 +3379,120 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           return Result.isSuccess(got) ? got.success.split('\0').filter((p) => p !== '') : null
         })
       /**
+       * **What landed on the base, and what each side did to it** (#594, #1121): the one read
+       * behind the fix brief and the review. One `git diff` per path (so no `diff --git` header
+       * is parsed back into paths), through `DIFF_FLAGS`; for a conflicted path also the
+       * first-parent commits that touched it and, given `branchSha`, the branch's own diff.
+       * Conflicted paths come first, in the order given, then the rest. Every read that fails
+       * is that part's text, never an empty section and never a failed round. Reads only, in
+       * the attempt's worktree, which shares the mirror's objects: no fetch and no permit.
+       */
+      type RawLine = { sha: string; subject: string; n: number | null }
+      type RawCommits = { readonly failed: string } | { readonly lines: readonly RawLine[] }
+      type RawPath = { path: string; diff: string; commits?: RawCommits; branchDiff?: string }
+      const landedOnBaseRead = (moved: {
+        readonly paths: readonly string[]
+        readonly fromSha: string
+        readonly toSha: string
+        readonly conflicted?: readonly string[]
+        readonly branchSha?: string
+      }): Effect.Effect<LandedPath[]> =>
+        Effect.gen(function* () {
+          const marked = moved.conflicted ?? []
+          const ordered = [...new Set([...marked, ...moved.paths])]
+          const readDiff = (a: string, b: string, path: string) =>
+            Effect.gen(function* () {
+              const got = yield* gitAskedEffect(['diff', ...DIFF_FLAGS, a, b, '--', path])
+              return Result.isFailure(got) ? `[could not read this diff: ${got.failure.detail}]` : got.success
+            })
+          const readCommits = (path: string): Effect.Effect<RawCommits> =>
+            Effect.gen(function* () {
+              const got = yield* gitAskedEffect([
+                '-c',
+                'log.follow=false',
+                'log',
+                '--first-parent',
+                '--no-color',
+                '--no-show-signature',
+                '--no-notes',
+                '--format=%H %s',
+                '-z',
+                `${moved.fromSha}..${moved.toSha}`,
+                '--',
+                path,
+              ])
+              if (Result.isFailure(got)) return { failed: got.failure.detail }
+              const lines: RawLine[] = got.success
+                .split('\0')
+                .map((rec) => rec.replace(/^\n+/, ''))
+                .filter((rec) => rec !== '')
+                .map((rec) => {
+                  const at = rec.indexOf(' ')
+                  const sha = at < 0 ? '' : rec.slice(0, at)
+                  if (!/^[0-9a-f]{40}$/.test(sha)) return { sha: '', subject: rec, n: null }
+                  const subject = rec.slice(at + 1)
+                  return { sha, subject, n: ticketOfLandingSubject(subject) }
+                })
+              return { lines }
+            })
+          const per: RawPath[] = yield* Effect.forEach(
+            ordered,
+            (path) =>
+              Effect.gen(function* () {
+                const diff = yield* readDiff(moved.fromSha, moved.toSha, path)
+                if (!marked.includes(path)) return { path, diff }
+                const commits = yield* readCommits(path)
+                const branchDiff =
+                  moved.branchSha === undefined ? undefined : yield* readDiff(moved.fromSha, moved.branchSha, path)
+                return { path, diff, commits, ...(branchDiff === undefined ? {} : { branchDiff }) }
+              }),
+            { concurrency: 'unbounded' },
+          )
+          // One stream read per distinct landed ticket; a rejection is a value that renders.
+          const numbers = [
+            ...new Set(
+              per.flatMap((e) =>
+                e.commits !== undefined && 'lines' in e.commits
+                  ? e.commits.lines.flatMap((l) => (l.n === null ? [] : [l.n]))
+                  : [],
+              ),
+            ),
+          ]
+          const titles = new Map<number, LandedTitle>()
+          yield* Effect.forEach(
+            numbers,
+            (n) =>
+              Effect.gen(function* () {
+                const got = yield* Effect.result(
+                  Effect.tryPromise({ try: () => store.read(ticketStream(project, n)), catch: (e) => String(e) }).pipe(
+                    Effect.flatMap((events) =>
+                      Effect.try({ try: () => reduceTicket(events).title, catch: (e) => String(e) }),
+                    ),
+                  ),
+                )
+                titles.set(
+                  n,
+                  Result.isFailure(got)
+                    ? { failed: got.failure }
+                    : typeof got.success === 'string' && got.success.trim() !== ''
+                      ? { known: got.success }
+                      : { none: true },
+                )
+              }),
+            { concurrency: 'unbounded' },
+          )
+          return per.map((e): LandedPath => {
+            if (e.commits === undefined || !('lines' in e.commits)) return e as LandedPath
+            const lines = e.commits.lines.map((l): LandedCommit => ({
+              sha: l.sha,
+              subject: l.subject,
+              ...(l.n === null ? {} : { ticket: { n: l.n, title: titles.get(l.n) ?? { none: true as const } } }),
+            }))
+            return { ...e, commits: { lines } }
+          })
+        })
+
+      /**
        * **The conflict round's pre-merge** (#1120): `git merge --no-commit --no-ff <baseSha>` in
        * this attempt's own worktree, so the fixer stands in the conflict the lane proved. No
        * fetch: the worktree shares the mirror's objects, and `baseSha` is what the lane read
@@ -3422,6 +3538,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           if (fromSha === '') {
             return { failed: `the common ancestor with ${baseSha.slice(0, 7)} could not be read` }
           }
+          // Recorded before the merge, because the review runs after the round has committed.
+          const headBefore = yield* gitAskedEffect(['rev-parse', 'HEAD'])
+          const branchSha = Result.isSuccess(headBefore) ? headBefore.success.trim() : ''
+          if (branchSha === '') {
+            return { failed: 'the branch head could not be read before the merge' }
+          }
           const merged = yield* gitAskedEffect(['merge', '--no-commit', '--no-ff', baseSha])
           if (Result.isSuccess(merged)) {
             yield* abort()
@@ -3454,7 +3576,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             }
           }
           conflictMergeStood = true
-          return { conflicted: { paths, fromSha, overlap: theirs.filter((p) => mine.includes(p)) } }
+          return { conflicted: { paths, fromSha, branchSha, overlap: theirs.filter((p) => mine.includes(p)) } }
         })
 
       /**
@@ -3466,7 +3588,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const conflictEvidence = (
         baseSha: string,
-      ): Effect.Effect<{ fromSha: string; overlap: readonly string[] } | null> =>
+      ): Effect.Effect<{ fromSha: string; overlap: readonly string[]; branchSha: string } | null> =>
         Effect.gen(function* () {
           // The merge commit need not be `HEAD`: the fixer or a formatter may have committed after
           // it. It is the merge on the path from `baseSha` to `HEAD` that has `baseSha` as a parent.
@@ -3493,7 +3615,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const base = yield* pathsBetween(`${fromSha}..${baseSha}`)
           const mine = yield* pathsBetween(`${fromSha}..${ours}`)
           if (base === null || mine === null) return null
-          return { fromSha, overlap: base.filter((p) => mine.includes(p)) }
+          return { fromSha, overlap: base.filter((p) => mine.includes(p)), branchSha: ours }
         })
 
       /**
@@ -3759,21 +3881,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             (from === undefined ? changeStart() : Effect.succeed(from)).pipe(
               Effect.flatMap((start) => diffBetween(start)),
             ),
-          // One call per path, so no `diff --git` header has to be parsed back
-          // into paths. A diff that cannot be read is text, not a dead review.
-          landed: ({ paths, fromSha, toSha }: { paths: readonly string[]; fromSha: string; toSha: string }) =>
-            Effect.forEach(
-              paths,
-              (path) =>
-                Effect.gen(function* () {
-                  const got = yield* gitAskedEffect(['diff', fromSha, toSha, '--', path])
-                  return {
-                    path,
-                    diff: Result.isFailure(got) ? `[could not read this diff: ${got.failure.detail}]` : got.success,
-                  }
-                }),
-              { concurrency: 'unbounded' },
-            ),
+          // `landedOnBaseRead`: a read that cannot be made is text, not a dead review.
+          landed: landedOnBaseRead,
           restore: restoreReview,
           // A getter, because `admit` is what writes it: `createAgentAction` and
           // `createDraftAction` read `deps.settingsPath` when the action *runs*,
@@ -4457,7 +4566,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           if (conflict) conflictMergeStood = true
           // The merge the conductor stood up before this agent started (#1120); read from the
           // context the round was dispatched with, which the route may clear for the next lap.
-          const merge = conflict ? brief.context.conflictMerge : undefined
+          const mergeAsked = conflict ? brief.context.conflictMerge : undefined
+          // What each side did to the conflicted paths, read before the dispatch (#1121).
+          const landed =
+            mergeAsked === undefined
+              ? undefined
+              : yield* landedOnBaseRead({
+                  paths: mergeAsked.paths,
+                  fromSha: mergeAsked.fromSha,
+                  toSha: mergeAsked.baseSha,
+                  conflicted: mergeAsked.paths,
+                  ...(mergeAsked.branchSha === undefined ? {} : { branchSha: mergeAsked.branchSha }),
+                })
+          const merge =
+            mergeAsked === undefined ? undefined : { ...mergeAsked, ...(landed === undefined ? {} : { landed }) }
           const refusal = conflict
             ? ({
                 on: 'conflict',
