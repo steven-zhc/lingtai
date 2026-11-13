@@ -5,17 +5,14 @@
  * srt keeps one instance per process, so this is a module-level object's methods behind Effects.
  * No `async` function and no `Effect.run*` here: the ratchet holds this package at 0 and 0.
  */
-import { mkdir, realpath } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { delimiter } from 'node:path'
+import { mkdir } from 'node:fs/promises'
 
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
-import { stateDir } from '@lingtai/env'
-import { Effect, Layer } from 'effect'
+import { Duration, Effect, Layer } from 'effect'
 
-import type { HostFacts } from './policy.ts'
+import { readHost } from './host.ts'
 import { Host, SandboxFs, SandboxUnavailable, Srt, type SrtPort } from './port.ts'
-import { SandboxLayer } from './sandbox.ts'
+import { HOST_CHECK_TTL, SandboxLayer, checkHost } from './sandbox.ts'
 
 type Manager = typeof SandboxManager
 
@@ -52,31 +49,7 @@ export const srtPort: SrtPort = {
   reset: Effect.tryPromise({ try: () => SandboxManager.reset(), catch: raw }),
 }
 
-const unavailable = (reason: string) => new SandboxUnavailable({ reason, sentences: [] })
-
-/** Reads `process.env`, the temp directory and its real path, once. Unset or relative `HOME`/`TMPDIR` is refused by name. */
-export const readHost: Effect.Effect<HostFacts, SandboxUnavailable> = Effect.gen(function* () {
-  const env = process.env
-  const home = env['HOME']
-  if (!home || !home.startsWith('/')) return yield* unavailable('HOME is unset or not absolute')
-  const tmp = env['TMPDIR'] ?? tmpdir()
-  if (!tmp.startsWith('/')) return yield* unavailable('TMPDIR is not absolute')
-  // `stateDir(env)` only after HOME passed: bare `stateDir()` falls back to `os.homedir()`.
-  const state = stateDir(env)
-  if (!state.startsWith('/')) return yield* unavailable('the state directory is not absolute')
-  const tmpdirReal = yield* Effect.tryPromise({ try: () => realpath(tmp), catch: raw }).pipe(
-    Effect.orElseSucceed(() => tmp),
-  )
-  return {
-    platform: process.platform,
-    home,
-    tmpdir: tmp,
-    tmpdirReal: tmpdirReal === tmp ? undefined : tmpdirReal,
-    stateDir: state,
-    pnpmHome: env['PNPM_HOME'],
-    path: (env['PATH'] ?? '').split(delimiter).filter((p) => p.startsWith('/')),
-  }
-})
+export { readHost }
 
 export const HostLive = Layer.effect(Host, readHost)
 
@@ -89,3 +62,24 @@ export const SandboxFsLive = Layer.succeed(SandboxFs, {
 
 /** Everything, from the process outward. S4–S6 provide this at their host's edge. */
 export const SandboxLive = SandboxLayer.pipe(Layer.provide(Layer.mergeAll(SrtLive, HostLive, SandboxFsLive)))
+
+/**
+ * Whether this process's host can sandbox, kept for `HOST_CHECK_TTL` the way `signedInProbe` keeps sign-in, and
+ * **without building `SandboxLayer`**: its scope resets srt's one instance when it closes, which a resolver
+ * asking per recipe read must never do under a run that is wrapping. Not `Effect.run*`: the ratchet holds 0.
+ */
+let kept: { readonly at: number; readonly failure: SandboxUnavailable | undefined } | undefined
+
+export const hostCanSandboxHere: Effect.Effect<void, SandboxUnavailable> = Effect.gen(function* () {
+  const now = yield* Effect.sync(() => Date.now())
+  if (kept !== undefined && now - kept.at < Duration.toMillis(HOST_CHECK_TTL)) {
+    return kept.failure === undefined ? undefined : yield* kept.failure
+  }
+  const failure = yield* readHost.pipe(
+    Effect.flatMap((host) => checkHost(srtPort, host)),
+    Effect.as(undefined),
+    Effect.catchTag('SandboxUnavailable', (e) => Effect.succeed(e)),
+  )
+  kept = { at: now, failure }
+  if (failure !== undefined) return yield* failure
+})

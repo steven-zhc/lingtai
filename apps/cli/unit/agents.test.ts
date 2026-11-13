@@ -4,6 +4,7 @@
  * answers, and a `Map`-backed `RecipeFiles` — no filesystem, no terminal.
  */
 import { type RecipeFiles, recipePath, resolveLocalRecipeEffect, setRecipeEffect } from '@lingtai/recipe'
+import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -587,6 +588,7 @@ describe('askAgents', () => {
         resolveLocalRecipeEffect('app', {
           home: HOME,
           read: files.read,
+          ...skipSandboxHost,
           signedIn: async () => ['claude-code', 'codex'],
         }),
       )
@@ -633,6 +635,7 @@ describe('askAgents', () => {
         resolveLocalRecipeEffect('app', {
           home: HOME,
           read: files.read,
+          ...skipSandboxHost,
           signedIn: async () => ['claude-code', 'codex'],
         }),
       )
@@ -693,6 +696,7 @@ describe('askAgents', () => {
         resolveLocalRecipeEffect('app', {
           home: HOME,
           read: files.read,
+          ...skipSandboxHost,
           signedIn: async () => ['claude-code', 'codex'],
         }),
       )
@@ -719,6 +723,7 @@ describe('askAgents', () => {
       resolveLocalRecipeEffect('app', {
         home: HOME,
         read: files.read,
+        ...skipSandboxHost,
         signedIn: async () => ['claude-code', 'codex'],
       }),
     )
@@ -782,6 +787,7 @@ describe('askAgents', () => {
         resolveLocalRecipeEffect('app', {
           home: HOME,
           read: files.read,
+          ...skipSandboxHost,
           signedIn: async () => ['claude-code', 'codex'],
         }),
       )

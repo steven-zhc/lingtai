@@ -21,7 +21,16 @@ import type { Log, LogQueries } from '@lingtai/event-store/log'
 // anything at import; the split stays because a caller that brings its own log
 // should still load no store at all.
 import type { EventStore } from '@lingtai/event-store/store'
-import { type LocalRecipeOptions, type ResolvedRecipe, type SignedIn, resolveLocalRecipeEffect } from '@lingtai/recipe'
+import {
+  type HostAnswer,
+  type HostFactsEffect,
+  type LocalRecipeOptions,
+  type ResolvedRecipe,
+  type SignedIn,
+  resolveLocalRecipeEffect,
+} from '@lingtai/recipe'
+import { SandboxUnavailable } from '@lingtai/sandbox'
+import { readHost } from '@lingtai/sandbox/host'
 import { Effect } from 'effect'
 
 /** The process-wide log — whichever store this machine chose — reached only when nobody supplied one. */
@@ -193,11 +202,31 @@ export const signedInHere: SignedIn = signedInProbe(everyRuntime())
  * anywhere in `conductor`, `recipe` or `actions`, would be exactly that, and
  * `unit/recorded-recipe.test.ts` fails if anything does.
  */
+/**
+ * What a lookup may be handed beyond a resolve's own: the three that default here and nowhere else. A test
+ * names the host (`host`, `hostFacts`) so nothing spawns; production leaves both to `hostHere`.
+ */
+export type RecipeLookupOptions = Omit<LocalRecipeOptions, 'base' | 'signedIn' | 'host' | 'hostFacts'> & {
+  signedIn?: SignedIn
+  host?: HostAnswer | 'skip'
+  hostFacts?: HostFactsEffect
+}
+
+/**
+ * The real host answer, asked only for an enabled, required `sandbox:` block (#1147). srt is imported on that
+ * first ask and not before, so a process whose recipes have no such block never loads it, and the answer is
+ * kept a minute by `hostCanSandboxHere` without building `SandboxLayer`, whose scope would reset srt's instance.
+ */
+export const hostHere: HostAnswer = Effect.tryPromise({
+  try: () => import('@lingtai/sandbox/live'),
+  catch: () => new SandboxUnavailable({ reason: 'the sandbox runtime could not be loaded', sentences: [] }),
+}).pipe(Effect.flatMap((live) => live.hostCanSandboxHere))
+
 export function currentRecipeEffect(
   state: ProjectState,
   _client?: unknown,
   base?: string,
-  options: Omit<LocalRecipeOptions, 'base' | 'signedIn'> & { signedIn?: SignedIn } = {},
+  options: RecipeLookupOptions = {},
 ): Effect.Effect<ResolvedRecipe, Error> {
   const project = state.project
   if (!project) return Effect.fail(new Error('no repository name recorded — re-run lingtai add'))
@@ -206,6 +235,8 @@ export function currentRecipeEffect(
     ...options,
     base: base ?? state.base ?? null,
     signedIn: options.signedIn ?? signedInHere,
+    host: options.host ?? hostHere,
+    hostFacts: options.hostFacts ?? readHost,
   })
 }
 
@@ -214,7 +245,7 @@ export function currentRecipe(
   state: ProjectState,
   client?: unknown,
   base?: string,
-  options: Omit<LocalRecipeOptions, 'base' | 'signedIn'> & { signedIn?: SignedIn } = {},
+  options: RecipeLookupOptions = {},
 ): Promise<ResolvedRecipe> {
   return Effect.runPromise(currentRecipeEffect(state, client, base, options))
 }

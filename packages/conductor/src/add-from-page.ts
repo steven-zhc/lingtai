@@ -31,6 +31,7 @@ import {
   diskFiles,
   type RecipeFiles,
   recipePath,
+  HOST_FOR_SAVING,
   resolveLocalRecipeEffect,
   resolveSource,
 } from '@lingtai/recipe'
@@ -335,9 +336,11 @@ export function liveRegister(target: SetupTarget, home?: string): AddPorts['regi
       }
       const tip = yield* gitIn(dir, ['rev-parse', '--verify', `refs/heads/${form.base}^{commit}`])
       if (!tip.ok) return yield* Effect.fail(new Error(`could not read ${form.base} in ${dir} — ${tip.out}`))
-      const resolved = yield* resolveLocalRecipeEffect(form.project, { home, signedIn: signedInHere }).pipe(
-        Effect.mapError((e) => new Error(reasonOf(e))),
-      )
+      const resolved = yield* resolveLocalRecipeEffect(form.project, {
+        home,
+        signedIn: signedInHere,
+        ...HOST_FOR_SAVING,
+      }).pipe(Effect.mapError((e) => new Error(reasonOf(e))))
       yield* addLocalEffect(
         {
           project: form.project,

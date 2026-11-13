@@ -22,6 +22,7 @@ import {
   baseOf,
   baseWrittenAt,
   recipePath,
+  HOST_FOR_SAVING,
   resolveLocalRecipeEffect,
   resolveRecipe,
   type ReadAtRef,
@@ -534,7 +535,7 @@ export const addEffect = Effect.fn('onboard.add')(function* (
   //    command's. A `--base` a person typed and the file contradicts is refused
   //    by name rather than overruled (#75); a remembered one is a hint, and the
   //    file's `repo.base` is adopted over it (#163).
-  const local = yield* resolveLocalRecipeEffect(repo, { signedIn: signedInHere }).pipe(
+  const local = yield* resolveLocalRecipeEffect(repo, { signedIn: signedInHere, ...HOST_FOR_SAVING }).pipe(
     Effect.map((recipe) => ({ recipe }) as const),
     Effect.catch((err) => Effect.succeed({ err } as const)),
   )

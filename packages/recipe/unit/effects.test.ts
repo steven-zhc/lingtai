@@ -1,3 +1,4 @@
+import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -21,13 +22,20 @@ const none = async () => []
 describe('the faces reject with the package errors, not wrappers', () => {
   it('RecipeMissingError for an absent recipe', async () => {
     await expect(
-      Effect.runPromise(resolveLocalRecipeEffect('p', { home: HOME, signedIn: none, read: files({}) })),
+      Effect.runPromise(
+        resolveLocalRecipeEffect('p', { home: HOME, ...skipSandboxHost, signedIn: none, read: files({}) }),
+      ),
     ).rejects.toBeInstanceOf(RecipeMissingError)
   })
   it('RecipeInvalidError for a recipe that is not valid', async () => {
     await expect(
       Effect.runPromise(
-        resolveLocalRecipeEffect('p', { home: HOME, signedIn: none, read: files({ [at('p')]: 'version: 99\n' }) }),
+        resolveLocalRecipeEffect('p', {
+          home: HOME,
+          ...skipSandboxHost,
+          signedIn: none,
+          read: files({ [at('p')]: 'version: 99\n' }),
+        }),
       ),
     ).rejects.toBeInstanceOf(RecipeInvalidError)
   })
@@ -36,6 +44,7 @@ describe('the faces reject with the package errors, not wrappers', () => {
       Effect.runPromise(
         resolveLocalRecipeEffect('p', {
           home: HOME,
+          ...skipSandboxHost,
           signedIn: none,
           read: files({ [at('p')]: 'version: 2\n', [`${HOME}/config.yml`]: 'steps:\n  build: []\n' }),
         }),
@@ -46,7 +55,12 @@ describe('the faces reject with the package errors, not wrappers', () => {
     const text = 'version: 2\nextends: pnpm-workspace\n'
     await expect(
       Effect.runPromise(
-        resolveLocalRecipeEffect('p', { home: HOME, signedIn: none, read: files({ [at('p')]: text }) }),
+        resolveLocalRecipeEffect('p', {
+          home: HOME,
+          ...skipSandboxHost,
+          signedIn: none,
+          read: files({ [at('p')]: text }),
+        }),
       ),
     ).rejects.toSatisfy((e) => e instanceof AgentUnresolvedError || e instanceof RecipeInvalidError)
   })
@@ -73,6 +87,7 @@ describe('a port that rejects makes the face reject with RecipeFailed', () => {
     const err = await Effect.runPromise(
       resolveLocalRecipeEffect('p', {
         home: HOME,
+        ...skipSandboxHost,
         signedIn: async () => Promise.reject(new Error('probe broke')),
         read: files({ [at('p')]: 'version: 2\nextends: pnpm-workspace\n' }),
       }),

@@ -19,7 +19,15 @@ import {
   type ProjectAdditions,
   cacheDir,
 } from './policy.ts'
-import { Host, SandboxFs, SandboxPolicyRefused, SandboxUnavailable, SandboxWrapFailed, Srt } from './port.ts'
+import {
+  Host,
+  SandboxFs,
+  type SrtPort,
+  SandboxPolicyRefused,
+  SandboxUnavailable,
+  SandboxWrapFailed,
+  Srt,
+} from './port.ts'
 import { refuseProtected } from './protect.ts'
 import { quoteArgv } from './quote.ts'
 
@@ -67,14 +75,9 @@ const checkFacts = (host: HostFacts): Effect.Effect<void, SandboxUnavailable> =>
   return bad.length === 0 ? Effect.void : Effect.fail(new SandboxUnavailable({ reason: bad.join('; '), sentences: [] }))
 }
 
-export const makeSandbox = Effect.gen(function* () {
-  const srt = yield* Srt
-  const host = yield* Host
-  const fs = yield* SandboxFs
-
-  yield* Effect.addFinalizer(() => srt.reset.pipe(Effect.ignore))
-
-  const platformAndDeps: Effect.Effect<void, SandboxUnavailable> = Effect.gen(function* () {
+/** Whether this host can run srt: the one question the resolver and `wrap` both ask, so they cannot disagree about *can*. */
+export const checkHost = (srt: SrtPort, host: HostFacts): Effect.Effect<void, SandboxUnavailable> =>
+  Effect.gen(function* () {
     if (host.platform !== 'darwin' && host.platform !== 'linux') {
       return yield* new SandboxUnavailable({ reason: `platform ${host.platform} cannot be sandboxed`, sentences: [] })
     }
@@ -97,7 +100,14 @@ export const makeSandbox = Effect.gen(function* () {
     }
   })
 
-  const hostCanSandbox = yield* Effect.cachedWithTTL(platformAndDeps, HOST_CHECK_TTL)
+export const makeSandbox = Effect.gen(function* () {
+  const srt = yield* Srt
+  const host = yield* Host
+  const fs = yield* SandboxFs
+
+  yield* Effect.addFinalizer(() => srt.reset.pipe(Effect.ignore))
+
+  const hostCanSandbox = yield* Effect.cachedWithTTL(checkHost(srt, host), HOST_CHECK_TTL)
 
   // One initialisation per process, shared by concurrent first callers. A failed one is cached too: a daemon
   // restart is the retry, since a second `initialize` after a failure is not a path srt documents.

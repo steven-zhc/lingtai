@@ -1,3 +1,4 @@
+import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 /**
  * The recipe from this machine (0046 §3, #180). No filesystem: the reader is
  * a map from path to text, and the home is a name.
@@ -46,6 +47,7 @@ const signed =
 
 const withMachine = (machine: string | undefined, signedIn = signed('claude-code')) => ({
   home: HOME,
+  ...skipSandboxHost,
   signedIn,
   read: files({
     [recipePath('app', HOME)]: RECIPE,
@@ -55,6 +57,7 @@ const withMachine = (machine: string | undefined, signedIn = signed('claude-code
 
 const withRecipe = (text: string, signedIn = signed('claude-code'), machine?: string) => ({
   home: HOME,
+  ...skipSandboxHost,
   signedIn,
   read: files({
     [recipePath('app', HOME)]: text,
@@ -100,6 +103,7 @@ describe('resolveLocalRecipe', () => {
     const spoken = await Effect.runPromise(
       resolveLocalRecipeEffect('app', {
         home: HOME,
+        ...skipSandboxHost,
         signedIn: signed('claude-code'),
         read: files({
           [recipePath('app', HOME)]: `${RECIPE.replace('  kinds: [bug]', '  kinds: [bug]\n  backoff: 30m')}
@@ -140,6 +144,7 @@ env: { plantAt: .env.local }
 `
     const read = (recipe: string) => ({
       home: HOME,
+      ...skipSandboxHost,
       signedIn: signed('claude-code'),
       read: files({ [recipePath('app', HOME)]: recipe }),
     })
@@ -200,7 +205,7 @@ steps:
   })
 
   it('refuses a missing recipe by its path', async () => {
-    const options = { home: HOME, signedIn: signed('claude-code'), read: files({}) }
+    const options = { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read: files({}) }
     await expect(Effect.runPromise(resolveLocalRecipeEffect('app', options))).rejects.toThrow(RecipeMissingError)
     await expect(Effect.runPromise(resolveLocalRecipeEffect('app', options))).rejects.toThrow(`${HOME}/app/recipe.yml`)
   })
@@ -298,7 +303,7 @@ steps:
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    rounds: 3\n`,
       })
       const resolved = await Effect.runPromise(
-        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
+        resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
       expect(resolved.recipe.runtime.limits).toEqual({ ...LIMIT_DEFAULTS, rounds: 3 })
       expect(resolved.provenance?.['runtime.limits.rounds']).toBe(`3 ← ${recipePath('app', HOME)}`)
@@ -311,6 +316,7 @@ steps:
       const b = await Effect.runPromise(
         resolveLocalRecipeEffect('app', {
           home: HOME,
+          ...skipSandboxHost,
           signedIn: signed('claude-code'),
           read: files({ [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 10\n` }),
         }),
@@ -329,11 +335,13 @@ steps:
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits: { wall: "90" }\n`,
       })
       const resolving = Effect.runPromise(
-        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
+        resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
       await expect(resolving).rejects.toThrow(RecipeInvalidError)
       await expect(
-        Effect.runPromise(resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read })),
+        Effect.runPromise(
+          resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
+        ),
       ).rejects.toThrow(/runtime\.limits\.wall: must be a positive duration/)
     })
 
@@ -343,7 +351,9 @@ steps:
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits: { turn: 7 }\n`,
       })
       await expect(
-        Effect.runPromise(resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read })),
+        Effect.runPromise(
+          resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
+        ),
       ).rejects.toThrow(/runtime\.limits: Unrecognized key: "turn"/)
     })
 
@@ -386,7 +396,7 @@ steps:
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  assignee:\n    login: alice\n    take: mine\n`,
       })
       const resolved = await Effect.runPromise(
-        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
+        resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
       expect(resolved.recipe.runtime.assignee).toEqual({ login: 'alice', take: 'mine' })
       expect(resolved.provenance?.['runtime.assignee.login']).toBe(`alice ← ${recipePath('app', HOME)}`)
@@ -398,7 +408,7 @@ steps:
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  assignee:\n    login: alice\n`,
       })
       const resolved = await Effect.runPromise(
-        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
+        resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
       expect(resolved.recipe.runtime.assignee).toEqual({ login: 'alice', take: 'both' })
       expect(resolved.provenance?.['runtime.assignee.take']).toBe('both ← default')
@@ -410,7 +420,9 @@ steps:
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  assignee:\n    take: mine\n`,
       })
       try {
-        await Effect.runPromise(resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }))
+        await Effect.runPromise(
+          resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
+        )
         expect.unreachable()
       } catch (err) {
         expect(err).toBeInstanceOf(RecipeInvalidError)
@@ -427,7 +439,7 @@ steps:
       )
       const read = files({ [recipePath('app', HOME)]: withClaim })
       const resolved = await Effect.runPromise(
-        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
+        resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
       expect(resolved.provenance?.['runtime.assignee.take']).toBe(`unassigned ← ${recipePath('app', HOME)}`)
       expect(resolved.provenance?.['runtime.assignee.login']).toBe(`(none) ← ${recipePath('app', HOME)}`)
@@ -517,7 +529,7 @@ steps:
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 5\n`,
       })
       const resolved = await Effect.runPromise(
-        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
+        resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
       expect(resolved.recipe.runtime.limits.turns).toBe(5)
     })

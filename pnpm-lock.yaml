@@ -395,6 +395,9 @@ importers:
       '@lingtai/repo':
         specifier: workspace:*
         version: link:../repo
+      '@lingtai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@lingtai/setup':
         specifier: workspace:*
         version: link:../setup
@@ -636,6 +639,9 @@ importers:
       '@lingtai/env':
         specifier: workspace:*
         version: link:../env
+      '@lingtai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       effect:
         specifier: ^4.1.2
         version: 4.1.2

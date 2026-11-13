@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { type RecipeFiles, machinePath, recipePath, saveRecipeText } from '../src/index.ts'
+import { fakeFacts, fakeSandboxHost } from '../test/sandbox-host.ts'
 
 const HOME = '/home/me/.lingtai'
 const PATH = recipePath('app', HOME)
@@ -37,6 +38,7 @@ const options = (files: RecipeFiles) => ({
   files,
   base: 'main',
   signedIn: async () => ['claude-code' as const],
+  hostFacts: fakeSandboxHost().hostFacts,
 })
 
 describe('saveRecipeText', () => {
@@ -124,5 +126,50 @@ describe('saveRecipeText', () => {
     const text = GOOD.replace('[bug]', '[bug, feature]')
     await saveRecipeText('app', { loaded: crlf(GOOD), text }, options(files))
     expect(store.get(PATH)).toBe(crlf(text))
+  })
+  describe('a sandbox block (#1147)', () => {
+    const save = async (block: string, host = fakeSandboxHost({ can: false })) => {
+      const { files, store } = mapFiles({ [PATH]: GOOD })
+      const text = `${GOOD}${block}`
+      const result = await saveRecipeText(
+        'app',
+        { loaded: GOOD, text },
+        { ...options(files), hostFacts: host.hostFacts },
+      )
+      return { result, store, text, host }
+    }
+
+    it('saves a recipe with the block', async () => {
+      const { result, store, text } = await save(
+        'sandbox:\n  network: { allow: [pypi.org] }\n  write: [~/work/fixtures]\n',
+      )
+      expect(result).toMatchObject({ ok: true, written: true })
+      expect(store.get(PATH)).toBe(text)
+    })
+
+    it('refuses a protected write by name, and writes nothing', async () => {
+      const { result, store } = await save('sandbox:\n  write: [~/.ssh/keys]\n')
+      expect(result).toMatchObject({ ok: false, reason: 'invalid' })
+      expect(result.ok ? '' : result.message).toContain('sandbox.write.0: "~/.ssh/keys" lies inside /home/me/.ssh')
+      expect(store.get(PATH)).toBe(GOOD)
+    })
+
+    it('saves required: true although this host cannot sandbox, because saving is not running', async () => {
+      const { result, host } = await save('sandbox:\n  required: true\n')
+      expect(result).toMatchObject({ ok: true, written: true })
+      expect(host.asked.host).toBe(0)
+    })
+
+    it('refuses enabled: false with required: true at save', async () => {
+      const { result } = await save('sandbox:\n  enabled: false\n  required: true\n')
+      expect(result).toMatchObject({ ok: false, reason: 'invalid' })
+      expect(result.ok ? '' : result.message).toContain('sandbox.required: required: true requires a sandbox')
+    })
+
+    it('does not read the host at all for a block that names no path', async () => {
+      const { host } = await save('sandbox:\n  required: true\n')
+      expect(host.asked).toEqual({ host: 0, facts: 0 })
+      expect(fakeFacts().home).toBe('/home/me')
+    })
   })
 })
