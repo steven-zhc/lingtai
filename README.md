@@ -7,6 +7,14 @@ English · [中文](README.zh-CN.md)
 
 # Lingtai
 
+[![Latest release](https://img.shields.io/github/v/release/steven-zhc/lingtai?label=version)](https://github.com/steven-zhc/lingtai/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/steven-zhc/lingtai/check.yml?branch=main&label=CI)](https://github.com/steven-zhc/lingtai/actions/workflows/check.yml?query=branch%3Amain)
+[![Integration tests](https://img.shields.io/github/actions/workflow/status/steven-zhc/lingtai/integration.yml?branch=main&label=integration)](https://github.com/steven-zhc/lingtai/actions/workflows/integration.yml?query=branch%3Amain)
+[![Build](https://img.shields.io/github/actions/workflow/status/steven-zhc/lingtai/release.yml?branch=main&label=build)](https://github.com/steven-zhc/lingtai/actions/workflows/release.yml?query=branch%3Amain)
+[![Deploy](https://img.shields.io/github/actions/workflow/status/steven-zhc/lingtai/deploy-site.yml?branch=main&label=deploy)](https://github.com/steven-zhc/lingtai/actions/workflows/deploy-site.yml?query=branch%3Amain)
+[![Website](https://img.shields.io/badge/website-lingtai.hczhang.com-7c3aed)](https://lingtai.hczhang.com/)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 **Agents do the work. Lingtai keeps the books.**
 
 Lingtai takes a queue of tickets, hands them to coding agents — several at

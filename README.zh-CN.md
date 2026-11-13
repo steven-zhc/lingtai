@@ -9,6 +9,14 @@
 
 # Lingtai
 
+[![最新版本](https://img.shields.io/github/v/release/steven-zhc/lingtai?label=version)](https://github.com/steven-zhc/lingtai/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/steven-zhc/lingtai/check.yml?branch=main&label=CI)](https://github.com/steven-zhc/lingtai/actions/workflows/check.yml?query=branch%3Amain)
+[![集成测试](https://img.shields.io/github/actions/workflow/status/steven-zhc/lingtai/integration.yml?branch=main&label=integration)](https://github.com/steven-zhc/lingtai/actions/workflows/integration.yml?query=branch%3Amain)
+[![构建](https://img.shields.io/github/actions/workflow/status/steven-zhc/lingtai/release.yml?branch=main&label=build)](https://github.com/steven-zhc/lingtai/actions/workflows/release.yml?query=branch%3Amain)
+[![部署](https://img.shields.io/github/actions/workflow/status/steven-zhc/lingtai/deploy-site.yml?branch=main&label=deploy)](https://github.com/steven-zhc/lingtai/actions/workflows/deploy-site.yml?query=branch%3Amain)
+[![官网](https://img.shields.io/badge/website-lingtai.hczhang.com-7c3aed)](https://lingtai.hczhang.com/)
+[![许可证：Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 **活儿给 agent 干，账由灵台记。**
 
 Lingtai（灵台）接收一个由票组成的队列，把它们交给编码 agent——可以同时交给多个，每个都在各自的工作树里——并让每一处改动停在检查和冷审查处，直到通过为止。通过的改动它会合并，否则就停下来等你。每一步都作为一个可以核对的结果写进你本机上的日志：给了 agent 什么、它产出了什么、什么通过了、是谁放行的、花了多少钱。
