@@ -24,4 +24,10 @@ describe('claudeTokenRow', () => {
     expect(row.status).toBe('fail')
     expect(JSON.stringify(row)).not.toContain(TOKEN)
   })
+
+  it('keeps the reader sentence through the production wrapping', async () => {
+    const row = await Effect.runPromise(claudeTokenRow())
+    // the default reads the real environment; it either answers or names the reason, never Effect.try's own sentence
+    expect(row.detail ?? '').not.toContain('An error occurred in Effect.try')
+  })
 })

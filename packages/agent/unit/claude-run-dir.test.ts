@@ -158,4 +158,38 @@ describe('prepareClaudeRunDirectory', () => {
     expect(Exit.isSuccess(exit)).toBe(true)
     expect(trace).toEqual([`could not remove ${DIR}: EBUSY`])
   })
+
+  it('fails by name when skills is a file or CLAUDE.md is a directory', async () => {
+    const a = fake({ [SRC]: { kind: 'dir' }, [`${SRC}/skills`]: { kind: 'file', data: 'x' } })
+    const ea = await run(prepareClaudeRunDirectory(DIR, { source: SRC, settings: {}, trace: () => {} }, a.fs))
+    expect(Exit.isFailure(ea)).toBe(true)
+    expect(JSON.stringify(ea)).toContain('must be a directory')
+    const b = fake({ [SRC]: { kind: 'dir' }, [`${SRC}/CLAUDE.md`]: { kind: 'dir' } })
+    const eb = await run(prepareClaudeRunDirectory(DIR, { source: SRC, settings: {}, trace: () => {} }, b.fs))
+    expect(Exit.isFailure(eb)).toBe(true)
+    expect(JSON.stringify(eb)).toContain('must be a file')
+  })
+
+  it('keeps the execute bit of a copied file', async () => {
+    const f = fake({
+      [SRC]: { kind: 'dir' },
+      [`${SRC}/skills`]: { kind: 'dir' },
+      [`${SRC}/skills/run.sh`]: { kind: 'file', data: '#!/bin/sh' },
+      [`${SRC}/skills/a.md`]: { kind: 'file', data: 'a' },
+    })
+    const modes: Record<string, number> = {}
+    const base = f.fs
+    const fs: RunDirFs = {
+      ...base,
+      stat: (p) => base.stat(p).pipe(Effect.map((s) => ({ ...s, mode: p.endsWith('run.sh') ? 0o755 : 0o644 }))),
+      lstat: (p) => base.lstat(p).pipe(Effect.map((s) => ({ ...s, mode: p.endsWith('run.sh') ? 0o755 : 0o644 }))),
+      writeFile: (p, d, m) => {
+        modes[p] = m
+        return base.writeFile(p, d, m)
+      },
+    }
+    await run(prepareClaudeRunDirectory(DIR, { source: SRC, settings: {}, trace: () => {} }, fs))
+    expect(modes[`${DIR}/skills/run.sh`]).toBe(0o700)
+    expect(modes[`${DIR}/skills/a.md`]).toBe(0o600)
+  })
 })

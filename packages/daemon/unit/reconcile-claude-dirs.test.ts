@@ -44,4 +44,26 @@ describe('findOrphanClaudeDirsEffect', () => {
     const { fs } = fake({})
     expect(await Effect.runPromise(findOrphanClaudeDirsEffect({ home: '/h', fs }))).toEqual([])
   })
+
+  it('a runs/ that cannot be listed fails rather than finding none', async () => {
+    const fs: ClaudeDirFs = {
+      readdir: async () => {
+        throw Object.assign(new Error('EACCES'), { code: 'EACCES' })
+      },
+      rm: async () => {},
+    }
+    await expect(Effect.runPromise(findOrphanClaudeDirsEffect({ home: '/h', fs }))).rejects.toBeDefined()
+  })
+
+  it('a run directory that cannot be listed fails rather than finding none', async () => {
+    const { fs: base } = fake(tree)
+    const fs: ClaudeDirFs = {
+      ...base,
+      readdir: async (p) => {
+        if (p === '/h/runs/r1') throw Object.assign(new Error('EIO'), { code: 'EIO' })
+        return base.readdir(p)
+      },
+    }
+    await expect(Effect.runPromise(findOrphanClaudeDirsEffect({ home: '/h', fs }))).rejects.toBeDefined()
+  })
 })

@@ -3024,6 +3024,13 @@ export function codexRoleRow(
   }
 }
 
+/** `claudeOauthToken` as a boolean Effect that keeps the reader's own sentence, which `Effect.try` alone would replace. */
+const readClaudeToken = (env?: NodeJS.ProcessEnv): Effect.Effect<boolean, Error> =>
+  Effect.try({
+    try: () => claudeOauthToken(env) !== undefined,
+    catch: (err) => (err instanceof Error ? err : new Error('could not be read')),
+  })
+
 /**
  * Whether a sandboxed Claude Code run has a long-lived token to hold (0127 §8).
  * `ok` either way: nothing needs it until a recipe requires a sandbox for
@@ -3031,7 +3038,7 @@ export function codexRoleRow(
  * never read here — `reach.claudeToken` answers a boolean.
  */
 export function claudeTokenRow(
-  read: () => Effect.Effect<boolean, unknown> = () => Effect.try(() => claudeOauthToken() !== undefined),
+  read: () => Effect.Effect<boolean, unknown> = () => readClaudeToken(),
 ): Effect.Effect<CheckResult> {
   const name = 'claude: long-lived token'
   return read().pipe(
@@ -3767,9 +3774,7 @@ export function runDoctor(
     yield* step('runtimes', runtimeAuth(reach.runtimes).pipe(Effect.map(push)))
     yield* step(
       'claude token',
-      claudeTokenRow(reach.claudeToken ?? (() => Effect.try(() => claudeOauthToken(env) !== undefined))).pipe(
-        Effect.map(push),
-      ),
+      claudeTokenRow(reach.claudeToken ?? (() => readClaudeToken(env))).pipe(Effect.map(push)),
     )
     yield* step(
       'deferred',

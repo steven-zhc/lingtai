@@ -40,4 +40,10 @@ describe('claudeOauthToken', () => {
     expect(message).toContain('/fake/config.yml')
     expect(message).not.toContain(FAKE)
   })
+
+  it('a parse error in the file never quotes the line it broke on', () => {
+    const broken = file(`claude:\n  oauth_token: ${FAKE}: [\n`)
+    expect(broken.unreadable).toContain('/fake/config.yml')
+    expect(broken.unreadable).not.toContain(FAKE)
+  })
 })

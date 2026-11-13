@@ -138,6 +138,17 @@ export function machineFile(from: NodeJS.ProcessEnv = process.env): MachineFile 
 }
 
 /**
+ * Where a YAML error is, and nothing it quoted: the parser's message holds an
+ * excerpt of the offending line, which may be a secret pasted into the file.
+ */
+function yamlWhere(err: unknown): string {
+  const e = err as { code?: unknown; linePos?: readonly { line?: unknown }[] }
+  const code = typeof e?.code === 'string' ? ` (${e.code})` : ''
+  const line = typeof e?.linePos?.[0]?.line === 'number' ? ` at line ${e.linePos[0].line}` : ''
+  return `${code}${line}`
+}
+
+/**
  * The same file, already read — for a caller that reads it through a world of
  * its own rather than `node:fs` (`lingtai init`'s `InitWorld.machine`, #435).
  *
@@ -153,7 +164,7 @@ export function machineFileFrom(path: string, text: string | null): MachineFile 
     return {
       path,
       provider: yamlProvider({}),
-      unreadable: `${path} could not be parsed as YAML: ${(err as Error).message}`,
+      unreadable: `${path} could not be parsed as YAML${yamlWhere(err)}`,
     }
   }
 }

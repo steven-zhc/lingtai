@@ -35,6 +35,8 @@ export interface RunDirStat {
   isDirectory(): boolean
   isFile(): boolean
   isSymbolicLink(): boolean
+  /** Permission bits; absent from a fake that does not model them. */
+  mode?: number
 }
 
 /** The filesystem, as a port: a unit test hands in a fake. Failures carry a `code`, as Node's do. */
@@ -76,6 +78,16 @@ export interface ClaudeRunDirectoryOptions {
 
 /** The three user-level items a run keeps. */
 export const COPIED_ITEMS = ['CLAUDE.md', 'skills', 'agents'] as const
+
+/** What each top-level item must be, once a link is followed. */
+const SHAPE_OF: Record<(typeof COPIED_ITEMS)[number], 'file' | 'directory'> = {
+  'CLAUDE.md': 'file',
+  skills: 'directory',
+  agents: 'directory',
+}
+
+/** A copy is the run's own, `0600` — and keeps the owner's execute bit, so a skill's helper script still runs. */
+const copyMode = (s: RunDirStat): number => (((s.mode ?? 0) & 0o111) !== 0 ? 0o700 : 0o600)
 
 const codeOf = (err: unknown): string => {
   const code = (err as { code?: unknown } | null)?.code
@@ -121,7 +133,7 @@ export const prepareClaudeRunDirectory = (
       .pipe(Effect.mapError((err) => failed('write', join(dir, 'settings.json'), err)))
 
     for (const name of COPIED_ITEMS) {
-      yield* copyItem(fs, join(options.source, name), join(dir, name), options.trace, [])
+      yield* copyItem(fs, join(options.source, name), join(dir, name), options.trace, [], SHAPE_OF[name])
     }
   })
 
@@ -132,6 +144,7 @@ const copyItem = (
   dst: string,
   trace: (line: string) => void,
   ancestors: readonly string[],
+  expected?: 'file' | 'directory',
 ): Effect.Effect<void, AgentHostFailed> =>
   Effect.gen(function* () {
     const link = yield* fs.lstat(src).pipe(
@@ -155,6 +168,12 @@ const copyItem = (
       resolved = target
     }
 
+    if (expected !== undefined && (expected === 'directory' ? !resolved.isDirectory() : !resolved.isFile())) {
+      return yield* Effect.fail(
+        new AgentHostFailed({ operation: 'claude-run-dir', detail: `${src} must be a ${expected}` }),
+      )
+    }
+
     if (resolved.isDirectory()) {
       const real = yield* fs.realpath(src).pipe(Effect.mapError((err) => failed('read', src, err)))
       if (ancestors.includes(real)) {
@@ -172,7 +191,7 @@ const copyItem = (
 
     if (resolved.isFile()) {
       const data = yield* fs.readFile(src).pipe(Effect.mapError((err) => failed('read', src, err)))
-      yield* fs.writeFile(dst, data, 0o600).pipe(Effect.mapError((err) => failed('write', dst, err)))
+      yield* fs.writeFile(dst, data, copyMode(resolved)).pipe(Effect.mapError((err) => failed('write', dst, err)))
       return
     }
 

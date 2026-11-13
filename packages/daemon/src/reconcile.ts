@@ -123,6 +123,8 @@ const realFs: ClaudeDirFs = {
   rm: (path, o) => rm(path, o),
 }
 
+const isEnoent = (err: unknown): boolean => (err as { code?: unknown } | null)?.code === 'ENOENT'
+
 const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> =>
   Effect.tryPromise({ try: () => f(), catch: (e) => e })
 
@@ -338,7 +340,8 @@ export const findOrphansEffect = Effect.fn('daemon.findOrphans')(function* (opti
       // `PreparationStarted` or `RunStarted`. Read from the log rather than a
       // projection: reconciliation has to work when a projection is the thing
       // that is broken.
-      const run = yield* attempt(() => store.read(runId)).pipe(Effect.catch(() => Effect.succeed([] as Envelope[])))
+      // A stream that cannot be read is not evidence the run is over: it fails rather than reporting a live directory as abandoned.
+      const run = yield* attempt(() => store.read(runId))
       const taskId = run
         .map((e) => (e.data as { ticketId?: string } | undefined)?.ticketId)
         .find((id): id is string => typeof id === 'string')
@@ -760,7 +763,8 @@ export const findOrphanClaudeDirsEffect = Effect.fn('daemon.findOrphanClaudeDirs
 
   const runIds = yield* attempt(() => fs.readdir(root)).pipe(
     Effect.map((entries) => entries.filter((e) => e.isDirectory()).map((e) => e.name)),
-    Effect.catch(() => Effect.succeed(null)),
+    // Only an absent `runs/` is empty; any other failure is a failure to look, not a finding of none.
+    Effect.catch((err) => (isEnoent(err) ? Effect.succeed(null) : Effect.fail(err))),
   )
   if (runIds === null) return [] as Finding[]
 
@@ -769,7 +773,7 @@ export const findOrphanClaudeDirsEffect = Effect.fn('daemon.findOrphanClaudeDirs
     const path = claudeConfigDirFor(home, runId)
     const inside = yield* attempt(() => fs.readdir(join(root, runId))).pipe(
       Effect.map((entries) => entries.some((e) => e.name === 'claude' && e.isDirectory())),
-      Effect.catch(() => Effect.succeed(false)),
+      Effect.catch((err) => (isEnoent(err) ? Effect.succeed(false) : Effect.fail(err))),
     )
     if (!inside) continue
 
