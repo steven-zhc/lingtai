@@ -110,11 +110,6 @@ export const readCodeVersionEffect = (cwd: string = codeRoot()): Effect.Effect<C
     Effect.catchTag('RepoFailed', () => Effect.succeed<CodeVersion>({ sha: null, dirty: false })),
   )
 
-/** `readCodeVersionEffect` as a promise (a listed face, #790). */
-export function readCodeVersion(cwd?: string): Promise<CodeVersion> {
-  return Effect.runPromise(readCodeVersionEffect(cwd))
-}
-
 const baseRef = (cwd: string): Effect.Effect<string> =>
   gitEffect(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], { cwd }).pipe(
     Effect.catchTag('RepoFailed', () => Effect.succeed(FALLBACK_BASE)),

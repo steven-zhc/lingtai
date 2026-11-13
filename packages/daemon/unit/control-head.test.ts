@@ -6,9 +6,10 @@
 import { CONTROL_STREAM } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { readControl, recordStart, requestShutdownUnlessStanding } from '../src/control.ts'
+import { readControl, recordStartEffect, requestShutdownUnlessStanding } from '../src/control.ts'
 
 /** A store whose first `readTypes` of the control stream appends `event` behind the reader's back. */
 function racing(real: EventStore, event: { type: string; actor: string; data: unknown }) {
@@ -44,6 +45,8 @@ describe('control appends decide at the head they read first', () => {
     ])
   })
 })
+
+const recordStart = (...args: Parameters<typeof recordStartEffect>) => Effect.runPromise(recordStartEffect(...args))
 
 describe('recordStart decides and appends at the head it read', () => {
   const code = { sha: 'abc1234', dirty: false }

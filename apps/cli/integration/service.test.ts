@@ -1513,9 +1513,9 @@ describe('one command to stop, one to start', () => {
         watermark: () => controlWatermark(store),
         // The daemon launchd starts reads where the stream is, and records itself.
         after: async (v) => {
-          const { recordStart, startAfter } = await import('@lingtai/daemon/control')
+          const { recordStartEffect, startAfter } = await import('@lingtai/daemon/control')
           if ((await startAfter(v, store)) === null)
-            await recordStart('daemon', null, { sha: RECORDED.sha, dirty: false }, v, store)
+            await Effect.runPromise(recordStartEffect('daemon', null, { sha: RECORDED.sha, dirty: false }, v, store))
           return startAfter(v, store)
         },
       },

@@ -50,11 +50,13 @@ import { describe, expect, it } from 'vitest'
 import {
   startBeacon,
   readControl,
-  recordStart,
+  recordStartEffect,
   requestShutdownUnlessStanding,
   resumeConductor,
 } from '../src/control.ts'
 import { STALE_AFTER_MS, lastBeat, type Beat, type DaemonStore } from '../src/store.ts'
+
+const recordStart = (...args: Parameters<typeof recordStartEffect>) => Effect.runPromise(recordStartEffect(...args))
 
 export interface DaemonFixture {
   /** The store under test. */

@@ -356,16 +356,6 @@ export const recordStartEffect = (
   return attempt(0)
 }
 
-export function recordStart(
-  by: string,
-  reason: string | null,
-  code: CodeVersion,
-  since: number,
-  store: EventStore = eventStore,
-): Promise<{ recorded: true } | { recorded: false; standing: ShutdownRequest }> {
-  return Effect.runPromise(recordStartEffect(by, reason, code, since, store))
-}
-
 /** A `ConductorStarted`, as the log has it. */
 export interface RecordedStart {
   by: string
@@ -503,10 +493,6 @@ export function requestRun(project: string, issue: string, by: string, store: Ev
 /** Idempotent DDL for the beacon's row. Called once, at every daemon start. */
 export const createStatusTableEffect = (store?: DaemonStore): Effect.Effect<void> =>
   withDaemonStore(store, {}, (it) => it.create())
-
-export function createStatusTable(store?: DaemonStore): Promise<void> {
-  return Effect.runPromise(createStatusTableEffect(store))
-}
 
 export interface BeatOptions {
   /** The run this daemon is hosting, when it is hosting one. */

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { CLAUDE_CODE_CAPABILITIES } from '@lingtai/agent'
-import { beat, createStatusTable } from '@lingtai/daemon'
+import { beat, createStatusTableEffect } from '@lingtai/daemon'
 import { SUBSCRIBER_STREAM, emptyProject } from '@lingtai/domain'
 import type { StoreChoice } from '@lingtai/env'
 /**
@@ -1033,7 +1033,7 @@ steps:
    * reads as starting, and never as a daemon to restart.
    */
   it('does not call a daemon that is still starting `not running`', async () => {
-    await createStatusTable()
+    await Effect.runPromise(createStatusTableEffect())
     // What startup now writes before it begins the slow half — a fresh row
     // whose word is `starting`.
     await beat('starting')
