@@ -123,6 +123,13 @@ argued against the three objects that are there, not against the empty space
 beside them, which is the argument none of the six tickets above was asked to
 make. The frame is held to the same rule.
 
+**One exception, from 0.14 (S9c, [0.14.md](0.14.md)).** The sandbox's state is
+an icon beside `Report`, with no text: the selected project's state, or the
+worst across all projects. It earns its place on the question health already
+answers, *is the system doing what I configured it to*, and it costs one
+icon's width. It is not a chip and carries no figure; its sentence is its
+tooltip. The next thing proposed for the bar is argued against it too.
+
 It is in the code, at the end of `.bar` in `apps/board/src/app/page.tsx`, where
 the next chip would be added, and so where the argument has to be made.
 `apps/board/unit/projects.test.tsx` holds the code to the set *filter, health,
