@@ -24,10 +24,12 @@ import {
   type Trial,
   type TrialReport,
   type TrialResult,
-  detectSetup,
+  detectSetupEffect,
 } from '@lingtai/setup'
+import { Effect } from 'effect'
 
-import { type QuestionWorld, question } from './question.ts'
+import { lift, recovering } from './exit.ts'
+import { type QuestionWorld, questionEffect } from './question.ts'
 
 export type SetupWorld = QuestionWorld
 
@@ -79,14 +81,16 @@ function isRunAction(value: unknown): value is NamedRun & Record<string, unknown
 }
 
 /** The `run:` actions already at `path`, in file order — `[]` where the step is absent or writes none. */
-async function currentRunActions(
+function currentRunActions(
   project: string,
   path: readonly string[],
   options: { home?: string; files?: RecipeFiles },
-): Promise<NamedRun[]> {
-  const value = await readRecipeKey(project, path, options)
-  if (!Array.isArray(value)) return []
-  return value.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
+): Effect.Effect<NamedRun[], unknown> {
+  return Effect.gen(function* () {
+    const value = yield* lift(() => readRecipeKey(project, path, options))
+    if (!Array.isArray(value)) return []
+    return value.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
+  })
 }
 
 /**
@@ -107,21 +111,23 @@ async function currentRunActions(
  * writes its answer explicitly rather than risk a later preset default
  * silently filling in what the person declined.
  */
-async function resolvedRunActions(
+function resolvedRunActions(
   project: string,
   step: 'prepared' | 'build',
   options: { home?: string; files?: RecipeFiles },
-): Promise<NamedRun[] | null> {
-  const files = options.files ?? diskFiles
-  const path = recipePath(project, options.home)
-  const text = await files.read(path)
-  if (text === null) return null
-  try {
-    const actions = resolveSource(text, path, path).recipe.steps[step] as unknown[]
-    return actions.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
-  } catch {
-    return null
-  }
+): Effect.Effect<NamedRun[] | null, unknown> {
+  return Effect.gen(function* () {
+    const files = options.files ?? diskFiles
+    const path = recipePath(project, options.home)
+    const text = yield* lift(() => files.read(path))
+    if (text === null) return null
+    try {
+      const actions = resolveSource(text, path, path).recipe.steps[step] as unknown[]
+      return actions.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
+    } catch {
+      return null
+    }
+  })
 }
 
 /** A flag that takes its value as a separate following token, e.g. `pnpm --filter web test`. */
@@ -223,12 +229,12 @@ function mergeRunActions(original: unknown[], wanted: NamedRun[]): unknown[] {
   return merged
 }
 
-async function printFound(
+function printFound(
   world: SetupWorld,
   detected: DetectedSetup,
   onPath: AskInstallAndBuildInput['onPath'],
-): Promise<void> {
-  if (onPath === undefined) return
+): Effect.Effect<void, unknown> {
+  if (onPath === undefined) return Effect.void
   // The first word is the manager (`uv`, `poetry`, `pnpm`…). ruff, mypy and
   // pytest come from the project's environment after install, so they are not
   // probed; Go's tools come from no such environment, so all of them are. An
@@ -239,47 +245,56 @@ async function printFound(
     ...detected.build,
   ]
   const tools = new Set(commands.flatMap((c) => (c === undefined ? [] : [c.tool ?? c.run.split(' ')[0]!])))
-  for (const tool of tools) {
-    try {
-      if (!(await onPath(tool))) {
-        world.log(`${tool} is not on this machine's PATH; the conductor runs these commands here`)
-      }
-    } catch {
-      // extra information only
-    }
-  }
+  return Effect.forEach(
+    tools,
+    (tool) =>
+      lift(() => onPath(tool)).pipe(
+        Effect.flatMap((found) =>
+          found
+            ? Effect.void
+            : Effect.sync(() =>
+                world.log(`${tool} is not on this machine's PATH; the conductor runs these commands here`),
+              ),
+        ),
+        // extra information only
+        recovering(() => Effect.void),
+      ),
+    { discard: true },
+  )
 }
 
-async function askInstall(
+function askInstall(
   world: SetupWorld,
   input: AskInstallAndBuildInput,
   detected: DetectedSetup,
   /** The command just tried (null for none), when this is a second time round. */
   previous?: string | null,
-): Promise<{ run: string | null; refused: string } | { run: string | null }> {
-  const current = await currentRunActions(input.project, ['steps', 'prepared'], {
-    home: input.home,
-    files: input.files,
-  })
-  const again = previous !== undefined
-  const currentRun = again ? (previous ?? 'none') : (current[0]?.run ?? null)
+): Effect.Effect<{ run: string | null; refused: string } | { run: string | null }, unknown> {
+  return Effect.gen(function* () {
+    const current = yield* currentRunActions(input.project, ['steps', 'prepared'], {
+      home: input.home,
+      files: input.files,
+    })
+    const again = previous !== undefined
+    const currentRun = again ? (previous ?? 'none') : (current[0]?.run ?? null)
 
-  const answer = await question(world, {
-    name: 'the install command',
-    flag: '--install <command>, or --install none',
-    given: input.given.install,
-    prompt: 'the install command',
-    current: currentRun,
-    detected: again ? null : (detected.install?.run ?? null),
-    ...(!again && currentRun === null && detected.install
-      ? { why: [`install: ${detected.install.run} — ${detected.install.because}`] }
-      : {}),
-    fallback: '',
-    validate: async (a) => (a === '' ? 'type a command, or none' : null),
-    kept: input.kept,
+    const answer = yield* questionEffect(world, {
+      name: 'the install command',
+      flag: '--install <command>, or --install none',
+      given: input.given.install,
+      prompt: 'the install command',
+      current: currentRun,
+      detected: again ? null : (detected.install?.run ?? null),
+      ...(!again && currentRun === null && detected.install
+        ? { why: [`install: ${detected.install.run} — ${detected.install.because}`] }
+        : {}),
+      fallback: '',
+      validate: (a) => Effect.succeed(a === '' ? 'type a command, or none' : null),
+      kept: input.kept,
+    })
+    if ('refused' in answer) return { run: null, refused: answer.refused }
+    return { run: answer.answer === 'none' ? null : answer.answer }
   })
-  if ('refused' in answer) return { run: null, refused: answer.refused }
-  return { run: answer.answer === 'none' ? null : answer.answer }
 }
 
 type Tried =
@@ -293,248 +308,263 @@ type Tried =
  * keep the list, go back and edit it, or drop the checks that failed.
  * `asked` is false for the run `drop` repeats — choosing it was the question.
  */
-async function tryTheBuild(
+function tryTheBuild(
   world: SetupWorld,
   input: AskInstallAndBuildInput,
   install: string | null,
   build: NamedRun[],
   asked: boolean,
-): Promise<Tried> {
-  if (build.length === 0) return { ok: true, trial: { trial: 'not-run', because: 'no checks' } }
-  const trial = input.tryBuild
-  if (trial === null) {
-    world.log(
-      'the trial run was not run — no checkout on this machine; the first attempt’s `build` is where these first run',
-    )
-    return { ok: true, trial: { trial: 'not-run', because: 'no checkout' } }
-  }
+): Effect.Effect<Tried, unknown> {
+  return Effect.gen(function* () {
+    if (build.length === 0) return { ok: true, trial: { trial: 'not-run', because: 'no checks' } }
+    const trial = input.tryBuild
+    if (trial === null) {
+      world.log(
+        'the trial run was not run — no checkout on this machine; the first attempt’s `build` is where these first run',
+      )
+      return { ok: true, trial: { trial: 'not-run', because: 'no checkout' } }
+    }
 
-  if (asked) {
-    const base = await trial.base()
-    const ending = input.recipeExisted === true ? 'This list is not written yet.' : 'Nothing is written yet.'
-    const check = await question(world, {
-      name: 'the trial run',
-      flag: '--check-build yes, or --check-build no',
-      given: input.given.check,
-      prompt: `Try them once now, on \`${base}\`, to see that they work? ${ending}`,
-      choices: ['yes', 'no'],
-      fallback: 'yes',
-      kept: input.kept,
-    })
-    if ('refused' in check) return { refused: check.refused }
-    if (check.answer === 'no') return { ok: true, trial: { trial: 'not-run', because: 'declined' } }
-  }
+    if (asked) {
+      const base = yield* trial.base
+      const ending = input.recipeExisted === true ? 'This list is not written yet.' : 'Nothing is written yet.'
+      const check = yield* questionEffect(world, {
+        name: 'the trial run',
+        flag: '--check-build yes, or --check-build no',
+        given: input.given.check,
+        prompt: `Try them once now, on \`${base}\`, to see that they work? ${ending}`,
+        choices: ['yes', 'no'],
+        fallback: 'yes',
+        kept: input.kept,
+      })
+      if ('refused' in check) return { refused: check.refused }
+      if (check.answer === 'no') return { ok: true, trial: { trial: 'not-run', because: 'declined' } }
+    }
 
-  world.log('running the trial build — this can take minutes')
-  let report: TrialReport
-  const startedAt = Date.now()
-  try {
-    report = await trial.run(
-      install,
-      build.map((b) => b.run),
-    )
-  } catch (err) {
-    // Ctrl+C is not a result: the worktree is already gone, and a failed list
-    // is not what was asked. Anything else is a bug and propagates.
-    if (err instanceof Error && err.name === 'TrialInterrupted') {
+    world.log('running the trial build — this can take minutes')
+    const startedAt = Date.now()
+    const ran = yield* trial
+      .run(
+        install,
+        build.map((b) => b.run),
+      )
+      .pipe(
+        Effect.map((report) => ({ report }) as const),
+        // Ctrl+C is not a result: the worktree is already gone, and a failed list
+        // is not what was asked. Anything else is a bug and propagates.
+        Effect.catchIf(
+          (err): err is Error => err instanceof Error && err.name === 'TrialInterrupted',
+          () => Effect.succeed({ interrupted: true } as const),
+        ),
+      )
+    if ('interrupted' in ran) {
       return { refused: `the trial run was interrupted. ${input.kept ?? 'Nothing was written'}` }
     }
-    throw err
-  }
-  const ms = Date.now() - startedAt
-  const { results, nothingDeclared } = report
-  // Colour is decided by what failed, never by what was not run.
-  const firstFailed = results.find((r) => r.outcome === 'failed')
-  if (firstFailed === undefined) return { ok: true, trial: { trial: 'passed', ms } }
+    const report: TrialReport = ran.report
+    const ms = Date.now() - startedAt
+    const { results, nothingDeclared } = report
+    // Colour is decided by what failed, never by what was not run.
+    const firstFailed = results.find((r) => r.outcome === 'failed')
+    if (firstFailed === undefined) return { ok: true, trial: { trial: 'passed', ms } }
 
-  for (const r of results) {
-    if (r.outcome === 'failed') world.log(`failed: ${r.command}\n${r.evidence}`)
-    else if (r.outcome === 'not-run') world.log(`not run: ${r.command} — ${r.because}`)
-  }
-  if (nothingDeclared) {
-    world.log(
-      `the recipe declares no env, so these ran without any of your variables — if a check needs one, declare it under env: in ${recipePath(input.project, input.home)}`,
-    )
-  }
+    for (const r of results) {
+      if (r.outcome === 'failed') world.log(`failed: ${r.command}\n${r.evidence}`)
+      else if (r.outcome === 'not-run') world.log(`not run: ${r.command} — ${r.because}`)
+    }
+    if (nothingDeclared) {
+      world.log(
+        `the recipe declares no env, so these ran without any of your variables — if a check needs one, declare it under env: in ${recipePath(input.project, input.home)}`,
+      )
+    }
 
-  // A failure is a check only when it names one of the list's commands. The
-  // install, `env`, `git` and `cleanup` are not checks: dropping removes
-  // nothing that fixes them, so only `edit` (back to the install) is offered.
-  const checks = new Set(build.map((b) => b.run))
-  const failed = results.filter((r) => r.outcome === 'failed').map((r) => r.command)
-  const failedChecks = failed.filter((c) => checks.has(c) && c !== install)
-  const failedOther = failed.filter((c) => c !== 'cleanup' && !failedChecks.includes(c))
-  const canDrop = failedChecks.length > 0 && failedOther.length === 0
+    // A failure is a check only when it names one of the list's commands. The
+    // install, `env`, `git` and `cleanup` are not checks: dropping removes
+    // nothing that fixes them, so only `edit` (back to the install) is offered.
+    const checks = new Set(build.map((b) => b.run))
+    const failed = results.filter((r) => r.outcome === 'failed').map((r) => r.command)
+    const failedChecks = failed.filter((c) => checks.has(c) && c !== install)
+    const failedOther = failed.filter((c) => c !== 'cleanup' && !failedChecks.includes(c))
+    const canDrop = failedChecks.length > 0 && failedOther.length === 0
 
-  const decide = await question(world, {
-    name: 'what to do with the failed build list',
-    flag: '--check-build no, or --build <command>',
-    given: null,
-    prompt: canDrop
-      ? 'keep the list as it is, edit it, or drop the checks that failed?'
-      : 'keep the list as it is, or edit it?',
-    choices: canDrop ? ['edit', 'keep', 'drop'] : ['edit', 'keep'],
-    fallback: 'edit',
-    kept: input.kept,
+    const decide = yield* questionEffect(world, {
+      name: 'what to do with the failed build list',
+      flag: '--check-build no, or --build <command>',
+      given: null,
+      prompt: canDrop
+        ? 'keep the list as it is, edit it, or drop the checks that failed?'
+        : 'keep the list as it is, or edit it?',
+      choices: canDrop ? ['edit', 'keep', 'drop'] : ['edit', 'keep'],
+      fallback: 'edit',
+      kept: input.kept,
+    })
+    if ('refused' in decide) return { refused: decide.refused }
+    if (decide.answer === 'drop') return { again: 'drop', failed: failedChecks }
+    if (decide.answer === 'edit') {
+      const at = failedChecks.length > 0 && failedOther.length === 0 ? 'build' : 'install'
+      if (at === 'build' && input.given.build !== null) {
+        return {
+          refused: 'the trial build failed and the list was not written — rerun with --build to give a different list',
+        }
+      }
+      if (at === 'install' && input.given.install !== null) {
+        return {
+          refused:
+            'the trial’s install failed and the list was not written — rerun with --install to give a different one',
+        }
+      }
+      return { again: 'edit', at }
+    }
+    return { ok: true, trial: { trial: 'failed-kept', command: firstFailed.command, ms } }
   })
-  if ('refused' in decide) return { refused: decide.refused }
-  if (decide.answer === 'drop') return { again: 'drop', failed: failedChecks }
-  if (decide.answer === 'edit') {
-    const at = failedChecks.length > 0 && failedOther.length === 0 ? 'build' : 'install'
-    if (at === 'build' && input.given.build !== null) {
-      return {
-        refused: 'the trial build failed and the list was not written — rerun with --build to give a different list',
-      }
-    }
-    if (at === 'install' && input.given.install !== null) {
-      return {
-        refused:
-          'the trial’s install failed and the list was not written — rerun with --install to give a different one',
-      }
-    }
-    return { again: 'edit', at }
-  }
-  return { ok: true, trial: { trial: 'failed-kept', command: firstFailed.command, ms } }
 }
 
-async function askBuild(
+function askBuild(
   world: SetupWorld,
   input: AskInstallAndBuildInput,
   detected: DetectedSetup,
   /** The list just tried, when this is a second time round. */
   previous?: NamedRun[],
-): Promise<{ build: NamedRun[] } | { refused: string }> {
-  const originalBuild = (await readRecipeKey(input.project, ['steps', 'build'], {
-    home: input.home,
-    files: input.files,
-  })) as unknown[] | null
-  const current =
-    previous ?? (await currentRunActions(input.project, ['steps', 'build'], { home: input.home, files: input.files }))
+): Effect.Effect<{ build: NamedRun[] } | { refused: string }, unknown> {
+  return Effect.gen(function* () {
+    const originalBuild = (yield* lift(() =>
+      readRecipeKey(input.project, ['steps', 'build'], {
+        home: input.home,
+        files: input.files,
+      }),
+    )) as unknown[] | null
+    const current =
+      previous ??
+      (yield* currentRunActions(input.project, ['steps', 'build'], { home: input.home, files: input.files }))
 
-  if (input.given.build !== null) {
-    if (input.given.build.includes('none') && input.given.build.length > 1) {
-      return { refused: '--build none cannot be combined with another --build value' }
+    if (input.given.build !== null) {
+      if (input.given.build.includes('none') && input.given.build.length > 1) {
+        return { refused: '--build none cannot be combined with another --build value' }
+      }
+      // `--build` with no value right after it — forgotten before another flag,
+      // or last on the line — parses to `''` rather than being dropped (both
+      // `init.ts`'s `parseArgs` does this
+      // deliberately, so a forgotten value is seen rather than silently
+      // absorbed). `''` is not a command: refuse by name instead of writing a
+      // `run: ""` that `command.ts` would execute as `sh -c ''`, exiting 0
+      // having checked nothing (#431 fix round, finding 2).
+      if (input.given.build.includes('')) {
+        return { refused: '--build takes a command, or none — not empty' }
+      }
+      const build = input.given.build[0] === 'none' ? [] : namedFromTyped(input.given.build, originalBuild ?? [])
+      if (build.length === 0) world.log('nothing will check a diff before review')
+      return { build }
     }
-    // `--build` with no value right after it — forgotten before another flag,
-    // or last on the line — parses to `''` rather than being dropped (both
-    // `init.ts`'s `parseArgs` does this
-    // deliberately, so a forgotten value is seen rather than silently
-    // absorbed). `''` is not a command: refuse by name instead of writing a
-    // `run: ""` that `command.ts` would execute as `sh -c ''`, exiting 0
-    // having checked nothing (#431 fix round, finding 2).
-    if (input.given.build.includes('')) {
-      return { refused: '--build takes a command, or none — not empty' }
+
+    const defaultList = current.length > 0 ? current : detected.build.length > 0 ? detected.build : null
+    // What detection found explains a default only when the default came from it, not from the file's own list.
+    const why =
+      current.length > 0 || previous !== undefined
+        ? []
+        : [
+            ...detected.build.map((b) => `build (${b.name}): ${b.run} — ${b.because}`),
+            ...detected.skipped.map((s) => `skipped \`${s.script}\`: ${s.why}`),
+            ...detected.notes,
+          ]
+
+    if (defaultList !== null) {
+      const answer = yield* questionEffect(world, {
+        name: 'the build steps',
+        flag: '--build <command> (repeatable), or --build none',
+        given: null,
+        prompt: 'Each attempt runs these checks before review — keep this list? (yes / no to write your own)',
+        choices: ['yes', 'no'],
+        fallback: 'yes',
+        why,
+        kept: input.kept,
+      })
+      if ('refused' in answer) return { refused: answer.refused }
+      if (answer.answer === 'yes') return { build: defaultList.map(({ name, run }) => ({ name, run })) }
     }
-    const build = input.given.build[0] === 'none' ? [] : namedFromTyped(input.given.build, originalBuild ?? [])
-    if (build.length === 0) world.log('nothing will check a diff before review')
-    return { build }
-  }
 
-  const defaultList = current.length > 0 ? current : detected.build.length > 0 ? detected.build : null
-  // What detection found explains a default only when the default came from it, not from the file's own list.
-  const why =
-    current.length > 0 || previous !== undefined
-      ? []
-      : [
-          ...detected.build.map((b) => `build (${b.name}): ${b.run} — ${b.because}`),
-          ...detected.skipped.map((s) => `skipped \`${s.script}\`: ${s.why}`),
-          ...detected.notes,
-        ]
-
-  if (defaultList !== null) {
-    const answer = await question(world, {
-      name: 'the build steps',
-      flag: '--build <command> (repeatable), or --build none',
-      given: null,
-      prompt: 'Each attempt runs these checks before review — keep this list? (yes / no to write your own)',
-      choices: ['yes', 'no'],
-      fallback: 'yes',
-      why,
-      kept: input.kept,
-    })
-    if ('refused' in answer) return { refused: answer.refused }
-    if (answer.answer === 'yes') return { build: defaultList.map(({ name, run }) => ({ name, run })) }
-  }
-
-  const typed: string[] = []
-  for (;;) {
-    const answer = await question(world, {
-      name: 'a build command',
-      flag: '--build <command> (repeatable), or --build none',
-      given: null,
-      prompt: 'a command that must pass before review — empty when done',
-      fallback: '',
-      ...(defaultList === null && typed.length === 0 && why.length > 0 ? { why } : {}),
-      kept: input.kept,
-    })
-    if ('refused' in answer) return { refused: answer.refused }
-    if (answer.answer === '') break
-    typed.push(answer.answer)
-  }
-  if (typed.length === 0) world.log('nothing will check a diff before review')
-  return { build: namedFromTyped(typed, originalBuild ?? []) }
+    const typed: string[] = []
+    for (;;) {
+      const answer = yield* questionEffect(world, {
+        name: 'a build command',
+        flag: '--build <command> (repeatable), or --build none',
+        given: null,
+        prompt: 'a command that must pass before review — empty when done',
+        fallback: '',
+        ...(defaultList === null && typed.length === 0 && why.length > 0 ? { why } : {}),
+        kept: input.kept,
+      })
+      if ('refused' in answer) return { refused: answer.refused }
+      if (answer.answer === '') break
+      typed.push(answer.answer)
+    }
+    if (typed.length === 0) world.log('nothing will check a diff before review')
+    return { build: namedFromTyped(typed, originalBuild ?? []) }
+  })
 }
 
-export async function askInstallAndBuild(
+export function askInstallAndBuildEffect(
   world: SetupWorld,
   input: AskInstallAndBuildInput,
-): Promise<AskInstallAndBuildResult> {
-  const detected = input.detected ?? (await detectSetup(input.reader))
-  await printFound(world, detected, input.onPath)
+): Effect.Effect<AskInstallAndBuildResult, unknown> {
+  return Effect.gen(function* () {
+    const detected = input.detected ?? (yield* detectSetupEffect(input.reader))
+    yield* printFound(world, detected, input.onPath)
 
-  let install = await askInstall(world, input, detected)
-  if ('refused' in install) return { refused: install.refused }
+    let install = yield* askInstall(world, input, detected)
+    if ('refused' in install) return { refused: install.refused }
 
-  let build = await askBuild(world, input, detected)
-  if ('refused' in build) return { refused: build.refused }
-
-  let tried: Tried
-  for (;;) {
-    let asked = true
-    for (;;) {
-      tried = await tryTheBuild(world, input, install.run, build.build, asked)
-      if ('again' in tried && tried.again === 'drop') {
-        const failed = new Set(tried.failed)
-        build = { build: build.build.filter((b) => !failed.has(b.run)) }
-        if (build.build.length === 0) world.log('nothing will check a diff before review')
-        asked = false
-        continue
-      }
-      break
-    }
-    if (!('again' in tried)) break
-    // edit: back to the question that can change what failed, every earlier answer kept.
-    if (tried.at === 'install') {
-      install = await askInstall(world, input, detected, install.run)
-      if ('refused' in install) return { refused: install.refused }
-    }
-    build = await askBuild(world, input, detected, build.build)
+    let build = yield* askBuild(world, input, detected)
     if ('refused' in build) return { refused: build.refused }
-  }
-  if ('refused' in tried) return { refused: tried.refused }
 
-  const changes: RecipeChange[] = []
-  const fileOptions = { home: input.home, files: input.files }
+    let tried: Tried
+    for (;;) {
+      let asked = true
+      for (;;) {
+        tried = yield* tryTheBuild(world, input, install.run, build.build, asked)
+        if ('again' in tried && tried.again === 'drop') {
+          const failed: Set<string> = new Set(tried.failed)
+          build = { build: build.build.filter((b) => !failed.has(b.run)) }
+          if (build.build.length === 0) world.log('nothing will check a diff before review')
+          asked = false
+          continue
+        }
+        break
+      }
+      if (!('again' in tried)) break
+      // edit: back to the question that can change what failed, every earlier answer kept.
+      if (tried.at === 'install') {
+        install = yield* askInstall(world, input, detected, install.run)
+        if ('refused' in install) return { refused: install.refused }
+      }
+      build = yield* askBuild(world, input, detected, build.build)
+      if ('refused' in build) return { refused: build.refused }
+    }
+    if ('refused' in tried) return { refused: tried.refused }
 
-  const effectiveInstall = await resolvedRunActions(input.project, 'prepared', fileOptions)
-  const effectiveInstallRun = effectiveInstall?.[0]?.run ?? null
-  if (effectiveInstall === null || install.run !== effectiveInstallRun) {
-    const originalPrepared = (await readRecipeKey(input.project, ['steps', 'prepared'], fileOptions)) as
-      | unknown[]
-      | null
-    const wanted = install.run === null ? [] : [{ name: 'install', run: install.run }]
-    changes.push({ path: ['steps', 'prepared'], value: mergeRunActions(originalPrepared ?? [], wanted) })
-  }
+    const changes: RecipeChange[] = []
+    const fileOptions = { home: input.home, files: input.files }
 
-  const effectiveBuild = await resolvedRunActions(input.project, 'build', fileOptions)
-  const sameBuild =
-    effectiveBuild !== null &&
-    effectiveBuild.length === build.build.length &&
-    effectiveBuild.every((a, i) => a.run === build.build[i]!.run)
-  if (!sameBuild) {
-    const originalBuild = (await readRecipeKey(input.project, ['steps', 'build'], fileOptions)) as unknown[] | null
-    changes.push({ path: ['steps', 'build'], value: mergeRunActions(originalBuild ?? [], build.build) })
-  }
+    const effectiveInstall = yield* resolvedRunActions(input.project, 'prepared', fileOptions)
+    const effectiveInstallRun = effectiveInstall?.[0]?.run ?? null
+    if (effectiveInstall === null || install.run !== effectiveInstallRun) {
+      const originalPrepared = (yield* lift(() => readRecipeKey(input.project, ['steps', 'prepared'], fileOptions))) as
+        | unknown[]
+        | null
+      const wanted = install.run === null ? [] : [{ name: 'install', run: install.run }]
+      changes.push({ path: ['steps', 'prepared'], value: mergeRunActions(originalPrepared ?? [], wanted) })
+    }
 
-  return { changes, trial: tried.trial }
+    const effectiveBuild = yield* resolvedRunActions(input.project, 'build', fileOptions)
+    const sameBuild =
+      effectiveBuild !== null &&
+      effectiveBuild.length === build.build.length &&
+      effectiveBuild.every((a, i) => a.run === build.build[i]!.run)
+    if (!sameBuild) {
+      const originalBuild = (yield* lift(() => readRecipeKey(input.project, ['steps', 'build'], fileOptions))) as
+        | unknown[]
+        | null
+      changes.push({ path: ['steps', 'build'], value: mergeRunActions(originalBuild ?? [], build.build) })
+    }
+
+    return { changes, trial: tried.trial }
+  })
 }

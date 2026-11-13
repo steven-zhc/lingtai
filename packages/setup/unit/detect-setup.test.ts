@@ -5,7 +5,10 @@
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { DETECTORS, detectSetup, detectSetupEffect, type SetupReader, type StackDetector } from '../src/detect-setup.ts'
+import { DETECTORS, detectSetupEffect, type SetupReader, type StackDetector } from '../src/detect-setup.ts'
+
+const detectSetup = (r: SetupReader, detectors?: readonly StackDetector[]) =>
+  Effect.runPromise(detectSetupEffect(r, detectors))
 
 function reader(files: Record<string, string>, opts: { haveNotRead?: string[] } = {}): SetupReader {
   const haveNotRead = new Set(opts.haveNotRead ?? [])

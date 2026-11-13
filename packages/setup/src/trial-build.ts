@@ -34,8 +34,8 @@ export interface TrialReport {
 
 /** The trial: the base it will cut at (asked when it is about to run), and the run itself. */
 export interface Trial {
-  base: () => Promise<string>
-  run: (install: string | null, build: string[]) => Promise<TrialReport>
+  base: Effect.Effect<string, unknown>
+  run: (install: string | null, build: string[]) => Effect.Effect<TrialReport, unknown>
 }
 
 /** Thrown by the runner, after its worktree is gone, when Ctrl+C stopped the trial. */
@@ -320,19 +320,7 @@ export const liveTrialEffect = Effect.fn('setup.trial.live')(function* (
   )
 })
 
-export function trialBase(at: TrialAt): Promise<string> {
-  return Effect.runPromise(trialBaseEffect(at))
-}
-
-export function runLiveTrial(
-  at: Omit<TrialAt, 'interrupt'>,
-  install: string | null,
-  build: string[],
-): Promise<TrialReport> {
-  return Effect.runPromise(liveTrialEffect(at, install, build))
-}
-
 export const liveTrialBuild = (at: Omit<TrialAt, 'interrupt'>): Trial => ({
-  base: () => trialBase(at),
-  run: (install, build) => runLiveTrial(at, install, build),
+  base: trialBaseEffect(at),
+  run: (install, build) => liveTrialEffect(at, install, build),
 })

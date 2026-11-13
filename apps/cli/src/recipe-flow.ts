@@ -45,7 +45,7 @@ import { askAgents } from './agents.ts'
 import { lift, recovering } from './exit.ts'
 import { askLanding, askLimits } from './landing.ts'
 import { acceptingDefaults, questionEffect, type QuestionWorld } from './question.ts'
-import { type AskInstallAndBuildInput, type TrialOutcome, askInstallAndBuild } from './setup-build.ts'
+import { type AskInstallAndBuildInput, type TrialOutcome, askInstallAndBuildEffect } from './setup-build.ts'
 import { askKinds, askTickets } from './source.ts'
 
 /**
@@ -272,27 +272,25 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
     if ('refused' in wroteModelChanges) return wroteModelChanges
   }
 
-  const setup = yield* lift(() =>
-    askInstallAndBuild(askWorld, {
-      project: at.project,
-      reader: at.reader,
-      ...(at.proposal?.detected.known === true ? { detected: at.proposal.detected.value } : {}),
-      given: {
-        install: at.flags['install'] ?? null,
-        build: at.buildFlags.length === 0 ? null : [...at.buildFlags],
-        // Keyed on the world and not on the flag, so a person who typed `yes` at
-        // "use every default?" is held to it as `--defaults` is: no scripted or
-        // defaulted setup runs minutes of somebody's build (#436).
-        check: (at.flags['check-build'] as 'yes' | 'no' | undefined) ?? (askWorld !== world ? 'no' : null),
-      },
-      tryBuild: typeof at.tryBuild === 'function' ? at.tryBuild(files) : (at.tryBuild ?? null),
-      recipeExisted: !absent,
-      onPath: toolOnPath,
-      home: at.home,
-      files,
-      kept: askKept,
-    }),
-  )
+  const setup = yield* askInstallAndBuildEffect(askWorld, {
+    project: at.project,
+    reader: at.reader,
+    ...(at.proposal?.detected.known === true ? { detected: at.proposal.detected.value } : {}),
+    given: {
+      install: at.flags['install'] ?? null,
+      build: at.buildFlags.length === 0 ? null : [...at.buildFlags],
+      // Keyed on the world and not on the flag, so a person who typed `yes` at
+      // "use every default?" is held to it as `--defaults` is: no scripted or
+      // defaulted setup runs minutes of somebody's build (#436).
+      check: (at.flags['check-build'] as 'yes' | 'no' | undefined) ?? (askWorld !== world ? 'no' : null),
+    },
+    tryBuild: typeof at.tryBuild === 'function' ? at.tryBuild(files) : (at.tryBuild ?? null),
+    recipeExisted: !absent,
+    onPath: toolOnPath,
+    home: at.home,
+    files,
+    kept: askKept,
+  })
   if ('refused' in setup) return setup
   const trial = setup.trial
   // Said only once the write that carries the list has happened, never when it was chosen.

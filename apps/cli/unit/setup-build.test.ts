@@ -6,11 +6,12 @@
  */
 import { type RecipeFiles, recipePath, resolveSource, setRecipe } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { acceptingDefaults } from '../src/question.ts'
 import {
-  askInstallAndBuild,
+  askInstallAndBuildEffect,
   type AskInstallAndBuildInput,
   type SetupWorld,
   type TrialResult,
@@ -45,8 +46,14 @@ function trial(
   run: (install: string | null, build: string[]) => Promise<{ results: TrialResult[]; nothingDeclared: boolean }>,
   base = 'main',
 ): NonNullable<AskInstallAndBuildInput['tryBuild']> {
-  return { base: async () => base, run }
+  return {
+    base: Effect.succeed(base),
+    run: (install, build) => Effect.tryPromise({ try: () => run(install, build), catch: (e) => e }),
+  }
 }
+
+const askInstallAndBuild = (world: SetupWorld, input: AskInstallAndBuildInput) =>
+  Effect.runPromise(askInstallAndBuildEffect(world, input))
 
 const EMPTY_READER: SetupReader = { has: async () => false, read: async () => null }
 

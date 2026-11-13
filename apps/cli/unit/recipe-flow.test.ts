@@ -471,11 +471,15 @@ describe('askRecipe — the trial run (#436)', () => {
       keptBeforeWrite: 'Nothing was written',
       files: mapFiles(),
       tryBuild: {
-        base: async () => 'main',
-        run: async (_install, build) => {
-          calls.push(build)
-          return { results: [{ command: 'pnpm test', outcome: 'passed', evidence: '' }], nothingDeclared: false }
-        },
+        base: Effect.succeed('main'),
+        run: (_install, build) =>
+          Effect.sync(() => {
+            calls.push(build)
+            return {
+              results: [{ command: 'pnpm test', outcome: 'passed' as const, evidence: '' }],
+              nothingDeclared: false,
+            }
+          }),
       },
     } satisfies RecipeAt)
     return { result, calls }
@@ -505,11 +509,12 @@ describe('askRecipe — the trial run (#436)', () => {
 
   describe('a kept failed list says it is written only once it is', () => {
     const failing = {
-      base: async () => 'main',
-      run: async () => ({
-        results: [{ command: 'pnpm test', outcome: 'failed' as const, evidence: 'boom' }],
-        nothingDeclared: false,
-      }),
+      base: Effect.succeed('main'),
+      run: () =>
+        Effect.succeed({
+          results: [{ command: 'pnpm test', outcome: 'failed' as const, evidence: 'boom' }],
+          nothingDeclared: false,
+        }),
     }
     const go = async (stopAfterKeep: boolean) => {
       let kept = false
