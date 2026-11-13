@@ -32,7 +32,7 @@ const root = fileURLToPath(new URL('../../../', import.meta.url))
  * 0101 §6's list. Pinned here: a baseline that could drop a key would be a way out.
  * `packages/telegram` is not on it: it is deliberately free of `effect` (`packages/telegram/src/cli.ts:12-17`
  * imports nothing a third party's notifier could not, and `:35-37` says a merge reaches it with no
- * `pnpm install`), so converting it would break both.
+ * `pnpm install`), so converting it would break both. Decided when #790 ended (#1116): it stays off the list.
  */
 const PACKAGES = [
   'apps/cli',
@@ -48,8 +48,46 @@ const PACKAGES = [
   'packages/recipe',
 ] as const
 
-/** Paths under a counted `src/` that are excluded, each with its reason. Empty today. */
-const NOT_COUNTED: readonly { path: string; reason: string }[] = []
+/**
+ * A file under a counted `src/` that the package total leaves out, with the counts it has. The counts are
+ * measured, not trusted: the ratchet still counts the file and is red when either differs, in either direction.
+ * **Adding a path to `NOT_COUNTED` or `HOST_EDGES`, or raising a count in one, is raising the baseline.**
+ */
+export interface Exclusion {
+  path: string
+  async: number
+  run: number
+  reason: string
+  /** When set, every module the file loads must satisfy it, and the red names the one that does not. */
+  imports?: (specifier: string) => boolean
+}
+
+/** `notify.ts` imports `node:` and the extension's index, and nothing else, so it starts with no database or credentials. */
+const NOTIFY_IMPORTS = '../../../packages/extension/src/index.ts'
+const notifyMayImport = (specifier: string): boolean => specifier.startsWith('node:') || specifier === NOTIFY_IMPORTS
+
+/** Files that are never Effects by design. */
+const NOT_COUNTED: readonly Exclusion[] = [
+  {
+    path: 'apps/cli/src/prompt.ts',
+    async: 5,
+    run: 0,
+    reason: 'the @clack/prompts wrapper; kept promise-shaped by the operator, 2026-11-12',
+  },
+  {
+    path: 'apps/cli/src/notify.ts',
+    async: 5,
+    run: 0,
+    reason:
+      'an extension run as its own process, importing only node: and packages/extension, as packages/telegram does',
+    imports: notifyMayImport,
+  },
+]
+
+/** Where the program's own run is: a host's edge (0101 §6). */
+const HOST_EDGES: readonly Exclusion[] = [
+  { path: 'apps/cli/src/entry.ts', async: 0, run: 1, reason: "the program's one run (0101 §6)" },
+]
 
 interface Hit {
   line: number
@@ -400,7 +438,7 @@ export function checkFaces(
   if (!Array.isArray(entries)) return { exempt, refusals: [`${head} is not an array.`] }
   const seen = new Set<string>()
   let prev: FaceEntry | undefined
-  const skip = NOT_COUNTED.map((n) => n.path)
+  const skip = [...NOT_COUNTED, ...HOST_EDGES].map((n) => n.path)
   for (const [i, raw] of (entries as unknown[]).entries()) {
     const e = raw as Partial<Record<keyof FaceEntry, unknown>> | null
     const str = (k: keyof FaceEntry): string => (typeof e?.[k] === 'string' ? (e[k] as string) : '')
@@ -441,6 +479,82 @@ export function checkFaces(
     exempt.set(entry.file, byPos)
   }
   return { exempt, refusals }
+}
+
+/** Every module a file names: `import`, `export … from`, `import(…)`, `require(…)`, `import x = require(…)`, `import('x').T`. */
+export function modulesOf(name: string, text: string): { specifier: string; line: number }[] {
+  const sf = parse(name, text)
+  const found: { specifier: string; line: number }[] = []
+  const at = (n: ts.Node): number => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1
+  const note = (n: ts.Node, arg: ts.Node | undefined): void => {
+    found.push({
+      specifier: arg && ts.isStringLiteralLike(arg) ? arg.text : `<${arg ? arg.getText(sf) : 'nothing'}>`,
+      line: at(n),
+    })
+  }
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) || (ts.isExportDeclaration(node) && node.moduleSpecifier)) {
+      note(node, node.moduleSpecifier)
+    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      note(node, node.moduleReference.expression)
+    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+      note(node, node.argument.literal)
+    } else if (
+      ts.isCallExpression(node) &&
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
+    ) {
+      note(node, node.arguments[0])
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  return found
+}
+
+/**
+ * The exclusion lists, checked without the filesystem: `read` hands back a file's text or undefined. Each entry
+ * is counted with the ratchet's own `count` and must match exactly; a file that names its imports is held to them.
+ */
+export function checkExclusions(
+  lists: readonly { name: string; entries: readonly Exclusion[] }[],
+  read: (file: string) => string | undefined,
+  shared: ReadonlySet<string>,
+): string[] {
+  const problems: string[] = []
+  const seen = new Set<string>()
+  for (const { name, entries } of lists) {
+    for (const e of entries) {
+      const who = `${name} ${e.path}`
+      if (seen.has(e.path)) problems.push(`${who} is listed twice.`)
+      seen.add(e.path)
+      if (!PACKAGES.some((p) => e.path.startsWith(`${p}/src/`))) {
+        problems.push(`${who} is outside the packages the ratchet counts.`)
+        continue
+      }
+      if (e.reason.trim() === '') problems.push(`${who}: \`reason\` is empty.`)
+      const text = read(e.path)
+      if (text === undefined) {
+        problems.push(`${who}: no file ${e.path}.`)
+        continue
+      }
+      const c = count(e.path, text, shared)
+      for (const measure of ['async', 'run'] as const) {
+        if (c[measure].length !== e[measure]) {
+          problems.push(
+            `${who}.${measure} is ${c[measure].length}, listed as ${e[measure]}: the listed count is measured and must match. ` +
+              `Adding to ${name}, or raising a count in it, is raising the baseline.`,
+          )
+        }
+      }
+      for (const m of e.imports ? modulesOf(e.path, text) : []) {
+        if (!e.imports!(m.specifier)) {
+          problems.push(`${who}:${m.line} imports \`${m.specifier}\`, which this file may not: ${e.reason}.`)
+        }
+      }
+    }
+  }
+  return problems
 }
 
 async function walk(dir: string): Promise<string[]> {
@@ -697,6 +811,74 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
     })
   })
 
+  describe('checkExclusions', () => {
+    const E = `import { Effect } from 'effect'\n`
+    const path = 'apps/cli/src/x.ts'
+    const entry: Exclusion = { path, async: 2, run: 0, reason: 'why' }
+    const check = (text: string | undefined, e: Exclusion = entry): string =>
+      checkExclusions([{ name: 'NOT_COUNTED', entries: [e] }], (f) => (f === path ? text : undefined), new Set()).join(
+        '\n',
+      )
+    const two = 'async function a() {}\nasync function b() {}\n'
+
+    it('accepts a file whose counts are the listed ones', () => {
+      expect(check(two)).toBe('')
+      expect(check(`${E}Effect.runPromise(g())\n`, { ...entry, async: 0, run: 1 })).toBe('')
+    })
+    it('is red on a sixth async where five are listed, and on one fewer', () => {
+      expect(check(`${two}async function c() {}\n`)).toMatch(/x\.ts\.async is 3, listed as 2/)
+      expect(check('async function a() {}\n')).toMatch(/x\.ts\.async is 1, listed as 2/)
+    })
+    it('is red on a second run in a host edge', () => {
+      const edge = { ...entry, async: 0, run: 1 }
+      expect(check(`${E}Effect.runPromise(g())\nEffect.runPromise(h())\n`, edge)).toMatch(/\.run is 2, listed as 1/)
+      expect(check('export {}\n', edge)).toMatch(/\.run is 0, listed as 1/)
+    })
+    it('says that adding to a list is raising the baseline', () => {
+      expect(check(`${two}async function c() {}\n`)).toMatch(/is raising the baseline/)
+    })
+    it('refuses a path outside the counted packages, a missing file and a listing twice', () => {
+      expect(check(two, { ...entry, path: 'packages/telegram/src/x.ts' })).toMatch(/outside the packages/)
+      expect(check(undefined)).toMatch(/no file/)
+      expect(checkExclusions([{ name: 'A', entries: [entry, entry] }], () => two, new Set()).join('\n')).toMatch(
+        /listed twice/,
+      )
+    })
+    it('holds a file to its imports, and names the one that is not allowed and its line', () => {
+      const imports = (s: string): boolean => s.startsWith('node:') || s === 'ok'
+      const e = { ...entry, async: 0, imports }
+      expect(check(`import { a } from 'node:fs'\nimport type { B } from 'ok'\n`, e)).toBe('')
+      expect(check(`import { a } from 'node:fs'\nimport { Effect } from 'effect'\n`, e)).toMatch(
+        /x\.ts:2 imports `effect`/,
+      )
+    })
+    it('finds an import however it is spelled', () => {
+      const t = [
+        `export { a } from 'one'`,
+        `const b = await import('two')`,
+        `const c = require('three')`,
+        `import d = require('four')`,
+        `type T = import('five').T`,
+        `import('./' + x)`,
+      ].join('\n')
+      expect(modulesOf('y.ts', t).map((m) => m.specifier)).toEqual([
+        'one',
+        'two',
+        'three',
+        'four',
+        'five',
+        "<'./' + x>",
+      ])
+    })
+    it("holds notify.ts to node: and the extension's index", () => {
+      expect(notifyMayImport('node:child_process')).toBe(true)
+      expect(notifyMayImport(NOTIFY_IMPORTS)).toBe(true)
+      expect(notifyMayImport('effect')).toBe(false)
+      expect(notifyMayImport('@lingtai/event-store')).toBe(false)
+      expect(notifyMayImport('../../../packages/extension/src/other.ts')).toBe(false)
+    })
+  })
+
   it('has the counted packages as the baseline keys', () => {
     expect(Object.keys(baseline).sort()).toEqual([...PACKAGES].sort())
   })
@@ -716,20 +898,30 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
     const problems: string[] = [...refusals]
     const notCounted: string[] = []
     const measured: Record<string, { async: number; run: number }> = {}
-    const skip = NOT_COUNTED.map((n) => n.path)
+    const excluded = new Set([...NOT_COUNTED, ...HOST_EDGES].map((n) => n.path))
     const sources = new Map<string, string>()
     for (const pkg of PACKAGES) {
       for (const full of await walk(`${root}${pkg}/src`)) {
         const f = full.slice(root.length)
-        if (!skip.includes(f)) sources.set(f, await readFile(full, 'utf8'))
+        sources.set(f, await readFile(full, 'utf8'))
       }
     }
     const shared = new Set<string>()
     for (const [f, text] of sources) for (const x of emptyContextExports(f, text)) shared.add(x)
+    problems.push(
+      ...checkExclusions(
+        [
+          { name: 'NOT_COUNTED', entries: NOT_COUNTED },
+          { name: 'HOST_EDGES', entries: HOST_EDGES },
+        ],
+        (f) => sources.get(f),
+        shared,
+      ),
+    )
     await Promise.all(
       PACKAGES.map(async (pkg) => {
         const parsed = [...sources]
-          .filter(([f]) => f.startsWith(`${pkg}/src/`))
+          .filter(([f]) => f.startsWith(`${pkg}/src/`) && !excluded.has(f))
           .map(([f, text]) => ({ f, c: count(f, text, shared) }))
         const hits = { async: [] as string[], run: [] as string[] }
         for (const { f, c } of parsed) {
@@ -749,7 +941,8 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
             problems.push(
               `${pkg}.${measure} is ${n}, baseline ${base}:\n${hits[measure].map((h) => `  ${h}`).join('\n')}\n` +
                 `0101 §6: every backend function that does IO is an Effect, and \`Effect.run*\` runs only at a host's edge — see epic #790. ` +
-                `Write it as an Effect. A promise face kept for callers not yet moved is listed in effect-ratchet.faces.json, and is never paid for by raising this number.`,
+                `Write it as an Effect. A promise face kept for callers not yet moved is listed in effect-ratchet.faces.json, and is never paid for by raising this number. ` +
+                `Adding a path to NOT_COUNTED or HOST_EDGES, or raising a count in either, is raising the baseline.`,
             )
           } else if (n < base) {
             problems.push(
@@ -761,6 +954,11 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
     )
     if (problems.length > 0) {
       problems.push(`measured now:\n${JSON.stringify(measured, null, 2)}`)
+      problems.push(
+        `not counted, listed as exclusions:\n${[...NOT_COUNTED, ...HOST_EDGES]
+          .map((e) => `  ${e.path} async ${e.async} run ${e.run} (${e.reason})`)
+          .join('\n')}`,
+      )
       if (notCounted.length > 0)
         problems.push(
           `not counted, listed as promise faces:\n${notCounted
