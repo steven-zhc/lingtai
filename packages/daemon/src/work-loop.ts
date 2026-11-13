@@ -289,7 +289,7 @@ export interface WorkLoopOptions {
    */
   discuss?: (event: Envelope) => Effect.Effect<void>
   /** A new wait or a resume (`TRIAGE_EVENTS`), handed to the daemon's triage queue off the pass path. */
-  triage?: (event: Envelope) => Promise<void>
+  triage?: (event: Envelope) => Effect.Effect<void>
   /**
    * How often to sweep for work nothing announced. `0` disables it, which is
    * what a test wants and what a machine with a reachable webhook can afford.
@@ -570,7 +570,8 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
       deliver('discuss', event, (e) => Effect.runPromiseWith(services)(Effect.suspend(() => discuss(e))))
     }
     if ((TRIAGE_EVENTS as readonly string[]).includes(event.type) && options.triage) {
-      deliver('triage', event, options.triage)
+      const triage = options.triage
+      deliver('triage', event, (e) => Effect.runPromiseWith(services)(Effect.suspend(() => triage(e))))
     }
     if (!triggers.has(event.type)) return
     void kick('completion')

@@ -15,8 +15,8 @@
 import { createRuntime, runtimeRun, runtimeVersionOf, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import { readingFor } from '@lingtai/conductor/discuss'
-import { currentRecipe, loadProject, loadProjects } from '@lingtai/conductor/projects'
-import { readProjectTicket, type ReadProjectTicket } from '@lingtai/conductor/read-ticket'
+import { currentRecipeEffect, loadProjectEffect, loadProjectsEffect } from '@lingtai/conductor/projects'
+import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
 import { recordPrompt } from '@lingtai/conductor/record-prompt'
 import { readState } from '@lingtai/conductor/snapshot-state'
 import {
@@ -54,305 +54,372 @@ import {
   ConcurrencyError,
   eventStore,
   log as processLog,
+  readThroughSnapshot,
   type EventStore,
   type SnapshotReadOptions,
 } from '@lingtai/event-store'
-import { readTasks, type TaskCard } from '@lingtai/projector'
+import { readTasksEffect, type TaskCard } from '@lingtai/projector'
 import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
-import { conflictedPathsAt, diffStatAt, listAt, readAt, refSha, type ConflictedPath } from '@lingtai/repo'
+import { conflictedPathsAt, diffStatAt, listAt, readAt, refSha, refShaEffect, type ConflictedPath } from '@lingtai/repo'
+import { Cause, Context, Deferred, Effect, Exit, Semaphore } from 'effect'
 
 import { prepare } from './discuss.ts'
+import { lift } from './exit.ts'
 import { prepareTriageCheckout } from './triage-checkout.ts'
 
 /** One queue for this daemon process; the key stays present until its worker settles. */
-const queued = new Map<string, { done: Promise<unknown>; settled: Promise<void> }>()
+const queued = new Map<string, { done: Deferred.Deferred<unknown, unknown>; settled: Deferred.Deferred<void> }>()
+/** One agent at a time, across every key. */
+const permit = Semaphore.makeUnsafe(1)
 /** What a worker answers when a lock held it back: a scan that joined it must ask again. */
 const HELD = Symbol('held')
-let tail: Promise<void> = Promise.resolve()
 
-function queueTriage(
+const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
+/**
+ * Queue `work` behind the one permit. A new key forks a detached worker, which keeps the
+ * caller's context and outlives it; a key already queued hands back the same Deferreds.
+ */
+function enqueue(
   key: { ticketId: string; waitId: WaitId },
-  run: () => Promise<unknown>,
+  work: Effect.Effect<unknown, unknown>,
   log: (line: string) => void,
-): { added: boolean; done: Promise<unknown>; settled: Promise<void> } {
-  const id = JSON.stringify([key.ticketId, key.waitId])
-  const existing = queued.get(id)
-  if (existing) return { added: false, ...existing }
-  const done = tail.then(run)
-  tail = done
-    .then(
-      () => {},
-      (err) => {
-        log(`triage ${key.waitId}: ${err instanceof Error ? err.message : String(err)}`)
-      },
-    )
-    .finally(() => {
-      queued.delete(id)
-    })
-  queued.set(id, { done, settled: tail })
-  return { added: true, done, settled: tail }
+): Effect.Effect<{
+  added: boolean
+  done: Deferred.Deferred<unknown, unknown>
+  settled: Deferred.Deferred<void>
+}> {
+  return Effect.suspend(
+    (): Effect.Effect<{
+      added: boolean
+      done: Deferred.Deferred<unknown, unknown>
+      settled: Deferred.Deferred<void>
+    }> => {
+      const id = JSON.stringify([key.ticketId, key.waitId])
+      const existing = queued.get(id)
+      if (existing) return Effect.succeed({ added: false, ...existing })
+      const done = Deferred.makeUnsafe<unknown, unknown>()
+      const settled = Deferred.makeUnsafe<void>()
+      queued.set(id, { done, settled })
+      const worker = permit
+        .withPermits(1)(work)
+        .pipe(
+          Effect.exit,
+          Effect.flatMap((exit) =>
+            Effect.gen(function* () {
+              yield* Deferred.done(done, exit)
+              if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) {
+                log(`triage ${key.waitId}: ${messageOf(Cause.squash(exit.cause))}`)
+              }
+            }),
+          ),
+          // A worker that dies or is interrupted still frees its key: a later scan must get a new one.
+          Effect.ensuring(
+            Effect.suspend(() => {
+              queued.delete(id)
+              return Deferred.succeed(settled, undefined)
+            }),
+          ),
+        )
+      return Effect.as(Effect.forkDetach(worker), { added: true, done, settled })
+    },
+  )
 }
 
 export function enqueueTriage(
   key: { ticketId: string; waitId: WaitId },
-  run: () => Promise<unknown>,
+  run: Effect.Effect<unknown, unknown>,
   log: (line: string) => void = console.error,
 ): boolean {
-  return queueTriage(key, run, log).added
+  return Effect.runSyncWith(Context.empty())(enqueue(key, run, log)).added
 }
 
 export interface TriageTriggerPorts {
   store: Pick<EventStore, 'read'>
   /** Every registered project, for a lift that names none (`DayCeilingLifted`); absent means none. */
-  projects?: () => Promise<readonly string[]>
-  triageFor(project: string): Promise<Triage | null>
-  /** Rejects while the start time is unread: nothing is decided from a substituted one (#583). */
-  daemonStartedAt: () => Promise<Date>
-  run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
+  projects?: () => Effect.Effect<readonly string[], unknown>
+  triageFor(project: string): Effect.Effect<Triage | null, unknown>
+  /** Fails while the start time is unread: nothing is decided from a substituted one (#583). */
+  daemonStartedAt: () => Effect.Effect<Date, unknown>
+  run(request: WaitTriageRequest): Effect.Effect<{ started?: boolean } | void, unknown>
   log?: (line: string) => void
   /** A sentence while the project is locked (0126 §5); absent means no lock. */
-  locked?: (project: string) => Promise<string | null>
+  locked?: (project: string) => Effect.Effect<string | null, unknown>
 }
 
 export interface CatchUpTriagePorts extends SnapshotReadOptions {
   store: Pick<EventStore, 'read' | 'readTypes' | 'append'>
-  readTasks(project: string): Promise<Pick<TaskCard, 'issue' | 'state'>[]>
-  baseSha(project: string): Promise<string | null>
-  /** Rejects while the start time is unread: nothing is decided from a substituted one (#583). */
-  daemonStartedAt: () => Promise<Date>
-  run(request: WaitTriageRequest): Promise<{ started?: boolean } | void>
+  readTasks(project: string): Effect.Effect<Pick<TaskCard, 'issue' | 'state'>[], unknown>
+  baseSha(project: string): Effect.Effect<string | null, unknown>
+  /** Fails while the start time is unread: nothing is decided from a substituted one (#583). */
+  daemonStartedAt: () => Effect.Effect<Date, unknown>
+  run(request: WaitTriageRequest): Effect.Effect<{ started?: boolean } | void, unknown>
   log?: (line: string) => void
   /** A sentence while the project is locked (0126 §5); absent means no lock. */
-  locked?: (project: string) => Promise<string | null>
+  locked?: (project: string) => Effect.Effect<string | null, unknown>
 }
 
-const notLocked = () => Promise.resolve(null)
+const notLocked = () => Effect.succeed(null)
 
 /** The events that lift a hold on every project at once; they name none. */
 const LIFTS_OF_A_DAY = ['DayCeilingLifted'] as const
 
-/** Scan the board's waiting candidates, but let each ticket stream decide whether its wait is current. */
-export async function catchUpTriage(project: string, triage: Triage | null, deps: CatchUpTriagePorts): Promise<void> {
-  if (triage === null) return
-  // Before any scan, so a start time that cannot be read fails the scan and the
-  // recipe hash stays unpinned: the next pass asks again (#583).
-  const startedAt = await deps.daemonStartedAt()
-  for (const card of await deps.readTasks(project)) {
-    if (card.state !== 'waiting') continue
-    // The stream name comes from the domain helper, not the board's row key.
-    const stream = ticketStream(project, card.issue)
-    await catchUpWait(stream, triage, deps, startedAt)
-  }
-}
-
-async function catchUpWait(ticketId: string, triage: Triage, deps: CatchUpTriagePorts, startedAt: Date): Promise<void> {
-  const state = await readState(deps.store, ticketReducer, ticketId, 'all', deps)
-  const lifecycle = state.lifecycle
-  if (lifecycle.status !== 'blocked') return
-  const { waitId, reason } = lifecycle
-  const status = triageStatus(reason, triageFactsFromState(state, waitId), {
-    declared: true,
-    daemonStartedAt: startedAt,
-  })
-  if (status._tag !== 'Queued' && status._tag !== 'Interrupted') return
-  const start = () =>
-    queueTriage(
-      { ticketId, waitId },
-      async () => {
-        // A person or the live subscriber may have answered this while it waited in the queue.
-        const latest = await readState(deps.store, ticketReducer, ticketId, 'all', deps)
-        const current = latest.lifecycle
-        if (current.status !== 'blocked' || current.waitId !== waitId) return
-        const facts = triageFactsFromState(latest, waitId)
-        const next = triageStatus(current.reason, facts, { declared: true, daemonStartedAt: startedAt })
-        if (next._tag === 'Queued' || (next._tag === 'Interrupted' && (facts.started?.attempt ?? 0) < 2)) {
-          // Held back means nothing is appended: the wait stays `Queued` (or
-          // `Interrupted`) until a resume scan or a restart finds it again.
-          const why = await (deps.locked ?? notLocked)(parseTicketStream(ticketId)?.project ?? '').catch(
-            (err: Error) => err.message,
-          )
-          if (why !== null) {
-            deps.log?.(`triage ${waitId} on ${ticketId}: not started — ${why}`)
-            return HELD
-          }
-          const outcome = await deps.run({ ticketId, waitId, reason: current.reason, triage })
-          if (outcome && outcome.started === false) throw new Error(`could not start triage ${waitId}`)
-        } else if (next._tag === 'Interrupted') {
-          await finishInterrupted(ticketId, waitId, deps, startedAt)
-        }
-      },
-      deps.log ?? console.error,
+/** `catchCause` that lets an interruption through; the squashed failure is what `onError` reads. */
+const recoverWith =
+  <B, E2 = never>(onError: (err: unknown) => Effect.Effect<B, E2>) =>
+  <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A | B, E2, R> =>
+    self.pipe(
+      Effect.catchCause((cause): Effect.Effect<B, E2> =>
+        Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause as Cause.Cause<never>) : onError(Cause.squash(cause)),
+      ),
     )
-  const first = start()
-  const result = await first.done
-  // This scan joined a worker whose lock read may predate a resume: once that
-  // worker has settled, ask again rather than let the resume be consumed.
-  if (!first.added && result === HELD) {
-    await first.settled
-    await start().done
-  }
-}
+
+/** Scan the board's waiting candidates, but let each ticket stream decide whether its wait is current. */
+export const catchUpTriage = (project: string, triage: Triage | null, deps: CatchUpTriagePorts) =>
+  Effect.gen(function* () {
+    if (triage === null) return
+    // Before any scan, so a start time that cannot be read fails the scan and the
+    // recipe hash stays unpinned: the next pass asks again (#583).
+    const startedAt = yield* deps.daemonStartedAt()
+    for (const card of yield* deps.readTasks(project)) {
+      if (card.state !== 'waiting') continue
+      // The stream name comes from the domain helper, not the board's row key.
+      const stream = ticketStream(project, card.issue)
+      yield* catchUpWait(stream, triage, deps, startedAt)
+    }
+  })
+
+const catchUpWait = (ticketId: string, triage: Triage, deps: CatchUpTriagePorts, startedAt: Date) =>
+  Effect.gen(function* () {
+    const state = yield* readThroughSnapshot(deps.store, ticketReducer, ticketId, 'all', deps)
+    const lifecycle = state.lifecycle
+    if (lifecycle.status !== 'blocked') return
+    const { waitId, reason } = lifecycle
+    const status = triageStatus(reason, triageFactsFromState(state, waitId), {
+      declared: true,
+      daemonStartedAt: startedAt,
+    })
+    if (status._tag !== 'Queued' && status._tag !== 'Interrupted') return
+    const start = () =>
+      enqueue(
+        { ticketId, waitId },
+        Effect.gen(function* () {
+          // A person or the live subscriber may have answered this while it waited in the queue.
+          const latest = yield* readThroughSnapshot(deps.store, ticketReducer, ticketId, 'all', deps)
+          const current = latest.lifecycle
+          if (current.status !== 'blocked' || current.waitId !== waitId) return
+          const facts = triageFactsFromState(latest, waitId)
+          const next = triageStatus(current.reason, facts, { declared: true, daemonStartedAt: startedAt })
+          if (next._tag === 'Queued' || (next._tag === 'Interrupted' && (facts.started?.attempt ?? 0) < 2)) {
+            // Held back means nothing is appended: the wait stays `Queued` (or
+            // `Interrupted`) until a resume scan or a restart finds it again.
+            const why = yield* (deps.locked ?? notLocked)(parseTicketStream(ticketId)?.project ?? '').pipe(
+              recoverWith((err) => Effect.succeed(messageOf(err))),
+            )
+            if (why !== null) {
+              deps.log?.(`triage ${waitId} on ${ticketId}: not started — ${why}`)
+              return HELD
+            }
+            const outcome = yield* deps.run({ ticketId, waitId, reason: current.reason, triage })
+            if (outcome && outcome.started === false)
+              return yield* Effect.fail(new Error(`could not start triage ${waitId}`))
+          } else if (next._tag === 'Interrupted') {
+            yield* finishInterrupted(ticketId, waitId, deps, startedAt)
+          }
+        }),
+        deps.log ?? console.error,
+      )
+    const first = yield* start()
+    const result = yield* Deferred.await(first.done)
+    // This scan joined a worker whose lock read may predate a resume: once that
+    // worker has settled, ask again rather than let the resume be consumed.
+    if (!first.added && result === HELD) {
+      yield* Deferred.await(first.settled)
+      const again = yield* start()
+      yield* Deferred.await(again.done)
+    }
+  })
 
 /** Finish the second interrupted attempt only while it is still the latest unfinished attempt. */
-async function finishInterrupted(
-  ticketId: string,
-  waitId: WaitId,
-  deps: CatchUpTriagePorts,
-  startedAt: Date,
-): Promise<void> {
-  for (let tries = 0; tries < 5; tries += 1) {
-    const reduced = await readState(deps.store, ticketReducer, ticketId, 'all', deps)
-    const lifecycle = reduced.lifecycle
-    if (lifecycle.status !== 'blocked' || lifecycle.waitId !== waitId) return
-    const facts = triageFactsFromState(reduced, waitId)
-    if (
-      facts.started === null ||
-      facts.started.attempt < 2 ||
-      triageStatus(lifecycle.reason, facts, { declared: true, daemonStartedAt: startedAt })._tag !== 'Interrupted'
-    )
-      return
-    const started = reduced.waits.findLast((w) => w.waitId === waitId)!.triage.started!
-    const runId = 'run' in lifecycle.reason ? lifecycle.reason.run.runId : null
-    const headSha = runId === null ? null : (await readState(deps.store, attemptReducer, runId, 'all', deps)).headSha
-    const baseSha = headSha === null ? await deps.baseSha(parseTicketStream(ticketId)!.project) : null
-    try {
-      await deps.store.append(ticketId, reduced.version, [
-        {
-          type: 'WaitTriaged',
-          actor: 'conductor',
-          data: parsePayload('WaitTriaged', {
-            waitId,
-            attempt: facts.started.attempt,
-            headSha: headSha ?? baseSha ?? '',
-            result: { _tag: 'TriageFailed', why: 'interrupted' },
-            by: started.by,
-          }),
-        },
-      ])
-      return
-    } catch (err) {
-      if (!(err instanceof ConcurrencyError)) throw err
+const finishInterrupted = (ticketId: string, waitId: WaitId, deps: CatchUpTriagePorts, startedAt: Date) =>
+  Effect.gen(function* () {
+    for (let tries = 0; tries < 5; tries += 1) {
+      const reduced = yield* readThroughSnapshot(deps.store, ticketReducer, ticketId, 'all', deps)
+      const lifecycle = reduced.lifecycle
+      if (lifecycle.status !== 'blocked' || lifecycle.waitId !== waitId) return
+      const facts = triageFactsFromState(reduced, waitId)
+      if (
+        facts.started === null ||
+        facts.started.attempt < 2 ||
+        triageStatus(lifecycle.reason, facts, { declared: true, daemonStartedAt: startedAt })._tag !== 'Interrupted'
+      )
+        return
+      const started = reduced.waits.findLast((w) => w.waitId === waitId)!.triage.started!
+      const runId = 'run' in lifecycle.reason ? lifecycle.reason.run.runId : null
+      const headSha =
+        runId === null ? null : (yield* readThroughSnapshot(deps.store, attemptReducer, runId, 'all', deps)).headSha
+      const baseSha = headSha === null ? yield* deps.baseSha(parseTicketStream(ticketId)!.project) : null
+      const attempt = facts.started.attempt
+      const appended = yield* lift(() =>
+        deps.store.append(ticketId, reduced.version, [
+          {
+            type: 'WaitTriaged',
+            actor: 'conductor',
+            data: parsePayload('WaitTriaged', {
+              waitId,
+              attempt,
+              headSha: headSha ?? baseSha ?? '',
+              result: { _tag: 'TriageFailed', why: 'interrupted' },
+              by: started.by,
+            }),
+          },
+        ]),
+      ).pipe(
+        Effect.as(true),
+        recoverWith((err) => (err instanceof ConcurrencyError ? Effect.succeed(false) : Effect.die(err))),
+      )
+      if (appended) return
     }
-  }
-  throw new Error(`could not finish interrupted triage ${waitId} after version conflicts`)
-}
+    return yield* Effect.fail(new Error(`could not finish interrupted triage ${waitId} after version conflicts`))
+  })
 
 /** A successful scan pins the resolved triage section until a later pass sees a different one. */
-export async function catchUpChangedTriage(
+export const catchUpChangedTriage = (
   project: string,
   triage: Triage | null,
   hashes: Map<string, string>,
   deps: CatchUpTriagePorts,
-): Promise<void> {
-  const hash = JSON.stringify(triage)
-  if (hashes.get(project) === hash) return
-  await catchUpTriage(project, triage, deps)
-  hashes.set(project, hash)
-}
+) =>
+  Effect.gen(function* () {
+    const hash = JSON.stringify(triage)
+    if (hashes.get(project) === hash) return
+    yield* catchUpTriage(project, triage, deps)
+    hashes.set(project, hash)
+  })
 
 /** An unreadable recipe supplies no triage declaration; try it again on a later pass. */
-export async function catchUpRegisteredTriage<T extends { project: string | null }>(
+export const catchUpRegisteredTriage = <T extends { project: string | null }>(
   projects: readonly T[],
-  resolve: (project: T) => Promise<Triage | null>,
-  scan: (project: string, triage: Triage | null) => Promise<void>,
+  resolve: (project: T) => Effect.Effect<Triage | null, unknown>,
+  scan: (project: string, triage: Triage | null) => Effect.Effect<void, unknown>,
   log: (line: string) => void,
-): Promise<void> {
-  for (const project of projects) {
-    if (project.project === null) continue
-    try {
-      await scan(project.project, await resolve(project))
-    } catch (err) {
-      log(`triage catch-up ${project.project}: ${(err as Error).message}`)
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    for (const project of projects) {
+      if (project.project === null) continue
+      const name = project.project
+      yield* Effect.gen(function* () {
+        yield* scan(name, yield* resolve(project))
+      }).pipe(recoverWith((err) => Effect.sync(() => log(`triage catch-up ${name}: ${(err as Error).message}`))))
     }
-  }
-}
+  })
 
 function currentWait(events: readonly Envelope[], waitId: WaitId): boolean {
   const lifecycle = reduceTicket(events).lifecycle
   return lifecycle.status === 'blocked' && lifecycle.waitId === waitId
 }
 
-/** Hand over only a current, queued wait. The returned promise never waits for its worker. */
-export async function onWaitStarted(event: Envelope, deps: TriageTriggerPorts & CatchUpTriagePorts): Promise<void> {
-  if (!(TRIAGE_EVENTS as readonly string[]).includes(event.type)) return
-  if (event.type === 'ProjectResumed') {
-    // Never awaited: a worker runs an agent, and a handler that has not
-    // settled in SUBSCRIBER_TIMEOUT_MS is reported as a failure.
-    const { project } = event.data as PayloadOf<'ProjectResumed'>
-    void deps
-      .triageFor(project)
-      .then((triage) => catchUpTriage(project, triage, deps))
-      .catch((err: Error) => deps.log?.(`triage catch-up ${project}: ${err.message}`))
-    return
-  }
-  if ((LIFTS_OF_A_DAY as readonly string[]).includes(event.type)) {
-    // A lifted day names no project, so every registered one is caught up. Never awaited, as above.
-    void (deps.projects?.() ?? Promise.resolve([] as readonly string[]))
-      .then((names) =>
-        names.map((project) =>
-          deps
-            .triageFor(project)
-            .then((triage) => catchUpTriage(project, triage, deps))
-            .catch((err: Error) => deps.log?.(`triage catch-up ${project}: ${err.message}`)),
+/** Hand over only a current, queued wait. The effect never waits for its worker. */
+export const onWaitStarted = (
+  event: Envelope,
+  deps: TriageTriggerPorts & CatchUpTriagePorts,
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    if (!(TRIAGE_EVENTS as readonly string[]).includes(event.type)) return
+    if (event.type === 'ProjectResumed') {
+      // Forked and never awaited: a worker runs an agent, and a handler that has not
+      // settled in SUBSCRIBER_TIMEOUT_MS is reported as a failure.
+      const { project } = event.data as PayloadOf<'ProjectResumed'>
+      yield* Effect.forkDetach(
+        catchUpProject(project, deps).pipe(
+          recoverWith((err) => Effect.sync(() => deps.log?.(`triage catch-up ${project}: ${messageOf(err)}`))),
         ),
       )
-      .catch((err: Error) => deps.log?.(`triage catch-up: ${err.message}`))
-    return
-  }
-  const parsed = parseTicketStream(event.streamId)
-  if (parsed === null) return
-  const triage = await deps.triageFor(parsed.project).catch(() => null)
-  const events = await deps.store.read(event.streamId)
-  const { waitId, reason } = event.data as PayloadOf<'WaitStarted'>
-  if (!currentWait(events, waitId)) return
-  // A first beat that failed dates `started_at` after attempts this daemon
-  // starts, so with no start time read nothing is queued here: the catch-up
-  // finds the wait `Queued` on a later pass (#583).
-  const daemonStartedAt = await deps.daemonStartedAt().catch((err: Error) => {
-    deps.log?.(`triage ${waitId}: daemon start time unread, left to catch-up: ${err.message}`)
-    return null
+      return
+    }
+    if ((LIFTS_OF_A_DAY as readonly string[]).includes(event.type)) {
+      // A lifted day names no project, so every registered one is caught up. Forked, as above.
+      yield* Effect.forkDetach(
+        Effect.gen(function* () {
+          const names = deps.projects ? yield* deps.projects() : []
+          for (const project of names) {
+            yield* catchUpProject(project, deps).pipe(
+              recoverWith((err) => Effect.sync(() => deps.log?.(`triage catch-up ${project}: ${messageOf(err)}`))),
+            )
+          }
+        }).pipe(recoverWith((err) => Effect.sync(() => deps.log?.(`triage catch-up: ${messageOf(err)}`)))),
+      )
+      return
+    }
+    const parsed = parseTicketStream(event.streamId)
+    if (parsed === null) return
+    const triage = yield* deps.triageFor(parsed.project).pipe(recoverWith(() => Effect.succeed(null)))
+    const events = yield* lift(() => deps.store.read(event.streamId))
+    const { waitId, reason } = event.data as PayloadOf<'WaitStarted'>
+    if (!currentWait(events, waitId)) return
+    // A first beat that failed dates `started_at` after attempts this daemon
+    // starts, so with no start time read nothing is queued here: the catch-up
+    // finds the wait `Queued` on a later pass (#583).
+    const daemonStartedAt = yield* deps.daemonStartedAt().pipe(
+      recoverWith((err) =>
+        Effect.sync(() => {
+          deps.log?.(`triage ${waitId}: daemon start time unread, left to catch-up: ${messageOf(err)}`)
+          return null
+        }),
+      ),
+    )
+    if (daemonStartedAt === null) return
+    const context = { declared: triage !== null, daemonStartedAt }
+    if (triageStatus(reason, triageFactsOf(events, waitId), context)._tag !== 'Queued' || triage === null) return
+    yield* enqueue(
+      { ticketId: event.streamId, waitId },
+      Effect.gen(function* () {
+        const latest = yield* lift(() => deps.store.read(event.streamId))
+        if (!currentWait(latest, waitId)) return
+        if (triageStatus(reason, triageFactsOf(latest, waitId), context)._tag !== 'Queued') return
+        const why = yield* (deps.locked ?? notLocked)(parsed.project).pipe(
+          recoverWith((err) => Effect.succeed(messageOf(err))),
+        )
+        if (why !== null) {
+          deps.log?.(`triage ${waitId} on ${event.streamId}: not started — ${why}`)
+          return HELD
+        }
+        const outcome = yield* deps.run({ ticketId: event.streamId, waitId, reason, triage })
+        if (outcome && outcome.started === false)
+          return yield* Effect.fail(new Error(`could not start triage ${waitId}`))
+      }),
+      deps.log ?? console.error,
+    )
   })
-  if (daemonStartedAt === null) return
-  const context = { declared: triage !== null, daemonStartedAt }
-  if (triageStatus(reason, triageFactsOf(events, waitId), context)._tag !== 'Queued' || triage === null) return
-  enqueueTriage(
-    { ticketId: event.streamId, waitId },
-    async () => {
-      const latest = await deps.store.read(event.streamId)
-      if (!currentWait(latest, waitId)) return
-      if (triageStatus(reason, triageFactsOf(latest, waitId), context)._tag !== 'Queued') return
-      const why = await (deps.locked ?? notLocked)(parsed.project).catch((err: Error) => err.message)
-      if (why !== null) {
-        deps.log?.(`triage ${waitId} on ${event.streamId}: not started — ${why}`)
-        return HELD
-      }
-      const outcome = await deps.run({ ticketId: event.streamId, waitId, reason, triage })
-      if (outcome && outcome.started === false) throw new Error(`could not start triage ${waitId}`)
-    },
-    deps.log,
-  )
-}
+
+const catchUpProject = (project: string, deps: TriageTriggerPorts & CatchUpTriagePorts) =>
+  Effect.flatMap(deps.triageFor(project), (triage) => catchUpTriage(project, triage, deps))
 
 /**
  * This process's start, as the store's clock dates it: `TriageStarted` is dated
  * by the store, and a database ahead of this host would read an attempt a
  * previous conductor cut off as `Running` (#576). The first success is kept;
  * a failed read, or a row that is another pid's because the first beat failed,
- * rejects and is read again on the next ask — the host's clock is never put in
+ * fails and is read again on the next ask — the host's clock is never put in
  * its place (#583).
  */
 export function memoDaemonStartedAt(
   read: () => Promise<{ pid: number; startedAt: Date } | null>,
   pid: number = process.pid,
-): () => Promise<Date> {
+): () => Effect.Effect<Date, unknown> {
   let resolved: Date | null = null
-  return async () => {
-    if (resolved !== null) return resolved
-    const row = await read()
-    if (row === null || row.pid !== pid) throw new Error('the daemon start time has not been recorded yet')
-    resolved = row.startedAt
-    return resolved
-  }
+  return () =>
+    Effect.suspend(() => {
+      if (resolved !== null) return Effect.succeed(resolved)
+      return lift(read).pipe(
+        Effect.flatMap((row) => {
+          if (row === null || row.pid !== pid)
+            return Effect.fail(new Error('the daemon start time has not been recorded yet'))
+          resolved = row.startedAt
+          return Effect.succeed(row.startedAt)
+        }),
+      )
+    })
 }
 
 /**
@@ -361,66 +428,80 @@ export function memoDaemonStartedAt(
  * unchanged, and the brief says *"The ticket could not be read"* with it.
  */
 export function triageIssue(
-  read: ReadProjectTicket = readProjectTicket,
-  load: typeof loadProject = loadProject,
-): (ticketId: string, signal?: AbortSignal) => Promise<{ ref: string; title: string; body: string }> {
-  return async (ticketId, signal) => {
-    const parsed = parseTicketStream(ticketId)
-    if (parsed === null) throw new Error(`invalid ticket stream: ${ticketId}`)
-    const state = await load(parsed.project)
-    if (state === null) throw new Error(`${parsed.project} is not registered`)
-    const answer = await read(state, Number(parsed.issue), { signal })
-    if (!answer.ok) throw answer.error
-    return { ref: String(answer.ticket.number), title: answer.ticket.title, body: answer.ticket.body }
-  }
+  read: typeof readProjectTicketEffect = readProjectTicketEffect,
+  load: typeof loadProjectEffect = loadProjectEffect,
+): (ticketId: string, signal?: AbortSignal) => Effect.Effect<{ ref: string; title: string; body: string }, Error> {
+  return (ticketId, signal) =>
+    Effect.gen(function* () {
+      const parsed = parseTicketStream(ticketId)
+      if (parsed === null) return yield* Effect.fail(new Error(`invalid ticket stream: ${ticketId}`))
+      const state = yield* load(parsed.project)
+      if (state === null) return yield* Effect.fail(new Error(`${parsed.project} is not registered`))
+      const answer = yield* read(state, Number(parsed.issue), { signal })
+      if (!answer.ok) return yield* Effect.fail(answer.error as Error)
+      return { ref: String(answer.ticket.number), title: answer.ticket.title, body: answer.ticket.body }
+    })
 }
+
+/** The project's base branch, `main` when it names none. */
+const baseOf = (ticketId: string): Effect.Effect<string> =>
+  Effect.gen(function* () {
+    const project = parseTicketStream(ticketId)?.project ?? ''
+    return (yield* loadProjectEffect(project))?.base ?? 'main'
+  })
 
 /** The daemon's real ports. A recipe that cannot resolve leaves triage undeclared. */
 export function daemonTriagePorts(
-  daemonStartedAt: () => Promise<Date>,
+  daemonStartedAt: () => Effect.Effect<Date, unknown>,
   log: (line: string) => void,
   writer?: SnapshotReadOptions['writer'],
-  locked?: (project: string) => Promise<string | null>,
+  locked?: (project: string) => Effect.Effect<string | null, unknown>,
 ): TriageTriggerPorts & CatchUpTriagePorts {
   return {
     locked,
-    projects: async () =>
-      (await loadProjects()).flatMap((p: { project: string | null }) => (p.project === null ? [] : [p.project])),
+    projects: () =>
+      Effect.map(loadProjectsEffect(), (all) =>
+        all.flatMap((p: { project: string | null }) => (p.project === null ? [] : [p.project])),
+      ),
     store: eventStore,
     snapshots: processLog.snapshots,
     writer,
     daemonStartedAt,
     log,
-    readTasks: (project) => readTasks({ project }),
-    baseSha: async (project) => {
-      const state = await loadProject(project)
-      if (state === null) return null
-      return refSha({ project, ref: state.base ?? 'main' })
-    },
-    triageFor: async (project) => {
-      const state = await loadProject(project)
-      return state === null ? null : ((await currentRecipe(state)).recipe.triage ?? null)
-    },
+    readTasks: (project) => readTasksEffect({ project }),
+    baseSha: (project) =>
+      Effect.gen(function* () {
+        const state = yield* loadProjectEffect(project)
+        if (state === null) return null
+        return yield* refShaEffect({ project, ref: state.base ?? 'main' })
+      }),
+    triageFor: (project) =>
+      Effect.gen(function* () {
+        const state = yield* loadProjectEffect(project)
+        return state === null ? null : ((yield* currentRecipeEffect(state)).recipe.triage ?? null)
+      }),
     run: (request) =>
-      waitTriage(
-        {
-          store: eventStore,
-          snapshots: processLog.snapshots,
-          writer,
-          runtime: createRuntime,
-          mirror: { refSha, listAt, readAt, diffStatAt, conflictedPathsAt },
-          issue: triageIssue(),
-          base: async (ticketId) => {
-            const project = parseTicketStream(ticketId)?.project ?? ''
-            return (await loadProject(project))?.base ?? 'main'
-          },
-          prepare,
-          prepareCheckout: (project, sha, signal) => prepareTriageCheckout(project, sha, undefined, signal),
-          now: Date.now,
-          log,
-        },
-        request,
-      ),
+      Effect.gen(function* () {
+        const now = Effect.runPromiseWith(yield* Effect.context<never>())
+        return yield* lift(() =>
+          waitTriage(
+            {
+              store: eventStore,
+              snapshots: processLog.snapshots,
+              writer,
+              runtime: createRuntime,
+              mirror: { refSha, listAt, readAt, diffStatAt, conflictedPathsAt },
+              issue: (ticketId, signal) => now(triageIssue()(ticketId, signal)),
+              base: (ticketId) => now(baseOf(ticketId)),
+              prepare,
+              prepareCheckout: (project, sha, signal) => prepareTriageCheckout(project, sha, undefined, signal),
+              now: Date.now,
+              log,
+            },
+            request,
+          ),
+        )
+      }),
   }
 }
 

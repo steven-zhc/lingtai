@@ -1167,16 +1167,16 @@ describe('waitTriage', () => {
 
       enqueueTriage(
         { ticketId: ticketStream('lingtai', 10), waitId: first },
-        () => waitTriage(stuck, requestOn(ticketStream('lingtai', 10), first, { triage: SHORT })),
+        Effect.tryPromise(() => waitTriage(stuck, requestOn(ticketStream('lingtai', 10), first, { triage: SHORT }))),
         log,
       )
       const done = new Promise<void>((resolve) => {
         enqueueTriage(
           { ticketId: ticketStream('lingtai', 11), waitId: second },
-          async () => {
+          Effect.sync(() => {
             ran.push('second')
             resolve()
-          },
+          }),
           log,
         )
       })

@@ -18,9 +18,6 @@ const record = { number: 2, title: 'water', body: 'the body', labels: [], url: n
 const absent = new Error('no ticket #2 for project garden')
 const found: Read = () => Effect.succeed({ ok: true, from: 'db', ticket: record })
 const missing: Read = () => Effect.succeed({ ok: false, from: 'db', error: absent })
-// `triageIssue` is still handed the promise reader (CLI-17).
-const foundP: ReadProjectTicket = async () => ({ ok: true, from: 'db', ticket: record })
-const missingP: ReadProjectTicket = async () => ({ ok: false, from: 'db', error: absent })
 
 describe('ticketEvidence (what gatherEvidence reads the ticket with)', () => {
   it('carries a db ticket read by the reader', async () => {
@@ -43,16 +40,16 @@ describe('ticketEvidence (what gatherEvidence reads the ticket with)', () => {
 })
 
 describe('triageIssue', () => {
-  const load = async () => state
+  const load = () => Effect.succeed(state)
   it('answers the ticket the reader found', async () => {
-    expect(await triageIssue(foundP, load)(ticketStream('garden', 2))).toEqual({
+    expect(await Effect.runPromise(triageIssue(found, load)(ticketStream('garden', 2)))).toEqual({
       ref: '2',
       title: 'water',
       body: 'the body',
     })
   })
   it('throws the reader’s error unchanged', async () => {
-    await expect(triageIssue(missingP, load)(ticketStream('garden', 2))).rejects.toThrow(
+    await expect(Effect.runPromise(triageIssue(missing, load)(ticketStream('garden', 2)))).rejects.toThrow(
       'no ticket #2 for project garden',
     )
   })
