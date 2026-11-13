@@ -113,11 +113,15 @@ see *A tier no runtime can provide*.
 
 7. **A person can lift a person's pause, an account limit, and today's
    ceiling — to a higher figure, never to none.** Raising the ceiling names a figure for today:
-   `DayCeilingLifted {day, why: person, by, toUsd}`. For that `day` only, the
+   `DayCeilingLifted {day, why: person, by, toUsd}`, **at any time of the day,
+   before the ceiling is reached as well as after**. Raised before, it takes no
+   lock away and only sets the figure, so the day never stops at the lower one.
+   For that `day` only, the
    guard then compares against the larger of `toUsd` and the configuration's
-   figure, and when the day's spend reaches it, locks again with a
+   figure, and when the day's spend reaches it, locks with a
    `DayCeilingReached` naming that figure. A new day forgets it. A `toUsd` not
-   above the day's spend is refused by name and appends nothing. The ceiling is
+   above the day's spend, or not above the figure today already has, is refused
+   by name and appends nothing. The ceiling is
    also lifted by raising or removing it in the configuration.
 
    An account limit is lifted when its `until` passes, or by a person who knows
