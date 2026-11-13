@@ -500,7 +500,7 @@ export function requestRun(project: string, issue: string, by: string, store: Ev
 
 /** Idempotent DDL for the beacon's row. Called once, at every daemon start. */
 export const createStatusTableEffect = (store?: DaemonStore): Effect.Effect<void> =>
-  Effect.promise(() => withDaemonStore(store, {}, (it) => it.create()))
+  withDaemonStore(store, {}, (it) => Effect.promise(() => it.create()))
 
 export function createStatusTable(store?: DaemonStore): Promise<void> {
   return Effect.runPromise(createStatusTableEffect(store))
@@ -535,20 +535,22 @@ export interface BeatOptions {
  * process and not about a database.
  */
 export const beatEffect = (state: string, options: BeatOptions = {}): Effect.Effect<void> =>
-  Effect.promise(() => {
+  Effect.suspend(() => {
     const { currentRunId = null, code = null, fresh = false, startedAt = null } = options
     return withDaemonStore(options.store, {}, (store) =>
-      store.beat({
-        pid: process.pid,
-        host: hostname(),
-        state,
-        currentRunId,
-        codeSha: code?.sha ?? null,
-        codeDirty: code?.dirty ?? false,
-        fresh,
-        startedAt,
-        stoppedProjections: options.stoppedProjections ?? [],
-      }),
+      Effect.promise(() =>
+        store.beat({
+          pid: process.pid,
+          host: hostname(),
+          state,
+          currentRunId,
+          codeSha: code?.sha ?? null,
+          codeDirty: code?.dirty ?? false,
+          fresh,
+          startedAt,
+          stoppedProjections: options.stoppedProjections ?? [],
+        }),
+      ),
     )
   })
 
@@ -713,7 +715,7 @@ export function startBeaconOn(port: BeaconPort, state: string, options: { every?
 
 /** Null when no daemon has ever run. Stale is reported, never hidden. */
 export const readStatusEffect = (store?: DaemonStore): Effect.Effect<DaemonStatus | null> =>
-  Effect.promise(() => withDaemonStore(store, {}, (it) => it.status()))
+  withDaemonStore(store, {}, (it) => Effect.promise(() => it.status()))
 
 export function readStatus(store?: DaemonStore): Promise<DaemonStatus | null> {
   return Effect.runPromise(readStatusEffect(store))

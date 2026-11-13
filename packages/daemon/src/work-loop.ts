@@ -662,12 +662,10 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
  *
  * Through the store since #220: the query was a `pg.Client` built here, which
  * is one of the four places the choice of implementation could not reach
- * (0055 §1). An Effect until DAEMON-7a moves the store.
+ * (0055 §1).
  */
 function headSeq(options: WorkLoopOptions): Effect.Effect<bigint> {
-  return Effect.promise(() =>
-    withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, (store) =>
-      store.head(),
-    ),
+  return withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, (store) =>
+    Effect.promise(() => store.head()),
   )
 }

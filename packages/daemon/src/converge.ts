@@ -379,10 +379,11 @@ export const findIssueDriftEffect = (options: ConvergeOptions = {}): Effect.Effe
     const store = logOf(options)
     // One read through a store opened for it and closed after it — the whole use
     // this makes of a `DaemonStore`. An injected one is the caller's and stays
-    // open (`choose.ts`). Lifted until DAEMON-7a, and `Effect.promise` on purpose: a store that will not open
-    // is a defect out of here, as it was through reconcile's lift of this function.
-    const streams = yield* Effect.promise(() =>
-      withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, candidates),
+    // open (`choose.ts`). A store that will not open is a defect out of here.
+    const streams = yield* withDaemonStore(
+      options.daemonStore,
+      options.url === undefined ? {} : { url: options.url },
+      (it) => Effect.promise(() => candidates(it)),
     )
     const projects = options.projects ?? (yield* loadProjectsEffect())
     const byName = new Map(projects.filter((p) => p.project).map((p) => [p.project!, p]))
