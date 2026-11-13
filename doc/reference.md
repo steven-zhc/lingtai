@@ -1787,11 +1787,15 @@ Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/voca
 `conflict` · `dirty-base` · `unpushed-base` · `pending-migration` ·
 `verify-failed` · `no-commits` · `push-rejected` · `lane-busy` ·
 `wip-commit` · `base-protected` · `unexpected` · `base-moved` ·
-`base-checked-out` · `unreachable`
+`base-checked-out` · `unreachable` · `remote-error`
 
 `unreachable` is git failing to reach origin for the fetch or push after the
 lane's own tries: nothing about the branch was judged, and approve re-runs only
 the land (#1029).
+
+`remote-error` is GitHub answering a push with a server error (500, 502, 503 or
+504) on every one of the lane's three tries: nothing about the branch or the
+base was judged, and approve re-runs only the land (#1125).
 
 **`verify-failed` was `gate-failed` until `#247`, and `conflict` was looked at
 in the same change and kept.** The old name was 0058 §3c's own complaint about
