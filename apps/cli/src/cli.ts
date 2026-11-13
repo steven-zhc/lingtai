@@ -12,6 +12,7 @@ import { Argument, CliOutput, Command, Flag } from 'effect/cli'
 import type { BoardVerb } from './board.ts'
 import { definitionOf, PROJECTION_NAMES, startIsVerbose } from './commands.ts'
 import { USAGE as ENV_USAGE } from './env-usage.ts'
+import { exitWith, failed, lift, orFailed, orWizardFailed, wizardFailed } from './exit.ts'
 import { commandHelp } from './help.ts'
 import { applyNoColor, heading, printJson, printJsonError, stripColour, symbol } from './output.ts'
 import { parseRestartArgs, type RestartArgs } from './restart.ts'
@@ -35,16 +36,6 @@ const version = Command.make('version', { json, noColor }, (args) =>
 /** What a handler sets when it fails on its own: `runCli` resolves to it, as the exit code. */
 let handlerCode = 0
 
-/** A handler that could not produce its report: the error document under `--json`, the message otherwise. Returns the exit code. */
-function failed(command: string, asJson: boolean, err: unknown): number {
-  const message = (err as Error).message || String(err)
-  if (asJson) return printJsonError(command, 'unavailable', message)
-  console.error(message)
-  if (process.env['LINGTAI_DEBUG']) console.error((err as Error).stack)
-  else console.error('(LINGTAI_DEBUG=1 for the stack)')
-  return 1
-}
-
 const status = Command.make(
   'status',
   {
@@ -54,31 +45,27 @@ const status = Command.make(
     noColor,
   },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       // Loaded here and not at the top: `lingtai version` is what `upgrade` spawns, and it must not
       // pay for the conductor, the projector and the store (`entry.ts`).
-      try {
-        const { readStatus, renderStatus, statusJson } = await import('./status.ts')
-        const project = args.project._tag === 'Some' ? args.project.value : undefined
-        const report = await readStatus({ project, all: args.all })
-        if (args.json) printJson('status', statusJson(report))
-        else
-          for (const line of renderStatus(report, { all: args.all, columns: process.stdout.columns })) console.log(line)
-      } catch (err) {
-        handlerCode = failed('status', args.json, err)
-      }
-    }),
+      const { readStatus, renderStatus, statusJson } = yield* lift(() => import('./status.ts'))
+      const project = args.project._tag === 'Some' ? args.project.value : undefined
+      const report = yield* lift(() => readStatus({ project, all: args.all }))
+      if (args.json) printJson('status', statusJson(report))
+      else
+        for (const line of renderStatus(report, { all: args.all, columns: process.stdout.columns })) console.log(line)
+    }).pipe(orFailed('status', args.json)),
 ).pipe(Command.withDescription(definitionOf('status').task))
 
 const eventsCommand = Command.make(
   'events',
   { name: Argument.String('name').pipe(Argument.optional), json, noColor },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       // Loaded here, for the reason `status` gives: no other command parses the manifest.
-      const { events, eventsJson, findEvent, renderEvent, renderEvents } = await import('./events.ts')
+      const { events, eventsJson, findEvent, renderEvent, renderEvents } = yield* lift(() => import('./events.ts'))
       if (args.name._tag === 'None') {
         if (args.json) printJson('events', eventsJson(events))
         else for (const line of renderEvents(events, { columns: process.stdout.columns })) console.log(line)
@@ -87,91 +74,69 @@ const eventsCommand = Command.make(
       const found = findEvent(events, args.name.value)
       if (found === undefined) {
         const message = `no event named ${args.name.value} — lingtai events lists them`
-        if (args.json) handlerCode = printJsonError('events', 'unknown-event', message)
-        else {
-          console.error(`${symbol.fail()} ${message}`)
-          handlerCode = 1
-        }
+        if (args.json) return yield* exitWith(printJsonError('events', 'unknown-event', message))
+        console.error(`${symbol.fail()} ${message}`)
+        return yield* exitWith(1)
       } else if (args.json) printJson('events', eventsJson(events, found))
       else for (const line of renderEvent(found)) console.log(line)
-    }),
+      // No `try` here today: a failed import is a defect, which `runCli` ends as 1.
+    }).pipe(Effect.orDie),
 ).pipe(Command.withDescription(definitionOf('events').task))
 
 const doctor = Command.make(
   'doctor',
   { json, noColor, verbose: Flag.Boolean('verbose').pipe(Flag.withDefault(false)) },
   (args) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
-      try {
-        // Loaded here, for the reason `status` gives.
-        const { doctorReport, doctorJson, renderDoctor, tally } = await import('./doctor.ts')
-        const { releaseCheck } = await import('./install.ts')
-        const { doctorProgress } = await import('./steps.ts')
-        const progress = doctorProgress({ stdout: process.stdout, stderr: process.stderr, json: args.json })
-        let report
-        try {
-          report = await doctorReport({ onProgress: progress.onProgress })
-          // Here and not in `runDoctor`, which `lingtai restart` gates on: the one
-          // outbound request this tool makes is asked by `doctor` and `upgrade` (#184),
-          // and a restart is neither. Timed here, since `runDoctor` never sees it.
-          progress.onProgress({ label: 'releases', phase: 'start', done: report.results.length })
-          const t0 = performance.now()
-          const row = await releaseCheck({ fetch, env: process.env, self: import.meta.filename })
-          report.results.push({ ...row, ms: Math.round(performance.now() - t0) })
-          Object.assign(report, tally(report.results))
-        } finally {
-          progress.clear()
-        }
-        if (args.json) printJson('doctor', doctorJson(report))
-        else for (const line of renderDoctor(report, { verbose: args.verbose })) console.log(line)
-        // Non-zero on any failure. `lingtai restart` runs the same report (0042) but
-        // does not refuse on the same number: a failure marked `restartAnswers` exits
-        // this 1 and lets a restart through — see `gatingFailures`. A deferred check
-        // is not a failure; a missing one would be.
-        handlerCode = report.failed === 0 ? 0 : 1
-      } catch (err) {
-        handlerCode = failed('doctor', args.json, err)
-      }
-    }),
+      // Loaded here, for the reason `status` gives.
+      const { doctorReport, doctorJson, renderDoctor, tally } = yield* lift(() => import('./doctor.ts'))
+      const { releaseCheck } = yield* lift(() => import('./install.ts'))
+      const { doctorProgress } = yield* lift(() => import('./steps.ts'))
+      const progress = doctorProgress({ stdout: process.stdout, stderr: process.stderr, json: args.json })
+      const report = yield* Effect.gen(function* () {
+        const report = yield* lift(() => doctorReport({ onProgress: progress.onProgress }))
+        // Here and not in `runDoctor`, which `lingtai restart` gates on: the one
+        // outbound request this tool makes is asked by `doctor` and `upgrade` (#184),
+        // and a restart is neither. Timed here, since `runDoctor` never sees it.
+        progress.onProgress({ label: 'releases', phase: 'start', done: report.results.length })
+        const t0 = performance.now()
+        const row = yield* lift(() => releaseCheck({ fetch, env: process.env, self: import.meta.filename }))
+        report.results.push({ ...row, ms: Math.round(performance.now() - t0) })
+        Object.assign(report, tally(report.results))
+        return report
+      }).pipe(Effect.ensuring(Effect.sync(() => progress.clear())))
+      if (args.json) printJson('doctor', doctorJson(report))
+      else for (const line of renderDoctor(report, { verbose: args.verbose })) console.log(line)
+      // Non-zero on any failure. `lingtai restart` runs the same report (0042) but
+      // does not refuse on the same number: a failure marked `restartAnswers` exits
+      // this 1 and lets a restart through — see `gatingFailures`. A deferred check
+      // is not a failure; a missing one would be.
+      yield* exitWith(report.failed === 0 ? 0 : 1)
+    }).pipe(orFailed('doctor', args.json)),
 ).pipe(Command.withDescription(definitionOf('doctor').task))
-
-/** A wizard that threw: the message, as the hand-rolled entry printed it, and exit 1. */
-function wizardFailed(err: unknown): number {
-  const error = err as Error
-  console.error(error.message || String(err))
-  if (process.env['LINGTAI_DEBUG']) console.error(error.stack)
-  return 1
-}
 
 // Loaded in the handler and not at the top, for the reason `status` gives; `init` also
 // loads the board's server module, which no other command needs.
 const init = Command.make('init', initOptions, (args) =>
-  Effect.promise(async () => {
-    try {
-      const { initCommand, liveInitWorld } = await import('./init.ts')
-      handlerCode = await initCommand(flagsOf(args), liveInitWorld())
-    } catch (err) {
-      handlerCode = wizardFailed(err)
-    }
-  }),
+  Effect.gen(function* () {
+    const { initCommand, liveInitWorld } = yield* lift(() => import('./init.ts'))
+    yield* exitWith(yield* lift(() => initCommand(flagsOf(args), liveInitWorld())))
+  }).pipe(orWizardFailed()),
 ).pipe(Command.withDescription(definitionOf('init').task))
 
 const add = Command.make(
   'add',
   { repo: Argument.String('owner/repo').pipe(Argument.optional), ...addOptions },
   ({ repo, ...options }) =>
-    Effect.promise(async () => {
-      try {
-        const { addFlow, liveAddWorld } = await import('./add.ts')
-        handlerCode = await addFlow(
-          { positional: repo._tag === 'Some' ? repo.value : undefined, ...flagsOf(options) },
-          liveAddWorld(),
-        )
-      } catch (err) {
-        handlerCode = wizardFailed(err)
-      }
-    }),
+    Effect.gen(function* () {
+      const { addFlow, liveAddWorld } = yield* lift(() => import('./add.ts'))
+      yield* exitWith(
+        yield* lift(() =>
+          addFlow({ positional: repo._tag === 'Some' ? repo.value : undefined, ...flagsOf(options) }, liveAddWorld()),
+        ),
+      )
+    }).pipe(orWizardFailed()),
 ).pipe(Command.withDescription(definitionOf('add').task))
 
 /** Where a wait-answering command's progress goes: stdout, or stderr so `--json` keeps stdout to its one document. */
@@ -183,19 +148,11 @@ function progressFor(asJson: boolean): (line: string) => void {
 function answerWith(
   command: keyof typeof VERBS,
   args: { json: boolean; noColor: boolean },
-  run: (progress: (line: string) => void) => Promise<Answered>,
+  run: (progress: (line: string) => void) => Effect.Effect<Answered, unknown>,
 ) {
-  return Effect.promise(() => printAnswer(command, args, run))
-}
-
-async function printAnswer(
-  command: keyof typeof VERBS,
-  args: { json: boolean; noColor: boolean },
-  run: (progress: (line: string) => void) => Promise<Answered>,
-): Promise<void> {
-  if (args.noColor) applyNoColor()
-  try {
-    const answered = await run(progressFor(args.json))
+  return Effect.gen(function* () {
+    if (args.noColor) applyNoColor()
+    const answered = yield* run(progressFor(args.json))
     if (args.json) printJson(command, verdictJson(answered.verdict))
     else
       for (const line of renderVerdict(
@@ -203,10 +160,8 @@ async function printAnswer(
         answered.verdict,
       ))
         console.log(line)
-    handlerCode = answered.code
-  } catch (err) {
-    handlerCode = failed(command, args.json, err)
-  }
+    yield* exitWith(answered.code)
+  }).pipe(orFailed(command, args.json))
 }
 
 const projectArg = Argument.String('project')
@@ -251,17 +206,21 @@ const approve = Command.make(
     noColor,
   },
   (args) =>
-    answerWith('approve', args, async (progress) => {
-      if (args.reject) {
-        // Gone (#150): it revoked the approval and put the run straight back
-        // into `awaiting-approval`, so the wait it seemed to end went on.
-        return refusal(2, 'removed-flag', '--reject is gone: it asked the same question again and ended nothing.', {
-          next: `lingtai requeue ${args.project} --issue ${args.issue}`,
-        })
-      }
-      const { approveVerdict } = await import('./approve.ts')
-      return approveVerdict({ project: args.project, issue: args.issue, note: given(args.note) }, progress)
-    }),
+    answerWith('approve', args, (progress) =>
+      Effect.gen(function* () {
+        if (args.reject) {
+          // Gone (#150): it revoked the approval and put the run straight back
+          // into `awaiting-approval`, so the wait it seemed to end went on.
+          return refusal(2, 'removed-flag', '--reject is gone: it asked the same question again and ended nothing.', {
+            next: `lingtai requeue ${args.project} --issue ${args.issue}`,
+          })
+        }
+        const { approveVerdict } = yield* lift(() => import('./approve.ts'))
+        return yield* lift(() =>
+          approveVerdict({ project: args.project, issue: args.issue, note: given(args.note) }, progress),
+        )
+      }),
+    ),
 ).pipe(Command.withDescription(definitionOf('approve').task))
 
 const requeue = Command.make(
@@ -275,19 +234,23 @@ const requeue = Command.make(
     noColor,
   },
   (args) =>
-    answerWith('requeue', args, async (progress) => {
-      const { requeueVerdict } = await import('./requeue.ts')
-      return requeueVerdict(
-        {
-          project: args.project,
-          issue: args.issue,
-          // `--note` left off and `--note` with nothing after it both mean `""` (#424).
-          note: given(args.note) ?? '',
-          ...(args.intoBody._tag === 'Some' ? { intoBody: args.intoBody.value } : {}),
-        },
-        progress,
-      )
-    }),
+    answerWith('requeue', args, (progress) =>
+      Effect.gen(function* () {
+        const { requeueVerdict } = yield* lift(() => import('./requeue.ts'))
+        return yield* lift(() =>
+          requeueVerdict(
+            {
+              project: args.project,
+              issue: args.issue,
+              // `--note` left off and `--note` with nothing after it both mean `""` (#424).
+              note: given(args.note) ?? '',
+              ...(args.intoBody._tag === 'Some' ? { intoBody: args.intoBody.value } : {}),
+            },
+            progress,
+          ),
+        )
+      }),
+    ),
 ).pipe(Command.withDescription(definitionOf('requeue').task))
 
 const grantFixRound = Command.make(
@@ -300,40 +263,56 @@ const grantFixRound = Command.make(
     noColor,
   },
   (args) =>
-    answerWith('grant-fix-round', args, async (progress) => {
-      const { grantFixRoundVerdict } = await import('./grant-fix-round.ts')
-      return grantFixRoundVerdict({ project: args.project, issue: args.issue, ifHead: given(args.ifHead) }, progress)
-    }),
+    answerWith('grant-fix-round', args, (progress) =>
+      Effect.gen(function* () {
+        const { grantFixRoundVerdict } = yield* lift(() => import('./grant-fix-round.ts'))
+        return yield* lift(() =>
+          grantFixRoundVerdict({ project: args.project, issue: args.issue, ifHead: given(args.ifHead) }, progress),
+        )
+      }),
+    ),
 ).pipe(Command.withDescription(definitionOf('grant-fix-round').task))
 
 const close = Command.make(
   'close',
   { project: projectArg, issue: integerOption('close', 'issue'), text: sentenceArg, json, noColor },
   (args) =>
-    answerWith('close', args, async (progress) => {
-      const { closeVerdict } = await import('./close.ts')
-      return closeVerdict({ project: args.project, issue: args.issue, reason: args.text.join(' ') }, progress)
-    }),
+    answerWith('close', args, (progress) =>
+      Effect.gen(function* () {
+        const { closeVerdict } = yield* lift(() => import('./close.ts'))
+        return yield* lift(() =>
+          closeVerdict({ project: args.project, issue: args.issue, reason: args.text.join(' ') }, progress),
+        )
+      }),
+    ),
 ).pipe(Command.withDescription(definitionOf('close').task))
 
 const ask = Command.make(
   'ask',
   { project: projectArg, issue: integerOption('ask', 'issue'), text: sentenceArg, json, noColor },
   (args) =>
-    answerWith('ask', args, async (progress) => {
-      const { askVerdict } = await import('./ask.ts')
-      return askVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress)
-    }),
+    answerWith('ask', args, (progress) =>
+      Effect.gen(function* () {
+        const { askVerdict } = yield* lift(() => import('./ask.ts'))
+        return yield* lift(() =>
+          askVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress),
+        )
+      }),
+    ),
 ).pipe(Command.withDescription(definitionOf('ask').task))
 
 const answer = Command.make(
   'answer',
   { project: projectArg, issue: integerOption('answer', 'issue'), text: sentenceArg, json, noColor },
   (args) =>
-    answerWith('answer', args, async (progress) => {
-      const { answerVerdict } = await import('./ask.ts')
-      return answerVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress)
-    }),
+    answerWith('answer', args, (progress) =>
+      Effect.gen(function* () {
+        const { answerVerdict } = yield* lift(() => import('./ask.ts'))
+        return yield* lift(() =>
+          answerVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress),
+        )
+      }),
+    ),
 ).pipe(Command.withDescription(definitionOf('answer').task))
 
 const now = Command.make(
@@ -346,12 +325,14 @@ const now = Command.make(
     noColor,
   },
   (args) =>
-    answerWith('now', args, async () => {
-      const issue = args.issue._tag === 'Some' ? args.issue.value : Number(given(args.second) ?? Number.NaN)
-      if (!Number.isInteger(issue)) return refusal(2, 'usage', 'lingtai now <project> --issue <n>')
-      const { nowVerdict } = await import('./now.ts')
-      return nowVerdict(args.project, issue, `human:${process.env['USER'] ?? 'operator'}`)
-    }),
+    answerWith('now', args, () =>
+      Effect.gen(function* () {
+        const issue = args.issue._tag === 'Some' ? args.issue.value : Number(given(args.second) ?? Number.NaN)
+        if (!Number.isInteger(issue)) return refusal(2, 'usage', 'lingtai now <project> --issue <n>')
+        const { nowVerdict } = yield* lift(() => import('./now.ts'))
+        return yield* lift(() => nowVerdict(args.project, issue, `human:${process.env['USER'] ?? 'operator'}`))
+      }),
+    ),
 ).pipe(Command.withDescription(definitionOf('now').task))
 
 /** What was typed after `board`: `port` and `dir` are null where nothing was, and the runner resolves them. */
@@ -364,31 +345,33 @@ export interface BoardRequest {
 }
 
 /** Runs one request and resolves to the exit code. A test hands `runCli` its own; the live one is below. */
-export type BoardRunner = (request: BoardRequest) => Promise<number>
+export type BoardRunner = (request: BoardRequest) => Effect.Effect<number, unknown>
 
 const BOARD_USAGE = 'lingtai board start|stop|restart|status [--port <n>] [--dir <path>] [--no-open]'
 
-async function liveBoardRunner(request: BoardRequest): Promise<number> {
-  const { boardCommand, builtBoardDir, boardStatusJson, readBoardStatus } = await import('./board.ts')
-  const { liveBoardWorld } = await import('./board-world.ts')
-  const { boardHost, boardPort } = await import('@lingtai/env')
-  // `--port` is this run's; without it the machine file's, and without that
-  // 17820 (#187). A file that does not parse is refused by name here rather
-  // than serving on a port nobody chose.
-  let port: number
-  let host: string
-  try {
-    port = request.port ?? boardPort()
-    host = boardHost()
-  } catch (err) {
-    return failed('board', request.json, err)
-  }
-  const world = liveBoardWorld(host)
-  if (request.verb === 'status' && request.json) {
-    printJson('board status', boardStatusJson(await readBoardStatus({ port }, world)))
-    return 0
-  }
-  return boardCommand({ verb: request.verb, port, dir: request.dir ?? builtBoardDir(), open: request.open }, world)
+function liveBoardRunner(request: BoardRequest): Effect.Effect<number, unknown> {
+  return Effect.gen(function* () {
+    const { boardCommand, builtBoardDir, boardStatusJson, readBoardStatus } = yield* lift(() => import('./board.ts'))
+    const { liveBoardWorld } = yield* lift(() => import('./board-world.ts'))
+    const { boardHost, boardPort } = yield* lift(() => import('@lingtai/env'))
+    // `--port` is this run's; without it the machine file's, and without that
+    // 17820 (#187). A file that does not parse is refused by name here rather
+    // than serving on a port nobody chose.
+    const where = yield* Effect.try({
+      try: () => ({ port: request.port ?? boardPort(), host: boardHost() }),
+      catch: (e) => e,
+    }).pipe(Effect.result)
+    if (where._tag === 'Failure') return failed('board', request.json, where.failure)
+    const { port, host } = where.success
+    const world = liveBoardWorld(host)
+    if (request.verb === 'status' && request.json) {
+      printJson('board status', boardStatusJson(yield* lift(() => readBoardStatus({ port }, world))))
+      return 0
+    }
+    return yield* lift(() =>
+      boardCommand({ verb: request.verb, port, dir: request.dir ?? builtBoardDir(), open: request.open }, world),
+    )
+  })
 }
 
 let boardRunner: BoardRunner = liveBoardRunner
@@ -406,7 +389,7 @@ function boardHandler(verb: BoardVerb) {
     json?: boolean
     noColor?: boolean
   }) =>
-    Effect.promise(async () => {
+    Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       const asJson = args.json === true
       const port = args.port._tag === 'Some' ? args.port.value! : null
@@ -414,21 +397,17 @@ function boardHandler(verb: BoardVerb) {
         const sentence = `${BOARD_USAGE} — --port takes a port number`
         if (asJson) printJsonError('board', 'usage', sentence)
         else console.error(sentence)
-        handlerCode = 2
-        return
+        return yield* exitWith(2)
       }
-      try {
-        handlerCode = await boardRunner({
-          verb,
-          port,
-          dir: args.dir?._tag === 'Some' ? args.dir.value! : null,
-          open: !args.noOpen,
-          json: asJson,
-        })
-      } catch (err) {
-        handlerCode = failed('board', asJson, err)
-      }
-    })
+      const code = yield* boardRunner({
+        verb,
+        port,
+        dir: args.dir?._tag === 'Some' ? args.dir.value! : null,
+        open: !args.noOpen,
+        json: asJson,
+      })
+      yield* exitWith(code)
+    }).pipe(orFailed('board', args.json === true))
 }
 
 const startOptions = { port: portOption, dir: dirOption, noOpen, noColor }
@@ -1565,17 +1544,22 @@ export async function runCli(
   }
   const errors: string[] = []
   handlerCode = 0
+  let handlerExited = false
   const code = await Effect.runPromise(
     run(argv.slice(2)).pipe(
       Effect.provide(CliOutput.layerPresenter(USAGE_ERRORS_ONLY)),
       Effect.provideService(Console.Console, consoleFor(globalThis.console, json, errors)),
       Effect.provide(NodeServices.layer),
       Effect.map(() => handlerCode),
+      Effect.catchTag('CommandExit', (e) => {
+        handlerExited = true
+        return Effect.succeed(e.code)
+      }),
       Effect.catchCause(() => Effect.succeed(1)),
     ),
   )
   // A handler that failed on its own has already said so; `usage` is for what did not parse.
-  if (code !== 0 && json && handlerCode === 0) {
+  if (code !== 0 && json && handlerCode === 0 && !handlerExited) {
     const command = args.find((a) => !a.startsWith('-')) ?? 'lingtai'
     return printJsonError(command, 'usage', errors.join('\n') || 'invalid usage')
   }
