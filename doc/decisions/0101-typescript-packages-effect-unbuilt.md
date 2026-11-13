@@ -116,7 +116,11 @@ turn limit, so every idiom it adopts is paid for again on every run.
    - **`Effect.run*` only at a host's edge**: the CLI's one run
      (`apps/cli/src/entry.ts`, which covers every command, `daemon` included), a
      board read, server action or route handler (`apps/board/src/app/actions.ts`,
-     `apps/board/src/lib/board.ts`), and a test. `runPromise` and not `runMain`
+     `apps/board/src/lib/board.ts`), and a test. The site (`apps/site`) runs
+     no Effect of its own: its scripts (`apps/site/scripts/books.ts`,
+     `apps/site/scripts/snapshot.ts`) call the promise faces of §7, so their
+     `Effect.runPromise` runs inside a registered face and they are a host the
+     faces file names. `runPromise` and not `runMain`
      at the CLI, because `runMain` interrupts the main fiber on SIGINT and the
      daemon's first Ctrl+C is a drain. Never inside backend code — a
      `runPromise` nested in an Effect starts a fiber with no parent, which loses
@@ -174,8 +178,11 @@ turn limit, so every idiom it adopts is paid for again on every run.
    actions call backend Effects with `Effect.runPromise` at their edge, and its
    own read spans are `@opentelemetry/api` (#775). A package that a host calls
    may keep a promise face beside its Effect one. A face is an exported function
-   whose whole body is `return Effect.runPromise(<call>)` — one implementation,
-   never two — and each is listed in `packages/domain/unit/effect-ratchet.faces.json`
+   whose whole body is `return Effect.runPromise(<call>)`, or the generic
+   `return Effect.runPromise(<parameter>, { signal })` that passes its own
+   Effect parameter and optionally its own abort signal
+   (`packages/github/src/app.ts`, `packages/conductor/src/port-face.ts`) — one
+   implementation, never two — and each is listed in `packages/domain/unit/effect-ratchet.faces.json`
    with `until: "0101 §7"` and a `why` naming the host or the host's test that
    reads it. A face that inspects an `Exit` or runs synchronously is a run, and
    is counted.
