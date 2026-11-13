@@ -144,18 +144,6 @@ function accept(q: Question, answer: string): Effect.Effect<string | null, unkno
   return q.validate === undefined ? Effect.succeed(null) : q.validate(answer)
 }
 
-/** A `Question` as the setup files not yet moved write it: their `validate` still returns a promise. */
-export type PromiseValidated = Omit<Question, 'validate'> & {
-  validate?: (answer: string) => Promise<string | null>
-}
-
-/** Lifts a promise `validate` once; a rejection keeps the error it threw, so it still propagates. */
-function liftValidate(q: PromiseValidated): Question {
-  const { validate, ...rest } = q
-  if (validate === undefined) return rest
-  return { ...rest, validate: (answer) => lift(() => validate(answer)) }
-}
-
 export function questionEffect(world: QuestionWorld, q: Question): Effect.Effect<Answered, unknown> {
   return Effect.gen(function* () {
     // A flag cannot be re-asked: it is run through `validate` once, and a
@@ -193,8 +181,4 @@ export function questionEffect(world: QuestionWorld, q: Question): Effect.Effect
       world.log(paint.fail(why))
     }
   })
-}
-
-export function question(world: QuestionWorld, q: PromiseValidated): Promise<Answered> {
-  return Effect.runPromise(questionEffect(world, liftValidate(q)))
 }

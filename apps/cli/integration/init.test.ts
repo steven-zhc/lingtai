@@ -8,17 +8,22 @@ import { recipePath, type RecipeFiles } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type GitResult, pathExists } from '../src/first-project.ts'
+import { type GitResult, pathExistsEffect } from '../src/first-project.ts'
 import {
   type AppCheck,
   type InitWorld,
   type RuntimeFound,
   configPath,
-  initCommand,
+  initCommandEffect,
   liveMachine,
   redact,
 } from '../src/init.ts'
 import { flagsFromArgv } from '../test/flags.ts'
+import { liftInitWorld } from '../test/init-world.ts'
+
+/** `initCommandEffect`, run to its exit code, the way every test here awaited `initCommand`. */
+const initCommand = (args: Parameters<typeof initCommandEffect>[0], w: InitWorld): Promise<number> =>
+  Effect.runPromise(initCommandEffect(args, w))
 
 /**
  * `lingtai init` (#186), against a world with no database, GitHub, runtime or
@@ -153,7 +158,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
   }
   return {
     seen,
-    world: {
+    world: liftInitWorld({
       env: { LINGTAI_HOME: home, ...script.env },
       // The real one, over `node:fs` (#435) — `config.yml` is a real file
       // here (this file's own header), and the test fixture must read and
@@ -203,7 +208,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
       // only recognises the project, App, database and kinds questions.
       // `/repo` is the repository `LOCAL_REPO_GIT` plans git for; it is not on
       // this machine, and `--local` refuses a directory that is not.
-      exists: async (path) => path === '/repo' || pathExists(path),
+      exists: async (path) => path === '/repo' || Effect.runPromise(pathExistsEffect(path)),
       setupReader: () => ({ has: () => Effect.succeed(false), read: () => Effect.succeed(null) }),
       database: async (url) => {
         seen.connected.push(url)
@@ -271,7 +276,7 @@ function world(home: string, script: Script, db = database()): { world: InitWorl
         toFix: { count: 0, failed: false },
         blocks: script.doctor ?? 'doctor: 0 ok, 0 not checked here, 0 not implemented yet, 0 failed',
       }),
-    },
+    }),
   }
 }
 

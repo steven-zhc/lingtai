@@ -685,23 +685,6 @@ export interface AddLocalOptions {
   fromSha: string
 }
 
-/**
- * The directory branch of onboarding (#394): `owner: null`, no installation to
- * check and no permissions to ask GitHub for — the recipe was already read and
- * resolved by `chooseFirstProject`, which is why this takes it rather than
- * reading it again.
- *
- * The same stream-version append `add` makes, and the same `registrationLine`,
- * so the two ways of registering a project cannot disagree about either.
- */
-export function addLocal(
-  options: AddLocalOptions,
-  resolved: ResolvedRecipe,
-  log: (line: string) => void = () => {},
-): Promise<{ line: string; updated: boolean }> {
-  return Effect.runPromise(addLocalEffect(options, resolved, log))
-}
-
 export const addLocalEffect = Effect.fn('onboard.addLocal')(function* (
   options: AddLocalOptions,
   resolved: ResolvedRecipe,

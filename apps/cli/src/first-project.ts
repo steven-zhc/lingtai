@@ -84,7 +84,7 @@ import {
 import { Cause, Effect } from 'effect'
 
 import { noRuntimesSignedInRefusal } from './agents.ts'
-import { checkAppEffect, pollForApp, type AppCheck } from './app-check.ts'
+import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
 import { boardAtEffect } from './board.ts'
 import { lift } from './exit.ts'
 import {
@@ -154,11 +154,6 @@ export const pathExistsEffect = (path: string): Effect.Effect<boolean> =>
     const code = (error as NodeJS.ErrnoException).code
     return !(code === 'ENOENT' || code === 'ENOTDIR')
   })
-
-/** `pathExistsEffect`, for `init.ts` until CLI-22b. */
-export function pathExists(path: string): Promise<boolean> {
-  return Effect.runPromise(pathExistsEffect(path))
-}
 
 /**
  * Every IO member returns an Effect; `ask`, `log` and `spin` are clack's and stay as `QuestionWorld` has them.
@@ -376,16 +371,6 @@ function askProjectKind(
     }
     return { kind: 'github' as const }
   })
-}
-
-/** The face of `chooseFirstProjectEffect` for `init.ts` and `add.ts`, which still await it (CLI-22a, CLI-22b). */
-export function chooseFirstProject(
-  world: FirstProjectWorld,
-  flags: Record<string, string>,
-  buildFlags: readonly string[] = [],
-  deferRecipeFlags = false,
-): Promise<FirstProjectOutcome> {
-  return Effect.runPromise(chooseFirstProjectEffect(world, flags, buildFlags, deferRecipeFlags))
 }
 
 export function chooseFirstProjectEffect(
@@ -1273,12 +1258,8 @@ export const liveGitEffect = (dir: string, args: readonly string[]): Effect.Effe
     },
   )
 
-/** Exported for `init.ts`'s `liveInitWorld()` until CLI-22b — one real `git`, not two. */
-export function liveGit(dir: string, args: readonly string[]): Promise<GitResult> {
-  return Effect.runPromise(liveGitEffect(dir, args))
-}
-
-function liveOpen(url: string): Promise<boolean> {
+/** Opens a browser; false when none could be. Never rejects. */
+export function liveOpen(url: string): Promise<boolean> {
   return new Promise((resolve) => {
     const opener = process.platform === 'darwin' ? 'open' : 'xdg-open'
     const child = spawn(opener, [url], { stdio: 'ignore', detached: true })
@@ -1361,9 +1342,13 @@ export interface LiveFirstProjectOptions {
  */
 export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstProjectWorld {
   const appWait: Pick<AppWaitWorld, 'open' | 'appeared' | 'pressed'> = {
-    open: liveOpen,
-    appeared: pollForApp,
-    pressed: (signal) => waitForKeypress(process.stdin, signal, 'running the same command again continues from here'),
+    open: (url) => lift(() => liveOpen(url)),
+    appeared: pollForAppEffect,
+    pressed: () =>
+      Effect.tryPromise({
+        try: (signal) => waitForKeypress(process.stdin, signal, 'running the same command again continues from here'),
+        catch: (e) => e,
+      }),
   }
   const home = stateDir()
 

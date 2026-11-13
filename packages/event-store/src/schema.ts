@@ -232,7 +232,3 @@ export const createSchemaEffect = (client: Queryable): Effect.Effect<SchemaOutco
       return { created: true, applied }
     }),
   )
-
-export function createSchema(client: Queryable): Promise<SchemaOutcome> {
-  return Effect.runPromise(createSchemaEffect(client))
-}

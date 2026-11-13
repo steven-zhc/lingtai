@@ -16,9 +16,13 @@ import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { FirstProjectWorld, GitResult, RegisterLocalPayload } from '../src/first-project.ts'
-import { chooseFirstProject, liveFirstProjectWorld } from '../src/first-project.ts'
+import { chooseFirstProjectEffect, liveFirstProjectWorld } from '../src/first-project.ts'
 import { flagsOf } from '../src/wizard-options.ts'
 import { liftFirstProjectWorld, liftPort, type PromiseFirstProjectWorld } from '../test/first-project-world.ts'
+
+/** `chooseFirstProjectEffect`, run to its outcome, the way every test here awaited `chooseFirstProject`. */
+const chooseFirstProject = (...args: Parameters<typeof chooseFirstProjectEffect>) =>
+  Effect.runPromise(chooseFirstProjectEffect(...args))
 
 const before = process.env['NO_COLOR']
 beforeAll(() => {

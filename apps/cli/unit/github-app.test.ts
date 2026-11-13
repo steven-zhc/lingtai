@@ -8,6 +8,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { APP_WAIT_MS, type AppWaitWorld, askFirstProjectEffect, waitForAppEffect } from '../src/github-app.ts'
 import type { QuestionWorld } from '../src/question.ts'
+import { liftPort } from '../test/first-project-world.ts'
+import { signalPort } from '../test/init-world.ts'
 
 // Same reason as `question.test.ts`: the assertions below read `paint`'s
 // output as bare strings, and `NO_COLOR` wins ahead of `FORCE_COLOR`.
@@ -104,23 +106,27 @@ function appWaitWorld(opts: { appeared?: Promise<{ slug: string; owner: string }
     aborted,
     world: {
       log: (line) => lines.push(line),
-      open: async (url) => {
+      open: liftPort(async (url: string) => {
         opened.push(url)
         return true
-      },
-      appeared: (signal) =>
-        new Promise((resolve) => {
-          signal.addEventListener('abort', () => (aborted.appeared = true), { once: true })
-          opts.appeared?.then(resolve)
-        }),
-      pressed: (signal) =>
-        new Promise((resolve) => {
-          signal.addEventListener('abort', () => {
-            aborted.pressed = true
-            resolve()
-          })
-          opts.pressed?.then(() => resolve())
-        }),
+      }),
+      appeared: signalPort(
+        (signal) =>
+          new Promise((resolve) => {
+            signal.addEventListener('abort', () => (aborted.appeared = true), { once: true })
+            opts.appeared?.then(resolve)
+          }),
+      ),
+      pressed: signalPort(
+        (signal) =>
+          new Promise<void>((resolve) => {
+            signal.addEventListener('abort', () => {
+              aborted.pressed = true
+              resolve()
+            })
+            opts.pressed?.then(() => resolve())
+          }),
+      ),
     },
   }
 }
@@ -164,12 +170,12 @@ describe('waitForAppEffect (#1110)', () => {
     const lines: string[] = []
     const world: AppWaitWorld = {
       log: (line) => lines.push(line),
-      open: async () => true,
-      appeared: (signal) => {
+      open: liftPort(async () => true),
+      appeared: signalPort((signal) => {
         seen = signal
         return never(signal)
-      },
-      pressed: async () => {},
+      }),
+      pressed: signalPort(async () => {}),
     }
     const result = await Effect.runPromise(waitForAppEffect(world, 'http://127.0.0.1:3200', { waitMs: APP_WAIT_MS }))
     expect(result).toEqual({ skipped: true })
@@ -179,11 +185,11 @@ describe('waitForAppEffect (#1110)', () => {
   it('fails with the rejection of a key reader that dies, rather than waiting on', async () => {
     const world: AppWaitWorld = {
       log: () => {},
-      open: async () => true,
-      appeared: never,
-      pressed: async () => {
+      open: liftPort(async () => true),
+      appeared: signalPort(never),
+      pressed: signalPort(async () => {
         throw new Error('tty gone')
-      },
+      }),
     }
     await expect(
       Effect.runPromise(waitForAppEffect(world, 'http://127.0.0.1:3200', { waitMs: APP_WAIT_MS })),

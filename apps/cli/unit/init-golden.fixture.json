@@ -1,0 +1,15 @@
+{
+  "code": 0,
+  "lines": [
+    "· looking for runtimes",
+    "the reviewer runs the writer's runtime, on its own default model, unless a model is named here",
+    "nothing will check a diff before review",
+    "init  repo\n\nthis machine\n  home      ~/.lingtai  new\n  log       SQLite · lingtai.db\n  agents    claude-code ✓\n\nthis project\n  code      /repo  local\n  lands on  lingtai-base, in /repo\n  tickets   Lingtai’s table · bug › feature › tech-debt › documentation\n\neach attempt\n  writes    claude-code\n  reviews   claude-code\n  checks    none — nothing checks a diff before review\n  trial     not run — no checks\n  approve   an attempt lands with no one asking",
+    "A role with no model is priced by the model its runtime reports on the first run.",
+    "",
+    "✓ ready — doctor: all 3 passed · 0 not checked here · 0 not implemented yet · recipe: /nonexistent/.lingtai/repo/recipe.yml",
+    "   [next] 1 lingtai board — the board, leave it running",
+    "          2 lingtai ticket new — your first ticket, in another terminal",
+    "          3 lingtai start — takes it, leave it running"
+  ]
+}

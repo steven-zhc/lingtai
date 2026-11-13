@@ -2,9 +2,12 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { Effect } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { pathExists } from '../src/first-project.ts'
+import { pathExistsEffect } from '../src/first-project.ts'
+
+const pathExists = (path: string) => Effect.runPromise(pathExistsEffect(path))
 
 const made: string[] = []
 afterEach(() => {

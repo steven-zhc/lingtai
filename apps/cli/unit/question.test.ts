@@ -7,7 +7,8 @@
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { acceptingDefaults, question, questionEffect, type QuestionWorld } from '../src/question.ts'
+import { acceptingDefaults, questionEffect, type QuestionWorld } from '../src/question.ts'
+import { question } from '../test/question.ts'
 
 // `paint` reads `FORCE_COLOR` on every call (colour.ts:54), and the assertions
 // below read its output as bare strings. `NO_COLOR` wins outright ahead of it
