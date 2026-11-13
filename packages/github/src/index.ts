@@ -53,6 +53,7 @@ export {
   ghScopeGap,
   ghScopeRefresh,
   ghStatus,
+  ghStatusEffect,
   liveGh,
   scrubbedEnv,
   type GhRun,

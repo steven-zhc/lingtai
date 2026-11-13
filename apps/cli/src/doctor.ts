@@ -55,6 +55,7 @@ import {
   signedInHere,
 } from '@lingtai/conductor'
 import { daySpendText, type DaySpend } from '@lingtai/conductor'
+import { currentRecipeEffect, loadProjectsEffect } from '@lingtai/conductor/projects'
 import { readFetchNote, readRateSnapshot } from '@lingtai/conductor/rate-snapshot'
 import {
   codeCurrency,
@@ -69,7 +70,9 @@ import {
   lastBeat,
   readCodeVersion,
   readControl,
+  readControlEffect,
   readStatus,
+  readStatusEffect,
 } from '@lingtai/daemon'
 import {
   type ControlState,
@@ -124,14 +127,17 @@ import {
   type LogQueries,
   type UnconvergedUpdate,
 } from '@lingtai/event-store/queries'
-import type { GhRun, GitHubClient } from '@lingtai/github'
-import { ghScopeGap, ghScopeRefresh, ghStatus, REQUIRED_PERMISSIONS } from '@lingtai/github'
+import type { GhRun, GhStatus, GitHubClient } from '@lingtai/github'
+import { ghScopeGap, ghScopeRefresh, ghStatusEffect, REQUIRED_PERMISSIONS } from '@lingtai/github'
 import {
   backlogProjection,
   describeShape,
   projectionLag,
+  projectionLagEffect,
   projectionShape,
+  projectionShapeEffect,
   readTasks,
+  readTasksEffect,
   spendProjection,
   ticketReportProjection,
   taskViewProjection,
@@ -152,13 +158,13 @@ import {
 } from '@lingtai/recipe'
 import { git } from '@lingtai/repo'
 import { remedyFor } from '@lingtai/setup'
-import { Effect } from 'effect'
+import { Cause, Effect } from 'effect'
 import pg from 'pg'
 
 import { ceilingUnreadLine, raisedLine, reachedLine } from './ceiling-words.ts'
 import { readDaySpend } from './day-ceiling.ts'
+import { lift } from './exit.ts'
 import { heading, LABEL_COLUMN, labelled, renderNextLine, section, symbol, width } from './output.ts'
-import { runEffect } from './project-pause.ts'
 import { RUN_UNDER_A_PAUSE } from './run.ts'
 import { probeSeaBuild, type SeaProbe } from './sea-build.ts'
 import { versionFacts } from './version.ts'
@@ -241,14 +247,42 @@ function describeUrl(raw: string): { port: string; database: string; pgbouncer: 
   }
 }
 
-async function withClient<T>(url: string, fn: (c: pg.Client) => Promise<T>): Promise<T> {
-  const c = new pg.Client({ connectionString: url, application_name: 'lingtai-doctor' })
-  await c.connect()
-  try {
-    return await fn(c)
-  } finally {
-    await c.end()
-  }
+/**
+ * A fact that failed, answered by `onFail`. A store failure is a defect (0101 §6), which `Effect.catch`
+ * does not see, so this is `catchCause`; an interruption is let through, as it was never a failure to
+ * answer with a row. The error is `Cause.squash`'s, so a row's detail is the message it always was.
+ */
+const recovering = <A, B>(self: Effect.Effect<A, unknown>, onFail: (err: unknown) => B): Effect.Effect<A | B> =>
+  self.pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.failCause(cause as Cause.Cause<never>)
+        : Effect.succeed(onFail(Cause.squash(cause))),
+    ),
+  )
+
+const doctorClient = (url: string): pg.Client =>
+  new pg.Client({ connectionString: url, application_name: 'lingtai-doctor' })
+
+/** A client that is ended however its scope ends: a failure, a defect or an interruption. A failed `end` changes nothing. */
+const clientOf = (url: string, make: (url: string) => pg.Client) =>
+  Effect.acquireRelease(
+    Effect.sync(() => make(url)),
+    (c) => lift(() => c.end()).pipe(Effect.ignore),
+  )
+
+export function withClient<T>(
+  url: string,
+  fn: (c: pg.Client) => Effect.Effect<T, unknown>,
+  make: (url: string) => pg.Client = doctorClient,
+): Effect.Effect<T, unknown> {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const c = yield* clientOf(url, make)
+      yield* lift(() => c.connect())
+      return yield* fn(c)
+    }),
+  )
 }
 
 /**
@@ -339,25 +373,25 @@ export function storeRow(choice: StoreChoice): CheckResult {
  * indistinguishable from a machine whose store will not open. That row is what
  * tells the two apart, so it is placed before them and never after.
  */
-export async function logReachable(where: string, queries: LogQueries): Promise<CheckResult> {
+export function logReachable(where: string, queries: LogQueries): Effect.Effect<CheckResult> {
   const name = 'log: reachable'
-  try {
-    const streams = await queries.projectStreams('prj-')
-    return {
-      name,
-      status: 'ok',
-      detail: `${where} opened and answered — ${streams.length} project stream(s) in it`,
-    }
-  } catch (err) {
-    return {
+  return recovering(
+    lift(() => queries.projectStreams('prj-')).pipe(
+      Effect.map((streams): CheckResult => ({
+        name,
+        status: 'ok',
+        detail: `${where} opened and answered — ${streams.length} project stream(s) in it`,
+      })),
+    ),
+    (err): CheckResult => ({
       name,
       status: 'fail',
       title: 'the log cannot be opened',
       detail:
         `${where} could not be opened or read — ${(err as Error).message}\n` +
         'Every command that appends or reads is refused the same way until it can be',
-    }
-  }
+    }),
+  )
 }
 
 export const GITHUB_APP_NOT_CONFIGURED =
@@ -508,21 +542,26 @@ export function environment(
   return { name: 'environment', status: 'ok', detail }
 }
 
-async function pooledConnection(url: string): Promise<CheckResult> {
-  try {
-    const version = await withClient(url, async (c) => {
-      const r = await c.query<{ v: string }>('select version() as v')
-      return (r.rows[0]?.v ?? '').split(' on ')[0]
-    })
-    return { name: 'postgres: pooled connection', status: 'ok', detail: version ?? 'connected' }
-  } catch (err) {
-    return {
+function pooledConnection(url: string): Effect.Effect<CheckResult> {
+  return recovering(
+    withClient(url, (c) =>
+      lift(() => c.query<{ v: string }>('select version() as v')).pipe(
+        Effect.map((r) => (r.rows[0]?.v ?? '').split(' on ')[0]),
+      ),
+    ).pipe(
+      Effect.map((version): CheckResult => ({
+        name: 'postgres: pooled connection',
+        status: 'ok',
+        detail: version ?? 'connected',
+      })),
+    ),
+    (err): CheckResult => ({
       name: 'postgres: pooled connection',
       status: 'fail',
       title: 'the database refused the pooled connection',
       detail: (err as Error).message,
-    }
-  }
+    }),
+  )
 }
 
 /**
@@ -547,48 +586,53 @@ export function notSessionModeDetail(standIn: boolean): string {
   )
 }
 
-async function directIsSessionMode(url: string, standIn = false): Promise<CheckResult> {
+function directIsSessionMode(url: string, standIn = false): Effect.Effect<CheckResult> {
   const name = 'postgres: direct connection is session mode'
-  const listener = new pg.Client({ connectionString: url, application_name: 'lingtai-doctor' })
-  const notifier = new pg.Client({ connectionString: url, application_name: 'lingtai-doctor' })
+  return recovering(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const listener = yield* clientOf(url, doctorClient)
+        yield* lift(() => listener.connect())
+        const heard: string[] = []
+        listener.on('notification', (m) => void heard.push(m.payload ?? ''))
+        yield* lift(() => listener.query('LISTEN lingtai_doctor'))
 
-  try {
-    await listener.connect()
-    const heard: string[] = []
-    listener.on('notification', (m) => void heard.push(m.payload ?? ''))
-    await listener.query('LISTEN lingtai_doctor')
+        // Long enough that a transaction pooler would have handed the listener's
+        // backend to someone else, taking the LISTEN registration with it.
+        yield* Effect.sleep('1500 millis')
 
-    // Long enough that a transaction pooler would have handed the listener's
-    // backend to someone else, taking the LISTEN registration with it.
-    await new Promise((r) => setTimeout(r, 1_500))
+        // Acquired after the wait, as it always was: the pause is the listener's alone.
+        const notifier = yield* clientOf(url, doctorClient)
+        yield* lift(() => notifier.connect())
+        yield* lift(() => notifier.query("NOTIFY lingtai_doctor, 'lingtai doctor'"))
 
-    await notifier.connect()
-    await notifier.query("NOTIFY lingtai_doctor, 'lingtai doctor'")
+        const deadline = Date.now() + 5_000
+        while (heard.length === 0 && Date.now() < deadline) {
+          yield* Effect.sleep('50 millis')
+        }
+        if (heard.length === 0) {
+          return {
+            name,
+            status: 'fail',
+            title: 'the direct database connection is not session mode',
+            detail: notSessionModeDetail(standIn),
+          } as CheckResult
+        }
 
-    const deadline = Date.now() + 5_000
-    while (heard.length === 0 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 50))
-    }
-    if (heard.length === 0) {
-      return {
-        name,
-        status: 'fail',
-        title: 'the direct database connection is not session mode',
-        detail: notSessionModeDetail(standIn),
-      }
-    }
-
-    return {
+        return {
+          name,
+          status: 'ok',
+          detail: 'cross-connection NOTIFY delivered after a 1.5s pause',
+        } as CheckResult
+      }),
+    ),
+    (err): CheckResult => ({
       name,
-      status: 'ok',
-      detail: 'cross-connection NOTIFY delivered after a 1.5s pause',
-    }
-  } catch (err) {
-    return { name, status: 'fail', title: 'the direct database connection failed', detail: (err as Error).message }
-  } finally {
-    await listener.end().catch(() => {})
-    await notifier.end().catch(() => {})
-  }
+      status: 'fail',
+      title: 'the direct database connection failed',
+      detail: (err as Error).message,
+    }),
+  )
 }
 
 /** The schema the log's own tables live in; an archive made by #448's reset
@@ -665,76 +709,92 @@ export function schemaChecks(
  * trigger is what makes the system event-driven at all. Each one missing is a
  * different silent failure.
  */
-async function schema(url: string): Promise<CheckResult[]> {
-  try {
-    return await withClient(url, async (c) => {
-      const out: CheckResult[] = []
+function schema(url: string): Effect.Effect<CheckResult[]> {
+  return recovering(
+    withClient(url, (c) =>
+      Effect.gen(function* () {
+        const out: CheckResult[] = []
 
-      // Two, since `#72` dropped `outbox`. The log and the projections'
-      // checkpoints are the whole of the schema now, which is the shape 0022
-      // was arguing for: everything else is computed on demand.
-      const tables = await c.query<{ table_name: string }>(
-        `select table_name from information_schema.tables
+        // Two, since `#72` dropped `outbox`. The log and the projections'
+        // checkpoints are the whole of the schema now, which is the shape 0022
+        // was arguing for: everything else is computed on demand.
+        const tables = yield* lift(() =>
+          c.query<{ table_name: string }>(
+            `select table_name from information_schema.tables
          where table_schema = '${EVENTS_SCHEMA}' and table_name in ('events','checkpoints')`,
-      )
-      const found = tables.rows.map((r) => r.table_name).sort()
-      out.push({
-        name: 'schema: tables',
-        status: found.length === 2 ? 'ok' : 'fail',
-        ...(found.length === 2 ? {} : { title: 'the log is missing a table' }),
-        detail: found.length === 2 ? found.join(', ') : `found ${found.join(', ') || 'none'} — expected both`,
-      })
+          ),
+        )
+        const found = tables.rows.map((r) => r.table_name).sort()
+        out.push({
+          name: 'schema: tables',
+          status: found.length === 2 ? 'ok' : 'fail',
+          ...(found.length === 2 ? {} : { title: 'the log is missing a table' }),
+          detail: found.length === 2 ? found.join(', ') : `found ${found.join(', ') || 'none'} — expected both`,
+        })
 
-      // These three match on `tablename`/`relname` across every schema — not
-      // just `EVENTS_SCHEMA` — because `schemaChecks` is what judges the
-      // result; see its own docstring for why that split exists (#500).
-      const uq = await c.query<{ schemaname: string }>(
-        `select schemaname from pg_indexes where tablename = 'events'
+        // These three match on `tablename`/`relname` across every schema — not
+        // just `EVENTS_SCHEMA` — because `schemaChecks` is what judges the
+        // result; see its own docstring for why that split exists (#500).
+        const uq = yield* lift(() =>
+          c.query<{ schemaname: string }>(
+            `select schemaname from pg_indexes where tablename = 'events'
          and indexdef like '%UNIQUE%stream_id%version%'`,
-      )
+          ),
+        )
 
-      const rules = await c.query<{ schemaname: string; rulename: string }>(
-        `select schemaname, rulename from pg_rules where tablename = 'events'
+        const rules = yield* lift(() =>
+          c.query<{ schemaname: string; rulename: string }>(
+            `select schemaname, rulename from pg_rules where tablename = 'events'
          and rulename in ('lingtai_events_no_update','lingtai_events_no_delete')`,
-      )
+          ),
+        )
 
-      const trig = await c.query<{ schemaname: string }>(
-        `select n.nspname as schemaname from pg_trigger t
+        const trig = yield* lift(() =>
+          c.query<{ schemaname: string }>(
+            `select n.nspname as schemaname from pg_trigger t
          join pg_class c on c.oid = t.tgrelid
          join pg_namespace n on n.oid = c.relnamespace
          where c.relname = 'events' and t.tgname = 'lingtai_events_notify' and not t.tgisinternal`,
-      )
+          ),
+        )
 
-      out.push(...schemaChecks(uq.rows, rules.rows, trig.rows, EVENTS_SCHEMA, { checkout: !isSea() }))
+        out.push(...schemaChecks(uq.rows, rules.rows, trig.rows, EVENTS_SCHEMA, { checkout: !isSea() }))
 
-      const jsonb = await c.query<{ table_name: string; column_name: string; data_type: string }>(
-        `select table_name, column_name, data_type from information_schema.columns
+        const jsonb = yield* lift(() =>
+          c.query<{ table_name: string; column_name: string; data_type: string }>(
+            `select table_name, column_name, data_type from information_schema.columns
          where table_schema = '${EVENTS_SCHEMA}'
            and (table_name, column_name) in (('events','data'))`,
-      )
-      const wrong = jsonb.rows.filter((r) => r.data_type !== 'jsonb')
-      out.push({
-        name: 'schema: payload column',
-        status: jsonb.rows.length === 1 && wrong.length === 0 ? 'ok' : 'fail',
-        ...(jsonb.rows.length === 1 && wrong.length === 0
-          ? {}
-          : { title: 'the event payload column is the wrong type' }),
-        detail:
-          jsonb.rows.length === 1 && wrong.length === 0
-            ? 'events.data is jsonb'
-            : wrong.length > 0
-              ? wrong.map((r) => `${r.table_name}.${r.column_name} is ${r.data_type}`).join(', ')
-              : 'events.data is missing',
-      })
+          ),
+        )
+        const wrong = jsonb.rows.filter((r) => r.data_type !== 'jsonb')
+        out.push({
+          name: 'schema: payload column',
+          status: jsonb.rows.length === 1 && wrong.length === 0 ? 'ok' : 'fail',
+          ...(jsonb.rows.length === 1 && wrong.length === 0
+            ? {}
+            : { title: 'the event payload column is the wrong type' }),
+          detail:
+            jsonb.rows.length === 1 && wrong.length === 0
+              ? 'events.data is jsonb'
+              : wrong.length > 0
+                ? wrong.map((r) => `${r.table_name}.${r.column_name} is ${r.data_type}`).join(', ')
+                : 'events.data is missing',
+        })
 
-      return out
-    })
-  } catch (err) {
-    return [
+        return out
+      }),
+    ),
+    (err): CheckResult[] => [
       { name: 'schema', status: 'fail', title: 'the log schema could not be read', detail: (err as Error).message },
-    ]
-  }
+    ],
+  )
 }
+
+/** What the beacon read answers: the daemon's status, or `null` where none has ever run. */
+type Beacon = Awaited<ReturnType<typeof readStatus>>
+type ProjectionLags = Awaited<ReturnType<typeof projectionLag>>
+type ProjectionShape = Awaited<ReturnType<typeof projectionShape>>
 
 /**
  * Projections that stopped alone in the running daemon (#839).
@@ -744,29 +804,31 @@ async function schema(url: string): Promise<CheckResult[]> {
  * cannot be read is a `fail` with the error, and that one a restart does not fix.
  */
 export function stoppedProjections(
-  read: () => ReturnType<typeof readStatus> = () => readStatus(),
-): Promise<CheckResult> {
+  read: () => Effect.Effect<Beacon, unknown> = () => readStatusEffect(),
+): Effect.Effect<CheckResult> {
   const name = 'projections: stopped'
-  return read().then(
-    (status): CheckResult => {
-      if (!status || !lastBeat(status).up) return { name, status: 'ok', detail: 'no daemon is running' }
-      const list = status.stoppedProjections
-      if (list === null) return { name, status: 'ok', detail: 'the running daemon predates this check' }
-      if (list.length === 0) return { name, status: 'ok', detail: 'every projection the daemon follows is reducing' }
-      return {
-        name,
-        status: 'fail',
-        title: `${list.length} projection(s) stopped`,
-        detail: list
-          .map(
-            (p) =>
-              `${p.name} stopped ${p.checkpoint === null ? 'at an unread checkpoint' : `at seq ${p.checkpoint}`}: ${p.error} — rebuild first: lingtai projection rebuild ${p.name}, then lingtai restart`,
-          )
-          .join('\n'),
-        fix: 'rebuild first: `lingtai projection rebuild <name>`, then `lingtai restart`',
-        restartAnswers: true,
-      }
-    },
+  return recovering(
+    read().pipe(
+      Effect.map((status): CheckResult => {
+        if (!status || !lastBeat(status).up) return { name, status: 'ok', detail: 'no daemon is running' }
+        const list = status.stoppedProjections
+        if (list === null) return { name, status: 'ok', detail: 'the running daemon predates this check' }
+        if (list.length === 0) return { name, status: 'ok', detail: 'every projection the daemon follows is reducing' }
+        return {
+          name,
+          status: 'fail',
+          title: `${list.length} projection(s) stopped`,
+          detail: list
+            .map(
+              (p) =>
+                `${p.name} stopped ${p.checkpoint === null ? 'at an unread checkpoint' : `at seq ${p.checkpoint}`}: ${p.error} — rebuild first: lingtai projection rebuild ${p.name}, then lingtai restart`,
+            )
+            .join('\n'),
+          fix: 'rebuild first: `lingtai projection rebuild <name>`, then `lingtai restart`',
+          restartAnswers: true,
+        }
+      }),
+    ),
     (err): CheckResult => ({
       name,
       status: 'fail',
@@ -781,33 +843,35 @@ export function stoppedProjections(
  * reduces through the one this machine wrote down (#179), which is what lets a
  * file-backed machine have this row at all.
  */
-export async function projections(
+export function projections(
   url?: string,
-  fetch: () => ReturnType<typeof projectionLag> = () => projectionLag(url),
-): Promise<CheckResult> {
-  try {
-    const lags = await fetch()
-    if (lags.length === 0) {
-      return {
-        name: 'projections: lag',
-        status: 'ok',
-        detail: 'no projection has a checkpoint yet — nothing is running to fall behind',
-      }
-    }
-    const detail = lags.map((l) => `${l.name} at ${l.lastSeq}/${l.headSeq} (${l.lag} behind)`).join(' · ')
-    // Reported, not failed. With no daemon yet, every projection is behind
-    // whenever nothing is running it — that is expected, not broken. Once the
-    // conductor runs as a daemon (#27), lag plus a stale `updatedAt` becomes a
-    // real failure and this is where it belongs.
-    return { name: 'projections: lag', status: 'ok', detail }
-  } catch (err) {
-    return {
+  fetch: () => Effect.Effect<ProjectionLags, unknown> = () => projectionLagEffect(url),
+): Effect.Effect<CheckResult> {
+  return recovering(
+    fetch().pipe(
+      Effect.map((lags): CheckResult => {
+        if (lags.length === 0) {
+          return {
+            name: 'projections: lag',
+            status: 'ok',
+            detail: 'no projection has a checkpoint yet — nothing is running to fall behind',
+          }
+        }
+        const detail = lags.map((l) => `${l.name} at ${l.lastSeq}/${l.headSeq} (${l.lag} behind)`).join(' · ')
+        // Reported, not failed. With no daemon yet, every projection is behind
+        // whenever nothing is running it — that is expected, not broken. Once the
+        // conductor runs as a daemon (#27), lag plus a stale `updatedAt` becomes a
+        // real failure and this is where it belongs.
+        return { name: 'projections: lag', status: 'ok', detail }
+      }),
+    ),
+    (err): CheckResult => ({
       name: 'projections: lag',
       status: 'fail',
       title: 'projection lag could not be read',
       detail: (err as Error).message,
-    }
-  }
+    }),
+  )
 }
 
 /**
@@ -827,34 +891,41 @@ export async function projections(
  * `information_schema` only, so it obeys the rule at the top of this file and
  * runs on every doctor.
  */
-export async function projectionShapes(
+export function projectionShapes(
   url?: string,
-  fetch: (p: Projection) => ReturnType<typeof projectionShape> = (p) => projectionShape(p, url),
-): Promise<CheckResult> {
+  fetch: (p: Projection) => Effect.Effect<ProjectionShape, unknown> = (p) => projectionShapeEffect(p, url),
+): Effect.Effect<CheckResult> {
   const name = 'projections: shape'
-  try {
+  return recovering(
     // Every projection, not the first one: `finding_backlog` (#137) and
     // `spend` (#497) each have a `create table if not exists` of their own,
     // and the same #84 waiting in it.
-    const shapes = await Promise.all(
-      [taskViewProjection, backlogProjection, spendProjection, ticketReportProjection].map((p) => fetch(p)),
-    )
-    const drifting = shapes.filter((s) => s.drift.length > 0)
-    if (drifting.length === 0) {
-      return { name, status: 'ok', detail: shapes.map((s) => `${s.projection}: ${describeShape(s)}`).join(' · ') }
-    }
-    return {
+    Effect.forEach([taskViewProjection, backlogProjection, spendProjection, ticketReportProjection], (p) => fetch(p), {
+      concurrency: 'unbounded',
+    }).pipe(
+      Effect.map((shapes): CheckResult => {
+        const drifting = shapes.filter((s) => s.drift.length > 0)
+        if (drifting.length === 0) {
+          return { name, status: 'ok', detail: shapes.map((s) => `${s.projection}: ${describeShape(s)}`).join(' · ') }
+        }
+        return {
+          name,
+          status: 'fail',
+          title: `${drifting.length === 1 ? 'a projection differs' : `${drifting.length} projections differ`} from the declared columns`,
+          fix: drifting.map((s) => `lingtai projection rebuild ${s.projection}`).join('\n'),
+          detail:
+            `${drifting.length} projection(s) differ from the columns their code declares\n` +
+            shapes.map((s) => `${s.projection}: ${describeShape(s)}`).join('\n'),
+        }
+      }),
+    ),
+    (err): CheckResult => ({
       name,
       status: 'fail',
-      title: `${drifting.length === 1 ? 'a projection differs' : `${drifting.length} projections differ`} from the declared columns`,
-      fix: drifting.map((s) => `lingtai projection rebuild ${s.projection}`).join('\n'),
-      detail:
-        `${drifting.length} projection(s) differ from the columns their code declares\n` +
-        shapes.map((s) => `${s.projection}: ${describeShape(s)}`).join('\n'),
-    }
-  } catch (err) {
-    return { name, status: 'fail', title: 'projection columns could not be read', detail: (err as Error).message }
-  }
+      title: 'projection columns could not be read',
+      detail: (err as Error).message,
+    }),
+  )
 }
 
 /**
@@ -905,18 +976,19 @@ export async function projectionShapes(
  * Never a `fail`: none of this is wrong, and a check that goes red for a
  * `settings.json` everyone has is a check people learn to skip.
  */
-export async function settingsSources(
-  fetch: () => Promise<string | null> = async () => {
-    try {
-      return await readFile(join(homedir(), '.claude', 'settings.json'), 'utf8')
-    } catch {
-      return null
-    }
-  },
-): Promise<CheckResult> {
+export function settingsSources(
+  fetch: () => Effect.Effect<string | null> = () =>
+    recovering(
+      lift(() => readFile(join(homedir(), '.claude', 'settings.json'), 'utf8')),
+      () => null,
+    ),
+): Effect.Effect<CheckResult> {
+  return Effect.map(fetch(), settingsRow)
+}
+
+function settingsRow(raw: string | null): CheckResult {
   const name = 'runtime: other settings in scope'
 
-  const raw = await fetch()
   if (raw === null) {
     return { name, status: 'ok', detail: 'no ~/.claude/settings.json — the recipe is the whole story' }
   }
@@ -974,39 +1046,45 @@ export async function settingsSources(
  * recipe, and it is a `fail` in exactly that case. Neither row is the other's
  * summary.
  */
-export async function runtimeAuth(
+export function runtimeAuth(
   fetch: () => ReturnType<typeof everyRuntime> = () => everyRuntime(),
-): Promise<CheckResult> {
-  const name = 'runtime: signed in'
-  // Exactly what a run gets. Not `process.env`.
-  const env = runnableEnv({})
-  const asked = await Promise.all(
-    fetch().map(async (runtime) => ({
-      id: runtime.capabilities.id,
-      // A runtime that cannot be asked cheaply must not pretend.
-      status: runtime.checkAuth ? await runtime.checkAuth(env) : null,
-    })),
-  )
+): Effect.Effect<CheckResult> {
+  return Effect.gen(function* () {
+    const name = 'runtime: signed in'
+    // Exactly what a run gets. Not `process.env`.
+    const env = runnableEnv({})
+    const asked = yield* Effect.forEach(
+      fetch(),
+      (runtime) =>
+        // A runtime that cannot be asked cheaply must not pretend. `checkAuth` stays a promise (#1098), and its
+        // rejection is a defect as it always was: no row answers it.
+        (runtime.checkAuth
+          ? lift(() => runtime.checkAuth!(env))
+          : (Effect.succeed(null) as Effect.Effect<AuthStatus | null, unknown>)
+        ).pipe(Effect.map((status) => ({ id: runtime.capabilities.id, status }))),
+      { concurrency: 'unbounded' },
+    ).pipe(Effect.orDie)
 
-  const signedIn = asked.filter((a) => a.status?.loggedIn === true)
-  const said = asked
-    .map((a) => `${a.id} — ${a.status === null ? 'cannot be asked cheaply' : a.status.detail}`)
-    .join(' · ')
+    const signedIn = asked.filter((a) => a.status?.loggedIn === true)
+    const said = asked
+      .map((a) => `${a.id} — ${a.status === null ? 'cannot be asked cheaply' : a.status.detail}`)
+      .join(' · ')
 
-  if (signedIn.length > 0) return { name, status: 'ok', detail: said }
-  if (asked.every((a) => a.status === null)) {
-    return { name, status: 'skip', detail: said }
-  }
-  return {
-    name,
-    status: 'fail',
-    title: 'No coding agent on this machine is signed in',
-    detail:
-      'No runtime is signed in, in the filtered environment a run gets\n' +
-      `${said} (${Object.keys(env).sort().join(', ')}). ` +
-      "If you are signed in yourself, the run's environment is missing something the credential " +
-      'store needs — on macOS that is USER, because a keychain item is found by who is asking.',
-  }
+    if (signedIn.length > 0) return { name, status: 'ok', detail: said }
+    if (asked.every((a) => a.status === null)) {
+      return { name, status: 'skip', detail: said }
+    }
+    return {
+      name,
+      status: 'fail',
+      title: 'No coding agent on this machine is signed in',
+      detail:
+        'No runtime is signed in, in the filtered environment a run gets\n' +
+        `${said} (${Object.keys(env).sort().join(', ')}). ` +
+        "If you are signed in yourself, the run's environment is missing something the credential " +
+        'store needs — on macOS that is USER, because a keychain item is found by who is asking.',
+    }
+  })
 }
 
 /** Whether the machine is elected to the saved `gh` login; a refused or absent election is not `gh`. */
@@ -1023,10 +1101,11 @@ function usesGh(env: NodeJS.ProcessEnv): boolean {
  * so a login that is signed out or lacks `repo` and `workflow` fails every pass.
  * Reads `gh auth status`, never the token.
  */
-export async function ghLogin(env: NodeJS.ProcessEnv, gh?: GhRun): Promise<CheckResult | null> {
-  if (!usesGh(env)) return null
+export const ghLogin = (env: NodeJS.ProcessEnv, gh?: GhRun): Effect.Effect<CheckResult | null> =>
+  usesGh(env) ? ghStatusEffect(gh).pipe(Effect.map(ghRow)) : Effect.succeed(null)
+
+function ghRow(status: GhStatus): CheckResult {
   const name = 'github: gh login'
-  const status = await ghStatus(gh)
   if (!status.ok) {
     // Only a missing sign-in is answered by `gh auth login`; a missing or old gh
     // cannot run it, and signing in again would not make an old gh accept --json.
@@ -1155,25 +1234,25 @@ export interface DoctorReach {
   /** Told when each step starts and ends; `lingtai doctor` draws a spinner from it. */
   onProgress?: (p: DoctorProgress) => void
   /** As `daemonLiveness` and `daemonCurrency` already take it. */
-  status: () => ReturnType<typeof readStatus>
+  status: () => Effect.Effect<Beacon, unknown>
   /** As `daemonLiveness` already takes it. */
-  pause: () => Promise<Awaited<ReturnType<typeof readControl>> | null>
-  lags: () => ReturnType<typeof projectionLag>
-  shapes: (p: Projection) => ReturnType<typeof projectionShape>
+  pause: () => Effect.Effect<Awaited<ReturnType<typeof readControl>> | null, unknown>
+  lags: () => Effect.Effect<ProjectionLags, unknown>
+  shapes: (p: Projection) => Effect.Effect<ProjectionShape, unknown>
   lockHolder: () => ReturnType<typeof conductorLockHolder>
   orphans: () => ReturnType<typeof findOrphans>
   /** `SnapshotStore.census` of the log this machine chose; the process log's own where absent. */
   snapshots?: () => Promise<SnapshotCensusRow[]>
   titles: () => ReturnType<typeof readTasks>
   /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
-  settings: () => Promise<string | null>
+  settings: () => Effect.Effect<string | null>
   runtimes: () => ReturnType<typeof everyRuntime>
   /** As `spendToday` takes it: today's rows and the ceiling, injectable so a unit test reads no store. */
   /** `gh`'s runner for the `github: gh login` row, injectable so a unit test spawns nothing. */
   gh?: GhRun
   spend?: () => Promise<{ day: DaySpend; ceilingUsd: number | undefined }>
   /** The `account: <runtime>` rows, injectable so a unit test reads no store (#1009). */
-  accounts?: () => Promise<CheckResult[]>
+  accounts?: () => Effect.Effect<CheckResult[]>
   /** Model-only Codex configuration, injectable so doctor tests never read machine credentials. */
   codexText?: () => CodexTextConfig | undefined
   /**
@@ -1236,80 +1315,87 @@ export interface DoctorReport {
  * reports is the read that failed rather than a second one on another
  * connection.
  */
-export async function daemonLiveness(
-  read: () => ReturnType<typeof readStatus> = () => readStatus().catch(() => null),
+export function daemonLiveness(
+  read: () => Effect.Effect<Beacon, unknown> = () => recovering(readStatusEffect(), () => null),
   /** The control reduce. Doctor's own swallows a failure; the suite passes a memory store's. */
-  readPause: () => Promise<Awaited<ReturnType<typeof readControl>> | null> = () => readControl().catch(() => null),
-): Promise<CheckResult> {
-  const status = await read()
-  // Read before the early return. A pause is in force whether or not a daemon
-  // has ever run, and it is exactly the thing somebody will forget they set —
-  // reporting liveness without it would be the same silence this check exists
-  // to break.
-  const control = await readPause()
-  // With what it means for `lingtai run`, which obeys it daemon or none (#166):
-  // "why did nothing run" and "why did something run" answered in one row.
-  const paused = control?.paused ? `, paused by ${control.by} (${control.reason}) — ${RUN_UNDER_A_PAUSE}` : ''
-  // A third fact beside those two, and independent of both (0030): being
-  // current, being paused and being on the way out are three answers, and a
-  // daemon that is draining is up, unpaused and going to stop anyway.
-  const asked = control?.shutdown ? `, shutdown asked by ${control.shutdown.by} (${control.shutdown.reason})` : ''
+  readPause: () => Effect.Effect<Awaited<ReturnType<typeof readControl>> | null, unknown> = () =>
+    recovering(readControlEffect(), () => null),
+): Effect.Effect<CheckResult, unknown> {
+  return Effect.gen(function* () {
+    const status = yield* read()
+    // Read before the early return. A pause is in force whether or not a daemon
+    // has ever run, and it is exactly the thing somebody will forget they set —
+    // reporting liveness without it would be the same silence this check exists
+    // to break.
+    const control = yield* readPause()
+    // With what it means for `lingtai run`, which obeys it daemon or none (#166):
+    // "why did nothing run" and "why did something run" answered in one row.
+    const paused = control?.paused ? `, paused by ${control.by} (${control.reason}) — ${RUN_UNDER_A_PAUSE}` : ''
+    // A third fact beside those two, and independent of both (0030): being
+    // current, being paused and being on the way out are three answers, and a
+    // daemon that is draining is up, unpaused and going to stop anyway.
+    const asked = control?.shutdown ? `, shutdown asked by ${control.shutdown.by} (${control.shutdown.reason})` : ''
 
-  if (!status) {
+    if (!status) {
+      return {
+        name: 'daemon: liveness',
+        status: 'ok',
+        detail: `no daemon has run — lingtai run works by hand; lingtai daemon takes the queue${paused}${asked}`,
+      }
+    }
+
+    // Both of the beacon's fields, through the one function the board reads it
+    // with. This row used to compute the age here and ignore the state, and so
+    // called a daemon that was still starting `not running` — for twelve seconds,
+    // in the window just after a restart, which is exactly when somebody is
+    // reading this row to decide whether to restart (`#144`).
+    const beat = lastBeat(status)
+    const age = beat.ageMs
+
+    if (!beat.up) {
+      // What it last said, because a stale beacon still knows what the process
+      // was doing when it fell silent: `stopping` is a daemon that was told to
+      // go, `starting` one that died on the way up and never took work.
+      const last = beat.state === 'up' ? '' : `, last said ${beat.state}`
+      return {
+        name: 'daemon: liveness',
+        status: 'ok',
+        // Reported, not failed: a stopped daemon is a choice as often as a
+        // crash, and doctor exiting non-zero on it would make the command
+        // useless as a restart gate.
+        detail: `last seen ${Math.round(age / 1000)}s ago (pid ${status.pid})${last} — not running${paused}${asked}`,
+      }
+    }
+
+    // `draining` says stopping; what it is stopping *for* is the pass, and the
+    // pass is a ticket. "stopping, finishing lingtai#94" is the sentence; "up"
+    // was what this said for both, which is the reducing #77 argued against.
+    // A task_view that cannot be read is said so, never passed off as no passes (#640).
+    let held: string[] | null = []
+    if (beat.state === 'draining' || beat.state === 'up') {
+      held = yield* recovering(readTasksEffect().pipe(Effect.map(heldPasses)), () => null)
+    }
+    const stopping =
+      beat.state === 'draining'
+        ? ` — ${held === null ? 'what is in flight is unreadable' : describeInFlight(held)}`
+        : ''
+    // Up with several passes side by side says how many, and one or none stays as it was (#640).
+    let side = ''
+    if (beat.state === 'up') {
+      if (held === null) side = ' — attempts in flight unreadable'
+      else if (held.length > 1) side = ` — ${held.length} attempts in flight`
+    }
+    // The same argument one state along. `starting` is up and taking nothing
+    // yet, and saying only `starting` would invite the restart that `#144`'s
+    // `not running` invited.
+    const starting = beat.state === 'starting' ? ' — reconciling; it takes no work until that finishes' : ''
+
     return {
       name: 'daemon: liveness',
       status: 'ok',
-      detail: `no daemon has run — lingtai run works by hand; lingtai daemon takes the queue${paused}${asked}`,
+      detail: `${beat.state}${stopping}${side}${starting}, last beat ${Math.round(age / 1000)}s ago${paused}${asked}`,
     }
-  }
-
-  // Both of the beacon's fields, through the one function the board reads it
-  // with. This row used to compute the age here and ignore the state, and so
-  // called a daemon that was still starting `not running` — for twelve seconds,
-  // in the window just after a restart, which is exactly when somebody is
-  // reading this row to decide whether to restart (`#144`).
-  const beat = lastBeat(status)
-  const age = beat.ageMs
-
-  if (!beat.up) {
-    // What it last said, because a stale beacon still knows what the process
-    // was doing when it fell silent: `stopping` is a daemon that was told to
-    // go, `starting` one that died on the way up and never took work.
-    const last = beat.state === 'up' ? '' : `, last said ${beat.state}`
-    return {
-      name: 'daemon: liveness',
-      status: 'ok',
-      // Reported, not failed: a stopped daemon is a choice as often as a
-      // crash, and doctor exiting non-zero on it would make the command
-      // useless as a restart gate.
-      detail: `last seen ${Math.round(age / 1000)}s ago (pid ${status.pid})${last} — not running${paused}${asked}`,
-    }
-  }
-
-  // `draining` says stopping; what it is stopping *for* is the pass, and the
-  // pass is a ticket. "stopping, finishing lingtai#94" is the sentence; "up"
-  // was what this said for both, which is the reducing #77 argued against.
-  // A task_view that cannot be read is said so, never passed off as no passes (#640).
-  let held: string[] | null = []
-  if (beat.state === 'draining' || beat.state === 'up') held = await readTasks().then(heldPasses, () => null)
-  const stopping =
-    beat.state === 'draining' ? ` — ${held === null ? 'what is in flight is unreadable' : describeInFlight(held)}` : ''
-  // Up with several passes side by side says how many, and one or none stays as it was (#640).
-  let side = ''
-  if (beat.state === 'up') {
-    if (held === null) side = ' — attempts in flight unreadable'
-    else if (held.length > 1) side = ` — ${held.length} attempts in flight`
-  }
-  // The same argument one state along. `starting` is up and taking nothing
-  // yet, and saying only `starting` would invite the restart that `#144`'s
-  // `not running` invited.
-  const starting = beat.state === 'starting' ? ' — reconciling; it takes no work until that finishes' : ''
-
-  return {
-    name: 'daemon: liveness',
-    status: 'ok',
-    detail: `${beat.state}${stopping}${side}${starting}, last beat ${Math.round(age / 1000)}s ago${paused}${asked}`,
-  }
+  })
 }
 
 /**
@@ -1317,15 +1403,16 @@ export async function daemonLiveness(
  * failure, so it is `info` and takes no part in the exit code; with none paused
  * there is no row at all.
  */
-export function pausedProjects(load: typeof loadProjects = loadProjects): Promise<CheckResult[]> {
+export function pausedProjects(
+  load: () => Effect.Effect<ProjectState[], unknown> = () => loadProjectsEffect(),
+): Effect.Effect<CheckResult[]> {
   const name = 'daemon: paused projects'
-  return load().then(
-    (projects) => pausedRows(name, projects),
-    () => [{ name, status: 'warn', detail: 'the project list could not be read' }],
-  )
+  return recovering(load().pipe(Effect.map((projects) => pausedRows(name, projects))), (): CheckResult[] => [
+    { name, status: 'warn', detail: 'the project list could not be read' },
+  ])
 }
 
-function pausedRows(name: string, projects: Awaited<ReturnType<typeof loadProjects>>): CheckResult[] {
+function pausedRows(name: string, projects: readonly ProjectState[]): CheckResult[] {
   const paused = projects.filter((p) => p.project !== null && p.paused !== null)
   if (paused.length === 0) return []
   const detail = paused.map((p) => `${p.project} (by ${p.paused!.by} since ${p.paused!.at.toISOString()})`).join('; ')
@@ -1340,10 +1427,10 @@ function pausedRows(name: string, projects: Awaited<ReturnType<typeof loadProjec
  */
 export function accountLimits(
   store: EventStore = eventStore,
-  load: typeof loadProjects = loadProjects,
-  recipeFor: (state: ProjectState) => Promise<ResolvedRecipe> = currentRecipe,
+  load: () => Effect.Effect<ProjectState[], unknown> = () => loadProjectsEffect(),
+  recipeFor: (state: ProjectState) => Effect.Effect<ResolvedRecipe, unknown> = (state) => currentRecipeEffect(state),
   now: () => Date = () => new Date(),
-): Promise<CheckResult[]> {
+): Effect.Effect<CheckResult[]> {
   const name = (runtime: RuntimeId) => `account: ${runtime}`
   const rows = Effect.gen(function* () {
     const limited = yield* Effect.forEach(RuntimeId.options, (runtime) =>
@@ -1351,21 +1438,21 @@ export function accountLimits(
     )
     const standing = limited.filter(([, account]) => account.limit !== null)
     if (standing.length === 0) return [] as CheckResult[]
-    const projects = (yield* Effect.tryPromise({ try: () => load(), catch: (e) => e })).filter(
-      (p) => p.project !== null,
-    )
-    const control = yield* Effect.tryPromise({ try: () => readControl(store), catch: (e) => e })
+    const projects = (yield* load()).filter((p) => p.project !== null)
+    const control = yield* readControlEffect(store)
     const uses = yield* Effect.forEach(projects, (p) =>
-      Effect.tryPromise({ try: () => recipeFor(p), catch: (e) => e }).pipe(
-        Effect.map((resolved) => {
-          const runtimes = runtimesOf(resolved.recipe)
-          const accounts = new Map(limited.filter(([r]) => runtimes.includes(r)))
-          // Takes work only where the guard would answer no lock at all: a pause, the ceiling
-          // or another limited account holds a project too.
-          const free = locksOn({ project: p, control, accounts }).length === 0
-          return { project: p.project!, runtimes, free } as const
-        }),
-        Effect.catch(() => Effect.succeed(null)),
+      recovering(
+        recipeFor(p).pipe(
+          Effect.map((resolved) => {
+            const runtimes = runtimesOf(resolved.recipe)
+            const accounts = new Map(limited.filter(([r]) => runtimes.includes(r)))
+            // Takes work only where the guard would answer no lock at all: a pause, the ceiling
+            // or another limited account holds a project too.
+            const free = locksOn({ project: p, control, accounts }).length === 0
+            return { project: p.project!, runtimes, free } as const
+          }),
+        ),
+        () => null,
       ),
     )
     const resolved = uses.filter((u): u is NonNullable<typeof u> => u !== null)
@@ -1383,7 +1470,7 @@ export function accountLimits(
       return { name: name(runtime), status: 'info', detail }
     })
   })
-  return runEffect(rows).catch((err: unknown): CheckResult[] => [
+  return recovering(rows, (err): CheckResult[] => [
     {
       name: 'daemon: account limits',
       status: 'warn',
@@ -1393,12 +1480,8 @@ export function accountLimits(
 }
 
 /** The `spend` projection's lag right now; undefined where it cannot be read. */
-async function spendLagNow(lags: () => ReturnType<typeof projectionLag>): Promise<bigint | undefined> {
-  try {
-    return (await lags()).find((l) => l.name === 'spend')?.lag
-  } catch {
-    return undefined
-  }
+function spendLagNow(lags: () => Effect.Effect<ProjectionLags, unknown>): Effect.Effect<bigint | undefined> {
+  return recovering(lags().pipe(Effect.map((all) => all.find((l) => l.name === 'spend')?.lag)), () => undefined)
 }
 
 /**
@@ -3232,6 +3315,14 @@ export function runDoctor(
 ): Effect.Effect<DoctorReport> {
   return Effect.gen(function* () {
     const results: CheckResult[] = []
+    // The checks CLI-12 has not reached still take promises; the seams they share with the ones above are
+    // Effects, so each is run through the report's own services (`runPromiseWith` is the form the ratchet allows).
+    const ctx = yield* Effect.context<never>()
+    const asPromise = <A, E>(self: Effect.Effect<A, E>): Promise<A> => Effect.runPromiseWith(ctx)(self)
+    // `load` is the promise face every check below CLI-12 takes; these two checks read the Effect, and
+    // the real one is read as one rather than run to a promise and lifted back.
+    const loadE: () => Effect.Effect<ProjectState[], unknown> =
+      load === loadProjects ? () => loadProjectsEffect() : () => lift(() => load())
     const push = (r: CheckResult) => void results.push(r)
     const pushAll = (rs: readonly CheckResult[]) => void results.push(...rs)
     // Every row goes in inside a step, so each gets the milliseconds of the call that pushed it and
@@ -3385,19 +3476,19 @@ export function runDoctor(
       // store runs its own `create table if not exists` — `events` and
       // `daemon_status` — which is how that store is opened at all and how the
       // very next command would open it; not one row goes in.
-      yield* step('the log', Effect.promise(() => logReachable(choice.path, queries)).pipe(Effect.map(push)))
-      yield* step('projections', Effect.promise(() => projections(undefined, reach.lags)).pipe(Effect.map(push)))
+      yield* step('the log', logReachable(choice.path, queries).pipe(Effect.map(push)))
+      yield* step('projections', projections(undefined, reach.lags).pipe(Effect.map(push)))
+      yield* step('projection shapes', projectionShapes(undefined, reach.shapes).pipe(Effect.map(push)))
+      yield* step('stopped projections', stoppedProjections(reach.status).pipe(Effect.map(push)))
+      yield* step('the daemon', daemonLiveness(reach.status, reach.pause).pipe(Effect.orDie, Effect.map(push)))
       yield* step(
-        'projection shapes',
-        Effect.promise(() => projectionShapes(undefined, reach.shapes)).pipe(Effect.map(push)),
+        'daemon currency',
+        Effect.promise(() => daemonCurrency(reach.status && (() => asPromise(reach.status!())))).pipe(Effect.map(push)),
       )
-      yield* step('stopped projections', Effect.promise(() => stoppedProjections(reach.status)).pipe(Effect.map(push)))
-      yield* step('the daemon', Effect.promise(() => daemonLiveness(reach.status, reach.pause)).pipe(Effect.map(push)))
-      yield* step('daemon currency', Effect.promise(() => daemonCurrency(reach.status)).pipe(Effect.map(push)))
-      yield* step('paused projects', Effect.promise(() => pausedProjects(load)).pipe(Effect.map(pushAll)))
+      yield* step('paused projects', pausedProjects(loadE).pipe(Effect.map(pushAll)))
       yield* step(
         'account limits',
-        Effect.promise(() => (reach.accounts ?? (() => accountLimits(undefined, load)))()).pipe(Effect.map(pushAll)),
+        (reach.accounts ?? (() => accountLimits(undefined, loadE)))().pipe(Effect.map(pushAll)),
       )
       yield* step(
         'spend',
@@ -3405,14 +3496,17 @@ export function runDoctor(
           spendToday(
             reach.spend,
             reach.pause
-              ? () => reach.pause!().then((c) => c ?? Promise.reject(new Error('the control stream could not be read')))
+              ? () =>
+                  asPromise(reach.pause!()).then(
+                    (c) => c ?? Promise.reject(new Error('the control stream could not be read')),
+                  )
               : () => readControl(),
           ),
         ).pipe(Effect.map(push)),
       )
       yield* step(
         'rates',
-        Effect.promise(() => spendLagNow(reach.lags ?? (() => projectionLag()))).pipe(
+        spendLagNow(reach.lags ?? (() => projectionLagEffect())).pipe(
           Effect.map((lag) => push(ratesCheck(process.env, lag))),
         ),
       )
@@ -3456,27 +3550,22 @@ export function runDoctor(
       // `LogQueries` so that the file-backed branch above can ask them at all;
       // which connection *this* branch hands them is unchanged.
       const audit = createPostgresLogQueries({ url: direct })
-      yield* step('the pooler', Effect.promise(() => pooledConnection(pooled)).pipe(Effect.map(push)))
-      yield* step(
-        'the direct connection',
-        Effect.promise(() => directIsSessionMode(direct, standIn)).pipe(Effect.map(push)),
-      )
-      yield* step('the schema', Effect.promise(() => schema(direct)).pipe(Effect.map(pushAll)))
-      yield* step('projections', Effect.promise(() => projections(pooled)).pipe(Effect.map(push)))
-      yield* step('projection shapes', Effect.promise(() => projectionShapes(pooled)).pipe(Effect.map(push)))
-      yield* step('stopped projections', Effect.promise(() => stoppedProjections()).pipe(Effect.map(push)))
-      yield* step('the daemon', Effect.promise(() => daemonLiveness()).pipe(Effect.map(push)))
+      yield* step('the pooler', pooledConnection(pooled).pipe(Effect.map(push)))
+      yield* step('the direct connection', directIsSessionMode(direct, standIn).pipe(Effect.map(push)))
+      yield* step('the schema', schema(direct).pipe(Effect.map(pushAll)))
+      yield* step('projections', projections(pooled).pipe(Effect.map(push)))
+      yield* step('projection shapes', projectionShapes(pooled).pipe(Effect.map(push)))
+      yield* step('stopped projections', stoppedProjections().pipe(Effect.map(push)))
+      yield* step('the daemon', daemonLiveness().pipe(Effect.orDie, Effect.map(push)))
       // Beside liveness, never reduced into it: up and current are two facts, and
       // for thirty-nine minutes only one of them was measured.
       yield* step('daemon currency', Effect.promise(() => daemonCurrency()).pipe(Effect.map(push)))
-      yield* step('paused projects', Effect.promise(() => pausedProjects(load)).pipe(Effect.map(pushAll)))
-      yield* step('account limits', Effect.promise(() => accountLimits(undefined, load)).pipe(Effect.map(pushAll)))
+      yield* step('paused projects', pausedProjects(loadE).pipe(Effect.map(pushAll)))
+      yield* step('account limits', accountLimits(undefined, loadE).pipe(Effect.map(pushAll)))
       yield* step('spend', Effect.promise(() => spendToday(undefined, () => readControl())).pipe(Effect.map(push)))
       yield* step(
         'rates',
-        Effect.promise(() => spendLagNow(() => projectionLag())).pipe(
-          Effect.map((lag) => push(ratesCheck(process.env, lag))),
-        ),
+        spendLagNow(() => projectionLagEffect()).pipe(Effect.map((lag) => push(ratesCheck(process.env, lag)))),
       )
       // What the conductor refused, from the log — not what this checkout would
       // refuse, which the recipe rows answer, and which is a different question
@@ -3518,8 +3607,8 @@ export function runDoctor(
       'GitHub',
       Effect.gen(function* () {
         results.push(githubCredentials(env))
-        const ghRow = yield* Effect.promise(() => ghLogin(env, reach.gh))
-        if (ghRow !== null) results.push(ghRow)
+        const ghResult = yield* ghLogin(env, reach.gh)
+        if (ghResult !== null) results.push(ghResult)
       }),
     )
     yield* step('project recipes', Effect.promise(() => projectRecipes(filters)).pipe(Effect.map(pushAll)))
@@ -3528,8 +3617,8 @@ export function runDoctor(
       Effect.promise(() => declaredEnvironment(env, load, reach)).pipe(Effect.map(pushAll)),
     )
     yield* step('recipe bases', Effect.promise(() => recipeGovernsItsBase(env, load, reach)).pipe(Effect.map(pushAll)))
-    yield* step('settings', Effect.promise(() => settingsSources(reach.settings)).pipe(Effect.map(push)))
-    yield* step('runtimes', Effect.promise(() => runtimeAuth(reach.runtimes)).pipe(Effect.map(push)))
+    yield* step('settings', settingsSources(reach.settings).pipe(Effect.map(push)))
+    yield* step('runtimes', runtimeAuth(reach.runtimes).pipe(Effect.map(push)))
     yield* step(
       'deferred',
       Effect.sync(() => {

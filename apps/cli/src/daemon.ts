@@ -17,6 +17,7 @@ import {
   readCodeVersion,
   readControl,
   readStatus,
+  readStatusEffect,
   recordStart,
   reconcile,
   requestShutdownEffect,
@@ -82,7 +83,7 @@ export function serviceOptions(): ServiceOptions {
     // Doctor reduces that into "no daemon has run", and here it would be the
     // one wrong answer this command exists to avoid. It is the only read:
     // a second one could fail where this succeeded.
-    liveness: () => lift(() => daemonLiveness(() => readStatus())).pipe(Effect.map((live) => live.detail)),
+    liveness: () => daemonLiveness(() => readStatusEffect()).pipe(Effect.map((live) => live.detail)),
     shutdown: () => readControlEffect().pipe(Effect.map((control) => control.shutdown)),
     // `lingtai shutdown`'s own append and a wait on the lock (#174): the
     // supervisor is told only once this command holds the conductor lock.
