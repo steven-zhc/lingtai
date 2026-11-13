@@ -1,4 +1,4 @@
-import type { ReadProjectTicket, readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
+import type { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
 /**
  * The discussion's and triage's ticket reads go through the one reader (#731).
  * `ticketEvidence` is what `gatherEvidence` does with the ticket, pulled out so

@@ -202,7 +202,7 @@ describe('triage catch-up', () => {
   it('returns from onWaitStarted while the worker still waits, and the worker completes once released', async () => {
     const f = fixture()
     const wait = f.add(21)
-    const gate = Deferred.makeUnsafe<void>()
+    const hold = Deferred.makeUnsafe<void>()
     let finished = false
     const live: TriageTriggerPorts = {
       store: f.deps.store,
@@ -210,14 +210,14 @@ describe('triage catch-up', () => {
       daemonStartedAt: () => Effect.succeed(startedAt),
       run: () =>
         Effect.gen(function* () {
-          yield* Deferred.await(gate)
+          yield* Deferred.await(hold)
           finished = true
         }),
     }
     await onWaitStarted(wait.wait, { ...f.deps, ...live, store: f.deps.store })
     await drained()
     expect(finished).toBe(false)
-    Deferred.doneUnsafe(gate, Effect.void)
+    Deferred.doneUnsafe(hold, Effect.void)
     await drained()
     expect(finished).toBe(true)
   })
