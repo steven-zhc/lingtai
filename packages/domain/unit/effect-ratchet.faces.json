@@ -63,19 +63,19 @@
     "file": "packages/agent/src/run-log.ts",
     "fn": "openRunLog",
     "until": "#790",
-    "why": "apps/cli/src/discuss.ts:377 awaits it"
+    "why": "apps/cli/src/discuss.ts awaits it, until CLI-16b"
   },
   {
     "file": "packages/agent/src/runtime.ts",
     "fn": "runtimeRun",
     "until": "#790",
-    "why": "apps/cli/src/discuss.ts:265 (discussionAsk) and apps/cli/src/triage.ts:951 await it, until the apps/cli row"
+    "why": "apps/cli/src/triage.ts:951 awaits it, until the apps/cli row"
   },
   {
     "file": "packages/agent/src/runtime.ts",
     "fn": "runtimeVersionOf",
     "until": "#790",
-    "why": "apps/cli/src/discuss.ts:291 (discussionVersion) and apps/cli/src/triage.ts:945 await it, until the apps/cli row"
+    "why": "apps/cli/src/triage.ts:945 awaits it, until the apps/cli row"
   },
   {
     "file": "packages/conductor/src/approve.ts",
@@ -166,12 +166,6 @@
     "fn": "concludeDiscussion",
     "until": "#790",
     "why": "apps/board `actions.ts` awaits it, until the board row"
-  },
-  {
-    "file": "packages/conductor/src/discuss.ts",
-    "fn": "holdDiscussion",
-    "until": "#790",
-    "why": "apps/cli `discuss.ts` and `discuss-ask.test.ts` await it, until the apps/cli row"
   },
   {
     "file": "packages/conductor/src/edit-body.ts",
@@ -1017,7 +1011,7 @@
     "file": "packages/repo/src/mirror.ts",
     "fn": "listAt",
     "until": "#790",
-    "why": "apps/cli (discuss, triage)"
+    "why": "apps/cli (triage)"
   },
   {
     "file": "packages/repo/src/mirror.ts",
@@ -1029,13 +1023,13 @@
     "file": "packages/repo/src/mirror.ts",
     "fn": "readAt",
     "until": "#790",
-    "why": "apps/cli (discuss, triage)"
+    "why": "apps/cli (triage)"
   },
   {
     "file": "packages/repo/src/mirror.ts",
     "fn": "refSha",
     "until": "#790",
-    "why": "apps/cli (discuss, triage) and apps/board task.ts"
+    "why": "apps/cli (triage) and apps/board task.ts"
   },
   {
     "file": "packages/repo/src/worktree.ts",

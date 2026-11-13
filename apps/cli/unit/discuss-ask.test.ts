@@ -6,7 +6,7 @@ import {
   type RunOutcome,
   type RunRequest,
 } from '@lingtai/agent'
-import { holdDiscussion } from '@lingtai/conductor/discuss'
+import { holdDiscussionEffect } from '@lingtai/conductor/discuss'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { callFor, Discuss, DISCUSS_DEFAULTS } from '@lingtai/recipe'
 /**
@@ -18,7 +18,7 @@ import { callFor, Discuss, DISCUSS_DEFAULTS } from '@lingtai/recipe'
  * which is the Done-when's own distinction: a `Discuss` that parses `turns: 7`
  * proves nothing about whether that `7` ever reaches a call.
  */
-import { Effect } from 'effect'
+import { Cause, Effect, Exit } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { discussionAsk, discussionVersion } from '../src/discuss.ts'
@@ -82,35 +82,37 @@ describe('discussionAsk', () => {
         },
       },
     })
-    const held = await holdDiscussion(
-      {
-        store,
-        serve: async () => null,
-        version: discussionVersion(runtime),
-        ask: discussionAsk(runtime, {
-          runId: async () => 'chat-codex:0:0',
-          cwd: '/tmp/chat-codex',
-          settingsPath: '/tmp/no-tools',
-          log: NO_RUN_LOG,
-        }),
-      },
-      {
-        chatId: 'codex',
-        question: 'Why?',
-        by: 'human:test',
-        runtime: 'codex',
-        call: { model: 'priced-model', turns: 2, wallMs: 1000 },
-        evidence: {
-          ticketId: 'ticket-lingtai-1',
-          attempt: null,
-          ticket: { ref: '1', title: 'test', body: 'test' },
-          ticketProblem: null,
-          triage: null,
-          log: [],
-          reading: [],
-          refs: [],
+    const held = await Effect.runPromise(
+      holdDiscussionEffect(
+        {
+          store,
+          serve: () => Effect.succeed(null),
+          version: discussionVersion(runtime),
+          ask: discussionAsk(runtime, {
+            runId: () => Effect.succeed('chat-codex:0:0'),
+            cwd: '/tmp/chat-codex',
+            settingsPath: '/tmp/no-tools',
+            log: NO_RUN_LOG,
+          }),
         },
-      },
+        {
+          chatId: 'codex',
+          question: 'Why?',
+          by: 'human:test',
+          runtime: 'codex',
+          call: { model: 'priced-model', turns: 2, wallMs: 1000 },
+          evidence: {
+            ticketId: 'ticket-lingtai-1',
+            attempt: null,
+            ticket: { ref: '1', title: 'test', body: 'test' },
+            ticketProblem: null,
+            triage: null,
+            log: [],
+            reading: [],
+            refs: [],
+          },
+        },
+      ),
     )
     expect(held.answered).toBe(true)
     expect(requests).toHaveLength(1)
@@ -134,13 +136,13 @@ describe('discussionAsk', () => {
   it("carries the recipe's turns and wall onto the runtime's limits", async () => {
     const { runtime, requests } = stubRuntime()
     const ask = discussionAsk(runtime, {
-      runId: async (round) => `chat-1:0:${round}`,
+      runId: (round) => Effect.succeed(`chat-1:0:${round}`),
       cwd: '/tmp/chat-1',
       settingsPath: '/tmp/chat-1.settings.json',
       log: NO_RUN_LOG,
     })
 
-    await ask('the brief', 0, { turns: 7, wallMs: 90_000 })
+    await Effect.runPromise(ask('the brief', 0, { turns: 7, wallMs: 90_000 }))
 
     expect(requests).toHaveLength(1)
     expect(requests[0]?.limits).toEqual({ turns: 7, wallMs: 90_000 })
@@ -152,19 +154,19 @@ describe('discussionAsk', () => {
   it("carries the recipe's model only when one was named", async () => {
     const { runtime, requests } = stubRuntime()
     const ask = discussionAsk(runtime, {
-      runId: async (round) => `chat-1:0:${round}`,
+      runId: (round) => Effect.succeed(`chat-1:0:${round}`),
       cwd: '/tmp/chat-1',
       settingsPath: '/tmp/chat-1.settings.json',
       log: NO_RUN_LOG,
     })
 
-    await ask('the brief', 1, { model: 'haiku', turns: 40, wallMs: 300_000 })
+    await Effect.runPromise(ask('the brief', 1, { model: 'haiku', turns: 40, wallMs: 300_000 }))
 
     expect(requests[0]?.model).toBe('haiku')
     expect(requests[0]?.runId).toBe('chat-1:0:1')
   })
 
-  it('turns an unconfigured Codex runtime into an ask rejection the discussion can record', async () => {
+  it('turns an unconfigured Codex runtime into an ask defect the discussion can record', async () => {
     const ask = discussionAsk(
       () =>
         createRuntime('codex', {
@@ -180,9 +182,10 @@ describe('discussionAsk', () => {
             },
           },
         }),
-      { runId: async () => 'chat-1:0:0', cwd: '/tmp/chat-1', settingsPath: '/tmp/settings', log: NO_RUN_LOG },
+      { runId: () => Effect.succeed('chat-1:0:0'), cwd: '/tmp/chat-1', settingsPath: '/tmp/settings', log: NO_RUN_LOG },
     )
-    await expect(ask('the brief', 0, { turns: 1, wallMs: 1000 })).rejects.toThrow(ToolsCannotBeDenied)
+    const exit = await Effect.runPromiseExit(ask('the brief', 0, { turns: 1, wallMs: 1000 }))
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(ToolsCannotBeDenied)
   })
 })
 
