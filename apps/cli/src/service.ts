@@ -98,17 +98,18 @@ import { WALL_LIMIT } from './wall-limit.ts'
 
 /**
  * Asks again whenever no request stands, until stopped; `stop` resolves once a
- * round in flight has finished. A root fiber with no services, kept here for
- * `service.ts`'s promise-shaped wait only — CLI-08b forks `keepAskedLoop` in
- * its own scope and deletes this.
+ * round in flight has finished. It carries the caller's services but is still a
+ * root fiber, kept here for `service.ts`'s promise-shaped wait only — CLI-08b
+ * forks `keepAskedLoop` in its own scope and deletes this.
  */
 function keepAsked(
+  services: Context.Context<never>,
   standing: Effect.Effect<unknown, unknown>,
   ask: Effect.Effect<unknown, unknown>,
   everyMs: number,
 ): { stop: () => Promise<void> } {
-  const fiber = Effect.runForkWith(Context.empty())(keepAskedLoop(standing, ask, everyMs))
-  return { stop: () => Effect.runPromiseWith(Context.empty())(Fiber.interrupt(fiber)) }
+  const fiber = Effect.runForkWith(services)(keepAskedLoop(standing, ask, everyMs))
+  return { stop: () => Effect.runPromiseWith(services)(Fiber.interrupt(fiber)) }
 }
 
 /** What a cause says, for the sentence that reports a read that failed. */
@@ -1485,7 +1486,7 @@ export const serviceCommand = (args: string[], options: ServiceOptions): Effect.
           // A start by a copy that held the lock while initialising ends the request
           // adopted above; the lock then stays with it and the wait never ends. So
           // whenever no request stands during the wait, it is asked again.
-          watcher = keepAsked(options.shutdown(), askAgain, 2000)
+          watcher = keepAsked(yield* Effect.context<never>(), options.shutdown(), askAgain, 2000)
           let waited = yield* queue.wait(waitLog, askAgain, progress)
           steps.end()
           // Asked again right before the supervisor is told: the lock is only worth

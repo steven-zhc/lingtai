@@ -8,11 +8,14 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   catchUpChangedTriage as catchUpChanged,
-  enqueueTriage,
+  enqueueTriage as enqueueTriageEffect,
   onWaitStarted as onStarted,
   type CatchUpTriagePorts,
   type TriageTriggerPorts,
 } from '../src/triage.ts'
+
+const enqueueTriage = (...args: Parameters<typeof enqueueTriageEffect>): boolean =>
+  Effect.runSync(enqueueTriageEffect(...args)).added
 
 /** A promise, lifted lazily with its failure kept as it was. */
 const fx = <A>(f: () => PromiseLike<A>): Effect.Effect<A, unknown> =>

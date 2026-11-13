@@ -3,8 +3,7 @@ import { Effect } from 'effect'
 
 /**
  * The action spans of a pass (#791), made through `@opentelemetry/api`. A step's
- * span is an `Effect.withSpan` since #1053. `inSpan` is for a promise body (the
- * judge, and the `end` step's actions); the action span is started from an Effect
+ * span is an `Effect.withSpan` since #1053. The action span is started from an Effect
  * body by `inSpanEffect`. 0101 §6 wants `Effect.withSpan` here too, but that waits
  * for the action ports, keeping the span names.
  *
@@ -42,49 +41,6 @@ const sinkOf = (): Sink | undefined => context.active().getValue(SINK) as Sink |
 export function markFailed(): void {
   const sink = sinkOf()
   if (sink !== undefined) sink.errored = true
-}
-
-/**
- * Runs `body` as a span that is the active one inside it, so a span started in
- * it is its child. `failed` is the span's own reading of a value the body
- * *returned* — given only by an action, whose result has one reading; a step
- * gives none and is `ERROR` by its children alone. A throw is always one. The
- * status carries no message.
- */
-export function inSpan<T>(
-  name: string,
-  attributes: Readonly<Record<string, number>>,
-  body: () => Promise<T>,
-  failed: (value: T) => boolean = () => false,
-): Promise<T> {
-  const parent = sinkOf()
-  const mine = newSink()
-  const span = trace.getTracer(SCOPE).startSpan(name, { attributes })
-  const finish = (error: boolean) => {
-    if (error || mine.errored) {
-      span.setStatus({ code: SpanStatusCode.ERROR })
-      if (parent !== undefined) parent.errored = true
-    }
-    span.end()
-  }
-  // Promise chains and not `async`: 0101 §6's ratchet (#792) counts the keyword,
-  // and a function that is going to be an Effect is not a place to add one.
-  let running: Promise<T>
-  try {
-    running = Promise.resolve(context.with(withSink(trace.setSpan(context.active(), span), mine), body))
-  } catch (err) {
-    running = Promise.reject(err)
-  }
-  return running.then(
-    (value) => {
-      finish(failed(value))
-      return value
-    },
-    (err: unknown) => {
-      finish(true)
-      throw err
-    },
-  )
 }
 
 /**

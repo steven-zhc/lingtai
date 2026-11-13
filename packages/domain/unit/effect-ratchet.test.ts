@@ -63,11 +63,14 @@ interface Counts {
 
 /**
  * A run that starts a fiber of its own. `Effect.runPromiseWith(services)` and the
- * other `*With` runs are not one: they carry the caller's services, its tracer
- * among them (`Effect.context()`, Effect 4), which is what `Runtime.runPromise(rt)`
- * was on Effect 3 and was never counted.
+ * other `*With` runs carry the caller's services, its tracer among them
+ * (`Effect.context()`, Effect 4), which is what `Runtime.runPromise(rt)` was on
+ * Effect 3, and are not counted. A `*With` run whose context is `Context.empty()`
+ * or `Context.make(…)` carries nothing: it is a root run under another name, and
+ * `RUN_WITH` plus `isEmptyContext` count it.
  */
 const RUN = /^run[A-Z](?!\w*With$)/
+const RUN_WITH = /^run[A-Z]\w*With$/
 const EFFECT_MODULES = new Set(['effect', 'effect/Effect'])
 
 /** Parse once; a syntax error comes back as a tree, so read the diagnostics. */
@@ -84,18 +87,41 @@ export function parse(name: string, text: string): ts.SourceFile {
 
 interface Imports {
   effects: Set<string>
+  /** local names of `Context` (from 'effect') or of `effect/Context` itself */
+  contexts: Set<string>
+  /** local name → the name it was imported as, for `run*With` */
+  bareWith: Map<string, string>
+  /** local names imported from anywhere else: candidates for a shared empty context */
+  others: Map<string, string>
   /** local name → the name it was imported as */
   bare: Map<string, string>
 }
 
 function importsOf(sf: ts.SourceFile): Imports {
   const effects = new Set<string>()
+  const contexts = new Set<string>()
   const bare = new Map<string, string>()
+  const bareWith = new Map<string, string>()
+  const others = new Map<string, string>()
   for (const st of sf.statements) {
     if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue
     const from = st.moduleSpecifier.text
     const clause = st.importClause
-    if (!clause || clause.isTypeOnly || !EFFECT_MODULES.has(from)) continue
+    if (!clause || clause.isTypeOnly) continue
+    if (from === 'effect/Context') {
+      if (clause.name) contexts.add(clause.name.text)
+      if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings))
+        contexts.add(clause.namedBindings.name.text)
+      continue
+    }
+    if (!EFFECT_MODULES.has(from)) {
+      if (clause.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+        for (const el of clause.namedBindings.elements) {
+          if (!el.isTypeOnly) others.set(el.name.text, (el.propertyName ?? el.name).text)
+        }
+      }
+      continue
+    }
     if (clause.name && from === 'effect/Effect') effects.add(clause.name.text)
     const nb = clause.namedBindings
     if (nb && ts.isNamespaceImport(nb) && from === 'effect/Effect') effects.add(nb.name.text)
@@ -104,16 +130,92 @@ function importsOf(sf: ts.SourceFile): Imports {
         if (el.isTypeOnly) continue
         const imported = (el.propertyName ?? el.name).text
         if (from === 'effect' && imported === 'Effect') effects.add(el.name.text)
+        else if (from === 'effect' && imported === 'Context') contexts.add(el.name.text)
         else if (RUN.test(imported)) bare.set(el.name.text, imported)
+        else if (RUN_WITH.test(imported) && from === 'effect/Effect') bareWith.set(el.name.text, imported)
       }
     }
   }
-  return { effects, bare }
+  return { effects, contexts, bare, bareWith, others }
 }
 
-export function count(name: string, text: string): Counts {
+const unwrap = (e: ts.Expression): ts.Expression => {
+  let x = e
+  while (
+    ts.isParenthesizedExpression(x) ||
+    ts.isAsExpression(x) ||
+    ts.isSatisfiesExpression(x) ||
+    ts.isNonNullExpression(x) ||
+    ts.isTypeAssertionExpression(x)
+  ) {
+    x = x.expression
+  }
+  return x
+}
+
+/** `Context.empty()` or `Context.make(…)`, under parentheses, `as`, `satisfies` and `!`. */
+function isContextCall(e: ts.Expression, contexts: ReadonlySet<string>): boolean {
+  const x = unwrap(e)
+  return (
+    ts.isCallExpression(x) &&
+    ts.isPropertyAccessExpression(x.expression) &&
+    ts.isIdentifier(x.expression.expression) &&
+    contexts.has(x.expression.expression.text) &&
+    (x.expression.name.text === 'empty' || x.expression.name.text === 'make')
+  )
+}
+
+/** Names this file declares, with `const`, as an empty context: its own, and whether each is exported. */
+function emptyContextConsts(
+  sf: ts.SourceFile,
+  contexts: ReadonlySet<string>,
+): { all: Set<string>; exported: Set<string> } {
+  const all = new Set<string>()
+  const exported = new Set<string>()
+  const scan = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isVariableDeclarationList(node.parent) &&
+      node.parent.flags & ts.NodeFlags.Const &&
+      isContextCall(node.initializer, contexts)
+    ) {
+      all.add(node.name.text)
+      if (ts.isVariableStatement(node.parent.parent) && isExported(node.parent.parent)) exported.add(node.name.text)
+    }
+    ts.forEachChild(node, scan)
+  }
+  scan(sf)
+  for (const st of sf.statements) {
+    if (ts.isExportDeclaration(st) && !st.moduleSpecifier && st.exportClause && ts.isNamedExports(st.exportClause)) {
+      for (const el of st.exportClause.elements) {
+        if (all.has((el.propertyName ?? el.name).text)) exported.add(el.name.text)
+      }
+    }
+  }
+  return { all, exported }
+}
+
+/** The names a file exports as an empty context, for the walk's first pass. */
+export function emptyContextExports(name: string, text: string): Set<string> {
   const sf = parse(name, text)
-  const { effects, bare } = importsOf(sf)
+  return emptyContextConsts(sf, importsOf(sf).contexts).exported
+}
+
+export function count(name: string, text: string, shared: ReadonlySet<string> = new Set()): Counts {
+  const sf = parse(name, text)
+  const { effects, bare, bareWith, contexts, others } = importsOf(sf)
+  const local = emptyContextConsts(sf, contexts).all
+  const emptyArg = (e: ts.Expression | undefined): boolean => {
+    if (!e) return false
+    if (isContextCall(e, contexts)) return true
+    const x = unwrap(e)
+    if (!ts.isIdentifier(x)) return false
+    if (local.has(x.text)) return true
+    const from = others.get(x.text)
+    return from !== undefined && shared.has(from)
+  }
 
   const out: Counts = { async: [], run: [] }
   const at = (n: ts.Node): Hit => ({
@@ -132,6 +234,22 @@ export function count(name: string, text: string): Counts {
       if (mod) out.async.push(at(mod))
     }
     if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      effects.has(node.expression.text) &&
+      RUN_WITH.test(node.name.text)
+    ) {
+      if (ts.isCallExpression(node.parent) && node.parent.expression === node && emptyArg(node.parent.arguments[0])) {
+        out.run.push(at(node))
+      }
+    } else if (
+      ts.isIdentifier(node) &&
+      bareWith.has(node.text) &&
+      ts.isCallExpression(node.parent) &&
+      node.parent.expression === node
+    ) {
+      if (emptyArg(node.parent.arguments[0])) out.run.push(at(node))
+    } else if (
       ts.isPropertyAccessExpression(node) &&
       ts.isIdentifier(node.expression) &&
       effects.has(node.expression.text) &&
@@ -371,6 +489,63 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
     expect(c.run).toEqual([])
   })
 
+  describe('a *With run whose context is empty', () => {
+    const H = `import { Context, Effect } from 'effect'\n`
+    const n = (t: string, shared?: ReadonlySet<string>): number => count('a.ts', H + t, shared).run.length
+    it('counts Context.empty() and Context.make(…), bare and curried', () => {
+      expect(n(`Effect.runPromiseWith(Context.empty())\n`)).toBe(1)
+      expect(n(`Effect.runPromiseWith(Context.empty())(e)\n`)).toBe(1)
+      expect(n(`Effect.runForkWith(Context.make(Tag, x))(e)\n`)).toBe(1)
+    })
+    it('counts through a same-file const, and under as, satisfies, parentheses and !', () => {
+      expect(n(`const c = Context.empty()\nEffect.runSyncWith(c)(e)\n`)).toBe(1)
+      expect(n(`Effect.runPromiseWith((Context.empty() as Ctx))(e)\n`)).toBe(1)
+      expect(n(`Effect.runPromiseWith(Context.empty() satisfies Ctx)(e)\n`)).toBe(1)
+      expect(n(`const c = Context.empty() as Ctx\nEffect.runPromiseWith(c!)(e)\n`)).toBe(1)
+    })
+    it('counts an aliased Context, effect/Context, and a bare runPromiseWith', () => {
+      expect(
+        count('a.ts', `import { Context as C, Effect } from 'effect'\nEffect.runPromiseWith(C.empty())\n`).run,
+      ).toHaveLength(1)
+      expect(
+        count(
+          'b.ts',
+          `import * as C from 'effect/Context'\nimport { Effect } from 'effect'\nEffect.runPromiseWith(C.empty())\n`,
+        ).run,
+      ).toHaveLength(1)
+      expect(
+        count(
+          'c.ts',
+          `import { Context } from 'effect'\nimport { runPromiseWith } from 'effect/Effect'\nrunPromiseWith(Context.empty())(e)\n`,
+        ).run,
+      ).toHaveLength(1)
+    })
+    it('counts a const exported from another counted file', () => {
+      const lib = `import { Context } from 'effect'\nexport const none = Context.empty()\nconst x = Context.empty()\nexport { x }\n`
+      const shared = emptyContextExports('lib.ts', lib)
+      expect([...shared].sort()).toEqual(['none', 'x'])
+      const user = `import { Effect } from 'effect'\nimport { none } from './lib'\nEffect.runPromiseWith(none)(e)\n`
+      expect(count('user.ts', user, shared).run).toHaveLength(1)
+      expect(count('user.ts', user).run).toHaveLength(0)
+    })
+    it('does not count a context taken from the caller, directly or under a ternary', () => {
+      expect(
+        n(
+          `const f = Effect.gen(function* () {\n  const services = yield* Effect.context<never>()\n  Effect.runPromiseWith(services)(e)\n})\n`,
+        ),
+      ).toBe(0)
+      expect(
+        n(
+          `const f = Effect.gen(function* () {\n  const runtime = opts.slots ? yield* Effect.context<R>() : undefined\n  Effect.runPromiseWith(runtime!)(e)\n})\n`,
+        ),
+      ).toBe(0)
+    })
+    it('does not count a let, a parameter or a property', () => {
+      expect(n(`let s = Context.empty()\ns = yield* Effect.context()\nEffect.runPromiseWith(s)(e)\n`)).toBe(0)
+      expect(n(`const f = (s: Ctx) => Effect.runPromiseWith(s)(e)\nEffect.runForkWith(ports.services)(e)\n`)).toBe(0)
+    })
+  })
+
   it('counts an aliased runPromise imported from effect', () => {
     const c = count('a.ts', `import { runPromise as go } from 'effect/Effect'\nawait go(x)\n`)
     expect(c.run.map((h) => h.line)).toEqual([2])
@@ -541,15 +716,21 @@ describe('the Effect ratchet (0101 §6, #792)', () => {
     const problems: string[] = [...refusals]
     const notCounted: string[] = []
     const measured: Record<string, { async: number; run: number }> = {}
+    const skip = NOT_COUNTED.map((n) => n.path)
+    const sources = new Map<string, string>()
+    for (const pkg of PACKAGES) {
+      for (const full of await walk(`${root}${pkg}/src`)) {
+        const f = full.slice(root.length)
+        if (!skip.includes(f)) sources.set(f, await readFile(full, 'utf8'))
+      }
+    }
+    const shared = new Set<string>()
+    for (const [f, text] of sources) for (const x of emptyContextExports(f, text)) shared.add(x)
     await Promise.all(
       PACKAGES.map(async (pkg) => {
-        const files = (await walk(`${root}${pkg}/src`)).map((f) => f.slice(root.length))
-        const skip = NOT_COUNTED.map((n) => n.path)
-        const parsed = await Promise.all(
-          files
-            .filter((f) => !skip.includes(f))
-            .map(async (f) => ({ f, c: count(f, await readFile(`${root}${f}`, 'utf8')) })),
-        )
+        const parsed = [...sources]
+          .filter(([f]) => f.startsWith(`${pkg}/src/`))
+          .map(([f, text]) => ({ f, c: count(f, text, shared) }))
         const hits = { async: [] as string[], run: [] as string[] }
         for (const { f, c } of parsed) {
           for (const h of c.async) hits.async.push(`${f}:${h.line}`)

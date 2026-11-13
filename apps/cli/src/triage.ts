@@ -67,7 +67,7 @@ import {
   refShaEffect,
   type ConflictedPath,
 } from '@lingtai/repo'
-import { Cause, Context, Deferred, Effect, Exit, Fiber, Semaphore } from 'effect'
+import { Cause, Deferred, Effect, Exit, Fiber, Semaphore } from 'effect'
 
 import { prepare } from './discuss.ts'
 import { lift } from './exit.ts'
@@ -86,10 +86,10 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
  * Queue `work` behind the one permit. A new key forks a detached worker, which keeps the
  * caller's context and outlives it; a key already queued hands back the same Deferreds.
  */
-function enqueue(
+export function enqueueTriage(
   key: { ticketId: string; waitId: WaitId },
   work: Effect.Effect<unknown, unknown>,
-  log: (line: string) => void,
+  log: (line: string) => void = console.error,
 ): Effect.Effect<{
   added: boolean
   done: Deferred.Deferred<unknown, unknown>
@@ -130,14 +130,6 @@ function enqueue(
       return Effect.as(Effect.forkDetach(worker), { added: true, done, settled })
     },
   )
-}
-
-export function enqueueTriage(
-  key: { ticketId: string; waitId: WaitId },
-  run: Effect.Effect<unknown, unknown>,
-  log: (line: string) => void = console.error,
-): boolean {
-  return Effect.runSyncWith(Context.empty())(enqueue(key, run, log)).added
 }
 
 export interface TriageTriggerPorts {
@@ -207,7 +199,7 @@ const catchUpWait = (ticketId: string, triage: Triage, deps: CatchUpTriagePorts,
     })
     if (status._tag !== 'Queued' && status._tag !== 'Interrupted') return
     const start = () =>
-      enqueue(
+      enqueueTriage(
         { ticketId, waitId },
         Effect.gen(function* () {
           // A person or the live subscriber may have answered this while it waited in the queue.
@@ -380,7 +372,7 @@ export const onWaitStarted = (
     if (daemonStartedAt === null) return
     const context = { declared: triage !== null, daemonStartedAt }
     if (triageStatus(reason, triageFactsOf(events, waitId), context)._tag !== 'Queued' || triage === null) return
-    yield* enqueue(
+    yield* enqueueTriage(
       { ticketId: event.streamId, waitId },
       Effect.gen(function* () {
         const latest = yield* lift(() => deps.store.read(event.streamId))

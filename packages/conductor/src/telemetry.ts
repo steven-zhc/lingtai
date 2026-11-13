@@ -228,12 +228,3 @@ export const installTracingEffect = (
       }
     })
   })
-
-/** The promise face of `installTracingEffect`, for `apps/cli/src/tracing.ts` and the tests, until #790. */
-export function installTracing(
-  from: NodeJS.ProcessEnv,
-  file?: MachineFile,
-  exporter?: SpanExporter,
-): Promise<Tracing | undefined> {
-  return Effect.runPromise(installTracingEffect(from, file, exporter))
-}

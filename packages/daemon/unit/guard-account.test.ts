@@ -9,7 +9,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type CeilingPort, lockedBy, makeGuard } from '../src/guard.ts'
+import { type CeilingPort, lockedEffect, makeGuard } from '../src/guard.ts'
 
 const NO_CEILING: CeilingPort = {
   configuredUsd: () => undefined,
@@ -85,7 +85,7 @@ describe('the account check in the guard', () => {
     } as EventStore
     const g = await setup({ store })
     await expect(run(g.guard.locksFor('p'))).rejects.toThrow()
-    expect(await lockedBy(g.guard)('p')).toBe('could not read whether p is locked — disk')
+    expect(await Effect.runPromise(lockedEffect(g.guard)('p'))).toBe('could not read whether p is locked — disk')
   })
 
   it('a guard that is not the holder appends nothing and still answers the lock after until', async () => {

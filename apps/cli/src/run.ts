@@ -746,9 +746,9 @@ export function run(
     ),
   )
   return Effect.gen(function* () {
-    yield* Effect.promise(() => startTracing())
+    yield* startTracing()
     const code = yield* edge
-    yield* Effect.promise(() => flushTracing())
+    yield* flushTracing
     return code
   })
 }

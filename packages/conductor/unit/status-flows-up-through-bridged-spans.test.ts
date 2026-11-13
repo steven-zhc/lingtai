@@ -10,7 +10,7 @@ import { InMemorySpanExporter } from '@opentelemetry/sdk-trace-base'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { installTracing, type Tracing } from '../src/telemetry.ts'
+import { installTracingEffect, type Tracing } from '../src/telemetry.ts'
 
 const on = { LINGTAI_TELEMETRY_OTLP_ENDPOINT: 'http://collector:4318/v1/traces' } as unknown as NodeJS.ProcessEnv
 
@@ -19,7 +19,7 @@ describe('a bridged span and its bridged parent', () => {
   let tracing: Tracing
 
   beforeAll(async () => {
-    tracing = (await installTracing(on, machineFileFrom('/h/config.yml', null), exporter))!
+    tracing = (await Effect.runPromise(installTracingEffect(on, machineFileFrom('/h/config.yml', null), exporter)))!
   })
   afterAll(() => {
     trace.disable()
