@@ -91,17 +91,22 @@ export function trackLiveSpend(projection: Projection, port: ProjectionRunnerPor
  * its checkpoint, started only when no rebuild is standing runners down, and counted as
  * starting until it has caught up. A start that fails is unregistered.
  */
-export const startLive = (projection: Projection, port: ProjectionRunnerPort): Effect.Effect<void, unknown> =>
-  Effect.gen(function* () {
-    while (standingDown !== null) yield* Deferred.await(standingDown)
-    // Registered in `liveSpend` and `starting` in one synchronous step, with nothing yielded between.
-    yield* Effect.suspend(() => {
-      trackLiveSpend(projection, port)
-      const done = Deferred.makeUnsafe<void>()
-      starting.add(done)
-      return port.start().pipe(
+export const startLive = (projection: Projection, port: ProjectionRunnerPort): Effect.Effect<void, unknown> => {
+  // The check of `standingDown` and the registration are one synchronous step: the scheduler may yield
+  // between any two effects, so a check made before a `suspend` can be stale by the time it runs.
+  const attempt: Effect.Effect<void, unknown> = Effect.suspend(() => {
+    if (standingDown !== null) return Effect.flatMap(Deferred.await(standingDown), () => attempt)
+    trackLiveSpend(projection, port)
+    const done = Deferred.makeUnsafe<void>()
+    starting.add(done)
+    // Uninterruptible up to the start itself, so an interruption cannot land between the registration and
+    // the finalizer that unregisters it, and leave a hold waiting on a start that never settles.
+    return Effect.uninterruptibleMask((restore) =>
+      restore(port.start()).pipe(
         Effect.onError(() => Effect.sync(() => liveSpend.delete(port))),
         Effect.ensuring(settle(starting, done)),
-      )
-    })
+      ),
+    )
   })
+  return attempt
+}
