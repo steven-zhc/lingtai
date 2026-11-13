@@ -4,6 +4,7 @@
  * the lock cannot be asked — never *no conductor* for a read that failed.
  */
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { type Bound, conductorNote, NO_CONDUCTOR } from '../src/conductor-note.ts'
@@ -42,15 +43,13 @@ describe('conductorNote', () => {
 describe('requeue prints the note through its deps seam', () => {
   const run = async (holder: () => Promise<string | null>) => {
     const lines: string[] = []
-    const code = await requeueCommand(
-      { project: 'lingtai', issue: 9, note: 'again', by: 'human:test' },
-      (l) => lines.push(l),
-      {
+    const code = await Effect.runPromise(
+      requeueCommand({ project: 'lingtai', issue: 9, note: 'again', by: 'human:test' }, (l) => lines.push(l), {
         store: createMemoryEventStore(),
-        loadProject: async () => ({ owner: 'steven' }) as never,
+        loadProject: () => Effect.succeed({ owner: 'steven' } as never),
         conductorNote: () => conductorNote({ holder }),
-        requeue: async () => ({ ok: true, ticketId: 'ticket-lingtai-9', detail: 'back in the queue' }) as never,
-      },
+        requeue: () => Effect.succeed({ ok: true, ticketId: 'ticket-lingtai-9', detail: 'back in the queue' } as never),
+      }),
     )
     return { code, lines }
   }

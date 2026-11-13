@@ -13,6 +13,7 @@ import { userInfo } from 'node:os'
 import { projectStream, reduceTicket, ticketStream } from '@lingtai/domain'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { createProjectionRunner, taskViewProjection } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { answerCommand, askCommand } from '../src/ask.ts'
@@ -71,7 +72,9 @@ beforeAll(async () => {
 describe('lingtai ask / answer', () => {
   it('asks before any run, and status prints the question rather than counting it', async () => {
     const said: string[] = []
-    expect(await askCommand({ project: PROJECT, issue: ASKED, text: QUESTION }, (l) => said.push(l))).toBe(0)
+    expect(
+      await Effect.runPromise(askCommand({ project: PROJECT, issue: ASKED, text: QUESTION }, (l) => said.push(l))),
+    ).toBe(0)
 
     const events = await store.read(wi(ASKED))
     expect(events.map((e) => e.type)).toEqual(['WaitStarted'])
@@ -93,14 +96,16 @@ describe('lingtai ask / answer', () => {
 
   it('refuses to ask about an item a run holds', async () => {
     const said: string[] = []
-    expect(await askCommand({ project: PROJECT, issue: RUNNING, text: QUESTION }, (l) => said.push(l))).toBe(1)
+    expect(
+      await Effect.runPromise(askCommand({ project: PROJECT, issue: RUNNING, text: QUESTION }, (l) => said.push(l))),
+    ).toBe(1)
     expect(said.join('\n')).toContain('claimed')
     expect((await store.read(wi(RUNNING))).some((e) => e.type === 'WaitStarted')).toBe(false)
   })
 
   it('refuses a blank question and a blank answer rather than defaulting either', async () => {
-    expect(await askCommand({ project: PROJECT, issue: ASKED, text: '  ' }, () => {})).toBe(2)
-    expect(await answerCommand({ project: PROJECT, issue: ASKED, text: '' }, () => {})).toBe(2)
+    expect(await Effect.runPromise(askCommand({ project: PROJECT, issue: ASKED, text: '  ' }, () => {}))).toBe(2)
+    expect(await Effect.runPromise(answerCommand({ project: PROJECT, issue: ASKED, text: '' }, () => {}))).toBe(2)
   })
 
   /**
@@ -110,11 +115,13 @@ describe('lingtai ask / answer', () => {
    * answer, or *asked by mistake, ignore* is what the agent is told to build.
    */
   it('withdraws a question asked before any run on requeue, and keeps no answer', async () => {
-    expect(await askCommand({ project: PROJECT, issue: WITHDRAWN, text: 'which desgin?' }, () => {})).toBe(0)
+    expect(
+      await Effect.runPromise(askCommand({ project: PROJECT, issue: WITHDRAWN, text: 'which desgin?' }, () => {})),
+    ).toBe(0)
 
     const said: string[] = []
-    const code = await requeueCommand({ project: PROJECT, issue: WITHDRAWN, note: 'asked by mistake, ignore' }, (l) =>
-      said.push(l),
+    const code = await Effect.runPromise(
+      requeueCommand({ project: PROJECT, issue: WITHDRAWN, note: 'asked by mistake, ignore' }, (l) => said.push(l)),
     )
     expect(code).toBe(0)
     expect(said.join('\n')).toContain('withdrawn')
@@ -133,12 +140,16 @@ describe('lingtai ask / answer', () => {
     expect(item.answers).toEqual([])
 
     // And it can be asked again, reworded.
-    expect(await askCommand({ project: PROJECT, issue: WITHDRAWN, text: 'which design?' }, () => {})).toBe(0)
+    expect(
+      await Effect.runPromise(askCommand({ project: PROJECT, issue: WITHDRAWN, text: 'which design?' }, () => {})),
+    ).toBe(0)
   })
 
   it('answers on the record, and the reducer keeps what the answer was', async () => {
     const said: string[] = []
-    expect(await answerCommand({ project: PROJECT, issue: ASKED, text: CHOICE }, (l) => said.push(l))).toBe(0)
+    expect(
+      await Effect.runPromise(answerCommand({ project: PROJECT, issue: ASKED, text: CHOICE }, (l) => said.push(l))),
+    ).toBe(0)
 
     const events = await store.read(wi(ASKED))
     const last = events[events.length - 1]!

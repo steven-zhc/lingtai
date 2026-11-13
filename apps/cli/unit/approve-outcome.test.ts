@@ -3,6 +3,7 @@ import { aClaim, aLanding, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { log } from '@lingtai/event-store'
 import { createMemoryEventStore, createMemorySnapshotStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 const boundOf = async <T>(op: Promise<T>) => ({ ok: true as const, value: await op })
@@ -45,7 +46,7 @@ async function world(over: Partial<FollowWorld> = {}) {
 describe('followApproval', () => {
   it('no holder: it lands when a conductor runs', async () => {
     const { w } = await world({ holder: async () => null })
-    const r = await followApproval(target, w)
+    const r = await Effect.runPromise(followApproval(target, w))
     expect(r.detail).toBe('it lands when a conductor runs: lingtai start, or lingtai run')
     expect(r.outcome).toBe('no-conductor')
   })
@@ -57,7 +58,7 @@ describe('followApproval', () => {
       polls++
       if (polls === 2) await h.append(aLanding(item, 'abcdef0123456789', 'main'))
     }
-    const r = await followApproval(target, h.w)
+    const r = await Effect.runPromise(followApproval(target, h.w))
     expect(r.detail).toBe('landed on main in abcdef0')
     expect(r.outcome).toBe('landed')
     expect(r.extra).toEqual({ mergeCommit: 'abcdef0123456789', base: 'main' })
@@ -66,14 +67,14 @@ describe('followApproval', () => {
   it('a new wait: held again', async () => {
     const h = await world()
     await h.append(aWait(item, { _tag: 'OwnQuestion', question: 'which one?', by: 'human:x' }))
-    const r = await followApproval(target, h.w)
+    const r = await Effect.runPromise(followApproval(target, h.w))
     expect(r.detail).toMatch(/^held again: /)
     expect(r.next).toBe('lingtai status lingtai')
   })
 
   it('nothing within 60 seconds: names the holder, and a landing at 59 seconds still wins', async () => {
     const h = await world()
-    const r = await followApproval(target, h.w)
+    const r = await Effect.runPromise(followApproval(target, h.w))
     expect(r.detail).toBe('lingtai-daemon is continuing it; lingtai status says when it lands')
     expect(r.outcome).toBe('pending')
     expect(h.at()).toBeGreaterThanOrEqual(WAIT_MS)
@@ -85,7 +86,7 @@ describe('followApproval', () => {
       t += ms
       if (t === 59_000) await late.append(aLanding(item, '1234567890', 'main'))
     }
-    expect((await followApproval(target, late.w)).outcome).toBe('landed')
+    expect((await Effect.runPromise(followApproval(target, late.w))).outcome).toBe('landed')
   })
 
   it('the signal aborts the wait: the approval stands', async () => {
@@ -93,7 +94,7 @@ describe('followApproval', () => {
     const ac = new AbortController()
     h.w.signal = ac.signal
     h.w.sleep = async () => ac.abort()
-    const r = await followApproval(target, h.w)
+    const r = await Effect.runPromise(followApproval(target, h.w))
     expect(r.detail).toBe('stopped waiting; the approval stands, and lingtai status says when it lands')
     expect(r.outcome).toBe('unknown')
   })
@@ -107,7 +108,7 @@ describe('followApproval', () => {
         readTypes: () => Promise.reject(new Error('unused')),
       },
     })
-    const r = await followApproval(target, h.w)
+    const r = await Effect.runPromise(followApproval(target, h.w))
     expect(r.detail).toBe('could not read the outcome (store down); lingtai status says when it lands')
   })
 
@@ -117,7 +118,7 @@ describe('followApproval', () => {
         throw new Error('EACCES')
       },
     })
-    const r = await followApproval(target, h.w)
+    const r = await Effect.runPromise(followApproval(target, h.w))
     expect(r.detail).toBe('could not tell whether a conductor is running (EACCES); lingtai doctor says')
   })
 
@@ -126,7 +127,7 @@ describe('followApproval', () => {
     const ac = new AbortController()
     const h = await world({ store: pending, signal: ac.signal })
     setTimeout(() => ac.abort(), 5)
-    const stopped = await followApproval(target, h.w)
+    const stopped = await Effect.runPromise(followApproval(target, h.w))
     expect(stopped.detail).toBe('stopped waiting; the approval stands, and lingtai status says when it lands')
 
     let calls = 0
@@ -134,7 +135,7 @@ describe('followApproval', () => {
       store: pending,
       bound: (op) => (++calls === 1 ? boundOf(op) : Promise.resolve({ ok: false as const, why: 'timeout' as const })),
     })
-    const r = await followApproval(target, t.w)
+    const r = await Effect.runPromise(followApproval(target, t.w))
     expect(r.outcome).toBe('pending')
     expect(r.detail).toBe('lingtai-daemon is continuing it; lingtai status says when it lands')
   })
@@ -144,12 +145,12 @@ describe('followApproval', () => {
       holder: () => new Promise<never>(() => {}),
       bound: async () => ({ ok: false, why: 'timeout' }),
     })
-    const r = await followApproval(target, h.w)
+    const r = await Effect.runPromise(followApproval(target, h.w))
     expect(r.detail).toMatch(/^could not tell whether a conductor is running \(no answer in 60 seconds\)/)
     const ac = new AbortController()
     ac.abort()
     const a = await world({ holder: () => new Promise<never>(() => {}), signal: ac.signal })
-    expect((await followApproval(target, a.w)).detail).toMatch(/^stopped waiting/)
+    expect((await Effect.runPromise(followApproval(target, a.w))).detail).toMatch(/^stopped waiting/)
   })
 
   it('held again names the branch from the ticket reduce, not an empty one', async () => {
@@ -172,7 +173,7 @@ describe('followApproval', () => {
         because: { _tag: 'NotAsked' },
       }),
     )
-    const r = await followApproval(target, h.w)
+    const r = await Effect.runPromise(followApproval(target, h.w))
     expect(r.detail).toMatch(/^held again: agent\/1 is waiting on you\./)
   })
 
@@ -186,7 +187,7 @@ describe('followApproval', () => {
         because: { _tag: 'NotAsked' },
       }),
     )
-    const r = await followApproval(target, h.w)
+    const r = await Effect.runPromise(followApproval(target, h.w))
     expect(r.detail).toMatch(/^held again: agent\/1 is waiting on you\./)
   })
 
@@ -203,7 +204,7 @@ describe('followApproval', () => {
       const ac = new AbortController()
       const h = await world({ store: late, signal: ac.signal })
       setTimeout(() => ac.abort(), 5)
-      const r = await followApproval(target, h.w)
+      const r = await Effect.runPromise(followApproval(target, h.w))
       expect(r.detail).toMatch(/^stopped waiting/)
       fail(new Error('ECONNRESET'))
       await new Promise((resolve) => setTimeout(resolve, 20))
@@ -236,7 +237,7 @@ describe('followApproval reads the ticket through its snapshot', () => {
       state: ticketReducer.encode(reduceAll(ticketReducer, stored.slice(0, 1))),
     })
     const latest = vi.spyOn(snapshots, 'latest')
-    const r = await followApproval(target, { ...h.w, snapshots })
+    const r = await Effect.runPromise(followApproval(target, { ...h.w, snapshots }))
     expect(r.detail).toBe('landed on main in abcdef0')
     expect(latest).toHaveBeenCalled()
   })
@@ -247,7 +248,7 @@ describe('followApproval reads the ticket through its snapshot', () => {
       throw new Error('the process log was touched')
     })
     try {
-      const r = await followApproval(target, h.w)
+      const r = await Effect.runPromise(followApproval(target, h.w))
       expect(r.detail).toBe('landed on main in abcdef0')
       expect(latest).not.toHaveBeenCalled()
     } finally {

@@ -1,4 +1,5 @@
 /** The wait-answering commands through `@effect/cli` (#621): what is parsed, and what is refused before a handler runs. */
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { INTEGER_FLAGS, runCli } from '../src/cli.ts'
@@ -6,43 +7,46 @@ import { INTEGER_FLAGS, runCli } from '../src/cli.ts'
 const seen = vi.hoisted(() => ({ calls: [] as { command: string; options: unknown }[] }))
 
 vi.mock('../src/close.ts', () => ({
-  closeVerdict: async (options: unknown) => {
+  closeVerdict: (options: unknown) => {
     seen.calls.push({ command: 'close', options })
-    return { code: 0, verdict: { outcome: 'accepted', ticketId: 'ticket-p-5', detail: 'closed it' } }
+    return Effect.succeed({ code: 0, verdict: { outcome: 'accepted', ticketId: 'ticket-p-5', detail: 'closed it' } })
   },
 }))
 vi.mock('../src/requeue.ts', () => ({
-  requeueVerdict: async (options: unknown) => {
+  requeueVerdict: (options: unknown) => {
     seen.calls.push({ command: 'requeue', options })
-    return { code: 0, verdict: { outcome: 'accepted', ticketId: 'ticket-p-5', detail: 'back in the queue' } }
+    return Effect.succeed({
+      code: 0,
+      verdict: { outcome: 'accepted', ticketId: 'ticket-p-5', detail: 'back in the queue' },
+    })
   },
 }))
 vi.mock('../src/grant-fix-round.ts', () => ({
-  grantFixRoundVerdict: async (options: unknown) => {
+  grantFixRoundVerdict: (options: unknown) => {
     seen.calls.push({ command: 'grant-fix-round', options })
-    return {
+    return Effect.succeed({
       code: 1,
       verdict: { outcome: 'refused', reason: 'head-moved', ticketId: 'ticket-p-5', detail: 'the head moved' },
-    }
+    })
   },
 }))
 vi.mock('../src/ask.ts', () => ({
-  askVerdict: async (options: unknown) => {
+  askVerdict: (options: unknown) => {
     seen.calls.push({ command: 'ask', options })
-    return { code: 0, verdict: { outcome: 'accepted', ticketId: 'ticket-p-5', detail: 'asked' } }
+    return Effect.succeed({ code: 0, verdict: { outcome: 'accepted', ticketId: 'ticket-p-5', detail: 'asked' } })
   },
-  answerVerdict: async (options: unknown) => {
+  answerVerdict: (options: unknown) => {
     seen.calls.push({ command: 'answer', options })
-    return { code: 0, verdict: { outcome: 'accepted', ticketId: 'ticket-p-5', detail: 'answered' } }
+    return Effect.succeed({ code: 0, verdict: { outcome: 'accepted', ticketId: 'ticket-p-5', detail: 'answered' } })
   },
 }))
 vi.mock('../src/now.ts', () => ({
-  nowVerdict: async (project: string, issue: number, by: string) => {
+  nowVerdict: (project: string, issue: number, by: string) => {
     seen.calls.push({ command: 'now', options: { project, issue, by } })
-    return {
+    return Effect.succeed({
       code: 0,
       verdict: { outcome: 'accepted', subject: `${project} #${issue}`, detail: `requested ${project} #${issue}` },
-    }
+    })
   },
 }))
 

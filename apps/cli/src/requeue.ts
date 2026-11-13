@@ -25,15 +25,18 @@ import { userInfo } from 'node:os'
  * through the GitHub client before the wait is resolved. A refusal after that
  * write leaves the body changed and reports the item's current state.
  */
-import { currentRecipe, loadProject, ownerlessClient, requeue } from '@lingtai/conductor'
-import { editBodyAndRequeue, type IssueChannel } from '@lingtai/conductor/edit-body'
-import { projectClient } from '@lingtai/conductor/filter'
-import { readState } from '@lingtai/conductor/snapshot-state'
+import { requeueEffect } from '@lingtai/conductor/decide'
+import { editBodyAndRequeueEffect, type IssueChannel } from '@lingtai/conductor/edit-body'
+import { projectClientEffect } from '@lingtai/conductor/filter'
+import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
+import { currentRecipeEffect, loadProjectEffect } from '@lingtai/conductor/projects'
 import { ticketReducer, ticketStream } from '@lingtai/domain'
 import { hasGitHubAuth } from '@lingtai/env'
-import { eventStore, log, type EventStore } from '@lingtai/event-store'
+import { eventStore, log, readThroughSnapshot, type EventStore } from '@lingtai/event-store'
+import { Effect } from 'effect'
 
 import { type ConductorNote, noteConductor } from './conductor-note.ts'
+import { lift } from './exit.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface RequeueCommandOptions {
@@ -50,86 +53,81 @@ export interface RequeueCommandOptions {
 }
 
 type RequeueDeps = {
-  loadProject?: typeof loadProject
+  loadProject?: typeof loadProjectEffect
   client?: IssueChannel
   store?: EventStore
   /** The line that says no conductor will reduce this. Replaceable so a test needs no lock file. */
   conductorNote?: ConductorNote
-  editBodyAndRequeue?: typeof editBodyAndRequeue
-  requeue?: typeof requeue
+  editBodyAndRequeue?: typeof editBodyAndRequeueEffect
+  requeue?: typeof requeueEffect
 }
 
-export async function requeueVerdict(
+export function requeueVerdict(
   options: RequeueCommandOptions,
   progress: (line: string) => void,
   deps: RequeueDeps = {},
-): Promise<Answered> {
-  // Checked before the stream is read, so a mistyped project says so. Without
-  // it the refusal would be `ticket-lingati-130 is backlog, not blocked`, which is
-  // true, unhelpful, and about the wrong mistake.
-  const project = await (deps.loadProject ?? loadProject)(options.project)
-  if (!project) {
-    return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
-  }
+): Effect.Effect<Answered, unknown> {
+  return Effect.gen(function* () {
+    const project = yield* (deps.loadProject ?? loadProjectEffect)(options.project)
+    if (!project) {
+      return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
+    }
 
-  // Holds no projector (0100 §13): the conductor lock's holder reduces this onto
-  // the board, and the note after the append says when none is up.
-  const append = async (): Promise<Answered> => {
-    const by = options.by ?? `human:${userInfo().username}`
-    if (options.intoBody !== undefined) {
-      const { client } = deps.client ? { client: deps.client } : await projectClient(project)
-      const ticketId = ticketStream(options.project, options.issue)
-      const item = await readState(deps.store ?? eventStore, ticketReducer, ticketId, 'all', {
-        snapshots: deps.store === undefined ? log.snapshots : undefined,
-      })
-      if (item.lifecycle.status !== 'blocked') {
-        return refusal(1, 'not-blocked', `${ticketId} is ${item.lifecycle.status}, not blocked — nothing was written`, {
-          ticketId,
+    const append = Effect.gen(function* () {
+      const by = options.by ?? `human:${userInfo().username}`
+      if (options.intoBody !== undefined) {
+        const { client } = deps.client ? { client: deps.client } : yield* projectClientEffect(project)
+        const ticketId = ticketStream(options.project, options.issue)
+        const item = yield* readThroughSnapshot(deps.store ?? eventStore, ticketReducer, ticketId, 'all', {
+          snapshots: deps.store === undefined ? log.snapshots : undefined,
         })
+        if (item.lifecycle.status !== 'blocked') {
+          return refusal(
+            1,
+            'not-blocked',
+            `${ticketId} is ${item.lifecycle.status}, not blocked — nothing was written`,
+            { ticketId },
+          )
+        }
+        const outcome = yield* (deps.editBodyAndRequeue ?? editBodyAndRequeueEffect)({
+          project: options.project,
+          issue: options.issue,
+          waitId: item.lifecycle.waitId,
+          text: options.intoBody,
+          by,
+          note: options.note,
+          github: client,
+          ...(deps.store ? { store: deps.store } : {}),
+        })
+        return fromOutcome(outcome, { written: outcome.written })
       }
-      const outcome = await (deps.editBodyAndRequeue ?? editBodyAndRequeue)({
+      const github =
+        deps.client ??
+        (project.owner === null
+          ? (yield* ownerlessClientEffect(project, (yield* currentRecipeEffect(project)).recipe)).client
+          : hasGitHubAuth()
+            ? (yield* projectClientEffect(project)).client
+            : undefined)
+      const outcome = yield* (deps.requeue ?? requeueEffect)({
+        github,
         project: options.project,
         issue: options.issue,
-        waitId: item.lifecycle.waitId,
-        text: options.intoBody,
         by,
         note: options.note,
-        github: client,
         ...(deps.store ? { store: deps.store } : {}),
       })
-      return fromOutcome(outcome, { written: outcome.written })
-    }
-    // Only needed when the wait's triage asked questions; with no GitHub App the
-    // requeue refuses by name in that case and is unchanged otherwise (#921).
-    const github =
-      deps.client ??
-      (project.owner === null
-        ? (await ownerlessClient(project, (await currentRecipe(project)).recipe)).client
-        : hasGitHubAuth()
-          ? (await projectClient(project)).client
-          : undefined)
-    const outcome = await (deps.requeue ?? requeue)({
-      github,
-      project: options.project,
-      issue: options.issue,
-      // The local account: a weak claim, but a true one, and the same one the
-      // board records (0007). An unblocking that named nobody would be the
-      // silent waiver this system exists to remove.
-      by,
-      note: options.note,
-      ...(deps.store ? { store: deps.store } : {}),
+      return fromOutcome(outcome)
     })
-    return fromOutcome(outcome)
-  }
-  const answered = await append()
-  if (answered.code === 0) await noteConductor(progress, deps.conductorNote)
-  return answered
+    const answered: Answered = yield* append
+    if (answered.code === 0) yield* lift(() => noteConductor(progress, deps.conductorNote))
+    return answered
+  })
 }
 
-export async function requeueCommand(
+export function requeueCommand(
   options: RequeueCommandOptions,
   log = console.log,
   deps: RequeueDeps = {},
-): Promise<number> {
-  return logVerdict(VERBS['requeue'], await requeueVerdict(options, log, deps), log)
+): Effect.Effect<number, unknown> {
+  return Effect.map(requeueVerdict(options, log, deps), (answered) => logVerdict(VERBS['requeue'], answered, log))
 }
