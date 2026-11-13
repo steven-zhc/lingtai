@@ -225,7 +225,7 @@ import {
   type Worktree,
 } from '@lingtai/repo'
 import { ticketOfLandingSubject } from '@lingtai/repo/landing-subject'
-import { type Duration, Effect, Exit, Result } from 'effect'
+import { Cause, type Duration, Effect, Exit, Result } from 'effect'
 
 import { reachAccountLimit } from './account.ts'
 import { armsOnOriginEffect } from './arms.ts'
@@ -242,8 +242,8 @@ import { armForState, conflictResolvedOf, diffBaseShaOf, landedOnBaseOf, priorAt
 import { createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
 import { claimTicketEffect, continueTicketEffect, releaseTicketEffect, type SplitChildState } from './claim.ts'
-import { closeHolding } from './close.ts'
-import { runnableNow, type TicketSource } from './discover.ts'
+import { closeHoldingEffect } from './close.ts'
+import { runnableNowEffect, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
 import { fixBriefParts, grantedAdviceFromState } from './fix.ts'
@@ -254,7 +254,7 @@ import { labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { accountWallOf, type NeverStarted, standDown } from './never-started.ts'
 import { AgentHost, Repo } from './ports.ts'
-import { currentRecipe } from './projects.ts'
+import { currentRecipeEffect } from './projects.ts'
 import { signedInHere } from './projects.ts'
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
@@ -814,12 +814,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // ---- 1. the recipe, from this machine -----------------------------------
     // `~/.lingtai/<project>/recipe.yml` (0046 §3, #180), the same read every
     // other command that conducts makes.
-    const recipeAt: Result.Result<ResolvedRecipe, string> = yield* Effect.result(
-      Effect.tryPromise({
-        try: () => (options.recipe ?? (() => currentRecipe(options.project, options.client)))(),
-        // An unreadable or non-compliant recipe must stop the run rather than
-        // fall back to a default.
-        catch: (err) => (err as Error).message,
+    //
+    // An unreadable or non-compliant recipe must stop the run rather than fall
+    // back to a default, and **every cause of it stops it the same way**: a
+    // failure and a defect both answer `stage: 'recipe'`, because a daemon
+    // restarted onto a bad recipe takes nothing at all rather than crashing
+    // every pass. `Effect.result` sees only the failure channel; this sees both.
+    const recipeAt: Result.Result<ResolvedRecipe, string> = yield* (
+      options.recipe ? Effect.tryPromise(options.recipe) : currentRecipeEffect(options.project, options.client)
+    ).pipe(
+      Effect.map((found) => Result.succeed(found)),
+      Effect.catchCause((cause) => {
+        const err = Cause.squash(cause)
+        return Effect.succeed(Result.fail(err instanceof Error ? err.message : String(err)))
       }),
     )
     if (Result.isFailure(recipeAt)) {
@@ -1802,9 +1809,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           if (opened === null) beforeTheOpen.push({ label, detail })
           else opened.note(label, detail)
         },
-        close: async (fate) => {
-          await opened?.close(fate)
-        },
+        // The inner log's own promise, handed on: this adds no IO of its own.
+        close: (fate) => opened?.close(fate) ?? Promise.resolve(),
       }
       /** Called by `claim`'s `queue:` action, and only once it holds the item. */
       const openTheRunLog: Effect.Effect<void> = Effect.gen(function* () {
@@ -1831,13 +1837,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * close and nothing to say.
        */
       yield* Effect.addFinalizer(() =>
-        Effect.promise(async () => {
-          if (opened === null) return
+        Effect.suspend(() => {
+          if (opened === null) return Effect.void
           // The sentence, and the label a reader recognises it by: `#110`
           // follows this from another process and has nothing else to tell *the
           // writer has finished* from *the writer is thinking*.
           runLog.note(RUN_LOG_END, runLogEnd(didLand))
-          await runLog.close(didLand ? 'delete' : 'keep')
+          return Effect.promise(() => runLog.close(didLand ? 'delete' : 'keep'))
         }),
       )
 
@@ -2664,7 +2670,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const tickets: TicketSource = options.client
           // A read that rejects is a defect here, which the pipeline turns into
           // `queue:`'s `failed` verdict as a rejection did.
-          const found = yield* Effect.promise(() => runnableNow({ client: tickets, queue, only: [options.issue] }))
+          const found = yield* runnableNowEffect({ client: tickets, queue, only: [options.issue] }).pipe(Effect.orDie)
           const runnable = found.runnable.find((r) => r.ref === String(options.issue))
           if (!runnable) {
             return {
@@ -2725,22 +2731,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 // left to change. Closed here, with no run — `end` is what resolves
                 // the issue, as it does for `lingtai close`.
                 const done = claim.refusal
-                const closed = yield* Effect.promise(() =>
-                  closeHolding(
-                    {
-                      project: options.project.project!,
-                      issue: options.issue,
-                      by: 'conductor',
-                      reason: `every child of split ${done.waitId} is closed: ${splitChildrenWords(done.children)}`,
-                      state: options.project,
-                      client: options.client,
-                      recipe: async () => resolved,
-                      ifVersion: done.version,
-                    },
-                    store,
-                    ticketId,
-                  ),
-                )
+                const closed = yield* closeHoldingEffect(
+                  {
+                    project: options.project.project!,
+                    issue: options.issue,
+                    by: 'conductor',
+                    reason: `every child of split ${done.waitId} is closed: ${splitChildrenWords(done.children)}`,
+                    state: options.project,
+                    client: options.client,
+                    // A value already held, handed over as the thunk `CloseOptions` asks for.
+                    recipe: () => Promise.resolve(resolved),
+                    ifVersion: done.version,
+                  },
+                  store,
+                  ticketId,
+                ).pipe(Effect.orDie)
                 if (closed.ok) {
                   // The split's wait is over (`WaitResolved{Split}` is on the stream).
                   // This path calls `tellGitHub` directly, so it edits here (#750).

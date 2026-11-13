@@ -21,7 +21,7 @@ import type { IssueChannel } from './tell.ts'
 import { writeSectionEffect } from './write-section.ts'
 
 export type { IssueChannel } from './tell.ts'
-export { writeSection, type WriteSectionResult } from './write-section.ts'
+export { type WriteSectionResult } from './write-section.ts'
 
 export interface EditBodyAndRequeueResult {
   ok: boolean

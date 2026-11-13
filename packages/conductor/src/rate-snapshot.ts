@@ -17,6 +17,7 @@ import { join } from 'node:path'
 
 import { LITELLM_URL, mergeSnapshot, ratesFromLiteLLM, shipped, type RateRow } from '@lingtai/domain/rate-card'
 import { rateDir, readJson, readRateSnapshot, snapshotPath } from '@lingtai/projector'
+import { Cause, Effect } from 'effect'
 
 /** What the last attempt said, for `doctor` — separate from the snapshot so a failure leaves that byte-for-byte alone. */
 export interface FetchNote {
@@ -72,8 +73,8 @@ export function newlyPriced(before: readonly RateRow[], after: readonly RateRow[
 export interface RatePorts {
   /** The models some run priced without a figure, with the runtime that ran them. */
   wanted: () => Promise<{ model: string; runtime: string }[]>
-  /** LiteLLM's table, parsed. Throws on a failed fetch or invalid JSON. */
-  table: () => Promise<unknown>
+  /** LiteLLM's table, parsed. Fails on a failed fetch or invalid JSON. */
+  table: () => Effect.Effect<unknown, unknown>
   read: () => RateRow[]
   write: (rows: RateRow[]) => void
   note: (note: FetchNote) => void
@@ -92,11 +93,15 @@ export const realRatePorts = (
 ): RatePorts => ({
   wanted,
   ...(rebuild === undefined ? {} : { rebuild }),
-  table: async () => {
-    const res = await fetch(LITELLM_URL, { signal: AbortSignal.timeout(10_000) })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
-  },
+  table: () =>
+    Effect.gen(function* () {
+      const res = yield* Effect.tryPromise({
+        try: () => fetch(LITELLM_URL, { signal: AbortSignal.timeout(10_000) }),
+        catch: (error) => error,
+      })
+      if (!res.ok) return yield* Effect.fail(new Error(`HTTP ${res.status}`))
+      return yield* Effect.tryPromise({ try: () => res.json() as Promise<unknown>, catch: (error) => error })
+    }),
   read: () => readRateSnapshot(from),
   write: (rows) => {
     const path = snapshotPath(from)
@@ -117,7 +122,7 @@ let inflight: Promise<void> | null = null
  * gets the same promise, so two passes make one fetch and one write.
  */
 export function refreshRates(ports: RatePorts): Promise<void> {
-  inflight ??= run(ports).finally(() => {
+  inflight ??= refreshOnce(ports).finally(() => {
     inflight = null
   })
   return inflight
@@ -131,7 +136,13 @@ export function ratesDue(now: Date, note: FetchNote | null = readFetchNote()): b
   return note === null || note.at.slice(0, 10) < now.toISOString().slice(0, 10)
 }
 
-async function run(ports: RatePorts): Promise<void> {
+/** One refresh, run to the end. The only run of `refreshRatesEffect`; `refreshRates` adds the in-flight dedupe. */
+export function refreshOnce(ports: RatePorts): Promise<void> {
+  return Effect.runPromise(refreshRatesEffect(ports))
+}
+
+/** `refreshRates` without the dedupe, as an Effect. It never fails: every cause becomes the note. */
+export function refreshRatesEffect(ports: RatePorts): Effect.Effect<void> {
   // Reporting can fail on the same disk the write did; a refresh never rejects.
   const fail = (error: unknown) => {
     try {
@@ -140,10 +151,12 @@ async function run(ports: RatePorts): Promise<void> {
       // nothing left to tell anyone
     }
   }
-  try {
-    const wanted = (await ports.wanted()).filter((w) => !shipped(w.model))
+  return Effect.gen(function* () {
+    const wanted = (yield* Effect.tryPromise({ try: () => ports.wanted(), catch: (error) => error })).filter(
+      (w) => !shipped(w.model),
+    )
     if (wanted.length === 0) return
-    const table = await ports.table()
+    const table = yield* ports.table()
     const day = ports.now().toISOString().slice(0, 10)
     const { rows, rejected } = ratesFromLiteLLM(table, wanted, day)
     const before = ports.read()
@@ -153,12 +166,11 @@ async function run(ports: RatePorts): Promise<void> {
     const priced = merged === null ? [] : newlyPriced(before, merged)
     let rebuilt: string | undefined
     if (priced.length > 0 && ports.rebuild !== undefined) {
-      try {
-        rebuilt = await ports.rebuild(priced)
-      } catch (err) {
+      const rebuild = ports.rebuild
+      rebuilt = yield* Effect.tryPromise({ try: () => rebuild(priced), catch: (error) => error }).pipe(
         // The write stood, so this is not `ok: false`.
-        rebuilt = `rebuild failed: ${(err as Error).message}`
-      }
+        Effect.catch((err) => Effect.succeed(`rebuild failed: ${(err as Error).message}`)),
+      )
     }
     ports.note({
       at: ports.now().toISOString(),
@@ -167,7 +179,8 @@ async function run(ports: RatePorts): Promise<void> {
       ...(priced.length === 0 ? {} : { priced }),
       ...(rebuilt === undefined ? {} : { rebuilt }),
     })
-  } catch (err) {
-    fail(err)
-  }
+  }).pipe(
+    // Failures and defects alike: a throw from a synchronous port is a defect here.
+    Effect.catchCause((cause) => Effect.sync(() => fail(Cause.squash(cause)))),
+  )
 }

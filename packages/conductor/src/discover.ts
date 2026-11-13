@@ -27,6 +27,7 @@
  * discover it at all.
  */
 import type { AssigneeRule, QueueSettings } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
 // `ticketStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
@@ -421,52 +422,60 @@ export interface RunnableNowOptions {
  * The answer is an argument, not a side effect: pass it to `selectRunnable`,
  * which subtracts what the log says is claimed.
  */
-export async function runnableNow(options: RunnableNowOptions): Promise<Offered> {
-  const { client, queue } = options
+export function runnableNow(options: RunnableNowOptions): Promise<Offered> {
+  return Effect.runPromise(runnableNowEffect(options))
+}
 
-  const issues = options.only
-    ? await Promise.all(options.only.map((n) => client.getIssue(n)))
-    : await client.listOpenIssues()
+/** `runnableNow` as an Effect: a failed listing is the failure, with the client's own error, never an empty queue. */
+export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Offered, unknown> {
+  return Effect.gen(function* () {
+    const { client, queue } = options
 
-  const result: Offered = { runnable: [], skipped: [], kindColors: {}, dependenciesUnread: null }
+    const issues = yield* Effect.tryPromise({
+      try: () => (options.only ? Promise.all(options.only.map((n) => client.getIssue(n))) : client.listOpenIssues()),
+      catch: (error) => error,
+    })
 
-  const unread: number[] = []
+    const result: Offered = { runnable: [], skipped: [], kindColors: {}, dependenciesUnread: null }
 
-  for (const issue of issues) {
-    if (issue.dependencies === null) unread.push(issue.number)
+    const unread: number[] = []
 
-    const matched = kindLabelOf(issue, queue.kinds)
-    // Before the skip, deliberately: the colour of `bug` is the same whether or
-    // not this particular bug can be run, and a held ticket is often the only
-    // open issue a kind has.
-    if (matched && matched.label.color && !(matched.kind in result.kindColors)) {
-      result.kindColors[matched.kind] = matched.label.color
-    }
+    for (const issue of issues) {
+      if (issue.dependencies === null) unread.push(issue.number)
 
-    const { skip, label } = considerIssue(issue, queue)
-    if (skip) {
-      result.skipped.push({
-        ref: issue.number,
-        reason: skip,
-        label,
+      const matched = kindLabelOf(issue, queue.kinds)
+      // Before the skip, deliberately: the colour of `bug` is the same whether or
+      // not this particular bug can be run, and a held ticket is often the only
+      // open issue a kind has.
+      if (matched && matched.label.color && !(matched.kind in result.kindColors)) {
+        result.kindColors[matched.kind] = matched.label.color
+      }
+
+      const { skip, label } = considerIssue(issue, queue)
+      if (skip) {
+        result.skipped.push({
+          ref: issue.number,
+          reason: skip,
+          label,
+          title: issue.title,
+          kind: matched?.kind ?? null,
+          blockedBy: issue.dependencies?.blockedBy ?? null,
+          parent: issue.parent,
+          subIssues: issue.subIssues,
+        })
+        continue
+      }
+      result.runnable.push({
+        ref: String(issue.number),
         title: issue.title,
-        kind: matched?.kind ?? null,
-        blockedBy: issue.dependencies?.blockedBy ?? null,
+        // `considerIssue` already refused a null kind, so this is a string.
+        kind: matched!.kind,
         parent: issue.parent,
         subIssues: issue.subIssues,
       })
-      continue
     }
-    result.runnable.push({
-      ref: String(issue.number),
-      title: issue.title,
-      // `considerIssue` already refused a null kind, so this is a string.
-      kind: matched!.kind,
-      parent: issue.parent,
-      subIssues: issue.subIssues,
-    })
-  }
 
-  result.dependenciesUnread = dependenciesUnread(unread, issues.length)
-  return result
+    result.dependenciesUnread = dependenciesUnread(unread, issues.length)
+    return result
+  })
 }

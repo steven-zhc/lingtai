@@ -45,7 +45,7 @@
     "file": "packages/agent/src/run-log.ts",
     "fn": "closeRunLogFile",
     "until": "#790",
-    "why": "RunLog.close is a promise method: packages/conductor/src/conduct.ts:1788 and :1823 (lifted until the conductor chain's conduct.ts-holds-no-async ticket) and apps/cli/src/discuss.ts:439 await it; until RunLog.close is an Effect"
+    "why": "RunLog.close is a promise method: packages/conductor/src/conduct.ts hands the inner log's own promise on, and apps/cli/src/discuss.ts:439 awaits it; until RunLog.close is an Effect"
   },
   {
     "file": "packages/agent/src/run-log.ts",
@@ -135,7 +135,25 @@
     "file": "packages/conductor/src/close.ts",
     "fn": "closeHolding",
     "until": "#790",
-    "why": "`apps/cli/unit/verbs-accept-refuse.test.ts` (#487); `conduct.ts` lifts it through `Effect.promise` until CONDUCT8-7"
+    "why": "`apps/cli/unit/verbs-accept-refuse.test.ts` (#487)"
+  },
+  {
+    "file": "packages/conductor/src/discover.ts",
+    "fn": "runnableNow",
+    "until": "#790",
+    "why": "apps/board (board.ts, queued.ts), apps/cli (status.ts, conduct.ts) and `wizard.ts` await it"
+  },
+  {
+    "file": "packages/conductor/src/discuss.ts",
+    "fn": "concludeDiscussion",
+    "until": "#790",
+    "why": "apps/board `actions.ts` awaits it, until the board row"
+  },
+  {
+    "file": "packages/conductor/src/discuss.ts",
+    "fn": "holdDiscussion",
+    "until": "#790",
+    "why": "apps/cli `discuss.ts` and `discuss-ask.test.ts` await it, until the apps/cli row"
   },
   {
     "file": "packages/conductor/src/edit-body.ts",
@@ -201,7 +219,7 @@
     "file": "packages/conductor/src/projects.ts",
     "fn": "currentRecipe",
     "until": "#790",
-    "why": "apps/board (actions, lib/task, lib/recipe, lib/board), apps/cli verbs, `close.ts:176` (CONDUCT8-3) and `conduct.ts:813` (CONDUCT8-7) await it"
+    "why": "apps/board (actions, lib/task, lib/recipe, lib/board), apps/cli verbs, `close.ts:176` (CONDUCT8-3) await it"
   },
   {
     "file": "packages/conductor/src/projects.ts",
@@ -226,6 +244,18 @@
     "fn": "signedInIds",
     "until": "#790",
     "why": "`@lingtai/recipe`'s promise `SignedIn` port, through `signedInProbe`"
+  },
+  {
+    "file": "packages/conductor/src/queue.ts",
+    "fn": "selectRunnable",
+    "until": "#790",
+    "why": "apps/board `queued.ts`, apps/cli `status.ts`, `packages/daemon/integration/reconcile.test.ts` and `wizard.ts` await it"
+  },
+  {
+    "file": "packages/conductor/src/rate-snapshot.ts",
+    "fn": "refreshOnce",
+    "until": "#790",
+    "why": "`refreshRates` keeps the in-flight dedupe over it, and apps/cli `rates.ts` awaits that"
   },
   {
     "file": "packages/conductor/src/read-ticket.ts",
@@ -270,6 +300,18 @@
     "why": "apps/cli attach.ts awaits it"
   },
   {
+    "file": "packages/conductor/src/same-file.ts",
+    "fn": "readFixFiles",
+    "until": "#790",
+    "why": "apps/cli `status.ts` and `conduct.ts` await it"
+  },
+  {
+    "file": "packages/conductor/src/schedule.ts",
+    "fn": "tallyTurn",
+    "until": "#790",
+    "why": "apps/cli `run.ts` hands it over as `tallyPass`"
+  },
+  {
     "file": "packages/conductor/src/snapshot-state.ts",
     "fn": "readState",
     "until": "#790",
@@ -304,12 +346,6 @@
     "fn": "ticketsFor",
     "until": "#790",
     "why": "apps/cli (conduct, run, ticket)"
-  },
-  {
-    "file": "packages/conductor/src/write-section.ts",
-    "fn": "writeSection",
-    "until": "#790",
-    "why": "`discuss.ts` awaits it until CONDUCT8-7"
   },
   {
     "file": "packages/daemon/src/choose.ts",

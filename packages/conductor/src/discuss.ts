@@ -9,9 +9,10 @@ import {
 } from '@lingtai/domain'
 import type { TriageResult } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
+import { Cause, Effect } from 'effect'
 
 import { editHash } from './attempts.ts'
-import { writeSection, type IssueChannel } from './edit-body.ts'
+import type { IssueChannel } from './edit-body.ts'
 import {
   jsonCandidates,
   MAX_READ_ROUNDS,
@@ -91,6 +92,7 @@ import {
  * caller's own in-memory receipt, not a second write of the same fact.
  */
 import { recordPrompt } from './record-prompt.ts'
+import { writeSectionEffect } from './write-section.ts'
 
 export type { IssueChannel } from './tell.ts'
 // Re-exported: `apps/board/src/lib/recipe.ts` and `discuss.test.ts` both
@@ -502,155 +504,178 @@ export interface HeldTurn {
  * It never throws. A discussion is a thing a person is watching; an exception
  * that reached the daemon's subscription would stop the loop over a question.
  */
-export async function holdDiscussion(ports: DiscussionPorts, options: DiscussionTurnOptions): Promise<HeldTurn> {
-  const log = ports.log ?? (() => {})
-  const stream = chatStream(options.chatId)
-  const before = await ports.store.read(stream)
-  const call = options.call
+export function holdDiscussion(ports: DiscussionPorts, options: DiscussionTurnOptions): Promise<HeldTurn> {
+  return Effect.runPromise(holdDiscussionEffect(ports, options))
+}
 
-  // `by` is already an actor — `human:steven`, the same string the board's card
-  // actions record. Prefixing it here would make it `human:human:steven` and
-  // fail the envelope's own regex, which is the check that catches it.
-  await append(ports.store, stream, before.length, options.by, 'DiscussionAsked', {
-    ticketId: options.evidence.ticketId,
-    attempt: options.evidence.attempt,
-    by: options.by,
-    question: options.question,
-    reading: [...options.evidence.reading],
-  })
-
-  const history = reduceChat(before).turns
-  const served: { at: string; text: string | null }[] = []
-  let turns = 0
-  let durationMs = 0
-  // **Not on `DiscussionAnswered` or `DiscussionHeld` any more** (#502, 0110
-  // §9/§13): spend is `RunSpent`'s alone, read by the `spend` projection —
-  // `cost` here is kept only for `HeldTurn.costUsd`, the caller's own
-  // in-memory receipt, never persisted a second time.
+/**
+ * `holdDiscussion` as an Effect. It never fails: a port that throws, a store that refuses and a
+ * defect all end the turn as `answered: false`, with the cause said through `ports.log`.
+ */
+export function holdDiscussionEffect(ports: DiscussionPorts, options: DiscussionTurnOptions): Effect.Effect<HeldTurn> {
+  // Outside the generator so the catch below can still report what was spent before the cause.
   let cost: number | null = null
+  const log = ports.log ?? (() => {})
+  return Effect.gen(function* () {
+    const stream = chatStream(options.chatId)
+    const before = yield* lift(() => ports.store.read(stream))
+    const call = options.call
 
-  const spend = (outcome: Answered) => {
-    turns += outcome.turns
-    durationMs += outcome.durationMs
-    if (outcome.costUsd !== null) cost = (cost ?? 0) + outcome.costUsd
-  }
-
-  const answer = (data: {
-    text: string
-    cannot: string[]
-    proposal: { kind: 'prompt' | 'ticket'; text: string } | null
-    failure: string | null
-  }) =>
-    append(ports.store, stream, -1, `agent:${options.chatId}`, 'DiscussionAnswered', {
-      text: data.text,
-      read: served.map((s) => s.at),
-      cannot: data.cannot,
-      proposal: data.proposal,
-      turns,
-      durationMs,
-      failure: data.failure,
-    })
-
-  for (let round = 0; round <= MAX_READ_ROUNDS; round += 1) {
-    const prompt = buildBrief({
-      evidence: options.evidence,
-      history,
+    // `by` is already an actor — `human:steven`, the same string the board's card
+    // actions record. Prefixing it here would make it `human:human:steven` and
+    // fail the envelope's own regex, which is the check that catches it.
+    yield* appendEvent(ports.store, stream, before.length, options.by, 'DiscussionAsked', {
+      ticketId: options.evidence.ticketId,
+      attempt: options.evidence.attempt,
+      by: options.by,
       question: options.question,
-      served,
-      roundsLeft: MAX_READ_ROUNDS - round,
-      prompt: options.prompt,
+      reading: [...options.evidence.reading],
     })
 
-    // Set inside the `.catch` below: `ports.ask` threw rather than returning, so
-    // the `Answered` beneath it is made up by this function and not reported by
-    // the process. The one `RunSpent` per process the ticket asks for (#496,
-    // 0110 §2) is for a process that returned an outcome — a killed one has
-    // nothing to record, and records nothing.
-    let threw = false
-    // Before the call, so a crash or a kill still leaves the prompt on the log
-    // (#923). `ports.ask` hands `prompt` to the runtime unchanged.
-    await recordPrompt(
-      ports.store,
-      stream,
-      {
-        for: { _tag: 'Discussion' },
-        promptVersion: `discussion@${prompt.length}`,
-        runtimeVersion: await Promise.resolve()
-          .then(() => ports.version())
-          .catch(() => null),
-        prompt,
-      },
-      log,
-    )
-    const outcome = await ports.ask(prompt, round, call).catch((err: unknown): Answered => {
-      threw = true
-      return {
-        turns: 0,
-        durationMs: 0,
-        costUsd: null,
-        text: null,
-        failure: { kind: 'crash', detail: (err as Error).message },
-      }
-    })
-    spend(outcome)
-
-    if (!threw) {
-      await append(ports.store, stream, -1, 'conductor', 'RunSpent', {
-        for: { _tag: 'Discussion' },
-        runtime: options.runtime,
-        turns: outcome.turns,
-        durationMs: outcome.durationMs,
-        costUsd: outcome.costUsd,
-        usage: outcome.usage ?? [],
-      })
+    const history = reduceChat(before).turns
+    const served: { at: string; text: string | null }[] = []
+    let turns = 0
+    let durationMs = 0
+    // **Not on `DiscussionAnswered` or `DiscussionHeld` any more** (#502, 0110
+    // §9/§13): spend is `RunSpent`'s alone, read by the `spend` projection —
+    // `cost` here is kept only for `HeldTurn.costUsd`, the caller's own
+    // in-memory receipt, never persisted a second time.
+    const spend = (outcome: Answered) => {
+      turns += outcome.turns
+      durationMs += outcome.durationMs
+      if (outcome.costUsd !== null) cost = (cost ?? 0) + outcome.costUsd
     }
 
-    if (outcome.failure) {
-      log(`discussion ${options.chatId}: ${outcome.failure.kind} — ${outcome.failure.detail}`)
-      await answer({
-        text: '',
+    const answer = (data: {
+      text: string
+      cannot: string[]
+      proposal: { kind: 'prompt' | 'ticket'; text: string } | null
+      failure: string | null
+    }) =>
+      appendEvent(ports.store, stream, -1, `agent:${options.chatId}`, 'DiscussionAnswered', {
+        text: data.text,
+        read: served.map((s) => s.at),
+        cannot: data.cannot,
+        proposal: data.proposal,
+        turns,
+        durationMs,
+        failure: data.failure,
+      })
+
+    for (let round = 0; round <= MAX_READ_ROUNDS; round += 1) {
+      const prompt = buildBrief({
+        evidence: options.evidence,
+        history,
+        question: options.question,
+        served,
+        roundsLeft: MAX_READ_ROUNDS - round,
+        prompt: options.prompt,
+      })
+
+      // Set inside the `.catch` below: `ports.ask` threw rather than returning, so
+      // the `Answered` beneath it is made up by this function and not reported by
+      // the process. The one `RunSpent` per process the ticket asks for (#496,
+      // 0110 §2) is for a process that returned an outcome — a killed one has
+      // nothing to record, and records nothing.
+      let threw = false
+      // Before the call, so a crash or a kill still leaves the prompt on the log
+      // (#923). `ports.ask` hands `prompt` to the runtime unchanged.
+      const runtimeVersion = yield* lift(() => Promise.resolve().then(() => ports.version())).pipe(
+        Effect.catch(() => Effect.succeed(null)),
+      )
+      yield* Effect.promise(() =>
+        recordPrompt(
+          ports.store,
+          stream,
+          {
+            for: { _tag: 'Discussion' },
+            promptVersion: `discussion@${prompt.length}`,
+            runtimeVersion,
+            prompt,
+          },
+          log,
+        ),
+      )
+      const outcome = yield* lift(() => ports.ask(prompt, round, call)).pipe(
+        Effect.catch((err: unknown) => {
+          threw = true
+          return Effect.succeed<Answered>({
+            turns: 0,
+            durationMs: 0,
+            costUsd: null,
+            text: null,
+            failure: { kind: 'crash', detail: (err as Error).message },
+          })
+        }),
+      )
+      spend(outcome)
+
+      if (!threw) {
+        yield* appendEvent(ports.store, stream, -1, 'conductor', 'RunSpent', {
+          for: { _tag: 'Discussion' },
+          runtime: options.runtime,
+          turns: outcome.turns,
+          durationMs: outcome.durationMs,
+          costUsd: outcome.costUsd,
+          usage: outcome.usage ?? [],
+        })
+      }
+
+      if (outcome.failure) {
+        log(`discussion ${options.chatId}: ${outcome.failure.kind} — ${outcome.failure.detail}`)
+        yield* answer({
+          text: '',
+          cannot: [],
+          proposal: null,
+          failure: `${outcome.failure.kind}: ${outcome.failure.detail}`,
+        })
+        return { costUsd: cost, answered: false, proposal: null }
+      }
+
+      const reply = parseReply(outcome.text)
+
+      if (reply.kind === 'read' && round < MAX_READ_ROUNDS) {
+        for (const at of reply.paths) {
+          const cut = at.indexOf(':')
+          const ref = at.slice(0, cut)
+          const path = at.slice(cut + 1)
+          const text = yield* lift(() => ports.serve(ref, path)).pipe(Effect.catch(() => Effect.succeed(null)))
+          served.push({ at, text })
+        }
+        log(`discussion ${options.chatId}: served ${reply.paths.length} file(s)`)
+        continue
+      }
+
+      if (reply.kind === 'answer') {
+        yield* answer({ text: reply.text, cannot: reply.cannot, proposal: reply.proposal, failure: null })
+        return { costUsd: cost, answered: true, proposal: reply.proposal }
+      }
+
+      // Out of rounds while still asking, or an answer nothing could read. Both
+      // end the turn, and both say which — an unreadable reply presented as an
+      // answer is the thing `parseReply` refuses to do.
+      yield* answer({
+        text: reply.kind === 'unreadable' ? reply.text : '',
         cannot: [],
         proposal: null,
-        failure: `${outcome.failure.kind}: ${outcome.failure.detail}`,
+        failure:
+          reply.kind === 'unreadable'
+            ? "the assistant's reply was not readable as an answer"
+            : `the assistant asked for files after ${MAX_READ_ROUNDS} rounds of reading`,
       })
       return { costUsd: cost, answered: false, proposal: null }
     }
 
-    const reply = parseReply(outcome.text)
-
-    if (reply.kind === 'read' && round < MAX_READ_ROUNDS) {
-      for (const at of reply.paths) {
-        const cut = at.indexOf(':')
-        const ref = at.slice(0, cut)
-        const path = at.slice(cut + 1)
-        served.push({ at, text: await ports.serve(ref, path).catch(() => null) })
-      }
-      log(`discussion ${options.chatId}: served ${reply.paths.length} file(s)`)
-      continue
-    }
-
-    if (reply.kind === 'answer') {
-      await answer({ text: reply.text, cannot: reply.cannot, proposal: reply.proposal, failure: null })
-      return { costUsd: cost, answered: true, proposal: reply.proposal }
-    }
-
-    // Out of rounds while still asking, or an answer nothing could read. Both
-    // end the turn, and both say which — an unreadable reply presented as an
-    // answer is the thing `parseReply` refuses to do.
-    await answer({
-      text: reply.kind === 'unreadable' ? reply.text : '',
-      cannot: [],
-      proposal: null,
-      failure:
-        reply.kind === 'unreadable'
-          ? "the assistant's reply was not readable as an answer"
-          : `the assistant asked for files after ${MAX_READ_ROUNDS} rounds of reading`,
-    })
+    // Unreachable: the loop answers or fails on every path.
     return { costUsd: cost, answered: false, proposal: null }
-  }
-
-  // Unreachable: the loop answers or fails on every path.
-  return { costUsd: cost, answered: false, proposal: null }
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.sync((): HeldTurn => {
+        log(`discussion ${options.chatId}: ${(Cause.squash(cause) as Error).message}`)
+        return { costUsd: cost, answered: false, proposal: null }
+      }),
+    ),
+  )
 }
 
 // -------------------------------------------------------------- conclude ----
@@ -701,69 +726,80 @@ export interface ConcludeOptions {
  * happened and how it ended. What it cost is `RunSpent`'s, through the
  * `spend` projection (#502, 0110 §9/§13), not this event's own field any more.
  */
-export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok: boolean; detail: string }> {
-  const { store, ticketId, chatId, by } = options
-  const text = (options.text ?? '').trim()
+export function concludeDiscussion(options: ConcludeOptions): Promise<{ ok: boolean; detail: string }> {
+  return Effect.runPromise(concludeDiscussionEffect(options))
+}
 
-  let detail = 'the discussion is closed'
-  let ok = true
+/** `concludeDiscussion` as an Effect. It never fails: a store or GitHub that refuses is `{ ok: false, detail }`. */
+export function concludeDiscussionEffect(options: ConcludeOptions): Effect.Effect<{ ok: boolean; detail: string }> {
+  return Effect.gen(function* () {
+    const { store, ticketId, chatId, by } = options
+    const text = (options.text ?? '').trim()
 
-  if (options.outcome === 'prompt') {
-    if (text === '') return { ok: false, detail: "there is nothing to add to the next run's prompt" }
-    const at = (await store.read(ticketId)).length
-    await store.append(ticketId, at, [
-      {
-        type: 'PromptEdited',
-        actor: by,
-        // `basedOn` is null and that is the honest value: the assistant
-        // proposes a sentence, not a change to a document, so nobody was
-        // looking at a composed prompt when this was adopted. The board's own
-        // box is the one that records what it was written against (#104).
-        data: parsePayload('PromptEdited', {
-          text,
-          hash: editHash(text),
-          by,
-          basedOn: null,
-          chatId,
-        }),
-      },
-    ])
-    detail = "the next attempt's prompt carries it"
-  }
+    let detail = 'the discussion is closed'
+    let ok = true
 
-  if (options.outcome === 'ticket') {
-    if (text === '') return { ok: false, detail: 'there is nothing to add to the ticket' }
-    if (!options.ticket) return { ok: false, detail: 'the ticket could not be read, so it cannot be edited' }
-    const section = discussionSection(text, by, options.now ?? new Date())
-    const written = await writeSection({
-      store,
-      github: options.ticket.github,
-      ticketId,
-      key: `chat-${chatId}`,
-      text: section,
-    })
-    ok = written.written
-    // `written.detail` already says what went wrong — including the cases
-    // `upsertSection` refuses before any request reaches GitHub, such as an
-    // unclosed marker in the body — so it is the detail, not a parenthetical
-    // under a claim that assumes every refusal is GitHub's.
-    detail = written.written ? 'the ticket carries it' : written.detail
-  }
+    if (options.outcome === 'prompt') {
+      if (text === '') return { ok: false, detail: "there is nothing to add to the next run's prompt" }
+      const at = (yield* lift(() => store.read(ticketId))).length
+      yield* lift(() =>
+        store.append(ticketId, at, [
+          {
+            type: 'PromptEdited',
+            actor: by,
+            // `basedOn` is null and that is the honest value: the assistant
+            // proposes a sentence, not a change to a document, so nobody was
+            // looking at a composed prompt when this was adopted. The board's own
+            // box is the one that records what it was written against (#104).
+            data: parsePayload('PromptEdited', {
+              text,
+              hash: editHash(text),
+              by,
+              basedOn: null,
+              chatId,
+            }),
+          },
+        ]),
+      )
+      detail = "the next attempt's prompt carries it"
+    }
 
-  const at = (await store.read(ticketId)).length
-  await store.append(ticketId, at, [
-    {
-      type: 'DiscussionHeld',
-      actor: by,
-      data: parsePayload('DiscussionHeld', {
-        chatId,
-        outcome: options.outcome,
-        by,
-      }),
-    },
-  ])
+    if (options.outcome === 'ticket') {
+      if (text === '') return { ok: false, detail: 'there is nothing to add to the ticket' }
+      if (!options.ticket) return { ok: false, detail: 'the ticket could not be read, so it cannot be edited' }
+      const section = discussionSection(text, by, options.now ?? new Date())
+      const written = yield* writeSectionEffect({
+        store,
+        github: options.ticket.github,
+        ticketId,
+        key: `chat-${chatId}`,
+        text: section,
+      })
+      ok = written.written
+      // `written.detail` already says what went wrong — including the cases
+      // `upsertSection` refuses before any request reaches GitHub, such as an
+      // unclosed marker in the body — so it is the detail, not a parenthetical
+      // under a claim that assumes every refusal is GitHub's.
+      detail = written.written ? 'the ticket carries it' : written.detail
+    }
 
-  return { ok, detail }
+    const at = (yield* lift(() => store.read(ticketId))).length
+    yield* lift(() =>
+      store.append(ticketId, at, [
+        {
+          type: 'DiscussionHeld',
+          actor: by,
+          data: parsePayload('DiscussionHeld', {
+            chatId,
+            outcome: options.outcome,
+            by,
+          }),
+        },
+      ]),
+    )
+
+    return { ok, detail }
+  }).pipe(Effect.catchCause((cause) => Effect.succeed({ ok: false, detail: (Cause.squash(cause) as Error).message })))
 }
 
 /**
@@ -774,15 +810,21 @@ export async function concludeDiscussion(options: ConcludeOptions): Promise<{ ok
  * follow-up question can have landed on the same stream. Reading the length
  * again is what an `expectedVersion` is for.
  */
-async function append(
+function appendEvent(
   store: EventStore,
   stream: string,
   at: number,
   actor: string,
   type: 'DiscussionAsked' | 'DiscussionAnswered' | 'RunSpent',
   data: unknown,
-): Promise<void> {
-  const version = at >= 0 ? at : (await store.read(stream)).length
-  const event: ToAppend = { type, actor, data: parsePayload(type, data) }
-  await store.append(stream, version, [event])
+): Effect.Effect<void, unknown> {
+  return Effect.gen(function* () {
+    const version = at >= 0 ? at : (yield* lift(() => store.read(stream))).length
+    const event: ToAppend = { type, actor, data: parsePayload(type, data) }
+    yield* lift(() => store.append(stream, version, [event]))
+  })
 }
+
+/** A promise port as an Effect whose failure is whatever it rejected with. */
+const lift = <A>(run: () => PromiseLike<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: run, catch: (error) => error })
