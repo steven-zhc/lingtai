@@ -18,11 +18,6 @@ export interface InFlight {
   settled(): Effect.Effect<void>
 }
 
-/** `work-loop.ts`'s promise `stop`, until DAEMON-1b, which deletes it. */
-export function inFlightSettledFace(inFlight: InFlight) {
-  return Effect.runPromise(inFlight.settled())
-}
-
 export function createInFlight(): InFlight {
   const set = new Set<Promise<void>>()
   return {

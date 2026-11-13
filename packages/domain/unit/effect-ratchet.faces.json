@@ -21,7 +21,7 @@
     "file": "packages/actions/src/subscriber.ts",
     "fn": "deliverFace",
     "until": "#790",
-    "why": "packages/daemon/src/work-loop.ts:606 awaits `Subscriber.deliver`, built by apps/cli/src/subscribers.ts:233, until the daemon row"
+    "why": "apps/cli/src/subscribers.ts builds promise `Subscriber`s that the daemon's work loop lifts, until the apps/cli row"
   },
   {
     "file": "packages/agent/src/auth.ts",
@@ -186,10 +186,16 @@
     "why": "`deliver`'s promise callbacks in `packages/daemon/src/work-loop.ts`, which hold the CLI's `EventSubscriber.deliver`, until that is an Effect (apps/cli row)"
   },
   {
-    "file": "packages/daemon/src/in-flight.ts",
-    "fn": "inFlightSettledFace",
+    "file": "packages/daemon/src/work-loop.ts",
+    "fn": "workLoopStartFace",
     "until": "#790",
-    "why": "`work-loop.ts`'s promise `stop`, until DAEMON-1b, which deletes it"
+    "why": "apps/cli/src/daemon.ts and apps/cli/integration/telegram.test.ts hold a promise `WorkLoop` until the apps/cli row; the daemon's own tests hold it too"
+  },
+  {
+    "file": "packages/daemon/src/work-loop.ts",
+    "fn": "workLoopStopFace",
+    "until": "#790",
+    "why": "apps/cli/src/daemon.ts and apps/cli/integration/telegram.test.ts hold a promise `WorkLoop` until the apps/cli row; the daemon's own tests hold it too"
   },
   {
     "file": "packages/event-store/src/choose.ts",
@@ -207,7 +213,7 @@
     "file": "packages/event-store/src/choose.ts",
     "fn": "processLog",
     "until": "#790",
-    "why": "apps/cli projector.ts and packages/daemon daemon.ts, work-loop.ts await it until their rows"
+    "why": "apps/cli `projector.ts`, and `packages/daemon/src/daemon.ts` until DAEMON-2"
   },
   {
     "file": "packages/event-store/src/choose.ts",
@@ -267,7 +273,7 @@
     "file": "packages/event-store/src/store-face.ts",
     "fn": "followFace",
     "until": "#790",
-    "why": "apps/board's stream route, packages/daemon's work-loop and packages/projector's projection runner call the promise `subscribe` until their rows"
+    "why": "apps/board's stream route calls the promise `subscribe` until its row"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
@@ -351,7 +357,7 @@
     "file": "packages/event-store/src/store-face.ts",
     "fn": "wakeSessionFace",
     "until": "#790",
-    "why": "`Log.waker(name)` is a promise `Waker` that apps/board's stream route, packages/daemon's work-loop and packages/projector's projection runner pass to `subscribe`, and fakes in daemon and projector tests implement"
+    "why": "`Log.waker(name)` is a promise `Waker` that apps/board's stream route passes to `subscribe`, and fakes in daemon and projector tests implement"
   },
   {
     "file": "packages/github/src/app.ts",

@@ -53,7 +53,7 @@
  * ([0030](../../../doc/decisions-archive/0030-shutting-down-safely.md) §1). A ticket is
  * not finished when its agent exits: the gates run, the merge lane runs, the
  * `end` point runs, and one pass spans all of it. So `stop()` waits for every
- * pass in flight, and `pump` retains the look's promise (and any pass a look
+ * pass in flight, and `kick` retains the look's promise (and any pass a look
  * hands to `started`) for it to wait on — which is the only
  * thing that was missing. `running`, `again` and the `if (stopped) break` were
  * all already here, so from outside the loop looked as though it drained.
@@ -87,11 +87,21 @@
  * must not have. `lingtai doctor` reads them back.
  */
 import { type Envelope, WAIT_EVENTS } from '@lingtai/domain'
-import { type EventStore, type Log, processLog, subscribe, type Subscription } from '@lingtai/event-store'
+import {
+  type EventStore,
+  fromPromiseStore,
+  fromPromiseWaker,
+  type Log,
+  processEvents,
+  processWaker,
+} from '@lingtai/event-store'
+import type { FollowCell } from '@lingtai/event-store/subscribe'
+import { follow } from '@lingtai/event-store/subscribe'
+import { Context, Effect, Exit, Scope } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import { makeFailureRecorder, recordFailureFace } from './failure-recorder.ts'
-import { createInFlight, inFlightSettledFace } from './in-flight.ts'
+import { createInFlight } from './in-flight.ts'
 import type { DaemonStore } from './store.ts'
 
 /**
@@ -352,24 +362,32 @@ export interface WorkLoop {
   readonly busy: boolean
 }
 
-export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
+/** The loop as Effects (#1070); `createWorkLoop` lists two promise faces over it. */
+export interface WorkLoopPort {
+  /** Runs the first look and then follows the log. */
+  start(): Effect.Effect<void>
+  /** Takes no more work, and waits for every look and every pass in flight (0030, no timeout). */
+  stop(): Effect.Effect<void>
+  readonly passes: number
+  readonly busy: boolean
+}
+
+export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
   const log = options.log ?? (() => {})
   const tell = options.tell ?? log
   const triggers = new Set<string>(options.triggers ?? COMPLETION_EVENTS)
 
-  let subscription: Subscription | null = null
-  let sweep: ReturnType<typeof setInterval> | undefined
+  /** What following the log and the sweep run in. A look or a pass is never in it. */
+  let followScope: Scope.Closeable | null = null
+  /** The services `start` ran with, which a look is started with: set before anything can kick. */
+  let services: Context.Context<never> = Context.empty()
   let running = false
   let again = false
   let stopped = false
   let passes = 0
   /**
-   * The pass in flight, retained.
-   *
-   * This one reference is what makes a drain possible. Everything else was
-   * already here — `running`, `again`, `if (stopped) break` — and from outside
-   * the loop looked as though it drained; nothing held the promise, so nothing
-   * could wait for it (0030).
+   * The look in flight, retained, so a pump that finds one running can hand it
+   * back and a drain can wait for it (0030).
    */
   let lookInFlight: Promise<void> | null = null
   const passesInFlight = createInFlight()
@@ -386,7 +404,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
         () => false,
       )
       .then((worked) => {
-        if (worked && !stopped) void pump('completion')
+        if (worked && !stopped) void kick('completion')
       })
   }
 
@@ -447,7 +465,12 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
     }
   }
 
-  function pump(reason: TurnReason): Promise<void> {
+  /**
+   * Starts a look on a fiber of its own, synchronously. Not a child of whoever
+   * called: a look is never interrupted, and closing the following scope must
+   * not reach it (0030 §1).
+   */
+  function kick(reason: TurnReason): Promise<void> {
     if (running) {
       // A pass is in flight. Remember to go round again rather than starting a
       // second one into the same queue.
@@ -455,17 +478,21 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
       return lookInFlight ?? Promise.resolve()
     }
     running = true
-    const pass = drain(reason).finally(() => {
+    const look = Effect.runPromiseWith(services)(drain(reason)).finally(() => {
       running = false
       lookInFlight = null
     })
-    lookInFlight = pass
-    passesInFlight.track(pass)
-    return pass
+    lookInFlight = look
+    passesInFlight.track(look)
+    return look
   }
 
-  async function drain(reason: TurnReason): Promise<void> {
-    try {
+  const pump = (reason: TurnReason): Effect.Effect<void> => Effect.promise(() => kick(reason))
+
+  const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> => Effect.tryPromise({ try: f, catch: (e) => e })
+
+  function drain(reason: TurnReason): Effect.Effect<void> {
+    return Effect.gen(function* () {
       do {
         again = false
         if (stopped) break
@@ -476,7 +503,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
         // A shutdown is asked first, because it is the stronger answer: a
         // conductor that has been told to stop does not need to know whether
         // it was also paused.
-        const why = await options.shutdown?.()
+        const why = options.shutdown ? yield* attempt(() => Promise.resolve(options.shutdown?.())) : undefined
         if (why) {
           // Set here, not by the caller. The pending `again` from events that
           // arrived during the pass lapses on the `if (stopped) break` above,
@@ -486,7 +513,7 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           options.onShutdown?.(why)
           break
         }
-        const paused = await options.paused?.()
+        const paused = options.paused ? yield* attempt(() => Promise.resolve(options.paused?.())) : undefined
         if (paused) {
           // Nothing is left pending by a pause any more: a run tells GitHub
           // as it goes, so a paused conductor has nothing owed (0022). What
@@ -495,21 +522,41 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
           break
         }
         passes += 1
-        try {
-          await options.pass(reason, started)
-        } catch (err) {
-          // A pass that throws must not take the loop with it: the next
-          // completion event is exactly when you want it to try again.
-          tell(`turn failed: ${(err as Error).message}`)
-        }
+        // A pass that throws must not take the loop with it: the next
+        // completion event is exactly when you want it to try again.
+        yield* attempt(() => Promise.resolve(options.pass(reason, started))).pipe(
+          Effect.catch((err) => Effect.sync(() => tell(`turn failed: ${(err as Error).message}`))),
+        )
         reason = 'completion'
       } while (again)
-    } catch (err) {
+    }).pipe(
       // Reaching here means the loop's own bookkeeping threw, not the pass —
       // the pass has its own catch. It must still not escape into a caller
       // that is only draining.
-      tell(`loop failed: ${(err as Error).message}`)
+      Effect.catch((err) => Effect.sync(() => tell(`loop failed: ${(err as Error).message}`))),
+    )
+  }
+
+  const onEvent = (event: Envelope): void => {
+    // Before the trigger check: the events worth interrupting somebody
+    // for are mostly *not* the ones that wake the conductor. A task being
+    // blocked is both; a run asking a question is only the first.
+    //
+    // Through `deliver`, every one of them, and never called directly.
+    // That is the boundary this file's header is about: what a subscriber
+    // does with an event is its own business, and what it does *to the
+    // process following the log* is not its business at all.
+    for (const s of subscribers()) deliver(s.name, event, (e) => s.deliver(e), s.project)
+    // Before the trigger check too, and never through `pump`. See
+    // `discuss` above: a question must not wait for a run.
+    if ((DISCUSSION_EVENTS as readonly string[]).includes(event.type) && options.discuss) {
+      deliver('discuss', event, options.discuss)
     }
+    if ((TRIAGE_EVENTS as readonly string[]).includes(event.type) && options.triage) {
+      deliver('triage', event, options.triage)
+    }
+    if (!triggers.has(event.type)) return
+    void kick('completion')
   }
 
   return {
@@ -521,73 +568,91 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
       return running || passesInFlight.size > 0
     },
 
-    async start() {
-      // From the head, not from zero. Replaying history would fire a pass for
-      // every task that has ever landed.
-      const from = await headSeq(options)
+    start: () =>
+      Effect.gen(function* () {
+        services = yield* Effect.context<never>()
+        // From the head, not from zero. Replaying history would fire a pass for
+        // every task that has ever landed.
+        const from = yield* headSeq(options)
+        // A stop that arrived while the head was read: a scope made now would
+        // never be closed.
+        if (stopped) return
 
-      // The log, not `options.store`: that one is where failures are recorded,
-      // and a test's store is not the log that wakes. The process-wide one is
-      // the store this machine chose and the waker that goes with it — which is
-      // what #221 made inseparable, and #179 made a written choice rather than
-      // Postgres by default.
-      const following = options.eventLog ?? (await processLog())
+        // The log, not `options.store`: that one is where failures are recorded,
+        // and a test's store is not the log that wakes. The process-wide one is
+        // the store this machine chose and the waker that goes with it.
+        const events = options.eventLog ? Effect.succeed(fromPromiseStore(options.eventLog.store)) : processEvents
+        const waker = options.eventLog
+          ? fromPromiseWaker(options.eventLog.waker('lingtai-daemon'))
+          : processWaker('lingtai-daemon')
+        const cell: FollowCell = { lastSeq: from, stopped: false, caughtUp: { resolve() {}, reject() {} } }
+        const scope = Scope.makeUnsafe()
+        followScope = scope
+        yield* Effect.forkIn(
+          follow(
+            {
+              fromSeq: from,
+              events: yield* events,
+              waker,
+              onEvent: (event) => Effect.sync(() => onEvent(event)),
+              onError: (error, phase) => tell(`subscription ${phase}: ${String(error)}`),
+            },
+            cell,
+          ),
+          scope,
+        )
 
-      subscription = subscribe({
-        fromSeq: from,
-        store: following.store,
-        waker: following.waker('lingtai-daemon'),
-        onEvent: (event) => {
-          // Before the trigger check: the events worth interrupting somebody
-          // for are mostly *not* the ones that wake the conductor. A task being
-          // blocked is both; a run asking a question is only the first.
-          //
-          // Through `deliver`, every one of them, and never called directly.
-          // That is the boundary this file's header is about: what a subscriber
-          // does with an event is its own business, and what it does *to the
-          // process following the log* is not its business at all.
-          for (const s of subscribers()) deliver(s.name, event, (e) => s.deliver(e), s.project)
-          // Before the trigger check too, and never through `pump`. See
-          // `discuss` above: a question must not wait for a run.
-          if ((DISCUSSION_EVENTS as readonly string[]).includes(event.type) && options.discuss) {
-            deliver('discuss', event, options.discuss)
-          }
-          if ((TRIAGE_EVENTS as readonly string[]).includes(event.type) && options.triage) {
-            deliver('triage', event, options.triage)
-          }
-          if (!triggers.has(event.type)) return
-          void pump('completion')
-        },
-        onError: (error, phase) => tell(`subscription ${phase}: ${String(error)}`),
-      })
+        // The cold start. Nothing is in flight, so nothing will tell us to begin.
+        yield* pump('startup')
 
-      // The cold start. Nothing is in flight, so nothing will tell us to begin.
-      await pump('startup')
+        // A stop during the startup look: no sweep, and no timer to outlive it.
+        if (stopped) return
+        const every = options.sweepMs ?? SWEEP_MS
+        if (every > 0) {
+          yield* Effect.forkIn(
+            Effect.forever(Effect.sleep(every).pipe(Effect.andThen(Effect.sync(() => void kick('sweep'))))),
+            scope,
+          )
+        }
+      }),
 
-      const every = options.sweepMs ?? SWEEP_MS
-      if (every > 0) {
-        sweep = setInterval(() => void pump('sweep'), every)
-        // Never hold the process open on its own account. A daemon whose only
-        // remaining reason to live is its own fallback timer is a daemon that
-        // cannot exit.
-        sweep.unref?.()
-      }
+    stop: () =>
+      Effect.gen(function* () {
+        stopped = true
+        // The subscription is closed first so nothing new arrives to set
+        // `again` while this waits — though it would lapse on
+        // `if (stopped) break` if it did.
+        if (followScope) yield* Scope.close(followScope, Exit.void)
+        followScope = null
+        // And then the drain. There is no timeout here on purpose (0030 §6). A
+        // pass may take as long as `runtime.limits.wall`, and a wait that gave
+        // up after some minutes would recreate the orphan this exists to
+        // prevent, silently, at the moment it matters most.
+        yield* passesInFlight.settled()
+      }),
+  }
+}
+
+/** `apps/cli/src/daemon.ts` and `apps/cli/integration/telegram.test.ts` hold a promise `WorkLoop` until the apps/cli row; the daemon's own tests hold it too. */
+export function workLoopStartFace(port: WorkLoopPort) {
+  return Effect.runPromise(port.start())
+}
+
+/** As `workLoopStartFace`. */
+export function workLoopStopFace(port: WorkLoopPort) {
+  return Effect.runPromise(port.stop())
+}
+
+export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
+  const port = makeWorkLoop(options)
+  return {
+    start: () => workLoopStartFace(port),
+    stop: () => workLoopStopFace(port),
+    get passes() {
+      return port.passes
     },
-
-    async stop() {
-      stopped = true
-      clearInterval(sweep)
-      await subscription?.close().catch(() => {})
-      subscription = null
-      // And then the drain. The subscription is closed first so nothing new
-      // arrives to set `again` while this waits — though it would lapse on
-      // `if (stopped) break` if it did.
-      //
-      // There is no timeout here on purpose (0030 §6). A pass may take as long
-      // as `runtime.limits.wall`, and a wait that gave up after some minutes
-      // would recreate the orphan this exists to prevent, silently, at the
-      // moment it matters most. Whoever wants to accept that asks for it.
-      await inFlightSettledFace(passesInFlight)
+    get busy() {
+      return port.busy
     },
   }
 }
@@ -597,10 +662,12 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
  *
  * Through the store since #220: the query was a `pg.Client` built here, which
  * is one of the four places the choice of implementation could not reach
- * (0055 §1).
+ * (0055 §1). An Effect until DAEMON-7a moves the store.
  */
-async function headSeq(options: WorkLoopOptions): Promise<bigint> {
-  return withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, (store) =>
-    store.head(),
+function headSeq(options: WorkLoopOptions): Effect.Effect<bigint> {
+  return Effect.promise(() =>
+    withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, (store) =>
+      store.head(),
+    ),
   )
 }
