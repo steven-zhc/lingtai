@@ -103,20 +103,35 @@ turn limit, so every idiom it adopts is paid for again on every run.
    port or a service, `Layer` provides one, and `Scope` ties each acquired resource to a
    lifetime, so a resource is released because of how the code is structured
    rather than because someone remembered to release it.
-   - **What is an Effect**: every function in `event-store`, `projector`,
-     `github`, `repo`, `agent`, `actions`, `conductor`, `daemon`, `telegram` and
-     `apps/cli` that reads or writes outside the process — the store, a table, the
-     network, git, a child process, the filesystem, the clock it waits on. Each
-     returns an `Effect` with a tagged error per package, never a promise and never
-     a thrown error for a failure the caller is meant to decide on.
-   - **`Effect.runPromise` only at a host's edge**: the daemon's entry, each CLI
-     command's entry, a board read or server action, and a test. Never inside
-     backend code — a `runPromise` nested in an Effect starts a fiber with no
-     parent, which loses the caller's scope, its interruption and its span.
-     A pass the scheduler starts detached runs with
+   - **What is an Effect**: every function in `apps/cli`, `event-store`,
+     `projector`, `github`, `repo`, `agent`, `actions`, `conductor`, `daemon`,
+     `setup` and `recipe` that reads or writes outside the process — the store, a
+     table, the network, git, a child process, the filesystem, the clock it waits
+     on. These are the packages `PACKAGES` names in
+     `packages/domain/unit/effect-ratchet.test.ts`, and
+     `packages/domain/unit/effect-ratchet.baseline.json` holds each at 0 `async`
+     functions and 0 `Effect.run*` calls. Each returns an `Effect` with a tagged
+     error per package, never a promise and never a thrown error for a failure
+     the caller is meant to decide on.
+   - **`Effect.run*` only at a host's edge**: the CLI's one run
+     (`apps/cli/src/entry.ts`, which covers every command, `daemon` included), a
+     board read, server action or route handler (`apps/board/src/app/actions.ts`,
+     `apps/board/src/lib/board.ts`), and a test. The site (`apps/site`) runs
+     no Effect of its own: its scripts (`apps/site/scripts/books.ts`,
+     `apps/site/scripts/snapshot.ts`) call the promise faces of §7, so their
+     `Effect.runPromise` runs inside a registered face and they are a host the
+     faces file names. `runPromise` and not `runMain`
+     at the CLI, because `runMain` interrupts the main fiber on SIGINT and the
+     daemon's first Ctrl+C is a drain. Never inside backend code — a
+     `runPromise` nested in an Effect starts a fiber with no parent, which loses
+     the caller's scope, its interruption and its span. A fiber that backend code
+     must start itself, such as a pass the scheduler starts detached, runs with
      `Effect.runPromiseWith(yield* Effect.context())`, which carries the
      caller's services and its tracer into the new root fiber
-     (`packages/conductor/src/schedule.ts`).
+     (`packages/conductor/src/schedule.ts`; `packages/conductor/src/run-attempt.ts`
+     says why: a bare `runPromise` would drop the pass's span). The ratchet counts
+     a `*With` run over `Context.empty()` or `Context.make(…)` as the root run it
+     is, and does not count one over the caller's own context.
    - **Tracing is Effect's**: a named operation is `Effect.withSpan` (or
      `Effect.fn`), and a host that has `telemetry.otlp_endpoint` provides
      `tracingLayer` (`packages/conductor/src/telemetry.ts`, which is
@@ -125,9 +140,8 @@ turn limit, so every idiom it adopts is paid for again on every run.
      carry is `lingtai.ticket`, the issue number. The board's own read spans
      (`apps/board/src/lib/telemetry.ts`) follow the same rules.
    - `runOnce` (`conduct.ts`) and `runQueue` (`schedule.ts`) are `Effect`s that
-     need `Repo | AgentHost`. The hosts provide the layer and call
-     `Effect.runPromise` once, at their edge (`apps/cli/src/conduct.ts`,
-     `apps/cli/src/run.ts`).
+     need `Repo | AgentHost`. The hosts provide the layer and the CLI's one run
+     executes them (`apps/cli/src/conduct.ts`, `apps/cli/src/run.ts`).
    - Port methods return `Effect`s with one tagged error per package, and the
      operation is a field on it: `RepoFailed` (`@lingtai/repo`),
      `AgentHostFailed` (`@lingtai/agent`).
@@ -152,14 +166,28 @@ turn limit, so every idiom it adopts is paid for again on every run.
    map onto each other mechanically and one `Config` describes both. It is run
    with `Effect.runSync` inside `env`'s own functions, so a caller gets a plain
    value or a plain error.
+   **A third-party promise library is called through `Effect.tryPromise`** at the
+   call site: `@clack/prompts`, wrapped by `apps/cli/src/prompt.ts` and reached
+   through `apps/cli/src/question.ts`. `ora` is driven as a synchronous spinner
+   object by `apps/cli/src/steps.ts`, inside the Effect that owns the step.
+   **`packages/telegram` and `apps/cli/src/notify.ts` import no `effect`**: a
+   notifier a third party could write imports nothing but `node:` and
+   `extension` (`packages/telegram/src/cli.ts`), so both stay plain and are not
+   counted.
    **The board** (`apps/board`) stays `async`: its Server Components and server
    actions call backend Effects with `Effect.runPromise` at their edge, and its
-   own read spans are `@opentelemetry/api` (#775). A package that the board calls
-   may keep a promise face beside its Effect one, and that face is only a
-   `runPromise` over the Effect — one implementation, never two.
-
-   Where a package has not been moved yet, epic #790 lists it; the rule above is
-   what each move is held to.
+   own read spans are `@opentelemetry/api` (#775). A package that a host calls
+   may keep a promise face beside its Effect one. A face is an exported function
+   whose whole body is `return Effect.runPromise(<call>)` or
+   `return Effect.runPromise(<call>, { signal })` — the call being a concrete
+   Effect (`wakeSessionFace`, `followFace` in
+   `packages/event-store/src/store-face.ts`, which take the caller's
+   `AbortSignal`) or the face's own Effect parameter
+   (`packages/github/src/app.ts`, `packages/conductor/src/port-face.ts`) — one
+   implementation, never two — and each is listed in `packages/domain/unit/effect-ratchet.faces.json`
+   with `until: "0101 §7"` and a `why` naming the host or the host's test that
+   reads it. A face that inspects an `Exit` or runs synchronously is a run, and
+   is counted.
 
 8. **The hook is the one exception to "TypeScript on Node".** `lingtai-hook` is a
    dependency-free thin client, compiled with
