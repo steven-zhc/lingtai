@@ -29,15 +29,17 @@ import {
   landOnBranchChanges,
   landingChanges,
   parseDuration,
-  readRecipeKey,
+  readRecipeKeyEffect,
   recipePath,
   resolveSource,
   roundsChange,
-  setRecipe,
+  setRecipeEffect,
   wallChange,
 } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
-import { type QuestionWorld, question } from './question.ts'
+import { lift, recovering } from './exit.ts'
+import { type QuestionWorld, questionEffect } from './question.ts'
 
 export interface LandingDeps {
   home?: string
@@ -62,22 +64,22 @@ type Answered = { ok: true } | { refused: string }
  * uncaught, the answers already written stay on disk while the one that threw
  * never reaches the terminal to be asked again (#399).
  */
-async function setRecipeOrRefuse(
+function setRecipeOrRefuse(
   project: string,
   changes: readonly RecipeChange[],
   options: { home?: string; files?: RecipeFiles },
-): Promise<SetRecipeResult | { refused: string }> {
-  try {
-    return await setRecipe(project, changes, options)
-  } catch (err) {
-    return { refused: (err as Error).message }
-  }
+): Effect.Effect<SetRecipeResult | { refused: string }> {
+  return setRecipeEffect(project, changes, options).pipe(recovering((err) => Effect.succeed({ refused: err.message })))
 }
 
-async function resolvedFile(
+function readKey(project: string, path: readonly (string | number)[], options: { home?: string; files?: RecipeFiles }) {
+  return Effect.orDie(readRecipeKeyEffect(project, path, options))
+}
+
+const resolvedFile = Effect.fn('landing.resolvedFile')(function* (
   project: string,
   options: { home?: string; files?: RecipeFiles },
-): Promise<
+): Effect.fn.Return<
   | {
       text: string
       recipe: Recipe
@@ -87,11 +89,12 @@ async function resolvedFile(
       limits: { turns: TurnLimit; wall: string; rounds: number; restarts: number; usd?: number }
       agent: string
     }
-  | { refused: string }
+  | { refused: string },
+  unknown
 > {
   const files = options.files ?? diskFiles
   const path = recipePath(project, options.home)
-  const text = await files.read(path)
+  const text = yield* lift(() => files.read(path))
   if (text === null) return { refused: `no recipe at ${path} — lingtai add reads this project's own refusal for that` }
   let resolved
   try {
@@ -108,7 +111,7 @@ async function resolvedFile(
     limits: ceilingOf(resolved.recipe),
     agent: resolved.recipe.runtime.agent,
   }
-}
+})
 
 /** The recipe's `runtime.limits.usd` is written, but only claude-code enforces it. */
 export function dollarCeilingNote(named: unknown): string {
@@ -139,44 +142,44 @@ const LAND = 'land it without asking'
  * step is inherited whole from a preset) does the resolved list stand in,
  * so a step `extends:` supplies is not dropped.
  */
-export async function askLanding(
+export const askLanding = Effect.fn('landing.askLanding')(function* (
   world: QuestionWorld,
   project: string,
   land: string | null,
   deps: LandingDeps,
-): Promise<Answered> {
+): Effect.fn.Return<Answered, unknown> {
   const options = { home: deps.home, files: deps.files }
-  const file = await resolvedFile(project, options)
+  const file = yield* resolvedFile(project, options)
   if ('refused' in file) return file
 
   const currentlyHolds = file.proposed.some((action) => 'human' in action)
-  const rawProposed = async () => await readRecipeKey(project, ['steps', 'proposed'], options)
-  const rawAdmit = async () => await readRecipeKey(project, ['steps', 'admit'], options)
+  const rawProposed = () => readKey(project, ['steps', 'proposed'], options)
+  const rawAdmit = () => readKey(project, ['steps', 'admit'], options)
 
   let changes: ReturnType<typeof landingChanges>
   if (land !== null) {
     // A flag is run through `question()` with no `choices`: `--land main` is a
     // branch, which the two phrases below would refuse as "not one of …".
-    const result = await question(world, {
+    const result = yield* questionEffect(world, {
       name: 'the landing',
       flag: '--land <branch>|hold',
       given: land,
       prompt: 'land this on which branch, or "hold" to hold every attempt for a person',
       current: null,
       detected: null,
-      validate: async (answer) => (answer.trim() === '' ? 'needs a branch name, or "hold"' : null),
+      validate: (answer) => Effect.succeed(answer.trim() === '' ? 'needs a branch name, or "hold"' : null),
       kept: deps.kept,
     })
     if ('refused' in result) return result
-    const proposed = await rawProposed()
-    const admit = await rawAdmit()
+    const proposed = yield* rawProposed()
+    const admit = yield* rawAdmit()
     changes = landingChanges(
       { land: result.answer },
       Array.isArray(proposed) ? proposed : file.proposed,
       Array.isArray(admit) ? admit : file.admit,
     )
   } else {
-    const result = await question(world, {
+    const result = yield* questionEffect(world, {
       name: 'the landing',
       flag: '--land hold (wait for me to approve) or --land <branch> (land on that branch)',
       given: null,
@@ -187,8 +190,8 @@ export async function askLanding(
       kept: deps.kept,
     })
     if ('refused' in result) return result
-    const proposed = await rawProposed()
-    const admit = await rawAdmit()
+    const proposed = yield* rawProposed()
+    const admit = yield* rawAdmit()
     const rawP = Array.isArray(proposed) ? proposed : file.proposed
     const rawA = Array.isArray(admit) ? admit : file.admit
     if (result.answer === WAIT) {
@@ -198,7 +201,7 @@ export async function askLanding(
       // hold's removal, never a `repo.base` the file did not say.
       changes = holdRemovalChanges(rawP)
     } else {
-      const base = await deps.defaultBranch()
+      const base = yield* lift(() => deps.defaultBranch())
       if (base === null) {
         return {
           refused: `no base branch to land on — pass --land <branch>. ${deps.kept ?? 'Nothing was written'}`,
@@ -207,8 +210,8 @@ export async function askLanding(
       changes = landOnBranchChanges(base, rawP, rawA)
     }
   }
-  const hadSteps = (await readRecipeKey(project, ['steps'], options)) !== null
-  const written = await setRecipeOrRefuse(project, changes, options)
+  const hadSteps = (yield* readKey(project, ['steps'], options)) !== null
+  const written = yield* setRecipeOrRefuse(project, changes, options)
   if ('refused' in written) return written
   if (written.written && !hadSteps && changes.some((c) => c.path[0] === 'steps')) {
     world.log(
@@ -219,7 +222,7 @@ export async function askLanding(
     )
   }
   return { ok: true }
-}
+})
 
 /** `--budget`'s "none", parsed the way the question accepts `5`, `5.00` and `$5`. */
 function parseBudget(answer: string): number | null | string {
@@ -243,63 +246,64 @@ export interface LimitsFlags {
  * an inherited default must not pin it into the file (`write.ts`'s
  * `readRecipeKey` comment, #392).
  */
-export async function askLimits(
+export const askLimits = Effect.fn('landing.askLimits')(function* (
   world: QuestionWorld,
   project: string,
   flags: LimitsFlags,
   options: { home?: string; files?: RecipeFiles; kept?: string },
-): Promise<Answered> {
-  const file = await resolvedFile(project, options)
+): Effect.fn.Return<Answered, unknown> {
+  const file = yield* resolvedFile(project, options)
   if ('refused' in file) return file
   const { limits } = file
 
-  const rounds = await question(world, {
+  const rounds = yield* questionEffect(world, {
     name: 'rounds',
     flag: '--rounds <n>',
     given: flags.rounds ?? null,
     prompt: 'how many times an attempt sends the agent back — 0 means every refusal goes straight to you',
     current: String(limits.rounds),
-    validate: async (answer) => (/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
+    validate: (answer) => Effect.succeed(/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
     kept: options.kept,
   })
   if ('refused' in rounds) return rounds
   const roundsValue = Number(rounds.answer)
   if (roundsValue !== limits.rounds) {
-    const written = await setRecipeOrRefuse(project, [roundsChange(roundsValue)], options)
+    const written = yield* setRecipeOrRefuse(project, [roundsChange(roundsValue)], options)
     if ('refused' in written) return written
   }
 
-  const wall = await question(world, {
+  const wall = yield* questionEffect(world, {
     name: 'wall',
     flag: '--wall <duration>',
     given: flags.wall ?? null,
     prompt: 'what one agent run may take, like 30m or 2h',
     current: limits.wall,
-    validate: async (answer) => {
-      try {
-        return parseDuration(answer) > 0 ? null : 'must be a positive duration, like 30m'
-      } catch {
-        return 'that is not a duration like 30s, 15m or 2h'
-      }
-    },
+    validate: (answer) =>
+      Effect.sync(() => {
+        try {
+          return parseDuration(answer) > 0 ? null : 'must be a positive duration, like 30m'
+        } catch {
+          return 'that is not a duration like 30s, 15m or 2h'
+        }
+      }),
     kept: options.kept,
   })
   if ('refused' in wall) return wall
   if (wall.answer !== limits.wall) {
-    const written = await setRecipeOrRefuse(project, [wallChange(wall.answer)], options)
+    const written = yield* setRecipeOrRefuse(project, [wallChange(wall.answer)], options)
     if ('refused' in written) return written
   }
 
-  const budget = await question(world, {
+  const budget = yield* questionEffect(world, {
     name: 'the spend ceiling',
     flag: '--budget <dollars>|none',
     given: flags.budget ?? null,
     prompt: 'a dollar ceiling per agent run, like $5, or "none" for no ceiling',
     current: limits.usd === undefined ? 'none' : String(limits.usd),
     show: (value) => (value === 'none' ? 'none' : `$${Number(value).toFixed(2)}`),
-    validate: async (answer) => {
+    validate: (answer) => {
       const parsed = parseBudget(answer)
-      return typeof parsed === 'string' ? parsed : null
+      return Effect.succeed(typeof parsed === 'string' ? parsed : null)
     },
     kept: options.kept,
   })
@@ -308,18 +312,18 @@ export async function askLimits(
   const usdValue =
     budget.answer.trim().toLowerCase() === 'none' ? null : Number(budget.answer.trim().replace(/^\$/, ''))
   if ((usdValue ?? null) !== (limits.usd ?? null)) {
-    const written = await setRecipeOrRefuse(project, [budgetChange(usdValue)], options)
+    const written = yield* setRecipeOrRefuse(project, [budgetChange(usdValue)], options)
     if ('refused' in written) return written
   }
 
-  const after = await resolvedFile(project, options)
+  const after = yield* resolvedFile(project, options)
   if ('refused' in after) return after
   // The runtime the file names, not `resolveSource`'s schema default: a recipe
   // naming none runs whichever runtime this machine detects (local.ts), which
   // may not be claude-code.
-  const named = await readRecipeKey(project, ['runtime', 'agent'], options)
+  const named = yield* readKey(project, ['runtime', 'agent'], options)
   if (after.limits.usd !== undefined && named !== 'claude-code') {
     world.log(paint.muted(dollarCeilingNote(named)))
   }
   return { ok: true }
-}
+})

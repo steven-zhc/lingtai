@@ -4,9 +4,10 @@
  * writes nothing — writing is the caller's, never the seam's — and a re-run
  * offers the current value as the default.
  */
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { acceptingDefaults, question, type QuestionWorld } from '../src/question.ts'
+import { acceptingDefaults, question, questionEffect, type QuestionWorld } from '../src/question.ts'
 
 // `paint` reads `FORCE_COLOR` on every call (colour.ts:54), and the assertions
 // below read its output as bare strings. `NO_COLOR` wins outright ahead of it
@@ -173,6 +174,35 @@ describe('question', () => {
     await expect(question(w, { name: 'the store', flag: '--store', given: null, prompt: 'store' })).rejects.toThrow(
       'ctrl-c',
     )
+  })
+
+  it('a validate that rejects reaches the caller as the same error', async () => {
+    const err = new Error('database unreachable')
+    const w = world(['x'])
+    await expect(
+      question(w.world, {
+        name: 'the store',
+        flag: '--store',
+        given: null,
+        prompt: 'store',
+        validate: () => Promise.reject(err),
+      }),
+    ).rejects.toBe(err)
+  })
+
+  it('questionEffect runs an Effect validate: a refusal is logged and asked again', async () => {
+    const { world: w, lines } = world(['bad', 'good'])
+    const result = await Effect.runPromise(
+      questionEffect(w, {
+        name: 'the store',
+        flag: '--store',
+        given: null,
+        prompt: 'store',
+        validate: (answer) => Effect.succeed(answer === 'good' ? null : `${answer} is refused`),
+      }),
+    )
+    expect(result).toEqual({ answer: 'good' })
+    expect(lines.some((l) => l.includes('bad is refused'))).toBe(true)
   })
 })
 
