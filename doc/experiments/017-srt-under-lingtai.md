@@ -287,11 +287,87 @@ configuration. Then it copies only the access token into the run's
 directory.** A run can neither rotate the operator's login nor carry away a
 long-lived refresh token, and `claude.com` stays off the allowlist.
 
-**Not measured.** The macOS Keychain, where an interactive Mac keeps these
-credentials. Over SSH foundry uses the file, so how Lingtai reads the access
-token from the Keychain, and whether `claude auth status` refreshes it there,
-is open. Linux was not measured either: harbor's Claude Code is 2.1.278, older
-than the one measured here.
+Linux was not measured: harbor's Claude Code is 2.1.278, older than the one
+measured here.
+
+## Claude Code's login in the macOS Keychain
+
+Measured 2026-11-12 on foundry, Claude Code 2.1.312, in Terminal inside the
+desktop session (over VNC). Over SSH the Keychain answers *User interaction is
+not allowed*, and `launchctl asuser` into the desktop session needs root, so
+this part could only be run by hand. Only expiry times and token hash
+prefixes were printed.
+
+foundry holds two logins for one user. `~/.claude/.credentials.json` is valid,
+with 271 minutes left. The Keychain item `Claude Code-credentials` (account
+`steven`) was last written in January and expired 413,515 minutes (287 days)
+before the test.
+
+| Step, in the desktop session | Result |
+|---|---|
+| Is the login Keychain unlocked? | yes, `no-timeout` |
+| `security find-generic-password -s "Claude Code-credentials" -w` | **read the item, no dialog**, exit 0 |
+| `claude auth status` | `"loggedIn": true`, on the January token. Neither store changed. |
+| `claude -p` | `OAuth session expired and could not be refreshed`. Claude Code then **cleared the Keychain item's tokens** (item rewritten 2026-11-13 03:25:19Z, `at=none rt=none`). |
+| `~/.claude/.credentials.json` across all four steps | untouched: same mtime, same tokens |
+
+**What this establishes.**
+
+- **The store depends on the session, not the machine.** In the desktop
+  session Claude Code reads the Keychain and ignores the file, even though the
+  file holds a valid login. Over SSH it reads the file. `lingtai service`
+  installs a LaunchAgent and starts the daemon in `gui/<uid>`
+  (`apps/cli/src/service.ts:357`, `:860`), so a daemon started that way reads
+  the Keychain like the desktop session does. A daemon started from an SSH
+  shell reads the file. The same machine can therefore give two different
+  answers to whether it is signed in.
+- **`"loggedIn": true` does not mean a run will work.** `claude auth status`
+  answered true on a token expired for 287 days, whose refresh then failed. It
+  reports that credentials exist, not that they are valid. Lingtai's doctor
+  probe (`signedInHere`) and the refresh step in decision 8 both read that
+  field.
+- **Any process in the desktop session can read the login.** `security`
+  read the item with no prompt. The item's access list lets `security` read
+  it, presumably because Claude Code writes the item through `security`
+  itself. Whether a process **inside srt** can still reach it goes through
+  `securityd` over Mach IPC, not through a file, so the filesystem deny list
+  says nothing about it. That is measured next.
+- **A failed refresh clears the store it came from**, in the Keychain as in
+  the file (above). The desktop login on foundry was already unusable before
+  the test, and it is now empty.
+
+A second script ran in the same desktop session four minutes later. G1 and G2
+use a directory holding only the file's access token, as in D. G3 and G4 run
+`security find-generic-password -s "Claude Code-credentials" -w` inside srt
+with D's policy.
+
+| Case, in the desktop session | Result |
+|---|---|
+| G1: `CLAUDE_CONFIG_DIR` holding only an access token, outside srt | **OK**. It used the directory's file. No new Keychain item appeared, and the empty `Claude Code-credentials` item did not stop it. |
+| G2: the same, inside srt | **OK**. The copy was unchanged and no Keychain item appeared. |
+| G3: `security` reads the Keychain item, inside srt | **exit 0: read.** The deny list as written leaves the operator's login readable to a run. |
+| G4: G3 with `~/Library/Keychains` on `denyRead` | **exit 44** (`errSecItemNotFound`): refused. |
+
+**What this establishes.**
+
+- **A run's own directory sidesteps the Keychain.** With `CLAUDE_CONFIG_DIR`
+  set, Claude Code reads that directory's file in the desktop session too.
+  Decision 8's shape works on macOS whichever session the daemon runs in. Only
+  the step that *reads the operator's login* has to know which store holds
+  it.
+- **The macOS deny list needs `~/Library/Keychains`.** Without it, any
+  command inside srt can read every Keychain item whose access list allows
+  `security`, and Claude Code's login is one of them. Denying the directory
+  works because the client opens the keychain file itself. It also cuts off
+  git's `osxkeychain` credential helper, which a run has no business using
+  (decision 5).
+- **Not measured:** G2 with `~/Library/Keychains` denied, which is S4's
+  configuration. G1 shows that a run with its own directory does not ask the
+  Keychain for its token, so it is expected to work, and S4's Done when checks
+  it. Also not measured: whether `claude auth status` refreshes a
+  *refreshable* token held in the Keychain. The only Keychain token on foundry
+  had a dead refresh token, and `auth status` neither refreshed it nor said
+  so.
 
 ## What this changes in 0.14.md
 
@@ -311,7 +387,10 @@ than the one measured here.
    File refusals are not reported on Linux and not attributed on macOS.
 6. **A run never refreshes Claude Code's token.** Lingtai refreshes the
    operator's login outside srt when it is close to expiry
-   (`claude auth status`), and gives the run only the access token.
+   (`claude auth status`), and gives the run only the access token. It reads
+   the operator's login from the store that session's Claude Code uses (the
+   Keychain in the desktop session, the file over SSH), and it judges the login
+   by `expiresAt`, never by `"loggedIn"`.
 7. **The build gate needs the package stores writable**, and Lingtai's own
    `pnpm test` must be green inside srt before Lingtai opts in. The one test
    that is not is a test bug: it spawns the real runtimes (above). It is fixed
@@ -320,6 +399,8 @@ than the one measured here.
    are added after `runnableEnv` has chosen what a run gets, or every network
    call a run makes hangs on Linux.
 9. **Bundling is feasible**, with `apply-seccomp` extracted at start.
+10. **On macOS the deny list includes `~/Library/Keychains`**, or a run can
+    read the operator's Claude Code login through `security`.
 
 ## Not measured
 
@@ -327,6 +408,6 @@ than the one measured here.
   under srt. The socket test stands in for the hook.
 - Ubuntu 24.04's default AppArmor setting, since harbor already has it off.
   srt's README says bubblewrap needs it off or a profile granting `userns`.
-- Claude Code with the OAuth token stored in the macOS Keychain rather than
-  `~/.claude/.credentials.json`. foundry has the file.
+- `claude auth status` refreshing a refreshable token held in the macOS
+  Keychain (above).
 - An arm64 machine.
