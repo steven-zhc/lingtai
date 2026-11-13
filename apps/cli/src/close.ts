@@ -28,7 +28,6 @@ import { hasGitHubAuth } from '@lingtai/env'
 import { Effect } from 'effect'
 
 import { noteConductor } from './conductor-note.ts'
-import { lift } from './exit.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface CloseCommandOptions {
@@ -78,7 +77,7 @@ export function closeVerdict(
       return fromOutcome(outcome)
     })
     const answered: Answered = yield* append
-    if (answered.code === 0) yield* lift(() => noteConductor(progress))
+    if (answered.code === 0) yield* noteConductor(progress)
     return answered
   })
 }

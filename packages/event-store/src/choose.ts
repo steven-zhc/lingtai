@@ -103,7 +103,7 @@ export function processTicketSql(): Promise<TicketSql> {
   return Effect.runPromise(processTicketSqlEffect())
 }
 
-const processTicketSqlEffect = () => Effect.map(process_.get(), (o) => o.tickets)
+export const processTicketSqlEffect = (): Effect.Effect<TicketSql> => Effect.map(process_.get(), (o) => o.tickets)
 
 const openEffect: Effect.Effect<Opened> = Effect.gen(function* () {
   const choice = chosenStore()

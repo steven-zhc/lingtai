@@ -135,13 +135,13 @@
     "file": "packages/conductor/src/backlog.ts",
     "fn": "acceptFinding",
     "until": "#790",
-    "why": "the board's backlog action and `lingtai backlog` (apps/cli/src/backlog.ts)"
+    "why": "the board's backlog action"
   },
   {
     "file": "packages/conductor/src/backlog.ts",
     "fn": "declineFinding",
     "until": "#790",
-    "why": "the board's backlog action and `lingtai backlog` (apps/cli/src/backlog.ts)"
+    "why": "the board's backlog action"
   },
   {
     "file": "packages/conductor/src/close.ts",
@@ -193,15 +193,9 @@
   },
   {
     "file": "packages/conductor/src/end-step.ts",
-    "fn": "appendEndActions",
-    "until": "#790",
-    "why": "`apps/cli/src/end.ts` awaits it, until the apps/cli row"
-  },
-  {
-    "file": "packages/conductor/src/end-step.ts",
     "fn": "endedWithoutEndActions",
     "until": "#790",
-    "why": "`apps/cli/src/end.ts` awaits it, until the apps/cli row"
+    "why": "the apps/cli unit tests (`doctor`, `doctor-progress`, `doctor-titles-projects`, `log-predates-hold`) fake or call it"
   },
   {
     "file": "packages/conductor/src/filter.ts",
@@ -213,7 +207,7 @@
     "file": "packages/conductor/src/filter.ts",
     "fn": "projectClient",
     "until": "#790",
-    "why": "apps/board actions and lib/task, and apps/cli (requeue, backlog, grant-fix-round, end, close, approve) await it until the apps/cli rows"
+    "why": "apps/board actions and lib/task, and apps/cli (requeue, grant-fix-round, close, approve) await it until the apps/cli rows"
   },
   {
     "file": "packages/conductor/src/filter.ts",
@@ -399,7 +393,7 @@
     "file": "packages/conductor/src/tell.ts",
     "fn": "tellGitHubAbout",
     "until": "#790",
-    "why": "`apps/cli/src/end.ts` awaits it, until the apps/cli row"
+    "why": "the conductor unit tests (`sweep-refs`, `edit-ended-waits`, `trace-an-attempt`, `landing-comment`) call it"
   },
   {
     "file": "packages/conductor/src/ticket-history.ts",
@@ -411,7 +405,7 @@
     "file": "packages/conductor/src/ticket-store.ts",
     "fn": "ticketsFor",
     "until": "#790",
-    "why": "apps/cli (conduct, run, ticket)"
+    "why": "apps/cli (conduct, run)"
   },
   {
     "file": "packages/daemon/src/choose.ts",
@@ -597,7 +591,7 @@
     "file": "packages/event-store/src/choose.ts",
     "fn": "processTicketSql",
     "until": "#790",
-    "why": "apps/cli ticket.ts and conductor ticket-history.ts, ticket-store.ts await it"
+    "why": "conductor ticket-history.ts and ticket-store.ts await it, and `closable.test.ts` calls it"
   },
   {
     "file": "packages/event-store/src/closable.ts",
@@ -639,7 +633,7 @@
     "file": "packages/event-store/src/store-face.ts",
     "fn": "execFace",
     "until": "#790",
-    "why": "every promise TicketSql holder outside packages/event-store (db-tickets, ticket-store, ticket-history, apps/cli ticket), and the test fakes"
+    "why": "every promise TicketSql holder outside packages/event-store (db-tickets, ticket-store, ticket-history), and the test fakes"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
@@ -687,7 +681,7 @@
     "file": "packages/event-store/src/store-face.ts",
     "fn": "queryFace",
     "until": "#790",
-    "why": "every promise TicketSql holder outside packages/event-store (db-tickets, ticket-store, ticket-history, apps/cli ticket), and the test fakes"
+    "why": "every promise TicketSql holder outside packages/event-store (db-tickets, ticket-store, ticket-history), and the test fakes"
   },
   {
     "file": "packages/event-store/src/store-face.ts",

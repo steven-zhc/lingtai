@@ -106,7 +106,6 @@ export {
   type PromptBudget,
 } from './attempts.ts'
 export {
-  appendEndActions,
   appendEndActionsEffect,
   endedWithoutEndActions,
   endedWithoutEndActionsEffect,
@@ -128,7 +127,15 @@ export {
   type TellOptions,
   type Told,
 } from './tell.ts'
-export { acceptFinding, declineFinding, proposalFor, type BacklogDecision, type DecideOptions } from './backlog.ts'
+export {
+  acceptFinding,
+  acceptFindingEffect,
+  declineFinding,
+  declineFindingEffect,
+  proposalFor,
+  type BacklogDecision,
+  type DecideOptions,
+} from './backlog.ts'
 export {
   BodyChanged,
   githubTicketStore,

@@ -19,7 +19,6 @@ import { loadProjectEffect } from '@lingtai/conductor/projects'
 import { Effect } from 'effect'
 
 import { noteConductor } from './conductor-note.ts'
-import { lift } from './exit.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface AskCommandOptions {
@@ -64,7 +63,7 @@ function decide(
       return fromOutcome(outcome)
     })
     const answered: Answered = yield* append
-    if (answered.code === 0) yield* lift(() => noteConductor(progress))
+    if (answered.code === 0) yield* noteConductor(progress)
     return answered
   })
 }
