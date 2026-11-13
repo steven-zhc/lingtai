@@ -1398,6 +1398,35 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(h.removed).toEqual([])
   })
 
+  const unreadable =
+    'could not read the board to check for an attempt of repo in flight — store down. Nothing was written'
+
+  it('a read that rejects gets the one refusal sentence, with the error’s own message in it', async () => {
+    const { h, result } = run({
+      answers: ['yes'],
+      inFlight: async () => {
+        throw new Error('store down')
+      },
+    })
+    expect(await result).toEqual({ refused: unreadable })
+    expect(h.files.replaced).toEqual({})
+    expect(h.removed).toEqual([])
+  })
+
+  it('a read that dies (a defect, 0101 §6) gets the same sentence a rejection does', async () => {
+    const h = harness({
+      answers: ['yes'],
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: OLD },
+    })
+    h.world.inFlight = () => Effect.die(new Error('store down'))
+    const result = await chooseFirstProject(h.world, { local: '/repo', defaults: '', install: 'none' })
+    expect(result).toEqual({ refused: unreadable })
+    expect(h.files.replaced).toEqual({})
+    expect(h.removed).toEqual([])
+  })
+
   it('--base dev keeps dev, and the line names it', async () => {
     const { h, result } = run(
       { answers: ['yes'], git: git({ '/repo::rev-parse --verify refs/heads/dev^{commit}': ok('cafefee\n') }) },
