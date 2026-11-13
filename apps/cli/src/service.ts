@@ -629,17 +629,17 @@ export interface LockQueue {
    */
   wait: (
     log: (line: string) => void,
-    retaken?: () => Promise<void>,
+    retaken?: Effect.Effect<void, unknown>,
     progress?: (line: string) => void,
-  ) => Promise<'held' | 'interrupted' | 'gave-up'>
+  ) => Effect.Effect<'held' | 'interrupted' | 'gave-up', unknown>
   /**
    * Whether the lock is still this command's, asked on its own connection. A
    * wait that ended held is not proof a moment later: Postgres releases the
    * lock with a dropped session, and a copy the supervisor starts can take it.
    */
-  holds: () => Promise<boolean>
+  holds: Effect.Effect<boolean, unknown>
   /** Releases the lock when held, and leaves the queue when not. Safe to call twice. */
-  leave: () => Promise<void>
+  leave: Effect.Effect<void, unknown>
 }
 
 /** What a person is told over somebody else's standing drain: the start is what would end it. */
@@ -1426,7 +1426,7 @@ export const serviceCommand = (args: string[], options: ServiceOptions): Effect.
         const leaving = Effect.suspend(() =>
           lift(() => watcher?.stop() ?? Promise.resolve()).pipe(
             Effect.ignore,
-            Effect.andThen(lift(() => queue.leave()).pipe(Effect.ignore)),
+            Effect.andThen(queue.leave.pipe(Effect.ignore)),
           ),
         )
         const waiting = Effect.gen(function* () {
@@ -1462,9 +1462,8 @@ export const serviceCommand = (args: string[], options: ServiceOptions): Effect.
           // the request stands and is above its `since`, so it obeys that. Either way
           // this person's own request is the one waited on; somebody else's is not.
           //
-          // An Effect here, and a promise where `LockQueue.wait` takes it (CLI-08b
-          // makes the queue one too): it fails with an `Error` whose message the
-          // queue prints, a store's defect included.
+          // It fails with an `Error` whose message the queue prints, a store's
+          // defect included.
           const askAgain: Effect.Effect<void, unknown> = Effect.gen(function* () {
             const again = yield* options.drain.ask(by, `service ${verb}: ${reason}`)
             if (!again.asked && again.standing.by !== by)
@@ -1476,9 +1475,6 @@ export const serviceCommand = (args: string[], options: ServiceOptions): Effect.
               Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.fail(asError(Cause.squash(cause))),
             ),
           )
-          // The fibre each promise round starts carries this one's services.
-          const runAsk = Effect.runPromiseWith(yield* Effect.context<never>())
-          const retake = (): Promise<void> => runAsk(askAgain)
           // Only where the entry passed steps: `noSteps` would swallow the repeated line `log` carries otherwise.
           const progress = options.steps === undefined ? undefined : (line: string) => steps.progress(line)
           // A line written while the spinner is live would be erased by its next redraw, so it ends first.
@@ -1490,22 +1486,22 @@ export const serviceCommand = (args: string[], options: ServiceOptions): Effect.
           // adopted above; the lock then stays with it and the wait never ends. So
           // whenever no request stands during the wait, it is asked again.
           watcher = keepAsked(options.shutdown(), askAgain, 2000)
-          let waited = yield* lift(() => queue.wait(waitLog, retake, progress))
+          let waited = yield* queue.wait(waitLog, askAgain, progress)
           steps.end()
           // Asked again right before the supervisor is told: the lock is only worth
           // anything while its session lasts, and a wait that ended held says
           // nothing about a connection that dropped since. After `bootout` or
           // `systemctl stop` the supervisor starts no copy, so this is the last
           // moment a lost lock could be handed to one.
-          while (waited === 'held' && !(yield* lift(() => queue.holds()).pipe(answeringUnread(() => false)))) {
+          while (waited === 'held' && !(yield* queue.holds.pipe(answeringUnread(() => false)))) {
             log(
               'the conductor lock was lost with its connection before the supervisor was told anything — its place is taken again, the drain asked again, and the wait goes on',
             )
-            waited = yield* lift(() => queue.wait(waitLog, retake, progress))
+            waited = yield* queue.wait(waitLog, askAgain, progress)
             steps.end()
           }
           if (waited !== 'held') {
-            yield* lift(() => queue.leave())
+            yield* queue.leave
             log(
               `${waited === 'interrupted' ? 'stopped waiting' : 'gave up waiting'}, and the supervisor was told nothing. ` +
                 'The request stands until the next start ends it, and service start by this person is not refused over it. ' +
@@ -1519,7 +1515,7 @@ export const serviceCommand = (args: string[], options: ServiceOptions): Effect.
 
           // Unloaded, not killed: KeepAlive would bring a killed job straight back.
           const stopped = platform === 'launchd' ? yield* unload() : run(['systemctl', '--user', 'stop', SYSTEMD_UNIT])
-          yield* lift(() => queue.leave())
+          yield* queue.leave
           if (!stopped) {
             error(
               'the supervisor did not stop the service, above — it may still be running it, and a daemon it starts takes work. ' +

@@ -310,13 +310,10 @@ const drainWithTheLog = (reason: string, despiteDoctor: boolean): Effect.Effect<
       control: control.readControlEffect(),
       request: (who, why) => control.requestShutdownUnlessStandingEffect(who, why),
       inFlight: control.inFlightEffect().pipe(Effect.map((items) => daemon.describeInFlight(items))),
-      // CLI-08a replaces this lift of `waitForTheLock` with a `yield*`.
-      wait: lift(() =>
-        waitForTheLock('draining', null, (line) => console.log(line), {
-          ctrlC:
-            'ctrl-c stops waiting, leaves the drain standing and the shim where it is — lingtai upgrade again picks it up, and the next start ends it.',
-        }),
-      ),
+      wait: waitForTheLock('draining', null, (line) => console.log(line), {
+        ctrlC:
+          'ctrl-c stops waiting, leaves the drain standing and the shim where it is — lingtai upgrade again picks it up, and the next start ends it.',
+      }),
       log: (line) => console.log(line),
     })
   })

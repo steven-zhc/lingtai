@@ -93,7 +93,7 @@ import { Cause, Effect } from 'effect'
 
 import { doctorReportEffect } from './doctor.ts'
 import { lift } from './exit.ts'
-import { SHUTDOWN_BOARD_ONLY, START_BOARD_ONLY } from './service.ts'
+import { SHUTDOWN_BOARD_ONLY, START_BOARD_ONLY, type LockQueue } from './service.ts'
 import { noSteps, type Steps } from './steps.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
 
@@ -1067,25 +1067,20 @@ export const prepareRestart = (
       // not make has the timeout it was asked with — so that one, either way.
       const giveUpMs = drainTimeoutMs
       steps.begin(plan.go === 'drain' ? 'draining' : 'waiting')
-      // `waitForTheLock` is a promise until CLI-08a and takes the facts as thunks: the fiber it
-      // starts for each carries this one's services.
-      const run = Effect.runPromiseWith(yield* Effect.context<never>())
-      const waited = yield* lift(() =>
-        waitForTheLock(
-          plan.go === 'drain' ? 'draining' : 'waiting',
-          giveUpMs === null ? null : giveUpMs + RELEASE_GRACE_MS,
-          // A line written while the spinner is live would be erased by its next redraw.
-          (line) => {
-            steps.end()
-            log(line)
-          },
-          {
-            ask: () => run(facts.holder()),
-            held: () => run(facts.inFlight()),
-            ...(facts.pollMs === undefined ? {} : { pollMs: facts.pollMs }),
-            progress: (line) => steps.progress(line),
-          },
-        ),
+      const waited = yield* waitForTheLock(
+        plan.go === 'drain' ? 'draining' : 'waiting',
+        giveUpMs === null ? null : giveUpMs + RELEASE_GRACE_MS,
+        // A line written while the spinner is live would be erased by its next redraw.
+        (line) => {
+          steps.end()
+          log(line)
+        },
+        {
+          ask: facts.holder(),
+          held: facts.inFlight(),
+          ...(facts.pollMs === undefined ? {} : { pollMs: facts.pollMs }),
+          progress: (line) => steps.progress(line),
+        },
       )
       steps.end()
 
@@ -1356,16 +1351,16 @@ function sayRefusal(heading: string, because: readonly Refusal[], log: (line: st
  * it for one of the two kinds of conductor. It is also the thing the start has
  * to win, so waiting on anything else would be waiting on a proxy.
  */
-export async function waitForTheLock(
+export function waitForTheLock(
   /** What to call it in the repeated line: a drain was asked for, or it was not. */
   doing: 'draining' | 'waiting',
   giveUpAfterMs: number | null,
   log: (line: string) => void,
   /** How the lock is asked about, and how often. Replaceable so a test need not own a database. */
   how: {
-    ask?: () => Promise<string | null>
+    ask?: Effect.Effect<string | null, unknown>
     /** What is in flight, asked for the repeated line. Replaceable for the same reason. */
-    held?: () => Promise<string[]>
+    held?: Effect.Effect<string[], unknown>
     pollMs?: number
     sayEveryMs?: number
     /** What Ctrl+C does, in the repeated line — the caller's to say, since it is the caller that acts on it. */
@@ -1373,61 +1368,75 @@ export async function waitForTheLock(
     /** Where the repeated "still …" line goes (#622): a spinner's message on a terminal. Left out, it is `log`. */
     progress?: (line: string) => void
   } = {},
-): Promise<'free' | 'interrupted' | 'gave-up'> {
-  const ask = how.ask ?? (() => conductorLockHolder())
+): Effect.Effect<'free' | 'interrupted' | 'gave-up', unknown> {
+  const ask = how.ask ?? lift(() => conductorLockHolder())
+  const heldFacts = how.held ?? lift(() => inFlight())
   const pollMs = how.pollMs ?? POLL_MS
   const sayEveryMs = how.sayEveryMs ?? SAY_EVERY_MS
   const ctrlC = how.ctrlC ?? 'ctrl-c stops waiting and leaves whatever was asked for standing.'
-  const began = Date.now()
-  let said = began
-  let interrupted = false
-  /** Whether the last ask failed, so a run of failures is said once and not every poll. */
-  let failing = false
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const began = Date.now()
+      let said = began
+      let interrupted = false
+      /** Whether the last ask failed, so a run of failures is said once and not every poll. */
+      let failing = false
 
-  // Left standing on purpose. The request is in the log, so the drain it asked
-  // for carries on without this process — what Ctrl+C ends is the waiting.
-  const onSignal = (): void => {
-    interrupted = true
-  }
-  process.on('SIGINT', onSignal)
-
-  try {
-    for (;;) {
-      // Only an answer of "nobody" is free. A query that failed — a network
-      // blip, a pooler restart — says nothing about the lock, and reading it as
-      // empty would withdraw the drain while the old daemon is still in its
-      // pass: it would read no request when the pass ends and carry on from the
-      // stale commit, and the start here would lose the lock to it.
-      const answer = await ask().then(
-        (holder) => ({ ok: true as const, holder }),
-        (err: unknown) => ({ ok: false as const, message: (err as Error).message }),
-      )
-      if (answer.ok) {
-        failing = false
-        if (answer.holder === null) return 'free'
-      } else if (!failing) {
-        failing = true
-        log(paint.signal(`could not ask who holds the lock — ${answer.message}. Still ${doing}; it is asked again.`))
+      // Left standing on purpose. The request is in the log, so the drain it asked
+      // for carries on without this process — what Ctrl+C ends is the waiting.
+      // A Node listener and not an interruption: the scope takes it off on every
+      // way out, so a second press reaches Node's default and ends the process.
+      const onSignal = (): void => {
+        interrupted = true
       }
-      if (interrupted) return 'interrupted'
-      if (giveUpAfterMs !== null && Date.now() - began > giveUpAfterMs) return 'gave-up'
+      yield* Effect.acquireRelease(
+        Effect.sync(() => process.on('SIGINT', onSignal)),
+        () => Effect.sync(() => process.off('SIGINT', onSignal)),
+      )
 
-      if (Date.now() - said >= sayEveryMs) {
-        said = Date.now()
-        const held = await (how.held ?? (() => inFlight()))().catch(() => [])
-        ;(how.progress ?? log)(
-          paint.muted(
-            `still ${doing} after ${Math.round((Date.now() - began) / 1000)}s — ${describeInFlight(held)}. ` + ctrlC,
+      for (;;) {
+        // Only an answer of "nobody" is free. A query that failed — a network
+        // blip, a pooler restart — says nothing about the lock, and reading it as
+        // empty would withdraw the drain while the old daemon is still in its
+        // pass: it would read no request when the pass ends and carry on from the
+        // stale commit, and the start here would lose the lock to it.
+        const answer = yield* ask.pipe(
+          Effect.map((holder) => ({ ok: true as const, holder })),
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.succeed({ ok: false as const, message: messageOf(Cause.squash(cause)) }),
           ),
         )
-      }
+        if (answer.ok) {
+          failing = false
+          if (answer.holder === null) return 'free' as const
+        } else if (!failing) {
+          failing = true
+          log(paint.signal(`could not ask who holds the lock — ${answer.message}. Still ${doing}; it is asked again.`))
+        }
+        if (interrupted) return 'interrupted' as const
+        if (giveUpAfterMs !== null && Date.now() - began > giveUpAfterMs) return 'gave-up' as const
 
-      await new Promise((resolve) => setTimeout(resolve, pollMs))
-      if (interrupted) return 'interrupted'
-    }
-  } finally {
-    process.off('SIGINT', onSignal)
-  }
+        if (Date.now() - said >= sayEveryMs) {
+          said = Date.now()
+          const held = yield* heldFacts.pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.succeed([] as string[]),
+            ),
+          )
+          ;(how.progress ?? log)(
+            paint.muted(
+              `still ${doing} after ${Math.round((Date.now() - began) / 1000)}s — ${describeInFlight(held)}. ` + ctrlC,
+            ),
+          )
+        }
+
+        yield* Effect.sleep(pollMs)
+        if (interrupted) return 'interrupted' as const
+      }
+    }),
+  )
 }
 
 /**
@@ -1445,59 +1454,59 @@ export async function waitForTheLock(
  * is checked before a grant is believed, and a grant is confirmed before it is
  * trusted (`LockPlace.confirm`).
  */
-export async function queueForTheLock(
+export function queueForTheLock(
   how: {
     place?: () => Promise<LockPlace>
     holder?: () => Promise<string | null>
     pollMs?: number
     sayEveryMs?: number
   } = {},
-): Promise<{
-  wait: (
-    log: (line: string) => void,
-    retaken?: () => Promise<void>,
-    progress?: (line: string) => void,
-  ) => Promise<'held' | 'interrupted' | 'gave-up'>
-  holds: () => Promise<boolean>
-  leave: () => Promise<void>
-}> {
-  const take = how.place ?? (() => queueForDaemonLock({ name: 'lingtai-service-shutdown' }))
-  const holder = how.holder ?? (() => conductorLockHolder())
-  let place = await take()
-  const holds = async (): Promise<boolean> => place.lost() === null && place.held() && (await place.confirm())
-  return {
-    wait: async (log, retaken, progress) => {
-      const waited = await waitForTheLock('draining', null, log, {
-        ask: async () => {
-          if (await holds()) return null
-          const lost = place.lost() ?? (place.held() ? new Error('the lock is no longer held on its connection') : null)
-          if (lost !== null) {
-            await place.leave()
-            place = await take()
-            // Whoever took the lock in the gap may be a copy started after the
-            // request, which never reads it — so the caller asks again, after
-            // the new place, where whatever holds the lock does read it.
-            const again = await (retaken ?? (async () => {}))().then(
-              () => '',
-              (err: unknown) => `, and asking for the drain again failed — ${(err as Error).message}`,
-            )
-            throw new Error(
-              `the place in the queue for the lock was lost (${lost.message}) and was taken again${again}`,
-            )
-          }
-          return (await holder()) ?? 'nobody, while the lock is handed to this command'
-        },
-        ctrlC:
-          'ctrl-c stops waiting and tells the supervisor nothing — the request stands, a daemon that already read it still exits after its attempt, and the next restart by the same person picks it up; the next start ends it.',
-        ...(how.pollMs === undefined ? {} : { pollMs: how.pollMs }),
-        ...(how.sayEveryMs === undefined ? {} : { sayEveryMs: how.sayEveryMs }),
-        ...(progress === undefined ? {} : { progress }),
-      })
-      return waited === 'free' ? 'held' : waited
-    },
-    holds,
-    leave: () => place.leave(),
-  }
+): Effect.Effect<LockQueue, unknown> {
+  return Effect.gen(function* () {
+    const take = how.place ?? (() => queueForDaemonLock({ name: 'lingtai-service-shutdown' }))
+    const holder = how.holder ?? (() => conductorLockHolder())
+    let place = yield* lift(take)
+    const holds: Effect.Effect<boolean, unknown> = Effect.gen(function* () {
+      return place.lost() === null && place.held() && (yield* lift(() => place.confirm()))
+    })
+    const leave: Effect.Effect<void, unknown> = Effect.suspend(() => lift(() => place.leave()))
+    return {
+      wait: (log, retaken, progress) =>
+        waitForTheLock('draining', null, log, {
+          ask: Effect.gen(function* () {
+            if (yield* holds) return null
+            const lost =
+              place.lost() ?? (place.held() ? new Error('the lock is no longer held on its connection') : null)
+            if (lost !== null) {
+              yield* leave
+              place = yield* lift(take)
+              // Whoever took the lock in the gap may be a copy started after the
+              // request, which never reads it — so the caller asks again, after
+              // the new place, where whatever holds the lock does read it.
+              const again = yield* (retaken ?? Effect.void).pipe(
+                Effect.map(() => ''),
+                Effect.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Effect.failCause(cause)
+                    : Effect.succeed(`, and asking for the drain again failed — ${messageOf(Cause.squash(cause))}`),
+                ),
+              )
+              return yield* Effect.fail(
+                new Error(`the place in the queue for the lock was lost (${lost.message}) and was taken again${again}`),
+              )
+            }
+            return (yield* lift(holder)) ?? 'nobody, while the lock is handed to this command'
+          }),
+          ctrlC:
+            'ctrl-c stops waiting and tells the supervisor nothing — the request stands, a daemon that already read it still exits after its attempt, and the next restart by the same person picks it up; the next start ends it.',
+          ...(how.pollMs === undefined ? {} : { pollMs: how.pollMs }),
+          ...(how.sayEveryMs === undefined ? {} : { sayEveryMs: how.sayEveryMs }),
+          ...(progress === undefined ? {} : { progress }),
+        }).pipe(Effect.map((waited) => (waited === 'free' ? ('held' as const) : waited))),
+      holds,
+      leave,
+    }
+  })
 }
 
 /** How many doctor failures refuse a restart: every one but those a restart is the remedy for. */
