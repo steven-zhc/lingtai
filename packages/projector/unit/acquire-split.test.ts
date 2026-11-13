@@ -1,3 +1,5 @@
+import { EventEmitter } from 'node:events'
+
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { setAcquireObserver } from '../src/acquire.ts'
@@ -11,7 +13,7 @@ const poolOf = (query: (text: string) => Promise<{ rows: unknown[] }>) => {
     query: vi.fn(),
     connect: vi.fn(async () => {
       await new Promise((r) => setTimeout(r, 20))
-      return { query, release }
+      return Object.assign(new EventEmitter(), { query, release })
     }),
   }
   return { pool: pool as unknown as QueryPool, release, raw: pool }
@@ -49,4 +51,25 @@ it('a driver error discards the client and still rejects as itself', async () =>
   })
   await expect(queryRows(pool, 'select 1')).rejects.toBe(err)
   expect(release).toHaveBeenCalledWith(err)
+})
+
+it('an error event on the checked-out client rejects the read and is not uncaught', async () => {
+  setAcquireObserver((run) => run())
+  const clients: EventEmitter[] = []
+  const release = vi.fn()
+  const pool = {
+    query: vi.fn(),
+    connect: vi.fn(async () => {
+      const client = Object.assign(new EventEmitter(), { query: () => new Promise(() => undefined), release })
+      clients.push(client)
+      return client
+    }),
+  } as unknown as QueryPool
+  const read = queryRows(pool, 'select 1')
+  await new Promise((r) => setTimeout(r, 5))
+  const dropped = new Error('connection terminated')
+  expect(() => clients[0]!.emit('error', dropped)).not.toThrow()
+  await expect(read).rejects.toBe(dropped)
+  expect(release).toHaveBeenCalledWith(dropped)
+  expect(clients[0]!.listenerCount('error')).toBe(0)
 })

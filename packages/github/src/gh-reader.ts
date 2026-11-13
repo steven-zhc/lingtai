@@ -30,35 +30,48 @@ export function createGhReader(run: GhRun = liveGh): GhReader {
     request: <T>(path: string) =>
       Effect.gen(function* () {
         const token = yield* ghTokenEffect(run)
-        const response = yield* Effect.tryPromise({
+        // The body is read inside the observed request, so its span covers the whole transfer and ends failed
+        // on a non-2xx or an unreadable body.
+        type Read =
+          | { kind: 'ok'; data: unknown }
+          | { kind: 'status'; status: number; text: string }
+          | { kind: 'unread'; error: Error }
+        const read = yield* Effect.tryPromise({
           try: (signal) =>
-            observedRequest('GET', path, (report) =>
-              fetch(`${GITHUB_API}${path}`, {
-                signal,
-                headers: {
-                  accept: 'application/vnd.github+json',
-                  'x-github-api-version': '2022-11-28',
-                  'user-agent': 'lingtai',
-                  authorization: `Bearer ${token}`,
-                },
-              }).then((response) => {
-                report(remainingOf(response))
-                return response
-              }),
+            observedRequest(
+              'GET',
+              path,
+              (report): Promise<Read> =>
+                fetch(`${GITHUB_API}${path}`, {
+                  signal,
+                  headers: {
+                    accept: 'application/vnd.github+json',
+                    'x-github-api-version': '2022-11-28',
+                    'user-agent': 'lingtai',
+                    authorization: `Bearer ${token}`,
+                  },
+                }).then((response): Promise<Read> => {
+                  report(remainingOf(response))
+                  const unread = (err: unknown): Read => ({ kind: 'unread', error: asError(err) })
+                  return response.ok
+                    ? response.json().then((data: unknown): Read => ({ kind: 'ok', data }), unread)
+                    : response.text().then((text): Read => ({ kind: 'status', status: response.status, text }), unread)
+                }),
+              (value) => value.kind !== 'ok',
             ),
           catch: (err) => new Error(`could not reach GitHub: ${asError(err).message}`),
         })
-        if (!response.ok) {
-          const body = yield* Effect.tryPromise({ try: () => response.text(), catch: asError })
-          let message = body.slice(0, 400)
+        if (read.kind === 'unread') return yield* Effect.fail(read.error)
+        if (read.kind === 'status') {
+          let message = read.text.slice(0, 400)
           try {
-            message = (JSON.parse(body) as { message?: string }).message ?? message
+            message = (JSON.parse(read.text) as { message?: string }).message ?? message
           } catch {
             // Not JSON. The raw prefix is more useful than nothing.
           }
-          return yield* Effect.fail(new GitHubFailed(response.status, path, message))
+          return yield* Effect.fail(new GitHubFailed(read.status, path, message))
         }
-        return (yield* Effect.tryPromise({ try: () => response.json(), catch: asError })) as T
+        return read.data as T
       }).pipe(
         Effect.timeout(TIMEOUT),
         Effect.mapError((err) =>

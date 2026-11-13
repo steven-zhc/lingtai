@@ -255,17 +255,31 @@ export type QueryPool = Pick<pg.Pool, 'connect' | 'query'>
 export function queryRows(pool: QueryPool, text: string, args?: unknown[]): Promise<pg.QueryResultRow[]> {
   const around = acquireObserver()
   if (around === undefined) return pool.query(text, args).then((r) => r.rows)
-  return around(() => pool.connect()).then((client) =>
-    client.query(text, args).then(
-      (r) => {
-        client.release()
-        return r.rows
-      },
-      (err: unknown) => {
-        client.release(err instanceof Error ? err : true)
-        throw err
-      },
-    ),
+  return around(() => pool.connect()).then(
+    (client) =>
+      new Promise<pg.QueryResultRow[]>((resolve, reject) => {
+        // A checked-out client has no listener but ours: `Pool.query` installs one for the same reason, and
+        // without it a dropped connection is an uncaught `error` event rather than this read's rejection.
+        let settled = false
+        const finish = (err: unknown, rows?: pg.QueryResultRow[]): void => {
+          if (settled) return
+          settled = true
+          client.removeListener('error', onError)
+          if (err === undefined) {
+            client.release()
+            resolve(rows ?? [])
+          } else {
+            client.release(err instanceof Error ? err : true)
+            reject(err)
+          }
+        }
+        const onError = (err: Error): void => finish(err)
+        client.on('error', onError)
+        client.query(text, args).then(
+          (r) => finish(undefined, r.rows),
+          (err: unknown) => finish(err),
+        )
+      }),
   )
 }
 

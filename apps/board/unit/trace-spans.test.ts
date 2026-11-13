@@ -1,9 +1,10 @@
 import { machineFileFrom } from '@lingtai/env'
-import { readThroughSnapshot } from '@lingtai/event-store'
+import { readThroughSnapshot, type SnapshotReadObserver } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { setRequestObserver } from '@lingtai/github'
 import { context, trace } from '@opentelemetry/api'
 import { InMemorySpanExporter, type ReadableSpan } from '@opentelemetry/sdk-trace-base'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -27,6 +28,16 @@ vi.mock('@lingtai/conductor/snapshot-state', async (orig) => ({
 vi.mock('@lingtai/daemon/control', async (orig) => ({
   ...(await orig<object>()),
   readStatus: vi.fn(async () => null),
+  // The real fold over a memory store, handed whatever `readControlOnce` passes — so its observer wiring is what is under test.
+  readControl: vi.fn(async (_store: unknown, cache: { observe?: SnapshotReadObserver }) => {
+    const { Effect } = await import('effect')
+    const reducer = { name: 'n', version: 1, initial: 0, decode: Number, encode: Number, reduce: (n: number) => n + 1 }
+    return Effect.runPromise(
+      readThroughSnapshot(createMemoryEventStore() as never, reducer as never, 'ctl', 'all', {
+        observe: cache.observe,
+      }),
+    )
+  }),
 }))
 vi.mock('../src/lib/spend.ts', async (orig) => ({
   ...(await orig<object>()),
@@ -34,9 +45,12 @@ vi.mock('../src/lib/spend.ts', async (orig) => ({
 }))
 vi.mock('../src/lib/snapshot-writer.ts', () => ({ boardWriterOrNone: vi.fn(async () => undefined) }))
 
+import { githubJson } from '../../../packages/github/src/app.ts'
+import { createGhReader } from '../../../packages/github/src/gh-reader.ts'
 import { githubQueue, loadBoard, type AskableFilter } from '../src/lib/board.ts'
+import { readControlOnce } from '../src/lib/locks.ts'
 import { installTracing } from '../src/lib/telemetry.ts'
-import { timed, tracedSync } from '../src/lib/timing.ts'
+import { measure, timed, traced } from '../src/lib/timing.ts'
 
 const none = machineFileFrom('/h/config.yml', null)
 const on = { LINGTAI_TELEMETRY_OTLP_ENDPOINT: 'http://collector:4318/v1/traces' } as unknown as NodeJS.ProcessEnv
@@ -60,6 +74,7 @@ afterEach(() => {
   setRequestObserver(undefined)
   trace.disable()
   context.disable()
+  vi.unstubAllGlobals()
   vi.clearAllMocks()
 })
 
@@ -115,6 +130,7 @@ describe('loadBoard', () => {
       'projects.onboard',
       'board.recipes',
       'daemon.status',
+      'triage.declared',
       'board.progress',
       'snapshot.writer',
     ]) {
@@ -130,69 +146,111 @@ describe('loadBoard', () => {
         name,
       ).toBe(page.name)
     }
-    for (const s of all.filter((x) => x.name === 'attempt.state')) {
-      expect(parentOf(all, s)?.name).toBe('board.progress')
-    }
+    const states = all.filter((x) => x.name === 'attempt.state')
+    expect(states.length).toBeGreaterThan(0)
+    for (const s of states) expect(parentOf(all, s)?.name).toBe('board.progress')
   })
 })
 
 describe('githubQueue', () => {
+  const askWith = (reads: () => Promise<unknown>) => async (f: AskableFilter) => {
+    await reads().catch(() => undefined)
+    return { state: 'unanswered', filter: f, problem: 'stop here' } as const
+  }
+
   it('has a child span per request under its project, with no path on any span', async () => {
-    setRequestObserver(async (info, run) =>
-      (await import('../src/lib/timing.ts')).traced(
-        'github.request',
-        (span) =>
-          run((remaining) => {
-            if (remaining !== undefined) span.setAttribute('lingtai.ratelimit.remaining', remaining)
-          }),
-        info.page === undefined ? {} : { 'lingtai.page': info.page },
-      ),
+    // The observer installed is the board's own (`installTracing` put it there); the requests go through the real client.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('[]', { status: 200, headers: { 'x-ratelimit-remaining': '4999' } })),
     )
-    const { observedRequest } = await import('../../../packages/github/src/observe.ts')
     const filter = { project: 'lingtai' } as AskableFilter
-    await githubQueue([filter], new Set(), async (f) => {
-      await observedRequest('GET', '/repos/o/r/issues?page=1', async (report) => report(4999))
-      await observedRequest('GET', '/repos/o/r/issues?page=2', async (report) => report(undefined))
-      return { state: 'unanswered', filter: f, problem: 'stop here' }
-    })
+    await githubQueue(
+      [filter],
+      new Set(),
+      askWith(async () => {
+        await Effect.runPromise(githubJson('GET', '/repos/o/r/issues?page=1', 'tok'))
+        await Effect.runPromise(githubJson('GET', '/repos/o/r/issues?page=2', 'tok'))
+      }),
+    )
     const all = await spans()
     const project = all.find((s) => s.name === 'queue.project')!
     expect(project.attributes['lingtai.project']).toBe('lingtai')
     const requests = all.filter((s) => s.name === 'github.request')
     expect(requests.map((s) => s.attributes['lingtai.page'])).toEqual([1, 2])
-    expect(requests.map((s) => s.attributes['lingtai.ratelimit.remaining'])).toEqual([4999, undefined])
+    expect(requests.map((s) => s.attributes['lingtai.ratelimit.remaining'])).toEqual([4999, 4999])
     for (const r of requests) expect(parentOf(all, r)?.name).toBe('queue.project')
     for (const s of all) for (const v of Object.values(s.attributes)) expect(String(v)).not.toMatch(/\/|github\.com/)
+  })
+
+  it('a 403 marks the request and its project failed, though the page only reports it unanswered', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"message":"no"}', { status: 403 })),
+    )
+    const filter = { project: 'lingtai' } as AskableFilter
+    const queue = await githubQueue(
+      [filter],
+      new Set(),
+      askWith(() => Effect.runPromise(githubJson('GET', '/repos/o/r/issues?page=1', 'tok'))),
+    )
+    expect(queue.problems).toHaveLength(1)
+    const all = await spans()
+    expect(all.find((s) => s.name === 'github.request')!.status.code).toBe(2)
+    expect(all.find((s) => s.name === 'queue.project')!.status.code).toBe(2)
+  })
+
+  it('the gh reader’s request span covers the body, and a failing body fails it', async () => {
+    const run = vi.fn(async () => ({ code: 0, stdout: 'tok\n', stderr: '' }))
+    let bodyRead = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        const response = new Response('[]', { status: 200 })
+        response.json = async () => {
+          await new Promise((r) => setTimeout(r, 20))
+          bodyRead = performance.now()
+          throw new Error('body cut off')
+        }
+        return response
+      }),
+    )
+    await Effect.runPromise(createGhReader(run).request('/user/repos?page=3')).catch(() => undefined)
+    const request = (await spans()).find((s) => s.name === 'github.request')!
+    expect(request.attributes['lingtai.page']).toBe(3)
+    expect(request.status.code).toBe(2)
+    expect(bodyRead).toBeGreaterThan(0)
+    const [sec, nano] = request.endTime
+    expect(sec * 1e3 + nano / 1e6).toBeGreaterThanOrEqual(request.startTime[0] * 1e3 + request.startTime[1] / 1e6 + 15)
   })
 })
 
 describe('the control read', () => {
-  it('reports the read and the reduce apart, and whether a snapshot served it', async () => {
-    const { traced } = await import('../src/lib/timing.ts')
-    const store = createMemoryEventStore()
-    const reducer = { name: 'n', version: 1, initial: 0, decode: Number, encode: Number, reduce: (s: number) => s + 1 }
-    const served: boolean[] = []
-    await traced('events.control', () =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      import('effect').then(({ Effect }) =>
-        Effect.runPromise(
-          readThroughSnapshot(store as never, reducer as never, 'ctl', 'all', {
-            observe: {
-              read: (step, run) => traced(`control.${step}`, () => run()),
-              reduce: (run) => tracedSync('control.reduce', run),
-              served: (b) => served.push(b),
-            },
-          }),
-        ),
-      ),
-    )
-    const names = (await spans()).map((s) => s.name)
+  it('readControlOnce reports the read and the reduce apart, and whether a snapshot served it', async () => {
+    await readControlOnce()
+    const all = await spans()
+    const snapshot = all.find((s) => s.name === 'control.snapshot')!
+    expect(snapshot.attributes['lingtai.snapshot']).toBe(false)
+    const names = all.map((s) => s.name)
     expect(names).toEqual(expect.arrayContaining(['control.full', 'control.reduce']))
-    expect(served).toEqual([false])
+    for (const name of ['control.full', 'control.reduce']) {
+      expect(
+        parentOf(
+          all,
+          all.find((s) => s.name === name)!,
+        )?.name,
+        name,
+      ).toBe('control.snapshot')
+    }
   })
 })
 
-it('timed still names its span and traced leaves the timing meta alone', async () => {
-  await timed('x', async () => 1)
-  expect((await spans()).map((s) => s.name)).toContain('x')
+it('timed names its span and enters the timing meta; traced makes a span and no meta entry', async () => {
+  const [, timings] = await measure(async () => {
+    await timed('x', async () => 1)
+    await traced('y', async () => 2)
+  })
+  expect(timings.map((t) => t.name)).toEqual(['x'])
+  const names = (await spans()).map((s) => s.name)
+  expect(names).toEqual(expect.arrayContaining(['x', 'y']))
 })

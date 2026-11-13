@@ -67,6 +67,7 @@ import {
 } from '@lingtai/projector/task-view'
 import type { ResolvedRecipe } from '@lingtai/recipe'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { SpanStatusCode } from '@opentelemetry/api'
 import { Effect } from 'effect'
 
 import {
@@ -1309,13 +1310,20 @@ export async function githubQueue(
   // All of them at once, for the reason `queueFilters` gives (#112).
   const asked = await Promise.all(
     askable.map((filter) =>
-      traced('queue.project', () => ask(filter), { 'lingtai.project': filter.project }).catch(
-        (err: unknown): ProjectQueue => ({
-          state: 'unanswered',
-          filter,
-          problem: err instanceof Error ? err.message : String(err),
-        }),
-      ),
+      traced(
+        'queue.project',
+        async (span) => {
+          const answer = await ask(filter)
+          // `askProject` turns its failures into an answer, so the span must be told: an unanswered project is a failed one.
+          if (answer.state === 'unanswered') span.setStatus({ code: SpanStatusCode.ERROR })
+          return answer
+        },
+        { 'lingtai.project': filter.project },
+      ).catch((err: unknown): ProjectQueue => ({
+        state: 'unanswered',
+        filter,
+        problem: err instanceof Error ? err.message : String(err),
+      })),
     ),
   )
 

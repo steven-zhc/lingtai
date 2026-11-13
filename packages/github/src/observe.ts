@@ -28,16 +28,37 @@ export function setRequestObserver(observer: RequestObserver | undefined): void 
 
 const noop = (): void => undefined
 
-/** `run`, as it is with no observer: the same promise, no hop. */
+/** Carries a value `failed` judged a failure through the observer's rejection, so its span is marked. */
+class Judged<T> {
+  constructor(readonly value: T) {}
+}
+
+/**
+ * `run`, as it is with no observer: the same promise, no hop. With one, `run`
+ * includes the body, and a value `failed` calls a failure (a non-2xx the caller
+ * turns into an error later) rejects inside the observer so its span ends
+ * failed, then comes back out as the value.
+ */
 export function observedRequest<T>(
   method: string,
   path: string,
   run: (report: (remaining: number | undefined) => void) => Promise<T>,
+  failed?: (value: T) => boolean,
 ): Promise<T> {
   const observer = (globalThis as Holder)[KEY]
   if (observer === undefined) return run(noop)
   const match = /[?&]page=(\d+)/.exec(path)
-  return observer({ method, page: match === null ? undefined : Number(match[1]) }, run)
+  const info = { method, page: match === null ? undefined : Number(match[1]) }
+  if (failed === undefined) return observer(info, run)
+  return observer(info, (report) =>
+    run(report).then((value) => {
+      if (failed(value)) throw new Judged(value)
+      return value
+    }),
+  ).catch((err: unknown) => {
+    if (err instanceof Judged) return err.value as T
+    throw err
+  })
 }
 
 /** The header as a number; missing or not a number is `undefined`, never `0`. */
