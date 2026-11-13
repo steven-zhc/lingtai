@@ -15,7 +15,8 @@
  */
 import type { Runtime } from '@lingtai/agent'
 import type { ProjectFilter } from '@lingtai/conductor'
-import { emptyControl } from '@lingtai/domain'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
+import { emptyControl, type ProjectState } from '@lingtai/domain'
 import type { StoreChoice } from '@lingtai/env'
 import type { LogQueries } from '@lingtai/event-store'
 import type { UnconvergedUpdate } from '@lingtai/event-store/queries'
@@ -633,5 +634,51 @@ describe('github: gh login', () => {
     )
     expect(find(report.results, 'github: app credentials').detail).toContain('github.auth is gh')
     expect(find(report.results, 'github: gh login').status).toBe('ok')
+  })
+})
+
+describe('lingtai doctor — the recipe row asks the sign-in probe once (#1122)', () => {
+  it('hands the probe it was given to the one registered project, and spawns nothing', async () => {
+    let probed = 0
+    const state = { project: 'esctest', owner: null, base: 'main', refused: null } as unknown as ProjectState
+    const text = `
+version: 2
+repo: { base: main, remote: git@example.com:esctest/esctest.git }
+source: { kinds: [bug], exclude: [], tickets: db }
+env: { required: [], plantAt: .env.local }
+runtime: { name: x, prompt: y, agent: claude-code }
+steps: {}
+`
+    const report = await runDoctor(
+      {},
+      () => undefined,
+      wroteSqlite,
+      emptyLog,
+      async () => [state],
+      {
+        ...reach,
+        recipe: (s, c) =>
+          currentRecipeEffect(s, c, undefined, {
+            home: '/nonexistent-home',
+            read: async (p: string) => (p.endsWith('recipe.yml') ? text : null),
+            signedIn: async () => [],
+          }),
+        agentEnv: async () => ({
+          values: {},
+          merged: {},
+          names: [],
+          missing: [],
+          deferred: [],
+          file: '<unused>',
+          refusal: null,
+        }),
+        signedIn: () => {
+          probed++
+          return Promise.resolve([])
+        },
+      },
+    )
+    expect(find(report.results, 'recipe: esctest')).toBeDefined()
+    expect(probed).toBe(1)
   })
 })
