@@ -210,6 +210,36 @@
     "why": "apps/cli daemon.ts and doctor.ts await it until the apps/cli rows"
   },
   {
+    "file": "packages/conductor/src/onboard.ts",
+    "fn": "add",
+    "until": "#790",
+    "why": "`apps/cli/src/first-project.ts` (`chooseFirstProject`) awaits it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/onboard.ts",
+    "fn": "addLocal",
+    "until": "#790",
+    "why": "`apps/cli/src/first-project.ts` and `apps/cli/src/init.ts` await it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/onboard.ts",
+    "fn": "checkGhAccess",
+    "until": "#790",
+    "why": "`apps/cli/src/add-github.ts` and `liveAddDeps` await it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/onboard.ts",
+    "fn": "checkInstallation",
+    "until": "#790",
+    "why": "`apps/cli/src/add-github.ts` (the `check` port, typed `typeof checkInstallation`) and `liveAddDeps` await it, until the apps/cli row"
+  },
+  {
+    "file": "packages/conductor/src/onboard.ts",
+    "fn": "recheck",
+    "until": "#790",
+    "why": "`apps/board/src/app/actions.ts` awaits it; 0101 §7 lets the board keep a promise"
+  },
+  {
     "file": "packages/conductor/src/ownerless.ts",
     "fn": "ownerlessClient",
     "until": "#790",

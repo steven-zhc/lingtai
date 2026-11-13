@@ -1,3 +1,32 @@
+import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from '@lingtai/domain'
+import { baseProtectedRemedies, parsePayload } from '@lingtai/domain'
+import { githubApp, githubAuthKind, githubClientAuth } from '@lingtai/env'
+import { eventStore } from '@lingtai/event-store'
+import {
+  GitHubFailed,
+  type GhRun,
+  type Installation,
+  NotInstalledError,
+  REQUIRED_PERMISSIONS,
+  createGitHubClient,
+  gapRemedyLines,
+  ghScopeGap,
+  ghStatus,
+  installationForRepo,
+  parseSlug,
+  permissionGaps,
+} from '@lingtai/github'
+import {
+  RECIPE_PATH,
+  baseDivergence,
+  baseOf,
+  baseWrittenAt,
+  recipePath,
+  resolveLocalRecipe,
+  resolveRecipe,
+  type ReadAtRef,
+  type ResolvedRecipe,
+} from '@lingtai/recipe'
 /**
  * `lingtai add <owner>/<repo>` — the whole of onboarding.
  *
@@ -36,38 +65,21 @@
  * replays is the base the wizard recorded, and it arrives as the hint it is
  * rather than as a flag — `resumeOnboarding` below is that whole distinction.
  */
-import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from '@lingtai/domain'
-import { baseProtectedRemedies, parsePayload } from '@lingtai/domain'
-import { githubApp, githubAuthKind, githubClientAuth } from '@lingtai/env'
-import { eventStore } from '@lingtai/event-store'
-import {
-  GitHubFailed,
-  type GhRun,
-  type Installation,
-  NotInstalledError,
-  REQUIRED_PERMISSIONS,
-  createGitHubClient,
-  gapRemedyLines,
-  ghScopeGap,
-  ghStatus,
-  installationForRepo,
-  parseSlug,
-  permissionGaps,
-} from '@lingtai/github'
-import {
-  RECIPE_PATH,
-  baseDivergence,
-  baseOf,
-  baseWrittenAt,
-  recipePath,
-  resolveLocalRecipe,
-  resolveRecipe,
-  type ReadAtRef,
-  type ResolvedRecipe,
-} from '@lingtai/recipe'
+import { Effect } from 'effect'
 
 import { taken } from './pick-repository.ts'
 import { signedInHere } from './projects.ts'
+
+/**
+ * A port's promise as an Effect whose failure is the rejection itself, never a
+ * wrapper: what a caller printed from the promise version is what it prints
+ * from this (#1085).
+ */
+const lift = <A>(f: () => Promise<A>): Effect.Effect<A, Error> =>
+  Effect.tryPromise({ try: f, catch: (e) => e as Error })
+
+/** A synchronous throw as the same kind of failure. */
+const attempt = <A>(f: () => A): Effect.Effect<A, Error> => Effect.try({ try: f, catch: (e) => e as Error })
 
 export interface AddOptions {
   slug: string
@@ -142,31 +154,41 @@ export interface RecheckDeps {
  * the scopes, the machine's recipe, `ProjectConfigured`. Nothing here, and
  * nothing `add` does, writes to the repository.
  */
-export async function recheck(
+export function recheck(
   recorded: { owner: string; project: string; base: string },
-  deps: RecheckDeps = {
-    installation: (owner, repo) => installationForRepo(githubApp(), owner, repo),
-    register: add,
-  },
+  deps: RecheckDeps = liveRecheckDeps,
 ): Promise<Rechecked> {
+  return Effect.runPromise(recheckEffect(recorded, deps))
+}
+
+const liveRecheckDeps: RecheckDeps = {
+  installation: (owner, repo) => installationForRepo(githubApp(), owner, repo),
+  register: (options, log) => add(options, log),
+}
+
+export const recheckEffect = Effect.fn('onboard.recheck')(function* (
+  recorded: { owner: string; project: string; base: string },
+  deps: RecheckDeps = liveRecheckDeps,
+) {
   const slug = `${recorded.owner}/${recorded.project}`
-  let installation: Installation
-  try {
-    installation = await deps.installation(recorded.owner, recorded.project)
-  } catch (err) {
-    if (!(err instanceof NotInstalledError)) throw err
+  const installation = yield* lift(() => deps.installation(recorded.owner, recorded.project)).pipe(
+    Effect.catch((err) => (err instanceof NotInstalledError ? Effect.succeed(null) : Effect.fail(err))),
+  )
+  if (installation === null) {
     return {
       ok: false,
       installed: false,
       detail:
         `the GitHub App is not installed on ${slug} — install it on that repository ` +
         '(Settings → GitHub Apps → Configure), then press Recheck. Nothing was written.',
-    }
+    } satisfies Rechecked as Rechecked
   }
 
   const said: string[] = []
-  const outcome = await deps.register({ ...resumeOnboarding(recorded), installation }, (line) => said.push(line))
-  if (outcome.ok) return { ok: true, detail: `${recorded.project} is live` }
+  const outcome = yield* lift(() =>
+    deps.register({ ...resumeOnboarding(recorded), installation }, (line) => said.push(line)),
+  )
+  if (outcome.ok) return { ok: true, detail: `${recorded.project} is live` } satisfies Rechecked as Rechecked
   // **Everything it said, not the last line.** A permission gap is one line per
   // scope with what each is for; a rule here about which line is the refusal
   // would have to know which failure it was, and would be wrong the first time
@@ -177,8 +199,8 @@ export async function recheck(
     ok: false,
     installed: true,
     detail: why === '' ? `${recorded.project} could not be registered` : why,
-  }
-}
+  } satisfies Rechecked as Rechecked
+})
 
 /** The recipe that governs, or the reason this command will not pick one. */
 export type Governing =
@@ -206,17 +228,17 @@ export type Governing =
  * returned as a refusal instead: it is a branch this command chose to follow,
  * and the message has to say that is what happened.
  */
-export async function governing(
+export const governingEffect = Effect.fn('onboard.governing')(function* (
   read: ReadAtRef,
   from: { ref: string; named: boolean },
   slug: string,
-): Promise<Governing> {
-  const resolved = await resolveRecipe(read, from.ref)
+) {
+  const resolved = yield* lift(() => resolveRecipe(read, from.ref))
   const declared = baseOf(resolved.recipe)
   // The key as this recipe writes it: `repo.base`, or `worktree:`'s at `admit`
   // where the setting has moved onto the step that owns it (`#268`).
   const wrote = baseWrittenAt(resolved.recipe)
-  if (declared === from.ref) return { ok: true, resolved, adoptedFrom: null }
+  if (declared === from.ref) return { ok: true, resolved, adoptedFrom: null } as Governing
 
   if (from.named) {
     return {
@@ -227,27 +249,25 @@ export async function governing(
         'it governs, and this command will not overrule either. ' +
         `Re-run without --base to take ${declared} from the recipe, ` +
         `or fix ${wrote} on ${from.ref}.`,
-    }
+    } as Governing
   }
 
-  let atDeclared: ResolvedRecipe
-  try {
-    atDeclared = await resolveRecipe(read, declared)
-  } catch (err) {
-    return {
-      ok: false,
-      refusal:
+  const atDeclared = yield* lift(() => resolveRecipe(read, declared)).pipe(
+    Effect.catch((err) =>
+      Effect.succeed(
         `${RECIPE_PATH} on ${from.ref} declares ${wrote}: ${declared}, ` +
-        `so the recipe was read from ${declared} — ${(err as Error).message}`,
-    }
-  }
+          `so the recipe was read from ${declared} — ${err.message}`,
+      ),
+    ),
+  )
+  if (typeof atDeclared === 'string') return { ok: false, refusal: atDeclared } as Governing
   // The file it points at has to point at itself. A chain is not a bootstrap:
   // one hop is "the default branch is not the base", two is a recipe that
   // disagrees with the branch it is on, which is `baseDivergence` exactly.
   const divergence = baseDivergence(atDeclared, slug)
-  if (divergence) return { ok: false, refusal: divergence }
-  return { ok: true, resolved: atDeclared, adoptedFrom: from.ref }
-}
+  if (divergence) return { ok: false, refusal: divergence } as Governing
+  return { ok: true, resolved: atDeclared, adoptedFrom: from.ref } as Governing
+})
 
 /**
  * Steps 1 and 2 of onboarding, and the whole of what a check needs before a
@@ -270,27 +290,37 @@ export async function governing(
  * installation, and swallowing it here would hide an outage behind onboarding
  * advice that does not apply.
  */
-export async function checkInstallation(
+export function checkInstallation(
   slug: string,
   log: (line: string) => void,
   known?: Installation,
-  lookup: (owner: string, repo: string) => Promise<Installation> = (owner, repo) =>
-    installationForRepo(githubApp(), owner, repo),
+  lookup: (owner: string, repo: string) => Promise<Installation> = liveLookup,
 ): Promise<Installation | null> {
-  const { owner, repo } = parseSlug(slug)
+  return Effect.runPromise(checkInstallationEffect(slug, log, known, lookup))
+}
+
+const liveLookup = (owner: string, repo: string): Promise<Installation> => installationForRepo(githubApp(), owner, repo)
+
+export const checkInstallationEffect = Effect.fn('onboard.checkInstallation')(function* (
+  slug: string,
+  log: (line: string) => void,
+  known?: Installation,
+  lookup: (owner: string, repo: string) => Promise<Installation> = liveLookup,
+) {
+  const { owner, repo } = yield* attempt(() => parseSlug(slug))
 
   // 1. Is the App installed here at all? This is the question a PAT cannot be
   //    asked, and the reason 0006 chose an App.
-  let installation = known
-  try {
-    installation ??= await lookup(owner, repo)
-  } catch (err) {
-    if (err instanceof NotInstalledError) {
-      log(err.message)
-      return null
-    }
-    throw err
-  }
+  const installation =
+    known ??
+    (yield* lift(() => lookup(owner, repo)).pipe(
+      Effect.catch((err) => {
+        if (!(err instanceof NotInstalledError)) return Effect.fail(err)
+        log(err.message)
+        return Effect.succeed(null)
+      }),
+    ))
+  if (installation === null) return null
   log(`installation ${installation.id} on ${installation.account} (${installation.repositorySelection})`)
 
   // 2. Does it grant what Lingtai actually needs? Named individually, with
@@ -305,7 +335,7 @@ export async function checkInstallation(
   log(`permissions: ${describeRequired()}`)
 
   return installation
-}
+})
 
 /** What a `gh` machine's login is allowed to do to one repository. */
 export interface GhAccess {
@@ -324,10 +354,10 @@ export interface GhAccessDeps {
 
 const liveGhAccessDeps = (gh?: GhRun): GhAccessDeps => ({
   status: () => ghStatus(gh),
-  repository: async (owner, repo) =>
-    (await createGitHubClient({ auth: { kind: 'gh' }, owner, repo, ...(gh === undefined ? {} : { gh }) })).request(
-      'GET',
-      `/repos/${owner}/${repo}`,
+  // A port's live value, not a function being converted: `.then` here is the promise port, lifted where it is called.
+  repository: (owner, repo) =>
+    createGitHubClient({ auth: { kind: 'gh' }, owner, repo, ...(gh === undefined ? {} : { gh }) }).then((client) =>
+      client.request('GET', `/repos/${owner}/${repo}`),
     ),
 })
 
@@ -344,13 +374,21 @@ const liveGhAccessDeps = (gh?: GhRun): GhAccessDeps => ({
  * SAML enforcement and any other 403 are four different sentences, and a read
  * that failed on the network is never reported as no access.
  */
-export async function checkGhAccess(
+export function checkGhAccess(
   slug: string,
   log: (line: string) => void,
   deps: GhAccessDeps = liveGhAccessDeps(),
 ): Promise<GhAccess | null> {
-  const { owner, repo } = parseSlug(slug)
-  const status = await deps.status()
+  return Effect.runPromise(checkGhAccessEffect(slug, log, deps))
+}
+
+export const checkGhAccessEffect = Effect.fn('onboard.checkGhAccess')(function* (
+  slug: string,
+  log: (line: string) => void,
+  deps: GhAccessDeps = liveGhAccessDeps(),
+) {
+  const { owner, repo } = yield* attempt(() => parseSlug(slug))
+  const status = yield* lift(() => deps.status())
   if (!status.ok) {
     log(`${status.detail} — run \`gh auth login\``)
     return null
@@ -360,10 +398,12 @@ export async function checkGhAccess(
     log(gap)
     return null
   }
-  let found: Awaited<ReturnType<GhAccessDeps['repository']>>
-  try {
-    found = await deps.repository(owner, repo)
-  } catch (err) {
+  const read = yield* lift(() => deps.repository(owner, repo)).pipe(
+    Effect.map((found) => ({ found }) as const),
+    Effect.catch((err) => Effect.succeed({ err } as const)),
+  )
+  if ('err' in read) {
+    const err = read.err
     if (err instanceof GitHubFailed && err.status === 404) {
       log(`${slug} is not visible to ${status.login} — ${err.message}`)
     } else if (
@@ -388,6 +428,7 @@ export async function checkGhAccess(
     }
     return null
   }
+  const found = read.found
   // Before `permissions.push`: an archived repository can still report the
   // caller's role as push.
   if (found.archived === true) {
@@ -399,7 +440,7 @@ export async function checkGhAccess(
     return null
   }
   return { login: status.login, defaultBranch: found.default_branch ?? null }
-}
+})
 
 /** `issues, contents, pull requests, workflows write; metadata read`, from the table the check uses. */
 function describeRequired(): string {
@@ -435,46 +476,51 @@ const HARMLESS_RULES = new Set(['deletion', 'non_fast_forward', 'creation'])
  * make without admin permission (#662). Either saying yes is `protected`; a
  * failed read is `unknown` unless the other already said yes.
  */
-export async function baseProtection(
+export const baseProtectionEffect = Effect.fn('onboard.baseProtection')(function* (
   request: Request,
   owner: string,
   repo: string,
   base: string,
-): Promise<BaseProtection> {
+) {
   const ref = encodeURIComponent(base)
-  const [branch, rules] = await Promise.allSettled([
-    request<{ protected?: boolean }>('GET', `/repos/${owner}/${repo}/branches/${ref}`),
-    request<{ type: string }[]>('GET', `/repos/${owner}/${repo}/rules/branches/${ref}`),
-  ])
-  if (branch.status === 'fulfilled' && branch.value.protected === true)
-    return { kind: 'protected', by: 'a branch protection rule' }
-  if (
-    rules.status === 'fulfilled' &&
-    Array.isArray(rules.value) &&
-    rules.value.some((r) => !HARMLESS_RULES.has(r.type))
-  ) {
-    return { kind: 'protected', by: 'a ruleset' }
+  // Both reads run, and neither one's failure fails the other.
+  const settle = <A>(read: () => Promise<A>) =>
+    lift(read).pipe(
+      Effect.map((value) => ({ ok: true, value }) as const),
+      Effect.catch((reason) => Effect.succeed({ ok: false, reason } as const)),
+    )
+  const [branch, rules] = yield* Effect.all(
+    [
+      settle(() => request<{ protected?: boolean }>('GET', `/repos/${owner}/${repo}/branches/${ref}`)),
+      settle(() => request<{ type: string }[]>('GET', `/repos/${owner}/${repo}/rules/branches/${ref}`)),
+    ],
+    { concurrency: 2 },
+  )
+  if (branch.ok && branch.value.protected === true)
+    return { kind: 'protected', by: 'a branch protection rule' } as BaseProtection
+  if (rules.ok && Array.isArray(rules.value) && rules.value.some((r) => !HARMLESS_RULES.has(r.type))) {
+    return { kind: 'protected', by: 'a ruleset' } as BaseProtection
   }
-  if (branch.status === 'rejected') return { kind: 'unknown', why: String(branch.reason?.message ?? branch.reason) }
-  if (rules.status === 'rejected') return { kind: 'unknown', why: String(rules.reason?.message ?? rules.reason) }
-  return { kind: 'not-protected' }
-}
+  if (!branch.ok) return { kind: 'unknown', why: String(branch.reason?.message ?? branch.reason) } as BaseProtection
+  if (!rules.ok) return { kind: 'unknown', why: String(rules.reason?.message ?? rules.reason) } as BaseProtection
+  return { kind: 'not-protected' } as BaseProtection
+})
 
 /** Says what `baseProtection` found, if it is worth saying. Never changes the outcome of `add`. */
-export async function warnIfProtected(
+export const warnIfProtectedEffect = Effect.fn('onboard.warnIfProtected')(function* (
   request: Request,
   owner: string,
   repo: string,
   base: string,
   log: (line: string) => void,
-): Promise<void> {
-  const found = await baseProtection(request, owner, repo, base)
+) {
+  const found = yield* baseProtectionEffect(request, owner, repo, base)
   if (found.kind === 'protected') {
     log(`warning: ${base} is protected (${found.by}). ${baseProtectedRemedies(base)}`)
   } else if (found.kind === 'unknown') {
     log(`could not tell whether ${base} is protected (${found.why}). ${baseProtectedRemedies(base)}`)
   }
-}
+})
 
 export interface AddDeps {
   auth: () => 'app' | 'gh' | null
@@ -485,7 +531,7 @@ export interface AddDeps {
 const liveAddDeps: AddDeps = {
   auth: () => githubAuthKind(),
   checkGh: (slug, log) => checkGhAccess(slug, log),
-  check: checkInstallation,
+  check: (slug, log, known, lookup) => checkInstallation(slug, log, known, lookup),
 }
 
 /** How this machine reached GitHub for an add: the saved `gh` login (unknown when it said none), or the App. */
@@ -499,44 +545,56 @@ export type GithubReach = { kind: 'gh'; login: string | null } | { kind: 'app'; 
  */
 export type Added = { ok: true; updated: boolean; warnings: readonly string[]; reach: GithubReach } | { ok: false }
 
-export async function add(options: AddOptions, log = console.log, deps: AddDeps = liveAddDeps): Promise<Added> {
-  const { owner, repo } = parseSlug(options.slug)
+export function add(options: AddOptions, log = console.log, deps: AddDeps = liveAddDeps): Promise<Added> {
+  return Effect.runPromise(addEffect(options, log, deps))
+}
+
+export const addEffect = Effect.fn('onboard.add')(function* (
+  options: AddOptions,
+  log: (line: string) => void = console.log,
+  deps: AddDeps = liveAddDeps,
+) {
+  const { owner, repo } = yield* attempt(() => parseSlug(options.slug))
   const warnings: string[] = []
 
   // On a `gh` machine there is no installation to ask for: the saved login's
   // scopes and its push right on this repository are the check.
-  const onGh = deps.auth() === 'gh'
+  const onGh = (yield* attempt(() => deps.auth())) === 'gh'
   let installation: Installation | undefined
   let reach: GithubReach
   if (onGh) {
-    const access = await deps.checkGh(options.slug, log)
-    if (access === null) return { ok: false }
+    const access = yield* lift(() => deps.checkGh(options.slug, log))
+    if (access === null) return { ok: false } as Added
     reach = { kind: 'gh', login: access.login === '' ? null : access.login }
   } else {
-    const found = await deps.check(options.slug, log, options.installation)
-    if (found === null) return { ok: false }
+    const found = yield* lift(() => deps.check(options.slug, log, options.installation))
+    if (found === null) return { ok: false } as Added
     installation = found
     reach = { kind: 'app', slug: found.appSlug }
   }
 
-  const client = await createGitHubClient({
-    auth: onGh ? { kind: 'gh' } : githubClientAuth(),
-    owner,
-    repo,
-    ...(installation === undefined ? {} : { installation }),
-  })
+  const client = yield* lift(() =>
+    createGitHubClient({
+      auth: onGh ? { kind: 'gh' } : githubClientAuth(),
+      owner,
+      repo,
+      ...(installation === undefined ? {} : { installation }),
+    }),
+  )
 
   // 3. The recipe, and with it the base — which is the recipe's, not this
   //    command's. A `--base` a person typed and the file contradicts is refused
   //    by name rather than overruled (#75); a remembered one is a hint, and the
   //    file's `repo.base` is adopted over it (#163).
-  let resolved: ResolvedRecipe
-  try {
-    resolved = await resolveLocalRecipe(repo, { signedIn: signedInHere })
-  } catch (err) {
-    log((err as Error).message)
-    return { ok: false }
+  const local = yield* lift(() => resolveLocalRecipe(repo, { signedIn: signedInHere })).pipe(
+    Effect.map((recipe) => ({ recipe }) as const),
+    Effect.catch((err) => Effect.succeed({ err } as const)),
+  )
+  if ('err' in local) {
+    log(local.err.message)
+    return { ok: false } as Added
   }
+  const resolved: ResolvedRecipe = local.recipe
   if (options.base?.named && options.base.ref !== baseOf(resolved.recipe)) {
     const wrote = baseWrittenAt(resolved.recipe)
     log(
@@ -544,12 +602,12 @@ export async function add(options: AddOptions, log = console.log, deps: AddDeps 
         "This command will not overrule either — re-run without --base to take the recipe's, " +
         `or fix ${wrote} in the file.`,
     )
-    return { ok: false }
+    return { ok: false } as Added
   }
   // Past this point these are one branch, and this one is the file's.
   const base = baseOf(resolved.recipe)
-  const fromSha = await client.refSha(base)
-  await warnIfProtected(
+  const fromSha = yield* lift(() => client.refSha(base))
+  yield* warnIfProtectedEffect(
     (m, path) => client.request(m, path),
     owner,
     repo,
@@ -561,7 +619,7 @@ export async function add(options: AddOptions, log = console.log, deps: AddDeps 
   )
 
   const stream = projectStream(repo)
-  const existing = await eventStore.read(stream)
+  const existing = yield* lift(() => eventStore.read(stream))
   // The owner guard at the write itself: a check made earlier (the picker's, or
   // `runGithubBranch`'s under `gh`) can be passed by two adds at once, and the
   // append below is optimistic on the version read here, so this read is the
@@ -570,28 +628,29 @@ export async function add(options: AddOptions, log = console.log, deps: AddDeps 
   const holder = otherOwner(existing, owner)
   if (holder !== null) {
     log(taken({ slug: options.slug, repo, takenBy: holder }))
-    return { ok: false }
+    return { ok: false } as Added
   }
-  await eventStore.append(stream, existing.length === 0 ? 0 : existing[existing.length - 1]!.version, [
-    {
-      type: 'ProjectConfigured',
-      actor: 'conductor',
-      data: parsePayload('ProjectConfigured', {
-        project: repo,
-        owner,
-        // A copy of the recipe's `repo.base`, not a decision taken beside it
-        // (#75). Recorded rather than re-derived because a run must not have to
-        // ask GitHub which branch governs it; later drift is caught by the run's
-        // own refusal rather than manufactured here.
-        base,
-        configHash: resolved.configHash,
-        fromSha,
-      }),
-    },
-  ])
+  const data = yield* attempt(() =>
+    parsePayload('ProjectConfigured', {
+      project: repo,
+      owner,
+      // A copy of the recipe's `repo.base`, not a decision taken beside it
+      // (#75). Recorded rather than re-derived because a run must not have to
+      // ask GitHub which branch governs it; later drift is caught by the run's
+      // own refusal rather than manufactured here.
+      base,
+      configHash: resolved.configHash,
+      fromSha,
+    }),
+  )
+  yield* lift(() =>
+    eventStore.append(stream, existing.length === 0 ? 0 : existing[existing.length - 1]!.version, [
+      { type: 'ProjectConfigured', actor: 'conductor', data },
+    ]),
+  )
 
-  return { ok: true, updated: isRegistered(reduceProject(existing)), warnings, reach }
-}
+  return { ok: true, updated: isRegistered(reduceProject(existing)), warnings, reach } as Added
+})
 
 /** Who already holds this project's stream, when it is not `owner` (compared in any case); else null. */
 export function otherOwner(prior: readonly Envelope[], owner: string): string | null {
@@ -635,27 +694,36 @@ export interface AddLocalOptions {
  * The same stream-version append `add` makes, and the same `registrationLine`,
  * so the two ways of registering a project cannot disagree about either.
  */
-export async function addLocal(
+export function addLocal(
   options: AddLocalOptions,
   resolved: ResolvedRecipe,
   log: (line: string) => void = () => {},
 ): Promise<{ line: string; updated: boolean }> {
+  return Effect.runPromise(addLocalEffect(options, resolved, log))
+}
+
+export const addLocalEffect = Effect.fn('onboard.addLocal')(function* (
+  options: AddLocalOptions,
+  resolved: ResolvedRecipe,
+  log: (line: string) => void = () => {},
+) {
   const stream = projectStream(options.project)
-  const existing = await eventStore.read(stream)
-  await eventStore.append(stream, existing.length === 0 ? 0 : existing[existing.length - 1]!.version, [
-    {
-      type: 'ProjectConfigured',
-      actor: 'conductor',
-      data: parsePayload('ProjectConfigured', {
-        project: options.project,
-        owner: null,
-        base: options.base,
-        configHash: options.configHash,
-        fromSha: options.fromSha,
-      }),
-    },
-  ])
+  const existing = yield* lift(() => eventStore.read(stream))
+  const data = yield* attempt(() =>
+    parsePayload('ProjectConfigured', {
+      project: options.project,
+      owner: null,
+      base: options.base,
+      configHash: options.configHash,
+      fromSha: options.fromSha,
+    }),
+  )
+  yield* lift(() =>
+    eventStore.append(stream, existing.length === 0 ? 0 : existing[existing.length - 1]!.version, [
+      { type: 'ProjectConfigured', actor: 'conductor', data },
+    ]),
+  )
   const line = registrationLine(existing, options.project, resolved)
   log(line)
   return { line, updated: isRegistered(reduceProject(existing)) }
-}
+})
