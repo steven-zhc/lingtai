@@ -1,121 +1,117 @@
 {
   "version": 1,
   "window": {
-    "from": "2026-10-02",
-    "to": "2026-10-31"
+    "from": "2026-11-01",
+    "to": "2026-11-13"
   },
-  "capturedAt": "2026-11-01T22:33:56.932Z",
-  "commit": "d1be4c8e",
+  "capturedAt": "2026-11-13T20:03:04.236Z",
+  "commit": "5a6a2c52",
   "outcomes": {
-    "landed": 283,
-    "closed": 8,
+    "landed": 319,
+    "closed": 2,
     "open": 0,
     "landedByKind": [
       {
         "kind": "bug",
-        "count": 85
+        "count": 46
       },
       {
         "kind": "documentation",
-        "count": 33
+        "count": 32
       },
       {
         "kind": "feature",
-        "count": 141
+        "count": 96
       },
       {
         "kind": "tech-debt",
-        "count": 24
+        "count": 145
       }
     ]
   },
   "fixRounds": {
-    "median": 1,
-    "zeroOrOneShare": 0.7455830388692579,
-    "fiveOrMoreShare": 0.0636042402826855
+    "median": 0,
+    "zeroOrOneShare": 0.8307210031347962,
+    "fiveOrMoreShare": 0.02821316614420063
   },
   "cost": {
-    "median": 3.55,
-    "mean": 6.322508833922261,
-    "p90": 12.2,
+    "median": 3.83,
+    "mean": 5.489749216300939,
+    "p90": 9.56,
     "includesEstimates": true,
-    "costUnknown": 1
+    "costUnknown": 4
   },
   "machineMinutes": {
-    "median": 10.12155,
-    "mean": 15.331651001177857
+    "median": 11.650833333333333,
+    "mean": 15.018306792058516
   },
   "elapsedMinutes": {
-    "median": 10.431333333333333,
-    "mean": 79.74585206124854,
-    "withinHourShare": 0.8268551236749117
+    "median": 11.866083333333334,
+    "mean": 39.30378495297806,
+    "withinHourShare": 0.9122257053291536
   },
-  "waitedShare": 0.14487632508833923,
+  "waitedShare": 0.06896551724137931,
   "spendShare": [
     {
       "purpose": "Work",
-      "share": 0.5575967218955301
+      "share": 0.6739094193758539
     },
     {
       "purpose": "Answering",
-      "share": 0.3499942665206025
+      "share": 0.2753506146211566
     },
     {
       "purpose": "Judge",
-      "share": 0.032024300705989384
+      "share": 0.026260758907016447
     },
     {
       "purpose": "Triage",
-      "share": 0.059881737811796676
-    },
-    {
-      "purpose": "Discussion",
-      "share": 0.0005029730660813533
+      "share": 0.02447920709597293
     }
   ],
   "receipts": [
     {
       "median": true,
-      "fixRounds": 1,
-      "machineMinutes": 10.12155,
+      "fixRounds": 0,
+      "machineMinutes": 11.650833333333333,
       "waits": 0,
-      "cost": 3.55
+      "cost": 3.83
     },
     {
       "median": false,
-      "number": 782,
-      "title": "feat(site): the bar and the docs sidebar link /docs/events/, and the events page draws the sidebar",
-      "kind": "feature",
-      "outcome": "landed",
-      "fixRounds": 2,
-      "passes": 1,
-      "waits": 1,
-      "machineMinutes": 14.243016666666668,
-      "cost": 4.02
-    },
-    {
-      "median": false,
-      "number": 664,
-      "title": "fix(agent): a user's own Claude Code and Codex restrictions are proven to hold under Lingtai's launch flags, and may only narrow them",
+      "number": 1130,
+      "title": "fix(cli): the triage catch-up test of a lifted day passes every time, and the reason it failed is found and named",
       "kind": "bug",
       "outcome": "landed",
-      "fixRounds": 4,
-      "passes": 2,
-      "waits": 1,
-      "machineMinutes": 20.158416666666668,
-      "cost": 9.27
+      "fixRounds": 0,
+      "passes": 1,
+      "waits": 0,
+      "machineMinutes": 9.87145,
+      "cost": 2.51
     },
     {
       "median": false,
-      "number": 539,
-      "title": "A person can grant one checked fix round on preserved work",
+      "number": 1125,
+      "title": "fix(repo): a push GitHub answers with a 5xx is retried in place, and when the tries run out the card says the server failed and offers approve",
+      "kind": "bug",
+      "outcome": "landed",
+      "fixRounds": 0,
+      "passes": 1,
+      "waits": 0,
+      "machineMinutes": 16.874233333333333,
+      "cost": 5.62
+    },
+    {
+      "median": false,
+      "number": 1127,
+      "title": "feat(domain): a person can raise today's ceiling before it is reached, and the day then never stops at the lower figure",
       "kind": "feature",
-      "outcome": "closed",
-      "fixRounds": 4,
-      "passes": 2,
-      "waits": 2,
-      "machineMinutes": 39.44273333333334,
-      "cost": 11.39
+      "outcome": "landed",
+      "fixRounds": 0,
+      "passes": 1,
+      "waits": 0,
+      "machineMinutes": 13.3883,
+      "cost": 4.48
     }
   ]
 }
