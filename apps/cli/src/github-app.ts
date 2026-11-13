@@ -148,18 +148,3 @@ export function waitForAppEffect(
     return { timedOut: true } as const
   })
 }
-
-/** The face of `waitForAppEffect` for the tops, which still await it (CLI-21, CLI-22b). */
-export function waitForApp(world: AppWaitWorld, boardUrl: string, options: { waitMs: number }): Promise<AppWaitResult> {
-  return Effect.runPromise(waitForAppEffect(world, boardUrl, options))
-}
-
-/** The face of `askFirstProjectEffect` for `first-project.ts` (CLI-21). */
-export function askFirstProject(
-  world: QuestionWorld,
-  flags: Record<string, string>,
-  kept?: string,
-  cancel?: { startOver?: string; command?: string },
-): Promise<FirstProject> {
-  return Effect.runPromise(askFirstProjectEffect(world, flags, kept, cancel))
-}

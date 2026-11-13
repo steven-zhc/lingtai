@@ -47,6 +47,28 @@ export function spun<T>(world: { spin?: QuestionWorld['spin'] }, label: string, 
   return world.spin === undefined ? fn() : world.spin(label, fn)
 }
 
+/**
+ * `spun` for an Effect: the effect itself where the world has no `spin`; otherwise it runs inside `spin`'s
+ * promise, carrying the caller's services in (`Effect.runPromiseWith`, which the ratchet does not count). That
+ * inner run starts and ends inside `fn`, so `liveSpin`'s `finally` clears the spinner after it and nothing
+ * outlives it. A rejection comes out as the error it was — the squashed cause of the inner run.
+ */
+export const spunEffect = <A, E, R>(
+  world: { spin?: QuestionWorld['spin'] },
+  label: string,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, unknown, R> => {
+  const spin = world.spin
+  if (spin === undefined) return effect
+  return Effect.gen(function* () {
+    const ctx = yield* Effect.context<R>()
+    return yield* Effect.tryPromise({
+      try: () => spin(label, () => Effect.runPromiseWith(ctx)(effect)),
+      catch: (e) => e,
+    })
+  })
+}
+
 export interface Question {
   /** The subject of the refusal — "the store". */
   name: string

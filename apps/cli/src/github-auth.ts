@@ -32,14 +32,14 @@ export interface GithubAuthWorld extends QuestionWorld {
     /** The machine's elected auth — null where nothing is configured. Throws where `github.auth` is refused. */
     auth?: () => 'app' | 'gh' | null
     /** `gh auth status`, as a value — asked only when the question is, or `--github-auth gh` is given. */
-    ghStatus: () => Promise<GhStatus>
+    ghStatus: () => Effect.Effect<GhStatus, unknown>
     /**
      * `gh` with the terminal handed over (#712). Present only where there is one,
      * so its presence is how the question knows it may offer to sign in.
      */
     gh?: GhRun
     /** Writes `github.auth`, keeping every other key and comment (0114 §6). */
-    writeAuth: (kind: 'gh' | 'app') => Promise<void>
+    writeAuth: (kind: 'gh' | 'app') => Effect.Effect<void, unknown>
   }
 }
 
@@ -127,7 +127,7 @@ export function askGithubAuthEffect(
       // An explicit `--github-auth gh` is checked even where `gh` is already saved:
       // the login may have been signed out, or lost a scope, since it was written.
       if (given === 'gh') {
-        const why = notReady(yield* lift(() => world.github.ghStatus()))
+        const why = notReady(yield* world.github.ghStatus())
         if (why !== null) return { refused: `--github-auth gh, but ${why}. ${kept}` }
       }
       world.log(`github       ${elected} — ${set === null ? 'a GitHub App is configured here' : 'github.auth'}`)
@@ -136,11 +136,11 @@ export function askGithubAuthEffect(
 
     if (given === 'app') return { auth: 'app', pending: true }
 
-    const status = yield* lift(() => world.github.ghStatus())
+    const status = yield* world.github.ghStatus()
     const why = notReady(status)
 
     const write = (): Effect.Effect<GithubAuthAnswer> =>
-      lift(() => world.github.writeAuth('gh')).pipe(
+      world.github.writeAuth('gh').pipe(
         Effect.map((): GithubAuthAnswer => ({ auth: 'gh', pending: false })),
         recovering((err) => Effect.succeed<GithubAuthAnswer>({ refused: `${err.message}. ${kept}` })),
       )
@@ -196,7 +196,7 @@ export function askGithubAuthEffect(
         () => lift(() => world.github.gh!(args, { stdio: 'inherit' })),
         () => Effect.sync(() => void process.off('SIGINT', ignore)),
       )
-      current = yield* lift(() => world.github.ghStatus())
+      current = yield* world.github.ghStatus()
       if (!('missing' in result) && result.code === 0 && current.ok && notReady(current) === null) {
         world.log(`github       gh, signed in as ${current.login}`)
         return yield* write()
@@ -210,17 +210,6 @@ export function askGithubAuthEffect(
       )
     }
   })
-}
-
-/** The face of `askGithubAuthEffect` for `first-project.ts` (CLI-21) and `init.ts` (CLI-22b). */
-export function askGithubAuth(
-  world: GithubAuthWorld,
-  flags: Record<string, string>,
-  appConfigured: boolean,
-  kept: string,
-  cancel?: { startOver?: string; command?: string },
-): Promise<GithubAuthAnswer> {
-  return Effect.runPromise(askGithubAuthEffect(world, flags, appConfigured, kept, cancel))
 }
 
 /** The `gh` command that moves this status towards ready, or null where signing in cannot change it (#712). */

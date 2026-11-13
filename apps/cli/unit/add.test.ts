@@ -5,13 +5,14 @@ import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { type AddWorld, addFlow } from '../src/add.ts'
-import type { FirstProjectWorld, GitResult } from '../src/first-project.ts'
+import type { GitResult } from '../src/first-project.ts'
 /**
  * `addFlow` (#400, #435): `lingtai add` driven from `unit/` with no
  * `lingtai.ts` import — that file calls `main()` on import, which is why
  * `addFlow` lives in its own module (`add.ts`'s own header).
  */
 import { stripColour } from '../src/output.ts'
+import { liftFirstProjectWorld, liftPort, type PromiseFirstProjectWorld } from '../test/first-project-world.ts'
 import { flagsFromArgv } from '../test/flags.ts'
 
 const before = process.env['NO_COLOR']
@@ -47,7 +48,7 @@ function mapFiles(initial: Record<string, string> = {}): RecipeFiles {
 
 type GitPlan = Record<string, GitResult>
 
-function fakeGit(plan: GitPlan): FirstProjectWorld['git'] {
+function fakeGit(plan: GitPlan): PromiseFirstProjectWorld['git'] {
   return async (dir, args) => {
     const key = `${dir}::${args.join(' ')}`
     const found = plan[key]
@@ -79,7 +80,7 @@ interface Harness {
 function ttyHarness(): Harness {
   const asked: string[] = []
   const errors: string[] = []
-  const project: FirstProjectWorld = {
+  const project: PromiseFirstProjectWorld = {
     ask: async (prompt) => {
       asked.push(prompt)
       if (asked.length === 1) return 'local'
@@ -114,7 +115,7 @@ function ttyHarness(): Harness {
   }
   const logged: string[] = []
   const world: AddWorld = {
-    project,
+    project: liftFirstProjectWorld(project),
     error: (line) => errors.push(line),
     log: (line) => logged.push(line),
     doctor: async () => ({
@@ -191,12 +192,12 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     const files = mapFiles()
     h.world.project.files = files
     h.world.project.github.auth = () => 'gh'
-    h.world.project.github.ghStatus = async () => ({ ok: true, login: 'sam', scopes: ['repo', 'workflow'] })
-    h.world.project.github.add = async (_options, log) => {
+    h.world.project.github.ghStatus = liftPort(async () => ({ ok: true, login: 'sam', scopes: ['repo', 'workflow'] }))
+    h.world.project.github.add = liftPort(async (_options, log) => {
       log('reading /h/.lingtai/widgets/recipe.yml — a dump line that must not reach the screen')
       log('  tier guarded')
       return { ok: true, updated: false, warnings: over.warnings ?? [], reach: { kind: 'gh', login: 'sam' } }
-    }
+    })
     h.world.githubDeps = {
       check: async () => null,
       auth: () => 'gh',
@@ -359,7 +360,7 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
 
   it('refuses a GitHub project that is already added before asking anything, naming its recipe (#968)', async () => {
     const { world, errors, asked, argv } = githubHarness()
-    world.project.projects = async () => [
+    world.project.projects = liftPort(async () => [
       {
         project: 'widgets',
         owner: 'acme',
@@ -371,7 +372,7 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
         version: 1,
         lastSeq: null,
       },
-    ]
+    ])
     expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(1)
     expect(errors).toEqual([expect.stringContaining(`its recipe is ${recipePath('widgets')}, and it is edited there`)])
     expect(asked).toEqual([])
@@ -379,7 +380,7 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
 
   it('an owner never recorded is still repaired by adding it again: no question, no recipe written (#968)', async () => {
     const { world, errors, asked } = githubHarness()
-    world.project.projects = async () => [
+    world.project.projects = liftPort(async () => [
       {
         project: 'widgets',
         owner: null,
@@ -391,7 +392,7 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
         version: 1,
         lastSeq: null,
       },
-    ]
+    ])
     const code = await addFlow({ ...flagsFromArgv([]), positional: 'acme/widgets' }, world)
     expect(errors).toEqual([])
     expect(code).toBe(0)
