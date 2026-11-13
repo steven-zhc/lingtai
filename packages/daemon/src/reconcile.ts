@@ -112,9 +112,10 @@ const execFile = promisify(execFileCb)
  * interface. A store the caller injected is used as it is and left open, for
  * the reason a pool passed in is the caller's to end.
  */
-function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => Promise<T>): Effect.Effect<T, unknown> {
-  // `withDaemonStore` is lifted until DAEMON-7a. The error is kept as it came, so a message read off it is the store's.
-  return attempt(() => withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, fn))
+function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => Promise<T>): Effect.Effect<T> {
+  return withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, (it) =>
+    Effect.promise(() => fn(it)),
+  )
 }
 
 /** A promise as an Effect whose failure is the rejection itself, unwrapped — the shape `readThroughSnapshot` uses. */
@@ -561,7 +562,11 @@ export const releaseForeignClaimsEffect = Effect.fn('daemon.releaseForeignClaims
     // No log to read is not a divergence — and on a machine that has written no
     // choice, `chosenStore()`'s refusal lands here too, which is the same
     // answer: nothing to compare against.
-    .pipe(Effect.catch(() => Effect.succeed([] as string[])))
+    .pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.succeed([] as string[]),
+      ),
+    )
 
   const findings: Finding[] = []
   for (const ticketId of streams) {

@@ -21,12 +21,14 @@
  *
  * **Close what this opens.** A Postgres store holds nothing — it connects per
  * operation — but a SQLite one holds the log's file, so every caller here now
- * closes the store it did not receive. `beat()` is the one that made this worth
+ * closes the store it did not receive — as the release of an
+ * `acquireUseRelease`, so an interrupted call closes its store too. `beat()` is the one that made this worth
  * saying: it runs every `HEARTBEAT_MS` for the life of a daemon, and a handle
  * per beat is a file descriptor leak that no Postgres machine would ever show.
  */
 import { chosenStore } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
+import { Effect } from 'effect'
 
 import { createPostgresDaemonStore } from './postgres.ts'
 import type { DaemonStore } from './store.ts'
@@ -48,36 +50,39 @@ export interface DaemonStoreOptions {
   events?: EventStore
 }
 
-export async function processDaemonStore(options: DaemonStoreOptions = {}): Promise<DaemonStore> {
-  const choice = chosenStore()
-  if (choice.store === 'postgres') {
-    // **The written URL, not `directPostgresUrl()`.** The choice carries one
-    // URL and `machineDatabaseUrl` says it stands in for both names, because
-    // 1.0's store has no pooled/direct split; the one thing that genuinely
-    // needs a session-mode connection is the waker, and that is the log's
-    // (0009, `@lingtai/event-store/choose`). This store opens a connection per
-    // operation and ends it, which a transaction pooler serves.
-    return createPostgresDaemonStore({
-      url: options.url ?? choice.url,
-      ...(options.events === undefined ? {} : { events: options.events }),
-    })
-  }
-  const sqlite = await import('./sqlite.ts')
-  const db = sqlite.openSqliteDaemon(choice.path)
-  return sqlite.createSqliteDaemonStore(db, options.events)
+export const processDaemonStoreEffect = (options: DaemonStoreOptions = {}): Effect.Effect<DaemonStore> =>
+  Effect.suspend(() => {
+    const choice = chosenStore()
+    if (choice.store === 'postgres') {
+      // **The written URL, not `directPostgresUrl()`.** The choice carries one
+      // URL and `machineDatabaseUrl` says it stands in for both names, because
+      // 1.0's store has no pooled/direct split; the one thing that genuinely
+      // needs a session-mode connection is the waker, and that is the log's
+      // (0009, `@lingtai/event-store/choose`). This store opens a connection per
+      // operation and ends it, which a transaction pooler serves.
+      return Effect.succeed(
+        createPostgresDaemonStore({
+          url: options.url ?? choice.url,
+          ...(options.events === undefined ? {} : { events: options.events }),
+        }),
+      )
+    }
+    return Effect.promise(() => import('./sqlite.ts')).pipe(
+      Effect.map((sqlite) => sqlite.createSqliteDaemonStore(sqlite.openSqliteDaemon(choice.path), options.events)),
+    )
+  })
+
+/** The promise face of `processDaemonStoreEffect`, for a spawned script. */
+export function processDaemonStore(options: DaemonStoreOptions = {}): Promise<DaemonStore> {
+  return Effect.runPromise(processDaemonStoreEffect(options))
 }
 
-/** Opens one, runs `fn`, closes it — unless the caller supplied the store, which is theirs. */
-export async function withDaemonStore<T>(
+/** Runs `use` on the given store (never closed — it is the caller's), or on one opened here and closed on every exit. */
+export const withDaemonStore = <A, E>(
   given: DaemonStore | undefined,
   options: DaemonStoreOptions,
-  fn: (store: DaemonStore) => Promise<T>,
-): Promise<T> {
-  if (given !== undefined) return fn(given)
-  const store = await processDaemonStore(options)
-  try {
-    return await fn(store)
-  } finally {
-    await store.close()
-  }
-}
+  use: (store: DaemonStore) => Effect.Effect<A, E>,
+): Effect.Effect<A, E> =>
+  given !== undefined
+    ? use(given)
+    : Effect.acquireUseRelease(processDaemonStoreEffect(options), use, (store) => Effect.promise(() => store.close()))

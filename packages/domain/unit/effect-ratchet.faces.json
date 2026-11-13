@@ -180,6 +180,12 @@
     "why": "apps/cli (conduct, run, ticket)"
   },
   {
+    "file": "packages/daemon/src/choose.ts",
+    "fn": "processDaemonStore",
+    "until": "#790",
+    "why": "packages/daemon/integration/the-written-choice.test.ts opens it in a spawned script"
+  },
+  {
     "file": "packages/daemon/src/control.ts",
     "fn": "beaconBeatFace",
     "until": "#790",
