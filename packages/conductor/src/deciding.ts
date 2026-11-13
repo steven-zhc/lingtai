@@ -29,8 +29,3 @@ export function decidingEffect<A, E, R>(
     (got) => (got.ok ? Effect.promise(() => got.lock.release()) : Effect.void),
   )
 }
-
-/** The promise face of `decidingEffect`; its one caller left is `split-ticket.ts`, until CONDUCT8-4. */
-export function deciding<T>(ticketId: string, busy: () => T, act: () => Promise<T>): Promise<T> {
-  return Effect.runPromise(decidingEffect(ticketId, busy, Effect.promise(act)))
-}

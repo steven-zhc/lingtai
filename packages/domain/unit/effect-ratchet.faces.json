@@ -108,6 +108,18 @@
     "why": "`apps/cli/src/ask.ts` awaits it, until the apps/cli row"
   },
   {
+    "file": "packages/conductor/src/backlog.ts",
+    "fn": "acceptFinding",
+    "until": "#790",
+    "why": "the board's backlog action and `lingtai backlog` (apps/cli/src/backlog.ts)"
+  },
+  {
+    "file": "packages/conductor/src/backlog.ts",
+    "fn": "declineFinding",
+    "until": "#790",
+    "why": "the board's backlog action and `lingtai backlog` (apps/cli/src/backlog.ts)"
+  },
+  {
     "file": "packages/conductor/src/close.ts",
     "fn": "close",
     "until": "#790",
@@ -118,12 +130,6 @@
     "fn": "closeHolding",
     "until": "#790",
     "why": "`apps/cli/unit/verbs-accept-refuse.test.ts` (#487); `conduct.ts` lifts it through `Effect.promise` until CONDUCT8-7"
-  },
-  {
-    "file": "packages/conductor/src/deciding.ts",
-    "fn": "deciding",
-    "until": "#790",
-    "why": "`split-ticket.ts` holds the decide lock through it until CONDUCT8-4"
   },
   {
     "file": "packages/conductor/src/edit-body.ts",
@@ -219,7 +225,7 @@
     "file": "packages/conductor/src/resolve-wait.ts",
     "fn": "resolveWaitHolding",
     "until": "#790",
-    "why": "the unit tests that resolve a wait directly (#487's exported-for-the-unit-half reason); `split-ticket.ts` awaits it until CONDUCT8-4"
+    "why": "the unit tests that resolve a wait directly (#487's exported-for-the-unit-half reason)"
   },
   {
     "file": "packages/conductor/src/run-attempt.ts",
@@ -250,6 +256,18 @@
     "fn": "readState",
     "until": "#790",
     "why": "apps/cli (requeue, continuing, subscribers, status, grant-fix-round, triage, approve) and apps/board read a reducer's state as a promise"
+  },
+  {
+    "file": "packages/conductor/src/split-ticket.ts",
+    "fn": "splitTicket",
+    "until": "#790",
+    "why": "the board's split action (apps/board/src/app/actions.ts, 0101 §7)"
+  },
+  {
+    "file": "packages/conductor/src/split-ticket.ts",
+    "fn": "splitTicketHolding",
+    "until": "#790",
+    "why": "apps/board/unit/split-instance.test.ts calls it with the lock out of the way"
   },
   {
     "file": "packages/conductor/src/ticket-history.ts",
