@@ -1,9 +1,10 @@
 # 0126 — A stop is a lock and an unlock on the stream of what it stops
 
-**Status** accepted · 2026-11-11 · not yet built
+**Status** accepted · 2026-11-11 · amended 2026-11-13: an account is a platform's, and a rate limit is its lock · not yet built
 
 Three things stop new work: a person pausing a project, the day's spend reaching
-the ceiling, and a runtime's account reaching its usage limit. Each is a pair of
+the ceiling, and a platform's account reaching a limit — a runtime's usage limit,
+or a code host's rate limit. Each is a pair of
 events, one that locks and one that unlocks, on the stream of the thing it stops;
 the state is what replaying them gives. The work loop only reads them, one guard
 checked before work is taken writes the two the system owns, and one function in
@@ -34,11 +35,29 @@ see *A tier no runtime can provide*.
    | --- | --- | --- | --- | --- |
    | A person's pause | `prj-{project}` | `ProjectPaused {project, by}` | `ProjectResumed {project, by}` | A person: `lingtai resume [project]`, the board's banner, or the bar with that project selected |
    | The day's ceiling | `ctl-conductor` | `DayCeilingReached {day, reportedUsd, estimatedUsd, ceilingUsd}` | `DayCeilingLifted {day, why: new-day \| config-raised \| config-removed}`, or `{day, why: person, by, toUsd}` | The guard; or a person raising today's ceiling (§7) |
-   | A runtime's usage limit | `acct-{runtime}` | `AccountLimitReached {runtime, until, untilFrom, said}` | `AccountLimitLifted {runtime}`, or `{runtime, by}` | The guard, once `until` has passed; or a person who knows it is over (§7) |
+   | A platform account's limit | `acct-{platform}` | `AccountLimitReached {account, until, untilFrom, said}` | `AccountLimitLifted {account}`, or `{account, by}` | The guard, once `until` has passed; or a person who knows it is over (§7) |
 
    A project's own state is the Project aggregate's. The ceiling is the
    installation's budget. An account is shared by every project on the machine
-   whose recipe uses its runtime, and is its own aggregate.
+   that uses its platform, and is its own aggregate. `account` names the
+   platform: a runtime (`claude-code`, `codex`) or a code host (`github`, and
+   any later one such as `gitlab`).
+
+   **A rate limit is an account limit.** A platform that answers *too many
+   requests* is limiting the account, not one ticket, so every project on that
+   account would meet it next: the first call that meets it appends
+   `AccountLimitReached` for the platform, and the guard stops new work on
+   every project that uses it until `until`. `until` is the platform's own word
+   where it gives one — `retry-after`, or GitHub's `x-ratelimit-reset` —
+   recorded in `untilFrom`; where it gives none, one minute, doubling on each
+   limit met again before an unlock (`untilFrom: 'backoff'`). Which answers are
+   a rate limit, and which header carries the wait, is the failure module's
+   table ([0108](0108-a-refusal-buys-a-round.md) §19,
+   [doc/design/platform-errors.md](../design/platform-errors.md)): a
+   permission 403 is never one. **The call that met the limit is not a
+   failure of its attempt**: the attempt waits for the unlock and makes the
+   same call again, in place — no agent run, no round, and nothing redone — as
+   any attempt in flight goes on under a lock (§6).
 
 3. **Appended on the transition only.** A writer reads the stream's state, appends
    at that head only if the state changes, and on a concurrency error re-reads and
@@ -227,7 +246,8 @@ restarts onto the removal stops nothing any more. Run `lingtai resume` before th
 
 ## Not decided here
 
-- More than one account per runtime on one machine. `acct-{runtime}` assumes one.
+- More than one account per platform on one machine. `acct-{platform}` assumes one
+  (for GitHub, one App per machine, [0114](0114-a-github-app-not-a-token.md)).
 - What the guard's ceiling check does when today's spend cannot be trusted to be
   current, which 0122 §5 answers with *no work is taken*.
 - Keyboard shortcuts for pausing and resuming. They belong to a board-wide scheme
