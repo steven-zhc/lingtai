@@ -1,6 +1,6 @@
 # 0108 — Failure, fix rounds and restarts: a refusal buys a round in the same worktree, a wall stops the conductor, and a crash stops the attempt
 
-**Status** accepted · 2026-10-01 · amended 2026-11-13: a rule answers what is only transient, a red base puts the item back in the queue, a conflict's budget is `rounds`, and the mechanical bounds are constants
+**Status** accepted · 2026-10-01 · amended 2026-11-13: a rule answers what is only transient, a red base puts the item back in the queue, a red check runs twice, a conflict's budget is `rounds`, the mechanical bounds are constants, and every failure rule is one module
 
 A step that refuses with something an agent can be held to sends the agent back
 into the same worktree, carrying the evidence; `runtime.limits.rounds` bounds how
@@ -182,8 +182,8 @@ fixes the bounds and the endings that router works inside.
     rerun counts against the attempt's `TRANSIENT_RETRIES_LIMIT` (3), which is
     counted over the whole attempt, not over consecutive failures, and is in
     the ceiling (§8). With it spent, the next transient crash holds for a
-    person as above. Which sentences count is a list in one function, matched
-    on the runtime's own words like `accountWallOf`, and a sentence not on
+    person as above. Which sentences count is a row of the failure module's
+    table (§19), matched on the runtime's own words, and a sentence not on
     it is a crash. The list's evidence is
     [doc/design/platform-errors.md](../design/platform-errors.md), and it holds
     two rules from there: the edge's refusal page is matched on its title,
@@ -261,6 +261,50 @@ fixes the bounds and the endings that router works inside.
     that wait — it advises and never moves the item, and it is not asked
     about anything a rule or a judge already answered.
 
+17. **A red check is run twice before it is believed, and a flaky red that is
+    not this diff's does not stop it.** When a check refuses — `build`, a
+    declared check (`check-refused`), or the base check (§13) — the same
+    command runs once more on the same commit, at once. Red twice is red, and
+    goes where red goes. Red then green is flaky, and it lets the attempt go on
+    only when all three hold: (1) the second run is green; (2) no failing test's
+    file is in this ticket's diff; (3) that test has failed on the base before —
+    the base check's record or the backlog already names it as flaky. Then the
+    attempt continues, and the flaky test is recorded as a backlog finding
+    (§9) for a person to decide; Lingtai opens no ticket for it. If any of the
+    three fails, or the failing test cannot be named from the command's
+    output, it is red: a test this diff added or touched, or one never seen
+    failing on the base, is this diff's until shown otherwise. On the base
+    check, red then green is green. The rerun runs no agent; it costs the
+    check's time once.
+
+18. **Every other reason the router hears has its answer written down.**
+
+    | Reason | What it means | Answered by |
+    | --- | --- | --- |
+    | `setup-refused` | `prepared` failed before any agent ran (an install, a setup command) | A rule: a transient error in the failure table (a registry's 5xx) reruns the step in place (§12); anything else is a person's, because it is the environment, not the code |
+    | `check-refused` | A check declared at `proposed` or before the lane refused | A rule: run twice (§17); red with output is answered as `red` — a round in the same worktree |
+    | `answer-unreadable` | An agent answered and the machine could not read it | A rule: the same agent is asked again in place, once, counted as a transient rerun (§12); unreadable again is a person's |
+    | `nothing-produced` | `implement`'s first run committed nothing | A judge, where declared: the ticket is unclear (a person's, with triage saying what is missing) or the work is unfinished (one more round); undeclared, a person |
+    | `fixer-disagrees` | A fix round committed nothing because the fixer holds the finding wrong | A judge, where declared: rules between the reviewer and the fixer; undeclared, a person. §17 removes the commonest case, a flaky red the fixer rightly refused |
+    | `needs-input` | A step asked a question only a person can answer | Always a person |
+
+19. **Every failure rule lives in one module, as tables.** `packages/domain/src/failure/`
+    holds three pure steps and nothing that does IO: **classify** turns what a
+    platform or a tool said — a status, a header, git's stderr, a runtime's
+    sentence — into a failure kind, by the error table (platform, match,
+    transient / repeatable / account limit, where the wait is read from, and
+    the documented source); **respond** turns a failure kind and the attempt's
+    counters into one answer — rerun in place, lock the account, continue from
+    the saved head, ask a judge, or a person — within §8's one total; and
+    **explain** gives the sentence and the move a person reads when the answer
+    is a person. The packages that meet a failure only hand what they saw to
+    *classify* and carry out what *respond* says; none keeps a rule of its own.
+    The tables are the source of
+    [doc/design/platform-errors.md](../design/platform-errors.md) and of this
+    ADR's routing, both generated, and a test fails when a generated file is
+    stale. A new rule is a row, a test that feeds the row the platform's own
+    words, and a regeneration — nothing else.
+
 ## Consequences
 
 - Every refusal is one flow with one ceiling. Only the evidence differs between a
@@ -284,7 +328,11 @@ fixes the bounds and the endings that router works inside.
   continued from the saved head after the lane's retries; `BASE_MERGES_LIMIT`
   raised from 2 to 10 and `TRANSIENT_RETRIES_LIMIT` added; the conflict budget
   drawn from `rounds` rather than `CONFLICT_ROUNDS_LIMIT = 2`; and
-  `attemptCeiling` saying the one total of §8.
+  `attemptCeiling` saying the one total of §8. §17's second run, §18's
+  answers, and §19's module — today the rules are in `network.ts`,
+  `github/src/app.ts`, `never-started.ts`, `judge.ts`'s `BUILT_IN_FOR`,
+  `routing.ts` and `attribution.ts`, and `platform-errors.md` is written by
+  hand.
 
 - **`backlog:` does not set the bar.** The plugin is declared in
   `packages/recipe/src/recipe.ts`, but the `minor` bar is still a literal in
