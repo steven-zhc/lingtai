@@ -20,6 +20,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { repoRoot } from '@lingtai/env'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { Drained } from '../src/install.ts'
@@ -44,14 +45,16 @@ function outside(
   const live: Live = {
     env,
     log: (line) => lines.push(line),
-    holder: async () => {
-      asked.push('lock')
-      return holds
-    },
-    drain: async (reason, despiteDoctor): Promise<Drained> => {
-      asked.push(`drain ${reason} ${String(despiteDoctor)}`)
-      return { ok: true, after: async () => {} }
-    },
+    holder: () =>
+      Effect.sync(() => {
+        asked.push('lock')
+        return holds
+      }),
+    drain: (reason, despiteDoctor) =>
+      Effect.sync((): Drained => {
+        asked.push(`drain ${reason} ${String(despiteDoctor)}`)
+        return { ok: true, after: Effect.void }
+      }),
   }
   return { live, asked, lines }
 }
@@ -285,7 +288,7 @@ describe('logWhere', () => {
 describe('conducting', () => {
   it('asks the lock where a log is configured', async () => {
     const o = outside({ LINGTAI_DATABASE_URL: URL_ })
-    expect(await liveWorld('/v/1/lingtai', o.live).conducting()).toBe('human:steven')
+    expect(await Effect.runPromise(liveWorld('/v/1/lingtai', o.live).conducting())).toBe('human:steven')
     expect(o.asked).toEqual(['lock'])
   })
 
@@ -302,7 +305,7 @@ describe('conducting', () => {
    */
   it('asks the lock where no log is configured too, because the lock is a file (#193)', async () => {
     const o = outside({})
-    expect(await liveWorld('/v/1/lingtai', o.live).conducting()).toBe('human:steven')
+    expect(await Effect.runPromise(liveWorld('/v/1/lingtai', o.live).conducting())).toBe('human:steven')
     expect(o.asked).toEqual(['lock'])
   })
 
@@ -381,14 +384,17 @@ describe('conducting', () => {
 describe('the drain', () => {
   it('drains where a conductor holds the lock, and says nothing of its own', async () => {
     const o = outside({ LINGTAI_DATABASE_URL: URL_ })
-    expect(await liveDrain('upgrading', false, o.live)).toEqual({ ok: true, after: expect.any(Function) })
+    expect(await Effect.runPromise(liveDrain('upgrading', false, o.live))).toEqual({
+      ok: true,
+      after: expect.anything(),
+    })
     expect(o.asked).toEqual(['lock', 'drain upgrading false'])
     expect(o.lines).toEqual([])
   })
 
   it('says so and goes on where nothing conducts and no store is written, reaching neither the doctor nor the daemon', async () => {
     const o = outside({}, null)
-    const drained = await liveDrain('upgrading', false, o.live)
+    const drained = await Effect.runPromise(liveDrain('upgrading', false, o.live))
     expect(drained.ok).toBe(true)
     expect(o.lines).toEqual([
       'nothing holds the conductor lock and this machine has written no store — nothing to drain',
@@ -412,7 +418,10 @@ describe('the drain', () => {
     writeFileSync(join(home, 'config.yml'), 'database:\n  store: sqlite\n')
     const o = outside({ LINGTAI_HOME: home })
 
-    expect(await liveDrain('upgrading', false, o.live)).toEqual({ ok: true, after: expect.any(Function) })
+    expect(await Effect.runPromise(liveDrain('upgrading', false, o.live))).toEqual({
+      ok: true,
+      after: expect.anything(),
+    })
     expect(o.asked).toEqual(['lock', 'drain upgrading false'])
     expect(o.lines).toEqual([])
   })
@@ -427,7 +436,7 @@ describe('the drain', () => {
   it('reaches the drain on a configured machine that nothing is conducting', async () => {
     const o = outside({ LINGTAI_DATABASE_URL: URL_ }, null)
 
-    await liveDrain('upgrading', false, o.live)
+    await Effect.runPromise(liveDrain('upgrading', false, o.live))
 
     expect(o.asked).toEqual(['lock', 'drain upgrading false'])
     expect(o.lines).toEqual([])
@@ -448,7 +457,7 @@ describe('the drain', () => {
     const o = outside({ LINGTAI_HOME: home }, null)
 
     expect(existsSync(join(home, 'lingtai.db'))).toBe(false)
-    await liveDrain('upgrading', false, o.live)
+    await Effect.runPromise(liveDrain('upgrading', false, o.live))
 
     expect(o.asked).toEqual(['lock', 'drain upgrading false'])
     expect(o.lines).toEqual([])
@@ -456,13 +465,13 @@ describe('the drain', () => {
 
   it("is what the world's own drain is, so an upgrade takes the same path", async () => {
     const o = outside({}, null)
-    await liveWorld('/v/1/lingtai', o.live).drain('upgrading', true)
+    await Effect.runPromise(liveWorld('/v/1/lingtai', o.live).drain('upgrading', true))
     expect(o.lines).toEqual([
       'nothing holds the conductor lock and this machine has written no store — nothing to drain',
     ])
 
     const configured = outside({ LINGTAI_DATABASE_URL: URL_ })
-    await liveWorld('/v/1/lingtai', configured.live).drain('upgrading', true)
+    await Effect.runPromise(liveWorld('/v/1/lingtai', configured.live).drain('upgrading', true))
     expect(configured.asked).toEqual(['lock', 'drain upgrading true'])
   })
 })

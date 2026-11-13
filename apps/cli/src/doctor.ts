@@ -3567,7 +3567,7 @@ export function doctorReportEffect(
   )
 }
 
-/** The face of `doctorReportEffect` for `world.ts`, `restart.ts` and `setup-end.ts`, which still await it. */
+/** The face of `doctorReportEffect` for `restart.ts` and `setup-end.ts`, which still await it. */
 export function doctorReport(opts: { onProgress?: (p: DoctorProgress) => void } = {}): Promise<DoctorReport> {
   return Effect.runPromise(doctorReportEffect(opts))
 }

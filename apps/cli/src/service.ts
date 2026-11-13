@@ -81,6 +81,7 @@ import { dirname, join } from 'node:path'
 
 import type { Asking, RecordedStart } from '@lingtai/daemon'
 import { repoRoot, stateDir } from '@lingtai/env'
+import { Context, Effect, Fiber } from 'effect'
 
 import { jsonErrorDocument } from './output.ts'
 import {
@@ -91,8 +92,25 @@ import {
   type SupervisorAnswer,
 } from './service-status.ts'
 import { noSteps, type Steps } from './steps.ts'
-import { keepAsked } from './upgrade-drain.ts'
+import { keepAskedLoop } from './upgrade-drain.ts'
 import { WALL_LIMIT } from './wall-limit.ts'
+
+/**
+ * Asks again whenever no request stands, until stopped; `stop` resolves once a
+ * round in flight has finished. A root fiber with no services, kept here for
+ * `service.ts`'s promise-shaped wait only — CLI-08b forks `keepAskedLoop` in
+ * its own scope and deletes this.
+ */
+function keepAsked(
+  standing: () => Promise<unknown>,
+  ask: () => Promise<unknown>,
+  everyMs: number,
+): { stop: () => Promise<void> } {
+  const fiber = Effect.runForkWith(Context.empty())(
+    keepAskedLoop(Effect.tryPromise(standing), Effect.tryPromise(ask), everyMs),
+  )
+  return { stop: () => Effect.runPromiseWith(Context.empty())(Fiber.interrupt(fiber)) }
+}
 
 /** Unchanged from `scripts/launchd.sh`, so the agent it installed is the one this replaces. */
 export const LAUNCHD_LABEL = 'ai.nextloom.lingtai.daemon'

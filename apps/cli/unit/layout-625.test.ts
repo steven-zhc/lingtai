@@ -262,11 +262,11 @@ function world(env: NodeJS.ProcessEnv, log: string[], self = '/checkout/apps/cli
       throw new Error('nothing here may ask the network')
     }) as unknown as typeof fetch,
     log: (line) => void log.push(line),
-    ask: async () => false,
+    ask: () => Effect.succeed(false),
     running: () => [],
-    conducting: async () => null,
-    drain: async () => ({ ok: false, code: 1 }),
-    app: async () => null,
+    conducting: () => Effect.succeed(null),
+    drain: () => Effect.succeed({ ok: false, code: 1 }),
+    app: () => Effect.succeed(null),
     logWhere: () => ({ kind: 'none' }) as ReturnType<World['logWhere']>,
   }
 }
@@ -364,7 +364,7 @@ describe('the install commands, laid out', () => {
 
     const un: string[] = []
     const w2 = world({ ...NOWHERE, LINGTAI_HOME: home }, un)
-    w2.conducting = () => Promise.reject(null)
+    w2.conducting = () => Effect.fail(null)
     const kept = await Effect.runPromise(uninstall({ yes: true, nothingConducts: false }, w2))
     expect(kept).toBe(1)
     expect(un.at(-1)).toContain('could not be read')
