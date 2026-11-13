@@ -137,31 +137,39 @@ export const rebuildUnderLock = (options: RebuildUnderLockOptions): Effect.Effec
   Effect.gen(function* () {
     const error = options.error ?? ((line: string) => console.error(line))
     const acquire = options.acquire ?? ((o: AcquireDaemonLockOptions) => lift(() => acquireDaemonLock(o)))
-    const taken = yield* Effect.suspend(() =>
-      acquire({
-        name: 'lingtai projection rebuild',
-        locker: options.acquire ? NO_LOCKER : createFileLocker(),
-      }),
-    ).pipe(
-      Effect.map((held) => ({ held })),
-      recovering((err) => Effect.succeed({ failure: err })),
-    )
-    if ('failure' in taken) {
-      error(
-        `${symbol.fail()} could not take the conductor lock (${taken.failure instanceof Error ? taken.failure.message : String(taken.failure)}) — nothing was rebuilt; lingtai doctor says who holds it`,
-      )
-      return 1
-    }
-    const held = taken.held
-    if (!held.ok) {
-      error(
-        `${symbol.fail()} ${held.holder ?? 'another process'} holds the conductor lock and is the only writer of ${options.name} — lingtai shutdown "…" first (lingtai service shutdown where the supervisor keeps it), then rebuild`,
-      )
-      return 1
-    }
+    // The attempt to take the lock is the acquire step, so an interruption that arrives while it is
+    // pending cannot discard a lock that then succeeds; a refusal holds nothing and releases nothing.
     return yield* Effect.acquireUseRelease(
-      Effect.succeed(held.lock),
-      () => rebuildProjection(options),
-      (lock) => Effect.promise(() => lock.release()),
+      Effect.suspend(() =>
+        acquire({
+          name: 'lingtai projection rebuild',
+          locker: options.acquire ? NO_LOCKER : createFileLocker(),
+        }),
+      ).pipe(
+        Effect.map((held) => ({ held })),
+        recovering((err) => Effect.succeed({ failure: err })),
+      ),
+      (taken) =>
+        Effect.gen(function* () {
+          if ('failure' in taken) {
+            error(
+              `${symbol.fail()} could not take the conductor lock (${taken.failure instanceof Error ? taken.failure.message : String(taken.failure)}) — nothing was rebuilt; lingtai doctor says who holds it`,
+            )
+            return 1
+          }
+          const held = taken.held
+          if (!held.ok) {
+            error(
+              `${symbol.fail()} ${held.holder ?? 'another process'} holds the conductor lock and is the only writer of ${options.name} — lingtai shutdown "…" first (lingtai service shutdown where the supervisor keeps it), then rebuild`,
+            )
+            return 1
+          }
+          return yield* rebuildProjection(options)
+        }),
+      (taken) => {
+        if (!('held' in taken) || !taken.held.ok) return Effect.void
+        const lock = taken.held.lock
+        return Effect.promise(() => lock.release())
+      },
     )
   })

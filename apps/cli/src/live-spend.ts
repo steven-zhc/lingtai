@@ -35,11 +35,13 @@ const dropped = recovering(() => Effect.void)
  * rather than replaying beside a writer it can no longer see.
  */
 export const releaseLive = (port: ProjectionRunnerPort): Effect.Effect<void> =>
-  Effect.gen(function* () {
+  // One synchronous step: leaving `liveSpend` and entering `closing` must not have a yield between them,
+  // or a hold that scans there sees the runner in neither.
+  Effect.suspend(() => {
     liveSpend.delete(port)
-    const done = yield* Deferred.make<void>()
+    const done = Deferred.makeUnsafe<void>()
     closing.add(done)
-    yield* port.close().pipe(dropped, Effect.ensuring(settle(closing, done)))
+    return port.close().pipe(dropped, Effect.ensuring(settle(closing, done)))
   })
 
 /** Set while a rebuild holds the live runners; a start waits on it rather than reading a rewound checkpoint. */
@@ -92,11 +94,14 @@ export function trackLiveSpend(projection: Projection, port: ProjectionRunnerPor
 export const startLive = (projection: Projection, port: ProjectionRunnerPort): Effect.Effect<void, unknown> =>
   Effect.gen(function* () {
     while (standingDown !== null) yield* Deferred.await(standingDown)
-    trackLiveSpend(projection, port)
-    const done = yield* Deferred.make<void>()
-    starting.add(done)
-    yield* port.start().pipe(
-      Effect.onError(() => Effect.sync(() => liveSpend.delete(port))),
-      Effect.ensuring(settle(starting, done)),
-    )
+    // Registered in `liveSpend` and `starting` in one synchronous step, with nothing yielded between.
+    yield* Effect.suspend(() => {
+      trackLiveSpend(projection, port)
+      const done = Deferred.makeUnsafe<void>()
+      starting.add(done)
+      return port.start().pipe(
+        Effect.onError(() => Effect.sync(() => liveSpend.delete(port))),
+        Effect.ensuring(settle(starting, done)),
+      )
+    })
   })

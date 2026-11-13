@@ -72,12 +72,15 @@ const followSecondary = (
       recovering((err) =>
         Effect.gen(function* () {
           log(`${projection.name} will not follow this run: ${err.message}`)
-          yield* runner.close()
+          yield* closed(runner)
           return null
         }),
       ),
     )
   })
+
+/** A close that fails is dropped, as `.catch(() => {})` dropped a rejection; one runner's failure must not strand the others. */
+const closed = (runner: ProjectionRunnerPort): Effect.Effect<void> => runner.close().pipe(recovering(() => Effect.void))
 
 const releaseSecondary = (
   name: string,
@@ -161,7 +164,7 @@ export const ProjectorLive = (log: (line: string) => void): Layer.Layer<Projecto
             log(`the projection stopped during this run: ${String(runner.failure)}`)
             log('the board is behind until it is rebuilt — lingtai projection rebuild task_view')
           }
-          if (runner) yield* runner.close()
+          if (runner) yield* closed(runner)
           yield* releaseSecondary(backlogProjection.name, backlog, log)
           yield* releaseSecondary(spendProjection.name, spend, log)
           yield* releaseSecondary(ticketReportProjection.name, report, log)
