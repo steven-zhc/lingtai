@@ -1809,8 +1809,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           if (opened === null) beforeTheOpen.push({ label, detail })
           else opened.note(label, detail)
         },
-        // The inner log's own promise, handed on: this adds no IO of its own.
-        close: (fate) => opened?.close(fate) ?? Promise.resolve(),
+        // The inner log's own close Effect, handed on lazily: it runs only when this Effect does.
+        close: (fate) => Effect.suspend(() => opened?.close(fate) ?? Effect.void),
       }
       /** Called by `claim`'s `queue:` action, and only once it holds the item. */
       const openTheRunLog: Effect.Effect<void> = Effect.gen(function* () {
@@ -1843,7 +1843,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // follows this from another process and has nothing else to tell *the
           // writer has finished* from *the writer is thinking*.
           runLog.note(RUN_LOG_END, runLogEnd(didLand))
-          return Effect.promise(() => runLog.close(didLand ? 'delete' : 'keep'))
+          return runLog.close(didLand ? 'delete' : 'keep')
         }),
       )
 

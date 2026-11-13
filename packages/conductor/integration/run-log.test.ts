@@ -22,8 +22,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { openRunLog } from '@lingtai/agent'
-import { Effect } from 'effect'
+import { openRunLogEffect } from '@lingtai/agent'
+import { Effect, Stream } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -32,7 +32,7 @@ import {
   RUN_LOG_QUIET_MS,
   findRunLog,
   findRunLogEffect,
-  followRunLog,
+  followRunLogStream,
   listRunLogs,
   runLogEnd,
   runLogPath,
@@ -57,7 +57,9 @@ const QUICK = { pollMs: 5 }
 async function drain(path: string, signal?: AbortSignal): Promise<{ lines: string[]; ended: RunLogEnding | null }> {
   const lines: string[] = []
   let ended: RunLogEnding | null = null
-  for await (const seen of followRunLog({ path, ...QUICK, ...(signal ? { signal } : {}) })) {
+  for await (const seen of Stream.toAsyncIterable(
+    followRunLogStream({ path, ...QUICK, ...(signal ? { signal } : {}) }),
+  )) {
     if ('line' in seen) lines.push(seen.line)
     else ended = seen.ended
   }
@@ -106,11 +108,11 @@ describe('following one', () => {
     // The main use, and the one a command that only worked live would miss:
     // the log worth reading is always the one from the run that just failed.
     const path = runLogPath(home, 'lingtai', 'pass-over')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
     log.note('Read', 'packages/agent/src/run-log.ts')
     log.note('Bash', 'pnpm typecheck')
     log.note(RUN_LOG_END, runLogEnd(false))
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
 
     const { lines, ended } = await drain(path)
     expect(ended).toBe('did not land')
@@ -125,14 +127,14 @@ describe('following one', () => {
     // The whole reason 0034 chose a file over a socket: somebody attaching four
     // minutes into a run wants the four minutes.
     const path = runLogPath(home, 'lingtai', 'pass-late')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
     log.note('Read', 'before anybody was watching')
 
     const follow = drain(path)
     await new Promise((r) => setTimeout(r, 30))
     log.note('Edit', 'after they attached')
     log.note(RUN_LOG_END, runLogEnd(false))
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
 
     const { lines, ended } = await follow
     expect(ended).toBe('did not land')
@@ -144,12 +146,12 @@ describe('following one', () => {
     // 0034 §4 deletes the log when the run landed and §5 when its work item
     // did. Either way there is nothing left to explain and nothing more coming.
     const path = runLogPath(home, 'lingtai', 'pass-landed')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
     log.note('Read', 'a run that is about to land')
 
     const follow = drain(path)
     await new Promise((r) => setTimeout(r, 30))
-    await log.close('delete')
+    await Effect.runPromise(log.close('delete'))
 
     const { lines, ended } = await follow
     // `removed` rather than `landed`: the file said nothing on its way out, so
@@ -167,14 +169,14 @@ describe('following one', () => {
    */
   it('treats a new file at the same path as this one ending', async () => {
     const path = runLogPath(home, 'lingtai', 'chat-replaced')
-    const dead = await openRunLog({ path })
+    const dead = await Effect.runPromise(openRunLogEffect({ path }))
     dead.note('think', 'what daemon A wrote before it was killed')
-    await dead.close('keep')
+    await Effect.runPromise(dead.close('keep'))
 
     const seen: string[] = []
     let ended: RunLogEnding | null = null
     const follow = (async () => {
-      for await (const s of followRunLog({ path, pollMs: 200 })) {
+      for await (const s of Stream.toAsyncIterable(followRunLogStream({ path, pollMs: 200 }))) {
         if ('line' in s) seen.push(s.line)
         else ended = s.ended
       }
@@ -183,7 +185,7 @@ describe('following one', () => {
 
     // Well inside one poll, as a starting turn does it.
     await rm(path, { force: true })
-    const live = await openRunLog({ path })
+    const live = await Effect.runPromise(openRunLogEffect({ path }))
     live.note('think', 'what daemon B is writing now')
 
     const timeout = new Promise<'hung'>((r) => setTimeout(() => r('hung'), 2_000))
@@ -193,7 +195,7 @@ describe('following one', () => {
     // Asked again, the follower is handed B's trace and not A's.
     const again = drain(path)
     await new Promise((r) => setTimeout(r, 30))
-    await live.close('delete')
+    await Effect.runPromise(live.close('delete'))
     const { lines } = await again
     expect(lines.some((l) => l.includes('daemon B'))).toBe(true)
     expect(lines.some((l) => l.includes('daemon A'))).toBe(false)
@@ -208,9 +210,9 @@ describe('following one', () => {
 
   it('says landed when the last line does, before the file goes', async () => {
     const path = runLogPath(home, 'lingtai', 'pass-said')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
     log.note(RUN_LOG_END, runLogEnd(true))
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
 
     expect((await drain(path)).ended).toBe('landed')
   })
@@ -226,7 +228,7 @@ describe('following one', () => {
     // Ctrl-C, and the tab closing. A reader leaving says nothing about the run,
     // so there is no ending to report — the caller knows it detached.
     const path = runLogPath(home, 'lingtai', 'pass-going')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
     log.note('Read', 'still going')
 
     const detach = new AbortController()
@@ -237,7 +239,7 @@ describe('following one', () => {
     const { lines, ended } = await follow
     expect(ended).toBeNull()
     expect(lines.some((l) => l.includes('still going'))).toBe(true)
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
   })
 
   it('never mistakes what an agent printed for the line that ends the log', async () => {
@@ -245,11 +247,11 @@ describe('following one', () => {
     // the label column, which nothing it types can reach. An agent that prints
     // this sentence verbatim must not hang up on its own reader.
     const path = runLogPath(home, 'lingtai', 'pass-liar')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
     log.note('agent', runLogEnd(true))
     log.note('Edit', 'and the run carried on')
     log.note(RUN_LOG_END, runLogEnd(false))
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
 
     const { lines, ended } = await drain(path)
     expect(ended).toBe('did not land')
@@ -261,7 +263,7 @@ describe('following one', () => {
     // partial UTF-8 character are ordinary. Half a line yielded as a line is a
     // fragment of a fact read as the whole one.
     const path = runLogPath(home, 'lingtai', 'pass-split')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
 
     const follow = drain(path)
     for (const chunk of ['日本語のプロンプト', '— и кириллица', '…']) {
@@ -269,7 +271,7 @@ describe('following one', () => {
       await new Promise((r) => setTimeout(r, 8))
     }
     log.note(RUN_LOG_END, runLogEnd(false))
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
 
     const { lines } = await follow
     expect(lines.filter((l) => l.includes('agent'))).toHaveLength(3)

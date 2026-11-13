@@ -78,7 +78,7 @@ export {
 } from './conduct.ts'
 export {
   findRunLog,
-  followRunLog,
+  followRunLogStream,
   listRunLogs,
   runLogPath,
   type FoundRunLog,

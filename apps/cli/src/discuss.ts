@@ -42,7 +42,7 @@ import { join } from 'node:path'
 import {
   createRuntime,
   NO_RUN_LOG,
-  openRunLog,
+  openRunLogEffect,
   RUN_LOG_BEAT_MS,
   runtimeVersionOfEffect,
   type RunTrace,
@@ -375,7 +375,7 @@ export const answerDiscussion = (
      * `findOrphanLogs` removes it when that item lands — the same rule and the
      * same code as a run's. But the *file* is one turn's, and the `finally` below
      * is why: what a follower asks for is the answer being produced right now, and
-     * `followRunLog` reads from byte zero, so a file that outlived its turn would
+     * `followRunLogStream` reads from byte zero, so a file that outlived its turn would
      * show the second question the first question's trace and call it live.
      *
      * **Its ending is its deletion, and there is no `RUN_LOG_END`.** That line's
@@ -388,7 +388,7 @@ export const answerDiscussion = (
      * the tail stops and the connection with it. What outlives a turn is exactly
      * the log of a daemon that died mid-answer — the one case still owed an
      * explanation, and the case §5's reaper is for. That residue is also the one
-     * thing that could still be here when this opens, and `openRunLog` appends on
+     * thing that could still be here when this opens, and `openRunLogEffect` appends on
      * purpose (a run's second attempt adds to the story rather than erasing it) —
      * so it goes first. This turn's trace is this turn's.
      */
@@ -396,20 +396,19 @@ export const answerDiscussion = (
     yield* Effect.promise(() => rm(path, { force: true }).catch(() => {}))
     // Acquired uninterruptibly and released on every exit, so an interruption while the log is
     // opening cannot leave an open file the release never sees.
-    const acquire = Effect.promise(() =>
-      openRunLog({ path })
-        .catch(() => NO_RUN_LOG)
-        .then((trace) => {
-          // Still here, said on the file itself whether or not there is a line to write:
-          // an agent thinking for a minute writes nothing, and neither does a daemon
-          // that was killed. The board tells the two apart by this (`RUN_LOG_BEAT_MS`).
-          const beat = setInterval(() => {
-            const at = new Date()
-            void utimes(path, at, at).catch(() => {})
-          }, RUN_LOG_BEAT_MS)
-          beat.unref?.()
-          return { trace, beat }
-        }),
+    const acquire = openRunLogEffect({ path }).pipe(
+      Effect.catch(() => Effect.succeed(NO_RUN_LOG)),
+      Effect.map((trace) => {
+        // Still here, said on the file itself whether or not there is a line to write:
+        // an agent thinking for a minute writes nothing, and neither does a daemon
+        // that was killed. The board tells the two apart by this (`RUN_LOG_BEAT_MS`).
+        const beat = setInterval(() => {
+          const at = new Date()
+          void utimes(path, at, at).catch(() => {})
+        }, RUN_LOG_BEAT_MS)
+        beat.unref?.()
+        return { trace, beat }
+      }),
     )
 
     yield* Effect.acquireUseRelease(
@@ -467,8 +466,7 @@ export const answerDiscussion = (
       // chat's stream and this was only ever the trace beside it (0034 §8), and
       // leaving it would hand the *next* question this one's output as the answer
       // being written for it. On every exit, an interruption included.
-      ({ trace, beat }) =>
-        Effect.sync(() => clearInterval(beat)).pipe(Effect.andThen(Effect.promise(() => trace.close('delete')))),
+      ({ trace, beat }) => Effect.sync(() => clearInterval(beat)).pipe(Effect.andThen(trace.close('delete'))),
     )
   }).pipe(
     // Said and never fatal; an interruption passes. The loop keeps going over a question somebody typed.

@@ -497,7 +497,7 @@ const liveRunners: Runners = {
         process.on('SIGINT', () => controller.abort())
         return controller
       })
-      return yield* lift(() => attach({ runId: request.runId, signal: detach.signal }))
+      return yield* attach({ runId: request.runId, signal: detach.signal })
     }),
   end: (request) =>
     Effect.gen(function* () {

@@ -22,12 +22,14 @@ vi.mock('@lingtai/agent', async (importActual) => {
   const { Effect: E } = await import('effect')
   return {
     ...(await importActual<typeof import('@lingtai/agent')>()),
-    openRunLog: async () => ({
-      note: () => {},
-      close: async (how: string) => {
-        world.closed.push(how)
-      },
-    }),
+    openRunLogEffect: () =>
+      E.succeed({
+        note: () => {},
+        close: (how: string) =>
+          E.sync(() => {
+            world.closed.push(how)
+          }),
+      }),
     createRuntime: () => ({
       capabilities: {},
       run: () => E.die(new Error('boom')),

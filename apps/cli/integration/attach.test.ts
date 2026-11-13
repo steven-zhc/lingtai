@@ -13,8 +13,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { openRunLog } from '@lingtai/agent'
+import { openRunLogEffect } from '@lingtai/agent'
 import { RUN_LOG_END, runLogEnd, runLogPath } from '@lingtai/conductor/run-log'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { attach } from '../src/attach.ts'
@@ -38,13 +39,13 @@ function recorder() {
 describe('lingtai attach', () => {
   it('prints a finished run whole and says the log ends, not how the run went', async () => {
     const path = runLogPath(home, 'lingtai', 'pass-9')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
     log.note('Read', 'packages/conductor/src/conduct.ts')
     log.note(RUN_LOG_END, runLogEnd(false))
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
 
     const { out, sinks } = recorder()
-    expect(await attach({ runId: 'pass-9', home, ...sinks })).toBe(0)
+    expect(await Effect.runPromise(attach({ runId: 'pass-9', home, ...sinks }))).toBe(0)
 
     expect(out.slice(0, 3)).toEqual(['attached to lingtai', `log  ${path}`, ''])
     expect(out.some((l) => l.includes('packages/conductor/src/conduct.ts'))).toBe(true)
@@ -56,13 +57,13 @@ describe('lingtai attach', () => {
   })
 
   it('names both reasons a log is missing, and offers the ones that are there', async () => {
-    const there = await openRunLog({ path: runLogPath(home, 'lingtai', 'pass-here') })
-    await there.close('keep')
+    const there = await Effect.runPromise(openRunLogEffect({ path: runLogPath(home, 'lingtai', 'pass-here') }))
+    await Effect.runPromise(there.close('keep'))
 
     const { err, sinks } = recorder()
     // Non-zero, because nothing was shown. That is the only thing this
     // command's exit status is ever about — never what the run did.
-    expect(await attach({ runId: 'pass-elsewhere', home, ...sinks })).toBe(1)
+    expect(await Effect.runPromise(attach({ runId: 'pass-elsewhere', home, ...sinks }))).toBe(1)
 
     const said = err.join('\n')
     expect(said).toContain('no run log for pass-elsewhere')
@@ -72,7 +73,7 @@ describe('lingtai attach', () => {
 
   it('says so plainly when no run has ever left a log here', async () => {
     const { err, sinks } = recorder()
-    expect(await attach({ runId: 'pass-9', home, ...sinks })).toBe(1)
+    expect(await Effect.runPromise(attach({ runId: 'pass-9', home, ...sinks }))).toBe(1)
     expect(err.join('\n')).toContain('There are no run logs on this machine.')
   })
 
@@ -80,17 +81,17 @@ describe('lingtai attach', () => {
     // Ctrl-C. The run carries on and the log is still being written; a command
     // that printed an ending here would be inventing one.
     const path = runLogPath(home, 'lingtai', 'pass-going')
-    const log = await openRunLog({ path })
+    const log = await Effect.runPromise(openRunLogEffect({ path }))
     log.note('Bash', 'pnpm test')
 
     const detach = new AbortController()
     const { out, sinks } = recorder()
-    const running = attach({ runId: 'pass-going', home, signal: detach.signal, ...sinks })
+    const running = Effect.runPromise(attach({ runId: 'pass-going', home, signal: detach.signal, ...sinks }))
     await new Promise((r) => setTimeout(r, 60))
     detach.abort()
 
     expect(await running).toBe(0)
     expect(out.at(-1)).toBe(`— detached. The run is still going; its log is at ${path}`)
-    await log.close('keep')
+    await Effect.runPromise(log.close('keep'))
   })
 })
