@@ -255,7 +255,7 @@
     "file": "packages/conductor/src/port-face.ts",
     "fn": "runPort",
     "until": "#790",
-    "why": "the promise members of the `Tickets` this package builds (`dbTickets`), until `Tickets` is an Effect port"
+    "why": "the promise members of the `Tickets` this package builds (`dbTickets`), and the `@lingtai/setup` readers and the `Tracing` flush/shutdown (`add-from-page.ts`, `telemetry.ts`), until those are Effect ports"
   },
   {
     "file": "packages/conductor/src/projects.ts",
@@ -370,6 +370,12 @@
     "fn": "splitTicketHolding",
     "until": "#790",
     "why": "apps/board/unit/split-instance.test.ts calls it with the lock out of the way"
+  },
+  {
+    "file": "packages/conductor/src/telemetry.ts",
+    "fn": "installTracing",
+    "until": "#790",
+    "why": "`apps/cli/src/tracing.ts` awaits it, and `trace-an-attempt.test.ts` and `status-flows-up-through-bridged-spans.test.ts` call it, until the apps/cli row"
   },
   {
     "file": "packages/conductor/src/tell.ts",
