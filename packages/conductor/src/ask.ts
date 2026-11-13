@@ -107,6 +107,7 @@ export function askEffect(options: AskOptions): Effect.Effect<AskOutcome, unknow
         ]),
       catch: asFailure,
     }).pipe(
+      Effect.uninterruptible,
       Effect.as(false),
       Effect.catchIf(
         (err) => err instanceof ConcurrencyError,

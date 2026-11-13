@@ -194,10 +194,10 @@ export function closeHoldingEffect(
         catch: asFailure,
       }).pipe(
         Effect.flatMap((resolved) => Effect.try({ try: () => resolved.recipe.steps.end, catch: asFailure })),
-        Effect.map((steps) => ({ steps, failure: null as Error | null })),
-        Effect.catch((err) => Effect.succeed({ steps: [] as readonly StepAction[], failure: err })),
+        Effect.map((steps) => ({ ok: true as const, steps })),
+        Effect.catch((failure) => Effect.succeed({ ok: false as const, failure })),
       )
-      if (loaded.failure !== null) {
+      if (!loaded.ok) {
         return {
           ok: false,
           ticketId,
@@ -260,6 +260,7 @@ export function closeHoldingEffect(
         try: () => store.append(ticketId, item.version, [closedEvent, ...ended]),
         catch: asFailure,
       }).pipe(
+        Effect.uninterruptible,
         Effect.as(false),
         Effect.catchIf(
           (err) => err instanceof ConcurrencyError,
@@ -278,17 +279,19 @@ export function closeHoldingEffect(
     // and may overrule it.
     if (options.client) {
       const client = options.client
-      yield* Effect.tryPromise({
-        try: () =>
-          tellGitHubAbout({
-            store,
-            github: client,
-            ticketId,
-            labels: labelsFor('closed'),
-            appended: ended,
-          }),
-        catch: asFailure,
-      })
+      yield* Effect.uninterruptible(
+        Effect.tryPromise({
+          try: () =>
+            tellGitHubAbout({
+              store,
+              github: client,
+              ticketId,
+              labels: labelsFor('closed'),
+              appended: ended,
+            }),
+          catch: asFailure,
+        }),
+      )
     }
 
     return { ok: true, ticketId, detail: `closed by ${options.by} — the queue will not offer it again` }

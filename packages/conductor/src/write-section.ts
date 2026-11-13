@@ -79,10 +79,10 @@ export function writeSectionEffect(options: WriteSectionOptions): Effect.Effect<
 
     for (let attempt = 0; attempt < 2; attempt++) {
       const read = yield* bodyOf(github, issue).pipe(
-        Effect.map((body) => ({ body, failure: null })),
-        Effect.catch((err) => Effect.succeed({ body: '', failure: err as unknown })),
+        Effect.map((body) => ({ ok: true as const, body })),
+        Effect.catch((failure) => Effect.succeed({ ok: false as const, failure: failure as unknown })),
       )
-      if (read.failure !== null) {
+      if (!read.ok) {
         return { written: false, detail: `the issue could not be read: ${errorMessage(read.failure)}` }
       }
       const body = read.body
@@ -94,15 +94,19 @@ export function writeSectionEffect(options: WriteSectionOptions): Effect.Effect<
         return { written: false, detail: errorMessage(err) }
       }
 
-      const told = yield* Effect.promise(() =>
-        tellGitHub({ store, github, ticketId, change: { kind: 'body', body: next, ifUnchanged: body } }),
+      // Uninterruptible: the PATCH is a write, and interrupting would hand the
+      // decide lock to a second decider while this one is still in flight.
+      const told = yield* Effect.uninterruptible(
+        Effect.promise(() =>
+          tellGitHub({ store, github, ticketId, change: { kind: 'body', body: next, ifUnchanged: body } }),
+        ),
       )
 
       const readBack = yield* bodyOf(github, issue).pipe(
-        Effect.map((after) => ({ after, failure: null })),
-        Effect.catch((err) => Effect.succeed({ after: '', failure: err as unknown })),
+        Effect.map((after) => ({ ok: true as const, after })),
+        Effect.catch((failure) => Effect.succeed({ ok: false as const, failure: failure as unknown })),
       )
-      if (readBack.failure !== null) {
+      if (!readBack.ok) {
         // When the write itself recorded `IssueUpdated`, the PATCH is known to
         // have landed — the read-back failing after that tells us nothing new.
         // Only a failed or unattempted write leaves it genuinely unknown
@@ -119,13 +123,15 @@ export function writeSectionEffect(options: WriteSectionOptions): Effect.Effect<
       const landed = after.replace(/\r\n/g, '\n').includes(wanted)
       if (landed) {
         if (told.recorded === 'IssueUpdateFailed') {
-          yield* Effect.promise(() =>
-            record(store, ticketId, 'IssueUpdated', {
-              project: target.project,
-              issue: String(issue),
-              change: 'body',
-              detail: `found on read-back after: ${errorMessage(told.error)}`,
-            }),
+          yield* Effect.uninterruptible(
+            Effect.promise(() =>
+              record(store, ticketId, 'IssueUpdated', {
+                project: target.project,
+                issue: String(issue),
+                change: 'body',
+                detail: `found on read-back after: ${errorMessage(told.error)}`,
+              }),
+            ),
           )
         }
         return { written: true }

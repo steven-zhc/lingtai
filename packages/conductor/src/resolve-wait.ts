@@ -448,6 +448,7 @@ export function resolveWaitHoldingEffect(
         ]),
       catch: asFailure,
     }).pipe(
+      Effect.uninterruptible,
       Effect.as(false),
       Effect.catchIf(
         (err) => err instanceof ConcurrencyError,
@@ -558,17 +559,19 @@ function requestContinuation(
 ): Effect.Effect<string | null> {
   const once = Effect.gen(function* () {
     const at = yield* Effect.tryPromise({ try: () => store.head(CONTROL_STREAM), catch: (e) => e })
-    yield* Effect.tryPromise({
-      try: () =>
-        store.append(CONTROL_STREAM, at, [
-          {
-            type: 'ContinueRequested',
-            actor: by,
-            data: parsePayload('ContinueRequested', { project, issue, runId, by }),
-          },
-        ]),
-      catch: (e) => e,
-    })
+    yield* Effect.uninterruptible(
+      Effect.tryPromise({
+        try: () =>
+          store.append(CONTROL_STREAM, at, [
+            {
+              type: 'ContinueRequested',
+              actor: by,
+              data: parsePayload('ContinueRequested', { project, issue, runId, by }),
+            },
+          ]),
+        catch: (e) => e,
+      }),
+    )
   })
   return Effect.gen(function* () {
     let lastError: unknown = null
