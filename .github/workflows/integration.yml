@@ -54,9 +54,9 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
           cache: pnpm
@@ -91,7 +91,7 @@ jobs:
           "
       - name: test
         run: pnpm test:integration --reporter=default --reporter=json --outputFile.json=integration-${{ matrix.store }}.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: integration-${{ matrix.store }}
@@ -113,7 +113,7 @@ jobs:
       SHA: ${{ github.sha }}
       TITLE: integration tests are red on main
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: needs.integration.result == 'failure'
         continue-on-error: true
         with:
