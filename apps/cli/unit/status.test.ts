@@ -8,6 +8,7 @@ import {
   type ControlState,
 } from '@lingtai/domain'
 import { describeWaitLines } from '@lingtai/projector'
+import { Effect } from 'effect'
 /**
  * `lingtai status`'s two ticket-source lines, named after where a project's
  * tickets actually live rather than always `GitHub` (`#389`).
@@ -448,7 +449,7 @@ describe('lingtai status through @effect/cli', () => {
 
   async function run(
     argv: string[],
-    read: (o: unknown) => Promise<StatusReport>,
+    read: (o: unknown) => Effect.Effect<StatusReport, unknown>,
   ): Promise<{ code: number; out: string }> {
     vi.resetModules()
     vi.doMock('../src/status.ts', async (orig) => ({
@@ -469,21 +470,20 @@ describe('lingtai status through @effect/cli', () => {
     ['status', '--all', 'lingtai'],
   ])('parses %j', async (...argv) => {
     const seen: unknown[] = []
-    const { code } = await run(argv, async (o) => (seen.push(o), { projects: [], message: 'none' }))
+    const { code } = await run(argv, (o) => Effect.sync(() => (seen.push(o), { projects: [], message: 'none' })))
     expect(code).toBe(0)
     expect(seen).toEqual([{ project: 'lingtai', all: true }])
   })
 
   it('prints the one document under --json', async () => {
-    const { code, out } = await run(['status', '--json'], async () => fixture)
+    const { code, out } = await run(['status', '--json'], () => Effect.succeed(fixture))
     expect(code).toBe(0)
     expect(JSON.parse(out)).toMatchObject({ version: 1, command: 'status', projects: [{ project: 'lingtai' }, {}, {}] })
   })
 
   it('reports a runtime failure as unavailable, not usage, and exits 1', async () => {
-    const failing = async (): Promise<StatusReport> => {
-      throw new Error('no store configured')
-    }
+    // A store failure is a defect (0101 §6): the message printed is the one it carries.
+    const failing = (): Effect.Effect<StatusReport, unknown> => Effect.die(new Error('no store configured'))
     const json = await run(['status', '--json'], failing)
     expect(json.code).toBe(1)
     expect(JSON.parse(json.out)).toEqual({
@@ -497,7 +497,7 @@ describe('lingtai status through @effect/cli', () => {
   })
 
   it('refuses a flag it does not know, as a usage error', async () => {
-    const { code, out } = await run(['status', '--refresh', '--json'], async () => fixture)
+    const { code, out } = await run(['status', '--refresh', '--json'], () => Effect.succeed(fixture))
     expect(code).toBe(1)
     expect(JSON.parse(out).error.code).toBe('usage')
   })

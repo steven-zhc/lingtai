@@ -8,9 +8,10 @@ import { CeilingUnchecked, type CeilingPort } from '@lingtai/daemon'
 import { todaysCeiling, type ControlState } from '@lingtai/domain'
 import { machineDayCeiling } from '@lingtai/env'
 import { eventStore, type EventStore } from '@lingtai/event-store'
-import { projectionLag, readRateSnapshot, readSpend, type ProjectionLag } from '@lingtai/projector'
-import { Effect } from 'effect'
+import { projectionLagEffect, readRateSnapshot, readSpendEffect, type ProjectionLag } from '@lingtai/projector'
+import { Cause, Effect } from 'effect'
 
+import { lift, recovering } from './exit.ts'
 import { spendRebuildHold, spendRebuilds } from './rates.ts'
 
 /** Behind and quiet for this long is a stopped subscriber; the lag after a pass is not. */
@@ -22,16 +23,17 @@ function ago(ms: number): string {
 }
 
 /** Whether the log holds a `RunSpent` from `now`'s day: what a `spend` that never checkpointed is leaving out. */
-async function runSpentToday(store: EventStore, now: Date): Promise<boolean> {
-  const since = startOfLocalDay(now).getTime()
-  let from = 0n
-  for (;;) {
-    const page = await store.readAll(from, 1000)
-    if (page.length === 0) return false
-    if (page.some((e) => e.type === 'RunSpent' && e.at.getTime() >= since)) return true
-    from = page[page.length - 1]!.seq
-  }
-}
+const runSpentToday = (store: EventStore, now: Date): Effect.Effect<boolean, unknown> =>
+  Effect.gen(function* () {
+    const since = startOfLocalDay(now).getTime()
+    let from = 0n
+    for (;;) {
+      const page = yield* lift(() => store.readAll(from, 1000))
+      if (page.length === 0) return false
+      if (page.some((e) => e.type === 'RunSpent' && e.at.getTime() >= since)) return true
+      from = page[page.length - 1]!.seq
+    }
+  })
 
 /**
  * The sentence for a `spend` projection that is not following the log, or null.
@@ -39,16 +41,17 @@ async function runSpentToday(store: EventStore, now: Date): Promise<boolean> {
  * the empty table would read as zero; with none, a system that has never run
  * spent nothing and is not stopped.
  */
-export async function spendStallIn(
+export const spendStallIn = (
   lags: readonly ProjectionLag[],
   now: Date,
   store: EventStore,
-): Promise<string | null> {
-  if (lags.some((l) => l.name === 'spend')) return spendStall(lags, now)
-  return (await runSpentToday(store, now))
-    ? 'the spend projection has never checkpointed and the log has spend from today'
-    : null
-}
+): Effect.Effect<string | null, unknown> =>
+  Effect.gen(function* () {
+    if (lags.some((l) => l.name === 'spend')) return spendStall(lags, now)
+    return (yield* runSpentToday(store, now))
+      ? 'the spend projection has never checkpointed and the log has spend from today'
+      : null
+  })
 
 /** The sentence for a `spend` row that is behind and quiet, or null; a missing row is `spendStallIn`'s. */
 export function spendStall(lags: readonly ProjectionLag[], now: Date): string | null {
@@ -62,8 +65,8 @@ export function spendStall(lags: readonly ProjectionLag[], now: Date): string | 
 
 export interface DayCeilingPorts {
   ceiling?: () => number | undefined
-  lags?: () => Promise<readonly ProjectionLag[]>
-  rows?: (since: Date) => ReturnType<typeof readSpend>
+  lags?: () => Effect.Effect<readonly ProjectionLag[], unknown>
+  rows?: (since: Date) => ReturnType<typeof readSpendEffect>
   now?: () => Date
   /** A sentence while `spend` is being rebuilt (#680); null otherwise. */
   rebuilding?: (lags: readonly ProjectionLag[]) => string | null
@@ -86,25 +89,25 @@ export function ceilingPort(store: EventStore | undefined, ports: DayCeilingPort
       Effect.gen(function* () {
         const unchecked = (err: unknown) =>
           new CeilingUnchecked({ why: err instanceof Error ? err.message : String(err) })
+        // A store failure is a defect (0101 §6): either way it is *could not check*, and an interruption is not.
+        const unless = <A, R>(self: Effect.Effect<A, unknown, R>): Effect.Effect<A, CeilingUnchecked, R> =>
+          Effect.catchCause(self, (cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause as Cause.Cause<never>)
+              : Effect.fail(unchecked(Cause.squash(cause))),
+          )
         const rebuilds = ports.rebuilds ?? spendRebuilds
         const began = rebuilds()
-        const lags = yield* Effect.tryPromise({
-          try: () => (ports.lags ?? (() => projectionLag()))(),
-          catch: unchecked,
-        })
+        const lags = yield* unless(Effect.suspend(ports.lags ?? (() => projectionLagEffect())))
         // A replay moves the checkpoint on every batch, so the stall check reads
         // a half-built table as healthy; the hold is the rebuild saying so.
         const stall =
           (ports.rebuilding ?? spendRebuildHold)(lags) ??
-          (yield* Effect.tryPromise({
-            try: () => spendStallIn(lags, (ports.now ?? (() => now))(), store ?? eventStore),
-            catch: unchecked,
-          }))
+          (yield* unless(spendStallIn(lags, (ports.now ?? (() => now))(), store ?? eventStore)))
         if (stall !== null) return yield* Effect.fail(new CeilingUnchecked({ why: stall }))
-        const rows = yield* Effect.tryPromise({
-          try: () => (ports.rows ?? ((since: Date) => readSpend({ since })))(startOfLocalDay(now)),
-          catch: unchecked,
-        })
+        const rows = yield* unless(
+          Effect.suspend(() => (ports.rows ?? ((since: Date) => readSpendEffect({ since })))(startOfLocalDay(now))),
+        )
         // The hold was checked before an asynchronous read; a rebuild that began
         // meanwhile may have dropped the table under it, so that answer is not used.
         if (rebuilds() !== began) {
@@ -119,8 +122,8 @@ export function ceilingPort(store: EventStore | undefined, ports: DayCeilingPort
 }
 
 export interface TrustedDaySpendPorts {
-  lags?: () => Promise<readonly ProjectionLag[]>
-  rows?: (since: Date) => ReturnType<typeof readSpend>
+  lags?: () => Effect.Effect<readonly ProjectionLag[], unknown>
+  rows?: (since: Date) => ReturnType<typeof readSpendEffect>
   now?: () => Date
   rebuilding?: (lags: readonly ProjectionLag[]) => string | null
   rebuilds?: () => number
@@ -145,15 +148,21 @@ export const readDaySpendTrusted = (
     const now = (ports.now ?? (() => new Date()))()
     const rebuilds = ports.rebuilds ?? spendRebuilds
     const began = rebuilds()
-    const lags = yield* Effect.tryPromise({ try: () => (ports.lags ?? (() => projectionLag()))(), catch: fail })
+    // A store failure is a defect (0101 §6); the promise this was said it as a rejection, so it is an Error here.
+    const unless = <A, R>(self: Effect.Effect<A, unknown, R>): Effect.Effect<A, Error, R> =>
+      Effect.catchCause(self, (cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause as Cause.Cause<never>)
+          : Effect.fail(fail(Cause.squash(cause))),
+      )
+    const lags = yield* unless(Effect.suspend(ports.lags ?? (() => projectionLagEffect())))
     const stall =
       (ports.rebuilding ?? spendRebuildHold)(lags) ??
-      (yield* Effect.tryPromise({ try: () => spendStallIn(lags, now, ports.store ?? eventStore), catch: fail }))
+      (yield* unless(spendStallIn(lags, now, ports.store ?? eventStore)))
     if (stall !== null) return { refused: `could not check today's spend: ${stall}` }
-    const rows = yield* Effect.tryPromise({
-      try: () => (ports.rows ?? ((since: Date) => readSpend({ since })))(startOfLocalDay(now)),
-      catch: fail,
-    })
+    const rows = yield* unless(
+      Effect.suspend(() => (ports.rows ?? ((since: Date) => readSpendEffect({ since })))(startOfLocalDay(now))),
+    )
     if (rebuilds() !== began) {
       return { refused: "could not check today's spend: the spend projection began a rebuild while it was read" }
     }
@@ -171,27 +180,30 @@ export const readDaySpendTrusted = (
 
 /**
  * Today across **every** project, whatever `--project` says: the ceiling covers
- * the installation. Throws where the figure is malformed or the spend unreadable.
+ * the installation. Fails where the figure is malformed or the spend unreadable.
  */
-export async function readDaySpend(now: Date = new Date()): Promise<{ day: DaySpend; ceilingUsd: number | undefined }> {
-  const ceilingUsd = machineDayCeiling()
-  return { day: daySpend(await readSpend({ since: startOfLocalDay(now) }), now, readRateSnapshot()), ceilingUsd }
-}
+export const readDaySpend = (
+  now: Date = new Date(),
+): Effect.Effect<{ day: DaySpend; ceilingUsd: number | undefined }, unknown> =>
+  Effect.gen(function* () {
+    const ceilingUsd = machineDayCeiling()
+    const rows = yield* readSpendEffect({ since: startOfLocalDay(now) })
+    return { day: daySpend(rows, now, readRateSnapshot()), ceilingUsd }
+  })
 
 /** The one sentence `status` prints, with the unknown runs' reasons beside it; a failure to read is said, not hidden, and carries no list. */
-export async function daySpendLine(
+export const daySpendLine = (
   /** For a raise: null where the control stream could not be read, which keeps the configured figure. */
   control: ControlState | null = null,
-  lags: () => Promise<readonly ProjectionLag[]> = () => projectionLag(),
-): Promise<{ text: string; unknownWhy: DaySpend['unknownWhy'] | null }> {
-  try {
+  lags: () => Effect.Effect<readonly ProjectionLag[], unknown> = () => projectionLagEffect(),
+): Effect.Effect<{ text: string; unknownWhy: DaySpend['unknownWhy'] | null }> =>
+  Effect.gen(function* () {
     const now = new Date()
-    const { day, ceilingUsd: configuredUsd } = await readDaySpend(now)
+    const { day, ceilingUsd: configuredUsd } = yield* readDaySpend(now)
     const ceilingUsd = control === null ? configuredUsd : todaysCeiling(control, now, configuredUsd)
-    const stall = ceilingUsd === undefined ? null : await spendStallIn(await lags(), now, eventStore)
+    const stall = ceilingUsd === undefined ? null : yield* spendStallIn(yield* lags(), now, eventStore)
     if (stall !== null) return { text: `the daily ceiling could not be checked: ${stall}`, unknownWhy: null }
     return { text: daySpendText(day, ceilingUsd), unknownWhy: day.unknownWhy }
-  } catch (err) {
-    return { text: `today's spend could not be read: ${(err as Error).message}`, unknownWhy: null }
-  }
-}
+  }).pipe(
+    recovering((err) => Effect.succeed({ text: `today's spend could not be read: ${err.message}`, unknownWhy: null })),
+  )

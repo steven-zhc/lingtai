@@ -5,17 +5,19 @@
  * on it — but each conductor awaits `ratesSettled()` before it lets go of the
  * lock, so the one write lands inside the one-writer window.
  */
-import { currentRecipe, loadProjects } from '@lingtai/conductor'
+import { currentRecipeEffect, loadProjectsEffect } from '@lingtai/conductor/projects'
 import { ratesDue, realRatePorts, refreshRates } from '@lingtai/conductor/rate-snapshot'
 import { LITELLM_PROVIDER } from '@lingtai/domain/rate-card'
 import {
-  createProjectionRunner,
-  readSpend,
+  makeRunner,
+  readSpendEffect,
   spendProjection,
   ticketReportProjection,
   type ProjectionLag,
 } from '@lingtai/projector'
+import { Effect } from 'effect'
 
+import { recovering } from './exit.ts'
 import { holdLiveSpend } from './live-spend.ts'
 
 /** Every `model:` a recipe names, with the runtime beside it (its own `agent:`, else `runtime.agent`). */
@@ -39,24 +41,27 @@ export function modelsInRecipe(recipe: unknown): { model: string; runtime: strin
 }
 
 /** The `(model, runtime)` pairs of runs that reported no dollars of their own, and of every project's recipe. */
-export async function modelsSeenInSpend(): Promise<{ model: string; runtime: string }[]> {
-  const seen = new Map<string, { model: string; runtime: string }>()
-  for (const state of await loadProjects()) {
-    try {
-      for (const m of modelsInRecipe((await currentRecipe(state)).recipe)) seen.set(`${m.runtime}\0${m.model}`, m)
-    } catch {
-      // A recipe that will not resolve names no model; the pass says why.
+export const modelsSeenInSpend = (): Effect.Effect<{ model: string; runtime: string }[], unknown> =>
+  Effect.gen(function* () {
+    const seen = new Map<string, { model: string; runtime: string }>()
+    for (const state of yield* loadProjectsEffect()) {
+      yield* currentRecipeEffect(state).pipe(
+        Effect.map((resolved) => {
+          for (const m of modelsInRecipe(resolved.recipe)) seen.set(`${m.runtime}\0${m.model}`, m)
+        }),
+        // A recipe that will not resolve names no model; the pass says why.
+        recovering(() => Effect.void),
+      )
     }
-  }
-  for (const row of await readSpend()) {
-    if (row.costUsd !== null) continue
-    for (const entry of row.usage) {
-      if (entry.model !== undefined)
-        seen.set(`${row.runtime}\0${entry.model}`, { model: entry.model, runtime: row.runtime })
+    for (const row of yield* readSpendEffect()) {
+      if (row.costUsd !== null) continue
+      for (const entry of row.usage) {
+        if (entry.model !== undefined)
+          seen.set(`${row.runtime}\0${entry.model}`, { model: entry.model, runtime: row.runtime })
+      }
     }
-  }
-  return [...seen.values()]
-}
+    return [...seen.values()]
+  })
 
 /**
  * The projections that store an estimate (0110 §5): `spend` and `ticket_report` (0123).
@@ -90,35 +95,53 @@ export function spendRebuildHold(lags: readonly ProjectionLag[]): string | null 
     : 'the spend projection is being rebuilt after a model was priced'
 }
 
-/** Rebuilds what stores estimates through the runner `lingtai projection rebuild` uses. */
-export async function rebuildEstimates(priced: string[]): Promise<string> {
-  const { log } = await import('@lingtai/event-store')
-  const { rebuildProjection } = await import('./projection.ts')
-  const lines: string[] = []
-  const mine = { settled: false }
-  hold = mine
-  rebuildsBegun += 1
-  // The live `spend` subscriber in this process shares the checkpoint the
-  // rebuild rewinds; left running it could commit a new event and carry the
-  // checkpoint to the head before the rebuild's replay reads where to start.
-  let resume = async () => {}
-  try {
-    resume = await holdLiveSpend()
-    for (const projection of ESTIMATE_PROJECTIONS) {
-      await rebuildProjection({
-        name: projection.name,
-        queries: log.queries,
-        runnerFor: () => createProjectionRunner({ projection }),
-        log: (line) => lines.push(line),
-        error: (line) => lines.push(line),
-      })
-    }
-  } finally {
-    await resume()
-    mine.settled = true
-  }
-  return `priced ${priced.join(', ')}; ${lines.join('; ')}`
-}
+/**
+ * Rebuilds what stores estimates through the runner `lingtai projection rebuild` uses.
+ *
+ * **Every runner is detached** (`makeRunner`'s `detached`): this runs in a refresh's fiber, which
+ * ends when the refresh does, and `resume` restarts the live `spend` runners from inside it. A
+ * runner that fiber owned would be closed with it and `spend` would stop following after every
+ * price change.
+ */
+export const rebuildEstimates = (priced: string[]): Effect.Effect<string, unknown> =>
+  Effect.gen(function* () {
+    // Not loaded in the daemon until a price changes.
+    const { processQueries } = yield* Effect.promise(() => import('@lingtai/event-store'))
+    const { rebuildProjection } = yield* Effect.promise(() => import('./projection.ts'))
+    const queries = yield* processQueries
+    const lines: string[] = []
+    const mine = { settled: false }
+    hold = mine
+    rebuildsBegun += 1
+    // The live `spend` subscriber in this process shares the checkpoint the
+    // rebuild rewinds; left running it could commit a new event and carry the
+    // checkpoint to the head before the rebuild's replay reads where to start.
+    yield* Effect.acquireUseRelease(
+      holdLiveSpend(),
+      () =>
+        Effect.forEach(
+          ESTIMATE_PROJECTIONS,
+          (projection) =>
+            rebuildProjection({
+              name: projection.name,
+              queries,
+              runnerFor: () => makeRunner({ projection }, { detached: true }),
+              log: (line) => lines.push(line),
+              error: (line) => lines.push(line),
+            }),
+          { discard: true },
+        ),
+      (resume) => resume,
+    ).pipe(
+      // After `resume`, and on every exit including one before anything was held.
+      Effect.ensuring(
+        Effect.sync(() => {
+          mine.settled = true
+        }),
+      ),
+    )
+    return `priced ${priced.join(', ')}; ${lines.join('; ')}`
+  })
 
 /** Starts a refresh if one is due. Never throws and is not awaited. */
 export function startRates(now: Date = new Date()): void {

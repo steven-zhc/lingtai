@@ -314,8 +314,8 @@ describe('run continues what a person approved (#747)', () => {
         store,
         dayCeiling: {
           ceiling: () => 1,
-          rows: (async () => (spent ? [row] : [])) as never,
-          lags: async () => [],
+          rows: (() => Effect.sync(() => (spent ? [row] : []))) as never,
+          lags: () => Effect.succeed([]),
           rebuilding: () => null,
           rebuilds: () => 0,
         },

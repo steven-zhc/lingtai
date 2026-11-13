@@ -11,20 +11,19 @@ import {
   filterFacts,
   githubClientFor,
   heldUntil,
-  loadProjects,
   passedOver,
   projectFilter,
-  runnableNow,
-  readFixFiles,
-  selectRunnable,
+  readFixFilesEffect,
+  runnableNowEffect,
   waitsFor,
   type ClientFor,
   type RecipeFor,
   accountsFor,
   currentRecipe,
 } from '@lingtai/conductor'
-import { readState } from '@lingtai/conductor/snapshot-state'
-import { readControl } from '@lingtai/daemon'
+import { loadProjectsEffect } from '@lingtai/conductor/projects'
+import { selectRunnableEffect } from '@lingtai/conductor/queue'
+import { readControlEffect } from '@lingtai/daemon'
 import {
   agentBranchOf,
   attemptReducer,
@@ -45,14 +44,15 @@ import type { WaitReason } from '@lingtai/domain/wait'
 import { recommendedResolution, waitMoves } from '@lingtai/domain/wait'
 import { machineDayCeiling } from '@lingtai/env'
 import { paint, stateInk } from '@lingtai/env/colour'
-import { eventStore, log } from '@lingtai/event-store'
-import { describeArm, describeWaitLines, describeWait, readTasks, type TaskCard } from '@lingtai/projector'
+import { eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
+import { describeArm, describeWaitLines, describeWait, readTasksEffect, type TaskCard } from '@lingtai/projector'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { Effect } from 'effect'
 
 import { ceilingFactsJson, ceilingUnreadLine, lockJson, lockLine, raisedLine, reachedLine } from './ceiling-words.ts'
 import { daySpendLine } from './day-ceiling.ts'
+import { lift, recovering } from './exit.ts'
 import { heading, keyValues, section, symbol, table } from './output.ts'
-import { runEffect } from './project-pause.ts'
 import { waitCommand } from './wait-command.ts'
 
 /** The resolution `recommendedResolution` names for an advised `ConflictingHunks`; null for anything else (#656). */
@@ -210,22 +210,23 @@ export interface StatusReading {
   /** Today's spend against the ceiling, in the one sentence. */
   spendLine?: (
     control: ControlState | null,
-  ) => Promise<{ text: string; unknownWhy: { reason: string; runs: number }[] | null }>
+  ) => Effect.Effect<{ text: string; unknownWhy: { reason: string; runs: number }[] | null }, unknown>
   /** The runtimes the project's recipe uses and their `acct-` state. Replaceable so a test need not own a log. */
-  accounts?: (project: ProjectState) => Promise<ReadonlyMap<RuntimeId, AccountState>>
+  accounts?: (project: ProjectState) => Effect.Effect<ReadonlyMap<RuntimeId, AccountState>, unknown>
   /** The control stream, whole. Replaceable so a test need not own a log. */
-  control?: () => Promise<ControlState>
+  control?: () => Effect.Effect<ControlState, unknown>
   /** The configured daily ceiling; throws where `limits.day_usd` does not parse. */
   configuredCeiling?: () => number | undefined
   now?: () => Date
   /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
-  stepOf?: (runId: string) => Promise<StatusAttempt['step']>
+  stepOf?: (runId: string) => Effect.Effect<StatusAttempt['step'], unknown>
   /** Whether a run published a clean head a fix round can continue from. Replaceable so a test need not own a log. */
-  savedHeadOf?: (runId: string, project: ProjectState) => Promise<SavedHeadReading>
+  savedHeadOf?: (runId: string, project: ProjectState) => Effect.Effect<SavedHeadReading, unknown>
 }
 
 /** A run's state through the log's snapshots. Read-only: a short command offers none (0124 §5, #878). */
-const attemptOf = (runId: string) => readState(eventStore, attemptReducer, runId, 'all', { snapshots: log.snapshots })
+const attemptOf = (runId: string) =>
+  readThroughSnapshot(eventStore, attemptReducer, runId, 'all', { snapshots: log.snapshots })
 
 /**
  * Whether the run's last `RunRefsPublished` left a clean head to continue, and
@@ -234,17 +235,15 @@ const attemptOf = (runId: string) => readState(eventStore, attemptReducer, runId
  * makes the same remote comparison, so a deleted or moved branch is no saved
  * head here either. A stream or a remote that will not read is neither: it is reported as unreadable, so the recommendation is not drawn from a guess.
  */
-async function hasSavedHead(
+const hasSavedHead = (
   runId: string,
   project: ProjectState,
   clientFor: ClientFor = githubClientFor,
-): Promise<SavedHeadReading> {
-  try {
-    return await readingOf(savedHeadOf(await attemptOf(runId)), project, clientFor)
-  } catch (e) {
-    return { unreadable: e instanceof Error ? e.message : String(e) }
-  }
-}
+): Effect.Effect<SavedHeadReading> =>
+  attemptOf(runId).pipe(
+    Effect.flatMap((attempt) => lift(() => readingOf(savedHeadOf(attempt), project, clientFor))),
+    recovering((e) => Effect.succeed<SavedHeadReading>({ unreadable: e instanceof Error ? e.message : String(e) })),
+  )
 
 /** Only `Saved` goes on to the remote comparison; every other answer is no saved head. */
 export function readingOf(
@@ -270,9 +269,8 @@ export interface StatusAttempt {
  * The step a run is inside: `AttemptState.step` off its reduced stream (D12). A failed read throws — it
  * is not "no step".
  */
-async function lastStep(runId: string): Promise<StatusAttempt['step']> {
-  return (await attemptOf(runId)).step
-}
+const lastStep = (runId: string): Effect.Effect<StatusAttempt['step'], unknown> =>
+  Effect.map(attemptOf(runId), (attempt) => attempt.step)
 
 /** What a person is being waited on for, in the words the card and the board use (#147). */
 export interface StatusWait {
@@ -377,242 +375,260 @@ const NAMES: Record<string, string> = {
  * the same order the command always made; the words are computed here so that
  * `renderStatus` and `statusJson` are pure.
  */
-export async function readStatus(options: StatusOptions = {}, reading: StatusReading = {}): Promise<StatusReport> {
-  const projects = (await loadProjects()).filter((p) => !options.project || p.project === options.project)
-  if (projects.length === 0) {
-    return {
-      projects: [],
-      message: options.project
-        ? `no project named "${options.project}" — run lingtai add <owner>/<repo> first`
-        : 'no projects registered — run lingtai add <owner>/<repo>',
+export const readStatus = (
+  options: StatusOptions = {},
+  reading: StatusReading = {},
+): Effect.Effect<StatusReport, unknown> =>
+  Effect.gen(function* () {
+    const projects = (yield* loadProjectsEffect()).filter((p) => !options.project || p.project === options.project)
+    if (projects.length === 0) {
+      return {
+        projects: [],
+        message: options.project
+          ? `no project named "${options.project}" — run lingtai add <owner>/<repo> first`
+          : 'no projects registered — run lingtai add <owner>/<repo>',
+      }
     }
-  }
 
-  const readAt = (reading.now ?? (() => new Date()))()
-  const control: ControlState | { unread: string } = await (reading.control ?? (() => readControl()))().catch(
-    (err: unknown) => ({ unread: err instanceof Error ? err.message : String(err) }),
-  )
-  const controlState = 'unread' in control ? null : control
+    const readAt = (reading.now ?? (() => new Date()))()
+    // A failed read is `{ unread }`, never *not paused*; a store failure is a defect (0101 §6), and an interruption is not a failed read.
+    const control: ControlState | { unread: string } = yield* Effect.suspend(
+      reading.control ?? (() => readControlEffect()),
+    ).pipe(recovering((err: unknown) => Effect.succeed({ unread: err instanceof Error ? err.message : String(err) })))
+    const controlState = 'unread' in control ? null : control
 
-  const out: ProjectStatus[] = []
-  for (const project of projects) {
-    const name = project.project!
-    // Said before the numbers that depend on it, by the facts of the function
-    // `lingtai daemon` prints at startup, so the two cannot disagree (#76).
-    const filter = await projectFilter(project, reading.clientFor, reading.recipeFor)
-    const view: StatusFilter = filter.ok
-      ? {
-          ok: true,
-          facts: [...filterFacts(filter)],
-          recipe: filter.configHash,
-          ref: filter.ref,
-          kinds: [...filter.kinds],
-          exclude: [...filter.exclude],
-        }
-      : { ok: false, facts: [...filterFacts(filter)], problem: filter.problem }
+    const out: ProjectStatus[] = []
+    for (const project of projects) {
+      const name = project.project!
+      // Said before the numbers that depend on it, by the facts of the function
+      // `lingtai daemon` prints at startup, so the two cannot disagree (#76).
+      const filter = yield* lift(() => projectFilter(project, reading.clientFor, reading.recipeFor))
+      const view: StatusFilter = filter.ok
+        ? {
+            ok: true,
+            facts: [...filterFacts(filter)],
+            recipe: filter.configHash,
+            ref: filter.ref,
+            kinds: [...filter.kinds],
+            exclude: [...filter.exclude],
+          }
+        : { ok: false, facts: [...filterFacts(filter)], problem: filter.problem }
 
-    // Priority order is the recipe's `kinds`, and the recipe lives in the
-    // managed repository — so without GitHub the queue can still be listed, just
-    // not prioritised.
-    const kinds: readonly string[] = filter.ok ? filter.kinds : []
-    // Empty when the ticket source could not be asked, which is not the same as
-    // an empty queue and is said differently.
-    let offered: { ref: string; title: string; kind: string }[] = []
-    let asked = false
-    let source: string | null = null
-    let eligible: number | null = null
-    let offerError: string | null = null
-    let skipped: { ref: number; reason: string }[] = []
-    let passed: string | null = null
-    let unread: string | null = null
-    if (filter.ok) {
-      // After where this project's tickets actually live (#389).
-      source = sourceName(ticketSourceOf(filter.recipe))
-      try {
+      // Priority order is the recipe's `kinds`, and the recipe lives in the
+      // managed repository — so without GitHub the queue can still be listed, just
+      // not prioritised.
+      const kinds: readonly string[] = filter.ok ? filter.kinds : []
+      // Empty when the ticket source could not be asked, which is not the same as
+      // an empty queue and is said differently.
+      let offered: { ref: string; title: string; kind: string }[] = []
+      let asked = false
+      let source: string | null = null
+      let eligible: number | null = null
+      let offerError: string | null = null
+      let skipped: { ref: number; reason: string }[] = []
+      let passed: string | null = null
+      let unread: string | null = null
+      if (filter.ok) {
+        // After where this project's tickets actually live (#389).
+        source = sourceName(ticketSourceOf(filter.recipe))
         const { tickets, recipe } = filter
         // Always, never behind a flag; takes nothing, claims nothing, appends no
         // event. **`tickets`, not `client`** (#382): a `db` project's queue lives
         // in `dbTickets`, same as `board.ts` and `queued.ts`.
-        const found = await runnableNow({ client: tickets, queue: queueOf(recipe) })
-        offered = found.runnable
-        asked = true
-        // **`eligible`, not `runnable`** (#54): this is about the recipe, the queue line about state.
-        eligible = found.runnable.length
-        skipped = found.skipped.map((s) => ({ ref: s.ref, reason: s.reason }))
-        passed = passedOver(found.skipped)
-        unread = found.dependenciesUnread
-      } catch (err) {
-        offerError = (err as Error).message
+        const asked_ = yield* runnableNowEffect({ client: tickets, queue: queueOf(recipe) }).pipe(
+          Effect.map((found) => ({ found })),
+          recovering((err) => Effect.succeed({ failed: err.message })),
+        )
+        if ('failed' in asked_) offerError = asked_.failed
+        else {
+          const found = asked_.found
+          offered = found.runnable
+          asked = true
+          // **`eligible`, not `runnable`** (#54): this is about the recipe, the queue line about state.
+          eligible = found.runnable.length
+          skipped = found.skipped.map((s) => ({ ref: s.ref, reason: s.reason }))
+          passed = passedOver(found.skipped)
+          unread = found.dependenciesUnread
+        }
       }
-    }
 
-    // Zero when the recipe would not resolve: nothing was offered either.
-    const backoffMs = filter.ok ? filter.backoffMs : 0
-    // The ceiling `describeArm` says `of` against — `limits.restarts`, null where the recipe would not resolve (#504).
-    const restartsOf = filter.ok ? filter.limits.restarts : null
-    const runnable = await selectRunnable({ project: name, offered, kinds, backoffMs })
-    const tasks = await readTasks({ project: name })
-    // **The arm comes from the row, because the offer cannot carry it** (#100):
-    // a restarted ticket is queued, so it is listed from here and nowhere else.
-    const restartsByTask = new Map(tasks.map((t) => [t.taskId, t.restarts ?? 0]))
-    // **Computed, never appended** (0122 §2): what is in flight is the `task_view` rows
-    // running, and the files are each ticket's own `Fix` row. A queued ticket that would
-    // be skipped for one of them says so in the `held` cell, in `waitsFor`'s words —
-    // the sentence the daemon's look logs, from the same function.
-    const flying = tasks.filter((t) => t.state === 'running' || t.state === 'verifying')
-    const waits = new Map<string, string>()
-    if (filter.ok && flying.length > 0 && runnable.length > 0) {
-      const inFlight = await Promise.all(
-        flying.map(async (t) => ({ issue: t.issue, files: await readFixFiles(filter.tickets, Number(t.issue)) })),
-      )
-      for (const r of runnable) {
-        const why = waitsFor(await readFixFiles(filter.tickets, Number(r.issue)), inFlight)
-        if (why !== null) waits.set(r.taskId, why)
+      // Zero when the recipe would not resolve: nothing was offered either.
+      const backoffMs = filter.ok ? filter.backoffMs : 0
+      // The ceiling `describeArm` says `of` against — `limits.restarts`, null where the recipe would not resolve (#504).
+      const restartsOf = filter.ok ? filter.limits.restarts : null
+      const runnable = yield* selectRunnableEffect({ project: name, offered, kinds, backoffMs })
+      const tasks = yield* readTasksEffect({ project: name })
+      // **The arm comes from the row, because the offer cannot carry it** (#100):
+      // a restarted ticket is queued, so it is listed from here and nowhere else.
+      const restartsByTask = new Map(tasks.map((t) => [t.taskId, t.restarts ?? 0]))
+      // **Computed, never appended** (0122 §2): what is in flight is the `task_view` rows
+      // running, and the files are each ticket's own `Fix` row. A queued ticket that would
+      // be skipped for one of them says so in the `held` cell, in `waitsFor`'s words —
+      // the sentence the daemon's look logs, from the same function.
+      const flying = tasks.filter((t) => t.state === 'running' || t.state === 'verifying')
+      const waits = new Map<string, string>()
+      if (filter.ok && flying.length > 0 && runnable.length > 0) {
+        const inFlight = yield* Effect.forEach(
+          flying,
+          (t) =>
+            Effect.map(readFixFilesEffect(filter.tickets, Number(t.issue)), (files) => ({ issue: t.issue, files })),
+          { concurrency: 'unbounded' },
+        )
+        for (const r of runnable) {
+          const why = waitsFor(yield* readFixFilesEffect(filter.tickets, Number(r.issue)), inFlight)
+          if (why !== null) waits.set(r.taskId, why)
+        }
       }
-    }
-    const now = Date.now()
-    const offeredKinds = kinds.length > 0 ? kinds : ['bug']
-    const offeredRefs = new Set(offered.filter((o) => offeredKinds.includes(o.kind)).map((o) => o.ref))
+      const now = Date.now()
+      const offeredKinds = kinds.length > 0 ? kinds : ['bug']
+      const offeredRefs = new Set(offered.filter((o) => offeredKinds.includes(o.kind)).map((o) => o.ref))
 
-    const rowOf = (
-      t: {
-        taskId: string
-        issue: string
-        kind: string
-        title: string
-        state: string
-        lastAttemptAt?: Date | null
-        repairPending?: boolean
-        wait?: TaskCard['wait']
-        triage?: TaskCard['triage']
-        awaitingSha?: string | null
-        savedHead?: SavedHeadReading
-      },
-      restarts: number,
-    ): StatusRow => {
-      // **When, not whether** (#95): the sentence is `backingOff`'s, so the card says it in the same words (#100).
-      const until =
-        t.state === 'queued'
-          ? heldUntil(
-              { lastAttemptAt: t.lastAttemptAt ?? null, repairPending: t.repairPending === true },
-              backoffMs,
-              now,
-            )
-          : null
-      const words = t.wait == null ? null : waitWords(t.wait.reason, waitPassOf(t.issue, project.base))
-      return {
-        taskId: t.taskId,
-        ref: t.issue,
-        kind: t.kind,
-        title: t.title,
-        state: t.state,
-        restarts,
-        arm: armLine({ restarts }, restartsOf),
-        held: until ? backingOff(until, now) : (waits.get(t.taskId) ?? null),
-        // Said only when the source actually answered: with no answer every row looks unoffered.
-        // Against the offer and not `runnable`, which the retry window has already thinned.
-        unoffered: t.state === 'queued' && asked && !offeredRefs.has(t.issue),
-        run: null,
-        wait:
-          t.wait == null || words === null
-            ? null
-            : {
-                reason: t.wait.reason._tag,
-                line: words.line,
-                short: words.short,
-                needs: words.needs,
-                words: describeWait({
-                  waiting: true,
-                  asked: t.wait.reason._tag === 'OwnQuestion',
-                  awaitingSha: t.awaitingSha ?? null,
-                  needs: words.needs,
-                }),
-                detail: waitDetail(words, t.wait.reason, t.triage, t.savedHead),
-                recommendation: conflictRecommendation(t.wait.reason, t.triage, t.savedHead),
-                command: waitCommand(
-                  waitMoves(t.wait.reason, {
-                    triage: t.triage?.result ?? null,
-                    savedHead: typeof t.savedHead === 'object' ? false : t.savedHead,
-                  }),
-                  { project: name, issue: t.issue, reason: t.wait.reason },
-                ),
-                raw: Boolean(words.diagnosis?.raw),
-              },
-      }
-    }
-
-    // A read that fails is said, never shown as *not limited* (0126 §5).
-    const accounts = await (
-      reading.accounts ??
-      ((p) => runEffect(accountsFor(eventStore, p, (state) => (reading.recipeFor ?? currentRecipe)(state, undefined))))
-    )(project).then(
-      (a) => ({ accounts: a }),
-      (err: unknown) => ({ unread: err instanceof Error ? err.message : String(err) }),
-    )
-    out.push({
-      locks:
-        controlState === null
-          ? { unread: (control as { unread: string }).unread }
-          : 'unread' in accounts
-            ? { unread: accounts.unread }
-            : locksOn({ project, control: controlState, accounts: accounts.accounts }),
-      project: name,
-      base: project.base ?? null,
-      filter: view,
-      source,
-      eligible,
-      offerError,
-      passedOver: skipped,
-      passedOverLine: passed,
-      dependenciesUnread: unread,
-      runnable: runnable.map((r) => rowOf({ ...r, state: 'queued' }, restartsByTask.get(r.taskId) ?? 0)),
-      known: await Promise.all(
-        tasks.map(async (t) => {
-          const conflict =
-            t.wait != null &&
-            t.runId &&
-            t.triage?.result?._tag === 'TriageAdvised' &&
-            (t.triage.result.cause._tag === 'ConflictingHunks' || t.triage.result.resolution === 'GrantFixRound')
-          const savedHead = conflict
-            ? await (reading.savedHeadOf ?? ((id, p) => hasSavedHead(id, p, reading.clientFor)))(
-                t.runId as string,
-                project,
+      const rowOf = (
+        t: {
+          taskId: string
+          issue: string
+          kind: string
+          title: string
+          state: string
+          lastAttemptAt?: Date | null
+          repairPending?: boolean
+          wait?: TaskCard['wait']
+          triage?: TaskCard['triage']
+          awaitingSha?: string | null
+          savedHead?: SavedHeadReading
+        },
+        restarts: number,
+      ): StatusRow => {
+        // **When, not whether** (#95): the sentence is `backingOff`'s, so the card says it in the same words (#100).
+        const until =
+          t.state === 'queued'
+            ? heldUntil(
+                { lastAttemptAt: t.lastAttemptAt ?? null, repairPending: t.repairPending === true },
+                backoffMs,
+                now,
               )
-            : undefined
-          const row = rowOf({ ...t, savedHead }, t.restarts ?? 0)
-          // Every pass in flight is a row with its step, not only the first (#640).
-          if ((t.state === 'running' || t.state === 'verifying') && t.runId) {
-            try {
-              row.run = { runId: t.runId, step: await (reading.stepOf ?? lastStep)(t.runId) }
-            } catch (err) {
-              row.run = { runId: t.runId, step: null, error: (err as Error).message }
-            }
-          }
-          return row
-        }),
-      ),
-    })
-  }
-  const spend = await (reading.spendLine ?? daySpendLine)(controlState)
-  let configured: number | undefined
-  try {
-    configured = (reading.configuredCeiling ?? machineDayCeiling)()
-  } catch {
-    // Unparsable: a `reached` in the log still prints, and the sentence says the figure could not be read.
-    configured = undefined
-  }
-  const facts = controlState === null ? undefined : ceilingFacts(controlState, readAt, configured)
-  const ceiling: CeilingFacts | { unread: string } | undefined =
-    controlState === null ? { unread: (control as { unread: string }).unread } : facts
-  return {
-    projects: out,
-    message: null,
-    now: readAt,
-    ...(ceiling === undefined ? {} : { ceiling }),
-    spend: spend.text,
-    ...(spend.unknownWhy === null ? {} : { spendUnknown: spend.unknownWhy }),
-  }
-}
+            : null
+        const words = t.wait == null ? null : waitWords(t.wait.reason, waitPassOf(t.issue, project.base))
+        return {
+          taskId: t.taskId,
+          ref: t.issue,
+          kind: t.kind,
+          title: t.title,
+          state: t.state,
+          restarts,
+          arm: armLine({ restarts }, restartsOf),
+          held: until ? backingOff(until, now) : (waits.get(t.taskId) ?? null),
+          // Said only when the source actually answered: with no answer every row looks unoffered.
+          // Against the offer and not `runnable`, which the retry window has already thinned.
+          unoffered: t.state === 'queued' && asked && !offeredRefs.has(t.issue),
+          run: null,
+          wait:
+            t.wait == null || words === null
+              ? null
+              : {
+                  reason: t.wait.reason._tag,
+                  line: words.line,
+                  short: words.short,
+                  needs: words.needs,
+                  words: describeWait({
+                    waiting: true,
+                    asked: t.wait.reason._tag === 'OwnQuestion',
+                    awaitingSha: t.awaitingSha ?? null,
+                    needs: words.needs,
+                  }),
+                  detail: waitDetail(words, t.wait.reason, t.triage, t.savedHead),
+                  recommendation: conflictRecommendation(t.wait.reason, t.triage, t.savedHead),
+                  command: waitCommand(
+                    waitMoves(t.wait.reason, {
+                      triage: t.triage?.result ?? null,
+                      savedHead: typeof t.savedHead === 'object' ? false : t.savedHead,
+                    }),
+                    { project: name, issue: t.issue, reason: t.wait.reason },
+                  ),
+                  raw: Boolean(words.diagnosis?.raw),
+                },
+        }
+      }
+
+      // A read that fails is said, never shown as *not limited* (0126 §5).
+      const accounts = yield* Effect.suspend(() =>
+        (
+          reading.accounts ??
+          ((p) => accountsFor(eventStore, p, (state) => (reading.recipeFor ?? currentRecipe)(state, undefined)))
+        )(project),
+      ).pipe(
+        Effect.map((a) => ({ accounts: a })),
+        recovering((err: unknown) => Effect.succeed({ unread: err instanceof Error ? err.message : String(err) })),
+      )
+      out.push({
+        locks:
+          controlState === null
+            ? { unread: (control as { unread: string }).unread }
+            : 'unread' in accounts
+              ? { unread: accounts.unread }
+              : locksOn({ project, control: controlState, accounts: accounts.accounts }),
+        project: name,
+        base: project.base ?? null,
+        filter: view,
+        source,
+        eligible,
+        offerError,
+        passedOver: skipped,
+        passedOverLine: passed,
+        dependenciesUnread: unread,
+        runnable: runnable.map((r) => rowOf({ ...r, state: 'queued' }, restartsByTask.get(r.taskId) ?? 0)),
+        known: yield* Effect.forEach(
+          tasks,
+          (t) =>
+            Effect.gen(function* () {
+              const conflict =
+                t.wait != null &&
+                t.runId &&
+                t.triage?.result?._tag === 'TriageAdvised' &&
+                (t.triage.result.cause._tag === 'ConflictingHunks' || t.triage.result.resolution === 'GrantFixRound')
+              const savedHead = conflict
+                ? yield* Effect.suspend(() =>
+                    (reading.savedHeadOf ?? ((id, p) => hasSavedHead(id, p, reading.clientFor)))(
+                      t.runId as string,
+                      project,
+                    ),
+                  )
+                : undefined
+              const row = rowOf({ ...t, savedHead }, t.restarts ?? 0)
+              // Every pass in flight is a row with its step, not only the first (#640).
+              if ((t.state === 'running' || t.state === 'verifying') && t.runId) {
+                const runId = t.runId
+                row.run = yield* Effect.suspend(() => (reading.stepOf ?? lastStep)(runId)).pipe(
+                  Effect.map((step): StatusAttempt => ({ runId, step })),
+                  recovering((err) => Effect.succeed<StatusAttempt>({ runId, step: null, error: err.message })),
+                )
+              }
+              return row
+            }),
+          { concurrency: 'unbounded' },
+        ),
+      })
+    }
+    const spend = yield* Effect.suspend(() => (reading.spendLine ?? daySpendLine)(controlState))
+    let configured: number | undefined
+    try {
+      configured = (reading.configuredCeiling ?? machineDayCeiling)()
+    } catch {
+      // Unparsable: a `reached` in the log still prints, and the sentence says the figure could not be read.
+      configured = undefined
+    }
+    const facts = controlState === null ? undefined : ceilingFacts(controlState, readAt, configured)
+    const ceiling: CeilingFacts | { unread: string } | undefined =
+      controlState === null ? { unread: (control as { unread: string }).unread } : facts
+    return {
+      projects: out,
+      message: null,
+      now: readAt,
+      ...(ceiling === undefined ? {} : { ceiling }),
+      spend: spend.text,
+      ...(spend.unknownWhy === null ? {} : { spendUnknown: spend.unknownWhy }),
+    } satisfies StatusReport
+  })
 
 /** The state column: the wait's words, the clock, the absence — and the arm, muted. */
 function stateCell(row: StatusRow): string {
@@ -812,12 +828,13 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
 }
 
 /** Reads and prints the text form — what the tests that drive the command with a `log` use. */
-export async function status(
+export const status = (
   options: StatusOptions = {},
   log = console.log,
   reading: StatusReading = {},
-): Promise<number> {
-  const report = await readStatus(options, reading)
-  for (const line of renderStatus(report, { all: options.all, columns: process.stdout.columns })) log(line)
-  return 0
-}
+): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const report = yield* readStatus(options, reading)
+    for (const line of renderStatus(report, { all: options.all, columns: process.stdout.columns })) log(line)
+    return 0
+  })

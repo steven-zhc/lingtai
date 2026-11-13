@@ -48,7 +48,7 @@ const status = Command.make(
       // pay for the conductor, the projector and the store (`entry.ts`).
       const { readStatus, renderStatus, statusJson } = yield* lift(() => import('./status.ts'))
       const project = args.project._tag === 'Some' ? args.project.value : undefined
-      const report = yield* lift(() => readStatus({ project, all: args.all }))
+      const report = yield* readStatus({ project, all: args.all })
       if (args.json) printJson('status', statusJson(report))
       else
         for (const line of renderStatus(report, { all: args.all, columns: process.stdout.columns })) console.log(line)
@@ -577,8 +577,9 @@ const liveRunners: Runners = {
           return 0
         }).pipe(orFailed('projection lag', request.json))
       }
-      const { log } = yield* lift(() => import('@lingtai/event-store'))
-      const { createProjectionRunner } = yield* lift(() => import('@lingtai/projector'))
+      const { processQueries } = yield* lift(() => import('@lingtai/event-store'))
+      const { makeRunner } = yield* lift(() => import('@lingtai/projector'))
+      const queries = yield* processQueries
       const chosen = projection.PROJECTIONS.find((p) => p.name === request.name)!
       // Drop the table, reset the checkpoint, replay — which is what makes a
       // projection's shape free to change, a rebuild rather than a migration.
@@ -586,13 +587,12 @@ const liveRunners: Runners = {
       // #445's payload reset (#451). The conductor lock is taken first and for
       // the whole replay (0100 §13): a rebuild is a writer, and the lock holder
       // is the only one.
-      return yield* lift(() =>
-        projection.rebuildUnderLock({
-          name: request.name,
-          queries: log.queries,
-          runnerFor: () => createProjectionRunner({ projection: chosen }),
-        }),
-      )
+      return yield* projection.rebuildUnderLock({
+        name: request.name,
+        queries,
+        // Detached, as the promise runner it replaces was: the close below is the runner's end.
+        runnerFor: () => makeRunner({ projection: chosen }, { detached: true }),
+      })
     }),
   // `upgrade` is spawned-from and `version` is what it spawns, so none of these three
   // is imported at the top; `self` is the file this process started from (`install.ts`).

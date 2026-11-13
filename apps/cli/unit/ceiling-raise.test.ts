@@ -22,11 +22,11 @@ async function setup() {
 }
 
 const healthy = {
-  lags: () => Promise.resolve([]),
+  lags: () => Effect.succeed([]),
   rebuilding: () => null,
   rebuilds: () => 0,
   now: () => NOW,
-  rows: () => Promise.resolve([]),
+  rows: () => Effect.succeed([]),
   ceiling: () => 25 as number | undefined,
 }
 
@@ -36,7 +36,7 @@ describe('ceilingRaise', () => {
     const code = await Effect.runPromise(
       ceilingRaise({
         ...healthy,
-        rows: () => Promise.reject(new Error('no table')),
+        rows: () => Effect.die(new Error('no table')),
         toUsd: 40,
         by: 'human:steven',
         store,
@@ -90,7 +90,7 @@ describe('ceilingRaise', () => {
       ceilingRaise({
         ...healthy,
         lags: () =>
-          Promise.resolve([{ name: 'spend', lag: 9n, updatedAt: new Date(NOW.getTime() - 3_600_000) } as never]),
+          Effect.succeed([{ name: 'spend', lag: 9n, updatedAt: new Date(NOW.getTime() - 3_600_000) } as never]),
         toUsd: 40,
         by: 'human:steven',
         store,

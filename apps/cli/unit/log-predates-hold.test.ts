@@ -13,16 +13,16 @@ import type { Runtime } from '@lingtai/agent'
  * gone from the catalogue — `createMemoryEventStore().plant` is the only way
  * to get either into a store at all, since `append` validates on the way in.
  */
-import { startDaemon } from '@lingtai/daemon'
+import { type AcquireDaemonLockOptions, startDaemon } from '@lingtai/daemon'
 import type { StoreChoice } from '@lingtai/env'
 import { LogPredatesHoldError, logPredatesHold, type LogQueries } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import type { Projection, ProjectionRunner } from '@lingtai/projector'
+import type { Projection, ProjectionRunner, ProjectionRunnerPort } from '@lingtai/projector'
 import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import { type DoctorReach, runDoctor as runDoctorEffect } from '../src/doctor.ts'
-import { rebuildProjection, rebuildUnderLock } from '../src/projection.ts'
+import { rebuildProjection as rebuildProjectionE, rebuildUnderLock as rebuildUnderLockE } from '../src/projection.ts'
 
 // `runDoctor` is an Effect; these tests read the report it yields.
 const runDoctor = (...a: Parameters<typeof runDoctorEffect>) => Effect.runPromise(runDoctorEffect(...a))
@@ -221,6 +221,44 @@ describe('lingtai doctor refuses through the guard (#451)', () => {
     expect(row?.status).toBe('ok')
   })
 })
+
+/**
+ * The rebuild's seams are Effects; these fakes stay promise-shaped and are lifted here, so each case
+ * below reads as it always did. A throw inside one is a defect (0101 §6), which `runPromise` rejects with.
+ */
+interface LooseRebuild {
+  name: string
+  queries: Pick<LogQueries, 'typeCounts'>
+  runnerFor: () => ProjectionRunner | unknown
+  log?: (line: string) => void
+  error?: (line: string) => void
+  acquire?: (
+    options: AcquireDaemonLockOptions,
+  ) => Promise<{ ok: true; lock: { release(): Promise<void> } } | { ok: false; holder: string | null }>
+}
+const portOf = (r: ProjectionRunner): ProjectionRunnerPort => ({
+  name: r.name,
+  failure: r.failure,
+  running: r.running,
+  start: () => Effect.promise(() => r.start()),
+  stop: () => Effect.promise(() => r.stop()),
+  rebuild: () => Effect.promise(() => r.rebuild()),
+  lag: () => Effect.promise(() => r.lag()),
+  shape: () => Effect.promise(() => r.shape()),
+  close: () => Effect.promise(() => r.close()),
+})
+const lifted = (o: LooseRebuild) => ({
+  name: o.name,
+  queries: { typeCounts: () => Effect.promise(() => (o.queries as unknown as LogQueries).typeCounts()) },
+  runnerFor: () => portOf((o.runnerFor as () => ProjectionRunner)()),
+  ...(o.log === undefined ? {} : { log: o.log }),
+  ...(o.error === undefined ? {} : { error: o.error }),
+  ...(o.acquire === undefined
+    ? {}
+    : { acquire: (a: AcquireDaemonLockOptions) => Effect.tryPromise({ try: () => o.acquire!(a), catch: (e) => e }) }),
+})
+const rebuildProjection = (o: LooseRebuild) => Effect.runPromise(rebuildProjectionE(lifted(o)))
+const rebuildUnderLock = (o: LooseRebuild) => Effect.runPromise(rebuildUnderLockE(lifted(o)))
 
 describe('lingtai projection rebuild refuses through the guard (#451)', () => {
   it('refuses before a runner is ever built, and returns non-zero', async () => {
