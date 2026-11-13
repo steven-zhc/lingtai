@@ -710,8 +710,8 @@ or fix repo.base in the file.
 ```
 
 **Only a branch a *person* typed earns that refusal.** A branch the system
-remembered — the one `ProjectOnboardingStarted` recorded, replayed by the
-board's *Recheck* — is a hint and is quietly adopted, because there is no flag
+remembered — the one `ProjectOnboardingStarted` recorded on a project an older log holds as
+pending, replayed by the board's *Recheck* — is a hint and is quietly adopted, because there is no flag
 for a button to omit and the refusal's advice would name something nobody typed.
 
 Editing `repo.base` afterwards re-creates the disagreement, and a run refuses on
@@ -1935,10 +1935,7 @@ recipe.source.exclude`): a `queue:` block the recipe declares at `claim`
 it has one, or `source.exclude` only where it declares none. `EXCLUDE`
 defaults to `[]` (`packages/recipe/src/recipe.ts:1074`), the default preset
 writes nothing to it, and this page's own earlier example recipe is
-`exclude: [blocked, needs-design]` — no `agent:hold` in it. The wizard's own
-"Hold all" button refuses for exactly this reason before offering itself:
-*"a recipe that does not exclude it gets no button rather than a guess"*
-(`packages/conductor/src/wizard.ts:154-159`). Check every project you are
+`exclude: [blocked, needs-design]` — no `agent:hold` in it. Check every project you are
 about to hold against, before trusting the label on anything:
 
 ```bash
