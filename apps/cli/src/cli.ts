@@ -131,10 +131,11 @@ const add = Command.make(
   { repo: Argument.String('owner/repo').pipe(Argument.optional), ...addOptions },
   ({ repo, ...options }) =>
     Effect.gen(function* () {
-      const { addFlow, liveAddWorld } = yield* lift(() => import('./add.ts'))
+      const { addFlowEffect, liveAddWorld } = yield* lift(() => import('./add.ts'))
       yield* exitWith(
-        yield* lift(() =>
-          addFlow({ positional: repo._tag === 'Some' ? repo.value : undefined, ...flagsOf(options) }, liveAddWorld()),
+        yield* addFlowEffect(
+          { positional: repo._tag === 'Some' ? repo.value : undefined, ...flagsOf(options) },
+          liveAddWorld(),
         ),
       )
     }).pipe(orWizardFailed()),

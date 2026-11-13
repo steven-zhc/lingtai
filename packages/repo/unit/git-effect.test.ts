@@ -75,3 +75,31 @@ describe('gitEffect, a synchronous execFile throw', () => {
     expect(err.exitCode).toBeNull()
   })
 })
+
+describe('gitEffect, a token that is an Effect', () => {
+  it('fails as a RepoFailed carrying the error message, before anything is spawned', async () => {
+    const cp = await import('node:child_process')
+    vi.mocked(cp.execFile).mockClear()
+    const err = await Effect.runPromise(
+      Effect.flip(gitEffect(['fetch'], { token: Effect.fail(new Error('no installation')) })),
+    )
+    expect(err).toBeInstanceOf(RepoFailed)
+    expect(err.detail).toBe('no installation')
+    expect(err.operation).toBe('git fetch')
+    expect(cp.execFile).not.toHaveBeenCalled()
+  })
+
+  it('is run once per invocation, never resolved once and passed on', async () => {
+    let runs = 0
+    const token = Effect.sync(() => `token-${++runs}`)
+    const first = Effect.runFork(gitEffect(['fetch'], { token }))
+    await tick()
+    fake.cb!(null, 'ok', '')
+    await Effect.runPromise(Fiber.join(first))
+    const second = Effect.runFork(gitEffect(['fetch'], { token }))
+    await tick()
+    fake.cb!(null, 'ok', '')
+    await Effect.runPromise(Fiber.join(second))
+    expect(runs).toBe(2)
+  })
+})

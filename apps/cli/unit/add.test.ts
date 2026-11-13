@@ -4,7 +4,10 @@ import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { type AddWorld, addFlow } from '../src/add.ts'
+import { type AddWorld, addFlowEffect } from '../src/add.ts'
+
+const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
+const addFlow = (...args: Parameters<typeof addFlowEffect>) => Effect.runPromise(addFlowEffect(...args))
 import type { GitResult } from '../src/first-project.ts'
 /**
  * `addFlow` (#400, #435): `lingtai add` driven from `unit/` with no
@@ -118,11 +121,12 @@ function ttyHarness(): Harness {
     project: liftFirstProjectWorld(project),
     error: (line) => errors.push(line),
     log: (line) => logged.push(line),
-    doctor: async () => ({
-      report: { ok: 27, notChecked: 10, deferred: 3 },
-      toFix: { count: 0, failed: false },
-      blocks: '',
-    }),
+    doctor: () =>
+      fx(async () => ({
+        report: { ok: 27, notChecked: 10, deferred: 3 },
+        toFix: { count: 0, failed: false },
+        blocks: '',
+      })),
     store: () => ({ store: 'sqlite', path: `${HOME}/lingtai.db`, from: 'default', where: 'default' }) as never,
     userHome: '/home/me',
   }
@@ -156,9 +160,10 @@ describe('addFlow at a TTY asks the project and recipe questions, and nothing be
     const { world, errors } = ttyHarness()
     world.repositories = {
       interactive: () => true,
-      list: async () => {
-        throw new Error('local was chosen: the list must not be read')
-      },
+      list: () =>
+        fx(async () => {
+          throw new Error('local was chosen: the list must not be read')
+        }),
     }
 
     const code = await addFlow(flagsFromArgv(['--budget', '7']), world)
@@ -203,19 +208,20 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
       auth: () => 'gh',
       interactive: () => true,
       ghAccess: async () => ({ login: 'sam', defaultBranch: 'main' }),
-      picker: async () => ({ installations: [], installUrl: null }),
+      picker: () => fx(async () => ({ installations: [], installUrl: null })),
       files,
-      reader: async () => SETUP_READER,
+      reader: () => fx(async () => SETUP_READER),
       ask: async () => '',
-      runtimes: async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }],
+      runtimes: () => fx(async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }]),
       history: async () => [],
     }
     if (over.doctorFails === true) {
-      h.world.doctor = async () => ({
-        report: { ok: 20, notChecked: 0, deferred: 0 },
-        toFix: { count: 1, failed: true },
-        blocks: 'a failing block',
-      })
+      h.world.doctor = () =>
+        fx(async () => ({
+          report: { ok: 20, notChecked: 0, deferred: 0 },
+          toFix: { count: 1, failed: true },
+          blocks: 'a failing block',
+        }))
     }
     const argv = ['acme/widgets', '--base', 'main', '--install', 'none', '--build', 'none']
     return { ...h, argv }
@@ -251,15 +257,16 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     }
     world.repositories = {
       interactive: () => true,
-      list: async () => ({
-        kind: 'gh',
-        login: 'sam',
-        more: true,
-        repositories: [
-          { owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null },
-          { owner: 'acme', repo: 'old', private: false, slug: 'acme/old', onboarded: 'registered' },
-        ],
-      }),
+      list: () =>
+        fx(async () => ({
+          kind: 'gh',
+          login: 'sam',
+          more: true,
+          repositories: [
+            { owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null },
+            { owner: 'acme', repo: 'old', private: false, slug: 'acme/old', onboarded: 'registered' },
+          ],
+        })),
     }
     const parsed = flagsFromArgv(['--project', 'github', '--github-auth', 'gh'])
 
@@ -278,12 +285,13 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     world.project.ask = async (prompt) => (/which repository/.test(prompt) ? 'acme/widgets' : '')
     world.repositories = {
       interactive: () => true,
-      list: async () => ({
-        kind: 'gh',
-        login: 'sam',
-        more: false,
-        repositories: [{ owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null }],
-      }),
+      list: () =>
+        fx(async () => ({
+          kind: 'gh',
+          login: 'sam',
+          more: false,
+          repositories: [{ owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null }],
+        })),
     }
     const parsed = flagsFromArgv(['--project', 'github', '--github-auth', 'gh', '--agent', 'claude-code'])
 
@@ -297,12 +305,13 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     world.project.ask = async (prompt) => (/which repository/.test(prompt) ? 'acme/widgets' : '')
     world.repositories = {
       interactive: () => true,
-      list: async () => ({
-        kind: 'gh',
-        login: 'sam',
-        more: false,
-        repositories: [{ owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null }],
-      }),
+      list: () =>
+        fx(async () => ({
+          kind: 'gh',
+          login: 'sam',
+          more: false,
+          repositories: [{ owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null }],
+        })),
     }
     const code = await addFlow(flagsFromArgv(['--github-auth', 'gh', '--agent', 'claude-code']), world)
     expect(errors).toEqual([])
@@ -314,27 +323,28 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     world.project.ask = async (prompt) => (/owner\/repo/.test(prompt) ? 'acme/widgets' : '')
     world.repositories = {
       interactive: () => true,
-      list: async () => ({
-        kind: 'app',
-        picker: {
-          installUrl: null,
-          installations: [
-            {
-              installation: {
-                id: 7,
-                account: 'acme',
-                permissions: {},
-                repositorySelection: 'all',
-                htmlUrl: null,
-                appSlug: null,
+      list: () =>
+        fx(async () => ({
+          kind: 'app',
+          picker: {
+            installUrl: null,
+            installations: [
+              {
+                installation: {
+                  id: 7,
+                  account: 'acme',
+                  permissions: {},
+                  repositorySelection: 'all',
+                  htmlUrl: null,
+                  appSlug: null,
+                },
+                unanswered: '502 on /installation/repositories: Bad Gateway',
+                gaps: [],
+                repositories: [],
               },
-              unanswered: '502 on /installation/repositories: Bad Gateway',
-              gaps: [],
-              repositories: [],
-            },
-          ],
-        },
-      }),
+            ],
+          },
+        })),
     }
 
     await addFlow(flagsFromArgv(['--project', 'github', '--github-auth', 'gh']), world)
@@ -346,10 +356,11 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     let read = false
     world.repositories = {
       interactive: () => false,
-      list: async () => {
-        read = true
-        throw new Error('must not be asked')
-      },
+      list: () =>
+        fx(async () => {
+          read = true
+          throw new Error('must not be asked')
+        }),
     }
     const parsed = flagsFromArgv(['--project', 'github', '--github-auth', 'gh'])
 

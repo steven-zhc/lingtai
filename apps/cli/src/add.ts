@@ -32,21 +32,21 @@ import { Cause, Effect } from 'effect'
  * person typed it here, is refused rather than silently adopted when the
  * recipe disagrees (#75).
  */
-import { type AskedBeforeAdd, askBeforeGithubAdd, type AskBeforeGithubAddDeps } from './add-github.ts'
+import { type AskedBeforeAdd, askBeforeGithubAddEffect, type AskBeforeGithubAddDeps, attempt } from './add-github.ts'
+import { lift } from './exit.ts'
 import {
-  chooseFirstProject,
+  chooseFirstProjectEffect,
   liveFirstProjectWorld,
-  liveRepositoryList,
-  runEffect,
+  liveRepositoryListEffect,
   type FirstProjectWorld,
 } from './first-project.ts'
 import { addSteps } from './next-steps.ts'
 import { renderNextBlock, renderNextLine } from './output.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
-import { question } from './question.ts'
+import { questionEffect } from './question.ts'
 import { ADD_KEPT } from './recipe-flow.ts'
 import { type CardRecipe, cardRecipe } from './setup-card.ts'
-import { liveSetupDoctor, printSetupEnd, type SetupDoctor } from './setup-end.ts'
+import { liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './setup-end.ts'
 
 export interface AddWorld {
   project: FirstProjectWorld
@@ -56,7 +56,7 @@ export interface AddWorld {
   /** Where the card goes — the same `log` the questions were asked through. */
   log: (line: string) => void
   /** The report `init` runs, against the same home. */
-  doctor: () => Promise<SetupDoctor>
+  doctor: () => Effect.Effect<SetupDoctor, unknown>
   /** The store this machine answers with, read the way `init` reads it. */
   store: () => StoreChoice
   /** For the card's `~` substitution. */
@@ -69,7 +69,7 @@ export interface AddWorld {
     /** A script never sees a prompt: with no terminal this is false and nothing is read. */
     interactive: () => boolean
     /** Rejects with the sentence to print when the read failed. */
-    list: () => Promise<RepositoryList>
+    list: () => Effect.Effect<RepositoryList, unknown>
   }
 }
 
@@ -85,15 +85,15 @@ const TYPE_IT = 'type owner/repo'
 const pickRepository = (world: AddWorld) =>
   Effect.gen(function* () {
     let offered: string[] = []
-    const read = yield* Effect.result(Effect.tryPromise({ try: () => world.repositories!.list(), catch: asError }))
-    if (read._tag === 'Failure') {
+    const read = yield* attempt(Effect.suspend(() => world.repositories!.list()))
+    if ('threw' in read) {
       // The list's failure is a sentence; typing `owner/repo` still works.
-      world.log(`could not list your repositories — ${read.failure.message}`)
-    } else if (read.success.kind === 'gh') {
-      offered = read.success.repositories.filter((r) => r.onboarded === null).map((r) => r.slug)
-      if (read.success.more) world.log('more not shown — type owner/repo')
+      world.log(`could not list your repositories — ${asError(read.threw).message}`)
+    } else if (read.ok.kind === 'gh') {
+      offered = read.ok.repositories.filter((r) => r.onboarded === null).map((r) => r.slug)
+      if (read.ok.more) world.log('more not shown — type owner/repo')
     } else {
-      const { picker } = read.success
+      const { picker } = read.ok
       if (picker.installations.length === 0) {
         if (picker.installUrl !== null) world.log(`the App is not installed anywhere yet: ${picker.installUrl}`)
         return null
@@ -109,55 +109,48 @@ const pickRepository = (world: AddWorld) =>
         i.repositories.filter((r) => r.onboarded === null).map((r) => r.slug),
       )
     }
-    const validate = (answer: string): Promise<string | null> => {
-      try {
-        parseSlug(answer)
-        return Promise.resolve(null)
-      } catch (err) {
-        return Promise.resolve((err as Error).message)
-      }
-    }
+    const validate = (answer: string): Effect.Effect<string | null> =>
+      Effect.sync(() => {
+        try {
+          parseSlug(answer)
+          return null
+        } catch (err) {
+          return (err as Error).message
+        }
+      })
     const kept = 'Nothing was registered.'
     if (offered.length > 0) {
-      const chosen = yield* Effect.tryPromise({
-        try: () =>
-          question(world.project, {
-            name: 'the repository',
-            flag: '<owner/repo>',
-            given: null,
-            prompt: 'which repository',
-            fallback: offered[0]!,
-            offer: [...offered, TYPE_IT],
-            validate: (answer) => (answer === TYPE_IT ? Promise.resolve(null) : validate(answer)),
-            kept,
-          }),
-        catch: asError,
+      const chosen = yield* questionEffect(world.project, {
+        name: 'the repository',
+        flag: '<owner/repo>',
+        given: null,
+        prompt: 'which repository',
+        fallback: offered[0]!,
+        offer: [...offered, TYPE_IT],
+        validate: (answer) => (answer === TYPE_IT ? Effect.succeed(null) : validate(answer)),
+        kept,
       })
       if ('refused' in chosen) return { refused: chosen.refused }
       if (chosen.answer !== TYPE_IT) return chosen.answer
     }
-    const typed = yield* Effect.tryPromise({
-      try: () =>
-        question(world.project, {
-          name: 'the repository',
-          flag: '<owner/repo>',
-          given: null,
-          prompt: 'owner/repo',
-          fallback: '',
-          validate,
-          kept,
-        }),
-      catch: asError,
+    const typed = yield* questionEffect(world.project, {
+      name: 'the repository',
+      flag: '<owner/repo>',
+      given: null,
+      prompt: 'owner/repo',
+      fallback: '',
+      validate,
+      kept,
     })
     return 'refused' in typed ? { refused: typed.refused } : typed.answer
   })
 
 const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
-export async function addFlow(
+export const addFlowEffect = Effect.fn('add.addFlow')(function* (
   args: { positional?: string | undefined; flags: Record<string, string>; repeated: Record<string, string[]> },
   world: AddWorld,
-): Promise<number> {
+): Effect.fn.Return<number, unknown> {
   const { flags, repeated } = args
   const positional = args.positional === undefined ? [] : [args.positional]
   const buildFlags = repeated['build'] ?? []
@@ -184,7 +177,7 @@ export async function addFlow(
     // goes on is an owner never recorded (`filter.ts`'s "re-run lingtai add <owner>/<repo>"), which asks
     // nothing, writes no recipe and only registers again.
     const repo = slugRepo(slug)
-    const found = repo === null ? undefined : alreadyAdded(await runEffect(world.project.projects()), repo)
+    const found = repo === null ? undefined : alreadyAdded(yield* world.project.projects(), repo)
     const ownerRepair = found !== undefined && found.owner === null && found.configHash !== null
     if (repo !== null && found !== undefined && !ownerRepair) {
       world.error(alreadyAddedSentence(repo))
@@ -192,7 +185,7 @@ export async function addFlow(
     }
     if (ownerRepair) repaired = repo
     if (!ownerRepair) {
-      const stopped = await askBeforeGithubAdd(slug, flags, world.githubDeps, buildFlags)
+      const stopped = yield* askBeforeGithubAddEffect(slug, flags, world.githubDeps, buildFlags)
       if (typeof stopped === 'number') return stopped
       asked = stopped
     }
@@ -218,7 +211,7 @@ export async function addFlow(
     flags['project'] !== 'local' &&
     flags['local'] === undefined &&
     world.repositories?.interactive() === true
-  const result = await chooseFirstProject(projectWorld, flags, buildFlags, holdsBack)
+  const result = yield* chooseFirstProjectEffect(projectWorld, flags, buildFlags, holdsBack)
   if ('refused' in result) {
     world.error(result.refused)
     return 1
@@ -232,13 +225,16 @@ export async function addFlow(
     // The pick goes back through this same function as if it had been typed,
     // so the access check, the recipe questions and the card are not written
     // twice. The auth question was settled on this pass; the kind is told.
-    const picked = await runEffect(pickRepository(world))
+    const picked = yield* pickRepository(world)
     if (typeof picked === 'object' && picked !== null) {
       world.error(picked.refused)
       return 1
     }
     if (picked !== null && picked !== '') {
-      return addFlow({ ...args, positional: undefined, flags: { ...flags, project: 'github', github: picked } }, world)
+      return yield* addFlowEffect(
+        { ...args, positional: undefined, flags: { ...flags, project: 'github', github: picked } },
+        world,
+      )
     }
   }
   if (result.project === 'github' && result.slug === undefined) {
@@ -252,7 +248,7 @@ export async function addFlow(
     return 2
   }
   if (result.project === 'local') {
-    const end = await printSetupEnd(
+    const end = yield* printSetupEndEffect(
       world,
       {
         command: 'add',
@@ -283,18 +279,21 @@ export async function addFlow(
     for (const line of result.warnings ?? []) world.log(line)
     const path = recipePath(repo)
     // The card reads the recipe back as written, as the local path does; a read that fails says so and draws no card.
-    let card: CardRecipe
-    try {
-      const text = await world.project.files.read(path)
-      if (text === null) throw new Error(`${path} is not there to read`)
-      card = cardRecipe(resolveSource(text, path, path).recipe, `${owner}/${repo}`)
-    } catch (err) {
+    const read = yield* attempt(
+      Effect.gen(function* () {
+        const text = yield* lift(() => world.project.files.read(path))
+        if (text === null) return yield* Effect.fail(new Error(`${path} is not there to read`))
+        return cardRecipe(resolveSource(text, path, path).recipe, `${owner}/${repo}`)
+      }),
+    )
+    if ('threw' in read) {
       world.error(
-        `${repo} is registered, but its recipe could not be read back for the summary — ${(err as Error).message}`,
+        `${repo} is registered, but its recipe could not be read back for the summary — ${read.threw.message}`,
       )
       return 1
     }
-    const end = await printSetupEnd(
+    const card: CardRecipe = read.ok
+    const end = yield* printSetupEndEffect(
       world,
       {
         command: 'add',
@@ -319,7 +318,7 @@ export async function addFlow(
     world.log(`${repaired}'s recipe is ${recipePath(repaired)}, and it is edited there`)
   }
   return 0
-}
+})
 
 function slugRepo(slug: string): string | null {
   try {
@@ -409,7 +408,7 @@ export function liveAddWorld(): AddWorld {
     project: liveFirstProjectWorld({ ask: liveAsk, spin: liveSpin, log: (line) => console.log(line) }),
     error: (line) => console.error(line),
     log: (line) => console.log(line),
-    doctor: liveSetupDoctor,
+    doctor: liveSetupDoctorEffect,
     store: () => storeChoice(process.env),
     userHome: process.env['HOME'] ?? '',
     repositories: {
@@ -417,7 +416,7 @@ export function liveAddWorld(): AddWorld {
         const how = interactivity(false)
         return how.stdinIsTTY && how.stdoutIsTTY
       },
-      list: () => liveRepositoryList(githubAuthKind() ?? 'app'),
+      list: () => liveRepositoryListEffect(githubAuthKind() ?? 'app'),
     },
   }
 }

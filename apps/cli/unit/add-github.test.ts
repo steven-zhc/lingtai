@@ -19,11 +19,13 @@ import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isMap, isScalar, parseDocument, type Node, type YAMLMap } from 'yaml'
 
-import { askBeforeGithubAdd as askBeforeGithubAddDraft, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
+import { askBeforeGithubAddEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
+
+const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 
 /** `askBeforeGithubAdd` writes nothing (#968); `applySetup` does, just before the registration — done here in its place. */
-async function askBeforeGithubAdd(...args: Parameters<typeof askBeforeGithubAddDraft>) {
-  const result = await askBeforeGithubAddDraft(...args)
+async function askBeforeGithubAdd(...args: Parameters<typeof askBeforeGithubAddEffect>) {
+  const result = await Effect.runPromise(askBeforeGithubAddEffect(...args))
   const deps = args[2]
   if (typeof result === 'object' && deps !== undefined) {
     await Effect.runPromise(applySetup({ files: deps.files }, result.answers, Effect.void))
@@ -82,9 +84,10 @@ function countedDeps(
   // has refused (#402 fix round 3) — so the default throws, which the code
   // under test catches and falls back on, same as a picker that failed for a
   // real reason would.
-  picker: AskBeforeGithubAddDeps['picker'] = async () => {
-    throw new Error('no picker in this test')
-  },
+  picker: AskBeforeGithubAddDeps['picker'] = () =>
+    fx(async () => {
+      throw new Error('no picker in this test')
+    }),
   // An absent file is now created once this check passes (#432) — overridden
   // by the tests that reach that far; every earlier-refusing test never
   // calls either.
@@ -119,12 +122,12 @@ function countedDeps(
     // A test that reaches an absent file's creation needs a reader
     // `askInstallAndBuild` can call without throwing — overridden by any
     // test that cares what it finds.
-    reader: async () => ({ has: () => Effect.succeed(false), read: () => Effect.succeed(null) }),
+    reader: () => fx(async () => ({ has: () => Effect.succeed(false), read: () => Effect.succeed(null) })),
     ask: async () => {
       counted.asks++
       return null
     },
-    runtimes: overrides.runtimes ?? (async () => []),
+    runtimes: overrides.runtimes ?? (() => Effect.succeed([])),
     history: overrides.history ?? (async () => []),
   }
   return counted
@@ -168,19 +171,26 @@ describe('askBeforeGithubAdd (#402)', () => {
       async (owner, repo) => {
         throw new NotInstalledError(owner, repo)
       },
-      async () => ({
-        installations: [
-          {
-            installation,
-            unanswered: null,
-            gaps: [],
-            repositories: [
-              { owner: 'someowner', repo: 'other-repo', private: true, slug: 'someowner/other-repo', onboarded: null },
-            ],
-          },
-        ],
-        installUrl: null,
-      }),
+      () =>
+        fx(async () => ({
+          installations: [
+            {
+              installation,
+              unanswered: null,
+              gaps: [],
+              repositories: [
+                {
+                  owner: 'someowner',
+                  repo: 'other-repo',
+                  private: true,
+                  slug: 'someowner/other-repo',
+                  onboarded: null,
+                },
+              ],
+            },
+          ],
+          installUrl: null,
+        })),
     )
     const errors: string[] = []
     const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => {
@@ -203,25 +213,26 @@ describe('askBeforeGithubAdd (#402)', () => {
   it("prints checkInstallation's gap list, not choose()'s onboarded sentence, for a project Lingtai already has (#402 review)", async () => {
     const counted = countedDeps(
       async () => GAPPY,
-      async () => ({
-        installations: [
-          {
-            installation: GAPPY,
-            unanswered: null,
-            gaps: [],
-            repositories: [
-              {
-                owner: 'steven-zhc',
-                repo: 'nextloom-ai-admin',
-                private: true,
-                slug: SLUG,
-                onboarded: 'registered',
-              },
-            ],
-          },
-        ],
-        installUrl: null,
-      }),
+      () =>
+        fx(async () => ({
+          installations: [
+            {
+              installation: GAPPY,
+              unanswered: null,
+              gaps: [],
+              repositories: [
+                {
+                  owner: 'steven-zhc',
+                  repo: 'nextloom-ai-admin',
+                  private: true,
+                  slug: SLUG,
+                  onboarded: 'registered',
+                },
+              ],
+            },
+          ],
+          installUrl: null,
+        })),
     )
     const errors: string[] = []
     const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => {
@@ -280,7 +291,7 @@ describe('askBeforeGithubAdd (#402)', () => {
     delete process.env['LINGTAI_GITHUB_APP_ID']
     delete process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY']
     const counted = countedDeps(async () => FULLY_PERMISSIONED, undefined, {
-      runtimes: async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }],
+      runtimes: () => fx(async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }]),
     })
     // Every question takes its own default or detected answer; `install` and
     // `build` are answered directly by flag, since neither has one to take.
@@ -343,7 +354,7 @@ describe('askBeforeGithubAdd (#402)', () => {
     delete process.env['LINGTAI_GITHUB_APP_ID']
     delete process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY']
     const counted = countedDeps(async () => FULLY_PERMISSIONED, undefined, {
-      runtimes: async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }],
+      runtimes: () => fx(async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }]),
     })
     counted.deps.ask = async () => ''
     const path = recipePath('nextloom-ai-admin')

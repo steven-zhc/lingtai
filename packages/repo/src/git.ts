@@ -16,9 +16,11 @@ import { Data, Effect } from 'effect'
  * The function form is what real runs use. An installation token lasts an hour
  * and a run may last two, so anything holding a string taken at the start is
  * holding something that expires before the integrator pushes. The string form
- * stays for tests, which do not talk to GitHub at all.
+ * stays for tests, which do not talk to GitHub at all. An Effect is the function
+ * form for a caller that already works in Effects: a description, run again on
+ * every invocation, so it is never resolved once and passed on as a string.
  */
-export type TokenSource = string | (() => Promise<string>)
+export type TokenSource = string | (() => Promise<string>) | Effect.Effect<string, unknown>
 
 export interface GitRunOptions {
   cwd?: string
@@ -117,12 +119,13 @@ export const gitEffect = (args: string[], options: GitRunOptions = {}): Effect.E
     // Resolved here, per invocation, rather than once by the caller — that is the
     // whole point of accepting a function.
     const source = options.token
-    const token = yield* typeof source === 'function'
-      ? Effect.tryPromise({
-          try: () => source(),
-          catch: (err) => fail(err instanceof Error ? err.message : String(err)),
-        })
-      : Effect.succeed(source)
+    const message = (err: unknown) => fail(err instanceof Error ? err.message : String(err))
+    // Tested before `typeof … === 'function'`, so this never depends on whether an Effect is callable.
+    const token = yield* Effect.isEffect(source)
+      ? source.pipe(Effect.mapError(message))
+      : typeof source === 'function'
+        ? Effect.tryPromise({ try: () => source(), catch: message })
+        : Effect.succeed(source)
     const invocation = gitInvocation(args, token, options.env ?? process.env)
     return yield* Effect.callback<string, RepoFailed>((resume, signal) => {
       const signals = [signal, options.signal].filter((s): s is AbortSignal => s !== undefined)

@@ -27,25 +27,13 @@
     "file": "apps/cli/src/first-project.ts",
     "fn": "chooseFirstProject",
     "until": "#790",
-    "why": "init.ts:649, add.ts:221 awaits it until CLI-22a or CLI-22b, whichever moves that caller"
+    "why": "init.ts:649 awaits it until CLI-22b"
   },
   {
     "file": "apps/cli/src/first-project.ts",
     "fn": "liveGit",
     "until": "#790",
     "why": "init.ts:1295 awaits it until CLI-22a or CLI-22b, whichever moves that caller"
-  },
-  {
-    "file": "apps/cli/src/first-project.ts",
-    "fn": "livePicker",
-    "until": "#790",
-    "why": "add-github.ts:165 awaits it until CLI-22a or CLI-22b, whichever moves that caller"
-  },
-  {
-    "file": "apps/cli/src/first-project.ts",
-    "fn": "liveRepositoryList",
-    "until": "#790",
-    "why": "add.ts:415 awaits it until CLI-22a or CLI-22b, whichever moves that caller"
   },
   {
     "file": "apps/cli/src/first-project.ts",
@@ -57,25 +45,19 @@
     "file": "apps/cli/src/question.ts",
     "fn": "question",
     "until": "#790",
-    "why": "add.ts, add-github.ts and init.ts (CLI-22a, CLI-22b) call it with promise `validate`s until their rows"
-  },
-  {
-    "file": "apps/cli/src/recipe-flow.ts",
-    "fn": "askRecipe",
-    "until": "#790",
-    "why": "add-github.ts:392 (CLI-22a) awaits it"
+    "why": "init.ts (CLI-22b) calls it with promise `validate`s until its row"
   },
   {
     "file": "apps/cli/src/setup-end.ts",
     "fn": "liveSetupDoctor",
     "until": "#790",
-    "why": "init.ts:1307 and add.ts:407 hand it over as a port value (CLI-22a for add.ts, CLI-22b for init.ts)"
+    "why": "init.ts:1307 hands it over as a port value until CLI-22b"
   },
   {
     "file": "apps/cli/src/setup-end.ts",
     "fn": "printSetupEnd",
     "until": "#790",
-    "why": "init.ts:543, :666, :1307 and add.ts:255, :297, :407 (CLI-22a for add.ts, CLI-22b for init.ts)"
+    "why": "init.ts:543, :666, :1307 until CLI-22b"
   },
   {
     "file": "packages/actions/src/action.ts",
@@ -1047,6 +1029,6 @@
     "file": "packages/setup/src/runtimes.ts",
     "fn": "askRuntimes",
     "until": "#790",
-    "why": "apps/cli (add-github, init) call it as a promise; goes with the later of the apps/cli setup group and the conductor rest"
+    "why": "apps/cli init.ts:1217 calls it as a promise (CLI-22b); goes with the later of the apps/cli setup group and the conductor rest"
   }
 ]
