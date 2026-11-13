@@ -16,9 +16,10 @@ import { aClaim, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { processEventStore, type EventStore } from '@lingtai/event-store'
 import { createProjectionRunner, taskViewProjection } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { exists, findOrphanLogs, findOrphans, reconcile } from '../src/index.ts'
+import { existsEffect, findOrphanLogs, findOrphans, reconcile } from '../src/index.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 const created = new Set<string>()
@@ -103,8 +104,8 @@ describe('reconciliation', () => {
 
     expect(found.map((f) => f.stream)).toEqual([dead])
     expect(found[0]!.action).toBe('removed')
-    expect(await exists(wt(dead))).toBe(false)
-    expect(await exists(wt(live))).toBe(true)
+    expect(await Effect.runPromise(existsEffect(wt(dead)))).toBe(false)
+    expect(await Effect.runPromise(existsEffect(wt(live)))).toBe(true)
   })
 
   /**
@@ -135,7 +136,7 @@ describe('reconciliation', () => {
     expect(found.map((f) => f.stream)).toContain(stale)
     // Still there: dryRun reports, it does not act. A doctor that changed what
     // it was checking would describe a state that no longer exists.
-    expect(await exists(wt(stale))).toBe(true)
+    expect(await Effect.runPromise(existsEffect(wt(stale)))).toBe(true)
   })
 
   /**
@@ -150,7 +151,7 @@ describe('reconciliation', () => {
     const it_ = found.find((f) => f.stream === nameless)
 
     expect(it_?.action).toBe('reported')
-    expect(await exists(wt(nameless))).toBe(true)
+    expect(await Effect.runPromise(existsEffect(wt(nameless)))).toBe(true)
 
     // A second start finds the same mystery and appends nothing for it.
     const reconciled = async () => (await store.readTypes('ctl-conductor', ['Reconciled'])).length
@@ -214,15 +215,15 @@ describe('reconciliation', () => {
     const found = await reconcile({ home, store, worker: ME })
 
     expect(found.find((f) => f.stream === landed)?.action).toBe('removed')
-    expect(await exists(rl(landed))).toBe(false)
+    expect(await Effect.runPromise(existsEffect(rl(landed)))).toBe(false)
 
     // Not a finding at all: nothing has diverged, the file is doing its job.
     expect(found.map((f) => f.stream)).not.toContain(waiting)
-    expect(await exists(rl(waiting))).toBe(true)
+    expect(await Effect.runPromise(existsEffect(rl(waiting)))).toBe(true)
 
     // Deleting mysteries is how you stop being able to explain them.
     expect(found.find((f) => f.stream === nameless)?.action).toBe('reported')
-    expect(await exists(rl(nameless))).toBe(true)
+    expect(await Effect.runPromise(existsEffect(rl(nameless)))).toBe(true)
   })
 
   it('appends nothing when there is nothing to say', async () => {
@@ -317,7 +318,7 @@ describe('a conductor that replaces a dead one', () => {
     // And the directory went with it, in the same pass — a worktree left
     // holding `agent/87` would stop git updating that ref on the next attempt.
     expect(found.find((f) => f.stream === runId)?.action).toBe('removed')
-    expect(await exists(orphanTree)).toBe(false)
+    expect(await Effect.runPromise(existsEffect(orphanTree))).toBe(false)
 
     // An appended event, never a recomputation: `rebuild task_view` replays
     // this same row and reaches the same answer, which it could not do if

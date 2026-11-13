@@ -18,10 +18,11 @@ import { spawn } from 'node:child_process'
 import { conductorWorker } from '@lingtai/conductor/claim'
 import type { Envelope } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
+import { Effect } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { readControl, recordStart, requestShutdownUnlessStanding } from '../src/control.ts'
-import { killWorker } from '../src/reconcile.ts'
+import { killWorkerEffect } from '../src/reconcile.ts'
 
 /** Just enough of a store to reduce. `readControl` reads one stream and nothing else. */
 function storeOf(events: { type: string; data: unknown }[]): EventStore {
@@ -124,7 +125,7 @@ describe('the process a dead claim names', () => {
     const pid = child.pid!
     const exited = new Promise<string | null>((r) => child.on('exit', (_c, signal) => r(signal)))
 
-    const said = await killWorker(`${HOST}:${pid}`)
+    const said = await Effect.runPromise(killWorkerEffect(`${HOST}:${pid}`))
 
     expect(said).toContain(`killed pid ${pid}`)
     expect(await exited).toBe('SIGKILL')
@@ -137,7 +138,7 @@ describe('the process a dead claim names', () => {
    */
   it("is reported, not killed, when the host is somebody else's", async () => {
     const child = decoy('lingtai-decoy-elsewhere')
-    const said = await killWorker(`some-other-laptop:${child.pid}`)
+    const said = await Effect.runPromise(killWorkerEffect(`some-other-laptop:${child.pid}`))
 
     expect(said).toContain('not this machine')
     expect(said).toContain('reported, not killed')
@@ -151,7 +152,7 @@ describe('the process a dead claim names', () => {
   it('is reported, not killed, when the argv is not the runtime we started', async () => {
     const child = spawn('sleep', ['60'], { stdio: 'ignore' })
     spawned.push(child)
-    const said = await killWorker(`${HOST}:${child.pid}`)
+    const said = await Effect.runPromise(killWorkerEffect(`${HOST}:${child.pid}`))
 
     expect(said).toContain('is not ours')
     expect(said).toContain('reported, not killed')
@@ -166,11 +167,11 @@ describe('the process a dead claim names', () => {
     child.kill('SIGKILL')
     await exited
 
-    expect(await killWorker(`${HOST}:${pid}`)).toBe(`pid ${pid} is gone`)
+    expect(await Effect.runPromise(killWorkerEffect(`${HOST}:${pid}`))).toBe(`pid ${pid} is gone`)
   })
 
   it('refuses a worker that names no process at all', async () => {
-    expect(await killWorker('nonsense')).toContain('names no process')
+    expect(await Effect.runPromise(killWorkerEffect('nonsense'))).toContain('names no process')
   })
 })
 
