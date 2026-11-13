@@ -95,7 +95,7 @@ export function installPaths(env: NodeJS.ProcessEnv = process.env): Paths {
 }
 
 /** What the drain decided: go on, with what to do once the shim has moved — or stop, with this exit code. */
-export type Drained = { ok: true; after: () => Promise<void> } | { ok: false; code: number }
+export type Drained = { ok: true; after: Effect.Effect<void, unknown> } | { ok: false; code: number }
 
 export interface AppFacts {
   slug: string
@@ -118,7 +118,7 @@ export interface World {
   fetch: typeof fetch
   log: (line: string) => void
   /** One yes-or-no question. False when there is nobody to ask. */
-  ask: (question: string) => Promise<boolean>
+  ask: (question: string) => Effect.Effect<boolean, unknown>
   /** Processes whose command line names one of `paths`, or whose working directory is under one, other than this one. */
   running: (paths: readonly string[]) => { pid: number; command: string }[]
   /**
@@ -129,11 +129,11 @@ export interface World {
    *
    * A read that fails throws, and is never a null (`daemon/src/lock.ts`).
    */
-  conducting: () => Promise<string | null>
+  conducting: () => Effect.Effect<string | null, unknown>
   /** Drain whatever conducts before the shim moves. `despiteDoctor` waives a red doctor and nothing else. */
-  drain: (reason: string, despiteDoctor: boolean) => Promise<Drained>
+  drain: (reason: string, despiteDoctor: boolean) => Effect.Effect<Drained, unknown>
   /** The GitHub App this machine is configured with, asked before anything is removed. */
-  app: () => Promise<AppFacts | null | { unread: string }>
+  app: () => Effect.Effect<AppFacts | null | { unread: string }, unknown>
   /**
    * **Where this machine's log is**, so an uninstall can say what it is about
    * to destroy and what it is leaving behind.
@@ -530,14 +530,14 @@ export const upgrade = (
         : `unpacked ${release.version} into ${join(paths.versions, release.version)}, checksum verified`,
     )
 
-    const drained = yield* lift(() => world.drain(`upgrading ${pointed} to ${release.version}`, options.despiteDoctor))
+    const drained = yield* world.drain(`upgrading ${pointed} to ${release.version}`, options.despiteDoctor)
     if (!drained.ok) {
       world.log(paint.held(`the shim still runs ${pointed}. lingtai upgrade again picks up where this stopped`))
       return drained.code
     }
 
     pointShim(paths, release.version)
-    yield* lift(() => drained.after())
+    yield* drained.after
     world.log(`${symbol.pass()} ${paint.pass(`${paths.shim} now runs ${release.version} (was ${pointed})`)}`)
     world.log(
       paint.muted(
@@ -629,7 +629,7 @@ export const uninstall = (
     // on a machine with no log configured at all. That is why there is no second
     // question below about a lock nobody could ask: this one is the question.
     let holder: string | null
-    const asked = yield* settle(lift(() => world.conducting()))
+    const asked = yield* settle(world.conducting())
     if (!asked.ok) {
       const err = asked.error
       // A read that failed is not a no (`daemon/src/lock.ts`), and nothing an
@@ -659,7 +659,7 @@ export const uninstall = (
     // *no* and that has to be said before the question, not after the `rmSync`.
     const where = world.logWhere()
 
-    const appAsked = yield* settle(lift(() => world.app()))
+    const appAsked = yield* settle(world.app())
     const app = appAsked.ok ? appAsked.value : { unread: appAsked.error.message }
 
     const what = ownShim ? `everything under ${paths.home}, and ${paths.shim}` : `everything under ${paths.home}`
@@ -682,7 +682,7 @@ export const uninstall = (
         ),
       )
     }
-    if (!options.yes && !(yield* lift(() => world.ask(`Remove ${what}? This cannot be undone. [y/N] `)))) {
+    if (!options.yes && !(yield* world.ask(`Remove ${what}? This cannot be undone. [y/N] `))) {
       world.log('nothing was removed')
       return 1
     }
