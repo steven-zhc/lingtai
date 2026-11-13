@@ -14,7 +14,17 @@ import { Deferred, Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { runOnce } from '../src/conduct.ts'
-import { PROJECT, fakeGitHub, fakePorts, memoryStore, project, runtime, withPorts } from '../test/one-attempt.ts'
+import {
+  PROJECT,
+  RECIPE,
+  fakeGitHub,
+  fakePorts,
+  memoryStore,
+  project,
+  quotaRuntime,
+  runtime,
+  withPorts,
+} from '../test/one-attempt.ts'
 
 describe('a release whose TicketReleased append is still in flight when the pass is interrupted', () => {
   it('records the release, the labels write and its outcome once the write is let through', async () => {
@@ -80,6 +90,64 @@ describe('a release whose TicketReleased append is still in flight when the pass
     expect(events.some((e) => e.type === 'IssueUpdated' && (e.data as { change?: string }).change === 'labels')).toBe(
       true,
     )
+  })
+})
+
+describe('a failed pass with a planned `failed` end action, interrupted inside the TicketReleased append', () => {
+  it('records the release, EndActionsResolved{failed} and the close once the write is let through', async () => {
+    const base = memoryStore()
+    const said: string[] = []
+    let reached!: Deferred.Deferred<void>
+    let latch!: Deferred.Deferred<void>
+    // This release is `yield* release(reason)` at the end of a pass that ended without
+    // landing: an interruptible path with no finalizer behind it, so only the release's
+    // own mask can keep the end actions and the GitHub write from being cut off.
+    const store: typeof base = {
+      ...base,
+      async append(streamId, expectedVersion, events) {
+        if (events.some((e) => e.type === 'TicketReleased')) {
+          await Effect.runPromise(Deferred.succeed(reached, undefined).pipe(Effect.andThen(Deferred.await(latch))))
+        }
+        return base.append(streamId, expectedVersion, events)
+      },
+    }
+    const recipe = RECIPE.replace('steps: {}', 'steps:\n  end:\n    - { name: close it, when: failed, close: true }')
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        reached = yield* Deferred.make<void>()
+        latch = yield* Deferred.make<void>()
+        const client = fakeGitHub(said, recipe)
+        const pass = yield* Effect.forkChild(
+          runOnce({
+            recipe: () => resolveRecipe((p, r) => client.fileAt(p, r), project.base ?? 'main'),
+            project,
+            client,
+            runtime: quotaRuntime,
+            issue: 7,
+            hookBinary: '/tmp/fake/lingtai-hook',
+            prompt: 'fix {{issue}}',
+            merge: false,
+            home: '/tmp/fake-home',
+            store,
+            log: () => {},
+          }).pipe(Effect.provide(withPorts(fakePorts([], store)))),
+        )
+        yield* Deferred.await(reached)
+        expect(said).not.toContain('close #7')
+        const interrupter = yield* Effect.forkChild(Fiber.interrupt(pass))
+        for (let i = 0; i < 20; i++) yield* Effect.yieldNow
+        yield* Deferred.succeed(latch, undefined)
+        yield* Fiber.join(interrupter)
+      }),
+    )
+
+    const events = base.streams.get(`ticket-${PROJECT}-7`) ?? []
+    const released = events.findIndex((e) => e.type === 'TicketReleased')
+    expect(released).toBeGreaterThanOrEqual(0)
+    expect(events[released + 1]?.type).toBe('EndActionsResolved')
+    expect(events[released + 1]!.data).toMatchObject({ outcome: 'failed' })
+    expect(said).toContain('close #7')
   })
 })
 
