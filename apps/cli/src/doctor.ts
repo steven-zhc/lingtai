@@ -40,35 +40,36 @@ import {
 import { extensionEnv, productionPatterns, resolveAgentEnv, runnableEnv } from '@lingtai/agent-env'
 import {
   type AgentRefusal,
-  type ClientFor,
   type ProjectFilter,
-  type RecipeFor,
   agentRefusal,
-  currentRecipe,
-  endedWithoutEndActions,
-  githubClientFor,
+  endedWithoutEndActionsEffect,
   loadProjects,
   attemptCeiling,
   readAccount,
   runtimesOf,
-  projectFilters,
   signedInHere,
 } from '@lingtai/conductor'
 import { daySpendText, type DaySpend } from '@lingtai/conductor'
+import {
+  type ClientForEffect,
+  type RecipeForEffect,
+  githubClientForEffect,
+  projectFiltersEffect,
+} from '@lingtai/conductor/filter'
 import { currentRecipeEffect, loadProjectsEffect } from '@lingtai/conductor/projects'
 import { readFetchNote, readRateSnapshot } from '@lingtai/conductor/rate-snapshot'
 import {
-  codeCurrency,
+  codeCurrencyEffect,
   type Currency,
   codeRoot,
   conductorLockHolder,
   describeCurrency,
   describeInFlight,
-  findOrphanLogs,
-  findOrphans,
+  findOrphanLogsEffect,
+  findOrphansEffect,
   held as heldPasses,
   lastBeat,
-  readCodeVersion,
+  readCodeVersionEffect,
   readControl,
   readControlEffect,
   readStatus,
@@ -113,7 +114,7 @@ import {
   createSqlSnapshotStore,
   eventStore,
   log,
-  logPredatesHold,
+  logPredatesHoldEffect,
   type EventStore,
   type SnapshotCensusRow,
 } from '@lingtai/event-store'
@@ -156,7 +157,7 @@ import {
   remoteOf,
   type Recipe,
 } from '@lingtai/recipe'
-import { git } from '@lingtai/repo'
+import { gitEffect } from '@lingtai/repo'
 import { remedyFor } from '@lingtai/setup'
 import { Cause, Effect } from 'effect'
 import pg from 'pg'
@@ -1239,18 +1240,18 @@ export interface DoctorReach {
   pause: () => Effect.Effect<Awaited<ReturnType<typeof readControl>> | null, unknown>
   lags: () => Effect.Effect<ProjectionLags, unknown>
   shapes: (p: Projection) => Effect.Effect<ProjectionShape, unknown>
-  lockHolder: () => ReturnType<typeof conductorLockHolder>
-  orphans: () => ReturnType<typeof findOrphans>
+  lockHolder: () => Effect.Effect<Awaited<ReturnType<typeof conductorLockHolder>>, unknown>
+  orphans: () => Effect.Effect<Orphan[], unknown>
   /** `SnapshotStore.census` of the log this machine chose; the process log's own where absent. */
-  snapshots?: () => Promise<SnapshotCensusRow[]>
-  titles: () => ReturnType<typeof readTasks>
+  snapshots?: () => Effect.Effect<SnapshotCensusRow[], unknown>
+  titles: () => Effect.Effect<Awaited<ReturnType<typeof readTasks>>, unknown>
   /** The raw text of `~/.claude/settings.json`, or `null` where it is absent. */
   settings: () => Effect.Effect<string | null>
   runtimes: () => ReturnType<typeof everyRuntime>
   /** As `spendToday` takes it: today's rows and the ceiling, injectable so a unit test reads no store. */
   /** `gh`'s runner for the `github: gh login` row, injectable so a unit test spawns nothing. */
   gh?: GhRun
-  spend?: () => Promise<{ day: DaySpend; ceilingUsd: number | undefined }>
+  spend?: () => Effect.Effect<{ day: DaySpend; ceilingUsd: number | undefined }, unknown>
   /** The `account: <runtime>` rows, injectable so a unit test reads no store (#1009). */
   accounts?: () => Effect.Effect<CheckResult[]>
   /** Model-only Codex configuration, injectable so doctor tests never read machine credentials. */
@@ -1264,8 +1265,8 @@ export interface DoctorReach {
    * real (#212).
    */
   sea: () => SeaProbe
-  /** As `currentRecipe` resolves it — `declaredEnvironment`, `recipeGovernsItsBase` and `projectFiltersOnce` all read one injected source (#357). */
-  recipe: RecipeFor
+  /** As `currentRecipeEffect` resolves it — `declaredEnvironment`, `recipeGovernsItsBase` and `projectFiltersOnce` all read one injected source (#357). */
+  recipe: RecipeForEffect
   /** As `resolveAgentEnv` reads it, for `declaredEnvironment`. */
   agentEnv: typeof resolveAgentEnv
 }
@@ -1569,60 +1570,62 @@ export function ratesCheck(from: NodeJS.ProcessEnv = process.env, spendLag?: big
  * make `lingtai doctor` exit 1 on something the restart lets through. Whether a daemon should restart
  * *itself* when `main` moves is still open; 0042 decided only the command.
  */
-export async function daemonCurrency(
+export function daemonCurrency(
   /**
    * The beacon read, as `daemonLiveness` takes it. Both rows read the one
    * mutable row, so both of them answer on whichever store holds it (#220) —
    * and a test can show that without a database.
    */
-  read: () => ReturnType<typeof readStatus> = () => readStatus().catch(() => null),
+  read: () => Effect.Effect<Beacon, unknown> = () => recovering(readStatusEffect(), () => null),
   /** This process's form: a binary has a release version and no commit, so a null `codeSha` is expected there. */
   build: Pick<ReturnType<typeof versionFacts>, 'lingtai' | 'form'> = versionFacts(),
-): Promise<CheckResult> {
-  const name = 'daemon: currency'
-  const status = await read()
-  if (!status) {
-    return { name, status: 'ok', detail: 'no daemon has run — nothing is holding code open' }
-  }
-
-  const beat = lastBeat(status)
-  if (!beat.up) {
-    // Nothing is holding stale modules if nothing is running. Said rather than
-    // omitted, because a check that disappears is one nobody misses.
-    return {
-      name,
-      status: 'ok',
-      detail: `no daemon is up (last beat ${Math.round(beat.ageMs / 1000)}s ago) — no process is holding old code`,
+): Effect.Effect<CheckResult, unknown> {
+  return Effect.gen(function* () {
+    const name = 'daemon: currency'
+    const status = yield* read()
+    if (!status) {
+      return { name, status: 'ok', detail: 'no daemon has run — nothing is holding code open' }
     }
-  }
 
-  // By this process's own form, never by whether the beacon carries a sha: a
-  // checkout's daemon may have written one, and a commit comparison read from a
-  // binary's directory says nothing about a release.
-  if (build.form === 'binary') {
-    return {
-      name,
-      status: 'ok',
-      detail: `this lingtai is ${build.lingtai}, an installed binary with a release version rather than a commit to compare — release: newest says whether a newer one is out`,
+    const beat = lastBeat(status)
+    if (!beat.up) {
+      // Nothing is holding stale modules if nothing is running. Said rather than
+      // omitted, because a check that disappears is one nobody misses.
+      return {
+        name,
+        status: 'ok',
+        detail: `no daemon is up (last beat ${Math.round(beat.ageMs / 1000)}s ago) — no process is holding old code`,
+      }
     }
-  }
 
-  if (!status.codeSha) {
-    return {
-      name,
-      status: 'warn',
-      // The state this check was written for, seen from the other side: a
-      // daemon old enough to predate the column cannot say what it is running,
-      // and that it cannot say is the finding.
-      title: 'the daemon cannot say which commit it runs',
-      detail:
-        'the running daemon recorded no commit\nit started before the beacon carried one, so how far behind it is cannot be known from here',
-      fix: RESTART_FIX,
+    // By this process's own form, never by whether the beacon carries a sha: a
+    // checkout's daemon may have written one, and a commit comparison read from a
+    // binary's directory says nothing about a release.
+    if (build.form === 'binary') {
+      return {
+        name,
+        status: 'ok',
+        detail: `this lingtai is ${build.lingtai}, an installed binary with a release version rather than a commit to compare — release: newest says whether a newer one is out`,
+      }
     }
-  }
 
-  const currency = await codeCurrency({ sha: status.codeSha, dirty: status.codeDirty })
-  return currencyRow(currency)
+    if (!status.codeSha) {
+      return {
+        name,
+        status: 'warn',
+        // The state this check was written for, seen from the other side: a
+        // daemon old enough to predate the column cannot say what it is running,
+        // and that it cannot say is the finding.
+        title: 'the daemon cannot say which commit it runs',
+        detail:
+          'the running daemon recorded no commit\nit started before the beacon carried one, so how far behind it is cannot be known from here',
+        fix: RESTART_FIX,
+      }
+    }
+
+    const currency = yield* codeCurrencyEffect({ sha: status.codeSha, dirty: status.codeDirty })
+    return currencyRow(currency)
+  })
 }
 
 /** The restart that answers both a daemon behind `main` and a refusal by code older than this checkout. */
@@ -1661,25 +1664,31 @@ export function currencyRow(c: Currency): CheckResult {
  * no `ProjectRecovered` has followed, and sets its commit beside this
  * checkout's, which is what turns the message into a diagnosis.
  */
-async function passRefusals(load: typeof loadProjects = loadProjects): Promise<CheckResult> {
-  const name = 'conductor: refusals on the log'
-  const projects = await load().catch(() => null)
-  if (projects === null) return { name, status: 'skip', detail: 'the project streams could not be read' }
+function passRefusals(load: LoadProjects = () => loadProjectsEffect()): Effect.Effect<CheckResult> {
+  return Effect.gen(function* () {
+    const name = 'conductor: refusals on the log'
+    const projects = yield* recovering(load(), () => null)
+    if (projects === null) return { name, status: 'skip' as const, detail: 'the project streams could not be read' }
 
-  const refusing = projects.filter((p) => p.project !== null && p.refused !== null)
-  if (refusing.length === 0) {
-    return { name, status: 'ok', detail: 'no project is refused by the last turn that looked at it' }
-  }
+    const refusing = projects.filter((p) => p.project !== null && p.refused !== null)
+    if (refusing.length === 0) {
+      return { name, status: 'ok' as const, detail: 'no project is refused by the last turn that looked at it' }
+    }
 
-  const status = await readStatus().catch(() => null)
-  const daemonUp = status !== null && lastBeat(status).up
-  const here = (await readCodeVersion()).sha
-  const read = await Promise.all(
-    refusing.map(async (p) =>
-      describeRefusal(p.project!, p.refused!, { daemonUp, here, behind: await isBehind(p.refused!.codeSha, here) }),
-    ),
-  )
-  return refusalsRow(read)
+    const status = yield* recovering(readStatusEffect(), () => null)
+    const daemonUp = status !== null && lastBeat(status).up
+    const here = (yield* readCodeVersionEffect()).sha
+    // Parallel and in order, as `Promise.all` was.
+    const read = yield* Effect.forEach(
+      refusing,
+      (p) =>
+        Effect.map(isBehind(p.refused!.codeSha, here), (behind) =>
+          describeRefusal(p.project!, p.refused!, { daemonUp, here, behind }),
+        ),
+      { concurrency: 'unbounded' },
+    )
+    return refusalsRow(read)
+  })
 }
 
 /** The row for the projects refused, graded apart from the reads that found them. */
@@ -1704,14 +1713,14 @@ export function refusalsRow(read: ReturnType<typeof describeRefusal>[]): CheckRe
  * checkout has moved past. False where it could not be said: a commit this
  * clone never fetched, or no checkout at all, is not proof of being older.
  */
-async function isBehind(sha: string | null, here: string | null): Promise<boolean> {
-  if (!sha || !here || sha === here) return false
-  try {
-    await git(['merge-base', '--is-ancestor', sha, here], { cwd: codeRoot() })
-    return true
-  } catch {
-    return false
-  }
+export function isBehind(
+  sha: string | null,
+  here: string | null,
+  run: (args: string[], options: { cwd: string }) => Effect.Effect<unknown, unknown> = gitEffect,
+): Effect.Effect<boolean> {
+  if (!sha || !here || sha === here) return Effect.succeed(false)
+  // Every end but an interruption — a non-zero exit, a spawn that failed, a defect — is "not proof".
+  return recovering(Effect.as(run(['merge-base', '--is-ancestor', sha, here], { cwd: codeRoot() }), true), () => false)
 }
 
 /**
@@ -1787,22 +1796,21 @@ export function describeRefusal(
  * daemon on it, and a lock that is free is the normal state of one without.
  * What would be wrong is not being able to say which.
  */
-async function conductorLock(
-  fetch: () => ReturnType<typeof conductorLockHolder> = () => conductorLockHolder(),
-): Promise<CheckResult> {
-  let holder: string | null
-  try {
-    holder = await fetch()
-  } catch (err) {
-    return { name: 'conductor: lock', status: 'ok', detail: `could not be read — ${(err as Error).message}` }
-  }
-  return {
-    name: 'conductor: lock',
-    status: 'ok',
-    detail: holder
-      ? `held by ${holder} — lingtai run and lingtai daemon both stand down while it is`
-      : 'nobody holds it — the next lingtai run or lingtai daemon conducts',
-  }
+function conductorLock(
+  fetch: () => Effect.Effect<Awaited<ReturnType<typeof conductorLockHolder>>, unknown> = () =>
+    lift(() => conductorLockHolder()),
+): Effect.Effect<CheckResult> {
+  const name = 'conductor: lock'
+  return recovering(
+    Effect.map(fetch(), (holder): CheckResult => ({
+      name,
+      status: 'ok',
+      detail: holder
+        ? `held by ${holder} — lingtai run and lingtai daemon both stand down while it is`
+        : 'nobody holds it — the next lingtai run or lingtai daemon conducts',
+    })),
+    (err): CheckResult => ({ name, status: 'ok', detail: `could not be read — ${(err as Error).message}` }),
+  )
 }
 
 /**
@@ -1811,11 +1819,19 @@ async function conductorLock(
  * `dryRun` is the whole point: a check that changed the thing it was checking
  * would tell you about a state that no longer exists by the time you read it.
  */
-async function orphans(
-  fetch: () => ReturnType<typeof findOrphans> = () =>
-    Promise.all([findOrphans({ dryRun: true }), findOrphanLogs({ dryRun: true })]).then((both) => both.flat()),
-): Promise<CheckResult> {
-  const found = await fetch().catch(() => null)
+function orphans(
+  fetch: () => Effect.Effect<Orphan[], unknown> = () =>
+    Effect.all([findOrphansEffect({ dryRun: true }), findOrphanLogsEffect({ dryRun: true })]).pipe(
+      Effect.map((both) => both.flat()),
+    ),
+): Effect.Effect<CheckResult> {
+  return Effect.map(
+    recovering(fetch(), () => null),
+    orphansRow,
+  )
+}
+
+function orphansRow(found: Orphan[] | null): CheckResult {
   if (found === null) {
     return {
       name: 'worktrees: reconciliation',
@@ -1860,9 +1876,18 @@ async function orphans(
  * or this build is older than the writer. Either way the log is not fully
  * replayable, which is the one property the whole system rests on.
  */
-export async function readableTypes(queries: LogQueries): Promise<CheckResult> {
+export function readableTypes(queries: LogQueries): Effect.Effect<CheckResult> {
   const name = 'log: every type is readable'
-  const rows = await queries.typeCounts().catch(() => null)
+  return Effect.map(
+    recovering(
+      lift(() => queries.typeCounts()),
+      () => null,
+    ),
+    (rows) => readableTypesRow(name, rows),
+  )
+}
+
+function readableTypesRow(name: string, rows: Awaited<ReturnType<LogQueries['typeCounts']>> | null): CheckResult {
   if (rows === null) return { name, status: 'ok', detail: 'no log to read yet' }
 
   const orphaned = rows.filter((r) => !isEventType(r.type))
@@ -1888,20 +1913,19 @@ const kb = (bytes: number): string => `${Math.max(1, Math.round(bytes / 1024))} 
  * remedy is offered — deleting rows is not a doctor action. A row at a version above this
  * build's, or under a name it does not register, is **another build's** and not void.
  */
-export async function snapshotCensus(census: () => Promise<SnapshotCensusRow[]>): Promise<CheckResult> {
+export function snapshotCensus(census: () => Effect.Effect<SnapshotCensusRow[], unknown>): Effect.Effect<CheckResult> {
   const name = 'snapshots'
-  let rows: SnapshotCensusRow[]
-  try {
-    rows = await census()
-  } catch (err) {
-    return {
+  return recovering(
+    Effect.map(census(), (rows): CheckResult => {
+      if (rows.length === 0) return { name, status: 'ok', detail: 'no snapshots yet' }
+      return classifySnapshots(name, rows)
+    }),
+    (err): CheckResult => ({
       name,
       status: 'warn',
       detail: `the snapshot census could not be read: ${err instanceof Error ? err.message : String(err)}`,
-    }
-  }
-  if (rows.length === 0) return { name, status: 'ok', detail: 'no snapshots yet' }
-  return classifySnapshots(name, rows)
+    }),
+  )
 }
 
 function classifySnapshots(name: string, rows: SnapshotCensusRow[]): CheckResult {
@@ -1946,17 +1970,25 @@ function classifySnapshots(name: string, rows: SnapshotCensusRow[]): CheckResult
  * remedy here is the operator's own call, not something worth holding a
  * report over.
  */
-export async function logPredatesHoldRow(queries: LogQueries): Promise<CheckResult> {
+export function logPredatesHoldRow(queries: LogQueries): Effect.Effect<CheckResult> {
   const name = 'log: predates the Hold event'
-  let found: Awaited<ReturnType<typeof logPredatesHold>>
-  try {
-    found = await logPredatesHold(queries)
-  } catch {
-    return { name, status: 'ok', detail: 'no log to read yet' }
-  }
-  if (found === null) return { name, status: 'ok', detail: 'no wait predates it' }
-  return { name, status: 'fail', title: 'the log holds an event this build does not know', detail: found.message }
+  return recovering(
+    Effect.map(
+      logPredatesHoldEffect({ typeCounts: () => lift(() => queries.typeCounts()).pipe(Effect.orDie) }),
+      (found): CheckResult =>
+        found === null
+          ? { name, status: 'ok', detail: 'no wait predates it' }
+          : { name, status: 'fail', title: 'the log holds an event this build does not know', detail: found.message },
+    ),
+    (): CheckResult => ({ name, status: 'ok', detail: 'no log to read yet' }),
+  )
 }
+
+/** One leftover `findOrphansEffect` / `findOrphanLogsEffect` found. */
+type Orphan = Effect.Success<ReturnType<typeof findOrphansEffect>>[number]
+
+/** The projects a check reduces, as an Effect: the real one reads the log, a test hands in its own. */
+type LoadProjects = () => Effect.Effect<ProjectState[], unknown>
 
 /** What the board calls each issue the two rows below name — `project#issue` to its title. */
 type TitleBook = Map<string, string>
@@ -1975,11 +2007,14 @@ type TitleBook = Map<string, string>
  * a store that cannot answer costs the titles rather than the check, which is
  * why the failure is an empty book.
  */
-async function issueTitles(
-  fetch: () => ReturnType<typeof readTasks> = () => readTasks({ retentionDays: 36_500 }),
-): Promise<TitleBook> {
-  const cards = await fetch().catch(() => [])
-  return new Map(cards.map((c) => [`${c.project}#${c.issue}`, c.title]))
+function issueTitles(
+  fetch: () => Effect.Effect<Awaited<ReturnType<typeof readTasks>>, unknown> = () =>
+    readTasksEffect({ retentionDays: 36_500 }),
+): Effect.Effect<TitleBook> {
+  return Effect.map(
+    recovering(fetch(), () => []),
+    (cards) => new Map(cards.map((c) => [`${c.project}#${c.issue}`, c.title])),
+  )
 }
 
 /**
@@ -2015,9 +2050,18 @@ function say(titles: TitleBook, ref: string, what: string): string {
  * From the log alone, and from the *item's own stream* for the second half, so
  * it says nothing about what the recipe happens to contain today.
  */
-export async function endStepRan(queries: LogQueries, titles: TitleBook): Promise<CheckResult> {
+export function endStepRan(queries: LogQueries, titles: TitleBook): Effect.Effect<CheckResult> {
+  return Effect.map(
+    recovering(endedWithoutEndActionsEffect(queries), () => null),
+    (found) => endStepRow(found, titles),
+  )
+}
+
+function endStepRow(
+  found: Effect.Success<ReturnType<typeof endedWithoutEndActionsEffect>> | null,
+  titles: TitleBook,
+): CheckResult {
   const name = 'steps: end ran on what landed'
-  const found = await endedWithoutEndActions(queries).catch(() => null)
   if (found === null) return { name, status: 'ok', detail: 'no log to read yet' }
 
   if (found.length === 0) {
@@ -2071,64 +2115,73 @@ export async function endStepRan(queries: LogQueries, titles: TitleBook): Promis
  * and runs reported no cost: the ceiling cannot see them (#332). `fail` only
  * where the figure is malformed.
  */
-export async function spendToday(
-  read: () => Promise<{ day: DaySpend; ceilingUsd: number | undefined }> = readDaySpend,
-  /** The control stream, throwing where it cannot be read. No default: a unit test must not read the machine's store. */
-  control: () => Promise<ControlState> = () => Promise.reject(new Error('the control stream was not offered')),
+export function spendToday(
+  read: () => Effect.Effect<{ day: DaySpend; ceilingUsd: number | undefined }, unknown> = () =>
+    lift(() => readDaySpend()),
+  /** The control stream, failing where it cannot be read. No default: a unit test must not read the machine's store. */
+  control: () => Effect.Effect<ControlState, unknown> = () =>
+    Effect.fail(new Error('the control stream was not offered')),
   now: () => Date = () => new Date(),
-): Promise<CheckResult> {
-  const name = 'spend: today'
-  const at = now()
-  // Its own try: a control failure is a line on the row, never the row's `fail`.
-  let state: ControlState | null = null
-  let unread: string | null = null
-  try {
-    state = await control()
-  } catch (err) {
-    unread = err instanceof Error ? err.message : String(err)
-  }
-  const facts = state === null ? undefined : ceilingFacts(state, at, undefined)
-  const reached = facts?.reached ?? null
-  const reachedText =
-    reached === null
-      ? null
-      : reached.passed
-        ? `the ceiling reached on ${reached.day} lifts when the conductor next looks`
-        : reachedLine(reached, at, 'nothing new starts')
-  const raisedText = facts?.raised == null ? null : raisedLine(facts.raised, at)
-  const unreadText = unread === null ? null : ceilingUnreadLine(unread)
-  // The short view draws one line of a row that is not `ok`, so everything the ceiling has to say shares it.
-  const headline = [reachedText, raisedText, unreadText].filter((l): l is string => l !== null).join(' · ')
-  try {
-    const { day, ceilingUsd: configuredUsd } = await read()
-    const ceilingUsd = state === null ? configuredUsd : todaysCeiling(state, at, configuredUsd)
-    const sentence = daySpendText(day, ceilingUsd)
-    if (ceilingUsd !== undefined && day.unknown > 0) {
-      return {
-        name,
-        status: 'warn',
-        title: `${day.unknown} of today's runs reported no cost`,
-        detail: [...(headline === '' ? [] : [headline]), `the daily ceiling cannot see them`, sentence].join('\n'),
-      }
+): Effect.Effect<CheckResult> {
+  return Effect.gen(function* () {
+    const name = 'spend: today'
+    const at = now()
+    // Its own read: a control failure is a line on the row, never the row's `fail`.
+    let state: ControlState | null = null
+    let unread: string | null = null
+    const controlExit = yield* Effect.exit(control())
+    if (controlExit._tag === 'Success') state = controlExit.value
+    else if (Cause.hasInterruptsOnly(controlExit.cause))
+      return yield* Effect.failCause(controlExit.cause as Cause.Cause<never>)
+    else {
+      const err = Cause.squash(controlExit.cause)
+      unread = err instanceof Error ? err.message : String(err)
     }
-    if (headline !== '') {
-      return {
-        name,
-        status: 'info',
-        ...(reached !== null && !reached.passed ? { title: "today's ceiling is reached" } : {}),
-        detail: [headline, sentence].join('\n'),
-      }
-    }
-    return { name, status: 'ok', detail: sentence }
-  } catch (err) {
-    const [first = '', ...rest] = (err as Error).message.split('\n')
-    return {
-      name,
-      status: 'fail',
-      title: "today's spend could not be read",
-      detail: [[first, ...(headline === '' ? [] : [headline])].join(' · '), ...rest].join('\n'),
-    }
-  }
+    const facts = state === null ? undefined : ceilingFacts(state, at, undefined)
+    const reached = facts?.reached ?? null
+    const reachedText =
+      reached === null
+        ? null
+        : reached.passed
+          ? `the ceiling reached on ${reached.day} lifts when the conductor next looks`
+          : reachedLine(reached, at, 'nothing new starts')
+    const raisedText = facts?.raised == null ? null : raisedLine(facts.raised, at)
+    const unreadText = unread === null ? null : ceilingUnreadLine(unread)
+    // The short view draws one line of a row that is not `ok`, so everything the ceiling has to say shares it.
+    const headline = [reachedText, raisedText, unreadText].filter((l): l is string => l !== null).join(' · ')
+    return yield* recovering(
+      Effect.map(read(), ({ day, ceilingUsd: configuredUsd }): CheckResult => {
+        const ceilingUsd = state === null ? configuredUsd : todaysCeiling(state, at, configuredUsd)
+        const sentence = daySpendText(day, ceilingUsd)
+        if (ceilingUsd !== undefined && day.unknown > 0) {
+          return {
+            name,
+            status: 'warn',
+            title: `${day.unknown} of today's runs reported no cost`,
+            detail: [...(headline === '' ? [] : [headline]), `the daily ceiling cannot see them`, sentence].join('\n'),
+          }
+        }
+        if (headline !== '') {
+          return {
+            name,
+            status: 'info',
+            ...(reached !== null && !reached.passed ? { title: "today's ceiling is reached" } : {}),
+            detail: [headline, sentence].join('\n'),
+          }
+        }
+        return { name, status: 'ok', detail: sentence }
+      }),
+      (err): CheckResult => {
+        const [first = '', ...rest] = (err as Error).message.split('\n')
+        return {
+          name,
+          status: 'fail',
+          title: "today's spend could not be read",
+          detail: [[first, ...(headline === '' ? [] : [headline])].join(' · '), ...rest].join('\n'),
+        }
+      },
+    )
+  })
 }
 
 /**
@@ -2200,15 +2253,21 @@ export function unconvergedRow(
   }
 }
 
-async function unconverged(
+function unconverged(
   queries: LogQueries,
   titles: TitleBook,
   unresolved: ReadonlyMap<string, string>,
-): Promise<CheckResult> {
-  const rows = await queries.unconvergedUpdates().catch(() => null)
-  if (rows === null)
-    return { name: 'github: what we said and did not manage', status: 'ok', detail: 'no log to read yet' }
-  return unconvergedRow(rows, titles, unresolved)
+): Effect.Effect<CheckResult> {
+  return Effect.map(
+    recovering(
+      lift(() => queries.unconvergedUpdates()),
+      () => null,
+    ),
+    (rows): CheckResult =>
+      rows === null
+        ? { name: 'github: what we said and did not manage', status: 'ok', detail: 'no log to read yet' }
+        : unconvergedRow(rows, titles, unresolved),
+  )
 }
 
 /**
@@ -2234,9 +2293,14 @@ async function unconverged(
  * window is worth being red over is this command's rule and not a log's, so it
  * is the parameter `subscriberFailures` takes.
  */
-async function subscribers(queries: LogQueries): Promise<CheckResult> {
-  const rows = await queries.subscriberFailures(new Date(Date.now() - A_DAY_MS)).catch(() => null)
-  return subscriberRow(rows)
+function subscribers(queries: LogQueries): Effect.Effect<CheckResult> {
+  return Effect.map(
+    recovering(
+      lift(() => queries.subscriberFailures(new Date(Date.now() - A_DAY_MS))),
+      () => null,
+    ),
+    subscriberRow,
+  )
 }
 
 type SubscriberFailures = Awaited<ReturnType<LogQueries['subscriberFailures']>>
@@ -2290,8 +2354,8 @@ const offlineClient = new Proxy({} as GitHubClient, {
  * question, nothing in a resolve asks one, and `github: app credentials`
  * already says the App is missing.
  */
-export function recipeClientFor(env: NodeJS.ProcessEnv): ClientFor {
-  return hasGitHubAuth(env) ? githubClientFor : async () => offlineClient
+export function recipeClientFor(env: NodeJS.ProcessEnv): ClientForEffect {
+  return hasGitHubAuth(env) ? (state) => githubClientForEffect(state) : () => Effect.succeed(offlineClient)
 }
 
 /** One line per value, `key  value ← where`, indented under the row. */
@@ -2311,14 +2375,16 @@ export function provenanceLines(provenance: Readonly<Record<string, string>>): s
  * `null` where the project streams themselves could not be read — the same
  * fact `projectRecipes` used to discover on its own, kept as its own `skip`.
  */
-async function projectFiltersOnce(
+function projectFiltersOnce(
   env: NodeJS.ProcessEnv,
-  load: typeof loadProjects,
-  recipe: RecipeFor = currentRecipe,
-): Promise<readonly ProjectFilter[] | null> {
-  const projects = await load().catch(() => null)
-  if (projects === null) return null
-  return projectFilters(projects, recipeClientFor(env), recipe)
+  load: LoadProjects,
+  recipe: RecipeForEffect = (state, client) => currentRecipeEffect(state, client),
+): Effect.Effect<readonly ProjectFilter[] | null> {
+  return Effect.gen(function* () {
+    const projects = yield* recovering(load(), () => null)
+    if (projects === null) return null
+    return yield* projectFiltersEffect(projects, recipeClientFor(env), recipe)
+  })
 }
 
 /** Each unresolved filter's project, against the recipe's own problem. */
@@ -2343,29 +2409,31 @@ function unresolvedProblems(filters: readonly ProjectFilter[] | null): ReadonlyM
  * The detail is `ProjectFilter`'s, the same value `lingtai daemon` prints at
  * startup and `lingtai status` prints per project. Three commands, one answer.
  */
-async function projectRecipes(filters: readonly ProjectFilter[] | null): Promise<CheckResult[]> {
-  const name = 'recipe: resolves for every project'
-  if (filters === null) {
-    return [{ name, status: 'skip', detail: 'the project streams could not be read' }]
-  }
-  if (filters.length === 0) {
-    return [{ name, status: 'ok', detail: 'nothing is registered, so no recipe governs anything' }]
-  }
+function projectRecipes(filters: readonly ProjectFilter[] | null): Effect.Effect<CheckResult[], unknown> {
+  return Effect.gen(function* () {
+    const name = 'recipe: resolves for every project'
+    if (filters === null) {
+      return [{ name, status: 'skip' as const, detail: 'the project streams could not be read' }]
+    }
+    if (filters.length === 0) {
+      return [{ name, status: 'ok' as const, detail: 'nothing is registered, so no recipe governs anything' }]
+    }
 
-  // **The dispatched runtime is the project's own, not this machine's** (`#313`).
-  // It defaulted to `createClaudeCodeRuntime().capabilities.id`, and a default
-  // that is right for one project and silently wrong for the next is how `#89`
-  // was possible — so it is deleted rather than re-pointed. `conduct.ts`
-  // constructs from this same field, which is what makes the answer true: the
-  // `runtime.agent` half of `agentRefusal` is now an assertion that the caller
-  // picked correctly, and the half that still refuses is a step's own `agent:`.
-  // `""` where the recipe did not resolve, and `recipeRow` never reads it there:
-  // nothing was dispatched, because there was no recipe to name a runtime.
-  // **What this machine can dispatch beyond each project's own** (`#314`). One
-  // cached probe for the whole report rather than one per project: the answer is
-  // about the machine, and `signedInProbe` remembers it for a minute anyway.
-  const signedIn = await signedInHere()
-  return filters.map((f) => recipeRow(f, f.ok ? f.recipe.runtime.agent : '', signedIn))
+    // **The dispatched runtime is the project's own, not this machine's** (`#313`).
+    // It defaulted to `createClaudeCodeRuntime().capabilities.id`, and a default
+    // that is right for one project and silently wrong for the next is how `#89`
+    // was possible — so it is deleted rather than re-pointed. `conduct.ts`
+    // constructs from this same field, which is what makes the answer true: the
+    // `runtime.agent` half of `agentRefusal` is now an assertion that the caller
+    // picked correctly, and the half that still refuses is a step's own `agent:`.
+    // `""` where the recipe did not resolve, and `recipeRow` never reads it there:
+    // nothing was dispatched, because there was no recipe to name a runtime.
+    // **What this machine can dispatch beyond each project's own** (`#314`). One
+    // cached probe for the whole report rather than one per project: the answer is
+    // about the machine, and `signedInProbe` remembers it for a minute anyway.
+    const signedIn = yield* lift(() => signedInHere())
+    return filters.map((f) => recipeRow(f, f.ok ? f.recipe.runtime.agent : '', signedIn))
+  })
 }
 
 /**
@@ -2814,7 +2882,7 @@ export function shareFixes(results: readonly CheckResult[]): void {
  * `skip` where the runtime cannot be asked cheaply — a row that guessed would be
  * the thing `runtime: signed in` already refuses to do.
  */
-async function dispatchedAuthRow(
+function dispatchedAuthRow(
   project: string,
   agent: RuntimeId,
   asked: Map<RuntimeId, AuthStatus | null>,
@@ -2827,13 +2895,25 @@ async function dispatchedAuthRow(
   // Exactly what a run gets. Not `process.env` — except the `CODEX_HOME` a
   // triage checkout is given, which the caller adds and keeps its own cache for.
   env: Record<string, string> = runnableEnv({}),
-): Promise<CheckResult> {
+): Effect.Effect<CheckResult, unknown> {
+  return Effect.gen(function* () {
+    if (!asked.has(agent)) {
+      const runtime = runtimes.find((r) => r.capabilities.id === agent)
+      asked.set(agent, runtime?.checkAuth ? yield* lift(() => runtime.checkAuth!(env)) : null)
+    }
+    return authRow(project, agent, asked.get(agent) ?? null, label, keys)
+  })
+}
+
+/** What `dispatchedAuthRow` asked, graded apart from the spawn that asked it. */
+function authRow(
+  project: string,
+  agent: RuntimeId,
+  status: AuthStatus | null,
+  label: string,
+  keys: readonly string[],
+): CheckResult {
   const name = `${label}: ${project} signed in`
-  if (!asked.has(agent)) {
-    const runtime = runtimes.find((r) => r.capabilities.id === agent)
-    asked.set(agent, runtime?.checkAuth ? await runtime.checkAuth(env) : null)
-  }
-  const status = asked.get(agent) ?? null
   if (status === null) {
     return { name, status: 'skip', detail: `${agent} cannot be asked cheaply` }
   }
@@ -2917,179 +2997,190 @@ class NoCodexText extends Error {
   }
 }
 
-export async function declaredEnvironment(
+export function declaredEnvironment(
   env: NodeJS.ProcessEnv,
-  load: typeof loadProjects = loadProjects,
+  load: LoadProjects = () => loadProjectsEffect(),
   reach: Partial<DoctorReach> = {},
-): Promise<CheckResult[]> {
-  const name = 'env: declared names, and which layer'
-  // No App is needed: the recipe is this machine's file (#180), and nothing in
-  // this row asks GitHub anything. No owner is needed either (#357): every
-  // value this loop reads — `currentRecipe`, `resolveAgentEnv`, `extensionRow`,
-  // `limitsRow` and `dispatchedAuthRow` — takes the project name alone.
-  const projects = await load().catch(() => null)
-  if (projects === null) {
-    return [{ name, status: 'skip', detail: 'the project streams could not be read' }]
-  }
-  if (projects.length === 0) {
-    return [{ name, status: 'ok', detail: 'no project has a recipe to declare anything yet' }]
-  }
-
-  const recipeFor = reach.recipe ?? currentRecipe
-  const agentEnvFor = reach.agentEnv ?? resolveAgentEnv
-  const runtimes = reach.runtimes?.() ?? everyRuntime()
-
-  const results: CheckResult[] = []
-  /** One spawn per runtime across every project — see `dispatchedAuthRow`. */
-  const asked = new Map<RuntimeId, AuthStatus | null>()
-  const askedTriageCli = new Map<RuntimeId, AuthStatus | null>()
-  for (const project of projects) {
-    if (!project.project) {
-      results.push({
-        name: `env: ${project.project ?? '(unnamed)'}`,
-        status: 'skip',
-        detail: 'no repository name recorded — re-run lingtai add',
-      })
-      continue
+): Effect.Effect<CheckResult[]> {
+  return Effect.gen(function* () {
+    const name = 'env: declared names, and which layer'
+    // No App is needed: the recipe is this machine's file (#180), and nothing in
+    // this row asks GitHub anything. No owner is needed either (#357): every
+    // value this loop reads — `currentRecipe`, `resolveAgentEnv`, `extensionRow`,
+    // `limitsRow` and `dispatchedAuthRow` — takes the project name alone.
+    const projects = yield* recovering(load(), () => null)
+    if (projects === null) {
+      return [{ name, status: 'skip' as const, detail: 'the project streams could not be read' }]
     }
-    const label = `env: ${project.project}`
-    try {
-      const resolved = await recipeFor(project, undefined)
-      // Every name either file offers, and which one answered — 0021 makes
-      // this load-bearing rather than nice: "the operator is responsible" is
-      // only true where the operator can see what is happening. Names only,
-      // never values.
-      const agentEnv = await agentEnvFor({
-        project: project.project,
-        required: resolved.recipe.env.required,
-        allow: resolved.recipe.env.allow,
-        deny: resolved.recipe.env.deny,
-        patterns: productionPatterns(resolved.recipe.env.refuseHosts),
-      })
+    if (projects.length === 0) {
+      return [{ name, status: 'ok' as const, detail: 'no project has a recipe to declare anything yet' }]
+    }
 
-      if (agentEnv.names.length === 0) {
+    const recipeFor = reach.recipe ?? ((state, client) => currentRecipeEffect(state, client))
+    const agentEnvFor = reach.agentEnv ?? resolveAgentEnv
+    const runtimes = reach.runtimes?.() ?? everyRuntime()
+
+    const results: CheckResult[] = []
+    /** One spawn per runtime across every project — see `dispatchedAuthRow`. */
+    const asked = new Map<RuntimeId, AuthStatus | null>()
+    const askedTriageCli = new Map<RuntimeId, AuthStatus | null>()
+    for (const project of projects) {
+      if (!project.project) {
         results.push({
-          name: label,
-          status: 'ok',
-          detail: `nothing required · ${basename(agentEnv.file)} is where a value would go`,
+          name: `env: ${project.project ?? '(unnamed)'}`,
+          status: 'skip',
+          detail: 'no repository name recorded — re-run lingtai add',
         })
-      } else {
-        // A name that resolved but does not reach the agent is worth saying: it
-        // is the `deny` half of the recipe doing its job, and it is invisible in
-        // the values.
-        const detail = agentEnv.names
-          .map((n) => {
-            const where = n.layer === 'project file' ? basename(agentEnv.file) : n.layer
-            const held = n.layer !== 'not set' && !(n.name in agentEnv.values)
-            return `${n.name} ← ${where}${held ? ' (denied)' : ''}`
-          })
-          .join(' · ')
-        const missing = agentEnv.missing.length
-        const listed = agentEnv.refusal ? `${detail}\n${agentEnv.refusal}` : detail
-        results.push(
-          missing > 0
-            ? {
-                name: label,
-                status: 'fail',
-                title: `${project.project} is missing ${missing} required ${missing === 1 ? 'value' : 'values'}`,
-                detail: `${missing} required ${missing === 1 ? 'name is' : 'names are'} not set\n${listed}`,
-                fix: agentEnv.missing.map((n) => `lingtai env set ${project.project} ${n}`).join('\n'),
-              }
-            : { name: label, status: 'ok', detail: listed },
-        )
+        continue
       }
-      results.push(extensionRow(project.project, resolved.recipe, agentEnv))
-      results.push(
-        limitsRow(project.project, resolved.recipe, createRuntime(resolved.recipe.runtime.agent).capabilities),
-      )
-      // Whether the runtime named above can actually be started — a different
-      // question from whether its declared limits bind, and the one nothing
-      // asked between `runtimeAuth` becoming per-machine and this row.
-      // Every agent the recipe will dispatch, once each: `runtime.agent` always
-      // (an unconfigured `implement` runs on it), then each step's agent action
-      // and each judge that names a runtime. Same test as `agentRefusal` — a
-      // built-in judge is a function, not a dispatch.
-      const needed = new Map<RuntimeId, string[]>([[resolved.recipe.runtime.agent, ['runtime.agent']]])
-      const need = (agent: RuntimeId, key: string) => needed.set(agent, [...(needed.get(agent) ?? []), key])
-      for (const [step, actions] of Object.entries(resolved.recipe.steps)) {
-        for (const action of actions) {
-          if ('agent' in action) need(action.agent, `steps.${step}.agent`)
-          else if ('judge' in action && !isBuiltInJudge(action.judge)) {
-            need(action.judge as RuntimeId, `steps.${step}.judge (when: ${action.when})`)
+      const label = `env: ${project.project}`
+      yield* recovering(
+        Effect.gen(function* () {
+          const resolved = yield* recipeFor(project, undefined)
+          // Every name either file offers, and which one answered — 0021 makes
+          // this load-bearing rather than nice: "the operator is responsible" is
+          // only true where the operator can see what is happening. Names only,
+          // never values.
+          const agentEnv = yield* lift(() =>
+            agentEnvFor({
+              project: project.project!,
+              required: resolved.recipe.env.required,
+              allow: resolved.recipe.env.allow,
+              deny: resolved.recipe.env.deny,
+              patterns: productionPatterns(resolved.recipe.env.refuseHosts),
+            }),
+          )
+
+          if (agentEnv.names.length === 0) {
+            results.push({
+              name: label,
+              status: 'ok',
+              detail: `nothing required · ${basename(agentEnv.file)} is where a value would go`,
+            })
+          } else {
+            // A name that resolved but does not reach the agent is worth saying: it
+            // is the `deny` half of the recipe doing its job, and it is invisible in
+            // the values.
+            const detail = agentEnv.names
+              .map((n) => {
+                const where = n.layer === 'project file' ? basename(agentEnv.file) : n.layer
+                const held = n.layer !== 'not set' && !(n.name in agentEnv.values)
+                return `${n.name} ← ${where}${held ? ' (denied)' : ''}`
+              })
+              .join(' · ')
+            const missing = agentEnv.missing.length
+            const listed = agentEnv.refusal ? `${detail}\n${agentEnv.refusal}` : detail
+            results.push(
+              missing > 0
+                ? {
+                    name: label,
+                    status: 'fail',
+                    title: `${project.project} is missing ${missing} required ${missing === 1 ? 'value' : 'values'}`,
+                    detail: `${missing} required ${missing === 1 ? 'name is' : 'names are'} not set\n${listed}`,
+                    fix: agentEnv.missing.map((n) => `lingtai env set ${project.project} ${n}`).join('\n'),
+                  }
+                : { name: label, status: 'ok', detail: listed },
+            )
           }
-        }
-      }
-      for (const [agent, keys] of needed) {
-        const row = await dispatchedAuthRow(project.project, agent, asked, runtimes, 'runtime', keys)
-        const onRuntime = agent === resolved.recipe.runtime.agent
-        results.push({
-          ...row,
-          // Two agents in one project are two rows, so the second names itself.
-          name: onRuntime ? row.name : `steps: ${project.project} ${agent} signed in`,
-          ...(!onRuntime && row.title !== undefined
-            ? {
-                title: `${project.project}'s steps need ${agent}, which ${stateTitle(asked.get(agent)?.state)}`,
+          results.push(extensionRow(project.project!, resolved.recipe, agentEnv))
+          results.push(
+            limitsRow(project.project!, resolved.recipe, createRuntime(resolved.recipe.runtime.agent).capabilities),
+          )
+          // Whether the runtime named above can actually be started — a different
+          // question from whether its declared limits bind, and the one nothing
+          // asked between `runtimeAuth` becoming per-machine and this row.
+          // Every agent the recipe will dispatch, once each: `runtime.agent` always
+          // (an unconfigured `implement` runs on it), then each step's agent action
+          // and each judge that names a runtime. Same test as `agentRefusal` — a
+          // built-in judge is a function, not a dispatch.
+          const needed = new Map<RuntimeId, string[]>([[resolved.recipe.runtime.agent, ['runtime.agent']]])
+          const need = (agent: RuntimeId, key: string) => needed.set(agent, [...(needed.get(agent) ?? []), key])
+          for (const [step, actions] of Object.entries(resolved.recipe.steps)) {
+            for (const action of actions) {
+              if ('agent' in action) need(action.agent, `steps.${step}.agent`)
+              else if ('judge' in action && !isBuiltInJudge(action.judge)) {
+                need(action.judge as RuntimeId, `steps.${step}.judge (when: ${action.when})`)
               }
-            : {}),
-          detail:
-            keys.length > 1 || !onRuntime
-              ? `${row.detail}${row.status === 'fail' ? '\n' : ' · '}needed by ${keys.join(', ')}`
-              : row.detail,
-        })
-      }
-      for (const role of ['discuss', 'triage'] as const) {
-        const selected = resolved.recipe[role]
-        if (role === 'triage' && resolved.recipe.triage?.agent === 'codex' && resolved.recipe.triage.tools === 'full') {
-          // The login the wait will use: a triage checkout keeps `CODEX_HOME`,
-          // which `runnableEnv` strips, so this is asked in its own cache.
-          const codexHome = process.env['CODEX_HOME']
-          const signedIn = await dispatchedAuthRow(
-            project.project,
-            'codex',
-            askedTriageCli,
-            runtimes,
-            role,
-            [`${role}.agent`],
-            codexHome ? { ...runnableEnv({}), CODEX_HOME: codexHome } : runnableEnv({}),
-          )
+            }
+          }
+          for (const [agent, keys] of needed) {
+            const row = yield* dispatchedAuthRow(project.project!, agent, asked, runtimes, 'runtime', keys)
+            const onRuntime = agent === resolved.recipe.runtime.agent
+            results.push({
+              ...row,
+              // Two agents in one project are two rows, so the second names itself.
+              name: onRuntime ? row.name : `steps: ${project.project} ${agent} signed in`,
+              ...(!onRuntime && row.title !== undefined
+                ? {
+                    title: `${project.project}'s steps need ${agent}, which ${stateTitle(asked.get(agent)?.state)}`,
+                  }
+                : {}),
+              detail:
+                keys.length > 1 || !onRuntime
+                  ? `${row.detail}${row.status === 'fail' ? '\n' : ' · '}needed by ${keys.join(', ')}`
+                  : row.detail,
+            })
+          }
+          for (const role of ['discuss', 'triage'] as const) {
+            const selected = resolved.recipe[role]
+            if (
+              role === 'triage' &&
+              resolved.recipe.triage?.agent === 'codex' &&
+              resolved.recipe.triage.tools === 'full'
+            ) {
+              // The login the wait will use: a triage checkout keeps `CODEX_HOME`,
+              // which `runnableEnv` strips, so this is asked in its own cache.
+              const codexHome = process.env['CODEX_HOME']
+              const signedIn = yield* dispatchedAuthRow(
+                project.project!,
+                'codex',
+                askedTriageCli,
+                runtimes,
+                role,
+                [`${role}.agent`],
+                codexHome ? { ...runnableEnv({}), CODEX_HOME: codexHome } : runnableEnv({}),
+              )
+              results.push({
+                ...signedIn,
+                detail:
+                  `${signedIn.detail}\n` +
+                  `triage runs the Codex CLI with tools in a disposable checkout of the attempt's head, ` +
+                  `billed to the Codex login; codex_text is not read`,
+              })
+              results.push({
+                name: `triage: ${project.project} limits`,
+                status: 'warn',
+                title: `${project.project}: Codex triage ignores some limits`,
+                detail:
+                  'Codex CLI route enforces wall, and not turns or usd\n' +
+                  'wall is enforced; turns is passed to the runtime and not enforced; usd is not observed ' +
+                  '(the CLI receipt carries no dollars), so the out-of-usd check never fires',
+              })
+            } else if (selected?.agent === 'codex') {
+              results.push(
+                codexRoleRow(project.project!, role, selected.model, reach.codexText ?? (() => codexTextConfig(env))),
+              )
+            } else if (selected) {
+              results.push(
+                yield* dispatchedAuthRow(project.project!, selected.agent, asked, runtimes, role, [`${role}.agent`]),
+              )
+            }
+          }
+        }),
+        (err) => {
+          // Includes `ProductionValueError`, which names the variable and the
+          // pattern it matched and no part of the value.
           results.push({
-            ...signedIn,
-            detail:
-              `${signedIn.detail}\n` +
-              `triage runs the Codex CLI with tools in a disposable checkout of the attempt's head, ` +
-              `billed to the Codex login; codex_text is not read`,
+            name: label,
+            status: 'fail',
+            title: `${project.project}'s environment could not be read`,
+            detail: (err as Error).message,
           })
-          results.push({
-            name: `triage: ${project.project} limits`,
-            status: 'warn',
-            title: `${project.project}: Codex triage ignores some limits`,
-            detail:
-              'Codex CLI route enforces wall, and not turns or usd\n' +
-              'wall is enforced; turns is passed to the runtime and not enforced; usd is not observed ' +
-              '(the CLI receipt carries no dollars), so the out-of-usd check never fires',
-          })
-        } else if (selected?.agent === 'codex') {
-          results.push(
-            codexRoleRow(project.project, role, selected.model, reach.codexText ?? (() => codexTextConfig(env))),
-          )
-        } else if (selected) {
-          results.push(
-            await dispatchedAuthRow(project.project, selected.agent, asked, runtimes, role, [`${role}.agent`]),
-          )
-        }
-      }
-    } catch (err) {
-      // Includes `ProductionValueError`, which names the variable and the
-      // pattern it matched and no part of the value.
-      results.push({
-        name: label,
-        status: 'fail',
-        title: `${project.project}'s environment could not be read`,
-        detail: (err as Error).message,
-      })
+        },
+      )
     }
-  }
-  return results
+    return results
+  })
 }
 
 /**
@@ -3110,82 +3201,88 @@ export async function declaredEnvironment(
  * decisions and doctor never writes; which one is meant is a person's answer,
  * given by re-running `lingtai add --base`.
  */
-export async function recipeGovernsItsBase(
+export function recipeGovernsItsBase(
   env: NodeJS.ProcessEnv,
-  load: typeof loadProjects = loadProjects,
+  load: LoadProjects = () => loadProjectsEffect(),
   reach: Partial<DoctorReach> = {},
-): Promise<CheckResult[]> {
-  const name = 'recipe: the rules and the merge target are one branch'
-  // No App is needed to compare them: the recipe is this machine's file (#180).
-  // No owner either (#357): the comparison is `state.base` against the
-  // recipe's own `repo.base`, read straight from the recorded registration —
-  // no fetch, no GitHub call, nothing beyond what registration already wrote.
+): Effect.Effect<CheckResult[]> {
+  return Effect.gen(function* () {
+    const name = 'recipe: the rules and the merge target are one branch'
+    // No App is needed to compare them: the recipe is this machine's file (#180).
+    // No owner either (#357): the comparison is `state.base` against the
+    // recipe's own `repo.base`, read straight from the recorded registration —
+    // no fetch, no GitHub call, nothing beyond what registration already wrote.
 
-  const projects = await load().catch(() => null)
-  if (projects === null) {
-    return [{ name, status: 'skip', detail: 'the project streams could not be read' }]
-  }
-  if (projects.length === 0) {
-    return [{ name, status: 'ok', detail: 'no project has a recorded base to disagree with a recipe yet' }]
-  }
-
-  const recipeFor = reach.recipe ?? currentRecipe
-  const results: CheckResult[] = []
-  for (const project of projects) {
-    if (!project.project) {
-      results.push({
-        name: `base: ${project.project ?? '(unnamed)'}`,
-        status: 'skip',
-        detail: 'no repository name recorded — re-run lingtai add',
-      })
-      continue
+    const projects = yield* recovering(load(), () => null)
+    if (projects === null) {
+      return [{ name, status: 'skip' as const, detail: 'the project streams could not be read' }]
     }
-    const label = `base: ${project.project}`
-    try {
-      const resolved = await recipeFor(project, undefined)
-      // The slug `baseDivergence` splices after `lingtai add ` in its own
-      // "Re-register:" sentence — a GitHub project names it `owner/repo`; a
-      // `--local` one has no owner to name and no directory recorded on
-      // `ProjectState` either, so `<dir>` is what the operator fills in
-      // (`conduct.ts`'s own convention, `#352`); and an owner-less project
-      // with no `repo.remote` is a GitHub project registered before
-      // `ProjectConfigured` carried an owner — only the remote tells the two
-      // apart (`init.ts`'s own `unrecorded`, `#352`).
-      const slug =
-        project.owner !== null
-          ? `${project.owner}/${project.project}`
-          : remoteOf(resolved.recipe) !== null
-            ? '--local <dir>'
-            : `<owner>/${project.project}`
-      const divergence = baseDivergence(resolved, slug)
-      results.push(
-        divergence
-          ? {
-              name: label,
-              status: 'fail',
-              title: `${project.project}'s rules and merge target differ`,
-              // The refusal `runOnce` and `add` share, its command on a line of its own.
-              detail: divergence.replace('. Re-register:', '.\nRe-register:'),
-              // A `--local` or owner-less slug is a placeholder; a command with one would not run.
-              ...(project.owner !== null ? { fix: `lingtai add ${slug} --base ${baseOf(resolved.recipe)}` } : {}),
-            }
-          : {
-              name: label,
-              status: 'ok',
-              // The key as this recipe writes it: since `#268` the base may be
-              // `worktree:`'s at `admit`, and a row naming the other line is a
-              // row that sends a reader to something nothing reads.
-              detail:
-                `read from ${resolved.ref}, and ` + `${baseWrittenAt(resolved.recipe)} says ${baseOf(resolved.recipe)}`,
-            },
+    if (projects.length === 0) {
+      return [{ name, status: 'ok' as const, detail: 'no project has a recorded base to disagree with a recipe yet' }]
+    }
+
+    const recipeFor = reach.recipe ?? ((state, client) => currentRecipeEffect(state, client))
+    const results: CheckResult[] = []
+    for (const project of projects) {
+      if (!project.project) {
+        results.push({
+          name: `base: ${project.project ?? '(unnamed)'}`,
+          status: 'skip',
+          detail: 'no repository name recorded — re-run lingtai add',
+        })
+        continue
+      }
+      const label = `base: ${project.project}`
+      yield* recovering(
+        Effect.gen(function* () {
+          const resolved = yield* recipeFor(project, undefined)
+          // The slug `baseDivergence` splices after `lingtai add ` in its own
+          // "Re-register:" sentence — a GitHub project names it `owner/repo`; a
+          // `--local` one has no owner to name and no directory recorded on
+          // `ProjectState` either, so `<dir>` is what the operator fills in
+          // (`conduct.ts`'s own convention, `#352`); and an owner-less project
+          // with no `repo.remote` is a GitHub project registered before
+          // `ProjectConfigured` carried an owner — only the remote tells the two
+          // apart (`init.ts`'s own `unrecorded`, `#352`).
+          const slug =
+            project.owner !== null
+              ? `${project.owner}/${project.project}`
+              : remoteOf(resolved.recipe) !== null
+                ? '--local <dir>'
+                : `<owner>/${project.project}`
+          const divergence = baseDivergence(resolved, slug)
+          results.push(
+            divergence
+              ? {
+                  name: label,
+                  status: 'fail',
+                  title: `${project.project}'s rules and merge target differ`,
+                  // The refusal `runOnce` and `add` share, its command on a line of its own.
+                  detail: divergence.replace('. Re-register:', '.\nRe-register:'),
+                  // A `--local` or owner-less slug is a placeholder; a command with one would not run.
+                  ...(project.owner !== null ? { fix: `lingtai add ${slug} --base ${baseOf(resolved.recipe)}` } : {}),
+                }
+              : {
+                  name: label,
+                  status: 'ok',
+                  // The key as this recipe writes it: since `#268` the base may be
+                  // `worktree:`'s at `admit`, and a row naming the other line is a
+                  // row that sends a reader to something nothing reads.
+                  detail:
+                    `read from ${resolved.ref}, and ` +
+                    `${baseWrittenAt(resolved.recipe)} says ${baseOf(resolved.recipe)}`,
+                },
+          )
+        }),
+        (err) => {
+          // A skip, not a second failure: an unreadable recipe is already red in the
+          // check above, and the comparison genuinely could not be made.
+          results.push({ name: label, status: 'skip', detail: `no recipe to compare — ${(err as Error).message}` })
+        },
       )
-    } catch (err) {
-      // A skip, not a second failure: an unreadable recipe is already red in the
-      // check above, and the comparison genuinely could not be made.
-      results.push({ name: label, status: 'skip', detail: `no recipe to compare — ${(err as Error).message}` })
     }
-  }
-  return results
+    return results
+  })
 }
 
 /**
@@ -3315,14 +3412,9 @@ export function runDoctor(
 ): Effect.Effect<DoctorReport> {
   return Effect.gen(function* () {
     const results: CheckResult[] = []
-    // The checks CLI-12 has not reached still take promises; the seams they share with the ones above are
-    // Effects, so each is run through the report's own services (`runPromiseWith` is the form the ratchet allows).
-    const ctx = yield* Effect.context<never>()
-    const asPromise = <A, E>(self: Effect.Effect<A, E>): Promise<A> => Effect.runPromiseWith(ctx)(self)
-    // `load` is the promise face every check below CLI-12 takes; these two checks read the Effect, and
+    // `load` is the promise face a caller may hand in; every check reads the Effect, and
     // the real one is read as one rather than run to a promise and lifted back.
-    const loadE: () => Effect.Effect<ProjectState[], unknown> =
-      load === loadProjects ? () => loadProjectsEffect() : () => lift(() => load())
+    const loadE: LoadProjects = load === loadProjects ? () => loadProjectsEffect() : () => lift(() => load())
     const push = (r: CheckResult) => void results.push(r)
     const pushAll = (rs: readonly CheckResult[]) => void results.push(...rs)
     // Every row goes in inside a step, so each gets the milliseconds of the call that pushed it and
@@ -3406,10 +3498,7 @@ export function runDoctor(
     // One resolve for the whole report (`#389`) — `recipe:`'s own rows below
     // and the `unconverged` rows in both store branches read this same value,
     // rather than each asking every project's recipe again.
-    const filters = yield* step(
-      'recipes',
-      Effect.promise(() => projectFiltersOnce(env, load, reach.recipe)),
-    )
+    const filters = yield* step('recipes', projectFiltersOnce(env, loadE, reach.recipe))
     const unresolved = unresolvedProblems(filters)
 
     /**
@@ -3481,10 +3570,7 @@ export function runDoctor(
       yield* step('projection shapes', projectionShapes(undefined, reach.shapes).pipe(Effect.map(push)))
       yield* step('stopped projections', stoppedProjections(reach.status).pipe(Effect.map(push)))
       yield* step('the daemon', daemonLiveness(reach.status, reach.pause).pipe(Effect.orDie, Effect.map(push)))
-      yield* step(
-        'daemon currency',
-        Effect.promise(() => daemonCurrency(reach.status && (() => asPromise(reach.status!())))).pipe(Effect.map(push)),
-      )
+      yield* step('daemon currency', daemonCurrency(reach.status).pipe(Effect.orDie, Effect.map(push)))
       yield* step('paused projects', pausedProjects(loadE).pipe(Effect.map(pushAll)))
       yield* step(
         'account limits',
@@ -3492,16 +3578,14 @@ export function runDoctor(
       )
       yield* step(
         'spend',
-        Effect.promise(() =>
-          spendToday(
-            reach.spend,
-            reach.pause
-              ? () =>
-                  asPromise(reach.pause!()).then(
-                    (c) => c ?? Promise.reject(new Error('the control stream could not be read')),
-                  )
-              : () => readControl(),
-          ),
+        spendToday(
+          reach.spend,
+          reach.pause
+            ? () =>
+                Effect.flatMap(reach.pause!(), (c) =>
+                  c === null ? Effect.fail(new Error('the control stream could not be read')) : Effect.succeed(c),
+                )
+            : () => readControlEffect(),
         ).pipe(Effect.map(push)),
       )
       yield* step(
@@ -3510,24 +3594,21 @@ export function runDoctor(
           Effect.map((lag) => push(ratesCheck(process.env, lag))),
         ),
       )
-      yield* step('refusals', Effect.promise(() => passRefusals(load)).pipe(Effect.map(push)))
-      yield* step('the lock', Effect.promise(() => conductorLock(reach.lockHolder)).pipe(Effect.map(push)))
-      yield* step('event types', Effect.promise(() => readableTypes(queries)).pipe(Effect.map(push)))
-      yield* step('holds', Effect.promise(() => logPredatesHoldRow(queries)).pipe(Effect.map(push)))
+      yield* step('refusals', passRefusals(loadE).pipe(Effect.map(push)))
+      yield* step('the lock', conductorLock(reach.lockHolder).pipe(Effect.map(push)))
+      yield* step('event types', readableTypes(queries).pipe(Effect.map(push)))
+      yield* step('holds', logPredatesHoldRow(queries).pipe(Effect.map(push)))
       yield* step(
         'snapshots',
-        Effect.promise(() => snapshotCensus(reach.snapshots ?? log.snapshots.census)).pipe(Effect.map(push)),
+        snapshotCensus(reach.snapshots ?? (() => lift(() => log.snapshots.census()))).pipe(Effect.map(push)),
       )
-      yield* step('orphans', Effect.promise(() => orphans(reach.orphans)).pipe(Effect.map(push)))
+      yield* step('orphans', orphans(reach.orphans).pipe(Effect.map(push)))
       // Read once and handed to both: the two rows below name issues, and a
       // number on its own is homework for whoever is reading them (#258).
-      const titles = yield* step(
-        'issue titles',
-        Effect.promise(() => issueTitles(reach.titles)),
-      )
-      yield* step('unconverged', Effect.promise(() => unconverged(queries, titles, unresolved)).pipe(Effect.map(push)))
-      yield* step('subscribers', Effect.promise(() => subscribers(queries)).pipe(Effect.map(push)))
-      yield* step('end step', Effect.promise(() => endStepRan(queries, titles)).pipe(Effect.map(push)))
+      const titles = yield* step('issue titles', issueTitles(reach.titles))
+      yield* step('unconverged', unconverged(queries, titles, unresolved).pipe(Effect.map(push)))
+      yield* step('subscribers', subscribers(queries).pipe(Effect.map(push)))
+      yield* step('end step', endStepRan(queries, titles).pipe(Effect.map(push)))
       // Named one at a time, each saying why it does not apply and naming the
       // store. See `postgresOnlyRows`.
       yield* step(
@@ -3559,10 +3640,10 @@ export function runDoctor(
       yield* step('the daemon', daemonLiveness().pipe(Effect.orDie, Effect.map(push)))
       // Beside liveness, never reduced into it: up and current are two facts, and
       // for thirty-nine minutes only one of them was measured.
-      yield* step('daemon currency', Effect.promise(() => daemonCurrency()).pipe(Effect.map(push)))
+      yield* step('daemon currency', daemonCurrency().pipe(Effect.orDie, Effect.map(push)))
       yield* step('paused projects', pausedProjects(loadE).pipe(Effect.map(pushAll)))
       yield* step('account limits', accountLimits(undefined, loadE).pipe(Effect.map(pushAll)))
-      yield* step('spend', Effect.promise(() => spendToday(undefined, () => readControl())).pipe(Effect.map(push)))
+      yield* step('spend', spendToday(undefined, () => readControlEffect()).pipe(Effect.map(push)))
       yield* step(
         'rates',
         spendLagNow(() => projectionLagEffect()).pipe(Effect.map((lag) => push(ratesCheck(process.env, lag)))),
@@ -3570,26 +3651,23 @@ export function runDoctor(
       // What the conductor refused, from the log — not what this checkout would
       // refuse, which the recipe rows answer, and which is a different question
       // whenever the two are at different commits (#148).
-      yield* step('refusals', Effect.promise(() => passRefusals(load)).pipe(Effect.map(push)))
-      yield* step('the lock', Effect.promise(() => conductorLock()).pipe(Effect.map(push)))
-      yield* step('event types', Effect.promise(() => readableTypes(audit)).pipe(Effect.map(push)))
-      yield* step('holds', Effect.promise(() => logPredatesHoldRow(audit)).pipe(Effect.map(push)))
+      yield* step('refusals', passRefusals(loadE).pipe(Effect.map(push)))
+      yield* step('the lock', conductorLock().pipe(Effect.map(push)))
+      yield* step('event types', readableTypes(audit).pipe(Effect.map(push)))
+      yield* step('holds', logPredatesHoldRow(audit).pipe(Effect.map(push)))
       const direct_ = createSqlSnapshotStore(createPostgresTicketSql({ url: direct }))
       yield* step(
         'snapshots',
-        Effect.promise(() => snapshotCensus(reach.snapshots ?? direct_.census)).pipe(Effect.map(push)),
+        snapshotCensus(reach.snapshots ?? (() => lift(() => direct_.census()))).pipe(Effect.map(push)),
       )
-      yield* step('orphans', Effect.promise(() => orphans()).pipe(Effect.map(push)))
+      yield* step('orphans', orphans().pipe(Effect.map(push)))
       // The projection and not the audit connection: this is what the rows are
       // *called*, not what they assert, so it is read where every other
       // projection read here is read (#258).
-      const titles = yield* step(
-        'issue titles',
-        Effect.promise(() => issueTitles()),
-      )
-      yield* step('unconverged', Effect.promise(() => unconverged(audit, titles, unresolved)).pipe(Effect.map(push)))
-      yield* step('subscribers', Effect.promise(() => subscribers(audit)).pipe(Effect.map(push)))
-      yield* step('end step', Effect.promise(() => endStepRan(audit, titles)).pipe(Effect.map(push)))
+      const titles = yield* step('issue titles', issueTitles())
+      yield* step('unconverged', unconverged(audit, titles, unresolved).pipe(Effect.map(push)))
+      yield* step('subscribers', subscribers(audit).pipe(Effect.map(push)))
+      yield* step('end step', endStepRan(audit, titles).pipe(Effect.map(push)))
     } else {
       yield* step(
         'Postgres',
@@ -3611,12 +3689,9 @@ export function runDoctor(
         if (ghResult !== null) results.push(ghResult)
       }),
     )
-    yield* step('project recipes', Effect.promise(() => projectRecipes(filters)).pipe(Effect.map(pushAll)))
-    yield* step(
-      'declared environment',
-      Effect.promise(() => declaredEnvironment(env, load, reach)).pipe(Effect.map(pushAll)),
-    )
-    yield* step('recipe bases', Effect.promise(() => recipeGovernsItsBase(env, load, reach)).pipe(Effect.map(pushAll)))
+    yield* step('project recipes', projectRecipes(filters).pipe(Effect.orDie, Effect.map(pushAll)))
+    yield* step('declared environment', declaredEnvironment(env, loadE, reach).pipe(Effect.map(pushAll)))
+    yield* step('recipe bases', recipeGovernsItsBase(env, loadE, reach).pipe(Effect.map(pushAll)))
     yield* step('settings', settingsSources(reach.settings).pipe(Effect.map(push)))
     yield* step('runtimes', runtimeAuth(reach.runtimes).pipe(Effect.map(push)))
     yield* step(

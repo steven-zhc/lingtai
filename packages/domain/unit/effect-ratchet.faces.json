@@ -195,7 +195,7 @@
     "file": "packages/conductor/src/end-step.ts",
     "fn": "endedWithoutEndActions",
     "until": "#790",
-    "why": "`apps/cli/src/doctor.ts` awaits it until CLI-12"
+    "why": "the apps/cli unit tests (`doctor`, `doctor-progress`, `doctor-titles-projects`, `log-predates-hold`) fake or call it"
   },
   {
     "file": "packages/conductor/src/filter.ts",
@@ -219,7 +219,7 @@
     "file": "packages/conductor/src/filter.ts",
     "fn": "projectFilters",
     "until": "#790",
-    "why": "apps/cli daemon.ts and doctor.ts await it until the apps/cli rows"
+    "why": "apps/cli daemon.ts awaits it until the apps/cli rows"
   },
   {
     "file": "packages/conductor/src/onboard.ts",
@@ -447,13 +447,13 @@
     "file": "packages/daemon/src/control.ts",
     "fn": "readControl",
     "until": "#790",
-    "why": "apps/cli (daemon, restart, status, doctor, run, conduct, world, project-pause, first-project, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
+    "why": "apps/cli (daemon, restart, status, run, conduct, world, project-pause, first-project, upgrade-drain, now) awaits them until its rows; apps/board (locks, task, actions, draining) keeps a face by 0101 §7"
   },
   {
     "file": "packages/daemon/src/control.ts",
     "fn": "readStatus",
     "until": "#790",
-    "why": "apps/cli (daemon, status, doctor, cli, restart) and apps/board (draining, health, board, task); the board keeps a face by 0101 §7"
+    "why": "apps/cli (daemon, status, cli, restart) and apps/board (draining, health, board, task); the board keeps a face by 0101 §7"
   },
   {
     "file": "packages/daemon/src/control.ts",
@@ -501,7 +501,7 @@
     "file": "packages/daemon/src/currency.ts",
     "fn": "codeCurrency",
     "until": "#790",
-    "why": "apps/cli (daemon, doctor, restart) and apps/board health.tsx await them; the board keeps a face by 0101 §7"
+    "why": "apps/cli (daemon, restart) and apps/board health.tsx await them; the board keeps a face by 0101 §7"
   },
   {
     "file": "packages/daemon/src/currency.ts",
@@ -513,7 +513,7 @@
     "file": "packages/daemon/src/currency.ts",
     "fn": "readCodeVersion",
     "until": "#790",
-    "why": "apps/cli (daemon, doctor, restart) and apps/board health.tsx await them; the board keeps a face by 0101 §7"
+    "why": "apps/cli (daemon, restart) and apps/board health.tsx await them; the board keeps a face by 0101 §7"
   },
   {
     "file": "packages/daemon/src/daemon.ts",
@@ -543,13 +543,13 @@
     "file": "packages/daemon/src/reconcile.ts",
     "fn": "findOrphanLogs",
     "until": "#790",
-    "why": "apps/cli/src/daemon.ts (startup) and apps/cli/src/doctor.ts (dry run) await it until the apps/cli row"
+    "why": "apps/cli/src/daemon.ts (startup) awaits it until the apps/cli row"
   },
   {
     "file": "packages/daemon/src/reconcile.ts",
     "fn": "findOrphans",
     "until": "#790",
-    "why": "apps/cli/src/daemon.ts (startup) and apps/cli/src/doctor.ts (dry run) await it until the apps/cli row"
+    "why": "apps/cli/src/daemon.ts (startup) awaits it until the apps/cli row"
   },
   {
     "file": "packages/daemon/src/reconcile.ts",
@@ -663,7 +663,7 @@
     "file": "packages/event-store/src/store-face.ts",
     "fn": "logPredatesHold",
     "until": "#790",
-    "why": "apps/cli (doctor, projection, projector) call it as a promise"
+    "why": "apps/cli (projection, projector) call it as a promise"
   },
   {
     "file": "packages/event-store/src/store-face.ts",
@@ -1023,7 +1023,7 @@
     "file": "packages/repo/src/git.ts",
     "fn": "git",
     "until": "#790",
-    "why": "apps/board (actions, expand-prompts) keeps it by 0101 §7; apps/cli (doctor, triage-checkout) and packages/conductor git-refs call it as a promise"
+    "why": "apps/board (actions, expand-prompts) keeps it by 0101 §7; apps/cli (triage-checkout) and packages/conductor git-refs call it as a promise"
   },
   {
     "file": "packages/repo/src/mirror.ts",

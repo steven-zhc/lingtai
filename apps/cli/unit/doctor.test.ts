@@ -78,26 +78,27 @@ const reach: DoctorReach = {
   pause: () => Effect.succeed(null),
   lags: () => Effect.succeed([]),
   shapes: (p: Projection) => Effect.succeed({ projection: p.name, matched: [], absent: [], drift: [] }),
-  lockHolder: async () => null,
-  orphans: async () => [],
-  snapshots: async () => [],
-  titles: async () => [],
+  lockHolder: () => Effect.succeed(null),
+  orphans: () => Effect.succeed([]),
+  snapshots: () => Effect.succeed([]),
+  titles: () => Effect.succeed([]),
   settings: () => Effect.succeed(null),
   accounts: () => Effect.succeed([]),
   runtimes: () => [signedInRuntime],
   // No store is opened: today is empty and no ceiling is set.
-  spend: async () => ({
-    day: {
-      reportedCents: 0,
-      reportedRuns: 0,
-      estimatedCents: 0,
-      estimatedRuns: 0,
-      fetchedRuns: 0,
-      unknown: 0,
-      unknownWhy: [],
-    },
-    ceilingUsd: undefined,
-  }),
+  spend: () =>
+    Effect.succeed({
+      day: {
+        reportedCents: 0,
+        reportedRuns: 0,
+        estimatedCents: 0,
+        estimatedRuns: 0,
+        fetchedRuns: 0,
+        unknown: 0,
+        unknownWhy: [],
+      },
+      ceilingUsd: undefined,
+    }),
   // Never reached on this machine: `isSea()` is false under vitest, so this
   // stands in for the probe without spawning Node or writing a scratch SEA.
   sea: () => ({ can: true }),
@@ -156,10 +157,11 @@ describe('lingtai doctor — the orphan row (#925)', () => {
       async () => [],
       {
         ...reach,
-        orphans: async () => [
-          { ...base, stream: 'run-mystery', path: '/x/runs/run-mystery.log', once: true },
-          { ...base, stream: 'run-stale', path: '/x/worktrees/run-stale', action: 'removed' as const },
-        ],
+        orphans: () =>
+          Effect.succeed([
+            { ...base, stream: 'run-mystery', path: '/x/runs/run-mystery.log', once: true },
+            { ...base, stream: 'run-stale', path: '/x/worktrees/run-stale', action: 'removed' as const },
+          ]),
       },
     )
     const detail = find(report.results, 'worktrees: reconciliation').detail
@@ -473,25 +475,27 @@ describe('snapshotCensus (#879)', () => {
   })
 
   it('is ok and says so when the table is absent', async () => {
-    const r = await snapshotCensus(async () => [])
+    const r = await Effect.runPromise(snapshotCensus(() => Effect.succeed([])))
     expect(r.status).toBe('ok')
     expect(r.detail).toBe('no snapshots yet')
   })
 
   it('is ok when every row is usable', async () => {
-    const r = await snapshotCensus(async () => [row('control', 7, 3, 3)])
+    const r = await Effect.runPromise(snapshotCensus(() => Effect.succeed([row('control', 7, 3, 3)])))
     expect(r.status).toBe('ok')
     expect(r.detail).toBe('3 snapshots, 3 usable (2 KB)')
   })
 
   it('reports an older version as void, naming reducer and version', async () => {
-    const r = await snapshotCensus(async () => [row('control', 1, 1, 1, 14_000), row('control', 7, 4, 4)])
+    const r = await Effect.runPromise(
+      snapshotCensus(() => Effect.succeed([row('control', 1, 1, 1, 14_000), row('control', 7, 4, 4)])),
+    )
     expect(r.status).toBe('info')
     expect(r.detail).toBe('5 snapshots, 4 usable (2 KB) · void: control v1 ×1 (14 KB, older version)')
   })
 
   it('reports an unanchored current-version row as void by anchor', async () => {
-    const r = await snapshotCensus(async () => [row('attempt', 4, 3, 1, 3000)])
+    const r = await Effect.runPromise(snapshotCensus(() => Effect.succeed([row('attempt', 4, 3, 1, 3000)])))
     expect(r.status).toBe('info')
     expect(r.detail).toContain('1 usable')
     expect(r.detail).toContain('attempt v4 ×2')
@@ -499,14 +503,16 @@ describe('snapshotCensus (#879)', () => {
   })
 
   it('counts a row both older and unanchored once, as older version', async () => {
-    const r = await snapshotCensus(async () => [row('control', 1, 2, 0)])
+    const r = await Effect.runPromise(snapshotCensus(() => Effect.succeed([row('control', 1, 2, 0)])))
     expect(r.detail).toContain('control v1 ×2')
     expect(r.detail).toContain('older version')
     expect(r.detail).not.toContain('anchor no longer')
   })
 
   it("keeps another build's rows apart from void", async () => {
-    const r = await snapshotCensus(async () => [row('control', 99, 1, 1), row('newfangled', 1, 2, 2)])
+    const r = await Effect.runPromise(
+      snapshotCensus(() => Effect.succeed([row('control', 99, 1, 1), row('newfangled', 1, 2, 2)])),
+    )
     expect(r.status).toBe('info')
     expect(r.detail).not.toContain('void')
     expect(r.detail).toContain('other code: control v99 ×1')
@@ -514,9 +520,7 @@ describe('snapshotCensus (#879)', () => {
   })
 
   it('is a warn, naming the error, when the read fails', async () => {
-    const r = await snapshotCensus(async () => {
-      throw new Error('connection reset')
-    })
+    const r = await Effect.runPromise(snapshotCensus(() => Effect.fail(new Error('connection reset'))))
     expect(r.status).toBe('warn')
     expect(r.detail).toContain('connection reset')
   })
@@ -530,7 +534,7 @@ describe('snapshotCensus (#879)', () => {
       async () => [],
       {
         ...reach,
-        snapshots: async () => [row('control', 1, 1, 1)],
+        snapshots: () => Effect.succeed([row('control', 1, 1, 1)]),
       },
     )
     expect(report.results.find((x) => x.name === 'snapshots')?.status).toBe('info')
@@ -553,18 +557,22 @@ describe('spendToday names the unknown runs', () => {
   }
 
   it('is ok with the names and no ceiling', async () => {
-    const r = await spendToday(
-      async () => ({ day, ceilingUsd: undefined }),
-      async () => emptyControl,
+    const r = await Effect.runPromise(
+      spendToday(
+        () => Effect.succeed({ day, ceilingUsd: undefined }),
+        () => Effect.succeed(emptyControl),
+      ),
     )
     expect(r.status).toBe('ok')
     expect(r.detail).toContain('+ 2 unknown (gpt-x ×1, no usage reported ×1)')
   })
 
   it('warns with the names and a ceiling', async () => {
-    const r = await spendToday(
-      async () => ({ day, ceilingUsd: 50 }),
-      async () => emptyControl,
+    const r = await Effect.runPromise(
+      spendToday(
+        () => Effect.succeed({ day, ceilingUsd: 50 }),
+        () => Effect.succeed(emptyControl),
+      ),
     )
     expect(r.status).toBe('warn')
     expect(r.detail).toContain('+ 2 unknown (gpt-x ×1, no usage reported ×1)')

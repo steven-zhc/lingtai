@@ -152,7 +152,7 @@ describe('doctor titles: store and log', () => {
 
   it('log: every type is readable', async () => {
     const queries = { typeCounts: async () => [{ type: 'NoSuchType', rows: 3 }] } as unknown as LogQueries
-    const r = await readableTypes(queries)
+    const r = await Effect.runPromise(readableTypes(queries))
     expect(r.name).toBe('log: every type is readable')
     expect(r.status).toBe('fail')
     plain(r)
@@ -162,7 +162,7 @@ describe('doctor titles: store and log', () => {
 
   it('log: predates the Hold event', async () => {
     const queries = { typeCounts: async () => [{ type: 'NoSuchType', rows: 3 }] } as unknown as LogQueries
-    const r = await logPredatesHoldRow(queries)
+    const r = await Effect.runPromise(logPredatesHoldRow(queries))
     expect(r.name).toBe('log: predates the Hold event')
     expect(r.status).toBe('fail')
     plain(r)

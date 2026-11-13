@@ -1,5 +1,5 @@
-import type { RecipeFor } from '@lingtai/conductor'
-import { currentRecipe } from '@lingtai/conductor'
+import type { RecipeForEffect } from '@lingtai/conductor/filter'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import type { ProjectState } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -64,7 +64,7 @@ describe('steps: end ran on what landed', () => {
         { streamId: 'ticket-beta-9', outcome: 'landed' },
       ],
     } as never
-    const row = await endStepRan(queries, new Map())
+    const row = await Effect.runPromise(endStepRan(queries, new Map()))
     expect(row).toMatchObject({ name: 'steps: end ran on what landed', status: 'fail' })
     PLAIN(row.title)
     expect(row.fix).toBe('lingtai end replay alpha --issue 7\nlingtai end replay beta --issue 9')
@@ -134,13 +134,13 @@ describe('codexRoleRow', () => {
   })
 })
 
-function recipeOf(text: string): RecipeFor {
-  return (async (state: ProjectState, client: unknown) =>
-    currentRecipe(state, client, undefined, {
+function recipeOf(text: string): RecipeForEffect {
+  return ((state: ProjectState, client: unknown) =>
+    currentRecipeEffect(state, client, undefined, {
       home: '/nonexistent-home',
       read: async (p: string) => (p.endsWith('recipe.yml') ? text : null),
       signedIn: async () => [],
-    })) as RecipeFor
+    })) as RecipeForEffect
 }
 
 const RECIPE = `
@@ -173,11 +173,13 @@ describe('per-project rows through declaredEnvironment', () => {
     })
 
   it('env: names each missing value as its own env set command', async () => {
-    const rows = await declaredEnvironment({}, async () => [state], {
-      recipe: recipeOf(RECIPE),
-      agentEnv: agentEnv(['TOKEN_A', 'TOKEN_B']),
-      runtimes: (() => []) as never,
-    })
+    const rows = await Effect.runPromise(
+      declaredEnvironment({}, () => Effect.succeed([state]), {
+        recipe: recipeOf(RECIPE),
+        agentEnv: agentEnv(['TOKEN_A', 'TOKEN_B']),
+        runtimes: (() => []) as never,
+      }),
+    )
     const row = rows.find((r) => r.name === 'env: alpha')!
     expect(row.status).toBe('fail')
     PLAIN(row.title)
@@ -195,24 +197,28 @@ describe('per-project rows through declaredEnvironment', () => {
         detail: 'dyld: Library not loaded',
       }),
     } as never
-    const rows = await declaredEnvironment({}, async () => [state], {
-      recipe: recipeOf(RECIPE),
-      agentEnv: agentEnv([]),
-      runtimes: (() => [broken]) as never,
-    })
+    const rows = await Effect.runPromise(
+      declaredEnvironment({}, () => Effect.succeed([state]), {
+        recipe: recipeOf(RECIPE),
+        agentEnv: agentEnv([]),
+        runtimes: (() => [broken]) as never,
+      }),
+    )
     const row = rows.find((r) => r.name === 'runtime: alpha signed in')!
     expect(row.title).toBe("alpha's runtime agent, claude-code, does not start")
     expect(row.detail).not.toContain('signed in yourself')
   })
 
   it('env: an unreadable environment is titled and has no fix', async () => {
-    const rows = await declaredEnvironment({}, async () => [state], {
-      recipe: recipeOf(RECIPE),
-      agentEnv: async () => {
-        throw new Error('boom')
-      },
-      runtimes: (() => []) as never,
-    })
+    const rows = await Effect.runPromise(
+      declaredEnvironment({}, () => Effect.succeed([state]), {
+        recipe: recipeOf(RECIPE),
+        agentEnv: async () => {
+          throw new Error('boom')
+        },
+        runtimes: (() => []) as never,
+      }),
+    )
     const row = rows.find((r) => r.name === 'env: alpha')!
     PLAIN(row.title)
     expect(row.fix).toBeUndefined()
@@ -220,11 +226,13 @@ describe('per-project rows through declaredEnvironment', () => {
 
   it('runtime and steps signed-in rows are titled and carry no fix', async () => {
     const recipe = recipeOf(RECIPE.replace('steps: {}', 'steps: { review: [{ name: x, prompt: y, agent: codex }] }'))
-    const rows = await declaredEnvironment({}, async () => [state], {
-      recipe,
-      agentEnv: agentEnv([]),
-      runtimes: (() => [signedOut('claude-code'), signedOut('codex')]) as never,
-    })
+    const rows = await Effect.runPromise(
+      declaredEnvironment({}, () => Effect.succeed([state]), {
+        recipe,
+        agentEnv: agentEnv([]),
+        runtimes: (() => [signedOut('claude-code'), signedOut('codex')]) as never,
+      }),
+    )
     const signed = rows.filter((r) => r.name.endsWith('signed in') && !r.name.startsWith('discuss'))
     expect(signed.map((r) => r.name)).toEqual(['runtime: alpha signed in', 'steps: alpha codex signed in'])
     for (const row of signed) {
@@ -238,12 +246,14 @@ describe('per-project rows through declaredEnvironment', () => {
 
   it('triage and discuss: signed out, limits and codex-ready rows are titled', async () => {
     const recipe = recipeOf(`${RECIPE}\ntriage: { agent: codex, tools: full }\ndiscuss: { agent: codex }\n`)
-    const rows = await declaredEnvironment({}, async () => [state], {
-      recipe,
-      agentEnv: agentEnv([]),
-      runtimes: (() => [signedOut('claude-code'), signedOut('codex')]) as never,
-      codexText: () => undefined,
-    })
+    const rows = await Effect.runPromise(
+      declaredEnvironment({}, () => Effect.succeed([state]), {
+        recipe,
+        agentEnv: agentEnv([]),
+        runtimes: (() => [signedOut('claude-code'), signedOut('codex')]) as never,
+        codexText: () => undefined,
+      }),
+    )
     for (const name of ['triage: alpha signed in', 'triage: alpha limits', 'discuss: alpha codex ready']) {
       const row = rows.find((r) => r.name === name)!
       expect(row.status).not.toBe('ok')
@@ -253,11 +263,13 @@ describe('per-project rows through declaredEnvironment', () => {
   })
 
   it('discuss: signed out on a non-codex agent is titled', async () => {
-    const rows = await declaredEnvironment({}, async () => [state], {
-      recipe: recipeOf(`${RECIPE}\ndiscuss: { agent: claude-code }\n`),
-      agentEnv: agentEnv([]),
-      runtimes: (() => [signedOut('claude-code')]) as never,
-    })
+    const rows = await Effect.runPromise(
+      declaredEnvironment({}, () => Effect.succeed([state]), {
+        recipe: recipeOf(`${RECIPE}\ndiscuss: { agent: claude-code }\n`),
+        agentEnv: agentEnv([]),
+        runtimes: (() => [signedOut('claude-code')]) as never,
+      }),
+    )
     const row = rows.find((r) => r.name === 'discuss: alpha signed in')!
     expect(row.status).toBe('fail')
     PLAIN(row.title)
@@ -271,8 +283,8 @@ describe('base: <project>', () => {
   it('gives an owned project the command, and a --local one none', async () => {
     const owned = { project: 'alpha', owner: 'acme', base: 'develop' } as ProjectState
     const local = { project: 'alpha', owner: null, base: 'develop' } as ProjectState
-    const [a] = await recipeGovernsItsBase({}, async () => [owned], { recipe })
-    const [b] = await recipeGovernsItsBase({}, async () => [local], { recipe })
+    const [a] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([owned]), { recipe }))
+    const [b] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([local]), { recipe }))
     expect(a).toMatchObject({ name: 'base: alpha', status: 'fail', fix: 'lingtai add acme/alpha --base main' })
     expect(b).toMatchObject({ name: 'base: alpha', status: 'fail' })
     expect(b!.fix).toBeUndefined()

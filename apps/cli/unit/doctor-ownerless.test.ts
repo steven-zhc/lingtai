@@ -15,9 +15,10 @@
  * spawns `claude auth status` — and never builds a `GitHubClient`, which
  * `recipeFor` below proves by recording what it was handed.
  */
-import type { RecipeFor } from '@lingtai/conductor'
-import { currentRecipe } from '@lingtai/conductor'
+import type { RecipeForEffect } from '@lingtai/conductor/filter'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import type { ProjectState } from '@lingtai/domain'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { type DoctorReach, declaredEnvironment, recipeGovernsItsBase } from '../src/doctor.ts'
@@ -30,16 +31,16 @@ import { type DoctorReach, declaredEnvironment, recipeGovernsItsBase } from '../
  * so a test can assert that neither row ever tries to build a `GitHubClient`
  * for a project with no owner.
  */
-function recipeOf(text: string): RecipeFor & { clients: unknown[] } {
+function recipeOf(text: string): RecipeForEffect & { clients: unknown[] } {
   const clients: unknown[] = []
-  const fn = (async (state: ProjectState, client: unknown) => {
+  const fn = ((state: ProjectState, client: unknown) => {
     clients.push(client)
-    return currentRecipe(state, client, undefined, {
+    return currentRecipeEffect(state, client, undefined, {
       home: '/nonexistent-home',
       read: async (p: string) => (p.endsWith('recipe.yml') ? text : null),
       signedIn: async () => [],
     })
-  }) as RecipeFor & { clients: unknown[] }
+  }) as RecipeForEffect & { clients: unknown[] }
   fn.clients = clients
   return fn
 }
@@ -103,7 +104,9 @@ describe('declaredEnvironment, every agent a recipe dispatches', () => {
   const rowsFor = (steps: string, codexSignedIn = true) => {
     const { asks, runtimes } = twoRuntimes(codexSignedIn)
     const recipe = recipeOf(RECIPE_OK.replace('steps: {}', steps))
-    return declaredEnvironment({}, async () => [state], { recipe, agentEnv: agentEnvStub, runtimes }).then((rows) => ({
+    return Effect.runPromise(
+      declaredEnvironment({}, () => Effect.succeed([state]), { recipe, agentEnv: agentEnvStub, runtimes }),
+    ).then((rows) => ({
       asks,
       rows: rows.filter((r) => /^(runtime|steps): .* signed in$/.test(r.name)),
     }))
@@ -145,19 +148,21 @@ describe('declaredEnvironment, a project with no owner', () => {
     const saved = process.env['CODEX_HOME']
     process.env['CODEX_HOME'] = '/profile/codex'
     try {
-      await declaredEnvironment({}, async () => [state], {
-        recipe,
-        agentEnv: agentEnvStub,
-        runtimes: (() => [
-          {
-            capabilities: { id: 'codex', enforces: ['wall'] },
-            checkAuth: async (env: Record<string, string>) => {
-              seen.push(env['CODEX_HOME'])
-              return { state: 'signed-in', loggedIn: true, method: null, detail: 'ok' }
+      await Effect.runPromise(
+        declaredEnvironment({}, () => Effect.succeed([state]), {
+          recipe,
+          agentEnv: agentEnvStub,
+          runtimes: (() => [
+            {
+              capabilities: { id: 'codex', enforces: ['wall'] },
+              checkAuth: async (env: Record<string, string>) => {
+                seen.push(env['CODEX_HOME'])
+                return { state: 'signed-in', loggedIn: true, method: null, detail: 'ok' }
+              },
             },
-          },
-        ]) as unknown as DoctorReach['runtimes'],
-      })
+          ]) as unknown as DoctorReach['runtimes'],
+        }),
+      )
     } finally {
       if (saved === undefined) delete process.env['CODEX_HOME']
       else process.env['CODEX_HOME'] = saved
@@ -170,23 +175,25 @@ describe('declaredEnvironment, a project with no owner', () => {
     const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
     let probes = 0
     let textReads = 0
-    const rows = await declaredEnvironment({}, async () => [state], {
-      recipe,
-      agentEnv: agentEnvStub,
-      runtimes: (() => [
-        {
-          capabilities: { id: 'codex', enforces: ['wall'] },
-          checkAuth: async () => {
-            probes += 1
-            return { state: 'signed-in', loggedIn: true, method: null, detail: 'Logged in using ChatGPT' }
+    const rows = await Effect.runPromise(
+      declaredEnvironment({}, () => Effect.succeed([state]), {
+        recipe,
+        agentEnv: agentEnvStub,
+        runtimes: (() => [
+          {
+            capabilities: { id: 'codex', enforces: ['wall'] },
+            checkAuth: async () => {
+              probes += 1
+              return { state: 'signed-in', loggedIn: true, method: null, detail: 'Logged in using ChatGPT' }
+            },
           },
+        ]) as unknown as DoctorReach['runtimes'],
+        codexText: () => {
+          textReads += 1
+          return undefined
         },
-      ]) as unknown as DoctorReach['runtimes'],
-      codexText: () => {
-        textReads += 1
-        return undefined
-      },
-    })
+      }),
+    )
     expect(rows.find((row) => row.name === 'triage: esctest codex ready')).toBeUndefined()
     const signedIn = rows.find((row) => row.name === 'triage: esctest signed in')
     expect(signedIn?.status).toBe('ok')
@@ -214,12 +221,14 @@ describe('declaredEnvironment, a project with no owner', () => {
       inputUsdPerMillion: 1,
       outputUsdPerMillion: 1,
     }
-    const rows = await declaredEnvironment({}, async () => [state], {
-      recipe,
-      agentEnv: agentEnvStub,
-      runtimes: runtimesStub,
-      codexText: () => configured,
-    })
+    const rows = await Effect.runPromise(
+      declaredEnvironment({}, () => Effect.succeed([state]), {
+        recipe,
+        agentEnv: agentEnvStub,
+        runtimes: runtimesStub,
+        codexText: () => configured,
+      }),
+    )
     expect(rows.find((row) => row.name === 'discuss: esctest codex ready')?.status).toBe('ok')
     expect(rows.find((row) => row.name === 'triage: esctest codex ready')).toMatchObject({
       status: 'fail',
@@ -227,25 +236,29 @@ describe('declaredEnvironment, a project with no owner', () => {
     })
     expect(JSON.stringify(rows)).not.toContain(configured.apiKey)
 
-    const missing = await declaredEnvironment({}, async () => [state], {
-      recipe,
-      agentEnv: agentEnvStub,
-      runtimes: runtimesStub,
-      codexText: () => undefined,
-    })
+    const missing = await Effect.runPromise(
+      declaredEnvironment({}, () => Effect.succeed([state]), {
+        recipe,
+        agentEnv: agentEnvStub,
+        runtimes: runtimesStub,
+        codexText: () => undefined,
+      }),
+    )
     expect(missing.filter((row) => row.name.endsWith('codex ready')).map((row) => row.status)).toEqual(['fail', 'fail'])
   })
 
   it('gives every row ok, by name, and builds no GitHub client', async () => {
     const recipe = recipeOf(RECIPE_OK)
     const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
-    const load = async () => [state]
+    const load = () => Effect.succeed([state])
 
-    const rows = await declaredEnvironment({}, load, {
-      recipe,
-      agentEnv: agentEnvStub,
-      runtimes: runtimesStub,
-    } satisfies Partial<DoctorReach>)
+    const rows = await Effect.runPromise(
+      declaredEnvironment({}, load, {
+        recipe,
+        agentEnv: agentEnvStub,
+        runtimes: runtimesStub,
+      } satisfies Partial<DoctorReach>),
+    )
 
     expect(rows.map((r) => r.name)).toEqual([
       'env: esctest',
@@ -262,7 +275,7 @@ describe('declaredEnvironment, a project with no owner', () => {
 
   it('skips rather than continuing past a project with no name recorded', async () => {
     const state = { project: null, owner: null, base: null } as ProjectState
-    const rows = await declaredEnvironment({}, async () => [state])
+    const rows = await Effect.runPromise(declaredEnvironment({}, () => Effect.succeed([state])))
 
     expect(rows).toEqual([
       { name: 'env: (unnamed)', status: 'skip', detail: 'no repository name recorded — re-run lingtai add' },
@@ -278,7 +291,7 @@ describe('recipeGovernsItsBase, a project with no owner', () => {
     const recipe = recipeOf(RECIPE_NO_REMOTE)
     const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
 
-    const [row] = await recipeGovernsItsBase({}, async () => [state], { recipe })
+    const [row] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([state]), { recipe }))
 
     expect(row?.name).toBe('base: esctest')
     expect(row?.status).toBe('ok')
@@ -288,7 +301,7 @@ describe('recipeGovernsItsBase, a project with no owner', () => {
     const recipe = recipeOf(RECIPE_OK)
     const state = { project: 'esctest', owner: null, base: 'develop' } as ProjectState
 
-    const [row] = await recipeGovernsItsBase({}, async () => [state], { recipe })
+    const [row] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([state]), { recipe }))
 
     expect(row?.name).toBe('base: esctest')
     expect(row?.status).toBe('fail')
@@ -299,7 +312,7 @@ describe('recipeGovernsItsBase, a project with no owner', () => {
     const recipe = recipeOf(RECIPE_NO_REMOTE)
     const state = { project: 'esctest', owner: null, base: 'develop' } as ProjectState
 
-    const [row] = await recipeGovernsItsBase({}, async () => [state], { recipe })
+    const [row] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([state]), { recipe }))
 
     expect(row?.status).toBe('fail')
     expect(row?.detail).toContain('lingtai add <owner>/esctest --base main')
@@ -307,7 +320,7 @@ describe('recipeGovernsItsBase, a project with no owner', () => {
 
   it('skips rather than continuing past a project with no name recorded', async () => {
     const state = { project: null, owner: null, base: null } as ProjectState
-    const rows = await recipeGovernsItsBase({}, async () => [state])
+    const rows = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([state])))
 
     expect(rows).toEqual([
       { name: 'base: (unnamed)', status: 'skip', detail: 'no repository name recorded — re-run lingtai add' },

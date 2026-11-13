@@ -58,7 +58,9 @@ describe('daemon: currency', () => {
   })
 
   it('titles the no-commit warn', async () => {
-    const row = await daemonCurrency(async () => ({ codeSha: null, state: 'idle', lastSeenAt: new Date() }) as never)
+    const row = await Effect.runPromise(
+      daemonCurrency(() => Effect.succeed({ codeSha: null, state: 'idle', lastSeenAt: new Date() } as never)),
+    )
     expect(row.name).toBe('daemon: currency')
     expect(row.status).toBe('warn')
     expect(row.fix).toBe(RESTART)
@@ -66,10 +68,12 @@ describe('daemon: currency', () => {
   })
 
   it('is not a warn, and offers no restart, for a binary daemon that records no commit', async () => {
-    const row = await daemonCurrency(async () => ({ codeSha: null, state: 'idle', lastSeenAt: new Date() }) as never, {
-      form: 'binary',
-      lingtai: '0.10.0',
-    })
+    const row = await Effect.runPromise(
+      daemonCurrency(() => Effect.succeed({ codeSha: null, state: 'idle', lastSeenAt: new Date() } as never), {
+        form: 'binary',
+        lingtai: '0.10.0',
+      }),
+    )
     expect(row.status).toBe('ok')
     expect(row.fix).toBeUndefined()
     expect(row.detail).toContain('0.10.0')
@@ -77,9 +81,12 @@ describe('daemon: currency', () => {
   })
 
   it('judges a binary by its own form even when the beacon carries a sha', async () => {
-    const row = await daemonCurrency(
-      async () => ({ codeSha: 'abcdef0123', codeDirty: false, state: 'idle', lastSeenAt: new Date() }) as never,
-      { form: 'binary', lingtai: '0.10.0' },
+    const row = await Effect.runPromise(
+      daemonCurrency(
+        () =>
+          Effect.succeed({ codeSha: 'abcdef0123', codeDirty: false, state: 'idle', lastSeenAt: new Date() } as never),
+        { form: 'binary', lingtai: '0.10.0' },
+      ),
     )
     expect(row.status).toBe('ok')
     expect(row.fix).toBeUndefined()
@@ -132,15 +139,15 @@ describe('spend: today', () => {
   }
 
   it('titles the warn and the fail, and gives neither a fix', async () => {
-    const warn = await spendToday(
-      async () => ({ day, ceilingUsd: 50 }),
-      async () => emptyControl,
+    const warn = await Effect.runPromise(
+      spendToday(
+        () => Effect.succeed({ day, ceilingUsd: 50 }),
+        () => Effect.succeed(emptyControl),
+      ),
     )
     expect(warn.title).toBe("2 of today's runs reported no cost")
     expect(firstLine(warn)).toBe('the daily ceiling cannot see them')
-    const fail = await spendToday(async () => {
-      throw new Error('nope')
-    })
+    const fail = await Effect.runPromise(spendToday(() => Effect.fail(new Error('nope'))))
     expect(fail.status).toBe('fail')
     PLAIN(fail.title)
     expect(warn.fix ?? fail.fix).toBeUndefined()
@@ -278,13 +285,12 @@ describe('spend: today when the ceiling holds (#1005)', () => {
   })
   const reached = { day: '2026-11-11', reportedUsd: 20, estimatedUsd: 5, ceilingUsd: 25, at, seq: 1 }
   const run = (d: typeof day, ceilingUsd: number | undefined, state: ControlState | Error) =>
-    spendToday(
-      async () => ({ day: d, ceilingUsd }),
-      async () => {
-        if (state instanceof Error) throw state
-        return state
-      },
-      () => NOW,
+    Effect.runPromise(
+      spendToday(
+        () => Effect.succeed({ day: d, ceilingUsd }),
+        () => (state instanceof Error ? Effect.fail(state) : Effect.succeed(state)),
+        () => NOW,
+      ),
     )
 
   it('is info with the remedy on the first line, and never a fix', async () => {
@@ -327,12 +333,12 @@ describe('spend: today when the ceiling holds (#1005)', () => {
     expect(draw(raised)).toContain('raised from $25.00 to $40.00 by human:steven')
     const unread = await run(day, 25, new Error('store down'))
     expect(draw(unread)).toContain('could not read whether the ceiling holds — store down')
-    const failed = await spendToday(
-      async () => {
-        throw new Error('spend down')
-      },
-      async () => withCeiling({ reached }),
-      () => NOW,
+    const failed = await Effect.runPromise(
+      spendToday(
+        () => Effect.fail(new Error('spend down')),
+        () => Effect.succeed(withCeiling({ reached })),
+        () => NOW,
+      ),
     )
     expect(failed.status).toBe('fail')
     expect(draw(failed)).toContain('reached at 14:20')

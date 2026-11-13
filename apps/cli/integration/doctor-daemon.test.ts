@@ -22,7 +22,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { readControlEffect, readStatus, readStatusEffect } from '@lingtai/daemon/control'
+import { readControlEffect, readStatusEffect } from '@lingtai/daemon/control'
 import { createSqliteDaemonStore, openSqliteDaemon } from '@lingtai/daemon/sqlite'
 import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
 import { Effect } from 'effect'
@@ -57,7 +57,7 @@ describe('the daemon rows, read from a beacon in a file', () => {
       expect(liveness.status).toBe('ok')
       expect(liveness.detail).toContain('no daemon has run')
 
-      const currency = await daemonCurrency(() => readStatus(store))
+      const currency = await Effect.runPromise(daemonCurrency(() => readStatusEffect(store)))
       expect(currency.status).toBe('ok')
       expect(currency.detail).toContain('nothing is holding code open')
     } finally {
@@ -93,7 +93,7 @@ describe('the daemon rows, read from a beacon in a file', () => {
       expect(liveness.detail).not.toContain('not running')
       expect(liveness.detail).toContain('takes no work')
 
-      const currency = await daemonCurrency(() => readStatus(store))
+      const currency = await Effect.runPromise(daemonCurrency(() => readStatusEffect(store)))
       expect(currency.status).toBe('warn')
       expect(currency.detail).toContain('recorded no commit')
     } finally {
