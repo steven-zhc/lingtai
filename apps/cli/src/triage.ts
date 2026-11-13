@@ -12,7 +12,7 @@
  * test needs none of the real ones. `daemonTriagePorts` wires the production
  * ports for the daemon in this file.
  */
-import { createRuntime, runtimeRun, runtimeVersionOf, type Runtime, type RunOutcome } from '@lingtai/agent'
+import { createRuntime, runtimeVersionOfEffect, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import { readingFor } from '@lingtai/conductor/discuss'
 import { currentRecipeEffect, loadProjectEffect, loadProjectsEffect } from '@lingtai/conductor/projects'
@@ -60,12 +60,19 @@ import {
 } from '@lingtai/event-store'
 import { readTasksEffect, type TaskCard } from '@lingtai/projector'
 import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
-import { conflictedPathsAt, diffStatAt, listAt, readAt, refSha, refShaEffect, type ConflictedPath } from '@lingtai/repo'
-import { Cause, Context, Deferred, Effect, Exit, Semaphore } from 'effect'
+import {
+  conflictedPathsAtEffect,
+  diffStatAtEffect,
+  listAtEffect,
+  readAtEffect,
+  refShaEffect,
+  type ConflictedPath,
+} from '@lingtai/repo'
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Semaphore } from 'effect'
 
 import { prepare } from './discuss.ts'
 import { lift } from './exit.ts'
-import { prepareTriageCheckout } from './triage-checkout.ts'
+import { prepareTriageCheckout, type Checkout } from './triage-checkout.ts'
 
 /** One queue for this daemon process; the key stays present until its worker settles. */
 const queued = new Map<string, { done: Deferred.Deferred<unknown, unknown>; settled: Deferred.Deferred<void> }>()
@@ -484,27 +491,28 @@ export function daemonTriagePorts(
         return state === null ? null : ((yield* currentRecipeEffect(state)).recipe.triage ?? null)
       }),
     run: (request) =>
-      Effect.gen(function* () {
-        const now = Effect.runPromiseWith(yield* Effect.context<never>())
-        return yield* lift(() =>
-          waitTriage(
-            {
-              store: eventStore,
-              snapshots: processLog.snapshots,
-              writer,
-              runtime: createRuntime,
-              mirror: { refSha, listAt, readAt, diffStatAt, conflictedPathsAt },
-              issue: (ticketId, signal) => now(triageIssue()(ticketId, signal)),
-              base: (ticketId) => now(baseOf(ticketId)),
-              prepare,
-              prepareCheckout: (project, sha, signal) => prepareTriageCheckout(project, sha, undefined, signal),
-              now: Date.now,
-              log,
-            },
-            request,
-          ),
-        )
-      }),
+      waitTriage(
+        {
+          store: eventStore,
+          snapshots: processLog.snapshots,
+          writer,
+          runtime: createRuntime,
+          mirror: {
+            refSha: refShaEffect,
+            listAt: listAtEffect,
+            readAt: readAtEffect,
+            diffStatAt: diffStatAtEffect,
+            conflictedPathsAt: conflictedPathsAtEffect,
+          },
+          issue: triageIssue(),
+          base: baseOf,
+          prepare,
+          prepareCheckout: (project, sha, signal) => prepareTriageCheckout(project, sha, undefined, signal),
+          now: Date.now,
+          log,
+        },
+        request,
+      ),
   }
 }
 
@@ -525,43 +533,44 @@ export interface TriagePorts extends SnapshotReadOptions {
   store: EventStore
   runtime(agent: DiscussAgent, options: { tools: 'none' | 'full' }): Runtime
   mirror: {
-    refSha(input: { project: string; ref: string; signal?: AbortSignal }): Promise<string | null>
+    refSha(input: { project: string; ref: string; signal?: AbortSignal }): Effect.Effect<string | null, unknown>
     listAt(input: {
       project: string
       ref: string
       signal?: AbortSignal
-    }): Promise<{ paths: string[]; truncated: boolean }>
+    }): Effect.Effect<{ paths: string[]; truncated: boolean }, unknown>
     readAt(input: {
       project: string
       ref: string
       path: string
       limitBytes?: number
       signal?: AbortSignal
-    }): Promise<string | null>
-    diffStatAt(input: { project: string; base: string; head: string; signal?: AbortSignal }): Promise<string | null>
+    }): Effect.Effect<string | null, unknown>
+    diffStatAt(input: {
+      project: string
+      base: string
+      head: string
+      signal?: AbortSignal
+    }): Effect.Effect<string | null, unknown>
     conflictedPathsAt(input: {
       project: string
       baseSha: string
       headSha: string
       signal?: AbortSignal
-    }): Promise<ConflictedPath[]>
+    }): Effect.Effect<ConflictedPath[], unknown>
   }
-  /** The ticket, as GitHub has it now. Throws, or rejects, to say why it could not be read. */
-  issue(ticketId: string, signal?: AbortSignal): Promise<{ ref: string; title: string; body: string }>
+  /** The ticket, as GitHub has it now. Fails to say why it could not be read. */
+  issue(ticketId: string, signal?: AbortSignal): Effect.Effect<{ ref: string; title: string; body: string }, unknown>
   /** The project's base branch. */
-  base(ticketId: string): Promise<string>
+  base(ticketId: string): Effect.Effect<string, unknown>
   /** `apps/cli/src/discuss.ts`'s `prepare` in production — an empty directory and a settings file that denies every tool. */
-  prepare(id: string): Promise<{ cwd: string; settingsPath: string }>
-  prepareCheckout?(
-    project: string,
-    sha: string,
-    signal?: AbortSignal,
-  ): Promise<{
-    cwd: string
-    settingsPath: string
-    env: Record<string, string>
-    cleanup(): Promise<void>
-  }>
+  prepare(id: string): Effect.Effect<{ cwd: string; settingsPath: string }, unknown>
+  /**
+   * A private checkout. Its `cleanup` is the caller's to run, because only the caller knows whether a
+   * tool may still be running in it: a port that registered its own release would delete the directory
+   * under a live tool.
+   */
+  prepareCheckout?(project: string, sha: string, signal?: AbortSignal): Effect.Effect<Checkout, unknown>
   now(): number
   log?(line: string): void
 }
@@ -574,134 +583,6 @@ export interface WaitTriageRequest {
   signal?: AbortSignal
 }
 
-/**
- * The evidence `triageBrief` is handed, gathered through the ports alone —
- * never `@lingtai/conductor/discuss`'s `gatherEvidence`, which reads the
- * global event store and returns the wrong shape (the design note's own
- * reason). A mirror or GitHub failure becomes `null`/`ticketProblem` here,
- * never an exception.
- */
-async function gatherEvidence(
-  deps: TriagePorts,
-  request: WaitTriageRequest,
-  before: readonly Envelope[],
-  guard: <T>(work: Promise<T>) => Promise<T>,
-  signal: AbortSignal,
-): Promise<{ evidence: TriageEvidence; baseSha: string | null; headSha: string | null; recordedHead: string | null }> {
-  const project = parseTicketStream(request.ticketId)?.project ?? ''
-
-  let ticket: TriageEvidence['ticket'] = null
-  let ticketProblem: string | null = null
-  try {
-    ticket = await guard(deps.issue(request.ticketId, signal))
-  } catch (err) {
-    ticketProblem = (err as Error).message
-  }
-
-  const base = await guard(deps.base(request.ticketId)).catch(() => 'main')
-
-  // `'run' in reason` is `wait.ts`'s own test (`allowedResolutions`) —
-  // `OwnQuestion` is the one `WaitReason` with no run, and this is not the
-  // place to refuse it: whether to triage is `triageStatus`'s call (#444).
-  const runId = 'run' in request.reason ? request.reason.run.runId : null
-
-  // 1-based, in the ticket's own claim order (`item.runs`) — the same
-  // numbering the detail page and Discussion's `attempt-<n>` ref use. Falls
-  // back to 1 rather than null when the run is not found there, so a mirror
-  // read never gets suppressed over a numbering gap.
-  const runIndex = runId === null ? -1 : reduceTicket(before).runs.indexOf(runId)
-  const runAttempt = runId === null ? null : runIndex >= 0 ? runIndex + 1 : 1
-
-  let routed: StoredRoute | null = null
-  let published: PayloadOf<'RunRefsPublished'> | null = null
-  let head: string | null = null
-  if (runId !== null) {
-    // An unreadable run stream is not evidence that the attempt has no head.
-    const run = await readState(deps.store, attemptReducer, runId, 'all', deps)
-    routed = run.route
-    published = run.published
-    head = run.headSha
-  }
-
-  const baseSha = await guard(deps.mirror.refSha({ project, ref: base, signal })).catch(() => null)
-  const refs: ReadableRef[] = []
-  if (baseSha !== null) {
-    const listed = await guard(deps.mirror.listAt({ project, ref: base, signal })).catch(() => ({
-      paths: [],
-      truncated: false,
-    }))
-    refs.push({ ref: base, sha: baseSha, paths: listed.paths, truncated: listed.truncated })
-  }
-  let headSha: string | null = null
-  if (head !== null) {
-    headSha = await guard(deps.mirror.refSha({ project, ref: head, signal })).catch(() => null)
-    if (headSha !== null) {
-      const listed = await guard(deps.mirror.listAt({ project, ref: headSha, signal })).catch(() => ({
-        paths: [],
-        truncated: false,
-      }))
-      refs.push({ ref: `attempt-${runAttempt ?? 1}`, sha: headSha, paths: listed.paths, truncated: listed.truncated })
-    }
-  }
-
-  const diffStat =
-    baseSha !== null && headSha !== null
-      ? await guard(deps.mirror.diffStatAt({ project, base: baseSha, head: headSha, signal })).catch(() => null)
-      : null
-
-  return {
-    evidence: {
-      ticketId: request.ticketId,
-      ticket,
-      ticketProblem,
-      reason: request.reason,
-      routed,
-      published,
-      diffStat,
-      // `head`, the log's own claim (`AttemptState.headSha`) —
-      // never `headSha`, the mirror's resolution of it. A mirror that cannot
-      // resolve a head the attempt did produce (a pruned worktree, a re-cloned
-      // mirror) must not read as "the attempt committed nothing": the log is
-      // what settles whether the attempt produced a commit, the mirror only
-      // whether a file can be served for it. `discuss.ts:226`'s own
-      // `gatherEvidence` follows the same rule.
-      reading: readingFor({ base, baseSha, attempt: runAttempt, head }),
-      refs,
-    },
-    baseSha,
-    headSha,
-    recordedHead: head,
-  }
-}
-
-/**
- * One wait, triaged. Appends `TriageStarted`, dispatches the agent under
- * Discussion's containment, and ends with exactly one `WaitTriaged` carrying
- * the same `attempt`. Every failure up to and including the agent's own run
- * is caught and turned into a `TriageFailed` `WaitTriaged` rather than
- * thrown — except the `WaitTriaged` append itself, which throws if it still
- * cannot be made to land after retrying, rather than reporting a result that
- * was never recorded.
- */
-export async function waitTriage(
-  deps: TriagePorts,
-  request: WaitTriageRequest,
-): Promise<{ attempt: number; result: TriageResult; started?: boolean }> {
-  // The recipe's wall starts here, before the first read, and bounds the whole
-  // attempt — reads included. A timer we clear rather than `AbortSignal.timeout`,
-  // so a finished attempt leaves nothing keeping the event loop alive.
-  const wallMs = triageCallFor(request.triage).wallMs
-  const wall = new AbortController()
-  const timer = setTimeout(() => wall.abort(), wallMs)
-  timer.unref?.()
-  const startedAt = deps.now()
-  try {
-    return await waitTriageWithin(deps, request, wall.signal, startedAt + wallMs)
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 /** Rejects with this when the wall fires while a read is outstanding. */
 class WallReached extends Error {
   constructor() {
@@ -709,121 +590,289 @@ class WallReached extends Error {
   }
 }
 
-async function waitTriageWithin(
+/**
+ * Races `work` against the wall. The work runs on a fiber of its own, so the race ends the moment the
+ * wall fires even when the work cannot be interrupted (a checkout's acquire is uninterruptible) — a
+ * stuck read must not hold the queue's one permit. The abandoned fiber is told to stop, in the
+ * background, and whatever it still produces is dropped.
+ */
+type Guard = <A, E>(work: Effect.Effect<A, E>) => Effect.Effect<A, E | WallReached>
+
+const guardedBy =
+  (signal: AbortSignal): Guard =>
+  <A, E>(work: Effect.Effect<A, E>): Effect.Effect<A, E | WallReached> =>
+    Effect.suspend(() => {
+      if (signal.aborted) return Effect.fail(new WallReached())
+      return Effect.gen(function* () {
+        const fiber = yield* Effect.forkDetach(work)
+        const walled = Effect.callback<never, WallReached>((resume) => {
+          const onAbort = (): void => resume(Effect.fail(new WallReached()))
+          signal.addEventListener('abort', onAbort, { once: true })
+          return Effect.sync(() => signal.removeEventListener('abort', onAbort))
+        })
+        return yield* Effect.raceFirst(Fiber.join(fiber), walled).pipe(
+          Effect.onExit(() => Effect.forkDetach(Fiber.interrupt(fiber))),
+        )
+      })
+    })
+
+/** The `try`/`catch` of a promise: the value, or what was thrown. An interruption is neither. */
+const settle = <A>(
+  work: Effect.Effect<A, unknown>,
+): Effect.Effect<{ ok: true; value: A } | { ok: false; error: unknown }> =>
+  work.pipe(
+    Effect.map((value) => ({ ok: true as const, value })),
+    recoverWith((error) => Effect.succeed({ ok: false as const, error })),
+  )
+
+/**
+ * The evidence `triageBrief` is handed, gathered through the ports alone —
+ * never `@lingtai/conductor/discuss`'s `gatherEvidence`, which reads the
+ * global event store and returns the wrong shape (the design note's own
+ * reason). A mirror or GitHub failure becomes `null`/`ticketProblem` here,
+ * never an exception.
+ */
+const gatherEvidence = (
+  deps: TriagePorts,
+  request: WaitTriageRequest,
+  before: readonly Envelope[],
+  guard: Guard,
+  signal: AbortSignal,
+): Effect.Effect<
+  { evidence: TriageEvidence; baseSha: string | null; headSha: string | null; recordedHead: string | null },
+  unknown
+> =>
+  Effect.gen(function* () {
+    const project = parseTicketStream(request.ticketId)?.project ?? ''
+    const orElse = <B>(fallback: B) => recoverWith(() => Effect.succeed(fallback))
+
+    let ticket: TriageEvidence['ticket'] = null
+    let ticketProblem: string | null = null
+    const issued = yield* settle(guard(deps.issue(request.ticketId, signal)))
+    if (issued.ok) ticket = issued.value
+    else ticketProblem = (issued.error as Error).message
+
+    const base = yield* guard(deps.base(request.ticketId)).pipe(orElse('main'))
+
+    // `'run' in reason` is `wait.ts`'s own test (`allowedResolutions`) —
+    // `OwnQuestion` is the one `WaitReason` with no run, and this is not the
+    // place to refuse it: whether to triage is `triageStatus`'s call (#444).
+    const runId = 'run' in request.reason ? request.reason.run.runId : null
+
+    // 1-based, in the ticket's own claim order (`item.runs`) — the same
+    // numbering the detail page and Discussion's `attempt-<n>` ref use. Falls
+    // back to 1 rather than null when the run is not found there, so a mirror
+    // read never gets suppressed over a numbering gap.
+    const runIndex = runId === null ? -1 : reduceTicket(before).runs.indexOf(runId)
+    const runAttempt = runId === null ? null : runIndex >= 0 ? runIndex + 1 : 1
+
+    let routed: StoredRoute | null = null
+    let published: PayloadOf<'RunRefsPublished'> | null = null
+    let head: string | null = null
+    if (runId !== null) {
+      // An unreadable run stream is not evidence that the attempt has no head.
+      const run = yield* lift(() => readState(deps.store, attemptReducer, runId, 'all', deps))
+      routed = run.route
+      published = run.published
+      head = run.headSha
+    }
+
+    const noPaths = { paths: [] as string[], truncated: false }
+    const baseSha = yield* guard(deps.mirror.refSha({ project, ref: base, signal })).pipe(orElse<string | null>(null))
+    const refs: ReadableRef[] = []
+    if (baseSha !== null) {
+      const listed = yield* guard(deps.mirror.listAt({ project, ref: base, signal })).pipe(orElse(noPaths))
+      refs.push({ ref: base, sha: baseSha, paths: listed.paths, truncated: listed.truncated })
+    }
+    let headSha: string | null = null
+    if (head !== null) {
+      headSha = yield* guard(deps.mirror.refSha({ project, ref: head, signal })).pipe(orElse<string | null>(null))
+      if (headSha !== null) {
+        const listed = yield* guard(deps.mirror.listAt({ project, ref: headSha, signal })).pipe(orElse(noPaths))
+        refs.push({
+          ref: `attempt-${runAttempt ?? 1}`,
+          sha: headSha,
+          paths: listed.paths,
+          truncated: listed.truncated,
+        })
+      }
+    }
+
+    const diffStat =
+      baseSha !== null && headSha !== null
+        ? yield* guard(deps.mirror.diffStatAt({ project, base: baseSha, head: headSha, signal })).pipe(
+            orElse<string | null>(null),
+          )
+        : null
+
+    return {
+      evidence: {
+        ticketId: request.ticketId,
+        ticket,
+        ticketProblem,
+        reason: request.reason,
+        routed,
+        published,
+        diffStat,
+        // `head`, the log's own claim (`AttemptState.headSha`) —
+        // never `headSha`, the mirror's resolution of it. A mirror that cannot
+        // resolve a head the attempt did produce (a pruned worktree, a re-cloned
+        // mirror) must not read as "the attempt committed nothing": the log is
+        // what settles whether the attempt produced a commit, the mirror only
+        // whether a file can be served for it. `discuss.ts:226`'s own
+        // `gatherEvidence` follows the same rule.
+        reading: readingFor({ base, baseSha, attempt: runAttempt, head }),
+        refs,
+      },
+      baseSha,
+      headSha,
+      recordedHead: head,
+    }
+  })
+
+/**
+ * One wait, triaged. Appends `TriageStarted`, dispatches the agent under
+ * Discussion's containment, and ends with exactly one `WaitTriaged` carrying
+ * the same `attempt`. Every failure up to and including the agent's own run
+ * is caught and turned into a `TriageFailed` `WaitTriaged` rather than
+ * failed — except the `WaitTriaged` append itself, which fails if it still
+ * cannot be made to land after retrying, rather than reporting a result that
+ * was never recorded.
+ */
+export const waitTriage = (
+  deps: TriagePorts,
+  request: WaitTriageRequest,
+): Effect.Effect<{ attempt: number; result: TriageResult; started?: boolean }, unknown> =>
+  Effect.suspend(() => {
+    // The recipe's wall starts here, before the first read, and bounds the whole
+    // attempt — reads included. A timer we clear rather than `AbortSignal.timeout`,
+    // so a finished attempt leaves nothing keeping the event loop alive.
+    const wallMs = triageCallFor(request.triage).wallMs
+    const wall = new AbortController()
+    const timer = setTimeout(() => wall.abort(), wallMs)
+    timer.unref?.()
+    const startedAt = deps.now()
+    return waitTriageWithin(deps, request, wall.signal, startedAt + wallMs).pipe(
+      Effect.ensuring(Effect.sync(() => clearTimeout(timer))),
+    )
+  })
+
+type Waited = { attempt: number; result: TriageResult; started?: boolean }
+
+const waitTriageWithin = (
   deps: TriagePorts,
   request: WaitTriageRequest,
   wallSignal: AbortSignal,
   wallDeadline: number,
-): Promise<{ attempt: number; result: TriageResult; started?: boolean }> {
-  const log = deps.log ?? (() => {})
-  const callerSignal = request.signal
-  const signal = callerSignal === undefined ? wallSignal : AbortSignal.any([wallSignal, callerSignal])
-  // A read that ignores its signal never settles; racing it is what makes the
-  // wall a bound rather than a request. A port that did settle late is dropped.
-  const guard = <T>(work: Promise<T>): Promise<T> => {
-    if (signal.aborted) {
-      work.catch(() => {})
-      return Promise.reject(new WallReached())
-    }
-    return new Promise<T>((resolve, reject) => {
-      const onAbort = (): void => {
-        work.catch(() => {})
-        reject(new WallReached())
-      }
-      signal.addEventListener('abort', onAbort, { once: true })
-      work.then(
-        (v) => {
-          signal.removeEventListener('abort', onAbort)
-          resolve(v)
-        },
-        (e: unknown) => {
-          signal.removeEventListener('abort', onAbort)
-          reject(e)
-        },
-      )
-    })
-  }
-  const abortedWhy = (): string => (callerSignal?.aborted ? 'aborted' : 'timeout')
-  const stream = request.ticketId
+): Effect.Effect<Waited, unknown> =>
+  Effect.gen(function* () {
+    const log = deps.log ?? (() => {})
+    const callerSignal = request.signal
+    const signal = callerSignal === undefined ? wallSignal : AbortSignal.any([wallSignal, callerSignal])
+    // A read that ignores its signal never settles; racing it is what makes the
+    // wall a bound rather than a request. A port that did settle late is dropped.
+    const guard = guardedBy(signal)
+    const abortedWhy = (): string => (callerSignal?.aborted ? 'aborted' : 'timeout')
+    const stream = request.ticketId
+    const project = parseTicketStream(request.ticketId)?.project ?? ''
 
-  let before: Envelope[]
-  try {
-    before = await deps.store.read(stream)
-  } catch (err) {
-    log(`triage ${request.waitId}: could not read ${stream} — ${(err as Error).message}`)
-    return {
-      // 0, not 1 — no `TriageStarted` was ever appended, so there is no
-      // attempt for this result to share a number with.
-      attempt: 0,
-      result: { _tag: 'TriageFailed', why: clip(`could not read the ticket: ${(err as Error).message}`) },
-      started: false,
+    let before: Envelope[]
+    const readBefore = yield* settle(lift(() => deps.store.read(stream)))
+    if (!readBefore.ok) {
+      log(`triage ${request.waitId}: could not read ${stream} — ${(readBefore.error as Error).message}`)
+      return {
+        // 0, not 1 — no `TriageStarted` was ever appended, so there is no
+        // attempt for this result to share a number with.
+        attempt: 0,
+        result: {
+          _tag: 'TriageFailed',
+          why: clip(`could not read the ticket: ${(readBefore.error as Error).message}`),
+        },
+        started: false,
+      } satisfies Waited
     }
-  }
-  const waitIsCurrent = (events: readonly Envelope[]): boolean =>
-    !reduceTicket(events).waits.some((w) => w.waitId === request.waitId) || currentWait(events, request.waitId)
-  if (!waitIsCurrent(before)) {
-    return { attempt: 0, result: { _tag: 'TriageFailed', why: 'wait no longer current' }, started: false }
-  }
-  const attempt =
-    (reduceTicket(before).waits.findLast((w) => w.waitId === request.waitId)?.triage.started?.attempt ?? 0) + 1
+    before = readBefore.value
+    const waitIsCurrent = (events: readonly Envelope[]): boolean =>
+      !reduceTicket(events).waits.some((w) => w.waitId === request.waitId) || currentWait(events, request.waitId)
+    if (!waitIsCurrent(before)) {
+      return {
+        attempt: 0,
+        result: { _tag: 'TriageFailed', why: 'wait no longer current' },
+        started: false,
+      } satisfies Waited
+    }
+    const attempt =
+      (reduceTicket(before).waits.findLast((w) => w.waitId === request.waitId)?.triage.started?.attempt ?? 0) + 1
 
-  const proposal = request.reason._tag === 'ProposedEscalated' ? request.reason.proposal : null
-  const conflict = proposal?._tag === 'MergeConflict' && proposal.baseSha !== null && proposal.headSha !== null
-  let conflictPaths: ConflictedPath[] | null = null
-  let mechanical: TriageResult | null = null
-  if (conflict) {
-    try {
-      const project = parseTicketStream(request.ticketId)?.project ?? ''
-      conflictPaths = await guard(
-        deps.mirror.conflictedPathsAt({
-          project,
-          baseSha: proposal.baseSha!,
-          headSha: proposal.headSha!,
-          signal,
-        }),
+    const proposal = request.reason._tag === 'ProposedEscalated' ? request.reason.proposal : null
+    const conflict = proposal?._tag === 'MergeConflict' && proposal.baseSha !== null && proposal.headSha !== null
+    let conflictPaths: ConflictedPath[] | null = null
+    let mechanical: TriageResult | null = null
+    if (conflict) {
+      const found = yield* settle(
+        guard(
+          deps.mirror.conflictedPathsAt({
+            project,
+            baseSha: proposal.baseSha!,
+            headSha: proposal.headSha!,
+            signal,
+          }),
+        ),
       )
-      const total = conflictPaths.reduce((sum, path) => sum + path.hunks, 0)
-      if (total > MERGE_HUNKS_ONE_BY_ONE) {
+      if (found.ok) {
+        conflictPaths = found.value
+        const total = conflictPaths.reduce((sum, path) => sum + path.hunks, 0)
+        if (total > MERGE_HUNKS_ONE_BY_ONE) {
+          mechanical = {
+            _tag: 'TriageAdvised',
+            cause: { _tag: 'ConflictingHunks', hunks: [], total },
+            resolution: 'Requeue',
+            summary: `${total} merge hunks need a fresh attempt from the new base`,
+            want: null,
+          }
+        }
+      } else {
         mechanical = {
-          _tag: 'TriageAdvised',
-          cause: { _tag: 'ConflictingHunks', hunks: [], total },
-          resolution: 'Requeue',
-          summary: `${total} merge hunks need a fresh attempt from the new base`,
-          want: null,
+          _tag: 'TriageFailed',
+          why: found.error instanceof WallReached ? abortedWhy() : clip((found.error as Error).message),
         }
       }
-    } catch (err) {
-      mechanical = {
-        _tag: 'TriageFailed',
-        why: err instanceof WallReached ? abortedWhy() : clip((err as Error).message),
-      }
     }
-  }
-  const by =
-    mechanical === null
-      ? { _tag: 'Agent' as const, runtime: request.triage.agent, model: request.triage.model ?? '' }
-      : { _tag: 'Mechanical' as const }
+    const by =
+      mechanical === null
+        ? { _tag: 'Agent' as const, runtime: request.triage.agent, model: request.triage.model ?? '' }
+        : { _tag: 'Mechanical' as const }
 
-  // A version conflict can be a person's WaitResolved or another triage.
-  // Re-read the lifecycle before retrying the paid attempt's append.
-  let started = false
-  let startedErr: unknown = null
-  for (let i = 0; i < 5 && !started; i += 1) {
-    try {
-      await deps.store.append(stream, before.length, [
-        {
-          type: 'TriageStarted',
-          actor: 'conductor',
-          data: parsePayload('TriageStarted', { waitId: request.waitId, attempt, by }),
-        },
-      ])
-      started = true
-    } catch (err) {
+    // A version conflict can be a person's WaitResolved or another triage.
+    // Re-read the lifecycle before retrying the paid attempt's append.
+    let started = false
+    let startedErr: unknown = null
+    for (let i = 0; i < 5 && !started; i += 1) {
+      const appended = yield* settle(
+        lift(() =>
+          deps.store.append(stream, before.length, [
+            {
+              type: 'TriageStarted',
+              actor: 'conductor',
+              data: parsePayload('TriageStarted', { waitId: request.waitId, attempt, by }),
+            },
+          ]),
+        ),
+      )
+      if (appended.ok) {
+        started = true
+        break
+      }
+      const err = appended.error
       if (err instanceof ConcurrencyError) {
         const since = before.length
-        before = await deps.store.read(stream)
+        before = yield* lift(() => deps.store.read(stream))
         if (!waitIsCurrent(before)) {
-          return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' }, started: false }
+          return {
+            attempt,
+            result: { _tag: 'TriageFailed', why: 'wait no longer current' },
+            started: false,
+          } satisfies Waited
         }
         const racedByOther = before
           .slice(since)
@@ -834,7 +883,7 @@ async function waitTriageWithin(
             attempt,
             result: { _tag: 'TriageFailed', why: clip('another attempt was already starting') },
             started: false,
-          }
+          } satisfies Waited
         }
         startedErr = err
         continue
@@ -844,371 +893,420 @@ async function waitTriageWithin(
         attempt,
         result: { _tag: 'TriageFailed', why: clip(`could not start: ${(err as Error).message}`) },
         started: false,
-      }
+      } satisfies Waited
     }
-  }
-  if (!started) {
-    const message = startedErr instanceof Error ? startedErr.message : String(startedErr)
-    log(`triage ${request.waitId}: TriageStarted append failed — ${message}`)
-    return { attempt, result: { _tag: 'TriageFailed', why: clip(`could not start: ${message}`) }, started: false }
-  }
+    if (!started) {
+      const message = startedErr instanceof Error ? startedErr.message : String(startedErr)
+      log(`triage ${request.waitId}: TriageStarted append failed — ${message}`)
+      return {
+        attempt,
+        result: { _tag: 'TriageFailed', why: clip(`could not start: ${message}`) },
+        started: false,
+      } satisfies Waited
+    }
 
-  let baseSha: string | null = null
-  let headSha: string | null = mechanical === null || proposal?._tag !== 'MergeConflict' ? null : proposal.headSha
-  let final: TriageResult
+    let baseSha: string | null = null
+    let headSha: string | null = mechanical === null || proposal?._tag !== 'MergeConflict' ? null : proposal.headSha
+    let final: TriageResult = { _tag: 'TriageFailed', why: 'triage did not run' }
 
-  if (mechanical !== null) {
-    final = mechanical
-  } else
-    try {
-      const gathered = await gatherEvidence(deps, request, before, guard, signal)
-      if (signal.aborted) throw new WallReached()
-      const evidence = gathered.evidence
-      evidence.conflicts = conflictPaths
-      baseSha = gathered.baseSha
-      headSha = gathered.headSha
-
-      const chatId = containmentId(request.waitId)
-      const full = request.triage.agent === 'codex' && request.triage.tools === 'full'
-      if (request.triage.tools === 'full' && !full) throw new Error('full triage tools require codex')
-      const selectedSha = gathered.recordedHead === null ? baseSha : headSha
-      if (full && selectedSha === null) {
-        throw new Error(
-          gathered.recordedHead === null ? 'base commit unavailable' : 'recorded attempt head unavailable',
-        )
-      }
-      const checkout = full
-        ? await guard(
-            (deps.prepareCheckout ?? ((p, sha, sig) => prepareTriageCheckout(p, sha, undefined, sig)))(
-              parseTicketStream(request.ticketId)?.project ?? '',
-              selectedSha!,
-              signal,
-            ).then((c) => {
-              // A checkout that lands after the wall must not be left behind.
-              if (signal.aborted) void c.cleanup().catch(() => {})
-              return c
-            }),
-          )
-        : null
+    if (mechanical !== null) {
+      final = mechanical
+    } else {
       // A run whose process scan did not finish may have a tool still alive in
       // the checkout; leaving the directory is safer than deleting it underneath.
       let toolsMayRemain = false
-      try {
-        const { cwd, settingsPath } = checkout ?? (await guard(deps.prepare(chatId)))
-        const runtime = deps.runtime(request.triage.agent, { tools: full ? 'full' : 'none' })
-        const call = triageCallFor(request.triage)
-        const usdBudget = call.usd ?? 0.5
-        const deadline = wallDeadline
+      // Set by the checkout's release when the cleanup fails, and read once the scope has closed.
+      let cleanupFailed: TriageResult | null = null
 
-        const project = parseTicketStream(request.ticketId)?.project ?? ''
-        const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]))
-        const serve = (ref: string, path: string): Promise<string | null> => {
-          const sha = shas.get(ref)
-          if (sha === undefined) return Promise.resolve(null)
-          return guard(deps.mirror.readAt({ project, ref: sha, path, limitBytes: FILE_BYTES, signal })).catch(
-            () => null,
+      const attemptWithin = Effect.gen(function* () {
+        const gathered = yield* gatherEvidence(deps, request, before, guard, signal)
+        if (signal.aborted) return yield* Effect.fail(new WallReached())
+        const evidence = gathered.evidence
+        evidence.conflicts = conflictPaths
+        baseSha = gathered.baseSha
+        headSha = gathered.headSha
+
+        const chatId = containmentId(request.waitId)
+        const full = request.triage.agent === 'codex' && request.triage.tools === 'full'
+        if (request.triage.tools === 'full' && !full)
+          return yield* Effect.fail(new Error('full triage tools require codex'))
+        const selectedSha = gathered.recordedHead === null ? baseSha : headSha
+        if (full && selectedSha === null) {
+          return yield* Effect.fail(
+            new Error(gathered.recordedHead === null ? 'base commit unavailable' : 'recorded attempt head unavailable'),
           )
         }
 
-        // `RunSpent`, retried on any error up to five attempts — the same bound
-        // and reasoning `resolve-wait.ts`'s `requestContinuation` uses: a dropped
-        // connection is as transient as a lost version race, and the version read
-        // above the append is re-taken on every attempt so a concurrent writer
-        // (another appender on the same ticket) is not mistaken for one. **A
-        // retry is not always "nothing was written" though** — a dropped
-        // connection can reject the promise after the transaction already
-        // committed, and a blind retry would then append a second, identical
-        // `RunSpent` for the one call. So before every attempt (including the
-        // first retry), check whether the stream already carries one matching
-        // this exact outcome since this `spend()` call started, and treat that as
-        // landed rather than writing it again. `null` once it has landed, one way
-        // or the other; otherwise the last error's message, which ends the
-        // triage rather than leaving a paid call unrecorded.
-        const spend = async (outcome: RunOutcome): Promise<string | null> => {
-          // `since` is captured from the first read that succeeds, not a read taken
-          // before the loop — a transient failure on that very first read (the
-          // scenario this retry exists for) must not propagate past this function
-          // uncaught, discarding both the ledger row and the advice the call
-          // already produced.
-          let since: number | null = null
-          let lastError: unknown = null
-          for (let i = 0; i < 5; i += 1) {
-            try {
-              const current = await deps.store.read(stream)
-              if (since === null) since = current.length
-              const alreadyLanded = current.slice(since).some((e) => {
-                if (e.type !== 'RunSpent') return false
-                const data = e.data as PayloadOf<'RunSpent'>
-                return (
-                  data.for._tag === 'Triage' &&
-                  data.for.waitId === request.waitId &&
-                  data.turns === outcome.turns &&
-                  data.durationMs === outcome.durationMs &&
-                  data.costUsd === outcome.costUsd
-                )
+        /** The agent's part, in the checkout when there is one. */
+        const withCheckout = (checkout: Checkout | null) =>
+          Effect.gen(function* () {
+            const { cwd, settingsPath } = checkout ?? (yield* guard(deps.prepare(chatId)))
+            const runtime = deps.runtime(request.triage.agent, { tools: full ? 'full' : 'none' })
+            const call = triageCallFor(request.triage)
+            const usdBudget = call.usd ?? 0.5
+            const deadline = wallDeadline
+
+            const shas = new Map(evidence.refs.map((r) => [r.ref, r.sha]))
+            const serve = (ref: string, path: string): Effect.Effect<string | null> => {
+              const sha = shas.get(ref)
+              if (sha === undefined) return Effect.succeed(null)
+              return guard(deps.mirror.readAt({ project, ref: sha, path, limitBytes: FILE_BYTES, signal })).pipe(
+                recoverWith(() => Effect.succeed(null)),
+              )
+            }
+
+            // `RunSpent`, retried on any error up to five attempts — the same bound
+            // and reasoning `resolve-wait.ts`'s `requestContinuation` uses: a dropped
+            // connection is as transient as a lost version race, and the version read
+            // above the append is re-taken on every attempt so a concurrent writer
+            // (another appender on the same ticket) is not mistaken for one. **A
+            // retry is not always "nothing was written" though** — a dropped
+            // connection can reject the promise after the transaction already
+            // committed, and a blind retry would then append a second, identical
+            // `RunSpent` for the one call. So before every attempt (including the
+            // first retry), check whether the stream already carries one matching
+            // this exact outcome since this `spend()` call started, and treat that as
+            // landed rather than writing it again. `null` once it has landed, one way
+            // or the other; otherwise the last error's message, which ends the
+            // triage rather than leaving a paid call unrecorded. **A loop and not
+            // `Effect.retry`**: the read before each write is what keeps a second row
+            // from being written.
+            const spend = (outcome: RunOutcome): Effect.Effect<string | null> =>
+              Effect.gen(function* () {
+                // `since` is captured from the first read that succeeds, not a read taken
+                // before the loop — a transient failure on that very first read (the
+                // scenario this retry exists for) must not propagate past this function
+                // uncaught, discarding both the ledger row and the advice the call
+                // already produced.
+                let since: number | null = null
+                let lastError: unknown = null
+                for (let i = 0; i < 5; i += 1) {
+                  const tried = yield* settle(
+                    Effect.gen(function* () {
+                      const current = yield* lift(() => deps.store.read(stream))
+                      if (since === null) since = current.length
+                      const alreadyLanded = current.slice(since).some((e) => {
+                        if (e.type !== 'RunSpent') return false
+                        const data = e.data as PayloadOf<'RunSpent'>
+                        return (
+                          data.for._tag === 'Triage' &&
+                          data.for.waitId === request.waitId &&
+                          data.turns === outcome.turns &&
+                          data.durationMs === outcome.durationMs &&
+                          data.costUsd === outcome.costUsd
+                        )
+                      })
+                      if (alreadyLanded) return
+                      yield* lift(() =>
+                        deps.store.append(stream, current.length, [
+                          {
+                            type: 'RunSpent',
+                            actor: 'conductor',
+                            data: parsePayload('RunSpent', {
+                              for: { _tag: 'Triage', waitId: request.waitId },
+                              runtime: request.triage.agent,
+                              turns: outcome.turns,
+                              durationMs: outcome.durationMs,
+                              usage: outcome.usage ?? [],
+                              costUsd: outcome.costUsd,
+                            }),
+                          },
+                        ]),
+                      )
+                    }),
+                  )
+                  if (tried.ok) return null
+                  lastError = tried.error
+                }
+                const message = lastError instanceof Error ? lastError.message : String(lastError)
+                log(`triage ${request.waitId}: RunSpent append failed — ${message}`)
+                return message
               })
-              if (alreadyLanded) return null
-              await deps.store.append(stream, current.length, [
-                {
-                  type: 'RunSpent',
-                  actor: 'conductor',
-                  data: parsePayload('RunSpent', {
+
+            const served: { at: string; text: string | null }[] = []
+            let costSpent = 0
+            let turnsSpent = 0
+            let result: TriageResult | null = null
+
+            for (let round = 0; round <= (full ? 0 : MAX_READ_ROUNDS); round += 1) {
+              // An abort during `serve`, between rounds, must not buy another one.
+              if (signal.aborted) {
+                result = { _tag: 'TriageFailed', why: abortedWhy() }
+                break
+              }
+
+              const wallLeft = deadline - deps.now()
+              if (wallLeft <= 0) {
+                result = { _tag: 'TriageFailed', why: 'timeout' }
+                break
+              }
+
+              const usdLeft = usdBudget - costSpent
+              if (usdLeft <= 0) {
+                result = { _tag: 'TriageFailed', why: 'out of usd' }
+                break
+              }
+
+              // `call.turns` bounds the whole triage, not one call — `holdDiscussion`
+              // hands every round the full budget, but a triage can run
+              // `MAX_READ_ROUNDS + 1` rounds, and the recipe's `limits` is documented
+              // as what one triage run may spend in total.
+              const turnsLeft = call.turns - turnsSpent
+              if (turnsLeft <= 0) {
+                result = { _tag: 'TriageFailed', why: 'out of turns' }
+                break
+              }
+
+              const prompt =
+                triageBrief({
+                  evidence,
+                  served,
+                  roundsLeft: full ? 0 : MAX_READ_ROUNDS - round,
+                  ...(request.triage.prompt === undefined ? {} : { prompt: request.triage.prompt }),
+                }) +
+                (full
+                  ? '\n\nInspect the checked-out files directly with your CLI tools before answering. This checkout is disposable; give one final triage answer without requesting mirror-served files.'
+                  : '')
+
+              // Before the call, so a crash or a kill still leaves the prompt on the log
+              // (#923). Tagged as the round's `RunSpent` is.
+              const triageEnv = checkout?.env ?? runnableEnv({})
+              const runtimeVersion = yield* runtimeVersionOfEffect(runtime, triageEnv, cwd)
+              yield* lift(() =>
+                recordPrompt(
+                  deps.store,
+                  stream,
+                  {
                     for: { _tag: 'Triage', waitId: request.waitId },
-                    runtime: request.triage.agent,
-                    turns: outcome.turns,
-                    durationMs: outcome.durationMs,
-                    usage: outcome.usage ?? [],
-                    costUsd: outcome.costUsd,
-                  }),
-                },
-              ])
-              return null
-            } catch (err) {
-              lastError = err
-            }
-          }
-          const message = lastError instanceof Error ? lastError.message : String(lastError)
-          log(`triage ${request.waitId}: RunSpent append failed — ${message}`)
-          return message
-        }
+                    promptVersion: `triage@${prompt.length}`,
+                    runtimeVersion,
+                    prompt,
+                  },
+                  log,
+                ),
+              )
+              let threw = false
+              // The wall reaches the runtime as `request.signal` (#1065), not as an interruption.
+              const outcome = yield* runtime
+                .run({
+                  runId: `${containmentId(request.waitId)}:${attempt}:${round}`,
+                  cwd,
+                  prompt,
+                  ...(call.model === undefined ? {} : { model: call.model }),
+                  settingsPath,
+                  env: triageEnv,
+                  limits: { turns: turnsLeft, wallMs: wallLeft, usd: usdLeft },
+                  // The runtime enforces the bounds before it answers; `parseTriage`
+                  // below stays the last check, and the route that cannot carry a
+                  // schema keeps the brief's own sentence (#582).
+                  ...(runtime.capabilities.acceptsOutputSchema === true
+                    ? { outputSchema: TRIAGE_ANSWER_JSON_SCHEMA }
+                    : {}),
+                  signal,
+                })
+                .pipe(
+                  recoverWith((err): Effect.Effect<RunOutcome> =>
+                    Effect.sync(() => {
+                      threw = true
+                      return {
+                        exitCode: null,
+                        turns: 0,
+                        durationMs: 0,
+                        costUsd: null,
+                        failure: { kind: 'crash', detail: (err as Error).message },
+                        text: null,
+                        sessionId: '',
+                      }
+                    }),
+                  ),
+                )
 
-        const served: { at: string; text: string | null }[] = []
-        let costSpent = 0
-        let turnsSpent = 0
-        let result: TriageResult | null = null
+              if (outcome.failure?.detail.includes('process cleanup incomplete')) toolsMayRemain = true
 
-        for (let round = 0; round <= (full ? 0 : MAX_READ_ROUNDS); round += 1) {
-          // An abort during `serve`, between rounds, must not buy another one.
-          if (signal.aborted) {
-            result = { _tag: 'TriageFailed', why: abortedWhy() }
-            break
-          }
+              if (!threw) {
+                // A call that was billed and cannot be recorded ends the triage —
+                // never silently continues to spend more against an under-reporting
+                // ledger (`/spend`, 0110 §2).
+                const spendProblem = yield* spend(outcome)
+                if (spendProblem !== null) {
+                  result = { _tag: 'TriageFailed', why: clip(`could not record spend: ${spendProblem}`) }
+                  break
+                }
+                // The Responses route reports tokens but no dollars. Reserve its
+                // conservative preflight bound before a later read round can run.
+                if (outcome.spendBoundUsd !== undefined) costSpent += outcome.spendBoundUsd
+                else if (outcome.costUsd !== null) costSpent += outcome.costUsd
+                turnsSpent += outcome.turns
+              }
 
-          const wallLeft = deadline - deps.now()
-          if (wallLeft <= 0) {
-            result = { _tag: 'TriageFailed', why: 'timeout' }
-            break
-          }
+              if (outcome.failure) {
+                const kind = outcome.failure.kind
+                // The runtimes call any incoming signal's abort `aborted`; only the
+                // caller's own abort is that, and the recipe's wall is a `timeout`.
+                const why =
+                  kind === 'timeout' || kind === 'aborted'
+                    ? kind === 'aborted' && !callerSignal?.aborted
+                      ? 'timeout'
+                      : kind
+                    : `${kind}: ${outcome.failure.detail}`
+                result = { _tag: 'TriageFailed', why: clip(why) }
+                break
+              }
 
-          const usdLeft = usdBudget - costSpent
-          if (usdLeft <= 0) {
-            result = { _tag: 'TriageFailed', why: 'out of usd' }
-            break
-          }
+              const reply = parseTriage(
+                outcome.structured === undefined
+                  ? outcome.text
+                  : JSON.stringify(unwrapTriageEnvelope(outcome.structured)),
+              )
 
-          // `call.turns` bounds the whole triage, not one call — `holdDiscussion`
-          // hands every round the full budget, but a triage can run
-          // `MAX_READ_ROUNDS + 1` rounds, and the recipe's `limits` is documented
-          // as what one triage run may spend in total.
-          const turnsLeft = call.turns - turnsSpent
-          if (turnsLeft <= 0) {
-            result = { _tag: 'TriageFailed', why: 'out of turns' }
-            break
-          }
+              if (reply.kind === 'read' && !full && round < MAX_READ_ROUNDS) {
+                for (const at of reply.paths) {
+                  const cut = at.indexOf(':')
+                  const ref = at.slice(0, cut)
+                  const path = at.slice(cut + 1)
+                  served.push({ at, text: yield* serve(ref, path) })
+                }
+                log(`triage ${request.waitId}: served ${reply.paths.length} file(s)`)
+                continue
+              }
 
-          const prompt =
-            triageBrief({
-              evidence,
-              served,
-              roundsLeft: full ? 0 : MAX_READ_ROUNDS - round,
-              ...(request.triage.prompt === undefined ? {} : { prompt: request.triage.prompt }),
-            }) +
-            (full
-              ? '\n\nInspect the checked-out files directly with your CLI tools before answering. This checkout is disposable; give one final triage answer without requesting mirror-served files.'
-              : '')
+              if (reply.kind === 'advised') {
+                if (conflictPaths !== null) {
+                  const cause = reply.result.cause
+                  const counted = new Set(
+                    conflictPaths.flatMap((path) => path.hunkLines.map((line) => JSON.stringify([path.path, line]))),
+                  )
+                  const classified = new Set<string>()
+                  if (cause._tag === 'ConflictingHunks') {
+                    for (const hunk of cause.hunks) {
+                      classified.add(JSON.stringify([hunk.path, hunk.line]))
+                    }
+                  }
+                  const complete =
+                    cause._tag === 'ConflictingHunks' &&
+                    cause.total === conflictPaths.reduce((sum, path) => sum + path.hunks, 0) &&
+                    classified.size === cause.hunks.length &&
+                    classified.size === counted.size &&
+                    [...counted].every((identity) => classified.has(identity))
+                  result = complete
+                    ? reply.result
+                    : { _tag: 'TriageFailed', why: 'agent advice did not classify every counted merge hunk' }
+                } else {
+                  result = reply.result
+                }
+                break
+              }
 
-          // Before the call, so a crash or a kill still leaves the prompt on the log
-          // (#923). Tagged as the round's `RunSpent` is.
-          const triageEnv = checkout?.env ?? runnableEnv({})
-          await recordPrompt(
-            deps.store,
-            stream,
-            {
-              for: { _tag: 'Triage', waitId: request.waitId },
-              promptVersion: `triage@${prompt.length}`,
-              runtimeVersion: await runtimeVersionOf(runtime, triageEnv, cwd),
-              prompt,
-            },
-            log,
-          )
-          let threw = false
-          const outcome = await runtimeRun(runtime, {
-            runId: `${containmentId(request.waitId)}:${attempt}:${round}`,
-            cwd,
-            prompt,
-            ...(call.model === undefined ? {} : { model: call.model }),
-            settingsPath,
-            env: triageEnv,
-            limits: { turns: turnsLeft, wallMs: wallLeft, usd: usdLeft },
-            // The runtime enforces the bounds before it answers; `parseTriage`
-            // below stays the last check, and the route that cannot carry a
-            // schema keeps the brief's own sentence (#582).
-            ...(runtime.capabilities.acceptsOutputSchema === true ? { outputSchema: TRIAGE_ANSWER_JSON_SCHEMA } : {}),
-            signal,
-          }).catch((err: unknown): RunOutcome => {
-            threw = true
-            return {
-              exitCode: null,
-              turns: 0,
-              durationMs: 0,
-              costUsd: null,
-              failure: { kind: 'crash', detail: (err as Error).message },
-              text: null,
-              sessionId: '',
-            }
-          })
-
-          if (outcome.failure?.detail.includes('process cleanup incomplete')) toolsMayRemain = true
-
-          if (!threw) {
-            // A call that was billed and cannot be recorded ends the triage —
-            // never silently continues to spend more against an under-reporting
-            // ledger (`/spend`, 0110 §2).
-            const spendProblem = await spend(outcome)
-            if (spendProblem !== null) {
-              result = { _tag: 'TriageFailed', why: clip(`could not record spend: ${spendProblem}`) }
+              // `refused`, or a `read` past the last round — both end the triage.
+              result = {
+                _tag: 'TriageFailed',
+                why: clip(
+                  reply.kind === 'refused'
+                    ? reply.why
+                    : `the agent asked for files after ${MAX_READ_ROUNDS} rounds of reading`,
+                ),
+              }
               break
             }
-            // The Responses route reports tokens but no dollars. Reserve its
-            // conservative preflight bound before a later read round can run.
-            if (outcome.spendBoundUsd !== undefined) costSpent += outcome.spendBoundUsd
-            else if (outcome.costUsd !== null) costSpent += outcome.costUsd
-            turnsSpent += outcome.turns
-          }
 
-          if (outcome.failure) {
-            const kind = outcome.failure.kind
-            // The runtimes call any incoming signal's abort `aborted`; only the
-            // caller's own abort is that, and the recipe's wall is a `timeout`.
-            const why =
-              kind === 'timeout' || kind === 'aborted'
-                ? kind === 'aborted' && !callerSignal?.aborted
-                  ? 'timeout'
-                  : kind
-                : `${kind}: ${outcome.failure.detail}`
-            result = { _tag: 'TriageFailed', why: clip(why) }
-            break
-          }
-
-          const reply = parseTriage(
-            outcome.structured === undefined ? outcome.text : JSON.stringify(unwrapTriageEnvelope(outcome.structured)),
-          )
-
-          if (reply.kind === 'read' && !full && round < MAX_READ_ROUNDS) {
-            for (const at of reply.paths) {
-              const cut = at.indexOf(':')
-              const ref = at.slice(0, cut)
-              const path = at.slice(cut + 1)
-              served.push({ at, text: await serve(ref, path) })
-            }
-            log(`triage ${request.waitId}: served ${reply.paths.length} file(s)`)
-            continue
-          }
-
-          if (reply.kind === 'advised') {
-            if (conflictPaths !== null) {
-              const cause = reply.result.cause
-              const counted = new Set(
-                conflictPaths.flatMap((path) => path.hunkLines.map((line) => JSON.stringify([path.path, line]))),
-              )
-              const classified = new Set<string>()
-              if (cause._tag === 'ConflictingHunks') {
-                for (const hunk of cause.hunks) {
-                  classified.add(JSON.stringify([hunk.path, hunk.line]))
-                }
-              }
-              const complete =
-                cause._tag === 'ConflictingHunks' &&
-                cause.total === conflictPaths.reduce((sum, path) => sum + path.hunks, 0) &&
-                classified.size === cause.hunks.length &&
-                classified.size === counted.size &&
-                [...counted].every((identity) => classified.has(identity))
-              result = complete
-                ? reply.result
-                : { _tag: 'TriageFailed', why: 'agent advice did not classify every counted merge hunk' }
-            } else {
-              result = reply.result
-            }
-            break
-          }
-
-          // `refused`, or a `read` past the last round — both end the triage.
-          result = {
-            _tag: 'TriageFailed',
-            why: clip(
-              reply.kind === 'refused'
-                ? reply.why
-                : `the agent asked for files after ${MAX_READ_ROUNDS} rounds of reading`,
-            ),
-          }
-          break
-        }
-
-        // Unreachable: the loop above always sets `result` before it exits.
-        final = result ?? { _tag: 'TriageFailed', why: 'triage did not run' }
-      } finally {
-        if (checkout && toolsMayRemain) {
-          log(`triage ${request.waitId}: checkout kept — a tool process may still be running in it`)
-        } else if (checkout)
-          await checkout.cleanup().catch((error: unknown) => {
-            log(`triage ${request.waitId}: cleanup failed — ${(error as Error).message}`)
-            final = { _tag: 'TriageFailed', why: clip(`cleanup failed: ${(error as Error).message}`) }
+            // Unreachable: the loop above always sets `result` before it exits.
+            return result ?? ({ _tag: 'TriageFailed', why: 'triage did not run' } satisfies TriageResult)
           })
-      }
-    } catch (err) {
-      if (err instanceof WallReached) {
-        final = { _tag: 'TriageFailed', why: abortedWhy() }
-      } else {
-        log(`triage ${request.waitId}: attempt ${attempt} crashed — ${(err as Error).message}`)
-        final = { _tag: 'TriageFailed', why: clip(`crashed: ${(err as Error).message}`) }
-      }
+
+        if (!full) return yield* withCheckout(null)
+
+        const prepareCheckout =
+          deps.prepareCheckout ??
+          ((p: string, sha: string, sig?: AbortSignal) => prepareTriageCheckout(p, sha, undefined, sig))
+        // The clone is uninterruptible so that a checkout which lands after the wall is still seen
+        // by the `tap` and cleaned up; the guard has by then stopped waiting for it.
+        const acquire = guard(
+          Effect.uninterruptible(
+            prepareCheckout(project, selectedSha!, signal).pipe(
+              Effect.tap((c) => (signal.aborted ? Effect.ignore(c.cleanup) : Effect.void)),
+            ),
+          ),
+        )
+        const release = (c: Checkout): Effect.Effect<void> =>
+          toolsMayRemain
+            ? Effect.sync(() =>
+                log(`triage ${request.waitId}: checkout kept — a tool process may still be running in it`),
+              )
+            : c.cleanup.pipe(
+                recoverWith((error) =>
+                  Effect.sync(() => {
+                    log(`triage ${request.waitId}: cleanup failed — ${(error as Error).message}`)
+                    cleanupFailed = { _tag: 'TriageFailed', why: clip(`cleanup failed: ${(error as Error).message}`) }
+                  }),
+                ),
+              )
+        return yield* Effect.acquireUseRelease(
+          acquire,
+          (c) => withCheckout(c),
+          (c) => release(c),
+        )
+      })
+
+      final = yield* attemptWithin.pipe(
+        recoverWith((err): Effect.Effect<TriageResult> => {
+          if (err instanceof WallReached) return Effect.succeed({ _tag: 'TriageFailed', why: abortedWhy() })
+          log(`triage ${request.waitId}: attempt ${attempt} crashed — ${(err as Error).message}`)
+          return Effect.succeed({ _tag: 'TriageFailed', why: clip(`crashed: ${(err as Error).message}`) })
+        }),
+      )
+      // The release ran when the checkout's scope closed, and a cleanup that failed outranks the answer.
+      final = (cleanupFailed as TriageResult | null) ?? final
     }
 
-  // The one append this function's contract is about, so unlike `TriageStarted`
-  // above it is neither swallowed nor left to a single attempt. Retried on any
-  // error up to five attempts, the version re-read each time, the same bound
-  // `spend` and `resolve-wait.ts`'s `requestContinuation` use — a `WaitTriaged`
-  // for this `attempt` landing twice is harmless (a reader takes the latest
-  // attempt's result, and a retry sends the same one), so unlike `spend` this
-  // needs no check for whether an earlier attempt already landed. If it still
-  // will not land after five attempts, this throws rather than returning
-  // `final` as though it had: `holdDiscussion`'s own terminal append
-  // (`discuss.ts:500-508`) is never wrapped in a `try`, for the same reason —
-  // a caller told this succeeded when the log carries no `WaitTriaged` would
-  // let `triageStatus` read `Interrupted` and buy a second triage of a wait
-  // this one already answered. The caller is a daemon subscriber, which logs
-  // and drops a thrown error (0015) rather than acting on a false success.
-  let lastError: unknown = null
-  for (let i = 0; i < 5; i += 1) {
-    try {
-      const current = await deps.store.read(stream)
-      if (!waitIsCurrent(current)) {
-        return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' } }
-      }
-      if (callerSignal?.aborted) final = { _tag: 'TriageFailed', why: 'aborted' }
-      const version = current.length
-      await deps.store.append(stream, version, [
-        {
-          type: 'WaitTriaged',
-          actor: 'conductor',
-          data: parsePayload('WaitTriaged', {
-            waitId: request.waitId,
-            attempt,
-            // `AttemptState.headSha ?? baseSha ?? ''` — the empty string is for a mirror
-            // with no base either, where `reading` already says no file can be
-            // read.
-            headSha: headSha ?? baseSha ?? '',
-            result: final,
-            by,
-          }),
-        },
-      ])
-      return { attempt, result: final }
-    } catch (err) {
-      lastError = err
+    // The one append this function's contract is about, so unlike `TriageStarted`
+    // above it is neither swallowed nor left to a single attempt. Retried on any
+    // error up to five attempts, the version re-read each time, the same bound
+    // `spend` and `resolve-wait.ts`'s `requestContinuation` use — a `WaitTriaged`
+    // for this `attempt` landing twice is harmless (a reader takes the latest
+    // attempt's result, and a retry sends the same one), so unlike `spend` this
+    // needs no check for whether an earlier attempt already landed. If it still
+    // will not land after five attempts, this fails rather than returning
+    // `final` as though it had: `holdDiscussion`'s own terminal append
+    // (`discuss.ts:500-508`) is never wrapped, for the same reason —
+    // a caller told this succeeded when the log carries no `WaitTriaged` would
+    // let `triageStatus` read `Interrupted` and buy a second triage of a wait
+    // this one already answered. The caller is a daemon subscriber, which logs
+    // and drops a failure (0015) rather than acting on a false success.
+    let lastError: unknown = null
+    for (let i = 0; i < 5; i += 1) {
+      const landed = yield* settle(
+        Effect.gen(function* () {
+          const current = yield* lift(() => deps.store.read(stream))
+          if (!waitIsCurrent(current)) {
+            return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' } } satisfies Waited
+          }
+          if (callerSignal?.aborted) final = { _tag: 'TriageFailed', why: 'aborted' }
+          const version = current.length
+          yield* lift(() =>
+            deps.store.append(stream, version, [
+              {
+                type: 'WaitTriaged',
+                actor: 'conductor',
+                data: parsePayload('WaitTriaged', {
+                  waitId: request.waitId,
+                  attempt,
+                  // `AttemptState.headSha ?? baseSha ?? ''` — the empty string is for a mirror
+                  // with no base either, where `reading` already says no file can be
+                  // read.
+                  headSha: headSha ?? baseSha ?? '',
+                  result: final,
+                  by,
+                }),
+              },
+            ]),
+          )
+          return { attempt, result: final } satisfies Waited
+        }),
+      )
+      if (landed.ok) return landed.value
+      lastError = landed.error
     }
-  }
-  const message = lastError instanceof Error ? lastError.message : String(lastError)
-  log(`triage ${request.waitId}: WaitTriaged append failed — ${message}`)
-  throw lastError
-}
+    const message = lastError instanceof Error ? lastError.message : String(lastError)
+    log(`triage ${request.waitId}: WaitTriaged append failed — ${message}`)
+    return yield* Effect.fail(lastError)
+  })

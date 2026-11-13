@@ -4,7 +4,8 @@ import { join } from 'node:path'
 
 import { runnableEnv } from '@lingtai/agent-env'
 import { stateDir } from '@lingtai/env'
-import { git, mirrorPathFor } from '@lingtai/repo'
+import { gitEffect, mirrorPathFor } from '@lingtai/repo'
+import { Effect } from 'effect'
 
 /**
  * The environment a triage run gets: the filtered one, a private `HOME`, and
@@ -29,46 +30,60 @@ export function triageCheckoutEnv(
   return { ...runnableEnv({}), HOME: privateHome, CODEX_HOME: codexHome, GIT_CONFIG_NOSYSTEM: '1' }
 }
 
+export interface Checkout {
+  cwd: string
+  settingsPath: string
+  env: Record<string, string>
+  /** Removes the private directory. Not run by the port itself: the caller knows whether a tool may remain. */
+  cleanup: Effect.Effect<void, Error>
+}
+
+const io = <A>(f: () => Promise<A>): Effect.Effect<A, Error> =>
+  Effect.tryPromise({ try: f, catch: (e) => (e instanceof Error ? e : new Error(String(e))) })
+
 /** A private copy: Codex may commit here without writing to the managed mirror. */
-export async function prepareTriageCheckout(
+export const prepareTriageCheckout = (
   project: string,
   sha: string,
   mirrorHome = stateDir(),
   signal?: AbortSignal,
-): Promise<{
-  cwd: string
-  settingsPath: string
-  env: Record<string, string>
-  cleanup(): Promise<void>
-}> {
-  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`invalid triage commit SHA: ${sha}`)
-  const root = await mkdtemp(join(tmpdir(), 'lingtai-triage-'))
-  const cleanup = async () => {
-    await rm(root, { recursive: true, force: true })
-  }
-  try {
-    const cwd = join(root, 'checkout')
-    const home = join(root, 'home')
-    await mkdir(home, { recursive: true, mode: 0o700 })
-    const env = triageCheckoutEnv(process.env, home)
-    await git(['clone', '--no-hardlinks', '--dissociate', '--no-checkout', mirrorPathFor(project, mirrorHome), cwd], {
-      env,
-      signal,
-    })
-    await git(['remote', 'remove', 'origin'], { cwd, env, signal })
-    await git(['config', 'core.hooksPath', '/dev/null'], { cwd, env, signal })
-    await git(['checkout', '--detach', sha], { cwd, env, signal })
-    const actual = await git(['rev-parse', 'HEAD'], { cwd, env, signal })
-    if (actual !== sha) throw new Error(`triage checkout resolved ${actual}, expected ${sha}`)
-    const settingsPath = join(root, 'settings.json')
-    await writeFile(settingsPath, '{}\n', { mode: 0o600 })
-    return { cwd, settingsPath, env, cleanup }
-  } catch (error) {
-    try {
-      await cleanup()
-    } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], 'triage checkout preparation and cleanup failed')
-    }
-    throw error
-  }
-}
+): Effect.Effect<Checkout, Error> =>
+  Effect.gen(function* () {
+    if (!/^[0-9a-f]{40}$/.test(sha)) return yield* Effect.fail(new Error(`invalid triage commit SHA: ${sha}`))
+    const root = yield* io(() => mkdtemp(join(tmpdir(), 'lingtai-triage-')))
+    const cleanup = io(() => rm(root, { recursive: true, force: true }))
+    // A failed preparation cleans up after itself, and says so if the cleanup failed too.
+    return yield* Effect.gen(function* () {
+      const cwd = join(root, 'checkout')
+      const home = join(root, 'home')
+      yield* io(() => mkdir(home, { recursive: true, mode: 0o700 }))
+      const env = triageCheckoutEnv(process.env, home)
+      yield* gitEffect(
+        ['clone', '--no-hardlinks', '--dissociate', '--no-checkout', mirrorPathFor(project, mirrorHome), cwd],
+        {
+          env,
+          signal,
+        },
+      )
+      yield* gitEffect(['remote', 'remove', 'origin'], { cwd, env, signal })
+      yield* gitEffect(['config', 'core.hooksPath', '/dev/null'], { cwd, env, signal })
+      yield* gitEffect(['checkout', '--detach', sha], { cwd, env, signal })
+      const actual = yield* gitEffect(['rev-parse', 'HEAD'], { cwd, env, signal })
+      if (actual !== sha) return yield* Effect.fail(new Error(`triage checkout resolved ${actual}, expected ${sha}`))
+      const settingsPath = join(root, 'settings.json')
+      yield* io(() => writeFile(settingsPath, '{}\n', { mode: 0o600 }))
+      return { cwd, settingsPath, env, cleanup } satisfies Checkout
+    }).pipe(
+      Effect.catch((error: Error) =>
+        cleanup.pipe(
+          Effect.matchEffect({
+            onSuccess: () => Effect.fail(error),
+            onFailure: (cleanupError) =>
+              Effect.fail(
+                new AggregateError([error, cleanupError], 'triage checkout preparation and cleanup failed') as Error,
+              ),
+          }),
+        ),
+      ),
+    )
+  })
