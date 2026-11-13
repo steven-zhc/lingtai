@@ -24,6 +24,7 @@ export {
   queriesLayer,
   snapshotsLayer,
   processEvents,
+  processQueries,
   processLog,
   processTicketSql,
   processWaker,
