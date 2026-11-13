@@ -39,7 +39,7 @@ export interface Checkout {
 }
 
 const io = <A>(f: () => Promise<A>): Effect.Effect<A, Error> =>
-  Effect.tryPromise({ try: f, catch: (e) => (e instanceof Error ? e : new Error(String(e))) })
+  Effect.tryPromise({ try: () => f(), catch: (e) => (e instanceof Error ? e : new Error(String(e))) })
 
 /** A private copy: Codex may commit here without writing to the managed mirror. */
 export const prepareTriageCheckout = (

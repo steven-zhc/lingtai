@@ -35,7 +35,8 @@ function sayOnce(reducer: string, kind: 'latest' | 'decode', e: unknown): void {
   console.error(`${reducer} snapshot ${kind} failed, reducing from version 1: ${String(e)}`)
 }
 
-const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> => Effect.tryPromise({ try: f, catch: (e) => e })
+const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: () => f(), catch: (e) => e })
 
 export function readThroughSnapshot<S>(
   store: Pick<EventStore, 'readTypes' | 'read'>,

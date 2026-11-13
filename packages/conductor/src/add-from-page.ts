@@ -281,7 +281,7 @@ export function exclusiveAdd<A, E>(
 }
 
 function checkAndWrite(form: SetupForm, ports: AddPorts, path: string): Effect.Effect<Added, never> {
-  return Effect.tryPromise({ try: ports.projects, catch: reasonOf }).pipe(
+  return Effect.tryPromise({ try: () => ports.projects(), catch: reasonOf }).pipe(
     Effect.flatMap((projects) =>
       alreadyAdded(projects, form.project) !== undefined
         ? Effect.succeed<Added>({ ok: false, say: alreadyAddedSentence(form.project, ports.home) })

@@ -116,12 +116,13 @@ export const gitEffect = (args: string[], options: GitRunOptions = {}): Effect.E
   return Effect.gen(function* () {
     // Resolved here, per invocation, rather than once by the caller — that is the
     // whole point of accepting a function.
-    const token = yield* typeof options.token === 'function'
+    const source = options.token
+    const token = yield* typeof source === 'function'
       ? Effect.tryPromise({
-          try: options.token,
+          try: () => source(),
           catch: (err) => fail(err instanceof Error ? err.message : String(err)),
         })
-      : Effect.succeed(options.token)
+      : Effect.succeed(source)
     const invocation = gitInvocation(args, token, options.env ?? process.env)
     return yield* Effect.callback<string, RepoFailed>((resume, signal) => {
       const signals = [signal, options.signal].filter((s): s is AbortSignal => s !== undefined)

@@ -125,7 +125,8 @@ function errorMessage(err: unknown): string {
 }
 
 /** A promise call lifted so its rejection is the failure itself, message and class intact. */
-const lift = <A>(f: () => Promise<A>): Effect.Effect<A, Error> => Effect.tryPromise({ try: f, catch: asFailure })
+const lift = <A>(f: () => Promise<A>): Effect.Effect<A, Error> =>
+  Effect.tryPromise({ try: () => f(), catch: asFailure })
 
 type Settled<A> = { ok: true; value: A } | { ok: false; error: unknown }
 

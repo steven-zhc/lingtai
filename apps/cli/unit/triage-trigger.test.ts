@@ -15,7 +15,8 @@ import {
 } from '../src/triage.ts'
 
 /** A promise, lifted lazily with its failure kept as it was. */
-const fx = <A>(f: () => PromiseLike<A>): Effect.Effect<A, unknown> => Effect.tryPromise({ try: f, catch: (e) => e })
+const fx = <A>(f: () => PromiseLike<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: () => f(), catch: (e) => e })
 const catchUpChangedTriage = (...args: Parameters<typeof catchUpChanged>) => Effect.runPromise(catchUpChanged(...args))
 const onWaitStarted = (...args: Parameters<typeof onStarted>) => Effect.runPromise(onStarted(...args))
 

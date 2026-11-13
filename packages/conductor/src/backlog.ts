@@ -180,7 +180,8 @@ function decidedDetail(key: string, state: FindingState): string {
   return `${key} was already decided`
 }
 
-const lift = <A>(f: () => Promise<A>): Effect.Effect<A, Error> => Effect.tryPromise({ try: f, catch: asFailure })
+const lift = <A>(f: () => Promise<A>): Effect.Effect<A, Error> =>
+  Effect.tryPromise({ try: () => f(), catch: asFailure })
 
 /** The whole cause of an effect as a message: a thrown error says nothing about whether a write landed. */
 type Caught<A> = { ok: true; value: A } | { ok: false; message: string }

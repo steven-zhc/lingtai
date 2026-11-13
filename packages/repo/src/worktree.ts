@@ -116,7 +116,7 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
     // mirror permit is not released while `rm` is still deleting under it.
     Effect.uninterruptible(
       Effect.tryPromise({
-        try: f,
+        try: () => f(),
         catch: (err) => new RepoFailed({ operation: 'git clone', detail: (err as Error).message }),
       }),
     )
@@ -157,7 +157,7 @@ export const provisionWorktreeEffect = Effect.fn('repo.provision')(function* (
     const io = <A>(f: () => Promise<A>) =>
       Effect.uninterruptible(
         Effect.tryPromise({
-          try: f,
+          try: () => f(),
           catch: (err) => new RepoFailed({ operation: 'provision', detail: (err as Error).message }),
         }),
       )

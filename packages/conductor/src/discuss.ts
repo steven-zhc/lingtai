@@ -845,4 +845,4 @@ const notInterrupted =
 
 /** A promise port as an Effect whose failure is whatever it rejected with. */
 const lift = <A>(run: () => PromiseLike<A>): Effect.Effect<A, unknown> =>
-  Effect.tryPromise({ try: run, catch: (error) => error })
+  Effect.tryPromise({ try: () => run(), catch: (error) => error })

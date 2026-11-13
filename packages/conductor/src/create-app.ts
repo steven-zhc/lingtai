@@ -448,10 +448,11 @@ export const creation: CreationSession = ((globalThis as WithSession)[SESSION] ?
  */
 /** A promise lifted with its rejection kept as the failure — for every call whose throw is caught. */
 const io = <A>(run: () => Promise<A>): Effect.Effect<A, Error> =>
-  Effect.tryPromise({ try: run, catch: (err) => err as Error })
+  Effect.tryPromise({ try: () => run(), catch: (err) => err as Error })
 
 /** A synchronous step that may throw, with the throw kept as the failure. */
-const sync = <A>(run: () => A): Effect.Effect<A, Error> => Effect.try({ try: run, catch: (err) => err as Error })
+const sync = <A>(run: () => A): Effect.Effect<A, Error> =>
+  Effect.try({ try: () => run(), catch: (err) => err as Error })
 
 /** An effect that may fail, as a value: `ok` with the answer, or the error. */
 const settle = <A>(

@@ -85,7 +85,7 @@ export const conductorNote: ConductorNote = (world = {}) => {
   const holder = world.holder ?? (() => conductorLockHolder())
   const couldNotTell = (why: string): string =>
     `could not tell whether a conductor is running (${why}); lingtai doctor says`
-  return bound(Effect.tryPromise({ try: holder, catch: (err) => err }), WAIT_MS).pipe(
+  return bound(Effect.tryPromise({ try: () => holder(), catch: (err) => err }), WAIT_MS).pipe(
     Effect.map((asked) => {
       if (!asked.ok) {
         return asked.why === 'abort' ? null : couldNotTell(`no answer in ${WAIT_MS / 1000} seconds`)

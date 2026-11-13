@@ -14,7 +14,7 @@ export const exitWith = (code: number): Effect.Effect<void, CommandExit> =>
  * `UnknownError` whose message is not the one a person should read.
  */
 export const lift = <A>(f: () => PromiseLike<A>): Effect.Effect<A, unknown> =>
-  Effect.tryPromise({ try: f, catch: (e) => e })
+  Effect.tryPromise({ try: () => f(), catch: (e) => e })
 
 /**
  * `catchCause` that lets an interruption through. What the promise this replaces caught was a

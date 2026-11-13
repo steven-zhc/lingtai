@@ -79,7 +79,7 @@ export function followApproval(
     const status = `lingtai status says when it lands`
     const stopped: Followed = { detail: `stopped waiting; the approval stands, and ${status}`, outcome: 'unknown' }
     const attempt = <T>(op: () => Promise<T>) =>
-      Effect.tryPromise({ try: op, catch: (err) => err }).pipe(
+      Effect.tryPromise({ try: () => op(), catch: (err) => err }).pipe(
         Effect.match({
           onFailure: (err) => ({ threw: true as const, err }),
           onSuccess: (value) => ({ threw: false as const, value }),

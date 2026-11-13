@@ -820,8 +820,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // failure and a defect both answer `stage: 'recipe'`, because a daemon
     // restarted onto a bad recipe takes nothing at all rather than crashing
     // every pass. `Effect.result` sees only the failure channel; this sees both.
+    const given = options.recipe
     const recipeAt: Result.Result<ResolvedRecipe, string> = yield* (
-      options.recipe ? Effect.tryPromise(options.recipe) : currentRecipeEffect(options.project, options.client)
+      given ? Effect.tryPromise(() => given()) : currentRecipeEffect(options.project, options.client)
     ).pipe(
       Effect.map((found) => Result.succeed(found)),
       Effect.catchCause((cause) => {
