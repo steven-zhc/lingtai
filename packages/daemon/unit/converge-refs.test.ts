@@ -3,6 +3,7 @@ import type { ProjectState } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { GitHubClient } from '@lingtai/github'
+import { Effect } from 'effect'
 /**
  * **A refs sweep GitHub refused is a job with an owner** (`#240`).
  *
@@ -14,7 +15,7 @@ import type { GitHubClient } from '@lingtai/github'
  * writes the difference"**.
  *
  * Nothing made that true. `Divergence.change` could not say `refs`,
- * `findIssueDrift` emitted nothing for one, and the sweep itself cannot be run
+ * `findIssueDriftEffect` emitted nothing for one, and the sweep itself cannot be run
  * again: `resolveEndActions` returns `[]` once an `EndActionsResolved` exists
  * for that outcome, so `lingtai end replay` skips the item. The warning and the
  * arms were both permanent. These are the cases that hold the other way round.
@@ -24,8 +25,13 @@ import type { GitHubClient } from '@lingtai/github'
  */
 import { describe, expect, it } from 'vitest'
 
-import { convergeIssues, findIssueDrift } from '../src/converge.ts'
+import { convergeIssuesEffect, findIssueDriftEffect } from '../src/converge.ts'
 import type { DaemonStore } from '../src/store.ts'
+
+const findIssueDrift = (options: Parameters<typeof findIssueDriftEffect>[0]) =>
+  Effect.runPromise(findIssueDriftEffect(options))
+const convergeIssues = (options: Parameters<typeof convergeIssuesEffect>[0]) =>
+  Effect.runPromise(convergeIssuesEffect(options))
 
 const PROJECT = 'lingtai'
 const ISSUE = 240

@@ -76,11 +76,14 @@ export {
 } from './control.ts'
 export {
   codeCurrency,
+  codeCurrencyEffect,
   codeIdentity,
+  codeIdentityEffect,
   codeRoot,
   describeCurrency,
   identityRefusals,
   readCodeVersion,
+  readCodeVersionEffect,
   type CodeVersion,
   type Currency,
   type CurrencyOptions,
@@ -104,8 +107,9 @@ export {
 } from './reconcile.ts'
 export {
   clientsForProjects,
-  convergeIssues,
-  findIssueDrift,
+  clientsForProjectsEffect,
+  convergeIssuesEffect,
+  findIssueDriftEffect,
   type ConvergeOptions,
   type Divergence,
 } from './converge.ts'

@@ -14,11 +14,15 @@ import {
 } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore, type MemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type ConvergeOptions, findIssueDrift } from '../src/converge.ts'
+import { type ConvergeOptions, findIssueDriftEffect } from '../src/converge.ts'
 import type { DaemonStore, StreamQuery } from '../src/store.ts'
 import { COMPLETION_EVENTS } from '../src/work-loop.ts'
+
+const findIssueDrift = (options: Parameters<typeof findIssueDriftEffect>[0]) =>
+  Effect.runPromise(findIssueDriftEffect(options))
 
 /**
  * Pins the daemon's own decisions — what wakes `work-loop.ts`'s loop, and

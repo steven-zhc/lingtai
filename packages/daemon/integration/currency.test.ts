@@ -255,4 +255,16 @@ describe('whether a start could be accounted for afterwards', () => {
     expect(id.pushed).toBeNull()
     expect(identityRefusals(id)[0]?.line).toContain('git fetch')
   })
+
+  /**
+   * A directory git cannot run in is a `RepoFailed` out of `gitEffect`, not a defect, so it is *unknown*
+   * and never `pushed: true` (#1073).
+   */
+  it('answers unknown, never pushed, when git cannot be run in the directory', async () => {
+    const id = await codeIdentity({ cwd: join(root, 'no-such-directory'), base: 'origin/main' })
+
+    expect(id.pushed).toBeNull()
+    expect(id.unknown).not.toBeNull()
+    expect(await readCodeVersion(join(root, 'no-such-directory'))).toEqual({ sha: null, dirty: false })
+  })
 })

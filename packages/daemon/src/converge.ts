@@ -59,14 +59,22 @@ import { agentBranch, armPrefix } from '@lingtai/conductor/branches'
 // Subpaths, never the barrel. `@lingtai/conductor`'s index pulls in the gate
 // pipeline and its child-process types, and the board imports this package —
 // so a barrel import here is a compile error three packages away.
-import type { ClientFor, RecipeFor } from '@lingtai/conductor/filter'
+import {
+  clientForSeam,
+  recipeForSeam,
+  ticketsOfSeam,
+  type ClientFor,
+  type ClientForEffect,
+  type RecipeFor,
+  type RecipeForEffect,
+} from '@lingtai/conductor/filter'
 import { foreignLabels, labelsFor } from '@lingtai/conductor/labels'
-import { ownerlessClient } from '@lingtai/conductor/ownerless'
-import { currentRecipe, loadProjects } from '@lingtai/conductor/projects'
+import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
+import { loadProjectsEffect } from '@lingtai/conductor/projects'
 // One wording for *what a part-way sweep had already deleted*, shared rather
 // than written twice: the inline sweep and this one record the same row.
 import { sweepFailure, type RefChannel } from '@lingtai/conductor/tell'
-import { ticketedClientOf, ticketsFor, type Tickets } from '@lingtai/conductor/ticket-store'
+import { ticketedClientOf, ticketsForEffect, type ticketsFor, type Tickets } from '@lingtai/conductor/ticket-store'
 import {
   parseTicketStream,
   parsePayload,
@@ -81,7 +89,8 @@ import {
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { type EventStore, eventStore } from '@lingtai/event-store'
-import { createGitHubClient, type GitHubClient } from '@lingtai/github'
+import { createGitHubClient } from '@lingtai/github'
+import { Cause, Effect } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import type { DaemonStore } from './store.ts'
@@ -138,62 +147,115 @@ export interface ProjectClients {
  * printed from inside it to repeat; the caller reports each entry once and
  * `lingtai doctor` reads the same filter live.
  */
-export async function clientsForProjects(
+export function clientsForProjectsEffect(
+  projects: readonly ProjectState[],
+  options: {
+    hasAuth?: () => boolean
+    clientFor?: ClientForEffect
+    recipeFor?: RecipeForEffect
+    /** The seam a test needs: `ownerlessClient`'s own third argument, following `projectFilter`'s fourth (`filter.ts`). */
+    ticketsOf?: typeof ticketsForEffect
+  } = {},
+): Effect.Effect<ProjectClients> {
+  return Effect.gen(function* () {
+    const hasAuth = options.hasAuth ?? hasGitHubAuth
+    // Not `clientForSeam(undefined)`: that default re-checks the process's own App and ignores `hasAuth`.
+    const clientFor: ClientForEffect =
+      options.clientFor ??
+      ((p) =>
+        Effect.tryPromise({
+          try: () => createGitHubClient({ auth: githubClientAuth(), owner: p.owner!, repo: p.project! }),
+          catch: (e) => e as Error,
+        }))
+    const recipeFor = options.recipeFor ?? recipeForSeam(undefined)
+    const ticketsOf = options.ticketsOf ?? ticketsForEffect
+    const clients = new Map<string, Tickets & RefChannel & { readonly owner: string | null; readonly repo: string }>()
+    const unresolved: UnresolvedProject[] = []
+    const reachable = hasAuth()
+    for (const p of projects) {
+      const project = p.project
+      if (!project) continue
+
+      // Not known whether this project's tickets are GitHub's or dbTickets' —
+      // see the doc comment above for why that rules out falling back to the
+      // raw client. A defect is reported as a failure is, as the `try` it replaces did.
+      const unresolve = (cause: Cause.Cause<unknown>) =>
+        unlessInterrupted(cause, () =>
+          Effect.sync(() => {
+            unresolved.push({ project, problem: oneLine(messageOf(cause)) })
+          }),
+        )
+
+      if (p.owner === null) {
+        // Never `clientFor`: there is no GitHub client to build.
+        yield* Effect.gen(function* () {
+          const resolved = yield* recipeFor(p, undefined)
+          const { client } = yield* ownerlessClientEffect(p, resolved.recipe, ticketsOf)
+          clients.set(project, client)
+        }).pipe(Effect.catchCause(unresolve))
+        continue
+      }
+
+      if (!reachable) continue
+      // Named by its absence: the divergence for that project simply is not
+      // found, and `doctor` still reports what the log says was not managed.
+      const built = yield* clientFor(p).pipe(
+        Effect.catchCause((cause) => unlessInterrupted(cause, () => Effect.succeed(null))),
+      )
+      if (built === null) continue
+      yield* Effect.gen(function* () {
+        const resolved = yield* recipeFor(p, built)
+        clients.set(project, ticketedClientOf(built, yield* ticketsOf(p, resolved.recipe, built)))
+      }).pipe(Effect.catchCause(unresolve))
+    }
+    return { clients, unresolved }
+  })
+}
+
+/** `clientsForProjectsEffect` over promise seams (a listed face, #790). */
+export function clientsForProjects(
   projects: readonly ProjectState[],
   options: {
     hasAuth?: () => boolean
     clientFor?: ClientFor
     recipeFor?: RecipeFor
-    /** The seam a test needs: `ownerlessClient`'s own third argument, following `projectFilter`'s fourth (`filter.ts`). */
     ticketsOf?: typeof ticketsFor
   } = {},
 ): Promise<ProjectClients> {
-  const hasAuth = options.hasAuth ?? hasGitHubAuth
-  const clientFor =
-    options.clientFor ??
-    ((p: ProjectState) => createGitHubClient({ auth: githubClientAuth(), owner: p.owner!, repo: p.project! }))
-  const recipeFor = options.recipeFor ?? currentRecipe
-  const clients = new Map<string, Tickets & RefChannel & { readonly owner: string | null; readonly repo: string }>()
-  const unresolved: UnresolvedProject[] = []
-  const reachable = hasAuth()
-  for (const p of projects) {
-    if (!p.project) continue
-
-    if (p.owner === null) {
-      try {
-        const resolved = await recipeFor(p, undefined)
-        const { client } = await ownerlessClient(p, resolved.recipe, options.ticketsOf)
-        clients.set(p.project, client)
-      } catch (err) {
-        // Not known whether this project's tickets are GitHub's or dbTickets' —
-        // see the doc comment above for why that rules out falling back to the
-        // raw client. Never `clientFor`: there is no GitHub client to build.
-        unresolved.push({ project: p.project, problem: oneLine((err as Error).message) })
-      }
-      continue
-    }
-
-    if (!reachable) continue
-    let client: GitHubClient
-    try {
-      client = await clientFor(p)
-    } catch {
-      // Named by its absence: the divergence for that project simply is not
-      // found, and `doctor` still reports what the log says was not managed.
-      continue
-    }
-    try {
-      const resolved = await recipeFor(p, client)
-      clients.set(p.project, ticketedClientOf(client, await ticketsFor(p, resolved.recipe, client)))
-    } catch (err) {
-      // Not known whether this project's tickets are GitHub's or dbTickets' —
-      // see the doc comment above for why that rules out falling back to the
-      // raw client.
-      unresolved.push({ project: p.project, problem: oneLine((err as Error).message) })
-    }
-  }
-  return { clients, unresolved }
+  return Effect.runPromise(clientsForProjectsEffect(projects, effectSeams(options)))
 }
+
+/** Each promise seam a test handed in, lifted once; one it did not is left to the Effect's own default. */
+function effectSeams(options: {
+  hasAuth?: () => boolean
+  clientFor?: ClientFor
+  recipeFor?: RecipeFor
+  ticketsOf?: typeof ticketsFor
+}): Parameters<typeof clientsForProjectsEffect>[1] {
+  return {
+    ...(options.hasAuth === undefined ? {} : { hasAuth: options.hasAuth }),
+    ...(options.clientFor === undefined ? {} : { clientFor: clientForSeam(options.clientFor) }),
+    ...(options.recipeFor === undefined ? {} : { recipeFor: recipeForSeam(options.recipeFor) }),
+    ...(options.ticketsOf === undefined ? {} : { ticketsOf: ticketsOfSeam(options.ticketsOf) }),
+  }
+}
+
+/** A promise as an Effect whose failure is the rejection itself, unwrapped — what the `catch` below reads `.message` off. */
+const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> => Effect.tryPromise({ try: f, catch: (e) => e })
+
+/** The message of whatever a step failed with, whether it failed or died. */
+const messageOf = (cause: Cause.Cause<unknown>): string => (Cause.squash(cause) as Error).message
+
+/**
+ * What a swallow-all `catch` keeps: every cause is answered, an interrupt is not.
+ * A store or a seam of the process is a defect when it throws, so `Effect.catch` alone would miss it.
+ */
+const unlessInterrupted = <B>(cause: Cause.Cause<unknown>, answer: () => Effect.Effect<B>): Effect.Effect<B> =>
+  Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause as Cause.Cause<never>) : answer()
+
+/** A promise that is allowed to fail: its answer, or `fallback` for a failure or a defect. */
+const orElse = <A, B>(f: () => Promise<A>, fallback: B): Effect.Effect<A | B> =>
+  attempt(f).pipe(Effect.catchCause((cause) => unlessInterrupted(cause, () => Effect.succeed(fallback))))
 
 /**
  * `RecipeInvalidError` puts one problem per line, which reads well in a
@@ -296,14 +358,14 @@ function logOf(options: ConvergeOptions): EventStore {
   return options.store ?? options.daemonStore?.events ?? eventStore
 }
 
-async function candidates(store: DaemonStore): Promise<Set<string>> {
-  return new Set(
-    await store.streams({
+function candidates(store: DaemonStore): Promise<Set<string>> {
+  return store
+    .streams({
       prefixes: [`${TICKET_STREAM_PREFIX}%`],
       // A continuation is claim-shaped (`claimShapeOf`); `reduceTicket` reduces it.
       types: ['TicketClaimed', 'TicketContinued', ...WAIT_EVENTS, 'TicketReleased', 'TicketLanded'],
-    }),
-  )
+    })
+    .then((found) => new Set(found))
 }
 
 /**
@@ -312,156 +374,156 @@ async function candidates(store: DaemonStore): Promise<Set<string>> {
  * Reads only, so `lingtai doctor` can say what a reconcile would do without
  * making it happen — the same split `findOrphans` has.
  */
-export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Divergence[]> {
-  const store = logOf(options)
-  // One read through a store opened for it and closed after it — the whole use
-  // this makes of a `DaemonStore`. An injected one is the caller's and stays
-  // open (`choose.ts`).
-  const streams = await withDaemonStore(
-    options.daemonStore,
-    options.url === undefined ? {} : { url: options.url },
-    candidates,
-  )
-  const projects = options.projects ?? (await loadProjects())
-  const byName = new Map(projects.filter((p) => p.project).map((p) => [p.project!, p]))
+export const findIssueDriftEffect = (options: ConvergeOptions = {}): Effect.Effect<Divergence[]> =>
+  Effect.gen(function* () {
+    const store = logOf(options)
+    // One read through a store opened for it and closed after it — the whole use
+    // this makes of a `DaemonStore`. An injected one is the caller's and stays
+    // open (`choose.ts`). Lifted until DAEMON-7a, and `Effect.promise` on purpose: a store that will not open
+    // is a defect out of here, as it was through reconcile's lift of this function.
+    const streams = yield* Effect.promise(() =>
+      withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, candidates),
+    )
+    const projects = options.projects ?? (yield* loadProjectsEffect())
+    const byName = new Map(projects.filter((p) => p.project).map((p) => [p.project!, p]))
 
-  const found: Divergence[] = []
+    const found: Divergence[] = []
 
-  for (const ticketId of streams) {
-    const parsed = parseTicketStream(ticketId)
-    if (!parsed) continue
-    const issue = Number(parsed.issue)
-    if (!Number.isInteger(issue)) continue
-    if (!byName.has(parsed.project)) continue
+    for (const ticketId of streams) {
+      const parsed = parseTicketStream(ticketId)
+      if (!parsed) continue
+      const issue = Number(parsed.issue)
+      if (!Number.isInteger(issue)) continue
+      if (!byName.has(parsed.project)) continue
 
-    const events = await store.read(ticketId).catch(() => [])
-    if (events.length === 0) continue
-    const item = reduceTicket(events)
-    const wanted = labelsFor(labelState(item.lifecycle.status))
+      const events = yield* orElse(() => store.read(ticketId), [])
+      if (events.length === 0) continue
+      const item = reduceTicket(events)
+      const wanted = labelsFor(labelState(item.lifecycle.status))
 
-    // What the log last said it managed, per change, is `item.github.last`: a
-    // failure with no later success is an outstanding claim; a success after it
-    // means somebody or something already got there. A rewritten waiting
-    // comment (#750) is attempted once and never repaired, so it is no
-    // divergence and no reason to read the issue — excluded here, once.
-    const failed = (c: keyof typeof item.github.last) =>
-      c !== 'comment-edited' && item.github.last[c]?.outcome === 'failed'
-    // And what it last said it *wrote*. An item that should carry no label but
-    // was given one is drift the log can see on its own, without a request.
-    const lastWrote: readonly string[] = item.github.labels ?? []
-    // And whether a `refs:` effect was ever resolved for this item, with what
-    // the recipe asked of it. Read off `EndActionsResolved` rather than assumed
-    // from the failure row, because `branch` is the recipe's decision and
-    // convergence must not widen it: an item swept with `branch: false` keeps
-    // `agent/<n>` however often the sweep is retried.
-    let sweep: { branch: boolean } | null = null
-    for (const e of events) {
-      if (e.type === 'EndActionsResolved') {
-        for (const a of (e.data as PayloadOf<'EndActionsResolved'>).actions) {
-          if ('refs' in a) sweep = { branch: a.branch }
+      // What the log last said it managed, per change, is `item.github.last`: a
+      // failure with no later success is an outstanding claim; a success after it
+      // means somebody or something already got there. A rewritten waiting
+      // comment (#750) is attempted once and never repaired, so it is no
+      // divergence and no reason to read the issue — excluded here, once.
+      const failed = (c: keyof typeof item.github.last) =>
+        c !== 'comment-edited' && item.github.last[c]?.outcome === 'failed'
+      // And what it last said it *wrote*. An item that should carry no label but
+      // was given one is drift the log can see on its own, without a request.
+      const lastWrote: readonly string[] = item.github.labels ?? []
+      // And whether a `refs:` effect was ever resolved for this item, with what
+      // the recipe asked of it. Read off `EndActionsResolved` rather than assumed
+      // from the failure row, because `branch` is the recipe's decision and
+      // convergence must not widen it: an item swept with `branch: false` keeps
+      // `agent/<n>` however often the sweep is retried.
+      let sweep: { branch: boolean } | null = null
+      for (const e of events) {
+        if (e.type === 'EndActionsResolved') {
+          for (const a of (e.data as PayloadOf<'EndActionsResolved'>).actions) {
+            if ('refs' in a) sweep = { branch: a.branch }
+          }
         }
       }
-    }
 
-    const outstanding = (Object.keys(item.github.last) as (keyof typeof item.github.last)[]).some(failed)
-    // A label Lingtai put on and no longer wants.
-    //
-    // Without this the commonest drift there is was invisible: a released or
-    // landed item wants no label, so `wanted` is empty, so the item was skipped
-    // and the `lingtai:working` it is still wearing was never seen. Found the
-    // first time a run was killed mid-flight — the release landed, the label
-    // stayed, and reconcile walked straight past it.
-    const stale = wanted.length === 0 && lastWrote.length > 0
+      const outstanding = (Object.keys(item.github.last) as (keyof typeof item.github.last)[]).some(failed)
+      // A label Lingtai put on and no longer wants.
+      //
+      // Without this the commonest drift there is was invisible: a released or
+      // landed item wants no label, so `wanted` is empty, so the item was skipped
+      // and the `lingtai:working` it is still wearing was never seen. Found the
+      // first time a run was killed mid-flight — the release landed, the label
+      // stayed, and reconcile walked straight past it.
+      const stale = wanted.length === 0 && lastWrote.length > 0
 
-    // Nothing outstanding, nothing to hold, nothing left over: the log is not
-    // claiming anything about this issue, so it is not worth a request.
-    if (wanted.length === 0 && !outstanding && !stale) continue
+      // Nothing outstanding, nothing to hold, nothing left over: the log is not
+      // claiming anything about this issue, so it is not worth a request.
+      if (wanted.length === 0 && !outstanding && !stale) continue
 
-    const client = options.clients?.get(parsed.project)
-    if (!client) continue
+      const client = options.clients?.get(parsed.project)
+      if (!client) continue
 
-    const current = await client.getIssue(issue).catch(() => null)
-    if (!current) continue
+      const current = yield* orElse(() => client.getIssue(issue), null)
+      if (!current) continue
 
-    // Names. GitHub sends each label's colour too, and convergence has no use
-    // for it: what the log implies is a set of names, and the difference this
-    // computes is between two sets of names.
-    const carried = current.labels.map((l) => l.name)
-    const target = [...new Set([...foreignLabels(carried), ...wanted])].sort()
-    const actual = [...carried].sort()
-    if (target.join(',') !== actual.join(',')) {
-      found.push({
-        ticketId,
-        project: parsed.project,
-        issue,
-        change: 'labels',
-        expected: target.join(', ') || '(no labels)',
-        actual: actual.join(', ') || '(no labels)',
-      })
-    }
-
-    if (failed('closed') && current.state === 'open') {
-      found.push({
-        ticketId,
-        project: parsed.project,
-        issue,
-        change: 'closed',
-        expected: 'closed — the log says the end step asked and did not manage',
-        actual: 'open',
-      })
-    }
-
-    if (failed('comment')) {
-      found.push({
-        ticketId,
-        project: parsed.project,
-        issue,
-        change: 'comment',
-        // Deliberately not repaired. See the header: a comment's text was a
-        // one-off decision and a later pass cannot re-make it.
-        expected: 'a comment the log says was never posted',
-        actual: 'not there, and not computable — say it by hand if it still matters',
-      })
-    }
-
-    // **The arms a sweep did not manage to delete** (`#240`).
-    //
-    // Computable, unlike a comment: the target is *no
-    // `agent/<n>-attempt-<k>` under this item's branch*, and what is actually
-    // there is one read away. Both conditions are needed and neither is the
-    // other — the log has to say a sweep was resolved *and* that its last word
-    // was a refusal, because an item nobody configured a `refs:` effect for has
-    // arms on purpose.
-    //
-    // **Asked of GitHub rather than read off the failed row.** A sweep that
-    // deleted two arms and was refused the third leaves one row saying it
-    // failed, and only the remote knows which two went — so the row is evidence
-    // that something is owed and never the list of what.
-    if (sweep && failed('refs')) {
-      const branch = agentBranch(issue)
-      const arms = armPrefix(branch)
-      // A read that is allowed to fail: this function repairs nothing, and a
-      // request refused here means the divergence is simply not found this
-      // pass. `doctor` still reports the row the log holds.
-      const live = await client.matchingRefs(`heads/${branch}`).catch(() => null)
-      const doomed = (live ?? []).filter(
-        (ref) => ref.startsWith(`heads/${arms}`) || (sweep.branch && ref === `heads/${branch}`),
-      )
-      if (doomed.length > 0) {
+      // Names. GitHub sends each label's colour too, and convergence has no use
+      // for it: what the log implies is a set of names, and the difference this
+      // computes is between two sets of names.
+      const carried = current.labels.map((l) => l.name)
+      const target = [...new Set([...foreignLabels(carried), ...wanted])].sort()
+      const actual = [...carried].sort()
+      if (target.join(',') !== actual.join(',')) {
         found.push({
           ticketId,
           project: parsed.project,
           issue,
-          change: 'refs',
-          expected: doomed.join(', '),
-          actual: `${doomed.length} still on origin — the log says the sweep asked and did not manage`,
+          change: 'labels',
+          expected: target.join(', ') || '(no labels)',
+          actual: actual.join(', ') || '(no labels)',
         })
       }
-    }
-  }
 
-  return found
-}
+      if (failed('closed') && current.state === 'open') {
+        found.push({
+          ticketId,
+          project: parsed.project,
+          issue,
+          change: 'closed',
+          expected: 'closed — the log says the end step asked and did not manage',
+          actual: 'open',
+        })
+      }
+
+      if (failed('comment')) {
+        found.push({
+          ticketId,
+          project: parsed.project,
+          issue,
+          change: 'comment',
+          // Deliberately not repaired. See the header: a comment's text was a
+          // one-off decision and a later pass cannot re-make it.
+          expected: 'a comment the log says was never posted',
+          actual: 'not there, and not computable — say it by hand if it still matters',
+        })
+      }
+
+      // **The arms a sweep did not manage to delete** (`#240`).
+      //
+      // Computable, unlike a comment: the target is *no
+      // `agent/<n>-attempt-<k>` under this item's branch*, and what is actually
+      // there is one read away. Both conditions are needed and neither is the
+      // other — the log has to say a sweep was resolved *and* that its last word
+      // was a refusal, because an item nobody configured a `refs:` effect for has
+      // arms on purpose.
+      //
+      // **Asked of GitHub rather than read off the failed row.** A sweep that
+      // deleted two arms and was refused the third leaves one row saying it
+      // failed, and only the remote knows which two went — so the row is evidence
+      // that something is owed and never the list of what.
+      if (sweep && failed('refs')) {
+        const branch = agentBranch(issue)
+        const arms = armPrefix(branch)
+        // A read that is allowed to fail: this function repairs nothing, and a
+        // request refused here means the divergence is simply not found this
+        // pass. `doctor` still reports the row the log holds.
+        const live = yield* orElse(() => client.matchingRefs(`heads/${branch}`), null)
+        const doomed = (live ?? []).filter(
+          (ref) => ref.startsWith(`heads/${arms}`) || (sweep.branch && ref === `heads/${branch}`),
+        )
+        if (doomed.length > 0) {
+          found.push({
+            ticketId,
+            project: parsed.project,
+            issue,
+            change: 'refs',
+            expected: doomed.join(', '),
+            actual: `${doomed.length} still on origin — the log says the sweep asked and did not manage`,
+          })
+        }
+      }
+    }
+
+    return found
+  })
 
 /**
  * Writes the difference, and appends what it wrote.
@@ -471,77 +533,98 @@ export async function findIssueDrift(options: ConvergeOptions = {}): Promise<Div
  * anything being marked resolved. That is the property worth having: there is
  * no second bookkeeping to get out of step with the first.
  */
-export async function convergeIssues(
+export const convergeIssuesEffect = (
   options: ConvergeOptions = {},
-): Promise<{ divergences: Divergence[]; converged: Divergence[] }> {
-  const log = options.log ?? (() => {})
-  const store = logOf(options)
-  const divergences = await findIssueDrift(options)
-  if (options.dryRun) return { divergences, converged: [] }
+): Effect.Effect<{ divergences: Divergence[]; converged: Divergence[] }> =>
+  Effect.gen(function* () {
+    const log = options.log ?? (() => {})
+    const store = logOf(options)
+    const divergences = yield* findIssueDriftEffect(options)
+    const converged: Divergence[] = []
+    if (options.dryRun) return { divergences, converged }
 
-  const converged: Divergence[] = []
+    for (const d of divergences) {
+      // The one place an interrupt is taken between divergences: each step below is uninterruptible, and
+      // without a point outside one a fiber asked to stop would write them all.
+      yield* Effect.yieldNow
+      const client = options.clients?.get(d.project)
+      if (!client) continue
+      // Nothing to write, by design.
+      if (d.change === 'comment') continue
 
-  for (const d of divergences) {
-    const client = options.clients?.get(d.project)
-    if (!client) continue
-    // Nothing to write, by design.
-    if (d.change === 'comment') continue
+      // What a part-way sweep had already deleted when it was refused, so the
+      // failure row can name it — `sweepRefs`'s rule and its wording, because a
+      // delete is one call per ref and the second one can be the one GitHub says
+      // no to. Empty for every other change, which is one call and no partial.
+      const gone: string[] = []
+      const write =
+        d.change === 'labels'
+          ? attempt(() => client.setLabels(d.issue, d.expected === '(no labels)' ? [] : d.expected.split(', ')))
+          : d.change === 'refs'
+            ? Effect.forEach(
+                d.expected.split(', '),
+                (ref) =>
+                  attempt(() => client.deleteRef(ref)).pipe(Effect.tap(() => Effect.sync(() => void gone.push(ref)))),
+                { discard: true },
+              )
+            : attempt(() => client.closeIssue(d.issue))
 
-    // What a part-way sweep had already deleted when it was refused, so the
-    // failure row can name it — `sweepRefs`'s rule and its wording, because a
-    // delete is one call per ref and the second one can be the one GitHub says
-    // no to. Empty for every other change, which is one call and no partial.
-    const gone: string[] = []
-    try {
-      if (d.change === 'labels') {
-        await client.setLabels(d.issue, d.expected === '(no labels)' ? [] : d.expected.split(', '))
-      } else if (d.change === 'refs') {
-        for (const ref of d.expected.split(', ')) {
-          await client.deleteRef(ref)
-          gone.push(ref)
-        }
-      } else {
-        await client.closeIssue(d.issue)
-      }
-      await record(store, d.ticketId, 'IssueUpdated', {
-        project: d.project,
-        issue: String(d.issue),
-        change: d.change,
-        detail: `converged by reconcile: ${d.expected}`,
-      })
-      converged.push(d)
-      // A repair that came out right, in the colour a verdict that passed
-      // wears. It is not chrome: something was wrong and now is not.
-      log(paint.pass(`reconciled: ${d.project}#${d.issue} ${d.change} — ${d.expected}`))
-    } catch (err) {
-      // Recorded, not retried. The next reconcile recomputes the target from
-      // the log and tries again on its own; a counter here would be the
-      // machinery 0022 deleted, growing back one field at a time.
-      await record(store, d.ticketId, 'IssueUpdateFailed', {
-        project: d.project,
-        issue: String(d.issue),
-        change: d.change,
-        error: sweepFailure(err, gone),
-      })
-      log(paint.fail(`reconcile could not converge ${d.project}#${d.issue} ${d.change}: ${(err as Error).message}`))
+      // **A write and its record are one step** (#1073): an interruption between them would leave a write
+      // GitHub has and the log does not, which is converged again next start, and a second `deleteRef`
+      // is a refusal recorded as a failure.
+      yield* Effect.uninterruptible(
+        Effect.gen(function* () {
+          const failure = yield* write.pipe(
+            Effect.map(() => null),
+            Effect.catch((err) => Effect.succeed({ err })),
+          )
+          if (failure === null) {
+            yield* record(store, d.ticketId, 'IssueUpdated', {
+              project: d.project,
+              issue: String(d.issue),
+              change: d.change,
+              detail: `converged by reconcile: ${d.expected}`,
+            })
+            converged.push(d)
+            // A repair that came out right, in the colour a verdict that passed
+            // wears. It is not chrome: something was wrong and now is not.
+            log(paint.pass(`reconciled: ${d.project}#${d.issue} ${d.change} — ${d.expected}`))
+            return
+          }
+          // Recorded, not retried. The next reconcile recomputes the target from
+          // the log and tries again on its own; a counter here would be the
+          // machinery 0022 deleted, growing back one field at a time.
+          yield* record(store, d.ticketId, 'IssueUpdateFailed', {
+            project: d.project,
+            issue: String(d.issue),
+            change: d.change,
+            error: sweepFailure(failure.err, gone),
+          })
+          log(
+            paint.fail(
+              `reconcile could not converge ${d.project}#${d.issue} ${d.change}: ${(failure.err as Error).message}`,
+            ),
+          )
+        }),
+      )
     }
-  }
 
-  return { divergences, converged }
-}
+    return { divergences, converged }
+  })
 
 /** Same silence as `tell.ts`: losing the record must not lose the write. */
-async function record(
+const record = (
   store: EventStore,
   ticketId: string,
   type: 'IssueUpdated' | 'IssueUpdateFailed',
   data: Record<string, string>,
-): Promise<void> {
-  try {
-    const at = (await store.read(ticketId)).length
-    await store.append(ticketId, at, [{ type, actor: 'conductor', data: parsePayload(type, data) }])
-  } catch {
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const at = (yield* attempt(() => store.read(ticketId))).length
+    yield* attempt(() => store.append(ticketId, at, [{ type, actor: 'conductor', data: parsePayload(type, data) }]))
+  }).pipe(
     // The next pass recomputes from GitHub, so an unwritten record costs a
-    // request rather than a fact.
-  }
-}
+    // request rather than a fact. A defect is swallowed too: a failed append that killed
+    // the converge would skip every remaining divergence and leave no `Reconciled`.
+    Effect.catchCause((cause) => unlessInterrupted(cause, () => Effect.void)),
+  )

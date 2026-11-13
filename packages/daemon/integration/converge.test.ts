@@ -14,9 +14,15 @@ import { processEventStore, type EventStore } from '@lingtai/event-store'
  * an issue somebody fixed by hand gets no write at all.
  */
 import type { GitHubClient, Issue } from '@lingtai/github'
+import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { convergeIssues, findIssueDrift } from '../src/index.ts'
+import { convergeIssuesEffect, findIssueDriftEffect } from '../src/index.ts'
+
+const findIssueDrift = (options: Parameters<typeof findIssueDriftEffect>[0]) =>
+  Effect.runPromise(findIssueDriftEffect(options))
+const convergeIssues = (options: Parameters<typeof convergeIssuesEffect>[0]) =>
+  Effect.runPromise(convergeIssuesEffect(options))
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 const created = new Set<string>()
