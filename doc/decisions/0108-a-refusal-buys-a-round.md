@@ -1,6 +1,6 @@
 # 0108 — Failure, fix rounds and restarts: a refusal buys a round in the same worktree, a wall stops the conductor, and a crash stops the attempt
 
-**Status** accepted · 2026-10-01
+**Status** accepted · 2026-10-01 · amended 2026-11-13: a rule answers what is only transient, a red base puts the item back in the queue, a conflict's budget is `rounds`, and the mechanical bounds are constants
 
 A step that refuses with something an agent can be held to sends the agent back
 into the same worktree, carrying the evidence; `runtime.limits.rounds` bounds how
@@ -11,7 +11,13 @@ start the ticket over from the base, bounded by `runtime.limits.restarts`
 agent that never started met something account-wide, so the conductor pauses
 until the reset and the item goes back to the queue untouched. An agent that
 started and did not finish judged nothing: it buys no round, pauses nothing, and
-holds the item for a person. Lingtai's own failures never reach an agent at all.
+holds the item for a person — unless what stopped it is only transient (an
+API that answered 5xx, an edge that refused the request), which a rule retries
+without a person. Lingtai's own failures never reach an agent at all. A base
+that is already red holds nothing for a person: the item goes back to the queue
+and is passed over until the base is green. **A person is the floor, not the
+default**: whatever a rule or a declared judge can answer is answered there, and
+what reaches a person is what neither could.
 
 ## Context
 
@@ -107,9 +113,9 @@ fixes the bounds and the endings that router works inside.
    printed beside the time figure rather than in place of it. **A third bound
    is free and is not a knob** (#593): when the base moved on files the branch
    also changed, the system merges it in itself and the attempt builds and reviews
-   again — no agent runs for the merge and no `round` is spent — at most twice
-   per attempt (`BASE_MERGES_LIMIT`), then a person. It adds nothing to the
-   ceiling above beyond the `build` and `review` it reruns. **A merge conflict buys its fix round from its own budget** (#653): `CONFLICT_ROUNDS_LIMIT = 2` per attempt, beside the base-merge budget, never drawn from `rounds`, and never counted in it — that round runs an agent, so it falls outside the ceiling above, and its result passes `build`, `review` and `proposed` again, a review that then refuses buying from `rounds` as usual. Once both are spent a person is reached. Absent, the
+   again — no agent runs for the merge and no `round` is spent — at most
+   `BASE_MERGES_LIMIT` (10) times per attempt, then a person. It adds nothing to the
+   ceiling above beyond the `build` and `review` it reruns. **A merge conflict buys its fix round from its own budget** (#653): as many conflict rounds per attempt as `rounds` allows, counted apart from `rounds` and never drawn from it, so a base that moves often cannot spend the rounds a review's findings need. There is no knob of its own: a conflict round runs an agent and costs what a fix round costs, so the recipe's one number bounds both, and the automatic ceiling above counts it — `(restarts + 1) × (2 × rounds + 1) × wall`, and the same for `usd`. Its result passes `build`, `review` and `proposed` again, a review that then refuses buying from `rounds` as usual. Once both are spent a person is reached. **The mechanical bounds are constants, not knobs**: a base merge (`BASE_MERGES_LIMIT`) and a transient retry (`TRANSIENT_RETRIES_LIMIT`, §12, §15) run no agent and cost nothing beyond the checks they rerun, so they are set high in `packages/domain/src/routing.ts`, are never written in a recipe, and exist only to stop a loop. Absent, the
    sentence is unchanged, character for character. A person's `GrantFixRound`
    ([#426](https://github.com/steven-zhc/lingtai/issues/426)) authorizes exactly
    one additional `implement` round on saved work when the wait has a fixable
@@ -164,7 +170,17 @@ fixes the bounds and the endings that router works inside.
     no round, reaches no judge, is not retried, and does not pause the conductor,
     because a crash is local — except a crash whose detail is the runtime's account-limit
     sentence, which pauses it as §11 says and is still the ticket's wait. The item is blocked for a person; the card offers no
-    approval, because no step judged the diff, and the move left is requeue. A step
+    approval, because no step judged the diff, and the move left is requeue.
+    **A crash that is only transient is requeued by rule, not held.** When the
+    runtime's own detail is an API error with a status a retry can clear — a 5xx,
+    a 429, or an edge's refusal page (Cloudflare's *Attention Required*, a 403
+    that carries it) — the attempt publishes its commits, the item is released
+    (`failed`) and keeps its place, exactly as a requeue would, and the next
+    attempt starts after `source.backoff`. At most `TRANSIENT_RETRIES_LIMIT` (3)
+    such retries follow one another for a ticket; the next transient crash holds
+    for a person as above. Which sentences count is a list in one function,
+    matched on the runtime's own words like `metTheAccountWall`, and a sentence
+    not on it is a crash. A step
     that stopped to ask a question is a different ending (`StepAsked`) and goes
     to the router.
 
@@ -172,11 +188,19 @@ fixes the bounds and the endings that router works inside.
 13. **A refusal the base shares buys nothing.** Before a `build` refusal buys
     a round, the refused command is run on the attempt's base commit. If it fails
     there too, the refusal is not about the diff: no round is bought, and the
-    attempt holds for a person, saying which check is red on the base (`base is
-    red: <check>`). A fix agent does not fix what it did not break; rounds spent
-    on it are spent for nothing. The base's result is recorded on the log, keyed
-    by the base commit and the command, so attempts in flight and the next ticket
-    reuse it, and a base that moves runs it again.
+    attempt ends without a wait: its commits are published, the item is released
+    and goes back to the queue, keeping its place. A fix agent does not fix what
+    it did not break, and a person has nothing to decide about this ticket — the
+    base is someone's to fix, and who is not Lingtai's to guess (in a team's
+    repository it is usually not this ticket's author). **The queue passes the
+    item over as `base-red` while the recorded result for the current base
+    commit is red**, and the board and `lingtai status` show it in the queue
+    with the check that is red, the same way they show `blocked-by`. The base's
+    result is recorded on the log, keyed by the base commit and the command, so
+    attempts in flight and every queued ticket reuse it; when the base moves the
+    check runs once on the new commit — no agent, no claim — and a green result
+    lets every item it held be taken again. Lingtai opens no ticket about a red
+    base.
 
 14. **A diff the reviewer cannot read whole buys nothing.** Before `review`,
     the diff the reviewer would be handed is measured the way it is clipped,
@@ -187,6 +211,23 @@ fixes the bounds and the endings that router works inside.
     and may advise `Split` with its plan (0118 §12). The person may also
     `Approve`, which runs the review on the clipped diff and records that the
     reviewer read only the first part, so the summary and the task page say so.
+
+15. **A landing the remote refused for a transient reason is retried by rule.**
+    The lane already retries a push that GitHub answered with a 5xx in place
+    (`remote-error`, #1125). When those retries are spent too, the router does
+    not hand the item to a person: it is released and keeps its place, as in
+    §12, counting against the same `TRANSIENT_RETRIES_LIMIT`. A refusal the
+    remote will repeat — a 4xx (a protected branch, a missing permission), a
+    rejected non-fast-forward the lane could not merge — still holds for a
+    person, because retrying it buys nothing.
+
+16. **A rule comes before a judge, and triage never acts.** What is only
+    mechanical or only transient (§8, §12, §13, §15) is answered by a rule,
+    which costs nothing and runs no agent; a judgement is a judge declared at
+    `proposed` (§6); what neither answers is a wait. Triage
+    ([0118](0118-a-hold-explains-itself.md)) is the report a person reads on
+    that wait — it advises and never moves the item, and it is not asked
+    about anything a rule or a judge already answered.
 
 ## Consequences
 
@@ -203,6 +244,14 @@ fixes the bounds and the endings that router works inside.
   implementer deserves a retry of its own is unmeasured and not offered.
 
 ## Not built yet
+
+- **The 2026-11-13 amendment.** §12's transient requeue and its list of
+  sentences; §13's release with `base-red` in the queue and the check rerun
+  per base commit (today the attempt still holds for a person, `base is red:
+  <check>`); §15's release after the lane's retries; `BASE_MERGES_LIMIT`
+  raised from 2 to 10 and `TRANSIENT_RETRIES_LIMIT` added; the conflict budget
+  drawn from `rounds` rather than `CONFLICT_ROUNDS_LIMIT = 2`, and
+  `attemptCeiling` counting it.
 
 - **`backlog:` does not set the bar.** The plugin is declared in
   `packages/recipe/src/recipe.ts`, but the `minor` bar is still a literal in
