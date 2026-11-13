@@ -1,3 +1,4 @@
+import { Effect } from 'effect'
 /**
  * #576. The row's `started_at` is what an interrupted triage is read against,
  * so it has to be this process's and not the first daemon's ever: only the first
@@ -13,8 +14,8 @@ describe('startBeacon', () => {
   it('sends exactly one fresh beat, the first, even when a word is said before the timer fires', async () => {
     const beats: Beat[] = []
     const store = {
-      beat: async (b: Beat) => void beats.push(b),
-      close: async () => {},
+      beat: (b: Beat) => Effect.sync(() => void beats.push(b)),
+      close: () => Effect.void,
     } as unknown as DaemonStore
     const beacon = startBeacon('starting', { store, every: 3_600_000 })
     await beacon.say('up')
@@ -29,11 +30,12 @@ describe('startBeacon', () => {
     const beats: Beat[] = []
     let failures = 1
     const store = {
-      beat: async (b: Beat) => {
-        beats.push(b)
-        if (failures-- > 0) throw new Error('transient')
-      },
-      close: async () => {},
+      beat: (b: Beat) =>
+        Effect.sync(() => {
+          beats.push(b)
+          if (failures-- > 0) throw new Error('transient')
+        }),
+      close: () => Effect.void,
     } as unknown as DaemonStore
     const beacon = startBeacon('starting', { store, every: 3_600_000 })
     await beacon.say('up')
@@ -48,8 +50,8 @@ describe('startBeacon', () => {
   it('dates the row from the start it was given', async () => {
     const beats: Beat[] = []
     const store = {
-      beat: async (b: Beat) => void beats.push(b),
-      close: async () => {},
+      beat: (b: Beat) => Effect.sync(() => void beats.push(b)),
+      close: () => Effect.void,
     } as unknown as DaemonStore
     const startedAt = new Date('2026-10-20T12:00:00Z')
     const beacon = startBeacon('starting', { store, every: 3_600_000, startedAt })

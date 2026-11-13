@@ -37,7 +37,7 @@ const project: ProjectState = {
 async function seeded() {
   const store = createMemoryEventStore()
   for (const stream of [FIRST, SECOND]) await store.append(stream, 0, aClaim(makeStream(stream), 'r1', DEAD))
-  const daemonStore = { streams: async () => [FIRST, SECOND] } as unknown as DaemonStore
+  const daemonStore = { streams: () => Effect.succeed([FIRST, SECOND]) } as unknown as DaemonStore
   return { store, daemonStore }
 }
 

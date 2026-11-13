@@ -112,10 +112,8 @@ const execFile = promisify(execFileCb)
  * interface. A store the caller injected is used as it is and left open, for
  * the reason a pool passed in is the caller's to end.
  */
-function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => Promise<T>): Effect.Effect<T> {
-  return withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, (it) =>
-    Effect.promise(() => fn(it)),
-  )
+function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => Effect.Effect<T>): Effect.Effect<T> {
+  return withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, fn)
 }
 
 /** A promise as an Effect whose failure is the rejection itself, unwrapped — the shape `readThroughSnapshot` uses. */

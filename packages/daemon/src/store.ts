@@ -50,6 +50,7 @@
  * interface is what made that a single edit rather than five.
  */
 import type { EventStore } from '@lingtai/event-store/store'
+import type { Effect } from 'effect'
 
 /**
  * A projection that stopped alone, as the beacon carries it (#839).
@@ -180,7 +181,7 @@ export interface DaemonStore {
    * migration rules: `daemon_status` is the one mutable operational row, and it
    * is created and widened where it is read.
    */
-  create(): Promise<void>
+  create(): Effect.Effect<void>
 
   /**
    * Says "still here", overwriting whatever the row said before.
@@ -190,10 +191,10 @@ export interface DaemonStore {
    * conductor lock it is holding while it conducts nothing. A row that cannot
    * be written reports itself by going stale.
    */
-  beat(beat: Beat): Promise<void>
+  beat(beat: Beat): Effect.Effect<void>
 
   /** Null when no daemon has ever run. Stale is reported, never hidden. */
-  status(): Promise<DaemonStatus | null>
+  status(): Effect.Effect<DaemonStatus | null>
 
   /**
    * The log's current end.
@@ -203,13 +204,13 @@ export interface DaemonStore {
    * answer is a single number, and reading it by paging would make starting the
    * daemon slower the longer it has been useful.
    */
-  head(): Promise<bigint>
+  head(): Effect.Effect<bigint>
 
   /** The stream ids matching `query`, in `stream_id` order. */
-  streams(query: StreamQuery): Promise<string[]>
+  streams(query: StreamQuery): Effect.Effect<string[]>
 
   /** Releases whatever this store holds open. */
-  close(): Promise<void>
+  close(): Effect.Effect<void>
 }
 
 /**

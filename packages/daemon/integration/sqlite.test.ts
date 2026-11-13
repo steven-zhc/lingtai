@@ -20,9 +20,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { Effect } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { createSqliteDaemonStore, openSqliteDaemon } from '../src/sqlite.ts'
+import type { DaemonStore } from '../src/store.ts'
 import { describeDaemonStoreContract, type DaemonFixture } from '../test/contract.ts'
 
 const dirs: string[] = []
@@ -44,7 +46,7 @@ describeDaemonStoreContract('sqlite', async (): Promise<DaemonFixture> => {
   // `daemon_status` have in Postgres.
   const db = openSqliteDaemon(path)
   const store = createSqliteDaemonStore(db)
-  const seconds: { close(): Promise<void> }[] = []
+  const seconds: DaemonStore[] = []
   const project = `esctest-sqlite-${crypto.randomUUID().slice(0, 8)}`
 
   return {
@@ -62,8 +64,8 @@ describeDaemonStoreContract('sqlite', async (): Promise<DaemonFixture> => {
     prefix: `ticket-${project}-%`,
     stream: (issue) => `ticket-${project}-${issue}`,
     async close() {
-      for (const s of seconds.splice(0)) await s.close().catch(() => {})
-      await store.close()
+      for (const s of seconds.splice(0)) await Effect.runPromise(s.close()).catch(() => {})
+      await Effect.runPromise(store.close())
     },
   }
 })
@@ -78,9 +80,9 @@ describe('sqlite: what only this store answers for', () => {
     const store = createSqliteDaemonStore(db)
     try {
       db.exec('DROP TABLE daemon_status')
-      expect(await store.status()).toBeNull()
+      expect(await Effect.runPromise(store.status())).toBeNull()
     } finally {
-      await store.close()
+      await Effect.runPromise(store.close())
     }
   })
 })

@@ -62,10 +62,11 @@ async function seeded(form: Form) {
   ])
   const queries: { types?: readonly string[] }[] = []
   const daemonStore = {
-    streams: async (q: { types?: readonly string[] }) => {
-      queries.push(q)
-      return [STREAM]
-    },
+    streams: (q: { types?: readonly string[] }) =>
+      Effect.sync(() => {
+        queries.push(q)
+        return [STREAM]
+      }),
   } as unknown as DaemonStore
   return { store, daemonStore, queries }
 }

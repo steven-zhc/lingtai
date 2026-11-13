@@ -25,6 +25,7 @@ import { join } from 'node:path'
 import { readControl, readStatus } from '@lingtai/daemon/control'
 import { createSqliteDaemonStore, openSqliteDaemon } from '@lingtai/daemon/sqlite'
 import { CONTROL_STREAM, parsePayload } from '@lingtai/domain'
+import { Effect } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { daemonCurrency, daemonLiveness } from '../src/doctor.ts'
@@ -58,25 +59,27 @@ describe('the daemon rows, read from a beacon in a file', () => {
       expect(currency.status).toBe('ok')
       expect(currency.detail).toContain('nothing is holding code open')
     } finally {
-      await store.close()
+      await Effect.runPromise(store.close())
     }
   })
 
   it('reads a beat back as a daemon that is up and cannot say what it is running', async () => {
     const store = freshStore()
     try {
-      await store.beat({
-        pid: 321,
-        host: 'laptop',
-        state: 'starting',
-        currentRunId: null,
-        // A daemon older than #98, which is the state `daemon: currency` was
-        // written for: up, and unable to say from where.
-        codeSha: null,
-        codeDirty: false,
-        fresh: true,
-        startedAt: null,
-      })
+      await Effect.runPromise(
+        store.beat({
+          pid: 321,
+          host: 'laptop',
+          state: 'starting',
+          currentRunId: null,
+          // A daemon older than #98, which is the state `daemon: currency` was
+          // written for: up, and unable to say from where.
+          codeSha: null,
+          codeDirty: false,
+          fresh: true,
+          startedAt: null,
+        }),
+      )
 
       const liveness = await daemonLiveness(
         () => readStatus(store),
@@ -90,7 +93,7 @@ describe('the daemon rows, read from a beacon in a file', () => {
       expect(currency.status).toBe('warn')
       expect(currency.detail).toContain('recorded no commit')
     } finally {
-      await store.close()
+      await Effect.runPromise(store.close())
     }
   })
 
@@ -119,7 +122,7 @@ describe('the daemon rows, read from a beacon in a file', () => {
       )
       expect(liveness.detail).toContain('paused by lingtai (migrating)')
     } finally {
-      await store.close()
+      await Effect.runPromise(store.close())
     }
   })
 })

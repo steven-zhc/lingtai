@@ -1,6 +1,7 @@
 /** #839. The beacon's new column, on a table that already exists without it. */
 import { DatabaseSync } from 'node:sqlite'
 
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { createSqliteDaemonStore } from '../src/sqlite.ts'
@@ -31,14 +32,18 @@ describe('daemon_status.stopped_projections on sqlite', () => {
       `INSERT INTO daemon_status VALUES (1, 9, 'old', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'up', NULL, NULL, 0)`,
     )
     const store = createSqliteDaemonStore(db, {} as never)
-    await store.create()
-    await store.create()
-    expect((await store.status())?.stoppedProjections).toBeNull()
+    await Effect.runPromise(store.create())
+    await Effect.runPromise(store.create())
+    expect((await Effect.runPromise(store.status()))?.stoppedProjections).toBeNull()
 
-    await store.beat({ ...beat, stoppedProjections: [{ name: 'spend', checkpoint: 12n, error: 'boom' }] })
-    expect((await store.status())?.stoppedProjections).toEqual([{ name: 'spend', checkpoint: 12n, error: 'boom' }])
+    await Effect.runPromise(
+      store.beat({ ...beat, stoppedProjections: [{ name: 'spend', checkpoint: 12n, error: 'boom' }] }),
+    )
+    expect((await Effect.runPromise(store.status()))?.stoppedProjections).toEqual([
+      { name: 'spend', checkpoint: 12n, error: 'boom' },
+    ])
 
-    await store.beat({ ...beat, fresh: false })
-    expect((await store.status())?.stoppedProjections).toEqual([])
+    await Effect.runPromise(store.beat({ ...beat, fresh: false }))
+    expect((await Effect.runPromise(store.status()))?.stoppedProjections).toEqual([])
   })
 })

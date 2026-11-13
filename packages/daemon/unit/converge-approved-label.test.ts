@@ -40,7 +40,7 @@ const project: ProjectState = {
 }
 
 function oneStream(): DaemonStore {
-  return { streams: async () => [STREAM] } as unknown as DaemonStore
+  return { streams: () => Effect.succeed([STREAM]) } as unknown as DaemonStore
 }
 
 /** A fake GitHub client carrying a fixed label set — `lingtai:waiting`, the one the sweep's own signoff put there. */

@@ -85,4 +85,4 @@ export const withDaemonStore = <A, E>(
 ): Effect.Effect<A, E> =>
   given !== undefined
     ? use(given)
-    : Effect.acquireUseRelease(processDaemonStoreEffect(options), use, (store) => Effect.promise(() => store.close()))
+    : Effect.acquireUseRelease(processDaemonStoreEffect(options), use, (store) => store.close())

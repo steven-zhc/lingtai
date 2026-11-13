@@ -666,6 +666,6 @@ export function createWorkLoop(options: WorkLoopOptions): WorkLoop {
  */
 function headSeq(options: WorkLoopOptions): Effect.Effect<bigint> {
   return withDaemonStore(options.daemonStore, options.url === undefined ? {} : { url: options.url }, (store) =>
-    Effect.promise(() => store.head()),
+    store.head(),
   )
 }

@@ -358,14 +358,14 @@ function logOf(options: ConvergeOptions): EventStore {
   return options.store ?? options.daemonStore?.events ?? eventStore
 }
 
-function candidates(store: DaemonStore): Promise<Set<string>> {
+function candidates(store: DaemonStore): Effect.Effect<Set<string>> {
   return store
     .streams({
       prefixes: [`${TICKET_STREAM_PREFIX}%`],
       // A continuation is claim-shaped (`claimShapeOf`); `reduceTicket` reduces it.
       types: ['TicketClaimed', 'TicketContinued', ...WAIT_EVENTS, 'TicketReleased', 'TicketLanded'],
     })
-    .then((found) => new Set(found))
+    .pipe(Effect.map((found) => new Set(found)))
 }
 
 /**
@@ -383,7 +383,7 @@ export const findIssueDriftEffect = (options: ConvergeOptions = {}): Effect.Effe
     const streams = yield* withDaemonStore(
       options.daemonStore,
       options.url === undefined ? {} : { url: options.url },
-      (it) => Effect.promise(() => candidates(it)),
+      candidates,
     )
     const projects = options.projects ?? (yield* loadProjectsEffect())
     const byName = new Map(projects.filter((p) => p.project).map((p) => [p.project!, p]))

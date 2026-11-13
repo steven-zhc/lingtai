@@ -14,7 +14,7 @@ import { COMPLETION_EVENTS, makeWorkLoop, type WorkLoopOptions } from '../src/wo
 const quiet = { ready: Promise.resolve(), close() {} }
 const makeLog = () =>
   ({ store: createMemoryEventStore(), queries: {}, waker: () => ({ open: () => quiet }) }) as unknown as Log
-const daemonStore = { head: async () => 0n } as unknown as DaemonStore
+const daemonStore = { head: () => Effect.succeed(0n) } as unknown as DaemonStore
 
 const ticks = async (n = 5) => {
   for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r))
