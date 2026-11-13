@@ -143,7 +143,7 @@ import {
   taskViewProjection,
   type Projection,
 } from '@lingtai/projector'
-import type { ResolvedRecipe, SignedIn } from '@lingtai/recipe'
+import type { HostAnswer, HostFactsEffect, ResolvedRecipe, SignedIn } from '@lingtai/recipe'
 import {
   UNBOUNDED,
   baseDivergence,
@@ -1252,6 +1252,13 @@ export interface DoctorReach {
   gh?: GhRun
   /** What this machine is signed in to, for the `recipe:` row — injectable so a unit test spawns nothing. */
   signedIn?: SignedIn
+  /**
+   * Whether this host can provide the sandbox a recipe requires, and the facts its paths are checked against
+   * (#1147). Injectable so a unit test never spawns: absent, `currentRecipeEffect`'s own defaults ask the real
+   * host, and only for a recipe with an enabled, required `sandbox:` block.
+   */
+  sandboxHost?: HostAnswer | 'skip'
+  hostFacts?: HostFactsEffect
   spend?: () => Effect.Effect<{ day: DaySpend; ceilingUsd: number | undefined }, unknown>
   /** The `account: <runtime>` rows, injectable so a unit test reads no store (#1009). */
   accounts?: () => Effect.Effect<CheckResult[]>
@@ -1419,6 +1426,22 @@ function pausedRows(name: string, projects: readonly ProjectState[]): CheckResul
   if (paused.length === 0) return []
   const detail = paused.map((p) => `${p.project} (by ${p.paused!.by} since ${p.paused!.at.toISOString()})`).join('; ')
   return [{ name, status: 'info', detail: `${detail} — lingtai resume <project> lifts it` }]
+}
+
+/**
+ * How every recipe row resolves a project: the injected source, or `currentRecipeEffect` with the host
+ * answer `DoctorReach` carries (#1147), so a unit test that names none never spawns and a real run asks the
+ * host only for a recipe with an enabled, required `sandbox:` block.
+ */
+function recipeLookup(reach: Partial<Pick<DoctorReach, 'recipe' | 'sandboxHost' | 'hostFacts'>>): RecipeForEffect {
+  return (
+    reach.recipe ??
+    ((state, client) =>
+      currentRecipeEffect(state, client, undefined, {
+        ...(reach.sandboxHost === undefined ? {} : { host: reach.sandboxHost }),
+        ...(reach.hostFacts === undefined ? {} : { hostFacts: reach.hostFacts }),
+      }))
+  )
 }
 
 /**
@@ -3019,7 +3042,7 @@ export function declaredEnvironment(
       return [{ name, status: 'ok' as const, detail: 'no project has a recipe to declare anything yet' }]
     }
 
-    const recipeFor = reach.recipe ?? ((state, client) => currentRecipeEffect(state, client))
+    const recipeFor = recipeLookup(reach)
     const agentEnvFor = reach.agentEnv ?? resolveAgentEnv
     const runtimes = reach.runtimes?.() ?? everyRuntime()
 
@@ -3224,7 +3247,7 @@ export function recipeGovernsItsBase(
       return [{ name, status: 'ok' as const, detail: 'no project has a recorded base to disagree with a recipe yet' }]
     }
 
-    const recipeFor = reach.recipe ?? ((state, client) => currentRecipeEffect(state, client))
+    const recipeFor = recipeLookup(reach)
     const results: CheckResult[] = []
     for (const project of projects) {
       if (!project.project) {
@@ -3501,7 +3524,7 @@ export function runDoctor(
     // One resolve for the whole report (`#389`) — `recipe:`'s own rows below
     // and the `unconverged` rows in both store branches read this same value,
     // rather than each asking every project's recipe again.
-    const filters = yield* step('recipes', projectFiltersOnce(env, loadE, reach.recipe))
+    const filters = yield* step('recipes', projectFiltersOnce(env, loadE, recipeLookup(reach)))
     const unresolved = unresolvedProblems(filters)
 
     /**
@@ -3577,7 +3600,9 @@ export function runDoctor(
       yield* step('paused projects', pausedProjects(loadE).pipe(Effect.map(pushAll)))
       yield* step(
         'account limits',
-        (reach.accounts ?? (() => accountLimits(undefined, loadE)))().pipe(Effect.map(pushAll)),
+        (
+          reach.accounts ?? (() => accountLimits(undefined, loadE, (state) => recipeLookup(reach)(state, undefined)))
+        )().pipe(Effect.map(pushAll)),
       )
       yield* step(
         'spend',
@@ -3645,7 +3670,10 @@ export function runDoctor(
       // for thirty-nine minutes only one of them was measured.
       yield* step('daemon currency', daemonCurrency().pipe(Effect.orDie, Effect.map(push)))
       yield* step('paused projects', pausedProjects(loadE).pipe(Effect.map(pushAll)))
-      yield* step('account limits', accountLimits(undefined, loadE).pipe(Effect.map(pushAll)))
+      yield* step(
+        'account limits',
+        accountLimits(undefined, loadE, (state) => recipeLookup(reach)(state, undefined)).pipe(Effect.map(pushAll)),
+      )
       yield* step('spend', spendToday(undefined, () => readControlEffect()).pipe(Effect.map(push)))
       yield* step(
         'rates',

@@ -19,6 +19,7 @@ import { filesEffect, messageOf, plainWhen } from './files.ts'
 import { isRefusal, recipePath, resolveLocalRecipeEffect, type SignedIn } from './local.ts'
 import { RECIPE_VERSION } from './recipe.ts'
 import { RecipeInvalidError, resolveSource } from './resolve.ts'
+import type { HostFactsEffect } from './sandbox.ts'
 
 /** The file seam: a `Map`-backed one for tests, `diskFiles` for the real thing. */
 export interface RecipeFiles {
@@ -226,7 +227,7 @@ export type SaveRecipeTextResult =
 export const saveRecipeTextEffect = Effect.fn('recipe.save-text')(function* (
   project: string,
   input: { loaded: string; text: string },
-  options: { home?: string; files?: RecipeFiles; base?: string | null; signedIn: SignedIn },
+  options: { home?: string; files?: RecipeFiles; base?: string | null; signedIn: SignedIn; hostFacts: HostFactsEffect },
 ) {
   const files = filesEffect(options.files)
   const path = recipePath(project, options.home)
@@ -252,6 +253,9 @@ export const saveRecipeTextEffect = Effect.fn('recipe.save-text')(function* (
       ...(options.home === undefined ? {} : { home: options.home }),
       base: options.base ?? null,
       signedIn: options.signedIn,
+      // Saving is not running: a person can write `required: true` before installing `bwrap`, and the paths are still checked.
+      host: 'skip',
+      hostFacts: options.hostFacts,
     },
     (p) => (p === path ? Effect.succeed(text) : files.read(p)),
   ).pipe(
@@ -275,7 +279,7 @@ export const saveRecipeTextEffect = Effect.fn('recipe.save-text')(function* (
 export function saveRecipeText(
   project: string,
   input: { loaded: string; text: string },
-  options: { home?: string; files?: RecipeFiles; base?: string | null; signedIn: SignedIn },
+  options: { home?: string; files?: RecipeFiles; base?: string | null; signedIn: SignedIn; hostFacts: HostFactsEffect },
 ): Promise<SaveRecipeTextResult> {
   return Effect.runPromise(saveRecipeTextEffect(project, input, options))
 }

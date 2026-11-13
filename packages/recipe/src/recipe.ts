@@ -32,6 +32,7 @@ import {
   readFields,
   servesStep,
 } from './plugin.ts'
+import { SandboxBlock } from './sandbox-block.ts'
 
 /**
  * `runtime.limits.turns`: a count, or the word `unbounded` (#547).
@@ -3435,6 +3436,11 @@ export const Recipe = z
         })
         .default({ evidence: 2_000, attempts: 5, findings: 5, diff: 400_000 }),
     }),
+    /**
+     * Whether a project's runs are sandboxed (#1147). **Optional and never defaulted**: absent means off, and
+     * a default here would put the block into every project's `configHash` (`sandbox-block.ts`).
+     */
+    sandbox: SandboxBlock.optional(),
   })
   /**
    * **A dispatch may only narrow the ceiling, and a built-in judge has none**

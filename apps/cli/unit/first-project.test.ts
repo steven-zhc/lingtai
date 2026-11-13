@@ -10,6 +10,7 @@ import { ownerlessRefusal } from '@lingtai/conductor'
 import type { ProjectState } from '@lingtai/domain'
 import { type AppReader, GitHubFailed, type GhRun, type GhStatus } from '@lingtai/github'
 import { resolveLocalRecipeEffect, type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
+import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { listRepositories as list, type Picker, type SetupReader } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -588,6 +589,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const resolved = await Effect.runPromise(
       resolveLocalRecipeEffect('repo', {
         home: HOME,
+        ...skipSandboxHost,
         signedIn: async () => ['claude-code'] as never[],
         base: 'main',
         read: async (p) => files.replaced[p] ?? null,

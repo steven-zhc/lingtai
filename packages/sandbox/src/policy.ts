@@ -68,6 +68,10 @@ const unique = (xs: readonly string[]): string[] => [...new Set(xs)]
 /** `<stateDir>/cache/<project>`: the policy's own (plan decision 11). */
 export const cacheDir = (host: HostFacts, project: string): string => posix.join(host.stateDir, 'cache', project)
 
+/** `<stateDir>/repos/<project>.git`: where `@lingtai/repo`'s `mirrorPathFor` puts it. Not imported, because that package reaches the event store; a unit test holds the two equal. */
+export const mirrorDir = (host: HostFacts, project: string): string =>
+  posix.join(host.stateDir, 'repos', `${project}.git`)
+
 /** The hook-socket directory, under every temp spelling the host has. */
 export const socketDirs = (host: HostFacts): string[] =>
   unique([host.tmpdir, ...(host.tmpdirReal ? [host.tmpdirReal] : [])].map((d) => posix.join(d, SOCKET_DIR_NAME)))

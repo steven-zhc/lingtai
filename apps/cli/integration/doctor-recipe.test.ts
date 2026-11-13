@@ -11,6 +11,7 @@ import { join } from 'node:path'
 
 import { projectFilterEffect } from '@lingtai/conductor/filter'
 import type { ProjectState } from '@lingtai/domain'
+import { fakeSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -141,5 +142,22 @@ describe('the recipe row, with no App configured', () => {
     // Registered against develop, and the machine's recipe says main.
     expect(base?.status).toBe('fail')
     expect(base?.detail).toContain('develop')
+  })
+
+  /** The host answer comes through `DoctorReach`, as `signedIn` does, so a doctor test never spawns (#1147). */
+  it('asks the host through DoctorReach, and only for a required sandbox', async () => {
+    const state = { project: 'app', owner: 'me', base: 'main' } as ProjectState
+    const load = () => Effect.succeed([state])
+    const host = fakeSandboxHost({ can: false, sentences: ['bwrap not found'] })
+    const reach = { sandboxHost: host.host, hostFacts: host.hostFacts }
+
+    await Effect.runPromise(recipeGovernsItsBase({}, load, reach))
+    expect(host.asked.host).toBe(0)
+
+    await writeFile(join(home, 'app', 'recipe.yml'), `${RECIPE}sandbox:\n  required: true\n`)
+    const [row] = await Effect.runPromise(recipeGovernsItsBase({}, load, reach))
+    expect(host.asked.host).toBe(1)
+    expect(row?.detail).toContain('sandbox.required: this recipe requires a sandbox')
+    expect(row?.detail).toContain('bwrap not found')
   })
 })

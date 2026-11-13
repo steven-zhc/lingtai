@@ -26,6 +26,7 @@ steps:
         - "packages/agent-env/**"
         - "packages/env/**"
         - "packages/repo/**"
+        - "packages/sandbox/**"
         - "packages/setup/**"
         - "packages/projector/**"
         - "packages/daemon/**"

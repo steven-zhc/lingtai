@@ -64,6 +64,7 @@ import {
   landOnBranchChanges,
   readRecipeKeyEffect,
   recipePath,
+  HOST_FOR_SAVING,
   resolveLocalRecipeEffect,
   resolveSource,
   type RecipeFiles,
@@ -961,6 +962,7 @@ function runLocalBranch(
     const resolved = yield* resolveLocalRecipeEffect(name, {
       home: world.home,
       signedIn: world.signedIn,
+      ...HOST_FOR_SAVING,
       base: final,
       // The recipe is still only a draft (`applySetup` is its one writer), so it is resolved over that text.
       read: (p) => (p === path ? Promise.resolve(previewed) : world.files.read(p)),

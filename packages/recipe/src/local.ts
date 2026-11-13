@@ -35,6 +35,7 @@ import { type RecipeFailed, failed, plainWhen, readRecipeFile } from './files.ts
 import { PRESETS } from './presets.ts'
 import { LIMIT_DEFAULTS } from './recipe.ts'
 import { RecipeInvalidError, RecipeMissingError, resolveSource } from './resolve.ts'
+import { type SandboxHostOptions, checkSandboxBlock } from './sandbox.ts'
 import { assigneeOf, backoffOf, baseOf, ceilingOf, excludeOf, kindsOf } from './settings.ts'
 
 /** A project's recipe, under `stateDir()`. */
@@ -280,7 +281,7 @@ function originIn(wrote: unknown, preset: string | null, path: string): (key: st
   }
 }
 
-export interface LocalRecipeOptions {
+export interface LocalRecipeOptions extends SandboxHostOptions {
   /** `stateDir()` unless a test says otherwise. */
   home?: string
   /** Asked only when the recipe names no `runtime.agent`. */
@@ -389,6 +390,9 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
   // What stays the repository's facts, from the recipe file — said with its
   // value, so the doctor prints the resolved recipe rather than a list of names.
   const { recipe } = resolved
+  // What the text alone could not decide: a path against this host's protected roots, and a required sandbox
+  // against what this host can provide (#1147). A refusal like any recipe in error, so it is per project.
+  yield* checkSandboxBlock(recipe, project, options.base ?? path, path, options)
   const from = originIn(wrote, resolved.preset, path)
   // The recipe's own, or the one runtime signed in — and which, said. Only a
   // value the schema refused leaves `agent` null, and that threw above.
