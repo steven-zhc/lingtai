@@ -85,7 +85,16 @@ describe('when the agent meets the wall', () => {
      * starts taking them — the Postgres disconnect CLAUDE.md documents for `#157`,
      * arriving on the one row `attemptBrief` reads.
      */
-    breaks: { push?: string; leasedBranch?: string; theRow?: boolean; theDiff?: number } = {},
+    breaks: {
+      push?: string
+      leasedBranch?: string
+      theRow?: boolean
+      theDiff?: number
+      /** The combined publish push `i` fails with `pushScript[i]`; one past the end goes through (#1125). */
+      pushScript?: string[]
+      /** What `ls-remote` answers, where a test needs origin to hold something. */
+      lsRemote?: string
+    } = {},
   ) => {
     const store = memoryStore()
     const did: string[] = []
@@ -121,6 +130,22 @@ describe('when the agent meets the wall', () => {
             }).pipe(Effect.andThen(pushRefusedWith(refuse)))
           : inner(args, o)
     }
+    if (breaks.pushScript !== undefined || breaks.lsRemote !== undefined) {
+      const inner = ports.repo.git
+      let n = 0
+      ports.repo.git = (args, o) => {
+        if (args[0] === 'ls-remote' && breaks.lsRemote !== undefined) return Effect.succeed(breaks.lsRemote)
+        if (args[0] === 'push' && args.some((a) => a.startsWith('--force-with-lease='))) {
+          const detail = breaks.pushScript?.[n++]
+          if (detail !== undefined) {
+            return Effect.sync(() => {
+              did.push('git push leased')
+            }).pipe(Effect.andThen(pushRefusedWith(detail)))
+          }
+        }
+        return inner(args, o)
+      }
+    }
     if (!committed) {
       // The worktree's HEAD is still the base: the agent edited and never ran
       // `git commit`, which is exactly what `#237` did.
@@ -155,6 +180,7 @@ describe('when the agent meets the wall', () => {
         merge: false,
         home: '/tmp/fake-home',
         store,
+        unreachableWaits: ['0 millis', '0 millis'],
       },
       ports,
     )
@@ -401,6 +427,36 @@ describe('when the agent meets the wall', () => {
   })
 
   /**
+   * **A publish push a 5xx answers is retried, and one origin applied is not lost** (#1125).
+   * A 500 does not prove the push failed: if try 1 landed, try 2's lease is stale, and without
+   * the check `armAlone` records `arm-only`, the run ends `unpushed`, and Approve is dropped.
+   */
+  it('retries a 5xx on the publish and publishes', async () => {
+    const fiveHundred = ' ! [remote rejected]   HEAD -> agent/7 (Internal Server Error)'
+    const { run, did } = await hitTheWall(true, { pushScript: [fiveHundred, fiveHundred] })
+    expect(did.filter((d) => d === 'git push leased')).toHaveLength(2)
+    const rows = run.filter((e) => e.type === 'RunRefsPublished')
+    expect(rows.map((e) => (e.data as { outcome: string }).outcome)).not.toContain('refused')
+    expect(rows.map((e) => (e.data as { outcome: string }).outcome)).not.toContain('arm-only')
+  })
+
+  it('publishes when a 5xx was applied and the retry only finds its own lease stale', async () => {
+    const fiveHundred = ' ! [remote rejected]   HEAD -> agent/7 (Internal Server Error)'
+    const stale = '! [remote rejected] agent/7 -> agent/7 (stale info)'
+    const sha = 'b'.repeat(40)
+    const { run } = await hitTheWall(true, {
+      pushScript: [fiveHundred, stale],
+      lsRemote: `${sha}\trefs/heads/agent/7\n${sha}\trefs/heads/agent/7-attempt-1`,
+    })
+    const outcomes = run
+      .filter((e) => e.type === 'RunRefsPublished')
+      .map((e) => (e.data as { outcome: string }).outcome)
+    expect(outcomes.length).toBeGreaterThan(0)
+    expect(outcomes).not.toContain('arm-only')
+    expect(outcomes).not.toContain('refused')
+  })
+
+  /**
    * **The account never costs the thing it is an account of.**
    *
    * A store that will not take `RunRefsPublished` is swallowed: raising it would
@@ -568,6 +624,7 @@ describe('when the agent meets the wall', () => {
           hookBinary: '/tmp/fake/lingtai-hook',
           prompt: 'fix {{issue}}',
           merge: false,
+          unreachableWaits: ['0 millis', '0 millis'],
           home: '/tmp/fake-home',
           store,
         },
@@ -791,6 +848,7 @@ describe('when the agent meets the wall', () => {
             hookBinary: '/tmp/fake/lingtai-hook',
             prompt: 'fix {{issue}}',
             merge: false,
+            unreachableWaits: ['0 millis', '0 millis'],
             home: '/tmp/fake-home',
             store,
           },
@@ -849,6 +907,7 @@ describe('when the agent meets the wall', () => {
           hookBinary: '/tmp/fake/lingtai-hook',
           prompt: 'fix {{issue}}',
           merge: false,
+          unreachableWaits: ['0 millis', '0 millis'],
           home: '/tmp/fake-home',
           store,
         },
@@ -922,6 +981,7 @@ describe('when the agent meets the wall', () => {
           hookBinary: '/tmp/fake/lingtai-hook',
           prompt: 'fix {{issue}}',
           merge: false,
+          unreachableWaits: ['0 millis', '0 millis'],
           home: '/tmp/fake-home',
           store,
         },
@@ -988,6 +1048,7 @@ describe('when the agent meets the wall', () => {
           hookBinary: '/tmp/fake/lingtai-hook',
           prompt: 'fix {{issue}}',
           merge: false,
+          unreachableWaits: ['0 millis', '0 millis'],
           home: '/tmp/fake-home',
           store,
         },
@@ -1068,6 +1129,7 @@ describe('when the agent meets the wall', () => {
           hookBinary: '/tmp/fake/lingtai-hook',
           prompt: 'fix {{issue}}',
           merge: false,
+          unreachableWaits: ['0 millis', '0 millis'],
           home: '/tmp/fake-home',
           store,
         },
@@ -1175,6 +1237,7 @@ describe('when the agent meets the wall', () => {
           hookBinary: '/tmp/fake/lingtai-hook',
           prompt: 'fix {{issue}}',
           merge: false,
+          unreachableWaits: ['0 millis', '0 millis'],
           home: '/tmp/fake-home',
           store,
         },
@@ -1232,6 +1295,7 @@ describe('when the agent meets the wall', () => {
           hookBinary: '/tmp/fake/lingtai-hook',
           prompt: 'fix {{issue}}',
           merge: false,
+          unreachableWaits: ['0 millis', '0 millis'],
           home: '/tmp/fake-home',
           store,
         },
