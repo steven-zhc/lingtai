@@ -433,6 +433,37 @@ installed beside 0.0.82 under `~/srt-probe-83`:
 Every row matches 0.0.82. `registerCommandNetworkLists` and
 `wrapWithSandboxArgv` are in 0.0.83's API unchanged.
 
+## The hook sockets' directory, write-denied
+
+Measured 2026-11-13 on both machines, srt 0.0.83. A server outside srt listens
+on `<tmpdir>/lingtai/probe-<pid>.sock`, as Lingtai's hook does. The temp
+directory is writable to the run, and `<tmpdir>/lingtai` is on `denyWrite`
+(on macOS both the `/var/folders/…` path and its real path). Linux uses
+`allowAllUnixSockets`, macOS `allowUnixSockets: [<the socket>]`.
+
+| inside srt | harbor | foundry |
+|---|---|---|
+| connect to the socket | `pong` | `pong` |
+| write a file beside it | `Read-only file system` | `Operation not permitted` |
+| `rm` the socket | refused; still on disk | refused; still on disk |
+| bind a new socket in that directory | `EROFS` | `EPERM` |
+| write elsewhere in the temp directory (control) | written | written |
+
+So write-denying the directory keeps the hook working and stops one run from
+removing or replacing another run's socket. It does not stop a run from
+connecting to another run's socket on Linux, where `allowAllUnixSockets` lets
+every socket through (decision 7).
+
+## Two srt options are per process, not per command
+
+Read in 0.0.83's `sandbox-manager.js`: `allowUnixSockets`,
+`allowAllUnixSockets` and `enableWeakerNetworkIsolation` are read from the
+instance's configuration (`getAllowUnixSockets`, `getAllowAllUnixSockets`,
+`getEnableWeakerNetworkIsolation`), and a command's `customConfig` cannot
+change them. With one instance per process, every run gets the same socket
+rule and, on macOS, the same weaker network isolation. That is why decision 9
+now turns it on for every macOS run.
+
 ## What this changes in 0.14.md
 
 1. **The hook socket on Linux needs `allowAllUnixSockets`.** seccomp cannot
