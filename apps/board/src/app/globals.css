@@ -168,7 +168,17 @@ body {
   border-top: 1px solid var(--rule);
   font: 14px var(--sans); color: var(--muted);
   font-variant-numeric: tabular-nums;
+  /* stays at the window's bottom while the page scrolls under it (#1123); sticky, not fixed,
+     so it keeps its place in the flow and covers nothing. Above the band (z 2), under the
+     filter menu (z 10). */
+  position: sticky; bottom: 0; z-index: 5;
+  background: var(--ground);
 }
+/* The footer's one-line height (1px border + 2 x 10px padding + 14px at 1.5 line height),
+   declared once where a footer exists so a sticky panel can leave room for it. One line on
+   purpose: the footer wraps only below 900px, where side panels have stacked under the form,
+   so no ResizeObserver. /setup has no .footer, so the variable falls back to 0px there. */
+body:has(.footer) { --footer-h: 42px; }
 .footer b { color: var(--ink); font-weight: 500; }
 .footer .spend { display: inline-flex; align-items: center; gap: 8px; }
 .footer .spend.at-ceiling > span:first-child, .footer .spend.at-ceiling .of { color: var(--fail); }
@@ -3310,7 +3320,7 @@ dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
 .s2-num { width: 72px; }
 .s2-yaml { margin: 0; padding: 8px 10px; border: 1px solid var(--rule); background: var(--surface-2); font-size: 11px; line-height: 1.45; overflow: auto; max-height: 80vh; white-space: pre; }
 .s2-right { align-self: stretch; }
-.rfile { position: sticky; top: 14px; display: flex; flex-direction: column; max-height: calc(100vh - 28px); max-height: calc(100dvh - 28px); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.rfile { position: sticky; top: 14px; display: flex; flex-direction: column; max-height: calc(100vh - 28px - var(--footer-h, 0px)); max-height: calc(100dvh - 28px - var(--footer-h, 0px)); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
 .rfile form.redit, .rfile .rfile-fill { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
 .rfile .cm-editor { min-height: 0; flex: 0 1 auto; }
 .rfile textarea { min-height: 0; }
