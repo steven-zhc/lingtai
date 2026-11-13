@@ -83,7 +83,7 @@ import {
 } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { readTasksEffect, type TaskCard } from '@lingtai/projector'
-import { Cause, Effect } from 'effect'
+import { Cause, Deferred, Effect, Fiber, Scope } from 'effect'
 
 import { withDaemonStore } from './choose.ts'
 import type { CodeVersion } from './currency.ts'
@@ -554,9 +554,9 @@ export interface Beacon {
   /** The word the row carries now. */
   readonly state: string
   /** Say something new, at once. Resolves when that write has landed. */
-  say(state: string): Promise<void>
+  say(state: string): Effect.Effect<void>
   /** A last word, and then nothing further is written. Idempotent. */
-  stop(last?: string): Promise<void>
+  stop(last?: string): Effect.Effect<void>
 }
 
 export interface BeaconOptions extends Omit<BeatOptions, 'stoppedProjections'> {
@@ -609,64 +609,96 @@ export const makeBeacon = (options: Omit<BeaconOptions, 'every'> = {}): BeaconPo
   }
 }
 
-/** The beacon's own timer in `startBeaconOn`, a promise host with no Effect around it; apps/cli/src/daemon.ts starts it. */
-export const beaconBeatFace = (port: BeaconPort, word: string): Promise<void> => Effect.runPromise(port.beat(word))
-
-export function startBeacon(state: string, options: BeaconOptions = {}): Beacon {
+/** The timer and every write are fibers of the caller's `Scope`: closing it, or interrupting its owner, ends them. */
+export function startBeacon(state: string, options: BeaconOptions = {}): Effect.Effect<Beacon, never, Scope.Scope> {
   const { every, ...rest } = options
   return startBeaconOn(makeBeacon(rest), state, every === undefined ? {} : { every })
 }
 
-export function startBeaconOn(port: BeaconPort, state: string, options: { every?: number } = {}): Beacon {
-  const { every = HEARTBEAT_MS } = options
-  let current = state
-  let stopped = false
-  /** The writes, in the order they were asked for, and never two at once. */
-  let chain: Promise<void> = Promise.resolve()
-  /** Queued or in flight. A tick only says "still here"; one already on the way says it. */
-  let owed = 0
+export const startBeaconOn = (
+  port: BeaconPort,
+  state: string,
+  options: { every?: number } = {},
+): Effect.Effect<Beacon, never, Scope.Scope> =>
+  Effect.gen(function* () {
+    const scope = yield* Effect.scope
+    const { every = HEARTBEAT_MS } = options
+    let current = state
+    let stopped = false
+    /** The last write asked for; the next one waits for it, which is what orders them and keeps two apart. */
+    let tail = Deferred.makeUnsafe<void>()
+    Deferred.doneUnsafe(tail, Effect.void)
+    /** Queued or in flight. A tick only says "still here"; one already on the way says it. */
+    let owed = 0
 
-  const write = (word: string): Promise<void> => {
-    owed += 1
-    chain = chain
-      .then(() => beaconBeatFace(port, word))
-      // The port swallows everything but an interruption; this keeps one from poisoning the chain.
-      .catch(() => {})
-      .finally(() => {
-        owed -= 1
+    /**
+     * Asking and queueing happen in one synchronous step, so the order of the writes is the order they were
+     * asked for. Each write is a fiber of its own: the port swallows everything but an interruption, and an
+     * interruption must end that one write and not the ones behind it. In the beacon's scope and not the
+     * asker's, because a drain and a stop ask from root fibers that may end before the write lands.
+     */
+    const write = (word: string): Effect.Effect<void> =>
+      Effect.suspend(() => {
+        owed += 1
+        const prev = tail
+        const mine = Deferred.makeUnsafe<void>()
+        tail = mine
+        return Effect.forkIn(
+          Deferred.await(prev).pipe(
+            Effect.andThen(port.beat(word)),
+            Effect.ensuring(
+              Effect.suspend(() => {
+                owed -= 1
+                return Deferred.succeed(mine, undefined)
+              }),
+            ),
+          ),
+          scope,
+          { startImmediately: true },
+        ).pipe(Effect.andThen(Deferred.await(mine)))
       })
-    return chain
-  }
 
-  // Announced before the timer, so the row is the new daemon's from the first
-  // moment it can be — and then again every `every` milliseconds, whatever the
-  // process is doing in between.
-  void write(current)
-  const timer = setInterval(() => {
-    if (owed === 0) void write(current)
-  }, every)
+    // Announced before the timer, so the row is the new daemon's from the first
+    // moment it can be — and then again every `every` milliseconds, whatever the
+    // process is doing in between.
+    yield* Effect.forkIn(write(current), scope, { startImmediately: true })
+    const tick = yield* Effect.forkIn(
+      Effect.forever(
+        Effect.sleep(every).pipe(
+          Effect.andThen(
+            Effect.suspend(() =>
+              owed === 0 ? Effect.forkIn(write(current), scope, { startImmediately: true }) : Effect.void,
+            ),
+          ),
+        ),
+      ),
+      scope,
+    )
 
-  return {
-    get state() {
-      return current
-    },
-    say: (next) => {
-      if (stopped) return Promise.resolve()
-      current = next
-      return write(next)
-    },
-    stop: (last) => {
-      clearInterval(timer)
-      if (!stopped && last !== undefined) {
-        current = last
-        void write(last)
-      }
-      stopped = true
-      // Everything scheduled, including the last word, has landed by here.
-      return chain
-    },
-  }
-}
+    const beacon: Beacon = {
+      get state() {
+        return current
+      },
+      say: (next) =>
+        Effect.suspend(() => {
+          if (stopped) return Effect.void
+          current = next
+          return write(next)
+        }),
+      stop: (last) =>
+        Effect.gen(function* () {
+          yield* Fiber.interrupt(tick)
+          if (!stopped && last !== undefined) {
+            current = last
+            yield* Effect.forkIn(write(last), scope, { startImmediately: true })
+          }
+          stopped = true
+          // Everything scheduled, including the last word, has landed by here.
+          yield* Effect.suspend(() => Deferred.await(tail))
+        }),
+    }
+    return beacon
+  })
 
 /** Null when no daemon has ever run. Stale is reported, never hidden. */
 export const readStatusEffect = (store?: DaemonStore): Effect.Effect<DaemonStatus | null> =>

@@ -31,8 +31,8 @@ function world() {
   }
   const stopping = daemonStopping({
     beacon: {
-      say: async (word) => void record.push(`say ${word}`),
-      stop: async (word) => void record.push(`beacon.stop ${word}`),
+      say: (word) => Effect.sync(() => void record.push(`say ${word}`)),
+      stop: (word) => Effect.sync(() => void record.push(`beacon.stop ${word}`)),
     },
     daemon,
     loop: () => ({

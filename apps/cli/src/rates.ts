@@ -2,7 +2,7 @@
  * Starts the daily price fetch (#658) from the two processes that hold the
  * conductor lock, `lingtai start` and `lingtai run`. Nothing else fetches:
  * `lingtai init` only reads the snapshot. Fire and forget — a pass never waits
- * on it — but each conductor awaits `ratesSettled()` before it lets go of the
+ * on it — but each conductor yields `ratesSettled` before it lets go of the
  * lock, so the one write lands inside the one-writer window.
  */
 import { currentRecipeEffect, loadProjectsEffect } from '@lingtai/conductor/projects'
@@ -15,7 +15,7 @@ import {
   ticketReportProjection,
   type ProjectionLag,
 } from '@lingtai/projector'
-import { Effect } from 'effect'
+import { Effect, type Scope } from 'effect'
 
 import { recovering } from './exit.ts'
 import { holdLiveSpend } from './live-spend.ts'
@@ -143,8 +143,18 @@ export const rebuildEstimates = (priced: string[]): Effect.Effect<string, unknow
     return `priced ${priced.join(', ')}; ${lines.join('; ')}`
   })
 
-/** Starts a refresh if one is due. Never throws and is not awaited. */
-export function startRates(now: Date = new Date()): void {
-  if (!ratesDue(now)) return
-  void refreshRates(realRatePorts(modelsSeenInSpend, process.env, rebuildEstimates)).catch(() => {})
-}
+/**
+ * Starts a refresh if one is due. Never fails and is not awaited. The refresh is a fiber of the caller's
+ * `Scope`: it outlives the pass that asked, `ratesSettled` is what waits for it, and closing the scope — or
+ * interrupting whoever owns it — interrupts it.
+ */
+export const startRates = (now?: Date): Effect.Effect<void, never, Scope.Scope> =>
+  // Decided each time the Effect runs, not when it is built: the daemon repeats one of these hourly, and a
+  // clock and a note read once would freeze that answer for the life of the process.
+  Effect.suspend(() =>
+    ratesDue(now ?? new Date())
+      ? Effect.forkScoped(refreshRates(realRatePorts(modelsSeenInSpend, process.env, rebuildEstimates)), {
+          startImmediately: true,
+        }).pipe(Effect.asVoid)
+      : Effect.void,
+  )
