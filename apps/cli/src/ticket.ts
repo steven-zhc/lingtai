@@ -21,16 +21,34 @@ import os from 'node:os'
 import path from 'node:path'
 import { text as readAll } from 'node:stream/consumers'
 
-import { currentRecipe, kindLabelOf, kindOf, loadProjects, type Tickets } from '@lingtai/conductor'
-import { dbTickets, type DbTickets } from '@lingtai/conductor/db-tickets'
+import { kindLabelOf, kindOf } from '@lingtai/conductor'
+import { makeDbTickets, type DbTicketsEffects } from '@lingtai/conductor/db-tickets'
+import { currentRecipeEffect, loadProjectsEffect } from '@lingtai/conductor/projects'
 import type { ProjectState } from '@lingtai/domain'
-import { processTicketSql } from '@lingtai/event-store'
+import { processTicketSqlEffect } from '@lingtai/event-store'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
 import { queueOf, ticketSourceOf } from '@lingtai/recipe/settings'
-import { Effect } from 'effect'
+import { Cause, Effect } from 'effect'
 
 import { heading, jsonDocument, jsonErrorDocument, symbol, table } from './output.ts'
-import { runEffect } from './project-pause.ts'
+
+/**
+ * A failure of any kind — typed or defect — settled into the sentence a person
+ * reads; an interruption passes. What a `try { await … } catch` was: a store
+ * failure is a defect here (0101 §6), so `Effect.catch` alone would let a
+ * rejected driver past the lines that say *your text is kept at …*.
+ */
+type Attempt<A> = { ok: true; value: A } | { ok: false; why: string }
+const attempt = <A, E>(self: Effect.Effect<A, E>): Effect.Effect<Attempt<A>> =>
+  Effect.matchCauseEffect(self, {
+    onSuccess: (value) => Effect.succeed<Attempt<A>>({ ok: true, value }),
+    onFailure: (cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.failCause(cause as Cause.Cause<never>)
+        : Effect.succeed<Attempt<A>>({ ok: false, why: (Cause.squash(cause) as Error).message }),
+  })
+
+const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
 /** `status.ts`'s own `oneLine`, copied rather than exported for one caller. */
 function oneLine(text: string, n = 140): string {
@@ -42,7 +60,7 @@ function oneLine(text: string, n = 140): string {
 export interface EditedForm {
   text: string
   path: string
-  discard(): Promise<void>
+  discard(): Effect.Effect<void>
 }
 
 /**
@@ -57,18 +75,20 @@ export interface EditedForm {
  * without touching the filesystem or starting a process.
  */
 export interface TicketReading {
-  projects?: () => Promise<ProjectState[]>
-  recipeFor?: (state: ProjectState) => Promise<ResolvedRecipe>
-  ticketsFor?: (project: string) => Promise<DbTickets>
+  projects?: () => Effect.Effect<ProjectState[]>
+  recipeFor?: (state: ProjectState) => Effect.Effect<ResolvedRecipe, Error>
+  ticketsFor?: (project: string) => Effect.Effect<DbTicketsEffects>
   env?: Record<string, string | undefined>
-  edit?: (command: string, initial: string, name: string) => Promise<EditedForm>
+  edit?: (command: string, initial: string, name: string) => Effect.Effect<EditedForm, Error>
   /** What `--body -` reads; `process.stdin` by default. */
   stdin?: NodeJS.ReadableStream & { isTTY?: boolean }
 }
 
-async function defaultTicketsFor(project: string): Promise<DbTickets> {
-  return dbTickets(await processTicketSql(), project)
-}
+const defaultTicketsFor = (project: string): Effect.Effect<DbTicketsEffects> =>
+  Effect.map(processTicketSqlEffect(), (sql) => makeDbTickets(sql, project))
+
+const defaultProjects = (): Effect.Effect<ProjectState[]> => loadProjectsEffect()
+const defaultRecipeFor = (state: ProjectState): Effect.Effect<ResolvedRecipe, Error> => currentRecipeEffect(state)
 
 /** The first non-blank of `$VISUAL` and `$EDITOR` — the house rule (`restart.ts`'s `$USER`), never a guessed default like `vi`. */
 function editorCommand(env: Record<string, string | undefined>): string | null {
@@ -87,25 +107,29 @@ function editorCommand(env: Record<string, string | undefined>): string | null {
  * Not unit-tested, by design (0060 §1) — `unit/ticket.test.ts` injects `edit`
  * instead.
  */
-async function defaultEdit(command: string, initial: string, name: string): Promise<EditedForm> {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'lingtai-ticket-'))
-  const filePath = path.join(dir, `${name}.md`)
-  await writeFile(filePath, initial, 'utf8')
-  const result = spawnSync('sh', ['-c', `${command} "$1"`, 'lingtai-editor', filePath], { stdio: 'inherit' })
-  if (result.status !== 0) {
-    throw new Error(
-      `the editor exited with status ${result.status ?? result.signal} — your text is kept at ${filePath}`,
+const defaultEdit = (command: string, initial: string, name: string): Effect.Effect<EditedForm, Error> =>
+  Effect.gen(function* () {
+    const dir = yield* Effect.tryPromise({
+      try: () => mkdtemp(path.join(os.tmpdir(), 'lingtai-ticket-')),
+      catch: asError,
+    })
+    const filePath = path.join(dir, `${name}.md`)
+    yield* Effect.tryPromise({ try: () => writeFile(filePath, initial, 'utf8'), catch: asError })
+    const result = yield* Effect.sync(() =>
+      spawnSync('sh', ['-c', `${command} "$1"`, 'lingtai-editor', filePath], { stdio: 'inherit' }),
     )
-  }
-  const text = await readFile(filePath, 'utf8')
-  return {
-    text,
-    path: filePath,
-    async discard() {
-      await rm(dir, { recursive: true, force: true })
-    },
-  }
-}
+    if (result.status !== 0) {
+      return yield* Effect.fail(
+        new Error(`the editor exited with status ${result.status ?? result.signal} — your text is kept at ${filePath}`),
+      )
+    }
+    const text = yield* Effect.tryPromise({ try: () => readFile(filePath, 'utf8'), catch: asError })
+    return {
+      text,
+      path: filePath,
+      discard: () => Effect.promise(() => rm(dir, { recursive: true, force: true })),
+    }
+  })
 
 /** Why a ticket verb could not start: a stable `code` for `--json`, and the sentence a person reads. */
 export interface TicketRefusal {
@@ -121,34 +145,39 @@ type Picked<T> = { ok: true; value: T } | ({ ok: false } & TicketRefusal)
  * guessed — `close <n>` against the wrong project closes a different
  * ticket carrying the same number.
  */
-async function findProject(
+const findProject = (
   named: string | undefined,
-  projects: () => Promise<ProjectState[]>,
-): Promise<Picked<ProjectState>> {
-  const all = await projects()
-  if (named !== undefined) {
-    const found = all.find((p) => p.project === named)
-    if (!found) {
+  projects: () => Effect.Effect<ProjectState[]>,
+): Effect.Effect<Picked<ProjectState>> =>
+  Effect.gen(function* () {
+    const all = yield* projects()
+    if (named !== undefined) {
+      const found = all.find((p) => p.project === named)
+      if (!found) {
+        return {
+          ok: false as const,
+          code: 'no-project' as const,
+          message: `no project named "${named}" — run lingtai add <owner>/<repo> first`,
+        }
+      }
+      return { ok: true as const, value: found }
+    }
+    if (all.length === 0) {
       return {
-        ok: false,
-        code: 'no-project',
-        message: `no project named "${named}" — run lingtai add <owner>/<repo> first`,
+        ok: false as const,
+        code: 'no-projects' as const,
+        message: 'no projects registered — run lingtai add <owner>/<repo>',
       }
     }
-    return { ok: true, value: found }
-  }
-  if (all.length === 0) {
-    return { ok: false, code: 'no-projects', message: 'no projects registered — run lingtai add <owner>/<repo>' }
-  }
-  if (all.length > 1) {
-    return {
-      ok: false,
-      code: 'ambiguous-project',
-      message: `more than one project is registered (${all.map((p) => p.project).join(', ')}) — say which with --project <p>`,
+    if (all.length > 1) {
+      return {
+        ok: false as const,
+        code: 'ambiguous-project' as const,
+        message: `more than one project is registered (${all.map((p) => p.project).join(', ')}) — say which with --project <p>`,
+      }
     }
-  }
-  return { ok: true, value: all[0]! }
-}
+    return { ok: true as const, value: all[0]! }
+  })
 
 /**
  * Refuses by name, before any store is opened, a project whose tickets are
@@ -157,52 +186,52 @@ async function findProject(
  * `ticket_comments` tables for no reason — this check runs first so that
  * never happens.
  */
-async function findDbRecipe(
+const findDbRecipe = (
   project: ProjectState,
-  recipeFor: (state: ProjectState) => Promise<ResolvedRecipe>,
-): Promise<Picked<Recipe>> {
-  let resolved: ResolvedRecipe
-  try {
-    resolved = await recipeFor(project)
-  } catch (err) {
-    return { ok: false, code: 'recipe-unreadable', message: (err as Error).message }
-  }
-  if (ticketSourceOf(resolved.recipe) !== 'db') {
-    return {
-      ok: false,
-      code: 'tickets-on-github',
-      message: `${project.project}'s tickets are on GitHub (${project.owner}/${project.project}) — gh issue list reads them, not lingtai ticket`,
+  recipeFor: (state: ProjectState) => Effect.Effect<ResolvedRecipe, Error>,
+): Effect.Effect<Picked<Recipe>> =>
+  Effect.gen(function* () {
+    const read = yield* attempt(recipeFor(project))
+    if (!read.ok) return { ok: false as const, code: 'recipe-unreadable' as const, message: read.why }
+    const resolved = read.value
+    if (ticketSourceOf(resolved.recipe) !== 'db') {
+      return {
+        ok: false as const,
+        code: 'tickets-on-github' as const,
+        message: `${project.project}'s tickets are on GitHub (${project.owner}/${project.project}) — gh issue list reads them, not lingtai ticket`,
+      }
     }
-  }
-  return { ok: true, value: resolved.recipe }
-}
+    return { ok: true as const, value: resolved.recipe }
+  })
 
 /** A refusal is a failure, so it carries the ✗ (0121 §2). */
 function refuse(log: (line: string) => void, why: TicketRefusal): void {
   log(`${symbol.fail()} ${why.message}`)
 }
 
-async function pickProject(
+const pickProject = (
   named: string | undefined,
-  projects: () => Promise<ProjectState[]>,
+  projects: () => Effect.Effect<ProjectState[]>,
   log: (line: string) => void,
-): Promise<ProjectState | null> {
-  const picked = await findProject(named, projects)
-  if (picked.ok) return picked.value
-  refuse(log, picked)
-  return null
-}
+): Effect.Effect<ProjectState | null> =>
+  Effect.gen(function* () {
+    const picked = yield* findProject(named, projects)
+    if (picked.ok) return picked.value
+    refuse(log, picked)
+    return null
+  })
 
-async function resolveDbRecipe(
+const resolveDbRecipe = (
   project: ProjectState,
-  recipeFor: (state: ProjectState) => Promise<ResolvedRecipe>,
+  recipeFor: (state: ProjectState) => Effect.Effect<ResolvedRecipe, Error>,
   log: (line: string) => void,
-): Promise<Recipe | null> {
-  const found = await findDbRecipe(project, recipeFor)
-  if (found.ok) return found.value
-  refuse(log, found)
-  return null
-}
+): Effect.Effect<Recipe | null> =>
+  Effect.gen(function* () {
+    const found = yield* findDbRecipe(project, recipeFor)
+    if (found.ok) return found.value
+    refuse(log, found)
+    return null
+  })
 
 export interface TicketListOptions {
   project?: string
@@ -233,46 +262,47 @@ export interface TicketListing {
 export type TicketListRead = { ok: true; listing: TicketListing } | ({ ok: false } & TicketRefusal)
 
 /** Reads the listing; the two renderings below are pure over it. */
-export async function readTicketListing(
+export const readTicketListing = (
   options: TicketListOptions = {},
   reading: TicketReading = {},
-): Promise<TicketListRead> {
-  const projects = reading.projects ?? loadProjects
-  const recipeFor = reading.recipeFor ?? ((state: ProjectState) => currentRecipe(state))
-  const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
+): Effect.Effect<TicketListRead> =>
+  Effect.gen(function* () {
+    const projects = reading.projects ?? defaultProjects
+    const recipeFor = reading.recipeFor ?? defaultRecipeFor
+    const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
 
-  const project = await findProject(options.project, projects)
-  if (!project.ok) return project
-  const name = project.value.project!
+    const project = yield* findProject(options.project, projects)
+    if (!project.ok) return project
+    const name = project.value.project!
 
-  const recipe = await findDbRecipe(project.value, recipeFor)
-  if (!recipe.ok) return recipe
+    const recipe = yield* findDbRecipe(project.value, recipeFor)
+    if (!recipe.ok) return recipe
 
-  const kinds = queueOf(recipe.value).kinds
-  const tickets = await ticketsFor(name)
-  const issues = options.all
-    ? [...(await tickets.listIssuesSince(new Date(0)))].sort((a, b) => a.number - b.number)
-    : await tickets.listOpenIssues()
+    const kinds = queueOf(recipe.value).kinds
+    const tickets = yield* ticketsFor(name)
+    const issues = options.all
+      ? [...(yield* tickets.listIssuesSince(new Date(0)))].sort((a, b) => a.number - b.number)
+      : yield* tickets.listOpenIssues()
 
-  return {
-    ok: true,
-    listing: {
-      project: name,
-      all: options.all === true,
-      tickets: issues.map((t) => {
-        const matched = kindLabelOf(t, kinds)
-        return {
-          number: t.number,
-          kind: kindOf(t, kinds) ?? null,
-          kindLabel: matched?.label.name ?? null,
-          title: t.title,
-          state: t.state === 'closed' ? 'closed' : 'open',
-          labels: t.labels.map((l) => l.name),
-        }
-      }),
-    },
-  }
-}
+    return {
+      ok: true,
+      listing: {
+        project: name,
+        all: options.all === true,
+        tickets: issues.map((t) => {
+          const matched = kindLabelOf(t, kinds)
+          return {
+            number: t.number,
+            kind: kindOf(t, kinds) ?? null,
+            kindLabel: matched?.label.name ?? null,
+            title: t.title,
+            state: t.state === 'closed' ? 'closed' : 'open',
+            labels: t.labels.map((l) => l.name),
+          }
+        }),
+      },
+    }
+  })
 
 /** The heading and a table; the empty case stays one line (0121 §1). */
 export function renderTicketList(listing: TicketListing, options: { columns?: number | undefined } = {}): string[] {
@@ -304,61 +334,63 @@ export function ticketListJson(listing: TicketListing): Record<string, unknown> 
   }
 }
 
-export async function ticketList(
+export const ticketList = (
   options: TicketListOptions = {},
   log: (line: string) => void = console.log,
   reading: TicketReading = {},
-): Promise<number> {
-  const read = await readTicketListing(options, reading)
-  if (!read.ok) {
-    if (options.json) log(jsonErrorDocument('ticket list', read.code, read.message))
-    else refuse(log, read)
-    return 1
-  }
-  if (options.json) log(jsonDocument('ticket list', ticketListJson(read.listing)))
-  else for (const line of renderTicketList(read.listing, { columns: options.columns })) log(line)
-  return 0
-}
+): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    const read = yield* readTicketListing(options, reading)
+    if (!read.ok) {
+      if (options.json) log(jsonErrorDocument('ticket list', read.code, read.message))
+      else refuse(log, read)
+      return 1
+    }
+    if (options.json) log(jsonDocument('ticket list', ticketListJson(read.listing)))
+    else for (const line of renderTicketList(read.listing, { columns: options.columns })) log(line)
+    return 0
+  })
 
 export interface TicketCloseOptions {
   project?: string
   issue: number
 }
 
-export async function ticketClose(
+export const ticketClose = (
   options: TicketCloseOptions,
   log: (line: string) => void = console.log,
   reading: TicketReading = {},
-): Promise<number> {
-  const projects = reading.projects ?? loadProjects
-  const recipeFor = reading.recipeFor ?? ((state: ProjectState) => currentRecipe(state))
-  const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
+): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    const projects = reading.projects ?? defaultProjects
+    const recipeFor = reading.recipeFor ?? defaultRecipeFor
+    const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
 
-  const project = await pickProject(options.project, projects, log)
-  if (!project) return 1
-  const name = project.project!
+    const project = yield* pickProject(options.project, projects, log)
+    if (!project) return 1
+    const name = project.project!
 
-  const recipe = await resolveDbRecipe(project, recipeFor, log)
-  if (!recipe) return 1
+    const recipe = yield* resolveDbRecipe(project, recipeFor, log)
+    if (!recipe) return 1
 
-  const tickets = await ticketsFor(name)
-  let ticket: Awaited<ReturnType<Tickets['getIssue']>>
-  try {
-    ticket = await tickets.getIssue(options.issue)
-  } catch (err) {
-    log((err as Error).message)
-    return 1
-  }
-  // A second close reads as a first one otherwise — `closeIssue` on an
-  // already-closed row succeeds silently (`db-tickets.ts`'s `UPDATE … RETURNING`).
-  if (ticket.state === 'closed') {
-    log(`#${ticket.number} is already closed`)
+    const tickets = yield* ticketsFor(name)
+    const got = yield* attempt(tickets.getIssue(options.issue))
+    if (!got.ok) {
+      log(got.why)
+      return 1
+    }
+    const ticket = got.value
+    // A second close reads as a first one otherwise — `closeIssue` on an
+    // already-closed row succeeds silently (`db-tickets.ts`'s `UPDATE … RETURNING`).
+    if (ticket.state === 'closed') {
+      log(`#${ticket.number} is already closed`)
+      return 0
+    }
+    // Not caught, as before: a failure here reaches the handler (message, exit 1).
+    yield* Effect.orDie(tickets.closeIssue(options.issue))
+    log(`${symbol.pass()} closed #${ticket.number}  ${ticket.title}`)
     return 0
-  }
-  await tickets.closeIssue(options.issue)
-  log(`${symbol.pass()} closed #${ticket.number}  ${ticket.title}`)
-  return 0
-}
+  })
 
 /** The three fields a person can change through the form — never the number or the state, which the store owns. */
 export interface TicketFormFields {
@@ -531,8 +563,8 @@ const newFromFlags = (
   reading: TicketReading,
 ): Effect.Effect<number> =>
   Effect.gen(function* () {
-    const projects = reading.projects ?? loadProjects
-    const recipeFor = reading.recipeFor ?? ((state: ProjectState) => currentRecipe(state))
+    const projects = reading.projects ?? defaultProjects
+    const recipeFor = reading.recipeFor ?? defaultRecipeFor
     const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
     const stdin = reading.stdin ?? process.stdin
 
@@ -553,10 +585,10 @@ const newFromFlags = (
       return 1
     }
 
-    const project = yield* Effect.promise(() => pickProject(options.project, projects, log))
+    const project = yield* pickProject(options.project, projects, log)
     if (!project) return 1
     const name = project.project!
-    const recipe = yield* Effect.promise(() => resolveDbRecipe(project, recipeFor, log))
+    const recipe = yield* resolveDbRecipe(project, recipeFor, log)
     if (!recipe) return 1
     const kinds = queueOf(recipe).kinds
 
@@ -577,18 +609,14 @@ const newFromFlags = (
       body = read.t
     }
 
-    const made = yield* Effect.tryPromise({
-      try: () => ticketsFor(name).then((tickets) => tickets.createIssue({ title, body: body.trimEnd(), labels })),
-      catch: (err) => err,
-    }).pipe(
-      Effect.map((created) => ({ ok: true as const, created })),
-      Effect.catch((err) => Effect.succeed({ ok: false as const, why: (err as Error).message })),
+    const made = yield* attempt(
+      Effect.flatMap(ticketsFor(name), (tickets) => tickets.createIssue({ title, body: body.trimEnd(), labels })),
     )
     if (!made.ok) {
       log(made.why)
       return 1
     }
-    const { created } = made
+    const created = made.value
     log(`${symbol.pass()} created #${created.number}  ${created.title}`)
     if (kindOf(created, kinds) === null) {
       log(`#${created.number} carries no kind label — the queue will not take it`)
@@ -596,176 +624,185 @@ const newFromFlags = (
     return 0
   })
 
-export async function ticketNew(
+export const ticketNew = (
   options: TicketNewOptions = {},
   log: (line: string) => void = console.log,
   reading: TicketReading = {},
-): Promise<number> {
-  if (options.title !== undefined || options.label !== undefined || options.body !== undefined) {
-    return runEffect(newFromFlags(options, log, reading))
-  }
-  const projects = reading.projects ?? loadProjects
-  const recipeFor = reading.recipeFor ?? ((state: ProjectState) => currentRecipe(state))
-  const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
-  const env = reading.env ?? process.env
-  const edit = reading.edit ?? defaultEdit
+): Effect.Effect<number> =>
+  options.title !== undefined || options.label !== undefined || options.body !== undefined
+    ? newFromFlags(options, log, reading)
+    : newFromEditor(options, log, reading)
 
-  const command = editorCommand(env)
-  if (!command) {
-    log('no editor to open — set $VISUAL or $EDITOR')
-    return 1
-  }
+/** `ticket new` with no flags: the editor opens on a form. Returns the exit code. */
+const newFromEditor = (
+  options: TicketNewOptions,
+  log: (line: string) => void,
+  reading: TicketReading,
+): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    const projects = reading.projects ?? defaultProjects
+    const recipeFor = reading.recipeFor ?? defaultRecipeFor
+    const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
+    const env = reading.env ?? process.env
+    const edit = reading.edit ?? defaultEdit
 
-  const project = await pickProject(options.project, projects, log)
-  if (!project) return 1
-  const name = project.project!
+    const command = editorCommand(env)
+    if (!command) {
+      log('no editor to open — set $VISUAL or $EDITOR')
+      return 1
+    }
 
-  const recipe = await resolveDbRecipe(project, recipeFor, log)
-  if (!recipe) return 1
+    const project = yield* pickProject(options.project, projects, log)
+    if (!project) return 1
+    const name = project.project!
 
-  const kinds = queueOf(recipe).kinds
-  const empty: TicketFormFields = { title: '', labels: [], body: '' }
-  const instructions = [`#! kinds: ${kinds.join(', ')} — one belongs in labels:, or the queue never sees this ticket`]
-  const rendered = renderTicketForm(empty, instructions)
+    const recipe = yield* resolveDbRecipe(project, recipeFor, log)
+    if (!recipe) return 1
 
-  let edited: EditedForm
-  try {
-    edited = await edit(command, rendered, `${name}-new`)
-  } catch (err) {
-    log((err as Error).message)
-    return 1
-  }
+    const kinds = queueOf(recipe).kinds
+    const empty: TicketFormFields = { title: '', labels: [], body: '' }
+    const instructions = [`#! kinds: ${kinds.join(', ')} — one belongs in labels:, or the queue never sees this ticket`]
+    const rendered = renderTicketForm(empty, instructions)
 
-  const after = parseTicketForm(edited.text)
-  if (!after.ok) {
-    log(`${after.why} — your text is kept at ${edited.path}`)
-    return 1
-  }
-  if (formsEqual(empty, after.form)) {
-    // Not discarded: an editor that does not block (`spawnSync` returning
-    // before the person has actually finished, #386 round 2) would have this
-    // CLI delete the directory the person is still typing into. Only a
-    // write that actually landed earns the discard.
-    log(`no change — nothing written, your text is kept at ${edited.path}`)
+    const opened = yield* attempt(edit(command, rendered, `${name}-new`))
+    if (!opened.ok) {
+      log(opened.why)
+      return 1
+    }
+    const edited = opened.value
+
+    const after = parseTicketForm(edited.text)
+    if (!after.ok) {
+      log(`${after.why} — your text is kept at ${edited.path}`)
+      return 1
+    }
+    if (formsEqual(empty, after.form)) {
+      // Not discarded: an editor that does not block (`spawnSync` returning
+      // before the person has actually finished, #386 round 2) would have this
+      // CLI delete the directory the person is still typing into. Only a
+      // write that actually landed earns the discard.
+      log(`no change — nothing written, your text is kept at ${edited.path}`)
+      return 0
+    }
+    if (after.form.title === '') {
+      log(`a ticket needs a title — your text is kept at ${edited.path}`)
+      return 1
+    }
+
+    const made = yield* attempt(
+      Effect.flatMap(ticketsFor(name), (tickets) =>
+        tickets.createIssue({ title: after.form.title, body: after.form.body, labels: after.form.labels }),
+      ),
+    )
+    if (!made.ok) {
+      log(`${made.why} — your text is kept at ${edited.path}`)
+      return 1
+    }
+    const created = made.value
+    yield* edited.discard()
+    log(`${symbol.pass()} created #${created.number}  ${created.title}`)
+    if (kindOf(created, kinds) === null) {
+      log(`#${created.number} carries no kind label — the queue will not take it`)
+    }
     return 0
-  }
-  if (after.form.title === '') {
-    log(`a ticket needs a title — your text is kept at ${edited.path}`)
-    return 1
-  }
-
-  let created: Awaited<ReturnType<Tickets['createIssue']>>
-  try {
-    const tickets = await ticketsFor(name)
-    created = await tickets.createIssue({ title: after.form.title, body: after.form.body, labels: after.form.labels })
-  } catch (err) {
-    log(`${(err as Error).message} — your text is kept at ${edited.path}`)
-    return 1
-  }
-  await edited.discard()
-  log(`${symbol.pass()} created #${created.number}  ${created.title}`)
-  if (kindOf(created, kinds) === null) {
-    log(`#${created.number} carries no kind label — the queue will not take it`)
-  }
-  return 0
-}
+  })
 
 export interface TicketEditOptions {
   project?: string
   issue: number
 }
 
-export async function ticketEdit(
+export const ticketEdit = (
   options: TicketEditOptions,
   log: (line: string) => void = console.log,
   reading: TicketReading = {},
-): Promise<number> {
-  const projects = reading.projects ?? loadProjects
-  const recipeFor = reading.recipeFor ?? ((state: ProjectState) => currentRecipe(state))
-  const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
-  const env = reading.env ?? process.env
-  const edit = reading.edit ?? defaultEdit
+): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    const projects = reading.projects ?? defaultProjects
+    const recipeFor = reading.recipeFor ?? defaultRecipeFor
+    const ticketsFor = reading.ticketsFor ?? defaultTicketsFor
+    const env = reading.env ?? process.env
+    const edit = reading.edit ?? defaultEdit
 
-  const command = editorCommand(env)
-  if (!command) {
-    log('no editor to open — set $VISUAL or $EDITOR')
-    return 1
-  }
+    const command = editorCommand(env)
+    if (!command) {
+      log('no editor to open — set $VISUAL or $EDITOR')
+      return 1
+    }
 
-  const project = await pickProject(options.project, projects, log)
-  if (!project) return 1
-  const name = project.project!
+    const project = yield* pickProject(options.project, projects, log)
+    if (!project) return 1
+    const name = project.project!
 
-  const recipe = await resolveDbRecipe(project, recipeFor, log)
-  if (!recipe) return 1
+    const recipe = yield* resolveDbRecipe(project, recipeFor, log)
+    if (!recipe) return 1
 
-  const tickets = await ticketsFor(name)
-  let ticket: Awaited<ReturnType<Tickets['getIssue']>>
-  try {
-    ticket = await tickets.getIssue(options.issue)
-  } catch (err) {
-    log((err as Error).message)
-    return 1
-  }
+    const tickets = yield* ticketsFor(name)
+    const got = yield* attempt(tickets.getIssue(options.issue))
+    if (!got.ok) {
+      log(got.why)
+      return 1
+    }
+    const ticket = got.value
 
-  const roundTripIssue = titleAndLabelsRoundTrip(ticket)
-  if (roundTripIssue) {
-    log(`#${ticket.number} — ${roundTripIssue}, so lingtai ticket edit refuses to open it`)
-    return 1
-  }
+    const roundTripIssue = titleAndLabelsRoundTrip(ticket)
+    if (roundTripIssue) {
+      log(`#${ticket.number} — ${roundTripIssue}, so lingtai ticket edit refuses to open it`)
+      return 1
+    }
 
-  const original = formFromTicket(ticket)
-  const rendered = renderTicketForm(original)
+    const original = formFromTicket(ticket)
+    const rendered = renderTicketForm(original)
 
-  let edited: EditedForm
-  try {
-    edited = await edit(command, rendered, `${name}-${ticket.number}`)
-  } catch (err) {
-    log((err as Error).message)
-    return 1
-  }
+    const opened = yield* attempt(edit(command, rendered, `${name}-${ticket.number}`))
+    if (!opened.ok) {
+      log(opened.why)
+      return 1
+    }
+    const edited = opened.value
 
-  const after = parseTicketForm(edited.text)
-  if (!after.ok) {
-    log(`${after.why} — your text is kept at ${edited.path}`)
-    return 1
-  }
-  if (formsEqual(original, after.form)) {
-    // Not discarded — see the matching comment in `ticketNew`.
-    log(`no change — nothing written, your text is kept at ${edited.path}`)
+    const after = parseTicketForm(edited.text)
+    if (!after.ok) {
+      log(`${after.why} — your text is kept at ${edited.path}`)
+      return 1
+    }
+    if (formsEqual(original, after.form)) {
+      // Not discarded — see the matching comment in `ticketNew`.
+      log(`no change — nothing written, your text is kept at ${edited.path}`)
+      return 0
+    }
+    if (after.form.title === '') {
+      log(`a ticket needs a title — your text is kept at ${edited.path}`)
+      return 1
+    }
+
+    const changed: string[] = []
+    if (after.form.title !== original.title) changed.push('title')
+    if (!sameLabels(original.labels, after.form.labels)) changed.push('labels')
+    if (after.form.body !== original.body) changed.push('body')
+
+    // The row this form was opened against may have moved while the editor had
+    // it open — a second `edit` on the same ticket, saved first. `updateFields`
+    // writes only if the row still holds exactly what `ticket` read, so the
+    // check and the write are one statement and nothing can land in between.
+    const expected = { title: ticket.title, labels: ticket.labels.map((l) => l.name), body: ticket.body }
+    const written = yield* attempt(
+      tickets.updateFields(options.issue, expected, {
+        title: after.form.title,
+        labels: after.form.labels,
+        // `original.body` is `ticket.body` run through `formFromTicket`'s
+        // trim, so a save that did not touch the body must write the row's own
+        // bytes back rather than that trimmed form — otherwise an untouched
+        // body's trailing whitespace is silently stripped on every edit, while
+        // the success line below names only the field the person changed.
+        body: changed.includes('body') ? after.form.body : ticket.body,
+      }),
+    )
+    if (!written.ok) {
+      log(`${written.why} — your text is kept at ${edited.path}`)
+      return 1
+    }
+    yield* edited.discard()
+    log(`${symbol.pass()} updated #${ticket.number} — ${changed.join(', ')}`)
     return 0
-  }
-  if (after.form.title === '') {
-    log(`a ticket needs a title — your text is kept at ${edited.path}`)
-    return 1
-  }
-
-  const changed: string[] = []
-  if (after.form.title !== original.title) changed.push('title')
-  if (!sameLabels(original.labels, after.form.labels)) changed.push('labels')
-  if (after.form.body !== original.body) changed.push('body')
-
-  // The row this form was opened against may have moved while the editor had
-  // it open — a second `edit` on the same ticket, saved first. `updateFields`
-  // writes only if the row still holds exactly what `ticket` read, so the
-  // check and the write are one statement and nothing can land in between.
-  const expected = { title: ticket.title, labels: ticket.labels.map((l) => l.name), body: ticket.body }
-  try {
-    await tickets.updateFields(options.issue, expected, {
-      title: after.form.title,
-      labels: after.form.labels,
-      // `original.body` is `ticket.body` run through `formFromTicket`'s
-      // trim, so a save that did not touch the body must write the row's own
-      // bytes back rather than that trimmed form — otherwise an untouched
-      // body's trailing whitespace is silently stripped on every edit, while
-      // the success line below names only the field the person changed.
-      body: changed.includes('body') ? after.form.body : ticket.body,
-    })
-  } catch (err) {
-    log(`${(err as Error).message} — your text is kept at ${edited.path}`)
-    return 1
-  }
-  await edited.discard()
-  log(`${symbol.pass()} updated #${ticket.number} — ${changed.join(', ')}`)
-  return 0
-}
+  })

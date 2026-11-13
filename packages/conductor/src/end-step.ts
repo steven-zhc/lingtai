@@ -178,16 +178,6 @@ export function appendEndActionsEffect(
   })
 }
 
-/** `appendEndActionsEffect` as a promise, for `lingtai end` (apps/cli) until its row of #790. */
-export function appendEndActions(
-  store: EventStore,
-  ticketId: string,
-  actions: readonly StepAction[],
-  outcome: TerminalOutcome,
-): Promise<ToAppend[]> {
-  return Effect.runPromise(appendEndActionsEffect(store, ticketId, actions, outcome))
-}
-
 // ------------------------------------------------------- what did not run ----
 
 /** A work item that ended with a plan at `end` and no record of it running. */

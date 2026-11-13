@@ -36,7 +36,6 @@ import { eventStore, log, readThroughSnapshot, type EventStore } from '@lingtai/
 import { Effect } from 'effect'
 
 import { type ConductorNote, noteConductor } from './conductor-note.ts'
-import { lift } from './exit.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
 export interface RequeueCommandOptions {
@@ -119,7 +118,7 @@ export function requeueVerdict(
       return fromOutcome(outcome)
     })
     const answered: Answered = yield* append
-    if (answered.code === 0) yield* lift(() => noteConductor(progress, deps.conductorNote))
+    if (answered.code === 0) yield* noteConductor(progress, deps.conductorNote)
     return answered
   })
 }

@@ -502,7 +502,7 @@ const liveRunners: Runners = {
   end: (request) =>
     Effect.gen(function* () {
       const { endReplay } = yield* lift(() => import('./end.ts'))
-      return yield* lift(() => endReplay(request))
+      return yield* endReplay(request)
     }),
   ticket: (request) =>
     Effect.gen(function* () {
@@ -510,27 +510,23 @@ const liveRunners: Runners = {
       const project = request.project === undefined ? {} : { project: request.project }
       switch (request.verb) {
         case 'list':
-          return yield* lift(() =>
-            ticketList({
-              ...project,
-              all: request.all === true,
-              json: request.json === true,
-              columns: process.stdout.columns,
-            }),
-          )
+          return yield* ticketList({
+            ...project,
+            all: request.all === true,
+            json: request.json === true,
+            columns: process.stdout.columns,
+          })
         case 'close':
-          return yield* lift(() => ticketClose({ ...project, issue: request.issue! }))
+          return yield* ticketClose({ ...project, issue: request.issue! })
         case 'new':
-          return yield* lift(() =>
-            ticketNew({
-              ...project,
-              ...(request.title === undefined ? {} : { title: request.title }),
-              ...(request.labels === undefined ? {} : { label: request.labels }),
-              ...(request.body === undefined ? {} : { body: request.body }),
-            }),
-          )
+          return yield* ticketNew({
+            ...project,
+            ...(request.title === undefined ? {} : { title: request.title }),
+            ...(request.labels === undefined ? {} : { label: request.labels }),
+            ...(request.body === undefined ? {} : { body: request.body }),
+          })
         case 'edit':
-          return yield* lift(() => ticketEdit({ ...project, issue: request.issue! }))
+          return yield* ticketEdit({ ...project, issue: request.issue! })
       }
     }),
   backlog: (request) =>
@@ -538,7 +534,7 @@ const liveRunners: Runners = {
       const backlog = yield* lift(() => import('./backlog.ts'))
       if (request.verb === 'list') {
         return yield* Effect.gen(function* () {
-          const listing = yield* lift(() => backlog.readBacklogListing({ project: request.project, all: request.all }))
+          const listing = yield* backlog.readBacklogListing({ project: request.project, all: request.all })
           if (request.json) printJson('backlog', backlog.backlogJson(listing))
           else for (const line of backlog.renderBacklog(listing)) console.log(line)
           return 0
@@ -549,12 +545,10 @@ const liveRunners: Runners = {
         console.log(backlog.BACKLOG_USAGE)
         return 2
       }
-      return yield* lift(() =>
-        backlog.decideFinding(
-          request.verb === 'accept'
-            ? { verb: 'accept', project, key, extra, kind: request.kind, unheld: request.unheld }
-            : { verb: 'decline', project, key, extra, reason: request.reason },
-        ),
+      return yield* backlog.decideFinding(
+        request.verb === 'accept'
+          ? { verb: 'accept', project, key, extra, kind: request.kind, unheld: request.unheld }
+          : { verb: 'decline', project, key, extra, reason: request.reason },
       )
     }),
   env: (request) =>

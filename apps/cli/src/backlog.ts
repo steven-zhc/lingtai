@@ -14,11 +14,13 @@ import { userInfo } from 'node:os'
  * accepts what it matches: a batch accept that means *all of them* is the rule
  * 0038 refused to write, typed at a terminal instead.
  */
-import { acceptFinding, declineFinding, githubTicketStore, loadProject } from '@lingtai/conductor'
-import { projectClient } from '@lingtai/conductor/filter'
+import { acceptFindingEffect, declineFindingEffect, githubTicketStore } from '@lingtai/conductor'
+import { projectClientEffect } from '@lingtai/conductor/filter'
+import { loadProjectEffect } from '@lingtai/conductor/projects'
 import { hasGitHubAuth } from '@lingtai/env'
-import { type BacklogEntry, readBacklog, readLag, readTasks } from '@lingtai/projector'
+import { type BacklogEntry, readBacklogEffect, readLagEffect, readTasksEffect } from '@lingtai/projector'
 import { kindsOf } from '@lingtai/recipe/settings'
+import { Cause, Effect } from 'effect'
 
 import { noteConductor } from './conductor-note.ts'
 import { section } from './output.ts'
@@ -118,47 +120,66 @@ export interface BacklogListing {
   behind?: string
 }
 
+/**
+ * A failure of any kind — typed or defect — settled into its message; an
+ * interruption passes. What a `try { await … } catch` was.
+ */
+const settleMessage = <A, E>(
+  self: Effect.Effect<A, E>,
+): Effect.Effect<{ ok: true; value: A } | { ok: false; why: string }> =>
+  Effect.matchCauseEffect(self, {
+    onSuccess: (value) => Effect.succeed({ ok: true as const, value }),
+    onFailure: (cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.failCause(cause as Cause.Cause<never>)
+        : Effect.succeed({ ok: false as const, why: (Cause.squash(cause) as Error).message }),
+  })
+
+type ReadLag = typeof readLagEffect
+
 /** Reads the listing; the rendering and the document below are pure over it. */
-export async function readBacklogListing(
+export const readBacklogListing = (
   options: BacklogListOptions = {},
-  deps: { readLag?: typeof readLag } = {},
-): Promise<BacklogListing> {
-  const { project } = options
-  const all = options.all === true
-  let behind: string | undefined
-  // Lag first, rows second (as the board's `currentSpend` does): a conductor
-  // that reduces between the two makes the rows newer than the lag that certifies
-  // them, where the other order would certify stale rows as current. This reads
-  // and never reduces — the conductor lock's holder is the only writer (0100 §13).
-  try {
-    const { lag } = await (deps.readLag ?? readLag)('finding_backlog')
-    if (Number(lag) > 0) behind = `finding_backlog is ${lag} behind`
-  } catch (err) {
-    behind = `finding_backlog's lag could not be read: ${(err as Error).message}`
-  }
+  deps: { readLag?: ReadLag } = {},
+): Effect.Effect<BacklogListing> =>
+  Effect.gen(function* () {
+    const { project } = options
+    const all = options.all === true
+    let behind: string | undefined
+    // Lag first, rows second (as the board's `currentSpend` does): a conductor
+    // that reduces between the two makes the rows newer than the lag that certifies
+    // them, where the other order would certify stale rows as current. This reads
+    // and never reduces — the conductor lock's holder is the only writer (0100 §13).
+    const lagRead = yield* settleMessage((deps.readLag ?? readLagEffect)('finding_backlog'))
+    if (lagRead.ok) {
+      if (Number(lagRead.value.lag) > 0) behind = `finding_backlog is ${lagRead.value.lag} behind`
+    } else {
+      behind = `finding_backlog's lag could not be read: ${lagRead.why}`
+    }
 
-  // An accepted entry whose issue is not recorded is listed with the open ones:
-  // something is still owed on it.
-  const entries = (await readBacklog({ project })).filter(
-    (e) => all || e.status === 'open' || (e.status === 'accepted' && e.proposedRef === null),
-  )
-  const base = { project: project ?? null, all, ...(behind === undefined ? {} : { behind }) }
-  if (entries.length === 0) return { ...base, entries: [] }
+    // An accepted entry whose issue is not recorded is listed with the open ones:
+    // something is still owed on it.
+    const entries = (yield* readBacklogEffect({ project })).filter(
+      (e) => all || e.status === 'open' || (e.status === 'accepted' && e.proposedRef === null),
+    )
+    const base = { project: project ?? null, all, ...(behind === undefined ? {} : { behind }) }
+    if (entries.length === 0) return { ...base, entries: [] }
 
-  // The one column the backlog does not hold: what each ticket it names is
-  // called. Over the whole history rather than the board's retention window,
-  // because a finding outlives the run that raised it; and caught rather than
-  // thrown, because a listing without titles is still a listing.
-  const titles = new Map(
-    (await readTasks({ retentionDays: 36_500, ...(project === undefined ? {} : { project }) }).catch(() => [])).map(
-      (t) => [`${t.project}#${t.issue}`, t.title] as const,
-    ),
-  )
-  return {
-    ...base,
-    entries: entries.map((entry) => ({ entry, title: titles.get(`${entry.project}#${entry.issue}`) ?? null })),
-  }
-}
+    // The one column the backlog does not hold: what each ticket it names is
+    // called. Over the whole history rather than the board's retention window,
+    // because a finding outlives the run that raised it; and caught rather than
+    // thrown, because a listing without titles is still a listing.
+    const tasks = yield* readTasksEffect({ retentionDays: 36_500, ...(project === undefined ? {} : { project }) }).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause as Cause.Cause<never>) : Effect.succeed([]),
+      ),
+    )
+    const titles = new Map(tasks.map((t) => [`${t.project}#${t.issue}`, t.title] as const))
+    return {
+      ...base,
+      entries: entries.map((entry) => ({ entry, title: titles.get(`${entry.project}#${entry.issue}`) ?? null })),
+    }
+  })
 
 /** One section per project, `describeEntry`'s lines inside it. */
 export function renderBacklog(listing: BacklogListing): string[] {
@@ -201,10 +222,11 @@ export function backlogJson(listing: BacklogListing): Record<string, unknown> {
   }
 }
 
-async function list(project: string | undefined, all: boolean, log: (line: string) => void): Promise<number> {
-  for (const line of renderBacklog(await readBacklogListing({ project, all }))) log(line)
-  return 0
-}
+const list = (project: string | undefined, all: boolean, log: (line: string) => void): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    for (const line of renderBacklog(yield* readBacklogListing({ project, all }))) log(line)
+    return 0
+  })
 
 export interface BacklogDecision {
   verb: 'accept' | 'decline'
@@ -225,101 +247,103 @@ export interface BacklogDecision {
  * the sentence because the conductor gives no reason code, and its wording is
  * not this ticket's to change.
  */
-async function finish(
+const finish = (
   r: { ok: boolean; detail: string },
   log: (line: string) => void,
-  lagOf: typeof readLag = readLag,
-): Promise<number> {
-  log(r.detail)
-  if (!r.ok && r.detail.startsWith('no backlog entry ')) {
-    try {
-      const { lag } = await lagOf('finding_backlog')
-      if (Number(lag) > 0) log(`finding_backlog is ${lag} behind; it reduces when a conductor runs`)
-    } catch {
+  lagOf: ReadLag = readLagEffect,
+): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    log(r.detail)
+    if (!r.ok && r.detail.startsWith('no backlog entry ')) {
       // A refusal that already explains itself does not grow a second failure.
+      const lagRead = yield* settleMessage(lagOf('finding_backlog'))
+      if (lagRead.ok && Number(lagRead.value.lag) > 0) {
+        log(`finding_backlog is ${lagRead.value.lag} behind; it reduces when a conductor runs`)
+      }
     }
-  }
-  if (r.ok) await noteConductor(log)
-  return r.ok ? 0 : 1
-}
+    if (r.ok) yield* noteConductor(log)
+    return r.ok ? 0 : 1
+  })
 
 /** `accept` and `decline`, once they have been parsed — by `split` here or by `@effect/cli` in `cli.ts`. */
-export async function decideFinding(decision: BacklogDecision, log = console.log): Promise<number> {
-  const { verb, project, key } = decision
-  if ((decision.extra ?? []).length > 0) {
-    log('one key at a time — a backlog entry is decided by a person reading it, not by a list')
-    return 2
-  }
-  const by = `human:${userInfo().username}`
-
-  if (verb === 'decline') {
-    const reason = decision.reason ?? ''
-    if (!reason.trim()) {
-      log('lingtai backlog decline needs --reason <why> — a decline nobody can explain gets asked again')
+export const decideFinding = (decision: BacklogDecision, log = console.log): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const { verb, project, key } = decision
+    if ((decision.extra ?? []).length > 0) {
+      log('one key at a time — a backlog entry is decided by a person reading it, not by a list')
       return 2
     }
-    const r = await declineFinding({ project, key, by, reason })
-    return finish(r, log)
-  }
+    const by = `human:${userInfo().username}`
 
-  // No --kind is refused by `acceptFinding` when the entry is open, and not
-  // needed when it is already accepted: the log says what the issue carries.
-  const kind = decision.kind
-  if (!hasGitHubAuth()) {
-    log(
-      'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
-    )
-    return 1
-  }
-  const state = await loadProject(project)
-  if (!state?.owner) {
-    log(`no project named "${project}" — run lingtai add <owner>/<repo> first`)
-    return 1
-  }
-  // The recipe on the base branch decides which kinds the queue sees, so it
-  // is read here rather than trusted from the flag. `client` carries a `db`
-  // project's own ticket verbs (`projectClient`, #383), so `githubTicketStore`
-  // writes the finding wherever this project's tickets actually live.
-  const { client, resolved } = await projectClient(state)
-  const r = await acceptFinding({
-    project,
-    key,
-    by,
-    kind,
-    kinds: kindsOf(resolved.recipe),
-    labels: decision.unheld ? [] : [HOLD],
-    tickets: githubTicketStore(client),
+    if (verb === 'decline') {
+      const reason = decision.reason ?? ''
+      if (!reason.trim()) {
+        log('lingtai backlog decline needs --reason <why> — a decline nobody can explain gets asked again')
+        return 2
+      }
+      const r = yield* declineFindingEffect({ project, key, by, reason })
+      return yield* finish(r, log)
+    }
+
+    // No --kind is refused by `acceptFinding` when the entry is open, and not
+    // needed when it is already accepted: the log says what the issue carries.
+    const kind = decision.kind
+    if (!hasGitHubAuth()) {
+      log(
+        'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
+      )
+      return 1
+    }
+    const state = yield* loadProjectEffect(project)
+    if (!state?.owner) {
+      log(`no project named "${project}" — run lingtai add <owner>/<repo> first`)
+      return 1
+    }
+    // The recipe on the base branch decides which kinds the queue sees, so it
+    // is read here rather than trusted from the flag. `client` carries a `db`
+    // project's own ticket verbs (`projectClient`, #383), so `githubTicketStore`
+    // writes the finding wherever this project's tickets actually live.
+    const { client, resolved } = yield* projectClientEffect(state)
+    const r = yield* acceptFindingEffect({
+      project,
+      key,
+      by,
+      kind,
+      kinds: kindsOf(resolved.recipe),
+      labels: decision.unheld ? [] : [HOLD],
+      tickets: githubTicketStore(client),
+    })
+    return yield* finish(r, log)
   })
-  return finish(r, log)
-}
 
 export const BACKLOG_USAGE = USAGE
 
-export async function backlogCommand(args: string[], log = console.log): Promise<number> {
-  const [sub, ...rest] = args
+export const backlogCommand = (args: string[], log = console.log): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const [sub, ...rest] = args
 
-  if (sub === 'accept' || sub === 'decline') {
-    const { positional, flags } = split(rest)
-    const [project, key, ...extra] = positional
-    if (!project || !key) {
+    if (sub === 'accept' || sub === 'decline') {
+      const { positional, flags } = split(rest)
+      const [project, key, ...extra] = positional
+      if (!project || !key) {
+        log(USAGE)
+        return 2
+      }
+      return yield* decideFinding(
+        { verb: sub, project, key, extra, kind: flags['kind'], unheld: 'unheld' in flags, reason: flags['reason'] },
+        log,
+      )
+    }
+
+    if (sub === 'help' || sub === '--help') {
+      log(USAGE)
+      return 0
+    }
+
+    const { positional, flags } = split(sub === undefined ? [] : [sub, ...rest])
+    if (positional.length > 1) {
       log(USAGE)
       return 2
     }
-    return decideFinding(
-      { verb: sub, project, key, extra, kind: flags['kind'], unheld: 'unheld' in flags, reason: flags['reason'] },
-      log,
-    )
-  }
-
-  if (sub === 'help' || sub === '--help') {
-    log(USAGE)
-    return 0
-  }
-
-  const { positional, flags } = split(sub === undefined ? [] : [sub, ...rest])
-  if (positional.length > 1) {
-    log(USAGE)
-    return 2
-  }
-  return list(positional[0], 'all' in flags, log)
-}
+    return yield* list(positional[0], 'all' in flags, log)
+  })

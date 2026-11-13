@@ -6,23 +6,98 @@
  */
 import { Readable } from 'node:stream'
 
-import { dbTickets } from '@lingtai/conductor/db-tickets'
+import { dbTickets, type DbTickets, type DbTicketsEffects } from '@lingtai/conductor/db-tickets'
 import { type ProjectState, emptyProject } from '@lingtai/domain'
 import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlite'
 import type { TicketSql } from '@lingtai/event-store/ticket-sql'
 import { resolveRecipe, type ResolvedRecipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
-  type EditedForm,
+  type EditedForm as EditedFormEffect,
   parseTicketForm,
   renderTicketForm,
-  ticketClose,
-  ticketEdit,
-  ticketList,
-  ticketNew,
-  type TicketReading,
+  ticketClose as ticketCloseEffect,
+  ticketEdit as ticketEditEffect,
+  ticketList as ticketListEffect,
+  ticketNew as ticketNewEffect,
+  type TicketReading as TicketReadingEffect,
 } from '../src/ticket.ts'
+
+/**
+ * The verbs are Effects and their seams return Effects. The scenarios below are
+ * written against plain promise fakes, so this adapts them at the one edge:
+ * a fake's rejection is a defect, as a rejected driver is in `makeDbTickets`
+ * (0101 §6), which is the case the `your text is kept at …` lines have to hold
+ * for. `getIssue`, `closeIssue` and `updateFields` fail with the typed `Error`
+ * the real store fails with.
+ */
+interface EditedForm {
+  text: string
+  path: string
+  discard(): Promise<void>
+}
+interface TicketReading {
+  projects?: () => Promise<ProjectState[]>
+  recipeFor?: (state: ProjectState) => Promise<ResolvedRecipe>
+  ticketsFor?: (project: string) => Promise<DbTickets>
+  env?: Record<string, string | undefined>
+  edit?: (command: string, initial: string, name: string) => Promise<EditedForm>
+  stdin?: TicketReadingEffect['stdin']
+}
+
+const typed = <A>(f: () => Promise<A>): Effect.Effect<A, Error> =>
+  Effect.tryPromise({ try: f, catch: (e) => (e instanceof Error ? e : new Error(String(e))) })
+
+const effectsOf = (t: DbTickets): DbTicketsEffects => ({
+  listOpenIssues: () => Effect.promise(() => t.listOpenIssues()),
+  listIssuesSince: (since) => Effect.promise(() => t.listIssuesSince(since)),
+  getIssue: (n) => typed(() => t.getIssue(n)),
+  createIssue: (input) => Effect.promise(() => t.createIssue(input)),
+  comment: (n, body) => typed(() => t.comment(n, body)),
+  editComment: (n, id, body) => typed(() => t.editComment(n, id, body)),
+  commentBodies: (n) => Effect.promise(() => t.commentBodies(n)),
+  setLabels: (n, labels) => typed(() => t.setLabels(n, labels)),
+  closeIssue: (n, reason) => typed(() => t.closeIssue(n, reason)),
+  updateBody: (n, body, opts) => typed(() => t.updateBody(n, body, opts)),
+  updateFields: (n, expected, next) => typed(() => t.updateFields(n, expected, next)),
+})
+
+const adapt = (r: TicketReading): TicketReadingEffect => ({
+  ...(r.projects ? { projects: () => Effect.promise(r.projects!) } : {}),
+  ...(r.recipeFor ? { recipeFor: (state) => typed(() => r.recipeFor!(state)) } : {}),
+  ...(r.ticketsFor
+    ? { ticketsFor: (project) => Effect.promise(() => r.ticketsFor!(project)).pipe(Effect.map(effectsOf)) }
+    : {}),
+  ...(r.env ? { env: r.env } : {}),
+  ...(r.edit
+    ? {
+        edit: (command, initial, name) =>
+          typed(() => r.edit!(command, initial, name)).pipe(
+            Effect.map((form): EditedFormEffect => ({
+              text: form.text,
+              path: form.path,
+              discard: () => Effect.promise(() => form.discard()),
+            })),
+          ),
+      }
+    : {}),
+  ...(r.stdin ? { stdin: r.stdin } : {}),
+})
+
+const ticketList = (
+  ...args: [Parameters<typeof ticketListEffect>[0]?, Parameters<typeof ticketListEffect>[1]?, TicketReading?]
+) => Effect.runPromise(ticketListEffect(args[0], args[1], adapt(args[2] ?? {})))
+const ticketClose = (
+  ...args: [Parameters<typeof ticketCloseEffect>[0], Parameters<typeof ticketCloseEffect>[1]?, TicketReading?]
+) => Effect.runPromise(ticketCloseEffect(args[0], args[1], adapt(args[2] ?? {})))
+const ticketNew = (
+  ...args: [Parameters<typeof ticketNewEffect>[0]?, Parameters<typeof ticketNewEffect>[1]?, TicketReading?]
+) => Effect.runPromise(ticketNewEffect(args[0], args[1], adapt(args[2] ?? {})))
+const ticketEdit = (
+  ...args: [Parameters<typeof ticketEditEffect>[0], Parameters<typeof ticketEditEffect>[1]?, TicketReading?]
+) => Effect.runPromise(ticketEditEffect(args[0], args[1], adapt(args[2] ?? {})))
 
 const DB_YAML = `
 version: 2
@@ -829,6 +904,38 @@ describe('lingtai ticket new --title (#1060)', () => {
     expect(await ticketNew({ project: 'p', ...flags }, log, noEditor(wrapped))).toBe(1)
     expect(lines.join('\n')).toContain(said)
     expect(state.creates).toBe(0)
+  })
+})
+
+describe('a store failure is a defect, and still keeps the text (#1100)', () => {
+  // `makeDbTickets` fails with a defect on a driver error (0101 §6), which
+  // `Effect.catch` does not see: the sentence that says where the text is kept
+  // has to hold for the whole cause.
+  const dying = (): TicketReadingEffect => {
+    const base = adapt({
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => dbTickets(freshSql(), 'p'),
+      env: EDITOR_ENV,
+    })
+    return {
+      ...base,
+      ticketsFor: () =>
+        Effect.succeed({
+          ...effectsOf(dbTickets(freshSql(), 'p')),
+          createIssue: () => Effect.die(new Error('disk I/O error')),
+        }),
+    }
+  }
+
+  it('ticket new says where the text is kept, and does not discard it', async () => {
+    const fake = fakeEdit('a fresh bug\nlabels: bug\n\nSteps.\n')
+    const { log, lines } = sink()
+    const reading = adapt({ edit: fake.edit })
+    const code = await Effect.runPromise(ticketNewEffect({ project: 'p' }, log, { ...dying(), edit: reading.edit! }))
+    expect(code).toBe(1)
+    expect(lines.join('\n')).toContain('disk I/O error — your text is kept at /fake/p-new.md')
+    expect(fake.discards).toBe(0)
   })
 })
 

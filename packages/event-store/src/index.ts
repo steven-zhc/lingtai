@@ -27,6 +27,7 @@ export {
   processQueries,
   processLog,
   processTicketSql,
+  processTicketSqlEffect,
   processWaker,
 } from './choose.ts'
 export {

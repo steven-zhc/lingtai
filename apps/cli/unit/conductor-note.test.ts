@@ -7,8 +7,15 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type Bound, conductorNote, NO_CONDUCTOR } from '../src/conductor-note.ts'
+import {
+  type BoundEffect,
+  conductorNote as conductorNoteEffect,
+  type ConductorNoteWorld,
+  NO_CONDUCTOR,
+} from '../src/conductor-note.ts'
 import { requeueCommand } from '../src/requeue.ts'
+
+const conductorNote = (world?: ConductorNoteWorld) => Effect.runPromise(conductorNoteEffect(world))
 
 describe('conductorNote', () => {
   it('says no conductor is running when nobody holds the lock', async () => {
@@ -30,12 +37,12 @@ describe('conductorNote', () => {
   })
 
   it('says it could not tell when the read gets no answer in time', async () => {
-    const bound: Bound = async () => ({ ok: false, why: 'timeout' })
+    const bound: BoundEffect = () => Effect.succeed({ ok: false, why: 'timeout' })
     expect(await conductorNote({ holder: () => new Promise(() => {}), bound })).toContain('could not tell')
   })
 
   it('says nothing when Ctrl+C aborted the wait', async () => {
-    const bound: Bound = async () => ({ ok: false, why: 'abort' })
+    const bound: BoundEffect = () => Effect.succeed({ ok: false, why: 'abort' })
     expect(await conductorNote({ holder: () => new Promise(() => {}), bound })).toBeNull()
   })
 })
@@ -47,7 +54,7 @@ describe('requeue prints the note through its deps seam', () => {
       requeueCommand({ project: 'lingtai', issue: 9, note: 'again', by: 'human:test' }, (l) => lines.push(l), {
         store: createMemoryEventStore(),
         loadProject: () => Effect.succeed({ owner: 'steven' } as never),
-        conductorNote: () => conductorNote({ holder }),
+        conductorNote: () => conductorNoteEffect({ holder }),
         requeue: () => Effect.succeed({ ok: true, ticketId: 'ticket-lingtai-9', detail: 'back in the queue' } as never),
       }),
     )

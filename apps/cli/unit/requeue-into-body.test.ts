@@ -32,7 +32,7 @@ async function blocked(store: EventStore, issue: number) {
 }
 
 const loadProject = () => Effect.succeed({ owner: 'steven' } as ProjectState)
-const conductorNote = async () => null
+const conductorNote = () => Effect.succeed(null)
 
 describe('requeue command', () => {
   it('--into-body writes the section and resolves EditBodyAndRequeue', async () => {

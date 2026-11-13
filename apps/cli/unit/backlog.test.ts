@@ -3,6 +3,7 @@
  * terminal and a batch decision nobody read.
  */
 import type { BacklogEntry } from '@lingtai/projector'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { backlogCommand, describeEntry, split } from '../src/backlog.ts'
@@ -34,7 +35,7 @@ const ENTRY: BacklogEntry = {
 
 async function said(args: string[]): Promise<{ code: number; out: string }> {
   const lines: string[] = []
-  const code = await backlogCommand(args, (l) => lines.push(l))
+  const code = await Effect.runPromise(backlogCommand(args, (l) => lines.push(l)))
   return { code, out: lines.join('\n') }
 }
 

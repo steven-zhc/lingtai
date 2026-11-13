@@ -9,6 +9,7 @@
  * stdout is unchanged, and nothing here can fail the command.
  */
 import { conductorLockHolder } from '@lingtai/daemon'
+import { Cause, Effect } from 'effect'
 
 /** How long `approve` waits for a conductor to land what it approved, and how long a note waits for the lock's answer. */
 export const WAIT_MS = 60_000
@@ -51,37 +52,64 @@ export const boundReal: Bound = (op, ms, signal) =>
 export const NO_CONDUCTOR =
   'no conductor is running — the board shows this when one starts: lingtai start, or lingtai run'
 
+/** `Bound` as an Effect: a wait that gives up at `ms`, or — through an injected one — at Ctrl+C. */
+export type BoundEffect = <T>(
+  op: Effect.Effect<T, unknown>,
+  ms: number,
+) => Effect.Effect<{ ok: true; value: T } | { ok: false; why: 'timeout' | 'abort' }, unknown>
+
+/** A read that never answers must not outlast the 60 seconds; Ctrl+C interrupts the fiber itself. */
+export const boundEffect: BoundEffect = (op, ms) =>
+  op.pipe(
+    Effect.timeoutOption(Math.max(0, ms)),
+    Effect.map((won) =>
+      won._tag === 'Some' ? { ok: true as const, value: won.value } : { ok: false as const, why: 'timeout' as const },
+    ),
+  )
+
 export interface ConductorNoteWorld {
   /** `conductorLockHolder`: who conducts, null for nobody, a throw where the lock could not be asked. */
   holder?: () => Promise<string | null>
-  bound?: Bound
-  signal?: AbortSignal
+  bound?: BoundEffect
 }
 
-export type ConductorNote = (world?: ConductorNoteWorld) => Promise<string | null>
+export type ConductorNote = (world?: ConductorNoteWorld) => Effect.Effect<string | null>
 
 /**
  * The line to print after an append, or null when a conductor holds the lock
  * and so will reduce it. A holder that cannot be read is *could not tell*, never
- * *no conductor*. Never throws.
+ * *no conductor*. Never fails.
  */
-export const conductorNote: ConductorNote = async (world = {}) => {
-  try {
-    const bound = world.bound ?? boundReal
-    const asked = await bound((world.holder ?? (() => conductorLockHolder()))(), WAIT_MS, world.signal)
-    if (!asked.ok) {
-      return asked.why === 'abort'
-        ? null
-        : `could not tell whether a conductor is running (no answer in ${WAIT_MS / 1000} seconds); lingtai doctor says`
-    }
-    return asked.value === null ? NO_CONDUCTOR : null
-  } catch (err) {
-    return `could not tell whether a conductor is running (${err instanceof Error ? err.message : String(err)}); lingtai doctor says`
-  }
+export const conductorNote: ConductorNote = (world = {}) => {
+  const bound = world.bound ?? boundEffect
+  const holder = world.holder ?? (() => conductorLockHolder())
+  const couldNotTell = (why: string): string =>
+    `could not tell whether a conductor is running (${why}); lingtai doctor says`
+  return bound(Effect.tryPromise({ try: holder, catch: (err) => err }), WAIT_MS).pipe(
+    Effect.map((asked) => {
+      if (!asked.ok) {
+        return asked.why === 'abort' ? null : couldNotTell(`no answer in ${WAIT_MS / 1000} seconds`)
+      }
+      return asked.value === null ? NO_CONDUCTOR : null
+    }),
+    // A failed ask — typed or defect — is a line, never a failure; only an interruption passes.
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.failCause(cause as Cause.Cause<never>)
+        : Effect.succeed<string | null>(
+            couldNotTell(
+              (() => {
+                const err = Cause.squash(cause)
+                return err instanceof Error ? err.message : String(err)
+              })(),
+            ),
+          ),
+    ),
+  )
 }
 
 /** Says the note through `say` when there is one. */
-export const noteConductor = (say: (line: string) => void, note: ConductorNote = conductorNote): Promise<void> =>
-  note().then((line) => {
+export const noteConductor = (say: (line: string) => void, note: ConductorNote = conductorNote): Effect.Effect<void> =>
+  Effect.map(note(), (line) => {
     if (line !== null) say(line)
   })

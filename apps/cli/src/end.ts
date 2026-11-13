@@ -22,17 +22,17 @@
  * of a recipe follows (0005).
  */
 import {
-  appendEndActions,
-  currentRecipe,
-  endedWithoutEndActions,
-  loadProject,
+  appendEndActionsEffect,
+  endedWithoutEndActionsEffect,
+  tellGitHubAboutEffect,
   type TicketedClient,
 } from '@lingtai/conductor'
-import { tellGitHubAbout } from '@lingtai/conductor'
-import { projectClient } from '@lingtai/conductor/filter'
+import { projectClientEffect } from '@lingtai/conductor/filter'
+import { currentRecipeEffect, loadProjectEffect } from '@lingtai/conductor/projects'
 import { hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import type { ResolvedRecipe } from '@lingtai/recipe'
+import { Cause, Effect } from 'effect'
 
 import { noteConductor } from './conductor-note.ts'
 import { heading, symbol } from './output.ts'
@@ -44,89 +44,106 @@ export interface EndReplayOptions {
   issue?: number
 }
 
-export async function endReplay(options: EndReplayOptions = {}, log = console.log): Promise<number> {
-  const found = (await endedWithoutEndActions()).filter(
-    (f) =>
-      (options.project === undefined || f.project === options.project) &&
-      (options.issue === undefined || f.issue === options.issue),
-  )
-
-  if (found.length === 0) {
-    log('nothing to replay — every ended item with end actions has resolved them')
-    return 0
-  }
-  if (!hasGitHubAuth()) {
-    log(
-      'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
+export const endReplay = (options: EndReplayOptions = {}, log = console.log): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const found = (yield* endedWithoutEndActionsEffect()).filter(
+      (f) =>
+        (options.project === undefined || f.project === options.project) &&
+        (options.issue === undefined || f.issue === options.issue),
     )
-    return 1
-  }
 
-  log(
-    heading(
-      [
-        'end replay',
-        options.project === undefined
-          ? ''
-          : options.issue === undefined
-            ? options.project
-            : `${options.project}#${options.issue}`,
-      ]
-        .filter(Boolean)
-        .join(' '),
-    ),
-  )
-  const replay = async (): Promise<number> => {
-    // One client per project — now a project's own ticket side too
-    // (`projectClient`, #383), never GitHub's for a `db` project. An
-    // installation token is scoped to one repository, and minting one per item
-    // would be a lookup per item.
-    const clients = new Map<string, TicketedClient>()
-    let replayed = 0
-
-    for (const item of found) {
-      const project = await loadProject(item.project)
-      if (!project?.owner) {
-        log(`${symbol.fail()} ${item.ticketId}: no project named "${item.project}" is onboarded — skipped`)
-        continue
-      }
-      try {
-        let client = clients.get(item.project)
-        let resolved: ResolvedRecipe
-        if (!client) {
-          // Built and resolved together, so the recipe that decided this
-          // project's ticket source is the one whose `end` runs here too.
-          const built = await projectClient(project)
-          client = built.client
-          resolved = built.resolved
-          clients.set(item.project, client)
-        } else {
-          resolved = await currentRecipe(project, client)
-        }
-        // The outcome the item actually reached, not a constant. This read
-        // `"landed"` when landing was the only ending audited; a closed ticket
-        // replayed as landed would write a resolution naming an outcome its own
-        // log does not contain, and run every `when: landed` action on a ticket
-        // that landed nothing (0044).
-        const ended = await appendEndActions(eventStore, item.ticketId, resolved.recipe.steps.end, item.outcome)
-        // Resolved and then carried out, in that order and in this process. The
-        // outbox used to stand between them; there is nothing to wait for now.
-        await tellGitHubAbout({ store: eventStore, github: client, ticketId: item.ticketId, appended: ended })
-        replayed += 1
-        log(
-          `${symbol.pass()} ${item.project}#${item.issue}: end resolved for ${item.outcome} from the recipe at ${resolved.ref}`,
-        )
-      } catch (err) {
-        // Named and carried on. One unreadable recipe must not strand the other
-        // items, and the log is intact either way.
-        log(`${symbol.fail()} ${item.project}#${item.issue}: not replayed — ${(err as Error).message}`)
-      }
+    if (found.length === 0) {
+      log('nothing to replay — every ended item with end actions has resolved them')
+      return 0
+    }
+    if (!hasGitHubAuth()) {
+      log(
+        'no GitHub App configured — write github: in ~/.lingtai/config.yml (the /setup/github-app page on the board writes it), see doc/decisions/0114-a-github-app-not-a-token.md',
+      )
+      return 1
     }
 
-    log(`${replayed} replayed`)
-    return 0
-  }
-  const code = await replay()
-  if (code === 0) await noteConductor(log)
-  return code
-}
+    log(
+      heading(
+        [
+          'end replay',
+          options.project === undefined
+            ? ''
+            : options.issue === undefined
+              ? options.project
+              : `${options.project}#${options.issue}`,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      ),
+    )
+    const replay = Effect.gen(function* () {
+      // One client per project — now a project's own ticket side too
+      // (`projectClient`, #383), never GitHub's for a `db` project. An
+      // installation token is scoped to one repository, and minting one per item
+      // would be a lookup per item.
+      const clients = new Map<string, TicketedClient>()
+      let replayed = 0
+
+      for (const item of found) {
+        const project = yield* loadProjectEffect(item.project)
+        if (!project?.owner) {
+          log(`${symbol.fail()} ${item.ticketId}: no project named "${item.project}" is onboarded — skipped`)
+          continue
+        }
+        // Named and carried on, for a defect as much as a typed failure: one
+        // unreadable recipe must not strand the other items, and the log is
+        // intact either way. An interruption passes.
+        const one = Effect.gen(function* () {
+          let client = clients.get(item.project)
+          let resolved: ResolvedRecipe
+          if (!client) {
+            // Built and resolved together, so the recipe that decided this
+            // project's ticket source is the one whose `end` runs here too.
+            const built = yield* projectClientEffect(project)
+            client = built.client
+            resolved = built.resolved
+            clients.set(item.project, client)
+          } else {
+            resolved = yield* currentRecipeEffect(project, client)
+          }
+          // The outcome the item actually reached, not a constant. This read
+          // `"landed"` when landing was the only ending audited; a closed ticket
+          // replayed as landed would write a resolution naming an outcome its own
+          // log does not contain, and run every `when: landed` action on a ticket
+          // that landed nothing (0044).
+          const ended = yield* appendEndActionsEffect(
+            eventStore,
+            item.ticketId,
+            resolved.recipe.steps.end,
+            item.outcome,
+          )
+          // Resolved and then carried out, in that order and in this process. The
+          // outbox used to stand between them; there is nothing to wait for now.
+          yield* tellGitHubAboutEffect({ store: eventStore, github: client, ticketId: item.ticketId, appended: ended })
+          return resolved
+        })
+        const done = yield* Effect.matchCauseEffect(one, {
+          onSuccess: (resolved) => Effect.succeed({ ok: true as const, resolved }),
+          onFailure: (cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause as Cause.Cause<never>)
+              : Effect.succeed({ ok: false as const, why: (Cause.squash(cause) as Error).message }),
+        })
+        if (done.ok) {
+          replayed += 1
+          log(
+            `${symbol.pass()} ${item.project}#${item.issue}: end resolved for ${item.outcome} from the recipe at ${done.resolved.ref}`,
+          )
+        } else {
+          log(`${symbol.fail()} ${item.project}#${item.issue}: not replayed — ${done.why}`)
+        }
+      }
+
+      log(`${replayed} replayed`)
+      return 0
+    })
+    const code = yield* replay
+    if (code === 0) yield* noteConductor(log)
+    return code
+  })

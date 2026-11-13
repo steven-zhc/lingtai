@@ -11,7 +11,6 @@ import { eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
 import { Effect } from 'effect'
 
 import { noteConductor } from './conductor-note.ts'
-import { lift } from './exit.ts'
 import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
 
 /** The SHA and ref are selected under the decision lock from the held run's log. */
@@ -68,7 +67,7 @@ export function grantFixRoundVerdict(
       } satisfies Answered
     })
     const answered: Answered = yield* append
-    if (answered.code === 0) yield* lift(() => noteConductor(progress))
+    if (answered.code === 0) yield* noteConductor(progress)
     return answered
   })
 }
