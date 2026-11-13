@@ -104,16 +104,18 @@ apart from *this process is too old for a recipe that is fine*. It is not
 refusing turn never reaches. A run that `runOnce` stops before its claim is not
 a `ProjectRefused` either.
 
-A project is **pending** between `ProjectOnboardingStarted` and
+No new project becomes pending, because the event that starts the state is
+retired; the pending projects are the ones an older log already holds. A project
+is **pending** between `ProjectOnboardingStarted` and
 `ProjectConfigured` (`#163`): recorded, visible on the board, and conducted by
 nothing. There is no flag and no table — `isRegistered` is `project !== null &&
 configHash !== null`, and `configHash` arrives only with a recipe that was read.
 `loadProjects()` has filtered on it since before pending existed, which is why
 the daemon needed no guard. **What pending waits for is `Recheck`, not an
-installation** (`#182`): the wizard writes the recipe on this machine and
-records the project only through a client built on the App's installation on
+installation** (`#182`): the wizard that wrote the recipe on this machine
+recorded the project only through a client built on the App's installation on
 the repository, refusing without one — so every pending project had one when it
-was recorded. What can still refuse is `lingtai add`'s checks: the
+was recorded, and that writer no longer exists. What can still refuse is `lingtai add`'s checks: the
 installation's permissions, the recipe, or an installation removed since. The
 board draws a card with `Recheck` on it, and `Recheck` is `recheck`
 (`packages/conductor/src/onboard.ts`): it asks `installationForRepo` first and
@@ -123,35 +125,9 @@ saying everything `add` said when it refuses. Nothing finishes it
 automatically, by decision
 ([the onboarding wizard](design/the-onboarding-wizard.md)).
 
-What appends that first event is `startOnboarding`
-(`packages/conductor/src/wizard.ts`, `#165`). The board's wizard page called it
-from *Write the recipe on this machine* until `#401` removed that page for the
-terminal's `pnpm lingtai add`, and it is **the only write it makes of its own
-accord** — and since `#180` it writes nothing to the
-repository: the recipe is parsed before anything is written, so a file that
-would fail `lingtai add` names its bad field instead; then
-`~/.lingtai/<project>/recipe.yml`, limits and all, with the page's agent under
-`projects.<project>.runtime` in `~/.lingtai/config.yml`, read back the way `add`
-reads them; then the event. A recipe already at that path that is not this one,
-or a machine file that already names another runtime for the project, is refused
-before anything is written. Abandon the page before it and the wizard has left
-nothing of its own accord to clean up. If the append fails over a written file it
-names the file and says which of two things happened: a store that blinked is
-finished by pressing again, which picks up a file that is *this* recipe, while a
-stream that moved underneath it is not, and that refusal says so and hands back
-the file. Beside
-it `firstPass` is the last screen — `selectRunnable` and
-`passedOver` and no rule of its own, so
-`12 runnable · 18 passed over — excluded-label 14, no-kind 4` is the sentence
-`lingtai status` will print an hour later.
-
-`Hold all` is `holdAll`, and it is **the operator's write and not the
-wizard's** — the one thing on that screen that outlives abandoning the page,
-since the labels stay on GitHub and the project has no stream to record them
-on. So it is offered and never automatic, it adds its label rather than
-replacing an issue's set, and the label is `agent:hold` or there is no button:
-`source.exclude` is free-form, and a recipe that excludes only `wontfix` gets
-no offer rather than that word stamped across twelve bug reports.
+`ProjectOnboardingStarted` is retired: it is still parsed and reduced for logs
+that hold it, and nothing appends it. A project starts today with `lingtai add`,
+whose stream begins at `ProjectConfigured`.
 
 <!-- streams:begin -->
 ## stream — 10 prefixes, unbounded instances
