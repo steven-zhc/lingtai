@@ -15,10 +15,17 @@ import { z } from 'zod'
 const LABEL = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
 const HOSTNAME = new RegExp(`^${LABEL}(?:\\.${LABEL})*$`, 'i')
 
-/** A hostname, or `*.` and a hostname: no scheme, port, path or other wildcard. srt's own validation is the backstop. */
+/**
+ * A hostname, or `*.` and a hostname: no scheme, port, path or other wildcard. It is held to what srt's own
+ * `isValidAllowedDomainEntry` accepts, so a saved entry is never one srt rejects at registration: a plain
+ * name needs a dot (or is `localhost`), and a wildcard needs two labels after it (`*.com` is too broad).
+ */
 export const isNetworkEntry = (entry: string): boolean => {
-  const host = entry.startsWith('*.') ? entry.slice(2) : entry
-  return host.length <= 253 && HOSTNAME.test(host)
+  const wild = entry.startsWith('*.')
+  const host = wild ? entry.slice(2) : entry
+  if (host.length > 253 || !HOSTNAME.test(host)) return false
+  if (wild) return host.includes('.')
+  return host.includes('.') || host === 'localhost'
 }
 
 /** `~`, `~/…` or absolute: a relative path names nothing, because nothing says what it is relative to. */

@@ -83,6 +83,8 @@ describe('what the text alone refuses', () => {
     ['a port', 'network: { allow: ["pypi.org:443"] }', 'sandbox.network.allow.0: "pypi.org:443"'],
     ['a path', 'network: { allow: ["pypi.org/simple"] }', 'sandbox.network.allow.0: "pypi.org/simple"'],
     ['a second wildcard', 'network: { allow: ["*.*.org"] }', 'sandbox.network.allow.0: "*.*.org"'],
+    ['a wildcard over a top-level domain', 'network: { allow: ["*.com"] }', 'sandbox.network.allow.0: "*.com"'],
+    ['a name with no dot', 'network: { allow: [intranet] }', 'sandbox.network.allow.0: "intranet"'],
     ['a bare *', 'network: { allow: ["*"] }', 'sandbox.network.allow.0: "*"'],
     ['a key it does not know', 'network: { alow: [pypi.org] }', 'sandbox.network'],
   ])('%s', async (_name, line, sentence) => {

@@ -3600,7 +3600,9 @@ export function runDoctor(
       yield* step('paused projects', pausedProjects(loadE).pipe(Effect.map(pushAll)))
       yield* step(
         'account limits',
-        (reach.accounts ?? (() => accountLimits(undefined, loadE)))().pipe(Effect.map(pushAll)),
+        (
+          reach.accounts ?? (() => accountLimits(undefined, loadE, (state) => recipeLookup(reach)(state, undefined)))
+        )().pipe(Effect.map(pushAll)),
       )
       yield* step(
         'spend',
@@ -3668,7 +3670,10 @@ export function runDoctor(
       // for thirty-nine minutes only one of them was measured.
       yield* step('daemon currency', daemonCurrency().pipe(Effect.orDie, Effect.map(push)))
       yield* step('paused projects', pausedProjects(loadE).pipe(Effect.map(pushAll)))
-      yield* step('account limits', accountLimits(undefined, loadE).pipe(Effect.map(pushAll)))
+      yield* step(
+        'account limits',
+        accountLimits(undefined, loadE, (state) => recipeLookup(reach)(state, undefined)).pipe(Effect.map(pushAll)),
+      )
       yield* step('spend', spendToday(undefined, () => readControlEffect()).pipe(Effect.map(push)))
       yield* step(
         'rates',

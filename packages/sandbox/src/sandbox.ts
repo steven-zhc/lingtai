@@ -83,17 +83,14 @@ export const checkHost = (srt: SrtPort, host: HostFacts): Effect.Effect<void, Sa
     }
     yield* checkFacts(host)
     const supported = yield* srt.isSupportedPlatform.pipe(
-      Effect.mapError(
-        (e) => new SandboxUnavailable({ reason: 'srt could not tell the platform', sentences: [sentenceOf(e)] }),
-      ),
+      // A thrown exception's message is never a sentence here: it can carry a temp path that varies per failure.
+      Effect.mapError(() => new SandboxUnavailable({ reason: 'srt could not tell the platform', sentences: [] })),
     )
     if (!supported) {
       return yield* new SandboxUnavailable({ reason: 'srt does not support this platform', sentences: [] })
     }
     const check = yield* srt.checkDependencies.pipe(
-      Effect.mapError(
-        (e) => new SandboxUnavailable({ reason: 'checkDependencies failed', sentences: [sentenceOf(e)] }),
-      ),
+      Effect.mapError(() => new SandboxUnavailable({ reason: 'checkDependencies failed', sentences: [] })),
     )
     if (check.errors.length > 0) {
       return yield* new SandboxUnavailable({ reason: 'host dependencies are missing', sentences: check.errors })
