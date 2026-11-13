@@ -117,7 +117,8 @@ function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => E
 }
 
 /** A promise as an Effect whose failure is the rejection itself, unwrapped — the shape `readThroughSnapshot` uses. */
-const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> => Effect.tryPromise({ try: f, catch: (e) => e })
+const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: () => f(), catch: (e) => e })
 
 /** The message of whatever a step failed with, whether it failed or died. */
 const messageOf = (cause: Cause.Cause<unknown>): string => (Cause.squash(cause) as Error).message

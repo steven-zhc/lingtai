@@ -126,7 +126,7 @@ export const prepare = (
   home = stateDir(),
 ): Effect.Effect<{ cwd: string; settingsPath: string }, unknown> =>
   Effect.gen(function* () {
-    const io = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
+    const io = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: () => f(), catch: (e) => e })
     const cwd = chatDir(chatId, home)
     yield* io(() => rm(cwd, { recursive: true, force: true }))
     yield* io(() => mkdir(cwd, { recursive: true, mode: 0o700 }))

@@ -219,7 +219,7 @@ export function tellGitHubEffect(options: TellOptions): Effect.Effect<Told> {
 
 /** A port's promise as an Effect whose failure is whatever it rejected with. */
 const attempt = <A>(call: () => Promise<A>): Effect.Effect<A, unknown> =>
-  Effect.tryPromise({ try: call, catch: (error) => error })
+  Effect.tryPromise({ try: () => call(), catch: (error) => error })
 
 /** The one write `change` asks of GitHub; what it answers is the `detail` that is recorded. */
 function write(github: IssueChannel, issue: number, change: IssueWrite): Effect.Effect<string, unknown> {

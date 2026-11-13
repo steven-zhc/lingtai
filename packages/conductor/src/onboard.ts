@@ -76,10 +76,10 @@ import { signedInHere } from './projects.ts'
  * from this (#1085).
  */
 const lift = <A>(f: () => Promise<A>): Effect.Effect<A, Error> =>
-  Effect.tryPromise({ try: f, catch: (e) => e as Error })
+  Effect.tryPromise({ try: () => f(), catch: (e) => e as Error })
 
 /** A synchronous throw as the same kind of failure. */
-const attempt = <A>(f: () => A): Effect.Effect<A, Error> => Effect.try({ try: f, catch: (e) => e as Error })
+const attempt = <A>(f: () => A): Effect.Effect<A, Error> => Effect.try({ try: () => f(), catch: (e) => e as Error })
 
 export interface AddOptions {
   slug: string

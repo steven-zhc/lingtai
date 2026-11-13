@@ -241,7 +241,8 @@ function effectSeams(options: {
 }
 
 /** A promise as an Effect whose failure is the rejection itself, unwrapped — what the `catch` below reads `.message` off. */
-const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> => Effect.tryPromise({ try: f, catch: (e) => e })
+const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: () => f(), catch: (e) => e })
 
 /** The message of whatever a step failed with, whether it failed or died. */
 const messageOf = (cause: Cause.Cause<unknown>): string => (Cause.squash(cause) as Error).message

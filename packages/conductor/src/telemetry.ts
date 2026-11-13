@@ -162,7 +162,7 @@ const EXPORT_MS = 3000
  * that trickles bytes would otherwise hold the process past the budget.
  */
 const boundedEffect = (flushing: () => Promise<void>, ms: number, cancel: () => void = () => {}) =>
-  Effect.tryPromise(flushing).pipe(
+  Effect.tryPromise(() => flushing()).pipe(
     // The SDK has its own budget, and at an equal deadline its rejection can
     // arrive before ours: a flush that did not finish cleanly cancels too.
     Effect.as(true),

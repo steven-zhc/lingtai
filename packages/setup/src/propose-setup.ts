@@ -99,7 +99,7 @@ type Settled<T> = { ok: true; value: T } | { ok: false; reason: string }
 
 /** A reader's promise as an Effect that cannot fail: the failure is a value. */
 const settle = <T>(read: () => Promise<T>): Effect.Effect<Settled<T>, never> =>
-  Effect.tryPromise({ try: read, catch: reasonOf }).pipe(
+  Effect.tryPromise({ try: () => read(), catch: reasonOf }).pipe(
     Effect.match({
       onSuccess: (value): Settled<T> => ({ ok: true, value }),
       onFailure: (reason): Settled<T> => ({ ok: false, reason }),
@@ -108,7 +108,7 @@ const settle = <T>(read: () => Promise<T>): Effect.Effect<Settled<T>, never> =>
 
 /** One reader as an Effect that can only succeed: a failure is a `known: false` line. */
 const attempt = <T, A>(read: () => Promise<T>, ok: (value: T) => Line<A>, fallback: A): Effect.Effect<Line<A>, never> =>
-  Effect.tryPromise({ try: read, catch: reasonOf }).pipe(
+  Effect.tryPromise({ try: () => read(), catch: reasonOf }).pipe(
     Effect.match({
       onSuccess: ok,
       onFailure: (reason): Line<A> => ({ known: false, reason, default: fallback }),

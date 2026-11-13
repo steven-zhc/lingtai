@@ -159,7 +159,8 @@ export function githubTicketStore(
     created,
   })
 
-  const lift = <A>(f: () => Promise<A>): Effect.Effect<A, Error> => Effect.tryPromise({ try: f, catch: asFailure })
+  const lift = <A>(f: () => Promise<A>): Effect.Effect<A, Error> =>
+    Effect.tryPromise({ try: () => f(), catch: asFailure })
 
   /** The issue a key belongs to: the oldest one carrying it. */
   const carrying = (key: string, since: Date): Effect.Effect<Ticket | undefined, Error> =>

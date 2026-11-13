@@ -48,7 +48,7 @@ interface TicketReading {
 }
 
 const typed = <A>(f: () => Promise<A>): Effect.Effect<A, Error> =>
-  Effect.tryPromise({ try: f, catch: (e) => (e instanceof Error ? e : new Error(String(e))) })
+  Effect.tryPromise({ try: () => f(), catch: (e) => (e instanceof Error ? e : new Error(String(e))) })
 
 const effectsOf = (t: DbTickets): DbTicketsEffects => ({
   listOpenIssues: () => Effect.promise(() => t.listOpenIssues()),

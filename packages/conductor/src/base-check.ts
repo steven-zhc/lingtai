@@ -84,7 +84,7 @@ const ATTEMPTS = 8
 
 /** A port's promise as an Effect whose failure is whatever it rejected with. */
 const attempt = <A>(call: () => Promise<A>): Effect.Effect<A, unknown> =>
-  Effect.tryPromise({ try: call, catch: (error) => error })
+  Effect.tryPromise({ try: () => call(), catch: (error) => error })
 
 const answered = (answer: BaseCheckAnswer): BaseCheckAnswer => answer
 

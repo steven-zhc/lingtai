@@ -20,7 +20,8 @@ import {
 } from '../src/triage.ts'
 
 /** A promise, lifted lazily with its failure kept as it was. */
-const fx = <A>(f: () => PromiseLike<A>): Effect.Effect<A, unknown> => Effect.tryPromise({ try: f, catch: (e) => e })
+const fx = <A>(f: () => PromiseLike<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: () => f(), catch: (e) => e })
 const catchUpTriage = (...args: Parameters<typeof catchUp>) => Effect.runPromise(catchUp(...args))
 const catchUpChangedTriage = (...args: Parameters<typeof catchUpChanged>) => Effect.runPromise(catchUpChanged(...args))
 const catchUpRegisteredTriage = (...args: Parameters<typeof catchUpRegistered>) =>
@@ -266,6 +267,12 @@ describe('triage catch-up', () => {
       await expect(at()).resolves.toBe(startedAt)
       await expect(at()).resolves.toBe(startedAt)
       expect(read).toHaveBeenCalledTimes(4)
+    })
+
+    it('reads with no argument: a read with an optional parameter is not handed Effect’s signal (#1129)', async () => {
+      const read = (store?: unknown) =>
+        store === undefined ? Promise.resolve({ pid: 7, startedAt }) : Promise.reject(new Error('got an argument'))
+      await expect(memoDaemonStartedAt(read, 7)()).resolves.toBe(startedAt)
     })
   })
 
