@@ -39,7 +39,7 @@ export interface CeilingFacts {
   configuredUsd: number | undefined
   /** `todaysCeiling`: the figure the guard compares against today. */
   todayUsd: number | undefined
-  /** Today's raise only. `fromUsd` is the figure that was reached; absent on a raise written before the event carried it. */
+  /** Today's raise only. `fromUsd` is today's figure when the raise was made; absent on a raise written before the event carried it. */
   raised: { fromUsd?: number; toUsd: number; by: string; at: Date } | null
   /** The standing lock. `passed` is a reader's word: the log still holds it, the guard lifts it at its next look (0126 §8). */
   reached: {
@@ -130,35 +130,39 @@ export function ceilingCheck(input: {
   return out
 }
 
-export type RaiseRefusal = 'not-reached' | 'not-above-spend' | 'not-above-ceiling'
+export type RaiseRefusal = 'no-ceiling' | 'not-above-spend' | 'not-above-ceiling'
 
 /** The sentence for each refusal, said the same by `lingtai ceiling raise` and the board (#1006). */
 export const RAISE_REFUSALS: Record<RaiseRefusal, string> = {
-  'not-reached':
-    "today's ceiling has not been reached — nothing to raise; to change the figure for every day, edit limits.day_usd",
+  'no-ceiling': 'no daily ceiling is configured — nothing to raise; to set one, edit limits.day_usd',
   'not-above-spend': "that is not above today's spend — raise it to more than has been spent",
-  'not-above-ceiling': 'that is not above the ceiling that was reached — raise it to a higher figure',
+  'not-above-ceiling': "that is not above today's ceiling — raise it to a higher figure",
 }
 
-/** The lift a person's raise appends, or the refusal that says why not (0126 §7). */
+/**
+ * The lift a person's raise appends, or the refusal that says why not (0126 §7).
+ * A raise is allowed at any time of the day, before the ceiling is reached as
+ * well as after; `fromUsd` is today's figure when it was made.
+ */
 export function raiseTransition(input: {
   state: ControlState
   now: Date
   toUsd: number
   by: string
   spentCents: number
+  configuredUsd: number | undefined
 }): { ok: true; event: ToAppend<Lifted> } | { ok: false; refused: RaiseRefusal } {
-  const { state, now, toUsd, by, spentCents } = input
-  const reached = state.dayCeiling.reached
-  if (reached === null || reached.day !== localDay(now)) return { ok: false, refused: 'not-reached' }
+  const { state, now, toUsd, by, spentCents, configuredUsd } = input
+  const today = todaysCeiling(state, now, configuredUsd)
+  if (today === undefined) return { ok: false, refused: 'no-ceiling' }
   if (cents(toUsd) <= spentCents) return { ok: false, refused: 'not-above-spend' }
-  if (cents(toUsd) <= cents(reached.ceilingUsd)) return { ok: false, refused: 'not-above-ceiling' }
+  if (cents(toUsd) <= cents(today)) return { ok: false, refused: 'not-above-ceiling' }
   return {
     ok: true,
     event: {
       type: 'DayCeilingLifted',
       actor: by,
-      data: { day: reached.day, why: 'person', by, toUsd, fromUsd: reached.ceilingUsd },
+      data: { day: localDay(now), why: 'person', by, toUsd, fromUsd: today },
     },
   }
 }

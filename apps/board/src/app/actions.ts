@@ -61,7 +61,7 @@ import {
 } from '@lingtai/domain'
 import { isPending, isRegistered } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
-import { stateDir } from '@lingtai/env'
+import { machineDayCeiling, stateDir } from '@lingtai/env'
 import { hasGitHubApp, hasGitHubAuth } from '@lingtai/env'
 import { eventStore, log } from '@lingtai/event-store'
 import { saveRecipeText } from '@lingtai/recipe'
@@ -576,7 +576,13 @@ export async function liftAccountNow(input: { runtime: string }): Promise<Action
 export async function continueToday(input: { toUsd: number }): Promise<ActionResult> {
   try {
     const result = await Effect.runPromise(
-      continueTodayWith({ store: eventStore, toUsd: input.toUsd, by: actor(), readSpend: () => readDayReading() }),
+      continueTodayWith({
+        store: eventStore,
+        toUsd: input.toUsd,
+        by: actor(),
+        readSpend: () => readDayReading(),
+        configuredUsd: () => machineDayCeiling(),
+      }),
     )
     // Only a raise changes what the banner shows. A refusal leaves the row
     // standing so the sentence beside its button is not unmounted with it.

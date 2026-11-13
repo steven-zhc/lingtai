@@ -430,7 +430,7 @@ lingtai close lingtai --issue <n> "superseded"
 | stop the daemon after the ticket in flight | [lingtai shutdown](#lingtai-shutdown) |
 | stop one project, or every project, taking new tickets | [lingtai pause](#lingtai-pause) |
 | take tickets again, for one project or every project | [lingtai resume](#lingtai-resume) |
-| raise today's spending ceiling once it has been reached | [lingtai ceiling](#lingtai-ceiling) |
+| raise today's spending ceiling | [lingtai ceiling](#lingtai-ceiling) |
 | lift a runtime's usage limit | [lingtai account](#lingtai-account) |
 
 ### lingtai start
@@ -581,16 +581,16 @@ lingtai resume
 
 ### lingtai ceiling
 
-Raise today's spending ceiling once it has been reached.
+Raise today's spending ceiling.
 
 Changes state.
 
 ```text
 lingtai ceiling raise <usd>
   Raises today's ceiling to <usd> dollars, a figure above both what has been
-  spent and the ceiling that was reached. Lasts until midnight; the
-  configuration (limits.day_usd) is not changed. Refused while the ceiling
-  has not been reached, or while today's spend cannot be read.
+  spent and today's ceiling, at any time of the day. Lasts until midnight; the
+  configuration (limits.day_usd) is not changed. Refused while no ceiling
+  is configured, or while today's spend cannot be read.
 ```
 
 ```sh

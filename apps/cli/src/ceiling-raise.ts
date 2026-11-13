@@ -38,6 +38,7 @@ export const ceilingRaise = (o: CeilingRaiseOptions): Effect.Effect<0 | 1> =>
       toUsd: o.toUsd,
       by: o.by,
       spentCents,
+      configuredUsd: spend.configuredUsd,
       store: o.store,
       now: (o.now ?? (() => new Date()))(),
     }).pipe(

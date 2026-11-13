@@ -4,6 +4,7 @@
  * rebuilt, is a refusal by name and appends nothing.
  */
 import { CONTROL_STREAM, localDay } from '@lingtai/domain'
+import { RAISE_REFUSALS } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -111,16 +112,32 @@ describe('ceilingRaise', () => {
     expect((await store.read(CONTROL_STREAM)).map((e) => e.type)).toEqual(['DayCeilingReached', 'DayCeilingLifted'])
   })
 
-  it('answers not-reached with the sentence that names limits.day_usd', async () => {
+  it('answers no-ceiling with the sentence that names limits.day_usd when none is configured', async () => {
+    const store = createMemoryEventStore()
+    const lines: string[] = []
+    const code = await Effect.runPromise(
+      ceilingRaise({
+        ...healthy,
+        ceiling: () => undefined,
+        toUsd: 40,
+        by: 'human:steven',
+        store,
+        log: (l) => lines.push(l),
+      }),
+    )
+    expect(code).toBe(1)
+    expect(lines[0]).toBe(RAISE_REFUSALS['no-ceiling'])
+    expect(await store.read(CONTROL_STREAM)).toEqual([])
+  })
+
+  it('raises with nothing standing', async () => {
     const store = createMemoryEventStore()
     const lines: string[] = []
     const code = await Effect.runPromise(
       ceilingRaise({ ...healthy, toUsd: 40, by: 'human:steven', store, log: (l) => lines.push(l) }),
     )
-    expect(code).toBe(1)
-    expect(lines[0]).toBe(
-      "today's ceiling has not been reached — nothing to raise; to change the figure for every day, edit limits.day_usd",
-    )
+    expect(code).toBe(0)
+    expect((await store.read(CONTROL_STREAM)).map((e) => e.type)).toEqual(['DayCeilingLifted'])
   })
 })
 
