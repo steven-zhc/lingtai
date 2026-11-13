@@ -1,7 +1,7 @@
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { coloured, paint } from '@lingtai/env/colour'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
-import { Console, Effect, Result } from 'effect'
+import { Console, Effect } from 'effect'
 /**
  * The `@effect/cli` side of the entry (#616). Loaded by `entry.ts` with a
  * dynamic `import()` and only for a command named in `commands.ts`, so a word
@@ -1559,6 +1559,12 @@ export const cli = (
 export const closeStores: Effect.Effect<void, unknown> = Effect.gen(function* () {
   const { closeProcessLogEffect } = yield* Effect.promise(() => import('@lingtai/event-store'))
   const { closeProcessProjectionsEffect } = yield* Effect.promise(() => import('@lingtai/projector'))
-  const settled = yield* Effect.all([closeProcessLogEffect(), closeProcessProjectionsEffect()], { mode: 'result' })
-  for (const r of settled) if (Result.isFailure(r)) return yield* Effect.fail(r.failure)
+  // `exit` and not `mode: 'result'`: a close that rejects is a defect, which `result` lets escape and so skips the other.
+  const settled = yield* Effect.all(
+    [Effect.exit(closeProcessLogEffect()), Effect.exit(closeProcessProjectionsEffect())],
+    {
+      concurrency: 'unbounded',
+    },
+  )
+  for (const r of settled) if (r._tag === 'Failure') return yield* Effect.failCause(r.cause)
 })
