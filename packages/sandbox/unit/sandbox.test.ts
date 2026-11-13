@@ -417,6 +417,10 @@ describe('refuseProtected', () => {
     expect(refuseProtected([`${h}/work/out`], host, { mirror })).toEqual([])
     expect(refuseProtected([`${h}/.ssh/../.ssh`], host, { mirror })[0]?.relation).toBe('is')
     expect(refuseProtected(['/t'], host, { mirror }).every((r) => r.relation === 'contains')).toBe(true)
+    // srt reads a path as a glob: `/**` and friends reach everything under the static prefix.
+    for (const g of [`${h}/**`, `${h}/*`, `${h}/.l*`, `${h}/{a,.local}/x`, `${h}/.local/**`, '/**'])
+      expect(refuseProtected([g], host, { mirror }).length).toBeGreaterThan(0)
+    expect(refuseProtected([`${h}/work/**`], host, { mirror })).toEqual([])
     expect(refuseProtected(['rel/path'], host, { mirror })[0]?.relation).toBe('relative')
   })
 

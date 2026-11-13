@@ -19,16 +19,24 @@ import { SandboxLayer } from './sandbox.ts'
 
 type Manager = typeof SandboxManager
 
+/** Keeps srt's own error: Effect's default wrapper would replace its message with a generic one. */
+const raw = (e: unknown): unknown => e
+
 export const srtPort: SrtPort = {
   initialize: (config) =>
-    Effect.tryPromise(() => SandboxManager.initialize(config as Parameters<Manager['initialize']>[0])),
-  isSupportedPlatform: Effect.try(() => SandboxManager.isSupportedPlatform()),
-  checkDependencies: Effect.try(() => SandboxManager.checkDependencies()),
-  registerCommandNetworkLists: (id, lists) => Effect.try(() => SandboxManager.registerCommandNetworkLists(id, lists)),
-  unregisterCommandNetworkLists: (id) => Effect.try(() => SandboxManager.unregisterCommandNetworkLists(id)),
+    Effect.tryPromise({
+      try: () => SandboxManager.initialize(config as Parameters<Manager['initialize']>[0]),
+      catch: raw,
+    }),
+  isSupportedPlatform: Effect.try({ try: () => SandboxManager.isSupportedPlatform(), catch: raw }),
+  checkDependencies: Effect.try({ try: () => SandboxManager.checkDependencies(), catch: raw }),
+  registerCommandNetworkLists: (id, lists) =>
+    Effect.try({ try: () => SandboxManager.registerCommandNetworkLists(id, lists), catch: raw }),
+  unregisterCommandNetworkLists: (id) =>
+    Effect.try({ try: () => SandboxManager.unregisterCommandNetworkLists(id), catch: raw }),
   wrapWithSandboxArgv: (command, customConfig, options) =>
-    Effect.tryPromise(
-      () =>
+    Effect.tryPromise({
+      try: () =>
         SandboxManager.wrapWithSandboxArgv(
           command,
           undefined,
@@ -37,10 +45,11 @@ export const srtPort: SrtPort = {
           undefined,
           options,
         ),
+      catch: raw,
       // Only `argv` leaves: the `env` srt returns is `process.env`.
-    ).pipe(Effect.map(({ argv }) => ({ argv }))),
-  cleanupAfterCommand: Effect.try(() => SandboxManager.cleanupAfterCommand()),
-  reset: Effect.tryPromise(() => SandboxManager.reset()),
+    }).pipe(Effect.map(({ argv }) => ({ argv }))),
+  cleanupAfterCommand: Effect.try({ try: () => SandboxManager.cleanupAfterCommand(), catch: raw }),
+  reset: Effect.tryPromise({ try: () => SandboxManager.reset(), catch: raw }),
 }
 
 const unavailable = (reason: string) => new SandboxUnavailable({ reason, sentences: [] })
@@ -55,7 +64,9 @@ export const readHost: Effect.Effect<HostFacts, SandboxUnavailable> = Effect.gen
   // `stateDir(env)` only after HOME passed: bare `stateDir()` falls back to `os.homedir()`.
   const state = stateDir(env)
   if (!state.startsWith('/')) return yield* unavailable('the state directory is not absolute')
-  const tmpdirReal = yield* Effect.tryPromise(() => realpath(tmp)).pipe(Effect.orElseSucceed(() => tmp))
+  const tmpdirReal = yield* Effect.tryPromise({ try: () => realpath(tmp), catch: raw }).pipe(
+    Effect.orElseSucceed(() => tmp),
+  )
   return {
     platform: process.platform,
     home,
@@ -72,7 +83,8 @@ export const HostLive = Layer.effect(Host, readHost)
 export const SrtLive = Layer.succeed(Srt, srtPort)
 
 export const SandboxFsLive = Layer.succeed(SandboxFs, {
-  ensureDir: (path: string) => Effect.tryPromise(() => mkdir(path, { recursive: true })).pipe(Effect.asVoid),
+  ensureDir: (path: string) =>
+    Effect.tryPromise({ try: () => mkdir(path, { recursive: true }), catch: raw }).pipe(Effect.asVoid),
 })
 
 /** Everything, from the process outward. S4–S6 provide this at their host's edge. */
