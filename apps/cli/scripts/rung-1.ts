@@ -1,5 +1,5 @@
 import { productionPatterns } from '@lingtai/agent-env'
-import { prepareWorktree, provisionWorktree, removeWorktree, resolveAgentEnv, runnableEnv } from '@lingtai/conductor'
+import { prepareWorktree, resolveAgentEnv, runnableEnv } from '@lingtai/conductor'
 import type { Envelope, ToAppend } from '@lingtai/domain'
 import { githubApp, hasGitHubApp } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store'
@@ -31,6 +31,8 @@ import { createGitHubClient } from '@lingtai/github'
  *   node --experimental-strip-types apps/cli/scripts/rung-1.ts <owner>/<repo>
  */
 import { baseOf, resolveRecipe, submodulesOf } from '@lingtai/recipe'
+import { provisionWorktreeEffect, removeWorktreeEffect } from '@lingtai/repo'
+import { Effect } from 'effect'
 
 const memory = (): EventStore & { events: Envelope[] } => {
   const events: Envelope[] = []
@@ -112,19 +114,21 @@ if (env.refusal) {
 }
 
 const runId = `pass-rung1-${crypto.randomUUID().slice(0, 8)}`
-const worktree = await provisionWorktree({
-  project: repo,
-  owner,
-  repo,
-  base: baseOf(recipe),
-  branch: `rung1/${runId}`,
-  runId,
-  submodules: submodulesOf(recipe),
-  plantAt: recipe.env.plantAt,
-  env: env.values,
-  // The function, not a snapshot. Same as a real run.
-  token: () => client.token(),
-})
+const worktree = await Effect.runPromise(
+  provisionWorktreeEffect({
+    project: repo,
+    owner,
+    repo,
+    base: baseOf(recipe),
+    branch: `rung1/${runId}`,
+    runId,
+    submodules: submodulesOf(recipe),
+    plantAt: recipe.env.plantAt,
+    env: env.values,
+    // The function, not a snapshot. Same as a real run.
+    token: () => client.token(),
+  }),
+)
 done(`${worktree.path} at ${worktree.baseSha.slice(0, 7)}`)
 
 // ---- seam 4: prepare, against a real dependency tree -----------------------
@@ -150,7 +154,7 @@ if (result.ok) {
 }
 
 // The worktree is disposable; the mirror is the expensive part and stays.
-await removeWorktree({ project: repo, runId }).catch((err: Error) => {
+await Effect.runPromise(removeWorktreeEffect({ project: repo, runId })).catch((err: Error) => {
   console.log(`  !!  could not remove the worktree: ${err.message}`)
 })
 

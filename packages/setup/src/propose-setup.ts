@@ -16,6 +16,7 @@ import { SETUP_KINDS } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import { detectSetupEffect, type DetectedSetup, type SetupReader } from './detect-setup.ts'
+import { portCause } from './port-cause.ts'
 import { remedyFor, runtimeStateSentence, type RuntimeFound } from './runtimes.ts'
 import { githubSlugOfRemote, ticketSourceOf, type TicketSourceName } from './ticket-source.ts'
 
@@ -60,12 +61,12 @@ export interface Proposal {
 export interface ProposalReaders {
   setupReader: SetupReader
   /** The default branch; for a local path, the one the caller already worked out. */
-  defaultBranch: () => Promise<string | null>
-  runtimes: () => Promise<readonly RuntimeFound[]>
+  defaultBranch: () => Effect.Effect<string | null, unknown>
+  runtimes: () => Effect.Effect<readonly RuntimeFound[], unknown>
   /** `ticket-<project>-*` streams already in the log — the caller's `liveHistory`. */
-  history: (project: string) => Promise<readonly string[]>
+  history: (project: string) => Effect.Effect<readonly string[], unknown>
   /** `git remote get-url origin` of a local path: null where there is no `origin`. */
-  origin: (path: string) => Promise<string | null>
+  origin: (path: string) => Effect.Effect<string | null, unknown>
 }
 
 /** A new recipe excludes no label: `source.exclude` defaults to `[]`, so nothing is held until somebody says so. */
@@ -97,21 +98,25 @@ const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : Strin
 
 type Settled<T> = { ok: true; value: T } | { ok: false; reason: string }
 
-/** A reader's promise as an Effect that cannot fail: the failure is a value. */
-const settle = <T>(read: () => Promise<T>): Effect.Effect<Settled<T>, never> =>
-  Effect.tryPromise({ try: () => read(), catch: reasonOf }).pipe(
+/** A reader as an Effect that cannot fail: the failure, or a defect, is a value. */
+const settle = <T>(read: Effect.Effect<T, unknown>): Effect.Effect<Settled<T>, never> =>
+  portCause(read).pipe(
     Effect.match({
       onSuccess: (value): Settled<T> => ({ ok: true, value }),
-      onFailure: (reason): Settled<T> => ({ ok: false, reason }),
+      onFailure: (e): Settled<T> => ({ ok: false, reason: reasonOf(e) }),
     }),
   )
 
 /** One reader as an Effect that can only succeed: a failure is a `known: false` line. */
-const attempt = <T, A>(read: () => Promise<T>, ok: (value: T) => Line<A>, fallback: A): Effect.Effect<Line<A>, never> =>
-  Effect.tryPromise({ try: () => read(), catch: reasonOf }).pipe(
+const attempt = <T, A>(
+  read: Effect.Effect<T, unknown>,
+  ok: (value: T) => Line<A>,
+  fallback: A,
+): Effect.Effect<Line<A>, never> =>
+  portCause(read).pipe(
     Effect.match({
       onSuccess: ok,
-      onFailure: (reason): Line<A> => ({ known: false, reason, default: fallback }),
+      onFailure: (e): Line<A> => ({ known: false, reason: reasonOf(e), default: fallback }),
     }),
   )
 
@@ -119,30 +124,32 @@ const attempt = <T, A>(read: () => Promise<T>, ok: (value: T) => Line<A>, fallba
 function watched(reader: SetupReader): { reader: SetupReader; failure: () => string | null } {
   let failed: string | null = null
   const present = new Set<string>()
-  const note = (e: unknown): never => {
-    failed ??= reasonOf(e)
-    throw e
-  }
+  const note = (e: unknown) =>
+    Effect.sync(() => {
+      failed ??= reasonOf(e)
+    })
   return {
     reader: {
       has: (path) =>
-        reader
-          .has(path)
-          .then((there) => {
-            if (there) present.add(path)
-            return there
-          })
-          .catch(note),
+        portCause(reader.has(path)).pipe(
+          Effect.tap((there) =>
+            Effect.sync(() => {
+              if (there) present.add(path)
+            }),
+          ),
+          Effect.tapError(note),
+        ),
       // A reader answers `null` for "could not get this content", so a file
       // that `has` just found and `read` cannot return is a failed read.
       read: (path) =>
-        reader
-          .read(path)
-          .then((text) => {
-            if (text === null && present.has(path)) failed ??= `${path} exists but could not be read`
-            return text
-          })
-          .catch(note),
+        portCause(reader.read(path)).pipe(
+          Effect.tap((text) =>
+            Effect.sync(() => {
+              if (text === null && present.has(path)) failed ??= `${path} exists but could not be read`
+            }),
+          ),
+          Effect.tapError(note),
+        ),
     },
     failure: () => failed,
   }
@@ -163,7 +170,7 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
         : { known: false, reason: `the repository could not be read: ${readFailure}`, default: fallback }
 
     const base = yield* attempt(
-      readers.defaultBranch,
+      readers.defaultBranch(),
       (b): Line<string | null> =>
         b === null
           ? { known: false, reason: 'the default branch could not be determined', default: null }
@@ -171,7 +178,7 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
       null,
     )
 
-    const probed = yield* settle(readers.runtimes)
+    const probed = yield* settle(readers.runtimes())
     const foundRuntimes = probed.ok ? probed.value : []
     const signedIn = foundRuntimes.filter((r) => r.signedIn).map((r) => r.id)
     const agents = defaultAgents(signedIn)
@@ -202,8 +209,8 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
 
     // History overrides `origin`: another source would number its own tickets
     // into the same streams (`DIFFERENT_SOURCE_CLASH`, apps/cli/src/source.ts).
-    const history = yield* settle(() => readers.history(project))
-    const origin = target.kind === 'local' ? yield* settle(() => readers.origin(target.path)) : null
+    const history = yield* settle(readers.history(project))
+    const origin = target.kind === 'local' ? yield* settle(readers.origin(target.path)) : null
     const repository =
       target.kind === 'github'
         ? { owner: target.owner, repo: target.repo }

@@ -1,6 +1,7 @@
 import { type RecipeFiles, recipePath } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { type AddWorld, addFlow } from '../src/add.ts'
@@ -29,7 +30,10 @@ const HOME = '/home/me/.lingtai'
 // answer outright rather than reading it as "none": with no `--install` flag
 // to short-circuit it, a test that answers every later question `''` needs a
 // detected default to take.
-const SETUP_READER: SetupReader = { has: async (path) => path === 'pnpm-lock.yaml', read: async () => null }
+const SETUP_READER: SetupReader = {
+  has: (path) => Effect.succeed(path === 'pnpm-lock.yaml'),
+  read: () => Effect.succeed(null),
+}
 
 function mapFiles(initial: Record<string, string> = {}): RecipeFiles {
   const store = new Map(Object.entries(initial))

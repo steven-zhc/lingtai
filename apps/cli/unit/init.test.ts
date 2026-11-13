@@ -1,5 +1,6 @@
 import type { GhStatus } from '@lingtai/github'
 import type { RecipeFiles } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { parseDocument } from 'yaml'
 
@@ -127,7 +128,7 @@ function harness(
     // answers every question empty, with no `--install` flag, needs a
     // detected default to answer against.
     exists: async () => true,
-    setupReader: () => ({ has: async (path) => path === 'pnpm-lock.yaml', read: async () => null }),
+    setupReader: () => ({ has: (path) => Effect.succeed(path === 'pnpm-lock.yaml'), read: () => Effect.succeed(null) }),
     database: async () => ({ ok: true, schema: { created: false, repaired: [] } }),
     ghStatus: async () => options.ghStatus ?? { ok: false, reason: 'missing', detail: 'gh is not installed' },
     app: async () => options.app ?? { configured: false },

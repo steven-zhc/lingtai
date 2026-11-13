@@ -34,7 +34,10 @@ vi.mock('node:fs/promises', () => ({
 }))
 
 import { mirrorWrite } from '../src/mirror-lock.ts'
-import { provisionWorktree } from '../src/worktree.ts'
+import { provisionWorktreeEffect } from '../src/worktree.ts'
+
+const provisionWorktree = (o: Parameters<typeof provisionWorktreeEffect>[0]) =>
+  Effect.runPromise(provisionWorktreeEffect(o))
 import { ensureMirrorEffect } from '../src/worktree.ts'
 
 const settle = () => new Promise((r) => setTimeout(r, 0))

@@ -79,7 +79,7 @@ function runtimesFrom(signedIn: readonly string[]): RuntimeFound[] {
   }))
 }
 
-const EMPTY_SETUP_READER: SetupReader = { has: async () => false, read: async () => null }
+const EMPTY_SETUP_READER: SetupReader = { has: () => Effect.succeed(false), read: () => Effect.succeed(null) }
 
 interface Harness {
   world: FirstProjectWorld

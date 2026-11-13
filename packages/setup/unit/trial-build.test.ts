@@ -9,6 +9,9 @@ import { describe, expect, it } from 'vitest'
 
 import { liveTrialEffect, runTrialEffect, TrialInterrupted, type TrialAt, type TrialDeps } from '../src/trial-build.ts'
 
+/** A fake port written as a promise, handed over as the Effect the port wants; a throw is the port's failure. */
+const lift = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
+
 const files: RecipeFiles = { read: async () => null, replace: async () => {} }
 const outcome = (ok: boolean, extra: Partial<CommandOutcome> = {}): CommandOutcome => ({
   ok,
@@ -24,11 +27,12 @@ function fakes(script: Record<string, CommandOutcome>, over: Partial<TrialDeps> 
   const cuts: { base: string; submodules: boolean }[] = []
   const removed: string[] = []
   const deps: TrialDeps = {
-    provision: async (o) => {
-      cuts.push({ base: o.base, submodules: o.submodules })
-      return { path: '/wt' }
-    },
-    remove: async ({ runId }) => void removed.push(runId),
+    provision: (o) =>
+      lift(async () => {
+        cuts.push({ base: o.base, submodules: o.submodules })
+        return { path: '/wt' }
+      }),
+    remove: ({ runId }) => lift(async () => void removed.push(runId)),
     run: async (o) => {
       ran.push({ run: o.run, cwd: o.cwd, timeoutLabel: o.timeoutLabel })
       return script[o.run] ?? outcome(true)
@@ -95,9 +99,10 @@ describe('runTrialEffect', () => {
     const { deps, ran, removed } = fakes(
       {},
       {
-        provision: async () => {
-          throw new Error('fatal: could not clone')
-        },
+        provision: () =>
+          lift(async () => {
+            throw new Error('fatal: could not clone')
+          }),
       },
     )
     const { results } = await Effect.runPromise(runTrialEffect(AT, deps, 'pnpm i', ['pnpm build']))
@@ -146,10 +151,11 @@ describe('runTrialEffect', () => {
       {},
       {
         resolveEnv: async () => ({ values: {}, refusal: 'FOO is required' }) as never,
-        provision: async () => {
-          provisioned = true
-          return { path: '/wt' }
-        },
+        provision: () =>
+          lift(async () => {
+            provisioned = true
+            return { path: '/wt' }
+          }),
       },
     )
     const { results } = await Effect.runPromise(runTrialEffect(AT, deps, 'i', ['x', 'y']))
@@ -192,9 +198,10 @@ describe('runTrialEffect', () => {
     const { deps } = fakes(
       {},
       {
-        remove: async () => {
-          throw new Error('EACCES')
-        },
+        remove: () =>
+          lift(async () => {
+            throw new Error('EACCES')
+          }),
         log: (l) => void lines.push(l),
       },
     )
@@ -209,10 +216,11 @@ describe('runTrialEffect', () => {
     const { deps, removed } = fakes(
       {},
       {
-        provision: async () => {
-          controller.abort()
-          throw new Error('git killed')
-        },
+        provision: () =>
+          lift(async () => {
+            controller.abort()
+            throw new Error('git killed')
+          }),
       },
     )
     await expect(

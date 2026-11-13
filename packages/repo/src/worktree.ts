@@ -253,10 +253,6 @@ export const provisionWorktreeEffect = Effect.fn('repo.provision')(function* (
   )
 })
 
-export function provisionWorktree(options: ProvisionOptions): Promise<Worktree> {
-  return Effect.runPromise(provisionWorktreeEffect(options))
-}
-
 /**
  * Removes a run's worktree. The mirror stays; it is the expensive part.
  *
@@ -282,7 +278,3 @@ export const removeWorktreeEffect = Effect.fn('repo.remove')(function* (options:
     Effect.ignore,
   )
 })
-
-export function removeWorktree(options: { project: string; runId: string; home?: string }): Promise<void> {
-  return Effect.runPromise(removeWorktreeEffect(options))
-}

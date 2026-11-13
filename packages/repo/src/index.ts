@@ -26,9 +26,7 @@ export {
 export { mirrorWrite } from './mirror-lock.ts'
 export {
   ensureMirrorEffect,
-  provisionWorktree,
   provisionWorktreeEffect,
-  removeWorktree,
   removeWorktreeEffect,
   worktreePath,
   type ProvisionOptions,
