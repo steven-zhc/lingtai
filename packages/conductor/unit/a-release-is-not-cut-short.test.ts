@@ -16,20 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { runOnce } from '../src/conduct.ts'
 import { PROJECT, fakeGitHub, fakePorts, memoryStore, project, runtime, withPorts } from '../test/one-attempt.ts'
 
-/** A GitHub whose first labels write waits on `latch`: with the claim interrupted, that write is the release's. */
-function holdingTheQueuedLabel(said: string[], reached: Deferred.Deferred<void>, latch: Deferred.Deferred<void>) {
-  const client = fakeGitHub(said)
-  const setLabels = client.setLabels.bind(client)
-  return {
-    ...client,
-    setLabels: async (n: number, labels: readonly string[]) => {
-      await Effect.runPromise(Deferred.succeed(reached, undefined).pipe(Effect.andThen(Deferred.await(latch))))
-      return setLabels(n, labels)
-    },
-  } as typeof client
-}
-
-describe('a release whose labels write is still in flight when the pass is interrupted', () => {
+describe('a release whose TicketReleased append is still in flight when the pass is interrupted', () => {
   it('records the release, the labels write and its outcome once the write is let through', async () => {
     const base = memoryStore()
     const said: string[] = []
@@ -38,6 +25,8 @@ describe('a release whose labels write is still in flight when the pass is inter
     // gives the item back through `release` on an *interruptible* path (not the
     // `Effect.ensuring` finalizer, which is uninterruptible whatever the release does).
     // No end plan is resolved on that path, so there is no `EndActionsResolved` to expect.
+    let reached!: Deferred.Deferred<void>
+    let latch!: Deferred.Deferred<void>
     const store: typeof base = {
       ...base,
       async append(streamId, expectedVersion, events) {
@@ -45,15 +34,21 @@ describe('a release whose labels write is still in flight when the pass is inter
           refused = true
           throw new Error('terminating connection')
         }
+        // The release's own append waits here. An interrupt that lands now is cut off only
+        // by the release's mask: the labels write is a *later* step, so no inner
+        // `uninterruptible` (`tellGitHubEffect`'s) can be what keeps it.
+        if (events.some((e) => e.type === 'TicketReleased')) {
+          await Effect.runPromise(Deferred.succeed(reached, undefined).pipe(Effect.andThen(Deferred.await(latch))))
+        }
         return base.append(streamId, expectedVersion, events)
       },
     }
 
     await Effect.runPromise(
       Effect.gen(function* () {
-        const reached = yield* Deferred.make<void>()
-        const latch = yield* Deferred.make<void>()
-        const client = holdingTheQueuedLabel(said, reached, latch)
+        reached = yield* Deferred.make<void>()
+        latch = yield* Deferred.make<void>()
+        const client = fakeGitHub(said)
         const pass = yield* Effect.forkChild(
           runOnce({
             recipe: () => resolveRecipe((p, r) => client.fileAt(p, r), project.base ?? 'main'),
@@ -69,10 +64,8 @@ describe('a release whose labels write is still in flight when the pass is inter
             log: () => {},
           }).pipe(Effect.provide(withPorts(fakePorts([], store)))),
         )
-        // The release is now inside its labels write; nothing after it has happened.
+        // The release is inside its TicketReleased append; nothing after it has happened.
         yield* Deferred.await(reached)
-        const before = (base.streams.get(`ticket-${PROJECT}-7`) ?? []).map((e) => e.type)
-        expect(before).toContain('TicketReleased')
         expect(said.some((line) => line.startsWith('labels'))).toBe(false)
         const interrupter = yield* Effect.forkChild(Fiber.interrupt(pass))
         for (let i = 0; i < 20; i++) yield* Effect.yieldNow
