@@ -25,8 +25,6 @@ export {
   type Runtime,
   type RuntimeCapabilities,
   type Spawned,
-  runtimeRun,
-  runtimeVersionOf,
   runtimeVersionOfEffect,
 } from './runtime.ts'
 export {

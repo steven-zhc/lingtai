@@ -121,18 +121,25 @@ export function chatDir(chatId: string, home = stateDir()): string {
  * Exported for `triage.ts` (`#428`), which contains a triage agent the same
  * way — no worktree, no tools — under its own id rather than a chat's.
  */
-export async function prepare(chatId: string, home = stateDir()): Promise<{ cwd: string; settingsPath: string }> {
-  const cwd = chatDir(chatId, home)
-  await rm(cwd, { recursive: true, force: true })
-  await mkdir(cwd, { recursive: true, mode: 0o700 })
-  const settingsPath = join(home, 'chats', `${chatId}.settings.json`)
-  await writeFile(
-    settingsPath,
-    `${JSON.stringify({ permissions: { defaultMode: 'default', deny: DENIED } }, null, 2)}\n`,
-    { mode: 0o600 },
-  )
-  return { cwd, settingsPath }
-}
+export const prepare = (
+  chatId: string,
+  home = stateDir(),
+): Effect.Effect<{ cwd: string; settingsPath: string }, unknown> =>
+  Effect.gen(function* () {
+    const io = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
+    const cwd = chatDir(chatId, home)
+    yield* io(() => rm(cwd, { recursive: true, force: true }))
+    yield* io(() => mkdir(cwd, { recursive: true, mode: 0o700 }))
+    const settingsPath = join(home, 'chats', `${chatId}.settings.json`)
+    yield* io(() =>
+      writeFile(
+        settingsPath,
+        `${JSON.stringify({ permissions: { defaultMode: 'default', deny: DENIED } }, null, 2)}\n`,
+        { mode: 0o600 },
+      ),
+    )
+    return { cwd, settingsPath }
+  })
 
 /**
  * One line per event, oldest first — the log as the assistant reads it.
@@ -319,7 +326,7 @@ export const answerDiscussion = (
   Effect.gen(function* () {
     const project = parseTicketStream(request.ticketId)?.project ?? ''
     const evidence = yield* gatherEvidence(request)
-    const { cwd, settingsPath } = yield* lift(() => prepare(request.chatId))
+    const { cwd, settingsPath } = yield* prepare(request.chatId)
     /**
      * The recipe's own `discuss:`, **asked rather than assumed** (`#313`, `#243`).
      *

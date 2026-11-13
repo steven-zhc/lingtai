@@ -54,18 +54,6 @@
     "why": "Runtime.checkAuth callers and apps/board/src/lib/recipe.ts await it; 0101 §7 lets the board keep a promise face"
   },
   {
-    "file": "packages/agent/src/runtime.ts",
-    "fn": "runtimeRun",
-    "until": "#790",
-    "why": "apps/cli/src/triage.ts:951 awaits it, until the apps/cli row"
-  },
-  {
-    "file": "packages/agent/src/runtime.ts",
-    "fn": "runtimeVersionOf",
-    "until": "#790",
-    "why": "apps/cli/src/triage.ts:945 awaits it, until the apps/cli row"
-  },
-  {
     "file": "packages/conductor/src/approve.ts",
     "fn": "approve",
     "until": "#790",
@@ -345,7 +333,7 @@
     "file": "packages/conductor/src/snapshot-state.ts",
     "fn": "readState",
     "until": "#790",
-    "why": "apps/cli (requeue, subscribers, status, grant-fix-round, triage's `waitTriage`, approve) and apps/board read a reducer's state as a promise"
+    "why": "apps/cli (requeue, subscribers, status, grant-fix-round, approve) and apps/board read a reducer's state as a promise"
   },
   {
     "file": "packages/conductor/src/split-ticket.ts",
@@ -981,25 +969,7 @@
     "file": "packages/repo/src/git.ts",
     "fn": "git",
     "until": "#790",
-    "why": "apps/board (actions, expand-prompts) keeps it by 0101 §7; apps/cli (triage-checkout) and packages/conductor git-refs call it as a promise"
-  },
-  {
-    "file": "packages/repo/src/mirror.ts",
-    "fn": "conflictedPathsAt",
-    "until": "#790",
-    "why": "apps/cli triage.ts, whose deps.mirror type is promise-shaped"
-  },
-  {
-    "file": "packages/repo/src/mirror.ts",
-    "fn": "diffStatAt",
-    "until": "#790",
-    "why": "apps/cli triage.ts, whose deps.mirror type is promise-shaped"
-  },
-  {
-    "file": "packages/repo/src/mirror.ts",
-    "fn": "listAt",
-    "until": "#790",
-    "why": "apps/cli (triage)"
+    "why": "apps/board (actions, expand-prompts) keeps it by 0101 §7; packages/conductor git-refs calls it as a promise"
   },
   {
     "file": "packages/repo/src/mirror.ts",
@@ -1009,15 +979,9 @@
   },
   {
     "file": "packages/repo/src/mirror.ts",
-    "fn": "readAt",
-    "until": "#790",
-    "why": "apps/cli (triage)"
-  },
-  {
-    "file": "packages/repo/src/mirror.ts",
     "fn": "refSha",
     "until": "#790",
-    "why": "apps/cli (triage) and apps/board task.ts"
+    "why": "apps/board task.ts and app/actions.ts"
   },
   {
     "file": "packages/repo/src/worktree.ts",

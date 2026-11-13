@@ -14,9 +14,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
+import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { conflictedPathsAt, diffStatAt, mirrorPathFor } from '../src/index.ts'
+import { conflictedPathsAtEffect, diffStatAtEffect, mirrorPathFor } from '../src/index.ts'
 
 const exec = promisify(execFile)
 const g = (args: string[], cwd: string) =>
@@ -80,7 +81,7 @@ afterAll(async () => {
 
 describe('diffStatAt', () => {
   it('diffs from the merge base, not the base ref itself — so a base that moved on does not show up as reverted', async () => {
-    const stat = await diffStatAt({ project: PROJECT, home, base: baseSha, head: headSha })
+    const stat = await Effect.runPromise(diffStatAtEffect({ project: PROJECT, home, base: baseSha, head: headSha }))
 
     expect(stat).not.toBeNull()
     expect(stat).toContain('head-only.txt')
@@ -91,7 +92,9 @@ describe('diffStatAt', () => {
   })
 
   it('returns null rather than throwing when the mirror has no such ref', async () => {
-    const stat = await diffStatAt({ project: PROJECT, home, base: baseSha, head: '0'.repeat(40) })
+    const stat = await Effect.runPromise(
+      diffStatAtEffect({ project: PROJECT, home, base: baseSha, head: '0'.repeat(40) }),
+    )
 
     expect(stat).toBeNull()
   })
@@ -120,7 +123,9 @@ describe('conflictedPathsAt', () => {
     await g(['push', '-q', 'origin', 'conflict-head'], work)
     const theirs = (await g(['rev-parse', 'HEAD'], work)).stdout.trim()
 
-    const paths = await conflictedPathsAt({ project: PROJECT, home, baseSha: ours, headSha: theirs })
+    const paths = await Effect.runPromise(
+      conflictedPathsAtEffect({ project: PROJECT, home, baseSha: ours, headSha: theirs }),
+    )
     expect(paths.map((path) => path.path).sort()).toEqual(['README.md', 'both.txt', 'leading.txt'])
     const readme = paths.find((path) => path.path === 'README.md')!
     expect(readme.hunks).toBe(2)
