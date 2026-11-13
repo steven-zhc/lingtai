@@ -815,7 +815,7 @@ export interface PipelineOptions {
 
 /**
  * An `Action` whose `run` is an Effect (#1041, #790 row 6): the one
- * implementation, which `promiseAction` wraps for the holders that still await.
+ * implementation, which `actionOver` wraps for the holders that still await.
  *
  * **Its error channel is `never`.** An action's answer is a verdict, as an agent
  * run's is a `RunOutcome`; a dep that rejects is a defect, and the pipeline turns
@@ -839,25 +839,19 @@ const portsOf = new WeakMap<Action, ActionPort>()
 export const liftPromise = <A>(thunk: () => PromiseLike<A> | A): Effect.Effect<A> =>
   Effect.promise(() => new Promise<A>((resolve) => resolve(thunk())))
 
-/** Every promise `Action` holder's way in. */
-export function actionRunFace(port: ActionPort, context: ActionContext): Promise<ActionResult> {
-  return Effect.runPromise(port.run(context))
-}
-
-/** The promise shape of a port: same name, kind and yields, `run` through the face. */
-export function promiseAction(port: ActionPort): Action {
-  const action: Action = {
-    name: port.name,
-    kind: port.kind,
-    yields: port.yields,
-    run: (context) => actionRunFace(port, context),
-  }
+/**
+ * An `Action` over a port, its `run` given by the caller. The port is
+ * remembered so `fromPromiseAction` hands the pipeline the port itself and the
+ * pipeline runs it in its own fiber; the promise `run` is for whoever awaits.
+ */
+export function actionOver(port: ActionPort, run: Action['run']): Action {
+  const action: Action = { name: port.name, kind: port.kind, yields: port.yields, run }
   portsOf.set(action, port)
   return action
 }
 
 /**
- * The port behind an action: the one `promiseAction` wrapped, when there is
+ * The port behind an action: the one `actionOver` wrapped, when there is
  * one, and otherwise a lift of a hand-written `run` (a test fake).
  */
 export function fromPromiseAction(action: Action): ActionPort {
@@ -873,11 +867,6 @@ export function fromPromiseAction(action: Action): ActionPort {
 
 /** `PipelineOptions` over ports. `emit` and `recordPrompt` stay promises: they are the pass's own. */
 export type PortPipelineOptions = Omit<PipelineOptions, 'actions'> & { actions: readonly ActionPort[] }
-
-const portOptions = (options: PipelineOptions): PortPipelineOptions => ({
-  ...options,
-  actions: options.actions.map(fromPromiseAction),
-})
 
 /**
  * Runs the actions in recipe order and stops at the first failure.
@@ -1230,9 +1219,4 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
 function elapsed(ms: number): string {
   const s = Math.round(ms / 1000)
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
-}
-
-/** The promise shape of `runActionPipelineEffect`: the same pipeline, awaited. */
-export function runActionPipeline(options: PipelineOptions): Promise<PipelineResult> {
-  return Effect.runPromise(runActionPipelineEffect(portOptions(options)))
 }

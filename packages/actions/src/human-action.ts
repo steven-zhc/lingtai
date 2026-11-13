@@ -21,7 +21,7 @@
  */
 import { Effect } from 'effect'
 
-import { promiseAction, type Action, type ActionContext, type ActionPort, type ActionResult } from './action.ts'
+import { type ActionContext, type ActionPort, type ActionResult } from './action.ts'
 
 export interface HumanActionSpec {
   name: string
@@ -49,8 +49,4 @@ export function makeHumanAction(spec: HumanActionSpec): ActionPort {
       })
     },
   }
-}
-
-export function createHumanAction(spec: HumanActionSpec): Action {
-  return promiseAction(makeHumanAction(spec))
 }

@@ -10,7 +10,8 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { runActionPipeline, type Action, type ActionContext, type ActionResult } from '../src/action.ts'
+import { type Action, type ActionContext, type ActionResult } from '../src/action.ts'
+import { runActionPipeline } from '../test/promise-actions.ts'
 
 const context: ActionContext = { runId: 'pass-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
 

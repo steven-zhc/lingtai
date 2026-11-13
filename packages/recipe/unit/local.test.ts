@@ -2,6 +2,7 @@
  * The recipe from this machine (0046 §3, #180). No filesystem: the reader is
  * a map from path to text, and the home is a name.
  */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -12,7 +13,7 @@ import {
   RecipeMissingError,
   machinePath,
   recipePath,
-  resolveLocalRecipe,
+  resolveLocalRecipeEffect,
   resolveSource,
   writtenAgent,
 } from '../src/index.ts'
@@ -68,7 +69,7 @@ const MOVED = new RegExp(
 
 describe('resolveLocalRecipe', () => {
   it('reads ~/.lingtai/<project>/recipe.yml, with no request', async () => {
-    const resolved = await resolveLocalRecipe('app', withMachine(undefined))
+    const resolved = await Effect.runPromise(resolveLocalRecipeEffect('app', withMachine(undefined)))
     expect(recipePath('app', HOME)).toBe(`${HOME}/app/recipe.yml`)
     expect(resolved.recipe.steps.proposed.map((a) => a.name)).toEqual(['build'])
     expect(resolved.ref).toBe('main')
@@ -88,7 +89,7 @@ describe('resolveLocalRecipe', () => {
    * reading some other file.
    */
   it('names a default as a default, and this file only for what this file carries', async () => {
-    const silent = await resolveLocalRecipe('app', withMachine(undefined))
+    const silent = await Effect.runPromise(resolveLocalRecipeEffect('app', withMachine(undefined)))
     expect(silent.provenance?.['source.backoff']).toBe('1h ← default')
     expect(silent.provenance?.['runtime.budget.attempts']).toBe('5 ← default')
     // `discuss:` is a recipe that names no discussion — the row exists and
@@ -96,18 +97,20 @@ describe('resolveLocalRecipe', () => {
     expect(silent.provenance?.['discuss.agent']).toBe('claude-code ← default')
     expect(silent.provenance?.['discuss.limits.turns']).toBe('40 ← default')
 
-    const spoken = await resolveLocalRecipe('app', {
-      home: HOME,
-      signedIn: signed('claude-code'),
-      read: files({
-        [recipePath('app', HOME)]: `${RECIPE.replace('  kinds: [bug]', '  kinds: [bug]\n  backoff: 30m')}
+    const spoken = await Effect.runPromise(
+      resolveLocalRecipeEffect('app', {
+        home: HOME,
+        signedIn: signed('claude-code'),
+        read: files({
+          [recipePath('app', HOME)]: `${RECIPE.replace('  kinds: [bug]', '  kinds: [bug]\n  backoff: 30m')}
 runtime:
   budget: { attempts: 9 }
 discuss:
   limits: { turns: 7 }
 `,
+        }),
       }),
-    })
+    )
     expect(spoken.provenance?.['source.backoff']).toBe(`30m ← ${HOME}/app/recipe.yml`)
     // Per field, as `runtime.limits` is: the three numbers beside `attempts`
     // are still the schema's, and saying otherwise is the same falsehood.
@@ -141,7 +144,7 @@ env: { plantAt: .env.local }
       read: files({ [recipePath('app', HOME)]: recipe }),
     })
 
-    const extended = await resolveLocalRecipe('app', read(`${bare}extends: pnpm-workspace\n`))
+    const extended = await Effect.runPromise(resolveLocalRecipeEffect('app', read(`${bare}extends: pnpm-workspace\n`)))
     expect(extended.provenance?.['steps']).toBe(
       'claim 0, admit 0, prepared 1, design 0, implement 0, build 1, review 0, proposed 0, merge 0, end 0 ← preset pnpm-workspace',
     )
@@ -152,7 +155,7 @@ env: { plantAt: .env.local }
 
     // Without one, ten empty steps nobody wrote down — a default, and this
     // file is the one place the answer is not.
-    const alone = await resolveLocalRecipe('app', read(bare))
+    const alone = await Effect.runPromise(resolveLocalRecipeEffect('app', read(bare)))
     expect(alone.provenance?.['steps']).toBe(
       'claim 0, admit 0, prepared 0, design 0, implement 0, build 0, review 0, proposed 0, merge 0, end 0 ← default',
     )
@@ -162,16 +165,19 @@ env: { plantAt: .env.local }
     // preset.gates` is the preset's, so the run gets `build: build` and a
     // reader who commented the block out and is asking why must be sent to the
     // preset. A key present and empty used to read as a key this file carried.
-    const emptied = await resolveLocalRecipe('app', read(`${bare}extends: pnpm-workspace\nsteps:\n`))
+    const emptied = await Effect.runPromise(
+      resolveLocalRecipeEffect('app', read(`${bare}extends: pnpm-workspace\nsteps:\n`)),
+    )
     expect(emptied.recipe.steps.build).toHaveLength(1)
     expect(emptied.provenance?.['steps']).toBe(
       'claim 0, admit 0, prepared 1, design 0, implement 0, build 1, review 0, proposed 0, merge 0, end 0 ← preset pnpm-workspace',
     )
 
     // And a file that carries them says so, in all three.
-    const own = await resolveLocalRecipe(
-      'app',
-      read(`
+    const own = await Effect.runPromise(
+      resolveLocalRecipeEffect(
+        'app',
+        read(`
 version: 2
 extends: pnpm-workspace
 repo: { base: main }
@@ -181,6 +187,7 @@ steps:
   proposed:
     - { name: build, run: pnpm test }
 `),
+      ),
     )
     const file = `${HOME}/app/recipe.yml`
     // The file's gates replace the preset's whole, which is `applyPreset`'s
@@ -194,49 +201,57 @@ steps:
 
   it('refuses a missing recipe by its path', async () => {
     const options = { home: HOME, signedIn: signed('claude-code'), read: files({}) }
-    await expect(resolveLocalRecipe('app', options)).rejects.toThrow(RecipeMissingError)
-    await expect(resolveLocalRecipe('app', options)).rejects.toThrow(`${HOME}/app/recipe.yml`)
+    await expect(Effect.runPromise(resolveLocalRecipeEffect('app', options))).rejects.toThrow(RecipeMissingError)
+    await expect(Effect.runPromise(resolveLocalRecipeEffect('app', options))).rejects.toThrow(`${HOME}/app/recipe.yml`)
   })
 
   /** Which runtime runs a step the recipe leaves open — the recipe's since `#372`. */
   describe('runtime.agent', () => {
     it('is the one the recipe names, even with two signed in', async () => {
-      const resolved = await resolveLocalRecipe(
-        'app',
-        withRecipe(`${RECIPE}runtime:\n  agent: codex\n`, signed('claude-code', 'codex')),
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect(
+          'app',
+          withRecipe(`${RECIPE}runtime:\n  agent: codex\n`, signed('claude-code', 'codex')),
+        ),
       )
       expect(resolved.recipe.runtime.agent).toBe('codex')
       expect(resolved.provenance?.['runtime.agent']).toBe(`codex ← ${recipePath('app', HOME)}`)
     })
 
     it('is the only one signed in, when nothing names one — and says it was detected', async () => {
-      const resolved = await resolveLocalRecipe('app', withMachine(undefined, signed('codex')))
+      const resolved = await Effect.runPromise(resolveLocalRecipeEffect('app', withMachine(undefined, signed('codex'))))
       expect(resolved.recipe.runtime.agent).toBe('codex')
       expect(resolved.provenance?.['runtime.agent']).toContain('detected')
     })
 
     it('is asked for, never picked, when more than one is signed in — and the recipe is where to write it', async () => {
-      const resolving = resolveLocalRecipe('app', withMachine(undefined, signed('claude-code', 'codex')))
+      const resolving = Effect.runPromise(
+        resolveLocalRecipeEffect('app', withMachine(undefined, signed('claude-code', 'codex'))),
+      )
       await expect(resolving).rejects.toThrow(AgentUnresolvedError)
-      await expect(resolveLocalRecipe('app', withMachine(undefined, signed('claude-code', 'codex')))).rejects.toThrow(
+      await expect(
+        Effect.runPromise(resolveLocalRecipeEffect('app', withMachine(undefined, signed('claude-code', 'codex')))),
+      ).rejects.toThrow(
         new RegExp(`claude-code and codex are all signed in.*which one should run.*in ${recipePath('app', HOME)}`),
       )
     })
 
     it('refuses by name when none is signed in', async () => {
-      await expect(resolveLocalRecipe('app', withMachine(undefined, signed()))).rejects.toThrow(
-        /no agent runtime is signed in/,
-      )
+      await expect(
+        Effect.runPromise(resolveLocalRecipeEffect('app', withMachine(undefined, signed()))),
+      ).rejects.toThrow(/no agent runtime is signed in/)
     })
 
     it('does not ask what is signed in when the recipe names one', async () => {
       let asked = false
-      await resolveLocalRecipe(
-        'app',
-        withRecipe(`${RECIPE}runtime:\n  agent: claude-code\n`, async () => {
-          asked = true
-          return []
-        }),
+      await Effect.runPromise(
+        resolveLocalRecipeEffect(
+          'app',
+          withRecipe(`${RECIPE}runtime:\n  agent: claude-code\n`, async () => {
+            asked = true
+            return []
+          }),
+        ),
       )
       expect(asked).toBe(false)
     })
@@ -244,7 +259,9 @@ steps:
     /** A typo is the schema's to refuse by path — never replaced by what is signed in. */
     it('refuses one that is not a runtime, rather than detecting over it', async () => {
       await expect(
-        resolveLocalRecipe('app', withRecipe(`${RECIPE}runtime:\n  agent: claud\n`, signed('claude-code'))),
+        Effect.runPromise(
+          resolveLocalRecipeEffect('app', withRecipe(`${RECIPE}runtime:\n  agent: claud\n`, signed('claude-code'))),
+        ),
       ).rejects.toThrow(/runtime\.agent/)
     })
 
@@ -254,16 +271,22 @@ steps:
         'steps:\n',
         'steps:\n  review:\n    - name: cold\n      agent: codex\n      prompt: review\n',
       )
-      const resolved = await resolveLocalRecipe('app', withRecipe(`${withReview}runtime:\n  agent: claude-code\n`))
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect('app', withRecipe(`${withReview}runtime:\n  agent: claude-code\n`)),
+      )
       expect(resolved.provenance?.['steps.review.agent']).toBe(`codex ← ${recipePath('app', HOME)}`)
       expect(resolved.provenance?.['steps.implement.agent']).toBe('claude-code ← runtime.agent')
       expect(resolved.provenance).not.toHaveProperty('steps.proposed.agent')
     })
 
     it('is refused in the machine file by name, machine-wide and per project', async () => {
-      await expect(resolveLocalRecipe('app', withMachine('runtime:\n  agent: codex\n'))).rejects.toThrow(MOVED)
       await expect(
-        resolveLocalRecipe('app', withMachine('projects:\n  app:\n    runtime:\n      agent: codex\n')),
+        Effect.runPromise(resolveLocalRecipeEffect('app', withMachine('runtime:\n  agent: codex\n'))),
+      ).rejects.toThrow(MOVED)
+      await expect(
+        Effect.runPromise(
+          resolveLocalRecipeEffect('app', withMachine('projects:\n  app:\n    runtime:\n      agent: codex\n')),
+        ),
       ).rejects.toThrow(/projects\.app: how a project's work is run/)
     })
   })
@@ -274,7 +297,9 @@ steps:
       const read = files({
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    rounds: 3\n`,
       })
-      const resolved = await resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
+      )
       expect(resolved.recipe.runtime.limits).toEqual({ ...LIMIT_DEFAULTS, rounds: 3 })
       expect(resolved.provenance?.['runtime.limits.rounds']).toBe(`3 ← ${recipePath('app', HOME)}`)
       expect(resolved.provenance?.['runtime.limits.turns']).toBe(`${LIMIT_DEFAULTS.turns} ← default`)
@@ -282,12 +307,14 @@ steps:
     })
 
     it('changes the hash, because a run under other limits is another run', async () => {
-      const a = await resolveLocalRecipe('app', withMachine(undefined))
-      const b = await resolveLocalRecipe('app', {
-        home: HOME,
-        signedIn: signed('claude-code'),
-        read: files({ [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 10\n` }),
-      })
+      const a = await Effect.runPromise(resolveLocalRecipeEffect('app', withMachine(undefined)))
+      const b = await Effect.runPromise(
+        resolveLocalRecipeEffect('app', {
+          home: HOME,
+          signedIn: signed('claude-code'),
+          read: files({ [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 10\n` }),
+        }),
+      )
       expect(a.configHash).not.toBe(b.configHash)
     })
 
@@ -301,11 +328,13 @@ steps:
       const read = files({
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits: { wall: "90" }\n`,
       })
-      const resolving = resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })
-      await expect(resolving).rejects.toThrow(RecipeInvalidError)
-      await expect(resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })).rejects.toThrow(
-        /runtime\.limits\.wall: must be a positive duration/,
+      const resolving = Effect.runPromise(
+        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
       )
+      await expect(resolving).rejects.toThrow(RecipeInvalidError)
+      await expect(
+        Effect.runPromise(resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read })),
+      ).rejects.toThrow(/runtime\.limits\.wall: must be a positive duration/)
     })
 
     /** Strict, as `DISPATCH.limits` already is — a typo is refused, not silently defaulted (`#371`). */
@@ -313,17 +342,22 @@ steps:
       const read = files({
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits: { turn: 7 }\n`,
       })
-      await expect(resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })).rejects.toThrow(
-        /runtime\.limits: Unrecognized key: "turn"/,
-      )
+      await expect(
+        Effect.runPromise(resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read })),
+      ).rejects.toThrow(/runtime\.limits: Unrecognized key: "turn"/)
     })
 
     it('is refused in the machine file by name, machine-wide and per project — nothing applied', async () => {
-      await expect(resolveLocalRecipe('app', withMachine('runtime:\n  limits:\n    rounds: 3\n'))).rejects.toThrow(
-        MOVED,
-      )
       await expect(
-        resolveLocalRecipe('app', withMachine('projects:\n  app:\n    runtime:\n      limits:\n        wall: 1h\n')),
+        Effect.runPromise(resolveLocalRecipeEffect('app', withMachine('runtime:\n  limits:\n    rounds: 3\n'))),
+      ).rejects.toThrow(MOVED)
+      await expect(
+        Effect.runPromise(
+          resolveLocalRecipeEffect(
+            'app',
+            withMachine('projects:\n  app:\n    runtime:\n      limits:\n        wall: 1h\n'),
+          ),
+        ),
       ).rejects.toThrow(/projects\.app: how a project's work is run/)
     })
   })
@@ -331,7 +365,7 @@ steps:
   /** Whose tickets this project takes (0046 §2, #181) — the recipe's since `#373`. */
   describe('runtime.assignee', () => {
     it('is absent when neither file says anything — `both`, and the hash is unchanged', async () => {
-      const resolved = await resolveLocalRecipe('app', withMachine(undefined))
+      const resolved = await Effect.runPromise(resolveLocalRecipeEffect('app', withMachine(undefined)))
       expect(resolved.recipe.runtime).not.toHaveProperty('assignee')
       expect(resolved.provenance?.['runtime.assignee.take']).toBe('both ← default')
       expect(resolved.provenance?.['runtime.assignee.login']).toBe('(none) ← default')
@@ -351,7 +385,9 @@ steps:
       const read = files({
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  assignee:\n    login: alice\n    take: mine\n`,
       })
-      const resolved = await resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
+      )
       expect(resolved.recipe.runtime.assignee).toEqual({ login: 'alice', take: 'mine' })
       expect(resolved.provenance?.['runtime.assignee.login']).toBe(`alice ← ${recipePath('app', HOME)}`)
       expect(resolved.provenance?.['runtime.assignee.take']).toBe(`mine ← ${recipePath('app', HOME)}`)
@@ -361,7 +397,9 @@ steps:
       const read = files({
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  assignee:\n    login: alice\n`,
       })
-      const resolved = await resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
+      )
       expect(resolved.recipe.runtime.assignee).toEqual({ login: 'alice', take: 'both' })
       expect(resolved.provenance?.['runtime.assignee.take']).toBe('both ← default')
       expect(resolved.provenance?.['runtime.assignee.login']).toBe(`alice ← ${recipePath('app', HOME)}`)
@@ -372,7 +410,7 @@ steps:
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  assignee:\n    take: mine\n`,
       })
       try {
-        await resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })
+        await Effect.runPromise(resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }))
         expect.unreachable()
       } catch (err) {
         expect(err).toBeInstanceOf(RecipeInvalidError)
@@ -388,19 +426,23 @@ steps:
         'steps:\n  claim:\n    - name: pick\n      queue:\n        kinds: [bug]\n        exclude: []\n        backoff: 1h\n        assignee:\n          take: unassigned\n  proposed:',
       )
       const read = files({ [recipePath('app', HOME)]: withClaim })
-      const resolved = await resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
+      )
       expect(resolved.provenance?.['runtime.assignee.take']).toBe(`unassigned ← ${recipePath('app', HOME)}`)
       expect(resolved.provenance?.['runtime.assignee.login']).toBe(`(none) ← ${recipePath('app', HOME)}`)
     })
 
     it('is refused in the machine file by name, machine-wide and per project', async () => {
-      await expect(resolveLocalRecipe('app', withMachine('runtime:\n  assignee:\n    take: both\n'))).rejects.toThrow(
-        MOVED,
-      )
       await expect(
-        resolveLocalRecipe(
-          'app',
-          withMachine('projects:\n  app:\n    runtime:\n      assignee:\n        take: mine\n'),
+        Effect.runPromise(resolveLocalRecipeEffect('app', withMachine('runtime:\n  assignee:\n    take: both\n'))),
+      ).rejects.toThrow(MOVED)
+      await expect(
+        Effect.runPromise(
+          resolveLocalRecipeEffect(
+            'app',
+            withMachine('projects:\n  app:\n    runtime:\n      assignee:\n        take: mine\n'),
+          ),
         ),
       ).rejects.toThrow(/projects\.app: how a project's work is run/)
     })
@@ -408,30 +450,36 @@ steps:
 
   describe('what belongs in the other file is refused, not dropped', () => {
     it('a steps key in the machine file is a parse error that says where a pass is configured', async () => {
-      const resolving = resolveLocalRecipe('app', withMachine('steps:\n  proposed: []\n'))
+      const resolving = Effect.runPromise(resolveLocalRecipeEffect('app', withMachine('steps:\n  proposed: []\n')))
       await expect(resolving).rejects.toThrow(MachineConfigInvalidError)
-      await expect(resolveLocalRecipe('app', withMachine('steps:\n  merge: []\n'))).rejects.toThrow(
-        `it is configured in the recipe, ${HOME}/app/recipe.yml`,
-      )
+      await expect(
+        Effect.runPromise(resolveLocalRecipeEffect('app', withMachine('steps:\n  merge: []\n'))),
+      ).rejects.toThrow(`it is configured in the recipe, ${HOME}/app/recipe.yml`)
     })
 
     it("names both when a project's section holds steps and a runtime", async () => {
-      const refusing = resolveLocalRecipe(
-        'app',
-        withMachine('projects:\n  app:\n    steps:\n      merge: []\n    runtime:\n      agent: codex\n'),
+      const refusing = Effect.runPromise(
+        resolveLocalRecipeEffect(
+          'app',
+          withMachine('projects:\n  app:\n    steps:\n      merge: []\n    runtime:\n      agent: codex\n'),
+        ),
       )
       await expect(refusing).rejects.toThrow(/projects\.app\.steps: an attempt is not configured/)
       await expect(
-        resolveLocalRecipe(
-          'app',
-          withMachine('projects:\n  app:\n    steps:\n      merge: []\n    runtime:\n      agent: codex\n'),
+        Effect.runPromise(
+          resolveLocalRecipeEffect(
+            'app',
+            withMachine('projects:\n  app:\n    steps:\n      merge: []\n    runtime:\n      agent: codex\n'),
+          ),
         ),
       ).rejects.toThrow(/projects\.app: how a project's work is run/)
     })
 
     it("so is one under a project's section", async () => {
       await expect(
-        resolveLocalRecipe('app', withMachine('projects:\n  app:\n    steps:\n      merge: []\n')),
+        Effect.runPromise(
+          resolveLocalRecipeEffect('app', withMachine('projects:\n  app:\n    steps:\n      merge: []\n')),
+        ),
       ).rejects.toThrow(/projects\.app\.steps: an attempt is not configured in the machine file/)
     })
 
@@ -441,20 +489,24 @@ steps:
      */
     it("names a project's section whatever it holds", async () => {
       await expect(
-        resolveLocalRecipe('app', withMachine('projects:\n  app:\n    gates:\n      merge: []\n')),
+        Effect.runPromise(
+          resolveLocalRecipeEffect('app', withMachine('projects:\n  app:\n    gates:\n      merge: []\n')),
+        ),
       ).rejects.toThrow(/projects\.app: how a project's work is run/)
     })
 
     it("and anything under the machine's runtime", async () => {
-      await expect(resolveLocalRecipe('app', withMachine('runtime:\n  tier: guarded\n'))).rejects.toThrow(
-        MachineConfigInvalidError,
-      )
+      await expect(
+        Effect.runPromise(resolveLocalRecipeEffect('app', withMachine('runtime:\n  tier: guarded\n'))),
+      ).rejects.toThrow(MachineConfigInvalidError)
     })
 
     it("leaves a section some other reader owns alone — the machine's own facts", async () => {
-      const resolved = await resolveLocalRecipe(
-        'app',
-        withMachine('database:\n  store: sqlite\ngithub:\n  app_id: "1"\nboard:\n  port: 18000\n'),
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect(
+          'app',
+          withMachine('database:\n  store: sqlite\ngithub:\n  app_id: "1"\nboard:\n  port: 18000\n'),
+        ),
       )
       expect(resolved.recipe.steps.proposed).toHaveLength(1)
     })
@@ -464,7 +516,9 @@ steps:
       const read = files({
         [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 5\n`,
       })
-      const resolved = await resolveLocalRecipe('app', { home: HOME, signedIn: signed('claude-code'), read })
+      const resolved = await Effect.runPromise(
+        resolveLocalRecipeEffect('app', { home: HOME, signedIn: signed('claude-code'), read }),
+      )
       expect(resolved.recipe.runtime.limits.turns).toBe(5)
     })
   })

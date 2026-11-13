@@ -417,10 +417,6 @@ export const appInstallationsEffect = (reader: AppReader): Effect.Effect<Install
     )
   })
 
-export function appInstallations(reader: AppReader): Promise<Installation[]> {
-  return Effect.runPromise(appInstallationsEffect(reader))
-}
-
 /**
  * What one installation can see.
  *
@@ -458,7 +454,3 @@ export const installationRepositoriesEffect = (
       `installation ${installationId} can see more than ${MAX_PAGES * PAGE} repositories — the listing is incomplete`,
     )
   })
-
-export function installationRepositories(reader: AppReader, installationId: number): Promise<VisibleRepository[]> {
-  return Effect.runPromise(installationRepositoriesEffect(reader, installationId))
-}

@@ -4,7 +4,7 @@
  * `setRecipe` — never written here, as `packages/recipe/unit/write.test.ts`
  * hands a `RecipeChange[]` to `setRecipe` directly.
  */
-import { type RecipeFiles, recipePath, resolveSource, setRecipe } from '@lingtai/recipe'
+import { type RecipeFiles, recipePath, resolveSource, setRecipeEffect } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -121,7 +121,7 @@ describe('askInstallAndBuild', () => {
       },
     ])
 
-    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
     expect(written.written).toBe(true)
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.prepared).toEqual([
@@ -161,7 +161,7 @@ steps:
       { path: ['steps', 'build'], value: [] },
     ])
 
-    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.prepared).toEqual([])
     expect(resolved.recipe.steps.build).toEqual([])
@@ -198,7 +198,7 @@ steps:
     ])
 
     // `because` is not a field a run: action may carry — setRecipe must accept this.
-    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.build).toEqual([
       { name: 'format', run: 'pnpm fmt:check', timeout: '15m', env: [] },
@@ -232,7 +232,7 @@ steps:
     if ('refused' in result) throw new Error(result.refused)
     expect(result.changes).toEqual([])
 
-    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
     expect(written).toEqual({ path: PATH, text: FIXTURE, written: false })
   })
 
@@ -255,7 +255,7 @@ env:
     if ('refused' in result) throw new Error(result.refused)
     expect(result.changes.some((c) => c.path.join('.') === 'steps.proposed')).toBe(false)
 
-    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
     expect(resolved.recipe.steps.proposed).toEqual([])
@@ -285,7 +285,7 @@ env:
     if ('refused' in result) throw new Error(result.refused)
     expect(result.changes.some((c) => c.path.join('.') === 'steps.prepared' && Array.isArray(c.value))).toBe(true)
 
-    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.prepared).toEqual([])
     // The preset declares nothing at `proposed`, so nothing runs there after the write either.
@@ -331,7 +331,7 @@ steps:
     )
     if ('refused' in result) throw new Error(result.refused)
 
-    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.build).toEqual([
       { name: 'test', run: 'pnpm test', timeout: '45m', env: ['TURBO_TOKEN'] },
@@ -361,7 +361,7 @@ steps:
     )
     if ('refused' in result) throw new Error(result.refused)
 
-    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.build).toEqual([
       { name: 'test', run: 'pnpm test', timeout: '45m', env: ['TURBO_TOKEN'] },
@@ -418,7 +418,7 @@ env:
     if ('refused' in result) throw new Error(result.refused)
     expect(lines).toContain('nothing will check a diff before review')
 
-    const written = await setRecipe('app', result.changes, { home: HOME, files })
+    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.build).toEqual([])
     expect(resolved.recipe.steps.proposed).toEqual([])
@@ -440,7 +440,7 @@ env:
       { path: ['env', 'plantAt'], value: '.env.local' },
       ...result.changes,
     ]
-    const written = await setRecipe('app', bundle, { home: HOME, files })
+    const written = await Effect.runPromise(setRecipeEffect('app', bundle, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.prepared).toEqual([])
     expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
@@ -531,7 +531,8 @@ steps:
     if ('refused' in result) throw new Error(result.refused)
     const build = result.changes.find((c) => c.path.join('.') === 'steps.build')?.value as { name: string }[]
     expect(build.map((b) => b.name)).toEqual(['fmt-check', 'uv run pytest'])
-    for (const change of result.changes) await setRecipe('app', [change], { home: HOME, files })
+    for (const change of result.changes)
+      await Effect.runPromise(setRecipeEffect('app', [change], { home: HOME, files }))
     expect(() => resolveSource(files.replaced.at(-1)!.text, PATH, PATH)).not.toThrow()
   })
 

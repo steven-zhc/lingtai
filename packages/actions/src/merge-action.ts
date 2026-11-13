@@ -43,14 +43,7 @@
 import type { RefusalReason } from '@lingtai/domain'
 import { Effect } from 'effect'
 
-import {
-  liftPromise,
-  promiseAction,
-  type Action,
-  type ActionContext,
-  type ActionPort,
-  type ActionResult,
-} from './action.ts'
+import { liftPromise, type ActionContext, type ActionPort, type ActionResult } from './action.ts'
 
 /**
  * How the lane lands it, and there is one value because `integrate.ts` offers
@@ -159,7 +152,3 @@ export function makeMergeAction(spec: MergeActionSpec, deps: MergePortDeps): Act
 export const mergePortDepsFrom = (deps: MergeActionDeps): MergePortDeps => ({
   land: (spec) => liftPromise(() => deps.land(spec)),
 })
-
-export function createMergeAction(spec: MergeActionSpec, deps: MergeActionDeps): Action {
-  return promiseAction(makeMergeAction(spec, mergePortDepsFrom(deps)))
-}

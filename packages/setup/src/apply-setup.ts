@@ -25,7 +25,7 @@
  * accepted: the recipe either add wrote may stay.
  */
 import type { ProjectState } from '@lingtai/domain'
-import { diskFiles, type RecipeChange, type RecipeFiles, recipePath, type Said, setRecipe } from '@lingtai/recipe'
+import { diskFiles, type RecipeChange, type RecipeFiles, recipePath, type Said, setRecipeEffect } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 /** What the questions decided: every change they made to the recipe, in order. */
@@ -76,22 +76,17 @@ export function draftFiles(base: RecipeFiles, path: string): RecipeFiles & { cha
  * what a caller resolves (the base, the config hash) before it registers.
  */
 export function previewSetup(target: ApplyTarget, answers: Answers): Effect.Effect<string, SetupWriteError> {
-  return Effect.tryPromise({
-    try: () => {
-      const path = recipePath(answers.project, target.home)
-      const scratch = draftFiles(target.files ?? diskFiles, path)
-      return scratch
-        .read(path)
-        .then((existing) =>
-          setRecipe(answers.project, answers.changes, {
-            home: target.home,
-            files: scratch,
-            ...(existing === null && answers.said !== undefined ? { said: answers.said } : {}),
-          }),
-        )
-        .then((written) => written.text)
-    },
-    catch: (err) => new SetupWriteError(`the recipe would not resolve: ${(err as Error).message}`),
+  return Effect.gen(function* () {
+    const path = recipePath(answers.project, target.home)
+    const scratch = draftFiles(target.files ?? diskFiles, path)
+    const unresolved = (err: unknown) => new SetupWriteError(`the recipe would not resolve: ${(err as Error).message}`)
+    const existing = yield* Effect.tryPromise({ try: () => scratch.read(path), catch: unresolved })
+    const written = yield* setRecipeEffect(answers.project, answers.changes, {
+      home: target.home,
+      files: scratch,
+      ...(existing === null && answers.said !== undefined ? { said: answers.said } : {}),
+    }).pipe(Effect.mapError(unresolved))
+    return written.text
   })
 }
 
@@ -112,15 +107,11 @@ export function applySetup<A, E>(
       try: () => files.read(path),
       catch: (err) => new SetupWriteError(`could not read ${path}: ${(err as Error).message}`),
     })
-    yield* Effect.tryPromise({
-      try: () =>
-        setRecipe(answers.project, answers.changes, {
-          home: target.home,
-          files,
-          ...(before === null && answers.said !== undefined ? { said: answers.said } : {}),
-        }),
-      catch: (err) => new SetupWriteError(`${path} was not written: ${(err as Error).message}`),
-    })
+    yield* setRecipeEffect(answers.project, answers.changes, {
+      home: target.home,
+      files,
+      ...(before === null && answers.said !== undefined ? { said: answers.said } : {}),
+    }).pipe(Effect.mapError((err) => new SetupWriteError(`${path} was not written: ${(err as Error).message}`)))
     const registered = yield* register
     return { path, registered }
   })

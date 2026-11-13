@@ -1,13 +1,6 @@
 import type { QueueActionDeps, WorkActionDeps } from '@lingtai/actions'
 import {
   NO_DESIGN,
-  createAgentAction,
-  createDraftAction,
-  createKeptRunAction,
-  createMergeAction,
-  createQueueAction,
-  createWorkAction,
-  createWorktreeAction,
   type Action,
   type ActionContext,
   type ActionFinding,
@@ -17,6 +10,15 @@ import {
   type MergeStrategy,
   type TakeAnswer,
 } from '@lingtai/actions'
+import {
+  createAgentAction,
+  createDraftAction,
+  createKeptRunAction,
+  createMergeAction,
+  createQueueAction,
+  createWorkAction,
+  createWorktreeAction,
+} from '@lingtai/actions/promise-actions'
 /**
  * The six bodies, read through the loop rather than beside it.
  *

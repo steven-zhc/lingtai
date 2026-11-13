@@ -174,7 +174,7 @@ const listGh = (
     listRepositories({
       auth: 'gh',
       projects: options.projects ?? [],
-      gh: { status: async () => options.status ?? OK, reader: gh.reader },
+      gh: { status: () => Effect.succeed(options.status ?? OK), reader: gh.reader },
     }),
   )
 

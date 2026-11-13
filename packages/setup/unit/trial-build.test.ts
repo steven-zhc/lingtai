@@ -2,7 +2,7 @@
  * The trial runner (#436) through fakes of the repo port and the process —
  * running a real `git` and a real shell is integration (0060 §1).
  */
-import type { CommandOutcome } from '@lingtai/actions'
+import type { CommandOutcome, RunCommandOptions } from '@lingtai/actions'
 import type { RecipeFiles } from '@lingtai/recipe'
 import { Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -22,7 +22,13 @@ const outcome = (ok: boolean, extra: Partial<CommandOutcome> = {}): CommandOutco
   ...extra,
 })
 
-function fakes(script: Record<string, CommandOutcome>, over: Partial<TrialDeps> = {}) {
+/** The process, written as a promise and handed over as the Effect the port wants. */
+type FakeRun = (o: RunCommandOptions) => Promise<CommandOutcome>
+
+function fakes(
+  script: Record<string, CommandOutcome>,
+  { run: overRun, ...over }: Partial<Omit<TrialDeps, 'run'>> & { run?: FakeRun } = {},
+) {
   const ran: { run: string; cwd: string; timeoutLabel?: string }[] = []
   const cuts: { base: string; submodules: boolean }[] = []
   const removed: string[] = []
@@ -33,10 +39,15 @@ function fakes(script: Record<string, CommandOutcome>, over: Partial<TrialDeps> 
         return { path: '/wt' }
       }),
     remove: ({ runId }) => lift(async () => void removed.push(runId)),
-    run: async (o) => {
-      ran.push({ run: o.run, cwd: o.cwd, timeoutLabel: o.timeoutLabel })
-      return script[o.run] ?? outcome(true)
-    },
+    run: (o) =>
+      Effect.promise(
+        overRun !== undefined
+          ? () => overRun(o)
+          : async () => {
+              ran.push({ run: o.run, cwd: o.cwd, timeoutLabel: o.timeoutLabel })
+              return script[o.run] ?? outcome(true)
+            },
+      ),
     resolveEnv: async () => ({ values: {}, refusal: null }) as never,
     runId: () => 'setup-1',
     log: () => {},

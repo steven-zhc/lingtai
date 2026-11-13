@@ -38,15 +38,7 @@
  */
 import { Effect } from 'effect'
 
-import {
-  fromPromiseAction,
-  liftPromise,
-  promiseAction,
-  type Action,
-  type ActionContext,
-  type ActionPort,
-  type ActionResult,
-} from './action.ts'
+import { liftPromise, type ActionContext, type ActionPort, type ActionResult } from './action.ts'
 
 /** What `clean` answered. A failure here is said, never swallowed (`#390`). */
 export type CleanAnswer = { readonly ok: true } | { readonly failed: string }
@@ -159,7 +151,3 @@ export const keptRunPortDepsFrom = (deps: KeptRunActionDeps): KeptRunPortDeps =>
   clean: () => liftPromise(() => deps.clean()),
   keep: (name) => liftPromise(() => deps.keep(name)),
 })
-
-export function createKeptRunAction(name: string, inner: Action, deps: KeptRunActionDeps): Action {
-  return promiseAction(makeKeptRunAction(name, fromPromiseAction(inner), keptRunPortDepsFrom(deps)))
-}

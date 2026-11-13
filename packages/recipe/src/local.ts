@@ -479,10 +479,6 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
   return { ...resolved, ref: options.base ?? baseOf(resolved.recipe), provenance }
 })
 
-export function resolveLocalRecipe(project: string, options: LocalRecipeOptions) {
-  return Effect.runPromise(resolveLocalRecipeEffect(project, options))
-}
-
 /**
  * What a recipe's text writes at `runtime.agent`, before any preset or
  * default: `absent`, a runtime, or `not a runtime`. A file that will not parse

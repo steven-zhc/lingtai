@@ -1,7 +1,6 @@
 export {
-  runActionPipeline,
   runActionPipelineEffect,
-  promiseAction,
+  actionOver,
   fromPromiseAction,
   type ActionPort,
   type PortPipelineOptions,
@@ -19,21 +18,12 @@ export {
   type SentBack,
   type TheDesign,
 } from './action.ts'
-export {
-  createProcessAction,
-  makeProcessAction,
-  EVIDENCE_BYTES,
-  EVIDENCE_LINES,
-  tail,
-  type ProcessActionSpec,
-} from './process-action.ts'
+export { makeProcessAction, EVIDENCE_BYTES, EVIDENCE_LINES, tail, type ProcessActionSpec } from './process-action.ts'
 export {
   buildDesignPrompt,
   buildReviewPrompt,
   reviewPromptParts,
   type DiffRead,
-  createAgentAction,
-  createDraftAction,
   makeAgentAction,
   makeDraftAction,
   agentPortDepsFrom,
@@ -55,7 +45,6 @@ export {
   type LandedTitle,
 } from './agent-action.ts'
 export {
-  createFileAction,
   makeFileAction,
   filePortDepsFrom,
   type FilePortDeps,
@@ -64,7 +53,6 @@ export {
   type KeptAnswer,
 } from './file-action.ts'
 export {
-  createKeptRunAction,
   makeKeptRunAction,
   keptRunPortDepsFrom,
   type KeptRunPortDeps,
@@ -73,7 +61,6 @@ export {
   type KeptRunAnswer,
 } from './kept-run-action.ts'
 export {
-  createFileBriefAction,
   makeFileBriefAction,
   fileBriefPortDepsFrom,
   type FileBriefPortDeps,
@@ -81,9 +68,8 @@ export {
   type FileBriefActionSpec,
   type ReadAnswer,
 } from './file-brief-action.ts'
-export { createHumanAction, makeHumanAction, type HumanActionSpec } from './human-action.ts'
+export { makeHumanAction, type HumanActionSpec } from './human-action.ts'
 export {
-  createWatchAction,
   makeWatchAction,
   watchPortDepsFrom,
   type WatchPortDeps,
@@ -91,7 +77,6 @@ export {
   type WatchActionSpec,
 } from './watch-action.ts'
 export {
-  createMergeAction,
   makeMergeAction,
   mergePortDepsFrom,
   type MergePortDeps,
@@ -101,7 +86,6 @@ export {
   type MergeStrategy,
 } from './merge-action.ts'
 export {
-  createQueueAction,
   makeQueueAction,
   queuePortDepsFrom,
   type QueuePortDeps,
@@ -110,7 +94,6 @@ export {
   type TakeAnswer,
 } from './queue-action.ts'
 export {
-  createWorkAction,
   makeWorkAction,
   workPortDepsFrom,
   type WorkPortDeps,
@@ -120,7 +103,6 @@ export {
   type WorkedAnswer,
 } from './work-action.ts'
 export {
-  createWorktreeAction,
   makeWorktreeAction,
   worktreePortDepsFrom,
   type WorktreePortDeps,
@@ -129,7 +111,6 @@ export {
   type WorktreeActionSpec,
 } from './worktree-action.ts'
 export {
-  actionsFromRecipe,
   actionPortsFromRecipe,
   actionPortDepsFrom,
   ActionUnavailableError,
@@ -141,7 +122,6 @@ export {
   commandEffect,
   parseResult,
   readResultEffect,
-  runCommand,
   type CommandOutcome,
   type RunCommandOptions,
 } from './command.ts'

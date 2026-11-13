@@ -11,7 +11,8 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Action, ActionContext, ActionResult } from '../src/action.ts'
-import { createKeptRunAction, type KeptRunActionDeps } from '../src/kept-run-action.ts'
+import { type KeptRunActionDeps } from '../src/kept-run-action.ts'
+import { createKeptRunAction } from '../test/promise-actions.ts'
 
 const context: ActionContext = { runId: 'pass-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
 

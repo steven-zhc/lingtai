@@ -47,14 +47,7 @@
 import type { QueueSettings } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
-import {
-  liftPromise,
-  promiseAction,
-  type Action,
-  type ActionContext,
-  type ActionPort,
-  type ActionResult,
-} from './action.ts'
+import { liftPromise, type ActionContext, type ActionPort, type ActionResult } from './action.ts'
 
 /**
  * What the take answered — four branches, and the fourth is why there are not
@@ -157,7 +150,3 @@ export function makeQueueAction(spec: QueueActionSpec, deps: QueuePortDeps): Act
 export const queuePortDepsFrom = (deps: QueueActionDeps): QueuePortDeps => ({
   take: (spec) => liftPromise(() => deps.take(spec)),
 })
-
-export function createQueueAction(spec: QueueActionSpec, deps: QueueActionDeps): Action {
-  return promiseAction(makeQueueAction(spec, queuePortDepsFrom(deps)))
-}

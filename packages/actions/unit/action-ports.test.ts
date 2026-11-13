@@ -12,8 +12,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
   fromPromiseAction,
-  promiseAction,
-  runActionPipeline,
   runActionPipelineEffect,
   type Action,
   type ActionContext,
@@ -21,7 +19,8 @@ import {
   type ActionResult,
 } from '../src/action.ts'
 import { newSink, withSink } from '../src/spans.ts'
-import { createWorktreeAction, makeWorktreeAction, type WorktreeActionDeps } from '../src/worktree-action.ts'
+import { makeWorktreeAction, type WorktreeActionDeps } from '../src/worktree-action.ts'
+import { createWorktreeAction, promiseAction, runActionPipeline } from '../test/promise-actions.ts'
 
 const ctx: ActionContext = { runId: 'pass-abc', onSha: 'a'.repeat(40), cwd: '/tmp/wt', env: {} }
 const PASSED: ActionResult = { verdict: 'passed', evidence: 'ok', findings: [] }

@@ -9,7 +9,7 @@ import { resolve } from 'node:path'
 import { ownerlessRefusal } from '@lingtai/conductor'
 import type { ProjectState } from '@lingtai/domain'
 import { type AppReader, GitHubFailed, type GhRun, type GhStatus } from '@lingtai/github'
-import { resolveLocalRecipe, type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
+import { resolveLocalRecipeEffect, type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
 import { listRepositories as list, type Picker, type SetupReader } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -585,12 +585,14 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       last = index
     }
 
-    const resolved = await resolveLocalRecipe('repo', {
-      home: HOME,
-      signedIn: async () => ['claude-code'] as never[],
-      base: 'main',
-      read: async (p) => files.replaced[p] ?? null,
-    })
+    const resolved = await Effect.runPromise(
+      resolveLocalRecipeEffect('repo', {
+        home: HOME,
+        signedIn: async () => ['claude-code'] as never[],
+        base: 'main',
+        read: async (p) => files.replaced[p] ?? null,
+      }),
+    )
     expect(registered).toHaveLength(1)
     expect(registered[0]!.configHash).toBe(resolved.configHash)
   })

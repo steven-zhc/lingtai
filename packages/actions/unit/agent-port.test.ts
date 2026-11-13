@@ -8,7 +8,8 @@ import { Effect, Exit, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { makeAgentAction, agentPortDepsFrom } from '../src/agent-action.ts'
-import { actionPortsFromRecipe, actionPortDepsFrom, actionsFromRecipe } from '../src/from-recipe.ts'
+import { actionPortsFromRecipe, actionPortDepsFrom } from '../src/from-recipe.ts'
+import { actionsFromRecipe } from '../test/promise-actions.ts'
 
 const answer: RunOutcome = {
   exitCode: 0,

@@ -20,8 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { type StepAction, RECIPE_PATH, resolveRecipe } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { runActionPipeline } from '../src/action.ts'
-import { actionsFromRecipe } from '../src/from-recipe.ts'
+import { actionsFromRecipe, runActionPipeline } from '../test/promise-actions.ts'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 const context = { runId: 'pass-1', onSha: 'b'.repeat(40), cwd: root, env: {} }

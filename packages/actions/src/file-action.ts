@@ -88,14 +88,7 @@
 import { thePathForThisTicket } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
-import {
-  liftPromise,
-  promiseAction,
-  type Action,
-  type ActionContext,
-  type ActionPort,
-  type ActionResult,
-} from './action.ts'
+import { liftPromise, type ActionContext, type ActionPort, type ActionResult } from './action.ts'
 
 /**
  * What the keep answers — two branches, because a destination either kept the
@@ -304,7 +297,3 @@ export const filePortDepsFrom = (deps: FileActionDeps): FilePortDeps => ({
   keep: (spec) => liftPromise(() => deps.keep(spec)),
   issue: () => liftPromise(() => deps.issue()),
 })
-
-export function createFileAction(spec: FileActionSpec, deps: FileActionDeps): Action {
-  return promiseAction(makeFileAction(spec, filePortDepsFrom(deps)))
-}

@@ -13,9 +13,10 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { Effect } from 'effect'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { runCommand } from '../src/index.ts'
+import { commandEffect } from '../src/index.ts'
 
 const env = { PATH: process.env['PATH'] ?? '' }
 let cwd: string
@@ -24,8 +25,8 @@ beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'lingtai-command-'))
 })
 
-const run = (options: Partial<Parameters<typeof runCommand>[0]> & { run: string }) =>
-  runCommand({ timeoutMs: 10_000, cwd, env, ...options })
+const run = (options: Partial<Parameters<typeof commandEffect>[0]> & { run: string }) =>
+  Effect.runPromise(commandEffect({ timeoutMs: 10_000, cwd, env, ...options }))
 
 const elapsedAside = (evidence: string) => evidence.replace(/\d+\.\d+s/, '<elapsed>')
 

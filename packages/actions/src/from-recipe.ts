@@ -17,7 +17,7 @@ import {
   whyNoKindAt,
 } from '@lingtai/recipe'
 
-import { type Action, type ActionPort, promiseAction } from './action.ts'
+import { type ActionPort } from './action.ts'
 import {
   type AgentActionDeps,
   type AgentPortDeps,
@@ -305,11 +305,6 @@ function dispatchDeps(
     },
   }
   return narrowed
-}
-
-/** The promise shape of `actionPortsFromRecipe`: the same actions, each through `promiseAction`. */
-export function actionsFromRecipe(step: Step, actions: readonly StepAction[], deps: ActionDeps = {}): Action[] {
-  return actionPortsFromRecipe(step, actions, actionPortDepsFrom(deps)).map(promiseAction)
 }
 
 export function actionPortsFromRecipe(

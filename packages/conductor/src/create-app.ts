@@ -65,7 +65,7 @@ import {
   GitHubFailed,
   REQUIRED_PERMISSIONS,
   buildManifest,
-  convertManifest,
+  convertManifestEffect,
   manifestFormAction,
 } from '@lingtai/github'
 import { Deferred, Effect, Semaphore } from 'effect'
@@ -611,7 +611,7 @@ function convertAndWriteEffect(
     }
 
     const code = options.code
-    const exchange = yield* settle(io(() => convertManifest(code, options.fetch ? { fetch: options.fetch } : {})))
+    const exchange = yield* settle(convertManifestEffect(code, options.fetch ? { fetch: options.fetch } : {}))
     if (!exchange.ok) {
       const err = exchange.error
       if (err instanceof GitHubFailed && (err.status === 404 || err.status === 422)) {

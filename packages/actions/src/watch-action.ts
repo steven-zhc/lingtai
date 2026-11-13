@@ -27,14 +27,7 @@
 import { compileWatch, type Watcher } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
-import {
-  liftPromise,
-  promiseAction,
-  type Action,
-  type ActionContext,
-  type ActionPort,
-  type ActionResult,
-} from './action.ts'
+import { liftPromise, type ActionContext, type ActionPort, type ActionResult } from './action.ts'
 
 export interface WatchActionSpec {
   name: string
@@ -124,7 +117,3 @@ export const watchPortDepsFrom = (deps: WatchActionDeps): WatchPortDeps => ({
     return deps.advice
   },
 })
-
-export function createWatchAction(spec: WatchActionSpec, deps: WatchActionDeps): Action {
-  return promiseAction(makeWatchAction(spec, watchPortDepsFrom(deps)))
-}
