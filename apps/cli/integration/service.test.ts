@@ -13,12 +13,14 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import type { LockPlace, RecordedStart } from '@lingtai/daemon'
+import type { Asking, LockPlace, RecordedStart } from '@lingtai/daemon'
 import { controlWatermark, readControl, requestShutdown, requestShutdownUnlessStanding } from '@lingtai/daemon/control'
 import { repoRoot } from '@lingtai/env'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { lift } from '../src/exit.ts'
 import { queueForTheLock } from '../src/restart.ts'
 import {
   BOARD_JOB,
@@ -34,11 +36,59 @@ import {
   launchdPlist,
   lingering,
   platformFor,
-  serviceCommand,
+  serviceCommand as serviceEffect,
   systemdUnit,
   type Exec,
-  type ServiceDrain,
+  type LockQueue,
+  type ServiceOptions,
 } from '../src/service.ts'
+
+/**
+ * The ports as these scenes write them — promises — and the command run to a
+ * promise. The ports are Effects since #1096; each scene states its facts as
+ * thunks, and this is the one place they are lifted.
+ */
+type ServiceDrain = {
+  ask: (by: string, reason: string) => Promise<Asking>
+  holding: () => Promise<string>
+  queue: () => Promise<LockQueue>
+}
+type PromiseOptions = Omit<ServiceOptions, 'liveness' | 'shutdown' | 'drain' | 'started' | 'board' | 'sleep'> & {
+  liveness: () => Promise<string>
+  shutdown: () => Promise<{ by: string; reason: string } | null>
+  drain: ServiceDrain
+  started: { watermark: () => Promise<number>; after: (version: number) => Promise<RecordedStart | null> }
+  board: Omit<ServiceOptions['board'], 'answering' | 'heldBy'> & {
+    answering: () => Promise<string | null>
+    heldBy: () => Promise<string | null>
+  }
+  sleep?: (ms: number) => Promise<void>
+}
+function serviceCommand(args: string[], o: PromiseOptions): Promise<number> {
+  const { sleep, ...rest } = o
+  return Effect.runPromise(
+    serviceEffect(args, {
+      ...rest,
+      liveness: () => lift(o.liveness),
+      shutdown: () => lift(o.shutdown),
+      drain: {
+        ask: (by, reason) => lift(() => o.drain.ask(by, reason)),
+        holding: () => lift(o.drain.holding),
+        queue: () => lift(o.drain.queue),
+      },
+      started: {
+        watermark: () => lift(o.started.watermark),
+        after: (version) => lift(() => o.started.after(version)),
+      },
+      board: {
+        ...o.board,
+        answering: () => lift(o.board.answering),
+        heldBy: () => lift(o.board.heldBy),
+      },
+      ...(sleep ? { sleep: (ms: number) => lift(() => sleep(ms)).pipe(Effect.orDie) } : {}),
+    }),
+  )
+}
 
 let home: string
 beforeEach(async () => {
