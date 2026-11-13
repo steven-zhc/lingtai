@@ -1,6 +1,16 @@
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { classifyClaudeAuth, classifyCodexLogin, reportedVersion, type ProbeEnd } from '../src/auth.ts'
+import {
+  claudeAuthThenStore,
+  classifyClaudeAuth,
+  classifyCodexLogin,
+  expiryFromCredentials,
+  reportedVersion,
+  withStoredExpiry,
+  type ProbeEnd,
+  type StoredExpiry,
+} from '../src/auth.ts'
 
 const exited = (code: number | null, out: string, signal: NodeJS.Signals | null = null): ProbeEnd => ({
   kind: 'exited',
@@ -81,5 +91,59 @@ describe('reportedVersion (#929)', () => {
   })
   it('never answers with stderr', () => {
     expect(reportedVersion({ kind: 'exited', code: 0, signal: null, out: '', err: '9.9.9' })).toBeNull()
+  })
+})
+
+describe('withStoredExpiry and the order it is asked in', () => {
+  const NOW = 1_800_000_000_000
+  const signedIn = exited(0, '{"loggedIn":true,"authMethod":"claude.ai"}')
+  const judge = (end: ProbeEnd, stored: StoredExpiry) => withStoredExpiry(classifyClaudeAuth(end), stored, NOW)
+
+  it('a future expiry stays signed in', () => {
+    expect(judge(signedIn, { kind: 'expires', at: NOW + 1, from: 'file' }).state).toBe('signed-in')
+  })
+  it('a past expiry is signed out and says to sign in again', () => {
+    const got = judge(signedIn, { kind: 'expires', at: NOW, from: 'keychain' })
+    expect(got).toMatchObject({ state: 'signed-out', loggedIn: false })
+    expect(got.detail).toContain(new Date(NOW).toISOString())
+    expect(got.detail).toContain('/login')
+  })
+  it('an unreadable store keeps the answer', () => {
+    expect(judge(signedIn, { kind: 'unreadable', why: 'x' })).toEqual(classifyClaudeAuth(signedIn))
+  })
+  it('another auth method keeps the answer', () => {
+    const key = exited(0, '{"loggedIn":true,"authMethod":"api_key"}')
+    expect(judge(key, { kind: 'expires', at: 1, from: 'file' }).state).toBe('signed-in')
+  })
+  it('signed out and unreadable output keep their answers', () => {
+    for (const end of [exited(0, '{"loggedIn":false,"authMethod":"none"}'), exited(0, 'nope')]) {
+      expect(judge(end, { kind: 'expires', at: 1, from: 'file' })).toEqual(classifyClaudeAuth(end))
+    }
+  })
+  it('asks the store only after a signed-in answer', async () => {
+    const calls: string[] = []
+    const store = Effect.sync((): StoredExpiry => {
+      calls.push('store')
+      return { kind: 'expires', at: 1, from: 'file' }
+    })
+    const ask = (end: ProbeEnd) =>
+      Effect.sync(() => {
+        calls.push('status')
+        return end
+      })
+    const out = await Effect.runPromise(claudeAuthThenStore(ask(signedIn), store, () => NOW))
+    expect(calls).toEqual(['status', 'store'])
+    expect(out.state).toBe('signed-out')
+    calls.length = 0
+    await Effect.runPromise(claudeAuthThenStore(ask(exited(0, '{"loggedIn":false}')), store, () => NOW))
+    expect(calls).toEqual(['status'])
+  })
+  it('never carries a token', () => {
+    const blob = '{"claudeAiOauth":{"accessToken":"sk-ant-SECRET-a","refreshToken":"sk-ant-SECRET-r","expiresAt":5}}'
+    const at = expiryFromCredentials(blob)
+    expect(at).toBe(5)
+    const got = judge(signedIn, { kind: 'expires', at: at ?? 0, from: 'keychain' })
+    expect(JSON.stringify(got)).not.toContain('SECRET')
+    expect(expiryFromCredentials('{"accessToken":"sk-ant-SECRET-a" nope')).toBeNull()
   })
 })
