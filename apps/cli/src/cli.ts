@@ -1246,16 +1246,14 @@ function serviceVerb(verb: keyof typeof SERVICE_DONE) {
         if (verb === 'uninstall') steps.begin('removing')
         let unconfirmed = false // the supervisor already had a conductor process
         let boardHad = false // ...and a board process, or no board job or build, so the board's start was not made either
-        const code = yield* lift(() =>
-          serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
-            ...serviceOptions(),
-            steps,
-            unconfirmed: (job) => {
-              if (job === 'conductor') unconfirmed = true
-              else boardHad = true
-            },
-          }),
-        ).pipe(
+        const code = yield* serviceCommand([verb, ...(why.length > 0 ? [why.join(' ')] : [])], {
+          ...serviceOptions(),
+          steps,
+          unconfirmed: (job) => {
+            if (job === 'conductor') unconfirmed = true
+            else boardHad = true
+          },
+        }).pipe(
           // A throw (EACCES on the service file, say) must not leave the spinner animating.
           Effect.ensuring(Effect.sync(() => steps.end())),
         )
@@ -1288,7 +1286,7 @@ const serviceStatus = Command.make('status', { json, noColor }, (args) =>
       Effect.gen(function* () {
         const { serviceOptions } = yield* lift(() => import('./daemon.ts'))
         const { serviceCommand } = yield* lift(() => import('./service.ts'))
-        return yield* lift(() => serviceCommand(['status'], { ...serviceOptions(), json: args.json }))
+        return yield* serviceCommand(['status'], { ...serviceOptions(), json: args.json })
       }),
     args.json ? 'service status' : undefined,
   ),
