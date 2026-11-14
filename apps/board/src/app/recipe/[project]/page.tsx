@@ -18,7 +18,7 @@ import { recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-
 import { FooterFetched } from '../../footer-fetched'
 import { StepRow } from '../../step-row'
 import { RecipeBar, type RecipeBarFilter } from './recipe-bar'
-import { RecipeText } from './recipe-text'
+import { RecipeText, type AllowRequest } from './recipe-text'
 import { SandboxSection } from './sandbox-section'
 
 /**
@@ -210,7 +210,7 @@ export function Recipe({
   pause,
   banner,
   sandbox,
-  draft,
+  allow,
 }: {
   view: ProjectRecipe
   edit?: boolean
@@ -220,8 +220,8 @@ export function Recipe({
   banner?: ReactNode
   /** The sandbox section (#1162), built by the page that read the log and the host: this stays pure. */
   sandbox?: ReactNode
-  /** The recipe text with a host appended, unsaved: the editor opens on it while `loaded` stays the file's bytes. */
-  draft?: string
+  /** A request to add a host to the editor's draft. `nonce` is new on every render of the page, so a repeat of the same request is still one. */
+  allow?: AllowRequest
 }) {
   const text = view.text
   return (
@@ -285,14 +285,11 @@ export function Recipe({
               <div className="s2-right">
                 {text === null ? null : (
                   <RecipeText
-                    // A client navigation keeps this component, and `open` and `draft` seed its state once: a new
-                    // request for either is a new editor.
-                    key={`${edit || !view.ok || draft !== undefined}:${draft ?? ''}`}
                     project={view.project}
                     text={text}
-                    open={edit || !view.ok || draft !== undefined}
+                    open={edit || !view.ok || allow !== undefined}
                     path={underHome(view.at)}
-                    {...(draft === undefined ? {} : { draft })}
+                    {...(allow === undefined ? {} : { allow })}
                   />
                 )}
               </div>
@@ -382,14 +379,18 @@ export default async function RecipePage({
   }
   const view = await projectRecipe(state)
   const builtIn = await Effect.runPromise(builtInSandboxEffect(name))
-  // `?allow=<host>`: the draft is computed here and handed down as its own prop; it is never saved from here.
+  // `?allow=<host>`: a request the editor applies to its own current draft, so earlier unsaved edits survive; it is
+  // never saved from here. The nonce makes a repeated click on the same link a new request.
   const host = typeof allow === 'string' ? allow : undefined
-  const drafted = host === undefined || view.text === null ? null : withAllowedHost(view.text, host)
+  const request: AllowRequest | null =
+    host === undefined || view.text === null || withAllowedHost(view.text, host) === null
+      ? null
+      : { host, nonce: Date.now() }
   return (
     <Recipe
       view={view}
       edit={edit === '1'}
-      {...(drafted === null ? {} : { draft: drafted })}
+      {...(request === null ? {} : { allow: request })}
       sandbox={
         <SandboxSection
           project={name}

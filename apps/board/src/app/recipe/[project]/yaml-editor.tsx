@@ -47,22 +47,26 @@ const theme = EditorView.theme({
 })
 
 /**
- * The recipe's YAML in CodeMirror. Seeded once from `initial` and never fed
+ * The recipe's YAML in CodeMirror. Seeded once from `initial`; after that fed only by `push` (a host added on request) and never fed
  * back: after that the caller's draft changes only because this reported it.
  */
 export default function YamlEditor({
   initial,
+  push,
   handoff,
   onChange,
   onReady,
 }: {
   initial: string
+  /** Text to put in the live editor, replacing what is there; a new `rev` is a new push. */
+  push: { rev: number; text: string } | null
   /** Read once, before the fallback textarea goes: whether it had focus, and its selection. */
   handoff: () => { focused: boolean; anchor: number; head: number } | null
   onChange: (text: string) => void
   onReady: () => void
 }) {
   const host = useRef<HTMLDivElement>(null)
+  const viewRef = useRef<EditorView | null>(null)
   const latest = useRef({ onChange, onReady })
   latest.current = { onChange, onReady }
   // Read once for the component's life: Strict Mode replays this effect after the first run
@@ -88,14 +92,23 @@ export default function YamlEditor({
         ],
       }),
     })
+    viewRef.current = view
     if (carried?.focused) {
       view.focus()
       view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head) })
     }
     latest.current.onReady()
-    return () => view.destroy()
+    return () => {
+      viewRef.current = null
+      view.destroy()
+    }
     // Seeded once: `initial` is the draft of the render the chunk arrived in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  useEffect(() => {
+    const view = viewRef.current
+    if (push === null || view === null || view.state.doc.toString() === push.text) return
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: push.text } })
+  }, [push])
   return <div ref={host} className="rfile-fill" />
 }

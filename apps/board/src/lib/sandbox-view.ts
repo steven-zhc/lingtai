@@ -351,7 +351,7 @@ export interface ProjectRow {
  * only where a `TicketClaimed` on one of its own `ticket-<project>-<n>` streams names it as the `runId`. A refusal record older than the window is dropped whole,
  * its caveats with it, since they say nothing of the last days.
  *
- * Telemetry is left out. The window is the entry's own `firstAt`, since a row carries no time. An unreadable or
+ * Telemetry is left out. The window is a row's own `at` for its caveats and the entry's `firstAt` for its hosts. An unreadable or
  * incomplete read is a sentence and never a zero.
  */
 export function projectBlockedOf(
