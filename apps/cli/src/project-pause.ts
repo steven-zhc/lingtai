@@ -7,18 +7,10 @@
  * (whose stub cannot see them). A person's pause carries no reason: it is a lock
  * on one project, and it holds until somebody lifts it.
  */
-import {
-  type ControlState,
-  type Guard,
-  lockFailure,
-  pauseProject,
-  resumeProject,
-  resumeConductor,
-  readControl,
-} from '@lingtai/daemon'
+import { type ControlState, type Guard, lockFailure, resumeConductor, readControl } from '@lingtai/daemon'
 import { CONTROL_STREAM, type ProjectState, lockSentence } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
-import { loadProjects } from '@lingtai/project'
+import { loadProjects, pauseProject, resumeProject } from '@lingtai/project'
 import { Effect } from 'effect'
 
 export interface ProjectPauseOptions {
@@ -72,7 +64,7 @@ export const pauseProjects = (name: string | undefined, by: string, options: Pro
     }
     for (const p of chosen) {
       const project = p.project!
-      const answer = yield* pauseProject(project, by, options.store).pipe(
+      const answer = yield* pauseProject(project, by, options.store ?? eventStore).pipe(
         Effect.mapError((e) => new Error(`could not pause ${project} — ${e.message}`)),
       )
       if (answer.kind === 'appended') log(`${project}: paused`)
@@ -98,7 +90,7 @@ export const resumeProjects = (name: string | undefined, by: string, options: Pr
       const project = p.project!
       // Bare resume says nothing of a project that was not paused; a named one says so.
       if (name === undefined && p.paused === null) continue
-      const answer = yield* resumeProject(project, by, options.store).pipe(
+      const answer = yield* resumeProject(project, by, options.store ?? eventStore).pipe(
         Effect.mapError((e) => new Error(`could not resume ${project} — ${e.message}`)),
       )
       if (answer.kind === 'appended') {

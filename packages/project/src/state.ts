@@ -6,7 +6,14 @@
  * events, is a stream to reduce rather than a projection to maintain. If that ever
  * stops being true it becomes one, which costs a truncate and a replay.
  */
-import { PROJECT_STREAM_PREFIX, type ProjectState, isRegistered, projectStream, reduceProject } from '@lingtai/domain'
+import {
+  type Envelope,
+  PROJECT_STREAM_PREFIX,
+  type ProjectState,
+  isRegistered,
+  projectStream,
+  reduceProject,
+} from '@lingtai/domain'
 import type { Log, LogQueries } from '@lingtai/event-store/log'
 import type { EventStore } from '@lingtai/event-store/store'
 import { Effect } from 'effect'
@@ -43,13 +50,17 @@ export function listProjectStreamsEffect(queries?: LogQueries): Effect.Effect<st
  * `askRefusal` refuses on it (*unknown is not unlocked*). `readProjectEffect` is this, asked whether it is registered.
  */
 export function readProjectStateEffect(project: string, store?: EventStore): Effect.Effect<ProjectState, Error> {
+  return readProjectEvents(project, store).pipe(Effect.map(reduceProject))
+}
+
+/** One project's stream as it stands — the envelopes, for a command that needs their count as well as their reduction. */
+export function readProjectEvents(project: string, store?: EventStore): Effect.Effect<Envelope[], Error> {
   return Effect.gen(function* () {
     const from = store ?? (yield* defaultLog()).store
-    const events = yield* Effect.tryPromise({
+    return yield* Effect.tryPromise({
       try: () => from.read(projectStream(project)),
       catch: (err) => (err instanceof Error ? err : new Error(String(err))),
     })
-    return reduceProject(events)
   })
 }
 

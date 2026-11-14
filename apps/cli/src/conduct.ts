@@ -40,13 +40,13 @@ import {
   waitsFor,
 } from '@lingtai/conductor'
 import { readControlEffect } from '@lingtai/daemon'
-import { type ControlState, type ProjectState, turnTransition, projectStream, reduceProject } from '@lingtai/domain'
+import { type ControlState, type ProjectState, turnTransition } from '@lingtai/domain'
 import { waitMoves } from '@lingtai/domain/wait'
 import { githubClientAuth, hasGitHubAuth, machineDayCeiling, repoRoot } from '@lingtai/env'
 import { type EventStore, eventStore, log as theLog } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
-import { loadProjectsEffect } from '@lingtai/project'
+import { loadProjectsEffect, recordTurn } from '@lingtai/project'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
 import { baseOf, concurrencyOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
@@ -892,13 +892,8 @@ function record(
 ): Effect.Effect<void> {
   const { store, log } = options
   const name = project.project!
-  return Effect.gen(function* () {
-    // Re-read rather than trusting the state the pass began with: a run can
-    // last an hour, and what matters is what the stream holds now.
-    const current = reduceProject(yield* Effect.promise(() => store.read(projectStream(name))))
-    const next = turnTransition(current, seen)
-    if (next) yield* Effect.promise(() => store.append(projectStream(name), current.version, [next]))
-  }).pipe(
+  // Re-reads rather than trusting the state the pass began with: a run can last an hour.
+  return recordTurn(name, seen, store).pipe(
     recovering((err) => Effect.sync(() => log(`${name}: could not record the attempt on the log — ${err.message}`))),
   )
 }

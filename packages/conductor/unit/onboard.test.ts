@@ -1,4 +1,4 @@
-import { type Envelope, type EventType, type PayloadOf, SCHEMA_VER, parsePayload } from '@lingtai/domain'
+import { type Envelope, type EventType, type PayloadOf, SCHEMA_VER, parsePayload, reduceProject } from '@lingtai/domain'
 import { type Installation, NotInstalledError } from '@lingtai/github'
 /**
  * What `lingtai add` decides about the base — which, since #75, is nothing.
@@ -15,7 +15,6 @@ import {
   type AddOptions,
   checkInstallationEffect,
   governingEffect,
-  otherOwner,
   recheck,
   registrationLine,
   resumeOnboarding,
@@ -350,7 +349,7 @@ describe('the last line lingtai add prints', () => {
   })
 
   it("says added when the only earlier event is the wizard's", async () => {
-    const line = registrationLine([started], 'nextloom-ai-admin', await resolved())
+    const line = registrationLine(reduceProject([started]), 1, 'nextloom-ai-admin', await resolved())
 
     expect(line).toContain('added nextloom-ai-admin')
     expect(line).toContain('across 5 steps')
@@ -358,24 +357,14 @@ describe('the last line lingtai add prints', () => {
   })
 
   it('says updated only once the project has been configured before', async () => {
-    const line = registrationLine([started, configured], 'nextloom-ai-admin', await resolved())
+    const line = registrationLine(reduceProject([started, configured]), 2, 'nextloom-ai-admin', await resolved())
 
     expect(line).toContain('updated nextloom-ai-admin')
     expect(line).toContain('2 earlier event(s)')
   })
 
   it('says added on a stream with nothing on it at all', async () => {
-    expect(registrationLine([], 'nextloom-ai-admin', await resolved())).toContain('added')
-  })
-
-  // The write-time guard: a stream another owner registered while this add
-  // was passing an earlier check is refused, not overwritten (#708).
-  it('names the other owner of a stream already configured, in any case', () => {
-    expect(otherOwner([started, configured], 'other')).toBe('steven-zhc')
-    expect(otherOwner([started, configured], 'Steven-ZHC')).toBeNull()
-    expect(otherOwner([started], 'other')).toBe('steven-zhc')
-    expect(otherOwner([started], 'steven-zhc')).toBeNull()
-    expect(otherOwner([], 'other')).toBeNull()
+    expect(registrationLine(reduceProject([]), 0, 'nextloom-ai-admin', await resolved())).toContain('added')
   })
 })
 
