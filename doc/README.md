@@ -112,6 +112,7 @@ replaces.
 | [0126](decisions/0126-a-stop-is-a-lock-and-an-unlock.md) | **Stops** — a person's pause, the day's ceiling and a runtime's usage limit are each a lock and an unlock on the stream of what they stop; a guard checked before work is taken writes the system's, one function answers every gate and reader, and the board's project filter scopes the banner that says why | accepted; not yet built |
 | [0127](decisions/0127-what-an-agent-can-reach.md) | **Reach** — one boundary, `srt`, with a policy Lingtai writes: an allowlist of hosts per project, a deny list of paths, and a login an agent never holds; the recipe's `sandbox` block owns containment and there is no tier | accepted; not yet built |
 | [0128](decisions/0128-the-project-aggregate-holds-every-project-fact.md) | **The Project aggregate** — every fact about a project is reduced from `prj-{project}`, the recipe included; the recipe file is a projection `@lingtai/project` keeps, a hand edit is recorded on read, and `rcp-` is not written again | accepted; not yet built |
+| [0129](decisions/0129-one-module-owns-each-aggregate.md) | **Aggregate owners** — one module owns each aggregate's appends and reads; rules are transition functions in `domain`; hosts never append; a request goes on the aggregate it is about; a decision reads the reduce, never a projection; a test counts outside appends down to zero | accepted; not yet built |
 
 ## Experiments
 

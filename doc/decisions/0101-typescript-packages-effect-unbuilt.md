@@ -72,6 +72,8 @@ turn limit, so every idiom it adopts is paid for again on every run.
      reaction (a subscriber, a notification) or a lookup, never a second reduce.
      The snapshot of a reducer ([0124](0124-a-stream-fold-is-cached-as-a-snapshot.md))
      is only correct because there is one.
+     Every append to a stream and every read of its state go through the one
+     module that owns that aggregate ([0129](0129-one-module-owns-each-aggregate.md)).
    - **Plain logic and its loaders:** `recipe` (load, validate, resolve), `actions` (running a
      declared action and proving it ran — IO, so Effect under rule 6), `agent-env` (what an agent may see),
      `env` (Lingtai's own settings, colour, and the file lock in
