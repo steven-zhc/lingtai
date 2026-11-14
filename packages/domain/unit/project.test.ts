@@ -7,12 +7,15 @@
  */
 import { describe, expect, it } from 'vitest'
 
+import { Actor } from '../src/envelope.ts'
 import { pauseTransition, resumeTransition } from '../src/locks.ts'
 import {
   type TurnObservation,
   isPending,
   isRegistered,
   turnTransition,
+  recipeChange,
+  sandboxObservation,
   reduceProject,
   refusalText,
 } from '../src/project.ts'
@@ -242,5 +245,53 @@ describe('a person pauses one project (0126)', () => {
     events.push(event('ProjectPaused', { project: 'lingtai', by: 'a' }))
     expect(pauseTransition(reduceProject(events), 'a')).toBeNull()
     expect(resumeTransition(reduceProject(events), 'a')).toMatchObject({ type: 'ProjectResumed' })
+  })
+})
+
+describe('the declared recipe and the observed sandbox', () => {
+  const seen = (by: string, sourceHash = 'h1') => ({ sourceHash, source: 'a: 1\n', by })
+
+  it('carries conductor for a file read and the person otherwise, both valid actors', () => {
+    const file = recipeChange(reduceProject([]), seen('file'))
+    const person = recipeChange(reduceProject([]), seen('human:x'))
+    expect(file?.actor).toBe('conductor')
+    expect(person?.actor).toBe('human:x')
+    expect(() => Actor.parse(file?.actor)).not.toThrow()
+    expect(() => Actor.parse(person?.actor)).not.toThrow()
+  })
+
+  it('records the first change, ignores an equal hash, and records a different one', () => {
+    const event = makeStream('prj-lingtai')
+    const first = recipeChange(reduceProject([]), seen('file'))!
+    const events = [event('ProjectRecipeChanged', first.data as never)]
+    const state = reduceProject(events)
+    expect(state.recipe).toMatchObject({ sourceHash: 'h1', source: 'a: 1\n', by: 'file' })
+    expect(recipeChange(state, seen('human:x'))).toBeNull()
+    expect(recipeChange(state, seen('human:x', 'h2'))).toMatchObject({ type: 'ProjectRecipeChanged' })
+  })
+
+  it('leaves a stream of only a recipe change neither registered nor pending, and keeps it through registration', () => {
+    const event = makeStream('prj-lingtai')
+    const only = [event('ProjectRecipeChanged', seen('file') as never)]
+    expect(isRegistered(reduceProject(only))).toBe(false)
+    expect(isPending(reduceProject(only))).toBe(false)
+    const after = reduceProject([
+      ...only,
+      event('ProjectConfigured', { project: 'lingtai', owner: 'o', base: 'main', configHash: 'h', fromSha: 's' }),
+    ])
+    expect(after.recipe?.sourceHash).toBe('h1')
+    expect(isRegistered(after)).toBe(true)
+  })
+
+  it('observes a sandbox only on a change of kind', () => {
+    const event = makeStream('prj-lingtai')
+    const first = sandboxObservation(reduceProject([]), { kind: 'sandboxed', runId: 'r1' })!
+    expect(first.actor).toBe('conductor')
+    const state = reduceProject([event('ProjectSandboxObserved', first.data as never)])
+    expect(state.sandboxObserved).toMatchObject({ kind: 'sandboxed', runId: 'r1' })
+    expect(sandboxObservation(state, { kind: 'sandboxed', runId: 'r2' })).toBeNull()
+    expect(sandboxObservation(state, { kind: 'degraded', runId: 'r2' })).toMatchObject({
+      type: 'ProjectSandboxObserved',
+    })
   })
 })

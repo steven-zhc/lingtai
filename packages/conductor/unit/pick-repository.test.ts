@@ -74,6 +74,8 @@ const project = (name: string, owner: string | null, configHash: string | null):
   fromSha: null,
   refused: null,
   paused: null,
+  recipe: null,
+  sandboxObserved: null,
   version: 1,
   lastSeq: 1n,
 })
