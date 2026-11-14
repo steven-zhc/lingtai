@@ -366,8 +366,12 @@ export function actionPortsFromRecipe(
       }
       // Fail closed (#1152): only a decision that is not *sandboxed* spawns as today, and `refused` is
       // not a licence to spawn either. A missing wrap is a refusal by name, never a silent unwrapped spawn.
-      const decided = deps.sandboxDecision?.kind
-      const wrapped = decided === 'sandboxed' || decided === 'refused'
+      const decision = deps.sandboxDecision
+      const decided = decision?.kind
+      const wrapped = decided === 'sandboxed'
+      // A `refused` decision is a failed action, never a throw and never a spawn (#1157): the command is not
+      // wrapped, so it neither calls `wrap` nor the runner.
+      const refusedWhy = decision?.kind === 'refused' ? decision.why : undefined
       if (wrapped && !deps.sandbox) {
         throw new ActionUnavailableError(
           action.name,
@@ -383,8 +387,9 @@ export function actionPortsFromRecipe(
         // nothing gets only what any process needs, never the daemon's.
         env: deps.env(action.env),
         step,
+        ...(refusedWhy === undefined ? {} : { refused: refusedWhy }),
         ...(wrapped && deps.sandbox ? { sandbox: deps.sandbox } : {}),
-        ...(!wrapped && deps.recordUnwrapped
+        ...(!wrapped && refusedWhy === undefined && deps.recordUnwrapped
           ? { recordUnwrapped: () => deps.recordUnwrapped!({ step, action: action.name }) }
           : {}),
         ...(deps.command ? { command: deps.command } : {}),

@@ -130,7 +130,7 @@ export function nextOf(outcome: StepOutcome, run: AttemptRef): NextOfResult {
   }
 
   if (action !== null && !cleared(action)) {
-    return fellShortAs(step, action, run)
+    return sandboxRefusedOr(outcome, fellShortAs(step, action, run))
   }
 
   if (step === 'implement' && changedNothing(outcome)) {
@@ -278,6 +278,47 @@ function nothingFellShort(step: Step, action: OfYields<'nothing'>): NextOfResult
     case 'Waived':
     case 'NotReached':
       throw new ImpossibleOutcomeError(step, action.yields, action.result._tag)
+  }
+}
+
+/**
+ * **A step the sandbox refused or could not provide goes to a person** (0127
+ * §14, #1157). Where the answer is one of the four red proposals a refused
+ * host or a lost sandbox would explain, and the outcome carries one, it is
+ * `SandboxRefused` instead — a fix round an agent cannot win is not bought.
+ * A step that failed for another reason while a host was refused lands here
+ * too: that errs toward a person, and is not told apart.
+ * `unavailable` wins over `connections`: the sandbox was lost, and hosts from
+ * earlier runs are secondary.
+ */
+function sandboxRefusedOr(outcome: StepOutcome, answer: NextOfResult): NextOfResult {
+  const sandbox = outcome.sandbox
+  if (sandbox === undefined || answer._tag !== 'Propose') return answer
+  const proposal = answer.proposal
+  if (
+    proposal._tag !== 'BuildRed' &&
+    proposal._tag !== 'VerifyRed' &&
+    proposal._tag !== 'SetupRefused' &&
+    proposal._tag !== 'CheckRefused'
+  ) {
+    return answer
+  }
+  const hosts = sandbox.refused ?? []
+  if (sandbox.unavailable === undefined && hosts.length === 0) return answer
+  const from = outcome.step
+  return {
+    _tag: 'Propose',
+    proposal:
+      sandbox.unavailable !== undefined
+        ? {
+            _tag: 'SandboxRefused',
+            from,
+            cause: 'unavailable',
+            hosts: [],
+            said: sandbox.unavailable,
+            output: proposal.output,
+          }
+        : { _tag: 'SandboxRefused', from, cause: 'connections', hosts, said: null, output: proposal.output },
   }
 }
 

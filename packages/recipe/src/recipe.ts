@@ -3483,6 +3483,15 @@ export const Recipe = z
         const refuse = (message: string): void => {
           ctx.addIssue({ code: 'custom', path: ['steps', step], message })
         }
+        if ('judge' in action && action.when === 'sandbox-refused') {
+          // Allowing a host or installing the sandbox is the operator's, and
+          // no fix round or agent can do either (0127 §14, #1157).
+          refuse(
+            `steps.${step}'s "${action.name}" names a \`judge:\` for \`when: sandbox-refused\` — but ` +
+              "allowing a host or installing the sandbox is the operator's, so only a person is ever " +
+              'offered it and nothing judges it',
+          )
+        }
         if ('judge' in action && isBuiltInJudge(action.judge)) {
           // `merge-the-base` answers one direction: at any other `toReply` finds
           // no candidate for `build` and a person is reached, so the line would

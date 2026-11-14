@@ -280,6 +280,14 @@ function escalatedColumns(
       return acknowledgement(stepLine(proposal.from, 'refused', proposal.output), run, proposal.output)
     case 'CheckRefused':
       return acknowledgement(stepLine(proposal.from, 'refused', proposal.output), run, proposal.output)
+    case 'SandboxRefused': {
+      // The full *Waiting on you* text is S9's (#1157); this is the plain sentence.
+      const detail =
+        proposal.cause === 'unavailable'
+          ? `sandbox unavailable on this host: ${proposal.said ?? ''}`
+          : `the sandbox refused a connection to ${proposal.hosts.join(', ')}`
+      return acknowledgement(stepLine(proposal.from, 'refused', detail), run, proposal.output)
+    }
     case 'AnswerUnreadable': {
       if (proposal.from === 'review' || proposal.from === 'proposed') {
         const prefix =

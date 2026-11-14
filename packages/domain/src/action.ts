@@ -247,6 +247,19 @@ export const StepOutcome = z.object({
   step: Step,
   round: z.number().int(),
   actions: z.array(Action),
+  /**
+   * What the sandbox did to this step (#1157), read by `nextOf` and nothing
+   * else. Absent when it did nothing, or the step was not sandboxed, or the
+   * outcome was written before the field existed.
+   * `refused` is the distinct non-telemetry hosts the sandbox refused;
+   * `unavailable` is srt's sentence where the host lost the sandbox.
+   */
+  sandbox: z
+    .object({
+      refused: z.array(z.string()).optional(),
+      unavailable: z.string().optional(),
+    })
+    .optional(),
 })
 export type StepOutcome = z.infer<typeof StepOutcome>
 

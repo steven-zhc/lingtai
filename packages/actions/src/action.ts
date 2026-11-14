@@ -130,6 +130,11 @@ interface ActionResultFields {
    * machine's and not a judgement about the diff. A kept run at `implement` must not turn it into a pass.
    */
   notWrapped?: true
+  /**
+   * Set beside `notWrapped` where the host lost the sandbox (`SandboxUnavailable`) or the run's decision was
+   * `refused`: srt's sentence, or the decision's `why`. The conductor reads it into the step's outcome (#1157).
+   */
+  sandboxUnavailable?: string
   /** The cold reviewer's summary of the change, where it wrote one (0103 §3, #890). */
   summary?: string
   /** Set when the reviewer read only the first `read` of `of` characters of an oversized diff, approved to (#892). */
@@ -723,6 +728,8 @@ export interface PipelineResult {
     findings: ActionFinding[]
     /** The reviewer's summary of the change, where it wrote one. `ActionResult.summary`. */
     summary?: string
+    /** That the host lost the sandbox, with the sentence (#1157). `ActionResult.sandboxUnavailable`. */
+    sandboxUnavailable?: string
     /** `ActionResult.clipped`. */
     clipped?: { read: number; of: number }
     /** Where the action left the worktree, where it moved it. `ActionResult.head`. */
@@ -1057,6 +1064,7 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
         // Spread for `head`'s reason: no summary is an absent key (#890).
         ...(result.summary === undefined ? {} : { summary: result.summary }),
         ...(result.clipped === undefined ? {} : { clipped: result.clipped }),
+        ...(result.sandboxUnavailable === undefined ? {} : { sandboxUnavailable: result.sandboxUnavailable }),
         // Spread for `head`'s reason, read by `becauseFrom` in `run-attempt.ts` with the
         // same `?? "action-refused"` fallback: an explicit `undefined` would be a
         // kind claiming to have a word for its refusal and then not having one.

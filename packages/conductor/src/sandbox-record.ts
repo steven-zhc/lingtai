@@ -9,9 +9,9 @@
  * `runId` is per attempt, so an invocation is keyed by step and action (and the dispatch's own id for an agent),
  * and by the wrap's `commandId`.
  */
-import { parsePayload, type Step, type ToAppend } from '@lingtai/domain'
+import { parsePayload, type Step, type StepOutcome, type ToAppend } from '@lingtai/domain'
 import type { SandboxDecision } from '@lingtai/recipe'
-import { newCommandId, worthRecording, type SandboxApi, type WrapInput } from '@lingtai/sandbox'
+import { newCommandId, worthRecording, type RefusedRead, type SandboxApi, type WrapInput } from '@lingtai/sandbox'
 import { Effect } from 'effect'
 
 /** What names one invocation, besides its `commandId`. `runId` is null and `runtime` absent for a `run:` command. */
@@ -33,6 +33,11 @@ export type AppendInvocation = (events: readonly ToAppend[]) => Effect.Effect<vo
 export interface InvocationAppends {
   readonly before: AppendInvocation
   readonly after: AppendInvocation
+  /**
+   * Told each read worth recording, **before** `after` appends it, so a refused append does not lose a read that
+   * happened (#1157). Absent where nobody collects.
+   */
+  readonly read?: (step: Step, read: RefusedRead) => void
 }
 
 type NotSandboxed = Exclude<SandboxDecision, { kind: 'sandboxed' }>
@@ -105,18 +110,79 @@ export const recordingWrap = (
     const append = appends.after
     yield* Effect.addFinalizer(() =>
       api.refusedConnections(wrapped).pipe(
-        Effect.flatMap((read) =>
-          worthRecording(read)
-            ? append([
-                {
-                  type: 'SandboxConnectionsRefused',
-                  actor: 'conductor',
-                  data: parsePayload('SandboxConnectionsRefused', { ...keysOf(keys, wrapped.commandId), read }),
-                },
-              ])
-            : Effect.void,
-        ),
+        Effect.flatMap((read) => {
+          if (!worthRecording(read)) return Effect.void
+          // Before the append, so a refused append does not lose a read that happened (#1157).
+          appends.read?.(keys.step, read)
+          return append([
+            {
+              type: 'SandboxConnectionsRefused',
+              actor: 'conductor',
+              data: parsePayload('SandboxConnectionsRefused', { ...keysOf(keys, wrapped.commandId), read }),
+            },
+          ])
+        }),
       ),
     )
     return wrapped
   })
+
+/**
+ * The hosts a set of reads refused, as `host:port` (`host` where the port is unknown; the whole line where it
+ * did not parse), in first-seen order, each once (#1157).
+ *
+ * **Telemetry never counts** (0127 §17). An `unreadable` read counts as no refusal: the step routes as today. An
+ * incomplete read still counts: a host it did see is a refusal.
+ */
+export const refusedHostsOf = (reads: readonly RefusedRead[]): string[] => {
+  const hosts = new Set<string>()
+  for (const read of reads) {
+    if (read.kind !== 'entries') continue
+    for (const entry of read.entries) {
+      if (entry.telemetry) continue
+      hosts.add(
+        entry.host === null
+          ? (entry.line ?? 'unknown')
+          : entry.port === null
+            ? entry.host
+            : `${entry.host}:${entry.port}`,
+      )
+    }
+  }
+  return [...hosts]
+}
+
+/** What the sandbox did to a step, for its `StepOutcome`: absent when there is nothing to say. */
+export const sandboxOutcomeOf = (reads: readonly RefusedRead[]): StepOutcome['sandbox'] => {
+  const refused = refusedHostsOf(reads)
+  return refused.length === 0 ? undefined : { refused }
+}
+
+/**
+ * **One pass's record of what its invocations were refused**, by step (#1157). Tee'd from the refusals append, so a
+ * refused append does not lose a read that happened; **drained** by `runStep` after the step's actions return, so
+ * a fix round's second `build` sees only its own reads. Built inside one `conduct` call: two passes at once each
+ * have their own.
+ */
+export interface RefusalCollector {
+  /** Remembers one read. */
+  readonly record: (step: Step, read: RefusedRead) => void
+  /** The step's reads, cleared. */
+  readonly drain: (step: Step) => readonly RefusedRead[]
+}
+
+export const makeRefusalCollector = (): RefusalCollector => {
+  const byStep = new Map<Step, RefusedRead[]>()
+  return {
+    record: (step, read) => {
+      const reads = byStep.get(step) ?? []
+      reads.push(read)
+      byStep.set(step, reads)
+    },
+    drain: (step) => {
+      const reads = byStep.get(step) ?? []
+      byStep.delete(step)
+      return reads
+    },
+  }
+}

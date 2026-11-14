@@ -1293,6 +1293,7 @@ describe('doc/reference.md', () => {
       'eleven',
       'twelve',
       'thirteen',
+      'fourteen',
     ] as const
     const spendsAnAgent = Object.values(BUILT_IN_FOR).filter((built) => built === null).length
     const total = JudgeWhen.options.length

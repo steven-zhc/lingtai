@@ -494,6 +494,8 @@ export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
   'fixer-disagrees': null,
   'merge-refused': null,
   'budget-exhausted': null,
+  // Allowing a host or installing the sandbox is the operator's (#1157).
+  'sandbox-refused': null,
   // Free and mechanical: the base moved on the branch's own files, so merge it in
   // and build and review again (#593). Bounded by `BASE_MERGES_LIMIT`, not by a judge.
   'base-moved': 'merge-the-base',

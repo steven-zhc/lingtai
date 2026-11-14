@@ -103,18 +103,33 @@ describe('a decision that is not sandboxed', () => {
 })
 
 describe('fail closed', () => {
-  it.each([sandboxed, { kind: 'refused', why: 'no bwrap' } as SandboxDecision])(
-    'a $kind decision with no sandbox dep throws ActionUnavailableError by name',
-    (decision) => {
-      for (const step of STEPS) {
-        const f = fakes()
-        expect(() => actionPortsFromRecipe(step, [action], { ...f.deps, sandboxDecision: decision })).toThrow(
-          ActionUnavailableError,
-        )
-        expect(f.spawns).toEqual([])
-      }
-    },
-  )
+  it('a sandboxed decision with no sandbox dep throws ActionUnavailableError by name', () => {
+    for (const step of STEPS) {
+      const f = fakes()
+      expect(() => actionPortsFromRecipe(step, [action], { ...f.deps, sandboxDecision: sandboxed })).toThrow(
+        ActionUnavailableError,
+      )
+      expect(f.spawns).toEqual([])
+    }
+  })
+
+  // #1157: a refused decision is a failed action, never a spawn and never a wrap, with or without a sandbox dep.
+  it.each([false, true])('a refused decision fails the action before spawn (sandbox dep: %s)', async (withSandbox) => {
+    for (const step of STEPS) {
+      const f = fakes()
+      const [port] = actionPortsFromRecipe(step, [action], {
+        ...f.deps,
+        sandboxDecision: { kind: 'refused', why: 'no bwrap' } as SandboxDecision,
+        ...(withSandbox ? { sandbox: f.sandbox } : {}),
+      })
+      const result = await Effect.runPromise(port!.run(context))
+      expect(result.verdict).toBe('failed')
+      expect(result.evidence).toContain('no bwrap')
+      expect(result.sandboxUnavailable).toBe('no bwrap')
+      expect(f.spawns).toEqual([])
+      expect(f.wraps).toEqual([])
+    }
+  })
 })
 
 describe('a wrap that fails', () => {
@@ -132,6 +147,8 @@ describe('a wrap that fails', () => {
     expect(result.verdict).toBe('failed')
     expect(result.evidence).toContain(sentence)
     expect(f.spawns).toEqual([])
+    // Only the host losing the sandbox is flagged for a person (#1157).
+    expect(result.sandboxUnavailable).toBe(error._tag === 'SandboxUnavailable' ? sentence : undefined)
   })
 })
 

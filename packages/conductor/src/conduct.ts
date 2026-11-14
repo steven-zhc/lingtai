@@ -275,7 +275,13 @@ import {
 import { RUN_LOG_END, claudeConfigDirFor, runLogEnd, runLogPath } from './run-log.ts'
 import { runtimesOf } from './runtimes-of.ts'
 import { decidePassSandbox, makeRunSandbox } from './sandbox-decision.ts'
-import { recordUnwrapped, recordingWrap, type InvocationAppends } from './sandbox-record.ts'
+import {
+  makeRefusalCollector,
+  recordUnwrapped,
+  recordingWrap,
+  sandboxOutcomeOf,
+  type InvocationAppends,
+} from './sandbox-record.ts'
 import { recordRecipe, stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, editEndedWaitsEffect, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
@@ -854,11 +860,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           : (self) => self,
       )
     }
+    // What this pass's invocations were refused, by step; `runStep` drains it into the step's outcome (#1157).
+    const refusals = makeRefusalCollector()
     const invocationAppends = (stream: string): InvocationAppends => ({
       before: (events) => appendInvocation(stream, events, true),
       // Remembered, so the pass cannot report success with a refusals row missing; swallowed here so the child's
       // own receipts are not lost over it.
       after: (events) => appendInvocation(stream, events, true).pipe(Effect.catchDefect(() => Effect.void)),
+      read: refusals.record,
     })
 
     // ---- 1. the recipe, from this machine -----------------------------------
@@ -5087,6 +5096,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         emit,
         recordPrompt: (call) => recordPrompt(store, runId, call, log),
         actionsAt,
+        sandboxAt: (step) => sandboxOutcomeOf(refusals.drain(step)),
         bodies: passBodies,
         ceilings,
         judge,

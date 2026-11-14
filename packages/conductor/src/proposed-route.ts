@@ -71,6 +71,8 @@ export function whenOf(proposal: Proposal): JudgeWhen {
       return 'base-moved'
     case 'BudgetExhausted':
       return 'budget-exhausted'
+    case 'SandboxRefused':
+      return 'sandbox-refused'
     case 'DiffTooLarge':
       // Never reached: `offerFor` offers only `hand-to-person` for it, so
       // `replyFor` answers `NotAsked` before this is asked (0108 §14). Not
