@@ -704,6 +704,44 @@ function laneWaited(): readonly Envelope[] {
   ])
 }
 
+/** #1161: one invocation's boundary, a second one that was refused, and a step that ends after them. */
+function sandboxRecorded(): readonly Envelope[] {
+  const run = anAttempt(attemptStream('sandbox-recorded'))
+  const keys = (commandId: string) => ({
+    step: 'implement' as const,
+    action: 'agent',
+    runtime: 'claude-code',
+    runId: run.runId,
+    commandId,
+  })
+  // Not `stamp`: its counters are global, so one more stamped history here would move every one after it and with
+  // them the committed hashes of the control and ticket reducers (0124 §3).
+  const own = (events: readonly Envelope[]) =>
+    events.map((e, i) => ({ ...e, seq: BigInt(9_000_000 + i), at: new Date(START_MS - 86_400_000 + i * STEP_MS) }))
+  return own([
+    runStarted(run, runTicket),
+    run.event('StepStarted', { runId: run.runId, step: 'implement', round: 0 }),
+    run.event('SandboxBoundaryRecorded', {
+      ...keys('cmd-1'),
+      boundary: { kind: 'unsandboxed', reason: 'off by choice' },
+    }),
+    run.event('SandboxConnectionsRefused', {
+      ...keys('cmd-1'),
+      read: {
+        kind: 'entries',
+        entries: [{ host: 'example.com', port: 443, count: 2, firstAt: '2026-11-01T00:00:00.000Z', telemetry: false }],
+        complete: true,
+      },
+    }),
+    run.event('SandboxConnectionsRefused', { ...keys('cmd-2'), read: { kind: 'unreadable', reason: 'no store' } }),
+    ...run.aStepEnded(
+      outcome('implement', 0, [
+        act('commit', 'agent', 'base000', { _tag: 'Completed', head: 'sha-1', question: null }, 'agent'),
+      ]),
+    ),
+  ])
+}
+
 /** #828 D2: `implement`'s commit is on the base, a later verdict is on `sha-1`, and the head then moves to `sha-2`. */
 function implementThenReviewed(): readonly Envelope[] {
   const run = anAttempt(attemptStream('implement-then-reviewed'))
@@ -1128,6 +1166,8 @@ function proposalRoutedByReference(): readonly Envelope[] {
 
 const late_proposalRoutedByReference = proposalRoutedByReference()
 
+const late_sandboxRecorded = sandboxRecorded()
+
 export const lateHistories = {
   attempt: {
     fixRoundRouted: late_fixRoundRouted,
@@ -1141,6 +1181,7 @@ export const lateHistories = {
     failedInsideStep: late_failedInsideStep,
     refusedThenFailed: late_refusedThenFailed,
     planResolved: late_planResolved,
+    sandboxRecorded: late_sandboxRecorded,
     laneWaited: late_laneWaited,
     implementThenReviewed: late_implementThenReviewed,
     proposalRoutedByReference: late_proposalRoutedByReference,
@@ -1371,6 +1412,8 @@ export const COVERS = {
     'ProposalRouted',
     'RunRefsPublished',
     'RunKeptUncommitted',
+    'SandboxBoundaryRecorded',
+    'SandboxConnectionsRefused',
   ],
   ticket: [
     'TicketDiscovered',
@@ -1486,6 +1529,9 @@ const late_everyAttemptType = stamp(
     return ordered.map((e, i) => ({ ...e, streamId, version: i + 1 }))
   })(),
 )
+// The two sandbox types (#1161) are in the fixture and not in the count: the control fixture is stamped after this
+// one, and its committed hash is over the `seq` it was given before they existed (0124 §3).
+nextSeq -= BigInt(late_everyAttemptType.filter((e) => e.type.startsWith('Sandbox')).length)
 
 /**
  * The control fixture's last event (version 3 of the control reducer): a start after a standing request, which

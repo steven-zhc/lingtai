@@ -926,6 +926,8 @@ export const RunFinished = z.object({
  */
 export const SandboxPolicyValue = z.object({
   allowedDomains: z.array(z.string()),
+  /** The entries of `allowedDomains` the project or caller added, as of this run; absent in a record from before it. */
+  recipeDomains: z.array(z.string()).optional(),
   allowRead: z.array(z.string()),
   allowWrite: z.array(z.string()),
   denyRead: z.array(z.string()),

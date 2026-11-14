@@ -53,8 +53,30 @@ export interface StepFinding {
   severity: Severity
 }
 
+/**
+ * One wrapped invocation's sandbox record (#1161), keyed by the wrap's `commandId`. Never by `runId`, which is
+ * minted once per claim and shared by every action of the attempt, nor by step and action, which repeat across fix
+ * rounds. `boundary` is null for a refusal record whose boundary event is missing.
+ */
+export interface SandboxInvocation {
+  readonly commandId: string
+  readonly step: Step
+  readonly action: string
+  readonly runtime?: string
+  readonly runId: string | null
+  /** The stream version of the first event that named this invocation. */
+  readonly version: number
+  readonly boundary: PayloadOf<'SandboxBoundaryRecorded'>['boundary'] | null
+  /** The last `SandboxConnectionsRefused`. Null where none was appended: the read found nothing, or has not happened. */
+  readonly refusals: PayloadOf<'SandboxConnectionsRefused'>['read'] | null
+  /** A `StepEnded` for this invocation's step arrived after it: the refusals were read by then. */
+  readonly ended: boolean
+}
+
 export interface StepState {
   step: string
+  /** The plugin of the reached action this state came from (#1161); absent on a waiver or an approval, which name none. */
+  plugin?: string
   verdict: StepVerdict
   /** The commit this verdict is about. A verdict on any other sha is stale. */
   onSha: string
@@ -212,6 +234,11 @@ export interface AttemptState {
   published: PayloadOf<'RunRefsPublished'> | null
   /** Every `RunKeptUncommitted`, in order. */
   kept: readonly PayloadOf<'RunKeptUncommitted'>[]
+  /**
+   * Every wrapped invocation's sandbox record, in the order first heard of (#1161). Absent until a sandbox event is
+   * reduced, so a state stored before it is still today's shape.
+   */
+  sandbox?: readonly SandboxInvocation[]
 
   version: number
   lastSeq: bigint | null
@@ -396,6 +423,7 @@ function stepStateOf(key: string, action: Reached, outcome: StepOutcome): StepSt
   const review = reviewSummaryOf({ ...outcome, actions: [action] })
   return {
     step: key,
+    plugin: action.plugin,
     onSha: action.onSha,
     by: null,
     reason: null,
@@ -406,6 +434,30 @@ function stepStateOf(key: string, action: Reached, outcome: StepOutcome): StepSt
     ...(review?.summary === undefined ? {} : { summary: review.summary }),
     ...(review?.clipped === undefined ? {} : { clipped: review.clipped }),
   }
+}
+
+/** The invocation `d` names, updated or added. A refusal with no boundary still gets its row (#1161). */
+function withSandbox(
+  state: AttemptState,
+  d: PayloadOf<'SandboxBoundaryRecorded'> | PayloadOf<'SandboxConnectionsRefused'>,
+  change: Partial<Pick<SandboxInvocation, 'boundary' | 'refusals'>>,
+  version: number,
+): readonly SandboxInvocation[] {
+  const all = state.sandbox ?? []
+  if (all.some((i) => i.commandId === d.commandId))
+    return all.map((i) => (i.commandId === d.commandId ? { ...i, ...change } : i))
+  const row: SandboxInvocation = {
+    commandId: d.commandId,
+    step: d.step,
+    action: d.action,
+    ...(d.runtime === undefined ? {} : { runtime: d.runtime }),
+    runId: d.runId,
+    version,
+    boundary: change.boundary ?? null,
+    refusals: change.refusals ?? null,
+    ended: false,
+  }
+  return [...all, row]
 }
 
 export function reduceAttemptEvent(state: AttemptState, event: Envelope): AttemptState {
@@ -530,20 +582,43 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
       // The move needs no proposal, so a route whose evidence is on a `StepEnded`
       // before a snapshot is still replayed (#932).
       const next = routeMove(d.offer, d.reply, d.decision)
+      // A route follows whatever judged it, and a judge runs between step visits: it gets no `StepEnded` of its own,
+      // so its wrapped invocation is over when the route is recorded (#1161).
+      const settled =
+        state.sandbox?.some((i) => !i.ended) === true
+          ? { sandbox: state.sandbox.map((i) => (i.ended ? i : { ...i, ended: true })) }
+          : {}
       return next._tag === 'FixRound'
         ? {
             ...state,
+            ...settled,
             ...at,
             implementRound: Math.max(state.implementRound, next.round),
             roundsOpened: [...state.roundsOpened, next.round],
             route: d,
           }
-        : { ...state, ...at, route: d }
+        : { ...state, ...settled, ...at, route: d }
+    }
+
+    case 'SandboxBoundaryRecorded': {
+      const d = event.data as PayloadOf<'SandboxBoundaryRecorded'>
+      return { ...state, ...at, sandbox: withSandbox(state, d, { boundary: d.boundary }, event.version) }
+    }
+
+    case 'SandboxConnectionsRefused': {
+      const d = event.data as PayloadOf<'SandboxConnectionsRefused'>
+      return { ...state, ...at, sandbox: withSandbox(state, d, { refusals: d.read }, event.version) }
     }
 
     case 'StepEnded': {
       const d = event.data as PayloadOf<'StepEnded'>
       let next = state
+      if (state.sandbox?.some((i) => i.step === d.outcome.step && !i.ended) === true) {
+        next = {
+          ...next,
+          sandbox: state.sandbox.map((i) => (i.step === d.outcome.step && !i.ended ? { ...i, ended: true } : i)),
+        }
+      }
       // A review round replaces the earlier ones' summaries: an action it did not reach keeps its old
       // verdict, but not an old summary, so insertion order never has to stand for recency (#893).
       if (d.outcome.step === 'review') {
@@ -555,7 +630,7 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
             steps[k] = kept
           }
         }
-        next = { ...state, steps }
+        next = { ...next, steps }
       }
       for (const action of d.outcome.actions) {
         if (!isReached(action)) continue

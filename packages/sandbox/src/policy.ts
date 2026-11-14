@@ -190,6 +190,8 @@ export const resolvedPolicy = (host: HostFacts, input: PolicyInputs) => {
   const fs = filesystemFor(host, input)
   return {
     allowedDomains: unique([...BUILT_IN_DOMAINS, ...runDomains(input)]),
+    // What was added over the built-in list at this moment: the record keeps where each domain came from.
+    recipeDomains: runDomains(input).filter((d) => !BUILT_IN_DOMAINS.includes(d)),
     allowRead: fs.allowRead,
     allowWrite: fs.allowWrite,
     denyRead: fs.denyRead,

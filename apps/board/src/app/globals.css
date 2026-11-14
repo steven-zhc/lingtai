@@ -3392,3 +3392,15 @@ dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
 .pbanner button:disabled { opacity: .5; cursor: default; }
 button.navlink { font-family: inherit; cursor: pointer; }
 .navlink.held { border-color: var(--held); background: var(--held-soft); color: var(--held); }
+
+/* The Sandbox tab (#1161): the attempt switcher, the parts, and the small state mark. */
+.sbswitch { display: flex; flex-wrap: wrap; gap: 0.6rem; justify-content: flex-end; margin-bottom: 0.75rem; }
+.sbswitch a { color: var(--muted); text-decoration: none; font-family: var(--mono); }
+.sbswitch a[aria-current='page'] { color: var(--ink); border-bottom: 2px solid var(--accent); }
+.sandbox { display: flex; flex-direction: column; gap: 1.25rem; }
+.sandbox h3 { margin: 0 0 0.35rem; }
+.sandbox ul { margin: 0 0 0.5rem; padding-left: 1.1rem; }
+.sbhead { margin: 0.4rem 0 0.15rem; color: var(--muted); }
+.sbrows { border-collapse: collapse; width: 100%; }
+.sbrows td { padding: 0.2rem 0.75rem 0.2rem 0; vertical-align: baseline; }
+.sbmark { font-family: var(--mono); font-size: 0.85em; }

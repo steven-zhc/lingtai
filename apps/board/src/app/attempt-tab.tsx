@@ -1,9 +1,11 @@
 import { inWords } from '@lingtai/conductor/queue'
+import type { SandboxInvocation } from '@lingtai/domain'
 import { describeWaitLines } from '@lingtai/projector/task-view'
 
 import { leadOf } from '@/lib/markdown'
 import { elapsed } from '@/lib/progress'
 import { describeAction, readRecipe, type FromHead } from '@/lib/recipe'
+import { markOfAction } from '@/lib/sandbox-view'
 import { billText } from '@/lib/spend'
 import type { AttemptTabDetail, AttemptView } from '@/lib/task'
 
@@ -12,6 +14,7 @@ import { HistoryRow } from './history-row.tsx'
 import { DocumentBody } from './markdown.tsx'
 import { Segs } from './rail.tsx'
 import { RunLog } from './run-log.tsx'
+import { SandboxMark } from './sandbox-panel.tsx'
 import { ShownPrompt } from './shown-prompt.tsx'
 import { RawEvidence } from './standing.tsx'
 
@@ -61,7 +64,7 @@ function ReviewSummary({ review }: { review: NonNullable<AttemptView['review']> 
 }
 
 export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDetail; now?: number }) {
-  const { run, standing, project } = detail
+  const { run, standing, project, sandbox } = detail
   const running = run.outcome.state === 'running'
   // The page is deciding on this attempt only while the ticket is blocked at it;
   // `deciding` is a search that walks back to an earlier refusal and means
@@ -195,7 +198,7 @@ export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDet
             {run.recipe === undefined || run.recipe.of === 'none' ? 'not shown' : run.recipe.configHash.slice(0, 12)}
           </span>
         </summary>
-        <RecipeGiven run={run} />
+        <RecipeGiven run={run} sandbox={sandbox} />
       </details>
 
       {/* `RunLog` is its own `<details>`: a second one around it would close
@@ -251,7 +254,13 @@ function changesFact(run: AttemptView): string {
  * grows no command (ADR 0016 §4); a name the shown recipe does not have says so
  * rather than borrowing a command from a different action.
  */
-export function RecipeGiven({ run }: { run: AttemptView }) {
+export function RecipeGiven({
+  run,
+  sandbox,
+}: {
+  run: AttemptView
+  sandbox?: readonly SandboxInvocation[] | undefined
+}) {
   const recipe = run.recipe
   if (recipe === undefined) return null
   if (recipe.of === 'none') {
@@ -330,10 +339,17 @@ export function RecipeGiven({ run }: { run: AttemptView }) {
                       )
                     }
                     const { does, bound } = describeAction(action, undefined, p.step)
+                    const mark = markOfAction(sandbox, p.step, name)
                     return (
                       <details key={name} className="act">
                         <summary>
                           <span className="mono">{name}</span> <span className="actbound">{bound}</span>
+                          {mark === null ? null : (
+                            <>
+                              {' '}
+                              <SandboxMark mark={mark} />
+                            </>
+                          )}
                         </summary>
                         <pre className="actcmd">{does}</pre>
                       </details>

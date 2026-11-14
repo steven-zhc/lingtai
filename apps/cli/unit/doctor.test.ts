@@ -498,10 +498,10 @@ describe('snapshotCensus (#879)', () => {
   })
 
   it('reports an unanchored current-version row as void by anchor', async () => {
-    const r = await Effect.runPromise(snapshotCensus(() => Effect.succeed([row('attempt', 4, 3, 1, 3000)])))
+    const r = await Effect.runPromise(snapshotCensus(() => Effect.succeed([row('attempt', 5, 3, 1, 3000)])))
     expect(r.status).toBe('info')
     expect(r.detail).toContain('1 usable')
-    expect(r.detail).toContain('attempt v4 ×2')
+    expect(r.detail).toContain('attempt v5 ×2')
     expect(r.detail).toContain('anchor no longer holds')
   })
 
