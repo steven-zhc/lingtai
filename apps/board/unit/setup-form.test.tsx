@@ -1,6 +1,6 @@
 import { STEPS } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { ReadView } from '../src/app/setup/repository/read/read-model.ts'
 
@@ -29,6 +29,7 @@ const view = (target: ReadView['target']): ReadView => ({
   heldBy: line('agent:hold'),
   end: line(true),
   limits: { turns: 300, wall: '1h', rounds: 3, restarts: 1 },
+  sandbox: null,
 })
 
 const render = async (target: ReadView['target']) => {
@@ -74,4 +75,32 @@ it('a local target has no end line and keeps base disabled', async () => {
   const line = html.slice(base, html.indexOf('s2-line', base + 1))
   expect(line).toContain('made from the branch checked out')
   expect(line).not.toContain('s2-change')
+})
+
+describe('the sandbox step (#1160)', () => {
+  const withSandbox = async (sandbox: ReadView['sandbox']) => {
+    const { SetupForm } = await import('../src/app/setup/repository/read/setup-form.tsx')
+    return renderToStaticMarkup(<SetupForm view={{ ...view({ kind: 'github', owner: 'o', repo: 'p' }), sandbox }} />)
+  }
+
+  it('is absent where the view carries none — an existing recipe is never asked', async () => {
+    expect(await withSandbox(null)).not.toContain('Sandbox')
+  })
+
+  it('shows the built-in hosts, on by default, and the line off gives up', async () => {
+    const html = await withSandbox({ builtIns: ['api.example.com'], cannot: null, offLine: 'it reaches everything' })
+    expect(html).toContain('Sandbox')
+    expect(html).toContain('api.example.com')
+    expect(html).toContain('it reaches everything')
+    expect(html).not.toContain('cannot run the sandbox')
+  })
+
+  it('says plainly when the host cannot provide it', async () => {
+    const html = await withSandbox({
+      builtIns: [],
+      cannot: 'This machine cannot run the sandbox yet: no bwrap.',
+      offLine: 'x',
+    })
+    expect(html).toContain('This machine cannot run the sandbox yet: no bwrap.')
+  })
 })

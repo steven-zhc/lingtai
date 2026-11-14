@@ -29,6 +29,16 @@ export interface RuntimeView {
   noTurnCeiling: boolean
 }
 
+/** The sandbox step (#1160): plain data, so the client never imports `@lingtai/sandbox`. */
+export interface SandboxView {
+  /** `BUILT_IN_DOMAINS`, read-only. */
+  builtIns: string[]
+  /** The sentence for a host that cannot provide the sandbox, srt's own words included; null where it can. */
+  cannot: string | null
+  /** What turning it off gives up. */
+  offLine: string
+}
+
 /** Everything the form starts from. */
 export interface ReadView {
   project: string
@@ -50,6 +60,8 @@ export interface ReadView {
   heldBy: LineView<string>
   end: LineView<boolean>
   limits: SetupForm['limits']
+  /** Null where the step is not asked: a recipe that already exists, or nothing could be read. */
+  sandbox: SandboxView | null
 }
 
 export type Preview = { text: string; ceiling: string } | { refused: string }

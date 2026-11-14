@@ -59,6 +59,7 @@ import { Effect } from 'effect'
 
 import { addEffect, addLocalEffect } from './onboard.ts'
 import { asFailure } from './port-face.ts'
+import { sandboxHostHere } from './projects.ts'
 import { loadAllProjects, signedInHere } from './projects.ts'
 import { liveHistoryEffect } from './ticket-history.ts'
 
@@ -147,7 +148,12 @@ function githubReader(
 }
 
 /** The readers a proposal reads through, for one target. */
-export function liveReaders(target: SetupTarget): Effect.Effect<ProposalReaders> {
+export function liveReaders(
+  target: SetupTarget,
+  options: { recipeIsNew?: boolean } = {},
+): Effect.Effect<ProposalReaders> {
+  // The host is read only for a recipe that is new (#1160): an existing project is never asked, so never loads srt.
+  const host = options.recipeIsNew === true ? { host: sandboxHostHere() } : {}
   if (target.kind === 'github') {
     const { owner, repo } = target
     return Effect.gen(function* () {
@@ -159,6 +165,7 @@ export function liveReaders(target: SetupTarget): Effect.Effect<ProposalReaders>
         runtimes: askRuntimesEffect,
         history: liveHistoryEffect,
         origin: () => Effect.succeed(null),
+        ...host,
       }
     })
   }
@@ -170,14 +177,33 @@ export function liveReaders(target: SetupTarget): Effect.Effect<ProposalReaders>
     history: liveHistoryEffect,
     origin: (path) =>
       gitIn(path, ['remote', 'get-url', 'origin']).pipe(Effect.map((r) => (r.ok && r.out !== '' ? r.out : null))),
+    ...host,
   })
 }
 
 /** Every line step 2 shows, read once; a failed read is a `known: false` line and not an error. */
-export function proposalFor(target: SetupTarget, readers?: ProposalReaders): Effect.Effect<Proposal, never> {
+export function proposalFor(
+  target: SetupTarget,
+  readers?: ProposalReaders,
+  options: { recipeIsNew?: boolean } = {},
+): Effect.Effect<Proposal, never> {
   return readers
     ? proposeSetup(target, readers)
-    : Effect.flatMap(liveReaders(target), (live) => proposeSetup(target, live))
+    : Effect.flatMap(liveReaders(target, options), (live) => proposeSetup(target, live))
+}
+
+/**
+ * Whether the project has no recipe on disk yet, so the sandbox step is asked (#1160). A read that throws counts as
+ * *exists*: the conservative side, which never offers a block over a file nobody could read.
+ */
+export function recipeIsNew(project: string, ports: { home?: string; files?: RecipeFiles } = {}) {
+  return Effect.tryPromise({
+    try: () => (ports.files ?? diskFiles).read(recipePath(project, ports.home)),
+    catch: reasonOf,
+  }).pipe(
+    Effect.map((text) => text === null),
+    Effect.orElseSucceed(() => false),
+  )
 }
 
 /**

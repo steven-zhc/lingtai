@@ -110,7 +110,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 import { addLocalEffect } from '@lingtai/conductor/onboard'
-import { loadAllProjectsEffect, signedInHere } from '@lingtai/conductor/projects'
+import { loadAllProjectsEffect, sandboxHostHere, signedInHere } from '@lingtai/conductor/projects'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { type ProjectState } from '@lingtai/domain'
 import {
@@ -255,6 +255,8 @@ export interface InitWorld {
   registerLocal: (payload: RegisterLocalPayload) => Effect.Effect<{ line: string; updated: boolean }, unknown>
   /** `FirstProjectWorld.history` (#396) — `ticket-<project>-*` streams already in the log for this project. */
   history: (project: string) => Effect.Effect<readonly string[], unknown>
+  /** `FirstProjectWorld.sandboxHost` (#1160): absent asks no sandbox question. */
+  sandboxHost?: FirstProjectWorld['sandboxHost']
   /**
    * The report `lingtai doctor` would print, formatted — printed at the end
    * and never allowed to set the exit code (#434). The live one imports
@@ -603,6 +605,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         // Already probed above, for the "look" lines — a second probe for the
         // same run would ask every runtime whether it is signed in twice.
         runtimes: () => Effect.succeed(runtimes),
+        ...(world.sandboxHost === undefined ? {} : { sandboxHost: world.sandboxHost }),
         claudeToken: (recipe) =>
           askClaudeTokenForRecipe(
             {
@@ -1363,6 +1366,7 @@ export function liveInitWorld(): InitWorld {
         payload.resolved,
       ),
     history: liveHistoryEffect,
+    sandboxHost: () => sandboxHostHere(),
     // Dynamic, never a static import of `./doctor.ts` — this file's header
     // warns that an eager log read breaks a fresh machine (`setup-end.ts` keeps that).
     doctor: liveSetupDoctorEffect,

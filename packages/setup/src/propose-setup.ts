@@ -12,12 +12,13 @@
  */
 import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
-import { SETUP_KINDS } from '@lingtai/recipe'
+import { SETUP_KINDS, verdictOf, type HostAnswer } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import { detectSetupEffect, type DetectedSetup, type SetupReader } from './detect-setup.ts'
 import { portCause } from './port-cause.ts'
 import { remedyFor, runtimeStateSentence, type RuntimeFound } from './runtimes.ts'
+import { type SandboxInstall, type SandboxProposal } from './sandbox-step.ts'
 import { githubSlugOfRemote, ticketSourceOf, type TicketSourceName } from './ticket-source.ts'
 
 export type Line<T> = { known: true; value: T; because: string } | { known: false; reason: string; default: T }
@@ -52,6 +53,12 @@ export interface Proposal {
   /** The label a new recipe excludes: null, because `source.exclude` defaults to `[]`. */
   heldBy: Line<string | null>
   end: Line<string[]>
+  /**
+   * The sandbox step: `null` where the caller passed no `host` reader, which it does only for a recipe that is
+   * new (#1160) — `null` means the step is not asked. The proposal always suggests *on*; a host that cannot is
+   * a fact shown under that default, not a failed read.
+   */
+  sandbox: SandboxProposal | null
   limits: Line<{ rounds: number; wall: string; turns: number | 'unbounded' }>
   /** Always false: `proposed: []` (#964 decision 5). A person approving the merge is something chosen. */
   personApprovesMerge: boolean
@@ -67,6 +74,11 @@ export interface ProposalReaders {
   history: (project: string) => Effect.Effect<readonly string[], unknown>
   /** `git remote get-url origin` of a local path: null where there is no `origin`. */
   origin: (path: string) => Effect.Effect<string | null, unknown>
+  /**
+   * The host check, and what a person needs to fix it: given only for a recipe that is new, so a project that
+   * already has one never loads srt (#1160). `install` is `@lingtai/sandbox`'s `installFor(platform)`.
+   */
+  host?: { answer: HostAnswer; install: SandboxInstall | null; builtIns: readonly string[] }
 }
 
 /** A new recipe excludes no label: `source.exclude` defaults to `[]`, so nothing is held until somebody says so. */
@@ -242,6 +254,15 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
                 because: 'no GitHub origin, so Lingtai keeps its own tickets',
               }
 
+    const sandbox: SandboxProposal | null =
+      readers.host === undefined
+        ? null
+        : {
+            verdict: yield* verdictOf(readers.host.answer),
+            install: readers.host.install,
+            builtIns: readers.host.builtIns,
+          }
+
     const checks = found.build.map(({ name, run }) => ({ name, run }))
     return {
       target,
@@ -263,6 +284,7 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
         target.kind === 'github'
           ? { known: true, value: DEFAULT_END, because: 'what a new GitHub project is seeded with' }
           : { known: true, value: [], because: 'a local project is seeded with no end actions' },
+      sandbox,
       limits: {
         known: true,
         value: { ...DEFAULT_LIMITS, turns: turnsFor(agents.writer) },

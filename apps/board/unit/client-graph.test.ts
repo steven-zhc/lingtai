@@ -23,6 +23,8 @@ const FORBIDDEN = (spec: string): string | null => {
   if (spec === '@lingtai/repo' || spec.startsWith('@lingtai/repo/')) return '@lingtai/repo'
   if (spec === '@lingtai/conductor' || spec.startsWith('@lingtai/conductor/')) return '@lingtai/conductor'
   if (spec === '@lingtai/setup' || spec.startsWith('@lingtai/setup/')) return '@lingtai/setup'
+  // Its root pulls in `node:crypto`, which only the post-merge Next build would otherwise catch (#230, #1160).
+  if (spec === '@lingtai/sandbox' || spec.startsWith('@lingtai/sandbox/')) return '@lingtai/sandbox'
   return null
 }
 

@@ -23,6 +23,7 @@ describe('the preview of a new GitHub recipe', () => {
       personApprovesMerge: true,
       limits: { turns: 50, wall: '1h', rounds: 3, restarts: 2 },
       turnsUnbounded: false,
+      sandbox: null,
     }
     const files = { read: () => Promise.resolve(null), replace: () => Promise.resolve() }
     const text = await Effect.runPromise(previewSetup({ home: '/h/.lingtai', files }, setupAnswers(form)))

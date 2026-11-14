@@ -5,7 +5,14 @@
 import { everyRuntime } from '@lingtai/agent'
 import { localTicketsOf } from '@lingtai/conductor/add-from-page'
 import { LIMIT_DEFAULTS } from '@lingtai/recipe'
-import { LINGTAI_BASE, type Line, type Proposal, type SetupTarget } from '@lingtai/setup'
+import {
+  LINGTAI_BASE,
+  SANDBOX_OFF_LINE,
+  sandboxCannotSentence,
+  type Line,
+  type Proposal,
+  type SetupTarget,
+} from '@lingtai/setup'
 
 import type { CheckView, LineView, ReadView } from './read-model.ts'
 
@@ -70,6 +77,14 @@ export function viewOf(proposal: Proposal, project: string, remote: string | nul
       rounds: proposal.limits.known ? proposal.limits.value.rounds : LIMIT_DEFAULTS.rounds,
       restarts: LIMIT_DEFAULTS.restarts,
     },
+    sandbox:
+      proposal.sandbox === null
+        ? null
+        : {
+            builtIns: [...proposal.sandbox.builtIns],
+            cannot: sandboxCannotSentence(proposal.sandbox),
+            offLine: SANDBOX_OFF_LINE,
+          },
   }
 }
 
@@ -102,5 +117,6 @@ export function emptyView(target: SetupTarget, project: string, remote: string |
     heldBy: unread(''),
     end: unread(false),
     limits: { ...LIMIT_DEFAULTS },
+    sandbox: null,
   }
 }

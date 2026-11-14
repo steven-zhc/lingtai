@@ -766,6 +766,9 @@ importers:
         specifier: ^2.8.1
         version: 2.9.0
     devDependencies:
+      '@lingtai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@types/node':
         specifier: ^26.4.0
         version: 26.4.0

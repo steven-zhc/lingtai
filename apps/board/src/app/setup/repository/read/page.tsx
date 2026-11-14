@@ -1,4 +1,4 @@
-import { proposalFor, projectNameOf, readLocalTarget } from '@lingtai/conductor/add-from-page'
+import { proposalFor, projectNameOf, readLocalTarget, recipeIsNew } from '@lingtai/conductor/add-from-page'
 import { loadAllProjects } from '@lingtai/conductor/projects'
 /**
  * Step 2 of adding a repository (#971): what Lingtai read, every proposed line
@@ -77,7 +77,9 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
   }
   // `suspend` so a reader that throws while it is built (an unreadable App key) is a failed read, not a failed page.
   const proposal = await Effect.runPromise(
-    Effect.suspend(() => proposalFor(target.target)).pipe(Effect.timeout('25 seconds')),
+    Effect.suspend(() =>
+      Effect.flatMap(recipeIsNew(project), (isNew) => proposalFor(target.target, undefined, { recipeIsNew: isNew })),
+    ).pipe(Effect.timeout('25 seconds')),
   ).catch((err: unknown) => (err instanceof Error ? err.message : 'it took too long'))
   if (typeof proposal === 'string') {
     return frame(

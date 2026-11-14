@@ -45,6 +45,7 @@ import { askAgents } from './agents.ts'
 import { lift, recovering } from './exit.ts'
 import { askLanding, askLimits } from './landing.ts'
 import { acceptingDefaults, questionEffect, type QuestionWorld } from './question.ts'
+import { askSandbox } from './sandbox-step.ts'
 import { type AskInstallAndBuildInput, type TrialOutcome, askInstallAndBuildEffect } from './setup-build.ts'
 import { askKinds, askTickets } from './source.ts'
 
@@ -266,6 +267,14 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
     if ('refused' in wroteAgentChanges) return wroteAgentChanges
     const wroteModelChanges = yield* writeOrRefuse(at.project, agents.modelChanges, fileOptions)
     if ('refused' in wroteModelChanges) return wroteModelChanges
+  }
+
+  // Asked of a new recipe only, and only where the caller read the host (#1160): an existing project is never
+  // given the block, and `proposal.sandbox` is `null` for one.
+  if (absent && at.proposal?.sandbox != null) {
+    const sandbox = yield* askSandbox(askWorld, { proposal: at.proposal.sandbox, flags: at.flags, kept: askKept })
+    if ('refused' in sandbox) return sandbox
+    collected.push(...sandbox.changes)
   }
 
   const setup = yield* askInstallAndBuildEffect(askWorld, {

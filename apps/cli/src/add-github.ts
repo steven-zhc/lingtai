@@ -24,6 +24,7 @@
  */
 import { checkGhAccessEffect, checkInstallationEffect, type GhAccess } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, type Choice, refusalLines } from '@lingtai/conductor/pick-repository'
+import { sandboxHostHere } from '@lingtai/conductor/projects'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp, stateDir } from '@lingtai/env'
 import { createGitHubClient, GitHubFailed, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
@@ -35,7 +36,7 @@ import {
   type RecipeFiles,
   resolveSource,
 } from '@lingtai/recipe'
-import { type Answers, EMPTY_SETUP_READER, type Picker, type SetupReader } from '@lingtai/setup'
+import { type Answers, EMPTY_SETUP_READER, type Picker, type ProposalReaders, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
 import { liveMachineText, liveTrialBuild, previewSetup } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -164,6 +165,8 @@ export interface AskBeforeGithubAddDeps {
   history: (project: string) => Effect.Effect<readonly string[], unknown>
   /** Asks for the sandboxed Claude Code token once the recipe is final (#1169); absent asks nothing, and it never refuses the add. */
   claudeToken?: (recipe: Parameters<typeof askClaudeTokenForRecipe>[1]) => Effect.Effect<void, unknown>
+  /** The host check for the sandbox step (#1160), read only for a recipe that is new; absent asks no sandbox question. */
+  sandboxHost?: () => NonNullable<ProposalReaders['host']>
 }
 
 const liveDeps: AskBeforeGithubAddDeps = {
@@ -181,6 +184,7 @@ const liveDeps: AskBeforeGithubAddDeps = {
   spin: liveSpin,
   runtimes: askRuntimesEffect,
   history: liveHistoryEffect,
+  sandboxHost: () => sandboxHostHere(),
   claudeToken: (recipe) =>
     askClaudeTokenForRecipe(
       liveClaudeTokenWorld({
@@ -406,6 +410,8 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
       runtimes: () => Effect.succeed(runtimes),
       history: (project) => deps.history(project),
       origin: () => Effect.succeed(null),
+      // Only a recipe that is new is asked the sandbox step; an existing one never loads srt (#1160).
+      ...(existing === null && deps.sandboxHost !== undefined ? { host: deps.sandboxHost() } : {}),
     },
   )
 
@@ -467,6 +473,8 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     'rounds',
     'wall',
     'budget',
+    'sandbox',
+    'sandbox-hosts',
   ]) {
     delete flags[name]
   }
