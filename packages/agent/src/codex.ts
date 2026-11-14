@@ -261,9 +261,10 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
  * `--permission-mode`; this is `-s`.
  *
  * `danger-full-access` is deliberately absent. It is what
- * `--dangerously-bypass-approvals-and-sandbox` amounts to, and the whole of what
- * makes this runtime `sandboxed` rather than `guarded` is that Lingtai does not
- * pass it.
+ * `--dangerously-bypass-approvals-and-sandbox` amounts to. Lingtai passes it
+ * only when the run's decision is *sandboxed* (#1151), where srt is the boundary
+ * and Codex's own sandbox is off; no unwrapped run ever carries it, and that is
+ * what keeps this runtime `sandboxed` rather than `guarded`.
  */
 export type CodexSandbox = 'workspace-write' | 'read-only'
 
@@ -1554,6 +1555,25 @@ export const codexRun = Effect.fn('agent.run')(function* (options: CodexOptions,
             sessionId: '',
           } satisfies RunOutcome
         }
+        if (request.signal?.aborted) {
+          // Aborted while the wrap was pending: nothing is spawned for a run nobody wants.
+          if (outputSchemaPath) {
+            try {
+              unlinkSync(outputSchemaPath)
+            } catch {
+              // Already gone.
+            }
+          }
+          return {
+            exitCode: null,
+            turns: 0,
+            durationMs: Date.now() - started,
+            costUsd: null,
+            text: null,
+            failure: { kind: 'aborted', detail: 'the conductor aborted the run' },
+            sessionId: '',
+          } satisfies RunOutcome
+        }
         launch = {
           command: wrapped.success.command,
           args: wrapped.success.args,
@@ -1727,6 +1747,8 @@ export const codexRun = Effect.fn('agent.run')(function* (options: CodexOptions,
         )
         const onAbort = () => kill('aborted', 'the conductor aborted the run')
         request.signal?.addEventListener('abort', onAbort, { once: true })
+        // An abort that fired before this point (during the wrap) was never delivered to the listener.
+        if (request.signal?.aborted) onAbort()
 
         child.on('error', (err) =>
           finish({

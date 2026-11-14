@@ -229,6 +229,24 @@ describe('codexRun with a decision', () => {
     expect(stops[0]).toBe(wrapped[0]!.env.LINGTAI_CODEX_PROCESS_MARKER)
   })
 
+  it('spawns nothing when the signal aborted while the wrap was pending', async () => {
+    const ac = new AbortController()
+    const { sandbox, wrapped } = fakeSandbox({
+      wrap: (input) =>
+        Effect.sync(() => {
+          ac.abort()
+          return { argv: ['srt', '--', ...input.command], env: { ...input.env }, commandId: 'c1' }
+        }),
+    })
+    const spawnFn = vi.fn()
+    const outcome: RunOutcome = await Effect.runPromise(
+      codexRun({ spawn: spawnFn as unknown as typeof spawn }, { ...request(sandbox), signal: ac.signal }),
+    )
+    expect(outcome.failure?.kind).toBe('aborted')
+    expect(spawnFn).not.toHaveBeenCalled()
+    expect(wrapped).toEqual([])
+  })
+
   it('spawns nothing for a refused decision or a failing wrap, and answers a crash', async () => {
     for (const [over, text] of [
       [{ decision: { kind: 'refused', why: 'no srt' } }, 'sandbox required and unavailable on this host: no srt'],
