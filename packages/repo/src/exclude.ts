@@ -19,7 +19,9 @@ export const sandboxExcludePath = (mirror: string, id: string): string =>
  * have read, because `core.excludesFile` replaces rather than adds, and a rule the project configured (`.env.local`)
  * must still hold. Names come first so a negation in the inherited rules is still the later, winning line.
  */
-export function excludeFileText(names: readonly string[], inherited = ''): string {
+export function excludeFileText(names: readonly string[], inheritedRaw = ''): string {
+  // Git skips a UTF-8 BOM only at the very start of an ignore file; behind our names it would stick to the first pattern.
+  const inherited = inheritedRaw.startsWith('\uFEFF') ? inheritedRaw.slice(1) : inheritedRaw
   const unique = [...new Set(names)]
   const head = unique.length === 0 ? '' : `${unique.join('\n')}\n`
   if (inherited.trim() === '') return head

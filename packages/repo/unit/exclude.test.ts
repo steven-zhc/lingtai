@@ -35,4 +35,9 @@ describe('excludeEnv', () => {
     expect(out['GIT_CONFIG_KEY_1']).toBe('core.excludesFile')
     expect(out['GIT_CONFIG_KEY_0']).toBe('a.b')
   })
+
+  it('drops a leading BOM from the inherited rules so the first pattern still matches', () => {
+    const text = excludeFileText(['/.vscode'], '\uFEFF.env.local\n')
+    expect(text).toBe('/.vscode\n.env.local\n')
+  })
 })
