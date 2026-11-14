@@ -732,6 +732,10 @@ export function continuationRound(run: AttemptState, granted: boolean): number {
   return granted ? run.implementRound + 1 : run.implementRound
 }
 
+/** srt's own explanation out of a `SandboxWrapFailed`'s `cause`. */
+const causeText = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : 'no explanation was given'
+
 export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, never, Repo | AgentHost> {
   const run: Effect.Effect<RunOnceResult, never, Repo | AgentHost> = Effect.gen(function* () {
     // Asked for, not threaded through, which is the half of 0023 the `RunPorts`
@@ -897,7 +901,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                             ? [e.reason, ...e.sentences].join('; ')
                             : e._tag === 'SandboxPolicyRefused'
                               ? `the sandbox policy refused ${e.refusals.map((r) => r.path).join(', ')}`
-                              : 'srt could not wrap the command',
+                              : `srt could not wrap the command: ${causeText(e.cause)}`,
                       })),
                     ),
                   ),
@@ -3163,7 +3167,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // worktree starts in its own run directory instead: the
               // conductor's is read-denied inside srt (#1150).
               cwd:
-                worktree?.path ?? (judgeDecision.kind === 'unsandboxed' ? home : claudeConfigDirFor(home, judgeRunId)),
+                worktree?.path ??
+                (judgeDecision.kind === 'unsandboxed' || runtime !== 'claude-code'
+                  ? home
+                  : claudeConfigDirFor(home, judgeRunId)),
               ...sandboxOf(judgeDecision, { runId: judgeRunId, worktree: worktree?.path }),
               prompt: judgePromptText,
               ...(declared.model === undefined ? {} : { model: declared.model }),

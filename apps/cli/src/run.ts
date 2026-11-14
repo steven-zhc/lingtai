@@ -2,6 +2,22 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 import { createRuntime, type Runtime } from '@lingtai/agent'
+import {
+  AgentHost,
+  currentRecipe,
+  loadProject,
+  ownerlessClientEffect,
+  ticketedClientOf,
+  attemptCeiling,
+  Repo,
+  runOnce,
+  runQueue,
+  tallyTurnEffect,
+  ticketsForEffect,
+  type TurnClient,
+  type RunOnceResult,
+} from '@lingtai/conductor'
+import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 /**
  * `lingtai run --once <project> --issue <n>` — Phase 1's whole shape.
  *
@@ -28,22 +44,7 @@ import { createRuntime, type Runtime } from '@lingtai/agent'
  * See `heedThePause` below for why this read is not scoped the way the daemon's
  * is.
  */
-import {
-  AgentHost,
-  currentRecipe,
-  loadProject,
-  ownerlessClientEffect,
-  ticketedClientOf,
-  attemptCeiling,
-  Repo,
-  runOnce,
-  runQueue,
-  tallyTurnEffect,
-  ticketsForEffect,
-  type TurnClient,
-  type RunOnceResult,
-} from '@lingtai/conductor'
-import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
+import { processSandbox } from '@lingtai/conductor/sandbox-service'
 import { lockedEffect, makeGuard, readControlEffect } from '@lingtai/daemon'
 import type { ControlState, ProjectState } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
@@ -315,6 +316,7 @@ interface CommonPassOptions {
   token?: TokenSource
   merge?: boolean
   hookBinary: string
+  sandbox?: typeof processSandbox
   promptVersion: string
   log: (line: string) => void
   /** Set only for a project with no owner — `ownerlessClient`'s own remote (`#352`). */
@@ -489,6 +491,7 @@ export function run(
           // credentials answer for the push.
           merge: options.merge,
           hookBinary,
+          sandbox: processSandbox,
           promptVersion: `ticket@${prompt.length}`,
           log,
           remote,
@@ -521,6 +524,7 @@ export function run(
           token: () => owned.token(),
           merge: options.merge,
           hookBinary,
+          sandbox: processSandbox,
           promptVersion: `ticket@${prompt.length}`,
           log,
         }

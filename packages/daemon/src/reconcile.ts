@@ -341,7 +341,9 @@ export const findOrphansEffect = Effect.fn('daemon.findOrphans')(function* (opti
       // projection: reconciliation has to work when a projection is the thing
       // that is broken.
       // A stream that cannot be read is not evidence the run is over: it fails rather than reporting a live directory as abandoned.
-      const run = yield* attempt(() => store.read(runId))
+      // A sub-run (`<pass>:review:…`) is a part of its pass: its claim is on the pass's stream.
+      const pass = runId.split(':')[0] ?? runId
+      const run = yield* attempt(() => store.read(pass))
       const taskId = run
         .map((e) => (e.data as { ticketId?: string } | undefined)?.ticketId)
         .find((id): id is string => typeof id === 'string')
@@ -363,7 +365,7 @@ export const findOrphansEffect = Effect.fn('daemon.findOrphans')(function* (opti
 
       const task = yield* ticketOf(store, options, taskId)
       const life = task.lifecycle
-      const live = life.status === 'claimed' && life.runId === runId && !abandoned.has(taskId)
+      const live = life.status === 'claimed' && life.runId === pass && !abandoned.has(taskId)
 
       if (live) continue
 
