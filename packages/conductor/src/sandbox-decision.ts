@@ -131,33 +131,52 @@ function readInherited(
     for (let d = dirname(p); d !== out[out.length - 1]; d = dirname(d)) out.push(d)
     return out
   }
+  // srt's own glob reading (`sandbox/glob-pattern.js`, `parseGlob` and `globTokenToRegex`), because a matcher that
+  // reads a pattern differently decides differently: no escapes, no braces, and `!` and `^` in a set do not negate.
+  const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const setOk = (members: string): boolean => {
+    if (members === '') return false
+    for (let i = 0; i < members.length; i++) {
+      const range = members[i + 1] === '-' && i + 2 < members.length
+      const from = members.charCodeAt(i)
+      if (range) i += 2
+      if (members.charCodeAt(i) < from) return false
+    }
+    return true
+  }
   const regexOf = (glob: string): RegExp => {
     let re = ''
-    let braces = 0
-    for (let i = 0; i < glob.length; i++) {
+    let i = 0
+    while (i < glob.length) {
       const c = glob[i]!
       if (c === '*') {
-        if (glob[i + 1] === '*') {
+        const start = i
+        while (glob[i] === '*') i++
+        const withSlash = i - start >= 2 && glob[i] === '/'
+        const rest = i - start - (withSlash ? 2 : 0)
+        if (rest >= 2) re += '.*'
+        else if (rest === 1) re += '[^/]*'
+        if (withSlash) {
+          re += '(.*/)?'
           i++
-          if (glob[i + 1] === '/') i++
-          re += glob[i] === '/' ? '(?:.*/)?' : '.*'
-        } else re += '[^/]*'
-      } else if (c === '?') re += '[^/]'
-      else if (c === '[') {
-        const end = glob.indexOf(']', i + 2)
-        if (end === -1) re += '\\['
-        else {
-          re += `[${glob.slice(i + 1, end).replace(/^!/, '^')}]`
-          i = end
         }
-      } else if (c === '{') {
-        braces++
-        re += '(?:'
-      } else if (c === '}' && braces > 0) {
-        braces--
-        re += ')'
-      } else if (c === ',' && braces > 0) re += '|'
-      else re += c.replace(/[.+^$()|\\]/g, '\\$&')
+      } else if (c === '?') {
+        re += '[^/]'
+        i++
+      } else if (c === '[') {
+        const close = glob.indexOf(']', i + 1)
+        const members = close === -1 ? '' : glob.slice(i + 1, close)
+        if (close !== -1 && setOk(members)) {
+          re += `[${members.replace(/[.^$+{}()|\\]/g, '\\$&')}]`
+          i = close + 1
+        } else {
+          re += '\\['
+          i++
+        }
+      } else {
+        re += escape(c)
+        i++
+      }
     }
     return new RegExp(`^${re}$`)
   }
