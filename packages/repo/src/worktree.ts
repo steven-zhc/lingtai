@@ -151,20 +151,23 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
       // After either path: a fresh clone replaces `info/exclude` with git's template.
       const names = options.exclude
       if (names !== undefined && names.length > 0) {
-        yield* io(async () => {
-          const file = join(path, 'info', 'exclude')
-          const before = await readFile(file, 'utf8').catch((err: NodeJS.ErrnoException) => {
-            if (err.code === 'ENOENT') return ''
-            throw err
-          })
-          const after = mergeExclude(before, names)
-          if (after === before) return
-          // Renamed over, so a sandboxed command of another pass never reads a half-written file.
-          await mkdir(dirname(file), { recursive: true })
-          const tmp = `${file}.${process.pid}.tmp`
-          await writeFile(tmp, after)
-          await rename(tmp, file)
-        })
+        const file = join(path, 'info', 'exclude')
+        yield* io(() =>
+          readFile(file, 'utf8')
+            .catch((err: NodeJS.ErrnoException) => {
+              if (err.code === 'ENOENT') return ''
+              throw err
+            })
+            .then((before) => {
+              const after = mergeExclude(before, names)
+              if (after === before) return undefined
+              // Renamed over, so a sandboxed command of another pass never reads a half-written file.
+              const tmp = `${file}.${process.pid}.tmp`
+              return mkdir(dirname(file), { recursive: true })
+                .then(() => writeFile(tmp, after))
+                .then(() => rename(tmp, file))
+            }),
+        )
       }
     }),
   )
