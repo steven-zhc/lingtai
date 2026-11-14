@@ -115,6 +115,14 @@ export interface RunCommandOptions {
    * so a command cannot inherit a meaning from a run it was not part of.
    */
   resultPath?: string
+  /**
+   * A command already wrapped by the sandbox (`Sandbox.wrap`): spawned as this
+   * argv with `shell: false` and this environment (plus `LINGTAI_RESULT` when a
+   * `resultPath` is asked for), in place of `run` and `env`. `run` stays the
+   * text a failure names. Absent, the spawn is the one every `run:` has always
+   * had. The caller sets `ownGroup`: the group leader is srt's wrapper.
+   */
+  wrapped?: { argv: readonly string[]; env: Readonly<Record<string, string>> }
 }
 
 /**
@@ -441,7 +449,32 @@ function spawnCommand(options: RunCommandOptions, report: (end: CommandEnd) => v
  * `run:` in every recipe already gets, which is the constraint (0037 §4).
  */
 function spawnChild(options: RunCommandOptions): ChildProcessByStdio<Writable | null, Readable, Readable> {
-  const env = options.resultPath ? { ...options.env, LINGTAI_RESULT: options.resultPath } : options.env
+  const { wrapped } = options
+  const env = options.resultPath
+    ? { ...(wrapped?.env ?? options.env), LINGTAI_RESULT: options.resultPath }
+    : (wrapped?.env ?? options.env)
+
+  if (wrapped !== undefined) {
+    const [file, ...args] = wrapped.argv
+    if (file === undefined) throw new Error('a wrapped command has no argv')
+    if (options.payload === undefined) {
+      return spawn(file, args, {
+        shell: false,
+        detached: options.ownGroup,
+        cwd: options.cwd,
+        env: env as NodeJS.ProcessEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    }
+    const wrappedChild = spawn(file, args, {
+      shell: false,
+      detached: options.ownGroup,
+      cwd: options.cwd,
+      env: env as NodeJS.ProcessEnv,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    return withPayload(wrappedChild, options.payload)
+  }
 
   if (options.payload === undefined) {
     // stdin is `/dev/null`, as it has always been: a reader gets EOF, not a hang.
@@ -465,11 +498,19 @@ function spawnChild(options: RunCommandOptions): ChildProcessByStdio<Writable | 
     env: env as NodeJS.ProcessEnv,
     stdio: ['pipe', 'pipe', 'pipe'],
   })
+  return withPayload(child, options.payload)
+}
+
+/** Hands the payload to the child's stdin and closes it. */
+function withPayload(
+  child: ChildProcessByStdio<Writable, Readable, Readable>,
+  payload: unknown,
+): ChildProcessByStdio<Writable, Readable, Readable> {
   // A command that never reads stdin closes the pipe under us — that is every
   // `run:` in every recipe today, and it is not a failure of anything. The exit
   // code is still the exit code.
   child.stdin.on('error', () => {})
-  child.stdin.end(`${JSON.stringify(options.payload)}\n`)
+  child.stdin.end(`${JSON.stringify(payload)}\n`)
   return child
 }
 

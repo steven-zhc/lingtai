@@ -34,7 +34,7 @@ export const startTracing = (from: NodeJS.ProcessEnv = process.env): Effect.Effe
     )
   })
 
-/** `PortsLive`, and the tracer where one was installed — read when the layer is built. */
+/** `PortsLive`, the tracer where one was installed — read when the layer is built. */
 export const tracedPorts: typeof PortsLive = Layer.suspend(() =>
   installed === undefined ? PortsLive : Layer.merge(PortsLive, installed.layer),
 ) as typeof PortsLive

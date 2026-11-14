@@ -40,7 +40,6 @@ import {
   type Slots,
   waitsFor,
 } from '@lingtai/conductor'
-import { processSandbox } from '@lingtai/conductor/sandbox-service'
 import { readControlEffect } from '@lingtai/daemon'
 import { type ControlState, type ProjectState, turnTransition, projectStream, reduceProject } from '@lingtai/domain'
 import { waitMoves } from '@lingtai/domain/wait'
@@ -56,6 +55,7 @@ import { Effect } from 'effect'
 import { stillOwed } from './continuing.ts'
 import { recovering } from './exit.ts'
 import { symbol } from './output.ts'
+import { processSandbox } from './sandbox.ts'
 import { tracedPorts } from './tracing.ts'
 import { waitCommand } from './wait-command.ts'
 
