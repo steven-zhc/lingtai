@@ -1,6 +1,6 @@
 # 0109 — The ticket, the claim, branches and attempts, and close: the core takes a ticket, every claim leaves its commits on a named ref, and a close is a terminal outcome
 
-**Status** accepted · 2026-10-01, revised 2026-10-28 (§5: a continuation is its own event)
+**Status** accepted · 2026-10-01, revised 2026-10-28 (§5: a continuation is its own event) · §8 amended 2026-11-14: the conductor applies a kept WIP itself
 
 The core runs a ticket. Where the ticket came from is an adapter's business,
 recorded for write-back and never branched on. A claim is one attempt. Whatever
@@ -161,17 +161,22 @@ run.
    The arm name is derived from `k`, never stored. The brief offers (`git show
    <ref>:<path>`, `git diff HEAD <ref>`) and leaves the judgement to the agent.
 
-   **A kept WIP commit is offered the same way, and told apart from one.**
-   `attemptBrief` reads `RunKeptUncommitted` off the previous run's stream and
-   says how many files, which arm, which sha, and what it stopped on — and
-   that the commit was never built or reviewed. The verb is `git diff
-   <parentSha> <sha> | git apply`, never `git checkout <sha> -- .` or `git
-   reset --hard <sha>`: the worktree this brief is read in is cut from a base
-   that may have moved since the WIP was made, and `checkout`/`reset` would
-   overwrite every path the WIP commit's tree holds — including whatever
-   landed on the base in between — rather than applying only the edits the
-   WIP itself carries. Resetting would also put the WIP commit into
-   `agent/<n>`'s own history, which the lane guard above refuses.
+   **A kept WIP commit is applied by the conductor, not offered.** When the
+   previous attempt's last run left one (`RunKeptUncommitted`), the next
+   attempt is cut from the base as always (§9), and then — before any agent
+   runs — the conductor applies the WIP's own edits to that fresh worktree,
+   uncommitted: `git diff <parentSha> <sha> | git apply --3way`. The verb is
+   the diff, never `git checkout <sha> -- .` or `git reset --hard <sha>`: the
+   base may have moved since the WIP was made, and either would overwrite what
+   landed on it in between, and a reset would put the WIP commit into
+   `agent/<n>`'s history. A path that does not apply cleanly is left out and
+   named. The brief then says the worktree already holds the stopped run's
+   edits — how many files, from which arm and sha, what it stopped on, which
+   paths were left out — and that they were never built or reviewed; the
+   agent commits them as the work stands (§7). So the stopped work is carried
+   on without any agent having to remember how, and the WIP commit itself
+   stays on its arm alone. The lane's `wip-commit` refusal (§6) stays, as the
+   backstop it always was.
 
 9. **The cut does not move.** Every attempt starts from the base as the mirror
    has it, never from an earlier attempt's branch. A refused approach does not
@@ -234,6 +239,7 @@ run.
 
 ## Not built yet
 
+- **§8's application of a kept WIP.** Today `attemptBrief` offers it and the agent applies it, and an agent that committed on top of the WIP instead is refused only at the lane (#1161, 2026-11-14).
 - **`source` is still a closed enum.** `TicketDiscovered.source` in
   `packages/domain/src/events.ts` is `github-issue | manual | agent-followup`.
   It is meant to be an open string, so that adding a store does not change the
