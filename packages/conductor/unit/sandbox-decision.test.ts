@@ -25,6 +25,10 @@ function fakeService(host: 'can' | SandboxUnavailable) {
       return host === 'can' ? Effect.void : Effect.fail(host)
     }),
     wrap: () => Effect.succeed({ argv: ['/w'], env: {}, commandId: 'c' }),
+    refusedConnections: () => Effect.succeed({ kind: 'unreadable', why: 'unused' } as never),
+    policyOf: () => {
+      throw new Error('unused')
+    },
   }
   return { service, asked }
 }

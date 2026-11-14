@@ -83,6 +83,16 @@ const withoutSrtSignals = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effe
 const lazy: SandboxApi = {
   hostCanSandbox: load.pipe(Effect.flatMap((api) => withoutSrtSignals(api.hostCanSandbox))),
   wrap: (input) => load.pipe(Effect.flatMap((api) => withoutSrtSignals(api.wrap(input)))),
+  // Only a service that wrapped can be asked these, so it is built by now; the policy needs no srt at all.
+  refusedConnections: (wrapped) =>
+    load.pipe(
+      Effect.flatMap((api) => api.refusedConnections(wrapped)),
+      Effect.orDie,
+    ),
+  policyOf: (input) => {
+    if (built === undefined) throw new Error('the sandbox service has not been built')
+    return built.policyOf(input)
+  },
 }
 
 /**

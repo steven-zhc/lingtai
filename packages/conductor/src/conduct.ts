@@ -223,7 +223,7 @@ import {
   type Worktree,
 } from '@lingtai/repo'
 import { ticketOfLandingSubject } from '@lingtai/repo/landing-subject'
-import type { SandboxApi } from '@lingtai/sandbox'
+import { standInExcludes, type SandboxApi } from '@lingtai/sandbox'
 import { Cause, type Duration, Effect, Exit, Result } from 'effect'
 
 import { reachAccountLimit } from './account.ts'
@@ -2895,6 +2895,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               home,
               remote: options.remote,
               gitEnv: options.gitEnv,
+              // srt's stand-in names, so `git add -A` works inside it (#1152); no key under any other decision.
+              ...(sandboxDecision.kind === 'sandboxed' ? { exclude: standInExcludes } : {}),
               // **A continuation re-cuts at the sha the approval was about,
               // never the base** (#465) — the worktree a held pass left is
               // gone once its scope closed, and `provisionWorktree`'s own

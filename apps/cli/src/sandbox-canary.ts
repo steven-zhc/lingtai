@@ -18,10 +18,11 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { processSandbox } from '@lingtai/conductor/sandbox-service'
 import { cacheDir, within, type HostFacts, type SandboxApi } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
 import { Cause, Effect } from 'effect'
+
+import { processSandbox } from './sandbox.ts'
 
 /** The project name the canary wraps under; its cache directory is `<stateDir>/cache/<this>`. */
 export const CANARY_PROJECT = 'lingtai-doctor-canary'

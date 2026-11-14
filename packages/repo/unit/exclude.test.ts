@@ -1,46 +1,23 @@
 import { describe, expect, it } from 'vitest'
 
-import { excludeConfigText, excludeEnv, excludeFileText } from '../src/exclude.ts'
+import { mergeExclude } from '../src/exclude.ts'
 
-describe('excludeFileText', () => {
-  it('lists each name once', () => {
-    expect(excludeFileText(['/.vscode', '/.idea', '/.vscode'])).toBe('/.vscode\n/.idea\n')
+describe('mergeExclude', () => {
+  it('keeps existing lines and comments, appending each name once', () => {
+    const git = '# git ls-files --others\n*.log\n'
+    expect(mergeExclude(git, ['/.vscode', '/.idea', '/.vscode'])).toBe(`${git}/.vscode\n/.idea\n`)
   })
-  it('keeps the global ignore rules it replaces, after the names', () => {
-    expect(excludeFileText(['/.vscode'], '.env.local\n*.log')).toBe('/.vscode\n.env.local\n*.log\n')
+  it('starts a file with no trailing newline on a new line', () => {
+    expect(mergeExclude('*.log', ['/.vscode'])).toBe('*.log\n/.vscode\n')
   })
-  it('is empty for nothing', () => {
-    expect(excludeFileText([])).toBe('')
+  it('writes the names into an empty file', () => {
+    expect(mergeExclude('', ['/.vscode'])).toBe('/.vscode\n')
   })
-})
-
-describe('excludeEnv', () => {
-  it('includes the config only under this worktree’s own git directory, never process-wide', () => {
-    const env = { PATH: '/bin' }
-    expect(excludeEnv('/m/app.git/info/x.config', '/m/app.git/worktrees/wt', env)).toEqual({
-      PATH: '/bin',
-      GIT_CONFIG_COUNT: '1',
-      GIT_CONFIG_KEY_0: 'includeIf.gitdir:/m/app.git/worktrees/wt.path',
-      GIT_CONFIG_VALUE_0: '/m/app.git/info/x.config',
-    })
-    expect(env).toEqual({ PATH: '/bin' })
+  it('is a no-op the second time', () => {
+    const once = mergeExclude('*.log\n', ['/.vscode', '/.idea'])
+    expect(mergeExclude(once, ['/.vscode', '/.idea'])).toBe(once)
   })
-  it('appends after config the caller already passed', () => {
-    const out = excludeEnv('/m/x.config', '/m/g', {
-      GIT_CONFIG_COUNT: '1',
-      GIT_CONFIG_KEY_0: 'a.b',
-      GIT_CONFIG_VALUE_0: 'c',
-    })
-    expect(out['GIT_CONFIG_COUNT']).toBe('2')
-    expect(out['GIT_CONFIG_KEY_1']).toBe('includeIf.gitdir:/m/g.path')
-    expect(out['GIT_CONFIG_KEY_0']).toBe('a.b')
-  })
-  it('writes the config with the path quoted', () => {
-    expect(excludeConfigText('/a "b"/x')).toBe('[core]\n\texcludesFile = "/a \\"b\\"/x"\n')
-  })
-
-  it('drops a leading BOM from the inherited rules so the first pattern still matches', () => {
-    const text = excludeFileText(['/.vscode'], '\uFEFF.env.local\n')
-    expect(text).toBe('/.vscode\n.env.local\n')
+  it('only adds what is missing', () => {
+    expect(mergeExclude('/.idea\n', ['/.vscode', '/.idea'])).toBe('/.idea\n/.vscode\n')
   })
 })

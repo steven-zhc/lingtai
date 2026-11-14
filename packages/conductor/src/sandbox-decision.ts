@@ -1,12 +1,8 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
-
 /**
  * The pass's sandbox decision and the wrap its `run:` commands go through (#1152).
  *
  * Decided **once per pass, before the claim**, so every action of the pass sees one answer. Provisioning
- * writes nothing for it: each wrapped command prepares its own exclude file (`makeRunSandbox`).
+ * writes srt's stand-in names into the mirror's `info/exclude` under a *sandboxed* decision.
  *
  * Nothing here loads srt. The service is `RunOnceOptions.sandbox`, a lazy Effect a host hands in at its edge, and it
  * is run only when the block is enabled: a recipe with no `sandbox:` block, or `enabled: false`, asks the host nothing
@@ -14,15 +10,7 @@ import { dirname, join, resolve } from 'node:path'
  */
 import type { RunSandbox } from '@lingtai/actions'
 import { sandboxDecision, verdictOf, type HostVerdict, type SandboxBlock, type SandboxDecision } from '@lingtai/recipe'
-import { excludeConfigText, excludeEnv, excludeFileText, gitEffect, sandboxExcludePath } from '@lingtai/repo'
-import {
-  SandboxWrapFailed,
-  filesystemFor,
-  standInExcludes,
-  staticPrefix,
-  type ProjectAdditions,
-  type SandboxApi,
-} from '@lingtai/sandbox'
+import type { ProjectAdditions, SandboxApi } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
 import { Effect, Result } from 'effect'
 
@@ -65,167 +53,18 @@ export const decidePassSandbox = (
     return { decision: sandboxDecision(block, verdict, home), service: built.success }
   })
 
-/**
- * The command's own exclude file: srt's stand-in names, then the global ignore rules **the command's own
- * environment** resolves (`core.excludesFile` under its `GIT_CONFIG_GLOBAL`, `HOME` and `XDG_CONFIG_HOME`, not
- * the daemon's) **read in the action's worktree**, so a conditional include that matches it applies and a relative
- * path means what it means to the command, because pointing a command at this file replaces them. A new file per command, written whole
- * and removed with the wrap's scope, so no running command ever reads a file that is being rewritten.
- */
-const commandExclude = (
-  pass: { readonly project: string; readonly mirror: string; readonly additions: ProjectAdditions },
-  worktree: string,
-  env: Readonly<Record<string, string>>,
-) =>
-  Effect.acquireRelease(
-    Effect.gen(function* () {
-      const { mirror } = pass
-      const host = yield* readHost.pipe(Effect.mapError((cause) => new SandboxWrapFailed({ cause })))
-      const policy = filesystemFor(host, {
-        project: pass.project,
-        worktree,
-        mirror,
-        project_additions: pass.additions,
-      })
-      const configured = yield* gitEffect(['config', '--get', '--type=path', 'core.excludesFile'], {
-        cwd: worktree,
-        env: env as NodeJS.ProcessEnv,
-      }).pipe(Effect.orElseSucceed(() => ''))
-      const inheritedFrom =
-        configured !== ''
-          ? resolve(worktree, configured)
-          : join(env['XDG_CONFIG_HOME'] || join(env['HOME'] ?? '', '.config'), 'git', 'ignore')
-      const gitdir = yield* gitEffect(['rev-parse', '--absolute-git-dir'], {
-        cwd: worktree,
-        env: env as NodeJS.ProcessEnv,
-      }).pipe(Effect.mapError((cause) => new SandboxWrapFailed({ cause })))
-      const file = sandboxExcludePath(mirror, randomUUID())
-      const config = `${file}.config`
-      yield* Effect.tryPromise({
-        try: () =>
-          readInherited(inheritedFrom, policy)
-            .then((inherited) => mkdir(dirname(file), { recursive: true }).then(() => inherited))
-            .then((inherited) => writeFile(file, excludeFileText(standInExcludes, inherited)))
-            .then(() => writeFile(config, excludeConfigText(file))),
-        catch: (cause) => new SandboxWrapFailed({ cause }),
-      })
-      return { config, gitdir: gitdir.trim(), file }
-    }),
-    ({ file, config }) => Effect.promise(() => Promise.all([rm(file, { force: true }), rm(config, { force: true })])),
-  )
-
-/**
- * Reads the inherited ignore file from outside the sandbox, so it is read the way the sandbox's own read policy
- * would: whatever the file's real path (a symlink included, in the worktree or out of it) it is read only where the
- * command itself could read it — not under a `denyRead` entry unless an `allowRead` one covers it. Containment is
- * not the question: a shared ignore file outside the worktree is readable. A missing file is empty.
- */
-function readInherited(
-  path: string,
-  policy: { readonly denyRead: readonly string[]; readonly allowRead: readonly string[] },
-): Promise<string> {
-  // srt reads an entry as a glob, so it is matched as one against the file's real path or any directory above it;
-  // a pattern's static prefix alone would turn `/srv/shared/*.secret` into a denial of all of `/srv/shared`.
-  const ancestors = (p: string): string[] => {
-    const out = [p]
-    for (let d = dirname(p); d !== out[out.length - 1]; d = dirname(d)) out.push(d)
-    return out
-  }
-  // srt's own glob reading (`sandbox/glob-pattern.js`, `parseGlob` and `globTokenToRegex`), because a matcher that
-  // reads a pattern differently decides differently: no escapes, no braces, and `!` and `^` in a set do not negate.
-  const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const setOk = (members: string): boolean => {
-    if (members === '') return false
-    for (let i = 0; i < members.length; i++) {
-      const range = members[i + 1] === '-' && i + 2 < members.length
-      const from = members.charCodeAt(i)
-      if (range) i += 2
-      if (members.charCodeAt(i) < from) return false
-    }
-    return true
-  }
-  const regexOf = (glob: string): RegExp => {
-    let re = ''
-    let i = 0
-    while (i < glob.length) {
-      const c = glob[i]!
-      if (c === '*') {
-        const start = i
-        while (glob[i] === '*') i++
-        const withSlash = i - start >= 2 && glob[i] === '/'
-        const rest = i - start - (withSlash ? 2 : 0)
-        if (rest >= 2) re += '.*'
-        else if (rest === 1) re += '[^/]*'
-        if (withSlash) {
-          re += '(.*/)?'
-          i++
-        }
-      } else if (c === '?') {
-        re += '[^/]'
-        i++
-      } else if (c === '[') {
-        const close = glob.indexOf(']', i + 1)
-        const members = close === -1 ? '' : glob.slice(i + 1, close)
-        if (close !== -1 && setOk(members)) {
-          re += `[${members.replace(/[.^$+{}()|\\]/g, '\\$&')}]`
-          i = close + 1
-        } else {
-          re += '\\['
-          i++
-        }
-      } else {
-        re += escape(c)
-        i++
-      }
-    }
-    return new RegExp(`^${re}$`)
-  }
-  // A policy path is lexical and may itself sit behind a symlink (macOS `/var`): match both spellings.
-  const spellings = (entry: string): Promise<string[]> => {
-    const prefix = staticPrefix(entry)
-    return realpath(prefix)
-      .catch(() => prefix)
-      .then((real) => (real === prefix ? [entry] : [entry, real + entry.slice(prefix.length)]))
-  }
-  const all = (entries: readonly string[]): Promise<string[]> =>
-    Promise.all(entries.map(spellings)).then((lists) => lists.flat())
-  const covers = (entries: readonly string[], real: string): boolean => {
-    const paths = ancestors(real)
-    return entries.some((e) => {
-      const re = regexOf(e)
-      return paths.some((p) => re.test(p))
-    })
-  }
-  return realpath(path)
-    .then((real) =>
-      Promise.all([all(policy.allowRead), all(policy.denyRead)]).then(([allowed, denied]) => {
-        if (!covers(allowed, real) && covers(denied, real)) {
-          throw new Error(`the global ignore file ${path} resolves to ${real}, which the sandbox's read policy denies`)
-        }
-        return readFile(real, 'utf8')
-      }),
-    )
-    .catch((err: NodeJS.ErrnoException) => {
-      if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return ''
-      throw err
-    })
-}
-
 /** `Sandbox.wrap`, closed over the pass's project, mirror and the decision's additions. */
 export const makeRunSandbox = (
   service: SandboxApi,
   pass: { readonly project: string; readonly mirror: string; readonly additions: ProjectAdditions },
 ): RunSandbox => ({
   wrap: (command, worktree, env) =>
-    Effect.flatMap(commandExclude(pass, worktree, env), ({ config, gitdir }) =>
-      service.wrap({
-        project: pass.project,
-        worktree,
-        mirror: pass.mirror,
-        command,
-        // srt's stand-ins are excluded for this command alone, never in the mirror's shared `info/exclude`.
-        env: excludeEnv(config, gitdir, env),
-        project_additions: pass.additions,
-      }),
-    ),
+    service.wrap({
+      project: pass.project,
+      worktree,
+      mirror: pass.mirror,
+      command,
+      env,
+      project_additions: pass.additions,
+    }),
 })
