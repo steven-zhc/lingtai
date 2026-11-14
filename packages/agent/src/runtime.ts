@@ -22,6 +22,7 @@ import type { RunFailureKind, RuntimeId, Tier, Usage } from '@lingtai/domain'
  */
 import { Effect } from 'effect'
 
+import type { RunSandbox } from './claude-sandbox.ts'
 import type { RunTrace } from './run-log.ts'
 
 /**
@@ -136,6 +137,12 @@ export interface RunRequest {
   outputSchema?: Record<string, unknown>
   /** Killed when this aborts, producing a `timeout` failure rather than silence. */
   signal?: AbortSignal
+  /**
+   * The run's sandbox (#1150): its decision, the policy inputs, its own directory and a `wrap` the conductor closed
+   * over. Set only when the run's decision is *sandboxed* or *refused*; absent is an unwrapped run, as before.
+   * Claude Code reads it; Codex does not yet (S5).
+   */
+  sandbox?: RunSandbox
 }
 
 /**

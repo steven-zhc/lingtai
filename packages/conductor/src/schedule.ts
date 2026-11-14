@@ -38,7 +38,7 @@ import { backoffOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
-import { type TurnClient, type RunOnceResult, runOnce } from './conduct.ts'
+import { type TurnClient, type RunOnceOptions, type RunOnceResult, runOnce } from './conduct.ts'
 import { runnableNowEffect } from './discover.ts'
 import type { AgentHost, Repo } from './ports.ts'
 import { selectRunnable } from './queue.ts'
@@ -50,6 +50,8 @@ export interface ScheduleOptions {
   client: TurnClient
   runtime: Runtime
   hookBinary: string
+  /** The process's one sandbox service (#1150); handed to every `runOnce`. */
+  sandbox?: RunOnceOptions['sandbox']
   /** False wires no hooks and skips the smoke test. See `RenderOptions.guard`. */
   guard?: boolean
   prompt: string
@@ -299,6 +301,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
               runtime: options.runtime,
               issue,
               hookBinary: options.hookBinary,
+              ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
               ...(options.guard === undefined ? {} : { guard: options.guard }),
               prompt: options.prompt,
               ...(options.promptVersion === undefined ? {} : { promptVersion: options.promptVersion }),
@@ -360,6 +363,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
         runtime: options.runtime,
         issue,
         hookBinary: options.hookBinary,
+        ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
         ...(options.guard === undefined ? {} : { guard: options.guard }),
         // Raw. `runOnce` has the ticket and does the substitution.
         prompt: options.prompt,

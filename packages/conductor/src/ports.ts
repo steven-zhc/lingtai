@@ -108,6 +108,8 @@ export interface AgentHostPort {
     /** `review`, `fix-1` — what the file is named after, and who reads it. */
     label: string
     home?: string
+    /** The run is sandboxed: the file turns Claude Code's own sandbox off (#1150). */
+    sandboxed?: boolean
   }): Effect.Effect<string, AgentHostFailed>
   /**
    * The run's log file, open for writing

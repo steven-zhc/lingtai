@@ -52,7 +52,7 @@
  * outcome*, rather than *is that sentence still in my output*. See
  * `recheckBlock`.
  */
-import { runtimeVersionOfEffect, type RunOutcome, type Runtime } from '@lingtai/agent'
+import { runtimeVersionOfEffect, type RunOutcome, type RunSandbox, type Runtime } from '@lingtai/agent'
 import type { RunTrace } from '@lingtai/agent/run-log'
 import type { RuntimeId } from '@lingtai/domain'
 import {
@@ -172,6 +172,11 @@ export interface AgentActionDeps {
   /** Rendered outside the worktree, like the implementer's. */
   settingsPath: string
   /**
+   * The `sandbox` a run of this action is handed, or nothing for an unwrapped run (#1150). Asked with the run's own
+   * id and cwd, when the run starts: the decision was made where `settingsPath` was written, and the two agree.
+   */
+  sandboxFor?: (runId: string, cwd: string) => { sandbox: RunSandbox } | Record<string, never>
+  /**
    * What the reviewer may spend, and what it is given.
    *
    * `diffBytes` is the recipe's `runtime.budget.diff`
@@ -208,6 +213,7 @@ export interface AgentPortDeps {
   }): Effect.Effect<LandedPath[]>
   restore(onSha: string): Effect.Effect<RestoreAnswer>
   settingsPath: string
+  sandboxFor?: AgentActionDeps['sandboxFor'] | undefined
   limits: AgentActionDeps['limits']
 }
 
@@ -230,6 +236,9 @@ export const agentPortDepsFrom = (deps: AgentActionDeps): AgentPortDeps => {
     restore: (onSha) => liftPromise(() => deps.restore(onSha)),
     get settingsPath() {
       return deps.settingsPath
+    },
+    get sandboxFor() {
+      return deps.sandboxFor
     },
     get limits() {
       return deps.limits
@@ -989,6 +998,7 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
                     // "the runtime's own default" means in the one place it has to be true.
                     ...(spec.model === undefined ? {} : { model: spec.model }),
                     settingsPath: deps.settingsPath,
+                    ...deps.sandboxFor?.(reviewId, context.cwd),
                     // Already tagged `<step>:<action>` by the pipeline (#153). The reviewer
                     // runs without the hook, so its tool calls are the stream's to write.
                     log: context.log,
@@ -1632,6 +1642,7 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
           prompt,
           ...(spec.model === undefined ? {} : { model: spec.model }),
           settingsPath: deps.settingsPath,
+          ...deps.sandboxFor?.(draftId, context.cwd),
           log: context.log,
           traceTools: true,
           env: context.env,

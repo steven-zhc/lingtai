@@ -83,6 +83,12 @@ export interface RenderOptions {
   home?: string
   /** Claude Code's extras. Off for a runtime that does not have them. */
   includeClaudeOnly?: boolean
+  /**
+   * The run is sandboxed (#1150): Claude Code's own sandbox cannot nest inside srt, and a managed repository's
+   * `.claude/settings.json` may turn it on, so the `--settings` file — which outranks the project's — turns it off.
+   * Absent is today's file, byte for byte.
+   */
+  sandboxed?: boolean
 }
 
 /**
@@ -111,7 +117,7 @@ export function renderSettings(options: RenderOptions): unknown {
   if (options.includeClaudeOnly !== false) {
     for (const name of CLAUDE_ONLY_HOOKS) hooks[name] = entry()
   }
-  return { hooks }
+  return { hooks, ...(options.sandboxed === true ? { sandbox: { enabled: false } } : {}) }
 }
 
 /**
@@ -237,12 +243,16 @@ export const writeUnhookedSettingsEffect = Effect.fn('agent.unhookedSettings')(f
   runId: string,
   label: string,
   home: string = stateDir(),
+  sandboxed = false,
 ) {
   const path = join(dirname(settingsPathFor(runId, home)), `${runId}.${label}.settings.json`)
   const fail = (err: unknown) => new AgentHostFailed({ operation: 'unhooked-settings', detail: (err as Error).message })
   yield* Effect.tryPromise({ try: () => mkdir(dirname(path), { recursive: true }), catch: fail })
   yield* Effect.tryPromise({
-    try: () => writeFile(path, `${JSON.stringify({}, null, 2)}\n`, { mode: 0o600 }),
+    try: () =>
+      writeFile(path, `${JSON.stringify(sandboxed ? { sandbox: { enabled: false } } : {}, null, 2)}\n`, {
+        mode: 0o600,
+      }),
     catch: fail,
   })
   return path

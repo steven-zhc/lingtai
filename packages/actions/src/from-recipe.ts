@@ -295,6 +295,9 @@ function dispatchDeps(
     get settingsPath() {
       return base.settingsPath
     },
+    get sandboxFor() {
+      return base.sandboxFor
+    },
     get limits() {
       return {
         turns: action.limits?.turns ?? base.limits.turns,

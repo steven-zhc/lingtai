@@ -40,6 +40,7 @@ import {
   type Slots,
   waitsFor,
 } from '@lingtai/conductor'
+import { processSandbox } from '@lingtai/conductor/sandbox-service'
 import { readControlEffect } from '@lingtai/daemon'
 import { type ControlState, type ProjectState, turnTransition, projectStream, reduceProject } from '@lingtai/domain'
 import { waitMoves } from '@lingtai/domain/wait'
@@ -200,6 +201,8 @@ interface CommonPassOptions {
   token?: TokenSource
   merge?: boolean
   hookBinary: string
+  /** The process's one sandbox service, built on first ask (#1150). */
+  sandbox?: typeof processSandbox
   prompt: string
   promptVersion: string
   log: (line: string) => void
@@ -272,6 +275,7 @@ export function conductWork(
           client,
           runtime: createRuntime(resolved.recipe.runtime.agent),
           hookBinary: options.hookBinary,
+          sandbox: processSandbox,
           prompt: options.prompt,
           promptVersion: `ticket@${options.prompt.length}`,
           remote,
@@ -307,6 +311,7 @@ export function conductWork(
           // run's wall limit is two.
           token: () => client.token(),
           hookBinary: options.hookBinary,
+          sandbox: processSandbox,
           prompt: options.prompt,
           promptVersion: `ticket@${options.prompt.length}`,
           ...(options.merge === undefined ? {} : { merge: options.merge }),

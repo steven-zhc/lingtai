@@ -124,10 +124,16 @@ true.
     runs in the daemon's own directory, and the merge lane's own `git`. A base
     check's answer is keyed by the boundary it ran under.
 
-16. **The operator's own denies carry over.** The read and write denies in
-    `~/.claude/settings.json` and in the operator's Codex permission profile go
-    on the policy's deny lists for every run of the project. Settings or a
-    profile Lingtai cannot read refuse the run.
+16. **The operator's own denies carry over.** `sandbox.filesystem.denyRead` in
+    `~/.claude/settings.json` goes on the deny lists of every sandboxed Claude
+    Code run of the project, `~` expanded: the run's own `CLAUDE_CONFIG_DIR`
+    no longer reads that file, and it is the one key measured to hold for a
+    subprocess (#664). The file absent carries nothing; present and unreadable,
+    not JSON, or holding an entry that is not an absolute path refuses the run,
+    and so does an entry that is, lies inside or contains the worktree, the
+    mirror, the run's directory or a path it must read. The operator's Codex
+    permission profile goes on the lists of every run in the same way, and a
+    profile Lingtai cannot read refuses the run.
 
 17. **Known telemetry hosts** are a built-in list, refused like any other host,
     recorded on the run and left out of what a person is shown and of §14's
