@@ -108,7 +108,6 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     title: row.title ?? `#${row.issue}`,
     kind: row.kind ?? 'unknown',
     state: row.state as TaskState,
-    tier: row.tier,
     runId: row.run_id,
     turns: row.turns,
     passed: count('passed'),

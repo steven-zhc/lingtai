@@ -88,7 +88,6 @@ describe('loadBoard', () => {
         title: 't',
         kind: 'bug',
         state: 'running',
-        tier: 'guarded',
         runId: 'r1',
         turns: null,
         passed: 0,

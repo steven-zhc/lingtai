@@ -24,7 +24,6 @@ function requeued(): TaskCard {
     title: 'lingtai status prints the restart count without its ceiling',
     kind: 'bug',
     state: 'queued',
-    tier: 'guarded',
     runId: null,
     turns: null,
     passed: 0,

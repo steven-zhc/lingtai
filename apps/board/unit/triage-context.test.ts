@@ -22,7 +22,6 @@ function waiting(triage: TaskCard['triage']): TaskCard {
     title: 'the card derives triage status',
     kind: 'bug',
     state: 'waiting',
-    tier: 'guarded',
     runId: null,
     turns: null,
     passed: 0,

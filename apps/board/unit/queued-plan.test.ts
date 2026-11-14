@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { planOf } from '../src/lib/queued.ts'
 
-const RUNTIME = { limits: { turns: 10, wall: '1h', rounds: 1, restarts: 1 }, tier: 'guarded' } as never
+const RUNTIME = { limits: { turns: 10, wall: '1h', rounds: 1, restarts: 1 } } as never
 
 const stepOf = (plan: StepPlan, step: string) => planOf(plan, RUNTIME).steps.find((s) => s.step === step)
 

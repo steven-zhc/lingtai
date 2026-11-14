@@ -355,7 +355,6 @@ const RUN_1: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -930,7 +929,6 @@ const RUN_2: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -1808,7 +1806,6 @@ const RUN_4: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -2519,7 +2516,6 @@ const RUN_5: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -3283,7 +3279,6 @@ const RUN_6: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -3805,7 +3800,6 @@ const RUN_7: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -4605,7 +4599,6 @@ const RUN_9: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -5400,7 +5393,6 @@ const RUN_10a: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -6115,7 +6107,6 @@ const RUN_10b: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -7179,7 +7170,6 @@ const RUN_12: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -7796,7 +7786,6 @@ const RUN_13: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -8551,7 +8540,6 @@ const RUN_13b: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -9233,7 +9221,6 @@ const RUN_14a: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -9787,7 +9774,6 @@ const RUN_14b: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -10282,7 +10268,6 @@ const RUN_14c: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -11090,7 +11075,6 @@ const RUN_14d: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',
@@ -11802,7 +11786,6 @@ const RUN_16: EventSpec[] = [
             turns: 10,
             wall: '2m',
           },
-          tier: 'guarded',
         },
         source: {
           backoff: '1h',

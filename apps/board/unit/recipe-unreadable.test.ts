@@ -23,7 +23,6 @@ function waiting(reason: NonNullable<TaskCard['wait']>['reason']): TaskCard {
     title: 't',
     kind: 'bug',
     state: 'waiting',
-    tier: 'guarded',
     runId: null,
     turns: null,
     passed: 0,

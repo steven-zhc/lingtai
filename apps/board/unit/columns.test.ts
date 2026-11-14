@@ -37,7 +37,6 @@ function task(state: TaskCard['state']): TaskCard {
     title: 'a task',
     kind: 'bug',
     state,
-    tier: 'guarded',
     runId: null,
     turns: null,
     passed: 0,

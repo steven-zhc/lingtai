@@ -289,7 +289,6 @@ function toCard(row: ProjectionRow): TaskCard {
     title: (row.title as string | null) ?? `#${issue}`,
     kind: (row.kind as string | null) ?? 'unknown',
     state: row.state as TaskState,
-    tier: row.tier as string,
     runId: (row.run_id as string | null) ?? null,
     turns: row.turns === null ? null : Number(row.turns),
     passed: count('passed'),

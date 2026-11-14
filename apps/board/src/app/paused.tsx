@@ -1,11 +1,10 @@
 'use client'
 
 /**
- * What the board says while the setup's pause stands: a project's recipe asks
- * for a tier one of its runtimes cannot provide, so every project stops until
- * the recipe is fixed and somebody resumes (until the 0.14.0 security epic makes
- * that a refused recipe, #676). Every other stop is a project's lock, shown by
- * the banner (#994).
+ * What the board says while a setup pause recorded before 0.14 still stands:
+ * every project stops until somebody resumes (`lingtai resume`). Nothing
+ * appends a new one. Every other stop is a project's lock, shown by the banner
+ * (#994).
  *
  * The health dot next door answers *is what I am looking at current?* and it was
  * answering correctly for four days while nothing moved (`#77`): the
@@ -21,7 +20,7 @@
  * pause is the news.
  *
  * It shows the reason as the conductor gave it; that already names the project,
- * the runtime and the tier. Who is not shown: it is always `lingtai`.
+ * the project and the runtime. Who is not shown: it is always `lingtai`.
  *
  * **Resume is an append, like Approve.** It does not start a daemon and does
  * not reach into a running pass; it records the decision, and whatever is
@@ -45,7 +44,7 @@ export function Paused({ reason }: { by?: string | null; reason: string | null }
           somebody looking for the fault instead of reading the sentence. */}
       <span
         className="chip held"
-        title="the recipe asks for a tier its runtime cannot provide; nothing starts until it is fixed and resumed — an attempt already in flight finishes"
+        title="a setup pause recorded before 0.14 still stands; nothing starts until it is resumed (lingtai resume) — an attempt already in flight finishes"
       >
         setup paused
       </span>

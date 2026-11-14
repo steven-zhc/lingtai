@@ -23,7 +23,6 @@ const EXPECTED: [string, [string, string[]][]][] = [
           'title',
           'kind',
           'state',
-          'tier',
           'run_id',
           'turns',
           'base_sha',

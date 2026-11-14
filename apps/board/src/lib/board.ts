@@ -138,7 +138,6 @@ export interface BoardCard {
    */
   kindColor: string | null
   title: string
-  tier: string
   /** What the last run produced. The diff a person reads is this one. */
   headSha: string | null
   /**
@@ -834,7 +833,6 @@ export function toCard(
     kind: t.kind,
     kindColor,
     title: t.title,
-    tier: t.tier,
     headSha: t.headSha,
     awaitingSha: t.awaitingSha,
     waitId: t.wait?.waitId ?? null,
@@ -1396,9 +1394,6 @@ export async function githubQueue(
         kind: r.kind,
         kindColor: offered.kindColors[r.kind] ?? null,
         title: r.title,
-        // The column default the deleted cache also relied on. Which tier it
-        // will actually run at is decided when it runs, not now.
-        tier: 'guarded',
         headSha: null,
         awaitingSha: null,
         // Nothing has run, so there is no wait to resolve.
@@ -1923,7 +1918,7 @@ export function queuedStanding(
     return {
       state: 'paused',
       text: 'paused until the setup is fixed — nothing will start',
-      title: 'a recipe asks for a tier its runtime cannot provide; this card keeps its place',
+      title: 'a setup pause from before 0.14 still stands; this card keeps its place until `lingtai resume`',
     }
   }
   // A lock (#995, #1007, #1010): after the setup pause, before a backoff. The

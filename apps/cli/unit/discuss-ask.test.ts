@@ -31,7 +31,6 @@ function stubRuntime(): { runtime: Runtime; requests: RunRequest[] } {
       hooks: [],
       canFailClosed: true,
       canRewriteToolCall: false,
-      tier: 'guarded',
     } as unknown as Runtime['capabilities'],
     run: (request: RunRequest) =>
       Effect.sync((): RunOutcome => {

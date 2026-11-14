@@ -204,7 +204,6 @@ const STEPS: StepPlan = new Map([
 
 const PLAN: PlanView = planOf(STEPS, {
   limits: { turns: 150, wall: '1h', rounds: 2, restarts: 0 },
-  tier: 'guarded',
 })
 
 /** The queued page with the panel's plan filled in, as a resolved answer would draw it. */
@@ -277,7 +276,7 @@ describe('what will happen', () => {
     // line rather than omitted — 0016 §4 — and none gets a row of its own.
     expect(html).toContain('nothing configured at: design, build, review')
     expect(html.match(/<li><b>/g)).toHaveLength(PLAN.steps.length - 3)
-    expect(html).toContain('150 turns · 1h · guarded · 2 round(s) back · then straight to you')
+    expect(html).toContain('150 turns · 1h · 2 round(s) back · then straight to you')
   })
 
   /**
@@ -291,7 +290,6 @@ describe('what will happen', () => {
     // to a person is making a choice somebody should be able to see.
     const none = planOf(STEPS, {
       limits: { turns: 300, wall: '2h', rounds: 0, restarts: 0 },
-      tier: 'guarded',
     })
     expect(planPage(none)).toContain('straight to you')
   })
@@ -310,7 +308,6 @@ describe('what will happen', () => {
   it('does not promise a refusal is yours when a restart is bought', () => {
     const over = planOf(STEPS, {
       limits: { turns: 150, wall: '1h', rounds: 0, restarts: 2 },
-      tier: 'guarded',
     })
     const html = planPage(over)
 

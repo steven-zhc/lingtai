@@ -28,7 +28,6 @@ function queued(over: Partial<TaskCard> & { issue: string; kind: string }): Task
     project: 'esctest',
     title: `issue ${over.issue}`,
     state: 'queued',
-    tier: 'guarded',
     runId: null,
     turns: null,
     passed: 0,
