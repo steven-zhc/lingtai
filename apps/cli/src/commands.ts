@@ -465,23 +465,6 @@ export const COMMANDS = [
     examples: ['lingtai resume lingtai', 'lingtai resume'],
   }),
   define({
-    name: 'token',
-    group: 'install and upkeep',
-    task: 'set the token a sandboxed Claude Code run holds',
-    effect: 'changes',
-    usage: [
-      'lingtai token claude',
-      '  Runs `claude setup-token` for you and writes what it prints to',
-      '  claude.oauth_token in ~/.lingtai/config.yml (0600), keeping every other',
-      '  key. If that cannot be read from its output, asks you to paste the',
-      '  token at a hidden prompt. A token already set is asked about: replace',
-      '  or keep. LINGTAI_CLAUDE_OAUTH_TOKEN, when exported, wins over the file.',
-      '  Needs a terminal. The token is never printed, logged or put on a',
-      '  command line.',
-    ],
-    examples: ['lingtai token claude'],
-  }),
-  define({
     name: 'ceiling',
     group: 'daemon',
     task: "raise today's spending ceiling",
@@ -653,6 +636,23 @@ export const COMMANDS = [
       '  --json  the manifest instead of the sections',
     ],
     examples: ['lingtai events', 'lingtai events TicketReleased --json'],
+  }),
+  define({
+    name: 'token',
+    group: 'install and upkeep',
+    task: 'set the token a sandboxed Claude Code run holds',
+    effect: 'changes',
+    usage: [
+      'lingtai token claude',
+      '  Runs `claude setup-token` for you and writes what it prints to',
+      '  claude.oauth_token in ~/.lingtai/config.yml (0600), keeping every other',
+      '  key. If that cannot be read from its output, asks you to paste the',
+      '  token at a hidden prompt. A token already set is asked about: replace',
+      '  or keep. LINGTAI_CLAUDE_OAUTH_TOKEN, when exported, wins over the file.',
+      '  Needs a terminal. The token is never printed, logged or put on a',
+      '  command line.',
+    ],
+    examples: ['lingtai token claude'],
   }),
 ] as const
 

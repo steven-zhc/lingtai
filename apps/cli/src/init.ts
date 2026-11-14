@@ -151,6 +151,7 @@ import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
 import { boardAtEffect, boardLock, builtBoardDir, serveBoardEffect } from './board.ts'
+import { askClaudeTokenForRecipe, liveSetupTokenRun } from './claude-token.ts'
 import { lift, recovering } from './exit.ts'
 import {
   chooseFirstProjectEffect,
@@ -163,7 +164,6 @@ import {
   pathExistsEffect,
 } from './first-project.ts'
 import { APP_WAIT_MS, waitForAppEffect } from './github-app.ts'
-import { askClaudeTokenForRecipe, liveSetupTokenRun } from './claude-token.ts'
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
 import { githubInitSteps, type Here, hereSteps, localInitSteps } from './next-steps.ts'

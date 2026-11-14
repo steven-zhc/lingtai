@@ -48,16 +48,16 @@ export interface ClaudeTokenWorld extends Pick<QuestionWorld, 'ask' | 'log'> {
 }
 
 /** `claude setup-token` over `node:child_process`; stdout is piped, which Claude Code 2.1.325 completes its sign-in with. */
-export const liveSetupTokenRun =
-  (): ClaudeTokenWorld['run'] =>
-  (onChunk) =>
-    new Promise((resolve) => {
-      const child = spawn('claude', ['setup-token'], { stdio: ['inherit', 'pipe', 'inherit'] })
-      child.stdout.setEncoding('utf8')
-      child.stdout.on('data', (chunk: string) => onChunk(chunk))
-      child.on('error', (err: NodeJS.ErrnoException) => resolve(err.code === 'ENOENT' ? { missing: true } : { code: null }))
-      child.on('close', (code) => resolve({ code }))
-    })
+export const liveSetupTokenRun = (): ClaudeTokenWorld['run'] => (onChunk) =>
+  new Promise((resolve) => {
+    const child = spawn('claude', ['setup-token'], { stdio: ['inherit', 'pipe', 'inherit'] })
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => onChunk(chunk))
+    child.on('error', (err: NodeJS.ErrnoException) =>
+      resolve(err.code === 'ENOENT' ? { missing: true } : { code: null }),
+    )
+    child.on('close', (code) => resolve({ code }))
+  })
 
 /**
  * Runs the child; the token if it printed exactly one and exited 0, else
@@ -170,7 +170,8 @@ export const claudeTokenCommand = (world: ClaudeTokenWorld): Effect.Effect<0 | 1
       world.log('this needs a terminal — or set claude.oauth_token in ~/.lingtai/config.yml by hand')
       return 1 as const
     }
-    if (state.environment) world.log('a token is set in this process\'s environment (LINGTAI_CLAUDE_OAUTH_TOKEN), which a run reads first')
+    if (state.environment)
+      world.log("a token is set in this process's environment (LINGTAI_CLAUDE_OAUTH_TOKEN), which a run reads first")
     if (state.file) world.log(`a token is already set in ${world.path}`)
     if (state.environment || state.file) {
       const choice = yield* Effect.tryPromise(() =>

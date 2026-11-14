@@ -1374,7 +1374,12 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     home,
     claudeToken: (recipe) =>
       askClaudeTokenForRecipe(
-        liveClaudeTokenWorld({ ask: options.ask, log: options.log, machine: liveMachineText(), interactive: process.stdin.isTTY === true && process.stdout.isTTY === true }),
+        liveClaudeTokenWorld({
+          ask: options.ask,
+          log: options.log,
+          machine: liveMachineText(),
+          interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
+        }),
         recipe,
       ),
     signedIn: signedInHere,
