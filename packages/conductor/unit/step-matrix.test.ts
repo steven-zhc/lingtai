@@ -1293,8 +1293,12 @@ describe('doc/reference.md', () => {
       'eleven',
       'twelve',
       'thirteen',
+      'fourteen',
     ] as const
-    const spendsAnAgent = Object.values(BUILT_IN_FOR).filter((built) => built === null).length
+    // `sandbox-refused` has no built-in and no judge either: a recipe naming one is refused (#1157).
+    const spendsAnAgent = Object.entries(BUILT_IN_FOR).filter(
+      ([when, built]) => built === null && when !== 'sandbox-refused',
+    ).length
     const total = JudgeWhen.options.length
     expect(doc, "doc/reference.md's `judge:` row disagrees with BUILT_IN_FOR about what a judge costs").toContain(
       `for ${NUMERAL[spendsAnAgent]} of the ${NUMERAL[total]} directions an agent`,

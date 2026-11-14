@@ -354,6 +354,18 @@ describe('allowedResolutions', () => {
       )
     })
 
+    it('SandboxRefused: Requeue, Close — allow the host or install the sandbox, then requeue', () => {
+      const reason = parseProposed({
+        _tag: 'SandboxRefused',
+        from: 'build',
+        cause: 'connections',
+        hosts: ['example.com:443'],
+        said: null,
+        output: 'red',
+      })
+      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close'])
+    })
+
     it('SetupRefused: Requeue, Close', () => {
       const reason = parseProposed({ _tag: 'SetupRefused', from: 'prepared', output: 'no network' })
       expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close'])

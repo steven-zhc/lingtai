@@ -19,7 +19,7 @@ import { z } from 'zod'
 import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts'
 
 /**
- * **The thirteen reasons a pass arrives at `proposed`**, which is what a
+ * **The fourteen reasons a pass arrives at `proposed`**, which is what a
  * `judge:` entry's `when:` names — and `SpentFor`'s `Judge` variant
  * (`events.ts`) needs this as a value import.
  */
@@ -37,6 +37,7 @@ export const JudgeWhen = z.enum([
   'merge-refused',
   'budget-exhausted',
   'base-moved',
+  'sandbox-refused',
 ])
 export type JudgeWhen = z.infer<typeof JudgeWhen>
 
@@ -174,6 +175,26 @@ const MergeRefused = z.object({
 })
 type MergeRefused = z.infer<typeof MergeRefused>
 
+/**
+ * **A step the sandbox refused, or could not provide** (0127 §14, #1157). It
+ * replaces `BuildRed`, `VerifyRed`, `SetupRefused` or `CheckRefused` where the
+ * step's outcome carries a refusal: allowing a host, or installing the
+ * sandbox, is the operator's, so only a person is offered it.
+ *
+ * `cause: 'connections'` carries the refused hosts and no `said`;
+ * `cause: 'unavailable'` carries srt's sentence in `said` and no hosts.
+ * `output` is the evidence of the proposal it replaced.
+ */
+const SandboxRefused = z.object({
+  _tag: z.literal('SandboxRefused'),
+  from: Step,
+  cause: z.enum(['connections', 'unavailable']),
+  hosts: z.array(z.string()),
+  said: z.string().nullable(),
+  output: z.string(),
+})
+type SandboxRefused = z.infer<typeof SandboxRefused>
+
 /** A turn or dollar ceiling, from any step. */
 const BudgetExhausted = z.object({
   _tag: z.literal('BudgetExhausted'),
@@ -203,6 +224,7 @@ export const Proposal = z.discriminatedUnion('_tag', [
   NothingProduced,
   FixerDisagrees,
   MergeRefused,
+  SandboxRefused,
   BudgetExhausted,
 ])
 export type Proposal = z.infer<typeof Proposal>
@@ -250,6 +272,7 @@ export const StoredProposal = z.discriminatedUnion('_tag', [
   NothingProduced,
   FixerDisagrees,
   MergeRefused.partial({ output: true }),
+  SandboxRefused,
   BudgetExhausted,
 ])
 export type StoredProposal = z.infer<typeof StoredProposal>
@@ -285,6 +308,7 @@ export function fromOf(proposal: StoredProposal): Step {
     case 'CheckRefused':
     case 'AnswerUnreadable':
     case 'DiffTooLarge':
+    case 'SandboxRefused':
     case 'BudgetExhausted':
       return proposal.from
     case 'NothingProduced':

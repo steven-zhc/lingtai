@@ -106,6 +106,7 @@ export function makeKeptRunAction(name: string, inner: ActionPort, deps: KeptRun
                 ? `${ran.evidence} — and the tree could not be put back afterwards (${recleaned.failed})`
                 : ran.evidence,
             findings: [],
+            ...(ran.sandboxUnavailable === undefined ? {} : { sandboxUnavailable: ran.sandboxUnavailable }),
           }
         }
 

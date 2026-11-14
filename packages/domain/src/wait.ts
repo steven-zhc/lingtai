@@ -338,7 +338,10 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
         case 'BudgetExhausted':
         case 'AnswerUnreadable':
           return ['EditBodyAndRequeue', 'Requeue', 'Split', 'Close']
+        // Allow the host (or install the sandbox), then requeue: the
+        // requeue runs under the edited recipe or the repaired host (#1157).
         case 'SetupRefused':
+        case 'SandboxRefused':
           return ['Requeue', 'Close']
         // 0108 §14: no reviewer ran, so `Approve` here waives nothing — it
         // means *review the clipped diff anyway* (#892) — and there is no round
@@ -567,6 +570,7 @@ export function continuationOf(
         case 'MergeConflict':
         case 'VerifyRed':
         case 'SetupRefused':
+        case 'SandboxRefused':
         case 'AnswerUnreadable':
         case 'NothingProduced':
         case 'BudgetExhausted':

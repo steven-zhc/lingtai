@@ -1561,6 +1561,21 @@ describe('a dispatch is one shape', () => {
     }
   })
 
+  /** #1157: allowing a host or installing the sandbox is the operator's, so no `judge:` answers `sandbox-refused`. */
+  it('refuses any `judge:` at `when: sandbox-refused`, built-in or runtime, by name', () => {
+    for (const judge of ['same-worktree', 'claude-code']) {
+      const refused = Recipe.safeParse({
+        ...BASE,
+        steps: { proposed: [{ name: 'a refused host', judge, when: 'sandbox-refused' }] },
+      })
+      expect(refused.success, judge).toBe(false)
+      const why = refused.error!.issues.map((issue) => issue.message).join('\n')
+      expect(why).toContain('a refused host')
+      expect(why).toContain('`when: sandbox-refused`')
+      expect(why).toContain("the operator's")
+    }
+  })
+
   /**
    * **A built-in judge spends nothing, which is the whole of what its name
    * promises** (0070 §3).

@@ -197,6 +197,11 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
     case 'BuildRed':
       round('fix-lines', 'implement', proposal.output.trim() !== '')
       break
+    case 'SandboxRefused':
+      // Nothing is pushed, not even to `unavailable`: allowing a host or
+      // installing the sandbox is the operator's, so the hold says *nothing
+      // but a person was on offer* (#1157).
+      break
     case 'VerifyRed':
       round('fix-lines', 'implement', proposal.output.trim() !== '')
       break

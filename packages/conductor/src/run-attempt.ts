@@ -827,7 +827,7 @@ export interface AttemptOptions {
    * The resolved recipe. Only `steps` is read, and it holds all ten (0061 §5),
    * so `recipe.steps[step]` is a lookup that cannot miss.
    */
-  readonly recipe: Pick<Recipe, 'steps'>
+  readonly recipe: Pick<Recipe, 'steps' | 'sandbox'>
   /**
    * **What the walk starts from, and not what every visit is handed.**
    *
@@ -889,6 +889,8 @@ export interface AttemptOptions {
    * point runs (0060 §1).
    */
   readonly actionsAt: (step: Step, actions: readonly StepAction[]) => readonly Action[]
+  /** `AttemptPortOptions.sandboxAt`. */
+  readonly sandboxAt?: (step: Step) => StepOutcome['sandbox']
   /**
    * `proposed` — **which of the offered steps the recipe's `judge:` for this
    * direction answers**, or that it declared none (`#462`). Moved here from
@@ -1052,6 +1054,11 @@ export interface AttemptPortOptions {
   readonly ceilings?: AttemptOptions['ceilings']
   readonly from?: AttemptOptions['from']
   readonly actionsAt: (step: Step, actions: readonly StepAction[]) => readonly ActionPort[]
+  /**
+   * What the sandbox did to the step that just ran (#1157), asked once right after its actions return and
+   * **draining** what it read, so a fix round's second visit sees only its own. Absent where nothing is sandboxed.
+   */
+  readonly sandboxAt?: (step: Step) => StepOutcome['sandbox']
   readonly judge?: (on: Judging) => Effect.Effect<Judged>
   readonly mergeBase?: (toSha: string) => Effect.Effect<MergeBaseAnswer>
   /**
@@ -1096,6 +1103,7 @@ export function attemptPortsFrom(options: AttemptOptions): AttemptPortOptions {
     ...(options.ceilings === undefined ? {} : { ceilings: options.ceilings }),
     ...(options.from === undefined ? {} : { from: options.from }),
     actionsAt: (step, actions) => options.actionsAt(step, actions).map(fromPromiseAction),
+    ...(options.sandboxAt === undefined ? {} : { sandboxAt: options.sandboxAt }),
     ...(judge === undefined ? {} : { judge: (on: Judging) => Effect.promise(() => judge(on)) }),
     ...(mergeBase === undefined ? {} : { mergeBase: (toSha: string) => Effect.promise(() => mergeBase(toSha)) }),
     ...(baseIsRed === undefined
@@ -2279,6 +2287,9 @@ function runVisit(
       const readClippedAt = firstVisitOfFrom ? options.from?.readClipped?.onSha : undefined
       const readClippedKept = firstVisitOfFrom ? options.from?.readClipped?.kept : undefined
       // Called here, inside the step's span, so the context it captures is this step's.
+      // A routing judge is dispatched under `proposed` between visits and never drains what it was refused:
+      // discard that, so the read after this visit's actions is this visit's own (#1157).
+      options.sandboxAt?.(spec.step)
       const result = yield* runActionPipelineEffect({
         step: spec.step,
         actions: pipelineActions,
@@ -2323,7 +2334,24 @@ function runVisit(
       results = result.results
       leftTheTreeAt = headFrom(result)
       wroteTheDesign = designFrom(result)
-      outcome = stepOutcomeOf(spec.step, reaching.context.round ?? 0, reaching.context.onSha, pipelineActions, result)
+      const read = options.sandboxAt?.(spec.step)
+      // Under `required: true` a sandbox lost mid-pass goes to a person. Under `required: false` it routes as
+      // today: 0127 §14's *later runs go ahead unsandboxed, each marked* is not built here.
+      const lost =
+        options.recipe.sandbox?.required === true
+          ? result.results.find((r) => r.sandboxUnavailable !== undefined)?.sandboxUnavailable
+          : undefined
+      const sandbox =
+        read?.refused === undefined && lost === undefined
+          ? undefined
+          : {
+              ...(read?.refused === undefined ? {} : { refused: read.refused }),
+              ...(lost === undefined ? {} : { unavailable: lost }),
+            }
+      outcome = {
+        ...stepOutcomeOf(spec.step, reaching.context.round ?? 0, reaching.context.onSha, pipelineActions, result),
+        ...(sandbox === undefined ? {} : { sandbox }),
+      }
       const ending = endingOf(spec, result)
       // Not `continue`, and not a swallowed failure: a step whose plugins did
       // not pass has ended, and the body does not run.

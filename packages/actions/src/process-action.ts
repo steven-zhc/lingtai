@@ -101,6 +101,11 @@ export interface ProcessActionSpec {
    * record it. Absent under a wrap. Run before the child starts.
    */
   recordUnwrapped?: () => Effect.Effect<void>
+  /**
+   * The run's decision was `refused` (#1157): its `why`. The command is neither wrapped nor spawned — the action
+   * fails, naming it, and a `refused` run never runs unwrapped.
+   */
+  refused?: string
   /** The runner, as the subscriber's `options.command ?? commandEffect`. */
   command?: CommandRunner
 }
@@ -137,8 +142,18 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
           env: spec.env,
           signal: context.signal,
         }
+        if (spec.refused !== undefined) {
+          return {
+            verdict: 'failed' as const,
+            evidence: `the sandbox would not wrap \`${spec.run}\`: ${spec.refused}`,
+            findings: [],
+            notWrapped: true as const,
+            sandboxUnavailable: spec.refused,
+          }
+        }
         const spawn = spec.command ?? commandEffect
         let wrapFailed = false
+        let unavailable: string | undefined
         if (spec.sandbox === undefined && spec.recordUnwrapped !== undefined) yield* spec.recordUnwrapped()
         const outcome =
           spec.sandbox === undefined
@@ -158,7 +173,11 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
                       spawn({ ...base, wrapped: { argv: wrapped.argv, env: wrapped.env }, ownGroup: true }),
                     ),
                     Effect.catchTags({
-                      SandboxUnavailable: (e) => refused(e, () => (wrapFailed = true)),
+                      SandboxUnavailable: (e) =>
+                        refused(e, () => {
+                          wrapFailed = true
+                          unavailable = [e.reason, ...e.sentences].join('; ')
+                        }),
                       SandboxWrapFailed: (e) => refused(e, () => (wrapFailed = true)),
                       SandboxPolicyRefused: (e) => refused(e, () => (wrapFailed = true)),
                     }),
@@ -173,6 +192,7 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
           evidence: outcome.evidence,
           findings: [],
           ...(wrapFailed ? { notWrapped: true as const } : {}),
+          ...(unavailable === undefined ? {} : { sandboxUnavailable: unavailable }),
         }
       }),
   }
