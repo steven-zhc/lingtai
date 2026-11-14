@@ -134,3 +134,19 @@ describe('a wrap that fails', () => {
     expect(f.spawns).toEqual([])
   })
 })
+
+describe('a wrap that fails at implement', () => {
+  it('fails the step with the sentence and spawns nothing, even through the kept run', async () => {
+    const f = fakes(new SandboxWrapFailed({ cause: new Error('srt said no') }))
+    const [port] = actionPortsFromRecipe('implement', [action], {
+      ...f.deps,
+      sandboxDecision: sandboxed,
+      sandbox: f.sandbox,
+    })
+    const result = await Effect.runPromise(port!.run(context))
+    expect(result.verdict).toBe('failed')
+    expect(result.evidence).toContain('srt said no')
+    expect(f.spawns).toEqual([])
+    expect(f.commits).toEqual([])
+  })
+})

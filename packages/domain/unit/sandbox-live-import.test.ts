@@ -12,13 +12,6 @@ import { modulesOf } from '../test/ts-modules.ts'
 
 const root = join(import.meta.dirname, '..', '..', '..')
 
-/**
- * The one exemption, named: #1147's `hostHere` imports `live` *dynamically*, behind the first host question, so a
- * process whose recipes have no `sandbox:` block never loads srt (`projects.ts` says so). It is not a static
- * import and never becomes one: a static import there would load srt for everything that imports the conductor.
- */
-const EXEMPT_DYNAMIC = 'packages/conductor/src/projects.ts'
-
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     if (name === 'node_modules' || name.startsWith('.')) return []
@@ -50,21 +43,12 @@ const importers = roots
   })
 
 describe('@lingtai/sandbox/live', () => {
-  it('is imported only under apps/cli/src, bar the one dynamic import in projects.ts', () => {
-    const stray = importers.filter((i) => !i.file.startsWith('apps/cli/src/') && i.file !== EXEMPT_DYNAMIC)
+  it('is imported only under apps/cli/src, statically or dynamically', () => {
+    const stray = importers.filter((i) => !i.file.startsWith('apps/cli/src/'))
     expect(stray.map((i) => `${i.file}:${i.line}`)).toEqual([])
-  })
-
-  it('is imported in projects.ts by `import(…)` and never statically', () => {
-    for (const i of importers.filter((x) => x.file === EXEMPT_DYNAMIC)) {
-      const line = i.text.split('\n')[i.line - 1]!
-      expect(line).toMatch(/import\(\s*'@lingtai\/sandbox\/live'/)
-      expect(line).not.toMatch(/^\s*(import|export)\s.*from/)
-    }
   })
 
   it('is found where it is known to be, so the test cannot pass by finding nothing', () => {
     expect(importers.some((i) => i.file === 'apps/cli/src/sandbox.ts')).toBe(true)
-    expect(importers.some((i) => i.file === EXEMPT_DYNAMIC)).toBe(true)
   })
 })

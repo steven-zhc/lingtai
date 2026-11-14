@@ -2924,7 +2924,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               remote: options.remote,
               gitEnv: options.gitEnv,
               // srt's stand-in names, under a *sandboxed* decision only (#1152).
-              ...(sandboxDecision.kind === 'sandboxed' ? { exclude: standInExcludes } : {}),
+              // Every attempt says which: an unsandboxed pass clears what a sandboxed one left (the file is shared).
+              exclude: sandboxDecision.kind === 'sandboxed' ? standInExcludes : [],
               // **A continuation re-cuts at the sha the approval was about,
               // never the base** (#465) — the worktree a held pass left is
               // gone once its scope closed, and `provisionWorktree`'s own

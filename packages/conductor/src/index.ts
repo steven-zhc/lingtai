@@ -33,6 +33,7 @@ export {
   loadProject,
   loadProjects,
   loadProjectsEffect,
+  provideHostAnswer,
   signedInHere,
 } from './projects.ts'
 export { gitRefChannel, type GitRefChannelOptions } from './git-refs.ts'

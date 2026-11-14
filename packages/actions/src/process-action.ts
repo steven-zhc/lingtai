@@ -96,14 +96,16 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
   const timeoutLabel = spec.timeout ?? '15m'
   const timeoutMs = parseDuration(timeoutLabel)
   /** A wrap that failed spawns nothing: a failed command with the error's sentence. */
-  const refused = (error: SandboxWrapError): Effect.Effect<CommandOutcome> =>
-    Effect.succeed({
-      ok: false,
-      evidence: wrapRefusal(spec.run, error),
-      timedOut: false,
-      durationMs: 0,
-      exitCode: null,
-    })
+  const refused = (error: SandboxWrapError, mark: () => void): Effect.Effect<CommandOutcome> =>
+    Effect.sync(mark).pipe(
+      Effect.as({
+        ok: false,
+        evidence: wrapRefusal(spec.run, error),
+        timedOut: false,
+        durationMs: 0,
+        exitCode: null,
+      }),
+    )
 
   return {
     name: spec.name,
@@ -123,6 +125,7 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
           signal: context.signal,
         }
         const spawn = spec.command ?? commandEffect
+        let wrapFailed = false
         const outcome =
           spec.sandbox === undefined
             ? yield* spawn(base)
@@ -133,9 +136,9 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
                     spawn({ ...base, wrapped: { argv: wrapped.argv, env: wrapped.env }, ownGroup: true }),
                   ),
                   Effect.catchTags({
-                    SandboxUnavailable: (e) => refused(e),
-                    SandboxWrapFailed: (e) => refused(e),
-                    SandboxPolicyRefused: (e) => refused(e),
+                    SandboxUnavailable: (e) => refused(e, () => (wrapFailed = true)),
+                    SandboxWrapFailed: (e) => refused(e, () => (wrapFailed = true)),
+                    SandboxPolicyRefused: (e) => refused(e, () => (wrapFailed = true)),
                   }),
                 ),
               )
@@ -147,6 +150,7 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
           verdict: outcome.ok ? ('passed' as const) : ('failed' as const),
           evidence: outcome.evidence,
           findings: [],
+          ...(wrapFailed ? { notWrapped: true as const } : {}),
         }
       }),
   }

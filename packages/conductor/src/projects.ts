@@ -29,7 +29,6 @@ import {
   type SignedIn,
   resolveLocalRecipeEffect,
 } from '@lingtai/recipe'
-import { SandboxUnavailable } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
 import { Effect } from 'effect'
 
@@ -212,15 +211,22 @@ export type RecipeLookupOptions = Omit<LocalRecipeOptions, 'base' | 'signedIn' |
   hostFacts?: HostFactsEffect
 }
 
+let hostProvider: HostAnswer | undefined
+
 /**
- * The real host answer, asked only for an enabled, required `sandbox:` block (#1147). srt is imported on that
- * first ask and not before, so a process whose recipes have no such block never loads it, and the answer is
- * kept a minute by `hostCanSandboxHere` without building `SandboxLayer`, whose scope would reset srt's instance.
+ * A host that can load srt says how it answers (#1152). Only `apps/cli/src` may import `@lingtai/sandbox/live`
+ * (the board imports this package, and must never load srt), so the CLI hands its answer in here at start.
  */
-export const hostHere: HostAnswer = Effect.tryPromise({
-  try: () => import('@lingtai/sandbox/live'),
-  catch: () => new SandboxUnavailable({ reason: 'the sandbox runtime could not be loaded', sentences: [] }),
-}).pipe(Effect.flatMap((live) => live.hostCanSandboxHere))
+export const provideHostAnswer = (answer: HostAnswer): void => {
+  hostProvider = answer
+}
+
+/**
+ * The host answer, asked only for an enabled, required `sandbox:` block (#1147). **A process with no sandbox
+ * runtime — the board — has no answer to give and does not refuse on its behalf**: it only shows a recipe, and
+ * the pass that would wrap decides again, with the host's own answer, before it claims anything.
+ */
+export const hostHere: HostAnswer = Effect.suspend(() => hostProvider ?? Effect.void)
 
 export function currentRecipeEffect(
   state: ProjectState,

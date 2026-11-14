@@ -95,6 +95,20 @@ export function makeKeptRunAction(name: string, inner: ActionPort, deps: KeptRun
 
         const ran = yield* inner.run(context)
 
+        // A sandbox that would not wrap the command is the machine failing, not the command: the step fails with
+        // its sentence rather than passing for `build` to judge a tree nothing ran against (#1152).
+        if (ran.notWrapped) {
+          const recleaned = yield* deps.clean()
+          return {
+            verdict: 'failed',
+            evidence:
+              'failed' in recleaned
+                ? `${ran.evidence} — and the tree could not be put back afterwards (${recleaned.failed})`
+                : ran.evidence,
+            findings: [],
+          }
+        }
+
         if (ran.verdict !== 'passed') {
           const recleaned = yield* deps.clean()
           if ('failed' in recleaned) {

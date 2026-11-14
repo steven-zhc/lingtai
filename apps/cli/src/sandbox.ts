@@ -1,5 +1,6 @@
+import { provideHostAnswer } from '@lingtai/conductor'
 import { Sandbox, SandboxUnavailable, type SandboxApi } from '@lingtai/sandbox'
-import { Context, Effect, Layer, Scope, Semaphore } from 'effect'
+import { Context, Effect, Exit, Layer, Scope, Semaphore } from 'effect'
 
 /**
  * The `Sandbox` service for the two hosts that conduct a pass, `lingtai run` and the daemon (#1152).
@@ -41,10 +42,65 @@ const load: Effect.Effect<SandboxApi, SandboxUnavailable> = Effect.suspend(() =>
   )
 })
 
+/**
+ * **srt installs its own `SIGINT`/`SIGTERM` handlers** when it initialises (`sandbox-manager.js`,
+ * `process.once('SIGINT', cleanupHandler)`), and they reset its proxies and bridges at once: a first Ctrl+C
+ * during a drain would break the command the drain is waiting for. The lifecycle is Lingtai's — the drain
+ * finishes the pass, `releaseSandbox` resets after it — so the listeners srt added during its first
+ * initialisation are taken off again. (`exit` stays: it is the backstop for a process that dies anyway.)
+ */
+const SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM']
+const signals = Semaphore.makeUnsafe(1)
+let stripped = false
+
+const withoutSrtSignals = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.suspend(() => {
+    if (stripped) return effect
+    return signals.withPermits(1)(
+      Effect.suspend(() => {
+        if (stripped) return effect
+        const before = SIGNALS.map((s) => new Set<unknown>(process.listeners(s)))
+        return Effect.ensuring(
+          effect,
+          Effect.sync(() => {
+            SIGNALS.forEach((signal, i) => {
+              for (const listener of process.listeners(signal)) {
+                if (!before[i]!.has(listener)) {
+                  process.removeListener(signal, listener as NodeJS.SignalsListener)
+                  stripped = true
+                }
+              }
+            })
+          }),
+        )
+      }),
+    )
+  })
+
 const lazy: SandboxApi = {
-  hostCanSandbox: load.pipe(Effect.flatMap((api) => api.hostCanSandbox)),
-  wrap: (input) => load.pipe(Effect.flatMap((api) => api.wrap(input))),
+  hostCanSandbox: load.pipe(Effect.flatMap((api) => withoutSrtSignals(api.hostCanSandbox))),
+  wrap: (input) => load.pipe(Effect.flatMap((api) => withoutSrtSignals(api.wrap(input)))),
 }
+
+/**
+ * Closes the process-wide scope, which resets srt (its proxies, and on Linux the socat bridges that would keep
+ * the event loop alive). Called by the two hosts where they end, after the drain, beside `flushTracing`. A
+ * process that never built it has nothing to close.
+ */
+export const releaseSandbox: Effect.Effect<void> = Effect.suspend(() => {
+  if (built === undefined) return Effect.void
+  built = undefined
+  return Scope.close(held, Exit.void)
+})
+
+// The host answer the resolver and the pass fall back to where no service is provided: srt is loaded on the
+// first ask only, and only from here (the board imports the conductor and must never reach `live`).
+provideHostAnswer(
+  Effect.tryPromise({
+    try: () => import('@lingtai/sandbox/live'),
+    catch: () => new SandboxUnavailable({ reason: 'the sandbox runtime could not be loaded', sentences: [] }),
+  }).pipe(Effect.flatMap((live) => live.hostCanSandboxHere)),
+)
 
 /** Provided beside `tracedPorts` at every site that runs a pass. */
 export const sandboxService: Layer.Layer<Sandbox> = Layer.succeed(Sandbox, lazy)

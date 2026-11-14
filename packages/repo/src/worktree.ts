@@ -57,8 +57,10 @@ export interface ProvisionOptions {
    */
   gitEnv?: NodeJS.ProcessEnv
   /**
-   * Lines the mirror's `info/exclude` must carry, written once each and keeping what was there (#1152). Linked
-   * worktrees read the common dir's file, so this covers every one. Absent or empty, nothing is written.
+   * Lines the mirror's `info/exclude` must carry, in one managed block, keeping what else was there (#1152).
+   * Linked worktrees read the common dir's file, so this covers every one. **Empty removes the block**; absent
+   * leaves the file alone. A caller that provisions for a pass passes it every time, so one pass's exclusions
+   * never reach the next.
    */
   exclude?: readonly string[]
 }
@@ -142,21 +144,22 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
         Effect.tryPromise({
           // Promise chains and no `async`: the ratchet counts those.
           try: () => {
-            const names = options.exclude ?? []
-            if (names.length === 0) return Promise.resolve()
+            // Absent: a caller that says nothing about it touches nothing. Empty: it removes what a sandboxed
+            // pass left, so the policy never outlives the pass that asked for it.
+            const names = options.exclude
+            if (names === undefined) return Promise.resolve()
             const file = join(path, 'info', 'exclude')
             return readFile(file, 'utf8')
               .catch((err: NodeJS.ErrnoException) => {
                 if (err.code === 'ENOENT') return ''
                 throw err
               })
-              .then((existing) =>
+              .then((existing) => {
+                const merged = withExcludes(existing, names)
+                if (merged === existing) return undefined
                 // A bare clone made without templates has no `info/`.
-                mkdir(dirname(file), { recursive: true }).then(() => {
-                  const merged = withExcludes(existing, names)
-                  return merged === existing ? undefined : writeFile(file, merged)
-                }),
-              )
+                return mkdir(dirname(file), { recursive: true }).then(() => writeFile(file, merged))
+              })
           },
           catch: (err) => new RepoFailed({ operation: 'info/exclude', detail: (err as Error).message }),
         }),
