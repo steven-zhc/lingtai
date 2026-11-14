@@ -163,6 +163,7 @@ import {
   pathExistsEffect,
 } from './first-project.ts'
 import { APP_WAIT_MS, waitForAppEffect } from './github-app.ts'
+import { askClaudeTokenForRecipe, liveSetupTokenRun } from './claude-token.ts'
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
 import { githubInitSteps, type Here, hereSteps, localInitSteps } from './next-steps.ts'
@@ -602,6 +603,19 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         // Already probed above, for the "look" lines — a second probe for the
         // same run would ask every runtime whether it is signed in twice.
         runtimes: () => Effect.succeed(runtimes),
+        claudeToken: (recipe) =>
+          askClaudeTokenForRecipe(
+            {
+              ask: world.ask,
+              log: world.log,
+              run: liveSetupTokenRun(),
+              machine: world.machine,
+              path,
+              env: world.env,
+              interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
+            },
+            recipe,
+          ),
         setupReader: world.setupReader,
         exists: world.exists,
         register: world.registerLocal,

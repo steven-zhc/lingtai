@@ -136,8 +136,9 @@ limits:
 #   output_usd_per_million: 30
 
 # A sandboxed Claude Code run cannot read your login, so it holds a long-lived
-# token of its own: run `claude setup-token` once and paste the result here, or
-# export LINGTAI_CLAUDE_OAUTH_TOKEN. It is a secret; revoking it is yours.
+# token of its own: run `lingtai token claude` once (it runs `claude setup-token`
+# and writes the result here), or paste it here by hand, or export
+# LINGTAI_CLAUDE_OAUTH_TOKEN. It is a secret; revoking it is yours.
 # claude:
 #   oauth_token: <the token claude setup-token printed>
 

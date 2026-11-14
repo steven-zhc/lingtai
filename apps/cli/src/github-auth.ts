@@ -16,11 +16,9 @@
  * terminal: signed out, or without `repo` and `workflow`, it is refused with
  * the command that fixes it, and `github.auth: gh` is not written.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
-
 import { paint } from '@lingtai/env/colour'
 import { ghScopeGap, type GhRun, type GhStatus } from '@lingtai/github'
+import { liveMachineText, type MachineText } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { isMap, parseDocument } from 'yaml'
 
@@ -50,29 +48,7 @@ export interface GithubAuthWorld extends QuestionWorld {
  */
 export type GithubAuthAnswer = { auth: 'gh' | 'app'; pending: boolean } | { refused: string }
 
-/** `config.yml` as `{ read, write }` — `init`'s `world.machine`, or `node:fs` for `add`. */
-export interface MachineText {
-  read: (path: string) => string | null
-  write: (path: string, text: string) => void
-}
-
-/**
- * `config.yml` over `node:fs`. Written beside, then renamed over: an
- * interruption mid-write leaves the old file or the new one, never half of
- * either. `0600`, because a database URL carries its password.
- */
-export function liveMachineText(): MachineText {
-  return {
-    read: (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null),
-    write: (path, text) => {
-      mkdirSync(dirname(path), { recursive: true })
-      const partial = `${path}.${process.pid}.partial`
-      writeFileSync(partial, text, { mode: 0o600 })
-      chmodSync(partial, 0o600)
-      renameSync(partial, path)
-    },
-  }
-}
+export { liveMachineText, type MachineText }
 
 /** Sets `github.auth` in the file, through a document edit so nothing else in it moves. */
 export function writeGithubAuth(file: MachineText, path: string, kind: 'gh' | 'app'): void {

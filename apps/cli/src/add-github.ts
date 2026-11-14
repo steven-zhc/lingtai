@@ -25,14 +25,22 @@
 import { checkGhAccessEffect, checkInstallationEffect, type GhAccess } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, type Choice, refusalLines } from '@lingtai/conductor/pick-repository'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
-import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp } from '@lingtai/env'
+import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp, stateDir } from '@lingtai/env'
 import { createGitHubClient, GitHubFailed, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
-import { diskFiles, readRecipeKeyEffect, recipePath, type RecipeChange, type RecipeFiles } from '@lingtai/recipe'
+import {
+  diskFiles,
+  readRecipeKeyEffect,
+  recipePath,
+  type RecipeChange,
+  type RecipeFiles,
+  resolveSource,
+} from '@lingtai/recipe'
 import { type Answers, EMPTY_SETUP_READER, type Picker, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
-import { liveTrialBuild } from '@lingtai/setup'
+import { liveMachineText, liveTrialBuild, previewSetup } from '@lingtai/setup'
 import { Effect } from 'effect'
 
+import { askClaudeTokenForRecipe, liveClaudeTokenWorld } from './claude-token.ts'
 import { lift, recovering } from './exit.ts'
 import { livePickerEffect } from './first-project.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
@@ -154,6 +162,8 @@ export interface AskBeforeGithubAddDeps {
   runtimes: () => Effect.Effect<readonly RuntimeFound[], unknown>
   /** `askRecipe`'s `history` — `ticket-<project>-*` streams already in the log for this project. */
   history: (project: string) => Effect.Effect<readonly string[], unknown>
+  /** Asks for the sandboxed Claude Code token once the recipe is final (#1169); absent asks nothing, and it never refuses the add. */
+  claudeToken?: (recipe: Parameters<typeof askClaudeTokenForRecipe>[1]) => Effect.Effect<void, unknown>
 }
 
 const liveDeps: AskBeforeGithubAddDeps = {
@@ -171,6 +181,16 @@ const liveDeps: AskBeforeGithubAddDeps = {
   spin: liveSpin,
   runtimes: askRuntimesEffect,
   history: liveHistoryEffect,
+  claudeToken: (recipe) =>
+    askClaudeTokenForRecipe(
+      liveClaudeTokenWorld({
+        ask: liveAsk,
+        log: (line) => console.log(line),
+        machine: liveMachineText(),
+        interactive: interactivity(false).stdinIsTTY && interactivity(false).stdoutIsTTY,
+      }),
+      recipe,
+    ),
 }
 
 /** What the questions came to when the add goes on: the trial and the hints, for the card `add` ends on. */
@@ -453,6 +473,15 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   if ('refused' in recipeResult) {
     console.error(recipeResult.refused)
     return 1
+  }
+  if (deps.claudeToken !== undefined) {
+    // The recipe is a draft until `applySetup` writes it, so its final form is the preview of the answers.
+    const final = yield* attempt(
+      previewSetup({ home: stateDir(), files: deps.files }, recipeResult.answers).pipe(
+        Effect.map((text) => resolveSource(text, recipePath(repo), recipePath(repo)).recipe),
+      ),
+    )
+    if ('ok' in final) yield* deps.claudeToken(final.ok).pipe(Effect.catch(() => Effect.void))
   }
   return { trial: recipeResult.trial, hints: recipeResult.hints, runtimes, answers: recipeResult.answers }
 })
