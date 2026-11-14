@@ -13,8 +13,7 @@
  */
 export {
   RUN_LIMITS,
-  meetsTier,
-  missingForTier,
+  missingToFailClosed,
   neverStarted,
   type AuthState,
   type AuthStatus,

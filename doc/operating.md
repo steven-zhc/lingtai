@@ -683,7 +683,7 @@ Until then the slot was an entry with no projects, a caption with one and a
 filter with two, and the only route left was this command or typing
 `/setup/repository` from memory.
 
-The tier, the gates, the priority order **and the base** are all the recipe's,
+The gates, the priority order **and the base** are all the recipe's,
 in `~/.lingtai/<project>/recipe.yml` — which is why this command reads nothing
 from the repository to decide them. It does ask, once a recipe already exists:
 the writer and its model (`--agent`, `--model`, #398), the cold reviewer and its
@@ -1088,18 +1088,15 @@ queued: the sweep looks at every registered project, so an expired lock is
 lifted and its banner clears even while the queue is empty. A raise and a lift
 append at once (0126 §4, §7).
 
-**The setup's pause is not one of the three.** A recipe that asks for a tier one
-of its runtimes cannot provide makes the pass append `DispatchRefused` and one
-conductor-wide `ConductorPaused` with `cause: 'setup'`
-(`packages/conductor/src/conduct.ts:990-1031`). It pauses **every** project,
-holds across a restart, shows as the bar's `paused` chip (who, why, and a
-Resume beside it) and inside `lingtai doctor`'s `daemon: liveness` row as
-`paused by <by> (<reason>)`. Fix the recipe, then lift it with the chip's Resume
-or bare `lingtai resume` — whose own sentence is *"run `lingtai resume` once it
-is"* (`conduct.ts:1101`). Bare `lingtai resume` also unlocks every project a person
-paused; `lingtai resume <project>` never touches the setup's pause. In the
-0.14.0 security epic (#676) this becomes a refused recipe for that project
-alone.
+**An old setup pause is still one of the three, and nothing appends a new one.**
+A `ConductorPaused` with `cause: 'setup'` written before #1158 — when a recipe
+could ask for a tier one of its runtimes could not provide — keeps its meaning:
+it holds across a restart, shows as the bar's `paused` chip and inside
+`lingtai doctor`'s `daemon: liveness` row as `paused by <by> (<reason>)`, and is
+lifted with the chip's Resume or bare `lingtai resume`. Since #1158 a runtime
+that cannot fail closed is a refused pass for that project alone
+(`DispatchRefused`, no pause), and a recipe that writes `runtime.tier` is
+refused when it resolves, with the `sandbox` setting to use instead.
 
 **Shutdown is a stop the process does not come back from**
 ([0030](decisions-archive/0030-shutting-down-safely.md)). It appends and returns; the

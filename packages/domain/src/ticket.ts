@@ -275,7 +275,7 @@ export interface TicketState {
    * never silently downgraded, so the refusals are the record of what could not
    * run and why.
    */
-  dispatchRefusals: readonly { requiredTier: Tier; runtime: string; missing: readonly string[] }[]
+  dispatchRefusals: readonly { requiredTier?: Tier; runtime: string; missing: readonly string[] }[]
 
   /** Runs that have held this item, oldest first. A re-run appends. */
   runs: readonly string[]

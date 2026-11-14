@@ -38,20 +38,15 @@ import {
 } from '../test/one-attempt.ts'
 
 /**
- * **A refused dispatch pauses the conductor, rather than asking a person once
- * per ticket** (#405, 0031 §5's indefinite pause applied to 0118 §4's *fix the
- * setup*).
- *
- * The refusal is about the *pass* — a step naming a runtime that cannot meet
- * the recipe's tier is impossible for every item behind this one too — so it
- * must not read as a problem with this one ticket. `missingForTier` is what
- * decides it: `runtime`'s fixture `providesTier: 'guarded'`, and `tier:
- * sandboxed` asks for what it does not have.
+ * **A runtime that cannot fail closed is refused before the claim, for this pass
+ * only** (#1158, #676). Failing closed is a fixed requirement, not a recipe's
+ * choice, and the refusal is the project's — it pauses nothing, so no
+ * `ConductorPaused` is appended whatever the runtime.
  */
-describe('a refused dispatch pauses the conductor rather than emptying the queue into Waiting', () => {
-  const SANDBOXED = RECIPE.replace('agent: claude-code,', 'agent: claude-code, tier: sandboxed,')
+describe('a runtime that cannot fail closed is refused before the claim', () => {
+  const cannot: typeof runtime = { ...runtime, capabilities: { ...runtime.capabilities, canFailClosed: false } }
 
-  it('appends DispatchRefused and one ConductorPaused with until: null, holding across a restart, and claims nothing', async () => {
+  it('appends DispatchRefused without a tier, names the runtime, pauses nothing and claims nothing', async () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
@@ -59,8 +54,8 @@ describe('a refused dispatch pauses the conductor rather than emptying the queue
     const result = await once(
       {
         project,
-        client: fakeGitHub(said, SANDBOXED),
-        runtime,
+        client: fakeGitHub(said, RECIPE),
+        runtime: cannot,
         issue: 7,
         hookBinary: '/tmp/fake/lingtai-hook',
         prompt: 'fix {{issue}}',
@@ -71,86 +66,49 @@ describe('a refused dispatch pauses the conductor rather than emptying the queue
       fakePorts(did, store),
     )
 
-    expect(result).toMatchObject({ ok: false, stage: 'dispatch' })
+    expect(result).toMatchObject({ ok: false, stage: 'dispatch', runId: null })
+    const detail = (result as { detail: string }).detail
+    expect(detail).toContain(PROJECT)
+    expect(detail).toContain('claude-code cannot fail closed')
+    expect(detail).toContain('pre-tool-use-interception')
 
     const item = await store.read(`ticket-${PROJECT}-7`)
-    expect(item.filter((e) => e.type === 'DispatchRefused')).toHaveLength(1)
-    // Still queued, not held for a person: the domain lifecycle is unchanged
-    // by `DispatchRefused`, and nothing here claims it either.
+    const refused = item.filter((e) => e.type === 'DispatchRefused')
+    expect(refused).toHaveLength(1)
+    expect(refused[0]!.data).toEqual({ runtime: 'claude-code', missing: ['pre-tool-use-interception'] })
     expect(item.map((e) => e.type)).not.toContain('TicketClaimed')
 
-    const control = await store.read('ctl-conductor')
-    const paused = control.filter((e) => e.type === 'ConductorPaused')
-    expect(paused).toHaveLength(1)
-    const d = paused[0]!.data as { by: string; until: string | null; reason: string; holdsAcrossStarts: boolean }
-    expect(d.by).toBe('lingtai')
-    // Nothing fixes a missing tier by waiting (0031 §5).
-    expect(d.until).toBeNull()
-    // And a restart loads the same setup, so the pause has to survive one (#405).
-    expect(d.holdsAcrossStarts).toBe(true)
-    expect((d as { cause?: string }).cause).toBe('setup')
-    expect(d.reason).toContain(PROJECT)
-    expect(d.reason).toContain('sandboxed')
-    expect(d.reason).toContain('filesystem-sandbox')
-
-    // Before the claim, same as every other refusal in this file: nothing
-    // acquired, nothing provisioned.
+    // No pause of any cause: a refusal is the pass's, not the setup's.
+    expect((await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')).toEqual([])
+    // Before the claim: nothing acquired, nothing provisioned.
     expect(did).toEqual([])
   })
 
-  const refusedOver = async (standing: { actor: string; data: Record<string, unknown> }) => {
+  it('refuses a step naming a second runtime that cannot, by that runtime', async () => {
     const store = memoryStore()
     const did: string[] = []
-    const said: string[] = []
-    await store.append('ctl-conductor', 0, [{ type: 'ConductorPaused', ...standing } as never])
+    const codexReview = REVIEWED.replace('agent: claude-code\n      prompt:', 'agent: codex\n      prompt:')
 
     const result = await once(
       {
         project,
-        client: fakeGitHub(said, SANDBOXED),
+        client: fakeGitHub([], codexReview),
         runtime,
+        runtimeFor: (id) =>
+          id === 'codex' ? { ...cannot, capabilities: { ...cannot.capabilities, id: 'codex' } } : runtime,
+        signedIn: async () => ['codex'],
         issue: 7,
         hookBinary: '/tmp/fake/lingtai-hook',
         prompt: 'fix {{issue}}',
-        merge: false,
         home: '/tmp/fake-home',
         store,
       },
       fakePorts(did, store),
     )
+
     expect(result).toMatchObject({ ok: false, stage: 'dispatch' })
-
-    // The refusal itself is recorded on the item either way.
-    const item = await store.read(`ticket-${PROJECT}-7`)
-    expect(item.filter((e) => e.type === 'DispatchRefused')).toHaveLength(1)
-    return (await store.read('ctl-conductor')).filter((e) => e.type === 'ConductorPaused')
-  }
-
-  it('appends no second pause while the setup is paused, and leaves it exactly as it was', async () => {
-    const setupsPause = {
-      by: 'lingtai',
-      reason: 'a recipe asks for a tier nobody provides',
-      until: null,
-      holdsAcrossStarts: true,
-      cause: 'setup',
-    }
-    const paused = await refusedOver({ actor: 'conductor', data: setupsPause })
-    expect(paused).toHaveLength(1)
-    expect(paused[0]!.data).toEqual(setupsPause)
-  })
-
-  it("is not stopped by a person's old pause, which stops nothing: the setup's is appended over it", async () => {
-    const personsPause = {
-      by: 'a person',
-      reason: 'looking at something else',
-      until: null,
-      holdsAcrossStarts: false,
-      cause: 'person',
-    }
-    const paused = await refusedOver({ actor: 'a person', data: personsPause })
-    expect(paused).toHaveLength(2)
-    expect(paused[0]!.data).toEqual(personsPause)
-    expect(paused[1]!.data).toMatchObject({ cause: 'setup', holdsAcrossStarts: true })
+    expect((result as { detail: string }).detail).toContain('codex cannot fail closed')
+    expect(did).toEqual([])
   })
 })
 

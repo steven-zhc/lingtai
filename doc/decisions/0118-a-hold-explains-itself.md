@@ -57,7 +57,7 @@ with no block** (`RunAwaitingInput` and a bare `RunFailed` leave `blocked`
 false, `packages/projector/src/task-view.ts:447-566`) is a state that should
 not exist. `DispatchRefused` moves nothing into this lane since `#405`: the
 refusal is the attempt's rather than this item's, so the reducer leaves an item that
-was merely queued `queued` — a tier the setup cannot provide is a refused recipe
+was merely queued `queued` — a runtime that cannot fail closed is a refused pass
 for the project ([0126](0126-a-stop-is-a-lock-and-an-unlock.md)) — and leaves an
 item already in this lane on a question exactly as it was, because only a
 person's answer may lift that. **Unpushed work** (the branch did

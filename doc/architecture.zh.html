@@ -1002,8 +1002,8 @@
       <p><b>向前兼容只做到存储为止。</b>reducer 会忽略它不认识的事件类型，
         所以旧投影能在新 conductor 下活下来。存储不会 —— 它在读的时候就抛，
         所以实际上它先把这个事件拒了。目前这是刻意的，但这意味着那份宽容要等两边一致之后才真的存在。</p>
-      <p><b><code>tier: sandboxed</code> 还没做。</b>把整条工具链容器化本身就是一件独立的活；
-        第一个项目跑的是 <code>guarded</code>。</p>
+      <p><b>工具链容器化还没做。</b>recipe 的 <code>sandbox</code> 块给每个 runtime 套上一层策略；
+        把整条工具链容器化本身就是一件独立的活。fail closed 是始终要求的。</p>
     </div>
   </section>
 

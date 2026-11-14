@@ -165,6 +165,11 @@ describe('ticketNoteOf: the transitions', () => {
     ])
     expect(notes[0]).toEqual({ value: 'needs sandboxed; claude-code is missing a, b' })
   })
+
+  it('a refusal written after #1158 carries no tier, and the line does not say undefined', () => {
+    const notes = ticketNotes([t('DispatchRefused', { runtime: 'claude-code', missing: ['a', 'b'] } as never)])
+    expect(notes[0]).toEqual({ value: 'claude-code is missing a, b' })
+  })
 })
 
 /** #932: the count on the card comes from the reducer's state, whether the route kept its findings or names them. */

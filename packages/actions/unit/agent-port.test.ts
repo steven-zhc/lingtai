@@ -30,7 +30,6 @@ const runtimeOf = (run: Runtime['run']): Runtime & { seen: RunRequest[] } => {
       hooks: [],
       canFailClosed: true,
       canRewriteToolCall: false,
-      providesTier: 'guarded',
       enforces: ['turns', 'wall'],
     },
     run: (request) => {

@@ -448,7 +448,6 @@ describe('actionsFromRecipe', () => {
         hooks: [],
         canFailClosed: true,
         canRewriteToolCall: false,
-        providesTier: 'guarded',
         enforces: ['turns', 'wall'],
       },
       run: (request) => {

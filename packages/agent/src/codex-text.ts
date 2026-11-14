@@ -26,7 +26,6 @@ export function createCodexTextRuntime({ config, transport = fetch }: CodexTextO
       hooks: [],
       canFailClosed: false,
       canRewriteToolCall: false,
-      providesTier: 'sandboxed',
       enforces: ['turns', 'wall', 'usd'],
     },
     // A constant: no IO, so no Effect and no face.

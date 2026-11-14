@@ -1041,8 +1041,9 @@
         not know, so an older projection survives a newer conductor. The store does not — it throws
         on read, so in practice it refuses the event first. Deliberate for now, but it means the
         tolerance is only real once the two agree.</p>
-      <p><b><code>tier: sandboxed</code> is not built.</b> Containerising the whole toolchain is its
-        own piece of work; <code>guarded</code> is what the first project runs at.</p>
+      <p><b>A containerised toolchain is not built.</b> The recipe's <code>sandbox</code> block wraps
+        each runtime in a policy; containerising the whole toolchain is its own piece of work.
+        Failing closed is always required.</p>
     </div>
   </section>
 

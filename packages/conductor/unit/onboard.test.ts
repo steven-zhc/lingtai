@@ -353,7 +353,6 @@ describe('the last line lingtai add prints', () => {
     const line = registrationLine([started], 'nextloom-ai-admin', await resolved())
 
     expect(line).toContain('added nextloom-ai-admin')
-    expect(line).toContain('tier ')
     expect(line).toContain('across 5 steps')
     expect(line).not.toContain('updated')
   })

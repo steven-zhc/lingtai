@@ -38,8 +38,7 @@ import {
   createClaudeCodeRuntime,
   createCodexRuntime,
   gitWritableRoots,
-  meetsTier,
-  missingForTier,
+  missingToFailClosed,
   neverStarted,
   openRunLogEffect,
   parseResult,
@@ -168,37 +167,13 @@ describe('capabilities', () => {
     expect(CODEX_CAPABILITIES.hooks).not.toContain('PreCompact')
   })
 
-  /**
-   * A project's safety level must not depend on which agent happens to be
-   * running today. Claude Code cannot provide `sandboxed` on its own, and the
-   * scheduler has to be able to say so *before* dispatching.
-   */
-  it('says which runtime can carry which tier, and what is missing', () => {
-    expect(meetsTier(CLAUDE_CODE_CAPABILITIES, 'guarded')).toBe(true)
-    expect(meetsTier(CLAUDE_CODE_CAPABILITIES, 'sandboxed')).toBe(false)
-    expect(meetsTier(CODEX_CAPABILITIES, 'sandboxed')).toBe(true)
-
-    // Named, so DispatchRefused carries a reason rather than a refusal.
-    expect(missingForTier(CLAUDE_CODE_CAPABILITIES, 'sandboxed')).toEqual(['filesystem-sandbox'])
-    expect(missingForTier(CLAUDE_CODE_CAPABILITIES, 'guarded')).toEqual([])
-  })
-
-  /**
-   * `#138` renamed `canBlockToolUse` to `canFailClosed` and changed nothing
-   * else: the same capabilities name the same things on `DispatchRefused`.
-   */
-  it('refuses the same capabilities with the same names after the rename', () => {
-    const notifyOnly = { ...CLAUDE_CODE_CAPABILITIES, providesTier: 'open' as const, canFailClosed: false }
-    const refusable = { ...notifyOnly, canFailClosed: true }
-
-    expect(missingForTier(notifyOnly, 'guarded')).toEqual(['pre-tool-use-interception'])
-    expect(missingForTier(refusable, 'guarded')).toEqual(['tier-guarded'])
-    // **Both promises, since `#313`.** `notifyOnly` has neither a sandbox nor a
-    // hook that stops the run, and `sandboxed` asks for both: naming only the
-    // filesystem half would send an operator to fix half of it. The names
-    // themselves are unchanged, which is what `#138` pinned here.
-    expect(missingForTier(notifyOnly, 'sandboxed')).toEqual(['pre-tool-use-interception', 'filesystem-sandbox'])
-    expect(missingForTier(notifyOnly, 'open')).toEqual([])
+  /** Named, so `DispatchRefused` carries a reason rather than a refusal. */
+  it('says which runtime can fail closed, and what is missing', () => {
+    expect(missingToFailClosed(CLAUDE_CODE_CAPABILITIES)).toEqual([])
+    expect(missingToFailClosed(CODEX_CAPABILITIES)).toEqual([])
+    expect(missingToFailClosed({ ...CLAUDE_CODE_CAPABILITIES, canFailClosed: false })).toEqual([
+      'pre-tool-use-interception',
+    ])
   })
 
   /**
@@ -1007,7 +982,7 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, o
    * worktree's `$GIT_DIR/hooks` resolves to — so an implementer under the sandbox
    * could write `hooks/pre-push`, and the merge lane runs `git push` from the
    * conductor process, unsandboxed, holding the installation token. A writable
-   * `hooks/` is a way out of the boundary `providesTier: "sandboxed"` promises,
+   * `hooks/` is a way out of the boundary a sandboxed run promises,
    * which is why the assertion below is an exact list and not a `toContain`.
    */
   it("names a linked worktree's git directory and the borrowed stores, not the repository", async () => {

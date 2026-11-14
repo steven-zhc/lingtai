@@ -904,3 +904,11 @@ describe('a line of history', () => {
     expect(said).not.toContain('ticket@1911')
   })
 })
+
+describe('a dispatch refusal written after #1158', () => {
+  it('names the runtime and what it is missing, without a tier and without undefined', () => {
+    const line = summarise(e('DispatchRefused', { runtime: 'codex', missing: ['pre-tool-use-interception'] }))
+    expect(line).toBe('codex cannot fail closed — missing pre-tool-use-interception')
+    expect(line).not.toContain('undefined')
+  })
+})

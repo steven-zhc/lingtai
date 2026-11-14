@@ -274,7 +274,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   SplitFailed: (d) => `Split failed at ${need(d, 'step')}: ${clip(d['detail'])}`,
   TicketLinked: (d) => `${need(d, 'relation')} ${need(d, 'otherRef')}`,
   TicketLanded: (d) => `merged as ${sha(d, 'mergeCommit')}`,
-  DispatchRefused: (d) => `${need(d, 'runtime')} cannot run ${need(d, 'requiredTier')} — missing ${list(d['missing'])}`,
+  // `requiredTier` is on events written before #1158 and absent on every later one.
+  DispatchRefused: (d) =>
+    d['requiredTier'] === undefined
+      ? `${need(d, 'runtime')} cannot fail closed — missing ${list(d['missing'])}`
+      : `${need(d, 'runtime')} cannot run ${need(d, 'requiredTier')} — missing ${list(d['missing'])}`,
 
   // ------------------------------------------------------------------ run --
   // The runtime, the model (which a runtime may not name: `""`) and the base. The

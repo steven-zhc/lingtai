@@ -492,7 +492,7 @@ export function fakeGitHub(said: string[], recipe = RECIPE): GitHubClient {
 /**
  * An agent that says it committed something, without a subprocess.
  *
- * The capabilities are the real shape, not a stub: `missingForTier` reads them
+ * The capabilities are the real shape, not a stub: `missingToFailClosed` reads them
  * and refuses the dispatch if they do not carry the recipe's tier, and a fake
  * that skipped them would skip the refusal this run has to get past.
  */
@@ -502,7 +502,6 @@ export const runtime: Runtime = {
     hooks: ['PreToolUse', 'PostToolUse', 'Stop'],
     canFailClosed: true,
     canRewriteToolCall: false,
-    providesTier: 'guarded',
     enforces: ['turns', 'wall'],
   },
   run: () =>

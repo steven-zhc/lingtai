@@ -404,7 +404,9 @@ export function ticketNoteOf(before: TicketState, after: TicketState): Note {
   }
   if (after.dispatchRefusals.length > before.dispatchRefusals.length && after.lifecycle.status !== 'blocked') {
     const d = after.dispatchRefusals.at(-1)!
-    return { value: `needs ${d.requiredTier}; ${d.runtime} is missing ${d.missing.join(', ')}` }
+    const missing = `${d.runtime} is missing ${d.missing.join(', ')}`
+    // `requiredTier` is on refusals written before #1158 and absent on every later one.
+    return { value: d.requiredTier === undefined ? missing : `needs ${d.requiredTier}; ${missing}` }
   }
   return null
 }
