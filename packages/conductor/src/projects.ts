@@ -29,7 +29,7 @@ import {
   type SignedIn,
   resolveLocalRecipeEffect,
 } from '@lingtai/recipe'
-import { SandboxUnavailable } from '@lingtai/sandbox'
+import { BUILT_IN_DOMAINS, SandboxUnavailable, installFor } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
 import { Effect } from 'effect'
 
@@ -221,6 +221,17 @@ export const hostHere: HostAnswer = Effect.tryPromise({
   try: () => import('@lingtai/sandbox/live'),
   catch: () => new SandboxUnavailable({ reason: 'the sandbox runtime could not be loaded', sentences: [] }),
 }).pipe(Effect.flatMap((live) => live.hostCanSandboxHere))
+
+/**
+ * What the setup wizard reads of the host (#1160): the answer through `hostHere` (so srt is imported on the
+ * first ask and never by a client graph), the install advice for `platform`, and the built-in allowlist.
+ * Handed to `proposeSetup` only for a recipe that is new.
+ */
+export const sandboxHostHere = (platform: string = process.platform) => ({
+  answer: hostHere,
+  install: installFor(platform) ?? null,
+  builtIns: BUILT_IN_DOMAINS,
+})
 
 export function currentRecipeEffect(
   state: ProjectState,

@@ -22,6 +22,13 @@ const kindsOf = (text: string): string[] =>
     .map((k) => k.trim())
     .filter((k) => k !== '')
 
+/** One host per line (or comma-separated), trimmed, none empty. The server checks each by the block's own rule. */
+const hostsOf = (text: string): string[] =>
+  text
+    .split(/[\n,]/)
+    .map((h) => h.trim())
+    .filter((h) => h !== '')
+
 function Line(props: {
   label: string
   note: string
@@ -57,6 +64,8 @@ export function SetupForm({ view }: { view: ReadView }) {
   const [heldBy, setHeldBy] = useState(view.heldBy.value)
   const [closeOnEnd, setCloseOnEnd] = useState(view.end.value)
   const [approves, setApproves] = useState(false)
+  const [sandboxOn, setSandboxOn] = useState(true)
+  const [allowText, setAllowText] = useState('')
   const [limits, setLimits] = useState(view.limits)
   const [open, setOpen] = useState<string | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
@@ -93,6 +102,7 @@ export function SetupForm({ view }: { view: ReadView }) {
     personApprovesMerge: approves,
     limits: unbounded ? { ...limits, turns: 'unbounded' } : limits,
     turnsUnbounded: unbounded,
+    sandbox: view.sandbox === null ? null : { enabled: sandboxOn, allow: hostsOf(allowText) },
   }
   const key = JSON.stringify(answers)
 
@@ -385,6 +395,42 @@ export function SetupForm({ view }: { view: ReadView }) {
             ))}
           </ol>
         </section>
+
+        {view.sandbox !== null ? (
+          <section className="rcard">
+            <h3 className="rcard-h">Sandbox</h3>
+            {view.sandbox.cannot !== null ? <p className="note wiz-fail">{view.sandbox.cannot}</p> : null}
+            <fieldset className="wiz-group">
+              <label className="wiz-row">
+                <input type="radio" checked={sandboxOn} onChange={() => setSandboxOn(true)} />
+                <span>
+                  <b>On</b> — agents and build commands run inside it
+                </span>
+              </label>
+              <label className="wiz-row">
+                <input type="radio" checked={!sandboxOn} onChange={() => setSandboxOn(false)} />
+                <span>
+                  <b>Off</b> — {view.sandbox.offLine}
+                </span>
+              </label>
+            </fieldset>
+            {sandboxOn ? (
+              <>
+                <p className="note">Hosts every sandboxed run may reach:</p>
+                <p className="mono">{view.sandbox.builtIns.join(' · ')}</p>
+                <label className="wiz-row">
+                  <span>more hosts, one per line</span>
+                  <textarea
+                    className="wiz-input mono"
+                    rows={3}
+                    value={allowText}
+                    onChange={(e) => setAllowText(e.target.value)}
+                  />
+                </label>
+              </>
+            ) : null}
+          </section>
+        ) : null}
 
         <section className="rcard">
           <h3 className="rcard-h">What an attempt may spend</h3>

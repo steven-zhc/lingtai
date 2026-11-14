@@ -95,6 +95,13 @@ describe('flagsOf', () => {
     expect(valuelessFlag(['--no-color'])).toBeNull()
   })
 
+  it('accepts --sandbox and --sandbox-hosts on add and init (#1160)', async () => {
+    for (const cmd of ['add', 'init'] as const) {
+      const parsed = await parsedBy(cmd, ['--sandbox', 'off', '--sandbox-hosts', 'a.example.com'])
+      expect(parsed?.flags).toMatchObject({ sandbox: 'off', 'sandbox-hosts': 'a.example.com' })
+    }
+  })
+
   it('refuses a flag neither command has, where add used to ignore it', async () => {
     expect(await parsedBy('add', ['owner/repo', '--no-such-flag', 'x'])).toBeNull()
   })

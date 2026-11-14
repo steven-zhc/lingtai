@@ -30,6 +30,7 @@ const FORM: SetupForm = {
   personApprovesMerge: false,
   limits: { turns: 300, wall: '2h', rounds: 2, restarts: 0 },
   turnsUnbounded: false,
+  sandbox: null,
 }
 
 function files(): RecipeFiles & { store: Map<string, string> } {

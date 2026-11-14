@@ -1,5 +1,5 @@
-import { proposalFor, projectNameOf, readLocalTarget } from '@lingtai/conductor/add-from-page'
-import { loadAllProjects } from '@lingtai/conductor/projects'
+import { proposalFor, projectNameOf, readLocalTarget, recipeIsNew } from '@lingtai/conductor/add-from-page'
+import { loadAllProjects, sandboxHostHere } from '@lingtai/conductor/projects'
 /**
  * Step 2 of adding a repository (#971): what Lingtai read, every proposed line
  * with its *change*, the two decisions, and the recipe beside them. The page
@@ -7,6 +7,7 @@ import { loadAllProjects } from '@lingtai/conductor/projects'
  * editable empty line (`proposeSetup`'s `known: false`), and Add is still
  * possible. Nothing is written until Add.
  */
+import { verdictOf } from '@lingtai/recipe'
 import { alreadyAdded } from '@lingtai/setup'
 import { alreadyAddedSentence, type SetupTarget } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -76,10 +77,22 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
     )
   }
   // `suspend` so a reader that throws while it is built (an unreadable App key) is a failed read, not a failed page.
+  const isNew = await Effect.runPromise(recipeIsNew(project))
   const proposal = await Effect.runPromise(
-    Effect.suspend(() => proposalFor(target.target)).pipe(Effect.timeout('25 seconds')),
+    Effect.suspend(() => proposalFor(target.target, undefined, { recipeIsNew: isNew })).pipe(
+      Effect.timeout('25 seconds'),
+    ),
   ).catch((err: unknown) => (err instanceof Error ? err.message : 'it took too long'))
   if (typeof proposal === 'string') {
+    // The host check does not depend on the repository read: a failed read still says what this machine can do (#1160).
+    const host = sandboxHostHere()
+    const sandbox = isNew
+      ? {
+          verdict: await Effect.runPromise(verdictOf(host.answer)),
+          install: host.install,
+          builtIns: host.builtIns,
+        }
+      : null
     return frame(
       `step 2 — ${label}`,
       <>
@@ -87,7 +100,7 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
           Reading the repository failed: {proposal}. <a href="">Reload</a> to read it again, or fill the lines in
           yourself.
         </p>
-        <SetupForm view={emptyView(target.target, project, target.remote, proposal)} />
+        <SetupForm view={emptyView(target.target, project, target.remote, proposal, sandbox)} />
       </>,
     )
   }

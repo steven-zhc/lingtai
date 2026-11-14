@@ -5,7 +5,15 @@
 import { everyRuntime } from '@lingtai/agent'
 import { localTicketsOf } from '@lingtai/conductor/add-from-page'
 import { LIMIT_DEFAULTS } from '@lingtai/recipe'
-import { LINGTAI_BASE, type Line, type Proposal, type SetupTarget } from '@lingtai/setup'
+import {
+  LINGTAI_BASE,
+  SANDBOX_OFF_LINE,
+  sandboxCannotSentence,
+  type Line,
+  type Proposal,
+  type SandboxProposal,
+  type SetupTarget,
+} from '@lingtai/setup'
 
 import type { CheckView, LineView, ReadView } from './read-model.ts'
 
@@ -70,6 +78,14 @@ export function viewOf(proposal: Proposal, project: string, remote: string | nul
       rounds: proposal.limits.known ? proposal.limits.value.rounds : LIMIT_DEFAULTS.rounds,
       restarts: LIMIT_DEFAULTS.restarts,
     },
+    sandbox:
+      proposal.sandbox === null
+        ? null
+        : {
+            builtIns: [...proposal.sandbox.builtIns],
+            cannot: sandboxCannotSentence(proposal.sandbox),
+            offLine: SANDBOX_OFF_LINE,
+          },
   }
 }
 
@@ -80,7 +96,14 @@ const noTurnCeiling = (id: string): boolean =>
  * The form when nothing could be read at all (a timeout, a key that would not
  * load): every line says so and starts empty, and Add is still possible.
  */
-export function emptyView(target: SetupTarget, project: string, remote: string | null, reason: string): ReadView {
+export function emptyView(
+  target: SetupTarget,
+  project: string,
+  remote: string | null,
+  reason: string,
+  /** Where the recipe is new, the sandbox step is still offered, on: a failed read never drops the default (#1160). */
+  sandbox: SandboxProposal | null = null,
+): ReadView {
   const local = target.kind === 'local'
   const note = `could not be read: ${reason}`
   const unread = <T>(value: T) => ({ value, note, known: false })
@@ -102,5 +125,13 @@ export function emptyView(target: SetupTarget, project: string, remote: string |
     heldBy: unread(''),
     end: unread(false),
     limits: { ...LIMIT_DEFAULTS },
+    sandbox:
+      sandbox === null
+        ? null
+        : {
+            builtIns: [...sandbox.builtIns],
+            cannot: sandboxCannotSentence(sandbox),
+            offLine: SANDBOX_OFF_LINE,
+          },
   }
 }

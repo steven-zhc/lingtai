@@ -78,6 +78,8 @@
         "--reviewer",
         "--reviewer-model",
         "--rounds",
+        "--sandbox",
+        "--sandbox-hosts",
         "--tickets",
         "--wall",
         "--yes"
@@ -782,6 +784,8 @@
         "--reviewer",
         "--reviewer-model",
         "--rounds",
+        "--sandbox",
+        "--sandbox-hosts",
         "--store",
         "--tickets",
         "--wall",
