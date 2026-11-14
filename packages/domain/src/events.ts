@@ -1492,10 +1492,15 @@ export const IntegrationSucceeded = z.object({
 export const BaseChecked = z.object({
   /** The branch, e.g. `main`. */
   base: z.string(),
-  /** The commit the command ran on — half of the key. */
+  /** The commit the command ran on — the first third of the key. */
   baseSha: z.string(),
-  /** The `run:` text exactly — the other half. */
+  /** The `run:` text exactly — the second third. */
   command: z.string(),
+  /**
+   * The third: `unsandboxed`, or the fingerprint of the policy it ran under. A cache key, not a
+   * `SandboxBoundary`. Absent on an event written before it existed, which reads as `unsandboxed`.
+   */
+  boundary: z.string().optional(),
   ok: z.boolean(),
   exitCode: z.number().int(),
   durationMs: z.number().int().nonnegative(),

@@ -26,6 +26,8 @@ function fakes(failWith?: SandboxUnavailable | SandboxWrapFailed) {
   const wraps: { command: readonly string[]; worktree: string; env: Record<string, string> }[] = []
   const spawns: RunCommandOptions[] = []
   const sandbox: RunSandbox = {
+    profile: () => ({ ok: true, paths: [] }),
+    fingerprint: () => 'fp',
     wrap: (command, worktree, env) => {
       wraps.push({ command, worktree, env })
       if (failWith) return Effect.fail(failWith)

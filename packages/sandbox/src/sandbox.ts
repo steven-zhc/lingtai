@@ -15,6 +15,7 @@ import {
   policyVariables,
   runDomains,
   resolvedPolicy,
+  policyFingerprint,
   type CallerAdditions,
   type HostFacts,
   type PolicyInputs,
@@ -72,6 +73,8 @@ export interface SandboxApi {
   readonly refusedConnections: (wrapped: Wrapped) => Effect.Effect<RefusedRead>
   /** The policy `wrap` would hand srt for this input, as a value, using this service's own host. */
   readonly policyOf: (input: PolicyInputs) => ReturnType<typeof resolvedPolicy>
+  /** A stable fingerprint of that policy, the run's worktree left out, using this service's own host. */
+  readonly fingerprintOf: (input: PolicyInputs) => string
 }
 
 export class Sandbox extends Context.Service<Sandbox, SandboxApi>()('@lingtai/sandbox/Sandbox') {}
@@ -199,7 +202,9 @@ export const makeSandbox = Effect.gen(function* () {
 
   const policyOf = (input: PolicyInputs) => resolvedPolicy(host, input)
 
-  return { hostCanSandbox, wrap, refusedConnections, policyOf } satisfies SandboxApi
+  const fingerprintOf = (input: PolicyInputs) => policyFingerprint(host, input)
+
+  return { hostCanSandbox, wrap, refusedConnections, policyOf, fingerprintOf } satisfies SandboxApi
 })
 
 /** Needs `Srt`, `Host` and `SandboxFs`; resets the instance when its scope closes. */

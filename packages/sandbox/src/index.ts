@@ -7,6 +7,9 @@ export {
   mirrorDir,
   instanceConfig,
   policyVariables,
+  policyFingerprint,
+  fingerprintSource,
+  WORKTREE_PLACEHOLDER,
 } from './policy.ts'
 export type { CallerAdditions, HostFacts, PolicyInputs, ProjectAdditions } from './policy.ts'
 export { Host, SandboxFs, SandboxPolicyRefused, SandboxUnavailable, SandboxWrapFailed, Srt } from './port.ts'

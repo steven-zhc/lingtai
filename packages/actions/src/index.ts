@@ -27,6 +27,7 @@ export {
   type CommandRunner,
   type ProcessActionSpec,
   type RunSandbox,
+  type OperatorProfile,
   type SandboxWrapError,
 } from './process-action.ts'
 export {

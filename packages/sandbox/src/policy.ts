@@ -4,6 +4,7 @@
  * Pure: every function takes the host's facts as an argument and none reads `process`, `HOME` or the disk,
  * so a test builds every path from a directory it made itself.
  */
+import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 
 /** What this machine is. The live layer reads it once; a test hands one in. Every path is absolute. */
@@ -18,6 +19,11 @@ export interface HostFacts {
   readonly pnpmHome?: string | undefined
   /** The directories on the `PATH` this process started with. */
   readonly path: readonly string[]
+  /**
+   * The `PATH` exactly as the process started with it, relative entries included: `path` drops those,
+   * but the wrapped command is spawned with the whole string, so it is what the fingerprint hashes.
+   */
+  readonly pathRaw?: string | undefined
 }
 
 /** What a project's recipe adds (S7 will pass it). Goes through the protected-path check. */
@@ -192,3 +198,67 @@ export const resolvedPolicy = (host: HostFacts, input: PolicyInputs) => {
     srtVersion: SRT_VERSION,
   }
 }
+
+/** What `policyFingerprint` puts in place of the run's own worktree, so a throwaway path never reaches the hash. */
+export const WORKTREE_PLACEHOLDER = '<worktree>'
+
+const byCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
+
+/** Object keys in sorted order, every array sorted: two lists in a different order are one policy. */
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canonical).sort((a, b) => byCodeUnits(JSON.stringify(a), JSON.stringify(b)))
+    : value !== null && typeof value === 'object'
+      ? Object.fromEntries(
+          Object.entries(value as Record<string, unknown>)
+            .sort(([a], [b]) => byCodeUnits(a, b))
+            .map(([k, v]) => [k, canonical(v)]),
+        )
+      : value
+
+/** `p` with the run's worktree, as a prefix, replaced by the placeholder. A caller's relative deny resolves under it. */
+const unrooted = (worktree: string, p: string): string =>
+  p === worktree
+    ? WORKTREE_PLACEHOLDER
+    : p.startsWith(`${worktree}/`)
+      ? `${WORKTREE_PLACEHOLDER}${p.slice(worktree.length)}`
+      : p
+
+const unrootedLists = <T extends object | undefined>(worktree: string, lists: T): T =>
+  lists === undefined
+    ? lists
+    : (Object.fromEntries(
+        Object.entries(lists).map(([k, v]) => [k, Array.isArray(v) ? v.map((p) => unrooted(worktree, String(p))) : v]),
+      ) as T)
+
+/**
+ * What `policyFingerprint` hashes: the pinned srt version, the host's facts, the instance configuration, the run's
+ * `customConfig`, and the run's domains (which are in neither configuration). The run's own worktree is replaced by a
+ * placeholder everywhere it is a path prefix, including in the additions a profile resolved against it.
+ */
+export const fingerprintSource = (host: HostFacts, input: PolicyInputs) => {
+  const stable: PolicyInputs = {
+    ...input,
+    worktree: WORKTREE_PLACEHOLDER,
+    ...(input.project_additions === undefined
+      ? {}
+      : { project_additions: unrootedLists(input.worktree, input.project_additions) }),
+    ...(input.caller_additions === undefined
+      ? {}
+      : { caller_additions: unrootedLists(input.worktree, input.caller_additions) }),
+  }
+  return canonical({
+    srtVersion: SRT_VERSION,
+    // The PATH is an ordered search list, so it goes in as one string and is not sorted like the policy's sets.
+    host: { ...host, path: host.pathRaw ?? host.path.join(':'), pathRaw: undefined },
+    instance: instanceConfig(host),
+    custom: customConfigFor(host, stable),
+    domains: runDomains(stable),
+  })
+}
+
+/** A stable fingerprint of the policy a run would be wrapped in; the run's own worktree is not part of it. */
+export const policyFingerprint = (host: HostFacts, input: PolicyInputs): string =>
+  createHash('sha256')
+    .update(JSON.stringify(fingerprintSource(host, input)))
+    .digest('hex')

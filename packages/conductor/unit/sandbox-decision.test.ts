@@ -30,6 +30,7 @@ function fakeService(host: 'can' | SandboxUnavailable) {
     policyOf: () => {
       throw new Error('unused')
     },
+    fingerprintOf: () => 'fp',
   }
   return { service, asked }
 }
@@ -105,7 +106,9 @@ describe('makeRunSandbox puts the operator Codex profile denies on a run: comman
       readCodexPermissions: () => profile,
     })
     const result = Effect.runPromise(
-      Effect.scoped(run.wrap(['make'], '/work/tree', { HOME: '/home/op' }, log)).pipe(Effect.result),
+      Effect.scoped(
+        run.wrap(['make'], '/work/tree', { HOME: '/home/op' }, run.profile('/work/tree', { HOME: '/home/op' }), log),
+      ).pipe(Effect.result),
     )
     return { seen, result }
   }
