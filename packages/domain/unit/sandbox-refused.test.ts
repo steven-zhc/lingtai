@@ -89,7 +89,7 @@ describe('nextOf: a sandbox the host lost', () => {
 })
 
 describe('SandboxRefused offers only a person', () => {
-  it('offerFor pushes nothing, not even to unavailable', () => {
+  it('offerFor offers only the person who is always there, and excludes nothing', () => {
     const proposal = Proposal.parse({
       _tag: 'SandboxRefused',
       from: 'build',
@@ -99,7 +99,7 @@ describe('SandboxRefused offers only a person', () => {
       output: '',
     })
     const offer = offerFor(proposal, { rounds: 3, restarts: 1 }, { rounds: 0, restarts: 0 })
-    expect(offer.available).toEqual([])
+    expect(offer.available.map((c) => c.id)).toEqual(['hand-to-person'])
     expect(offer.unavailable).toEqual([])
     expect(fromOf(StoredProposal.parse(proposal))).toBe('build')
   })
