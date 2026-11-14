@@ -65,7 +65,7 @@
   },
   {
     "file": "packages/conductor/src/base-check.ts",
-    "function": "check",
+    "function": "lookup",
     "type": "BaseChecked",
     "count": 1,
     "class": "select",
