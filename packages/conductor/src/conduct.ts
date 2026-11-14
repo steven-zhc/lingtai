@@ -883,6 +883,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               : { kind: 'refused', why: decision.why },
           project,
           mirror: mirrorPathFor(project, home),
+          cache: join(home, 'cache', project),
           worktree: run.worktree ?? runDir,
           runDir,
           operatorClaudeDir: join(homedir(), '.claude'),
@@ -3167,10 +3168,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // worktree starts in its own run directory instead: the
               // conductor's is read-denied inside srt (#1150).
               cwd:
-                worktree?.path ??
-                (judgeDecision.kind === 'unsandboxed' || runtime !== 'claude-code'
-                  ? home
-                  : claudeConfigDirFor(home, judgeRunId)),
+                worktree?.path ?? (judgeDecision.kind === 'unsandboxed' ? home : claudeConfigDirFor(home, judgeRunId)),
               ...sandboxOf(judgeDecision, { runId: judgeRunId, worktree: worktree?.path }),
               prompt: judgePromptText,
               ...(declared.model === undefined ? {} : { model: declared.model }),

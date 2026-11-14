@@ -29,6 +29,8 @@ export interface RunSandbox {
   readonly decision: RunSandboxDecision
   readonly project: string
   readonly mirror: string
+  /** The project's cache directory (`cacheDir`), which a carried deny must not cover (#1151). */
+  readonly cache: string
   /** Where the run writes its work: the worktree, or its own directory for a judge with none. */
   readonly worktree: string
   /** `claudeConfigDirFor(home, <this run's id>)`: the run's own `CLAUDE_CONFIG_DIR`. */

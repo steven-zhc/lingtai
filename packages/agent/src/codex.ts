@@ -54,7 +54,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve, sep } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 
 import type { TokenCounts, Usage } from '@lingtai/domain'
@@ -64,6 +64,7 @@ import { parse as parseToml } from 'smol-toml'
 
 import { codexAuth, runtimeVersionEffect } from './auth.ts'
 import { clip, lineReader, PROMPT_ELIDED, RECEIPT_TAIL_CHARS } from './claude-code.ts'
+import { codexSandboxedLaunch } from './codex-sandbox.ts'
 import { NO_RUN_LOG } from './run-log.ts'
 import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
 
@@ -260,9 +261,10 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
  * `--permission-mode`; this is `-s`.
  *
  * `danger-full-access` is deliberately absent. It is what
- * `--dangerously-bypass-approvals-and-sandbox` amounts to, and the whole of what
- * makes this runtime `sandboxed` rather than `guarded` is that Lingtai does not
- * pass it.
+ * `--dangerously-bypass-approvals-and-sandbox` amounts to. Lingtai passes it
+ * only when the run's decision is *sandboxed* (#1151), where srt is the boundary
+ * and Codex's own sandbox is off; no unwrapped run ever carries it, and that is
+ * what keeps this runtime `sandboxed` rather than `guarded`.
  */
 export type CodexSandbox = 'workspace-write' | 'read-only'
 
@@ -660,7 +662,7 @@ export function userPermissionsFrom(text: string): UserPermissions {
 }
 
 /** `userPermissionsFrom` for the file the child will read. Never throws; a file that cannot be read is `unreadable`. */
-function userPermissionsAt(env: Record<string, string>, cwd: string): UserPermissions {
+export function userPermissionsAt(env: Record<string, string>, cwd: string): UserPermissions {
   const path = codexConfigPath(env, cwd)
   if (path === undefined) return { kind: 'none' }
   let text: string
@@ -1231,7 +1233,7 @@ export function codexArgv(
   prompt: string,
   options: {
     settings: unknown
-    sandbox: CodexSandbox
+    sandbox: CodexSandbox | 'danger-full-access'
     /** See `gitWritableRoots`. Empty for a reader, which commits nothing. */
     writable?: readonly string[]
     extraArgs?: readonly string[]
@@ -1263,7 +1265,7 @@ function argsFor(
   request: Invocable,
   prompt: string,
   hookArgs: readonly string[],
-  sandbox: CodexSandbox,
+  sandbox: CodexSandbox | 'danger-full-access',
   writable: readonly string[],
   extraArgs: readonly string[],
   outputSchemaPath: string | undefined,
@@ -1275,7 +1277,7 @@ function argsFor(
   // own `extends`: their chain may end at `:danger-full-access`.
   const name = `lingtai_${sandbox.replace('-', '_')}`
   const permissionArgs =
-    denies.length > 0
+    denies.length > 0 && sandbox !== 'danger-full-access'
       ? [
           '-c',
           `default_permissions=${toml(name)}`,
@@ -1405,11 +1407,16 @@ export function createCodexRuntime(options: CodexOptions = {}): Runtime {
         // deterministic, and `invocation()` must not do `run()`'s I/O.
         args: codexArgv(request, PROMPT_ELIDED, {
           settings: hookWiringAt(request.settingsPath),
-          sandbox,
-          writable: writableFor(sandbox, request.cwd),
+          // `danger-full-access` only where srt is the boundary (#1151), and then with no profile and no `--add-dir`.
+          ...(request.sandbox?.decision.kind === 'sandboxed'
+            ? { sandbox: 'danger-full-access' as const, writable: [] }
+            : {
+                sandbox,
+                writable: writableFor(sandbox, request.cwd),
+                ...deniesOf(userPermissionsAt(request.env, request.cwd)),
+              }),
           extraArgs,
           outputSchemaPath: request.outputSchema ? outputSchemaPathFor(request.runId) : undefined,
-          ...deniesOf(userPermissionsAt(request.env, request.cwd)),
         }),
       }
     },
@@ -1456,9 +1463,12 @@ export const codexRun = Effect.fn('agent.run')(function* (options: CodexOptions,
     } satisfies RunOutcome
   }
 
-  const writable = writableFor(sandbox, request.cwd)
+  const wrapIn = request.sandbox
+  const writable = wrapIn === undefined ? writableFor(sandbox, request.cwd) : []
   const permissions = userPermissionsAt(request.env, request.cwd)
-  if (permissions.kind === 'kept' || permissions.kind === 'unreadable') {
+  if (wrapIn !== undefined) {
+    // srt is the boundary: the profile's denies go to it, and a refusal is decided in `codexSandboxedLaunch`.
+  } else if (permissions.kind === 'kept' || permissions.kind === 'unreadable') {
     trace.note('codex', `the user's Codex permission profile did not narrow this run: ${permissions.why}`)
   } else if (permissions.kind === 'denies') {
     const covered = denyCoveringRoot(permissions.paths, [...writable, request.cwd], request.env.HOME, request.cwd)
@@ -1490,25 +1500,91 @@ export const codexRun = Effect.fn('agent.run')(function* (options: CodexOptions,
   // recorded, not requested.
   const recorded = request.model ? { model: request.model } : configModelFor(request.env, request.cwd, trace)
 
+  // Chosen here and nowhere else: `danger-full-access` reaches an argv only when the run's decision is *sandboxed*.
   const args = codexArgv(request, request.prompt, {
     settings: wiring,
-    sandbox,
+    sandbox: wrapIn === undefined ? sandbox : 'danger-full-access',
     writable,
     outputSchemaPath,
     extraArgs,
-    ...deniesOf(permissions),
+    ...(wrapIn === undefined ? deniesOf(permissions) : {}),
   })
+  // Created before the wrap, so the env srt is handed carries it and `stopRunProcesses` can find the run.
+  const processMarker = randomUUID()
 
   return yield* Effect.scoped(
     Effect.gen(function* () {
       const runFork = yield* FiberSet.makeRuntime<never, void, never>()
+      let launch: { command: string; args: readonly string[]; env: NodeJS.ProcessEnv } = {
+        command: binary,
+        args,
+        // Filtered, not inherited (0007).
+        env: { ...request.env, LINGTAI_CODEX_PROCESS_MARKER: processMarker } as unknown as NodeJS.ProcessEnv,
+      }
+      if (wrapIn !== undefined) {
+        const codexConfig = codexConfigPath(request.env, request.cwd)
+        const wrapped = yield* codexSandboxedLaunch(
+          wrapIn,
+          {
+            argv: [binary, ...args],
+            env: { ...request.env, LINGTAI_CODEX_PROCESS_MARKER: processMarker },
+            cwd: request.cwd,
+            codexHome: codexConfig === undefined ? undefined : dirname(codexConfig),
+            permissions,
+            outputSchemaPath,
+          },
+          request.env.HOME,
+        ).pipe(Effect.result)
+        if (wrapped._tag === 'Failure') {
+          const detail = wrapped.failure.sentence
+          trace.note('codex', detail)
+          if (outputSchemaPath) {
+            try {
+              unlinkSync(outputSchemaPath)
+            } catch {
+              // Already gone.
+            }
+          }
+          return {
+            exitCode: null,
+            turns: 0,
+            durationMs: Date.now() - started,
+            costUsd: null,
+            text: null,
+            failure: { kind: 'crash', detail },
+            sessionId: '',
+          } satisfies RunOutcome
+        }
+        if (request.signal?.aborted) {
+          // Aborted while the wrap was pending: nothing is spawned for a run nobody wants.
+          if (outputSchemaPath) {
+            try {
+              unlinkSync(outputSchemaPath)
+            } catch {
+              // Already gone.
+            }
+          }
+          return {
+            exitCode: null,
+            turns: 0,
+            durationMs: Date.now() - started,
+            costUsd: null,
+            text: null,
+            failure: { kind: 'aborted', detail: 'the conductor aborted the run' },
+            sessionId: '',
+          } satisfies RunOutcome
+        }
+        launch = {
+          command: wrapped.success.command,
+          args: wrapped.success.args,
+          env: wrapped.success.env as unknown as NodeJS.ProcessEnv,
+        }
+      }
       return yield* Effect.callback<RunOutcome>((resume) => {
-        const processMarker = randomUUID()
         const seen: Seen = new Map()
-        const child = spawnChild(binary, args, {
+        const child = spawnChild(launch.command, [...launch.args], {
           cwd: request.cwd,
-          // Filtered, not inherited (0007).
-          env: { ...request.env, LINGTAI_CODEX_PROCESS_MARKER: processMarker } as unknown as NodeJS.ProcessEnv,
+          env: launch.env,
           // **`"ignore"` on stdin is load-bearing**, not tidiness: `codex exec`
           // reads stdin even when a prompt was given as an argument — *"if stdin
           // is piped and a prompt is also provided, stdin is appended as a
@@ -1671,6 +1747,8 @@ export const codexRun = Effect.fn('agent.run')(function* (options: CodexOptions,
         )
         const onAbort = () => kill('aborted', 'the conductor aborted the run')
         request.signal?.addEventListener('abort', onAbort, { once: true })
+        // An abort that fired before this point (during the wrap) was never delivered to the listener.
+        if (request.signal?.aborted) onAbort()
 
         child.on('error', (err) =>
           finish({
