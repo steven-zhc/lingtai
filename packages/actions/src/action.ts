@@ -125,6 +125,11 @@ interface ActionResultFields {
    */
   evidence: string
   findings: ActionFinding[]
+  /**
+   * Set by a `run:` whose sandbox would not wrap it (#1152): the command never started, so the failure is the
+   * machine's and not a judgement about the diff. A kept run at `implement` must not turn it into a pass.
+   */
+  notWrapped?: true
   /** The cold reviewer's summary of the change, where it wrote one (0103 §3, #890). */
   summary?: string
   /** Set when the reviewer read only the first `read` of `of` characters of an oversized diff, approved to (#892). */

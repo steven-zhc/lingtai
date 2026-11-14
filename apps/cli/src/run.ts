@@ -18,6 +18,30 @@ import {
   type RunOnceResult,
 } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
+import { lockedEffect, makeGuard, readControlEffect } from '@lingtai/daemon'
+import type { ControlState, ProjectState } from '@lingtai/domain'
+import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
+import { eventStore, log as theLog, type EventStore } from '@lingtai/event-store'
+import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
+import {
+  boundsBesides,
+  dispatchingSteps,
+  isBuiltInJudge,
+  limitsFor,
+  parseDuration,
+  type Recipe,
+  type ResolvedRecipe,
+} from '@lingtai/recipe'
+import type { TokenSource } from '@lingtai/repo'
+import { Data, Effect, type Layer } from 'effect'
+
+import { ConductorLock, ConductorLockLive, type ConductorBusy, type LockUnreadable } from './conductor-lock.ts'
+import { stillOwed } from './continuing.ts'
+import { ceilingPort, type DayCeilingPorts } from './day-ceiling.ts'
+import { recovering } from './exit.ts'
+import { symbol } from './output.ts'
+import { Projector, ProjectorLive } from './projector.ts'
+import { startRates } from './rates.ts'
 /**
  * `lingtai run --once <project> --issue <n>` — Phase 1's whole shape.
  *
@@ -44,31 +68,8 @@ import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
  * See `heedThePause` below for why this read is not scoped the way the daemon's
  * is.
  */
-import { processSandbox } from '@lingtai/conductor/sandbox-service'
-import { lockedEffect, makeGuard, readControlEffect } from '@lingtai/daemon'
-import type { ControlState, ProjectState } from '@lingtai/domain'
-import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
-import { eventStore, log as theLog, type EventStore } from '@lingtai/event-store'
-import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
-import {
-  boundsBesides,
-  dispatchingSteps,
-  isBuiltInJudge,
-  limitsFor,
-  parseDuration,
-  type Recipe,
-  type ResolvedRecipe,
-} from '@lingtai/recipe'
-import type { TokenSource } from '@lingtai/repo'
-import { Data, Effect, type Layer } from 'effect'
-
-import { ConductorLock, ConductorLockLive, type ConductorBusy, type LockUnreadable } from './conductor-lock.ts'
-import { stillOwed } from './continuing.ts'
-import { ceilingPort, type DayCeilingPorts } from './day-ceiling.ts'
-import { recovering } from './exit.ts'
-import { symbol } from './output.ts'
-import { Projector, ProjectorLive } from './projector.ts'
-import { startRates } from './rates.ts'
+import { processSandbox } from './sandbox.ts'
+import { releaseSandbox } from './sandbox.ts'
 import { flushTracing, startTracing, tracedPorts } from './tracing.ts'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
@@ -757,6 +758,7 @@ export function run(
     yield* startTracing()
     const code = yield* edge
     yield* flushTracing
+    yield* releaseSandbox
     return code
   })
 }

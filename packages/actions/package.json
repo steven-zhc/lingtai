@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@lingtai/recipe": "workspace:*",
+    "@lingtai/sandbox": "workspace:*",
     "@lingtai/domain": "workspace:*",
     "@lingtai/agent": "workspace:*",
     "@opentelemetry/api": "^1.10.0",

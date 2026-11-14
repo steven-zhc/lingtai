@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 
 /**
@@ -15,6 +15,7 @@ import { renderEnvFile } from '@lingtai/agent-env'
 import { stateDir } from '@lingtai/env'
 import { Effect } from 'effect'
 
+import { mergeExclude } from './exclude.ts'
 import { RepoFailed, type TokenSource, gitEffect } from './git.ts'
 import { mirrorWrite } from './mirror-lock.ts'
 
@@ -55,6 +56,8 @@ export interface ProvisionOptions {
    * where the restriction does not apply and must not be lifted.
    */
   gitEnv?: NodeJS.ProcessEnv
+  /** Lines merged into the mirror's `info/exclude` — srt's stand-in names, under a sandboxed decision (#1152). */
+  exclude?: readonly string[]
 }
 
 export interface Worktree {
@@ -106,6 +109,8 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
   remote?: string
   home?: string
   gitEnv?: NodeJS.ProcessEnv
+  /** Lines to keep in the mirror's `info/exclude`, merged in under the mirror hold (#1152). */
+  exclude?: readonly string[]
 }): Effect.fn.Return<string, RepoFailed> {
   const home = options.home ?? stateDir()
   const path = mirrorPath(home, options.project)
@@ -136,13 +141,34 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
         // point into its metadata and whose unpushed commits live only in it, so it
         // is never removed on the strength of a failed fetch.
         yield* gitEffect(['fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], { ...run, cwd: path })
-        return
+      } else {
+        yield* io(() => mkdir(dirname(path), { recursive: true }))
+        yield* io(() => rm(path, { recursive: true, force: true }))
+        yield* gitEffect(['clone', '--bare', remote, path], run)
+        // A bare clone's origin is not wired for later fetches by default.
+        yield* gitEffect(['remote', 'set-url', 'origin', remote], { ...run, cwd: path })
       }
-      yield* io(() => mkdir(dirname(path), { recursive: true }))
-      yield* io(() => rm(path, { recursive: true, force: true }))
-      yield* gitEffect(['clone', '--bare', remote, path], run)
-      // A bare clone's origin is not wired for later fetches by default.
-      yield* gitEffect(['remote', 'set-url', 'origin', remote], { ...run, cwd: path })
+      // After either path: a fresh clone replaces `info/exclude` with git's template.
+      const names = options.exclude
+      if (names !== undefined && names.length > 0) {
+        const file = join(path, 'info', 'exclude')
+        yield* io(() =>
+          readFile(file, 'utf8')
+            .catch((err: NodeJS.ErrnoException) => {
+              if (err.code === 'ENOENT') return ''
+              throw err
+            })
+            .then((before) => {
+              const after = mergeExclude(before, names)
+              if (after === before) return undefined
+              // Renamed over, so a sandboxed command of another pass never reads a half-written file.
+              const tmp = `${file}.${process.pid}.tmp`
+              return mkdir(dirname(file), { recursive: true })
+                .then(() => writeFile(tmp, after))
+                .then(() => rename(tmp, file))
+            }),
+        )
+      }
     }),
   )
   return path
@@ -169,6 +195,7 @@ export const provisionWorktreeEffect = Effect.fn('repo.provision')(function* (
       remote: options.remote,
       home,
       gitEnv: options.gitEnv,
+      ...(options.exclude !== undefined ? { exclude: options.exclude } : {}),
     })
 
     const path = worktreePath(home, options.project, options.runId)

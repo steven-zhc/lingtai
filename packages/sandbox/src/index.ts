@@ -28,3 +28,5 @@ export {
   worthRecording,
 } from './refusals.ts'
 export type { ParsedViolation, RefusedEntry, RefusedRead } from './refusals.ts'
+export { SRT_STAND_INS, standInExcludes } from './stand-ins.ts'
+export { hostProgramsPresent } from './probe.ts'
