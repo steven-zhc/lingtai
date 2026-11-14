@@ -184,6 +184,7 @@ export const resolvedPolicy = (host: HostFacts, input: PolicyInputs) => {
   const fs = filesystemFor(host, input)
   return {
     allowedDomains: unique([...BUILT_IN_DOMAINS, ...runDomains(input)]),
+    allowRead: fs.allowRead,
     allowWrite: fs.allowWrite,
     denyRead: fs.denyRead,
     denyWrite: fs.denyWrite,

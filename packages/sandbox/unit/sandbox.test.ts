@@ -606,6 +606,8 @@ describe('refused connections (#1156)', () => {
   it('matches telemetry hosts as allowedDomains entries are', () => {
     expect(isTelemetryHost('sentry.io')).toBe(true)
     expect(isTelemetryHost('o1.ingest.sentry.io')).toBe(true)
+    expect(isTelemetryHost('sentry.io.')).toBe(true)
+    expect(isTelemetryHost('o1.ingest.sentry.io.')).toBe(true)
     expect(isTelemetryHost('notsentry.io')).toBe(false)
     expect(isTelemetryHost('sentry.io.evil.test')).toBe(false)
   })
@@ -633,6 +635,15 @@ describe('refused connections (#1156)', () => {
     expect(
       SandboxConnectionsRefused.parse({ step: 'build', action: 'a', runId: null, commandId: 'c', read: r }),
     ).toBeTruthy()
+  })
+
+  it('keeps a caller read apart from a denyWrite in the resolved policy', () => {
+    const at = (c: object) => resolvedPolicy(host, inputFor(host, { caller_additions: c }))
+    const r = at({ read: ['/state/tool'] })
+    const d = at({ denyWrite: ['/state/tool'] })
+    expect(r.allowRead).toContain('/state/tool')
+    expect(d.allowRead).not.toContain('/state/tool')
+    expect(r).not.toEqual(d)
   })
 
   it('pins the srt version package.json pins', () => {

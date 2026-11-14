@@ -922,6 +922,7 @@ export const RunFinished = z.object({
  */
 export const SandboxPolicyValue = z.object({
   allowedDomains: z.array(z.string()),
+  allowRead: z.array(z.string()),
   allowWrite: z.array(z.string()),
   denyRead: z.array(z.string()),
   denyWrite: z.array(z.string()),

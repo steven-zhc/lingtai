@@ -7,7 +7,8 @@
 export const TELEMETRY_HOSTS: readonly string[] = ['sentry.io', '*.sentry.io']
 
 export const isTelemetryHost = (host: string): boolean => {
-  const h = host.toLowerCase()
+  // srt matches the canonical hostname, so a rooted `sentry.io.` is `sentry.io`.
+  const h = host.toLowerCase().replace(/\.+$/, '')
   return TELEMETRY_HOSTS.some((p) => (p.startsWith('*.') ? h.endsWith(p.slice(1)) && h.length > p.length - 1 : h === p))
 }
 
