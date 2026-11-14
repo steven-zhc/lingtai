@@ -135,6 +135,12 @@ limits:
 #   input_usd_per_million: 10
 #   output_usd_per_million: 30
 
+# A sandboxed Claude Code run cannot read your login, so it holds a long-lived
+# token of its own: run `claude setup-token` once and paste the result here, or
+# export LINGTAI_CLAUDE_OAUTH_TOKEN. It is a secret; revoking it is yours.
+# claude:
+#   oauth_token: <the token claude setup-token printed>
+
 # --- the tests --------------------------------------------------------------
 # Nothing here, on purpose. A test never reads this file: it is exactly the
 # operator's log and App. The integration half runs on a SQLite file of its own;

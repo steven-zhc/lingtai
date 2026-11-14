@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { Config, ConfigProvider, Effect, Option, Result } from 'effect'
+import { Config, ConfigProvider, Effect, Option, Redacted, Result } from 'effect'
 import { parse as parseYaml } from 'yaml'
 
 /**
@@ -138,6 +138,17 @@ export function machineFile(from: NodeJS.ProcessEnv = process.env): MachineFile 
 }
 
 /**
+ * Where a YAML error is, and nothing it quoted: the parser's message holds an
+ * excerpt of the offending line, which may be a secret pasted into the file.
+ */
+function yamlWhere(err: unknown): string {
+  const e = err as { code?: unknown; linePos?: readonly { line?: unknown }[] }
+  const code = typeof e?.code === 'string' ? ` (${e.code})` : ''
+  const line = typeof e?.linePos?.[0]?.line === 'number' ? ` at line ${e.linePos[0].line}` : ''
+  return `${code}${line}`
+}
+
+/**
  * The same file, already read — for a caller that reads it through a world of
  * its own rather than `node:fs` (`lingtai init`'s `InitWorld.machine`, #435).
  *
@@ -153,7 +164,7 @@ export function machineFileFrom(path: string, text: string | null): MachineFile 
     return {
       path,
       provider: yamlProvider({}),
-      unreadable: `${path} could not be parsed as YAML: ${(err as Error).message}`,
+      unreadable: `${path} could not be parsed as YAML${yamlWhere(err)}`,
     }
   }
 }
@@ -224,6 +235,34 @@ export function codexTextConfig(
     inputUsdPerMillion: positive('input_usd_per_million'),
     outputUsdPerMillion: positive('output_usd_per_million'),
   }
+}
+
+/**
+ * The long-lived token `claude setup-token` made, for a sandboxed Claude Code
+ * run (0127 §8): `LINGTAI_CLAUDE_OAUTH_TOKEN` first, then `claude.oauth_token`
+ * in the file. **Redacted**, so that no log, trace or error sentence can print
+ * it by accident; only the caller that sets it on a run unwraps it.
+ *
+ * Absent is `undefined`: empty, or with whitespace inside it. The outer
+ * whitespace is trimmed, since a pasted token often carries a newline. Nothing
+ * else about its shape is checked — whether it works is Claude Code's to say.
+ *
+ * An unreadable file fails with a sentence that names the path and nothing the
+ * parser quoted: its message holds an excerpt of the offending line, which may
+ * be the token itself.
+ */
+export function claudeOauthToken(
+  from: NodeJS.ProcessEnv = process.env,
+  file: MachineFile = machineFile(from),
+): Redacted.Redacted<string> | undefined {
+  if (file.unreadable !== undefined) {
+    throw new Error(`${file.path} could not be read or parsed, so claude.oauth_token is unknown`)
+  }
+  const raw =
+    stringAt(environmentProvider(from), 'claude', 'oauth_token') ?? stringAt(file.provider, 'claude', 'oauth_token')
+  const token = raw?.trim()
+  if (token === undefined || token === '' || /\s/.test(token)) return undefined
+  return Redacted.make(token)
 }
 
 /**

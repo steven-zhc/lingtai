@@ -48,12 +48,19 @@ true.
 7. **On Linux the hook socket gets through with `allowAllUnixSockets`, and
    known dangerous sockets are read-denied**, `/var/run/docker.sock` first.
 
-8. **Each Claude Code run gets its own `CLAUDE_CONFIG_DIR` holding only an
-   access token.** Lingtai refreshes the operator's login outside the sandbox,
-   reads it from the store that session's Claude Code uses (the Keychain in a
-   macOS desktop session or LaunchAgent, the file otherwise), judges it by
-   `expiresAt`, and refuses the run when it is still short. A run never holds
-   the refresh token.
+8. **A sandboxed Claude Code run holds a long-lived token and a configuration
+   directory of its own.** The operator's login is denied to the run (§12), and
+   Lingtai cannot refresh it early: `claude auth status` refreshes only in a
+   token's last five minutes (experiment 017). So the operator makes a token
+   once with `claude setup-token` and sets `claude.oauth_token` in
+   `~/.lingtai/config.yml` or `LINGTAI_CLAUDE_OAUTH_TOKEN`; Lingtai reads it as
+   a redacted value and the run gets it as `CLAUDE_CODE_OAUTH_TOKEN`. The run's
+   `CLAUDE_CONFIG_DIR` is `runs/<runId>/claude`, made for that run, holding the
+   hook settings Lingtai writes and copies of the operator's user-level
+   `CLAUDE.md`, `skills/` and `agents/`, with symlinks copied as their targets.
+   It holds no MCP servers, plugins, commands, `settings.json` or login. The
+   directory is removed when the run's scope closes; a daemon start removes any
+   a dead process left, and `lingtai doctor` only reports them.
 
 9. **On macOS every run has `enableWeakerNetworkIsolation`.** Codex needs
    `trustd` to verify TLS, and `srt` reads the option per process, not per
@@ -127,6 +134,9 @@ true.
     rule.
 
 18. **What is not covered.**
+    - A sandboxed Claude Code run holds a long-lived token, readable inside the
+      run; it can reach only allowlisted hosts, and revoking it is the
+      operator's.
     - Codex's login is readable to a Codex run.
     - A refused file access is not reported (§2).
     - `srt` is a research preview pinned to one version, recorded on every run;

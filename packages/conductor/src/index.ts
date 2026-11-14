@@ -77,6 +77,7 @@ export {
   type RunOnceResult,
 } from './conduct.ts'
 export {
+  claudeConfigDirFor,
   findRunLog,
   followRunLogStream,
   runLogPath,

@@ -1,0 +1,44 @@
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { Effect } from 'effect'
+import { describe, expect, it } from 'vitest'
+
+import { claudeTokenRow, readClaudeToken } from '../src/doctor.ts'
+
+const TOKEN = 'sk-ant-oat01-FAKE-0000'
+
+describe('claudeTokenRow', () => {
+  it('says set, and not set with the fix, and never a value', async () => {
+    const set = await Effect.runPromise(claudeTokenRow(() => Effect.succeed(true)))
+    expect(set).toMatchObject({ status: 'ok', detail: 'set' })
+    const unset = await Effect.runPromise(claudeTokenRow(() => Effect.succeed(false)))
+    expect(unset.status).toBe('ok')
+    expect(unset.detail).toContain('claude setup-token')
+    expect(unset.detail).toContain('claude.oauth_token')
+  })
+
+  it('fails with the reader sentence when the file cannot be read, quoting nothing', async () => {
+    const row = await Effect.runPromise(
+      claudeTokenRow(() =>
+        Effect.fail(new Error('/x/config.yml could not be read or parsed, so claude.oauth_token is unknown')),
+      ),
+    )
+    expect(row.status).toBe('fail')
+    expect(JSON.stringify(row)).not.toContain(TOKEN)
+  })
+
+  it('keeps the reader sentence through the production wrapping', async () => {
+    // a config.yml that is a directory cannot be read: the reader's own sentence must survive the wrapping
+    const home = mkdtempSync(join(tmpdir(), 'claude-token-'))
+    try {
+      mkdirSync(join(home, 'config.yml'))
+      const row = await Effect.runPromise(claudeTokenRow(() => readClaudeToken({ LINGTAI_HOME: home })))
+      expect(row.status).toBe('fail')
+      expect(row.detail).toContain('could not be read or parsed, so claude.oauth_token is unknown')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})

@@ -59,6 +59,16 @@ export function runLogPath(home: string, project: string, runId: string): string
   return join(home, 'runs', project, `${runId}.log`)
 }
 
+/**
+ * A sandboxed Claude Code run's own configuration directory (0127 §8):
+ * `runs/<runId>/claude`, beside `settingsPathFor`'s `runs/<runId>/settings.json`.
+ * The conductor and the start-up sweep name it here, so they cannot disagree;
+ * `packages/agent` is handed it and never learns where `~/.lingtai` is.
+ */
+export function claudeConfigDirFor(home: string, runId: string): string {
+  return join(home, 'runs', runId, 'claude')
+}
+
 /** A log on disk, and the project directory that says whose run it was. */
 export interface FoundRunLog {
   project: string

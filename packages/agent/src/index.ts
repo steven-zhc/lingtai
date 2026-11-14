@@ -58,6 +58,14 @@ export {
 export { RUNTIMES, ToolsCannotBeDenied, createRuntime, everyRuntime, type RuntimeOptions } from './runtimes.ts'
 export { codexTextSpendBound, createCodexTextRuntime, type CodexTextOptions } from './codex-text.ts'
 export {
+  COPIED_ITEMS,
+  liveRunDirFs,
+  prepareClaudeRunDirectory,
+  type ClaudeRunDirectoryOptions,
+  type RunDirFs,
+  type RunDirStat,
+} from './claude-run-dir.ts'
+export {
   AgentHostFailed,
   CLAUDE_ONLY_HOOKS,
   INTERSECTION_HOOKS,

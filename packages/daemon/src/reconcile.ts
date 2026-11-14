@@ -76,6 +76,7 @@ import { promisify } from 'node:util'
 // reason: `@lingtai/conductor`'s index pulls in the gate pipeline and its
 // child-process types, and the board imports this package.
 import { conductorWorker } from '@lingtai/conductor/claim'
+import { claudeConfigDirFor } from '@lingtai/conductor/run-log'
 import {
   type Envelope,
   reduceTicket,
@@ -117,6 +118,13 @@ function withStreams<T>(options: ReconcileOptions, fn: (store: DaemonStore) => E
 }
 
 /** A promise as an Effect whose failure is the rejection itself, unwrapped — the shape `readThroughSnapshot` uses. */
+const realFs: ClaudeDirFs = {
+  readdir: (path) => readdir(path, { withFileTypes: true }),
+  rm: (path, o) => rm(path, o),
+}
+
+const isEnoent = (err: unknown): boolean => (err as { code?: unknown } | null)?.code === 'ENOENT'
+
 const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, unknown> =>
   Effect.tryPromise({ try: () => f(), catch: (e) => e })
 
@@ -288,6 +296,18 @@ export interface ReconcileOptions {
    * should still clean worktrees and return claims.
    */
   github?: ConvergeOptions
+  /**
+   * The two filesystem calls the sweep of a run's own Claude directory makes,
+   * so a unit test hands in a fake rather than a real directory. Defaults to
+   * `node:fs/promises`.
+   */
+  fs?: ClaudeDirFs
+}
+
+/** What `findOrphanClaudeDirsEffect` and `removeOne` ask of the filesystem. */
+export interface ClaudeDirFs {
+  readdir(path: string): Promise<readonly { name: string; isDirectory(): boolean }[]>
+  rm(path: string, options: { recursive: true; force: true }): Promise<void>
 }
 
 export const findOrphansEffect = Effect.fn('daemon.findOrphans')(function* (options: ReconcileOptions = {}) {
@@ -320,7 +340,8 @@ export const findOrphansEffect = Effect.fn('daemon.findOrphans')(function* (opti
       // `PreparationStarted` or `RunStarted`. Read from the log rather than a
       // projection: reconciliation has to work when a projection is the thing
       // that is broken.
-      const run = yield* attempt(() => store.read(runId)).pipe(Effect.catch(() => Effect.succeed([] as Envelope[])))
+      // A stream that cannot be read is not evidence the run is over: it fails rather than reporting a live directory as abandoned.
+      const run = yield* attempt(() => store.read(runId))
       const taskId = run
         .map((e) => (e.data as { ticketId?: string } | undefined)?.ticketId)
         .find((id): id is string => typeof id === 'string')
@@ -703,9 +724,9 @@ const releaseOne = (f: Finding, store: EventStore, options: ReconcileOptions, lo
   )
 
 /** One removal, as one uninterruptible step. */
-const removeOne = (f: Finding, log: (line: string) => void) =>
+const removeOne = (f: Finding, log: (line: string) => void, fs: ClaudeDirFs = realFs) =>
   Effect.uninterruptible(
-    attempt(() => rm(f.path, { recursive: true, force: true })).pipe(
+    attempt(() => fs.rm(f.path, { recursive: true, force: true })).pipe(
       Effect.flatMap(() => Effect.sync(() => log(paint.pass(`reconciled: removed ${f.path}`)))),
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
@@ -719,6 +740,66 @@ const removeOne = (f: Finding, log: (line: string) => void) =>
       }),
     ),
   )
+
+/**
+ * A sandboxed Claude Code run's own configuration directory,
+ * `runs/<runId>/claude` (`claudeConfigDirFor`), left by a run whose process
+ * died before its scope closed (0127 §8).
+ *
+ * **Two modes.** Not a dry run — the daemon's start-up, under the conductor
+ * lock — removes every one, because no run is live then. A dry run is
+ * `lingtai doctor`, which may sit beside a live daemon, so it skips the
+ * directory of a run still claimed under that run id and only reports the
+ * rest. `runs/<project>/` directories never hold one named `claude` that is a
+ * run's: a project's directory holds `<runId>.log` files, and only a directory
+ * named `claude` is matched.
+ */
+export const findOrphanClaudeDirsEffect = Effect.fn('daemon.findOrphanClaudeDirs')(function* (
+  options: ReconcileOptions = {},
+) {
+  const fs = options.fs ?? realFs
+  const home = options.home ?? defaultHome()
+  const root = join(home, 'runs')
+
+  const runIds = yield* attempt(() => fs.readdir(root)).pipe(
+    Effect.map((entries) => entries.filter((e) => e.isDirectory()).map((e) => e.name)),
+    // Only an absent `runs/` is empty; any other failure is a failure to look, not a finding of none.
+    Effect.catch((err) => (isEnoent(err) ? Effect.succeed(null) : Effect.fail(err))),
+  )
+  if (runIds === null) return [] as Finding[]
+
+  const findings: Finding[] = []
+  for (const runId of runIds) {
+    const path = claudeConfigDirFor(home, runId)
+    const inside = yield* attempt(() => fs.readdir(join(root, runId))).pipe(
+      Effect.map((entries) => entries.some((e) => e.name === 'claude' && e.isDirectory())),
+      Effect.catch((err) => (isEnoent(err) ? Effect.succeed(false) : Effect.fail(err))),
+    )
+    if (!inside) continue
+
+    if (options.dryRun) {
+      const store = logOf(options)
+      // A stream that cannot be read is not evidence the run is over: it fails rather than reporting a live directory as abandoned.
+      const run = yield* attempt(() => store.read(runId))
+      const taskId = run
+        .map((e) => (e.data as { ticketId?: string } | undefined)?.ticketId)
+        .find((id): id is string => typeof id === 'string')
+      if (taskId) {
+        const life = (yield* ticketOf(store, options, taskId)).lifecycle
+        if (life.status === 'claimed' && life.runId === runId) continue
+      }
+    }
+
+    findings.push({
+      stream: runId,
+      expected: 'no configuration directory — the run that made it is over',
+      actual: `a Claude configuration directory at ${path}`,
+      action: options.dryRun ? 'reported' : 'removed',
+      path,
+    })
+  }
+  return findings
+})
 
 export const reconcileEffect = Effect.fn('daemon.reconcile')(function* (options: ReconcileOptions = {}) {
   const log = options.log ?? (() => {})
@@ -736,6 +817,7 @@ export const reconcileEffect = Effect.fn('daemon.reconcile')(function* (options:
     ...(yield* findLaggingProjectionsEffect(options)),
     ...(yield* findOrphansEffect({ ...options, abandoned })),
     ...(yield* findOrphanLogsEffect(options)),
+    ...(yield* findOrphanClaudeDirsEffect(options)),
     ...foreign,
   ]
 
@@ -778,7 +860,7 @@ export const reconcileEffect = Effect.fn('daemon.reconcile')(function* (options:
       continue
     }
     if (f.action !== 'removed') continue
-    yield* removeOne(f, log)
+    yield* removeOne(f, log, options.fs)
   }
 
   // A defect, and the host reports it: the daemon starts anyway (`apps/cli/src/daemon.ts`).
