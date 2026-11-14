@@ -15,6 +15,8 @@ import { SandboxWrapFailed, type ProjectAdditions, type SandboxApi } from '@ling
 import { readHost } from '@lingtai/sandbox/host'
 import { Effect, Result } from 'effect'
 
+import { recordingWrap, type InvocationAppends } from './sandbox-record.ts'
+
 export interface PassSandbox {
   readonly decision: SandboxDecision
   /** The provided `Sandbox` service, when the host gave one. A *sandboxed* decision with none is refused by the pass. */
@@ -69,10 +71,12 @@ export const makeRunSandbox = (
     readonly cache: string
     readonly additions: ProjectAdditions
     readonly codexNamed: boolean
+    /** Where the boundary and refusals of each wrapped command are appended (#1164). */
+    readonly appends?: InvocationAppends
     readonly readCodexPermissions?: (env: Record<string, string>, cwd: string) => UserPermissions
   },
 ): RunSandbox => ({
-  wrap: (command, worktree, env, log) => {
+  wrap: (command, worktree, env, log, keys) => {
     const profile = operatorCodexDenies(
       (pass.readCodexPermissions ?? userPermissionsAt)(env, worktree),
       { home: env.HOME, cwd: worktree },
@@ -91,7 +95,7 @@ export const makeRunSandbox = (
         }),
       )
     }
-    return service.wrap({
+    const input = {
       project: pass.project,
       worktree,
       mirror: pass.mirror,
@@ -99,6 +103,10 @@ export const makeRunSandbox = (
       env,
       project_additions: pass.additions,
       ...(profile.paths.length > 0 ? { caller_additions: { deny: profile.paths } } : {}),
-    })
+    }
+    // Without keys (a caller that names no step) nothing can be recorded under them, and the wrap is as it was.
+    return keys === undefined || pass.appends === undefined
+      ? service.wrap(input)
+      : recordingWrap(service, input, { step: keys.step, action: keys.action, runId: null }, pass.appends)
   },
 })

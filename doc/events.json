@@ -1,5 +1,5 @@
 {
-  "sha": "d72590cd69fe8b844fe991660a985d5e29fa5d73",
+  "sha": "c1f915c55fff9c4c9b232db15e87d26e7d2620b9",
   "events": [
     {
       "name": "TicketDiscovered",
@@ -9,9 +9,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "The conductor found a new ticket to work on, from a GitHub issue, a person, or an agent's follow-up.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L194",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L194",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/event-store/scripts/bootstrap.mjs#L54"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/event-store/scripts/bootstrap.mjs#L54"
       ],
       "subscribers": "on: [TicketDiscovered]"
     },
@@ -23,9 +23,9 @@
       "retired": false,
       "at": ["claim"],
       "summary": "The conductor claimed a ticket and began a run on it.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L205",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L205",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/claim.ts#L184"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/claim.ts#L184"
       ],
       "subscribers": "on: [TicketClaimed]"
     },
@@ -37,9 +37,9 @@
       "retired": false,
       "at": ["claim"],
       "summary": "A person approved a held run, and it went on.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L252",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L252",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/claim.ts#L257"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/claim.ts#L257"
       ],
       "subscribers": "on: [TicketContinued]"
     },
@@ -51,10 +51,10 @@
       "retired": false,
       "at": ["claim", "end", "outside"],
       "summary": "The conductor gave up its claim on a ticket, so the ticket can be taken again.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L282",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L282",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/claim.ts#L300",
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/daemon/src/reconcile.ts#L700"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/claim.ts#L300",
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/daemon/src/reconcile.ts#L700"
       ],
       "subscribers": "on: [TicketReleased]"
     },
@@ -66,10 +66,10 @@
       "retired": false,
       "at": ["end", "outside"],
       "summary": "A ticket stopped to wait for a person's decision.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L347",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L347",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/ask.ts#L87",
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L5542"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/ask.ts#L87",
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L5646"
       ],
       "subscribers": "on: [WaitStarted]"
     },
@@ -81,9 +81,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person answered a waiting ticket.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L362",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L362",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/resolve-wait.ts#L426"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/resolve-wait.ts#L426"
       ],
       "subscribers": "on: [WaitResolved]"
     },
@@ -95,9 +95,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person approved splitting a ticket into smaller ones, and which of them depend on which.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L411",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L411",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/resolve-wait.ts#L423"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/resolve-wait.ts#L423"
       ],
       "subscribers": "on: [TicketSplit]"
     },
@@ -109,9 +109,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "The conductor began creating the child tickets of an approved split on GitHub.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L441",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L441",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/split-ticket.ts#L250"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/split-ticket.ts#L250"
       ],
       "subscribers": "on: [SplitStarted]"
     },
@@ -123,9 +123,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "The conductor created one child ticket of a split on GitHub and confirmed it exists.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L452",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L452",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/split-ticket.ts#L365"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/split-ticket.ts#L365"
       ],
       "subscribers": "on: [SplitChildWritten]"
     },
@@ -137,9 +137,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "The conductor set one blocked-by link between two child tickets on GitHub and confirmed it.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L464",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L464",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/split-ticket.ts#L412"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/split-ticket.ts#L412"
       ],
       "subscribers": "on: [SplitLinkWritten]"
     },
@@ -151,9 +151,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "Creating the tickets of a split stopped partway, because a step failed or GitHub refused.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L475",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L475",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/split-ticket.ts#L259"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/split-ticket.ts#L259"
       ],
       "subscribers": "on: [SplitFailed]"
     },
@@ -165,7 +165,7 @@
       "retired": true,
       "at": [],
       "summary": "No longer written: a link saying one ticket caused, followed up, or duplicated another.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L504",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L504",
       "sites": [],
       "subscribers": "on: [TicketLinked]"
     },
@@ -177,10 +177,10 @@
       "retired": false,
       "at": ["merge", "end"],
       "summary": "A ticket's change was merged into the base branch.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L510",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L510",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L2590",
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L5262"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L2651",
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L5366"
       ],
       "subscribers": "on: [TicketLanded]"
     },
@@ -192,9 +192,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person closed the ticket without landing it.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L535",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L535",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/close.ts#L205"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/close.ts#L205"
       ],
       "subscribers": "on: [TicketClosed]"
     },
@@ -206,9 +206,9 @@
       "retired": false,
       "at": ["claim"],
       "summary": "The conductor refused to start an agent because its runtime cannot fail closed.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L546",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L546",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L1107"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L1168"
       ],
       "subscribers": "on: [DispatchRefused]"
     },
@@ -220,9 +220,9 @@
       "retired": false,
       "at": ["design", "implement", "review"],
       "summary": "An agent's run started on its own worktree, cut from the base commit.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L591",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L591",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L4332"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L4427"
       ],
       "subscribers": "on: [RunStarted]"
     },
@@ -234,9 +234,9 @@
       "retired": false,
       "at": ["prepared", "design", "implement", "review", "build", "proposed", "merge", "outside"],
       "summary": "The conductor handed the agent its prompt.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L668",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L668",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/record-prompt.ts#L114"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/record-prompt.ts#L114"
       ],
       "subscribers": "on: [RunPrompted]"
     },
@@ -248,9 +248,9 @@
       "retired": false,
       "at": ["design", "implement", "review"],
       "summary": "An agent edited, wrote, or deleted a file during its run.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L713",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L713",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/agent/src/hook-socket.ts#L300"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/agent/src/hook-socket.ts#L300"
       ],
       "subscribers": "on: [RunTouchedFile]"
     },
@@ -262,9 +262,9 @@
       "retired": false,
       "at": ["design", "implement", "review"],
       "summary": "An agent ran out of room in its context and had to compact, a sign the ticket was too large.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L720",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L720",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/agent/src/hook-socket.ts#L237"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/agent/src/hook-socket.ts#L237"
       ],
       "subscribers": "on: [RunContextExhausted]"
     },
@@ -276,9 +276,9 @@
       "retired": false,
       "at": ["design", "implement", "review"],
       "summary": "An agent stopped to ask for input instead of carrying on.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L723",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L723",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/agent/src/hook-socket.ts#L245"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/agent/src/hook-socket.ts#L245"
       ],
       "subscribers": "on: [RunAwaitingInput]"
     },
@@ -290,9 +290,9 @@
       "retired": false,
       "at": ["implement", "end"],
       "summary": "An agent's run left a branch with changes on it.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L726",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L726",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L2110"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L2171"
       ],
       "subscribers": "on: [RunProducedDiff]"
     },
@@ -304,9 +304,9 @@
       "retired": false,
       "at": ["implement", "end"],
       "summary": "The conductor tried to push a run's branches to the remote, and recorded whether it pushed, had nothing to push, or was refused.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L777",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L777",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L2078"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L2139"
       ],
       "subscribers": "on: [RunRefsPublished]"
     },
@@ -318,9 +318,9 @@
       "retired": false,
       "at": ["implement", "end"],
       "summary": "The conductor saved a stopped agent's uncommitted work as a commit of its own, so it was not lost.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L890",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L890",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L2268"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L2329"
       ],
       "subscribers": "on: [RunKeptUncommitted]"
     },
@@ -332,10 +332,10 @@
       "retired": false,
       "at": ["implement", "end"],
       "summary": "An agent finished and offered its work, so the checks began.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L909",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L909",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L3844",
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L4560"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L3911",
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L4659"
       ],
       "subscribers": "on: [RunProposedCompletion]"
     },
@@ -347,9 +347,9 @@
       "retired": false,
       "at": ["design", "implement", "review", "end"],
       "summary": "An agent's process ended.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L917",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L917",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L4524"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L4623"
       ],
       "subscribers": "on: [RunFinished]"
     },
@@ -361,8 +361,10 @@
       "retired": false,
       "at": ["prepared", "design", "implement", "review", "build", "proposed", "merge"],
       "summary": "The sandbox boundary one action's invocation ran under.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L965",
-      "sites": [],
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L965",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/sandbox-record.ts#L66"
+      ],
       "subscribers": "on: [SandboxBoundaryRecorded]"
     },
     {
@@ -373,8 +375,10 @@
       "retired": false,
       "at": ["prepared", "design", "implement", "review", "build", "proposed", "merge"],
       "summary": "The outbound connections the sandbox refused one invocation.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L986",
-      "sites": [],
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L986",
+      "sites": [
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/sandbox-record.ts#L112"
+      ],
       "subscribers": "on: [SandboxConnectionsRefused]"
     },
     {
@@ -385,9 +389,9 @@
       "retired": false,
       "at": ["design", "implement", "review", "end"],
       "summary": "An agent's run failed.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1035",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1035",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L4485"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L4584"
       ],
       "subscribers": "on: [RunFailed]"
     },
@@ -399,9 +403,9 @@
       "retired": false,
       "at": ["prepared", "design", "implement", "review", "build", "proposed", "merge", "outside"],
       "summary": "One paid call to an agent runtime finished, and what it cost was recorded.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1057",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1057",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/apps/cli/src/triage.ts#L990"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/apps/cli/src/triage.ts#L990"
       ],
       "subscribers": "on: [RunSpent]"
     },
@@ -413,9 +417,9 @@
       "retired": false,
       "at": ["claim", "admit", "implement"],
       "summary": "The conductor worked out the plan for a run: what will happen at each of its ten steps.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1141",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1141",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L4366"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L4461"
       ],
       "subscribers": "on: [StepsResolved]"
     },
@@ -427,9 +431,9 @@
       "retired": false,
       "at": ["claim", "admit", "implement"],
       "summary": "The conductor recorded a recipe, once, under the hash that names it.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1171",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1171",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/steps-resolved.ts#L45"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/steps-resolved.ts#L45"
       ],
       "subscribers": "on: [RecipeRecorded]"
     },
@@ -441,9 +445,9 @@
       "retired": false,
       "at": ["end"],
       "summary": "The conductor worked out what to do at the end of a run, given how the run ended.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1200",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1200",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/end-step.ts#L148"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/end-step.ts#L148"
       ],
       "subscribers": "on: [EndActionsResolved]"
     },
@@ -455,9 +459,9 @@
       "retired": false,
       "at": ["admit", "prepared", "design", "implement", "review", "build", "proposed", "merge"],
       "summary": "A step of a run began.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1236",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1236",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/run-attempt.ts#L1826"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/run-attempt.ts#L1826"
       ],
       "subscribers": "on: [StepStarted]"
     },
@@ -469,9 +473,9 @@
       "retired": false,
       "at": ["admit", "prepared", "design", "implement", "review", "build", "proposed", "merge", "end"],
       "summary": "A step of a run ended, with the result of every action it ran.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1379",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1379",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L5517"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L5621"
       ],
       "subscribers": "on: [StepEnded]"
     },
@@ -483,9 +487,9 @@
       "retired": false,
       "at": ["end", "outside"],
       "summary": "A person accepted a minor review finding, to be worked as a ticket of its own.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1408",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1408",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/backlog.ts#L283"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/backlog.ts#L283"
       ],
       "subscribers": "on: [FindingAccepted]"
     },
@@ -497,9 +501,9 @@
       "retired": false,
       "at": ["end", "outside"],
       "summary": "The ticket that an accepted finding asked for now exists in the ticket store.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1432",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1432",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/backlog.ts#L337"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/backlog.ts#L337"
       ],
       "subscribers": "on: [FindingProposed]"
     },
@@ -511,9 +515,9 @@
       "retired": false,
       "at": ["end", "outside"],
       "summary": "A person declined a minor review finding.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1451",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1451",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/backlog.ts#L447"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/backlog.ts#L447"
       ],
       "subscribers": "on: [FindingDeclined]"
     },
@@ -525,9 +529,9 @@
       "retired": false,
       "at": ["merge"],
       "summary": "A run was ready to merge but waited, because another run was landing.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1466",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1466",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L3349"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L3416"
       ],
       "subscribers": "on: [MergeLaneWaited]"
     },
@@ -539,9 +543,9 @@
       "retired": false,
       "at": ["merge"],
       "summary": "The conductor tried to merge a run's branch into the base branch.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1469",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1469",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/repo/src/integrate.ts#L754"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/repo/src/integrate.ts#L754"
       ],
       "subscribers": "on: [IntegrationAttempted]"
     },
@@ -553,9 +557,9 @@
       "retired": false,
       "at": ["merge"],
       "summary": "The merge of a run's branch into the base branch was refused.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1478",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1478",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/repo/src/integrate.ts#L307"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/repo/src/integrate.ts#L307"
       ],
       "subscribers": "on: [IntegrationRefused]"
     },
@@ -567,9 +571,9 @@
       "retired": false,
       "at": ["merge"],
       "summary": "A run's branch was merged into the base branch.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1485",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1485",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/repo/src/integrate.ts#L325"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/repo/src/integrate.ts#L325"
       ],
       "subscribers": "on: [IntegrationSucceeded]"
     },
@@ -581,9 +585,9 @@
       "retired": false,
       "at": ["proposed", "end"],
       "summary": "The conductor ran a project's check command on the base branch and recorded whether it passed.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1492",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1492",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/base-check.ts#L206"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/base-check.ts#L206"
       ],
       "subscribers": "on: [BaseChecked]"
     },
@@ -595,7 +599,7 @@
       "retired": true,
       "at": [],
       "summary": "No longer written: the step after review chose where the ticket goes next; `ProposalRouted` replaced it.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1532",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1532",
       "sites": [],
       "subscribers": "on: [PassRouted]"
     },
@@ -607,9 +611,9 @@
       "retired": false,
       "at": ["review", "proposed", "end"],
       "summary": "The step after review chose where the ticket goes next; the log keeps the offer, and names the StepEnded that holds the evidence.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1563",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1563",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/conduct.ts#L5093"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/conduct.ts#L5197"
       ],
       "subscribers": "on: [ProposalRouted]"
     },
@@ -621,7 +625,7 @@
       "retired": false,
       "at": ["claim", "design", "implement", "review", "end", "outside"],
       "summary": "The conductor paused itself over a tier a runtime cannot provide, and takes no new work until a person resumes it.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1615",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1615",
       "sites": [],
       "subscribers": "on: [ConductorPaused]"
     },
@@ -633,9 +637,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person resumed the conductor after the setup's pause.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1658",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1658",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/daemon/src/control.ts#L177"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/daemon/src/control.ts#L177"
       ],
       "subscribers": "on: [ConductorResumed]"
     },
@@ -647,9 +651,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "Today's spend reached the daily ceiling; no new work starts until it is lifted.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1661",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1661",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/ceiling-lock.ts#L125"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/ceiling-lock.ts#L125"
       ],
       "subscribers": "on: [DayCeilingReached]"
     },
@@ -661,9 +665,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "The daily ceiling was lifted: a new day, the configuration, or a person raising today's figure.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1671",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1671",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/ceiling-lock.ts#L105"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/ceiling-lock.ts#L105"
       ],
       "subscribers": "on: [DayCeilingLifted]"
     },
@@ -675,10 +679,10 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person asked the conductor to stop once the pass in flight finishes.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1706",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1706",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/daemon/src/control.ts#L238",
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/daemon/src/control.ts#L277"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/daemon/src/control.ts#L238",
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/daemon/src/control.ts#L277"
       ],
       "subscribers": "on: [ConductorShutdownRequested]"
     },
@@ -690,9 +694,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A conductor started, and recorded who started it, why, and from which commit.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1755",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1755",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/daemon/src/control.ts#L327"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/daemon/src/control.ts#L327"
       ],
       "subscribers": "on: [ConductorStarted]"
     },
@@ -704,7 +708,7 @@
       "retired": true,
       "at": [],
       "summary": "No longer written: a request to shut the conductor down was withdrawn.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1811",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1811",
       "sites": [],
       "subscribers": "on: [ConductorShutdownWithdrawn]"
     },
@@ -716,7 +720,7 @@
       "retired": true,
       "at": [],
       "summary": "No longer written: a queued action, such as posting a GitHub comment, was carried out.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1860",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1860",
       "sites": [],
       "subscribers": "on: [OutboxDelivered]"
     },
@@ -728,7 +732,7 @@
       "retired": true,
       "at": [],
       "summary": "No longer written: a queued action, such as posting a GitHub comment, failed.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1874",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1874",
       "sites": [],
       "subscribers": "on: [OutboxFailed]"
     },
@@ -740,9 +744,9 @@
       "retired": false,
       "at": ["claim", "end", "outside"],
       "summary": "Lingtai changed a GitHub issue, such as a comment, its labels, or closing it, and GitHub accepted the change.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1918",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1918",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/write-section.ts#L121"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/write-section.ts#L121"
       ],
       "subscribers": "on: [IssueUpdated]"
     },
@@ -754,9 +758,9 @@
       "retired": false,
       "at": ["claim", "end", "outside"],
       "summary": "Lingtai tried to change a GitHub issue and the change was refused or failed.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1945",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1945",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/tell.ts#L189"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/tell.ts#L189"
       ],
       "subscribers": "on: [IssueUpdateFailed]"
     },
@@ -768,9 +772,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "GitHub reported a change to a project's issues, so the queue needs another look.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1955",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1955",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/apps/board/src/app/api/webhook/route.ts#L74"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/apps/board/src/app/api/webhook/route.ts#L74"
       ],
       "subscribers": "on: [QueueChanged]"
     },
@@ -782,9 +786,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person asked for a ticket to be run now.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1963",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1963",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/daemon/src/control.ts#L449"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/daemon/src/control.ts#L449"
       ],
       "subscribers": "on: [RunRequested]"
     },
@@ -796,9 +800,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person approved a held run, so the conductor owes it a continuation.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L1992",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L1992",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/resolve-wait.ts#L557"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/resolve-wait.ts#L557"
       ],
       "subscribers": "on: [ContinueRequested]"
     },
@@ -810,9 +814,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person asked a question about a ticket.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2019",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2019",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/apps/board/src/app/actions.ts#L636"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/apps/board/src/app/actions.ts#L636"
       ],
       "subscribers": "on: [DiscussionRequested]"
     },
@@ -824,9 +828,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A question went to the discussion assistant, along with a note of what it could read to answer.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2048",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2048",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/discuss.ts#L526"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/discuss.ts#L526"
       ],
       "subscribers": "on: [DiscussionAsked]"
     },
@@ -838,9 +842,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "The discussion assistant answered a question, saying what it read and what it could not establish.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2081",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2081",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/discuss.ts#L554"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/discuss.ts#L554"
       ],
       "subscribers": "on: [DiscussionAnswered]"
     },
@@ -852,9 +856,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A discussion was filed away, having produced a prompt edit, a ticket, or nothing.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2113",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2113",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/discuss.ts#L793"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/discuss.ts#L793"
       ],
       "subscribers": "on: [DiscussionHeld]"
     },
@@ -866,10 +870,10 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person added a sentence to the next run's prompt, or took the sentence away.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2146",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2146",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/apps/board/src/app/actions.ts#L746",
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/discuss.ts#L751"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/apps/board/src/app/actions.ts#L746",
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/discuss.ts#L751"
       ],
       "subscribers": "on: [PromptEdited]"
     },
@@ -881,7 +885,7 @@
       "retired": true,
       "at": [],
       "summary": "No longer written: a person began adding a repository, which was recorded but not yet worked.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2211",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2211",
       "sites": [],
       "subscribers": "on: [ProjectOnboardingStarted]"
     },
@@ -893,10 +897,10 @@
       "retired": false,
       "at": ["outside"],
       "summary": "The conductor read a project's recipe from its base branch and recorded which version it was.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2242",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2242",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/onboard.ts#L597",
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/onboard.ts#L655"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/onboard.ts#L597",
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/onboard.ts#L655"
       ],
       "subscribers": "on: [ProjectConfigured]"
     },
@@ -908,9 +912,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "The conductor could not look at a project and said why, once, when it began.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2279",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2279",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/project.ts#L215"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/project.ts#L215"
       ],
       "subscribers": "on: [ProjectRefused]"
     },
@@ -922,9 +926,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "The conductor looked at a project it had refused and no longer refused it.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2299",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2299",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/project.ts#L203"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/project.ts#L203"
       ],
       "subscribers": "on: [ProjectRecovered]"
     },
@@ -936,9 +940,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person paused one project: it starts no new work until resumed.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2313",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2313",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/locks.ts#L145"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/locks.ts#L145"
       ],
       "subscribers": "on: [ProjectPaused]"
     },
@@ -950,9 +954,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person resumed one project.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2349",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2349",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/locks.ts#L151"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/locks.ts#L151"
       ],
       "subscribers": "on: [ProjectResumed]"
     },
@@ -964,9 +968,9 @@
       "retired": false,
       "at": ["claim", "design", "implement", "review", "end", "outside"],
       "summary": "A runtime's account reached its usage limit; no project whose recipe uses it starts new work until it is lifted.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2323",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2323",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/account.ts#L77"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/account.ts#L77"
       ],
       "subscribers": "on: [AccountLimitReached]"
     },
@@ -978,9 +982,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A runtime's usage limit was lifted: its time passed, or a person said it is over.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2338",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2338",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/account.ts#L67"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/account.ts#L67"
       ],
       "subscribers": "on: [AccountLimitLifted]"
     },
@@ -992,9 +996,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A restarted conductor found state the log did not predict, and recorded what it did about it.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2366",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2366",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/daemon/src/reconcile.ts#L875"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/daemon/src/reconcile.ts#L875"
       ],
       "subscribers": "on: [Reconciled]"
     },
@@ -1006,9 +1010,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "A person created the team's GitHub App from Lingtai's setup page.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2417",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2417",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/conductor/src/create-app.ts#L655"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/conductor/src/create-app.ts#L655"
       ],
       "subscribers": "on: [GitHubAppCreated]"
     },
@@ -1020,9 +1024,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "The conductor began triaging a waiting ticket, using an agent or its own rules.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2463",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2463",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/apps/cli/src/triage.ts#L842"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/apps/cli/src/triage.ts#L842"
       ],
       "subscribers": "on: [TriageStarted]"
     },
@@ -1034,10 +1038,10 @@
       "retired": false,
       "at": ["outside"],
       "summary": "The conductor finished triaging a waiting ticket, with advice or a failure.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2476",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2476",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/apps/cli/src/triage.ts#L264",
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/apps/cli/src/triage.ts#L1281"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/apps/cli/src/triage.ts#L264",
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/apps/cli/src/triage.ts#L1281"
       ],
       "subscribers": "on: [WaitTriaged]"
     },
@@ -1049,9 +1053,9 @@
       "retired": false,
       "at": ["outside"],
       "summary": "An event subscriber was given an event and did not finish handling it.",
-      "definition": "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/domain/src/events.ts#L2506",
+      "definition": "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/domain/src/events.ts#L2506",
       "sites": [
-        "https://github.com/steven-zhc/lingtai/blob/d72590cd69fe8b844fe991660a985d5e29fa5d73/packages/daemon/src/failure-recorder.ts#L59"
+        "https://github.com/steven-zhc/lingtai/blob/c1f915c55fff9c4c9b232db15e87d26e7d2620b9/packages/daemon/src/failure-recorder.ts#L59"
       ],
       "subscribers": "on: [PluginFailed]"
     }

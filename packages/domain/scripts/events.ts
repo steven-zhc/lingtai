@@ -53,11 +53,7 @@ export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'ctl-' | 'cha
  * `events-json.test.ts` accepts an event here with no site, and fails the moment the finder finds one, so the
  * entry is deleted in the commit that adds the append.
  */
-export const NOT_YET_APPENDED: ReadonlySet<EventType> = new Set<EventType>([
-  'SandboxBoundaryRecorded',
-  'SandboxConnectionsRefused',
-  'ConductorPaused',
-])
+export const NOT_YET_APPENDED: ReadonlySet<EventType> = new Set<EventType>(['ConductorPaused'])
 
 export const ELSEWHERE: readonly { event: EventType; why: string; file: string; anchor: string }[] = [
   {

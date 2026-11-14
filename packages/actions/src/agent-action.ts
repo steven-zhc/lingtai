@@ -54,7 +54,7 @@
  */
 import { runtimeVersionOfEffect, type RunOutcome, type RunSandbox, type Runtime } from '@lingtai/agent'
 import type { RunTrace } from '@lingtai/agent/run-log'
-import type { RuntimeId } from '@lingtai/domain'
+import type { RuntimeId, Step } from '@lingtai/domain'
 import {
   composePrompt,
   REFUSED_ABOUT,
@@ -102,6 +102,8 @@ function spentOf(outcome: RunOutcome, runtime: Runtime): ActionSpent {
 
 export interface AgentActionSpec {
   name: string
+  /** The step this action is declared at, for the sandbox boundary recorded under it (#1164). Absent, `review` or `design`. */
+  step?: Step
   /** Appended to the fixed brief. Adds concerns; cannot remove them. */
   prompt: string
   /**
@@ -175,7 +177,12 @@ export interface AgentActionDeps {
    * The `sandbox` a run of this action is handed, or nothing for an unwrapped run (#1150). Asked with the run's own
    * id and cwd, when the run starts: the decision was made where `settingsPath` was written, and the two agree.
    */
-  sandboxFor?: (runId: string, cwd: string) => { sandbox: RunSandbox } | Record<string, never>
+  sandboxFor?: (
+    runId: string,
+    cwd: string,
+    /** Which step and action this run is, for the boundary the conductor records under them (#1164). */
+    keys: { readonly step: Step; readonly action: string; readonly runtime: string },
+  ) => Effect.Effect<{ sandbox: RunSandbox } | Record<string, never>>
   /**
    * What the reviewer may spend, and what it is given.
    *
@@ -998,7 +1005,13 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
                     // "the runtime's own default" means in the one place it has to be true.
                     ...(spec.model === undefined ? {} : { model: spec.model }),
                     settingsPath: deps.settingsPath,
-                    ...deps.sandboxFor?.(reviewId, context.cwd),
+                    ...(deps.sandboxFor === undefined
+                      ? {}
+                      : yield* deps.sandboxFor(reviewId, context.cwd, {
+                          step: spec.step ?? 'review',
+                          action: spec.name,
+                          runtime: deps.runtime.capabilities.id,
+                        })),
                     // Already tagged `<step>:<action>` by the pipeline (#153). The reviewer
                     // runs without the hook, so its tool calls are the stream's to write.
                     log: context.log,
@@ -1642,7 +1655,13 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
           prompt,
           ...(spec.model === undefined ? {} : { model: spec.model }),
           settingsPath: deps.settingsPath,
-          ...deps.sandboxFor?.(draftId, context.cwd),
+          ...(deps.sandboxFor === undefined
+            ? {}
+            : yield* deps.sandboxFor(draftId, context.cwd, {
+                step: spec.step ?? 'design',
+                action: spec.name,
+                runtime: deps.runtime.capabilities.id,
+              })),
           log: context.log,
           traceTools: true,
           env: context.env,
