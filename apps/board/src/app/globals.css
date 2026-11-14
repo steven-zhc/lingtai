@@ -3146,6 +3146,19 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .wiz-foot { display: flex; justify-content: space-between; align-items: center; }
 .wiz-primary { color: var(--accent-ink); background: var(--accent-soft); border: 1px solid var(--accent); padding: 4px 11px; }
 
+/* The sandbox's one icon beside Report (#1163). Four states, not levels: off is grey and dashed, never an alarm. */
+.sbx { display: inline-flex; align-items: center; cursor: pointer; list-style: none; }
+.sbx::-webkit-details-marker { display: none; }
+.sbx-mark { width: 12px; height: 12px; border-radius: 3px; border: 2px solid var(--muted); box-sizing: border-box; }
+.sbx-sandboxed .sbx-mark { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 25%, transparent); }
+.sbx-off .sbx-mark { border-style: dashed; border-color: var(--muted); }
+.sbx-degraded .sbx-mark { border-color: var(--held); background: color-mix(in srgb, var(--held) 25%, transparent); }
+.sbx-stopped .sbx-mark { border-color: var(--fail); background: color-mix(in srgb, var(--fail) 25%, transparent); }
+.sbx-unknown .sbx-mark { border-color: var(--muted); }
+.sbx-skeleton { width: 12px; height: 12px; border-radius: 3px; background: var(--muted); opacity: 0.25; }
+.sbx-list { position: relative; }
+.sbx-list ul { position: absolute; right: 0; margin: 4px 0 0; padding: 6px 10px; list-style: none; white-space: nowrap; background: var(--bg, canvas); border: 1px solid var(--muted); border-radius: 6px; z-index: 10; }
+
 /* /report (#689). Everything is prefixed `rp-`; series wear --s1..--s4 and
    --muted, never the board's state hues. */
 .rp { gap: 1rem; }

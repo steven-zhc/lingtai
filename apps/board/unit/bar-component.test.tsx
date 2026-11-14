@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Bar } from '../src/app/bar.tsx'
+import type { SandboxMark } from '../src/lib/sandbox-state.ts'
 
 const bar = (project: string | undefined, here?: 'report' | 'recipe', registered?: boolean) =>
   renderToStaticMarkup(
@@ -14,6 +15,15 @@ const bar = (project: string | undefined, here?: 'report' | 'recipe', registered
       <span>middle</span>
     </Bar>,
   )
+
+const mark = (names: string[]): SandboxMark => ({
+  state: 'degraded',
+  projects: names.map((project) => ({ project, sentence: 'degraded' })),
+  sentence: 'sandbox degraded',
+})
+const withIcon = (names: string[]) => renderToStaticMarkup(<Bar project={undefined} sandbox={mark(names)} />)
+/** The one element the 0.14 exception admits into `.topnav` (#1163), whichever form it takes. */
+const SANDBOX_ICON = /<(a|details) class="sbx[^"]*"[\s\S]*?<\/\1>/
 
 describe('Bar', () => {
   it('links Lingtai home, with the project where there is one', () => {
@@ -51,7 +61,7 @@ describe('Bar', () => {
 
   it('holds Report alone with no project, or one that is not registered', () => {
     for (const html of [bar(undefined, undefined, true), bar('a'), bar('a', undefined, false)]) {
-      const nav = html.slice(html.indexOf('class="topnav"'))
+      const nav = html.slice(html.indexOf('class="topnav"')).replace(SANDBOX_ICON, '')
       expect(nav).toContain('/report')
       expect(nav).not.toContain('/recipe/')
       expect(nav).not.toContain('vsep')
@@ -62,5 +72,27 @@ describe('Bar', () => {
     const html = bar('a', 'recipe', true)
     expect(html).toMatch(/<a class="navlink on" aria-current="page" href="\/recipe\/a">Recipe</)
     expect(html).toMatch(/<a class="navlink" href="\/report\?project=a">Report</)
+  })
+
+  it('draws the sandbox icon as a plain link before Report when one project is worst', () => {
+    const html = withIcon(['a b'])
+    expect(html).toContain('<a class="sbx sbx-degraded"')
+    expect(html).toContain('href="/recipe/a%20b#sandbox"')
+    expect(html).toContain('aria-label="sandbox degraded"')
+    expect(html.indexOf('class="sbx')).toBeLessThan(html.indexOf('/report'))
+    expect(html.replace(SANDBOX_ICON, '')).not.toContain('sbx')
+  })
+
+  it('draws a details disclosure listing each project when several tie', () => {
+    const html = withIcon(['a', 'b'])
+    expect(html).toContain('<details class="sbx-list sbx-degraded">')
+    expect(html).toContain('<summary class="sbx" aria-label="sandbox degraded"')
+    expect(html).toContain('href="/recipe/a#sandbox"')
+    expect(html).toContain('href="/recipe/b#sandbox"')
+    expect(html.indexOf('<details')).toBeLessThan(html.indexOf('/report'))
+  })
+
+  it('draws nothing without a sandbox prop', () => {
+    expect(bar(undefined)).not.toContain('sbx')
   })
 })

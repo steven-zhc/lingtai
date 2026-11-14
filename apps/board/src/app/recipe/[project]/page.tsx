@@ -11,6 +11,7 @@ import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe 
 import { recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
 
 import { FooterFetched } from '../../footer-fetched'
+import { sandboxSlot } from '../../sandbox-slot.tsx'
 import { StepRow } from '../../step-row'
 import { RecipeBar, type RecipeBarFilter } from './recipe-bar'
 import { RecipeText } from './recipe-text'
@@ -214,7 +215,7 @@ export function Recipe({
     <>
       <main className="detail">
         {bar === undefined ? (
-          <Bar project={view.project} registered here="recipe" pause={pause} />
+          <Bar sandbox={sandboxSlot(view.project)} project={view.project} registered here="recipe" pause={pause} />
         ) : (
           <RecipeBar project={view.project} {...bar} pause={pause} />
         )}
@@ -327,7 +328,7 @@ export default async function RecipePage({
   } catch {
     return (
       <main className="detail">
-        <Bar project={name} here="recipe" />
+        <Bar sandbox={sandboxSlot(name)} project={name} here="recipe" />
         <LockBanner project={name} />
       </main>
     )

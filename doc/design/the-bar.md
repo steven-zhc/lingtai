@@ -130,8 +130,10 @@ answers, *is the system doing what I configured it to*, and it costs one
 icon's width. It is not a chip and carries no figure; its sentence is its
 tooltip. The next thing proposed for the bar is argued against it too.
 
-It is in the code, at the end of `.bar` in `apps/board/src/app/page.tsx`, where
-the next chip would be added, and so where the argument has to be made.
+It is in the code in `.topnav` in `apps/board/src/app/bar.tsx`, immediately
+before `Report`, and drawn on every page that renders the bar except `/setup`;
+`apps/board/unit/bar-component.test.tsx` admits exactly that element there, so
+the next thing proposed for `.topnav` still fails it.
 `apps/board/unit/projects.test.tsx` holds the code to the set *filter, health,
 headline*.
 

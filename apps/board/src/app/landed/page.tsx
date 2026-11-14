@@ -24,6 +24,7 @@ import { projectionChip, type ReportChip } from '@/lib/report.ts'
 import { measure, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
+import { sandboxSlot } from '../sandbox-slot.tsx'
 import { LandedView } from './view.tsx'
 
 export const dynamic = 'force-dynamic'
@@ -56,6 +57,7 @@ export default async function LandedPage({ searchParams }: { searchParams: Promi
     <main className="detail">
       <TimingMeta timings={timings} />
       <Bar
+        sandbox={sandboxSlot(only)}
         project={only}
         registered={only !== undefined && projects.some((p) => p.project === only)}
         pause={await pauseSlot(only)}

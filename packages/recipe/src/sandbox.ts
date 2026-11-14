@@ -25,6 +25,20 @@ import type { Recipe } from './recipe.ts'
 import { RecipeInvalidError } from './resolve.ts'
 import type { SandboxBlock } from './sandbox-block.ts'
 
+/**
+ * The fixed head of the refusal `checkSandboxBlock` gives a recipe that requires a sandbox this host cannot
+ * provide. `isSandboxRequiredRefusal` matches it, so the sentence and its reader change together (#1163).
+ */
+export const SANDBOX_REQUIRED_REFUSAL =
+  'sandbox.required: this recipe requires a sandbox and this machine cannot provide one'
+
+/**
+ * Whether a `ProjectRefused` detail is the sandbox's own refusal — a required sandbox this host cannot give —
+ * and not some other problem, nor a `sandbox.write` / `sandbox.deny` path refusal (a broken recipe, not a host).
+ * A substring, because the detail is the whole error message and may carry other problems or a ref before it.
+ */
+export const isSandboxRequiredRefusal = (detail: string): boolean => detail.includes(SANDBOX_REQUIRED_REFUSAL)
+
 /** S3's `hostCanSandbox`: succeeds when this host can sandbox, fails with srt's own sentences when it cannot. */
 export type HostAnswer = Effect.Effect<void, SandboxUnavailable>
 
@@ -168,7 +182,7 @@ export const checkSandboxBlock = Effect.fn('recipe.sandbox-check')(function* (
     const verdict = yield* verdictOf(options.host)
     if (!verdict.can) {
       problems.push(
-        `sandbox.required: this recipe requires a sandbox and this machine cannot provide one (${said(verdict)}) — ` +
+        `${SANDBOX_REQUIRED_REFUSAL} (${said(verdict)}) — ` +
           'install what is missing, or set required: false to run unsandboxed',
       )
     }

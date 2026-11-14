@@ -16,6 +16,7 @@ import type { Answered } from '../../deferred.tsx'
 import { FooterFetched } from '../../footer-fetched'
 import { Follow, Following } from '../../live.tsx'
 import { LegacyFragment, RecordTabRow } from '../../record-tab-row.tsx'
+import { sandboxSlot } from '../../sandbox-slot.tsx'
 import { DeferredCoords, DeferredStanding, detailClass } from '../../standing.tsx'
 
 /**
@@ -156,7 +157,12 @@ export function TaskBody({
   return (
     <>
       <main className={detailClass(task.standing.state, Boolean(task.standing.afterMove))}>
-        <Bar project={task.ticket?.project ?? undefined} registered={registered} pause={pause}>
+        <Bar
+          sandbox={sandboxSlot(task.ticket?.project ?? undefined)}
+          project={task.ticket?.project ?? undefined}
+          registered={registered}
+          pause={pause}
+        >
           <span className="sep" />
           {/* Rank 8: one muted line, each identifier once. */}
           <DeferredCoords standing={task.standing} taskId={task.taskId} answer={github} />

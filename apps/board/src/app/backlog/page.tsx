@@ -21,6 +21,7 @@ import { LockBanner } from '@/app/lock-banner.tsx'
 import { backlogChip, currentBacklog } from '@/lib/backlog'
 
 import { FooterFetched } from '../footer-fetched'
+import { sandboxSlot } from '../sandbox-slot.tsx'
 import { DecideFinding, OpenAccepted } from './decide-finding.tsx'
 
 export const dynamic = 'force-dynamic'
@@ -76,7 +77,7 @@ export default async function BacklogPage() {
   return (
     <>
       <main className="detail">
-        <Bar project={undefined}>
+        <Bar sandbox={sandboxSlot(undefined)} project={undefined}>
           <span className="sep" />
           <span>backlog</span>
           <span className="sep" />

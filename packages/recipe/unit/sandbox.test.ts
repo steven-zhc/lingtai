@@ -2,7 +2,14 @@
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { RecipeInvalidError, recipePath, resolveLocalRecipeEffect, sandboxDecision } from '../src/index.ts'
+import {
+  RecipeInvalidError,
+  SANDBOX_REQUIRED_REFUSAL,
+  isSandboxRequiredRefusal,
+  recipePath,
+  resolveLocalRecipeEffect,
+  sandboxDecision,
+} from '../src/index.ts'
 import { fakeFacts, fakeSandboxHost, type FakeSandboxHost } from '../test/sandbox-host.ts'
 
 const STATE = '/home/me/.lingtai'
@@ -283,5 +290,19 @@ describe('sandboxDecision', () => {
       kind: 'refused',
       why: 'host dependencies are missing; bwrap not found',
     })
+  })
+})
+
+describe('isSandboxRequiredRefusal (#1163)', () => {
+  it('recognises the refusal checkSandboxBlock gives, with anything before or after it', () => {
+    const detail = `recipe ~/x.yml is invalid:\n  - ${SANDBOX_REQUIRED_REFUSAL} (srt is not installed) — install what is missing`
+    expect(isSandboxRequiredRefusal(detail)).toBe(true)
+    expect(isSandboxRequiredRefusal(SANDBOX_REQUIRED_REFUSAL)).toBe(true)
+  })
+
+  it('does not take a path refusal or another problem for it', () => {
+    expect(isSandboxRequiredRefusal('sandbox.write: these paths could not be checked, because x')).toBe(false)
+    expect(isSandboxRequiredRefusal('source.kinds: must not be empty')).toBe(false)
+    expect(isSandboxRequiredRefusal('')).toBe(false)
   })
 })

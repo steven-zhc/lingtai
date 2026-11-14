@@ -31,6 +31,7 @@ import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
 import { FooterFetched } from '../footer-fetched'
+import { sandboxSlot } from '../sandbox-slot.tsx'
 import { LandingsPanel, RoundsPanel, SpendPanel, SurvivalPanel, kindsOfReport } from './charts.tsx'
 import { CostliestPanel, Filters, KindsPanel, Tiles, TopPanel, WaitsPanel, WhereItWentPanel } from './panels.tsx'
 
@@ -101,6 +102,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
       <main className="detail">
         <TimingMeta timings={timings} />
         <Bar
+          sandbox={sandboxSlot(only)}
           project={only}
           registered={only !== undefined && projects.some((p) => p.project === only)}
           here="report"

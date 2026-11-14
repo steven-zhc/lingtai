@@ -59,6 +59,7 @@ import { Pending } from './pending.tsx'
 import { AddProject, filterSummary, ProjectRows } from './projects.tsx'
 import { QueuedAnswered, QueuedCountAnswered, QueuedCountPending, QueuedFallback } from './queued-stream.tsx'
 import { Rail, Segs } from './rail.tsx'
+import { sandboxSlot } from './sandbox-slot.tsx'
 import { Skeleton } from './skeleton.tsx'
 
 /**
@@ -1025,6 +1026,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           <TimingPart ctx={ctx} />
         </Suspense>
         <Bar
+          sandbox={sandboxSlot(param, key('sandbox'))}
           project={param}
           actions={
             <Suspense key={key('actions')} fallback={null}>

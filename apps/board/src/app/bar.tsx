@@ -10,6 +10,8 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import type { SandboxMark } from '../lib/sandbox-state.ts'
+
 export const withProject = (path: string, project: string | undefined): string =>
   project === undefined ? path : `${path}?project=${encodeURIComponent(project)}`
 
@@ -19,6 +21,7 @@ export function Bar({
   registered = false,
   pause,
   actions,
+  sandbox,
   children,
 }: {
   /** The project in view, carried on the way home and on Report; none on `all`. */
@@ -34,6 +37,11 @@ export function Bar({
    * streams them. When given it replaces `registered` and `pause`.
    */
   actions?: ReactNode
+  /**
+   * The sandbox's state beside Report (#1163), worked out by the page: the selected project's, or the worst across
+   * projects. A node is its loading skeleton. Absent draws nothing.
+   */
+  sandbox?: SandboxMark | ReactNode
   children?: ReactNode
 }) {
   return (
@@ -52,6 +60,7 @@ export function Bar({
         ) : project !== undefined && registered ? (
           <BarActions project={project} here={here} pause={pause} />
         ) : null}
+        {isMark(sandbox) ? <SandboxIcon mark={sandbox} /> : sandbox}
         <Link
           className={here === 'report' ? 'navlink on' : 'navlink'}
           href={withProject('/report', project)}
@@ -88,5 +97,47 @@ export function BarActions({
       </span>
       <span className="vsep" aria-hidden="true" />
     </>
+  )
+}
+
+const isMark = (v: unknown): v is SandboxMark =>
+  typeof v === 'object' && v !== null && 'state' in v && 'projects' in v && 'sentence' in v
+
+const sectionOf = (project: string) => `/recipe/${encodeURIComponent(project)}#sandbox`
+
+/**
+ * The sandbox's one icon (#1163): no text, its sentence as tooltip and accessible name. One project in the worst
+ * state is a plain link to its section; several are a `<details>` listing each. *Off* is grey and dashed.
+ */
+export function SandboxIcon({ mark }: { mark: SandboxMark }) {
+  const only = mark.projects.length === 1 ? mark.projects[0]! : undefined
+  const glyph = <span className="sbx-mark" aria-hidden="true" />
+  if (only !== undefined) {
+    return (
+      <Link
+        className={`sbx sbx-${mark.state}`}
+        href={sectionOf(only.project)}
+        aria-label={mark.sentence}
+        title={mark.sentence}
+      >
+        {glyph}
+      </Link>
+    )
+  }
+  return (
+    <details className={`sbx-list sbx-${mark.state}`}>
+      <summary className="sbx" aria-label={mark.sentence} title={mark.sentence}>
+        {glyph}
+      </summary>
+      <ul>
+        {mark.projects.map((p) => (
+          <li key={p.project}>
+            <Link href={sectionOf(p.project)}>
+              {p.project}: {p.sentence}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }
