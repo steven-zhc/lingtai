@@ -37,7 +37,6 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     title: 'the hero board, generated from the log at build time',
     kind: 'feature',
     state: 'landed',
-    tier: 'guarded',
     runId: null,
     turns: 7,
     passed: 0,

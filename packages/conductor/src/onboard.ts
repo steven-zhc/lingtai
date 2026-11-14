@@ -614,7 +614,7 @@ export function otherOwner(prior: readonly Envelope[], owner: string): string | 
  * its stream has anything on it. A repository the wizard recorded already has
  * one event — `ProjectOnboardingStarted` — and has never been configured at
  * all, so counting events reports the first registration of every
- * wizard-onboarded repository as an update and swallows the tier-and-gates
+ * wizard-onboarded repository as an update and swallows the registration
  * summary onboarding exists to print. `isRegistered` is the line
  * `loadProjects` already draws, asked of the stream as it stood before this
  * append.

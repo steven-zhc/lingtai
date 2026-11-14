@@ -26,7 +26,6 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     title: 'a task',
     kind: 'enhancement',
     state: 'landed',
-    tier: 'guarded',
     runId: null,
     turns: null,
     passed: 0,

@@ -105,7 +105,6 @@ describe('a closed item in the archive', () => {
     title: 'A refused review buys a fixing agent',
     kind: 'feature',
     state: 'landed',
-    tier: 'guarded',
     runId: null,
     turns: 67,
     passed: 0,

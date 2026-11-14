@@ -1061,7 +1061,6 @@ describe('a queued page reduces the plan into the rail (#781)', () => {
     })
   const view = planOf(new Map(), {
     limits: { turns: 150, wall: '1h', rounds: 2, restarts: 0 },
-    tier: 'guarded',
   })
 
   it('draws one rail and no plan box, with the plan open in the panel', () => {

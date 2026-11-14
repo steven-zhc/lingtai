@@ -73,8 +73,6 @@ export interface PlanView {
   turns: TurnLimit
   /** `runtime.limits.wall`, in the recipe's own words rather than milliseconds. */
   wall: string
-  /** `runtime.tier` — how contained the run must be (0007). */
-  tier: string
   /**
    * How many times a pass sends the agent back, `runtime.limits.rounds`
    * ([0039](../../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
@@ -153,8 +151,9 @@ export interface QueuedView {
    */
   runnableAt: string | null
   /**
-   * Whether the setup's pause stands: a recipe asks for a tier its runtime
-   * cannot provide, and the conductor takes nothing until it is fixed and resumed.
+   * Whether a setup pause recorded before 0.14 still stands: the conductor
+   * takes nothing until a person resumes (`lingtai resume`). Nothing appends a
+   * new one.
    *
    * **A pause outranks a backoff**, the same reading `queuedStanding` makes for
    * the card: an item whose backoff lifts in a minute still does not move while
@@ -200,7 +199,6 @@ export function planOf(
   plan: StepPlan,
   runtime: {
     limits: { turns: TurnLimit; wall: string; rounds: number; restarts: number }
-    tier: string
   },
 ): PlanView {
   return {
@@ -215,8 +213,6 @@ export function planOf(
     }),
     turns: runtime.limits.turns,
     wall: runtime.limits.wall,
-    // The recipe has no tier since #1158; the follow-up deletes this field.
-    tier: 'guarded',
     rounds: runtime.limits.rounds,
     restarts: runtime.limits.restarts,
   }
@@ -313,8 +309,6 @@ export async function queuedFor(input: {
     // for a bug in the machine-file merge. A step's own bound is named on the
     // `agent:` row, which is where it belongs.
     limits: ceilingOf(filter.recipe),
-    // The recipe has no tier since #1158; the follow-up deletes this field.
-    tier: 'guarded',
   })
   const until = backoffOf(input.own, filter.backoffMs)
 

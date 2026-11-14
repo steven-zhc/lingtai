@@ -166,7 +166,6 @@ function running(): Envelope[] {
       invocation: {
         command: 'claude',
         args: [],
-        tier: 'guarded',
         limits: { turns: 150, wallMs: 3_600_000 },
       },
     }),
@@ -301,7 +300,6 @@ function noPlanRecorded(): Envelope[] {
       invocation: {
         command: 'claude',
         args: [],
-        tier: 'guarded',
         limits: { turns: 150, wallMs: 3_600_000 },
       },
     }),
@@ -338,7 +336,6 @@ function landedPastMerge(): Envelope[] {
       invocation: {
         command: 'claude',
         args: [],
-        tier: 'guarded',
         limits: { turns: 150, wallMs: 3_600_000 },
       },
     }),
@@ -368,7 +365,6 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     title: 'the five steps are a sequence, so draw one',
     kind: 'tech-debt',
     state: 'running',
-    tier: 'guarded',
     runId: 'pass-170',
     turns: 48,
     passed: 1,
@@ -1291,7 +1287,6 @@ describe('the palette', () => {
 describe('the plan reduced into the rail (#781)', () => {
   const view = planOf(PLAN, {
     limits: { turns: 150, wall: '1h', rounds: 2, restarts: 0 },
-    tier: 'guarded',
   })
   const none = () => {
     const p = progressOf(reduceAttempt([resolved(PLAN)]), PLAN, false)

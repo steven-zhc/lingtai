@@ -103,7 +103,6 @@ export const taskViewProjection: Projection = {
         title        text,
         kind         text,
         state        text not null,
-        tier         text not null default 'guarded',
 
         run_id       text,
         turns        int,
@@ -749,7 +748,6 @@ export interface TaskCard {
   title: string
   kind: string
   state: TaskState
-  tier: string
   runId: string | null
   turns: number | null
   /**

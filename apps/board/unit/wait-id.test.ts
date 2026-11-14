@@ -13,7 +13,6 @@ function blocked(): TaskCard {
     title: 'a continuation never diffs against the sha it was approved at',
     kind: 'bug',
     state: 'waiting',
-    tier: 'guarded',
     runId: 'pass-465',
     turns: 3,
     passed: 1,
