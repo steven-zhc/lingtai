@@ -1121,6 +1121,36 @@ const ceilingRaiseCommand = Command.make(
     ),
 )
 
+const tokenClaude = Command.make('claude', { noColor }, (args) =>
+  daemonHandler(args, () =>
+    Effect.gen(function* () {
+      const token = yield* lift(() => import('./claude-token.ts'))
+      const { liveAsk } = yield* lift(() => import('./prompt.ts'))
+      const { liveMachineText } = yield* lift(() => import('@lingtai/setup'))
+      return yield* token.claudeTokenCommand(
+        token.liveClaudeTokenWorld({
+          ask: liveAsk,
+          log: (line) => console.log(line),
+          machine: liveMachineText(),
+          interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
+        }),
+      )
+    }).pipe(
+      printedBy((err) => {
+        console.error(err instanceof Error ? err.message : 'could not set the token')
+        return 1
+      }),
+    ),
+  ),
+)
+
+const tokenCommand = Command.make('token', {}, () =>
+  Effect.suspend(() => {
+    console.error(commandHelp('token'))
+    return exitWith(2)
+  }),
+).pipe(Command.withDescription(definitionOf('token').task), Command.withSubcommands([tokenClaude]))
+
 const ceilingCommand = Command.make('ceiling', {}, () =>
   Effect.suspend(() => {
     console.error(commandHelp('ceiling'))
@@ -1324,6 +1354,7 @@ export const root = Command.make('lingtai').pipe(
     pause,
     resume,
     ceilingCommand,
+    tokenCommand,
   ]),
 )
 

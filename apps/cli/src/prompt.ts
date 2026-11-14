@@ -77,13 +77,15 @@ export async function liveAsk(
   if (shape === undefined) return null
   for (const line of shape.why ?? []) console.log(line)
   const typed =
-    shape.choices !== undefined
-      ? await select(shape.message, shape.choices, shape.defaultValue, io, shape.labels)
-      : await clack.text({
-          message: shape.message,
-          placeholder: shape.defaultValue,
-          defaultValue: shape.defaultValue,
-        })
+    shape.secret === true
+      ? await clack.password({ message: shape.message })
+      : shape.choices !== undefined
+        ? await select(shape.message, shape.choices, shape.defaultValue, io, shape.labels)
+        : await clack.text({
+            message: shape.message,
+            placeholder: shape.defaultValue,
+            defaultValue: shape.defaultValue,
+          })
   if (clack.isCancel(typed)) {
     console.log(`\n${stoppedAtQuestion(shape)}`)
     process.exit(130)

@@ -266,6 +266,28 @@ export function claudeOauthToken(
 }
 
 /**
+ * Where a sandboxed Claude Code run's token is set, as two booleans — never the
+ * value. `environment` is `LINGTAI_CLAUDE_OAUTH_TOKEN` exported non-empty in
+ * `from` — which a run reads first and which *wins even when it holds nothing
+ * usable*, so the file is then never reached; `file` is a usable
+ * `claude.oauth_token` in the text given; `usable` is what a run would actually
+ * get, `claudeOauthToken`'s own answer, so this and a run cannot disagree.
+ * A file that does not parse is `{ unreadable }` (the path, nothing quoted),
+ * never *not set*.
+ */
+export type ClaudeTokenState = { environment: boolean; file: boolean; usable: boolean } | { unreadable: string }
+
+export function claudeTokenState(from: NodeJS.ProcessEnv, path: string, text: string | null): ClaudeTokenState {
+  const machine = machineFileFrom(path, text)
+  if (machine.unreadable !== undefined) return { unreadable: machine.unreadable }
+  return {
+    environment: stringAt(environmentProvider(from), 'claude', 'oauth_token') !== undefined,
+    file: claudeOauthToken({} as NodeJS.ProcessEnv, machine) !== undefined,
+    usable: claudeOauthToken(from, machine) !== undefined,
+  }
+}
+
+/**
  * The Postgres connection a caller that must have Postgres may use, which is
  * never the operator's.
  *

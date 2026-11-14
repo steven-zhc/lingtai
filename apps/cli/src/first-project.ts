@@ -87,6 +87,7 @@ import { Cause, Effect } from 'effect'
 import { noRuntimesSignedInRefusal } from './agents.ts'
 import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
 import { boardAtEffect } from './board.ts'
+import { askClaudeTokenForRecipe, liveClaudeTokenWorld } from './claude-token.ts'
 import { lift } from './exit.ts'
 import {
   APP_WAIT_MS,
@@ -171,6 +172,11 @@ export interface FirstProjectWorld extends QuestionWorld {
   files: RecipeFiles
   /** `stateDir()` unless a test says otherwise. */
   home: string
+  /**
+   * Asks for the sandboxed Claude Code token once the recipe is final (#1169) — absent asks nothing. It never
+   * refuses the add: the token belongs to the machine, not the project.
+   */
+  claudeToken?: (recipe: Parameters<typeof askClaudeTokenForRecipe>[1]) => Effect.Effect<void, unknown>
   signedIn: SignedIn
   /** Every runtime, asked whether it is installed and signed in — never probed twice (`AskAgentsAt`'s own rule). */
   runtimes: () => Effect.Effect<readonly RuntimeFound[], unknown>
@@ -947,6 +953,9 @@ function runLocalBranch(
     const previewed = previewedOrRefused.previewed
     const finalRecipe = resolveSource(previewed, path, path).recipe
     const final = baseOf(finalRecipe)
+    if (world.claudeToken !== undefined && !repairOnly) {
+      yield* world.claudeToken(finalRecipe).pipe(Effect.catch(() => Effect.void))
+    }
 
     let finalFromSha = fromSha
     if (final !== base) {
@@ -1363,6 +1372,16 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     projects: () => loadAllProjectsEffect(),
     files: diskFiles,
     home,
+    claudeToken: (recipe) =>
+      askClaudeTokenForRecipe(
+        liveClaudeTokenWorld({
+          ask: options.ask,
+          log: options.log,
+          machine: liveMachineText(),
+          interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
+        }),
+        recipe,
+      ),
     signedIn: signedInHere,
     runtimes: askRuntimesEffect,
     setupReader: liveSetupReader,

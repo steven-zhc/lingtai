@@ -32,6 +32,8 @@ export interface AskShape {
   command?: string | undefined
   /** Why the default is what it is — printed by a front end only when it actually draws the question. */
   why?: readonly string[] | undefined
+  /** Drawn hidden, and never echoed: the answer is a secret (#1169). A front end that cannot hide input refuses it. */
+  secret?: true | undefined
 }
 
 export interface QuestionWorld {

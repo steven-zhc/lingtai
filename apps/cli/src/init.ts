@@ -151,6 +151,7 @@ import { Document, isMap, parseDocument } from 'yaml'
 
 import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
 import { boardAtEffect, boardLock, builtBoardDir, serveBoardEffect } from './board.ts'
+import { askClaudeTokenForRecipe, liveSetupTokenRun } from './claude-token.ts'
 import { lift, recovering } from './exit.ts'
 import {
   chooseFirstProjectEffect,
@@ -602,6 +603,19 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         // Already probed above, for the "look" lines — a second probe for the
         // same run would ask every runtime whether it is signed in twice.
         runtimes: () => Effect.succeed(runtimes),
+        claudeToken: (recipe) =>
+          askClaudeTokenForRecipe(
+            {
+              ask: world.ask,
+              log: world.log,
+              run: liveSetupTokenRun(),
+              machine: world.machine,
+              path,
+              env: world.env,
+              interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
+            },
+            recipe,
+          ),
         setupReader: world.setupReader,
         exists: world.exists,
         register: world.registerLocal,

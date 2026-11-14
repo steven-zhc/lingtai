@@ -626,6 +626,7 @@ lingtai account lift claude-code
 | check everything that can be checked | [lingtai doctor](#lingtai-doctor) |
 | how far projections lag, and rebuild one | [lingtai projection](#lingtai-projection) |
 | the events this version writes, by step | [lingtai events](#lingtai-events) |
+| set the token a sandboxed Claude Code run holds | [lingtai token](#lingtai-token) |
 
 ### lingtai init
 
@@ -813,4 +814,25 @@ lingtai events [<name>] [--json] [--no-color]
 ```sh
 lingtai events
 lingtai events TicketReleased --json
+```
+
+### lingtai token
+
+Set the token a sandboxed Claude Code run holds.
+
+Changes state.
+
+```text
+lingtai token claude
+  Runs `claude setup-token` for you and writes what it prints to
+  claude.oauth_token in ~/.lingtai/config.yml (0600), keeping every other
+  key. If that cannot be read from its output, asks you to paste the
+  token at a hidden prompt. A token already set is asked about: replace
+  or keep. LINGTAI_CLAUDE_OAUTH_TOKEN, when exported, wins over the file.
+  Needs a terminal. The token is never printed, logged or put on a
+  command line.
+```
+
+```sh
+lingtai token claude
 ```

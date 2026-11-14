@@ -39,6 +39,7 @@ export const PAGES: readonly { label: string; href: string }[] = [
   { label: 'report', href: '/report' },
   { label: 'landed', href: '/landed' },
   { label: 'backlog', href: '/backlog' },
+  { label: 'claude token', href: '/setup/claude-token' },
 ]
 
 /**

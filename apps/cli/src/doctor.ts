@@ -3057,7 +3057,8 @@ export function claudeTokenRow(
         : {
             name,
             status: 'ok',
-            detail: 'not set — `claude setup-token`, then `claude.oauth_token` in ~/.lingtai/config.yml',
+            detail:
+              'not set — `lingtai token claude` (or `claude setup-token`, then `claude.oauth_token` in ~/.lingtai/config.yml)',
           },
     ),
     // The reader's sentence names the path and quotes nothing; it is safe to show.
