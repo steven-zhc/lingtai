@@ -717,6 +717,9 @@ importers:
         specifier: ^4.1.2
         version: 4.1.2
     devDependencies:
+      '@lingtai/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@types/node':
         specifier: ^26.4.0
         version: 26.4.0

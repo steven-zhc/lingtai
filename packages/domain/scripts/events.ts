@@ -287,6 +287,8 @@ export const STREAMS = {
   RunKeptUncommitted: ['pass-'],
   RunProposedCompletion: ['pass-'],
   RunFinished: ['pass-'],
+  SandboxBoundaryRecorded: ['pass-'],
+  SandboxConnectionsRefused: ['pass-'],
   RunFailed: ['pass-'],
   RunSpent: ['pass-', 'chat-', 'ticket-'],
   StepsResolved: ['pass-'],

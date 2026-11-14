@@ -25,6 +25,12 @@ export interface SrtDependencyCheck {
   readonly errors: readonly string[]
 }
 
+/** The part of an srt violation this package reads. */
+export interface SrtViolation {
+  readonly line: string
+  readonly timestamp: Date
+}
+
 /** What `srt`'s `SandboxManager` is asked, and only that. Failures arrive as `unknown` and are classified by the caller. */
 export interface SrtPort {
   /** `config` is an `initialize` configuration: see `instanceConfig`. */
@@ -39,6 +45,13 @@ export interface SrtPort {
     customConfig: unknown,
     options: { commandId: string },
   ): Effect.Effect<{ readonly argv: readonly string[] }, unknown>
+  /**
+   * Every violation srt's store holds for `commandId` (`getViolationsForCommand`). The store is process-wide and
+   * keeps the newest 100 across every command, so a result is never proof that nothing else was refused.
+   */
+  violationsFor(commandId: string): Effect.Effect<readonly SrtViolation[], unknown>
+  /** `getTotalCount()`: every violation ever added to the store, evicted or not. Shared by every command. */
+  violationTotal: Effect.Effect<number, unknown>
   cleanupAfterCommand: Effect.Effect<void, unknown>
   reset: Effect.Effect<void, unknown>
 }

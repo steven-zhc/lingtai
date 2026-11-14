@@ -175,3 +175,19 @@ export const policyVariables = (host: HostFacts, project: string): Record<string
     NEXT_TELEMETRY_DISABLED: '1',
   }
 }
+
+/** The `@anthropic-ai/sandbox-runtime` version this package pins; a unit test holds it equal to `package.json`. */
+export const SRT_VERSION = '0.0.83'
+
+/** The policy one invocation runs under, as a value: built from the functions `wrap` hands srt, so the two cannot disagree. */
+export const resolvedPolicy = (host: HostFacts, input: PolicyInputs) => {
+  const fs = filesystemFor(host, input)
+  return {
+    allowedDomains: unique([...BUILT_IN_DOMAINS, ...runDomains(input)]),
+    allowWrite: fs.allowWrite,
+    denyRead: fs.denyRead,
+    denyWrite: fs.denyWrite,
+    weakerNetworkIsolation: host.platform === 'darwin',
+    srtVersion: SRT_VERSION,
+  }
+}

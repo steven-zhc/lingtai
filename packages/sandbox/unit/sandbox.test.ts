@@ -1,8 +1,10 @@
+import { SandboxBoundaryRecorded, SandboxConnectionsRefused, SandboxPolicyValue } from '@lingtai/domain'
 /** #1146. Every test hands in a fake `Srt`, a fake `SandboxFs` and a `HostFacts` of strings: no srt, no process, no disk. */
 import { Deferred, Effect, Exit, Fiber, Layer, type Scope } from 'effect'
 import { TestClock } from 'effect/testing'
 import { describe, expect, it } from 'vitest'
 
+import pkg from '../package.json' with { type: 'json' }
 import {
   BUILT_IN_DOMAINS,
   Host,
@@ -13,6 +15,11 @@ import {
   SandboxUnavailable,
   SandboxWrapFailed,
   Srt,
+  SRT_VERSION,
+  parseViolationLine,
+  isTelemetryHost,
+  resolvedPolicy,
+  worthRecording,
   customConfigFor,
   quoteArgv,
   refuseProtected,
@@ -41,6 +48,9 @@ interface Fake {
   checkResult: { warnings: string[]; errors: string[] }
   failInit: boolean
   failWrap: boolean
+  violations: Record<string, { line: string; timestamp: Date }[]>
+  total: number[]
+  failViolations: boolean
   release?: Deferred.Deferred<void>
 }
 
@@ -54,6 +64,9 @@ const fake = (): Fake => {
     checkResult: { warnings: [], errors: [] },
     failInit: false,
     failWrap: false,
+    violations: {},
+    total: [0],
+    failViolations: false,
     srt: undefined as never,
   }
   const log = <A>(name: string, a: A) => Effect.sync(() => (f.calls.push(name), a))
@@ -78,6 +91,9 @@ const fake = (): Fake => {
         // What the real srt would hand back as `env`: never surfaced by the port, asserted absent below.
         return { argv: ['/bin/bash', '-c', `WRAPPED(${command})`], env: { LINGTAI_DATABASE_URL: 'x' } }
       }),
+    violationsFor: (id) =>
+      f.failViolations ? Effect.fail(new Error('/tmp/secret boom')) : Effect.sync(() => f.violations[id] ?? []),
+    violationTotal: Effect.sync(() => (f.total.length > 1 ? f.total.shift()! : f.total[0]!)),
     cleanupAfterCommand: log('cleanup', undefined).pipe(Effect.asVoid),
     reset: log('reset', undefined).pipe(Effect.asVoid),
   }
@@ -481,5 +497,145 @@ describe('caller read and denyWrite (#1150)', () => {
 
   it('platform.claude.com is not on the built-in allowlist', () => {
     expect(BUILT_IN_DOMAINS).not.toContain('platform.claude.com')
+  })
+})
+
+const v = (line: string, iso = '2026-11-13T10:00:00.000Z') => ({ line, timestamp: new Date(iso) })
+
+describe('refused connections (#1156)', () => {
+  const host = hostFor('linux')
+  const refusedOnce = 'deny network-outbound example.com:443 (host is not on the allow list)'
+
+  const read = async (f: Fake) =>
+    run(f, host, (s) =>
+      Effect.gen(function* () {
+        const w = yield* s.wrap(inputFor(host))
+        f.violations[w.commandId] = f.violations.__next ?? []
+        return yield* s.refusedConnections(w)
+      }),
+    )
+
+  it("returns one invocation's violations grouped by host, counted and marked telemetry", async () => {
+    const f = fake()
+    f.violations.__next = [
+      v(refusedOnce),
+      v(refusedOnce, '2026-11-13T09:00:00.000Z'),
+      v('deny network-outbound o1.ingest.sentry.io:443 (host is not on the allow list)'),
+      v('something srt invented'),
+    ]
+    f.total = [5, 9]
+    const r = await read(f)
+    expect(r).toEqual({
+      kind: 'entries',
+      complete: true,
+      entries: [
+        { host: 'example.com', port: 443, count: 2, firstAt: '2026-11-13T09:00:00.000Z', telemetry: false },
+        { host: 'o1.ingest.sentry.io', port: 443, count: 1, firstAt: '2026-11-13T10:00:00.000Z', telemetry: true },
+        {
+          host: null,
+          port: null,
+          line: 'something srt invented',
+          count: 1,
+          firstAt: '2026-11-13T10:00:00.000Z',
+          telemetry: false,
+        },
+      ],
+    })
+  })
+
+  it("returns nothing for another invocation's id", async () => {
+    const f = fake()
+    f.violations.other = [v(refusedOnce)]
+    const r = await read(f)
+    expect(r).toEqual({ kind: 'entries', entries: [], complete: true })
+    expect(worthRecording(r)).toBe(false)
+  })
+
+  it('says incomplete when the count moved by more than the store holds', async () => {
+    const f = fake()
+    f.violations.__next = [v(refusedOnce)]
+    f.total = [0, 160]
+    const r = await read(f)
+    expect(r).toMatchObject({ kind: 'entries', complete: false })
+    expect(worthRecording(r)).toBe(true)
+  })
+
+  it('says incomplete when the count went backwards, and complete at exactly 100', async () => {
+    const f = fake()
+    f.total = [50, 3]
+    expect(await read(f)).toMatchObject({ complete: false })
+    const g = fake()
+    g.total = [10, 110]
+    expect(await read(g)).toMatchObject({ complete: true })
+  })
+
+  it('is unreadable, never empty, when the port throws, and does not carry the message', async () => {
+    const f = fake()
+    f.failViolations = true
+    const r = await read(f)
+    expect(r).toEqual({ kind: 'unreadable', reason: 'srt violations could not be read' })
+    expect(worthRecording(r)).toBe(true)
+  })
+
+  it('is unreadable when the count could not be read at wrap, and wrap still succeeds', async () => {
+    const f = fake()
+    ;(f.srt as { violationTotal: SrtPort['violationTotal'] }).violationTotal = Effect.fail(new Error('no'))
+    const r = await read(f)
+    expect(r).toMatchObject({ kind: 'unreadable' })
+  })
+
+  it('parses a violation line per shape srt 0.0.83 writes, and keeps the rest whole', () => {
+    expect(parseViolationLine(refusedOnce)).toEqual({ host: 'example.com', port: 443 })
+    expect(parseViolationLine('deny socks-tunnel host.test:8080 (refuseOpaqueTunnels)')).toEqual({
+      host: 'host.test',
+      port: 8080,
+    })
+    expect(parseViolationLine('deny http-request GET https://a.test/x?y=1 (blocked)')).toEqual({
+      host: 'a.test',
+      port: 443,
+    })
+    expect(parseViolationLine('deny http-request CONNECT a.test:443 (blocked)')).toEqual({ host: null, port: null })
+    expect(parseViolationLine('deny network-outbound [::1]:80 (host is not on the allow list)')).toEqual({
+      host: '::1',
+      port: 80,
+    })
+    expect(parseViolationLine('deny file-read-data /etc/passwd')).toEqual({ host: null, port: null })
+    expect(parseViolationLine('')).toEqual({ host: null, port: null })
+  })
+
+  it('matches telemetry hosts as allowedDomains entries are', () => {
+    expect(isTelemetryHost('sentry.io')).toBe(true)
+    expect(isTelemetryHost('o1.ingest.sentry.io')).toBe(true)
+    expect(isTelemetryHost('notsentry.io')).toBe(false)
+    expect(isTelemetryHost('sentry.io.evil.test')).toBe(false)
+  })
+
+  it('gives the resolved policy from the same functions wrap uses, and parses through the domain schemas', async () => {
+    const f = fake()
+    const input = inputFor(host, { project_additions: { network: ['x.test'], write: ['/p/w'] } })
+    const policy = await run(f, host, (s) => Effect.succeed(s.policyOf(input)))
+    expect(policy).toEqual(resolvedPolicy(host, input))
+    expect(policy.allowedDomains).toEqual([...BUILT_IN_DOMAINS, 'x.test'])
+    expect(policy.allowWrite).toContain('/p/w')
+    expect(policy.weakerNetworkIsolation).toBe(false)
+    expect(resolvedPolicy(hostFor('darwin'), input).weakerNetworkIsolation).toBe(true)
+    expect(SandboxPolicyValue.parse(policy)).toEqual(policy)
+    expect(
+      SandboxBoundaryRecorded.parse({
+        step: 'implement',
+        action: 'a',
+        runId: null,
+        commandId: 'c',
+        boundary: { kind: 'sandboxed', srtVersion: SRT_VERSION, policy },
+      }),
+    ).toBeTruthy()
+    const r = await read(Object.assign(fake(), { total: [0, 1] }))
+    expect(
+      SandboxConnectionsRefused.parse({ step: 'build', action: 'a', runId: null, commandId: 'c', read: r }),
+    ).toBeTruthy()
+  })
+
+  it('pins the srt version package.json pins', () => {
+    expect(pkg.dependencies['@anthropic-ai/sandbox-runtime']).toBe(SRT_VERSION)
   })
 })

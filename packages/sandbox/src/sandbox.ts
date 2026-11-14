@@ -14,8 +14,10 @@ import {
   instanceConfig,
   policyVariables,
   runDomains,
+  resolvedPolicy,
   type CallerAdditions,
   type HostFacts,
+  type PolicyInputs,
   type ProjectAdditions,
   cacheDir,
 } from './policy.ts'
@@ -30,6 +32,7 @@ import {
 } from './port.ts'
 import { refuseProtected } from './protect.ts'
 import { quoteArgv } from './quote.ts'
+import { groupViolations, isComplete, type RefusedRead } from './refusals.ts'
 
 export interface WrapInput {
   readonly project: string
@@ -48,6 +51,11 @@ export interface Wrapped {
   /** The caller's environment plus the policy's variables. Spawn with this and `shell: false`. */
   readonly env: Readonly<Record<string, string>>
   readonly commandId: string
+  /**
+   * srt's store total when `wrap` began, or undefined when it could not be read, in which case the read says
+   * `unreadable` rather than guess. Only `refusedConnections` uses it.
+   */
+  readonly violationsBefore: number | undefined
 }
 
 export interface SandboxApi {
@@ -55,6 +63,15 @@ export interface SandboxApi {
   readonly wrap: (
     input: WrapInput,
   ) => Effect.Effect<Wrapped, SandboxUnavailable | SandboxWrapFailed | SandboxPolicyRefused, Scope.Scope>
+  /**
+   * The connections srt refused this invocation, read from its process-wide 100-entry store. **Call it after the
+   * child exits and before the scope `wrap` ran in closes**: closing it cleans up srt's per-command state. Never
+   * fails: a read that cannot be made is `unreadable`, never an empty list. A deny srt records without a command
+   * (`recordOutboundDeny`) is in no read by id and moves no count we can attribute.
+   */
+  readonly refusedConnections: (wrapped: Wrapped) => Effect.Effect<RefusedRead>
+  /** The policy `wrap` would hand srt for this input, as a value, using this service's own host. */
+  readonly policyOf: (input: PolicyInputs) => ReturnType<typeof resolvedPolicy>
 }
 
 export class Sandbox extends Context.Service<Sandbox, SandboxApi>()('@lingtai/sandbox/Sandbox') {}
@@ -135,6 +152,9 @@ export const makeSandbox = Effect.gen(function* () {
           ),
         )
 
+      // Before anything of this invocation's can reach the store.
+      const violationsBefore = yield* srt.violationTotal.pipe(Effect.orElseSucceed(() => undefined))
+
       // 128 random bits, never derived from the command, the run or the clock.
       const commandId = yield* Effect.sync(() => randomBytes(16).toString('base64url'))
       yield* Effect.acquireRelease(
@@ -156,10 +176,27 @@ export const makeSandbox = Effect.gen(function* () {
         argv: wrapped.argv,
         env: { ...input.env, ...policyVariables(host, input.project) },
         commandId,
+        violationsBefore,
       } satisfies Wrapped
     })
 
-  return { hostCanSandbox, wrap } satisfies SandboxApi
+  const refusedConnections = (wrapped: Wrapped): Effect.Effect<RefusedRead> =>
+    Effect.gen(function* () {
+      // Fixed texts, never the caught message: it can carry a temp path.
+      if (wrapped.violationsBefore === undefined) {
+        return { kind: 'unreadable', reason: 'the violation count could not be read at wrap' } as const
+      }
+      const before = wrapped.violationsBefore
+      const violations = yield* srt.violationsFor(wrapped.commandId)
+      const after = yield* srt.violationTotal
+      return { kind: 'entries', entries: groupViolations(violations), complete: isComplete(before, after) } as const
+    }).pipe(
+      Effect.catch(() => Effect.succeed({ kind: 'unreadable', reason: 'srt violations could not be read' } as const)),
+    )
+
+  const policyOf = (input: PolicyInputs) => resolvedPolicy(host, input)
+
+  return { hostCanSandbox, wrap, refusedConnections, policyOf } satisfies SandboxApi
 })
 
 /** Needs `Srt`, `Host` and `SandboxFs`; resets the instance when its scope closes. */

@@ -45,6 +45,15 @@ export const srtPort: SrtPort = {
       catch: raw,
       // Only `argv` leaves: the `env` srt returns is `process.env`.
     }).pipe(Effect.map(({ argv }) => ({ argv }))),
+  violationsFor: (id) =>
+    Effect.try({
+      try: () =>
+        SandboxManager.getSandboxViolationStore()
+          .getViolationsForCommand(id)
+          .map((v) => ({ line: v.line, timestamp: v.timestamp })),
+      catch: raw,
+    }),
+  violationTotal: Effect.try({ try: () => SandboxManager.getSandboxViolationStore().getTotalCount(), catch: raw }),
   cleanupAfterCommand: Effect.try({ try: () => SandboxManager.cleanupAfterCommand(), catch: raw }),
   reset: Effect.tryPromise({ try: () => SandboxManager.reset(), catch: raw }),
 }
