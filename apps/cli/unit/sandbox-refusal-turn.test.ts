@@ -8,7 +8,7 @@
 import { currentRecipe, loadProject } from '@lingtai/conductor'
 import { projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { recipePath } from '@lingtai/recipe'
+import { recipePath } from '@lingtai/project'
 import { fakeSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'

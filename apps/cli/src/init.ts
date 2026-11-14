@@ -134,16 +134,8 @@ import type { Locker } from '@lingtai/env/lock'
 import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type Queryable, type SchemaOutcome, createSchemaEffect } from '@lingtai/event-store/schema'
 import { ghStatusEffect, liveGh, type GhRun, type GhStatus } from '@lingtai/github'
-import {
-  diskFiles,
-  kindsOf,
-  readRecipeKeyEffect,
-  recipePath,
-  resolveSource,
-  ticketSourceOf,
-  type RecipeFiles,
-  type SignedIn,
-} from '@lingtai/recipe'
+import { diskFiles, readRecipeKeyEffect, recipePath } from '@lingtai/project'
+import { kindsOf, resolveSource, ticketSourceOf, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, runtimeStateSentence, type RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'

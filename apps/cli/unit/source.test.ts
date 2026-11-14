@@ -1,10 +1,11 @@
+import { recipePath } from '@lingtai/project'
 /**
  * `askTickets` and `askKinds` (#396) — the setup's two questions over #392's
  * seam, writing nothing themselves. No filesystem: the recipe file is a
  * `Map`, and no terminal: `world()` below scripts the answers the same way
  * `apps/cli/unit/landing.test.ts` does for `askLanding`.
  */
-import { type RecipeFiles, recipePath } from '@lingtai/recipe'
+import { type RecipeFiles } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 

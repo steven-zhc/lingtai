@@ -1,3 +1,12 @@
+import {
+  AgentUnresolvedError,
+  LIMIT_DEFAULTS,
+  MachineConfigInvalidError,
+  RecipeInvalidError,
+  RecipeMissingError,
+  resolveSource,
+  writtenAgent,
+} from '@lingtai/recipe'
 import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 /**
  * The recipe from this machine (0046 §3, #180). No filesystem: the reader is
@@ -6,18 +15,7 @@ import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import {
-  AgentUnresolvedError,
-  LIMIT_DEFAULTS,
-  MachineConfigInvalidError,
-  RecipeInvalidError,
-  RecipeMissingError,
-  machinePath,
-  recipePath,
-  resolveLocalRecipeEffect,
-  resolveSource,
-  writtenAgent,
-} from '../src/index.ts'
+import { machinePath, recipePath, resolveLocalRecipeEffect } from '../src/index.ts'
 
 const HOME = '/home/me/.lingtai'
 

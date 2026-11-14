@@ -1,4 +1,5 @@
-import { type RecipeFiles, recipePath } from '@lingtai/recipe'
+import { recipePath } from '@lingtai/project'
+import { type RecipeFiles } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'

@@ -1,10 +1,11 @@
+import { recipePath, setRecipeEffect } from '@lingtai/project'
 /**
  * `askInstallAndBuild` (#397): the two questions over `detect-setup.ts`'s
  * suggestion, returned as `RecipeChange[]` for the caller to hand to
  * `setRecipe` — never written here, as `packages/recipe/unit/write.test.ts`
  * hands a `RecipeChange[]` to `setRecipe` directly.
  */
-import { type RecipeFiles, recipePath, resolveSource, setRecipeEffect } from '@lingtai/recipe'
+import { type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'

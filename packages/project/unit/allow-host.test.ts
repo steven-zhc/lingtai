@@ -1,8 +1,9 @@
+import { type RecipeFiles, withAllowedHost } from '@lingtai/recipe'
+import { fakeSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 /** `withAllowedHost` (#1162): the editor's draft, pure, and what saving it does. */
 import { describe, expect, it } from 'vitest'
 
-import { type RecipeFiles, recipePath, saveRecipeText, withAllowedHost } from '../src/index.ts'
-import { fakeSandboxHost } from '../test/sandbox-host.ts'
+import { recipePath, saveRecipeText } from '../src/index.ts'
 
 const HOME = '/home/me/.lingtai'
 const PATH = recipePath('app', HOME)

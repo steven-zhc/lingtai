@@ -1,3 +1,4 @@
+import { diskFiles, readRecipeKeyEffect, recipePath } from '@lingtai/project'
 /**
  * The two questions #397 asks over `detect-setup.ts`'s suggestion: the
  * install command at `steps.prepared`, and the build commands at
@@ -10,14 +11,7 @@
  * as `packages/recipe/unit/write.test.ts` hands a `RecipeChange[]` to it
  * directly.
  */
-import {
-  diskFiles,
-  type RecipeChange,
-  type RecipeFiles,
-  readRecipeKeyEffect,
-  recipePath,
-  resolveSource,
-} from '@lingtai/recipe'
+import { type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import {
   type DetectedSetup,
   type SetupReader,

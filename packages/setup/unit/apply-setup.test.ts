@@ -1,5 +1,6 @@
 import { emptyProject, type ProjectState } from '@lingtai/domain'
-import { type RecipeChange, type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
+import { recipePath } from '@lingtai/project'
+import { type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -91,7 +92,7 @@ describe('applySetup (#968)', () => {
   it('a draft keeps every change and writes nothing to its base', async () => {
     const { files, store } = countingFiles()
     const draft = draftFiles(files, path)
-    const { setRecipeEffect } = await import('@lingtai/recipe')
+    const { setRecipeEffect } = await import('@lingtai/project')
     const more: RecipeChange[] = [{ path: ['source', 'kinds'], value: ['bug', 'feature'] }]
     await Effect.runPromise(setRecipeEffect('repo', CHANGES, { home: HOME, files: draft }))
     await Effect.runPromise(setRecipeEffect('repo', more, { home: HOME, files: draft }))

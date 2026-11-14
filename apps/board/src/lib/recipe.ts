@@ -21,6 +21,7 @@ import { describeAssignee } from '@lingtai/conductor/filter'
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { STEPS, type ProjectState, type Step } from '@lingtai/domain'
 import type { GitHubClient } from '@lingtai/github'
+import { diskFiles, machinePath, recipePath } from '@lingtai/project'
 import {
   LIMIT_DEFAULTS,
   MachineConfigInvalidError,
@@ -33,15 +34,12 @@ import {
   boundsBesides,
   disclose,
   discloseSteps,
-  diskFiles,
   excludeOf,
   kindOfAction,
   kindsOf,
   limitsFor,
-  machinePath,
   parseDuration,
   provenanceSource,
-  recipePath,
   resolveRecipe,
   type StepAction,
   type PluginSecrets,

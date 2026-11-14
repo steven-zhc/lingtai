@@ -11,15 +11,13 @@
  * `@lingtai/recipe`'s `answers.ts`, next to `landingChanges`.
  */
 import { paint } from '@lingtai/env/colour'
+import { diskFiles, readRecipeKeyEffect, recipePath } from '@lingtai/project'
 import {
-  diskFiles,
   kindsChanges,
   kindsOf,
   type Recipe,
   type RecipeChange,
   type RecipeFiles,
-  readRecipeKeyEffect,
-  recipePath,
   resolveSource,
   SETUP_KINDS,
   ticketsChange,

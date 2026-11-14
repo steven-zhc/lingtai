@@ -1,9 +1,10 @@
+import { recipePath, resolveLocalRecipeEffect, setRecipeEffect } from '@lingtai/project'
 /**
  * `askAgents` (#398): which agent writes the change, and which cold-reviews
  * it, as per-project recipe questions. A fake `QuestionWorld` with scripted
  * answers, and a `Map`-backed `RecipeFiles` — no filesystem, no terminal.
  */
-import { type RecipeFiles, recipePath, resolveLocalRecipeEffect, setRecipeEffect } from '@lingtai/recipe'
+import { type RecipeFiles } from '@lingtai/recipe'
 import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'

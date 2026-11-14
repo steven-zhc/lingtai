@@ -1,8 +1,9 @@
+import { type RecipeFiles } from '@lingtai/recipe'
+import { fakeFacts, fakeSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 /** `saveRecipeText` (#973): no filesystem — the file seam is a `Map`. */
 import { describe, expect, it } from 'vitest'
 
-import { type RecipeFiles, machinePath, recipePath, saveRecipeText } from '../src/index.ts'
-import { fakeFacts, fakeSandboxHost } from '../test/sandbox-host.ts'
+import { machinePath, recipePath, saveRecipeText } from '../src/index.ts'
 
 const HOME = '/home/me/.lingtai'
 const PATH = recipePath('app', HOME)

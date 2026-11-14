@@ -1,6 +1,7 @@
 import { boundedEvidence, commandEffect, type CommandOutcome, type RunCommandOptions } from '@lingtai/actions'
 import { resolveAgentEnv, runnableEnv, productionPatterns } from '@lingtai/agent-env'
-import { parseDuration, readRecipeKeyEffect, type RecipeFiles } from '@lingtai/recipe'
+import { readRecipeKeyEffect } from '@lingtai/project'
+import { parseDuration, type RecipeFiles } from '@lingtai/recipe'
 import { provisionWorktreeEffect, removeWorktreeEffect, type ProvisionOptions } from '@lingtai/repo'
 import { Data, Effect, Ref } from 'effect'
 

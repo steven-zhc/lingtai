@@ -1,7 +1,3 @@
-import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
-import { Effect } from 'effect'
-import { describe, expect, it } from 'vitest'
-
 import {
   AgentUnresolvedError,
   MachineConfigInvalidError,
@@ -9,10 +5,13 @@ import {
   RecipeInvalidError,
   RecipeMissingError,
   isMissing,
-  resolveLocalRecipeEffect,
   resolveRecipe,
-  setRecipeEffect,
-} from '../src/index.ts'
+} from '@lingtai/recipe'
+import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
+import { Effect } from 'effect'
+import { describe, expect, it } from 'vitest'
+
+import { resolveLocalRecipeEffect, setRecipeEffect } from '../src/index.ts'
 
 const HOME = '/nowhere'
 const files = (map: Record<string, string>) => async (p: string) => map[p] ?? null
