@@ -1,5 +1,6 @@
 import { CLAUDE_CODE_CAPABILITIES, CODEX_CAPABILITIES } from '@lingtai/agent'
-import { AgentUnresolvedError, recipePath, resolveLocalRecipeEffect } from '@lingtai/recipe'
+import { recipePath, resolveLocalRecipeEffect } from '@lingtai/project'
+import { AgentUnresolvedError } from '@lingtai/recipe'
 import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { Effect } from 'effect'
 /**

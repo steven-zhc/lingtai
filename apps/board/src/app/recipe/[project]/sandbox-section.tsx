@@ -1,4 +1,4 @@
-import type { BuiltInSandbox } from '@lingtai/recipe'
+import type { BuiltInSandbox } from '@lingtai/project'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 

@@ -1,5 +1,6 @@
+import { recipePath } from '@lingtai/project'
 /** The sandbox step's proposal and answers (#1160) — a fake host throughout, never the real check (0060 §1). */
-import { LIMIT_DEFAULTS, recipePath, resolveSource } from '@lingtai/recipe'
+import { LIMIT_DEFAULTS, resolveSource } from '@lingtai/recipe'
 import { SandboxUnavailable } from '@lingtai/sandbox'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'

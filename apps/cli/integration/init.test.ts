@@ -4,7 +4,8 @@ import { join } from 'node:path'
 
 import type { ProjectState } from '@lingtai/domain'
 import { storeChoice } from '@lingtai/env'
-import { recipePath, type RecipeFiles } from '@lingtai/recipe'
+import { recipePath } from '@lingtai/project'
+import { type RecipeFiles } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 

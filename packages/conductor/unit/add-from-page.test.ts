@@ -5,7 +5,8 @@
  * registers. Fake files and ports (0060 §1) — nothing here touches a disk.
  */
 import type { ProjectState } from '@lingtai/domain'
-import { type RecipeFiles, recipePath } from '@lingtai/recipe'
+import { recipePath } from '@lingtai/project'
+import { type RecipeFiles } from '@lingtai/recipe'
 import { keptSentence, LINGTAI_BASE, type Proposal, type SetupForm, SetupWriteError } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'

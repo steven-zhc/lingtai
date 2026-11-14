@@ -498,13 +498,13 @@
     "why": "apps/board/src/lib/board.ts, apps/board/src/lib/health.ts, apps/board/src/app/api/search/route.ts, apps/board/src/lib/task.ts; apps/site/scripts/books.ts, apps/site/scripts/snapshot.ts"
   },
   {
-    "file": "packages/recipe/src/files.ts",
+    "file": "packages/project/src/files.ts",
     "fn": "readFileFace",
     "until": "0101 §7",
     "why": "`diskFiles.read` is this, and the board calls it: apps/board/src/lib/recipe.ts"
   },
   {
-    "file": "packages/recipe/src/files.ts",
+    "file": "packages/project/src/files.ts",
     "fn": "replaceFileFace",
     "until": "0101 §7",
     "why": "`diskFiles.replace` is this, in the same `diskFiles` object the board imports: apps/board/src/lib/recipe.ts"
@@ -516,7 +516,7 @@
     "why": "apps/board/src/lib/recipe.ts"
   },
   {
-    "file": "packages/recipe/src/write.ts",
+    "file": "packages/project/src/write.ts",
     "fn": "saveRecipeText",
     "until": "0101 §7",
     "why": "apps/board/src/app/actions.ts"

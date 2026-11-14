@@ -1,3 +1,4 @@
+import { recipePath } from '@lingtai/project'
 /**
  * The board's step 2 and `lingtai add` write the same recipe for the same
  * answers (#971). `askRecipe` is driven with `--defaults` over a
@@ -5,7 +6,7 @@
  * run through `setupAnswers`; both are written by `applySetup` over a `Map`,
  * and the two files are compared byte for byte, comments included.
  */
-import { LIMIT_DEFAULTS, type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
+import { LIMIT_DEFAULTS, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { SandboxUnavailable } from '@lingtai/sandbox'
 import {
   applySetup,

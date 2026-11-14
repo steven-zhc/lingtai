@@ -57,15 +57,11 @@ import type { ProjectState } from '@lingtai/domain'
 import { boardHost, boardPort, boardReachHost, githubAuthKind, stateDir } from '@lingtai/env'
 import type { Locker } from '@lingtai/env/lock'
 import { ghStatusEffect, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
+import { diskFiles, readRecipeKeyEffect, recipePath, HOST_FOR_SAVING, resolveLocalRecipeEffect } from '@lingtai/project'
 import { readTasksEffect } from '@lingtai/projector'
 import {
   baseOf,
-  diskFiles,
   landOnBranchChanges,
-  readRecipeKeyEffect,
-  recipePath,
-  HOST_FOR_SAVING,
-  resolveLocalRecipeEffect,
   resolveSource,
   type RecipeFiles,
   type ResolvedRecipe,

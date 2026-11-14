@@ -15,6 +15,7 @@
  * prove it holds or lands a pass, not only that it resolves.
  */
 import { paint } from '@lingtai/env/colour'
+import { diskFiles, readRecipeKeyEffect, recipePath, setRecipeEffect } from '@lingtai/project'
 import {
   type Recipe,
   type RecipeChange,
@@ -24,16 +25,12 @@ import {
   baseOf,
   budgetChange,
   ceilingOf,
-  diskFiles,
   holdRemovalChanges,
   landOnBranchChanges,
   landingChanges,
   parseDuration,
-  readRecipeKeyEffect,
-  recipePath,
   resolveSource,
   roundsChange,
-  setRecipeEffect,
   wallChange,
 } from '@lingtai/recipe'
 import { Effect } from 'effect'

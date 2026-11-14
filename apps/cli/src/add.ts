@@ -2,7 +2,8 @@ import { exclusiveAdd } from '@lingtai/conductor/add-from-page'
 import type { GithubReach } from '@lingtai/conductor/onboard'
 import { githubAuthKind, storeChoice, type StoreChoice } from '@lingtai/env'
 import { parseSlug } from '@lingtai/github'
-import { recipePath, resolveSource } from '@lingtai/recipe'
+import { recipePath } from '@lingtai/project'
+import { resolveSource } from '@lingtai/recipe'
 import {
   alreadyAdded,
   alreadyAddedSentence,

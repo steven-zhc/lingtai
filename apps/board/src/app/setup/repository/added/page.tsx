@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
 import { stateDir } from '@lingtai/env'
-import { recipePath } from '@lingtai/recipe'
+import { recipePath } from '@lingtai/project'
 import { queueOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { liveMachineText, needsClaudeToken } from '@lingtai/setup'
 

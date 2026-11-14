@@ -25,7 +25,8 @@
  * accepted: the recipe either add wrote may stay.
  */
 import type { ProjectState } from '@lingtai/domain'
-import { diskFiles, type RecipeChange, type RecipeFiles, recipePath, type Said, setRecipeEffect } from '@lingtai/recipe'
+import { diskFiles, recipePath, setRecipeEffect } from '@lingtai/project'
+import { type RecipeChange, type RecipeFiles, type Said } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 /** What the questions decided: every change they made to the recipe, in order. */

@@ -15,6 +15,7 @@
     "@lingtai/agent-env": "workspace:*",
     "@lingtai/domain": "workspace:*",
     "@lingtai/github": "workspace:*",
+    "@lingtai/project": "workspace:*",
     "@lingtai/recipe": "workspace:*",
     "@lingtai/repo": "workspace:*",
     "effect": "^4.1.2",

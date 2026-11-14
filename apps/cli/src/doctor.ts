@@ -132,6 +132,7 @@ import {
 } from '@lingtai/event-store/queries'
 import type { GhRun, GhStatus, GitHubClient } from '@lingtai/github'
 import { ghScopeGap, ghScopeRefresh, ghStatusEffect, REQUIRED_PERMISSIONS } from '@lingtai/github'
+import { recipePath } from '@lingtai/project'
 import {
   backlogProjection,
   describeShape,
@@ -154,7 +155,6 @@ import {
   ceilingOf,
   declaresTurnsOn,
   isBuiltInJudge,
-  recipePath,
   remoteOf,
   sandboxDecision,
   verdictOf,
