@@ -1,7 +1,8 @@
 /**
  * The names srt plants in a worktree on Linux, each a `/dev/null` bind (experiment 017). `git add -A` inside
- * srt fails on them unless the mirror's `info/exclude` names them; the conductor writes them there, anchored
- * to the root, under a *sandboxed* decision only (#1152).
+ * srt fails on them unless git is told to exclude them. Under a *sandboxed* decision only (#1152) provisioning
+ * writes them, anchored to the root, into a side file beside the mirror's `info/exclude`, and each wrapped
+ * command is pointed at it through its environment (`excludeEnv`): a caller that omits that fails on them.
  */
 export const SRT_STAND_INS: readonly string[] = [
   '.bashrc',

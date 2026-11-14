@@ -140,29 +140,47 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
       )
       // Inside the hold, so two passes never interleave the read and the write. A file of its own, never
       // `info/exclude` (shared by every worktree and every command): see `exclude.ts`.
-      const writeExcludes = Effect.uninterruptible(
-        Effect.tryPromise({
-          // Promise chains and no `async`: the ratchet counts those.
-          try: () => {
-            const names = options.exclude
-            // Absent or empty: nothing is written, and nothing a sandboxed pass wrote is taken away.
-            if (names === undefined || names.length === 0) return Promise.resolve()
-            const file = sandboxExcludePath(path)
-            const text = excludeFileText(names)
-            return readFile(file, 'utf8')
-              .catch((err: NodeJS.ErrnoException) => {
-                if (err.code === 'ENOENT') return undefined
+      const writeExcludes = Effect.gen(function* () {
+        const names = options.exclude
+        // Absent or empty: nothing is written, and nothing a sandboxed pass wrote is taken away.
+        if (names === undefined || names.length === 0) return
+        // The side file *replaces* `core.excludesFile` for the command it is handed to, so it carries what
+        // that setting resolved to here: a project's global ignore rules must still hold inside the sandbox.
+        const env = options.gitEnv ?? process.env
+        const configured = yield* gitEffect(['config', '--get', '--type=path', 'core.excludesFile'], {
+          ...run,
+          cwd: path,
+        }).pipe(Effect.orElseSucceed(() => ''))
+        const inheritedFrom =
+          configured !== ''
+            ? configured
+            : join(env['XDG_CONFIG_HOME'] || join(env['HOME'] ?? '', '.config'), 'git', 'ignore')
+        yield* Effect.uninterruptible(
+          Effect.tryPromise({
+            // Promise chains and no `async`: the ratchet counts those.
+            try: () => {
+              const file = sandboxExcludePath(path)
+              const absent = (err: NodeJS.ErrnoException) => {
+                if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return undefined
                 throw err
-              })
-              .then((existing) => {
-                if (existing === text) return undefined
-                // A bare clone made without templates has no `info/`.
-                return mkdir(dirname(file), { recursive: true }).then(() => writeFile(file, text))
-              })
-          },
-          catch: (err) => new RepoFailed({ operation: 'info/exclude', detail: (err as Error).message }),
-        }),
-      )
+              }
+              return readFile(inheritedFrom, 'utf8')
+                .catch(absent)
+                .then((inherited) => {
+                  const text = excludeFileText(names, inherited ?? '')
+                  return readFile(file, 'utf8')
+                    .catch(absent)
+                    .then((existing) => {
+                      if (existing === text) return undefined
+                      // A bare clone made without templates has no `info/`.
+                      return mkdir(dirname(file), { recursive: true }).then(() => writeFile(file, text))
+                    })
+                })
+            },
+            catch: (err) => new RepoFailed({ operation: 'info/exclude', detail: (err as Error).message }),
+          }),
+        )
+      })
       if (present) {
         // A fetch that fails (a concurrent ref update, the network) says nothing
         // about the mirror: it is shared with every pass in flight, whose worktrees

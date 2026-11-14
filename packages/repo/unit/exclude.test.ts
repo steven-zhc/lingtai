@@ -6,6 +6,9 @@ describe('excludeFileText', () => {
   it('lists each name once', () => {
     expect(excludeFileText(['/.vscode', '/.idea', '/.vscode'])).toBe('/.vscode\n/.idea\n')
   })
+  it('keeps the global ignore rules it replaces, after the names', () => {
+    expect(excludeFileText(['/.vscode'], '.env.local\n*.log')).toBe('/.vscode\n.env.local\n*.log\n')
+  })
   it('is empty for nothing', () => {
     expect(excludeFileText([])).toBe('')
   })

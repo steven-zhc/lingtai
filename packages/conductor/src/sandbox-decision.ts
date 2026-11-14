@@ -1,8 +1,8 @@
 /**
  * The pass's sandbox decision and the wrap its `run:` commands go through (#1152).
  *
- * Decided **once per pass, before the claim**, so the provision (which writes srt's stand-in names into the
- * mirror's `info/exclude`) and the actions (which wrap) cannot see different answers a minute apart.
+ * Decided **once per pass, before the claim**, so the provision (which writes srt's stand-in names into a side
+ * file beside the mirror's `info/exclude`, which each wrapped command is pointed at) and the actions (which wrap) cannot see different answers a minute apart.
  *
  * Nothing here loads srt. The host answer is the provided `Sandbox` service's own where there is one, and
  * `hostHere` (which imports `@lingtai/sandbox/live` only when asked, as the resolver does) where there is not.
