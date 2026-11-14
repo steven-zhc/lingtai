@@ -140,7 +140,8 @@ describe('askRecipe — an absent file (#432)', () => {
     // local path seeds none, so it has no block to comment.
     for (const [dotted, sentence] of Object.entries(SAID)) {
       const comment = commentAbove(text, dotted)
-      if (comment === '') expect(['steps.end', 'steps.proposed', 'runtime.limits'], dotted).toContain(dotted)
+      // `sandbox` is asked only where the caller read the host (#1160), which this test does not.
+      if (comment === '') expect(['steps.end', 'steps.proposed', 'runtime.limits', 'sandbox'], dotted).toContain(dotted)
       else expect(comment, dotted).toBe(sentence)
     }
 

@@ -29,6 +29,7 @@ import { UNBOUNDED } from '@lingtai/recipe/duration'
 
 import type { Answers } from './apply-setup.ts'
 import type { SetupTarget, TicketsProposal } from './propose-setup.ts'
+import { hostsRefusal } from './sandbox-step.ts'
 
 /** The branch a directory with no GitHub base lands on: made from the checked-out one (0104 §15). */
 export const LINGTAI_BASE = 'lingtai-base'
@@ -40,6 +41,7 @@ export const SAID: Said = {
   runtime: "which agent's attempt this is",
   'steps.implement': 'which agent writes the change',
   'steps.review': 'which agent, if any, reads it cold before it moves on',
+  sandbox: "what an agent's commands may reach",
   'steps.prepared': 'getting the worktree ready before the agent starts',
   'steps.build': 'what must pass before review',
   'source.tickets': "where this project's tickets live",
@@ -97,6 +99,11 @@ export interface SetupForm {
   limits: { turns: number | 'unbounded'; wall: string; rounds: number; restarts: number }
   /** The writer's runtime enforces no turn count, so the recipe promises none. */
   turnsUnbounded: boolean
+  /**
+   * The sandbox step (#1160): `null` where it was not asked — an existing recipe, which this never touches.
+   * `allow` is the extra hosts; `required` is never written here.
+   */
+  sandbox: { enabled: boolean; allow: string[] } | null
 }
 
 /** What the form refuses before anything is written, by name; `null` where it can be written. */
@@ -105,6 +112,10 @@ export function refusalOf(form: SetupForm): string | null {
   if (form.writer.trim() === '') return 'no agent is chosen yet — choose the agent that writes the change'
   const kinds = parseKinds(form.kinds.join(','))
   if (typeof kinds === 'string') return kinds
+  if (form.sandbox !== null && form.sandbox.enabled) {
+    const bad = hostsRefusal(form.sandbox.allow)
+    if (bad !== null) return bad
+  }
   if (form.target.kind === 'local' && form.tickets === 'github') {
     return 'a project with no owner cannot take its tickets from GitHub — there is no repository to read issues from'
   }
@@ -124,6 +135,17 @@ function runsOf(checks: readonly { name: string; run: string }[]): { name: strin
     taken.add(name)
     return { name, run: c.run }
   })
+}
+
+/** `sandbox: { enabled: true }` with `network.allow` only where hosts were added; off is `{ enabled: false }`. Never `required`. */
+export function sandboxChanges(answer: { enabled: boolean; allow: readonly string[] }): RecipeChange[] {
+  if (!answer.enabled) return [{ path: ['sandbox'], value: { enabled: false } }]
+  return [
+    {
+      path: ['sandbox'],
+      value: answer.allow.length === 0 ? { enabled: true } : { enabled: true, network: { allow: [...answer.allow] } },
+    },
+  ]
 }
 
 /** The changes, in `askRecipe`'s order. */
@@ -159,6 +181,9 @@ export function setupChanges(form: SetupForm, rewrite = false): RecipeChange[] {
     path: ['steps', 'review'],
     value: form.reviewer === 'none' ? [] : [{ name: 'review', agent: form.reviewer, prompt: '' }],
   })
+
+  // A recipe already on disk is never given the block (#1160): the step is asked of a new one only.
+  if (!rewrite && form.sandbox !== null) changes.push(...sandboxChanges(form.sandbox))
 
   changes.push({
     path: ['steps', 'prepared'],

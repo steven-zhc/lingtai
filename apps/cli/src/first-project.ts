@@ -49,7 +49,7 @@ import { promisify } from 'node:util'
 import { exclusiveAdd } from '@lingtai/conductor/add-from-page'
 import { addEffect, addLocalEffect, type Added, type AddOptions, type GithubReach } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, refusalLines, taken } from '@lingtai/conductor/pick-repository'
-import { loadAllProjectsEffect, signedInHere } from '@lingtai/conductor/projects'
+import { loadAllProjectsEffect, sandboxHostHere, signedInHere } from '@lingtai/conductor/projects'
 import { repositoryList } from '@lingtai/conductor/repository-list'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { held } from '@lingtai/daemon'
@@ -72,7 +72,7 @@ import {
   type SignedIn,
 } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
-import { type Picker, type RepositoryList, type SetupReader } from '@lingtai/setup'
+import { type Picker, type ProposalReaders, type RepositoryList, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
 import {
   alreadyAddedSentence,
@@ -177,6 +177,8 @@ export interface FirstProjectWorld extends QuestionWorld {
    * refuses the add: the token belongs to the machine, not the project.
    */
   claudeToken?: (recipe: Parameters<typeof askClaudeTokenForRecipe>[1]) => Effect.Effect<void, unknown>
+  /** The host check for the sandbox step (#1160), read only for a recipe that is new; absent asks no sandbox question. */
+  sandboxHost?: () => NonNullable<ProposalReaders['host']>
   signedIn: SignedIn
   /** Every runtime, asked whether it is installed and signed in — never probed twice (`AskAgentsAt`'s own rule). */
   runtimes: () => Effect.Effect<readonly RuntimeFound[], unknown>
@@ -882,6 +884,10 @@ function runLocalBranch(
         defaultBranch: () => Effect.succeed(base),
         runtimes: () => Effect.succeed(runtimes),
         history: (project) => world.history(project),
+        // Only a recipe that is new is asked the sandbox step; an existing one never loads srt (#1160).
+        ...(existingText === null && !(found !== undefined && migrating) && world.sandboxHost !== undefined
+          ? { host: world.sandboxHost() }
+          : {}),
         // No `origin` is an answer (null); a git that failed is not.
         origin: (path) =>
           Effect.gen(function* () {
@@ -1372,6 +1378,7 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     projects: () => loadAllProjectsEffect(),
     files: diskFiles,
     home,
+    sandboxHost: () => sandboxHostHere(),
     claudeToken: (recipe) =>
       askClaudeTokenForRecipe(
         liveClaudeTokenWorld({

@@ -29,6 +29,7 @@ import {
   type SignedIn,
   resolveLocalRecipeEffect,
 } from '@lingtai/recipe'
+import { BUILT_IN_DOMAINS, installFor } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
 import { Effect } from 'effect'
 
@@ -227,6 +228,17 @@ export const provideHostAnswer = (answer: HostAnswer): void => {
  * the pass that would wrap decides again, with the host's own answer, before it claims anything.
  */
 export const hostHere: HostAnswer = Effect.suspend(() => hostProvider ?? Effect.void)
+
+/**
+ * What the setup wizard reads of the host (#1160): the answer through `hostHere` (so srt is imported on the
+ * first ask and never by a client graph), the install advice for `platform`, and the built-in allowlist.
+ * Handed to `proposeSetup` only for a recipe that is new.
+ */
+export const sandboxHostHere = (platform: string = process.platform) => ({
+  answer: hostHere,
+  install: installFor(platform) ?? null,
+  builtIns: BUILT_IN_DOMAINS,
+})
 
 export function currentRecipeEffect(
   state: ProjectState,
