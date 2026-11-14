@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve, sep } from 'node:path'
 
 /**
  * The pass's sandbox decision and the wrap its `run:` commands go through (#1152).
@@ -14,7 +14,7 @@ import { dirname, join, resolve } from 'node:path'
  */
 import type { RunSandbox } from '@lingtai/actions'
 import { sandboxDecision, verdictOf, type HostVerdict, type SandboxBlock, type SandboxDecision } from '@lingtai/recipe'
-import { excludeEnv, excludeFileText, gitEffect, sandboxExcludePath } from '@lingtai/repo'
+import { excludeConfigText, excludeEnv, excludeFileText, gitEffect, sandboxExcludePath } from '@lingtai/repo'
 import { SandboxWrapFailed, standInExcludes, type ProjectAdditions, type SandboxApi } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
 import { Effect, Result } from 'effect'
@@ -76,25 +76,45 @@ const commandExclude = (mirror: string, worktree: string, env: Readonly<Record<s
         configured !== ''
           ? resolve(worktree, configured)
           : join(env['XDG_CONFIG_HOME'] || join(env['HOME'] ?? '', '.config'), 'git', 'ignore')
+      const gitdir = yield* gitEffect(['rev-parse', '--absolute-git-dir'], {
+        cwd: worktree,
+        env: env as NodeJS.ProcessEnv,
+      }).pipe(Effect.mapError((cause) => new SandboxWrapFailed({ cause })))
       const file = sandboxExcludePath(mirror, randomUUID())
+      const config = `${file}.config`
       yield* Effect.tryPromise({
         try: () =>
-          readFile(inheritedFrom, 'utf8')
-            .catch((err: NodeJS.ErrnoException) => {
-              if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return ''
-              throw err
-            })
-            .then((inherited) =>
-              mkdir(dirname(file), { recursive: true }).then(() =>
-                writeFile(file, excludeFileText(standInExcludes, inherited)),
-              ),
-            ),
+          readInherited(inheritedFrom, worktree)
+            .then((inherited) => mkdir(dirname(file), { recursive: true }).then(() => inherited))
+            .then((inherited) => writeFile(file, excludeFileText(standInExcludes, inherited)))
+            .then(() => writeFile(config, excludeConfigText(file))),
         catch: (cause) => new SandboxWrapFailed({ cause }),
       })
-      return file
+      return { config, gitdir: gitdir.trim(), file }
     }),
-    (file) => Effect.promise(() => rm(file, { force: true })),
+    ({ file, config }) => Effect.promise(() => Promise.all([rm(file, { force: true }), rm(config, { force: true })])),
   )
+
+/**
+ * Reads the inherited ignore file from outside the sandbox, so it is read the way the sandbox's own read policy
+ * would: a path inside the worktree is the agent's to write, and a symlink there would make this read follow it to
+ * a file the run may not read and copy it into the mirror. Such a file is refused, never followed. A missing file is empty.
+ */
+function readInherited(path: string, worktree: string): Promise<string> {
+  return Promise.all([realpath(path), realpath(worktree)])
+    .then(([real, root]) => {
+      const inside = (p: string, r: string): boolean => p === r || p.startsWith(r + sep)
+      const lexicallyInside = inside(path, worktree) || inside(path, root)
+      if (lexicallyInside && !inside(real, root)) {
+        throw new Error(`the global ignore file ${path} is in the worktree and resolves outside it (${real})`)
+      }
+      return readFile(real, 'utf8')
+    })
+    .catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return ''
+      throw err
+    })
+}
 
 /** `Sandbox.wrap`, closed over the pass's project, mirror and the decision's additions. */
 export const makeRunSandbox = (
@@ -102,14 +122,14 @@ export const makeRunSandbox = (
   pass: { readonly project: string; readonly mirror: string; readonly additions: ProjectAdditions },
 ): RunSandbox => ({
   wrap: (command, worktree, env) =>
-    Effect.flatMap(commandExclude(pass.mirror, worktree, env), (file) =>
+    Effect.flatMap(commandExclude(pass.mirror, worktree, env), ({ config, gitdir }) =>
       service.wrap({
         project: pass.project,
         worktree,
         mirror: pass.mirror,
         command,
         // srt's stand-ins are excluded for this command alone, never in the mirror's shared `info/exclude`.
-        env: excludeEnv(file, env),
+        env: excludeEnv(config, gitdir, env),
         project_additions: pass.additions,
       }),
     ),

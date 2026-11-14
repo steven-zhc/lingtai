@@ -28,14 +28,28 @@ export function excludeFileText(names: readonly string[], inheritedRaw = ''): st
   return `${head}${inherited.endsWith('\n') ? inherited : `${inherited}\n`}`
 }
 
-/** The environment that points git, for one command, at that file (`core.excludesFile`), keeping any config already passed. */
-export function excludeEnv(file: string, env: Readonly<Record<string, string>>): Record<string, string> {
+/** The config file that sets `core.excludesFile` to `excludeFile`, for `excludeEnv` to include. */
+export const excludeConfigText = (excludeFile: string): string =>
+  `[core]\n\texcludesFile = "${excludeFile.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"\n`
+
+/**
+ * The environment that points git at `configFile` (which sets `core.excludesFile`), keeping any config already
+ * passed — **for the worktree's own repository alone**. The command's descendants include other repositories
+ * (a submodule, a clone), and `/.vscode` is anchored to *their* root: a bare `core.excludesFile` would silently
+ * drop their `settings.json` from `git add -A`. So it is an `includeIf.gitdir:` on exactly this worktree's git
+ * directory (no trailing slash, so no `**`: a submodule's directory under it does not match).
+ */
+export function excludeEnv(
+  configFile: string,
+  gitdir: string,
+  env: Readonly<Record<string, string>>,
+): Record<string, string> {
   const n = Number.parseInt(env['GIT_CONFIG_COUNT'] ?? '0', 10)
   const at = Number.isFinite(n) && n > 0 ? n : 0
   return {
     ...env,
     GIT_CONFIG_COUNT: String(at + 1),
-    [`GIT_CONFIG_KEY_${at}`]: 'core.excludesFile',
-    [`GIT_CONFIG_VALUE_${at}`]: file,
+    [`GIT_CONFIG_KEY_${at}`]: `includeIf.gitdir:${gitdir}.path`,
+    [`GIT_CONFIG_VALUE_${at}`]: configFile,
   }
 }
