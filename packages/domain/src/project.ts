@@ -2,16 +2,16 @@
  * The Project aggregate: `prj-{project}`, alive as long as the project is
  * managed.
  *
- * It holds what is Lingtai's rather than the repository's: where to reach the
- * repository — owner and base branch — and the last **resolved configuration**,
- * which is the hash the recipe came out as and the commit it came from.
+ * It holds every fact about a project that is Lingtai's rather than the
+ * repository's (0128): where to reach the repository — owner and base branch —
+ * the last resolved configuration (a hash and the commit it came from, which is
+ * not the recipe), the **declared recipe** — the text a person wrote and its
+ * hash, from `ProjectRecipeChanged` — and the sandbox state its runs last met,
+ * from `ProjectSandboxObserved`.
  *
- * The recipe itself is not here. It lives in the managed repository and is
- * re-read from `origin/<base>` for every run, because a snapshot of it would be
- * a second source of truth (doc/decisions-archive/0005-config-in-target-repo.md). The
- * hash is kept instead: it says *whether the configuration changed* between two
- * runs, which is what a reader of the log needs, without pretending to be the
- * configuration.
+ * Both of those two are appended on the transition, never the state: see
+ * `recipeChange` and `sandboxObservation`. `ProjectRecipeChanged` does not set
+ * `project`, so a stream holding only it is neither registered nor pending.
  */
 import type { Envelope, ToAppend } from './envelope.ts'
 import type { PayloadOf } from './events.ts'
@@ -49,6 +49,15 @@ export interface ProjectState {
    */
   paused: { by: string; seq: bigint; at: Date } | null
 
+  /**
+   * The declared recipe on record. Null is *not recorded yet*, never an empty
+   * recipe. The seq and time are the event's, so *since when* needs no clock.
+   */
+  recipe: (PayloadOf<'ProjectRecipeChanged'> & { seq: bigint; at: Date }) | null
+
+  /** The sandbox state the project's runs last met, and the run that met it. */
+  sandboxObserved: (PayloadOf<'ProjectSandboxObserved'> & { seq: bigint; at: Date }) | null
+
   version: number
   lastSeq: bigint | null
 }
@@ -64,6 +73,8 @@ export const emptyProject: ProjectState = {
   fromSha: null,
   refused: null,
   paused: null,
+  recipe: null,
+  sandboxObserved: null,
   version: 0,
   lastSeq: null,
 }
@@ -103,6 +114,16 @@ export function reduceProjectEvent(state: ProjectState, event: Envelope): Projec
     case 'ProjectRefused': {
       const d = event.data as PayloadOf<'ProjectRefused'>
       return { ...state, ...at, refused: { ...d, seq: event.seq, at: event.at } }
+    }
+
+    case 'ProjectRecipeChanged': {
+      const d = event.data as PayloadOf<'ProjectRecipeChanged'>
+      return { ...state, ...at, recipe: { ...d, seq: event.seq, at: event.at } }
+    }
+
+    case 'ProjectSandboxObserved': {
+      const d = event.data as PayloadOf<'ProjectSandboxObserved'>
+      return { ...state, ...at, sandboxObserved: { ...d, seq: event.seq, at: event.at } }
     }
 
     case 'ProjectRecovered':
@@ -215,6 +236,36 @@ export function turnTransition(
     type: 'ProjectRefused',
     actor: 'conductor',
     data: { project, detail: seen.detail, ref: seen.ref, codeSha: seen.codeSha },
+  }
+}
+
+/**
+ * What to append when a recipe was read, given what the stream already holds.
+ * Null when the hash on record is the one seen. Needs no registered project.
+ * The envelope's actor is the person, or `conductor` for a file read.
+ */
+export function recipeChange(
+  state: ProjectState,
+  seen: PayloadOf<'ProjectRecipeChanged'>,
+): ToAppend<PayloadOf<'ProjectRecipeChanged'>> | null {
+  if (state.recipe?.sourceHash === seen.sourceHash) return null
+  return {
+    type: 'ProjectRecipeChanged',
+    actor: seen.by === 'file' ? 'conductor' : seen.by,
+    data: { sourceHash: seen.sourceHash, source: seen.source, by: seen.by },
+  }
+}
+
+/** What to append when a run met a sandbox state; null when it is the kind on record. */
+export function sandboxObservation(
+  state: ProjectState,
+  seen: PayloadOf<'ProjectSandboxObserved'>,
+): ToAppend<PayloadOf<'ProjectSandboxObserved'>> | null {
+  if (state.sandboxObserved?.kind === seen.kind) return null
+  return {
+    type: 'ProjectSandboxObserved',
+    actor: 'conductor',
+    data: { kind: seen.kind, runId: seen.runId },
   }
 }
 

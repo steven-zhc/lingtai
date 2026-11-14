@@ -444,6 +444,9 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     `${personName(need(d, 'by'))} asked to continue ${attemptName(r, need(d, 'runId'))} of #${need(d, 'issue')}`,
   ProjectOnboardingStarted: (d) =>
     `${personName(need(d, 'by'))} started onboarding ${need(d, 'slug')} on ${need(d, 'base')}`,
+  ProjectRecipeChanged: (d) =>
+    `The recipe changed, by ${need(d, 'by') === 'file' ? 'its file' : personName(need(d, 'by'))}`,
+  ProjectSandboxObserved: (d) => `A run met the sandbox ${need(d, 'kind')}`,
   ProjectRefused: (d) => `${need(d, 'project')} was refused: ${clip(d['detail'])}`,
   ProjectRecovered: (d) => `${need(d, 'project')} recovered`,
   ProjectPaused: (d) => `${personName(need(d, 'by'))} paused ${need(d, 'project')}`,

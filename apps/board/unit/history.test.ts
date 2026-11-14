@@ -274,6 +274,8 @@ const SAMPLES = {
   ],
   ProjectOnboardingStarted: [{ slug: 'lingtai', base: 'main', by: 'human:steven' }],
   ProjectConfigured: [{ project: 'lingtai', owner: null, base: null, configHash: 'c'.repeat(40), fromSha: SHA }],
+  ProjectRecipeChanged: [{ sourceHash: 'a'.repeat(64), source: 'a: 1\n', by: 'file' }],
+  ProjectSandboxObserved: [{ kind: 'degraded', runId: 'run-1' }],
   ProjectRefused: [{ project: 'lingtai', detail: 'no recipe', ref: null, codeSha: null }],
   ProjectRecovered: [{ project: 'lingtai', ref: null, codeSha: null }],
   ProjectPaused: [{ project: 'lingtai', by: 'human:steven' }],

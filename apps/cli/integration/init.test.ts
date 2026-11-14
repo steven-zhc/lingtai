@@ -360,6 +360,8 @@ describe('lingtai init (#186)', () => {
       fromSha: 'abc123f',
       refused: null,
       paused: null,
+      recipe: null,
+      sandboxObserved: null,
       version: 1,
       lastSeq: 1n,
     }
@@ -385,6 +387,8 @@ describe('lingtai init (#186)', () => {
       fromSha: 'sha',
       refused: null,
       paused: null,
+      recipe: null,
+      sandboxObserved: null,
       version: 1,
       lastSeq: 1n,
     }
@@ -407,6 +411,8 @@ describe('lingtai init (#186)', () => {
       fromSha: 'sha',
       refused: null,
       paused: null,
+      recipe: null,
+      sandboxObserved: null,
       version: 1,
       lastSeq: 1n,
     }
@@ -431,6 +437,8 @@ describe('lingtai init (#186)', () => {
       fromSha: 'sha',
       refused: null,
       paused: null,
+      recipe: null,
+      sandboxObserved: null,
       version: 1,
       lastSeq: 1n,
     }
