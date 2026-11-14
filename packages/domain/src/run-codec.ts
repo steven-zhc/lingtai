@@ -84,6 +84,7 @@ const SandboxInvocation = z.strictObject({
   boundary: SandboxBoundary.nullable(),
   refusals: SandboxConnectionsRefused.shape.read.nullable(),
   ended: z.boolean(),
+  lost: z.boolean().optional(),
 })
 
 const StoredRun = z.strictObject({

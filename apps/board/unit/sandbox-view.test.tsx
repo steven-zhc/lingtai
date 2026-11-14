@@ -507,4 +507,36 @@ describe('what the record does not say is not drawn as fact (#1161, round 1)', (
     expect(sandboxViewOf(pending, 'p').rows[0]!.refusals).toEqual({ kind: 'pending' })
     expect(sandboxViewOf(pending, 'p', true).rows[0]!.refusals).toEqual({ kind: 'lost' })
   })
+
+  it('does not call a continued attempt lost: a RunFailed marks only the invocations open when it arrived', () => {
+    const state = fold((e) => [
+      e('SandboxBoundaryRecorded', { ...keys('c1'), boundary: sandboxed }),
+      e('RunFailed', { kind: 'out-of-turns', detail: 'limit' }),
+      e('StepStarted', { runId: RUN, step: 'implement', round: 1 }),
+      e('SandboxBoundaryRecorded', { ...keys('c2'), boundary: sandboxed }),
+    ])
+    expect(sandboxViewOf(state, 'p').rows.map((r) => r.refusals.kind)).toEqual(['lost', 'pending'])
+  })
+
+  it('says none refused, with no caveat, for a complete read of telemetry alone', () => {
+    const state = fold((e) => [
+      e('SandboxBoundaryRecorded', { ...keys('c1'), boundary: sandboxed }),
+      e('SandboxConnectionsRefused', {
+        ...keys('c1'),
+        read: { kind: 'entries', complete: true, entries: [entry('o.sentry.io', 4, '2026-11-01T00:00:00.000Z', true)] },
+      }),
+      ended(e),
+    ])
+    const view = sandboxViewOf(state, 'p')
+    expect(view.rows[0]!.refusals).toEqual({ kind: 'none refused' })
+    expect(view.blocked.caveats).toEqual([])
+  })
+
+  it('finds a judge invocation under judge:<when>, not the recipe name', () => {
+    const state = fold((e) => [
+      e('SandboxBoundaryRecorded', { ...keys('c1', 'proposed', 'judge:findings'), boundary: sandboxed }),
+    ])
+    expect(markOfAction(state.sandbox, 'proposed', 'judge:findings')?.state).toBe('sandboxed')
+    expect(markOfAction(state.sandbox, 'proposed', 'the approach')).toBeNull()
+  })
 })

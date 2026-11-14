@@ -339,7 +339,9 @@ export function RecipeGiven({
                       )
                     }
                     const { does, bound } = describeAction(action, undefined, p.step)
-                    const mark = markOfAction(sandbox, p.step, name)
+                    // A judge records as `judge:<when>` at `proposed`, whatever the recipe called it (conduct.ts).
+                    const recorded = 'judge' in action ? `judge:${(action as { when: string }).when}` : name
+                    const mark = markOfAction(sandbox, p.step, recorded)
                     return (
                       <details key={name} className="act">
                         <summary>

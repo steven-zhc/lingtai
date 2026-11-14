@@ -27,6 +27,8 @@ function Refusals({ reading }: { reading: RefusalReading }) {
           {reading.count} refused{reading.incomplete ? ' or more (the list is incomplete)' : ''}
         </span>
       )
+    case 'none refused':
+      return <span>none refused</span>
     case 'none recorded':
       return <span>none recorded</span>
     case 'pending':

@@ -37,6 +37,7 @@ export interface Mark {
  */
 export type RefusalReading =
   | { readonly kind: 'refused'; readonly count: number; readonly incomplete: boolean }
+  | { readonly kind: 'none refused' }
   | { readonly kind: 'none recorded' }
   | { readonly kind: 'pending' }
   | { readonly kind: 'lost' }
@@ -138,23 +139,25 @@ export function markOf(boundary: SandboxInvocation['boundary']): Mark {
   }
 }
 
-const isOver = (lifecycle: AttemptState['lifecycle']) =>
-  lifecycle.status === 'finished' || lifecycle.status === 'failed'
+// `failed` is not here: an attempt may be continued after a RunFailed, so a failure is read per invocation (`lost`).
+const isOver = (lifecycle: AttemptState['lifecycle']) => lifecycle.status === 'finished'
 
 function readingOf(i: SandboxInvocation, over: boolean): RefusalReading {
   if (i.refusals !== null) {
     if (i.refusals.kind === 'unreadable') return { kind: 'unreadable', reason: i.refusals.reason }
     // Telemetry is recorded and not counted: *Blocked* would never be empty otherwise.
     const count = i.refusals.entries.filter((e) => !e.telemetry).reduce((n, e) => n + e.count, 0)
+    // A complete read with nothing but telemetry is a confirmed empty result, not a missing record.
     return count === 0 && i.refusals.complete
-      ? { kind: 'none recorded' }
+      ? { kind: 'none refused' }
       : { kind: 'refused', count, incomplete: !i.refusals.complete }
   }
   // Nothing is appended when nothing was refused, and nothing either when the append failed (the conductor swallows
   // that), so even after the step ended absence is *none recorded* and never *none refused*.
   if (i.boundary === null || i.boundary.kind !== 'sandboxed') return { kind: 'not applicable' }
   if (i.ended) return { kind: 'none recorded' }
-  return over ? { kind: 'lost' } : { kind: 'pending' }
+  // `i.lost`: a RunFailed arrived while it was open; a later invocation of a continued attempt is still running.
+  return over || i.lost === true ? { kind: 'lost' } : { kind: 'pending' }
 }
 
 const labelOf = (i: Pick<SandboxInvocation, 'step' | 'action' | 'runtime'>) =>

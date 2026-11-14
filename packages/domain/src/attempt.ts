@@ -71,6 +71,8 @@ export interface SandboxInvocation {
   readonly refusals: PayloadOf<'SandboxConnectionsRefused'>['read'] | null
   /** A `StepEnded` for this invocation's step arrived after it: the refusals were read by then. */
   readonly ended: boolean
+  /** A `RunFailed` arrived while this invocation was still open: its refusals were never read. A later invocation of a continued attempt is not marked. */
+  readonly lost?: boolean
 }
 
 export interface StepState {
@@ -555,6 +557,9 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
         ...at,
         failure: { kind: d.kind, detail: d.detail },
         lifecycle: { status: 'failed', kind: d.kind, detail: d.detail },
+        ...(state.sandbox?.some((i) => !i.ended) === true
+          ? { sandbox: state.sandbox.map((i) => (i.ended ? i : { ...i, lost: true })) }
+          : {}),
       }
     }
 
