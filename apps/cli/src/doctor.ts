@@ -3527,6 +3527,8 @@ export function sandboxRows(
     const recipeFor = recipeLookup({ ...reach, sandboxHost: 'skip' })
     let asked = false
     if (projects === null) {
+      // A list that could not be read says nothing about whether anyone asks: measure rather than assume no.
+      asked = true
       rows.push({ name: 'sandbox: projects', status: 'skip', detail: 'the project list could not be read' })
     } else {
       for (const state of projects) {
@@ -3536,6 +3538,8 @@ export function sandboxRows(
           (): null => null,
         )
         if (resolved === null) {
+          // A recipe that could not be read may well ask: fail closed and let the canary run.
+          asked = true
           rows.push({
             name: `sandbox: ${state.project}`,
             status: 'skip',

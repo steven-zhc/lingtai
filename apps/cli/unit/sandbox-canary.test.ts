@@ -18,7 +18,7 @@ type Behaviour = {
   /** What each command does; absent means the answer a sound sandbox gives. */
   readPlanted?: 'refused' | 'readable' | 'readable-exit-1'
   readVisible?: 'ok' | 'fails'
-  example?: 'refused' | 'reachable'
+  example?: 'refused' | 'reachable' | 'times-out'
   github?: 'ok' | 'fails' | 'times-out'
   wrapFails?: boolean
 }
@@ -66,7 +66,10 @@ const scenario = (b: Behaviour = {}) => {
         }
         const url = argv[argv.length - 1]!
         if (url.includes('example.com')) {
-          return Effect.succeed({ exit: b.example === 'reachable' ? 0 : 56, stdout: '' })
+          return Effect.succeed({
+            exit: b.example === 'reachable' ? 0 : b.example === 'times-out' ? 28 : 56,
+            stdout: '',
+          })
         }
         if (b.github === 'times-out') return Effect.fail(new Error('timed out'))
         return Effect.succeed({ exit: b.github === 'fails' ? 6 : 0, stdout: '' })
@@ -108,6 +111,10 @@ describe('the sandbox canary judges by running, never by reading (#1159)', () =>
       expect(r.kind).toBe('could-not-run')
       expect(r).toMatchObject({ why: expect.stringContaining('could not run') })
     }
+  })
+
+  it('is could-not-run when a negative timed out instead of being refused', async () => {
+    expect((await result({ example: 'times-out' })).kind).toBe('could-not-run')
   })
 
   it('is could-not-run on a timeout, and when the wrap throws', async () => {

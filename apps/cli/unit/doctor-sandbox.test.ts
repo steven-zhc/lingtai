@@ -98,6 +98,18 @@ describe('the sandbox rows (#1159)', () => {
     expect(named(rows, 'sandbox: broken')).toMatchObject({ status: 'skip' })
   })
 
+  it('runs the canary when the project list or a recipe cannot be read', async () => {
+    const sandbox = fakeSandbox({ can: true, canary: Effect.succeed({ kind: 'held' }) })
+    const rows = await Effect.runPromise(
+      sandboxRows({ ...sandbox, recipe: (() => Effect.fail(new Error('transient'))) as never }, (() =>
+        Effect.succeed([{ project: 'app', owner: 'me', base: 'main' }])) as never),
+    )
+    expect(named(rows, 'sandbox: canary').detail).not.toContain('no project asks')
+    const down = fakeSandbox({ can: true })
+    await Effect.runPromise(sandboxRows({ ...down }, (() => Effect.fail(new Error('db'))) as never))
+    expect(down.asked.canary).toBe(1)
+  })
+
   it('fails the canary row for a leak, a run that could not be made, and a throw', async () => {
     const run = async (canary: Effect.Effect<CanaryResult>) =>
       named((await rowsFor({ app: block() }, fakeSandbox({ can: true, canary }))).rows, 'sandbox: canary')

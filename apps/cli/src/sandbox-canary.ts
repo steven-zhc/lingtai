@@ -67,6 +67,12 @@ const said = (e: unknown): string => {
   return String(e)
 }
 
+/**
+ * Exits that say the command did not get to ask: a signal or no exit (null), curl's DNS failure (6) and
+ * timeout (28), and the shell's not-executable (126) and not-found (127). None of them is a refusal.
+ */
+const INCONCLUSIVE: readonly (number | null)[] = [null, 6, 28, 126, 127]
+
 const couldNot = (why: string): CanaryResult => ({ kind: 'could-not-run', why })
 
 /**
@@ -153,7 +159,16 @@ export const runCanary = (
       const which: ('read' | 'network')[] = []
       if (readPlanted.run.exit === 0 || readPlanted.run.stdout.includes(secret)) which.push('read')
       if (reachOff.run.exit === 0) which.push('network')
-      return which.length === 0 ? ({ kind: 'held' } as const) : ({ kind: 'leaked', which } as const)
+      if (which.length > 0) return { kind: 'leaked', which } as const
+      // A negative only counts as refused when it ran far enough to be refused.
+      const unproven = [
+        INCONCLUSIVE.includes(readPlanted.run.exit)
+          ? 'the read of the planted file did not finish as a refusal'
+          : undefined,
+        INCONCLUSIVE.includes(reachOff.run.exit) ? 'the connection to example.com timed out or never ran' : undefined,
+      ].filter((s): s is string => s !== undefined)
+      if (unproven.length > 0) return couldNot(`the canary could not run — ${unproven.join('; ')}`)
+      return { kind: 'held' } as const
     }),
   ).pipe(
     Effect.catchCause((cause) =>
