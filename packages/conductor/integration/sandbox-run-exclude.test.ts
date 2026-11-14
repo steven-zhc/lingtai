@@ -101,6 +101,20 @@ describe('makeRunSandbox', () => {
     expect(t.wraps).toHaveLength(1)
   })
 
+  it('honours a shared ignore file beside a glob deny rule that does not match it', async () => {
+    const t = setup()
+    const shared = join(t.dir, 'shared-ignore')
+    writeFileSync(shared, '.env.local\n')
+    symlinkSync(shared, join(t.worktree, 'project-ignore'))
+    const run = makeRunSandbox(t.service, {
+      project: 'app',
+      mirror: t.mirror,
+      additions: { deny: [`${t.dir}/*.secret`] },
+    })
+    await Effect.runPromise(Effect.scoped(run.wrap(['/bin/sh', '-c', 'x'], t.worktree, t.env)))
+    expect(t.wraps).toHaveLength(1)
+  })
+
   it('refuses a symlink to a file the read policy denies, and copies nothing', async () => {
     const t = setup()
     const secret = join(t.dir, 'secret')

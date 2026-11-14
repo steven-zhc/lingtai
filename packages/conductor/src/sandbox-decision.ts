@@ -124,20 +124,63 @@ function readInherited(
   path: string,
   policy: { readonly denyRead: readonly string[]; readonly allowRead: readonly string[] },
 ): Promise<string> {
-  const inside = (p: string, r: string): boolean => p === r || p.startsWith(r.endsWith(sep) ? r : r + sep)
-  // A policy path is lexical and may itself sit behind a symlink (macOS `/var`): compare both spellings.
+  // srt reads an entry as a glob, so it is matched as one against the file's real path or any directory above it;
+  // a pattern's static prefix alone would turn `/srv/shared/*.secret` into a denial of all of `/srv/shared`.
+  const ancestors = (p: string): string[] => {
+    const out = [p]
+    for (let d = dirname(p); d !== out[out.length - 1]; d = dirname(d)) out.push(d)
+    return out
+  }
+  const regexOf = (glob: string): RegExp => {
+    let re = ''
+    let braces = 0
+    for (let i = 0; i < glob.length; i++) {
+      const c = glob[i]!
+      if (c === '*') {
+        if (glob[i + 1] === '*') {
+          i++
+          if (glob[i + 1] === '/') i++
+          re += glob[i] === '/' ? '(?:.*/)?' : '.*'
+        } else re += '[^/]*'
+      } else if (c === '?') re += '[^/]'
+      else if (c === '[') {
+        const end = glob.indexOf(']', i + 2)
+        if (end === -1) re += '\\['
+        else {
+          re += `[${glob.slice(i + 1, end).replace(/^!/, '^')}]`
+          i = end
+        }
+      } else if (c === '{') {
+        braces++
+        re += '(?:'
+      } else if (c === '}' && braces > 0) {
+        braces--
+        re += ')'
+      } else if (c === ',' && braces > 0) re += '|'
+      else re += c.replace(/[.+^$()|\\]/g, '\\$&')
+    }
+    return new RegExp(`^${re}$`)
+  }
+  // A policy path is lexical and may itself sit behind a symlink (macOS `/var`): match both spellings.
   const spellings = (entry: string): Promise<string[]> => {
     const prefix = staticPrefix(entry)
     return realpath(prefix)
       .catch(() => prefix)
-      .then((real) => (real === prefix ? [prefix] : [prefix, real]))
+      .then((real) => (real === prefix ? [entry] : [entry, real + entry.slice(prefix.length)]))
   }
   const all = (entries: readonly string[]): Promise<string[]> =>
     Promise.all(entries.map(spellings)).then((lists) => lists.flat())
+  const covers = (entries: readonly string[], real: string): boolean => {
+    const paths = ancestors(real)
+    return entries.some((e) => {
+      const re = regexOf(e)
+      return paths.some((p) => re.test(p))
+    })
+  }
   return realpath(path)
     .then((real) =>
       Promise.all([all(policy.allowRead), all(policy.denyRead)]).then(([allowed, denied]) => {
-        if (!allowed.some((r) => inside(real, r)) && denied.some((r) => inside(real, r))) {
+        if (!covers(allowed, real) && covers(denied, real)) {
           throw new Error(`the global ignore file ${path} resolves to ${real}, which the sandbox's read policy denies`)
         }
         return readFile(real, 'utf8')
