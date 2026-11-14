@@ -20,6 +20,8 @@ import {
   RunKeptUncommitted,
   RunProducedDiff,
   RunRefsPublished,
+  SandboxBoundary,
+  SandboxConnectionsRefused,
   RUN_FAILURE_KINDS,
   RuntimeId,
   Step,
@@ -70,6 +72,19 @@ const StepState = z.strictObject({
   clipped: z.strictObject({ read: z.number(), of: z.number() }).optional(),
 })
 
+// Keys in the order `withSandbox` writes them.
+const SandboxInvocation = z.strictObject({
+  commandId: z.string(),
+  step: Step,
+  action: z.string(),
+  runtime: z.string().optional(),
+  runId: z.string().nullable(),
+  version: z.number(),
+  boundary: SandboxBoundary.nullable(),
+  refusals: SandboxConnectionsRefused.shape.read.nullable(),
+  ended: z.boolean(),
+})
+
 const StoredRun = z.strictObject({
   lifecycle: Lifecycle,
   ticketId: z.string().nullable(),
@@ -116,6 +131,8 @@ const StoredRun = z.strictObject({
   route: StoredRoute.nullable(),
   published: RunRefsPublished.nullable(),
   kept: z.array(RunKeptUncommitted),
+  /** #1161; absent until a sandbox event is reduced. */
+  sandbox: z.array(SandboxInvocation).optional(),
   version: z.number(),
   lastSeq: Seq.transform((s) => BigInt(s)).nullable(),
 })
@@ -173,7 +190,8 @@ export const attemptReducer: Reducer<AttemptState> = {
   // the `StepEnded` version and action it came from.
   // 4: a `StepState` keeps the review's `summary` and `clipped` (#893); a snapshot
   // cut before this lacks them.
-  version: 4,
+  // 5: the sandbox events fold into `sandbox` (#1161); a version-4 snapshot was cut by a reducer that ignored them.
+  version: 5,
   initial: emptyAttempt,
   reduceEvent: reduceAttemptEvent,
   encode: encodeRun,
