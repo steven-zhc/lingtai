@@ -128,12 +128,21 @@ The streams that exist, and what each holds:
    - **the file is missing or unreadable while the Project has a recipe** —
      the module writes the file from the Project; a missing projection is
      rebuilt, never read as *no recipe*;
-   - **the file does not resolve** (invalid YAML, a refused field) — nothing
-     is appended, and the read fails with the resolver's refusal, as a recipe
-     that will not resolve fails today.
+   - **the file's text is not a valid declaration** — YAML that does not
+     parse, or a field the recipe's own schema refuses — nothing is appended,
+     and the read fails with that refusal. This check is the declared text's
+     alone: no host probe, no signed-in runtime, no machine file and no preset
+     is consulted, so a hand edit is recorded even while this host cannot
+     sandbox or two runtimes are signed in; whether the recipe then *resolves*
+     on this host is the attempt's question, refused there as today.
    Two readers that notice the same edit at once both append at the version
    they read; the second meets a concurrency error, re-reads, finds the hash
    already recorded, and appends nothing.
+   A recipe written by `lingtai add` or setup before the project is registered
+   is appended all the same, so *the event first, then the file* holds from the
+   first write; an add abandoned before registration leaves a `prj-` stream
+   with a recipe and no registration, which is listed as neither registered
+   nor pending.
 
 7. **One module is the way in: `@lingtai/project`, and it owns the whole
    stream.** It exports `loadProject(project)` — the Project, its recipe
