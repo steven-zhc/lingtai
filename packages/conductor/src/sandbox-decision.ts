@@ -59,7 +59,7 @@ export const decidePassSandbox = (
  *
  * It also puts the operator's Codex profile denies on the command's wrap (#1155, 0127 §16), read per call through
  * the `HOME` the command's own environment carries. An unreadable profile refuses only a recipe that names Codex;
- * otherwise the command goes ahead without them. A `run:` command has no run log, so that case leaves no note.
+ * otherwise the command goes ahead without them and the action's log says so.
  */
 export const makeRunSandbox = (
   service: SandboxApi,
@@ -72,12 +72,13 @@ export const makeRunSandbox = (
     readonly readCodexPermissions?: (env: Record<string, string>, cwd: string) => UserPermissions
   },
 ): RunSandbox => ({
-  wrap: (command, worktree, env) => {
+  wrap: (command, worktree, env, log) => {
     const profile = operatorCodexDenies(
       (pass.readCodexPermissions ?? userPermissionsAt)(env, worktree),
       { home: env.HOME, cwd: worktree },
       pass.codexNamed,
     )
+    if (profile.ok && profile.note !== undefined) log?.note('sandbox', profile.note)
     if (!profile.ok) return Effect.fail(new SandboxWrapFailed({ cause: new Error(profile.refusal.sentence) }))
     const needed = [worktree, pass.mirror, pass.cache]
     const colliding = collidingDenies(profile.paths, needed)

@@ -320,3 +320,10 @@ describe('danger-full-access', () => {
     expect(inv().join(' ')).not.toContain('danger-full-access')
   })
 })
+
+describe('an absent Codex profile (#1155)', () => {
+  it('is none, not unreadable', async () => {
+    const { userPermissionsAt } = await import('../src/codex.ts')
+    expect(userPermissionsAt({ HOME: '/nonexistent/h' }, '/nonexistent/c')).toEqual({ kind: 'none' })
+  })
+})

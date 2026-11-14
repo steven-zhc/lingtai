@@ -86,7 +86,7 @@ describe('decidePassSandbox', () => {
 })
 
 describe('makeRunSandbox puts the operator Codex profile denies on a run: command (#1155)', () => {
-  const wrapOf = (profile: UserPermissions, codexNamed: boolean) => {
+  const wrapOf = (profile: UserPermissions, codexNamed: boolean, log?: { note: (l: string, d?: string) => void }) => {
     const seen: WrapInput[] = []
     const { service } = fakeService('can')
     const api: SandboxApi = {
@@ -105,7 +105,7 @@ describe('makeRunSandbox puts the operator Codex profile denies on a run: comman
       readCodexPermissions: () => profile,
     })
     const result = Effect.runPromise(
-      Effect.scoped(run.wrap(['make'], '/work/tree', { HOME: '/home/op' })).pipe(Effect.result),
+      Effect.scoped(run.wrap(['make'], '/work/tree', { HOME: '/home/op' }, log)).pipe(Effect.result),
     )
     return { seen, result }
   }
@@ -123,6 +123,13 @@ describe('makeRunSandbox puts the operator Codex profile denies on a run: comman
     const plain = wrapOf({ kind: 'unreadable', why: 'bad' }, false)
     expect((await plain.result)._tag).toBe('Success')
     expect(plain.seen[0]!.caller_additions).toBeUndefined()
+  })
+
+  it("notes an unreadable profile on the action's log when the recipe names no Codex", async () => {
+    const notes: string[] = []
+    const { result } = wrapOf({ kind: 'unreadable', why: 'bad' }, false, { note: (_l, d = '') => void notes.push(d) })
+    expect((await result)._tag).toBe('Success')
+    expect(notes.join('\n')).toContain("the operator's Codex profile could not be read: bad")
   })
 
   it('refuses a deny that contains the worktree', async () => {

@@ -12,6 +12,7 @@
  * What is left here is exactly the translation from "a command ended" to "a
  * verdict about a commit", which is the part that is genuinely about actions.
  */
+import type { RunTrace } from '@lingtai/agent'
 import { parseDuration } from '@lingtai/recipe'
 import {
   type SandboxPolicyRefused,
@@ -42,6 +43,8 @@ export interface RunSandbox {
     command: readonly string[],
     worktree: string,
     env: Record<string, string>,
+    /** The run's log, for a note about protection the wrap left out (#1155). */
+    log?: RunTrace,
   ): Effect.Effect<Wrapped, SandboxWrapError, Scope.Scope>
 }
 
@@ -131,7 +134,7 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
             ? yield* spawn(base)
             : // The scope encloses the command: closing it cleans srt up, which must not happen under a running child.
               yield* Effect.scoped(
-                spec.sandbox.wrap(['/bin/sh', '-c', spec.run], context.cwd, spec.env).pipe(
+                spec.sandbox.wrap(['/bin/sh', '-c', spec.run], context.cwd, spec.env, context.log).pipe(
                   Effect.flatMap((wrapped) =>
                     spawn({ ...base, wrapped: { argv: wrapped.argv, env: wrapped.env }, ownGroup: true }),
                   ),

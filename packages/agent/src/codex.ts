@@ -667,6 +667,8 @@ export function userPermissionsAt(env: Record<string, string>, cwd: string): Use
   try {
     text = readFileSync(path, 'utf8')
   } catch (error) {
+    // No profile is no profile (#1155): only a file that is there and cannot be read is unreadable.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'none' }
     return { kind: 'unreadable', why: `${path}: ${(error as Error).message}` }
   }
   const verdict = userPermissionsFrom(text)
