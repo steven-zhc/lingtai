@@ -7,16 +7,19 @@
  *     board/          Next's standalone output; server.js is apps/board/server.js
  *     prompts/        the ticket template read before a pass
  *     packages/hook/  the native hook required before a pass
+ *     vendor/         srt's apply-seccomp (Linux) and proxy-agent jar, pinned by hash (#1154)
  *
  * 0010 still governs development — the source runs unbuilt, and nothing here
  * changes how a checkout runs. This is for shipping, as `packages/hook`'s Bun
  * binary already was (0002).
  */
 import { spawnSync } from 'node:child_process'
-import { cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { chmodSync, cpSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 
 import { build as esbuild } from 'esbuild'
+
+import { readVendor } from './vendor.ts'
 
 /** `apps/release/src` → the repository root. */
 const ROOT = resolve(import.meta.dirname, '../../..')
@@ -27,13 +30,22 @@ export interface BuildOptions {
   root?: string
 }
 
-export async function buildRelease({ out, root = ROOT }: BuildOptions): Promise<void> {
+export async function buildRelease({ out, root = ROOT }: BuildOptions): Promise<{ notes: string[] }> {
+  // Checked before `out` is emptied, so a refusal leaves no half-built dist/.
+  const vendor = readVendor(root, process.platform, process.arch)
   rmSync(out, { recursive: true, force: true })
   mkdirSync(out, { recursive: true })
   buildBoard(root, out)
   await bundleCli(root, out)
   buildAttemptAssets(root, out)
   writePackage(root, out)
+  for (const file of vendor.files) {
+    const dest = join(out, file.path)
+    mkdirSync(dirname(dest), { recursive: true })
+    writeFileSync(dest, file.bytes, { mode: file.mode })
+    chmodSync(dest, file.mode)
+  }
+  return { notes: vendor.note ? [vendor.note] : [] }
 }
 
 /** Build the platform-specific hook and copy the prompt beside the CLI. */
@@ -209,6 +221,7 @@ function commit(root: string): string {
 if (process.argv[1] === import.meta.filename) {
   const at = process.argv.indexOf('--out')
   const out = resolve(at > 0 && process.argv[at + 1] ? process.argv[at + 1]! : join(ROOT, 'dist'))
-  await buildRelease({ out })
+  const { notes } = await buildRelease({ out })
   console.log(`built ${out}`)
+  for (const note of notes) console.log(note)
 }

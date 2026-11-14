@@ -79,7 +79,7 @@ afterAll(() => {
 
 describe('pnpm build', () => {
   it('writes the CLI and everything a pass reads beside it', () => {
-    expect(readdirSync(first).sort()).toEqual(['board', 'lingtai.cjs', 'package.json', 'packages', 'prompts'])
+    expect(readdirSync(first).sort()).toEqual(['board', 'lingtai.cjs', 'package.json', 'packages', 'prompts', 'vendor'])
     expect(existsSync(join(first, 'board', 'apps', 'board', 'server.js'))).toBe(true)
     const hook = join(first, 'packages', 'hook', 'bin', 'lingtai-hook')
     expect(existsSync(hook)).toBe(true)
