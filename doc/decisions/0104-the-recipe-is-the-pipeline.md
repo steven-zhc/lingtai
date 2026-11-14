@@ -8,8 +8,10 @@ is `steps:` — the ten step names in attempt order, each a list of plugins writ
 Ansible-style with the plugin name as the key. A setting is written once, on the
 step that uses it, and every field is validated when the recipe resolves, before
 anything is claimed; the one templated field is judged again when it expands.
-The canonical recipe a run was given is appended to the log beside its hash, as
-a record nothing reads back. `~/.lingtai/config.yml` is the machine's file:
+The recipe is part of the Project aggregate ([0128](0128-the-project-aggregate-holds-every-project-fact.md)):
+every change to it is an event on `prj-{project}`, and the file is a projection
+of those events that `@lingtai/project` keeps, a hand edit being recorded when
+it is next read. `~/.lingtai/config.yml` is the machine's file:
 which store holds the log, the GitHub App, and where the board listens — and
 nothing about how a project's work is run, which runtime included (`#372`).
 
@@ -33,7 +35,8 @@ in the source.
    repository for it, so a `.lingtai/config.yaml` committed there is an ordinary
    file that changes nothing. Onboarding a repository commits nothing to it. The
    file is outside every worktree, so no agent can reach it. The file is read on
-   every resolve, so an edit reaches the next attempt without a restart.
+   every resolve, so an edit reaches the next attempt without a restart. It is
+   read and written only through `@lingtai/project` (0128 §6–§7).
 
 2. **The file shape is `version: 2` and `steps:`.** The top-level keys are
    `version`, `extends`, `repo`, `source`, `env`, `steps`, `discuss`,

@@ -5,7 +5,9 @@
 An agent runs inside one boundary, `srt`, with a policy Lingtai writes: which
 files it may read and write, which hosts it may connect to, and what it is
 given of the operator's own accounts. The `sandbox` block of the recipe owns
-containment and there is no tier. This ADR is the decision;
+containment and there is no tier. A project's sandbox state — what its recipe
+asks and what its runs met — is reduced from `prj-{project}`
+([0128](0128-the-project-aggregate-holds-every-project-fact.md) §5). This ADR is the decision;
 [the 0.14 plan](../milestone/0.14.0/0.14.md) holds what a person sees and sets
 on the board. Measurements are
 [experiment 017](../milestone/0.14.0/017-srt-under-lingtai.md)'s.

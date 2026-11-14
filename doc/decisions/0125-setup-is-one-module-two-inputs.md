@@ -61,7 +61,9 @@ the repository ([0104](0104-the-recipe-is-the-pipeline.md) §1).
      ([0103](0103-a-pass-is-ten-fixed-steps.md)).
 
 6. **There is no edit wizard.** Changing an existing project is editing its recipe
-   YAML. Saving resolves the recipe and writes nothing that fails to resolve —
+   YAML, through `@lingtai/project`'s `changeRecipe`, which appends the change on
+   `prj-{project}` and then writes the file
+   ([0128](0128-the-project-aggregate-holds-every-project-fact.md) §6). Saving resolves the recipe and writes nothing that fails to resolve —
    the check `lingtai add`, `lingtai doctor` and the daemon already share
    ([0104](0104-the-recipe-is-the-pipeline.md) §11).
 
