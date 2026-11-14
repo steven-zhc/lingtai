@@ -917,6 +917,77 @@ export const RunFinished = z.object({
 })
 
 /**
+ * The policy one sandboxed invocation ran under, as `@lingtai/sandbox`'s `resolvedPolicy` returns it. A test in that
+ * package parses its value through this schema, so a field added on one side alone fails there.
+ */
+export const SandboxPolicyValue = z.object({
+  allowedDomains: z.array(z.string()),
+  allowRead: z.array(z.string()),
+  allowWrite: z.array(z.string()),
+  denyRead: z.array(z.string()),
+  denyWrite: z.array(z.string()),
+  weakerNetworkIsolation: z.boolean(),
+  srtVersion: z.string(),
+})
+
+/**
+ * Which sandbox boundary one invocation ran under. Mirrors the recipe's `sandboxDecision` and not `Tier`, whose
+ * `sandboxed` means something else (0007). A reader that finds none for an invocation reads it as *unknown*.
+ */
+export const SandboxBoundary = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('sandboxed'), srtVersion: z.string(), policy: SandboxPolicyValue }),
+  z.object({
+    kind: z.literal('unsandboxed'),
+    reason: z.enum(['off by choice', 'degraded']),
+    why: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('refused'), why: z.string() }),
+])
+
+/** The keys that name one invocation. `runId` is null for a `run:` command, `runtime` absent. */
+const SandboxInvocationKeys = {
+  step: Step,
+  action: z.string(),
+  runtime: z.string().optional(),
+  runId: z.string().nullable(),
+  commandId: z.string(),
+}
+
+/**
+ * One invocation's boundary, appended before its child starts so a run that died still has it.
+ *
+ * @summary The sandbox boundary one action's invocation ran under.
+ */
+export const SandboxBoundaryRecorded = z.object({
+  ...SandboxInvocationKeys,
+  boundary: SandboxBoundary,
+})
+
+/** One refused host: `host` and `port` are null when srt's line could not be parsed, and `line` keeps it whole. */
+export const SandboxRefusedEntry = z.object({
+  host: z.string().nullable(),
+  port: z.number().int().nullable(),
+  line: z.string().optional(),
+  count: z.number().int(),
+  firstAt: z.string(),
+  telemetry: z.boolean(),
+})
+
+/**
+ * The connections the sandbox refused one invocation. `complete: false` means srt's 100-entry store evicted some,
+ * so the list is a lower bound. Appended only when something was refused, the read failed or entries were lost.
+ *
+ * @summary The outbound connections the sandbox refused one invocation.
+ */
+export const SandboxConnectionsRefused = z.object({
+  ...SandboxInvocationKeys,
+  read: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('entries'), entries: z.array(SandboxRefusedEntry), complete: z.boolean() }),
+    z.object({ kind: z.literal('unreadable'), reason: z.string() }),
+  ]),
+})
+
+/**
  * How a run ended when it did not end well.
  *
  * The list is the value and the type is read off it, for the reason
@@ -2477,6 +2548,8 @@ export const EVENTS = {
   RunKeptUncommitted,
   RunProposedCompletion,
   RunFinished,
+  SandboxBoundaryRecorded,
+  SandboxConnectionsRefused,
   RunFailed,
   RunSpent,
   StepsResolved,
@@ -2579,6 +2652,8 @@ export const EVENT_AT = {
   RunKeptUncommitted: ['implement', 'end'],
   RunProposedCompletion: ['implement', 'end'],
   RunFinished: [...AGENT_STEPS, 'end'],
+  SandboxBoundaryRecorded: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge'],
+  SandboxConnectionsRefused: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge'],
   RunFailed: [...AGENT_STEPS, 'end'],
   RunSpent: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge', 'outside'],
   StepsResolved: ['claim', 'admit', 'implement'],

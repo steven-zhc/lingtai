@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ELSEWHERE,
+  NOT_YET_APPENDED,
   anchorLines,
   findAppendSites,
   generate,
@@ -62,9 +63,14 @@ function staleEvents(committed: EventsDoc, fresh: EventsDoc): string[] {
 describe('events.json completeness', () => {
   it('every event that is not retired has an append site or an ELSEWHERE row', () => {
     const missing = (Object.keys(EVENTS) as EventType[]).filter(
-      (e) => !RETIRED.has(e) && !found.has(e) && !elsewhere.has(e),
+      (e) => !RETIRED.has(e) && !found.has(e) && !elsewhere.has(e) && !NOT_YET_APPENDED.has(e),
     )
     expect(missing, `no append site found and none listed: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it('an event listed as not yet appended has no append site', () => {
+    const now = [...NOT_YET_APPENDED].filter((e) => found.has(e) || elsewhere.has(e))
+    expect(now, `appended now; delete from NOT_YET_APPENDED: ${now.join(', ')}`).toEqual([])
   })
 
   it('an ELSEWHERE row is for an event the finder does not find', () => {
