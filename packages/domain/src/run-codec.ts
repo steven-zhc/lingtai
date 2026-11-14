@@ -20,6 +20,8 @@ import {
   RunKeptUncommitted,
   RunProducedDiff,
   RunRefsPublished,
+  SandboxBoundary,
+  SandboxConnectionsRefused,
   RUN_FAILURE_KINDS,
   RuntimeId,
   Step,
@@ -60,6 +62,7 @@ const Lifecycle = z.discriminatedUnion('status', [
 // left memory: an incremental reduce and a rebuild then store identical rows.
 const StepState = z.strictObject({
   step: z.string(),
+  plugin: z.string().optional(),
   onSha: z.string(),
   by: z.string().nullable(),
   reason: z.string().nullable(),
@@ -68,6 +71,20 @@ const StepState = z.strictObject({
   findings: z.array(Finding),
   summary: z.string().optional(),
   clipped: z.strictObject({ read: z.number(), of: z.number() }).optional(),
+})
+
+// Keys in the order `withSandbox` writes them.
+const SandboxInvocation = z.strictObject({
+  commandId: z.string(),
+  step: Step,
+  action: z.string(),
+  runtime: z.string().optional(),
+  runId: z.string().nullable(),
+  version: z.number(),
+  boundary: SandboxBoundary.nullable(),
+  refusals: SandboxConnectionsRefused.shape.read.nullable(),
+  ended: z.boolean(),
+  lost: z.boolean().optional(),
 })
 
 const StoredRun = z.strictObject({
@@ -118,6 +135,9 @@ const StoredRun = z.strictObject({
   kept: z.array(RunKeptUncommitted),
   version: z.number(),
   lastSeq: Seq.transform((s) => BigInt(s)).nullable(),
+  // Last, where the reduce first writes it: a key the state gains later goes after the ones it always had.
+  /** #1161; absent until a sandbox event is reduced. */
+  sandbox: z.array(SandboxInvocation).optional(),
 })
 
 /** Thrown for a stored state that is not a `AttemptState` of today's shape. */
@@ -173,7 +193,8 @@ export const attemptReducer: Reducer<AttemptState> = {
   // the `StepEnded` version and action it came from.
   // 4: a `StepState` keeps the review's `summary` and `clipped` (#893); a snapshot
   // cut before this lacks them.
-  version: 4,
+  // 5: the sandbox events fold into `sandbox` (#1161); a version-4 snapshot was cut by a reducer that ignored them.
+  version: 5,
   initial: emptyAttempt,
   reduceEvent: reduceAttemptEvent,
   encode: encodeRun,

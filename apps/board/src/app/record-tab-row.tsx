@@ -29,6 +29,7 @@ export interface AttemptTabFact {
 function selectedOf(segments: readonly string[] | null, fallback: TabKey): TabKey {
   const [kind, n] = segments ?? []
   if (kind === 'ticket') return 'ticket'
+  if (kind === 'sandbox') return 'sandbox'
   const attempt = kind === 'attempt' && n !== undefined ? attemptOfSegment(n) : null
   return attempt === null ? fallback : { attempt }
 }
@@ -54,7 +55,7 @@ export function RecordTabRow({
 
   const link = (key: TabKey, name: string, fact: string | null) => (
     <Link
-      key={key === 'ticket' ? 'ticket' : key.attempt}
+      key={typeof key === 'string' ? key : key.attempt}
       href={tabPath(taskId, key)}
       scroll={false}
       className="rtab"
@@ -72,6 +73,7 @@ export function RecordTabRow({
   return (
     <nav className="rtabs" aria-label="The record">
       {link('ticket', 'Ticket', events === 0 ? null : `${events} event${events === 1 ? '' : 's'}`)}
+      {link('sandbox', 'Sandbox', null)}
       {shown.map(attemptLink)}
       {earlier.length === 0 ? null : (
         <details className="rearlier">

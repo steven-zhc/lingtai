@@ -13,6 +13,7 @@ import { boundaryOfDecision, recordUnwrapped, recordingWrap } from '../src/sandb
 
 const policy = {
   allowedDomains: [],
+  recipeDomains: [],
   allowRead: [],
   allowWrite: [],
   denyRead: [],

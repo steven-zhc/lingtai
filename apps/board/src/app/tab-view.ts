@@ -29,6 +29,8 @@ export function loadDefaultTab(taskId: string): Promise<TabRead<DefaultTab>> {
       const detail = await loadTicketTab(taskId)
       return detail === null ? null : { kind: 'ticket', detail }
     }
+    // `defaultTabOf` never returns the sandbox tab.
+    if (key === 'sandbox') return null
     const detail = await loadAttemptTab(taskId, key.attempt)
     return detail === null ? null : { kind: 'attempt', detail }
   })
