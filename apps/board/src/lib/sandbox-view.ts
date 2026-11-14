@@ -221,7 +221,9 @@ export function sandboxViewOf(input: SandboxInput, project: string): SandboxView
   for (const s of input.resolved?.steps ?? []) {
     if (s.step === 'merge') continue
     for (const action of s.actions) {
-      if (input.steps[`${s.step}:${action}`] === undefined) continue
+      // Only `run:` and `agent:` launch a wrapped process; a human approval or a watch reached with no record is no gap.
+      const plugin = input.steps[`${s.step}:${action}`]?.plugin
+      if (plugin !== 'run' && plugin !== 'agent') continue
       if (recorded.some((i) => i.step === s.step && i.action === action)) continue
       rows.push({
         key: `unrecorded:${s.step}:${action}`,

@@ -62,6 +62,7 @@ const Lifecycle = z.discriminatedUnion('status', [
 // left memory: an incremental reduce and a rebuild then store identical rows.
 const StepState = z.strictObject({
   step: z.string(),
+  plugin: z.string().optional(),
   onSha: z.string(),
   by: z.string().nullable(),
   reason: z.string().nullable(),

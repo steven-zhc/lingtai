@@ -75,6 +75,8 @@ export interface SandboxInvocation {
 
 export interface StepState {
   step: string
+  /** The plugin of the reached action this state came from (#1161); absent on a waiver or an approval, which name none. */
+  plugin?: string
   verdict: StepVerdict
   /** The commit this verdict is about. A verdict on any other sha is stale. */
   onSha: string
@@ -421,6 +423,7 @@ function stepStateOf(key: string, action: Reached, outcome: StepOutcome): StepSt
   const review = reviewSummaryOf({ ...outcome, actions: [action] })
   return {
     step: key,
+    plugin: action.plugin,
     onSha: action.onSha,
     by: null,
     reason: null,
