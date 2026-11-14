@@ -10,7 +10,7 @@
  * paused", which is the silence #77 was about.
  */
 import { accountsFor, liftAccountLimit } from '@lingtai/conductor'
-import { pauseProject, raiseDayCeiling, readControl, resumeProject } from '@lingtai/daemon/control'
+import { raiseDayCeiling, readControl } from '@lingtai/daemon/control'
 import {
   RAISE_REFUSALS,
   NO_ACCOUNTS,
@@ -27,7 +27,7 @@ import {
 } from '@lingtai/domain'
 import { machineDayCeiling } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
-import { loadProjects, readProjectStateEffect } from '@lingtai/project'
+import { loadProjects, pauseProject, readProjectStateEffect, resumeProject } from '@lingtai/project'
 import { Context, Effect } from 'effect'
 import { cache } from 'react'
 

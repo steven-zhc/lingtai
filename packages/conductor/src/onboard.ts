@@ -1,4 +1,4 @@
-import { type Envelope, type ProjectState, isRegistered, projectStream, reduceProject } from '@lingtai/domain'
+import { type ProjectState, isRegistered } from '@lingtai/domain'
 import { baseProtectedRemedies, parsePayload } from '@lingtai/domain'
 import { githubApp, githubAuthKind, githubClientAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
@@ -16,7 +16,7 @@ import {
   parseSlug,
   permissionGaps,
 } from '@lingtai/github'
-import { recipePath, HOST_FOR_SAVING, resolveLocalRecipeEffect } from '@lingtai/project'
+import { registerProject, recipePath, HOST_FOR_SAVING, resolveLocalRecipeEffect } from '@lingtai/project'
 import {
   RECIPE_PATH,
   baseDivergence,
@@ -565,18 +565,6 @@ export const addEffect = Effect.fn('onboard.add')(function* (
     },
   )
 
-  const stream = projectStream(repo)
-  const existing = yield* lift(() => eventStore.read(stream))
-  // The owner guard at the write itself: a check made earlier (the picker's, or
-  // `runGithubBranch`'s under `gh`) can be passed by two adds at once, and the
-  // append below is optimistic on the version read here, so this read is the
-  // one that decides — a later add of the same name by another owner is refused
-  // rather than written over the first's identity.
-  const holder = otherOwner(existing, owner)
-  if (holder !== null) {
-    log(taken({ slug: options.slug, repo, takenBy: holder }))
-    return { ok: false } as Added
-  }
   const data = yield* attempt(() =>
     parsePayload('ProjectConfigured', {
       project: repo,
@@ -590,20 +578,16 @@ export const addEffect = Effect.fn('onboard.add')(function* (
       fromSha,
     }),
   )
-  yield* lift(() =>
-    eventStore.append(stream, existing.length === 0 ? 0 : existing[existing.length - 1]!.version, [
-      { type: 'ProjectConfigured', actor: 'conductor', data },
-    ]),
-  )
+  // The owner guard runs inside `registerProject`, on the read whose version the append uses, so two adds of one
+  // name by two owners cannot write over the first's identity.
+  const registered = yield* registerProject(repo, data, { store: eventStore })
+  if (registered.kind === 'taken') {
+    log(taken({ slug: options.slug, repo, takenBy: registered.holder }))
+    return { ok: false } as Added
+  }
 
-  return { ok: true, updated: isRegistered(reduceProject(existing)), warnings, reach } as Added
+  return { ok: true, updated: isRegistered(registered.before), warnings, reach } as Added
 })
-
-/** Who already holds this project's stream, when it is not `owner` (compared in any case); else null. */
-export function otherOwner(prior: readonly Envelope[], owner: string): string | null {
-  const holder = reduceProject(prior).owner
-  return holder !== null && holder.toLowerCase() !== owner.toLowerCase() ? holder : null
-}
 
 /**
  * The last line: *added*, or *updated* (#163).
@@ -617,10 +601,14 @@ export function otherOwner(prior: readonly Envelope[], owner: string): string | 
  * `loadProjects` already draws, asked of the stream as it stood before this
  * append.
  */
-export function registrationLine(prior: readonly Envelope[], repo: string, resolved: ResolvedRecipe): string {
-  const before: ProjectState = reduceProject(prior)
+export function registrationLine(
+  before: ProjectState,
+  priorEvents: number,
+  repo: string,
+  resolved: ResolvedRecipe,
+): string {
   return isRegistered(before)
-    ? `updated ${repo} — its ${prior.length} earlier event(s) are still on the record`
+    ? `updated ${repo} — its ${priorEvents} earlier event(s) are still on the record`
     : `added ${repo} — ${Object.values(resolved.recipe.steps).flat().length} action(s) across 5 steps`
 }
 
@@ -637,8 +625,6 @@ export const addLocalEffect = Effect.fn('onboard.addLocal')(function* (
   resolved: ResolvedRecipe,
   log: (line: string) => void = () => {},
 ) {
-  const stream = projectStream(options.project)
-  const existing = yield* lift(() => eventStore.read(stream))
   const data = yield* attempt(() =>
     parsePayload('ProjectConfigured', {
       project: options.project,
@@ -648,12 +634,11 @@ export const addLocalEffect = Effect.fn('onboard.addLocal')(function* (
       fromSha: options.fromSha,
     }),
   )
-  yield* lift(() =>
-    eventStore.append(stream, existing.length === 0 ? 0 : existing[existing.length - 1]!.version, [
-      { type: 'ProjectConfigured', actor: 'conductor', data },
-    ]),
-  )
-  const line = registrationLine(existing, options.project, resolved)
+  const registered = yield* registerProject(options.project, data, { store: eventStore })
+  // `owner: null` has no identity to guard, so `taken` cannot be the answer here.
+  if (registered.kind === 'taken')
+    return yield* Effect.die(new Error(`${options.project} is held by ${registered.holder}`))
+  const line = registrationLine(registered.before, registered.priorEvents, options.project, resolved)
   log(line)
-  return { line, updated: isRegistered(reduceProject(existing)) }
+  return { line, updated: isRegistered(registered.before) }
 })
