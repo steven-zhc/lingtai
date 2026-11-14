@@ -867,6 +867,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           runDir,
           operatorClaudeDir: join(homedir(), '.claude'),
           hostHome: homedir(),
+          codexNamed: runtimesOf(recipe).includes('codex'),
           read: [options.hookBinary],
           wrap: (input) =>
             service === undefined
@@ -4023,7 +4024,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               sandbox: makeRunSandbox(passSandbox.service, {
                 project,
                 mirror: mirrorPathFor(project, home),
+                cache: join(home, 'cache', project),
                 additions: sandboxDecision.project_additions,
+                codexNamed: runtimesOf(recipe).includes('codex'),
               }),
             }
           : {}),

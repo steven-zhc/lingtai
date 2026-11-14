@@ -7,6 +7,7 @@ import type { CallerAdditions, ProjectAdditions, WrapInput, Wrapped } from '@lin
 import { Effect, Redacted, type Scope } from 'effect'
 
 import { liveRunDirFs, prepareClaudeRunDirectory, type RunDirFs } from './claude-run-dir.ts'
+import type { UserPermissions } from './codex.ts'
 
 /**
  * What a sandboxed Claude Code run is handed, and what `claudeCodeRun` does with it (#1150, 0127 §8 and §16).
@@ -39,6 +40,8 @@ export interface RunSandbox {
   readonly operatorClaudeDir: string
   /** The host's `HOME`, for a leading `~` in a carried deny. */
   readonly hostHome: string
+  /** The project's recipe names Codex at some step (`runtimesOf`): only then does an unreadable Codex profile refuse a non-Codex run (#1155). */
+  readonly codexNamed: boolean
   /** Paths the conductor knows the run must read and not write, beside its `--settings` file: the hook binary. */
   readonly read: readonly string[]
   readonly wrap: (input: WrapInput) => Effect.Effect<Wrapped, WrapFailure, Scope.Scope>
@@ -60,6 +63,8 @@ export interface SandboxPorts {
   readonly runDirFs?: RunDirFs
   /** The operator's `settings.json` as text; `null` when it is absent. */
   readonly readOperatorSettings?: (path: string) => Effect.Effect<string | null, unknown>
+  /** The operator's Codex permission profile for a run's `(env, cwd)`; the default reads `config.toml` (#1155). */
+  readonly readCodexPermissions?: (env: Record<string, string>, cwd: string) => UserPermissions
 }
 
 const liveReadOperatorSettings = (path: string): Effect.Effect<string | null, unknown> =>
@@ -137,7 +142,15 @@ export interface SandboxedLaunch {
  */
 export const sandboxedLaunch = (
   sandbox: RunSandbox,
-  run: { readonly argv: readonly string[]; readonly env: Record<string, string>; readonly settingsPath: string },
+  run: {
+    readonly argv: readonly string[]
+    readonly env: Record<string, string>
+    readonly settingsPath: string
+    /** The operator's Codex profile denies for this run, read now (#1155); `claude-code.ts` closes it over the run's env and cwd. */
+    readonly operatorCodex: () =>
+      | { readonly ok: true; readonly paths: readonly string[]; readonly note?: string }
+      | { readonly ok: false; readonly refusal: SandboxRunRefused }
+  },
   buildEnv: (env: Record<string, string>) => Record<string, string>,
   trace: (line: string) => void,
   ports: SandboxPorts = {},
@@ -170,6 +183,18 @@ export const sandboxedLaunch = (
       )
     }
 
+    const profile = run.operatorCodex()
+    if (!profile.ok) return yield* Effect.fail(profile.refusal)
+    if (profile.note !== undefined) trace(profile.note)
+    const collidingProfile = collidingDenies(profile.paths, [...needed, sandbox.cache])
+    if (collidingProfile.length > 0) {
+      return yield* Effect.fail(
+        new SandboxRunRefused(
+          `the operator's Codex permission profile denies ${collidingProfile[0]}, which covers a path the run needs, and would be voided by it`,
+        ),
+      )
+    }
+
     const copied = yield* prepareClaudeRunDirectory(
       sandbox.runDir,
       { source: sandbox.operatorClaudeDir, settings: { sandbox: { enabled: false } }, trace },
@@ -179,7 +204,7 @@ export const sandboxedLaunch = (
     const callerAdditions: CallerAdditions = {
       write: [sandbox.runDir],
       read: [run.settingsPath, ...sandbox.read, ...copied],
-      deny: denies,
+      deny: [...denies, ...profile.paths],
     }
     const wrapped = yield* sandbox
       .wrap({

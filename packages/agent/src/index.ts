@@ -27,7 +27,9 @@ export {
   runtimeVersionOfEffect,
 } from './runtime.ts'
 export type { RunSandbox, RunSandboxDecision, SandboxPorts, WrapFailure } from './claude-sandbox.ts'
-export { SandboxRunRefused } from './claude-sandbox.ts'
+export { collidingDenies, SandboxRunRefused } from './claude-sandbox.ts'
+export type { UserPermissions } from './codex.ts'
+export { operatorCodexDenies } from './codex-sandbox.ts'
 export {
   CLAUDE_CODE_CAPABILITIES,
   PROMPT_ELIDED,
@@ -48,6 +50,7 @@ export {
   codexHookArgs,
   codexOutcome,
   codexTrace,
+  userPermissionsAt,
   createCodexRuntime,
   gitWritableRoots,
   type CodexAccount,

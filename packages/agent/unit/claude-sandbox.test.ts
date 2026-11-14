@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { claudeCodeRun } from '../src/claude-code.ts'
 import type { RunDirFs } from '../src/claude-run-dir.ts'
 import { NO_TOKEN_SENTENCE, type RunSandbox, type SandboxPorts } from '../src/claude-sandbox.ts'
+import type { UserPermissions } from '../src/codex.ts'
 import type { RunRequest } from '../src/runtime.ts'
 
 const TOKEN = 'sk-ant-oat01-FAKE-1150'
@@ -44,7 +45,10 @@ const child = () => {
   return c
 }
 
-const harness = (over: Partial<RunSandbox> = {}, ports: { token?: string | null; settings?: string | null } = {}) => {
+const harness = (
+  over: Partial<RunSandbox> = {},
+  ports: { token?: string | null; settings?: string | null; profile?: UserPermissions } = {},
+) => {
   const wrapped: WrapInput[] = []
   const spawned: Array<{ command: string; args: readonly string[]; options: Record<string, unknown> }> = []
   const files = fakeFs()
@@ -57,6 +61,7 @@ const harness = (over: Partial<RunSandbox> = {}, ports: { token?: string | null;
     runDir: '/state/runs/r1/claude',
     operatorClaudeDir: '/home/op/.claude',
     hostHome: '/home/op',
+    codexNamed: false,
     read: ['/bundle/lingtai-hook'],
     wrap: (input) =>
       Effect.sync(() => {
@@ -78,6 +83,7 @@ const harness = (over: Partial<RunSandbox> = {}, ports: { token?: string | null;
     oauthToken: () => (ports.token === null ? undefined : Redacted.make(ports.token ?? TOKEN)),
     runDirFs: files.fs,
     readOperatorSettings: () => Effect.succeed(ports.settings === undefined ? null : ports.settings),
+    readCodexPermissions: () => ports.profile ?? { kind: 'none' },
   }
   const options = {
     binary: 'claude',
@@ -199,5 +205,45 @@ describe('a sandboxed Claude Code run (#1150)', () => {
     expect(h.wrapped).toHaveLength(0)
     expect(h.spawned[0]!.command).toBe('claude')
     expect(h.spawned[0]!.options.env).toEqual({ KEEP: '1', CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' })
+  })
+})
+
+describe("the operator's Codex profile on a Claude Code run (#1155)", () => {
+  it('puts the profile denies on caller_additions.deny beside the settings denies', async () => {
+    const h = harness(
+      {},
+      {
+        settings: JSON.stringify({ sandbox: { filesystem: { denyRead: ['/abs/x'] } } }),
+        profile: { kind: 'denies', paths: ['~/secrets', '/abs/y'] },
+      },
+    )
+    await Effect.runPromise(claudeCodeRun(h.options, { ...h.request, env: { HOME: '/home/op' } }))
+    expect(h.wrapped[0]!.caller_additions?.deny).toEqual(['/abs/x', '/home/op/secrets', '/abs/y'])
+  })
+
+  it('refuses an unreadable profile before wrap when the recipe names Codex', async () => {
+    const h = harness({ codexNamed: true }, { profile: { kind: 'unreadable', why: 'bad toml' } })
+    const outcome = await Effect.runPromise(claudeCodeRun(h.options, h.request))
+    expect(h.wrapped).toHaveLength(0)
+    expect(h.spawned).toHaveLength(0)
+    expect(outcome.failure?.detail).toContain('bad toml')
+  })
+
+  it('goes ahead without the denies, and says so, when the recipe names no Codex', async () => {
+    const h = harness({ codexNamed: false }, { profile: { kind: 'unreadable', why: 'bad toml' } })
+    const notes: string[] = []
+    const log = { note: (_k: string, line: string) => void notes.push(line) } as unknown as RunRequest['log']
+    await Effect.runPromise(claudeCodeRun(h.options, { ...h.request, log }))
+    expect(h.wrapped).toHaveLength(1)
+    expect(h.wrapped[0]!.caller_additions?.deny).toEqual([])
+    expect(notes.join('\n')).toContain("the operator's Codex profile could not be read: ")
+  })
+
+  it('refuses a deny that is, lies inside or contains the worktree', async () => {
+    for (const path of ['/work/tree', '/work/tree/sub', '/work', '/state/cache/p']) {
+      const h = harness({}, { profile: { kind: 'denies', paths: [path] } })
+      await Effect.runPromise(claudeCodeRun(h.options, h.request))
+      expect(h.wrapped, path).toHaveLength(0)
+    }
   })
 })

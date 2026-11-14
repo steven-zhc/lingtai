@@ -69,6 +69,7 @@ const fakeSandbox = (over: Partial<RunSandbox> = {}) => {
     runDir: '/state/runs/r1/claude',
     operatorClaudeDir: '/home/op/.claude',
     hostHome: '/home/op',
+    codexNamed: true,
     read: ['/bundle/lingtai-hook'],
     wrap: (input) =>
       Effect.sync(() => {
@@ -317,5 +318,12 @@ describe('danger-full-access', () => {
       >[0]).args
     expect(inv(sandbox).join(' ')).toContain('--sandbox danger-full-access')
     expect(inv().join(' ')).not.toContain('danger-full-access')
+  })
+})
+
+describe('an absent Codex profile (#1155)', () => {
+  it('is none, not unreadable', async () => {
+    const { userPermissionsAt } = await import('../src/codex.ts')
+    expect(userPermissionsAt({ HOME: '/nonexistent/h' }, '/nonexistent/c')).toEqual({ kind: 'none' })
   })
 })
