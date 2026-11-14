@@ -93,6 +93,15 @@ export const takeFromSetupToken = (
 /** The token from `claude setup-token`, else pasted at a hidden prompt; null is a skip (an empty answer). */
 export const obtainClaudeToken = (world: ClaudeTokenWorld): Effect.Effect<Redacted.Redacted<string> | null, unknown> =>
   Effect.gen(function* () {
+    // Before the browser sign-in starts, so deferring is a choice and not a Ctrl+C that abandons the command.
+    const go = yield* Effect.tryPromise(() =>
+      world.ask('', {
+        message: 'run `claude setup-token` now, or skip and set the token later?',
+        defaultValue: 'run',
+        choices: ['run', 'skip'],
+      }),
+    )
+    if (go === 'skip') return null
     world.log('running `claude setup-token` — finish the sign-in in the browser')
     const taken = yield* takeFromSetupToken(world)
     if ('token' in taken) return taken.token

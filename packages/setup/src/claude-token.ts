@@ -57,7 +57,7 @@ export class ClaudeTokenRefused {
 }
 
 /** Where a token is set, as `claudeTokenState` (`@lingtai/env`) answers it. */
-export type ClaudeTokenSetAt = { environment: boolean; file: boolean } | { unreadable: string }
+export type ClaudeTokenSetAt = { environment: boolean; file: boolean; usable: boolean } | { unreadable: string }
 
 /** What a person is told when they skip, once. */
 export const CLAUDE_TOKEN_SKIPPED =
@@ -65,7 +65,7 @@ export const CLAUDE_TOKEN_SKIPPED =
 
 /**
  * Whether the person is asked: the sandbox is on, some step names `claude-code`,
- * and neither the environment nor the file holds a token. Whether the project is
+ * and a run would get no usable token (neither the environment nor the file). Whether the project is
  * *new* is the caller's to know. An unreadable file does not ask — the caller
  * says so, and the add goes on.
  */
@@ -76,7 +76,7 @@ export function needsClaudeToken(
   if ('unreadable' in state) return false
   if (recipe.sandbox === undefined || !recipe.sandbox.enabled) return false
   if (!runtimesOf(recipe).includes('claude-code')) return false
-  return !state.environment && !state.file
+  return !state.usable
 }
 
 /** Trimmed, no whitespace inside, and `sk-ant-oat01-…`; otherwise the rule broken, never the value. */
@@ -121,14 +121,29 @@ export const setClaudeTokenEffect = (
     if (doc.contents !== null && !isMap(doc.contents)) {
       return yield* Effect.fail(new ClaudeTokenRefused(`${path} is not a mapping — fix it and run this again`))
     }
-    doc.setIn(['claude', 'oauth_token'], Redacted.value(checked.token))
-    const out = doc.toString()
+    // `claude:` may be present and not a mapping (`null`, `[]`); `setIn` throws on that, which is a defect, not a refusal.
+    const claude = doc.get('claude')
+    if (claude !== undefined && claude !== null && !isMap(claude)) {
+      return yield* Effect.fail(
+        new ClaudeTokenRefused(`claude in ${path} is not a mapping — fix it and run this again`),
+      )
+    }
+    const out = yield* Effect.try({
+      try: () => {
+        if (claude === null || claude === undefined)
+          doc.set('claude', doc.createNode({ oauth_token: Redacted.value(checked.token) }))
+        else doc.setIn(['claude', 'oauth_token'], Redacted.value(checked.token))
+        return doc.toString()
+      },
+      catch: () => new ClaudeTokenRefused(`${path} could not be edited — nothing was written`),
+    })
     yield* Effect.try({
       try: () => file.write(path, out),
       catch: () => new ClaudeTokenRefused(`${path} could not be written — nothing was changed`),
     })
     const raw = env['LINGTAI_CLAUDE_OAUTH_TOKEN']
-    return { saved: true as const, environmentWins: raw !== undefined && raw.trim() !== '' }
+    // The reader takes any non-empty value as the environment's, whitespace included, and never reaches the file then.
+    return { saved: true as const, environmentWins: raw !== undefined && raw !== '' }
   })
 
 /** The sentence said after a save while the variable is exported; `whose` names the process that was asked. */

@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic'
 
 export default function ClaudeToken() {
   const state = claudeTokenSetAt({ file: liveMachineText(), path: join(stateDir(), 'config.yml'), env: process.env })
-  const set = 'unreadable' in state ? null : state.environment || state.file
+  const set = 'unreadable' in state ? null : state.usable
   return (
     <main className="detail">
       <Bar project={undefined}>

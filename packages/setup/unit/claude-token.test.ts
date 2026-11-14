@@ -73,7 +73,7 @@ describe('setClaudeTokenEffect', () => {
 describe('needsClaudeToken', () => {
   const recipe = (sandbox: { enabled: boolean } | undefined, agent = 'claude-code') =>
     ({ runtime: { agent }, steps: {}, sandbox }) as unknown as Parameters<typeof needsClaudeToken>[0]
-  const unset = { environment: false, file: false }
+  const unset = { environment: false, file: false, usable: false }
 
   it('asks when sandboxed, claude-code is named, and nothing is set', () => {
     expect(needsClaudeToken(recipe({ enabled: true }), unset)).toBe(true)
@@ -82,10 +82,29 @@ describe('needsClaudeToken', () => {
     ['no sandbox block', recipe(undefined), unset],
     ['sandbox disabled', recipe({ enabled: false }), unset],
     ['no claude-code', recipe({ enabled: true }, 'codex'), unset],
-    ['environment set', recipe({ enabled: true }), { environment: true, file: false }],
-    ['file set', recipe({ enabled: true }), { environment: false, file: true }],
+    ['environment set', recipe({ enabled: true }), { environment: true, file: false, usable: true }],
+    ['file set', recipe({ enabled: true }), { environment: false, file: true, usable: true }],
     ['unreadable', recipe({ enabled: true }), { unreadable: 'x' }],
   ])('does not ask: %s', (_name, r, state) => {
     expect(needsClaudeToken(r, state)).toBe(false)
   })
+})
+
+describe('the environment and the file disagree', () => {
+  it('a whitespace-only exported variable wins, so the save says so', async () => {
+    const { file } = port(null)
+    const exit = await run(file, FAKE, { LINGTAI_CLAUDE_OAUTH_TOKEN: '   ' })
+    expect(Exit.isSuccess(exit) && exit.value).toEqual({ saved: true, environmentWins: true })
+  })
+
+  it.each(['claude: null\n', 'claude:\n', 'claude: []\n', 'claude: 3\n'])(
+    'a file with %j is edited or refused, never a defect',
+    async (text) => {
+      const { state, file } = port(text)
+      const exit = await run(file, FAKE)
+      if (Exit.isSuccess(exit)) expect(state.text).toContain(FAKE)
+      else expect(state.writes).toBe(0)
+      expect(Exit.isFailure(exit) && JSON.stringify(exit)).not.toContain('Die')
+    },
+  )
 })

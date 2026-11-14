@@ -953,7 +953,7 @@ function runLocalBranch(
     const previewed = previewedOrRefused.previewed
     const finalRecipe = resolveSource(previewed, path, path).recipe
     const final = baseOf(finalRecipe)
-    if (world.claudeToken !== undefined) {
+    if (world.claudeToken !== undefined && !repairOnly) {
       yield* world.claudeToken(finalRecipe).pipe(Effect.catch(() => Effect.void))
     }
 

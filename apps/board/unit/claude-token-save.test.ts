@@ -47,8 +47,8 @@ describe('the board saves the token through the one step', () => {
 
   it('reads whether one is set on every call', () => {
     const { s, p } = ports(null)
-    expect(claudeTokenSetAt(p)).toEqual({ environment: false, file: false })
+    expect(claudeTokenSetAt(p)).toEqual({ environment: false, file: false, usable: false })
     s.text = `claude:\n  oauth_token: ${FAKE}\n`
-    expect(claudeTokenSetAt(p)).toEqual({ environment: false, file: true })
+    expect(claudeTokenSetAt(p)).toEqual({ environment: false, file: true, usable: true })
   })
 })

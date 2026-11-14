@@ -167,3 +167,28 @@ describe('lingtai token claude', () => {
     expect(await go(claudeTokenCommand(world({ file: 'a: [\n' }).w))).toBe(1)
   })
 })
+
+describe('skipping before the sign-in starts', () => {
+  it('choosing skip never spawns the child and prints the sentence once', async () => {
+    let ran = false
+    const x = world({ choice: 'skip' })
+    x.w.run = () => {
+      ran = true
+      return Promise.resolve({ code: 0 })
+    }
+    await go(askClaudeTokenForRecipe(x.w, sandboxed))
+    expect(ran).toBe(false)
+    expect(x.logs.filter((l) => l.includes('will be refused until the token is set'))).toHaveLength(1)
+  })
+
+  it('a whitespace-only exported variable is still not usable, and the person is asked', async () => {
+    const x = world({
+      env: { LINGTAI_CLAUDE_OAUTH_TOKEN: '   ' },
+      file: `claude:\n  oauth_token: ${FAKE}\n`,
+      ended: { missing: true },
+      pasted: FAKE,
+    })
+    await go(askClaudeTokenForRecipe(x.w, sandboxed))
+    expect(x.logs.join('\n')).toContain('a run reads it before the file')
+  })
+})
