@@ -7,7 +7,6 @@
  * (whose stub cannot see them). A person's pause carries no reason: it is a lock
  * on one project, and it holds until somebody lifts it.
  */
-import { loadProjects } from '@lingtai/conductor'
 import {
   type ControlState,
   type Guard,
@@ -19,6 +18,7 @@ import {
 } from '@lingtai/daemon'
 import { CONTROL_STREAM, type ProjectState, lockSentence } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+import { loadProjects } from '@lingtai/project'
 import { Effect } from 'effect'
 
 export interface ProjectPauseOptions {

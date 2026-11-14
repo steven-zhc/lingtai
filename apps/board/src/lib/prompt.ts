@@ -25,10 +25,10 @@ import { resolve } from 'node:path'
 import { armsOnOrigin } from '@lingtai/conductor/arms'
 import { agentBranch } from '@lingtai/conductor/branches'
 import { githubClientFor, projectFilter } from '@lingtai/conductor/filter'
-import { loadProject } from '@lingtai/conductor/projects'
 import { buildCommands, nextPrompt, renderPrompt } from '@lingtai/conductor/prompt'
 import type { Envelope } from '@lingtai/domain'
 import { repoRoot } from '@lingtai/env'
+import { readProject } from '@lingtai/project'
 
 import type { TicketView } from './task.ts'
 
@@ -139,7 +139,7 @@ export async function outgoingFor(input: {
     return refused(`no prompt template at ${path}`)
   }
 
-  const state = await loadProject(ticket.project).catch(() => null)
+  const state = await readProject(ticket.project).catch(() => null)
   if (!state) return refused(`${ticket.project} is not a registered project`)
   // Never throws, and its `problem` is already one line. The recipe is here for
   // two things, not one: `runtime.budget` — how much of the earlier attempts

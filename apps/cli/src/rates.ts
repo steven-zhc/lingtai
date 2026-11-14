@@ -5,9 +5,10 @@
  * on it — but each conductor yields `ratesSettled` before it lets go of the
  * lock, so the one write lands inside the one-writer window.
  */
-import { currentRecipeEffect, loadProjectsEffect } from '@lingtai/conductor/projects'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { ratesDue, realRatePorts, refreshRates } from '@lingtai/conductor/rate-snapshot'
 import { LITELLM_PROVIDER } from '@lingtai/domain/rate-card'
+import { loadProjectsEffect } from '@lingtai/project'
 import {
   makeRunner,
   readSpendEffect,

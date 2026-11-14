@@ -5,7 +5,7 @@
  */
 import { existsSync } from 'node:fs'
 
-import { createSlots, describeFilters, loadProjectsEffect, projectFiltersEffect } from '@lingtai/conductor'
+import { createSlots, describeFilters, projectFiltersEffect } from '@lingtai/conductor'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import {
@@ -43,6 +43,7 @@ import { paint } from '@lingtai/env/colour'
 import { createFileLocker } from '@lingtai/env/lock'
 import { eventStore } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
+import { loadProjectsEffect } from '@lingtai/project'
 import { parseDuration } from '@lingtai/recipe'
 import type { Triage } from '@lingtai/recipe'
 import { Cause, type Context, Effect } from 'effect'

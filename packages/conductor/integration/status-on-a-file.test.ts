@@ -31,9 +31,8 @@ import { join } from 'node:path'
 import { parsePayload, projectStream } from '@lingtai/domain'
 import { postgresUrl } from '@lingtai/env'
 import { createSqliteLog, openSqliteLog } from '@lingtai/event-store/sqlite'
+import { loadAllProjects, loadProjects, readProject } from '@lingtai/project'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-
-import { loadAllProjects, loadProject, loadProjects } from '../src/projects.ts'
 
 const dirs: string[] = []
 const opened: { close(): void }[] = []
@@ -126,9 +125,9 @@ describe('what lingtai status asks first, on a machine with no Postgres', () => 
   })
 
   it('answers about one project by name', async () => {
-    expect((await loadProject(LIVE, log.store))?.base).toBe('main')
+    expect((await readProject(LIVE, log.store))?.base).toBe('main')
     // Recorded and not yet registered, so the conductor is told nothing — the
     // rule `integration/projects.test.ts` pins against the real store.
-    expect(await loadProject(PENDING, log.store)).toBeNull()
+    expect(await readProject(PENDING, log.store)).toBeNull()
   })
 })

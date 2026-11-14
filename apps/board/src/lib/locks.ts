@@ -10,7 +10,6 @@
  * paused", which is the silence #77 was about.
  */
 import { accountsFor, liftAccountLimit } from '@lingtai/conductor'
-import { loadProjects } from '@lingtai/conductor/projects'
 import { pauseProject, raiseDayCeiling, readControl, resumeProject } from '@lingtai/daemon/control'
 import {
   RAISE_REFUSALS,
@@ -19,10 +18,8 @@ import {
   isRegistered,
   lockSentence,
   locksOn,
-  projectStream,
-  reduceProject,
   type CeilingFacts,
-  type Envelope,
+  type ProjectState,
   type Lock,
   RuntimeId,
   whenLabel,
@@ -30,6 +27,7 @@ import {
 } from '@lingtai/domain'
 import { machineDayCeiling } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
+import { loadProjects, readProjectStateEffect } from '@lingtai/project'
 import { Context, Effect } from 'effect'
 import { cache } from 'react'
 
@@ -253,8 +251,7 @@ export const setProjectPaused = (
   now: Date = new Date(),
 ) =>
   Effect.gen(function* () {
-    const read = () => Effect.tryPromise(() => store.read(projectStream(project))).pipe(Effect.map(reduceProject))
-    const state = yield* read()
+    const state = yield* readProjectStateEffect(project, store)
     if (!isRegistered(state)) {
       return { ok: false, detail: `"${project}" is not a registered project` } satisfies ActionResult
     }
@@ -266,7 +263,7 @@ export const setProjectPaused = (
           detail: verb === 'pause' ? `${project} paused` : `${project} resumed`,
         } satisfies ActionResult
       case 'already': {
-        const paused = (yield* read()).paused
+        const paused = (yield* readProjectStateEffect(project, store)).paused
         const who = paused === null ? '' : ` by ${paused.by}`
         return {
           ok: true,
@@ -289,9 +286,9 @@ export const setProjectPaused = (
 // `NO_ACCOUNTS` below is deliberate: this is a synchronous, pause-only read, and its
 // remedy sentence (`resume it`) is wrong for an account lock. The daemon's `locked`
 // still stops the turn; the board's account rows are #1010.
-export function askRefusal(project: string, read: readonly Envelope[] | Error): string | null {
+export function askRefusal(project: string, read: ProjectState | Error): string | null {
   if (read instanceof Error) return `could not read whether ${project} is paused — ${read.message}`
-  const sentence = lockSentence(project, locksOn({ project: reduceProject(read), accounts: NO_ACCOUNTS }))
+  const sentence = lockSentence(project, locksOn({ project: read, accounts: NO_ACCOUNTS }))
   return sentence === null ? null : `${sentence} — resume it, then ask`
 }
 

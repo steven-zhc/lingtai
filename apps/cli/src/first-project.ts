@@ -49,7 +49,7 @@ import { promisify } from 'node:util'
 import { exclusiveAdd } from '@lingtai/conductor/add-from-page'
 import { addEffect, addLocalEffect, type Added, type AddOptions, type GithubReach } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, refusalLines, taken } from '@lingtai/conductor/pick-repository'
-import { loadAllProjectsEffect, sandboxHostHere, signedInHere } from '@lingtai/conductor/projects'
+import { sandboxHostHere, signedInHere } from '@lingtai/conductor/projects'
 import { repositoryList } from '@lingtai/conductor/repository-list'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { held } from '@lingtai/daemon'
@@ -57,7 +57,14 @@ import type { ProjectState } from '@lingtai/domain'
 import { boardHost, boardPort, boardReachHost, githubAuthKind, stateDir } from '@lingtai/env'
 import type { Locker } from '@lingtai/env/lock'
 import { ghStatusEffect, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
-import { diskFiles, readRecipeKeyEffect, recipePath, HOST_FOR_SAVING, resolveLocalRecipeEffect } from '@lingtai/project'
+import {
+  HOST_FOR_SAVING,
+  diskFiles,
+  loadAllProjectsEffect,
+  readRecipeKeyEffect,
+  recipePath,
+  resolveLocalRecipeEffect,
+} from '@lingtai/project'
 import { readTasksEffect } from '@lingtai/projector'
 import {
   baseOf,

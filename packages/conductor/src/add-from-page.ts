@@ -26,7 +26,7 @@ import type { ProjectState } from '@lingtai/domain'
 import { githubApp, githubClientAuth } from '@lingtai/env'
 import { createFileLocker, type Locker } from '@lingtai/env/lock'
 import { GitHubFailed, makeGitHub, type GitHub } from '@lingtai/github'
-import { diskFiles, recipePath, HOST_FOR_SAVING, resolveLocalRecipeEffect } from '@lingtai/project'
+import { HOST_FOR_SAVING, diskFiles, loadAllProjects, recipePath, resolveLocalRecipeEffect } from '@lingtai/project'
 import { baseOf, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
 import {
@@ -53,7 +53,7 @@ import { Effect } from 'effect'
 import { addEffect, addLocalEffect } from './onboard.ts'
 import { asFailure } from './port-face.ts'
 import { sandboxHostHere } from './projects.ts'
-import { loadAllProjects, signedInHere } from './projects.ts'
+import { signedInHere } from './projects.ts'
 import { liveHistoryEffect } from './ticket-history.ts'
 
 const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))

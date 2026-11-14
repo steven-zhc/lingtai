@@ -7,10 +7,9 @@ import {
   type Lock,
   lockSentence,
   locksOn,
-  projectStream,
-  reduceProject,
 } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, type SnapshotStore } from '@lingtai/event-store'
+import { readProjectStateEffect } from '@lingtai/project'
 import { Cause, Data, Effect } from 'effect'
 
 import { readControlEffect } from './control.ts'
@@ -74,9 +73,7 @@ const asError = (err: unknown): Error => (err instanceof Error ? err : new Error
 
 /** A person's pause of this project: `prj-{project}`, read whole, fresh. */
 const projectPause: Check = ({ store }, project) =>
-  Effect.tryPromise({ try: () => store.read(projectStream(project)), catch: asError }).pipe(
-    Effect.map((events) => locksOn({ project: reduceProject(events), accounts: NO_ACCOUNTS })),
-  )
+  readProjectStateEffect(project, store).pipe(Effect.map((state) => locksOn({ project: state, accounts: NO_ACCOUNTS })))
 
 /**
  * The day's ceiling (0126 §3, §4): bring `ctl-conductor` up to the present,
@@ -122,8 +119,7 @@ const dayCeiling: Check = ({ store, snapshots, ceiling, now }) =>
  */
 const accountLimits: Check = ({ store, recipeFor, ceiling, now }, project) =>
   Effect.gen(function* () {
-    const events = yield* Effect.tryPromise({ try: () => store.read(projectStream(project)), catch: asError })
-    const state = reduceProject(events)
+    const state = yield* readProjectStateEffect(project, store)
     const read = accountsFor(store, state, recipeFor).pipe(
       Effect.mapError((err) => new AccountUnchecked({ why: err.message })),
     )

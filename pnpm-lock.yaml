@@ -474,6 +474,9 @@ importers:
       '@lingtai/github':
         specifier: workspace:*
         version: link:../github
+      '@lingtai/project':
+        specifier: workspace:*
+        version: link:../project
       '@lingtai/projector':
         specifier: workspace:*
         version: link:../projector

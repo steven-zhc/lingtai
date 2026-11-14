@@ -25,7 +25,6 @@ import { createRuntime, type Runtime } from '@lingtai/agent'
 import {
   currentRecipe,
   declinedBeforeWork,
-  loadProjectsEffect,
   ownerlessClientEffect,
   ticketedClientOf,
   readFixFilesEffect,
@@ -47,6 +46,7 @@ import { githubClientAuth, hasGitHubAuth, machineDayCeiling, repoRoot } from '@l
 import { type EventStore, eventStore, log as theLog } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
+import { loadProjectsEffect } from '@lingtai/project'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
 import { baseOf, concurrencyOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'

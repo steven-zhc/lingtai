@@ -9,9 +9,9 @@
  * `?kind=` and `?before=<at>,<ticket>`. Anything in it that does not parse is
  * not used, and the first page is shown.
  */
-import { loadProjects } from '@lingtai/conductor/projects'
 import { type Money, ticketMoney } from '@lingtai/conductor/report'
 import { parseTicketStream } from '@lingtai/domain'
+import { loadProjects } from '@lingtai/project'
 import { type BacklogEntry, readBacklog, readLag, readLanded, type TicketReportRow } from '@lingtai/projector'
 import type { TicketSource } from '@lingtai/recipe/settings'
 

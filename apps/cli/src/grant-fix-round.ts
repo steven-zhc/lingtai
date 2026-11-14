@@ -3,11 +3,12 @@ import { userInfo } from 'node:os'
 import type { IssueChannel } from '@lingtai/conductor'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
-import { currentRecipeEffect, loadProjectEffect } from '@lingtai/conductor/projects'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { resolveWaitEffect } from '@lingtai/conductor/resolve-wait'
 import { ticketReducer, ticketStream } from '@lingtai/domain'
 import { hasGitHubAuth } from '@lingtai/env'
 import { eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
+import { readProjectEffect } from '@lingtai/project'
 import { Effect } from 'effect'
 
 import { noteConductor } from './conductor-note.ts'
@@ -19,7 +20,7 @@ export function grantFixRoundVerdict(
   progress: (line: string) => void,
 ): Effect.Effect<Answered, unknown> {
   return Effect.gen(function* () {
-    const project = yield* loadProjectEffect(options.project)
+    const project = yield* readProjectEffect(options.project)
     if (!project) {
       return refusal(1, 'no-project', `no project named "${options.project}"`)
     }

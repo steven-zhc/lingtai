@@ -132,24 +132,6 @@
     "why": "apps/board/src/app/actions.ts, apps/board/src/app/setup/repository/added/page.tsx, apps/board/src/lib/board.ts, apps/board/src/lib/recipe.ts, apps/board/src/lib/task.ts"
   },
   {
-    "file": "packages/conductor/src/projects.ts",
-    "fn": "loadAllProjects",
-    "until": "0101 §7",
-    "why": "apps/board/src/app/actions.ts, apps/board/src/app/setup/repository/read/page.tsx, apps/board/src/lib/board.ts"
-  },
-  {
-    "file": "packages/conductor/src/projects.ts",
-    "fn": "loadProject",
-    "until": "0101 §7",
-    "why": "apps/board/src/app/actions.ts, apps/board/src/app/setup/repository/added/page.tsx, apps/board/src/lib/prompt.ts, apps/board/src/lib/queued.ts, apps/board/src/lib/task.ts"
-  },
-  {
-    "file": "packages/conductor/src/projects.ts",
-    "fn": "loadProjects",
-    "until": "0101 §7",
-    "why": "apps/board/src/app/api/search/route.ts, apps/board/src/lib/landed.ts, apps/board/src/lib/locks.ts"
-  },
-  {
     "file": "packages/conductor/src/queue.ts",
     "fn": "selectRunnable",
     "until": "0101 §7",
@@ -352,6 +334,30 @@
     "fn": "replaceFileFace",
     "until": "0101 §7",
     "why": "`diskFiles.replace` is this, in the same `diskFiles` object the board imports: apps/board/src/lib/recipe.ts"
+  },
+  {
+    "file": "packages/project/src/state.ts",
+    "fn": "loadAllProjects",
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/app/setup/repository/read/page.tsx, apps/board/src/lib/board.ts"
+  },
+  {
+    "file": "packages/project/src/state.ts",
+    "fn": "loadProjects",
+    "until": "0101 §7",
+    "why": "apps/board/src/app/api/search/route.ts, apps/board/src/lib/landed.ts, apps/board/src/lib/locks.ts"
+  },
+  {
+    "file": "packages/project/src/state.ts",
+    "fn": "readProject",
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts, apps/board/src/app/setup/repository/added/page.tsx, apps/board/src/lib/prompt.ts, apps/board/src/lib/queued.ts, apps/board/src/lib/task.ts"
+  },
+  {
+    "file": "packages/project/src/state.ts",
+    "fn": "readProjectState",
+    "until": "0101 §7",
+    "why": "apps/board/src/app/actions.ts"
   },
   {
     "file": "packages/project/src/write.ts",

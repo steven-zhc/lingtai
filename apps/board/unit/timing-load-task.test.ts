@@ -1,11 +1,12 @@
 import { githubClientFor, projectFilter } from '@lingtai/conductor/filter'
-import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import { currentRecipe } from '@lingtai/conductor/projects'
 import { readProjectTicket } from '@lingtai/conductor/read-ticket'
 import { readControl, readStatus } from '@lingtai/daemon/control'
 import { aClaim, aLanding } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { eventStore } from '@lingtai/event-store'
 import { GitHubFailed } from '@lingtai/github'
+import { readProject } from '@lingtai/project'
 import { readTasks } from '@lingtai/projector/task-view'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -22,8 +23,11 @@ vi.mock('@lingtai/event-store', async (original) => ({
 }))
 vi.mock('@lingtai/conductor/projects', async (original) => ({
   ...(await original<typeof import('@lingtai/conductor/projects')>()),
-  loadProject: vi.fn(),
   currentRecipe: vi.fn(),
+}))
+vi.mock('@lingtai/project', async (original) => ({
+  ...(await original<typeof import('@lingtai/project')>()),
+  readProject: vi.fn(),
 }))
 vi.mock('@lingtai/conductor/read-ticket', () => ({ readProjectTicket: vi.fn() }))
 vi.mock('@lingtai/conductor/filter', async (original) => ({
@@ -66,7 +70,7 @@ const taskId = 'ticket-lingtai-774'
 
 beforeEach(() => {
   vi.resetAllMocks()
-  vi.mocked(loadProject).mockResolvedValue({ owner: 'o', base: 'main' } as Awaited<ReturnType<typeof loadProject>>)
+  vi.mocked(readProject).mockResolvedValue({ owner: 'o', base: 'main' } as Awaited<ReturnType<typeof readProject>>)
   vi.mocked(currentRecipe).mockResolvedValue({ recipe: {} } as Awaited<ReturnType<typeof currentRecipe>>)
   vi.mocked(readProjectTicket).mockResolvedValue({
     ok: true,
@@ -140,7 +144,7 @@ describe('loadTask does not wait for GitHub', () => {
   it('is null for an id a 404 may rest on, with no GitHub asked', async () => {
     vi.mocked(eventStore.read).mockResolvedValue([])
     expect(await loadTask('nodash')).toBeNull()
-    vi.mocked(loadProject).mockResolvedValue(null)
+    vi.mocked(readProject).mockResolvedValue(null)
     expect(await loadTask(taskId)).toBeNull()
     expect(await knowable(taskId)).toBe(false)
     expect(await knowable('nodash')).toBe(false)
@@ -157,14 +161,14 @@ describe('loadTask does not wait for GitHub', () => {
 describe('a project read that fails is not a project that is absent', () => {
   it('knowable and loadTask reject rather than answer null (a 404)', async () => {
     vi.mocked(eventStore.read).mockResolvedValue([])
-    vi.mocked(loadProject).mockRejectedValue(new Error('stream read failed'))
+    vi.mocked(readProject).mockRejectedValue(new Error('stream read failed'))
     await expect(knowable(taskId)).rejects.toThrow('stream read failed')
     await expect(loadTask(taskId)).rejects.toThrow('stream read failed')
   })
 
   it('loadTaskAnswer says found: null with the problem, never found: false', async () => {
     vi.mocked(eventStore.read).mockResolvedValue([])
-    vi.mocked(loadProject).mockRejectedValue(new Error('stream read failed'))
+    vi.mocked(readProject).mockRejectedValue(new Error('stream read failed'))
     const answer = await loadTaskAnswer(taskId)
     expect(answer.ticket).toMatchObject({ found: null, problem: 'stream read failed' })
     expect(readProjectTicket).not.toHaveBeenCalled()

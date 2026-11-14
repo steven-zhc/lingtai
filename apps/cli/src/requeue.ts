@@ -29,10 +29,11 @@ import { requeueEffect } from '@lingtai/conductor/decide'
 import { editBodyAndRequeueEffect, type IssueChannel } from '@lingtai/conductor/edit-body'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
-import { currentRecipeEffect, loadProjectEffect } from '@lingtai/conductor/projects'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { ticketReducer, ticketStream } from '@lingtai/domain'
 import { hasGitHubAuth } from '@lingtai/env'
 import { eventStore, log, readThroughSnapshot, type EventStore } from '@lingtai/event-store'
+import { readProjectEffect } from '@lingtai/project'
 import { Effect } from 'effect'
 
 import { type ConductorNote, noteConductor } from './conductor-note.ts'
@@ -52,7 +53,7 @@ export interface RequeueCommandOptions {
 }
 
 type RequeueDeps = {
-  loadProject?: typeof loadProjectEffect
+  readProject?: typeof readProjectEffect
   client?: IssueChannel
   store?: EventStore
   /** The line that says no conductor will reduce this. Replaceable so a test needs no lock file. */
@@ -67,7 +68,7 @@ export function requeueVerdict(
   deps: RequeueDeps = {},
 ): Effect.Effect<Answered, unknown> {
   return Effect.gen(function* () {
-    const project = yield* (deps.loadProject ?? loadProjectEffect)(options.project)
+    const project = yield* (deps.readProject ?? readProjectEffect)(options.project)
     if (!project) {
       return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
     }

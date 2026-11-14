@@ -53,7 +53,7 @@ describe('requeue prints the note through its deps seam', () => {
     const code = await Effect.runPromise(
       requeueCommand({ project: 'lingtai', issue: 9, note: 'again', by: 'human:test' }, (l) => lines.push(l), {
         store: createMemoryEventStore(),
-        loadProject: () => Effect.succeed({ owner: 'steven' } as never),
+        readProject: () => Effect.succeed({ owner: 'steven' } as never),
         conductorNote: () => conductorNoteEffect({ holder }),
         requeue: () => Effect.succeed({ ok: true, ticketId: 'ticket-lingtai-9', detail: 'back in the queue' } as never),
       }),

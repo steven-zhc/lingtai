@@ -4,9 +4,9 @@
  */
 import { join } from 'node:path'
 
-import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import { currentRecipe } from '@lingtai/conductor/projects'
 import { stateDir } from '@lingtai/env'
-import { recipePath } from '@lingtai/project'
+import { readProject, recipePath } from '@lingtai/project'
 import { queueOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { liveMachineText, needsClaudeToken } from '@lingtai/setup'
 
@@ -38,7 +38,7 @@ function tokenSay(recipe: Parameters<typeof needsClaudeToken>[0]): TokenSay {
 
 async function read(project: string | undefined): Promise<{ added: Added; token: TokenSay }> {
   if (project === undefined || project === '') return { added: { state: 'none' }, token: { say: 'none' } }
-  const loaded = await loadProject(project).then(
+  const loaded = await readProject(project).then(
     (state) => ({ ok: true as const, state }),
     () => ({ ok: false as const }),
   )

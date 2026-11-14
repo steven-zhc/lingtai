@@ -58,7 +58,7 @@ import {
   type DiscussionPorts,
   type ReadableRef,
 } from '@lingtai/conductor/discuss'
-import { currentRecipe, loadProjectEffect } from '@lingtai/conductor/projects'
+import { currentRecipe } from '@lingtai/conductor/projects'
 import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
 import { runLogPath } from '@lingtai/conductor/run-log'
 import { DISCUSSION_EVENTS, readControlEffect } from '@lingtai/daemon'
@@ -76,6 +76,7 @@ import {
 } from '@lingtai/domain'
 import { stateDir } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
+import { readProjectEffect } from '@lingtai/project'
 import { callFor, DISCUSS_DEFAULTS, type Discuss } from '@lingtai/recipe'
 import { listAtEffect, readAtEffect, refShaEffect } from '@lingtai/repo'
 import { Effect, Semaphore } from 'effect'
@@ -214,7 +215,7 @@ export const gatherEvidence = (request: DiscussionRequest): Effect.Effect<Discus
     // `RunProducedDiff` is the attempt saying it produced something.
     const head = index >= 0 ? reduceAttempt(streams[index] ?? []).headSha : null
 
-    const state = yield* loadProjectEffect(project).pipe(recovering(() => Effect.succeed(null)))
+    const state = yield* readProjectEffect(project).pipe(recovering(() => Effect.succeed(null)))
     const base = state?.base ?? 'main'
 
     const { ticket, ticketProblem } = yield* ticketEvidence(state, project, Number(parsed?.issue))
@@ -342,7 +343,7 @@ export const answerDiscussion = (
      * it is called from the daemon's subscription, and an exception escaping
      * there would stop the loop over a question somebody typed.
      */
-    const discuss: Discuss = yield* loadProjectEffect(project).pipe(
+    const discuss: Discuss = yield* readProjectEffect(project).pipe(
       Effect.flatMap((state) =>
         state === null
           ? Effect.succeed(DISCUSS_DEFAULTS)

@@ -1,6 +1,7 @@
-import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import { currentRecipe } from '@lingtai/conductor/projects'
 import { readStatus } from '@lingtai/daemon/control'
 import { aWaitId } from '@lingtai/domain/test/events'
+import { readProject } from '@lingtai/project'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { beforeEach, expect, it, vi } from 'vitest'
 
@@ -8,8 +9,11 @@ import { loadCurrentTriageStatus, type StandingView } from '../src/lib/task.ts'
 
 vi.mock('@lingtai/conductor/projects', async (original) => ({
   ...(await original<typeof import('@lingtai/conductor/projects')>()),
-  loadProject: vi.fn(),
   currentRecipe: vi.fn(),
+}))
+vi.mock('@lingtai/project', async (original) => ({
+  ...(await original<typeof import('@lingtai/project')>()),
+  readProject: vi.fn(),
 }))
 vi.mock('@lingtai/projector/task-view', async (original) => ({
   ...(await original<typeof import('@lingtai/projector/task-view')>()),
@@ -29,7 +33,7 @@ const standing = {
 beforeEach(() => {
   vi.mocked(readStatus).mockResolvedValue(null)
   vi.mocked(readTasks).mockResolvedValue([])
-  vi.mocked(loadProject).mockResolvedValue(null)
+  vi.mocked(readProject).mockResolvedValue(null)
 })
 
 it('reports a failed task projection read', async () => {
@@ -40,7 +44,7 @@ it('reports a failed task projection read', async () => {
 })
 
 it('reports failed recipe resolution before triage starts', async () => {
-  vi.mocked(loadProject).mockResolvedValue({} as Awaited<ReturnType<typeof loadProject>>)
+  vi.mocked(readProject).mockResolvedValue({} as Awaited<ReturnType<typeof readProject>>)
   vi.mocked(currentRecipe).mockRejectedValue(new Error('recipe unavailable'))
   await expect(loadCurrentTriageStatus('ticket-lingtai-112', 'lingtai', standing)).rejects.toThrow('recipe unavailable')
 })
@@ -55,7 +59,7 @@ it('reports a failed daemon-status read for an unfinished triage attempt', async
       triage: { started: { attempt: 1, at: startedAt }, result: null },
     } as TaskCard,
   ])
-  vi.mocked(loadProject).mockResolvedValue({} as Awaited<ReturnType<typeof loadProject>>)
+  vi.mocked(readProject).mockResolvedValue({} as Awaited<ReturnType<typeof readProject>>)
   vi.mocked(currentRecipe).mockResolvedValue({ recipe: { triage: [] } } as unknown as Awaited<
     ReturnType<typeof currentRecipe>
   >)

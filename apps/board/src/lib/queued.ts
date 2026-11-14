@@ -1,6 +1,5 @@
 import { runnableNow, type SkipReason } from '@lingtai/conductor/discover'
 import { projectFilter, type StepPlan } from '@lingtai/conductor/filter'
-import { loadProject } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { held as heldBy } from '@lingtai/daemon/control'
 /**
@@ -35,6 +34,7 @@ import { held as heldBy } from '@lingtai/daemon/control'
  * *no queue position*, and only the reason tells them apart (#76).
  */
 import { reduceTicket, STEPS, type Envelope, type Lock } from '@lingtai/domain'
+import { readProject } from '@lingtai/project'
 import { plannedAt } from '@lingtai/recipe/defaults'
 import type { TurnLimit } from '@lingtai/recipe/duration'
 import { ceilingOf, queueOf } from '@lingtai/recipe/settings'
@@ -287,7 +287,7 @@ export async function queuedFor(input: {
 }): Promise<QueuedView> {
   const { project, issue, paused, locks } = input
 
-  const state = await loadProject(project).catch(() => null)
+  const state = await readProject(project).catch(() => null)
   if (!state) return refused(`${project} is not a registered project`, null, paused, project, locks)
 
   const filter = await projectFilter(state)

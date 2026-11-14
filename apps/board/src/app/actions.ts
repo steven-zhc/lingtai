@@ -42,7 +42,7 @@ import { editBodyAndRequeue } from '@lingtai/conductor/edit-body'
 import { githubClientFor, projectClient } from '@lingtai/conductor/filter'
 import { recheck } from '@lingtai/conductor/onboard'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
-import { currentRecipe, loadAllProjects, loadProject, signedInHere } from '@lingtai/conductor/projects'
+import { currentRecipe, signedInHere } from '@lingtai/conductor/projects'
 import { editHash } from '@lingtai/conductor/prompt'
 import { resolveWait } from '@lingtai/conductor/resolve-wait'
 import { readState } from '@lingtai/conductor/snapshot-state'
@@ -53,7 +53,6 @@ import {
   CONTROL_STREAM,
   parsePayload,
   parseTicketStream,
-  projectStream,
   ticketReducer,
   waitsFromState,
   type WaitId,
@@ -64,7 +63,7 @@ import { allowedResolutions } from '@lingtai/domain/wait'
 import { machineDayCeiling, stateDir } from '@lingtai/env'
 import { hasGitHubApp, hasGitHubAuth } from '@lingtai/env'
 import { eventStore, log } from '@lingtai/event-store'
-import { HOST_FOR_SAVING, saveRecipeText } from '@lingtai/project'
+import { HOST_FOR_SAVING, loadAllProjects, readProject, readProjectState, saveRecipeText } from '@lingtai/project'
 import { kindsOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
 import { Effect } from 'effect'
@@ -84,7 +83,7 @@ import { runSplit, splitInstance } from '@/lib/split-instance'
 import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
 
 async function project(name: string) {
-  const state = await loadProject(name)
+  const state = await readProject(name)
   if (!state?.owner) throw new Error(`no project named "${name}" — run lingtai add first`)
   return state
 }
@@ -96,7 +95,7 @@ async function project(name: string) {
  * by name and is unchanged otherwise.
  */
 async function answersChannel(name: string) {
-  const state = await loadProject(name)
+  const state = await readProject(name)
   if (!state) return undefined
   if (state.owner === null) return (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
   return hasGitHubAuth() ? (await projectClient(state)).client : undefined
@@ -132,7 +131,7 @@ export async function approveCard(input: {
         detail: 'stale: this card was rendered without the wait it is about — reload and read it again',
       }
     }
-    const state = await loadProject(input.project)
+    const state = await readProject(input.project)
     if (!state) return { ok: false, detail: `no project named "${input.project}" — run lingtai add first` }
 
     // **A project with no owner has no App to check and no GitHub client to
@@ -194,7 +193,7 @@ export async function continueFixingCard(input: {
   try {
     if (!input.waitId || !input.onSha)
       return { ok: false, detail: 'stale: reload this page before granting a fix round' }
-    const state = await loadProject(input.project)
+    const state = await readProject(input.project)
     if (!state) return { ok: false, detail: `no project named "${input.project}" — run lingtai add first` }
     const client =
       state.owner === null
@@ -624,9 +623,9 @@ export async function askDiscussion(input: {
     const by = actor()
     const project = parseTicketStream(input.taskId)?.project ?? ''
     if (project !== '') {
-      const read = await eventStore
-        .read(projectStream(project))
-        .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
+      const read = await readProjectState(project, eventStore).catch((err: unknown) =>
+        err instanceof Error ? err : new Error(String(err)),
+      )
       const refusal = askRefusal(project, read)
       if (refusal !== null) return { ok: false, detail: refusal }
     }
@@ -1008,7 +1007,7 @@ export async function saveRecipe(_previous: SaveRecipeState, form: FormData): Pr
     return { ok: false, loaded, text, message: 'the form was malformed — reload the page' }
   }
   try {
-    const state = await loadProject(name)
+    const state = await readProject(name)
     if (!state) return { ok: false, loaded, text, message: `no project named "${name}"` }
     const result = await saveRecipeText(
       name,

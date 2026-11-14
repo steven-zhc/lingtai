@@ -10,8 +10,11 @@ const conductor = vi.hoisted(() => ({
 vi.mock('@lingtai/conductor/decide', () => ({ approve: vi.fn(), requeue: conductor.requeue }))
 vi.mock('@lingtai/conductor/resolve-wait', () => ({ resolveWait: conductor.resolveWait }))
 vi.mock('@lingtai/conductor/projects', () => ({
-  loadProject: vi.fn(async () => ({ name: 'p', owner: null })),
   currentRecipe: vi.fn(async () => ({ recipe: {} })),
+}))
+vi.mock('@lingtai/project', async (orig) => ({
+  ...(await orig<object>()),
+  readProject: vi.fn(async () => ({ name: 'p', owner: null })),
   loadAllProjects: vi.fn(),
 }))
 vi.mock('@lingtai/conductor/ownerless', () => ({ ownerlessClient: vi.fn(async () => ({ client: {} })) }))

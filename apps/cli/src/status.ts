@@ -21,7 +21,6 @@ import {
   accountsFor,
   currentRecipe,
 } from '@lingtai/conductor'
-import { loadProjectsEffect } from '@lingtai/conductor/projects'
 import { selectRunnableEffect } from '@lingtai/conductor/queue'
 import { readControlEffect } from '@lingtai/daemon'
 import {
@@ -45,6 +44,7 @@ import { recommendedResolution, waitMoves } from '@lingtai/domain/wait'
 import { machineDayCeiling } from '@lingtai/env'
 import { paint, stateInk } from '@lingtai/env/colour'
 import { eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
+import { loadProjectsEffect } from '@lingtai/project'
 import { describeArm, describeWaitLines, describeWait, readTasksEffect, type TaskCard } from '@lingtai/projector'
 import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { Effect } from 'effect'

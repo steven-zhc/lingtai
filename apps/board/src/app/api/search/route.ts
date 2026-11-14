@@ -7,8 +7,8 @@
  * 200 whose index is the pages alone, so the palette on the not-set-up screen
  * still lists them. All the logic is `buildIndex`, which a test can reach.
  */
-import { loadProjects } from '@lingtai/conductor/projects'
 import { storeChoice } from '@lingtai/env'
+import { loadProjects } from '@lingtai/project'
 import { readTasks } from '@lingtai/projector/task-view'
 
 import { emptyIfUnbuilt, onBoardProjects } from '@/lib/board'

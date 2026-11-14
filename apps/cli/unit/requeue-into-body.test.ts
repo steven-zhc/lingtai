@@ -31,7 +31,7 @@ async function blocked(store: EventStore, issue: number) {
   return { ticketId, waitId }
 }
 
-const loadProject = () => Effect.succeed({ owner: 'steven' } as ProjectState)
+const readProject = () => Effect.succeed({ owner: 'steven' } as ProjectState)
 const conductorNote = () => Effect.succeed(null)
 
 describe('requeue command', () => {
@@ -48,7 +48,7 @@ describe('requeue command', () => {
         {
           store,
           client: tickets,
-          loadProject,
+          readProject,
           conductorNote,
           editBodyAndRequeue: (options) => editBodyAndRequeueHoldingEffect(options, store, ticketId),
         },
@@ -72,7 +72,7 @@ describe('requeue command', () => {
       requeueCommand(
         { project: 'lingtai', issue: 2, note: 'try again', by: 'human:test' },
         (line) => lines.push(line),
-        { store, loadProject, conductorNote, requeue: (options) => requeueHoldingEffect(options, store, ticketId) },
+        { store, readProject, conductorNote, requeue: (options) => requeueHoldingEffect(options, store, ticketId) },
       ),
     )
     expect(code).toBe(0)

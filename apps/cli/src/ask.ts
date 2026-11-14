@@ -15,7 +15,7 @@ import { userInfo } from 'node:os'
  * board's only writer, so each says when none is up.
  */
 import { answerEffect, askEffect } from '@lingtai/conductor/ask'
-import { loadProjectEffect } from '@lingtai/conductor/projects'
+import { readProjectEffect } from '@lingtai/project'
 import { Effect } from 'effect'
 
 import { noteConductor } from './conductor-note.ts'
@@ -48,7 +48,7 @@ function decide(
       )
     }
 
-    const project = yield* loadProjectEffect(options.project)
+    const project = yield* readProjectEffect(options.project)
     if (!project) {
       return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
     }
