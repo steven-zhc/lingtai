@@ -60,7 +60,6 @@ function reviewer(reply: RunOutcome): Runtime & { seen: RunRequest[] } {
       hooks: [],
       canFailClosed: true,
       canRewriteToolCall: false,
-      providesTier: 'guarded',
       enforces: ['turns', 'wall'],
     },
     run: (request) => {
@@ -1794,7 +1793,6 @@ describe('RunSpent, on every branch (#494)', () => {
           hooks: [],
           canFailClosed: true,
           canRewriteToolCall: true,
-          providesTier: 'guarded',
           enforces: ['turns', 'wall'],
         },
         run: () => Effect.succeed(outcome({ text: '{"findings":[]}' })),
@@ -1850,7 +1848,6 @@ describe('RunSpent, on every branch (#494)', () => {
           hooks: [],
           canFailClosed: true,
           canRewriteToolCall: false,
-          providesTier: 'guarded',
           enforces: ['turns', 'wall'],
         },
         run: () => Effect.die(new Error('the process died')),

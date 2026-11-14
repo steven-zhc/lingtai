@@ -1,4 +1,4 @@
-import { SEVERITIES, Tier, RuntimeId, JudgeWhen, type Step, isEventType, isRetiredEventType } from '@lingtai/domain'
+import { SEVERITIES, RuntimeId, JudgeWhen, type Step, isEventType, isRetiredEventType } from '@lingtai/domain'
 import { PREFIX } from '@lingtai/env'
 /**
  * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, its
@@ -3237,16 +3237,6 @@ export const Recipe = z
 
     runtime: z.object({
       agent: RuntimeId.default('claude-code'),
-      /**
-       * How contained the runtime must be. `conduct.ts` refuses to dispatch when the
-       * runtime cannot meet it, which is the whole of the enforcement.
-       *
-       * Defaulted rather than optional: nothing sits underneath it to fall back
-       * to, so an absent tier meaning "unspecified" would be a run whose
-       * containment nothing states. `guarded` is what every
-       * run has actually used ([ADR 0007](../../../doc/decisions-archive/0007-dual-runtime.md)).
-       */
-      tier: Tier.default('guarded'),
       prompt: z.string().optional(),
       /**
        * How many passes of this project one conductor may keep in flight

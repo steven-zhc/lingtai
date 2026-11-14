@@ -498,3 +498,47 @@ describe('durations, both ways', () => {
     expect(formatDuration(1_500)).toBe('1500ms')
   })
 })
+
+/**
+ * `runtime.tier` left the recipe (#1158). Refused by name, with the sentence for
+ * its value, **before the parse** — `runtime` is a plain `z.object`, so a key the
+ * schema no longer declares would otherwise be dropped without a word.
+ */
+describe('a recipe that still writes runtime.tier', () => {
+  const withTier = (tier: string) => VALID.replace('agent: claude-code', `agent: claude-code\n  tier: ${tier}`)
+  const refusal = async (tier: string) =>
+    resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: withTier(tier) }), 'develop').then(
+      () => '',
+      (e: Error) => e.message,
+    )
+
+  it('is told, for sandboxed, the sandbox block that keeps the containment it asked for', async () => {
+    expect(await refusal('sandboxed')).toContain(
+      'replace `runtime.tier: sandboxed` with `sandbox: { enabled: true, required: true }`: the same promise, contained or nothing runs',
+    )
+  })
+
+  it('is told, for guarded, that failing closed is now always required', async () => {
+    expect(await refusal('guarded')).toContain('delete `runtime.tier`: failing closed is now always required')
+  })
+
+  it('is told, for open, that a runtime that cannot fail closed is now refused', async () => {
+    expect(await refusal('open')).toContain(
+      'delete `runtime.tier`; a runtime that cannot fail closed is now refused rather than allowed',
+    )
+  })
+
+  it('is refused for any other value too, rather than dropped', async () => {
+    expect(await refusal('sandbxed')).toContain('runtime.tier: delete `runtime.tier`')
+  })
+})
+
+describe('the hash of a recipe that does not write runtime.tier', () => {
+  it('is the hash it had on main, when the defaulted tier was inside it (#1158)', async () => {
+    const resolved = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), 'develop')
+    // Recorded from `main` before the key left the schema.
+    expect(resolved.configHash).toBe('255cbdfe463cca1177d756840de675ef2740b1e6665cc0e3bbd8cd412ca02b53')
+    // And the body the event records still verifies against it: `forHash` is idempotent.
+    expect(hashRecipe(canonicalRecipe(resolved.recipe) as never)).toBe(resolved.configHash)
+  })
+})

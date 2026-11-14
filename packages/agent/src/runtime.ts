@@ -1,4 +1,4 @@
-import type { RunFailureKind, RuntimeId, Tier, Usage } from '@lingtai/domain'
+import type { RunFailureKind, RuntimeId, Usage } from '@lingtai/domain'
 /**
  * One interface, two implementations — **both of them real since `#313`.**
  *
@@ -62,8 +62,6 @@ export interface RuntimeCapabilities {
   canFailClosed: boolean
   /** Codex can rewrite a call as well as refuse it. Claude Code cannot. */
   canRewriteToolCall: boolean
-  /** The strongest containment this runtime provides on its own. */
-  providesTier: Tier
   /**
    * Which of `RUN_LIMITS` this adapter actually stops a run at (`#89`).
    *
@@ -307,56 +305,16 @@ export const runtimeVersionOfEffect = (
       )
 
 /**
- * Whether this runtime can be asked to do what the tier names.
+ * What a runtime that runs tools is missing to fail closed, so `DispatchRefused`
+ * can name it rather than say "no". Empty means it can.
  *
- * The tiers are about the runtime, not a policy on the tools: containment is
- * the worktree and the filtered environment, at every tier. `guarded` is a
- * runtime that stops the run when the `UserPromptSubmit` hook refuses the
- * prompt (`canFailClosed`) — not a hook before tool use, which Lingtai does not
- * install (`INTERSECTION_HOOKS`) — and it is what the first project runs at and what carried
- * the old loop's 73 runs. `sandboxed` adds a filesystem boundary the runtime
- * enforces itself, **which Codex provides and which was proved rather than read
- * off documentation** (`#313`, `codex.ts`): `codex sandbox -c
- * sandbox_mode=read-only` refuses a write inside the working root, and
- * `workspace-write` refuses `$HOME` and `~/.lingtai`.
- *
- * **The two are independent promises and this function reads both.** For weeks it
- * returned on rank alone, so `sandboxed` satisfied `guarded` without
- * `canFailClosed` being consulted — see `meetsTier`.
+ * **Failing closed is a fixed requirement** (#1158, ADR 0127 §10), no longer one
+ * a recipe opts into: a run whose `UserPromptSubmit` hook cannot stop it would
+ * produce nothing and look like it produced everything. The name is the one
+ * `DispatchRefused.missing` carried before there was a tier to drop, and is kept
+ * because the event carries it — old and new refusals share one vocabulary.
+ * Containment is the recipe's `sandbox` block and nothing here.
  */
-export function meetsTier(capabilities: RuntimeCapabilities, required: Tier): boolean {
-  const rank: Record<Tier, number> = { open: 0, guarded: 1, sandboxed: 2 }
-  // **`guarded` is an axis, not a rung** (`#313`). For weeks this returned on
-  // rank alone, so a `providesTier: "sandboxed"` runtime satisfied a `guarded`
-  // recipe **without `canFailClosed` ever being read** — and `missingForTier`'s
-  // `guarded` branch carried the right sentence behind a comment admitting it
-  // never fired. A rank that grants `guarded` to a runtime that cannot fail
-  // closed is the *silent downgrade* 0007 forbids by name: it *"records
-  // `DispatchRefused` when the combination cannot meet the tier — it never
-  // silently downgrades"*. Filesystem containment and failing closed are
-  // different promises and a bigger number is not one of them.
-  //
-  // Dead code today and correct anyway: both runtimes declare `canFailClosed`,
-  // and Codex's was proved against the binary rather than assumed (`codex.ts`).
-  // It fires on the day a runtime arrives that only notifies its hook.
-  if (required !== 'open' && !capabilities.canFailClosed) return false
-  return rank[capabilities.providesTier] >= rank[required]
-}
-
-/** What is missing, so `DispatchRefused` can name it rather than say "no". */
-export function missingForTier(capabilities: RuntimeCapabilities, required: Tier): string[] {
-  if (meetsTier(capabilities, required)) return []
-  // **Accumulated rather than branched** (`#313`), because since `meetsTier`
-  // reads two independent promises a runtime can be missing both, and a list
-  // that named only the first would send an operator to fix half of it. The
-  // names are unchanged and `DispatchRefused` records them.
-  const missing: string[] = []
-  // The name predates 0016 and is kept because the event carries it.
-  if (!capabilities.canFailClosed) missing.push('pre-tool-use-interception')
-  if (required === 'sandboxed' && capabilities.providesTier !== 'sandboxed') {
-    missing.push('filesystem-sandbox')
-  }
-  // Something is missing — `meetsTier` said so — and neither promise above is
-  // it. The tier itself, so the refusal still says a word rather than nothing.
-  return missing.length > 0 ? missing : [`tier-${required}`]
+export function missingToFailClosed(capabilities: RuntimeCapabilities): string[] {
+  return capabilities.canFailClosed ? [] : ['pre-tool-use-interception']
 }

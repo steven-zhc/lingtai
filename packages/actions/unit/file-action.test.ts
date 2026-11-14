@@ -394,7 +394,6 @@ describe("what the drafter's own event still carries", () => {
       hooks: [],
       canFailClosed: true,
       canRewriteToolCall: false,
-      providesTier: 'guarded',
       enforces: ['turns', 'wall'],
     },
     run: () =>

@@ -215,7 +215,8 @@ export function planOf(
     }),
     turns: runtime.limits.turns,
     wall: runtime.limits.wall,
-    tier: runtime.tier,
+    // The recipe has no tier since #1158; the follow-up deletes this field.
+    tier: 'guarded',
     rounds: runtime.limits.rounds,
     restarts: runtime.limits.restarts,
   }
@@ -312,7 +313,8 @@ export async function queuedFor(input: {
     // for a bug in the machine-file merge. A step's own bound is named on the
     // `agent:` row, which is where it belongs.
     limits: ceilingOf(filter.recipe),
-    tier: filter.recipe.runtime.tier,
+    // The recipe has no tier since #1158; the follow-up deletes this field.
+    tier: 'guarded',
   })
   const until = backoffOf(input.own, filter.backoffMs)
 

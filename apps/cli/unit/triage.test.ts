@@ -131,7 +131,6 @@ function stubRuntime(respond: (request: RunRequest, call: number) => RunOutcome 
       hooks: [],
       canFailClosed: true,
       canRewriteToolCall: false,
-      providesTier: 'guarded',
       enforces: [],
     } as unknown as Runtime['capabilities'],
     run: (request: RunRequest) =>

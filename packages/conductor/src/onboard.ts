@@ -623,7 +623,7 @@ export function registrationLine(prior: readonly Envelope[], repo: string, resol
   const before: ProjectState = reduceProject(prior)
   return isRegistered(before)
     ? `updated ${repo} — its ${prior.length} earlier event(s) are still on the record`
-    : `added ${repo} — tier ${resolved.recipe.runtime.tier}, ${Object.values(resolved.recipe.steps).flat().length} action(s) across 5 steps`
+    : `added ${repo} — ${Object.values(resolved.recipe.steps).flat().length} action(s) across 5 steps`
 }
 
 /** What `chooseFirstProject`'s local branch (#394) has already resolved before it registers. */

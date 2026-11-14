@@ -73,8 +73,6 @@ export interface ResolvedRecipe {
   ref: string
   /** The raw file, kept so a diff against a later version is possible. */
   source: string
-  /** The tier this run will execute at. The recipe's, and now nobody else's. */
-  tier: Recipe['runtime']['tier']
   /** Which preset it extended, if any. Provenance; not part of the hash. */
   preset: string | null
   /**
@@ -154,7 +152,13 @@ function forHash(recipe: Recipe, plugins: readonly Plugin[]): Record<string, unk
   for (const step of NOT_YET_IN_THE_HASH) {
     if ((steps[step] as readonly unknown[] | undefined)?.length === 0) delete steps[step]
   }
-  return { ...recipe, steps }
+  // `runtime.tier` left the recipe (#1158) and is written back here as the
+  // default it used to carry. **A hash cannot be upcast** (see above): the
+  // defaulted `tier: 'guarded'` was inside every recorded `configHash`, and a
+  // recipe that resolves now is one that never wrote another value (`sandboxed`
+  // and `open` are refused), so putting it back keeps every recipe's hash. Set
+  // unconditionally so it stays idempotent over a body already through here.
+  return { ...recipe, runtime: { ...recipe.runtime, tier: 'guarded' }, steps }
 }
 
 /**
@@ -241,6 +245,9 @@ export function resolveSource(
   const unknown = unknownKeys(applied.recipe)
   if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where)
 
+  const retired = retiredTier(applied.recipe)
+  if (retired.length > 0) throw new RecipeInvalidError(ref, retired, where)
+
   // A recipe may write no `runtime:` at all — its agent on each step or
   // detected (#372), and every field inside defaulted — so an absent one is
   // the schema's, as `emitRecipe` already reads it.
@@ -266,9 +273,37 @@ export function resolveSource(
     configHash: hashRecipe(parsed.data),
     ref,
     source,
-    tier: parsed.data.runtime.tier,
     preset: applied.preset,
   }
+}
+
+/**
+ * `runtime.tier` left the recipe (#1158, ADR 0127 §10), and is refused **before
+ * the parse**: `runtime` is a plain `z.object`, so once the schema stops
+ * declaring `tier` zod would drop it without a word, and a recipe that wrote
+ * `tier: sandboxed` would run uncontained while its file said otherwise.
+ *
+ * The sentence is for the value, never only *delete the field*: `sandboxed`
+ * asked for containment, and dropping it falls to no sandbox. Lingtai does not
+ * rewrite the recipe.
+ */
+function retiredTier(raw: unknown): string[] {
+  if (typeof raw !== 'object' || raw === null) return []
+  const runtime = (raw as Record<string, unknown>)['runtime']
+  if (typeof runtime !== 'object' || runtime === null || !('tier' in runtime)) return []
+  const tier = (runtime as Record<string, unknown>)['tier']
+  if (tier === 'sandboxed') {
+    return [
+      'runtime.tier: replace `runtime.tier: sandboxed` with `sandbox: { enabled: true, required: true }`: the same promise, contained or nothing runs',
+    ]
+  }
+  if (tier === 'guarded') return ['runtime.tier: delete `runtime.tier`: failing closed is now always required']
+  if (tier === 'open') {
+    return ['runtime.tier: delete `runtime.tier`; a runtime that cannot fail closed is now refused rather than allowed']
+  }
+  return [
+    'runtime.tier: delete `runtime.tier`: containment is the `sandbox` block, and failing closed is always required',
+  ]
 }
 
 /**

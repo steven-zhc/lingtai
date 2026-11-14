@@ -535,12 +535,16 @@ export const TicketLanded = z.object({ mergeCommit: z.string(), base: z.string()
 export const TicketClosed = z.object({ by: z.string(), reason: z.string() })
 
 /**
- * Capability matching refused the dispatch. Never silently downgrade a tier.
+ * Capability matching refused the dispatch: a runtime that runs tools could not
+ * fail closed. Never silently downgrade.
  *
- * @summary The conductor refused to start an agent because its runtime lacks something the ticket requires.
+ * `requiredTier` is on events written before #1158, when a recipe chose a tier;
+ * new events do not write it, and every old one still decodes.
+ *
+ * @summary The conductor refused to start an agent because its runtime cannot fail closed.
  */
 export const DispatchRefused = z.object({
-  requiredTier: Tier,
+  requiredTier: Tier.optional(),
   runtime: RuntimeId,
   missing: z.array(z.string()),
 })
@@ -568,8 +572,8 @@ export const Invocation = z.object({
   command: z.string(),
   /** argv as applied, with a placeholder where the prompt itself went. */
   args: z.array(z.string()),
-  /** The containment this run executed at: the recipe's, matched before dispatch. */
-  tier: Tier,
+  /** The containment this run executed at. Written before #1158 only; absent on a newer event. */
+  tier: Tier.optional(),
   /**
    * The limits in force, in the units the runtime was handed them. `usd` is
    * additive (`#370`) — absent on every event written before it, and absent

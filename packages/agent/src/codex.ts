@@ -33,17 +33,17 @@
  *   `"ignore"` below, which is `/dev/null`, and it is load-bearing.
  * - **The hooks wire, so `canFailClosed` is true and proved.** See
  *   `codexHookArgs`.
- * - **`providesTier: "sandboxed"` is proved.** `codex sandbox -c
+ * - **Codex's own filesystem boundary is proved.** `codex sandbox -c
  *   sandbox_mode=read-only` refused a write inside the working root;
  *   `workspace-write` refused `$HOME` and `~/.lingtai` — Lingtai's own state
  *   directory, where the hook wiring and the run logs live. It permits `/tmp`,
  *   which is Codex's documented exception and is where `socketPathFor` puts the
- *   run's hook socket; that is not a tier correction, because the runtime Lingtai
+ *   run's hook socket; that is not a correction, because the runtime Lingtai
  *   dispatches today provides no filesystem boundary at all and 0016 §6 refuses
  *   no tool call either way.
  * - **And refusing `~/.lingtai` is why a worktree needs `--add-dir`.** The git
  *   directory a worktree commits into lives there, outside `--cd`, so the
- *   boundary that makes this runtime `sandboxed` is the same one that stopped
+ *   boundary Codex enforces itself is the same one that stopped
  *   `git add` — `gitWritableRoots` names that directory, and of the repository it
  *   borrows objects and refs from **the three stores a commit writes to and not
  *   the directory holding them**, because that one holds `hooks/` and the merge
@@ -211,8 +211,6 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   canFailClosed: true,
   // Codex can rewrite a tool call, not merely refuse it.
   canRewriteToolCall: true,
-  /** `-s workspace-write` is a real filesystem boundary. See the module header. */
-  providesTier: 'sandboxed',
   /**
    * **`wall` only, and that is `#89` working rather than a regression.**
    *
@@ -1144,8 +1142,8 @@ function hookWiringAt(settingsPath: string): unknown | null {
  * unset, and the merge lane then runs `git merge` and `git push` from the
  * conductor process (`packages/repo/src/integrate.ts`) — not sandboxed, holding
  * the installation token. A writable `hooks/` is therefore a script the operator
- * runs, which is a path straight out of the boundary `providesTier: "sandboxed"`
- * promises, and nothing in the pass reads that path: `tamper` watches repository
+ * runs, which is a path straight out of the boundary a sandboxed
+ * run promises, and nothing in the pass reads that path: `tamper` watches repository
  * files, the recipe lives outside every worktree, and `build`/`review` see the
  * diff. `config` is in there too — an alias, `core.pager`, `core.fsmonitor` are
  * all commands git executes.

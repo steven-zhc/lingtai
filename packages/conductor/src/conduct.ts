@@ -32,7 +32,7 @@ import {
   type RunOutcome,
   type Runtime,
   createRuntime,
-  missingForTier,
+  missingToFailClosed,
   runtimeVersionOfEffect,
   taggedTrace,
   type RunSandbox,
@@ -40,7 +40,6 @@ import {
 import { extensionEnv, productionPatterns, renderEnvFile, runnableEnv } from '@lingtai/agent-env'
 import {
   type SpentFor,
-  type Tier,
   WIP_COMMIT_PREFIX,
   integrationStream,
   parsePayload,
@@ -108,8 +107,8 @@ import { type EventStore, eventStore, log as theLog, readThroughSnapshot, type S
  *                                           must name the registered base as its own
  *   resolve the environment                 a declared name with no value
  *                                           refuses here, before the money
- *   match the tier                          a runtime that cannot provide it is
- *                                           `DispatchRefused`, never a downgrade
+ *   check each runtime can fail closed      one that cannot is `DispatchRefused`,
+ *                                           never a downgrade
  *   → the pass                              ten steps, and the claim is the first
  *   write the ending                        landed, blocked or failed — once,
  *                                           whichever of the four ways it ended
@@ -1024,7 +1023,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         return built
       }
     })()
-    log(`recipe ${resolved.configHash.slice(0, 12)} from ${resolved.ref}, tier ${resolved.tier}`)
+    log(`recipe ${resolved.configHash.slice(0, 12)} from ${resolved.ref}`)
 
     // ---- 2. the environment, before anything is claimed ---------------------
     // A declared name with no value refuses the whole project for this pass: no
@@ -1083,81 +1082,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       return { ok: false, ticketId: null, runId: null, stage: 'env', detail }
     }
 
-    /**
-     * Append the setup's `ConductorPaused`, once, and never over a pause
-     * already holding (0031 §3, §5): a recipe whose tier one of its runtimes
-     * cannot provide. It is conductor-wide until the 0.14.0 security epic takes
-     * #676, and lifted only by `lingtai resume`, so it is
-     * `{until: null, holdsAcrossStarts: true, cause: 'setup'}` on every call.
-     * An account's wall is not this: it locks one runtime (`standDownAccount`).
-     *
-     * Declared here, above section 3, so a refusal found before the claim can
-     * call it: it is a `const` and a call from further down would be fine, but
-     * one from here to something below would hit its temporal dead zone.
-     *
-     * The three-way answer is so a caller can say what happened without a
-     * second read of `CONTROL_STREAM`: `'appended'` is the pause this call
-     * made, `'already-paused'` is a pause — anybody's — already holding, and
-     * `'failed'` is an append this already logged, so nothing else about it is
-     * said twice.
-     */
-    const pauseConductorOnce = (input: {
-      reason: string
-    }): Effect.Effect<{ kind: 'appended' } | { kind: 'already-paused'; reason: string | null } | { kind: 'failed' }> =>
-      Effect.gen(function* () {
-        // Head first, then the state, then the append at that head: an event landing between
-        // them fails the append rather than being decided over. A failure is a defect, as it
-        // was inside `Effect.promise`, so the `catchAllDefect` below still answers it.
-        const head = yield* Effect.promise(() => store.head(CONTROL_STREAM))
-        const state = yield* readThroughSnapshot(store, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, {
-          snapshots: controlSnapshots,
-        }).pipe(Effect.orDie)
-        if (state.paused) {
-          return { kind: 'already-paused' as const, reason: state.reason }
-        }
-        yield* Effect.promise(() =>
-          store.append(CONTROL_STREAM, head, [
-            {
-              type: 'ConductorPaused',
-              actor: 'conductor',
-              data: parsePayload('ConductorPaused', {
-                by: 'lingtai',
-                reason: input.reason,
-                until: null,
-                holdsAcrossStarts: true,
-                cause: 'setup',
-              }),
-            },
-          ]),
-        )
-        return { kind: 'appended' as const }
-      }).pipe(
-        // A pause that would not append must not replace the reason the run
-        // ended with the reason the pause failed.
-        Effect.catchDefect((defect) =>
-          Effect.sync(() => {
-            log(`could not pause the conductor: ${defect instanceof Error ? defect.message : String(defect)}`)
-            return { kind: 'failed' as const }
-          }),
-        ),
-      )
-
     // ---- 3. capability matching, before anything is claimed -----------------
-    const tier: Tier = resolved.tier
     /**
      * **Asked of every runtime this pass will dispatch, not only the default**
      * (`#314`, 0070 §8).
      *
-     * `tier` stays per-pass — it is the containment a project requires, not a
-     * property of one call — so a step naming a runtime that cannot provide it
-     * is the *pass* being impossible, and is recorded as `DispatchRefused`
-     * before the claim rather than as a step failing halfway through one.
-     * `refusedBy` names which runtime could not, because *sandboxed: missing
-     * filesystem-sandbox* over a two-runtime recipe says nothing about which
-     * line to edit.
+     * Failing closed is a fixed requirement, not a property a recipe asks for
+     * (#1158), so a step naming a runtime that cannot is the *pass* being
+     * impossible, and is recorded as `DispatchRefused` before the claim rather
+     * than as a step failing halfway through one. `refusedBy` names which
+     * runtime could not, because *missing pre-tool-use-interception* over a
+     * two-runtime recipe says nothing about which line to edit. It is the
+     * project's refusal for this pass and pauses nothing (#676).
      */
     const refusedBy = [options.runtime.capabilities.id, ...secondRuntimes]
-      .map((id) => ({ id, missing: missingForTier(runtimeNamed(id as RuntimeId).capabilities, tier) }))
+      .map((id) => ({ id, missing: missingToFailClosed(runtimeNamed(id as RuntimeId).capabilities) }))
       .find((each) => each.missing.length > 0)
     const missing = refusedBy?.missing ?? []
     const ticketId = ticketStream(project, options.issue)
@@ -1165,49 +1104,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     if (missing.length > 0) {
       // Never silently downgrade. The refusal is an event on the work item so the
       // board can say why nothing ran.
+      const runtime = refusedBy?.id ?? options.runtime.capabilities.id
       yield* appendNow(ticketId, [
         {
           type: 'DispatchRefused',
           actor: 'conductor',
-          data: parsePayload('DispatchRefused', {
-            requiredTier: tier,
-            runtime: refusedBy?.id ?? options.runtime.capabilities.id,
-            missing,
-          }),
+          data: parsePayload('DispatchRefused', { runtime, missing }),
         },
       ])
-      /**
-       * The project names which recipe is wrong, because the pause below stops
-       * every registered project and an operator reading it may have several
-       * (`#405`'s *Watch out*: "the pause's reason must name the project, the
-       * runtime and the tier it lacks").
-       */
-      const base = `${project}: ${refusedBy?.id ?? options.runtime.capabilities.id} cannot provide ${tier}: missing ${missing.join(', ')}.`
-      /**
-       * **This is `0118 §4`'s *fix the setup*, said once rather than once per
-       * ticket** (#405). The refusal above is about this one item; the pause is
-       * about the pass, which is impossible for every item behind this one too
-       * — so the conductor stops rather than emptying the queue into Waiting
-       * one ticket at a time. `until: null`, because nothing fixes a missing
-       * tier by waiting (0031 §5): the pause holds until a person lifts it with
-       * `lingtai resume`, and `holdsAcrossStarts: true` because a restart loads
-       * the same wrong setup.
-       */
-      const pausedSentence = `${base} Every queued item would meet the same thing, so the conductor is taking no work until the setup is fixed — run \`lingtai resume\` once it is.`
-      const outcome = yield* pauseConductorOnce({ reason: pausedSentence })
-      if (outcome.kind === 'appended') {
-        log(`dispatch refused — conductor paused until the setup is fixed: ${pausedSentence}`)
-      } else if (outcome.kind === 'already-paused') {
-        log(`dispatch refused; the conductor is already paused — ${outcome.reason ?? 'no reason given'}`)
-      }
       return {
         ok: false,
         ticketId,
         runId: null,
         stage: 'dispatch',
-        // `'failed'` means no pause is known to hold, so `detail` must not
-        // claim one does — `base` alone, with nothing said about the queue.
-        detail: outcome.kind === 'failed' ? base : pausedSentence,
+        detail: `${project}: ${runtime} cannot fail closed: missing ${missing.join(', ')}.`,
       }
     }
 
@@ -4441,9 +4351,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                       baseSha: tree.baseSha,
                       configHash: resolved.configHash,
                       worktree: tree.path,
-                      invocation: spawned
-                        ? { command: spawned.command, args: [...spawned.args], tier, limits: spend }
-                        : null,
+                      invocation: spawned ? { command: spawned.command, args: [...spawned.args], limits: spend } : null,
                     }),
                   },
                 ])

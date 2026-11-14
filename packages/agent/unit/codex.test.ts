@@ -34,7 +34,7 @@ import {
   userPermissionsFrom,
 } from '../src/codex.ts'
 import { renderSettings } from '../src/hook-config.ts'
-import { meetsTier, missingForTier, RUN_LIMITS } from '../src/runtime.ts'
+import { missingToFailClosed, RUN_LIMITS } from '../src/runtime.ts'
 
 const jsonl = (...events: readonly unknown[]): string[] => events.map((e) => JSON.stringify(e))
 
@@ -750,7 +750,7 @@ describe('the invocation', () => {
     expect(argv()).not.toContain('--add-dir')
   })
 
-  /** The flag that would make `providesTier: "sandboxed"` a lie. */
+  /** The flag that would make Codex's own sandbox a lie. */
   it('never passes the flag that turns the sandbox off', () => {
     expect(argv()).not.toContain('--dangerously-bypass-approvals-and-sandbox')
     expect(argv().join(' ')).not.toContain('danger-full-access')
@@ -840,36 +840,15 @@ describe("Codex's capabilities, each measured against the binary", () => {
    * root, and `workspace-write` refused `$HOME` and `~/.lingtai` — Lingtai's own
    * state directory, where the hook wiring and the run logs live.
    */
-  it('carries sandboxed, and carries guarded because it also fails closed', () => {
-    expect(CODEX_CAPABILITIES.providesTier).toBe('sandboxed')
-    expect(meetsTier(CODEX_CAPABILITIES, 'sandboxed')).toBe(true)
-    expect(meetsTier(CODEX_CAPABILITIES, 'guarded')).toBe(true)
-    expect(missingForTier(CODEX_CAPABILITIES, 'sandboxed')).toEqual([])
+  it('fails closed', () => {
+    expect(missingToFailClosed(CODEX_CAPABILITIES)).toEqual([])
   })
 })
 
-/**
- * The correction the ticket's *Watch out* named: `meetsTier` returned on rank
- * alone, so `sandboxed` satisfied `guarded` **without `canFailClosed` ever being
- * read**. A rank that grants `guarded` to a runtime that cannot fail closed is
- * the silent downgrade 0007 forbids by name.
- */
-describe('guarded is an axis, not a rung', () => {
-  const sandboxedButOpenLoop = { ...CODEX_CAPABILITIES, canFailClosed: false }
-
-  it('refuses guarded to a sandboxed runtime that cannot fail closed', () => {
-    expect(meetsTier(sandboxedButOpenLoop, 'guarded')).toBe(false)
-    expect(missingForTier(sandboxedButOpenLoop, 'guarded')).toEqual(['pre-tool-use-interception'])
-  })
-
-  it('names the promise that is missing, not the one that is kept', () => {
-    // It has a filesystem sandbox; what it lacks is failing closed. A refusal
-    // saying `filesystem-sandbox` would send an operator to fix the wrong thing.
-    expect(missingForTier(sandboxedButOpenLoop, 'sandboxed')).toEqual(['pre-tool-use-interception'])
-  })
-
-  it('still lets `open` through, which asks for neither promise', () => {
-    expect(meetsTier({ ...sandboxedButOpenLoop, providesTier: 'open' }, 'open')).toBe(true)
+/** Failing closed is read off `canFailClosed` alone: nothing else stands in for it. */
+describe('missingToFailClosed', () => {
+  it('names the missing promise for a runtime that cannot fail closed', () => {
+    expect(missingToFailClosed({ ...CODEX_CAPABILITIES, canFailClosed: false })).toEqual(['pre-tool-use-interception'])
   })
 })
 

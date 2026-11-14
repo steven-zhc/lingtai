@@ -17,9 +17,36 @@ import {
   STEPS,
   UPCASTERS,
   type UpcastRegistry,
+  parsePayload,
   parseStoredPayload,
   upcast,
 } from '../src/index.ts'
+
+/** #1158: `requiredTier` and `tier` are optional now, and every stored payload still decodes. */
+describe('events written when a recipe chose a tier', () => {
+  it('parses an old DispatchRefused and one without requiredTier', () => {
+    const old = { requiredTier: 'sandboxed', runtime: 'claude-code', missing: ['filesystem-sandbox'] }
+    expect(parsePayload('DispatchRefused', old)).toEqual(old)
+    const now = { runtime: 'claude-code', missing: ['pre-tool-use-interception'] }
+    expect(parsePayload('DispatchRefused', now)).toEqual(now)
+  })
+
+  it('parses an old Invocation with its tier and a new one without', () => {
+    const base = { command: 'claude', args: [], limits: { turns: 150, wallMs: 3_600_000 } }
+    const started = (invocation: unknown) => ({
+      ticketId: 'ticket-lingtai-88',
+      runtime: 'claude-code',
+      model: '',
+      promptVersion: 'ticket@1932',
+      baseSha: 'base000',
+      configHash: 'cfg',
+      worktree: '/tmp/wt',
+      invocation,
+    })
+    expect(() => parseStoredPayload('RunStarted', 2, started({ ...base, tier: 'guarded' }))).not.toThrow()
+    expect(() => parseStoredPayload('RunStarted', 2, started(base))).not.toThrow()
+  })
+})
 
 describe('upcast', () => {
   it('is a no-op at the current version', () => {

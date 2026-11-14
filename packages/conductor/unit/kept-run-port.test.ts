@@ -266,7 +266,6 @@ describe('the restore under interruption (#1043, #587)', () => {
           hooks: [],
           canFailClosed: true,
           canRewriteToolCall: false,
-          providesTier: 'guarded',
           enforces: ['turns', 'wall'],
         },
         run: () =>

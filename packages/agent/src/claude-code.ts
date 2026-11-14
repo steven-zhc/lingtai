@@ -71,11 +71,6 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   canFailClosed: true,
   // Codex can rewrite a call; Claude Code refuses or allows.
   canRewriteToolCall: false,
-  // No filesystem sandbox of its own. `guarded` is a `UserPromptSubmit` hook
-  // whose refusal (exit 2) stops the run, so the record fails closed; no hook
-  // runs before a tool use. Containment is the worktree
-  // and the filtered environment. It is what carried the old loop's 73 runs.
-  providesTier: 'guarded',
   /**
    * All three. `wall` is the `setTimeout` in `run`; `turns` is `--max-turns`
    * and `usd` is `--max-budget-usd`, both in `argsFor`, both applied by the
@@ -264,8 +259,8 @@ function argsFor(
     //
     // It does loosen the tools, and nothing stands behind it: a call outside
     // the worktree is not stopped by lingtai-hook. Containment is the
-    // filtered environment and the disposable worktree (see `providesTier`
-    // above, and ADR 0007), and the hook only makes the record fail closed.
+    // filtered environment and the disposable worktree (see ADR 0007
+    // and the recipe's `sandbox` block), and the hook only makes the record fail closed.
     '--permission-mode',
     permissionMode,
     '--session-id',

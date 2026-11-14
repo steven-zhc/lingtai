@@ -36,7 +36,6 @@ function reviewer(): Runtime & { seen: RunRequest[] } {
       hooks: [],
       canFailClosed: true,
       canRewriteToolCall: false,
-      providesTier: 'guarded',
       enforces: ['turns', 'wall', 'usd'],
     },
     run: (request) => {

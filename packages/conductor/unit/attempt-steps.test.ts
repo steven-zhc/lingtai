@@ -151,7 +151,6 @@ const coldReviewerSaying = (text: string | null): Action =>
           hooks: [],
           canFailClosed: true,
           canRewriteToolCall: false,
-          providesTier: 'guarded',
           enforces: ['turns', 'wall'],
         },
         // `#269` attempt 3's receipt: `success · 61 turns · $8.97 · exit 0`. It is
@@ -450,7 +449,6 @@ async function pass(
             hooks: [],
             canFailClosed: true,
             canRewriteToolCall: false,
-            providesTier: 'guarded',
             enforces: ['turns', 'wall'],
           },
           run: (request: { prompt: string }) => {
