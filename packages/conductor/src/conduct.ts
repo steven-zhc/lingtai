@@ -225,7 +225,6 @@ import {
   type Worktree,
 } from '@lingtai/repo'
 import { ticketOfLandingSubject } from '@lingtai/repo/landing-subject'
-import { standInExcludes } from '@lingtai/sandbox'
 import { Cause, type Duration, Effect, Exit, Result } from 'effect'
 
 import { reachAccountLimit } from './account.ts'
@@ -2923,9 +2922,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               home,
               remote: options.remote,
               gitEnv: options.gitEnv,
-              // srt's stand-in names, under a *sandboxed* decision only (#1152).
-              // A file only sandboxed commands read, so nothing here reaches an unsandboxed pass.
-              ...(sandboxDecision.kind === 'sandboxed' ? { exclude: standInExcludes } : {}),
               // **A continuation re-cuts at the sha the approval was about,
               // never the base** (#465) — the worktree a held pass left is
               // gone once its scope closed, and `provisionWorktree`'s own

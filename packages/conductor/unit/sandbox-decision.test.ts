@@ -2,12 +2,11 @@
  * The pass's one sandbox decision and the wrap's closure (#1152). `Sandbox` is a fake that records; nothing loads srt.
  */
 import type { SandboxBlock } from '@lingtai/recipe'
-import { excludeEnv } from '@lingtai/repo'
-import { Sandbox, SandboxUnavailable, type SandboxApi, type WrapInput } from '@lingtai/sandbox'
+import { Sandbox, SandboxUnavailable, type SandboxApi } from '@lingtai/sandbox'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { decidePassSandbox, makeRunSandbox } from '../src/sandbox-decision.ts'
+import { decidePassSandbox } from '../src/sandbox-decision.ts'
 
 const block = (over: Partial<SandboxBlock> = {}): SandboxBlock => ({
   enabled: true,
@@ -20,18 +19,14 @@ const block = (over: Partial<SandboxBlock> = {}): SandboxBlock => ({
 
 function fakeService(host: 'can' | SandboxUnavailable) {
   const asked = { host: 0 }
-  const wraps: WrapInput[] = []
   const service: SandboxApi = {
     hostCanSandbox: Effect.suspend(() => {
       asked.host += 1
       return host === 'can' ? Effect.void : Effect.fail(host)
     }),
-    wrap: (input) => {
-      wraps.push(input)
-      return Effect.succeed({ argv: ['/w'], env: {}, commandId: 'c' })
-    },
+    wrap: () => Effect.succeed({ argv: ['/w'], env: {}, commandId: 'c' }),
   }
-  return { service, asked, wraps }
+  return { service, asked }
 }
 
 const decide = (b: SandboxBlock | undefined, service?: SandboxApi) =>
@@ -72,24 +67,5 @@ describe('decidePassSandbox', () => {
       kind: 'refused',
       why: 'bwrap is missing',
     })
-  })
-})
-
-describe('makeRunSandbox', () => {
-  it('wraps the command with the pass’s project and mirror, the action’s worktree and the decision’s additions', async () => {
-    const f = fakeService('can')
-    const additions = { network: ['a.example'], write: ['/w'], deny: ['/d'] }
-    const run = makeRunSandbox(f.service, { project: 'app', mirror: '/m/app.git', additions })
-    await Effect.runPromise(Effect.scoped(run.wrap(['/bin/sh', '-c', 'pnpm test'], '/wt', { PATH: '/bin' })))
-    expect(f.wraps).toEqual([
-      {
-        project: 'app',
-        worktree: '/wt',
-        mirror: '/m/app.git',
-        command: ['/bin/sh', '-c', 'pnpm test'],
-        env: excludeEnv('/m/app.git', { PATH: '/bin' }),
-        project_additions: additions,
-      },
-    ])
   })
 })

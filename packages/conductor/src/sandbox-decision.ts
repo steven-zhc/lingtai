@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+
 /**
  * The pass's sandbox decision and the wrap its `run:` commands go through (#1152).
  *
@@ -10,8 +14,8 @@
  */
 import type { RunSandbox } from '@lingtai/actions'
 import { sandboxDecision, verdictOf, type HostVerdict, type SandboxBlock, type SandboxDecision } from '@lingtai/recipe'
-import { excludeEnv } from '@lingtai/repo'
-import { Sandbox, type ProjectAdditions, type SandboxApi } from '@lingtai/sandbox'
+import { excludeEnv, excludeFileText, gitEffect, sandboxExcludePath } from '@lingtai/repo'
+import { Sandbox, SandboxWrapFailed, standInExcludes, type ProjectAdditions, type SandboxApi } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
 import { Effect, Option, Result } from 'effect'
 
@@ -39,19 +43,58 @@ export const decidePassSandbox = (block: SandboxBlock | undefined): Effect.Effec
     return { decision: sandboxDecision(block, verdict, home), service }
   })
 
+/**
+ * The command's own exclude file: srt's stand-in names, then the global ignore rules **the command's own
+ * environment** resolves (`core.excludesFile` under its `GIT_CONFIG_GLOBAL`, `HOME` and `XDG_CONFIG_HOME`, not
+ * the daemon's), because pointing a command at this file replaces them. A new file per command, written whole
+ * and removed with the wrap's scope, so no running command ever reads a file that is being rewritten.
+ */
+const commandExclude = (mirror: string, env: Readonly<Record<string, string>>) =>
+  Effect.acquireRelease(
+    Effect.gen(function* () {
+      const configured = yield* gitEffect(['config', '--get', '--type=path', 'core.excludesFile'], {
+        cwd: mirror,
+        env: env as NodeJS.ProcessEnv,
+      }).pipe(Effect.orElseSucceed(() => ''))
+      const inheritedFrom =
+        configured !== ''
+          ? configured
+          : join(env['XDG_CONFIG_HOME'] || join(env['HOME'] ?? '', '.config'), 'git', 'ignore')
+      const file = sandboxExcludePath(mirror, randomUUID())
+      yield* Effect.tryPromise({
+        try: () =>
+          readFile(inheritedFrom, 'utf8')
+            .catch((err: NodeJS.ErrnoException) => {
+              if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return ''
+              throw err
+            })
+            .then((inherited) =>
+              mkdir(dirname(file), { recursive: true }).then(() =>
+                writeFile(file, excludeFileText(standInExcludes, inherited)),
+              ),
+            ),
+        catch: (cause) => new SandboxWrapFailed({ cause }),
+      })
+      return file
+    }),
+    (file) => Effect.promise(() => rm(file, { force: true })),
+  )
+
 /** `Sandbox.wrap`, closed over the pass's project, mirror and the decision's additions. */
 export const makeRunSandbox = (
   service: SandboxApi,
   pass: { readonly project: string; readonly mirror: string; readonly additions: ProjectAdditions },
 ): RunSandbox => ({
   wrap: (command, worktree, env) =>
-    service.wrap({
-      project: pass.project,
-      worktree,
-      mirror: pass.mirror,
-      command,
-      // srt's stand-ins are excluded for this command alone, never in the mirror's shared `info/exclude`.
-      env: excludeEnv(pass.mirror, env),
-      project_additions: pass.additions,
-    }),
+    Effect.flatMap(commandExclude(pass.mirror, env), (file) =>
+      service.wrap({
+        project: pass.project,
+        worktree,
+        mirror: pass.mirror,
+        command,
+        // srt's stand-ins are excluded for this command alone, never in the mirror's shared `info/exclude`.
+        env: excludeEnv(file, env),
+        project_additions: pass.additions,
+      }),
+    ),
 })

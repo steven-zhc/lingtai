@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 
 /**
@@ -15,7 +15,6 @@ import { renderEnvFile } from '@lingtai/agent-env'
 import { stateDir } from '@lingtai/env'
 import { Effect } from 'effect'
 
-import { excludeFileText, sandboxExcludePath } from './exclude.ts'
 import { RepoFailed, type TokenSource, gitEffect } from './git.ts'
 import { mirrorWrite } from './mirror-lock.ts'
 
@@ -56,12 +55,6 @@ export interface ProvisionOptions {
    * where the restriction does not apply and must not be lifted.
    */
   gitEnv?: NodeJS.ProcessEnv
-  /**
-   * Lines for the mirror's `info/lingtai-sandbox-exclude` (#1152) — a file only a sandboxed command is pointed
-   * at, never the shared `info/exclude`, so one pass's policy never reaches another's commands. Absent or empty
-   * writes nothing.
-   */
-  exclude?: readonly string[]
 }
 
 export interface Worktree {
@@ -113,7 +106,6 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
   remote?: string
   home?: string
   gitEnv?: NodeJS.ProcessEnv
-  exclude?: readonly string[]
 }): Effect.fn.Return<string, RepoFailed> {
   const home = options.home ?? stateDir()
   const path = mirrorPath(home, options.project)
@@ -138,56 +130,12 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
         Effect.as(true),
         Effect.orElseSucceed(() => false),
       )
-      // Inside the hold, so two passes never interleave the read and the write. A file of its own, never
-      // `info/exclude` (shared by every worktree and every command): see `exclude.ts`.
-      const writeExcludes = Effect.gen(function* () {
-        const names = options.exclude
-        // Absent or empty: nothing is written, and nothing a sandboxed pass wrote is taken away.
-        if (names === undefined || names.length === 0) return
-        // The side file *replaces* `core.excludesFile` for the command it is handed to, so it carries what
-        // that setting resolved to here: a project's global ignore rules must still hold inside the sandbox.
-        const env = options.gitEnv ?? process.env
-        const configured = yield* gitEffect(['config', '--get', '--type=path', 'core.excludesFile'], {
-          ...run,
-          cwd: path,
-        }).pipe(Effect.orElseSucceed(() => ''))
-        const inheritedFrom =
-          configured !== ''
-            ? configured
-            : join(env['XDG_CONFIG_HOME'] || join(env['HOME'] ?? '', '.config'), 'git', 'ignore')
-        yield* Effect.uninterruptible(
-          Effect.tryPromise({
-            // Promise chains and no `async`: the ratchet counts those.
-            try: () => {
-              const file = sandboxExcludePath(path)
-              const absent = (err: NodeJS.ErrnoException) => {
-                if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return undefined
-                throw err
-              }
-              return readFile(inheritedFrom, 'utf8')
-                .catch(absent)
-                .then((inherited) => {
-                  const text = excludeFileText(names, inherited ?? '')
-                  return readFile(file, 'utf8')
-                    .catch(absent)
-                    .then((existing) => {
-                      if (existing === text) return undefined
-                      // A bare clone made without templates has no `info/`.
-                      return mkdir(dirname(file), { recursive: true }).then(() => writeFile(file, text))
-                    })
-                })
-            },
-            catch: (err) => new RepoFailed({ operation: 'info/exclude', detail: (err as Error).message }),
-          }),
-        )
-      })
       if (present) {
         // A fetch that fails (a concurrent ref update, the network) says nothing
         // about the mirror: it is shared with every pass in flight, whose worktrees
         // point into its metadata and whose unpushed commits live only in it, so it
         // is never removed on the strength of a failed fetch.
         yield* gitEffect(['fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], { ...run, cwd: path })
-        yield* writeExcludes
         return
       }
       yield* io(() => mkdir(dirname(path), { recursive: true }))
@@ -195,7 +143,6 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
       yield* gitEffect(['clone', '--bare', remote, path], run)
       // A bare clone's origin is not wired for later fetches by default.
       yield* gitEffect(['remote', 'set-url', 'origin', remote], { ...run, cwd: path })
-      yield* writeExcludes
     }),
   )
   return path
@@ -222,7 +169,6 @@ export const provisionWorktreeEffect = Effect.fn('repo.provision')(function* (
       remote: options.remote,
       home,
       gitEnv: options.gitEnv,
-      exclude: options.exclude,
     })
 
     const path = worktreePath(home, options.project, options.runId)

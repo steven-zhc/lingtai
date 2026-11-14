@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { excludeEnv, excludeFileText, sandboxExcludePath } from '../src/exclude.ts'
+import { excludeEnv, excludeFileText } from '../src/exclude.ts'
 
 describe('excludeFileText', () => {
   it('lists each name once', () => {
@@ -17,16 +17,20 @@ describe('excludeFileText', () => {
 describe('excludeEnv', () => {
   it('sets core.excludesFile at the mirror’s side file, for this command only', () => {
     const env = { PATH: '/bin' }
-    expect(excludeEnv('/m/app.git', env)).toEqual({
+    expect(excludeEnv('/m/app.git/info/x', env)).toEqual({
       PATH: '/bin',
       GIT_CONFIG_COUNT: '1',
       GIT_CONFIG_KEY_0: 'core.excludesFile',
-      GIT_CONFIG_VALUE_0: sandboxExcludePath('/m/app.git'),
+      GIT_CONFIG_VALUE_0: '/m/app.git/info/x',
     })
     expect(env).toEqual({ PATH: '/bin' })
   })
   it('appends after config the caller already passed', () => {
-    const out = excludeEnv('/m/a.git', { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'a.b', GIT_CONFIG_VALUE_0: 'c' })
+    const out = excludeEnv('/m/a.git/info/x', {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'a.b',
+      GIT_CONFIG_VALUE_0: 'c',
+    })
     expect(out['GIT_CONFIG_COUNT']).toBe('2')
     expect(out['GIT_CONFIG_KEY_1']).toBe('core.excludesFile')
     expect(out['GIT_CONFIG_KEY_0']).toBe('a.b')
