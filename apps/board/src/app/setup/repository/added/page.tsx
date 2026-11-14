@@ -18,25 +18,33 @@ import { AddedCard, type Added } from './added-card.tsx'
 
 export const dynamic = 'force-dynamic'
 
-/** Whether the project just added is one whose sandboxed Claude Code run would be refused for want of a token (#1169). */
-function asksForToken(recipe: Parameters<typeof needsClaudeToken>[0]): boolean {
+/**
+ * What the added page says about the token (#1169): ask for it, say the file could not be read, or nothing.
+ * An unreadable `config.yml` is said — never taken as *no setup needed* — but only for a project that would need a token.
+ */
+type TokenSay = { say: 'none' } | { say: 'ask' } | { say: 'unreadable'; why: string }
+
+function tokenSay(recipe: Parameters<typeof needsClaudeToken>[0]): TokenSay {
+  // Whether a token would matter at all, whatever the file holds: the same predicate over a state of nothing set.
+  if (!needsClaudeToken(recipe, { environment: false, file: false, usable: false })) return { say: 'none' }
   try {
     const state = claudeTokenSetAt({ file: liveMachineText(), path: join(stateDir(), 'config.yml'), env: process.env })
-    return needsClaudeToken(recipe, state)
+    if ('unreadable' in state) return { say: 'unreadable', why: state.unreadable }
+    return needsClaudeToken(recipe, state) ? { say: 'ask' } : { say: 'none' }
   } catch {
-    return false
+    return { say: 'unreadable', why: 'config.yml could not be read, so claude.oauth_token is unknown' }
   }
 }
 
-async function read(project: string | undefined): Promise<{ added: Added; askToken: boolean }> {
-  if (project === undefined || project === '') return { added: { state: 'none' }, askToken: false }
+async function read(project: string | undefined): Promise<{ added: Added; token: TokenSay }> {
+  if (project === undefined || project === '') return { added: { state: 'none' }, token: { say: 'none' } }
   const loaded = await loadProject(project).then(
     (state) => ({ ok: true as const, state }),
     () => ({ ok: false as const }),
   )
-  if (!loaded.ok) return { added: { state: 'unreadable', project }, askToken: false }
+  if (!loaded.ok) return { added: { state: 'unreadable', project }, token: { say: 'none' } }
   const state = loaded.state
-  if (state === null) return { added: { state: 'unregistered', project }, askToken: false }
+  if (state === null) return { added: { state: 'unregistered', project }, token: { say: 'none' } }
   const name = state.project ?? project
   const recipe = recipePath(name)
   const resolved = await currentRecipe(state).then(
@@ -51,7 +59,7 @@ async function read(project: string | undefined): Promise<{ added: Added; askTok
         recipe,
         read: { ok: false, problem: resolved.message.replace(/\s*\n\s*/g, ' ').trim() },
       },
-      askToken: false,
+      token: { say: 'none' },
     }
   }
   const queue = queueOf(resolved.recipe)
@@ -68,13 +76,13 @@ async function read(project: string | undefined): Promise<{ added: Added; askTok
         github: ticketSourceOf(resolved.recipe) === 'github',
       },
     },
-    askToken: asksForToken(resolved.recipe),
+    token: tokenSay(resolved.recipe),
   }
 }
 
 export default async function AddedPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const { project } = await searchParams
-  const { added, askToken } = await read(project)
+  const { added, token } = await read(project)
   return (
     <main className="detail">
       <Bar project={undefined}>
@@ -89,7 +97,19 @@ export default async function AddedPage({ searchParams }: { searchParams: Promis
           </h2>
           <AddedCard {...added} />
         </section>
-        {askToken ? (
+        {token.say === 'unreadable' ? (
+          <section>
+            <h2>
+              <span className="hlab">Claude Code token</span>
+              <span className="hfact">unknown</span>
+            </h2>
+            <p>
+              {token.why} — this project's sandboxed Claude Code runs may be refused for want of a token. Fix the file,
+              then set it at /setup/claude-token.
+            </p>
+          </section>
+        ) : null}
+        {token.say === 'ask' ? (
           <section>
             <h2>
               <span className="hlab">Claude Code token</span>
