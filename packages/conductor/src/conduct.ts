@@ -213,7 +213,7 @@ import {
   type ResolvedRecipe,
   type StepAction,
 } from '@lingtai/recipe'
-import { DEFAULT_ACTION, isBuiltInJudge, sandboxDecision, verdictOf, type SandboxDecision } from '@lingtai/recipe'
+import { DEFAULT_ACTION, isBuiltInJudge, type SandboxDecision } from '@lingtai/recipe'
 import {
   UNREACHABLE_WAITS,
   isRemoteErrorFailure,
@@ -850,24 +850,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     }
     const resolved = recipeAt.success
     const recipe = resolved.recipe
-    /**
-     * This run's sandbox decision (#1150), made where its settings file is written so the two agree: `--settings`
-     * carries `sandbox.enabled: false` for a sandboxed run only. Never for a run that is not Claude Code's own.
-     */
-    const decideSandbox: Effect.Effect<SandboxDecision> =
-      recipe.sandbox === undefined || !recipe.sandbox.enabled
-        ? Effect.succeed({ kind: 'unsandboxed', reason: 'off by choice' })
-        : options.sandbox === undefined
-          ? Effect.succeed({ kind: 'refused', why: 'no sandbox service in this process' })
-          : options.sandbox.pipe(
-              Effect.flatMap((service) => verdictOf(service.hostCanSandbox)),
-              Effect.map((verdict) => sandboxDecision(recipe.sandbox, verdict, homedir())),
-              Effect.catch((e) =>
-                Effect.succeed<SandboxDecision>(
-                  sandboxDecision(recipe.sandbox, { can: false, reason: e.reason, sentences: e.sentences }, homedir()),
-                ),
-              ),
-            )
     /** The request's `sandbox` for a decision: absent unless it is *sandboxed* or *refused*. */
     const sandboxOf = (
       decision: SandboxDecision | undefined,
@@ -969,8 +951,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * **What this pass is, as to the sandbox — decided once, before the claim** (#1152). Every action's wrap
      * reads this one answer, so none can see *sandboxed* while another sees *degraded*. A refusal here claims nothing, like the refusals around it.
      */
-    const passSandbox = yield* decidePassSandbox(recipe.sandbox)
+    const passSandbox = yield* decidePassSandbox(recipe.sandbox, options.sandbox)
     const sandboxDecision = passSandbox.decision
+    /** The same answer at every agent site (#1150): one decision per pass, so a `run:` and the agent beside it agree. */
+    const decideSandbox: Effect.Effect<SandboxDecision> = Effect.succeed(sandboxDecision)
     if (sandboxDecision.kind === 'refused') {
       return {
         ok: false,

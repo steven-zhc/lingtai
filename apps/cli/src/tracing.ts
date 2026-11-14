@@ -2,8 +2,6 @@ import { PortsLive } from '@lingtai/conductor'
 import type { Tracing } from '@lingtai/conductor/telemetry'
 import { Effect, Layer } from 'effect'
 
-import { sandboxService } from './sandbox.ts'
-
 /**
  * Tracing for the two hosts that conduct a pass, `lingtai run` and the daemon
  * (#791). Installed once per process at the command's entry — the provider lives
@@ -36,10 +34,9 @@ export const startTracing = (from: NodeJS.ProcessEnv = process.env): Effect.Effe
     )
   })
 
-/** `PortsLive`, the tracer where one was installed, and the sandbox handle — read when the layer is built. */
+/** `PortsLive`, the tracer where one was installed — read when the layer is built. */
 export const tracedPorts: typeof PortsLive = Layer.suspend(() =>
-  // The sandbox service rides along: one lazy handle on a process-wide instance, so providing it per pass is safe.
-  Layer.merge(installed === undefined ? PortsLive : Layer.merge(PortsLive, installed.layer), sandboxService),
+  installed === undefined ? PortsLive : Layer.merge(PortsLive, installed.layer),
 ) as typeof PortsLive
 
 /** Bounded; a flush that times out is dropped and never holds an exit. */

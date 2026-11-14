@@ -105,5 +105,8 @@ provideHostAnswer(
   }).pipe(Effect.flatMap((live) => live.hostCanSandboxHere)),
 )
 
-/** Provided beside `tracedPorts` at every site that runs a pass. */
-export const sandboxService: Layer.Layer<Sandbox> = Layer.succeed(Sandbox, lazy)
+/**
+ * The one `Sandbox` service of this process, as `RunOnceOptions.sandbox` takes it: an Effect a host hands in at its
+ * edge, run by the pass only when its recipe's `sandbox:` block is enabled, so srt is loaded on that first ask.
+ */
+export const processSandbox: Effect.Effect<SandboxApi, SandboxUnavailable> = load.pipe(Effect.as(lazy))

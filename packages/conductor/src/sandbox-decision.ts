@@ -8,18 +8,16 @@ import { dirname, join, resolve } from 'node:path'
  * Decided **once per pass, before the claim**, so every action of the pass sees one answer. Provisioning
  * writes nothing for it: each wrapped command prepares its own exclude file (`makeRunSandbox`).
  *
- * Nothing here loads srt. The host answer is the provided `Sandbox` service's own where there is one, and
- * `hostHere` (which imports `@lingtai/sandbox/live` only when asked, as the resolver does) where there is not.
- * A recipe with no `sandbox:` block, or `enabled: false`, asks the host nothing at all.
+ * Nothing here loads srt. The service is `RunOnceOptions.sandbox`, a lazy Effect a host hands in at its edge, and it
+ * is run only when the block is enabled: a recipe with no `sandbox:` block, or `enabled: false`, asks the host nothing
+ * at all. A service that cannot be built is a `can: false` verdict carrying its reason and sentences.
  */
 import type { RunSandbox } from '@lingtai/actions'
 import { sandboxDecision, verdictOf, type HostVerdict, type SandboxBlock, type SandboxDecision } from '@lingtai/recipe'
 import { excludeEnv, excludeFileText, gitEffect, sandboxExcludePath } from '@lingtai/repo'
-import { Sandbox, SandboxWrapFailed, standInExcludes, type ProjectAdditions, type SandboxApi } from '@lingtai/sandbox'
+import { SandboxWrapFailed, standInExcludes, type ProjectAdditions, type SandboxApi } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
-import { Effect, Option, Result } from 'effect'
-
-import { hostHere } from './projects.ts'
+import { Effect, Result } from 'effect'
 
 export interface PassSandbox {
   readonly decision: SandboxDecision
@@ -27,20 +25,37 @@ export interface PassSandbox {
   readonly service: SandboxApi | undefined
 }
 
-export const decidePassSandbox = (block: SandboxBlock | undefined): Effect.Effect<PassSandbox> =>
+export type SandboxService = Effect.Effect<
+  SandboxApi,
+  { readonly reason: string; readonly sentences: readonly string[] }
+>
+
+export const decidePassSandbox = (
+  block: SandboxBlock | undefined,
+  sandbox: SandboxService | undefined,
+): Effect.Effect<PassSandbox> =>
   Effect.gen(function* () {
     if (block === undefined || !block.enabled) {
       // The answer is never evaluated: `sandboxDecision` returns before it reads one.
       return { decision: sandboxDecision(block, { can: true }, ''), service: undefined }
     }
-    const service = Option.getOrUndefined(yield* Effect.serviceOption(Sandbox))
     // `HOME`, never the state directory: `expandHome` turns `~/…` into the user's own paths. A host that cannot be read cannot sandbox.
     const facts = yield* Effect.result(readHost)
-    const verdict: HostVerdict = Result.isFailure(facts)
-      ? { can: false, reason: facts.failure.reason, sentences: facts.failure.sentences }
-      : yield* verdictOf(service?.hostCanSandbox ?? hostHere)
     const home = Result.isSuccess(facts) ? facts.success.home : ''
-    return { decision: sandboxDecision(block, verdict, home), service }
+    if (Result.isFailure(facts)) {
+      const verdict: HostVerdict = { can: false, reason: facts.failure.reason, sentences: facts.failure.sentences }
+      return { decision: sandboxDecision(block, verdict, home), service: undefined }
+    }
+    if (sandbox === undefined) {
+      return { decision: { kind: 'refused', why: 'no sandbox service in this process' }, service: undefined }
+    }
+    const built = yield* Effect.result(sandbox)
+    if (Result.isFailure(built)) {
+      const verdict: HostVerdict = { can: false, reason: built.failure.reason, sentences: built.failure.sentences }
+      return { decision: sandboxDecision(block, verdict, home), service: undefined }
+    }
+    const verdict = yield* verdictOf(built.success.hostCanSandbox)
+    return { decision: sandboxDecision(block, verdict, home), service: built.success }
   })
 
 /**

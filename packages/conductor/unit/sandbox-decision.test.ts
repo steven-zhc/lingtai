@@ -2,7 +2,7 @@
  * The pass's one sandbox decision and the wrap's closure (#1152). `Sandbox` is a fake that records; nothing loads srt.
  */
 import type { SandboxBlock } from '@lingtai/recipe'
-import { Sandbox, SandboxUnavailable, type SandboxApi } from '@lingtai/sandbox'
+import { SandboxUnavailable, type SandboxApi } from '@lingtai/sandbox'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -30,10 +30,7 @@ function fakeService(host: 'can' | SandboxUnavailable) {
 }
 
 const decide = (b: SandboxBlock | undefined, service?: SandboxApi) =>
-  decidePassSandbox(b).pipe(
-    service === undefined ? (e) => e : Effect.provideService(Sandbox, service),
-    Effect.runPromise,
-  )
+  decidePassSandbox(b, service === undefined ? undefined : Effect.succeed(service)).pipe(Effect.runPromise)
 
 describe('decidePassSandbox', () => {
   it('asks the host nothing for no block, or for enabled: false', async () => {
@@ -67,5 +64,18 @@ describe('decidePassSandbox', () => {
       kind: 'refused',
       why: 'bwrap is missing',
     })
+  })
+
+  it('is refused by name with no service, and carries a failed build as an unavailable host', async () => {
+    expect((await decide(block(), undefined)).decision).toEqual({
+      kind: 'refused',
+      why: 'no sandbox service in this process',
+    })
+    const failed = await decidePassSandbox(
+      block({ required: true }),
+      Effect.fail(new SandboxUnavailable({ reason: 'the sandbox runtime could not be loaded', sentences: [] })),
+    ).pipe(Effect.runPromise)
+    expect(failed.decision).toEqual({ kind: 'refused', why: 'the sandbox runtime could not be loaded' })
+    expect(failed.service).toBeUndefined()
   })
 })
