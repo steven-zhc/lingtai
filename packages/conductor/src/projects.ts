@@ -29,7 +29,7 @@ import {
   type SignedIn,
   resolveLocalRecipeEffect,
 } from '@lingtai/recipe'
-import { BUILT_IN_DOMAINS, installFor } from '@lingtai/sandbox'
+import { BUILT_IN_DOMAINS, hostProgramsPresent, installFor } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
 import { Effect } from 'effect'
 
@@ -224,10 +224,10 @@ export const provideHostAnswer = (answer: HostAnswer): void => {
 
 /**
  * The host answer, asked only for an enabled, required `sandbox:` block (#1147). **A process with no sandbox
- * runtime — the board — has no answer to give and does not refuse on its behalf**: it only shows a recipe, and
- * the pass that would wrap decides again, with the host's own answer, before it claims anything.
+ * runtime — the board — checks that the programs srt needs are installed instead of reporting success**, so setup still
+ * warns on a host that cannot sandbox; the pass that would wrap decides again with srt's own answer.
  */
-export const hostHere: HostAnswer = Effect.suspend(() => hostProvider ?? Effect.void)
+export const hostHere: HostAnswer = Effect.suspend(() => hostProvider ?? hostProgramsPresent())
 
 /**
  * What the setup wizard reads of the host (#1160): the answer through `hostHere` (so srt is imported on the
