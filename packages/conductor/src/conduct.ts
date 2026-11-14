@@ -48,9 +48,6 @@ import {
   DIFF_FLAGS,
 } from '@lingtai/domain'
 import {
-  CONTROL_FOLD_TYPES,
-  CONTROL_STREAM,
-  controlReducer,
   type ReleaseCause,
   type AttemptState,
   type RuntimeId,

@@ -15,7 +15,7 @@ repository**, so it carries no ADR history and no before-and-after; it
 describes [0058](doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md) and
 [0061](doc/decisions-archive/0061-the-recipe-is-the-pipeline.md), which are accepted
 and are built: **the conductor runs the ten steps since #256** —
-`conduct.ts` resolves the recipe, the environment and the tier and hands the
+`conduct.ts` resolves the recipe and the environment and hands the
 rest to `runPass`, and `run-once.ts`'s five gate points are deleted. What is
 still [the plan](doc/design/the-pipeline.md) is the rest of that document's
 list, not the engine. Both drawings come from `scripts/the-pass.py`; the HTML

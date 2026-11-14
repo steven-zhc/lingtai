@@ -116,9 +116,10 @@ export type ReadCache = {
  * The answer is the whole stream's, read through the snapshot. **A shutdown is
  * the whole stream's** (0126): a `ConductorStarted` ends it, and `recordStart`
  * is what decides, by its watermark, whether a request is that start's to obey.
- * **The one pause holds across starts**: a refusal over a missing tier is about
- * the setup, not about the daemon that found it out, so a restart meets the
- * same pause rather than taking work until it refuses the same ticket again.
+ * **The one pause holds across starts**: a setup pause written before #1158 (a refusal
+ * over a missing tier) is about the setup, not about the daemon that found it
+ * out, so a restart meets the same pause rather than taking work until it
+ * refuses the same ticket again. Nothing appends one now.
  * Every caller — the conductor, the board, `doctor`, `status` — reads the same
  * state.
  */

@@ -151,8 +151,8 @@ turn limit, so every idiom it adopts is paid for again on every run.
      and the projector. Finalizers run in reverse order of acquisition. That
      ordering is a rule, not just a detail: the worktree is gone before
      integration, and the run log closes last.
-   - Refusals come before acquisitions. The recipe, the environment, the tier and
-     the claim all refuse before the first resource is acquired.
+   - Refusals come before acquisitions. The recipe, the environment, a runtime that
+     cannot fail closed and the claim all refuse before the first resource is acquired.
    - The event store's failures stay **defects** rather than tagged errors: a run
      cannot decide anything on behalf of a store that will not append.
 

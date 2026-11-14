@@ -170,6 +170,8 @@ replaces.
   refuses the event first. That is deliberate for now (a type nobody models is
   more likely a bug than a newer writer), but it means the tolerance is only real
   once the two agree.
-- **`tier: sandboxed`.** Containerising the whole toolchain is its own piece of
-  work; `guarded` is what the first project runs at. See
+- **A containerised toolchain.** The recipe's `sandbox` block wraps each runtime
+  in a filesystem and network policy; containerising the whole toolchain is its
+  own piece of work. `runtime.tier` is gone: failing closed is always required,
+  and a recipe that writes it is refused with the `sandbox` setting to use. See
   [0007](decisions-archive/0007-dual-runtime.md).
