@@ -15,6 +15,7 @@ import {
   tally,
 } from '../src/doctor.ts'
 import { doctorProgress, type Spinner } from '../src/steps.ts'
+import { fakeSandbox } from '../test/sandbox-fakes.ts'
 
 // `runDoctor` is an Effect; these tests read the report it yields.
 const runDoctor = (...a: Parameters<typeof runDoctorEffect>) => Effect.runPromise(runDoctorEffect(...a))
@@ -42,6 +43,7 @@ const reach: DoctorReach = {
   settings: () => Effect.succeed(null),
   runtimes: () => [signedInRuntime],
   sea: () => ({ can: true }),
+  ...fakeSandbox(),
   recipe: () => {
     throw new Error('no project is registered')
   },

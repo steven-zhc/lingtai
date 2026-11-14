@@ -56,7 +56,7 @@ import {
   githubClientForEffect,
   projectFiltersEffect,
 } from '@lingtai/conductor/filter'
-import { currentRecipeEffect, loadProjectsEffect } from '@lingtai/conductor/projects'
+import { currentRecipeEffect, hostHere, loadProjectsEffect } from '@lingtai/conductor/projects'
 import { readFetchNote, readRateSnapshot } from '@lingtai/conductor/rate-snapshot'
 import {
   codeCurrencyEffect,
@@ -145,7 +145,7 @@ import {
   taskViewProjection,
   type Projection,
 } from '@lingtai/projector'
-import type { HostAnswer, HostFactsEffect, ResolvedRecipe, SignedIn } from '@lingtai/recipe'
+import type { HostAnswer, HostFactsEffect, HostVerdict, ResolvedRecipe, SignedIn } from '@lingtai/recipe'
 import {
   UNBOUNDED,
   baseDivergence,
@@ -156,9 +156,12 @@ import {
   isBuiltInJudge,
   recipePath,
   remoteOf,
+  sandboxDecision,
+  verdictOf,
   type Recipe,
 } from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
+import { installFor } from '@lingtai/sandbox'
 import { remedyFor } from '@lingtai/setup'
 import { Cause, Effect } from 'effect'
 import pg from 'pg'
@@ -168,6 +171,7 @@ import { readDaySpend } from './day-ceiling.ts'
 import { lift } from './exit.ts'
 import { heading, LABEL_COLUMN, labelled, renderNextLine, section, symbol, width } from './output.ts'
 import { RUN_UNDER_A_PAUSE } from './run.ts'
+import { liveCanary, type CanaryResult } from './sandbox-canary.ts'
 import { probeSeaBuild, type SeaProbe } from './sea-build.ts'
 import { versionFacts } from './version.ts'
 
@@ -1255,11 +1259,13 @@ export interface DoctorReach {
   /** What this machine is signed in to, for the `recipe:` row — injectable so a unit test spawns nothing. */
   signedIn?: SignedIn
   /**
-   * Whether this host can provide the sandbox a recipe requires, and the facts its paths are checked against
-   * (#1147). Injectable so a unit test never spawns: absent, `currentRecipeEffect`'s own defaults ask the real
-   * host, and only for a recipe with an enabled, required `sandbox:` block.
+   * Whether this host can provide the sandbox (#1147, #1159): **required**, the one answer the `sandbox: host`
+   * row, the canary's gate and every recipe row share, so they cannot disagree about *can*. `runDoctor` takes it
+   * through a `Pick`, as `sea`, so no default asks the real host and a unit test never spawns.
    */
-  sandboxHost?: HostAnswer | 'skip'
+  sandboxHost: HostAnswer
+  /** The canary (#1159): required for the same reason, and `lingtai doctor` passes the real one. */
+  sandboxCanary: () => Effect.Effect<CanaryResult>
   hostFacts?: HostFactsEffect
   spend?: () => Effect.Effect<{ day: DaySpend; ceilingUsd: number | undefined }, unknown>
   /** The `account: <runtime>` rows, injectable so a unit test reads no store (#1009). */
@@ -1436,12 +1442,15 @@ function pausedRows(name: string, projects: readonly ProjectState[]): CheckResul
   return [{ name, status: 'info', detail: `${detail} — lingtai resume <project> lifts it` }]
 }
 
+/** What a recipe row is handed: `DoctorReach`, except that the sandbox host may be `'skip'` (the sandbox rows read a recipe whatever the host says). */
+type LookupReach = Partial<Omit<DoctorReach, 'sandboxHost'>> & { sandboxHost?: HostAnswer | 'skip' }
+
 /**
  * How every recipe row resolves a project: the injected source, or `currentRecipeEffect` with the host
  * answer `DoctorReach` carries (#1147), so a unit test that names none never spawns and a real run asks the
  * host only for a recipe with an enabled, required `sandbox:` block.
  */
-function recipeLookup(reach: Partial<Pick<DoctorReach, 'recipe' | 'sandboxHost' | 'hostFacts'>>): RecipeForEffect {
+function recipeLookup(reach: LookupReach): RecipeForEffect {
   return (
     reach.recipe ??
     ((state, client) =>
@@ -3070,7 +3079,7 @@ class NoCodexText extends Error {
 export function declaredEnvironment(
   env: NodeJS.ProcessEnv,
   load: LoadProjects = () => loadProjectsEffect(),
-  reach: Partial<DoctorReach> = {},
+  reach: LookupReach = {},
 ): Effect.Effect<CheckResult[]> {
   return Effect.gen(function* () {
     const name = 'env: declared names, and which layer'
@@ -3274,7 +3283,7 @@ export function declaredEnvironment(
 export function recipeGovernsItsBase(
   env: NodeJS.ProcessEnv,
   load: LoadProjects = () => loadProjectsEffect(),
-  reach: Partial<DoctorReach> = {},
+  reach: LookupReach = {},
 ): Effect.Effect<CheckResult[]> {
   return Effect.gen(function* () {
     const name = 'recipe: the rules and the merge target are one branch'
@@ -3451,6 +3460,139 @@ export function seaRow(node: string, version: string, probe: SeaProbe): CheckRes
   }
 }
 
+const sandboxInstall = (): { text: string; command: string | undefined } => {
+  const advice = installFor(process.platform)
+  return advice === undefined
+    ? { text: `platform ${process.platform} cannot be sandboxed`, command: undefined }
+    : { text: `install ${advice.missing.join(', ')}`, command: advice.command }
+}
+
+/** `sandbox: host`: *can*, or srt's own sentences and the install command for this platform. */
+function sandboxHostRow(verdict: HostVerdict): CheckResult {
+  const name = 'sandbox: host'
+  if (verdict.can) return { name, status: 'ok', detail: 'this host can run the sandbox' }
+  const install = sandboxInstall()
+  return {
+    name,
+    status: 'fail',
+    title: 'this host cannot run the sandbox',
+    detail: [verdict.reason, ...verdict.sentences].join('\n'),
+    ...(install.command === undefined ? {} : { fix: install.command }),
+  }
+}
+
+/** `sandbox: <project>`: sandboxed, off by choice, degraded or stopped, from the recipe's block and the host verdict. */
+function sandboxProjectRow(project: string, block: Recipe['sandbox'], verdict: HostVerdict): CheckResult {
+  const name = `sandbox: ${project}`
+  const decision = sandboxDecision(block, verdict, homedir())
+  if (decision.kind === 'sandboxed') return { name, status: 'ok', detail: 'sandboxed' }
+  if (decision.kind === 'unsandboxed' && decision.reason === 'off by choice') {
+    return { name, status: 'ok', detail: 'off by choice — its recipe has no enabled sandbox block' }
+  }
+  const install = sandboxInstall()
+  const fix = (instead: string) =>
+    `${install.command === undefined ? install.text : install.command}\nor ${instead} in ~/.lingtai/${project}/recipe.yml`
+  if (decision.kind === 'unsandboxed' && decision.reason === 'degraded') {
+    return {
+      name,
+      status: 'fail',
+      title: `${project} runs without a sandbox`,
+      detail: `degraded (${decision.why}) — its runs are not sandboxed`,
+      fix: fix('set sandbox.enabled: false'),
+    }
+  }
+  const why = decision.kind === 'refused' ? decision.why : ''
+  return {
+    name,
+    status: 'fail',
+    title: `${project} is stopped`,
+    detail: `stopped (${why}) — its recipe requires a sandbox this host cannot provide`,
+    fix: fix('set sandbox.required: false'),
+  }
+}
+
+/**
+ * The sandbox rows (#1159): the host, one per project, and the canary. A recipe is read with `host: 'skip'`, so
+ * one whose required sandbox the host cannot provide still parses here and can be *stopped*; a recipe that does
+ * not resolve even so is the `recipe:` row's failure, and is a `skip` here rather than counted twice.
+ */
+export function sandboxRows(
+  reach: Pick<DoctorReach, 'sandboxHost' | 'sandboxCanary'> & Partial<DoctorReach>,
+  load: LoadProjects,
+): Effect.Effect<CheckResult[]> {
+  return Effect.gen(function* () {
+    const verdict = yield* verdictOf(reach.sandboxHost)
+    const rows: CheckResult[] = [sandboxHostRow(verdict)]
+    const projects = yield* recovering(load(), () => null)
+    const recipeFor = recipeLookup({ ...reach, sandboxHost: 'skip' })
+    let asked = false
+    if (projects === null) {
+      rows.push({ name: 'sandbox: projects', status: 'skip', detail: 'the project list could not be read' })
+    } else {
+      for (const state of projects) {
+        if (state.project === null) continue
+        const resolved = yield* recovering(
+          recipeFor(state, undefined).pipe(Effect.map((r) => r.recipe)),
+          (): null => null,
+        )
+        if (resolved === null) {
+          rows.push({
+            name: `sandbox: ${state.project}`,
+            status: 'skip',
+            detail: 'its recipe does not resolve — see recipe: resolves for every project',
+          })
+          continue
+        }
+        asked ||= resolved.sandbox?.enabled === true
+        rows.push(sandboxProjectRow(state.project, resolved.sandbox, verdict))
+      }
+    }
+    rows.push(yield* sandboxCanaryRow(reach.sandboxCanary, verdict, asked))
+    return rows
+  })
+}
+
+/** `sandbox: canary`: measured only where the host can and some project asks; every other way it fails to run is a failing row. */
+function sandboxCanaryRow(
+  canary: () => Effect.Effect<CanaryResult>,
+  verdict: HostVerdict,
+  asked: boolean,
+): Effect.Effect<CheckResult> {
+  const name = 'sandbox: canary'
+  if (!verdict.can) return Effect.succeed({ name, status: 'skip', detail: 'not run: the host row failed' })
+  if (!asked) return Effect.succeed({ name, status: 'ok', detail: 'not run: no project asks for the sandbox' })
+  return Effect.suspend(() => canary()).pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterrupts(cause)
+        ? Effect.interrupt
+        : Effect.succeed<CanaryResult>({ kind: 'could-not-run', why: 'the canary threw' }),
+    ),
+    Effect.map((result): CheckResult => {
+      if (result.kind === 'held') {
+        return {
+          name,
+          status: 'ok',
+          detail:
+            'a planted file under a denied path was unreadable and a host off the allowlist was unreachable, ' +
+            'while a worktree file and an allowlisted host worked through the same policy',
+        }
+      }
+      if (result.kind === 'leaked') {
+        const said = result.which.map((w) =>
+          w === 'read' ? 'the planted file was readable' : 'example.com was reachable',
+        )
+        return {
+          name,
+          status: 'fail',
+          title: 'the sandbox policy does not hold on this host',
+          detail: said.join('; '),
+        }
+      }
+      return { name, status: 'fail', title: 'the canary could not run', detail: result.why }
+    }),
+  )
+}
+
 /**
  * `machine` reads `database.url` from `~/.lingtai/config.yml`. Asked only when
  * `LINGTAI_DATABASE_URL` is unset — the order `postgresUrl` reads them in — and
@@ -3478,7 +3620,7 @@ export function runDoctor(
   store: () => StoreChoice = () => storeChoice(),
   queries: LogQueries = log.queries,
   load: typeof loadProjects = loadProjects,
-  reach: Partial<DoctorReach> & Pick<DoctorReach, 'sea'> = { sea: probeSeaBuild },
+  reach: Partial<DoctorReach> & Pick<DoctorReach, 'sea' | 'sandboxHost' | 'sandboxCanary'>,
 ): Effect.Effect<DoctorReport> {
   return Effect.gen(function* () {
     const results: CheckResult[] = []
@@ -3570,6 +3712,10 @@ export function runDoctor(
     // rather than each asking every project's recipe again.
     const filters = yield* step('recipes', projectFiltersOnce(env, loadE, recipeLookup(reach)))
     const unresolved = unresolvedProblems(filters)
+
+    // After the recipes, before the store branches, so both get it. The host and the canary are about the
+    // machine and not a project, which is why `Sandbox` is a section of its own rather than under `Projects`.
+    yield* step('sandbox', sandboxRows(reach, loadE).pipe(Effect.map(pushAll)))
 
     /**
      * **A machine that wrote `sqlite` is never asked for a connection string.**
@@ -3809,7 +3955,7 @@ export function doctorReportEffect(
     () => storeChoice(env),
     undefined,
     undefined,
-    { sea: probeSeaBuild, onProgress: opts.onProgress },
+    { sea: probeSeaBuild, sandboxHost: hostHere, sandboxCanary: liveCanary, onProgress: opts.onProgress },
   )
 }
 
@@ -3871,6 +4017,7 @@ const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
   ['Store and log', ['store', 'environment', 'postgres', 'schema', 'log', 'projections', 'snapshots']],
   ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers', 'spend', 'rates', 'account']],
   ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],
+  ['Sandbox', ['sandbox']],
   ['GitHub', ['github']],
   ['Runtimes', ['runtime', 'claude']],
 ]

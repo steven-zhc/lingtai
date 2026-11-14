@@ -40,6 +40,7 @@ import {
   unconvergedRow,
 } from '../src/doctor.ts'
 import { gatingFailures } from '../src/restart.ts'
+import { fakeSandbox } from '../test/sandbox-fakes.ts'
 
 // `runDoctor` is an Effect; these tests read the report it yields.
 const runDoctor = (...a: Parameters<typeof runDoctorEffect>) => Effect.runPromise(runDoctorEffect(...a))
@@ -103,6 +104,7 @@ const reach: DoctorReach = {
   // Never reached on this machine: `isSea()` is false under vitest, so this
   // stands in for the probe without spawning Node or writing a scratch SEA.
   sea: () => ({ can: true }),
+  ...fakeSandbox(),
   // Never reached on this machine: `load` below resolves to no projects, so
   // nothing in `declaredEnvironment`, `recipeGovernsItsBase` or
   // `projectFiltersOnce` calls either of these.
