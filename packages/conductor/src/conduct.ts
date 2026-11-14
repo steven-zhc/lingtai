@@ -1,3 +1,4 @@
+import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, posix, resolve } from 'node:path'
@@ -34,6 +35,7 @@ import {
   missingForTier,
   runtimeVersionOfEffect,
   taggedTrace,
+  type RunSandbox,
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, renderEnvFile, runnableEnv } from '@lingtai/agent-env'
 import {
@@ -211,7 +213,8 @@ import {
   type ResolvedRecipe,
   type StepAction,
 } from '@lingtai/recipe'
-import { DEFAULT_ACTION, isBuiltInJudge } from '@lingtai/recipe'
+import { DEFAULT_ACTION, isBuiltInJudge, sandboxDecision, verdictOf, type SandboxDecision } from '@lingtai/recipe'
+import type { SandboxApi } from '@lingtai/sandbox'
 import {
   UNREACHABLE_WAITS,
   isRemoteErrorFailure,
@@ -273,7 +276,7 @@ import {
   outcomeOf,
   runAttemptEffect,
 } from './run-attempt.ts'
-import { RUN_LOG_END, runLogEnd, runLogPath } from './run-log.ts'
+import { RUN_LOG_END, claudeConfigDirFor, runLogEnd, runLogPath } from './run-log.ts'
 import { runtimesOf } from './runtimes-of.ts'
 import { recordRecipe, stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, editEndedWaitsEffect, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
@@ -528,6 +531,12 @@ export interface RunOnceOptions {
   issue: number
   /** Absolute path to the compiled `lingtai-hook`. */
   hookBinary: string
+  /**
+   * The one sandbox service of this process (#1150), built lazily at a host's edge so that a process whose recipes
+   * have no `sandbox:` block never loads srt. Absent with a sandboxed decision is a refusal by name, never an
+   * unwrapped run.
+   */
+  sandbox?: Effect.Effect<SandboxApi, { readonly reason: string; readonly sentences: readonly string[] }>
   /** False wires no hooks and skips the smoke test. See `RenderOptions.guard`. */
   guard?: boolean
   /** The ticket prompt. Versioned, and recorded on every `RunPrompted`. */
@@ -836,6 +845,66 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     }
     const resolved = recipeAt.success
     const recipe = resolved.recipe
+    /**
+     * This run's sandbox decision (#1150), made where its settings file is written so the two agree: `--settings`
+     * carries `sandbox.enabled: false` for a sandboxed run only. Never for a run that is not Claude Code's own.
+     */
+    const decideSandbox: Effect.Effect<SandboxDecision> =
+      recipe.sandbox === undefined || !recipe.sandbox.enabled
+        ? Effect.succeed({ kind: 'unsandboxed', reason: 'off by choice' })
+        : options.sandbox === undefined
+          ? Effect.succeed({ kind: 'refused', why: 'no sandbox service in this process' })
+          : options.sandbox.pipe(
+              Effect.flatMap((service) => verdictOf(service.hostCanSandbox)),
+              Effect.map((verdict) => sandboxDecision(recipe.sandbox, verdict, homedir())),
+              Effect.catch((e) =>
+                Effect.succeed<SandboxDecision>(
+                  sandboxDecision(recipe.sandbox, { can: false, reason: e.reason, sentences: e.sentences }, homedir()),
+                ),
+              ),
+            )
+    /** The request's `sandbox` for a decision: absent unless it is *sandboxed* or *refused*. */
+    const sandboxOf = (
+      decision: SandboxDecision | undefined,
+      run: { runId: string; worktree: string | undefined },
+    ): { sandbox: RunSandbox } | Record<string, never> => {
+      if (decision === undefined || decision.kind === 'unsandboxed') return {}
+      const runDir = claudeConfigDirFor(home, run.runId)
+      const service = options.sandbox
+      return {
+        sandbox: {
+          decision:
+            decision.kind === 'sandboxed'
+              ? { kind: 'sandboxed', project_additions: decision.project_additions }
+              : { kind: 'refused', why: decision.why },
+          project,
+          mirror: mirrorPathFor(project, home),
+          worktree: run.worktree ?? runDir,
+          runDir,
+          operatorClaudeDir: join(homedir(), '.claude'),
+          hostHome: homedir(),
+          read: [options.hookBinary],
+          wrap: (input) =>
+            service === undefined
+              ? Effect.fail({ message: 'no sandbox service in this process' })
+              : service.pipe(
+                  Effect.mapError((e) => ({ message: [e.reason, ...e.sentences].join('; ') })),
+                  Effect.flatMap((api) =>
+                    api.wrap(input).pipe(
+                      Effect.mapError((e) => ({
+                        message:
+                          e._tag === 'SandboxUnavailable'
+                            ? [e.reason, ...e.sentences].join('; ')
+                            : e._tag === 'SandboxPolicyRefused'
+                              ? `the sandbox policy refused ${e.refusals.map((r) => r.path).join(', ')}`
+                              : 'srt could not wrap the command',
+                      })),
+                    ),
+                  ),
+                ),
+        },
+      }
+    }
     // The ref the rules came from and the branch they say they govern have to be
     // one branch. It refuses rather than picking a winner: both are recorded
     // decisions, and nothing here repairs a recorded decision silently (0024 §3).
@@ -1692,6 +1761,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * rather than above the pass.
        */
       let reviewSettingsPath = ''
+      let reviewDecision: SandboxDecision | undefined
       /**
        * **How many judgements this pass has bought**, and it is in the session id
        * (`#277`).
@@ -2864,7 +2934,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * with nothing cut, which is true, and the item is then blocked or
            * released by the ending like any other machine fact.
            */
-          const settings = yield* Effect.result(host.unhookedSettings({ runId, label: 'review', home }))
+          reviewDecision = yield* decideSandbox
+          const settings = yield* Effect.result(
+            host.unhookedSettings({
+              runId,
+              label: 'review',
+              home,
+              ...(reviewDecision.kind === 'sandboxed' ? { sandboxed: true } : {}),
+            }),
+          )
           if (Result.isFailure(settings)) {
             return { notCut: `the cold reviewer had no settings: ${settings.failure.detail}` }
           }
@@ -3025,7 +3103,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // `PassRouted.why` and the run log can be read after the fact (`#314`,
           // 0070 §2).
           const asKnown = `${runtime}${declared.model === undefined ? '' : ` (${declared.model})`}`
-          const settings = yield* Effect.result(host.unhookedSettings({ runId, label: 'judge', home }))
+          const judgeDecision = yield* decideSandbox
+          const settings = yield* Effect.result(
+            host.unhookedSettings({
+              runId,
+              label: 'judge',
+              home,
+              ...(judgeDecision.kind === 'sandboxed' ? { sandboxed: true } : {}),
+            }),
+          )
           if (Result.isFailure(settings)) {
             return held(`the "${named}" judge had no settings: ${settings.failure.detail}`)
           }
@@ -3060,6 +3146,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           )
           // Only a defect is the crash outcome; an interruption stays one. The
           // run's own interruption waits for the agent to stop before it continues.
+          const judgeRunId = `${runId}:judge:${on.when}:${continuation?.resumedWaitId ?? 'start'}:${judgements}`
           const outcome = yield* dispatched
             .run({
               // The count is in it, so two arrivals on one pass are two
@@ -3068,12 +3155,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // and a session id reused is the refusal `#195` cost a run.
               // The wait this continuation resumes is in it too, since the
               // count restarts in each one (#580). See `judgements`.
-              runId: `${runId}:judge:${on.when}:${continuation?.resumedWaitId ?? 'start'}:${judgements}`,
+              runId: judgeRunId,
               // The worktree where there is one, and the conductor's own
               // directory where `admit` never cut one. Nothing is read from
               // either — the prompt says so — but a process still needs a
-              // directory that exists to start in.
-              cwd: worktree?.path ?? home,
+              // directory that exists to start in. A sandboxed judge with no
+              // worktree starts in its own run directory instead: the
+              // conductor's is read-denied inside srt (#1150).
+              cwd:
+                worktree?.path ??
+                (judgeDecision.kind === 'unsandboxed' ? home : claudeConfigDirFor(home, judgeRunId)),
+              ...sandboxOf(judgeDecision, { runId: judgeRunId, worktree: worktree?.path }),
               prompt: judgePromptText,
               ...(declared.model === undefined ? {} : { model: declared.model }),
               settingsPath: settings.success,
@@ -3925,6 +4017,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           get settingsPath() {
             return reviewSettingsPath
           },
+          // The reviewer and the design agent share one settings file, so one decision (#1150).
+          sandboxFor: (forRun: string, cwd: string) => sandboxOf(reviewDecision, { runId: forRun, worktree: cwd }),
           // The ceiling, and the default: a `review` whose `agent:` declares a
           // `limits:` narrows it in `actionsFromRecipe`, which is the seam that
           // holds the action (`#314`).
@@ -4278,7 +4372,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * exactly the one the guard is for.
            */
           const startedAt = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
-          const wired = yield* Effect.result(host.wire({ runId, hookBinary: options.hookBinary, home }))
+          const implementDecision = yield* decideSandbox
+          const wired = yield* Effect.result(
+            host.wire({
+              runId,
+              hookBinary: options.hookBinary,
+              home,
+              ...(implementDecision.kind === 'sandboxed' ? { sandboxed: true } : {}),
+            }),
+          )
           if (Result.isFailure(wired)) return { stopped: `the hook was not wired: ${wired.failure.detail}` }
           const wiring = wired.success
 
@@ -4434,6 +4536,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   log: runLog,
                   env: agentEnv,
                   limits: spend,
+                  ...sandboxOf(implementDecision, { runId, worktree: tree.path }),
                 })
                 yield* Effect.promise(() => server.flush(runId).catch(() => {}))
                 return { outcome, version: server.get(runId)?.version ?? 1 }
@@ -4627,7 +4730,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
           runLog.note('fix', `round ${round} for ${from}`)
 
-          const settings = yield* Effect.result(host.unhookedSettings({ runId, label: `fix-${round}`, home }))
+          const fixDecision = yield* decideSandbox
+          const settings = yield* Effect.result(
+            host.unhookedSettings({
+              runId,
+              label: `fix-${round}`,
+              home,
+              ...(fixDecision.kind === 'sandboxed' ? { sandboxed: true } : {}),
+            }),
+          )
           if (Result.isFailure(settings)) {
             return { stopped: `the fixing agent had no settings: ${settings.failure.detail}` }
           }
@@ -4706,6 +4817,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               traceTools: true,
               env: fixEnv,
               limits: spendFor(spec.limits),
+              ...sandboxOf(fixDecision, { runId: fixId, worktree: tree.path }),
             })
             .pipe(
               Effect.catchDefect((err) =>

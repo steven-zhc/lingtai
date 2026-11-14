@@ -37,7 +37,8 @@ export function livePorts(): RunPorts {
       wire: writeHookWiringEffect,
       smokeTest: smokeTestFailClosedEffect,
       serve: serveHookServer,
-      unhookedSettings: ({ runId, label, home }) => writeUnhookedSettingsEffect(runId, label, home),
+      unhookedSettings: ({ runId, label, home, sandboxed }) =>
+        writeUnhookedSettingsEffect(runId, label, home, sandboxed === true),
       runLog: openRunLogEffect,
       // The one row that is wrapped here rather than in the package it comes
       // from. `@lingtai/agent-env` decides what an agent may see; it acquires
