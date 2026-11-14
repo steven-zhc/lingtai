@@ -928,7 +928,12 @@ describe('the record', () => {
         child
       </TaskBody>,
     )
-    expect(tabsOf(html)).toEqual([`/task/${ITEM}/ticket`, `/task/${ITEM}/attempt/2`, `/task/${ITEM}/attempt/1`])
+    expect(tabsOf(html)).toEqual([
+      `/task/${ITEM}/ticket`,
+      `/task/${ITEM}/sandbox`,
+      `/task/${ITEM}/attempt/2`,
+      `/task/${ITEM}/attempt/1`,
+    ])
     // Labelled by the board's word, `Attempt N`, with no run id as text.
     expect(html).toContain('Attempt 2')
     expect(html).not.toContain('>pass-')
@@ -946,13 +951,13 @@ describe('the record', () => {
     expect(html).not.toContain('the run')
   })
 
-  it('has only the Ticket tab when nothing has been dispatched', () => {
+  it('has only the Ticket and the Sandbox tabs when nothing has been dispatched', () => {
     const html = renderToStaticMarkup(
       <TaskBody task={task([], [])} github={NOTHING}>
         x
       </TaskBody>,
     )
-    expect(tabsOf(html)).toEqual([`/task/${ITEM}/ticket`])
+    expect(tabsOf(html)).toEqual([`/task/${ITEM}/ticket`, `/task/${ITEM}/sandbox`])
   })
 })
 

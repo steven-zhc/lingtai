@@ -131,10 +131,11 @@ const StoredRun = z.strictObject({
   route: StoredRoute.nullable(),
   published: RunRefsPublished.nullable(),
   kept: z.array(RunKeptUncommitted),
-  /** #1161; absent until a sandbox event is reduced. */
-  sandbox: z.array(SandboxInvocation).optional(),
   version: z.number(),
   lastSeq: Seq.transform((s) => BigInt(s)).nullable(),
+  // Last, where the reduce first writes it: a key the state gains later goes after the ones it always had.
+  /** #1161; absent until a sandbox event is reduced. */
+  sandbox: z.array(SandboxInvocation).optional(),
 })
 
 /** Thrown for a stored state that is not a `AttemptState` of today's shape. */
