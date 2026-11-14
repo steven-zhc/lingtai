@@ -30,6 +30,10 @@ export interface ProjectAdditions {
 /** What a runtime adds for itself (S4, S5): `~/.codex`, a run's config directory. Lingtai's own, taken as given. */
 export interface CallerAdditions {
   readonly write?: readonly string[] | undefined
+  /** Readable and not writable: on `allowRead` and `denyWrite`, so a copy inside a `write` path stays read-only (#1150). */
+  readonly read?: readonly string[] | undefined
+  /** Not writable, still readable: on `denyWrite` only. */
+  readonly denyWrite?: readonly string[] | undefined
   readonly deny?: readonly string[] | undefined
   readonly network?: readonly string[] | undefined
 }
@@ -51,7 +55,6 @@ export const BUILT_IN_DOMAINS: readonly string[] = [
   '*.anthropic.com',
   'claude.ai',
   '*.claude.ai',
-  'platform.claude.com',
   'api.openai.com',
   '*.openai.com',
   'chatgpt.com',
@@ -116,7 +119,7 @@ export const filesystemFor = (host: HostFacts, input: PolicyInputs) => {
   return {
     denyRead: unique([...denyRead(host), ...(project?.deny ?? []), ...(caller?.deny ?? [])]),
     // allowRead overrides denyRead (017). A caller's writable path under `stateDir` has to be readable too.
-    allowRead: unique([input.worktree, input.mirror, cache, ...(caller?.write ?? [])]),
+    allowRead: unique([input.worktree, input.mirror, cache, ...(caller?.write ?? []), ...(caller?.read ?? [])]),
     allowWrite: unique([
       input.worktree,
       input.mirror,
@@ -130,6 +133,9 @@ export const filesystemFor = (host: HostFacts, input: PolicyInputs) => {
       ...socketDirs(host),
       ...(project?.deny ?? []),
       ...(caller?.deny ?? []),
+      // srt's denyWrite overrides allowWrite, which is what makes a `read` path inside a `write` path read-only.
+      ...(caller?.read ?? []),
+      ...(caller?.denyWrite ?? []),
     ]),
   }
 }

@@ -2,7 +2,7 @@ export { BUILT_IN_DOMAINS, cacheDir, customConfigFor, mirrorDir, instanceConfig,
 export type { CallerAdditions, HostFacts, PolicyInputs, ProjectAdditions } from './policy.ts'
 export { Host, SandboxFs, SandboxPolicyRefused, SandboxUnavailable, SandboxWrapFailed, Srt } from './port.ts'
 export type { SandboxFsPort, SrtDependencyCheck, SrtPort } from './port.ts'
-export { protectedEntries, refuseProtected } from './protect.ts'
+export { protectedEntries, refuseProtected, staticPrefix, within } from './protect.ts'
 export type { Refusal, Relation } from './protect.ts'
 export { quoteArgv } from './quote.ts'
 export { HOST_CHECK_TTL, Sandbox, checkHost, SandboxLayer, makeSandbox } from './sandbox.ts'

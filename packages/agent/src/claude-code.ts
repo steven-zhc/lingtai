@@ -45,6 +45,7 @@ import type { RunFailureKind, TokenCounts, Usage } from '@lingtai/domain'
 import { Effect } from 'effect'
 
 import { claudeCodeAuth, runtimeVersionEffect } from './auth.ts'
+import { sandboxedLaunch, type SandboxPorts, type SandboxedLaunch } from './claude-sandbox.ts'
 import { observedCall } from './hook-socket.ts'
 import { NO_RUN_LOG } from './run-log.ts'
 import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
@@ -327,6 +328,8 @@ export interface ClaudeCodeOptions {
   spawn?: typeof spawn
   /** Replaces `process.kill`, so a test can stand in for a group that outlives the CLI. */
   signal?: (pid: number, signal: NodeJS.Signals | 0) => void
+  /** Replaces the token, directory and settings reads of a sandboxed run (#1150). */
+  sandbox?: SandboxPorts
 }
 
 const PROBE_MS = 100
@@ -444,9 +447,52 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
  * Every failure of the agent, a spawn failure included, is a `RunOutcome.failure`:
  * the error channel is `never`.
  */
-export const claudeCodeRun = Effect.fn('agent.run')(function* (options: ClaudeCodeOptions, request: RunRequest) {
+export const claudeCodeRun = (options: ClaudeCodeOptions, request: RunRequest): Effect.Effect<RunOutcome> => {
   const binary = options.binary ?? 'claude'
-  const permissionMode: PermissionMode = options.permissionMode ?? 'bypassPermissions'
+  const args = argsFor(
+    request,
+    request.prompt,
+    options.extraArgs ?? [],
+    options.permissionMode ?? 'bypassPermissions',
+  )
+  // Absent is today's run, untouched: the same command, the same filtered environment.
+  const sandbox = request.sandbox
+  if (sandbox === undefined) {
+    return runChild(options, request, { command: binary, args, env: spawnEnvFor(request.env) })
+  }
+  const started = Date.now()
+  return Effect.scoped(
+    sandboxedLaunch(
+      sandbox,
+      { argv: [binary, ...args], env: request.env, settingsPath: request.settingsPath },
+      spawnEnvFor,
+      (line) => (request.log ?? NO_RUN_LOG).note('sandbox', line),
+      options.sandbox,
+    ).pipe(
+      Effect.matchEffect({
+        // A refusal is a crash and never `never-started`: that stands the whole conductor down as an account
+        // fact (0031), and this is about the host or the project, which a person has to read.
+        onFailure: (refused) =>
+          Effect.succeed<RunOutcome>({
+            exitCode: null,
+            turns: 0,
+            durationMs: Date.now() - started,
+            costUsd: null,
+            text: null,
+            failure: { kind: 'crash', detail: refused.sentence },
+            sessionId: sessionIdFor(request.runId),
+          }),
+        onSuccess: (launch) => runChild(options, request, launch),
+      }),
+    ),
+  )
+}
+
+const runChild = Effect.fn('agent.run')(function* (
+  options: ClaudeCodeOptions,
+  request: RunRequest,
+  launch: SandboxedLaunch,
+) {
   const spawnChild = options.spawn ?? spawn
   const sendSignal = options.signal ?? ((pid, sig) => process.kill(pid, sig))
   const sessionId = sessionIdFor(request.runId)
@@ -455,16 +501,14 @@ export const claudeCodeRun = Effect.fn('agent.run')(function* (options: ClaudeCo
   // `?.` on the hot path (0034 §1).
   const trace = request.log ?? NO_RUN_LOG
 
-  const args = argsFor(request, request.prompt, options.extraArgs ?? [], permissionMode)
-
   return yield* Effect.callback<RunOutcome>((resume) => {
-    const child = spawnChild(binary, args, {
+    const child = spawnChild(launch.command, [...launch.args], {
       cwd: request.cwd,
       // Filtered, not inherited. The agent gets what the recipe allows plus
       // the hook's wiring and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` set by
       // `spawnEnvFor` (`#492`), and nothing else — one of the three real
       // boundaries (doc/decisions-archive/0007).
-      env: spawnEnvFor(request.env) as NodeJS.ProcessEnv,
+      env: launch.env as NodeJS.ProcessEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
       // Its own process group
       // ([0030](../../../doc/decisions-archive/0030-shutting-down-safely.md) §3).

@@ -49,13 +49,13 @@ export const protectedEntries = (host: HostFacts, mirror: string): Entry[] => {
  * srt reads a path as a glob (`/**` suffix stripped, `*`, `?`, `[…]`, `{…}` matched), so the check reads the
  * same way: the directory a pattern's static prefix names is what it can reach, and `/home/me/**` reaches `/home/me`.
  */
-const staticPrefix = (raw: string): string => {
+export const staticPrefix = (raw: string): string => {
   const segments = raw.split('/')
   const at = segments.findIndex((s) => /[*?[\]{}]/.test(s))
   return at === -1 ? raw : segments.slice(0, at).join('/') || '/'
 }
 
-const within = (outer: string, inner: string): boolean => {
+export const within = (outer: string, inner: string): boolean => {
   const rel = posix.relative(outer, inner)
   return rel === '' || (!rel.startsWith('..') && !posix.isAbsolute(rel))
 }

@@ -12,8 +12,8 @@ import { AgentHostFailed } from './hook-config.ts'
  * its own: the hook settings Lingtai writes, and copies of the operator's
  * user-level `CLAUDE.md`, `skills/` and `agents/`. It does not get MCP servers,
  * plugins, commands or `settings.json` from the operator's directory, and not
- * the login. **Nothing calls this yet** — S4b wraps the run and sets
- * `CLAUDE_CONFIG_DIR` to it.
+ * the login. `claude-sandbox.ts` wraps the run and sets
+ * `CLAUDE_CONFIG_DIR` to it (#1150).
  *
  * **`dir` and `source` are passed in.** `packages/agent` does not learn where
  * `~/.lingtai` or `~/.claude` is (`RunRequest`'s comment, `runtime.ts`); the
@@ -70,7 +70,7 @@ export const liveRunDirFs: RunDirFs = {
 export interface ClaudeRunDirectoryOptions {
   /** The operator's Claude directory (`~/.claude`), named by the caller. */
   source: string
-  /** `renderSettings`'s value, written as `<dir>/settings.json`. */
+  /** The run's user-level settings, written as `<dir>/settings.json`: `{ sandbox: { enabled: false } }` and no hooks, which are `--settings`'s. */
   settings: unknown
   /** One line at a time. Carries paths and error codes, never a value read from a file. */
   trace: (line: string) => void
@@ -108,7 +108,7 @@ export const prepareClaudeRunDirectory = (
   dir: string,
   options: ClaudeRunDirectoryOptions,
   fs: RunDirFs = liveRunDirFs,
-): Effect.Effect<void, AgentHostFailed, Scope.Scope> =>
+): Effect.Effect<readonly string[], AgentHostFailed, Scope.Scope> =>
   Effect.gen(function* () {
     yield* Effect.acquireRelease(
       fs.mkdir(dirname(dir), { recursive: true, mode: 0o700 }).pipe(
@@ -132,9 +132,14 @@ export const prepareClaudeRunDirectory = (
       .writeFile(join(dir, 'settings.json'), `${JSON.stringify(options.settings, null, 2)}\n`, 0o600)
       .pipe(Effect.mapError((err) => failed('write', join(dir, 'settings.json'), err)))
 
+    // The top-level paths that exist: an absent item or a dangling link is not here, so the sandbox is never told
+    // to allow a path that was not made.
+    const written = [join(dir, 'settings.json')]
     for (const name of COPIED_ITEMS) {
-      yield* copyItem(fs, join(options.source, name), join(dir, name), options.trace, [], SHAPE_OF[name])
+      const copied = yield* copyItem(fs, join(options.source, name), join(dir, name), options.trace, [], SHAPE_OF[name])
+      if (copied) written.push(join(dir, name))
     }
+    return written
   })
 
 /** Copy one entry as what it resolves to, or skip it when it is absent or a dangling link. */
@@ -145,13 +150,13 @@ const copyItem = (
   trace: (line: string) => void,
   ancestors: readonly string[],
   expected?: 'file' | 'directory',
-): Effect.Effect<void, AgentHostFailed> =>
+): Effect.Effect<boolean, AgentHostFailed> =>
   Effect.gen(function* () {
     const link = yield* fs.lstat(src).pipe(
       Effect.map((s): RunDirStat | null => s),
       Effect.catch((err) => (codeOf(err) === 'ENOENT' ? Effect.succeed(null) : Effect.fail(failed('read', src, err)))),
     )
-    if (link === null) return
+    if (link === null) return false
 
     let resolved: RunDirStat = link
     if (link.isSymbolicLink()) {
@@ -163,7 +168,7 @@ const copyItem = (
       )
       if (target === null) {
         trace(`skipped a dangling link: ${src}`)
-        return
+        return false
       }
       resolved = target
     }
@@ -186,13 +191,13 @@ const copyItem = (
       for (const name of names) {
         yield* copyItem(fs, join(src, name), join(dst, name), trace, [...ancestors, real])
       }
-      return
+      return true
     }
 
     if (resolved.isFile()) {
       const data = yield* fs.readFile(src).pipe(Effect.mapError((err) => failed('read', src, err)))
       yield* fs.writeFile(dst, data, copyMode(resolved)).pipe(Effect.mapError((err) => failed('write', dst, err)))
-      return
+      return true
     }
 
     return yield* Effect.fail(

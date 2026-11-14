@@ -27,6 +27,8 @@ export {
   type Spawned,
   runtimeVersionOfEffect,
 } from './runtime.ts'
+export type { RunSandbox, RunSandboxDecision, SandboxPorts, WrapFailure } from './claude-sandbox.ts'
+export { SandboxRunRefused } from './claude-sandbox.ts'
 export {
   CLAUDE_CODE_CAPABILITIES,
   PROMPT_ELIDED,
