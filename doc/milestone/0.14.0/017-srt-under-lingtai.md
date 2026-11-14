@@ -490,6 +490,14 @@ by the local `expiresAt`, and there is no flag to ask for it sooner. A refresh
 (2.1.325: *Set up a long-lived authentication token, requires Claude
 subscription*) is the documented way to a token that needs no refresh.
 
+## `claude setup-token` with stdout piped
+
+Measured 2026-11-13 by the operator on Claude Code 2.1.325, with stdout piped
+into a script that printed only line count and token prefixes: the browser
+sign-in completed, the command exited 0, it printed 28 lines, and the token's
+prefix is `sk-ant-oat01-`. So Lingtai can run it for a person and take the
+token from its output (#1169), falling back to a paste when that fails.
+
 ## What this changes in 0.14.md
 
 1. **The hook socket on Linux needs `allowAllUnixSockets`.** seccomp cannot
