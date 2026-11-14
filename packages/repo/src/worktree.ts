@@ -15,7 +15,7 @@ import { renderEnvFile } from '@lingtai/agent-env'
 import { stateDir } from '@lingtai/env'
 import { Effect } from 'effect'
 
-import { withExcludes } from './exclude.ts'
+import { excludeFileText, sandboxExcludePath } from './exclude.ts'
 import { RepoFailed, type TokenSource, gitEffect } from './git.ts'
 import { mirrorWrite } from './mirror-lock.ts'
 
@@ -57,10 +57,9 @@ export interface ProvisionOptions {
    */
   gitEnv?: NodeJS.ProcessEnv
   /**
-   * Lines the mirror's `info/exclude` must carry, in one managed block, keeping what else was there (#1152).
-   * Linked worktrees read the common dir's file, so this covers every one. **Empty removes the block**; absent
-   * leaves the file alone. A caller that provisions for a pass passes it every time, so one pass's exclusions
-   * never reach the next.
+   * Lines for the mirror's `info/lingtai-sandbox-exclude` (#1152) — a file only a sandboxed command is pointed
+   * at, never the shared `info/exclude`, so one pass's policy never reaches another's commands. Absent or empty
+   * writes nothing.
    */
   exclude?: readonly string[]
 }
@@ -139,26 +138,26 @@ export const ensureMirrorEffect = Effect.fn('repo.ensureMirror')(function* (opti
         Effect.as(true),
         Effect.orElseSucceed(() => false),
       )
-      // Inside the hold, so two passes never interleave the read and the write.
+      // Inside the hold, so two passes never interleave the read and the write. A file of its own, never
+      // `info/exclude` (shared by every worktree and every command): see `exclude.ts`.
       const writeExcludes = Effect.uninterruptible(
         Effect.tryPromise({
           // Promise chains and no `async`: the ratchet counts those.
           try: () => {
-            // Absent: a caller that says nothing about it touches nothing. Empty: it removes what a sandboxed
-            // pass left, so the policy never outlives the pass that asked for it.
             const names = options.exclude
-            if (names === undefined) return Promise.resolve()
-            const file = join(path, 'info', 'exclude')
+            // Absent or empty: nothing is written, and nothing a sandboxed pass wrote is taken away.
+            if (names === undefined || names.length === 0) return Promise.resolve()
+            const file = sandboxExcludePath(path)
+            const text = excludeFileText(names)
             return readFile(file, 'utf8')
               .catch((err: NodeJS.ErrnoException) => {
-                if (err.code === 'ENOENT') return ''
+                if (err.code === 'ENOENT') return undefined
                 throw err
               })
               .then((existing) => {
-                const merged = withExcludes(existing, names)
-                if (merged === existing) return undefined
+                if (existing === text) return undefined
                 // A bare clone made without templates has no `info/`.
-                return mkdir(dirname(file), { recursive: true }).then(() => writeFile(file, merged))
+                return mkdir(dirname(file), { recursive: true }).then(() => writeFile(file, text))
               })
           },
           catch: (err) => new RepoFailed({ operation: 'info/exclude', detail: (err as Error).message }),

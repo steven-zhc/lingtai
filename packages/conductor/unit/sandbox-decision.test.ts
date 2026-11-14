@@ -2,6 +2,7 @@
  * The pass's one sandbox decision and the wrap's closure (#1152). `Sandbox` is a fake that records; nothing loads srt.
  */
 import type { SandboxBlock } from '@lingtai/recipe'
+import { excludeEnv } from '@lingtai/repo'
 import { Sandbox, SandboxUnavailable, type SandboxApi, type WrapInput } from '@lingtai/sandbox'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -86,7 +87,7 @@ describe('makeRunSandbox', () => {
         worktree: '/wt',
         mirror: '/m/app.git',
         command: ['/bin/sh', '-c', 'pnpm test'],
-        env: { PATH: '/bin' },
+        env: excludeEnv('/m/app.git', { PATH: '/bin' }),
         project_additions: additions,
       },
     ])

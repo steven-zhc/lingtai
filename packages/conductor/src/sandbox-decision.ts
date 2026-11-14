@@ -10,6 +10,7 @@
  */
 import type { RunSandbox } from '@lingtai/actions'
 import { sandboxDecision, verdictOf, type HostVerdict, type SandboxBlock, type SandboxDecision } from '@lingtai/recipe'
+import { excludeEnv } from '@lingtai/repo'
 import { Sandbox, type ProjectAdditions, type SandboxApi } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
 import { Effect, Option, Result } from 'effect'
@@ -49,7 +50,8 @@ export const makeRunSandbox = (
       worktree,
       mirror: pass.mirror,
       command,
-      env,
+      // srt's stand-ins are excluded for this command alone, never in the mirror's shared `info/exclude`.
+      env: excludeEnv(pass.mirror, env),
       project_additions: pass.additions,
     }),
 })

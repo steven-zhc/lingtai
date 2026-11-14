@@ -49,6 +49,8 @@ const load: Effect.Effect<SandboxApi, SandboxUnavailable> = Effect.suspend(() =>
  * finishes the pass, `releaseSandbox` resets after it — so the listeners srt added during its first
  * initialisation are taken off again. (`exit` stays: it is the backstop for a process that dies anyway.)
  */
+/** The name srt gives its handler (`const cleanupHandler = …`, `sandbox-manager.js`). */
+const SRT_HANDLER = 'cleanupHandler'
 const SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM']
 const signals = Semaphore.makeUnsafe(1)
 let stripped = false
@@ -65,7 +67,8 @@ const withoutSrtSignals = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effe
           Effect.sync(() => {
             SIGNALS.forEach((signal, i) => {
               for (const listener of process.listeners(signal)) {
-                if (!before[i]!.has(listener)) {
+                // Ownership by name, not by timing: a daemon handler registered while the wrap was pending is not srt's.
+                if (!before[i]!.has(listener) && (listener as { name?: string }).name === SRT_HANDLER) {
                   process.removeListener(signal, listener as NodeJS.SignalsListener)
                   stripped = true
                 }
