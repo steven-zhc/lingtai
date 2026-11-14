@@ -782,13 +782,15 @@ export const findOrphanClaudeDirsEffect = Effect.fn('daemon.findOrphanClaudeDirs
     if (options.dryRun) {
       const store = logOf(options)
       // A stream that cannot be read is not evidence the run is over: it fails rather than reporting a live directory as abandoned.
-      const run = yield* attempt(() => store.read(runId))
+      // A sub-run (`<pass>:review:…`) is a part of its pass: its claim is on the pass's stream.
+      const pass = runId.split(':')[0] ?? runId
+      const run = yield* attempt(() => store.read(pass))
       const taskId = run
         .map((e) => (e.data as { ticketId?: string } | undefined)?.ticketId)
         .find((id): id is string => typeof id === 'string')
       if (taskId) {
         const life = (yield* ticketOf(store, options, taskId)).lifecycle
-        if (life.status === 'claimed' && life.runId === runId) continue
+        if (life.status === 'claimed' && life.runId === pass) continue
       }
     }
 

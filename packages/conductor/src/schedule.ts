@@ -302,7 +302,6 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
               issue,
               hookBinary: options.hookBinary,
               ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
-              ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
               ...(options.guard === undefined ? {} : { guard: options.guard }),
               prompt: options.prompt,
               ...(options.promptVersion === undefined ? {} : { promptVersion: options.promptVersion }),
@@ -364,6 +363,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
         runtime: options.runtime,
         issue,
         hookBinary: options.hookBinary,
+        ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
         ...(options.guard === undefined ? {} : { guard: options.guard }),
         // Raw. `runOnce` has the ticket and does the substitution.
         prompt: options.prompt,
