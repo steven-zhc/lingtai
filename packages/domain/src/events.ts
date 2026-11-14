@@ -2225,7 +2225,8 @@ export const ProjectOnboardingStarted = z.object({
 })
 
 /**
- * The recipe as resolved from origin/<base>, hashed so replays can be compared.
+ * A project's registration: its owner, its base branch, and the hash of the configuration the conductor resolved.
+ * That `configHash` is a resolved hash, not the Project's recipe — the declared recipe is `ProjectRecipeChanged`.
  *
  * Two fields were added after the fact, and both for the same reason: what was
  * recorded turned out not to be enough to find the recipe again.
@@ -2244,7 +2245,7 @@ export const ProjectOnboardingStarted = z.object({
  * did not record it, and inventing a value for them would be worse than saying
  * so.
  *
- * @summary The conductor read a project's recipe from its base branch and recorded which version it was.
+ * @summary A project was registered with its owner, its base branch and the hash of the configuration resolved for it.
  */
 export const ProjectConfigured = z.object({
   project: z.string(),
@@ -2252,6 +2253,39 @@ export const ProjectConfigured = z.object({
   base: z.string().nullable(),
   configHash: z.string(),
   fromSha: z.string(),
+})
+
+/**
+ * The project's declared recipe changed: the text a person wrote, or what the file on
+ * this machine held when it was first read.
+ *
+ * `source` is the file's text with every line ending made `\n` and nothing else
+ * touched, comments included — never a re-serialisation. `sourceHash` is its sha256, hex;
+ * the hash function is `@lingtai/recipe`'s, and this package only carries the value.
+ * `by` is `human:<id>` for a person, or `file` when the file was read and found different.
+ *
+ * Appended on the transition, never the state: `recipeChange` says nothing when the hash on
+ * record is the one seen.
+ *
+ * @summary A project's declared recipe changed, recorded as the text a person wrote and its hash.
+ */
+export const ProjectRecipeChanged = z.object({
+  sourceHash: z.string(),
+  source: z.string(),
+  by: z.union([z.literal('file'), z.string().regex(/^human:[\w.@-]+$/)]),
+})
+
+/**
+ * A run met a sandbox state different from the one on record for its project.
+ *
+ * `runId` is the attempt whose run met it. Appended on the transition, never the state:
+ * `sandboxObservation` says nothing when the kind on record is the one seen.
+ *
+ * @summary A run met a sandbox state different from the last one recorded for its project.
+ */
+export const ProjectSandboxObserved = z.object({
+  kind: z.enum(['sandboxed', 'degraded', 'off by choice']),
+  runId: z.string(),
 })
 
 /**
@@ -2599,6 +2633,8 @@ export const EVENTS = {
   PromptEdited,
   ProjectOnboardingStarted,
   ProjectConfigured,
+  ProjectRecipeChanged,
+  ProjectSandboxObserved,
   ProjectRefused,
   ProjectRecovered,
   ProjectPaused,
@@ -2703,6 +2739,8 @@ export const EVENT_AT = {
   PromptEdited: ['outside'],
   ProjectOnboardingStarted: [],
   ProjectConfigured: ['outside'],
+  ProjectRecipeChanged: ['claim', 'end', 'outside'],
+  ProjectSandboxObserved: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge', 'end'],
   ProjectRefused: ['outside'],
   ProjectRecovered: ['outside'],
   ProjectPaused: ['outside'],

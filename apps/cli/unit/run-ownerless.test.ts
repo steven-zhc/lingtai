@@ -52,6 +52,8 @@ const OWNERLESS_PROJECT: ProjectState = {
   fromSha: 'deadbeef',
   refused: null,
   paused: null,
+  recipe: null,
+  sandboxObserved: null,
   version: 1,
   lastSeq: 1n,
 }
