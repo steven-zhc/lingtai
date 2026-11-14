@@ -54,7 +54,6 @@ export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'ctl-' | 'cha
  * entry is deleted in the commit that adds the append.
  */
 export const NOT_YET_APPENDED: ReadonlySet<EventType> = new Set<EventType>([
-  'SandboxBoundaryRecorded',
   'SandboxConnectionsRefused',
   'ConductorPaused',
 ])

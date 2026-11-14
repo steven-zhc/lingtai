@@ -69,9 +69,13 @@ export function misplaced(envelopes: readonly Envelope[], at: Readonly<Record<Ev
     }
     // An agent judge is dispatched by `routeProposal` at `proposed`, after `review` has closed,
     // and its `RunSpent` is the one event that visit appends (`for._tag` is `Judge`).
+    // Its sandbox boundary is the same visit's, keyed by the step and the `judge:<when>` action (#1164).
     const judged =
-      (e.type === 'RunSpent' || e.type === 'RunPrompted') &&
-      (e.data as { for?: { _tag?: string } }).for?._tag === 'Judge'
+      ((e.type === 'RunSpent' || e.type === 'RunPrompted') &&
+        (e.data as { for?: { _tag?: string } }).for?._tag === 'Judge') ||
+      ((e.type === 'SandboxBoundaryRecorded' || e.type === 'SandboxConnectionsRefused') &&
+        (e.data as { step?: string; action?: string }).step === 'proposed' &&
+        ((e.data as { action?: string }).action ?? '').startsWith('judge:'))
     const window = !started ? ['claim'] : open ? [current] : judged ? ['proposed'] : ['end']
     const declared = at[e.type as EventType]
     if (!declared.some((s) => window.includes(s))) found.push({ type: e.type, seq: e.seq, window, declared })
