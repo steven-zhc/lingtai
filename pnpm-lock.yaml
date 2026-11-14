@@ -186,6 +186,9 @@ importers:
       '@lingtai/repo':
         specifier: workspace:*
         version: link:../../packages/repo
+      '@lingtai/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@lingtai/setup':
         specifier: workspace:*
         version: link:../../packages/setup
@@ -296,6 +299,9 @@ importers:
       '@lingtai/recipe':
         specifier: workspace:*
         version: link:../recipe
+      '@lingtai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@opentelemetry/api':
         specifier: ^1.10.0
         version: 1.10.0

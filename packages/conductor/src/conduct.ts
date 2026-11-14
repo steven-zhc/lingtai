@@ -278,6 +278,7 @@ import {
 } from './run-attempt.ts'
 import { RUN_LOG_END, claudeConfigDirFor, runLogEnd, runLogPath } from './run-log.ts'
 import { runtimesOf } from './runtimes-of.ts'
+import { decidePassSandbox, makeRunSandbox } from './sandbox-decision.ts'
 import { recordRecipe, stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, editEndedWaitsEffect, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
@@ -963,6 +964,35 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             ? `${wrongAgent.sentence} — nothing was claimed. Name ${options.runtime.capabilities.id} there to run with it`
             : `${wrongAgent.sentence} — nothing was claimed. Sign in to it, or name a runtime this machine has`,
       }
+    }
+    /**
+     * **What this pass is, as to the sandbox — decided once, before the claim** (#1152). Every action's wrap
+     * reads this one answer, so none can see *sandboxed* while another sees *degraded*. A refusal here claims nothing, like the refusals around it.
+     */
+    const passSandbox = yield* decidePassSandbox(recipe.sandbox)
+    const sandboxDecision = passSandbox.decision
+    if (sandboxDecision.kind === 'refused') {
+      return {
+        ok: false,
+        ticketId: null,
+        runId: null,
+        stage: 'recipe',
+        detail: `${sandboxDecision.why} — nothing was claimed`,
+      }
+    }
+    if (sandboxDecision.kind === 'sandboxed' && passSandbox.service === undefined) {
+      // The early form of fail-closed: without it an `implement` agent is paid for before `build` refuses.
+      return {
+        ok: false,
+        ticketId: null,
+        runId: null,
+        stage: 'recipe',
+        detail:
+          'the recipe sandboxes its runs and this host provided no Sandbox service to wrap them with — nothing was claimed',
+      }
+    }
+    if (sandboxDecision.kind === 'unsandboxed' && sandboxDecision.reason === 'degraded') {
+      log(`sandbox: running unsandboxed — ${sandboxDecision.why}`)
     }
     // Safe now, and only now: past the refusal these two are the same branch.
     const base = baseOf(recipe)
@@ -4094,6 +4124,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // neither reads the tree before acting on it. No `defaultsAt` row,
         // because an unconfigured `implement` runs no command at all.
         keptRun: { clean, keep: keepRun },
+        // The twelfth: the pass's one decision, and the wrap only a sandboxed one gets (#1152). Absent
+        // `sandbox` under a *sandboxed* decision is refused by name in `actionPortsFromRecipe`.
+        sandboxDecision,
+        ...(sandboxDecision.kind === 'sandboxed' && passSandbox.service !== undefined
+          ? {
+              sandbox: makeRunSandbox(passSandbox.service, {
+                project,
+                mirror: mirrorPathFor(project, home),
+                additions: sandboxDecision.project_additions,
+              }),
+            }
+          : {}),
       }
 
       /**

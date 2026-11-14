@@ -61,6 +61,7 @@ import { PROJECTIONS } from './projection.ts'
 import { startRates } from './rates.ts'
 import type { RestartArgs } from './restart.ts'
 import { openDaemon, prepareRestart, queueForTheLock, startRecorder, restartSupervised } from './restart.ts'
+import { releaseSandbox } from './sandbox.ts'
 import { keeper, serviceCommand, type ServiceOptions } from './service.ts'
 import type { Steps } from './steps.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
@@ -843,6 +844,7 @@ export function daemonCommand(
       yield* started.daemon.stopped()
       // After a drain and not on `stopNow`, which promised to stop now (#791).
       yield* flushTracing
+      yield* releaseSandbox
       yield* ratesSettled
       console.log('stopped')
       return 0

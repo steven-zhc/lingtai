@@ -18,7 +18,17 @@ export {
   type SentBack,
   type TheDesign,
 } from './action.ts'
-export { makeProcessAction, EVIDENCE_BYTES, EVIDENCE_LINES, tail, type ProcessActionSpec } from './process-action.ts'
+export {
+  makeProcessAction,
+  EVIDENCE_BYTES,
+  EVIDENCE_LINES,
+  tail,
+  wrapRefusal,
+  type CommandRunner,
+  type ProcessActionSpec,
+  type RunSandbox,
+  type SandboxWrapError,
+} from './process-action.ts'
 export {
   buildDesignPrompt,
   buildReviewPrompt,
