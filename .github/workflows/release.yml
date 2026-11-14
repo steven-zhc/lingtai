@@ -83,7 +83,7 @@ jobs:
       - name: pack
         run: |
           mkdir -p artifacts
-          tar -czf artifacts/lingtai-${{ matrix.platform }}.tar.gz -C dist lingtai packages prompts
+          tar -czf artifacts/lingtai-${{ matrix.platform }}.tar.gz -C dist lingtai packages prompts vendor
           # `board/` is identical on every platform; one copy is published.
           if [ "${{ matrix.platform }}" = linux-x64 ]; then
             tar -czf artifacts/board.tar.gz -C dist board
