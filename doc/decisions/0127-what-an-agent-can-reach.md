@@ -132,8 +132,11 @@ true.
     not JSON, or holding an entry that is not an absolute path refuses the run,
     and so does an entry that is, lies inside or contains the worktree, the
     mirror, the run's directory or a path it must read. The operator's Codex
-    permission profile goes on the lists of every run in the same way, and a
-    profile Lingtai cannot read refuses the run.
+    permission profile goes on the lists of every run in the same way, a
+    `run:` command's included. Settings Lingtai cannot read refuse the run; an
+    unreadable Codex profile refuses a run only of a project that names Codex at
+    some step, and otherwise the run goes ahead without those denies and its log
+    says so (a `run:` command has no log, so it leaves no note).
 
 17. **Known telemetry hosts** are a built-in list, refused like any other host,
     recorded on the run and left out of what a person is shown and of §14's

@@ -65,6 +65,24 @@ export const codexProfileDenies = (
   return { ok: true, paths }
 }
 
+/**
+ * The operator's Codex profile denies for a run that is **not** Codex (#1155, 0127 §16): the same paths
+ * `codexProfileDenies` makes, except that an `unreadable` profile refuses only a project whose recipe names Codex
+ * at some step (`codexNamed`). Otherwise the run goes ahead without them and `note` says so, for the run's log.
+ */
+export const operatorCodexDenies = (
+  verdict: UserPermissions,
+  at: { readonly home: string | undefined; readonly cwd: string },
+  codexNamed: boolean,
+):
+  | { readonly ok: true; readonly paths: string[]; readonly note?: string }
+  | { readonly ok: false; readonly refusal: SandboxRunRefused } => {
+  if (verdict.kind === 'unreadable' && !codexNamed) {
+    return { ok: true, paths: [], note: `the operator's Codex profile could not be read: ${verdict.why}` }
+  }
+  return codexProfileDenies(verdict, at)
+}
+
 export interface CodexLaunchRun {
   /** `[binary, ...args]`, the args built with `--sandbox danger-full-access`. */
   readonly argv: readonly string[]

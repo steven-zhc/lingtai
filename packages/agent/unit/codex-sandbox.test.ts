@@ -69,6 +69,7 @@ const fakeSandbox = (over: Partial<RunSandbox> = {}) => {
     runDir: '/state/runs/r1/claude',
     operatorClaudeDir: '/home/op/.claude',
     hostHome: '/home/op',
+    codexNamed: true,
     read: ['/bundle/lingtai-hook'],
     wrap: (input) =>
       Effect.sync(() => {

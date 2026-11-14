@@ -9,8 +9,9 @@
  * at all. A service that cannot be built is a `can: false` verdict carrying its reason and sentences.
  */
 import type { RunSandbox } from '@lingtai/actions'
+import { collidingDenies, operatorCodexDenies, userPermissionsAt, type UserPermissions } from '@lingtai/agent'
 import { sandboxDecision, verdictOf, type HostVerdict, type SandboxBlock, type SandboxDecision } from '@lingtai/recipe'
-import type { ProjectAdditions, SandboxApi } from '@lingtai/sandbox'
+import { SandboxWrapFailed, type ProjectAdditions, type SandboxApi } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
 import { Effect, Result } from 'effect'
 
@@ -53,18 +54,50 @@ export const decidePassSandbox = (
     return { decision: sandboxDecision(block, verdict, home), service: built.success }
   })
 
-/** `Sandbox.wrap`, closed over the pass's project, mirror and the decision's additions. */
+/**
+ * `Sandbox.wrap`, closed over the pass's project, mirror and the decision's additions.
+ *
+ * It also puts the operator's Codex profile denies on the command's wrap (#1155, 0127 §16), read per call through
+ * the `HOME` the command's own environment carries. An unreadable profile refuses only a recipe that names Codex;
+ * otherwise the command goes ahead without them. A `run:` command has no run log, so that case leaves no note.
+ */
 export const makeRunSandbox = (
   service: SandboxApi,
-  pass: { readonly project: string; readonly mirror: string; readonly additions: ProjectAdditions },
+  pass: {
+    readonly project: string
+    readonly mirror: string
+    readonly cache: string
+    readonly additions: ProjectAdditions
+    readonly codexNamed: boolean
+    readonly readCodexPermissions?: (env: Record<string, string>, cwd: string) => UserPermissions
+  },
 ): RunSandbox => ({
-  wrap: (command, worktree, env) =>
-    service.wrap({
+  wrap: (command, worktree, env) => {
+    const profile = operatorCodexDenies(
+      (pass.readCodexPermissions ?? userPermissionsAt)(env, worktree),
+      { home: env.HOME, cwd: worktree },
+      pass.codexNamed,
+    )
+    if (!profile.ok) return Effect.fail(new SandboxWrapFailed({ cause: new Error(profile.refusal.sentence) }))
+    const needed = [worktree, pass.mirror, pass.cache]
+    const colliding = collidingDenies(profile.paths, needed)
+    if (colliding.length > 0) {
+      return Effect.fail(
+        new SandboxWrapFailed({
+          cause: new Error(
+            `the operator's Codex permission profile denies ${colliding[0]}, which covers a path the run needs, and would be voided by it`,
+          ),
+        }),
+      )
+    }
+    return service.wrap({
       project: pass.project,
       worktree,
       mirror: pass.mirror,
       command,
       env,
       project_additions: pass.additions,
-    }),
+      ...(profile.paths.length > 0 ? { caller_additions: { deny: profile.paths } } : {}),
+    })
+  },
 })

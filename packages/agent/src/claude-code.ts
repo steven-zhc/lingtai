@@ -46,6 +46,8 @@ import { Effect } from 'effect'
 
 import { claudeCodeAuth, runtimeVersionEffect } from './auth.ts'
 import { sandboxedLaunch, type SandboxPorts, type SandboxedLaunch } from './claude-sandbox.ts'
+import { operatorCodexDenies } from './codex-sandbox.ts'
+import { userPermissionsAt } from './codex.ts'
 import { observedCall } from './hook-socket.ts'
 import { NO_RUN_LOG } from './run-log.ts'
 import type { AuthStatus, Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
@@ -454,7 +456,18 @@ export const claudeCodeRun = (options: ClaudeCodeOptions, request: RunRequest): 
   return Effect.scoped(
     sandboxedLaunch(
       sandbox,
-      { argv: [binary, ...args], env: request.env, settingsPath: request.settingsPath },
+      {
+        argv: [binary, ...args],
+        env: request.env,
+        settingsPath: request.settingsPath,
+        // Read per run, at dispatch, through the profile this run's own `HOME` finds (#1155).
+        operatorCodex: () =>
+          operatorCodexDenies(
+            (options.sandbox?.readCodexPermissions ?? userPermissionsAt)(request.env, request.cwd),
+            { home: request.env.HOME, cwd: request.cwd },
+            sandbox.codexNamed,
+          ),
+      },
       spawnEnvFor,
       (line) => (request.log ?? NO_RUN_LOG).note('sandbox', line),
       options.sandbox,
