@@ -81,6 +81,8 @@ export interface TypeCount {
  */
 export interface TypeRow {
   seq: bigint
+  /** The stream the row was appended to — what lets a caller keep one project's rows. */
+  streamId: string
   schemaVer: number
   data: unknown
 }
@@ -309,11 +311,11 @@ export function makePostgresQueries(options: PostgresLogQueriesOptions = {}): Qu
       // `seq` comes back as text: node-postgres leaves `bigint` (OID 20)
       // unparsed rather than losing precision past 2^53, so this is the one
       // place in the file that converts it back by hand.
-      const rows = yield* ask<{ seq: string; schema_ver: number; data: unknown }>(
-        'select seq, schema_ver, data from events where type = $1 order by seq',
+      const rows = yield* ask<{ seq: string; stream_id: string; schema_ver: number; data: unknown }>(
+        'select seq, stream_id, schema_ver, data from events where type = $1 order by seq',
         [type],
       )
-      return rows.map((r) => ({ seq: BigInt(r.seq), schemaVer: r.schema_ver, data: r.data }))
+      return rows.map((r) => ({ seq: BigInt(r.seq), streamId: r.stream_id, schemaVer: r.schema_ver, data: r.data }))
     }),
 
     unconvergedUpdates: Effect.fn('LogQueries.unconvergedUpdates')(function* () {

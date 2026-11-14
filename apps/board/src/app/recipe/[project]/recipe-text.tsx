@@ -18,17 +18,26 @@ export function RecipeText({
   text,
   open,
   path,
+  draft,
 }: {
   project: string
   text: string
   open: boolean
   path: string
+  /** Unsaved text to open the editor on; `text` stays the file's own bytes, which a save compares against. */
+  draft?: string
 }) {
   const [editing, setEditing] = useState(open)
   return (
     <div className="rfile">
       {editing ? (
-        <RecipeForm project={project} initial={text} path={path} onClose={() => setEditing(false)} />
+        <RecipeForm
+          project={project}
+          initial={text}
+          {...(draft === undefined ? {} : { draft })}
+          path={path}
+          onClose={() => setEditing(false)}
+        />
       ) : (
         <>
           <FileBar path={path}>

@@ -18,11 +18,14 @@ const YamlEditor = dynamic(() => import('./yaml-editor').catch(() => ({ default:
 export function RecipeForm({
   project,
   initial,
+  draft,
   path,
   onClose,
 }: {
   project: string
   initial: string
+  /** Unsaved text the editor opens on. `initial` stays the file's bytes: it is `loaded`, which a save compares to the disk. */
+  draft?: string
   path: string
   onClose: () => void
 }) {
@@ -34,7 +37,7 @@ export function RecipeForm({
   } satisfies SaveRecipeState)
   // Controlled: React resets an uncontrolled field when an action completes, which would drop
   // edits typed while Save was pending and the draft a refusal should keep.
-  const [draft, setDraft] = useState(initial)
+  const [body, setBody] = useState(draft ?? initial)
   // The textarea is the loading state and the fallback; the editor takes over once it is up.
   const [editorReady, setEditorReady] = useState(false)
   const fallback = useRef<HTMLTextAreaElement>(null)
@@ -53,8 +56,11 @@ export function RecipeForm({
     <form action={run} className="redit">
       <input type="hidden" name="project" value={project} />
       <input type="hidden" name="loaded" value={JSON.stringify(state.loaded)} />
-      <input type="hidden" name="text" value={draft} />
+      <input type="hidden" name="text" value={body} />
       <FileBar path={path}>
+        {draft !== undefined && body === draft && state.message === '' ? (
+          <span className="rfile-said">a host was added for you — not saved</span>
+        ) : null}
         <button type="submit" className="rfile-edit" disabled={pending}>
           Validate and save
         </button>
@@ -76,15 +82,15 @@ export function RecipeForm({
       {editorReady ? null : (
         <textarea
           ref={fallback}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
           style={{ width: '100%', boxSizing: 'border-box' }}
           spellCheck={false}
           rows={32}
           className="mono"
         />
       )}
-      <YamlEditor initial={draft} handoff={handoff} onChange={setDraft} onReady={() => setEditorReady(true)} />
+      <YamlEditor initial={body} handoff={handoff} onChange={setBody} onReady={() => setEditorReady(true)} />
     </form>
   )
 }

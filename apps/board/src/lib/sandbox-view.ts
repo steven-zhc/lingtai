@@ -8,7 +8,13 @@
  * A row is one wrapped invocation (`commandId`), never one `runId`: `runId` is minted once per claim and every
  * implement, fix, review and `run:` of the attempt shares it.
  */
-import type { AttemptState, SandboxInvocation } from '@lingtai/domain'
+import {
+  parseTicketStream,
+  SandboxConnectionsRefused,
+  ticketStreamsOf,
+  type AttemptState,
+  type SandboxInvocation,
+} from '@lingtai/domain'
 import { isNetworkEntry } from '@lingtai/recipe'
 
 type SandboxPolicy = Extract<NonNullable<SandboxInvocation['boundary']>, { kind: 'sandboxed' }>['policy']
@@ -326,4 +332,76 @@ export function markOfAction(
 ): Mark | null {
   const latest = (sandbox ?? []).filter((i) => i.step === step && i.action === action).at(-1)
   return latest === undefined ? null : markOf(latest.boundary)
+}
+
+/** How far back the recipe page's *recently blocked* reaches. Stated on the page, never a setting. */
+export const RECENT_DAYS = 14
+
+/** One row of the log as the recipe page's loader read it: the stream it was appended to, and its undecoded payload. */
+export interface ProjectRow {
+  readonly streamId: string
+  readonly data: unknown
+}
+
+/**
+ * What the project's runs were refused in the last `RECENT_DAYS` days, across every ticket: the recipe page's
+ * *recently blocked*. A refusal lands on a `pass-<uuid>` stream that names no project, so a stream is the project's
+ * only where a `TicketClaimed` on one of its own `ticket-<project>-<n>` streams names it as the `runId`.
+ *
+ * Telemetry is left out. The window is the entry's own `firstAt`, since a row carries no time. An unreadable or
+ * incomplete read is a sentence and never a zero.
+ */
+export function projectBlockedOf(
+  claims: readonly ProjectRow[],
+  refused: readonly ProjectRow[],
+  project: string,
+  now: Date,
+): SandboxView['blocked'] {
+  // The full `ticket-<project>-` prefix: a project name may itself hold a `-`, so the prefix is not parsed apart.
+  const prefix = ticketStreamsOf(project)
+  const issueOf = new Map<string, string>()
+  for (const c of claims) {
+    if (!c.streamId.startsWith(prefix)) continue
+    const runId = (c.data as { runId?: unknown } | null)?.runId
+    const issue = parseTicketStream(c.streamId)?.issue ?? c.streamId.slice(prefix.length)
+    if (typeof runId === 'string') issueOf.set(runId, `#${issue}`)
+  }
+  const since = now.getTime() - RECENT_DAYS * 24 * 60 * 60 * 1000
+  const caveats: string[] = []
+  const byHost = new Map<string, { count: number; firstAt: string; host: string | null; from: Set<string> }>()
+  for (const row of refused) {
+    const who = issueOf.get(row.streamId)
+    if (who === undefined) continue
+    const parsed = SandboxConnectionsRefused.safeParse(row.data)
+    if (!parsed.success) {
+      caveats.push(`${who}: a refusal record could not be read, so what it was refused is unknown.`)
+      continue
+    }
+    const read = parsed.data.read
+    if (read.kind === 'unreadable') {
+      caveats.push(`${who}: the refusals could not be read (${read.reason}).`)
+      continue
+    }
+    if (!read.complete) caveats.push(`${who}: srt's store evicted entries, so this list is a lower bound.`)
+    for (const e of read.entries) {
+      if (e.telemetry) continue
+      // An entry whose time cannot be read is kept: unknown is never dropped as old.
+      const at = Date.parse(e.firstAt)
+      if (!Number.isNaN(at) && at < since) continue
+      const key = e.host ?? e.line ?? 'unknown address'
+      const into = byHost.get(key) ?? { count: 0, firstAt: e.firstAt, host: e.host, from: new Set<string>() }
+      into.count += e.count
+      if (Date.parse(e.firstAt) < Date.parse(into.firstAt)) into.firstAt = e.firstAt
+      into.from.add(who)
+      byHost.set(key, into)
+    }
+  }
+  const hosts: BlockedHost[] = [...byHost].map(([label, h]) => ({
+    label,
+    count: h.count,
+    firstAt: h.firstAt,
+    from: [...h.from],
+    allowHref: allowHrefOf(project, h.host),
+  }))
+  return { hosts, caveats: [...new Set(caveats)] }
 }

@@ -309,6 +309,7 @@ export function describeLogQueriesContract(
       for (let i = 1; i < rows.length; i++) expect(rows[i]!.seq).toBeGreaterThan(rows[i - 1]!.seq)
       const last = rows.at(-1)!
       expect(last.schemaVer).toBe(1)
+      expect(last.streamId).toBe(item)
       expect(last.data).toEqual({ by: 'human:test', reason: 'done elsewhere' })
       // Never a `TicketLanded` row's shape, appended right beside it in the
       // same batch — the near-miss `typeCounts`'s own test seeds for the same
