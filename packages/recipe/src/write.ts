@@ -10,7 +10,7 @@
  */
 import { isDeepStrictEqual } from 'node:util'
 
-import { isNode, parse as parseYaml, parseDocument } from 'yaml'
+import { parse as parseYaml } from 'yaml'
 import { z } from 'zod'
 
 import { type RecipeChange, editRecipe } from './emit.ts'

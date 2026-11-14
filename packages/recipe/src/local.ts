@@ -32,10 +32,7 @@ import { parse as parseYaml } from 'yaml'
 
 import { type RecipeFailed, failed } from './files.ts'
 import { PRESETS } from './presets.ts'
-import { LIMIT_DEFAULTS } from './recipe.ts'
-import { RecipeInvalidError, RecipeMissingError, resolveSource } from './resolve.ts'
-import { type SandboxHostOptions, checkSandboxBlock } from './sandbox.ts'
-import { assigneeOf, backoffOf, baseOf, ceilingOf, excludeOf, kindsOf } from './settings.ts'
+import { RecipeInvalidError, RecipeMissingError } from './resolve.ts'
 
 /** A project's recipe file under `home` — a path, never a read; `@lingtai/project`'s `recipePath` defaults the home. */
 export function recipeFileIn(home: string, project: string): string {
