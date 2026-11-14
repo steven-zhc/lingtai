@@ -15,7 +15,7 @@ import { BUILT_IN_DOMAINS } from '@lingtai/sandbox/policy'
 type SandboxPolicy = Extract<NonNullable<SandboxInvocation['boundary']>, { kind: 'sandboxed' }>['policy']
 
 /** The slice of an attempt this view reads. */
-export type SandboxInput = Pick<AttemptState, 'lifecycle'> & {
+export type SandboxInput = Pick<AttemptState, 'lifecycle' | 'resolved' | 'steps'> & {
   readonly sandbox?: readonly SandboxInvocation[] | undefined
 }
 
@@ -216,9 +216,28 @@ export function sandboxViewOf(input: SandboxInput, project: string): SandboxView
   }))
 
   const caveats: string[] = []
-  // A row is a wrapped invocation that left a record. An action with none is not drawn: the plan also holds human
-  // and mechanical actions, and an action that never ran, none of which are invocations missing evidence.
-  if (recorded.length === 0)
+  // An action the attempt reached with no record ran before S8, or lost its record: *not recorded*. A planned action
+  // that never ran is not a gap, and the merge is Lingtai's own and runs outside the sandbox.
+  for (const s of input.resolved?.steps ?? []) {
+    if (s.step === 'merge') continue
+    for (const action of s.actions) {
+      if (input.steps[`${s.step}:${action}`] === undefined) continue
+      if (recorded.some((i) => i.step === s.step && i.action === action)) continue
+      rows.push({
+        key: `unrecorded:${s.step}:${action}`,
+        step: s.step,
+        action,
+        runtime: null,
+        mark: markOf(null),
+        weakerNetwork: false,
+        srtVersion: null,
+        policy: null,
+        refusals: { kind: 'not applicable' },
+      })
+      caveats.push(`${s.step} · ${action}: no sandbox record, so what it was refused is unknown.`)
+    }
+  }
+  if (recorded.length === 0 && caveats.length === 0)
     caveats.push('No sandbox record exists for this attempt, so what it was refused is unknown.')
   if (rows.some((r) => r.refusals.kind === 'none recorded'))
     caveats.push(

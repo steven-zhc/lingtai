@@ -221,21 +221,38 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
     expect(sandboxViewOf(b, 'p').policies[0]!.domains.map((d) => d.host)).toEqual(['only.example.net'])
   })
 
-  it('draws no row for a planned action that left no record, and says the attempt has none', () => {
+  it('says not recorded only for actions the attempt reached, and never for the merge or unexecuted ones', () => {
     const state = fold((e) => [
       e('StepsResolved', {
         runId: RUN,
         configHash: 'c',
         steps: STEPS.map((step) => ({
           step,
-          actions: step === 'build' ? ['test'] : step === 'review' ? ['cold'] : step === 'proposed' ? ['approve'] : [],
+          actions: step === 'build' ? ['test'] : step === 'review' ? ['cold'] : step === 'merge' ? ['land'] : [],
         })),
+      }),
+      e('StepEnded', {
+        runId: RUN,
+        outcome: {
+          step: 'build',
+          round: 0,
+          actions: [
+            {
+              plugin: 'run',
+              name: 'test',
+              onSha: 'base000',
+              evidence: '',
+              yields: 'verdict',
+              result: { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
+            },
+          ] as never,
+        },
       }),
       e('RunFailed', { kind: 'crash', detail: 'died' }),
     ])
     const view = sandboxViewOf(state, 'p')
-    expect(view.rows).toEqual([])
-    expect(view.blocked.caveats.join(' ')).toMatch(/No sandbox record/)
+    expect(view.rows.map((r) => [r.step, r.action, r.mark.state])).toEqual([['build', 'test', 'not recorded']])
+    expect(renderToStaticMarkup(<SandboxPanel view={view} />)).not.toContain('No refused connection was recorded')
   })
 
   it('keeps two invocations of one action under different policies apart, by number', () => {
