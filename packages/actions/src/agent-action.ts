@@ -181,7 +181,7 @@ export interface AgentActionDeps {
     runId: string,
     cwd: string,
     /** Which step and action this run is, for the boundary the conductor records under them (#1164). */
-    keys: { readonly step: Step; readonly action: string },
+    keys: { readonly step: Step; readonly action: string; readonly runtime: string },
   ) => Effect.Effect<{ sandbox: RunSandbox } | Record<string, never>>
   /**
    * What the reviewer may spend, and what it is given.
@@ -1010,6 +1010,7 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
                       : yield* deps.sandboxFor(reviewId, context.cwd, {
                           step: spec.step ?? 'review',
                           action: spec.name,
+                          runtime: deps.runtime.capabilities.id,
                         })),
                     // Already tagged `<step>:<action>` by the pipeline (#153). The reviewer
                     // runs without the hook, so its tool calls are the stream's to write.
@@ -1656,7 +1657,11 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
           settingsPath: deps.settingsPath,
           ...(deps.sandboxFor === undefined
             ? {}
-            : yield* deps.sandboxFor(draftId, context.cwd, { step: spec.step ?? 'design', action: spec.name })),
+            : yield* deps.sandboxFor(draftId, context.cwd, {
+                step: spec.step ?? 'design',
+                action: spec.name,
+                runtime: deps.runtime.capabilities.id,
+              })),
           log: context.log,
           traceTools: true,
           env: context.env,

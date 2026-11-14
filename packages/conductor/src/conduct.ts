@@ -833,8 +833,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     let hookRuns: { get(runId: string): { version: number } | undefined } | undefined
     /**
      * An invocation's sandbox rows, on the pass's stream and at the version a registered hook server holds.
-     * `remember`: the boundary's refusal is a defect the pass answers (`appendNow`'s reason); the refusals row's
-     * is not, because the hook server may still be flushing a late append of its own at that version.
+     * `remember`: a refused append is remembered as the pass's defect (`appendNow`'s reason), for both rows.
      */
     const appendInvocation = (stream: string, events: readonly ToAppend[], remember: boolean): Effect.Effect<void> => {
       const registered = hookRuns?.get(stream)
@@ -857,7 +856,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     }
     const invocationAppends = (stream: string): InvocationAppends => ({
       before: (events) => appendInvocation(stream, events, true),
-      after: (events) => appendInvocation(stream, events, false).pipe(Effect.catchDefect(() => Effect.void)),
+      // Remembered, so the pass cannot report success with a refusals row missing; swallowed here so the child's
+      // own receipts are not lost over it.
+      after: (events) => appendInvocation(stream, events, true).pipe(Effect.catchDefect(() => Effect.void)),
     })
 
     // ---- 1. the recipe, from this machine -----------------------------------
@@ -3995,12 +3996,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             return reviewSettingsPath
           },
           // The reviewer and the design agent share one settings file, so one decision (#1150).
-          sandboxFor: (forRun: string, cwd: string, keys: { step: Step; action: string }) =>
-            sandboxOf(
-              reviewDecision,
-              { runId: forRun, worktree: cwd },
-              { stream: runId, ...keys, runtime: options.runtime.capabilities.id },
-            ),
+          sandboxFor: (forRun: string, cwd: string, keys: { step: Step; action: string; runtime: string }) =>
+            sandboxOf(reviewDecision, { runId: forRun, worktree: cwd }, { stream: runId, ...keys }),
           // The ceiling, and the default: a `review` whose `agent:` declares a
           // `limits:` narrows it in `actionsFromRecipe`, which is the seam that
           // holds the action (`#314`).

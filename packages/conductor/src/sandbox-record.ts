@@ -27,9 +27,8 @@ export type AppendInvocation = (events: readonly ToAppend[]) => Effect.Effect<vo
 
 /**
  * The two appends an invocation makes. `before` is the boundary, which **must not be lost**: a refused one is a
- * defect that stops the child from starting. `after` is the refusals, written while the hook server may still be
- * flushing its own late appends to the same stream, so a version conflict there is tolerated rather than made the
- * pass's defect.
+ * defect that stops the child from starting. `after` is the refusals: a refused append is remembered by the
+ * conductor (so the pass cannot report success without it) but does not fail the invocation, whose receipts matter more.
  */
 export interface InvocationAppends {
   readonly before: AppendInvocation
@@ -115,8 +114,6 @@ export const recordingWrap = (
               ])
             : Effect.void,
         ),
-        // The child has run: losing its receipts over this row is the worse loss.
-        Effect.catchDefect(() => Effect.void),
       ),
     )
     return wrapped
