@@ -23,8 +23,8 @@ import { userInfo } from 'node:os'
  */
 import { closeEffect } from '@lingtai/conductor/close'
 import { projectClientEffect } from '@lingtai/conductor/filter'
-import { loadProjectEffect } from '@lingtai/conductor/projects'
 import { hasGitHubAuth } from '@lingtai/env'
+import { readProjectEffect } from '@lingtai/project'
 import { Effect } from 'effect'
 
 import { noteConductor } from './conductor-note.ts'
@@ -47,7 +47,7 @@ export function closeVerdict(
       return refusal(2, 'blank', `lingtai close <project> --issue <n> "<reason>" — nothing lifts a close, so say why`)
     }
 
-    const project = yield* loadProjectEffect(options.project)
+    const project = yield* readProjectEffect(options.project)
     if (!project?.owner) {
       return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
     }

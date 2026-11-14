@@ -1,7 +1,7 @@
 import { passedOver, runnableNow } from '@lingtai/conductor/discover'
 import { attemptCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
-import { currentRecipe, loadAllProjects } from '@lingtai/conductor/projects'
+import { currentRecipe } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { readState } from '@lingtai/conductor/snapshot-state'
 import { readStatus } from '@lingtai/daemon/control'
@@ -30,6 +30,7 @@ import {
 } from '@lingtai/domain/wait'
 import { eventStore, log } from '@lingtai/event-store'
 import type { LinkedIssue } from '@lingtai/github'
+import { loadAllProjects } from '@lingtai/project'
 import type { SpendRow } from '@lingtai/projector'
 /**
  * The board's data: one table, plus one question put to GitHub.

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@lingtai/conductor": "workspace:*",
+    "@lingtai/project": "workspace:*",
     "@lingtai/domain": "workspace:*",
     "@lingtai/env": "workspace:*",
     "@lingtai/event-store": "workspace:*",

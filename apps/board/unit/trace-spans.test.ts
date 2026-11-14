@@ -17,7 +17,7 @@ vi.mock('@lingtai/projector/task-view', async (orig) => ({
   readTasks: mocks.readTasks,
   readTaskProjects: vi.fn(async () => []),
 }))
-vi.mock('@lingtai/conductor/projects', async (orig) => ({
+vi.mock('@lingtai/project', async (orig) => ({
   ...(await orig<object>()),
   loadAllProjects: vi.fn(async () => []),
 }))

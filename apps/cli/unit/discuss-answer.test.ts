@@ -36,9 +36,12 @@ vi.mock('@lingtai/agent', async (importActual) => {
     }),
   }
 })
+vi.mock('@lingtai/project', async (importActual) => ({
+  ...(await importActual<typeof import('@lingtai/project')>()),
+  readProjectEffect: () => Effect.succeed(null),
+}))
 vi.mock('@lingtai/conductor/projects', async (importActual) => ({
   ...(await importActual<typeof import('@lingtai/conductor/projects')>()),
-  loadProjectEffect: () => Effect.succeed(null),
   currentRecipe: async () => {
     throw new Error('unreachable: no project is registered')
   },

@@ -5,7 +5,10 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@lingtai/conductor/projects', () => ({ loadProject: vi.fn(async () => ({ name: 'p' })) }))
+vi.mock('@lingtai/project', async (orig) => ({
+  ...(await orig<object>()),
+  readProject: vi.fn(async () => ({ name: 'p' })),
+}))
 vi.mock('@lingtai/conductor/discover', () => ({ runnableNow: vi.fn() }))
 vi.mock('@lingtai/conductor/filter', () => ({
   projectFilter: vi.fn(),

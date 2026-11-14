@@ -16,11 +16,12 @@ import { userInfo } from 'node:os'
 import { approveEffect } from '@lingtai/conductor/decide'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
-import { currentRecipeEffect, loadProjectEffect } from '@lingtai/conductor/projects'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { conductorLockHolder } from '@lingtai/daemon'
 import { agentBranchOf, ticketReducer, ticketStream, waitWords } from '@lingtai/domain'
 import { hasGitHubAuth } from '@lingtai/env'
 import { type EventStore, eventStore, log, readThroughSnapshot, type SnapshotStore } from '@lingtai/event-store'
+import { readProjectEffect } from '@lingtai/project'
 import { Effect } from 'effect'
 
 import { boundReal, type Bound, WAIT_MS } from './conductor-note.ts'
@@ -186,7 +187,7 @@ export function approveVerdict(
   world: Partial<FollowWorld> = {},
 ): Effect.Effect<Answered, unknown> {
   return Effect.gen(function* () {
-    const project = yield* loadProjectEffect(options.project)
+    const project = yield* readProjectEffect(options.project)
     if (!project) {
       return refusal(1, 'no-project', `no project named "${options.project}" — run lingtai add <owner>/<repo> first`)
     }

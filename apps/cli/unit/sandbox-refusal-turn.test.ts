@@ -5,10 +5,10 @@
  * host answer a counting fake: nothing here spawns `bwrap`. The refusal is one `ProjectRefused` however many
  * sweeps see it, and the first sweep after the host can is the `ProjectRecovered` (0126: not a pause).
  */
-import { currentRecipe, loadProject } from '@lingtai/conductor'
+import { currentRecipe } from '@lingtai/conductor'
 import { projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { recipePath } from '@lingtai/project'
+import { readProject, recipePath } from '@lingtai/project'
 import { fakeSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -46,7 +46,7 @@ describe('a required sandbox on a host that cannot provide it', () => {
     const host = fakeSandboxHost({ can: () => can })
 
     const sweep = async (): Promise<TurnOutcome> => {
-      const state = (await loadProject(PROJECT, store))!
+      const state = (await readProject(PROJECT, store))!
       return Effect.runPromise(
         conductProjects({
           projects: [state],

@@ -5,7 +5,6 @@ import { createRuntime, type Runtime } from '@lingtai/agent'
 import {
   AgentHost,
   currentRecipe,
-  loadProject,
   ownerlessClientEffect,
   ticketedClientOf,
   attemptCeiling,
@@ -23,6 +22,7 @@ import type { ControlState, ProjectState } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
 import { eventStore, log as theLog, type EventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
+import { readProject } from '@lingtai/project'
 import {
   boundsBesides,
   dispatchingSteps,
@@ -294,7 +294,7 @@ export interface RunWorld {
 export function liveRunWorld(options: RunOptions, log: (line: string) => void): RunWorld {
   return {
     hasGitHubAuth,
-    loadProject,
+    loadProject: readProject,
     createGitHubClient,
     currentRecipe,
     ticketsFor: ticketsForEffect,

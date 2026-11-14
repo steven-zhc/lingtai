@@ -28,9 +28,10 @@ import {
   type TicketedClient,
 } from '@lingtai/conductor'
 import { projectClientEffect } from '@lingtai/conductor/filter'
-import { currentRecipeEffect, loadProjectEffect } from '@lingtai/conductor/projects'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
+import { readProjectEffect } from '@lingtai/project'
 import type { ResolvedRecipe } from '@lingtai/recipe'
 import { Cause, Effect } from 'effect'
 
@@ -86,7 +87,7 @@ export const endReplay = (options: EndReplayOptions = {}, log = console.log): Ef
       let replayed = 0
 
       for (const item of found) {
-        const project = yield* loadProjectEffect(item.project)
+        const project = yield* readProjectEffect(item.project)
         if (!project?.owner) {
           log(`${symbol.fail()} ${item.ticketId}: no project named "${item.project}" is onboarded — skipped`)
           continue

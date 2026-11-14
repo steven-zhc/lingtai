@@ -62,7 +62,6 @@ import { agentBranch, armPrefix } from '@lingtai/conductor/branches'
 import { recipeForSeam, type ClientForEffect, type RecipeForEffect } from '@lingtai/conductor/filter'
 import { foreignLabels, labelsFor } from '@lingtai/conductor/labels'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
-import { loadProjectsEffect } from '@lingtai/conductor/projects'
 // One wording for *what a part-way sweep had already deleted*, shared rather
 // than written twice: the inline sweep and this one record the same row.
 import { sweepFailure, type RefChannel } from '@lingtai/conductor/tell'
@@ -82,6 +81,7 @@ import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import { createGitHubClient } from '@lingtai/github'
+import { loadProjectsEffect } from '@lingtai/project'
 import { Cause, Effect } from 'effect'
 
 import { withDaemonStore } from './choose.ts'

@@ -2,10 +2,11 @@
  * One project's lock skips that project and no other (0126); the conductor-wide
  * pause still ends the whole pass.
  */
-import { loadProject, reachAccountLimit } from '@lingtai/conductor'
+import { reachAccountLimit } from '@lingtai/conductor'
 import { CeilingUnchecked, type Guard, lockedEffect, makeGuard } from '@lingtai/daemon'
 import { accountStream, projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { readProject } from '@lingtai/project'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -30,9 +31,9 @@ async function twoProjects() {
     ])
   }
   const projects = [
-    (await loadProject('first', store))!,
-    (await loadProject('second', store))!,
-    (await loadProject('third', store))!,
+    (await readProject('first', store))!,
+    (await readProject('second', store))!,
+    (await readProject('third', store))!,
   ]
   return { store, projects }
 }

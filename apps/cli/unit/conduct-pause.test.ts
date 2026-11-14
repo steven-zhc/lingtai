@@ -14,10 +14,10 @@
  * appends the conductor's own pause; the claim is that the second is never
  * entered.
  */
-import { loadProject } from '@lingtai/conductor'
 import { readControl } from '@lingtai/daemon/control'
 import { CONTROL_STREAM, projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { readProject } from '@lingtai/project'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -42,7 +42,7 @@ describe('a pass across several projects', () => {
         },
       ])
     }
-    const projects = [(await loadProject('first', store))!, (await loadProject('second', store))!]
+    const projects = [(await readProject('first', store))!, (await readProject('second', store))!]
 
     const entered: string[] = []
     const lines: string[] = []

@@ -10,9 +10,9 @@
  * Every sweep re-reads the project streams, as `conductorTurn` does, so the
  * "once" below comes from the log and not from anything this process remembers.
  */
-import { loadProject } from '@lingtai/conductor'
 import { projectStream } from '@lingtai/domain'
 import { eventStore, type EventStore } from '@lingtai/event-store'
+import { readProject } from '@lingtai/project'
 import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -48,7 +48,7 @@ beforeAll(async () => {
 
 /** One sweep over both projects, BROKEN throwing while `broken`. */
 async function sweep(broken: boolean, codeSha: string, worked: string[] = []): Promise<TurnOutcome> {
-  const projects = [(await loadProject(BROKEN, store))!, (await loadProject(HEALTHY, store))!]
+  const projects = [(await readProject(BROKEN, store))!, (await readProject(HEALTHY, store))!]
   return runConduct({
     projects,
     codeSha,
@@ -93,14 +93,14 @@ describe('a pass that refuses a project', () => {
     for (let i = 0; i < N; i++) await sweep(false, NEW)
     expect(await types(BROKEN)).toEqual(['ProjectConfigured', 'ProjectRefused', 'ProjectRecovered'])
     expect((await store.read(projectStream(BROKEN)))[2]!.data).toEqual({ project: BROKEN, ref: 'main', codeSha: NEW })
-    expect((await loadProject(BROKEN, store))!.refused).toBeNull()
+    expect((await readProject(BROKEN, store))!.refused).toBeNull()
     expect(await types(HEALTHY)).toEqual(['ProjectConfigured'])
   })
 
   it('appends nothing for a project it looked away from without reading anything', async () => {
     const before = await types(HEALTHY)
     await runConduct({
-      projects: [(await loadProject(HEALTHY, store))!],
+      projects: [(await readProject(HEALTHY, store))!],
       codeSha: OLD,
       store,
       outcome: { projects: 0, ran: 0, refused: [] },
@@ -125,7 +125,7 @@ describe('a pass that refuses a project', () => {
     const N = 5
     for (let i = 0; i < N; i++) {
       const outcome = await runConduct({
-        projects: [(await loadProject(BROKEN, store))!],
+        projects: [(await readProject(BROKEN, store))!],
         codeSha: NEW,
         store,
         outcome: { projects: 0, ran: 0, refused: [] },
@@ -135,7 +135,7 @@ describe('a pass that refuses a project', () => {
           await Effect.runPromise(where.looked)
           // The run, in flight.
           midRun ??= (await types(BROKEN)).at(-1)
-          expect((await loadProject(BROKEN, store))!.refused).toBeNull()
+          expect((await readProject(BROKEN, store))!.refused).toBeNull()
           throw new Error(`merge lane: 502 Bad Gateway, request ${i}`)
         }),
       })
@@ -146,6 +146,6 @@ describe('a pass that refuses a project', () => {
     // One recovery across N sweeps that each fail after looking, and no refusal
     // after it: not a Recovered→Refused pair per sweep.
     expect((await types(BROKEN)).slice(before)).toEqual(['ProjectRecovered'])
-    expect((await loadProject(BROKEN, store))!.refused).toBeNull()
+    expect((await readProject(BROKEN, store))!.refused).toBeNull()
   })
 })

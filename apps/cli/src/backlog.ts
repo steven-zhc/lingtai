@@ -16,8 +16,8 @@ import { userInfo } from 'node:os'
  */
 import { acceptFindingEffect, declineFindingEffect, githubTicketStore } from '@lingtai/conductor'
 import { projectClientEffect } from '@lingtai/conductor/filter'
-import { loadProjectEffect } from '@lingtai/conductor/projects'
 import { hasGitHubAuth } from '@lingtai/env'
+import { readProjectEffect } from '@lingtai/project'
 import { type BacklogEntry, readBacklogEffect, readLagEffect, readTasksEffect } from '@lingtai/projector'
 import { kindsOf } from '@lingtai/recipe/settings'
 import { Cause, Effect } from 'effect'
@@ -294,7 +294,7 @@ export const decideFinding = (decision: BacklogDecision, log = console.log): Eff
       )
       return 1
     }
-    const state = yield* loadProjectEffect(project)
+    const state = yield* readProjectEffect(project)
     if (!state?.owner) {
       log(`no project named "${project}" — run lingtai add <owner>/<repo> first`)
       return 1

@@ -27,15 +27,7 @@ export {
   type TicketListing,
   type TicketSource,
 } from './discover.ts'
-export {
-  currentRecipe,
-  listProjectStreamsEffect,
-  loadProject,
-  loadProjects,
-  loadProjectsEffect,
-  provideHostAnswer,
-  signedInHere,
-} from './projects.ts'
+export { currentRecipe, provideHostAnswer, signedInHere } from './projects.ts'
 export { gitRefChannel, type GitRefChannelOptions } from './git-refs.ts'
 export { ownerlessClient, ownerlessClientEffect, type OwnerlessClient } from './ownerless.ts'
 export {

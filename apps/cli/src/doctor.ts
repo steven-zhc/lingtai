@@ -43,7 +43,6 @@ import {
   type ProjectFilter,
   agentRefusal,
   endedWithoutEndActionsEffect,
-  loadProjects,
   attemptCeiling,
   readAccount,
   runtimesOf,
@@ -56,7 +55,7 @@ import {
   githubClientForEffect,
   projectFiltersEffect,
 } from '@lingtai/conductor/filter'
-import { currentRecipeEffect, hostHere, loadProjectsEffect } from '@lingtai/conductor/projects'
+import { currentRecipeEffect, hostHere } from '@lingtai/conductor/projects'
 import { readFetchNote, readRateSnapshot } from '@lingtai/conductor/rate-snapshot'
 import {
   codeCurrencyEffect,
@@ -132,7 +131,7 @@ import {
 } from '@lingtai/event-store/queries'
 import type { GhRun, GhStatus, GitHubClient } from '@lingtai/github'
 import { ghScopeGap, ghScopeRefresh, ghStatusEffect, REQUIRED_PERMISSIONS } from '@lingtai/github'
-import { recipePath } from '@lingtai/project'
+import { listProjectStreamsEffect, loadProjects, loadProjectsEffect, recipePath } from '@lingtai/project'
 import {
   backlogProjection,
   describeShape,
@@ -382,7 +381,7 @@ export function storeRow(choice: StoreChoice): CheckResult {
 export function logReachable(where: string, queries: LogQueries): Effect.Effect<CheckResult> {
   const name = 'log: reachable'
   return recovering(
-    lift(() => queries.projectStreams('prj-')).pipe(
+    listProjectStreamsEffect(queries).pipe(
       Effect.map((streams): CheckResult => ({
         name,
         status: 'ok',

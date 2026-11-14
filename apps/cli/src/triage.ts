@@ -15,7 +15,7 @@
 import { createRuntime, runtimeVersionOfEffect, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import { readingFor } from '@lingtai/conductor/discuss'
-import { currentRecipeEffect, loadProjectEffect, loadProjectsEffect } from '@lingtai/conductor/projects'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
 import { recordPrompt } from '@lingtai/conductor/record-prompt'
 import {
@@ -57,6 +57,7 @@ import {
   type EventStore,
   type SnapshotReadOptions,
 } from '@lingtai/event-store'
+import { loadProjectsEffect, readProjectEffect } from '@lingtai/project'
 import { readTasksEffect, type TaskCard } from '@lingtai/projector'
 import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
 import {
@@ -430,7 +431,7 @@ export function memoDaemonStartedAt(
  */
 export function triageIssue(
   read: typeof readProjectTicketEffect = readProjectTicketEffect,
-  load: typeof loadProjectEffect = loadProjectEffect,
+  load: typeof readProjectEffect = readProjectEffect,
 ): (ticketId: string, signal?: AbortSignal) => Effect.Effect<{ ref: string; title: string; body: string }, Error> {
   return (ticketId, signal) =>
     Effect.gen(function* () {
@@ -448,7 +449,7 @@ export function triageIssue(
 const baseOf = (ticketId: string): Effect.Effect<string> =>
   Effect.gen(function* () {
     const project = parseTicketStream(ticketId)?.project ?? ''
-    return (yield* loadProjectEffect(project))?.base ?? 'main'
+    return (yield* readProjectEffect(project))?.base ?? 'main'
   })
 
 /** The daemon's real ports. A recipe that cannot resolve leaves triage undeclared. */
@@ -472,13 +473,13 @@ export function daemonTriagePorts(
     readTasks: (project) => readTasksEffect({ project }),
     baseSha: (project) =>
       Effect.gen(function* () {
-        const state = yield* loadProjectEffect(project)
+        const state = yield* readProjectEffect(project)
         if (state === null) return null
         return yield* refShaEffect({ project, ref: state.base ?? 'main' })
       }),
     triageFor: (project) =>
       Effect.gen(function* () {
-        const state = yield* loadProjectEffect(project)
+        const state = yield* readProjectEffect(project)
         return state === null ? null : ((yield* currentRecipeEffect(state)).recipe.triage ?? null)
       }),
     run: (request) =>

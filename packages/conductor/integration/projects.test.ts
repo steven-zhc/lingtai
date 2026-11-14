@@ -25,9 +25,8 @@ import { join } from 'node:path'
 import { isPending, projectStream } from '@lingtai/domain'
 import type { EventStore, Log } from '@lingtai/event-store'
 import { createSqliteLog, openSqliteLog } from '@lingtai/event-store/sqlite'
+import { loadAllProjects, loadProjects, readProject } from '@lingtai/project'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-
-import { loadAllProjects, loadProject, loadProjects } from '../src/projects.ts'
 
 const PENDING = `esctest${crypto.randomUUID().slice(0, 6)}`
 const LIVE = `esctest${crypto.randomUUID().slice(0, 6)}`
@@ -105,9 +104,9 @@ describe('the projects a conductor may take work from', () => {
     expect(live.map((p) => p.project).filter((n) => pending.some((p) => p.project === n))).toEqual([])
   })
 
-  /** `loadProject` is the same line asked about one name — the board's actions read through it. */
+  /** `readProject` is the same line asked about one name — the board's actions read through it. */
   it('gives no single project back for a pending name either', async () => {
-    expect(await loadProject(PENDING, store)).toBeNull()
-    expect((await loadProject(LIVE, store))?.project).toBe(LIVE)
+    expect(await readProject(PENDING, store)).toBeNull()
+    expect((await readProject(LIVE, store))?.project).toBe(LIVE)
   })
 })

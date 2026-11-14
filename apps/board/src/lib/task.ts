@@ -1,7 +1,7 @@
 import { ceilingReached, daySpend, startOfLocalDay } from '@lingtai/conductor'
 import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
-import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import { currentRecipe } from '@lingtai/conductor/projects'
 import { readProjectTicket } from '@lingtai/conductor/read-ticket'
 import { readControl, readStatus } from '@lingtai/daemon/control'
 import {
@@ -88,6 +88,7 @@ import { eventStore } from '@lingtai/event-store'
 // saying the issue is not there, and every other failure is GitHub not saying
 // anything. See `TicketView.found`.
 import { GitHubFailed } from '@lingtai/github'
+import { readProject } from '@lingtai/project'
 import { readRateSnapshot, readSpend, readTicketReport, type SpendRow } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { concurrencyOf, ticketSourceOf } from '@lingtai/recipe/settings'
@@ -1467,7 +1468,7 @@ async function loadTicketBase(taskId: string, own: readonly Envelope[]): Promise
   if (!parsed) return null
   const { project, issue } = parsed
   // A read that fails throws: it is not an unregistered project, and a 404 would say it was.
-  const state = await loadProject(project)
+  const state = await readProject(project)
   if (!state) return null
 
   const reduced = reduceTicket(own)
@@ -1531,7 +1532,7 @@ export const loadTicketAnswer = cache(async (taskId: string): Promise<TicketAnsw
     const parsed = parseTicketStream(taskId)
     if (!parsed) return { ...NO_ANSWER, found: false, problem: 'this id is not a ticket' }
     // A failed read is the catch below (found: null, with the problem), never `found: false`.
-    const state = await loadProject(parsed.project)
+    const state = await readProject(parsed.project)
     if (!state) return { ...NO_ANSWER, found: false, problem: `${parsed.project} is not a registered project` }
     const read = await timed('github.issue', () => readProjectTicket(state, Number(parsed.issue)), {
       failed: (r) => !r.ok,
@@ -1579,7 +1580,7 @@ export async function knowable(taskId: string): Promise<boolean> {
   const parsed = parseTicketStream(taskId)
   if (!parsed) return false
   // A failed read throws, so the page errors rather than claiming the project is not registered.
-  return (await loadProject(parsed.project)) !== null
+  return (await readProject(parsed.project)) !== null
 }
 
 /**
@@ -1600,7 +1601,7 @@ export async function knowable(taskId: string): Promise<boolean> {
 async function planFor(
   project: string,
 ): Promise<{ plan: StepPlan; limits: Pick<AttemptLimitsView, 'rounds' | 'restarts'> } | undefined> {
-  const state = await loadProject(project).catch(() => null)
+  const state = await readProject(project).catch(() => null)
   if (!state) return undefined
   const filter = await projectFilter(state)
   return filter.ok
@@ -1623,7 +1624,7 @@ async function recipesFor(project: string, runs: readonly AttemptView[]): Promis
   if (runs.length === 0) return new Map()
   let recipes: AttemptRecipe[]
   try {
-    const state = await loadProject(project)
+    const state = await readProject(project)
     if (!state) throw new Error('it is not a registered project')
     const client = await githubClientFor(state)
     let head: ReturnType<typeof currentRecipe> | null = null
@@ -1683,7 +1684,7 @@ export async function loadCurrentTriageStatus(
 ): Promise<{ status: TriageStatus; headSha: string | null } | null> {
   const [cards, project, daemon] = await Promise.all([
     readTasks({ project: projectName }),
-    loadProject(projectName).then((state) => (state === null ? null : currentRecipe(state))),
+    readProject(projectName).then((state) => (state === null ? null : currentRecipe(state))),
     readStatus(),
   ])
   const card = cards.find((row) => row.taskId === taskId)
@@ -1836,7 +1837,7 @@ async function inFlightFor(
     const ceilingSet = machineDayCeiling() !== undefined
     let concurrency: number | undefined
     if (ceilingSet) {
-      const loaded = await loadProject(project).catch(() => null)
+      const loaded = await readProject(project).catch(() => null)
       // `currentRecipe` is the local read: `projectFilter` would build a GitHub
       // client first, and the log's half must not wait for (or fail with) GitHub.
       if (loaded) concurrency = concurrencyOf((await currentRecipe(loaded)).recipe)
@@ -1956,7 +1957,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     if ('refusal' in saved) standing.fixWork = saved
     else {
       try {
-        const state = await loadProject(ticket.project)
+        const state = await readProject(ticket.project)
         if (!state) throw new Error(`no project named "${ticket.project}" — run lingtai add first`)
         const client =
           state.owner === null
@@ -1983,7 +1984,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     standing.reason !== null &&
     allowedResolutions(standing.reason).includes('Split')
   ) {
-    const state = await loadProject(ticket.project)
+    const state = await readProject(ticket.project)
     const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)
     standing.split = {
       progress: splitProgressOf(own, {

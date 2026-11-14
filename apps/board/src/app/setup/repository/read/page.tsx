@@ -1,5 +1,6 @@
 import { proposalFor, projectNameOf, readLocalTarget, recipeIsNew } from '@lingtai/conductor/add-from-page'
-import { loadAllProjects, sandboxHostHere } from '@lingtai/conductor/projects'
+import { sandboxHostHere } from '@lingtai/conductor/projects'
+import { loadAllProjects } from '@lingtai/project'
 /**
  * Step 2 of adding a repository (#971): what Lingtai read, every proposed line
  * with its *change*, the two decisions, and the recipe beside them. The page
