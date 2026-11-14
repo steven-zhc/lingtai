@@ -160,3 +160,33 @@ describe('SandboxSection', () => {
     expect(html).toContain('could not be read')
   })
 })
+
+describe('stamped links', () => {
+  const view = projectBlockedOf(
+    claims,
+    [{ streamId: 'pass-a', at: RECENT, data: refused([entry('cdn.example.com', 2, '2026-11-13T00:00:00Z')]) }],
+    'my-app',
+    NOW,
+  )
+
+  it('puts the stamp before the hash, so a click is a new command', () => {
+    const html = renderToStaticMarkup(<BlockedList blocked={view} stamp={42} />)
+    expect(html).toContain('/recipe/my-app?edit=1&amp;allow=cdn.example.com&amp;r=42#sandbox')
+  })
+
+  it('stamps the editor link only when given one', () => {
+    const at = (stamp?: number) =>
+      renderToStaticMarkup(
+        <SandboxSection
+          project="my-app"
+          {...(stamp === undefined ? {} : { stamp })}
+          own={undefined}
+          recipeError={false}
+          builtIn={builtIn}
+          blocked={null}
+        />,
+      )
+    expect(at(7)).toContain('/recipe/my-app?edit=1&amp;r=7#sandbox')
+    expect(at()).toContain('/recipe/my-app?edit=1#sandbox')
+  })
+})

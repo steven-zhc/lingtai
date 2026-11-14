@@ -105,9 +105,14 @@ export default function YamlEditor({
     // Seeded once: `initial` is the draft of the render the chunk arrived in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // A push already in the props when this mounted is in `initial` (the draft of the render the chunk arrived in),
+  // and replaying it would overwrite what was typed into the fallback textarea since.
+  const pushed = useRef(push?.rev)
   useEffect(() => {
     const view = viewRef.current
-    if (push === null || view === null || view.state.doc.toString() === push.text) return
+    if (push === null || view === null || push.rev === pushed.current) return
+    pushed.current = push.rev
+    if (view.state.doc.toString() === push.text) return
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: push.text } })
   }, [push])
   return <div ref={host} className="rfile-fill" />

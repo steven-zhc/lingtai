@@ -73,15 +73,25 @@ function RunTable({ rows }: { rows: readonly RunRow[] }) {
   )
 }
 
+function stamped(href: string, stamp: number | undefined): string {
+  if (stamp === undefined) return href
+  const at = href.indexOf('#')
+  const [path, hash] = at === -1 ? [href, ''] : [href.slice(0, at), href.slice(at)]
+  return `${path}${path.includes('?') ? '&' : '?'}r=${stamp}${hash}`
+}
+
 /**
  * The refused connections and the sentences about the ones unknown, with no heading of its own: the task page's
  * *Blocked* section and the recipe page's *recently blocked* both draw it (S9b), the second from every task.
  */
 export function BlockedList({
   blocked,
+  stamp,
   empty = 'No refused connection was recorded.',
 }: {
   blocked: SandboxView['blocked']
+  /** Added to each Allow link as `?r=` (before any `#`), so a click on the recipe page is a new command. */
+  stamp?: number
   empty?: string
 }) {
   return (
@@ -108,7 +118,7 @@ export function BlockedList({
                 </td>
                 <td>
                   {h.allowHref === null ? null : (
-                    <Link href={h.allowHref} prefetch={false}>
+                    <Link href={stamped(h.allowHref, stamp)} prefetch={false}>
                       Allow on this project
                     </Link>
                   )}

@@ -1,5 +1,5 @@
 import { hasGitHubAuth } from '@lingtai/env'
-import { builtInSandboxEffect, withAllowedHost } from '@lingtai/recipe'
+import { builtInSandboxEffect } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { notFound } from 'next/navigation'
 import { Suspense, type ReactNode } from 'react'
@@ -211,6 +211,7 @@ export function Recipe({
   banner,
   sandbox,
   allow,
+  nav,
 }: {
   view: ProjectRecipe
   edit?: boolean
@@ -220,8 +221,10 @@ export function Recipe({
   banner?: ReactNode
   /** The sandbox section (#1162), built by the page that read the log and the host: this stays pure. */
   sandbox?: ReactNode
-  /** A request to add a host to the editor's draft. `nonce` is new on every render of the page, so a repeat of the same request is still one. */
+  /** A request to add a host to the editor's draft. Its `nonce` is the URL's stamp, so only a new click is a new request. */
   allow?: AllowRequest
+  /** The URL's stamp (`?r=`): what tells a click on a link from a re-render of the same page. */
+  nav?: number
 }) {
   const text = view.text
   return (
@@ -290,6 +293,7 @@ export function Recipe({
                     open={edit || !view.ok || allow !== undefined}
                     path={underHome(view.at)}
                     {...(allow === undefined ? {} : { allow })}
+                    {...(nav === undefined ? {} : { nav })}
                   />
                 )}
               </div>
@@ -329,14 +333,14 @@ export function Recipe({
 }
 
 /** *Recently blocked*, read on render. A read that fails says so; it is never drawn as an empty list. */
-async function RecentlyBlocked({ project }: { project: string }) {
+async function RecentlyBlocked({ project, stamp }: { project: string; stamp: number }) {
   const read = await loadProjectBlocked(project)
   return read.kind === 'failed' ? (
     <p className="fail">
       The refused connections could not be read, so what the project&apos;s runs were refused is unknown.
     </p>
   ) : (
-    <BlockedList blocked={read.blocked} empty="No refused connection was recorded in this window." />
+    <BlockedList blocked={read.blocked} stamp={stamp} empty="No refused connection was recorded in this window." />
   )
 }
 
@@ -345,10 +349,10 @@ export default async function RecipePage({
   searchParams,
 }: {
   params: Promise<{ project: string }>
-  searchParams: Promise<{ edit?: string | string[]; allow?: string | string[] }>
+  searchParams: Promise<{ edit?: string | string[]; allow?: string | string[]; r?: string | string[] }>
 }) {
   const { project } = await params
-  const { edit, allow } = await searchParams
+  const { edit, allow, r } = await searchParams
   const name = decodeURIComponent(project)
   // Registered only: a repository that is recorded and not yet conducted has no
   // recipe to resolve, and `notFound` is the honest answer for a name nothing
@@ -380,26 +384,30 @@ export default async function RecipePage({
   const view = await projectRecipe(state)
   const builtIn = await Effect.runPromise(builtInSandboxEffect(name))
   // `?allow=<host>`: a request the editor applies to its own current draft, so earlier unsaved edits survive; it is
-  // never saved from here. The nonce makes a repeated click on the same link a new request.
+  // never saved from here, and never judged against the disk text (what the draft already holds is the form's to say).
+  // `?r=` is stamped on the links when they render and is read back from the URL, so a save's revalidation, which
+  // keeps the URL, is not a second click, and the next render's links carry a new stamp, so the next click is.
+  const stamp = Date.now()
+  const parsedNav = typeof r === 'string' ? Number(r) : 0
+  const nav = Number.isFinite(parsedNav) ? parsedNav : 0
   const host = typeof allow === 'string' ? allow : undefined
-  const request: AllowRequest | null =
-    host === undefined || view.text === null || withAllowedHost(view.text, host) === null
-      ? null
-      : { host, nonce: Date.now() }
+  const request: AllowRequest | null = host === undefined || view.text === null ? null : { host, nonce: nav }
   return (
     <Recipe
       view={view}
       edit={edit === '1'}
+      nav={nav}
       {...(request === null ? {} : { allow: request })}
       sandbox={
         <SandboxSection
           project={name}
+          stamp={stamp}
           own={view.ok ? view.recipe.sandbox : undefined}
           recipeError={!view.ok}
           builtIn={builtIn}
           blocked={
             <Suspense fallback={<Skeleton shape="lines" count={4} />}>
-              <RecentlyBlocked project={name} />
+              <RecentlyBlocked project={name} stamp={stamp} />
             </Suspense>
           }
         />

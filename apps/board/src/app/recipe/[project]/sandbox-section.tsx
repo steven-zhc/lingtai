@@ -42,19 +42,22 @@ function Entries({ title, own, builtIn }: { title: string; own: readonly string[
  */
 export function SandboxSection({
   project,
+  stamp,
   own,
   recipeError,
   builtIn,
   blocked,
 }: {
   project: string
+  /** The render's stamp for the editor link (`?r=`): what makes a second click a new command. Absent: no stamp. */
+  stamp?: number
   /** Undefined: no `sandbox:` block (off by choice), or the recipe could not be read (`recipeError`). */
   own: OwnSandbox | undefined
   recipeError: boolean
   builtIn: BuiltInSandbox
   blocked: ReactNode
 }) {
-  const editHref = `/recipe/${encodeURIComponent(project)}?edit=1#sandbox`
+  const editHref = `/recipe/${encodeURIComponent(project)}?edit=1${stamp === undefined ? '' : `&r=${stamp}`}#sandbox`
   const state = recipeError
     ? 'the recipe could not be read, so what it configures is unknown'
     : own === undefined

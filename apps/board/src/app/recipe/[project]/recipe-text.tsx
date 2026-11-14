@@ -15,7 +15,7 @@ export interface AllowRequest {
 /**
  * The `recipe.yml` column (#980): the file's text, or the editor on it in
  * place, in one panel with its path and the button in its bar (#984). Props
- * are primitives, so nothing here reaches `@/lib/recipe` and its
+ * are plain data, so nothing here reaches `@/lib/recipe` and its
  * server-side graph. No `key` anywhere above the form: a save revalidates the
  * page, and a remount would drop the message the save just earned.
  */
@@ -25,6 +25,7 @@ export function RecipeText({
   open,
   path,
   allow,
+  nav,
 }: {
   project: string
   text: string
@@ -32,17 +33,21 @@ export function RecipeText({
   path: string
   /** A host to add to the draft, applied by the form to what is typed now; `text` stays the file's own bytes. */
   allow?: AllowRequest
+  /** The page's navigation stamp (`?r=`, in the links that ask for the editor): a new one is a new command, a re-render is not. */
+  nav?: number
 }) {
   const [editing, setEditing] = useState(open)
   const [request, setRequest] = useState(allow)
   // A client navigation keeps this component, so a later request arrives as a changed prop, not a remount.
-  const seen = useRef(allow?.nonce)
+  // A stamp comes from the URL, so a revalidation after a save (same URL) is not a command, and a link's
+  // click (a new URL) is, whether it asks for the editor (`open`) or for a host in it (`allow`).
+  const seen = useRef(nav)
   useEffect(() => {
-    if (allow === undefined || allow.nonce === seen.current) return
-    seen.current = allow.nonce
-    setRequest(allow)
-    setEditing(true)
-  }, [allow])
+    if (nav === seen.current) return
+    seen.current = nav
+    if (allow !== undefined) setRequest(allow)
+    if (open) setEditing(true)
+  }, [nav, open, allow])
   return (
     <div className="rfile">
       {editing ? (
