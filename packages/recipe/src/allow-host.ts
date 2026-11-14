@@ -1,8 +1,8 @@
 /**
  * The recipe text with one host added to `sandbox.network.allow` (#1162), for the editor to open on as a draft.
  *
- * Pure and never a write: the page hands the result to the form as `draft` while `loaded` stays the file's own
- * bytes, so Save still compares against the disk. `parseDocument` keeps comments and layout, and `setIn` creates the
+ * Pure and never a write: the form runs it on its own current body (so earlier unsaved edits stay) while `loaded`
+ * stays the file's own bytes, so Save still compares against the disk. `parseDocument` keeps comments and layout, and `setIn` creates the
  * block when it is absent (which turns the sandbox on, as writing the block always does).
  */
 import { parseDocument } from 'yaml'

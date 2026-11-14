@@ -37,7 +37,12 @@ export function RecipeText({
   nav?: number
 }) {
   const [editing, setEditing] = useState(open)
-  const [request, setRequest] = useState(allow)
+  // The command's identity is minted here, once per accepted click: the URL's stamp names a render, and two links on
+  // one cached page (a Back, then another host) share it.
+  const minted = useRef(0)
+  const [request, setRequest] = useState<AllowRequest | undefined>(
+    allow === undefined ? undefined : { host: allow.host, nonce: 0 },
+  )
   // A client navigation keeps this component, so a later request arrives as a changed prop, not a remount.
   // A stamp comes from the URL, so a revalidation after a save (same URL) is not a command, and a link's
   // click (a new URL) is, whether it asks for the editor (`open`) or for a host in it (`allow`).
@@ -45,7 +50,7 @@ export function RecipeText({
   useEffect(() => {
     if (nav === seen.current) return
     seen.current = nav
-    if (allow !== undefined) setRequest(allow)
+    if (allow !== undefined) setRequest({ host: allow.host, nonce: ++minted.current })
     if (open) setEditing(true)
   }, [nav, open, allow])
   return (
