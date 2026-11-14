@@ -13,6 +13,7 @@ import {
   SandboxUnavailable,
   SandboxWrapFailed,
   Srt,
+  customConfigFor,
   quoteArgv,
   refuseProtected,
   type HostFacts,
@@ -441,3 +442,44 @@ describe('refuseProtected', () => {
 void SandboxPolicyRefused
 void SandboxUnavailable
 void SandboxWrapFailed
+
+describe('caller read and denyWrite (#1150)', () => {
+  const host: HostFacts = {
+    platform: 'darwin',
+    home: '/Users/me',
+    tmpdir: '/var/folders/x/T',
+    stateDir: '/Users/me/.lingtai',
+    path: [],
+  }
+  const input = {
+    project: 'p',
+    worktree: '/work/p',
+    mirror: '/Users/me/.lingtai/repos/p.git',
+    caller_additions: {
+      write: ['/Users/me/.lingtai/runs/r/claude'],
+      read: ['/Users/me/.lingtai/runs/r/claude/CLAUDE.md', '/bundle/lingtai-hook'],
+      denyWrite: ['/only/not/writable'],
+    },
+  }
+
+  it('read is readable and not writable, even inside a write path', () => {
+    const fs = customConfigFor(host, input).filesystem
+    expect(fs.allowRead).toContain('/Users/me/.lingtai/runs/r/claude/CLAUDE.md')
+    expect(fs.allowRead).toContain('/bundle/lingtai-hook')
+    expect(fs.allowWrite).toContain('/Users/me/.lingtai/runs/r/claude')
+    expect(fs.allowWrite).not.toContain('/Users/me/.lingtai/runs/r/claude/CLAUDE.md')
+    expect(fs.denyWrite).toContain('/Users/me/.lingtai/runs/r/claude/CLAUDE.md')
+    expect(fs.denyWrite).toContain('/bundle/lingtai-hook')
+  })
+
+  it('denyWrite goes on denyWrite only', () => {
+    const fs = customConfigFor(host, input).filesystem
+    expect(fs.denyWrite).toContain('/only/not/writable')
+    expect(fs.allowRead).not.toContain('/only/not/writable')
+    expect(fs.denyRead).not.toContain('/only/not/writable')
+  })
+
+  it('platform.claude.com is not on the built-in allowlist', () => {
+    expect(BUILT_IN_DOMAINS).not.toContain('platform.claude.com')
+  })
+})

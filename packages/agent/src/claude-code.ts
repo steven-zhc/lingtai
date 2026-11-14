@@ -449,12 +449,7 @@ export function createClaudeCodeRuntime(options: ClaudeCodeOptions = {}): Runtim
  */
 export const claudeCodeRun = (options: ClaudeCodeOptions, request: RunRequest): Effect.Effect<RunOutcome> => {
   const binary = options.binary ?? 'claude'
-  const args = argsFor(
-    request,
-    request.prompt,
-    options.extraArgs ?? [],
-    options.permissionMode ?? 'bypassPermissions',
-  )
+  const args = argsFor(request, request.prompt, options.extraArgs ?? [], options.permissionMode ?? 'bypassPermissions')
   // Absent is today's run, untouched: the same command, the same filtered environment.
   const sandbox = request.sandbox
   if (sandbox === undefined) {

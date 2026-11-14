@@ -249,7 +249,10 @@ export const writeUnhookedSettingsEffect = Effect.fn('agent.unhookedSettings')(f
   const fail = (err: unknown) => new AgentHostFailed({ operation: 'unhooked-settings', detail: (err as Error).message })
   yield* Effect.tryPromise({ try: () => mkdir(dirname(path), { recursive: true }), catch: fail })
   yield* Effect.tryPromise({
-    try: () => writeFile(path, `${JSON.stringify(sandboxed ? { sandbox: { enabled: false } } : {}, null, 2)}\n`, { mode: 0o600 }),
+    try: () =>
+      writeFile(path, `${JSON.stringify(sandboxed ? { sandbox: { enabled: false } } : {}, null, 2)}\n`, {
+        mode: 0o600,
+      }),
     catch: fail,
   })
   return path

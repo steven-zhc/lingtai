@@ -998,7 +998,7 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
                     // "the runtime's own default" means in the one place it has to be true.
                     ...(spec.model === undefined ? {} : { model: spec.model }),
                     settingsPath: deps.settingsPath,
-                    ...(deps.sandboxFor?.(reviewId, context.cwd) ?? {}),
+                    ...deps.sandboxFor?.(reviewId, context.cwd),
                     // Already tagged `<step>:<action>` by the pipeline (#153). The reviewer
                     // runs without the hook, so its tool calls are the stream's to write.
                     log: context.log,
@@ -1642,7 +1642,7 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
           prompt,
           ...(spec.model === undefined ? {} : { model: spec.model }),
           settingsPath: deps.settingsPath,
-          ...(deps.sandboxFor?.(draftId, context.cwd) ?? {}),
+          ...deps.sandboxFor?.(draftId, context.cwd),
           log: context.log,
           traceTools: true,
           env: context.env,

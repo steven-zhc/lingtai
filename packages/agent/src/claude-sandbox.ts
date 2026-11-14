@@ -11,7 +11,7 @@ import { liveRunDirFs, prepareClaudeRunDirectory, type RunDirFs } from './claude
 /**
  * What a sandboxed Claude Code run is handed, and what `claudeCodeRun` does with it (#1150, 0127 §8 and §16).
  *
- * `packages/agent` never imports `@lingtai/sandbox/live`: the conductor closes over the service and hands a
+ * `packages/agent` never imports the package's live entry (the one that loads srt): the conductor closes over the service and hands a
  * `wrap` function. Only the types and the pure path relation come from the package's root, which loads no srt.
  */
 
@@ -143,9 +143,7 @@ export const sandboxedLaunch = (
   Effect.gen(function* () {
     const decision = sandbox.decision
     if (decision.kind === 'refused') {
-      return yield* Effect.fail(
-        new SandboxRunRefused(`sandbox required and unavailable on this host: ${decision.why}`),
-      )
+      return yield* Effect.fail(new SandboxRunRefused(`sandbox required and unavailable on this host: ${decision.why}`))
     }
 
     const token = yield* Effect.try({

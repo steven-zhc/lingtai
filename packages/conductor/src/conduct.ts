@@ -1,6 +1,6 @@
-import { homedir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, join, posix, resolve } from 'node:path'
 
 import {
@@ -214,7 +214,6 @@ import {
   type StepAction,
 } from '@lingtai/recipe'
 import { DEFAULT_ACTION, isBuiltInJudge, sandboxDecision, verdictOf, type SandboxDecision } from '@lingtai/recipe'
-import type { SandboxApi } from '@lingtai/sandbox'
 import {
   UNREACHABLE_WAITS,
   isRemoteErrorFailure,
@@ -228,6 +227,7 @@ import {
   type Worktree,
 } from '@lingtai/repo'
 import { ticketOfLandingSubject } from '@lingtai/repo/landing-subject'
+import type { SandboxApi } from '@lingtai/sandbox'
 import { Cause, type Duration, Effect, Exit, Result } from 'effect'
 
 import { reachAccountLimit } from './account.ts'
@@ -3163,8 +3163,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // worktree starts in its own run directory instead: the
               // conductor's is read-denied inside srt (#1150).
               cwd:
-                worktree?.path ??
-                (judgeDecision.kind === 'unsandboxed' ? home : claudeConfigDirFor(home, judgeRunId)),
+                worktree?.path ?? (judgeDecision.kind === 'unsandboxed' ? home : claudeConfigDirFor(home, judgeRunId)),
               ...sandboxOf(judgeDecision, { runId: judgeRunId, worktree: worktree?.path }),
               prompt: judgePromptText,
               ...(declared.model === undefined ? {} : { model: declared.model }),
