@@ -285,6 +285,9 @@ export function Recipe({
               <div className="s2-right">
                 {text === null ? null : (
                   <RecipeText
+                    // A client navigation keeps this component, and `open` and `draft` seed its state once: a new
+                    // request for either is a new editor.
+                    key={`${edit || !view.ok || draft !== undefined}:${draft ?? ''}`}
                     project={view.project}
                     text={text}
                     open={edit || !view.ok || draft !== undefined}

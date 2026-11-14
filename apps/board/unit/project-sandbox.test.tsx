@@ -20,26 +20,58 @@ const refused = (entries: ReturnType<typeof entry>[], complete = true) => ({
   commandId: 'c1',
   read: { kind: 'entries', entries, complete },
 })
+const RECENT = '2026-11-13T00:00:00Z'
 const claims = [
-  { streamId: 'ticket-my-app-12', data: { runId: 'pass-a' } },
-  { streamId: 'ticket-other-3', data: { runId: 'pass-b' } },
+  { streamId: 'ticket-my-app-12', at: '2026-11-01T00:00:00Z', data: { runId: 'pass-a' } },
+  { streamId: 'ticket-other-3', at: '2026-11-01T00:00:00Z', data: { runId: 'pass-b' } },
+  { streamId: 'ticket-my-app-tools-7', at: '2026-11-01T00:00:00Z', data: { runId: 'pass-c' } },
 ]
 
 describe('projectBlockedOf', () => {
+  it('does not take a longer project name’s tickets for this project’s', () => {
+    const blocked = projectBlockedOf(
+      claims,
+      [{ streamId: 'pass-c', at: RECENT, data: refused([entry('tools.example.com', 1, RECENT)]) }],
+      'my-app',
+      NOW,
+    )
+    expect(blocked.hosts).toEqual([])
+  })
+
+  it('lets a caveat from before the window lapse with the rest', () => {
+    const old = '2026-10-01T00:00:00Z'
+    const blocked = projectBlockedOf(
+      claims,
+      [
+        { streamId: 'pass-a', at: old, data: { ...refused([]), read: { kind: 'unreadable', reason: 'store gone' } } },
+        { streamId: 'pass-a', at: old, data: refused([], false) },
+        { streamId: 'pass-a', at: old, data: { nonsense: true } },
+      ],
+      'my-app',
+      NOW,
+    )
+    expect(blocked.caveats).toEqual([])
+  })
+
   it('keeps the project’s own streams, drops telemetry and anything older than 14 days', () => {
     const blocked = projectBlockedOf(
       claims,
       [
         {
           streamId: 'pass-a',
+          at: RECENT,
           data: refused([
             entry('cdn.example.com', 2, '2026-11-13T00:00:00Z'),
             entry('sentry.io', 9, '2026-11-13T00:00:00Z', true),
             entry('old.example.com', 1, '2026-10-01T00:00:00Z'),
           ]),
         },
-        { streamId: 'pass-b', data: refused([entry('theirs.example.com', 1, '2026-11-13T00:00:00Z')]) },
-        { streamId: 'pass-unclaimed', data: refused([entry('nobody.example.com', 1, '2026-11-13T00:00:00Z')]) },
+        { streamId: 'pass-b', at: RECENT, data: refused([entry('theirs.example.com', 1, '2026-11-13T00:00:00Z')]) },
+        {
+          streamId: 'pass-unclaimed',
+          at: RECENT,
+          data: refused([entry('nobody.example.com', 1, '2026-11-13T00:00:00Z')]),
+        },
       ],
       'my-app',
       NOW,
@@ -53,8 +85,12 @@ describe('projectBlockedOf', () => {
     const blocked = projectBlockedOf(
       claims,
       [
-        { streamId: 'pass-a', data: { ...refused([]), read: { kind: 'unreadable', reason: 'store gone' } } },
-        { streamId: 'pass-a', data: refused([entry('x.example.com', 1, '2026-11-13T00:00:00Z')], false) },
+        {
+          streamId: 'pass-a',
+          at: RECENT,
+          data: { ...refused([]), read: { kind: 'unreadable', reason: 'store gone' } },
+        },
+        { streamId: 'pass-a', at: RECENT, data: refused([entry('x.example.com', 1, '2026-11-13T00:00:00Z')], false) },
       ],
       'my-app',
       NOW,
@@ -75,7 +111,7 @@ describe('SandboxSection', () => {
     <BlockedList
       blocked={projectBlockedOf(
         claims,
-        [{ streamId: 'pass-a', data: refused([entry('cdn.example.com', 2, '2026-11-13T00:00:00Z')]) }],
+        [{ streamId: 'pass-a', at: RECENT, data: refused([entry('cdn.example.com', 2, '2026-11-13T00:00:00Z')]) }],
         'my-app',
         NOW,
       )}

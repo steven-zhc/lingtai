@@ -340,13 +340,16 @@ export const RECENT_DAYS = 14
 /** One row of the log as the recipe page's loader read it: the stream it was appended to, and its undecoded payload. */
 export interface ProjectRow {
   readonly streamId: string
+  /** When the row was appended, ISO-8601. */
+  readonly at: string
   readonly data: unknown
 }
 
 /**
  * What the project's runs were refused in the last `RECENT_DAYS` days, across every ticket: the recipe page's
  * *recently blocked*. A refusal lands on a `pass-<uuid>` stream that names no project, so a stream is the project's
- * only where a `TicketClaimed` on one of its own `ticket-<project>-<n>` streams names it as the `runId`.
+ * only where a `TicketClaimed` on one of its own `ticket-<project>-<n>` streams names it as the `runId`. A refusal record older than the window is dropped whole,
+ * its caveats with it, since they say nothing of the last days.
  *
  * Telemetry is left out. The window is the entry's own `firstAt`, since a row carries no time. An unreadable or
  * incomplete read is a sentence and never a zero.
@@ -362,6 +365,8 @@ export function projectBlockedOf(
   const issueOf = new Map<string, string>()
   for (const c of claims) {
     if (!c.streamId.startsWith(prefix)) continue
+    // `ticket-app-tools-12` starts with `ticket-app-` too: what follows the prefix must be the issue number alone.
+    if (!/^\d+$/.test(c.streamId.slice(prefix.length))) continue
     const runId = (c.data as { runId?: unknown } | null)?.runId
     const issue = parseTicketStream(c.streamId)?.issue ?? c.streamId.slice(prefix.length)
     if (typeof runId === 'string') issueOf.set(runId, `#${issue}`)
@@ -372,6 +377,9 @@ export function projectBlockedOf(
   for (const row of refused) {
     const who = issueOf.get(row.streamId)
     if (who === undefined) continue
+    // A caveat is as old as its row: one from before the window is not this window's to report. An unreadable time is kept.
+    const recordedAt = Date.parse(row.at)
+    if (!Number.isNaN(recordedAt) && recordedAt < since) continue
     const parsed = SandboxConnectionsRefused.safeParse(row.data)
     if (!parsed.success) {
       caveats.push(`${who}: a refusal record could not be read, so what it was refused is unknown.`)

@@ -207,7 +207,13 @@ export function createMemoryEventStore(options: { now?: () => Date } = {}): Memo
     async rowsOfType(type) {
       return log
         .filter((r) => r.type === type)
-        .map((r): TypeRow => ({ seq: r.seq, streamId: r.streamId, schemaVer: r.schemaVer, data: r.data }))
+        .map((r): TypeRow => ({
+          seq: r.seq,
+          streamId: r.streamId,
+          at: r.at.toISOString(),
+          schemaVer: r.schemaVer,
+          data: r.data,
+        }))
     },
 
     async typeCounts() {

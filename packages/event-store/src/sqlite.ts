@@ -470,7 +470,9 @@ export function makeSqliteQueries(db: DatabaseSync): QueriesPort {
 
   const types = db.prepare('SELECT type, count(*) AS n FROM events GROUP BY type ORDER BY type')
 
-  const byType = bigints(db.prepare('SELECT seq, stream_id, schema_ver, data FROM events WHERE type = ? ORDER BY seq'))
+  const byType = bigints(
+    db.prepare('SELECT seq, stream_id, at, schema_ver, data FROM events WHERE type = ? ORDER BY seq'),
+  )
 
   const unconverged = db.prepare(
     `WITH said AS (
@@ -551,10 +553,11 @@ export function makeSqliteQueries(db: DatabaseSync): QueriesPort {
           // `bigints()` reads every integer column as a `bigint`, `schema_ver`
           // included — narrowed back to a `number` here, the same way `types()`
           // narrows `n` above.
-          const row = r as { seq: bigint; stream_id: string; schema_ver: bigint; data: string }
+          const row = r as { seq: bigint; stream_id: string; at: string; schema_ver: bigint; data: string }
           return {
             seq: row.seq,
             streamId: row.stream_id,
+            at: new Date(row.at).toISOString(),
             schemaVer: Number(row.schema_ver),
             data: JSON.parse(row.data) as unknown,
           }

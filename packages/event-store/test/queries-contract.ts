@@ -302,14 +302,15 @@ export function describeLogQueriesContract(
 
       // A shared database holds other tests' rows of this type too, so the
       // assertion is on the shape and the order rather than on which rows are
-      // "mine" — `rowsOfType` does not say which stream a row belongs to,
-      // which is exactly what makes it usable by `logPredatesHold` without
-      // knowing which streams hold a `WorkItemBlocked`.
+      // "mine" — each row names its stream and when it was appended, so a caller
+      // can keep one project's recent rows, and `logPredatesHold` can still use it
+      // without knowing which streams hold a `WorkItemBlocked`.
       expect(rows.length).toBeGreaterThanOrEqual(1)
       for (let i = 1; i < rows.length; i++) expect(rows[i]!.seq).toBeGreaterThan(rows[i - 1]!.seq)
       const last = rows.at(-1)!
       expect(last.schemaVer).toBe(1)
       expect(last.streamId).toBe(item)
+      expect(Number.isNaN(Date.parse(last.at))).toBe(false)
       expect(last.data).toEqual({ by: 'human:test', reason: 'done elsewhere' })
       // Never a `TicketLanded` row's shape, appended right beside it in the
       // same batch — the near-miss `typeCounts`'s own test seeds for the same
