@@ -23,6 +23,7 @@ export {
   remoteErrorRef,
   retryUnreachable,
 } from './network.ts'
+export { withExcludes } from './exclude.ts'
 export { mirrorWrite } from './mirror-lock.ts'
 export {
   ensureMirrorEffect,

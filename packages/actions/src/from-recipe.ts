@@ -10,6 +10,7 @@ import type { Runtime } from '@lingtai/agent'
 import type { RuntimeId, Step } from '@lingtai/domain'
 import {
   type ActionKind,
+  type SandboxDecision,
   type StepAction,
   kindOfAction,
   kindRefusedAt,
@@ -40,7 +41,7 @@ import {
   type KeptRunPortDeps,
 } from './kept-run-action.ts'
 import { makeMergeAction, mergePortDepsFrom, type MergeActionDeps, type MergePortDeps } from './merge-action.ts'
-import { makeProcessAction } from './process-action.ts'
+import { type CommandRunner, type RunSandbox, makeProcessAction } from './process-action.ts'
 import { makeQueueAction, queuePortDepsFrom, type QueueActionDeps, type QueuePortDeps } from './queue-action.ts'
 import { makeWatchAction, watchPortDepsFrom, type WatchActionDeps, type WatchPortDeps } from './watch-action.ts'
 import { type WorkActionDeps, type WorkPortDeps, makeWorkAction, workPortDepsFrom } from './work-action.ts'
@@ -168,6 +169,18 @@ export interface ActionDeps {
    * untrue.
    */
   keptRun?: KeptRunActionDeps
+  /**
+   * What this run is, decided once per pass before the claim (#1147): every `run:` is wrapped when it is
+   * *sandboxed*. Absent is the same as *unsandboxed* — a caller that decided nothing spawns as it always has.
+   * **A *sandboxed* or *refused* decision with no `sandbox` below refuses a `run:` by name**: only a decision
+   * that is not sandboxed may spawn as today, and an unwrapped spawn under `required: true` is the failure
+   * this exists to prevent (#1152).
+   */
+  sandboxDecision?: SandboxDecision
+  /** The wrap a sandboxed decision's `run:` commands go through. Built per pass in `conduct.ts`. */
+  sandbox?: RunSandbox
+  /** The runner a `run:` spawns through. Absent, `commandEffect`, as the subscriber's. A test hands one that records. */
+  command?: CommandRunner
 }
 
 /**
@@ -187,6 +200,9 @@ export interface ActionPortDeps {
   fileBrief?: FileBriefPortDeps
   env?: ActionDeps['env']
   keptRun?: KeptRunPortDeps
+  sandboxDecision?: ActionDeps['sandboxDecision']
+  sandbox?: ActionDeps['sandbox']
+  command?: ActionDeps['command']
 }
 
 /**
@@ -207,6 +223,9 @@ export const actionPortDepsFrom = (deps: ActionDeps): ActionPortDeps => {
     fileBrief: deps.fileBrief === undefined ? undefined : fileBriefPortDepsFrom(deps.fileBrief),
     env: deps.env,
     keptRun: deps.keptRun === undefined ? undefined : keptRunPortDepsFrom(deps.keptRun),
+    sandboxDecision: deps.sandboxDecision,
+    sandbox: deps.sandbox,
+    command: deps.command,
   }
   return lifted
 }
@@ -334,6 +353,17 @@ export function actionPortsFromRecipe(
         // and read as a broken build rather than as an action built wrong.
         throw new ActionUnavailableError(action.name, kind, 'no environment resolver was supplied to actionsFromRecipe')
       }
+      // Fail closed (#1152): only a decision that is not *sandboxed* spawns as today, and `refused` is
+      // not a licence to spawn either. A missing wrap is a refusal by name, never a silent unwrapped spawn.
+      const decided = deps.sandboxDecision?.kind
+      const wrapped = decided === 'sandboxed' || decided === 'refused'
+      if (wrapped && !deps.sandbox) {
+        throw new ActionUnavailableError(
+          action.name,
+          kind,
+          `this run is ${decided} and no sandbox was supplied to actionsFromRecipe`,
+        )
+      }
       const inner = makeProcessAction({
         name: action.name,
         run: action.run,
@@ -341,6 +371,8 @@ export function actionPortsFromRecipe(
         // 0037 §1: the declared set is the whole set. An action that declares
         // nothing gets only what any process needs, never the daemon's.
         env: deps.env(action.env),
+        ...(wrapped && deps.sandbox ? { sandbox: deps.sandbox } : {}),
+        ...(deps.command ? { command: deps.command } : {}),
       })
       // **`implement` wraps and the other four do not** (`#390`): a `run:`
       // there may not refuse (`REFUSING_STEPS`, `packages/conductor/src/run-attempt.ts`),

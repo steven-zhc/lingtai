@@ -68,6 +68,7 @@ import { recovering } from './exit.ts'
 import { symbol } from './output.ts'
 import { Projector, ProjectorLive } from './projector.ts'
 import { startRates } from './rates.ts'
+import { releaseSandbox } from './sandbox.ts'
 import { flushTracing, startTracing, tracedPorts } from './tracing.ts'
 
 /** Lingtai's own checkout — the hook binary and the prompt template. */
@@ -753,6 +754,7 @@ export function run(
     yield* startTracing()
     const code = yield* edge
     yield* flushTracing
+    yield* releaseSandbox
     return code
   })
 }
