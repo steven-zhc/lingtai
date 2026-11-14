@@ -3744,6 +3744,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * for `build`. The instance is `baseCheckFor(store)`'s, shared with every other pass in
        * this conductor, which is what makes two asks about one commit one run (0122).
        */
+      /**
+       * **One wrap for the pass, whoever asks** (#1153): the `run:` commands' (S6a) and the base check's. Built once, so
+       * a command is wrapped one way. The base check is told it on the question, and its keys name no step, so it
+       * appends nothing here.
+       */
+      const runSandbox =
+        sandboxDecision.kind === 'sandboxed' && passSandbox.service !== undefined
+          ? makeRunSandbox(passSandbox.service, {
+              appends: invocationAppends(runId),
+              project,
+              mirror: mirrorPathFor(project, home),
+              cache: join(home, 'cache', project),
+              additions: sandboxDecision.project_additions,
+              codexNamed: runtimesOf(recipe).includes('codex'),
+            })
+          : undefined
       const baseAbort = new AbortController()
       yield* Effect.addFinalizer(() => Effect.sync(() => baseAbort.abort()))
       const baseIsRed = (asked: { action: string; mergedOnto: string | null }) =>
@@ -3770,6 +3786,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             runId,
             signal: baseAbort.signal,
             timeoutMs: parseDuration(action.timeout),
+            // The wrap travels on the question: the base check is one instance shared by every pass and project.
+            ...(runSandbox === undefined ? {} : { sandbox: runSandbox }),
             tree: {
               cut: (path, sha) =>
                 detached(
@@ -4090,18 +4108,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   invocationAppends(runId).before,
                 ),
             }),
-        ...(sandboxDecision.kind === 'sandboxed' && passSandbox.service !== undefined
-          ? {
-              sandbox: makeRunSandbox(passSandbox.service, {
-                appends: invocationAppends(runId),
-                project,
-                mirror: mirrorPathFor(project, home),
-                cache: join(home, 'cache', project),
-                additions: sandboxDecision.project_additions,
-                codexNamed: runtimesOf(recipe).includes('codex'),
-              }),
-            }
-          : {}),
+        ...(runSandbox === undefined ? {} : { sandbox: runSandbox }),
       }
 
       /**

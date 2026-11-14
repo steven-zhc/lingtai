@@ -19,6 +19,8 @@ import {
   parseViolationLine,
   isTelemetryHost,
   resolvedPolicy,
+  policyFingerprint,
+  fingerprintSource,
   worthRecording,
   customConfigFor,
   quoteArgv,
@@ -648,5 +650,68 @@ describe('refused connections (#1156)', () => {
 
   it('pins the srt version package.json pins', () => {
     expect(pkg.dependencies['@anthropic-ai/sandbox-runtime']).toBe(SRT_VERSION)
+  })
+})
+
+describe("policyFingerprint leaves the run's worktree out wherever it is a prefix (#1153)", () => {
+  const host = hostFor('linux')
+  it('is the same for a profile deny resolved under another worktree, and differs for another deny', () => {
+    const at = (wt: string, deny: string) =>
+      policyFingerprint(host, inputFor(host, { worktree: wt, caller_additions: { deny: [deny] } }))
+    const a = `${host.stateDir}/worktrees/proj/base-abc1234-r1`
+    const b = `${host.stateDir}/worktrees/proj/base-abc1234-r2`
+    expect(at(a, `${a}/profiles/secret`)).toBe(at(b, `${b}/profiles/secret`))
+    expect(at(a, `${a}/profiles/secret`)).not.toBe(at(a, `${a}/profiles/other`))
+    expect(at(a, '/secret')).not.toBe(at(a, '/other'))
+  })
+})
+
+describe('policyFingerprint (#1153)', () => {
+  const host = hostFor('linux')
+  const at = (over: Partial<WrapInput> = {}, h: HostFacts = host) => policyFingerprint(h, inputFor(h, over))
+
+  it('is the same with lists in a different order', () => {
+    const a = at({ project_additions: { network: ['a.com', 'b.com'], write: ['/w1', '/w2'], deny: ['/d1', '/d2'] } })
+    const b = at({ project_additions: { network: ['b.com', 'a.com'], write: ['/w2', '/w1'], deny: ['/d2', '/d1'] } })
+    expect(a).toBe(b)
+  })
+
+  it('is the same for another worktree path, which is how another runId reaches it', () => {
+    expect(at({ worktree: `${host.stateDir}/worktrees/proj/base-abc1234-r1` })).toBe(
+      at({ worktree: `${host.stateDir}/worktrees/proj/base-abc1234-r2` }),
+    )
+  })
+
+  it('changes with a project domain, a deny, a write root, or the platform', () => {
+    const base = at({ project_additions: { network: [], write: [], deny: [] } })
+    expect(at({ project_additions: { network: ['x.com'], write: [], deny: [] } })).not.toBe(base)
+    expect(at({ project_additions: { network: [], write: [], deny: ['/secret'] } })).not.toBe(base)
+    expect(at({ project_additions: { network: [], write: ['/extra'], deny: [] } })).not.toBe(base)
+    expect(at({ project_additions: { network: [], write: [], deny: [] } }, hostFor('darwin'))).not.toBe(base)
+  })
+
+  it('changes with the PATH and the pnpm home, and the PATH keeps its order', () => {
+    const base = at()
+    expect(at({}, { ...host, path: ['/other/bin', ...host.path] })).not.toBe(base)
+    expect(at({}, { ...host, pnpmHome: '/elsewhere/pnpm' })).not.toBe(at({}, { ...host, pnpmHome: '/pnpm' }))
+    expect(at({}, { ...host, path: ['/a', '/b'] })).not.toBe(at({}, { ...host, path: ['/b', '/a'] }))
+  })
+
+  it('changes with a relative PATH entry the absolute list drops', () => {
+    const a = at({}, { ...host, pathRaw: `tools/old:${host.path.join(':')}` })
+    const b = at({}, { ...host, pathRaw: `tools/new:${host.path.join(':')}` })
+    expect(a).not.toBe(b)
+  })
+
+  it('is the same for canonically equivalent but distinct strings in either order', () => {
+    const composed = '/caf\u00e9'
+    const decomposed = '/cafe\u0301'
+    const a = at({ project_additions: { network: [], write: [composed, decomposed], deny: [] } })
+    const b = at({ project_additions: { network: [], write: [decomposed, composed], deny: [] } })
+    expect(a).toBe(b)
+  })
+
+  it('hashes the pinned srt version', () => {
+    expect(JSON.stringify(fingerprintSource(host, inputFor(host)))).toContain(`"srtVersion":"${SRT_VERSION}"`)
   })
 })

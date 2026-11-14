@@ -106,6 +106,10 @@ const lazy: SandboxApi = {
     if (built === undefined) throw new Error('the sandbox service has not been built')
     return built.policyOf(input)
   },
+  fingerprintOf: (input) => {
+    if (built === undefined) throw new Error('the sandbox service has not been built')
+    return built.fingerprintOf(input)
+  },
 }
 
 /**

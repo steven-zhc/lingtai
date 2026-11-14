@@ -208,7 +208,9 @@ fixes the bounds and the endings that router works inside.
     item over as `base-red` while the recorded result for the current base
     commit is red**, and the board and `lingtai status` show it in the queue
     with the check that is red, the same way they show `blocked-by`. The base's
-    result is recorded on the log, keyed by the base commit and the command, so
+    result is recorded on the log, keyed by the base commit, the command and the boundary it
+    ran under (`unsandboxed`, or a fingerprint of the sandbox policy; 0127 §15) —
+    an answer under one boundary never answers a question under another — so
     attempts in flight and every queued ticket reuse it; when the base moves the
     check runs once on the new commit — no agent, no claim — and a green result
     lets every item it held be taken again. **Taken again, it continues from

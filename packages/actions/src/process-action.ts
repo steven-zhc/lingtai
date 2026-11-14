@@ -12,7 +12,7 @@
  * What is left here is exactly the translation from "a command ended" to "a
  * verdict about a commit", which is the part that is genuinely about actions.
  */
-import type { RunTrace } from '@lingtai/agent'
+import type { RunTrace, operatorCodexDenies } from '@lingtai/agent'
 import type { Step } from '@lingtai/domain'
 import { parseDuration } from '@lingtai/recipe'
 import {
@@ -39,11 +39,25 @@ export type SandboxWrapError = SandboxUnavailable | SandboxWrapFailed | SandboxP
  * The wrap a *sandboxed* run's commands go through (#1152): `Sandbox.wrap`, closed over the pass's project,
  * mirror and decision by the conductor. Scoped, because the wrap's scope must enclose the command.
  */
+export type OperatorProfile = ReturnType<typeof operatorCodexDenies>
+
 export interface RunSandbox {
+  /**
+   * The only reader of the operator's Codex profile on a command's path: one call per command, and the value it
+   * returns is what `fingerprint` and `wrap` are handed. Neither of them reads the file again.
+   */
+  profile(worktree: string, env: Record<string, string>): OperatorProfile
+  /**
+   * Reads nothing. A stable fingerprint of the policy `wrap` would apply with this profile (the policy before any
+   * profile when none is given), the worktree left out — the base check's cache key (#1153).
+   */
+  fingerprint(worktree: string, profile?: OperatorProfile): string
+  /** Reads nothing: it is handed the profile `profile` returned. */
   wrap(
     command: readonly string[],
     worktree: string,
     env: Record<string, string>,
+    profile: OperatorProfile,
     /** The run's log, for a note about protection the wrap left out (#1155). */
     log?: RunTrace,
     /** Which step and action this command is, for the boundary the wrap records (#1164). */
@@ -165,6 +179,7 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
                     ['/bin/sh', '-c', spec.run],
                     context.cwd,
                     spec.env,
+                    spec.sandbox.profile(context.cwd, spec.env),
                     context.log,
                     spec.step === undefined ? undefined : { step: spec.step, action: spec.name },
                   )

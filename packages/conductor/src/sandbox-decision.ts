@@ -75,38 +75,50 @@ export const makeRunSandbox = (
     readonly appends?: InvocationAppends
     readonly readCodexPermissions?: (env: Record<string, string>, cwd: string) => UserPermissions
   },
-): RunSandbox => ({
-  wrap: (command, worktree, env, log, keys) => {
-    const profile = operatorCodexDenies(
-      (pass.readCodexPermissions ?? userPermissionsAt)(env, worktree),
-      { home: env.HOME, cwd: worktree },
-      pass.codexNamed,
-    )
-    if (profile.ok && profile.note !== undefined) log?.note('sandbox', profile.note)
-    if (!profile.ok) return Effect.fail(new SandboxWrapFailed({ cause: new Error(profile.refusal.sentence) }))
-    const needed = [worktree, pass.mirror, pass.cache]
-    const colliding = collidingDenies(profile.paths, needed)
-    if (colliding.length > 0) {
-      return Effect.fail(
-        new SandboxWrapFailed({
-          cause: new Error(
-            `the operator's Codex permission profile denies ${colliding[0]}, which covers a path the run needs, and would be voided by it`,
-          ),
-        }),
-      )
-    }
-    const input = {
-      project: pass.project,
-      worktree,
-      mirror: pass.mirror,
-      command,
-      env,
-      project_additions: pass.additions,
-      ...(profile.paths.length > 0 ? { caller_additions: { deny: profile.paths } } : {}),
-    }
-    // Without keys (a caller that names no step) nothing can be recorded under them, and the wrap is as it was.
-    return keys === undefined || pass.appends === undefined
-      ? service.wrap(input)
-      : recordingWrap(service, input, { step: keys.step, action: keys.action, runId: null }, pass.appends)
-  },
-})
+): RunSandbox => {
+  /** The one place a wrap's input is built, so the fingerprint recorded and the policy applied cannot disagree. */
+  const inputOf = (
+    command: readonly string[],
+    worktree: string,
+    env: Record<string, string>,
+    paths: readonly string[],
+  ) => ({
+    project: pass.project,
+    worktree,
+    mirror: pass.mirror,
+    command,
+    env,
+    project_additions: pass.additions,
+    ...(paths.length > 0 ? { caller_additions: { deny: [...paths] } } : {}),
+  })
+  return {
+    profile: (worktree, env) =>
+      operatorCodexDenies(
+        (pass.readCodexPermissions ?? userPermissionsAt)(env, worktree),
+        { home: env.HOME, cwd: worktree },
+        pass.codexNamed,
+      ),
+    fingerprint: (worktree, profile) =>
+      service.fingerprintOf(inputOf([], worktree, {}, profile?.ok ? profile.paths : [])),
+    wrap: (command, worktree, env, profile, log, keys) => {
+      if (profile.ok && profile.note !== undefined) log?.note('sandbox', profile.note)
+      if (!profile.ok) return Effect.fail(new SandboxWrapFailed({ cause: new Error(profile.refusal.sentence) }))
+      const needed = [worktree, pass.mirror, pass.cache]
+      const colliding = collidingDenies(profile.paths, needed)
+      if (colliding.length > 0) {
+        return Effect.fail(
+          new SandboxWrapFailed({
+            cause: new Error(
+              `the operator's Codex permission profile denies ${colliding[0]}, which covers a path the run needs, and would be voided by it`,
+            ),
+          }),
+        )
+      }
+      const input = inputOf(command, worktree, env, profile.paths)
+      // Without keys (a caller that names no step) nothing can be recorded under them, and the wrap is as it was.
+      return keys === undefined || pass.appends === undefined
+        ? service.wrap(input)
+        : recordingWrap(service, input, { step: keys.step, action: keys.action, runId: null }, pass.appends)
+    },
+  }
+}

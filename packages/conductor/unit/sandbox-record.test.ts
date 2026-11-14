@@ -37,6 +37,7 @@ const fakeApi = (refused: RefusedRead | 'store') => {
         refused === 'store' ? (store[0] ?? { kind: 'entries', entries: [], complete: true }) : refused,
       ),
     policyOf: () => policy,
+    fingerprintOf: () => 'fp',
   }
   return api
 }

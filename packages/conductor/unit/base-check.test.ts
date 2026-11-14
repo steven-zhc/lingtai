@@ -231,3 +231,124 @@ describe('baseCheck', () => {
     expect(tree.cut).not.toHaveBeenCalled()
   })
 })
+
+describe('baseCheck under a boundary (#1153)', () => {
+  /** A fake wrap: counts the profile reads and records every wrap with the profile it was handed. */
+  function fakeSandbox(
+    over: { fingerprint?: (p?: unknown) => string; profile?: () => unknown; failWrap?: boolean } = {},
+  ) {
+    const reads: string[] = []
+    const wraps: { command: readonly string[]; env: Record<string, string>; profile: unknown }[] = []
+    const sandbox = {
+      profile: (_worktree: string, env: Record<string, string>) => {
+        reads.push(env.HOME ?? '')
+        return (over.profile?.() ?? { ok: true, paths: [] }) as never
+      },
+      fingerprint: (_w: string, profile?: unknown) => (over.fingerprint ?? (() => 'fp-A'))(profile),
+      wrap: (command: readonly string[], _w: string, env: Record<string, string>, profile: unknown) => {
+        wraps.push({ command, env, profile })
+        return over.failWrap
+          ? Effect.fail({ _tag: 'SandboxUnavailable', reason: 'no bwrap', sentences: [] } as never)
+          : Effect.succeed({ argv: ['/wrap', ...command], env: { ...env, WRAPPED: '1' }, commandId: 'c' })
+      },
+    }
+    return { sandbox, reads, wraps }
+  }
+
+  it('reads the profile once per command and wraps with that same value', async () => {
+    const { port, runner } = setup()
+    const f = fakeSandbox({ profile: () => ({ ok: true, paths: ['/secret'] }) })
+    const answer = await Effect.runPromise(port.ask(question({ sandbox: f.sandbox as never })))
+    expect(answer).toMatchObject({ verdict: 'green', from: 'ran' })
+    expect(f.reads).toHaveLength(2)
+    expect(f.wraps).toHaveLength(2)
+    expect(f.wraps[0]!.command).toEqual(['/bin/sh', '-c', 'pnpm install'])
+    expect(f.wraps[1]!.profile).toEqual({ ok: true, paths: ['/secret'] })
+    expect(runner.mock.calls[1]![0]).toMatchObject({ wrapped: { argv: ['/wrap', '/bin/sh', '-c', 'pnpm typecheck'] } })
+  })
+
+  it('records the fingerprint, and an answer under one boundary never answers another', async () => {
+    const { port, store, calls } = setup()
+    await Effect.runPromise(port.ask(question({ sandbox: fakeSandbox().sandbox as never })))
+    expect((await recorded(store))[0]!.data).toMatchObject({ boundary: 'fp-A' })
+    // The same boundary is answered from the log; another boundary and no sandbox run again.
+    const same = await Effect.runPromise(port.ask(question({ sandbox: fakeSandbox().sandbox as never })))
+    expect(same).toMatchObject({ from: 'log' })
+    await Effect.runPromise(
+      port.ask(question({ sandbox: fakeSandbox({ fingerprint: () => 'fp-B' }).sandbox as never })),
+    )
+    await Effect.runPromise(port.ask(question()))
+    expect(calls.filter((c) => c === 'pnpm typecheck')).toHaveLength(3)
+    expect((await recorded(store)).map((e) => (e.data as { boundary: string }).boundary)).toEqual([
+      'fp-A',
+      'fp-B',
+      'unsandboxed',
+    ])
+  })
+
+  it('reads an event with no boundary as unsandboxed: it answers that question and never a sandboxed one', async () => {
+    const { port, store, calls } = setup()
+    await store.append(stream, 0, [
+      {
+        type: 'BaseChecked',
+        actor: 'conductor',
+        data: {
+          base: 'main',
+          baseSha: SHA,
+          command: 'pnpm typecheck',
+          ok: false,
+          exitCode: 1,
+          durationMs: 1,
+          evidence: 'x',
+          runId: 'old',
+        },
+      },
+    ])
+    expect(await Effect.runPromise(port.ask(question()))).toMatchObject({ verdict: 'red', from: 'log' })
+    expect(calls).toEqual([])
+    const sandboxed = await Effect.runPromise(port.ask(question({ sandbox: fakeSandbox().sandbox as never })))
+    expect(sandboxed).toMatchObject({ verdict: 'green', from: 'ran' })
+  })
+
+  it('shares one run for one fingerprint and runs twice for two', async () => {
+    const { port, calls } = setup(async () => {
+      await new Promise((r) => setTimeout(r, 10))
+      return outcome()
+    })
+    const ask = (fp: string) =>
+      Effect.runPromise(port.ask(question({ sandbox: fakeSandbox({ fingerprint: () => fp }).sandbox as never })))
+    await Promise.all([ask('fp-A'), ask('fp-A')])
+    expect(calls.filter((c) => c === 'pnpm typecheck')).toHaveLength(1)
+    await Promise.all([ask('fp-C'), ask('fp-D')])
+    expect(calls.filter((c) => c === 'pnpm typecheck')).toHaveLength(3)
+  })
+
+  it('answers unknown and records nothing when the wrap fails, never spawning unwrapped', async () => {
+    const { port, store, runner } = setup()
+    const answer = await Effect.runPromise(
+      port.ask(question({ sandbox: fakeSandbox({ failWrap: true }).sandbox as never })),
+    )
+    expect(answer).toMatchObject({ verdict: 'unknown' })
+    expect(runner).not.toHaveBeenCalled()
+    expect(await recorded(store)).toEqual([])
+  })
+
+  it('answers unknown and records nothing when the profile refuses', async () => {
+    const { port, store, runner } = setup()
+    const f = fakeSandbox({ profile: () => ({ ok: false, refusal: { sentence: 'bad profile' } }) })
+    const answer = await Effect.runPromise(port.ask(question({ sandbox: f.sandbox as never })))
+    expect(answer).toMatchObject({ verdict: 'unknown' })
+    expect(runner).not.toHaveBeenCalled()
+    expect(await recorded(store)).toEqual([])
+  })
+
+  it('a hit under a sandboxed boundary removes the tree and runs nothing', async () => {
+    const { port, runner } = setup()
+    await Effect.runPromise(port.ask(question({ sandbox: fakeSandbox().sandbox as never })))
+    runner.mockClear()
+    tree.remove.mockClear()
+    await Effect.runPromise(port.ask(question({ sandbox: fakeSandbox().sandbox as never })))
+    expect(runner).not.toHaveBeenCalled()
+    expect(tree.remove).toHaveBeenCalledTimes(1)
+  })
+})

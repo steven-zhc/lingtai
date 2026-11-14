@@ -34,6 +34,7 @@ export const readHost: Effect.Effect<HostFacts, SandboxUnavailable> = Effect.gen
     tmpdirReal: tmpdirReal === tmp ? undefined : tmpdirReal,
     stateDir: state,
     pnpmHome: env['PNPM_HOME'],
+    pathRaw: env['PATH'] ?? '',
     path: (env['PATH'] ?? '').split(delimiter).filter((p) => p.startsWith('/')),
   }
 })
