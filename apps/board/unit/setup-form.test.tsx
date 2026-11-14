@@ -99,8 +99,14 @@ describe('the sandbox step (#1160)', () => {
     const { emptyView } = await import('../src/app/setup/repository/read/view.ts')
     const target = { kind: 'github', owner: 'o', repo: 'p' } as const
     expect(emptyView(target, 'p', null, 'it took too long').sandbox).toBeNull()
-    const asked = emptyView(target, 'p', null, 'it took too long', { builtIns: ['api.example.com'] })
+    const asked = emptyView(target, 'p', null, 'it took too long', {
+      verdict: { can: false, reason: 'bwrap is missing', sentences: [] },
+      install: { missing: ['bwrap'], command: 'apt install bubblewrap' },
+      builtIns: ['api.example.com'],
+    })
     expect(asked.sandbox).toMatchObject({ builtIns: ['api.example.com'] })
+    expect(asked.sandbox?.cannot).toContain('Install: apt install bubblewrap')
+    expect(asked.sandbox?.cannot).toContain('will run without one')
     expect(await withSandbox(asked.sandbox)).toContain('<input type="radio" checked=""/><span><b>On</b>')
   })
 

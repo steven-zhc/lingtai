@@ -7,6 +7,7 @@ import { loadAllProjects, sandboxHostHere } from '@lingtai/conductor/projects'
  * editable empty line (`proposeSetup`'s `known: false`), and Add is still
  * possible. Nothing is written until Add.
  */
+import { verdictOf } from '@lingtai/recipe'
 import { alreadyAdded } from '@lingtai/setup'
 import { alreadyAddedSentence, type SetupTarget } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -83,6 +84,15 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
     ),
   ).catch((err: unknown) => (err instanceof Error ? err.message : 'it took too long'))
   if (typeof proposal === 'string') {
+    // The host check does not depend on the repository read: a failed read still says what this machine can do (#1160).
+    const host = sandboxHostHere()
+    const sandbox = isNew
+      ? {
+          verdict: await Effect.runPromise(verdictOf(host.answer)),
+          install: host.install,
+          builtIns: host.builtIns,
+        }
+      : null
     return frame(
       `step 2 — ${label}`,
       <>
@@ -90,15 +100,7 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
           Reading the repository failed: {proposal}. <a href="">Reload</a> to read it again, or fill the lines in
           yourself.
         </p>
-        <SetupForm
-          view={emptyView(
-            target.target,
-            project,
-            target.remote,
-            proposal,
-            isNew ? { builtIns: sandboxHostHere().builtIns } : null,
-          )}
-        />
+        <SetupForm view={emptyView(target.target, project, target.remote, proposal, sandbox)} />
       </>,
     )
   }

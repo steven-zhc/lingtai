@@ -11,6 +11,7 @@ import {
   sandboxCannotSentence,
   type Line,
   type Proposal,
+  type SandboxProposal,
   type SetupTarget,
 } from '@lingtai/setup'
 
@@ -101,7 +102,7 @@ export function emptyView(
   remote: string | null,
   reason: string,
   /** Where the recipe is new, the sandbox step is still offered, on: a failed read never drops the default (#1160). */
-  sandbox: { builtIns: readonly string[] } | null = null,
+  sandbox: SandboxProposal | null = null,
 ): ReadView {
   const local = target.kind === 'local'
   const note = `could not be read: ${reason}`
@@ -129,7 +130,7 @@ export function emptyView(
         ? null
         : {
             builtIns: [...sandbox.builtIns],
-            cannot: 'The host could not be checked, because the repository could not be read. The sandbox stays on.',
+            cannot: sandboxCannotSentence(sandbox),
             offLine: SANDBOX_OFF_LINE,
           },
   }

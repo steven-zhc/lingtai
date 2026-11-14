@@ -60,7 +60,7 @@ export interface ReadView {
   heldBy: LineView<string>
   end: LineView<boolean>
   limits: SetupForm['limits']
-  /** Null where the step is not asked: a recipe that already exists, or nothing could be read. */
+  /** Null where the step is not asked: a recipe that already exists. A failed read still offers it. */
   sandbox: SandboxView | null
 }
 
