@@ -23,6 +23,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { type DoctorReach, runDoctor as runDoctorEffect } from '../src/doctor.ts'
 import { rebuildProjection as rebuildProjectionE, rebuildUnderLock as rebuildUnderLockE } from '../src/projection.ts'
+import { fakeSandbox } from '../test/sandbox-fakes.ts'
 
 // `runDoctor` is an Effect; these tests read the report it yields.
 const runDoctor = (...a: Parameters<typeof runDoctorEffect>) => Effect.runPromise(runDoctorEffect(...a))
@@ -55,6 +56,7 @@ const reach: DoctorReach = {
   settings: () => Effect.succeed(null),
   runtimes: () => [signedInRuntime],
   sea: () => ({ can: true }),
+  ...fakeSandbox(),
   recipe: () => {
     throw new Error('no project is registered — nothing should resolve a recipe')
   },

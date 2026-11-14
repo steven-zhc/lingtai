@@ -24,6 +24,7 @@
     "@lingtai/projector": "workspace:*",
     "@lingtai/recipe": "workspace:*",
     "@lingtai/repo": "workspace:*",
+    "@lingtai/sandbox": "workspace:*",
     "@lingtai/setup": "workspace:*",
     "effect": "^4.1.2",
     "ora": "^9.4.1",

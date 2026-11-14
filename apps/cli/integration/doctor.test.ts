@@ -42,9 +42,21 @@ import type { DoctorReach } from '../src/doctor.ts'
 // alone does not show (0042).
 import { gatingFailures } from '../src/restart.ts'
 import { probeSeaBuild } from '../src/sea-build.ts'
+import { fakeSandbox } from '../test/sandbox-fakes.ts'
 
 // `runDoctor` is an Effect; these tests read the report it yields.
-const runDoctor = (...a: Parameters<typeof runDoctorEffect>) => Effect.runPromise(runDoctorEffect(...a))
+// The reach it used to default to: the real Node probe, and a host and a canary that answer without spawning srt (#1159).
+const runDoctor = (
+  env?: Parameters<typeof runDoctorEffect>[0],
+  machine?: Parameters<typeof runDoctorEffect>[1],
+  store?: Parameters<typeof runDoctorEffect>[2],
+  queries?: Parameters<typeof runDoctorEffect>[3],
+  load?: Parameters<typeof runDoctorEffect>[4],
+  reach: Partial<DoctorReach> = {},
+) =>
+  Effect.runPromise(
+    runDoctorEffect(env, machine, store, queries, load, { sea: probeSeaBuild, ...fakeSandbox(), ...reach }),
+  )
 
 const POOLED = 'postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true'
 const DIRECT = 'postgresql://u:p@db.example.com:5432/postgres'
