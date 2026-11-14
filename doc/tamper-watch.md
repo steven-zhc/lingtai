@@ -20,6 +20,7 @@ steps:
         - "packages/hook/**"
         - "packages/actions/**"
         - "packages/recipe/**"
+        - "packages/project/**"
         - "packages/domain/**"
         - "packages/github/**"
         - "packages/agent/**"
