@@ -110,9 +110,9 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
     expect(html).not.toContain('No refused connection was recorded')
   })
 
-  it('says none refused only once the step has ended, and says the read was lost when the run ended inside it', () => {
+  it('says none recorded, never none refused, once the step has ended, and says the read was lost when the run ended inside it', () => {
     const afterStep = fold((e) => [e('SandboxBoundaryRecorded', { ...keys('c1'), boundary: sandboxed }), ended(e)])
-    expect(sandboxViewOf(afterStep, 'p').rows[0]!.refusals).toEqual({ kind: 'none' })
+    expect(sandboxViewOf(afterStep, 'p').rows[0]!.refusals).toEqual({ kind: 'none recorded' })
 
     const died = fold((e) => [
       e('SandboxBoundaryRecorded', { ...keys('c1'), boundary: sandboxed }),
@@ -130,7 +130,7 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
       e('RunFinished', { exitCode: 0, turns: 1, durationMs: 1 }),
     ])
     expect(state.sandbox?.[0]?.ended).toBe(true)
-    expect(sandboxViewOf(state, 'p').rows[0]!.refusals).toEqual({ kind: 'none' })
+    expect(sandboxViewOf(state, 'p').rows[0]!.refusals).toEqual({ kind: 'none recorded' })
   })
 
   it('says so, in a sentence, when the refusals could not be read or are incomplete', () => {
@@ -176,7 +176,7 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
       ['o.example.com', 5, '2026-11-01T00:00:01.000Z'],
       ['raw srt line', 1, '2026-11-01T00:00:09.000Z'],
     ])
-    expect(view.blocked.hosts[0]!.from).toEqual(['implement · agent', 'review · cold'])
+    expect(view.blocked.hosts[0]!.from).toEqual(['implement · agent · claude-code', 'review · cold · claude-code'])
     expect(view.rows[0]!.refusals).toEqual({ kind: 'refused', count: 3, incomplete: false })
     expect(JSON.stringify(view)).not.toContain('sentry')
   })
@@ -221,38 +221,34 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
     expect(sandboxViewOf(b, 'p').policies[0]!.domains.map((d) => d.host)).toEqual(['only.example.net'])
   })
 
-  it('says not recorded only for actions the attempt reached, and never for the merge or unexecuted ones', () => {
+  it('draws no row for a planned action that left no record, and says the attempt has none', () => {
     const state = fold((e) => [
       e('StepsResolved', {
         runId: RUN,
         configHash: 'c',
         steps: STEPS.map((step) => ({
           step,
-          actions: step === 'build' ? ['test'] : step === 'review' ? ['cold'] : step === 'merge' ? ['land'] : [],
+          actions: step === 'build' ? ['test'] : step === 'review' ? ['cold'] : step === 'proposed' ? ['approve'] : [],
         })),
-      }),
-      e('StepEnded', {
-        runId: RUN,
-        outcome: {
-          step: 'build',
-          round: 0,
-          actions: [
-            {
-              plugin: 'run',
-              name: 'test',
-              onSha: 'base000',
-              evidence: '',
-              yields: 'verdict',
-              result: { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
-            },
-          ] as never,
-        },
       }),
       e('RunFailed', { kind: 'crash', detail: 'died' }),
     ])
     const view = sandboxViewOf(state, 'p')
-    expect(view.rows.map((r) => [r.step, r.action, r.mark.state])).toEqual([['build', 'test', 'not recorded']])
-    expect(renderToStaticMarkup(<SandboxPanel view={view} />)).not.toContain('No refused connection was recorded')
+    expect(view.rows).toEqual([])
+    expect(view.blocked.caveats.join(' ')).toMatch(/No sandbox record/)
+  })
+
+  it('keeps two invocations of one action under different policies apart, by number', () => {
+    const state = fold((e) => [
+      e('SandboxBoundaryRecorded', { ...keys('c1'), boundary: sandboxed }),
+      e('SandboxBoundaryRecorded', {
+        ...keys('c2'),
+        boundary: { kind: 'sandboxed', srtVersion: '0.0.83', policy: { ...policy(), allowWrite: ['/fix'] } },
+      }),
+    ])
+    const view = sandboxViewOf(state, 'p')
+    expect(view.policies).toHaveLength(2)
+    expect(view.rows.map((r) => r.policy)).toEqual([1, 2])
   })
 
   it('does not say nothing was refused for an attempt with no record at all', () => {
@@ -286,9 +282,10 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
     ])
     const view = sandboxViewOf(state, 'p')
     expect(view.policies.map((g) => [g.runs, g.srtVersion])).toEqual([
-      [['implement · agent'], '0.0.83'],
-      [['review · cold'], '0.0.90'],
+      [['implement · agent · claude-code'], '0.0.83'],
+      [['review · cold · codex'], '0.0.90'],
     ])
+    expect(view.rows.map((r) => r.policy)).toEqual([1, 2])
     expect(view.policies[0]!.denyRead).toEqual([{ path: '~/.lingtai/state', except: ['~/.lingtai/state/cache'] }])
     expect(view.rows.map((r) => r.srtVersion)).toEqual(['0.0.83', '0.0.90'])
     expect(renderToStaticMarkup(<SandboxPanel view={view} />)).toContain('except ~/.lingtai/state/cache')

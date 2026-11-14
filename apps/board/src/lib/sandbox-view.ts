@@ -15,7 +15,7 @@ import { BUILT_IN_DOMAINS } from '@lingtai/sandbox/policy'
 type SandboxPolicy = Extract<NonNullable<SandboxInvocation['boundary']>, { kind: 'sandboxed' }>['policy']
 
 /** The slice of an attempt this view reads. */
-export type SandboxInput = Pick<AttemptState, 'lifecycle' | 'resolved' | 'steps'> & {
+export type SandboxInput = Pick<AttemptState, 'lifecycle'> & {
   readonly sandbox?: readonly SandboxInvocation[] | undefined
 }
 
@@ -38,7 +38,7 @@ export interface Mark {
  */
 export type RefusalReading =
   | { readonly kind: 'refused'; readonly count: number; readonly incomplete: boolean }
-  | { readonly kind: 'none' }
+  | { readonly kind: 'none recorded' }
   | { readonly kind: 'pending' }
   | { readonly kind: 'lost' }
   | { readonly kind: 'unreadable'; readonly reason: string }
@@ -54,6 +54,8 @@ export interface RunRow {
   readonly weakerNetwork: boolean
   /** The srt version that enforced this run's boundary; null where it was not sandboxed or not recorded. */
   readonly srtVersion: string | null
+  /** The 1-based number of the `PolicyGroup` this invocation ran under; null where it was not sandboxed. */
+  readonly policy: number | null
   readonly refusals: RefusalReading
 }
 
@@ -62,7 +64,7 @@ export interface RunRow {
  * run could write is not one another could, and a reader must be able to tell which.
  */
 export interface PolicyGroup {
-  /** The invocations, as `step · action`, that ran under exactly this policy. */
+  /** The invocations, as `step · action · runtime`, that ran under exactly this policy. */
   readonly runs: readonly string[]
   readonly srtVersion: string
   readonly writable: readonly string[]
@@ -143,16 +145,18 @@ function readingOf(i: SandboxInvocation, over: boolean): RefusalReading {
     // Telemetry is recorded and not counted: *Blocked* would never be empty otherwise.
     const count = i.refusals.entries.filter((e) => !e.telemetry).reduce((n, e) => n + e.count, 0)
     return count === 0 && i.refusals.complete
-      ? { kind: 'none' }
+      ? { kind: 'none recorded' }
       : { kind: 'refused', count, incomplete: !i.refusals.complete }
   }
-  // Nothing is appended when nothing was refused, so absence means *none* only once the read has happened.
+  // Nothing is appended when nothing was refused, and nothing either when the append failed (the conductor swallows
+  // that), so even after the step ended absence is *none recorded* and never *none refused*.
   if (i.boundary === null || i.boundary.kind !== 'sandboxed') return { kind: 'not applicable' }
-  if (i.ended) return { kind: 'none' }
+  if (i.ended) return { kind: 'none recorded' }
   return over ? { kind: 'lost' } : { kind: 'pending' }
 }
 
-const labelOf = (i: Pick<SandboxInvocation, 'step' | 'action'>) => `${i.step} · ${i.action}`
+const labelOf = (i: Pick<SandboxInvocation, 'step' | 'action' | 'runtime'>) =>
+  `${i.step} · ${i.action}${i.runtime === undefined ? '' : ` · ${i.runtime}`}`
 
 /**
  * The domain set is the recorded one; *built in* is classified against today's built-in list, because the recorded
@@ -162,17 +166,21 @@ const sourceOf = (host: string): 'recipe' | 'built in' => (BUILT_IN_DOMAINS.incl
 
 const within = (path: string, root: string) => path === root || path.startsWith(root.endsWith('/') ? root : `${root}/`)
 
-function groupsOf(recorded: readonly SandboxInvocation[]): { group: PolicyGroup; key: string }[] {
-  const byKey = new Map<string, { runs: Set<string>; policy: SandboxPolicy }>()
+function groupsOf(
+  recorded: readonly SandboxInvocation[],
+): { group: PolicyGroup; key: string; commandIds: Set<string> }[] {
+  const byKey = new Map<string, { runs: Set<string>; commandIds: Set<string>; policy: SandboxPolicy }>()
   for (const i of recorded) {
     if (i.boundary?.kind !== 'sandboxed') continue
     const key = JSON.stringify(i.boundary.policy)
-    const at = byKey.get(key) ?? { runs: new Set<string>(), policy: i.boundary.policy }
+    const at = byKey.get(key) ?? { runs: new Set<string>(), commandIds: new Set<string>(), policy: i.boundary.policy }
     at.runs.add(labelOf(i))
+    at.commandIds.add(i.commandId)
     byKey.set(key, at)
   }
-  return [...byKey].map(([key, { runs, policy: p }]) => ({
+  return [...byKey].map(([key, { runs, commandIds, policy: p }]) => ({
     key,
+    commandIds,
     group: {
       runs: [...runs],
       srtVersion: p.srtVersion,
@@ -190,6 +198,11 @@ export function sandboxViewOf(input: SandboxInput, project: string): SandboxView
   const over = isOver(input.lifecycle)
   const recorded = input.sandbox ?? []
 
+  const groups = groupsOf(recorded)
+  const policyOf = (id: string) => {
+    const at = groups.findIndex((g) => g.commandIds.has(id))
+    return at === -1 ? null : at + 1
+  }
   const rows: RunRow[] = recorded.map((i) => ({
     key: i.commandId,
     step: i.step,
@@ -198,32 +211,19 @@ export function sandboxViewOf(input: SandboxInput, project: string): SandboxView
     mark: markOf(i.boundary),
     weakerNetwork: i.boundary?.kind === 'sandboxed' && i.boundary.policy.weakerNetworkIsolation,
     srtVersion: i.boundary?.kind === 'sandboxed' ? i.boundary.policy.srtVersion : null,
+    policy: policyOf(i.commandId),
     refusals: readingOf(i, over),
   }))
 
   const caveats: string[] = []
-  // An action the attempt reached with no record ran before S8, or lost its record: *not recorded*. A planned action
-  // that never ran is not a gap, and the merge is Lingtai's own and runs outside the sandbox.
-  for (const s of input.resolved?.steps ?? []) {
-    if (s.step === 'merge') continue
-    for (const action of s.actions) {
-      if (input.steps[`${s.step}:${action}`] === undefined) continue
-      if (recorded.some((i) => i.step === s.step && i.action === action)) continue
-      rows.push({
-        key: `unrecorded:${s.step}:${action}`,
-        step: s.step,
-        action,
-        runtime: null,
-        mark: markOf(null),
-        weakerNetwork: false,
-        srtVersion: null,
-        refusals: { kind: 'not applicable' },
-      })
-      caveats.push(`${s.step} · ${action}: no sandbox record, so what it was refused is unknown.`)
-    }
-  }
-  if (recorded.length === 0 && caveats.length === 0)
+  // A row is a wrapped invocation that left a record. An action with none is not drawn: the plan also holds human
+  // and mechanical actions, and an action that never ran, none of which are invocations missing evidence.
+  if (recorded.length === 0)
     caveats.push('No sandbox record exists for this attempt, so what it was refused is unknown.')
+  if (rows.some((r) => r.refusals.kind === 'none recorded'))
+    caveats.push(
+      'Where no refusal is listed, none was recorded; a refusal whose record failed to append would not show here.',
+    )
 
   const byHost = new Map<string, { count: number; firstAt: string; host: string | null; from: Set<string> }>()
   for (const i of recorded) {
@@ -255,7 +255,7 @@ export function sandboxViewOf(input: SandboxInput, project: string): SandboxView
 
   return {
     rows,
-    policies: groupsOf(recorded).map((g) => g.group),
+    policies: groups.map((g) => g.group),
     claudeCodeAuth: recorded.some((i) => i.runtime === 'claude-code'),
     blocked: { hosts, caveats },
   }

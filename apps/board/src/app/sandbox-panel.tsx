@@ -27,7 +27,7 @@ function Refusals({ reading }: { reading: RefusalReading }) {
           {reading.count} refused{reading.incomplete ? ' or more (the list is incomplete)' : ''}
         </span>
       )
-    case 'none':
+    case 'none recorded':
       return <span>none recorded</span>
     case 'pending':
       return <span className="empty">refusals are read when the run ends</span>
@@ -57,6 +57,7 @@ function RunTable({ rows }: { rows: readonly RunRow[] }) {
               <SandboxMark mark={r.mark} />
               {r.mark.why === null ? null : <span className={TONE_CLASS[r.mark.tone]}> {r.mark.why}</span>}
               {r.srtVersion === null ? null : <span className="empty"> srt {r.srtVersion}</span>}
+              {r.policy === null ? null : <span className="empty"> policy {r.policy}</span>}
               {r.weakerNetwork ? <span className="hold"> weaker network isolation</span> : null}
             </td>
             <td>
@@ -77,10 +78,10 @@ export function SandboxPanel({ view }: { view: SandboxView }) {
       <section aria-label="Allowed">
         <h3>Allowed</h3>
         {policies.length === 0 ? <p className="empty">none recorded</p> : null}
-        {policies.map((g) => (
+        {policies.map((g, n) => (
           <div key={policyKey(g)}>
             <p className="sbhead">
-              {g.runs.join(', ')} <span className="empty">srt {g.srtVersion}</span>
+              Policy {n + 1}: {g.runs.join(', ')} <span className="empty">srt {g.srtVersion}</span>
             </p>
             <p className="sbhead">Writable</p>
             {g.writable.length === 0 ? (
@@ -110,9 +111,11 @@ export function SandboxPanel({ view }: { view: SandboxView }) {
 
       <section aria-label="Limited">
         <h3>Limited</h3>
-        {policies.map((g) => (
+        {policies.map((g, n) => (
           <div key={policyKey(g)}>
-            <p className="sbhead">{g.runs.join(', ')}</p>
+            <p className="sbhead">
+              Policy {n + 1}: {g.runs.join(', ')}
+            </p>
             <p className="sbhead">Cannot be read</p>
             <ul className="mono">
               {g.denyRead.length === 0 ? <li className="empty">none recorded</li> : null}
