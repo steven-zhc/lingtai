@@ -62,9 +62,22 @@ const withoutSrtSignals = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effe
       Effect.suspend(() => {
         if (stripped) return effect
         const before = SIGNALS.map((s) => new Set<unknown>(process.listeners(s)))
+        // Taken off the moment srt adds them, not after the wrap: initialisation awaits proxy and bridge startup,
+        // and a signal in that window must reach the drain alone. `newListener` fires before the add, so the
+        // removal is deferred one microtask — which runs before any signal can be delivered.
+        const onNew = (event: string | symbol, listener: unknown): void => {
+          if (!SIGNALS.includes(event as NodeJS.Signals)) return
+          if ((listener as { name?: string }).name !== SRT_HANDLER) return
+          queueMicrotask(() => {
+            process.removeListener(event as NodeJS.Signals, listener as NodeJS.SignalsListener)
+            stripped = true
+          })
+        }
+        process.on('newListener', onNew)
         return Effect.ensuring(
           effect,
           Effect.sync(() => {
+            process.removeListener('newListener', onNew)
             SIGNALS.forEach((signal, i) => {
               for (const listener of process.listeners(signal)) {
                 // Ownership by name, not by timing: a daemon handler registered while the wrap was pending is not srt's.
