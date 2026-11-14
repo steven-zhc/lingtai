@@ -21,14 +21,8 @@ import type { Log, LogQueries } from '@lingtai/event-store/log'
 // anything at import; the split stays because a caller that brings its own log
 // should still load no store at all.
 import type { EventStore } from '@lingtai/event-store/store'
-import {
-  type HostAnswer,
-  type HostFactsEffect,
-  type LocalRecipeOptions,
-  type ResolvedRecipe,
-  type SignedIn,
-  resolveLocalRecipeEffect,
-} from '@lingtai/recipe'
+import { type LocalRecipeOptions, resolveLocalRecipeEffect } from '@lingtai/project'
+import { type HostAnswer, type HostFactsEffect, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
 import { BUILT_IN_DOMAINS, hostProgramsPresent, installFor } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
 import { Effect } from 'effect'

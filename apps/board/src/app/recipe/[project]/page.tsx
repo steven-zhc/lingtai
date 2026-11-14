@@ -1,5 +1,5 @@
 import { hasGitHubAuth } from '@lingtai/env'
-import { builtInSandboxEffect } from '@lingtai/recipe'
+import { builtInSandboxEffect } from '@lingtai/project'
 import { Effect } from 'effect'
 import { notFound } from 'next/navigation'
 import { Suspense, type ReactNode } from 'react'

@@ -28,14 +28,8 @@ import { sandboxHostHere } from '@lingtai/conductor/projects'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp, stateDir } from '@lingtai/env'
 import { createGitHubClient, GitHubFailed, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
-import {
-  diskFiles,
-  readRecipeKeyEffect,
-  recipePath,
-  type RecipeChange,
-  type RecipeFiles,
-  resolveSource,
-} from '@lingtai/recipe'
+import { diskFiles, readRecipeKeyEffect, recipePath } from '@lingtai/project'
+import { type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { type Answers, EMPTY_SETUP_READER, type Picker, type ProposalReaders, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
 import { liveMachineText, liveTrialBuild, previewSetup } from '@lingtai/setup'

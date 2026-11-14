@@ -15,6 +15,8 @@ const config: NextConfig = {
   transpilePackages: [
     '@lingtai/conductor',
     '@lingtai/recipe',
+    // The recipe file and the host read, which `@lingtai/recipe` no longer holds (0128 §8, #1172).
+    '@lingtai/project',
     // The recipe reads the host's facts through it (#1147); it ships as source like the rest.
     '@lingtai/sandbox',
     '@lingtai/domain',

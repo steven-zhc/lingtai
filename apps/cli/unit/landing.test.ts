@@ -1,4 +1,5 @@
-import { type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
+import { recipePath } from '@lingtai/project'
+import { type RecipeFiles, resolveSource } from '@lingtai/recipe'
 /**
  * `askLanding` and `askLimits` (#399) — the setup's questions over #392's
  * seam, writing with #395's `setRecipe`. No filesystem: the recipe file is a

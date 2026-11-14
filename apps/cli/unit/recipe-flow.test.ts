@@ -1,3 +1,4 @@
+import { recipePath } from '@lingtai/project'
 /**
  * `askRecipe` (#432): an absent file is created once, with every first-run
  * answer, the caller's seeds, and a comment above each block named in
@@ -5,7 +6,7 @@
  * comments are not rewritten. No filesystem — the file seam is a `Map`, by
  * 0060 §1.
  */
-import { type RecipeFiles, recipePath, resolveSource } from '@lingtai/recipe'
+import { type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { applySetup, EMPTY_SETUP_READER } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'

@@ -33,14 +33,8 @@ import type {
 } from '@lingtai/domain'
 import { cleared, resolveOffer, stepEndedsOf, waitWords, STEPS } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
-import {
-  landingChanges,
-  readRecipeKeyEffect,
-  recipePath,
-  type RecipeFiles,
-  resolveSource,
-  setRecipeEffect,
-} from '@lingtai/recipe'
+import { readRecipeKeyEffect, recipePath, setRecipeEffect } from '@lingtai/project'
+import { landingChanges, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 

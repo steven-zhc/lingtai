@@ -1,9 +1,10 @@
+import { RecipeInvalidError, sandboxDecision } from '@lingtai/recipe'
+import { fakeFacts, fakeSandboxHost, type FakeSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 /** The recipe's `sandbox:` block (#1147): no spawn, no disk, no `HOME` — the host is a counting fake. */
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { RecipeInvalidError, recipePath, resolveLocalRecipeEffect, sandboxDecision } from '../src/index.ts'
-import { fakeFacts, fakeSandboxHost, type FakeSandboxHost } from '../test/sandbox-host.ts'
+import { recipePath, resolveLocalRecipeEffect } from '../src/index.ts'
 
 const STATE = '/home/me/.lingtai'
 

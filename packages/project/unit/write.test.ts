@@ -1,3 +1,4 @@
+import { type RecipeFiles, RecipeInvalidError, resolveSource } from '@lingtai/recipe'
 /**
  * `setRecipe` and `readRecipeKey` (#395): the writer around `editRecipe`
  * (#162). No filesystem — the file seam is a `Map`.
@@ -5,14 +6,7 @@
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import {
-  type RecipeFiles,
-  RecipeInvalidError,
-  readRecipeKeyEffect,
-  recipePath,
-  resolveSource,
-  setRecipeEffect,
-} from '../src/index.ts'
+import { readRecipeKeyEffect, recipePath, setRecipeEffect } from '../src/index.ts'
 
 const HOME = '/home/me/.lingtai'
 

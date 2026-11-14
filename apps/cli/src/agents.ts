@@ -23,8 +23,9 @@
  */
 import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
+import { readRecipeKeyEffect } from '@lingtai/project'
 import type { RecipeChange, RecipeFiles } from '@lingtai/recipe'
-import { isBuiltInJudge, readRecipeKeyEffect, unboundedTurnsChange } from '@lingtai/recipe'
+import { isBuiltInJudge, unboundedTurnsChange } from '@lingtai/recipe'
 import { defaultAgents, remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from '@lingtai/setup'
 import { Effect } from 'effect'
 

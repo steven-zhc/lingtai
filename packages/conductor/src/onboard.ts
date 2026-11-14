@@ -16,14 +16,12 @@ import {
   parseSlug,
   permissionGaps,
 } from '@lingtai/github'
+import { recipePath, HOST_FOR_SAVING, resolveLocalRecipeEffect } from '@lingtai/project'
 import {
   RECIPE_PATH,
   baseDivergence,
   baseOf,
   baseWrittenAt,
-  recipePath,
-  HOST_FOR_SAVING,
-  resolveLocalRecipeEffect,
   resolveRecipe,
   type ReadAtRef,
   type ResolvedRecipe,

@@ -21,6 +21,7 @@
     "@lingtai/env": "workspace:*",
     "@lingtai/event-store": "workspace:*",
     "@lingtai/github": "workspace:*",
+    "@lingtai/project": "workspace:*",
     "@lingtai/projector": "workspace:*",
     "@lingtai/recipe": "workspace:*",
     "@lingtai/repo": "workspace:*",

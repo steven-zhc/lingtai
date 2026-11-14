@@ -18,7 +18,6 @@ import {
   type ProjectAdditions,
   type Refusal,
 } from '@lingtai/sandbox'
-import { readHost } from '@lingtai/sandbox/host'
 import { Cause, Effect } from 'effect'
 
 import type { Recipe } from './recipe.ts'
@@ -36,12 +35,6 @@ export interface SandboxHostOptions {
   readonly host: HostAnswer | 'skip'
   readonly hostFacts: HostFactsEffect
 }
-
-/**
- * What a caller that only *saves* a recipe hands in: the editor, `lingtai add` and onboarding. The real host
- * facts, because a path is refused at save, and no host answer, because saving is not running.
- */
-export const HOST_FOR_SAVING: SandboxHostOptions = { host: 'skip', hostFacts: readHost }
 
 /** The host's answer as a value: *can*, or *cannot* with the reason and srt's own sentences. */
 export type HostVerdict =

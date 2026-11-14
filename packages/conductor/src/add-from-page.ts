@@ -26,15 +26,8 @@ import type { ProjectState } from '@lingtai/domain'
 import { githubApp, githubClientAuth } from '@lingtai/env'
 import { createFileLocker, type Locker } from '@lingtai/env/lock'
 import { GitHubFailed, makeGitHub, type GitHub } from '@lingtai/github'
-import {
-  baseOf,
-  diskFiles,
-  type RecipeFiles,
-  recipePath,
-  HOST_FOR_SAVING,
-  resolveLocalRecipeEffect,
-  resolveSource,
-} from '@lingtai/recipe'
+import { diskFiles, recipePath, HOST_FOR_SAVING, resolveLocalRecipeEffect } from '@lingtai/project'
+import { baseOf, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
 import {
   alreadyAdded,

@@ -25,6 +25,8 @@ const FORBIDDEN = (spec: string): string | null => {
   if (spec === '@lingtai/setup' || spec.startsWith('@lingtai/setup/')) return '@lingtai/setup'
   // Its root pulls in `node:crypto`, which only the post-merge Next build would otherwise catch (#230, #1160).
   if (spec === '@lingtai/sandbox' || spec.startsWith('@lingtai/sandbox/')) return '@lingtai/sandbox'
+  // Its `files.ts` imports `node:fs/promises`, and its `sandbox.ts` the host read (#1172).
+  if (spec === '@lingtai/project' || spec.startsWith('@lingtai/project/')) return '@lingtai/project'
   return null
 }
 

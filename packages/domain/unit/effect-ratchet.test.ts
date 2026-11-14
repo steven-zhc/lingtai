@@ -46,6 +46,7 @@ const PACKAGES = [
   'packages/conductor',
   'packages/daemon',
   'packages/setup',
+  'packages/project',
   'packages/recipe',
   'packages/sandbox',
 ] as const

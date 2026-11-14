@@ -26,17 +26,9 @@ import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
 import { type RateRow, shipped } from '@lingtai/domain/rate-card'
+import { diskFiles, recipePath, setRecipeEffect } from '@lingtai/project'
 import { readJson, snapshotPath } from '@lingtai/projector'
-import {
-  baseOf,
-  diskFiles,
-  type RecipeChange,
-  type RecipeFiles,
-  recipePath,
-  resolveSource,
-  type Said,
-  setRecipeEffect,
-} from '@lingtai/recipe'
+import { baseOf, type RecipeChange, type RecipeFiles, resolveSource, type Said } from '@lingtai/recipe'
 import { type Answers, draftFiles, ENV_PLANT_AT, SAID, type SetupReader } from '@lingtai/setup'
 import type { Proposal, RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
