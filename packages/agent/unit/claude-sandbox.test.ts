@@ -52,6 +52,7 @@ const harness = (over: Partial<RunSandbox> = {}, ports: { token?: string | null;
     decision: { kind: 'sandboxed', project_additions: { write: ['/extra'] } },
     project: 'p',
     mirror: '/state/repos/p.git',
+    cache: '/state/cache/p',
     worktree: '/work/tree',
     runDir: '/state/runs/r1/claude',
     operatorClaudeDir: '/home/op/.claude',
