@@ -2103,6 +2103,16 @@ export async function loadAttemptTab(taskId: string, n: number): Promise<Attempt
   }
 }
 
+/**
+ * Each claim's attempt stream, reduced, and nothing else: no spend, no plan, no recipe. The Sandbox tab is a record of
+ * what ran, so it waits for none of what `readAttempts` also reads.
+ */
+const readAttemptStates = cache(async (taskId: string) => {
+  const claims = reduceTicket(await readOwn(taskId)).claims
+  const streams = await Promise.all(claims.map((c) => eventStore.read(c.runId)))
+  return streams.map((events) => reduceAttempt(events))
+})
+
 /** What the Sandbox tab shows (#1161): one attempt's recorded boundary, chosen by `?attempt=`. */
 export interface SandboxTabDetail {
   taskId: string
@@ -2120,7 +2130,7 @@ export interface SandboxTabDetail {
  * null is the newest attempt; null is returned for an attempt this ticket does not have.
  */
 export async function loadSandboxTab(taskId: string, wanted: number | null): Promise<SandboxTabDetail | null> {
-  const { states } = await readAttempts(taskId)
+  const states = await readAttemptStates(taskId)
   const project = parseTicketStream(taskId)?.project ?? ''
   const attempts = states.map((_, i) => i + 1)
   const selected = wanted ?? attempts.at(-1) ?? null

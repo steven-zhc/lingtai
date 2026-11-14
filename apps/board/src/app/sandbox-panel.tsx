@@ -5,7 +5,7 @@
  */
 import Link from 'next/link'
 
-import type { Mark, RefusalReading, RunRow, SandboxView, Tone } from '@/lib/sandbox-view'
+import type { Mark, PolicyGroup, RefusalReading, RunRow, SandboxView, Tone } from '@/lib/sandbox-view'
 import { CLAUDE_CODE_AUTH, NOT_COVERED } from '@/lib/sandbox-view'
 
 const TONE_CLASS: Record<Tone, string> = { ok: 'pass', muted: 'empty', signal: 'hold', fail: 'fail' }
@@ -28,7 +28,7 @@ function Refusals({ reading }: { reading: RefusalReading }) {
         </span>
       )
     case 'none':
-      return <span>none refused</span>
+      return <span>none recorded</span>
     case 'pending':
       return <span className="empty">refusals are read when the run ends</span>
     case 'lost':
@@ -39,6 +39,9 @@ function Refusals({ reading }: { reading: RefusalReading }) {
       return <span className="empty">—</span>
   }
 }
+
+const policyKey = (g: PolicyGroup) =>
+  `${g.runs.join('|')}:${g.srtVersion}:${g.writable.join(',')}:${g.denyRead.map((d) => d.path).join(',')}`
 
 function RunTable({ rows }: { rows: readonly RunRow[] }) {
   return (
@@ -53,6 +56,7 @@ function RunTable({ rows }: { rows: readonly RunRow[] }) {
             <td>
               <SandboxMark mark={r.mark} />
               {r.mark.why === null ? null : <span className={TONE_CLASS[r.mark.tone]}> {r.mark.why}</span>}
+              {r.srtVersion === null ? null : <span className="empty"> srt {r.srtVersion}</span>}
               {r.weakerNetwork ? <span className="hold"> weaker network isolation</span> : null}
             </td>
             <td>
@@ -67,52 +71,70 @@ function RunTable({ rows }: { rows: readonly RunRow[] }) {
 
 /** The three parts and the run rows for one attempt. */
 export function SandboxPanel({ view }: { view: SandboxView }) {
-  const { allowed, limited, blocked, rows } = view
+  const { policies, blocked, rows } = view
   return (
     <div className="sandbox">
       <section aria-label="Allowed">
         <h3>Allowed</h3>
-        <p className="sbhead">Writable</p>
-        {allowed.writable.length === 0 ? (
-          <p className="empty">none recorded</p>
-        ) : (
-          <ul className="mono">
-            {allowed.writable.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        )}
-        <p className="sbhead">Reachable</p>
-        {allowed.domains.length === 0 ? (
-          <p className="empty">none recorded</p>
-        ) : (
-          <ul className="mono">
-            {allowed.domains.map((d) => (
-              <li key={d.host}>
-                {d.host} <span className="empty">{d.source}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+        {policies.length === 0 ? <p className="empty">none recorded</p> : null}
+        {policies.map((g) => (
+          <div key={policyKey(g)}>
+            <p className="sbhead">
+              {g.runs.join(', ')} <span className="empty">srt {g.srtVersion}</span>
+            </p>
+            <p className="sbhead">Writable</p>
+            {g.writable.length === 0 ? (
+              <p className="empty">none recorded</p>
+            ) : (
+              <ul className="mono">
+                {g.writable.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            )}
+            <p className="sbhead">Reachable</p>
+            {g.domains.length === 0 ? (
+              <p className="empty">none recorded</p>
+            ) : (
+              <ul className="mono">
+                {g.domains.map((d) => (
+                  <li key={d.host}>
+                    {d.host} <span className="empty">{d.source}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
       </section>
 
       <section aria-label="Limited">
         <h3>Limited</h3>
-        <p className="sbhead">Cannot be read</p>
-        <ul className="mono">
-          {limited.denyRead.length === 0 ? <li className="empty">none recorded</li> : null}
-          {limited.denyRead.map((p) => (
-            <li key={p}>{p}</li>
-          ))}
-        </ul>
-        <p className="sbhead">Cannot be written</p>
-        <ul className="mono">
-          {limited.denyWrite.length === 0 ? <li className="empty">none recorded</li> : null}
-          {limited.denyWrite.map((p) => (
-            <li key={p}>{p}</li>
-          ))}
-        </ul>
-        {limited.claudeCodeAuth ? <p>{CLAUDE_CODE_AUTH}</p> : null}
+        {policies.map((g) => (
+          <div key={policyKey(g)}>
+            <p className="sbhead">{g.runs.join(', ')}</p>
+            <p className="sbhead">Cannot be read</p>
+            <ul className="mono">
+              {g.denyRead.length === 0 ? <li className="empty">none recorded</li> : null}
+              {g.denyRead.map((p) => (
+                <li key={p.path}>
+                  {p.path}
+                  {p.except.length === 0 ? null : (
+                    <span className="empty"> except {p.except.join(', ')}, which can be read</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="sbhead">Cannot be written</p>
+            <ul className="mono">
+              {g.denyWrite.length === 0 ? <li className="empty">none recorded</li> : null}
+              {g.denyWrite.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        {view.claudeCodeAuth ? <p>{CLAUDE_CODE_AUTH}</p> : null}
         <p className="sbhead">Not covered</p>
         <ul>
           {NOT_COVERED.map((t) => (
@@ -130,7 +152,7 @@ export function SandboxPanel({ view }: { view: SandboxView }) {
         ))}
         {blocked.hosts.length === 0 ? (
           blocked.caveats.length === 0 ? (
-            <p className="empty">Nothing was refused.</p>
+            <p className="empty">No refused connection was recorded.</p>
           ) : null
         ) : (
           <table className="sbrows">

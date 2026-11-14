@@ -105,7 +105,9 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
       'p',
     )
     expect(view.rows[0]!.refusals).toEqual({ kind: 'pending' })
-    expect(view.blocked.caveats).toEqual([])
+    expect(view.blocked.caveats.join(' ')).toMatch(/read when the run ends/)
+    const html = renderToStaticMarkup(<SandboxPanel view={view} />)
+    expect(html).not.toContain('No refused connection was recorded')
   })
 
   it('says none refused only once the step has ended, and says the read was lost when the run ended inside it', () => {
@@ -119,6 +121,16 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
     const view = sandboxViewOf(died, 'p')
     expect(view.rows[0]!.refusals).toEqual({ kind: 'lost' })
     expect(view.blocked.caveats.join(' ')).toMatch(/ended inside this step/)
+  })
+
+  it('marks a sandboxed review boundary ended by its StepEnded, though the review step folds summaries', () => {
+    const state = fold((e) => [
+      e('SandboxBoundaryRecorded', { ...keys('c1', 'review', 'cold'), boundary: sandboxed }),
+      e('StepEnded', { runId: RUN, outcome: { step: 'review', round: 0, actions: [] } }),
+      e('RunFinished', { exitCode: 0, turns: 1, durationMs: 1 }),
+    ])
+    expect(state.sandbox?.[0]?.ended).toBe(true)
+    expect(sandboxViewOf(state, 'p').rows[0]!.refusals).toEqual({ kind: 'none' })
   })
 
   it('says so, in a sentence, when the refusals could not be read or are incomplete', () => {
@@ -177,13 +189,15 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
       }),
     ])
     const view = sandboxViewOf(state, 'p')
-    expect(view.allowed.domains).toEqual([
+    expect(view.policies).toHaveLength(1)
+    expect(view.policies[0]!.domains).toEqual([
       { host: 'api.anthropic.com', source: 'built in' },
       { host: 'example.org', source: 'recipe' },
     ])
-    expect(view.allowed.writable).toEqual(['/wt', '~/.lingtai/cache/p'])
-    expect(view.limited.denyRead).toEqual(['~/.ssh'])
-    expect(view.limited.claudeCodeAuth).toBe(false)
+    expect(view.policies[0]!.writable).toEqual(['/wt', '~/.lingtai/cache/p'])
+    expect(view.policies[0]!.denyRead).toEqual([{ path: '~/.ssh', except: [] }])
+    expect(view.policies[0]!.srtVersion).toBe('0.0.83')
+    expect(view.claudeCodeAuth).toBe(false)
     const html = renderToStaticMarkup(<SandboxPanel view={view} />)
     expect(html).toContain('weaker network isolation')
     expect(html).toContain('outside the sandbox')
@@ -191,7 +205,7 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
       sandboxViewOf(
         fold((e) => [e('SandboxBoundaryRecorded', { ...keys('c1'), boundary: sandboxed })]),
         'p',
-      ).limited.claudeCodeAuth,
+      ).claudeCodeAuth,
     ).toBe(true)
   })
 
@@ -203,25 +217,81 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
         boundary: { kind: 'sandboxed', srtVersion: '0.0.83', policy: policy({ allowedDomains: ['only.example.net'] }) },
       }),
     ])
-    expect(sandboxViewOf(a, 'p').allowed.domains.map((d) => d.host)).toContain('example.org')
-    expect(sandboxViewOf(b, 'p').allowed.domains.map((d) => d.host)).toEqual(['only.example.net'])
+    expect(sandboxViewOf(a, 'p').policies[0]!.domains.map((d) => d.host)).toContain('example.org')
+    expect(sandboxViewOf(b, 'p').policies[0]!.domains.map((d) => d.host)).toEqual(['only.example.net'])
   })
 
-  it('says not recorded for planned actions of a finished attempt with no record, except the merge', () => {
+  it('says not recorded only for actions the attempt reached, and never for the merge or unexecuted ones', () => {
     const state = fold((e) => [
       e('StepsResolved', {
         runId: RUN,
         configHash: 'c',
         steps: STEPS.map((step) => ({
           step,
-          actions: step === 'build' ? ['test'] : step === 'merge' ? ['land'] : [],
+          actions: step === 'build' ? ['test'] : step === 'review' ? ['cold'] : step === 'merge' ? ['land'] : [],
         })),
       }),
-      e('RunFinished', { exitCode: 0, turns: 1, durationMs: 1 }),
+      e('StepEnded', {
+        runId: RUN,
+        outcome: {
+          step: 'build',
+          round: 0,
+          actions: [
+            {
+              plugin: 'run',
+              name: 'test',
+              onSha: 'base000',
+              evidence: '',
+              yields: 'verdict',
+              result: { _tag: 'Completed', assessment: { verdict: 'accepted', findings: [] } },
+            },
+          ] as never,
+        },
+      }),
+      e('RunFailed', { kind: 'crash', detail: 'died' }),
     ])
-    expect(sandboxViewOf(state, 'p').rows.map((r) => [r.step, r.action, r.mark.state])).toEqual([
-      ['build', 'test', 'not recorded'],
+    const view = sandboxViewOf(state, 'p')
+    expect(view.rows.map((r) => [r.step, r.action, r.mark.state])).toEqual([['build', 'test', 'not recorded']])
+    expect(renderToStaticMarkup(<SandboxPanel view={view} />)).not.toContain('No refused connection was recorded')
+  })
+
+  it('does not say nothing was refused for an attempt with no record at all', () => {
+    const view = sandboxViewOf(
+      fold(() => []),
+      'p',
+    )
+    expect(view.blocked.caveats.join(' ')).toMatch(/No sandbox record/)
+    expect(renderToStaticMarkup(<SandboxPanel view={view} />)).not.toContain('No refused connection was recorded')
+  })
+
+  it('keeps each invocation its own policy, with the exceptions to a denied root', () => {
+    const wide = {
+      ...policy(),
+      allowRead: ['/', '~/.lingtai/state/cache', '/elsewhere'],
+      denyRead: ['~/.lingtai/state'],
+    }
+    const state = fold((e) => [
+      e('SandboxBoundaryRecorded', {
+        ...keys('c1'),
+        boundary: { kind: 'sandboxed', srtVersion: '0.0.83', policy: wide },
+      }),
+      e('SandboxBoundaryRecorded', {
+        ...keys('c2', 'review', 'cold', 'codex'),
+        boundary: {
+          kind: 'sandboxed',
+          srtVersion: '0.0.90',
+          policy: { ...policy(), srtVersion: '0.0.90', allowWrite: ['/other'] },
+        },
+      }),
     ])
+    const view = sandboxViewOf(state, 'p')
+    expect(view.policies.map((g) => [g.runs, g.srtVersion])).toEqual([
+      [['implement · agent'], '0.0.83'],
+      [['review · cold'], '0.0.90'],
+    ])
+    expect(view.policies[0]!.denyRead).toEqual([{ path: '~/.lingtai/state', except: ['~/.lingtai/state/cache'] }])
+    expect(view.rows.map((r) => r.srtVersion)).toEqual(['0.0.83', '0.0.90'])
+    expect(renderToStaticMarkup(<SandboxPanel view={view} />)).toContain('except ~/.lingtai/state/cache')
   })
 
   it('takes events only: the view module reads no recipe', () => {

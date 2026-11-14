@@ -620,7 +620,7 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
             steps[k] = kept
           }
         }
-        next = { ...state, steps }
+        next = { ...next, steps }
       }
       for (const action of d.outcome.actions) {
         if (!isReached(action)) continue

@@ -12,8 +12,10 @@ import type { AttemptState, SandboxInvocation } from '@lingtai/domain'
 import { isNetworkEntry } from '@lingtai/recipe'
 import { BUILT_IN_DOMAINS } from '@lingtai/sandbox/policy'
 
+type SandboxPolicy = Extract<NonNullable<SandboxInvocation['boundary']>, { kind: 'sandboxed' }>['policy']
+
 /** The slice of an attempt this view reads. */
-export type SandboxInput = Pick<AttemptState, 'lifecycle' | 'resolved'> & {
+export type SandboxInput = Pick<AttemptState, 'lifecycle' | 'resolved' | 'steps'> & {
   readonly sandbox?: readonly SandboxInvocation[] | undefined
 }
 
@@ -50,7 +52,25 @@ export interface RunRow {
   readonly mark: Mark
   /** *weaker network isolation*, in words, where the recorded policy says so. */
   readonly weakerNetwork: boolean
+  /** The srt version that enforced this run's boundary; null where it was not sandboxed or not recorded. */
+  readonly srtVersion: string | null
   readonly refusals: RefusalReading
+}
+
+/**
+ * One recorded policy and the invocations that ran under it. Policies are never merged across invocations: a path one
+ * run could write is not one another could, and a reader must be able to tell which.
+ */
+export interface PolicyGroup {
+  /** The invocations, as `step · action`, that ran under exactly this policy. */
+  readonly runs: readonly string[]
+  readonly srtVersion: string
+  readonly writable: readonly string[]
+  readonly domains: readonly { readonly host: string; readonly source: 'recipe' | 'built in' }[]
+  /** A root that cannot be read, with the paths inside it the policy allows reading again. */
+  readonly denyRead: readonly { readonly path: string; readonly except: readonly string[] }[]
+  readonly denyWrite: readonly string[]
+  readonly weakerNetwork: boolean
 }
 
 export interface BlockedHost {
@@ -66,16 +86,9 @@ export interface BlockedHost {
 
 export interface SandboxView {
   readonly rows: readonly RunRow[]
-  readonly allowed: {
-    readonly writable: readonly string[]
-    readonly domains: readonly { readonly host: string; readonly source: 'recipe' | 'built in' }[]
-  }
-  readonly limited: {
-    readonly denyRead: readonly string[]
-    readonly denyWrite: readonly string[]
-    /** Claude Code's authentication sentence appears only where a Claude Code run is in the table. */
-    readonly claudeCodeAuth: boolean
-  }
+  readonly policies: readonly PolicyGroup[]
+  /** Claude Code's authentication sentence appears only where a Claude Code run is in the table. */
+  readonly claudeCodeAuth: boolean
   readonly blocked: {
     readonly hosts: readonly BlockedHost[]
     /** Sentences, in the fail colour, about invocations whose refusals are unknown or short. */
@@ -147,7 +160,31 @@ const labelOf = (i: Pick<SandboxInvocation, 'step' | 'action'>) => `${i.step} ·
  */
 const sourceOf = (host: string): 'recipe' | 'built in' => (BUILT_IN_DOMAINS.includes(host) ? 'built in' : 'recipe')
 
-const union = (lists: readonly (readonly string[])[]): string[] => [...new Set(lists.flat())]
+const within = (path: string, root: string) => path === root || path.startsWith(root.endsWith('/') ? root : `${root}/`)
+
+function groupsOf(recorded: readonly SandboxInvocation[]): { group: PolicyGroup; key: string }[] {
+  const byKey = new Map<string, { runs: Set<string>; policy: SandboxPolicy }>()
+  for (const i of recorded) {
+    if (i.boundary?.kind !== 'sandboxed') continue
+    const key = JSON.stringify(i.boundary.policy)
+    const at = byKey.get(key) ?? { runs: new Set<string>(), policy: i.boundary.policy }
+    at.runs.add(labelOf(i))
+    byKey.set(key, at)
+  }
+  return [...byKey].map(([key, { runs, policy: p }]) => ({
+    key,
+    group: {
+      runs: [...runs],
+      srtVersion: p.srtVersion,
+      writable: p.allowWrite,
+      domains: p.allowedDomains.map((host) => ({ host, source: sourceOf(host) })),
+      // `allowRead` re-allows paths inside a denied root: dropping it would call the whole root unreadable.
+      denyRead: p.denyRead.map((path) => ({ path, except: p.allowRead.filter((a) => a !== path && within(a, path)) })),
+      denyWrite: p.denyWrite,
+      weakerNetwork: p.weakerNetworkIsolation,
+    },
+  }))
+}
 
 export function sandboxViewOf(input: SandboxInput, project: string): SandboxView {
   const over = isOver(input.lifecycle)
@@ -160,34 +197,35 @@ export function sandboxViewOf(input: SandboxInput, project: string): SandboxView
     runtime: i.runtime ?? null,
     mark: markOf(i.boundary),
     weakerNetwork: i.boundary?.kind === 'sandboxed' && i.boundary.policy.weakerNetworkIsolation,
+    srtVersion: i.boundary?.kind === 'sandboxed' ? i.boundary.policy.srtVersion : null,
     refusals: readingOf(i, over),
   }))
 
-  // A planned action of a finished attempt with no record ran before S8, or lost its record: *not recorded*. The
-  // merge is Lingtai's own and runs outside the sandbox, so it is not a gap.
-  if (over) {
-    for (const s of input.resolved?.steps ?? []) {
-      if (s.step === 'merge') continue
-      for (const action of s.actions) {
-        if (recorded.some((i) => i.step === s.step && i.action === action)) continue
-        rows.push({
-          key: `unrecorded:${s.step}:${action}`,
-          step: s.step,
-          action,
-          runtime: null,
-          mark: markOf(null),
-          weakerNetwork: false,
-          refusals: { kind: 'not applicable' },
-        })
-      }
+  const caveats: string[] = []
+  // An action the attempt reached with no record ran before S8, or lost its record: *not recorded*. A planned action
+  // that never ran is not a gap, and the merge is Lingtai's own and runs outside the sandbox.
+  for (const s of input.resolved?.steps ?? []) {
+    if (s.step === 'merge') continue
+    for (const action of s.actions) {
+      if (input.steps[`${s.step}:${action}`] === undefined) continue
+      if (recorded.some((i) => i.step === s.step && i.action === action)) continue
+      rows.push({
+        key: `unrecorded:${s.step}:${action}`,
+        step: s.step,
+        action,
+        runtime: null,
+        mark: markOf(null),
+        weakerNetwork: false,
+        srtVersion: null,
+        refusals: { kind: 'not applicable' },
+      })
+      caveats.push(`${s.step} · ${action}: no sandbox record, so what it was refused is unknown.`)
     }
   }
-
-  const policies = recorded.flatMap((i) => (i.boundary?.kind === 'sandboxed' ? [i.boundary.policy] : []))
-  const domains = union(policies.map((p) => p.allowedDomains)).map((host) => ({ host, source: sourceOf(host) }))
+  if (recorded.length === 0 && caveats.length === 0)
+    caveats.push('No sandbox record exists for this attempt, so what it was refused is unknown.')
 
   const byHost = new Map<string, { count: number; firstAt: string; host: string | null; from: Set<string> }>()
-  const caveats: string[] = []
   for (const i of recorded) {
     const reading = readingOf(i, over)
     const who = labelOf(i)
@@ -195,6 +233,7 @@ export function sandboxViewOf(input: SandboxInput, project: string): SandboxView
     if (reading.kind === 'refused' && reading.incomplete)
       caveats.push(`${who}: srt's store evicted entries, so this list is a lower bound.`)
     if (reading.kind === 'lost') caveats.push(`${who}: refusals were not read — the run ended inside this step.`)
+    if (reading.kind === 'pending') caveats.push(`${who}: refusals are read when the run ends, so none are listed yet.`)
     if (i.refusals === null || i.refusals.kind !== 'entries') continue
     for (const e of i.refusals.entries) {
       if (e.telemetry) continue
@@ -216,12 +255,8 @@ export function sandboxViewOf(input: SandboxInput, project: string): SandboxView
 
   return {
     rows,
-    allowed: { writable: union(policies.map((p) => p.allowWrite)), domains },
-    limited: {
-      denyRead: union(policies.map((p) => p.denyRead)),
-      denyWrite: union(policies.map((p) => p.denyWrite)),
-      claudeCodeAuth: recorded.some((i) => i.runtime === 'claude-code'),
-    },
+    policies: groupsOf(recorded).map((g) => g.group),
+    claudeCodeAuth: recorded.some((i) => i.runtime === 'claude-code'),
     blocked: { hosts, caveats },
   }
 }
