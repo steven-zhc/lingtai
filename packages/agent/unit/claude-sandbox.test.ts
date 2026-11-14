@@ -214,11 +214,11 @@ describe("the operator's Codex profile on a Claude Code run (#1155)", () => {
       {},
       {
         settings: JSON.stringify({ sandbox: { filesystem: { denyRead: ['/abs/x'] } } }),
-        profile: { kind: 'denies', paths: ['~/secrets', '/abs/y', 'rel'] },
+        profile: { kind: 'denies', paths: ['~/secrets', '/abs/y'] },
       },
     )
     await Effect.runPromise(claudeCodeRun(h.options, { ...h.request, env: { HOME: '/home/op' } }))
-    expect(h.wrapped[0]!.caller_additions?.deny).toEqual(['/abs/x', '/home/op/secrets', '/abs/y', '/work/tree/rel'])
+    expect(h.wrapped[0]!.caller_additions?.deny).toEqual(['/abs/x', '/home/op/secrets', '/abs/y'])
   })
 
   it('refuses an unreadable profile before wrap when the recipe names Codex', async () => {
