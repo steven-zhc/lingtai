@@ -65,3 +65,16 @@ describe('the sticky footer (#1123)', () => {
     expect(block(':root:has(.footer)')).toContain('--footer-h')
   })
 })
+
+describe('the hold pill (#1168)', () => {
+  const block = (sel: string) =>
+    new RegExp(`(?:^|\\})\\s*${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+
+  it('.pill.hold wraps inside its card, and .pill stays on one line', () => {
+    const hold = block('.pill.hold')
+    expect(hold).toContain('white-space: normal')
+    expect(hold).toContain('overflow-wrap: anywhere')
+    expect(hold).toContain('max-width: 100%')
+    expect(block('.pill')).toContain('white-space: nowrap')
+  })
+})

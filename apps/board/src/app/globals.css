@@ -541,7 +541,14 @@ body {
 .pill.pass { color: var(--pass); border-color: var(--pass); background: var(--pass-soft); }
 .pill.fail { color: var(--fail); border-color: var(--fail); background: var(--fail-soft); }
 .pill.run { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
-.pill.hold { color: var(--held); border-color: var(--held); background: var(--held-soft); }
+.pill.hold {
+  color: var(--held);
+  border-color: var(--held);
+  background: var(--held-soft);
+  white-space: normal;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 /* Amber is reserved for "a human is the thing being waited on" — and for the
    two counters the old loop produced constantly and never showed anyone. */
 .pill.sig { color: var(--signal); border-color: var(--signal); background: var(--signal-soft); }
