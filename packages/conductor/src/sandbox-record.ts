@@ -101,11 +101,13 @@ export const recordingWrap = (
         }),
       },
     ])
+    // Named `append` so the catalogue's finder reads this as the refusals' append site.
+    const append = appends.after
     yield* Effect.addFinalizer(() =>
       api.refusedConnections(wrapped).pipe(
         Effect.flatMap((read) =>
           worthRecording(read)
-            ? appends.after([
+            ? append([
                 {
                   type: 'SandboxConnectionsRefused',
                   actor: 'conductor',
