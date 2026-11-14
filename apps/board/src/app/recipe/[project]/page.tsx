@@ -1,19 +1,25 @@
 import { hasGitHubAuth } from '@lingtai/env'
+import { builtInSandboxEffect } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { notFound } from 'next/navigation'
-import type { ReactNode } from 'react'
+import { Suspense, type ReactNode } from 'react'
 
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
+import { BlockedList } from '@/app/sandbox-panel.tsx'
+import { Skeleton } from '@/app/skeleton.tsx'
 import { filterOptions, onBoardProjects } from '@/lib/board'
 import { lockMap } from '@/lib/lock-marks.ts'
 import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
+import { loadProjectBlocked } from '@/lib/project-sandbox'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
 import { recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
 
 import { FooterFetched } from '../../footer-fetched'
 import { StepRow } from '../../step-row'
 import { RecipeBar, type RecipeBarFilter } from './recipe-bar'
-import { RecipeText } from './recipe-text'
+import { RecipeText, type AllowRequest } from './recipe-text'
+import { SandboxSection } from './sandbox-section'
 
 /**
  * What one project's recipe says today, and which file each value came from
@@ -104,7 +110,7 @@ function Action({ action }: { action: StepActionLine }) {
  * which reaches a server-action module this page must not follow beyond the
  * editor's own.
  */
-function LeftColumn({ view }: { view: Extract<ProjectRecipe, { ok: true }> }) {
+function LeftColumn({ view, sandbox }: { view: Extract<ProjectRecipe, { ok: true }>; sandbox?: ReactNode }) {
   const read = recipeLines(view.recipe, view.ref)
   const stepsRow = view.rows.find((row) => row.name === 'the steps')
   const source = stepsRow === undefined ? 'not said' : (sourceOf(stepsRow, view.provenance) ?? 'not said')
@@ -184,6 +190,8 @@ function LeftColumn({ view }: { view: Extract<ProjectRecipe, { ok: true }> }) {
             </div>
           ))}
       </section>
+
+      {sandbox}
     </div>
   )
 }
@@ -201,6 +209,9 @@ export function Recipe({
   bar,
   pause,
   banner,
+  sandbox,
+  allow,
+  nav,
 }: {
   view: ProjectRecipe
   edit?: boolean
@@ -208,6 +219,12 @@ export function Recipe({
   /** The bar's Pause button and the row under it, built by the page that read the locks (#994): this stays pure. */
   pause?: ReactNode
   banner?: ReactNode
+  /** The sandbox section (#1162), built by the page that read the log and the host: this stays pure. */
+  sandbox?: ReactNode
+  /** A request to add a host to the editor's draft. Its `nonce` is the URL's stamp, so only a new click is a new request. */
+  allow?: AllowRequest
+  /** The URL's stamp (`?r=`): what tells a click on a link from a re-render of the same page. */
+  nav?: number
 }) {
   const text = view.text
   return (
@@ -267,13 +284,22 @@ export function Recipe({
                 and dropping the message the save just earned. Without `.s2` the
                 broken case sits below the refusal. */}
             <div className={view.ok ? 's2 s2-even' : undefined}>
-              {view.ok ? <LeftColumn view={view} /> : null}
+              {view.ok ? <LeftColumn view={view} sandbox={sandbox} /> : null}
               <div className="s2-right">
                 {text === null ? null : (
-                  <RecipeText project={view.project} text={text} open={edit || !view.ok} path={underHome(view.at)} />
+                  <RecipeText
+                    project={view.project}
+                    text={text}
+                    open={edit || !view.ok || allow !== undefined}
+                    path={underHome(view.at)}
+                    {...(allow === undefined ? {} : { allow })}
+                    {...(nav === undefined ? {} : { nav })}
+                  />
                 )}
               </div>
             </div>
+            {/* A recipe that will not resolve has no left column; the built-ins still show, under the refusal. */}
+            {view.ok ? null : sandbox}
           </section>
 
           {view.ok ? (
@@ -306,15 +332,27 @@ export function Recipe({
   )
 }
 
+/** *Recently blocked*, read on render. A read that fails says so; it is never drawn as an empty list. */
+async function RecentlyBlocked({ project, stamp }: { project: string; stamp: number }) {
+  const read = await loadProjectBlocked(project)
+  return read.kind === 'failed' ? (
+    <p className="fail">
+      The refused connections could not be read, so what the project&apos;s runs were refused is unknown.
+    </p>
+  ) : (
+    <BlockedList blocked={read.blocked} stamp={stamp} empty="No refused connection was recorded in this window." />
+  )
+}
+
 export default async function RecipePage({
   params,
   searchParams,
 }: {
   params: Promise<{ project: string }>
-  searchParams: Promise<{ edit?: string | string[] }>
+  searchParams: Promise<{ edit?: string | string[]; allow?: string | string[]; r?: string | string[] }>
 }) {
   const { project } = await params
-  const { edit } = await searchParams
+  const { edit, allow, r } = await searchParams
   const name = decodeURIComponent(project)
   // Registered only: a repository that is recorded and not yet conducted has no
   // recipe to resolve, and `notFound` is the honest answer for a name nothing
@@ -343,10 +381,37 @@ export default async function RecipePage({
     app: hasGitHubAuth(),
     locks: lockMap(await readProjectLocks()),
   }
+  const view = await projectRecipe(state)
+  const builtIn = await Effect.runPromise(builtInSandboxEffect(name))
+  // `?allow=<host>`: a request the editor applies to its own current draft, so earlier unsaved edits survive; it is
+  // never saved from here, and never judged against the disk text (what the draft already holds is the form's to say).
+  // `?r=` is stamped on the links when they render and is read back from the URL, so a save's revalidation, which
+  // keeps the URL, is not a second click, and the next render's links carry a new stamp, so the next click is.
+  const stamp = Date.now()
+  const parsedNav = typeof r === 'string' ? Number(r) : 0
+  const nav = Number.isFinite(parsedNav) ? parsedNav : 0
+  const host = typeof allow === 'string' ? allow : undefined
+  const request: AllowRequest | null = host === undefined || view.text === null ? null : { host, nonce: nav }
   return (
     <Recipe
-      view={await projectRecipe(state)}
+      view={view}
       edit={edit === '1'}
+      nav={nav}
+      {...(request === null ? {} : { allow: request })}
+      sandbox={
+        <SandboxSection
+          project={name}
+          stamp={stamp}
+          own={view.ok ? view.recipe.sandbox : undefined}
+          recipeError={!view.ok}
+          builtIn={builtIn}
+          blocked={
+            <Suspense fallback={<Skeleton shape="lines" count={4} />}>
+              <RecentlyBlocked project={name} stamp={stamp} />
+            </Suspense>
+          }
+        />
+      }
       bar={bar}
       pause={await pauseSlot(name)}
       banner={<LockBanner project={name} />}

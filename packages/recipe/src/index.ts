@@ -12,4 +12,6 @@ export { BadWatchPatternError, compileWatch, MIGRATION_WATCH, TAMPER_WATCH, type
 export * from './defaults.ts'
 export * from './sandbox-block.ts'
 export * from './sandbox.ts'
+export * from './sandbox-builtins.ts'
+export * from './allow-host.ts'
 export * from './runtimes-of.ts'

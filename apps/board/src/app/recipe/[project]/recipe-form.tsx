@@ -1,12 +1,14 @@
 'use client'
 
+import { withAllowedHost } from '@lingtai/recipe/allow-host'
 import dynamic from 'next/dynamic.js'
-import { useActionState, useRef, useState } from 'react'
+import { useActionState, useEffect, useRef, useState } from 'react'
 
 import { saveRecipe } from '@/app/actions.ts'
 import type { SaveRecipeState } from '@/lib/recipe-edit'
 
 import { FileBar } from './file-bar'
+import type { AllowRequest } from './recipe-text'
 
 // The chunk loads only when the form does, and never on the server: CodeMirror touches `document`.
 // A failed load leaves the textarea, which is why it is caught here rather than boundaried.
@@ -18,11 +20,14 @@ const YamlEditor = dynamic(() => import('./yaml-editor').catch(() => ({ default:
 export function RecipeForm({
   project,
   initial,
+  allow,
   path,
   onClose,
 }: {
   project: string
   initial: string
+  /** A host to add to what is in the editor now, unsaved. `initial` stays the file's bytes: it is `loaded`, which a save compares to the disk. */
+  allow?: AllowRequest
   path: string
   onClose: () => void
 }) {
@@ -34,7 +39,25 @@ export function RecipeForm({
   } satisfies SaveRecipeState)
   // Controlled: React resets an uncontrolled field when an action completes, which would drop
   // edits typed while Save was pending and the draft a refusal should keep.
-  const [draft, setDraft] = useState(initial)
+  const [body, setBody] = useState(() =>
+    allow === undefined ? initial : (withAllowedHost(initial, allow.host) ?? initial),
+  )
+  const bodyNow = useRef(body)
+  bodyNow.current = body
+  // What was pushed into a live editor, and whether a host was added that is not saved yet.
+  const [push, setPush] = useState<{ rev: number; text: string } | null>(null)
+  const [added, setAdded] = useState(allow !== undefined && body !== initial)
+  const applied = useRef(allow?.nonce)
+  useEffect(() => {
+    if (allow === undefined || allow.nonce === applied.current) return
+    applied.current = allow.nonce
+    // On what is typed now, never on the disk text: earlier unsaved edits and earlier hosts stay.
+    const next = withAllowedHost(bodyNow.current, allow.host)
+    if (next === null) return
+    setBody(next)
+    setPush({ rev: allow.nonce, text: next })
+    setAdded(true)
+  }, [allow])
   // The textarea is the loading state and the fallback; the editor takes over once it is up.
   const [editorReady, setEditorReady] = useState(false)
   const fallback = useRef<HTMLTextAreaElement>(null)
@@ -53,8 +76,11 @@ export function RecipeForm({
     <form action={run} className="redit">
       <input type="hidden" name="project" value={project} />
       <input type="hidden" name="loaded" value={JSON.stringify(state.loaded)} />
-      <input type="hidden" name="text" value={draft} />
+      <input type="hidden" name="text" value={body} />
       <FileBar path={path}>
+        {added && state.message === '' ? (
+          <span className="rfile-said">a host was added for you — not saved</span>
+        ) : null}
         <button type="submit" className="rfile-edit" disabled={pending}>
           Validate and save
         </button>
@@ -76,15 +102,21 @@ export function RecipeForm({
       {editorReady ? null : (
         <textarea
           ref={fallback}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
           style={{ width: '100%', boxSizing: 'border-box' }}
           spellCheck={false}
           rows={32}
           className="mono"
         />
       )}
-      <YamlEditor initial={draft} handoff={handoff} onChange={setDraft} onReady={() => setEditorReady(true)} />
+      <YamlEditor
+        initial={body}
+        push={push}
+        handoff={handoff}
+        onChange={setBody}
+        onReady={() => setEditorReady(true)}
+      />
     </form>
   )
 }

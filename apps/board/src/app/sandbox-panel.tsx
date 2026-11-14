@@ -73,6 +73,65 @@ function RunTable({ rows }: { rows: readonly RunRow[] }) {
   )
 }
 
+function stamped(href: string, stamp: number | undefined): string {
+  if (stamp === undefined) return href
+  const at = href.indexOf('#')
+  const [path, hash] = at === -1 ? [href, ''] : [href.slice(0, at), href.slice(at)]
+  return `${path}${path.includes('?') ? '&' : '?'}r=${stamp}${hash}`
+}
+
+/**
+ * The refused connections and the sentences about the ones unknown, with no heading of its own: the task page's
+ * *Blocked* section and the recipe page's *recently blocked* both draw it (S9b), the second from every task.
+ */
+export function BlockedList({
+  blocked,
+  stamp,
+  empty = 'No refused connection was recorded.',
+}: {
+  blocked: SandboxView['blocked']
+  /** Added to each Allow link as `?r=` (before any `#`), so a click on the recipe page is a new command. */
+  stamp?: number
+  empty?: string
+}) {
+  return (
+    <>
+      {blocked.caveats.map((c) => (
+        <p key={c} className="fail">
+          {c}
+        </p>
+      ))}
+      {blocked.hosts.length === 0 ? (
+        blocked.caveats.length === 0 ? (
+          <p className="empty">{empty}</p>
+        ) : null
+      ) : (
+        <table className="sbrows">
+          <tbody>
+            {blocked.hosts.map((h) => (
+              <tr key={h.label}>
+                <td className="mono">{h.label}</td>
+                <td>{h.count}×</td>
+                <td>{h.from.join(', ')}</td>
+                <td>
+                  <time dateTime={h.firstAt}>{h.firstAt}</time>
+                </td>
+                <td>
+                  {h.allowHref === null ? null : (
+                    <Link href={stamped(h.allowHref, stamp)} prefetch={false}>
+                      Allow on this project
+                    </Link>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
+  )
+}
+
 /** The three parts and the run rows for one attempt. */
 export function SandboxPanel({ view }: { view: SandboxView }) {
   const { policies, blocked, rows } = view
@@ -151,38 +210,7 @@ export function SandboxPanel({ view }: { view: SandboxView }) {
 
       <section aria-label="Blocked">
         <h3>Blocked</h3>
-        {blocked.caveats.map((c) => (
-          <p key={c} className="fail">
-            {c}
-          </p>
-        ))}
-        {blocked.hosts.length === 0 ? (
-          blocked.caveats.length === 0 ? (
-            <p className="empty">No refused connection was recorded.</p>
-          ) : null
-        ) : (
-          <table className="sbrows">
-            <tbody>
-              {blocked.hosts.map((h) => (
-                <tr key={h.label}>
-                  <td className="mono">{h.label}</td>
-                  <td>{h.count}×</td>
-                  <td>{h.from.join(', ')}</td>
-                  <td>
-                    <time dateTime={h.firstAt}>{h.firstAt}</time>
-                  </td>
-                  <td>
-                    {h.allowHref === null ? null : (
-                      <Link href={h.allowHref} prefetch={false}>
-                        Allow on this project
-                      </Link>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <BlockedList blocked={blocked} />
       </section>
 
       <section aria-label="Runs">
