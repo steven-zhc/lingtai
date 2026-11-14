@@ -2287,6 +2287,9 @@ function runVisit(
       const readClippedAt = firstVisitOfFrom ? options.from?.readClipped?.onSha : undefined
       const readClippedKept = firstVisitOfFrom ? options.from?.readClipped?.kept : undefined
       // Called here, inside the step's span, so the context it captures is this step's.
+      // A routing judge is dispatched under `proposed` between visits and never drains what it was refused:
+      // discard that, so the read after this visit's actions is this visit's own (#1157).
+      options.sandboxAt?.(spec.step)
       const result = yield* runActionPipelineEffect({
         step: spec.step,
         actions: pipelineActions,
