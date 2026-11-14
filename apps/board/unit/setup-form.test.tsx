@@ -95,6 +95,15 @@ describe('the sandbox step (#1160)', () => {
     expect(html).not.toContain('cannot run the sandbox')
   })
 
+  it('a failed read still offers the step, on, for a new recipe (#1160)', async () => {
+    const { emptyView } = await import('../src/app/setup/repository/read/view.ts')
+    const target = { kind: 'github', owner: 'o', repo: 'p' } as const
+    expect(emptyView(target, 'p', null, 'it took too long').sandbox).toBeNull()
+    const asked = emptyView(target, 'p', null, 'it took too long', { builtIns: ['api.example.com'] })
+    expect(asked.sandbox).toMatchObject({ builtIns: ['api.example.com'] })
+    expect(await withSandbox(asked.sandbox)).toContain('<input type="radio" checked=""/><span><b>On</b>')
+  })
+
   it('says plainly when the host cannot provide it', async () => {
     const html = await withSandbox({
       builtIns: [],

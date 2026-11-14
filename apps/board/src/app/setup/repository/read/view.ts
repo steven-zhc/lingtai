@@ -95,7 +95,14 @@ const noTurnCeiling = (id: string): boolean =>
  * The form when nothing could be read at all (a timeout, a key that would not
  * load): every line says so and starts empty, and Add is still possible.
  */
-export function emptyView(target: SetupTarget, project: string, remote: string | null, reason: string): ReadView {
+export function emptyView(
+  target: SetupTarget,
+  project: string,
+  remote: string | null,
+  reason: string,
+  /** Where the recipe is new, the sandbox step is still offered, on: a failed read never drops the default (#1160). */
+  sandbox: { builtIns: readonly string[] } | null = null,
+): ReadView {
   const local = target.kind === 'local'
   const note = `could not be read: ${reason}`
   const unread = <T>(value: T) => ({ value, note, known: false })
@@ -117,6 +124,13 @@ export function emptyView(target: SetupTarget, project: string, remote: string |
     heldBy: unread(''),
     end: unread(false),
     limits: { ...LIMIT_DEFAULTS },
-    sandbox: null,
+    sandbox:
+      sandbox === null
+        ? null
+        : {
+            builtIns: [...sandbox.builtIns],
+            cannot: 'The host could not be checked, because the repository could not be read. The sandbox stays on.',
+            offLine: SANDBOX_OFF_LINE,
+          },
   }
 }

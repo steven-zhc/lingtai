@@ -1,5 +1,5 @@
 import { proposalFor, projectNameOf, readLocalTarget, recipeIsNew } from '@lingtai/conductor/add-from-page'
-import { loadAllProjects } from '@lingtai/conductor/projects'
+import { loadAllProjects, sandboxHostHere } from '@lingtai/conductor/projects'
 /**
  * Step 2 of adding a repository (#971): what Lingtai read, every proposed line
  * with its *change*, the two decisions, and the recipe beside them. The page
@@ -76,10 +76,11 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
     )
   }
   // `suspend` so a reader that throws while it is built (an unreadable App key) is a failed read, not a failed page.
+  const isNew = await Effect.runPromise(recipeIsNew(project))
   const proposal = await Effect.runPromise(
-    Effect.suspend(() =>
-      Effect.flatMap(recipeIsNew(project), (isNew) => proposalFor(target.target, undefined, { recipeIsNew: isNew })),
-    ).pipe(Effect.timeout('25 seconds')),
+    Effect.suspend(() => proposalFor(target.target, undefined, { recipeIsNew: isNew })).pipe(
+      Effect.timeout('25 seconds'),
+    ),
   ).catch((err: unknown) => (err instanceof Error ? err.message : 'it took too long'))
   if (typeof proposal === 'string') {
     return frame(
@@ -89,7 +90,15 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
           Reading the repository failed: {proposal}. <a href="">Reload</a> to read it again, or fill the lines in
           yourself.
         </p>
-        <SetupForm view={emptyView(target.target, project, target.remote, proposal)} />
+        <SetupForm
+          view={emptyView(
+            target.target,
+            project,
+            target.remote,
+            proposal,
+            isNew ? { builtIns: sandboxHostHere().builtIns } : null,
+          )}
+        />
       </>,
     )
   }

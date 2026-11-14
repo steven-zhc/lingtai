@@ -194,7 +194,8 @@ export function proposalFor(
 
 /**
  * Whether the project has no recipe on disk yet, so the sandbox step is asked (#1160). A read that throws counts as
- * *exists*: the conservative side, which never offers a block over a file nobody could read.
+ * *new*: the step is still offered, on by default, and the write decides again — `setupChanges` drops the block over
+ * a recipe that turns out to exist, so offering it never touches an existing project.
  */
 export function recipeIsNew(project: string, ports: { home?: string; files?: RecipeFiles } = {}) {
   return Effect.tryPromise({
@@ -202,7 +203,7 @@ export function recipeIsNew(project: string, ports: { home?: string; files?: Rec
     catch: reasonOf,
   }).pipe(
     Effect.map((text) => text === null),
-    Effect.orElseSucceed(() => false),
+    Effect.orElseSucceed(() => true),
   )
 }
 
