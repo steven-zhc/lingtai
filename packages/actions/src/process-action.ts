@@ -13,6 +13,7 @@
  * verdict about a commit", which is the part that is genuinely about actions.
  */
 import type { RunTrace } from '@lingtai/agent'
+import type { Step } from '@lingtai/domain'
 import { parseDuration } from '@lingtai/recipe'
 import {
   type SandboxPolicyRefused,
@@ -45,6 +46,8 @@ export interface RunSandbox {
     env: Record<string, string>,
     /** The run's log, for a note about protection the wrap left out (#1155). */
     log?: RunTrace,
+    /** Which step and action this command is, for the boundary the wrap records (#1164). */
+    keys?: { readonly step: Step; readonly action: string },
   ): Effect.Effect<Wrapped, SandboxWrapError, Scope.Scope>
 }
 
@@ -91,6 +94,13 @@ export interface ProcessActionSpec {
    * own process group. Absent, the spawn is today's, byte for byte.
    */
   sandbox?: RunSandbox
+  /** The step this command runs at: the key its sandbox boundary is recorded under (#1164). */
+  step?: Step
+  /**
+   * Appends this command's boundary when it is **not** wrapped (#1164): *unsandboxed* spawns, which have no wrap to
+   * record it. Absent under a wrap. Run before the child starts.
+   */
+  recordUnwrapped?: () => Effect.Effect<void>
   /** The runner, as the subscriber's `options.command ?? commandEffect`. */
   command?: CommandRunner
 }
@@ -129,21 +139,30 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
         }
         const spawn = spec.command ?? commandEffect
         let wrapFailed = false
+        if (spec.sandbox === undefined && spec.recordUnwrapped !== undefined) yield* spec.recordUnwrapped()
         const outcome =
           spec.sandbox === undefined
             ? yield* spawn(base)
             : // The scope encloses the command: closing it cleans srt up, which must not happen under a running child.
               yield* Effect.scoped(
-                spec.sandbox.wrap(['/bin/sh', '-c', spec.run], context.cwd, spec.env, context.log).pipe(
-                  Effect.flatMap((wrapped) =>
-                    spawn({ ...base, wrapped: { argv: wrapped.argv, env: wrapped.env }, ownGroup: true }),
+                spec.sandbox
+                  .wrap(
+                    ['/bin/sh', '-c', spec.run],
+                    context.cwd,
+                    spec.env,
+                    context.log,
+                    spec.step === undefined ? undefined : { step: spec.step, action: spec.name },
+                  )
+                  .pipe(
+                    Effect.flatMap((wrapped) =>
+                      spawn({ ...base, wrapped: { argv: wrapped.argv, env: wrapped.env }, ownGroup: true }),
+                    ),
+                    Effect.catchTags({
+                      SandboxUnavailable: (e) => refused(e, () => (wrapFailed = true)),
+                      SandboxWrapFailed: (e) => refused(e, () => (wrapFailed = true)),
+                      SandboxPolicyRefused: (e) => refused(e, () => (wrapFailed = true)),
+                    }),
                   ),
-                  Effect.catchTags({
-                    SandboxUnavailable: (e) => refused(e, () => (wrapFailed = true)),
-                    SandboxWrapFailed: (e) => refused(e, () => (wrapFailed = true)),
-                    SandboxPolicyRefused: (e) => refused(e, () => (wrapFailed = true)),
-                  }),
-                ),
               )
 
         // A process action finds nothing structured — that is what the agent action is

@@ -16,7 +16,7 @@ export type { Refusal, Relation } from './protect.ts'
 export { installFor } from './install.ts'
 export type { InstallAdvice } from './install.ts'
 export { quoteArgv } from './quote.ts'
-export { HOST_CHECK_TTL, Sandbox, checkHost, SandboxLayer, makeSandbox } from './sandbox.ts'
+export { HOST_CHECK_TTL, Sandbox, newCommandId, checkHost, SandboxLayer, makeSandbox } from './sandbox.ts'
 export type { SandboxApi, WrapInput, Wrapped } from './sandbox.ts'
 export {
   SRT_STORE_SIZE,

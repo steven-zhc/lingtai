@@ -114,6 +114,9 @@ export const checkHost = (srt: SrtPort, host: HostFacts): Effect.Effect<void, Sa
     }
   })
 
+/** 128 random bits, never derived from the command, the run or the clock. Also the id of an invocation that was not wrapped (#1164). */
+export const newCommandId = (): string => randomBytes(16).toString('base64url')
+
 export const makeSandbox = Effect.gen(function* () {
   const srt = yield* Srt
   const host = yield* Host
@@ -156,7 +159,7 @@ export const makeSandbox = Effect.gen(function* () {
       const violationsBefore = yield* srt.violationTotal.pipe(Effect.orElseSucceed(() => undefined))
 
       // 128 random bits, never derived from the command, the run or the clock.
-      const commandId = yield* Effect.sync(() => randomBytes(16).toString('base64url'))
+      const commandId = yield* Effect.sync(newCommandId)
       yield* Effect.acquireRelease(
         srt
           .registerCommandNetworkLists(commandId, { allowedDomains: runDomains(input) })

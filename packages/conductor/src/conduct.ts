@@ -275,6 +275,7 @@ import {
 import { RUN_LOG_END, claudeConfigDirFor, runLogEnd, runLogPath } from './run-log.ts'
 import { runtimesOf } from './runtimes-of.ts'
 import { decidePassSandbox, makeRunSandbox } from './sandbox-decision.ts'
+import { recordUnwrapped, recordingWrap, type InvocationAppends } from './sandbox-record.ts'
 import { recordRecipe, stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, editEndedWaitsEffect, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
@@ -822,6 +823,43 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ),
       )
 
+    /**
+     * The hook server of the `implement` dispatch in flight, so that an append made mid-run keeps its version.
+     *
+     * It appends to the stream at its own in-memory `run.version` and advances it (`hook-socket.ts`), so an
+     * append made here by a read of the head would leave that version one behind and its next
+     * `RunTouchedFile` would be refused (#1164).
+     */
+    let hookRuns: { get(runId: string): { version: number } | undefined } | undefined
+    /**
+     * An invocation's sandbox rows, on the pass's stream and at the version a registered hook server holds.
+     * `remember`: the boundary's refusal is a defect the pass answers (`appendNow`'s reason); the refusals row's
+     * is not, because the hook server may still be flushing a late append of its own at that version.
+     */
+    const appendInvocation = (stream: string, events: readonly ToAppend[], remember: boolean): Effect.Effect<void> => {
+      const registered = hookRuns?.get(stream)
+      if (registered === undefined) {
+        return remember ? appendNow(stream, events).pipe(Effect.asVoid) : appendAt(stream, events).pipe(Effect.asVoid)
+      }
+      return Effect.promise(() =>
+        store.append(stream, registered.version, events).then((written) => {
+          if (written.length > 0) registered.version = written[written.length - 1]!.version
+        }),
+      ).pipe(
+        remember
+          ? Effect.tapDefect((defect) =>
+              Effect.sync(() => {
+                unappended ??= defect
+              }),
+            )
+          : (self) => self,
+      )
+    }
+    const invocationAppends = (stream: string): InvocationAppends => ({
+      before: (events) => appendInvocation(stream, events, true),
+      after: (events) => appendInvocation(stream, events, false).pipe(Effect.catchDefect(() => Effect.void)),
+    })
+
     // ---- 1. the recipe, from this machine -----------------------------------
     // `~/.lingtai/<project>/recipe.yml` (0046 §3, #180), the same read every
     // other command that conducts makes.
@@ -850,11 +888,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     const sandboxOf = (
       decision: SandboxDecision | undefined,
       run: { runId: string; worktree: string | undefined },
-    ): { sandbox: RunSandbox } | Record<string, never> => {
-      if (decision === undefined || decision.kind === 'unsandboxed') return {}
+      /** The pass's stream, and what names this invocation on it (#1164). `runId` above is the dispatch's own. */
+      record: { stream: string; step: Step; action: string; runtime: string },
+    ): Effect.Effect<{ sandbox: RunSandbox } | Record<string, never>> => {
+      if (decision === undefined) return Effect.succeed({})
+      const keys = { step: record.step, action: record.action, runtime: record.runtime, runId: run.runId }
+      const appends = invocationAppends(record.stream)
+      // Not wrapped, so nothing else will say which boundary this one ran under: record it before the child starts.
+      if (decision.kind === 'unsandboxed') return recordUnwrapped(decision, keys, appends.before).pipe(Effect.as({}))
       const runDir = claudeConfigDirFor(home, run.runId)
       const service = options.sandbox
-      return {
+      return Effect.succeed({
         sandbox: {
           decision:
             decision.kind === 'sandboxed'
@@ -875,7 +919,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               : service.pipe(
                   Effect.mapError((e) => ({ message: [e.reason, ...e.sentences].join('; ') })),
                   Effect.flatMap((api) =>
-                    api.wrap(input).pipe(
+                    // A wrap that fails appends no boundary: no child starts, and the run's own failure is the record.
+                    recordingWrap(api, input, keys, appends).pipe(
                       Effect.mapError((e) => ({
                         message:
                           e._tag === 'SandboxUnavailable'
@@ -888,7 +933,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   ),
                 ),
         },
-      }
+      })
     }
     // The ref the rules came from and the branch they say they govern have to be
     // one branch. It refuses rather than picking a winner: both are recorded
@@ -3093,7 +3138,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // conductor's is read-denied inside srt (#1150).
               cwd:
                 worktree?.path ?? (judgeDecision.kind === 'unsandboxed' ? home : claudeConfigDirFor(home, judgeRunId)),
-              ...sandboxOf(judgeDecision, { runId: judgeRunId, worktree: worktree?.path }),
+              ...(yield* sandboxOf(
+                judgeDecision,
+                { runId: judgeRunId, worktree: worktree?.path },
+                { stream: runId, step: 'proposed', action: `judge:${on.when}`, runtime: dispatched.capabilities.id },
+              )),
               prompt: judgePromptText,
               ...(declared.model === undefined ? {} : { model: declared.model }),
               settingsPath: settings.success,
@@ -3946,7 +3995,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             return reviewSettingsPath
           },
           // The reviewer and the design agent share one settings file, so one decision (#1150).
-          sandboxFor: (forRun: string, cwd: string) => sandboxOf(reviewDecision, { runId: forRun, worktree: cwd }),
+          sandboxFor: (forRun: string, cwd: string, keys: { step: Step; action: string }) =>
+            sandboxOf(
+              reviewDecision,
+              { runId: forRun, worktree: cwd },
+              { stream: runId, ...keys, runtime: options.runtime.capabilities.id },
+            ),
           // The ceiling, and the default: a `review` whose `agent:` declares a
           // `limits:` narrows it in `actionsFromRecipe`, which is the seam that
           // holds the action (`#314`).
@@ -4019,9 +4073,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // The twelfth: the pass's one decision, and the wrap only a sandboxed one gets (#1152). Absent
         // `sandbox` under a *sandboxed* decision is refused by name in `actionPortsFromRecipe`.
         sandboxDecision,
+        // A `run:` that is not wrapped has no wrap to record its boundary, so it is recorded here (#1164).
+        ...(sandboxDecision.kind === 'sandboxed'
+          ? {}
+          : {
+              recordUnwrapped: (keys: { step: Step; action: string }) =>
+                recordUnwrapped(
+                  sandboxDecision,
+                  { step: keys.step, action: keys.action, runId: null },
+                  invocationAppends(runId).before,
+                ),
+            }),
         ...(sandboxDecision.kind === 'sandboxed' && passSandbox.service !== undefined
           ? {
               sandbox: makeRunSandbox(passSandbox.service, {
+                appends: invocationAppends(runId),
                 project,
                 mirror: mirrorPathFor(project, home),
                 cache: join(home, 'cache', project),
@@ -4357,6 +4423,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     runLog.note(call.tool === '' ? hook : call.tool, `${verdict.padEnd(6)}${call.target}`),
                   onLifecycle: (_r, hook) => runLog.note('hook', hook),
                 })
+                hookRuns = server
 
                 yield* appendNow(runId, [
                   {
@@ -4476,7 +4543,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   log: runLog,
                   env: agentEnv,
                   limits: spend,
-                  ...sandboxOf(implementDecision, { runId, worktree: tree.path }),
+                  ...(yield* sandboxOf(
+                    implementDecision,
+                    { runId, worktree: tree.path },
+                    { stream: runId, step: 'implement', action: spec.name, runtime: dispatched.capabilities.id },
+                  )),
                 })
                 yield* Effect.promise(() => server.flush(runId).catch(() => {}))
                 return { outcome, version: server.get(runId)?.version ?? 1 }
@@ -4745,6 +4816,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           )
           // Only a defect is the made-up crash outcome; an interruption stays one.
           // The run's own interruption waits for the agent to stop before it continues.
+          const fixSandbox = yield* sandboxOf(
+            fixDecision,
+            { runId: fixId, worktree: tree.path },
+            { stream: runId, step: 'implement', action: spec.name, runtime: dispatched.capabilities.id },
+          )
           const fixed = yield* dispatched
             .run({
               ...(brief.context.signal === undefined ? {} : { signal: brief.context.signal }),
@@ -4757,7 +4833,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               traceTools: true,
               env: fixEnv,
               limits: spendFor(spec.limits),
-              ...sandboxOf(fixDecision, { runId: fixId, worktree: tree.path }),
+              ...fixSandbox,
             })
             .pipe(
               Effect.catchDefect((err) =>

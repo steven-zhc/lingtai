@@ -17,6 +17,7 @@ import {
   parseDuration,
   whyNoKindAt,
 } from '@lingtai/recipe'
+import type { Effect } from 'effect'
 
 import { type ActionPort } from './action.ts'
 import {
@@ -179,6 +180,11 @@ export interface ActionDeps {
   sandboxDecision?: SandboxDecision
   /** The wrap a sandboxed decision's `run:` commands go through. Built per pass in `conduct.ts`. */
   sandbox?: RunSandbox
+  /**
+   * Appends the boundary of a `run:` the pass decided not to wrap (#1164): its step and action. Absent, nothing is
+   * recorded for it. Built per pass in `conduct.ts`, which holds the store.
+   */
+  recordUnwrapped?: (keys: { readonly step: Step; readonly action: string }) => Effect.Effect<void>
   /** The runner a `run:` spawns through. Absent, `commandEffect`, as the subscriber's. A test hands one that records. */
   command?: CommandRunner
 }
@@ -202,6 +208,7 @@ export interface ActionPortDeps {
   keptRun?: KeptRunPortDeps
   sandboxDecision?: ActionDeps['sandboxDecision']
   sandbox?: ActionDeps['sandbox']
+  recordUnwrapped?: ActionDeps['recordUnwrapped']
   command?: ActionDeps['command']
 }
 
@@ -225,6 +232,7 @@ export const actionPortDepsFrom = (deps: ActionDeps): ActionPortDeps => {
     keptRun: deps.keptRun === undefined ? undefined : keptRunPortDepsFrom(deps.keptRun),
     sandboxDecision: deps.sandboxDecision,
     sandbox: deps.sandbox,
+    recordUnwrapped: deps.recordUnwrapped,
     command: deps.command,
   }
   return lifted
@@ -374,7 +382,11 @@ export function actionPortsFromRecipe(
         // 0037 §1: the declared set is the whole set. An action that declares
         // nothing gets only what any process needs, never the daemon's.
         env: deps.env(action.env),
+        step,
         ...(wrapped && deps.sandbox ? { sandbox: deps.sandbox } : {}),
+        ...(!wrapped && deps.recordUnwrapped
+          ? { recordUnwrapped: () => deps.recordUnwrapped!({ step, action: action.name }) }
+          : {}),
         ...(deps.command ? { command: deps.command } : {}),
       })
       // **`implement` wraps and the other four do not** (`#390`): a `run:`
@@ -441,7 +453,11 @@ export function actionPortsFromRecipe(
         throw new ActionUnavailableError(action.name, kind, 'no reviewer was supplied to actionsFromRecipe')
       }
       const reviewing = dispatchDeps({ ...deps, agent: deps.agent }, action)
-      return [step === 'design' ? makeDraftAction(agent, reviewing) : makeAgentAction(agent, reviewing)]
+      return [
+        step === 'design'
+          ? makeDraftAction({ ...agent, step }, reviewing)
+          : makeAgentAction({ ...agent, step }, reviewing),
+      ]
     }
 
     if ('file' in action) {
