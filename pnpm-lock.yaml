@@ -80,6 +80,9 @@ importers:
       '@lingtai/repo':
         specifier: workspace:*
         version: link:../../packages/repo
+      '@lingtai/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@lingtai/setup':
         specifier: workspace:*
         version: link:../../packages/setup

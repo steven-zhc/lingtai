@@ -35,6 +35,7 @@ import {
   standingRefusal,
   type Step,
   type Finding as DomainFinding,
+  type SandboxInvocation,
 } from '@lingtai/domain'
 import {
   allowedResolutions,
@@ -111,6 +112,7 @@ import { typicalAttemptMs, type StartEstimate } from './queued-estimate.ts'
 import { inFlightOf, queuedFor, refused as refusedQueued, type InFlight, type QueuedView } from './queued.ts'
 import { recipeOfAttempt, type AttemptRecipe } from './recipe.ts'
 import { runningPanelOf, type RunningPanelView } from './running.ts'
+import { sandboxViewOf, type SandboxView } from './sandbox-view.ts'
 import { savedFixWork } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
 import {
@@ -2048,6 +2050,8 @@ export interface AttemptTabDetail {
   promptShown: PromptShown | null
   /** Every `RunPrompted` row in `events` that carries `refs`, keyed `${streamId}@${version}`. */
   expanded: ReadonlyMap<string, PromptShown>
+  /** The attempt's recorded sandbox invocations (#1161): the small state mark beside each planned action. */
+  sandbox?: readonly SandboxInvocation[]
 }
 
 /**
@@ -2095,7 +2099,35 @@ export async function loadAttemptTab(taskId: string, n: number): Promise<Attempt
     events,
     promptShown,
     expanded,
+    sandbox: state?.sandbox ?? [],
   }
+}
+
+/** What the Sandbox tab shows (#1161): one attempt's recorded boundary, chosen by `?attempt=`. */
+export interface SandboxTabDetail {
+  taskId: string
+  project: string
+  /** Every attempt's number, oldest first: the switcher's links. */
+  attempts: readonly number[]
+  /** The attempt shown; null for a ticket with no attempt yet. */
+  selected: number | null
+  view: SandboxView | null
+}
+
+/**
+ * The Sandbox tab's loader. **Never `loadTask`, and never the recipe**: the view is `reduceAttempt`'s `sandbox`
+ * slice of the attempt's own stream, so a run from before a recipe change shows the rules it ran under. `wanted`
+ * null is the newest attempt; null is returned for an attempt this ticket does not have.
+ */
+export async function loadSandboxTab(taskId: string, wanted: number | null): Promise<SandboxTabDetail | null> {
+  const { states } = await readAttempts(taskId)
+  const project = parseTicketStream(taskId)?.project ?? ''
+  const attempts = states.map((_, i) => i + 1)
+  const selected = wanted ?? attempts.at(-1) ?? null
+  if (selected === null) return { taskId, project, attempts, selected, view: null }
+  const state = states[selected - 1]
+  if (state === undefined) return null
+  return { taskId, project, attempts, selected, view: sandboxViewOf(state, project) }
 }
 
 /**

@@ -28,6 +28,7 @@
     "@lingtai/projector": "workspace:*",
     "@lingtai/recipe": "workspace:*",
     "@lingtai/repo": "workspace:*",
+    "@lingtai/sandbox": "workspace:*",
     "@lingtai/setup": "workspace:*",
     "@opentelemetry/api": "^1.10.0",
     "@opentelemetry/context-async-hooks": "^2.12.0",

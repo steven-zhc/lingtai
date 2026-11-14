@@ -6,8 +6,8 @@
  * implementation of each rule.
  */
 
-/** A tab: one attempt, or the ticket. */
-export type TabKey = { attempt: number } | 'ticket'
+/** A tab: one attempt, the ticket, or the sandbox (#1161). The sandbox is never the default. */
+export type TabKey = { attempt: number } | 'ticket' | 'sandbox'
 
 /**
  * Absolute, because a relative `attempt/N` resolves to `…/attempt/attempt/N`
@@ -25,12 +25,21 @@ export function taskPath(taskId: string): string {
   return `/task/${encodeURIComponent(taskId)}`
 }
 
+/** `/task/<id>/sandbox`, with `?attempt=<n>` to name the attempt: a link per attempt, so a reload keeps the choice. */
+export function sandboxTabPath(taskId: string, attempt?: number): string {
+  const base = `/task/${encodeURIComponent(taskId)}/sandbox`
+  return attempt === undefined ? base : `${base}?attempt=${attempt}`
+}
+
 export function tabPath(taskId: string, key: TabKey): string {
-  return key === 'ticket' ? ticketTabPath(taskId) : attemptTabPath(taskId, key.attempt)
+  if (key === 'ticket') return ticketTabPath(taskId)
+  if (key === 'sandbox') return sandboxTabPath(taskId)
+  return attemptTabPath(taskId, key.attempt)
 }
 
 export function sameTab(a: TabKey, b: TabKey): boolean {
-  return a === 'ticket' || b === 'ticket' ? a === b : a.attempt === b.attempt
+  if (typeof a === 'string' || typeof b === 'string') return a === b
+  return a.attempt === b.attempt
 }
 
 /**
@@ -71,7 +80,7 @@ export function visibleAttempts({
   const newestFirst = [...attempts].sort((a, b) => b - a)
   const keep = new Set(newestFirst.slice(0, NEWEST_TABS))
   if (deciding !== null) keep.add(deciding)
-  if (selected !== 'ticket') keep.add(selected.attempt)
+  if (typeof selected !== 'string') keep.add(selected.attempt)
   return {
     shown: newestFirst.filter((n) => keep.has(n)),
     earlier: newestFirst.filter((n) => !keep.has(n)),
@@ -94,4 +103,9 @@ export function tabOfFragment(hash: string): TabKey | 'default' | null {
 /** The attempt an `attempt/[n]` segment names, or null for anything that is not a whole number from 1. */
 export function attemptOfSegment(n: string): number | null {
   return /^[1-9]\d*$/.test(n) && Number.isSafeInteger(Number(n)) ? Number(n) : null
+}
+
+/** The attempt `?attempt=` names: null where absent or not a whole number from 1 (the newest is then meant). */
+export function attemptOfQuery(value: string | string[] | undefined): number | null {
+  return typeof value === 'string' ? attemptOfSegment(value) : null
 }
