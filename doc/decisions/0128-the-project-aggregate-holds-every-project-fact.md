@@ -63,8 +63,7 @@ The streams that exist, and what each holds:
 2. **The Project aggregate holds every fact about a project.** Its reduce,
    `reduceProject` in `packages/domain/src/project.ts`, pure, gives one
    `Project`: where its code lives (owner, base), its standing (paused,
-   refused), its **recipe** — the current `configHash` and the canonical recipe
-   it names — and its **observed sandbox state** (§5). A fact about a project
+   refused), its **recipe** — the declared source and its `sourceHash` (§3) — and its **observed sandbox state** (§5). A fact about a project
    that is not reduced from `prj-{project}` is a fact the log does not hold,
    and this ADR names the one that remains (§7).
 
