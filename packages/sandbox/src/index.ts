@@ -1,4 +1,12 @@
-export { BUILT_IN_DOMAINS, cacheDir, customConfigFor, mirrorDir, instanceConfig, policyVariables } from './policy.ts'
+export {
+  BUILT_IN_DOMAINS,
+  cacheDir,
+  customConfigFor,
+  filesystemFor,
+  mirrorDir,
+  instanceConfig,
+  policyVariables,
+} from './policy.ts'
 export type { CallerAdditions, HostFacts, PolicyInputs, ProjectAdditions } from './policy.ts'
 export { Host, SandboxFs, SandboxPolicyRefused, SandboxUnavailable, SandboxWrapFailed, Srt } from './port.ts'
 export type { SandboxFsPort, SrtDependencyCheck, SrtPort } from './port.ts'

@@ -42,7 +42,7 @@ function setup() {
   }
   const additions = { network: ['a.example'], write: ['/w'], deny: ['/d'] }
   const run = makeRunSandbox(service, { project: 'app', mirror, additions })
-  return { dir, mirror, worktree, env, wraps, seen, run, additions }
+  return { dir, mirror, worktree, env, wraps, seen, run, additions, service }
 }
 
 describe('makeRunSandbox', () => {
@@ -80,13 +80,35 @@ describe('makeRunSandbox', () => {
     expect(existsSync(env['GIT_CONFIG_VALUE_0']!)).toBe(false)
   })
 
-  it('refuses a global ignore file in the worktree that is a symlink out of it, and copies nothing', async () => {
+  it('honours a project-ignore symlink to a shared file outside the worktree that the read policy allows', async () => {
+    const t = setup()
+    const shared = join(t.dir, 'shared-ignore')
+    writeFileSync(shared, '.env.local\n')
+    symlinkSync(shared, join(t.worktree, 'project-ignore'))
+    await Effect.runPromise(
+      Effect.scoped(
+        t.run.wrap(['/bin/sh', '-c', 'x'], t.worktree, t.env).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              const text = readFileSync(t.seen[0]!.env['GIT_CONFIG_VALUE_0']!.replace(/\.config$/, ''), 'utf8')
+              expect(text).toContain('/.vscode\n')
+              expect(text.endsWith('.env.local\n')).toBe(true)
+            }),
+          ),
+        ),
+      ),
+    )
+    expect(t.wraps).toHaveLength(1)
+  })
+
+  it('refuses a symlink to a file the read policy denies, and copies nothing', async () => {
     const t = setup()
     const secret = join(t.dir, 'secret')
     writeFileSync(secret, 'TOP-SECRET\n')
     symlinkSync(secret, join(t.worktree, 'project-ignore'))
+    const run = makeRunSandbox(t.service, { project: 'app', mirror: t.mirror, additions: { deny: [secret] } })
     const exit = await Effect.runPromise(
-      Effect.scoped(t.run.wrap(['/bin/sh', '-c', 'x'], t.worktree, t.env)).pipe(Effect.result),
+      Effect.scoped(run.wrap(['/bin/sh', '-c', 'x'], t.worktree, t.env)).pipe(Effect.result),
     )
     expect(exit._tag).toBe('Failure')
     expect(t.wraps).toEqual([])
