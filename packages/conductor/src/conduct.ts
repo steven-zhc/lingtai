@@ -893,9 +893,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
     }
     /**
-     * **What this pass is, as to the sandbox — decided once, before the claim** (#1152). The provision's
-     * stand-ins and the actions' wrap both read this one answer, so neither can see *sandboxed* while the
-     * other sees *degraded*. A refusal here claims nothing, like the refusals around it.
+     * **What this pass is, as to the sandbox — decided once, before the claim** (#1152). Every action's wrap
+     * reads this one answer, so none can see *sandboxed* while another sees *degraded*. A refusal here claims nothing, like the refusals around it.
      */
     const passSandbox = yield* decidePassSandbox(recipe.sandbox)
     const sandboxDecision = passSandbox.decision

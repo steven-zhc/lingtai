@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 /**
  * The pass's sandbox decision and the wrap its `run:` commands go through (#1152).
  *
- * Decided **once per pass, before the claim**, so the provision (which writes srt's stand-in names into a side
- * file beside the mirror's `info/exclude`, which each wrapped command is pointed at) and the actions (which wrap) cannot see different answers a minute apart.
+ * Decided **once per pass, before the claim**, so every action of the pass sees one answer. Provisioning
+ * writes nothing for it: each wrapped command prepares its own exclude file (`makeRunSandbox`).
  *
  * Nothing here loads srt. The host answer is the provided `Sandbox` service's own where there is one, and
  * `hostHere` (which imports `@lingtai/sandbox/live` only when asked, as the resolver does) where there is not.
@@ -46,19 +46,20 @@ export const decidePassSandbox = (block: SandboxBlock | undefined): Effect.Effec
 /**
  * The command's own exclude file: srt's stand-in names, then the global ignore rules **the command's own
  * environment** resolves (`core.excludesFile` under its `GIT_CONFIG_GLOBAL`, `HOME` and `XDG_CONFIG_HOME`, not
- * the daemon's), because pointing a command at this file replaces them. A new file per command, written whole
+ * the daemon's) **read in the action's worktree**, so a conditional include that matches it applies and a relative
+ * path means what it means to the command, because pointing a command at this file replaces them. A new file per command, written whole
  * and removed with the wrap's scope, so no running command ever reads a file that is being rewritten.
  */
-const commandExclude = (mirror: string, env: Readonly<Record<string, string>>) =>
+const commandExclude = (mirror: string, worktree: string, env: Readonly<Record<string, string>>) =>
   Effect.acquireRelease(
     Effect.gen(function* () {
       const configured = yield* gitEffect(['config', '--get', '--type=path', 'core.excludesFile'], {
-        cwd: mirror,
+        cwd: worktree,
         env: env as NodeJS.ProcessEnv,
       }).pipe(Effect.orElseSucceed(() => ''))
       const inheritedFrom =
         configured !== ''
-          ? configured
+          ? resolve(worktree, configured)
           : join(env['XDG_CONFIG_HOME'] || join(env['HOME'] ?? '', '.config'), 'git', 'ignore')
       const file = sandboxExcludePath(mirror, randomUUID())
       yield* Effect.tryPromise({
@@ -86,7 +87,7 @@ export const makeRunSandbox = (
   pass: { readonly project: string; readonly mirror: string; readonly additions: ProjectAdditions },
 ): RunSandbox => ({
   wrap: (command, worktree, env) =>
-    Effect.flatMap(commandExclude(pass.mirror, env), (file) =>
+    Effect.flatMap(commandExclude(pass.mirror, worktree, env), (file) =>
       service.wrap({
         project: pass.project,
         worktree,

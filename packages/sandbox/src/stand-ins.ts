@@ -1,8 +1,8 @@
 /**
  * The names srt plants in a worktree on Linux, each a `/dev/null` bind (experiment 017). `git add -A` inside
- * srt fails on them unless git is told to exclude them. Under a *sandboxed* decision only (#1152) provisioning
- * writes them, anchored to the root, into a side file beside the mirror's `info/exclude`, and each wrapped
- * command is pointed at it through its environment (`excludeEnv`): a caller that omits that fails on them.
+ * srt fails on them unless git is told to exclude them. Provisioning writes nothing (#1152): each wrapped
+ * command gets a file of its own beside the mirror's `info/exclude` (`makeRunSandbox`), and is pointed at it
+ * through its environment (`excludeEnv`). A caller that wraps without that preparation fails on them.
  */
 export const SRT_STAND_INS: readonly string[] = [
   '.bashrc',
