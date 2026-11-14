@@ -125,9 +125,13 @@ The streams that exist, and what each holds:
    - **the Project has no recipe yet** (a project from before this decision)
      — append the first `ProjectRecipeChanged` from the file, `by: 'file'`;
      no person does anything;
-   - **the file is missing or unreadable while the Project has a recipe** —
-     the module writes the file from the Project; a missing projection is
-     rebuilt, never read as *no recipe*;
+   - **the file is missing while the Project has a recipe** — the module
+     creates the file from the Project, as one step that writes only if the
+     file is still not there, so an edit that arrives meanwhile is never
+     overwritten; a missing projection is rebuilt, never read as *no recipe*;
+   - **the file is there but cannot be read** — it is left as it is, never
+     overwritten, because what it holds was never seen; the read error is
+     said, and the attempt resolves from the Project's recipe all the same;
    - **the file's text is not a valid declaration** — YAML that does not
      parse, or a field the recipe's own schema refuses — nothing is appended,
      and the read fails with that refusal. This check is the declared text's
