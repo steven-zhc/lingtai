@@ -935,8 +935,11 @@ export const SandboxPolicyValue = z.object({
  */
 export const SandboxBoundary = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('sandboxed'), srtVersion: z.string(), policy: SandboxPolicyValue }),
-  z.object({ kind: z.literal('unsandboxed'), reason: z.literal('off by choice') }),
-  z.object({ kind: z.literal('unsandboxed'), reason: z.literal('degraded'), why: z.string() }),
+  z.object({
+    kind: z.literal('unsandboxed'),
+    reason: z.enum(['off by choice', 'degraded']),
+    why: z.string().optional(),
+  }),
   z.object({ kind: z.literal('refused'), why: z.string() }),
 ])
 

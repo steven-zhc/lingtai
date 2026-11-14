@@ -142,6 +142,18 @@ const SAMPLES = {
   ],
   RunProposedCompletion: [{ headSha: SHA }],
   RunFinished: [{ exitCode: 0, turns: 3, durationMs: 1000 }],
+  SandboxBoundaryRecorded: [
+    { step: 'build', action: 'pnpm test', runId: null, commandId: 'c1', boundary: { kind: 'refused', why: 'no srt' } },
+  ],
+  SandboxConnectionsRefused: [
+    {
+      step: 'build',
+      action: 'pnpm test',
+      runId: null,
+      commandId: 'c1',
+      read: { kind: 'unreadable', reason: 'srt violations could not be read' },
+    },
+  ],
   RunFailed: [{ kind: 'timeout', detail: 'the wall was hit' }],
   RunSpent: [
     {

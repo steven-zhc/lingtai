@@ -356,6 +356,13 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     `kept ${need(d, 'files')} file(s) +${need(d, 'insertions')} −${need(d, 'deletions')} as ${sha(d, 'sha')} ` +
     `on ${need(d, 'arm')} — stopped by ${need(d, 'stoppedBy')}`,
   RunProposedCompletion: (d) => `head ${sha(d, 'headSha')}`,
+  SandboxBoundaryRecorded: (d) => `${need(d, 'action')} ran ${need(d['boundary'] as Payload, 'kind')}`,
+  SandboxConnectionsRefused: (d) => {
+    const read = d['read'] as Payload
+    return read['kind'] === 'entries'
+      ? `${need(d, 'action')}: ${(read['entries'] as unknown[]).length} host(s) refused${read['complete'] === false ? ', at least' : ''}`
+      : `${need(d, 'action')}: refusals could not be read`
+  },
   RunFinished: (d) => `${need(d, 'turns')} turns, $${Number(d['costUsd'] ?? 0).toFixed(2)}`,
 
   // ----------------------------------------------------------------- gate --

@@ -55,7 +55,7 @@ export interface Wrapped {
    * srt's store total when `wrap` began, or undefined when it could not be read, in which case the read says
    * `unreadable` rather than guess. Only `refusedConnections` uses it.
    */
-  readonly violationsBefore: number | undefined
+  readonly violationsBefore?: number | undefined
 }
 
 export interface SandboxApi {
