@@ -10,7 +10,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
-import type { SandboxMark } from '../lib/sandbox-state.ts'
+import { GLYPH, type SandboxMark } from '../lib/sandbox-state.ts'
 
 export const withProject = (path: string, project: string | undefined): string =>
   project === undefined ? path : `${path}?project=${encodeURIComponent(project)}`
@@ -95,16 +95,6 @@ export function BarActions({
       <span className="vsep" aria-hidden="true" />
     </>
   )
-}
-
-/** A shape per state, so colour is never the only difference: tick, exclamation, cross; off is a dashed empty box. */
-const GLYPH: Record<SandboxMark['state'], string> = {
-  sandboxed: '✓',
-  degraded: '!',
-  stopped: '✕',
-  off: '',
-  unknown: '?',
-  unreadable: '?',
 }
 
 const sectionOf = (project: string) => `/recipe/${encodeURIComponent(project)}#sandbox`

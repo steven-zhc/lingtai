@@ -68,6 +68,26 @@ export function sandboxState(facts: SandboxFacts): SandboxState {
   return { state: 'unknown', sentence: UNKNOWN_WHILE_REFUSED }
 }
 
+/** A shape per state, so colour is never the only difference: tick, exclamation, cross; off is a dashed empty box. */
+export const GLYPH: Record<SandboxStateName, string> = {
+  sandboxed: '✓',
+  degraded: '!',
+  stopped: '✕',
+  off: '',
+  unknown: '?',
+  unreadable: '?',
+}
+
+/** Each named project's state, from the register a page already holds (#1166). Unnamed projects are skipped. */
+export function sandboxStates(projects: readonly ProjectState[]): ReadonlyMap<string, SandboxState> {
+  const states = new Map<string, SandboxState>()
+  for (const p of projects) {
+    if (p.project === null) continue
+    states.set(p.project, sandboxState(sandboxFactsOf(p)))
+  }
+  return states
+}
+
 /** How much each state needs a person, worst first. `unreadable` is not ranked: it is counted beside the rest. */
 const RANK: readonly SandboxStateName[] = ['stopped', 'degraded', 'unknown', 'off', 'sandboxed']
 

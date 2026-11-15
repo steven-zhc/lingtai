@@ -26,8 +26,10 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 
 import { isPaused, type LockMap } from '@/lib/lock-marks.ts'
+import type { SandboxState } from '@/lib/sandbox-state.ts'
 
 import { FilterMenu } from './filter-menu'
+import { ProjectSandboxMark } from './sandbox-mark'
 
 /** Where `+` lands and why: step 0 before the App answers, the picker after. */
 const addTarget = (app: boolean) => ({
@@ -57,12 +59,15 @@ export function ProjectRows({
   app,
   registered,
   locks,
+  sandbox,
 }: {
   filters: string[]
   only: string | undefined
   app: boolean
   registered: readonly string[]
   locks: LockMap
+  /** Each project's sandbox state (#1166); absent draws no mark. */
+  sandbox?: ReadonlyMap<string, SandboxState>
 }) {
   const { where, why } = addTarget(app)
   // What choosing a row gives, said once; the text is per project.
@@ -92,7 +97,15 @@ export function ProjectRows({
           href={`/?project=${encodeURIComponent(p)}`}
           {...(only === p ? current : {})}
         >
-          {p}
+          {sandbox?.get(p) === undefined ? (
+            p
+          ) : (
+            // The row spreads its children apart: name and mark are one child, so the mark stays beside the name.
+            <span className="pname">
+              {p}
+              <ProjectSandboxMark state={sandbox.get(p)} />
+            </span>
+          )}
           {isPaused(locks.get(p)) ? <span className="pause-tag">paused</span> : null}
           {hint(p) === null ? null : <span className="phint">{hint(p)}</span>}
         </Link>
@@ -121,6 +134,7 @@ export function Projects({
   app,
   registered,
   locks,
+  sandbox,
 }: {
   filters: string[]
   only: string | undefined
@@ -129,16 +143,19 @@ export function Projects({
   registered: readonly string[]
   /** What holds each project: a paused one is marked, never explained (0126 §8). */
   locks: LockMap
+  sandbox?: ReadonlyMap<string, SandboxState>
 }) {
   // Nothing configured is the one board with somewhere to go, and it is the
   // same object rather than a fourth one (#169).
   if (filters.length === 0)
-    return <ProjectRows filters={filters} only={only} app={app} registered={registered} locks={locks} />
+    return (
+      <ProjectRows filters={filters} only={only} app={app} registered={registered} locks={locks} sandbox={sandbox} />
+    )
 
   return (
     <>
       <FilterMenu className="filter" summary={filterSummary(only ?? 'all projects')}>
-        <ProjectRows filters={filters} only={only} app={app} registered={registered} locks={locks} />
+        <ProjectRows filters={filters} only={only} app={app} registered={registered} locks={locks} sandbox={sandbox} />
       </FilterMenu>
       <AddProject app={app} />
     </>
