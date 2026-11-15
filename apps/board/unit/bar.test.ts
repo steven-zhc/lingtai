@@ -511,3 +511,32 @@ describe('the dot warns when nothing conducts and the queue has runnable tickets
     expect(bearing('open', board({ conductor: { held: null } }), null, 4).tone).toBe('pass')
   })
 })
+
+describe('the dot says when a required sandbox is not running (#1167)', () => {
+  const stopped = {
+    wrong: 'lingtai stopped: no sandbox',
+    command: 'brew install ripgrep',
+    said: 'lingtai requires a sandbox this host cannot provide',
+  }
+
+  it('one stopped project: the label and the install command', () => {
+    const said = bearing('open', board(), null, null, stopped)
+    expect(said.tone).toBe('warn')
+    expect(said.label).toBe('lingtai stopped: no sandbox')
+    expect(said.command).toBe('brew install ripgrep')
+    expect(said.title).toContain('requires a sandbox this host cannot provide')
+  })
+
+  it('beats stale code, which a restart would not cure', () => {
+    expect(bearing('open', board(), behind, null, stopped).label).toBe('lingtai stopped: no sandbox')
+  })
+
+  it('does not beat an offline socket or a daemon nobody is running', () => {
+    expect(bearing('trouble', board(), null, null, stopped).label).toBe('offline')
+    expect(bearing('open', board({ daemon: 'stale', lag: 3 }), null, null, stopped).label).toBe('behind 3 · no daemon')
+  })
+
+  it('null changes nothing', () => {
+    expect(bearing('open', board(), behind, null, null)).toEqual(bearing('open', board(), behind, null))
+  })
+})

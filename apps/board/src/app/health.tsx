@@ -30,8 +30,11 @@ import { isSea } from 'node:sea'
 
 import { lastBeat, readStatus } from '@lingtai/daemon/control'
 import { codeCurrency, describeCurrency } from '@lingtai/daemon/currency'
+import { installFor } from '@lingtai/recipe'
 
-import type { CodeNews } from '@/lib/bearing'
+import type { CodeNews, SandboxNews } from '@/lib/bearing'
+import { readSandboxFacts } from '@/lib/sandbox-read'
+import { stoppedProjects } from '@/lib/sandbox-state'
 
 import { Live } from './live.tsx'
 
@@ -89,6 +92,30 @@ async function news(): Promise<CodeNews | null> {
 }
 
 /**
+ * The projects in scope whose required sandbox is not running, or null when none is. **A failed read is not none**:
+ * health reads its own facts and never sees this rejection, so it says the uncertainty itself (#1167).
+ */
+export async function sandboxNews(project: string | undefined): Promise<SandboxNews | null> {
+  const facts = await readSandboxFacts().catch(() => null)
+  if (facts === null) {
+    return {
+      wrong: 'sandbox state unreadable',
+      command: 'lingtai doctor',
+      said: 'could not read which projects require a sandbox',
+    }
+  }
+  const stopped = stoppedProjects(facts, project)
+  if (stopped.length === 0) return null
+  const install = installFor(process.platform)?.command
+  const names = stopped.length === 1 ? stopped[0]! : `${stopped.length} projects`
+  return {
+    wrong: `${names} stopped: no sandbox`,
+    command: install ?? 'lingtai doctor',
+    said: `${stopped.join(', ')} require${stopped.length === 1 ? 's' : ''} a sandbox this host cannot provide`,
+  }
+}
+
+/**
  * Not `async`, and `code` is a promise: `Live` stays mounted across a project
  * switch and reads it under its own boundary. An async component here would
  * block the shell on git.
@@ -97,10 +124,12 @@ export function Health({
   near,
   runnable,
   projectKey,
+  project,
 }: {
+  project?: string | undefined
   near: Promise<string | null>
   runnable: Promise<number | null>
   projectKey: string
 }) {
-  return <Live code={news()} near={near} runnable={runnable} projectKey={projectKey} />
+  return <Live code={news()} sandbox={sandboxNews(project)} near={near} runnable={runnable} projectKey={projectKey} />
 }

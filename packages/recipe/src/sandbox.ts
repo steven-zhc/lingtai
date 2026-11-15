@@ -38,6 +38,27 @@ export const SANDBOX_REQUIRED_REFUSAL =
  */
 export const isSandboxRequiredRefusal = (detail: string): boolean => detail.includes(SANDBOX_REQUIRED_REFUSAL)
 
+/**
+ * The host's own reason out of a sandbox-required refusal: the parenthesised text `checkSandboxBlock` puts right
+ * after `SANDBOX_REQUIRED_REFUSAL` (#1167). Undefined when the detail is not that refusal or the shape is not the
+ * one written there, so the caller falls back to a fixed sentence and never to a guess. It lives beside the
+ * template so the sentence and its reader change together.
+ */
+export function sandboxRequiredReason(detail: string): string | undefined {
+  const at = detail.indexOf(SANDBOX_REQUIRED_REFUSAL)
+  if (at < 0) return undefined
+  const rest = detail.slice(at + SANDBOX_REQUIRED_REFUSAL.length)
+  if (!rest.startsWith(' (')) return undefined
+  // The reason is the host's own sentences and may hold parentheses; the template closes it with ` — `.
+  const end = rest.indexOf(') — ')
+  if (end < 0) return undefined
+  const reason = rest.slice(2, end).trim()
+  return reason === '' ? undefined : reason
+}
+
+/** What to install on a platform to give srt its programs, re-exported so a reader of the board does not need `@lingtai/sandbox`'s own dependency (#1167). */
+export { installFor } from '@lingtai/sandbox'
+
 /** S3's `hostCanSandbox`: succeeds when this host can sandbox, fails with srt's own sentences when it cannot. */
 export type HostAnswer = Effect.Effect<void, SandboxUnavailable>
 

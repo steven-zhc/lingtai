@@ -84,7 +84,7 @@ import {
   type ReactNode,
 } from 'react'
 
-import { bearing, type Bearing, type CodeNews } from '@/lib/bearing'
+import { bearing, type Bearing, type CodeNews, type SandboxNews } from '@/lib/bearing'
 import type { Health } from '@/lib/health'
 
 /**
@@ -311,21 +311,27 @@ function Counted({
   socket,
   health,
   code,
+  sandbox,
   runnable,
 }: {
   socket: 'connecting' | 'open' | 'trouble'
   health: Health | null
   code: CodeNews | null
+  sandbox: SandboxNews | null
   runnable: Promise<number | null>
 }) {
-  return <Said said={bearing(socket, health, code, use(runnable))} />
+  return <Said said={bearing(socket, health, code, use(runnable), sandbox)} />
 }
+
+/** `Live`'s default: no stopped sandbox. */
+const NO_SANDBOX_NEWS: Promise<SandboxNews | null> = Promise.resolve(null)
 
 /** What waits on the code's news and the day's reading, both read under `Live`'s outer boundary. */
 function Answered({
   socket,
   health,
   code,
+  sandbox,
   near,
   runnable,
   projectKey,
@@ -333,16 +339,18 @@ function Answered({
   socket: 'connecting' | 'open' | 'trouble'
   health: Health | null
   code: Promise<CodeNews | null>
+  sandbox: Promise<SandboxNews | null>
   near: Promise<string | null>
   runnable: Promise<number | null>
   projectKey: string
 }) {
   const news = use(code)
+  const stopped = use(sandbox)
   const closeTo = use(near)
   return (
     <>
-      <Suspense key={`runnable:${projectKey}`} fallback={<Said said={bearing(socket, health, news, null)} />}>
-        <Counted socket={socket} health={health} code={news} runnable={runnable} />
+      <Suspense key={`runnable:${projectKey}`} fallback={<Said said={bearing(socket, health, news, null, stopped)} />}>
+        <Counted socket={socket} health={health} code={news} sandbox={stopped} runnable={runnable} />
       </Suspense>
       {/* Today's spend, only near the ceiling, after whatever the bearing said
           and never instead of it. The fail colour, never amber. */}
@@ -363,11 +371,14 @@ function Answered({
  */
 export function Live({
   code,
+  sandbox,
   near,
   runnable,
   projectKey,
 }: {
   code: Promise<CodeNews | null>
+  /** Absent is none stopped: a page that draws no sandbox rows has nothing to say about them. */
+  sandbox?: Promise<SandboxNews | null>
   near: Promise<string | null>
   runnable: Promise<number | null>
   projectKey: string
@@ -375,7 +386,15 @@ export function Live({
   const { socket, health } = useFollow()
   return (
     <Suspense key={`health:${projectKey}`} fallback={<span className="dot ct-pulse" aria-hidden="true" />}>
-      <Answered socket={socket} health={health} code={code} near={near} runnable={runnable} projectKey={projectKey} />
+      <Answered
+        socket={socket}
+        health={health}
+        code={code}
+        sandbox={sandbox ?? NO_SANDBOX_NEWS}
+        near={near}
+        runnable={runnable}
+        projectKey={projectKey}
+      />
     </Suspense>
   )
 }

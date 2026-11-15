@@ -60,6 +60,7 @@ import { Pending } from './pending.tsx'
 import { AddProject, filterSummary, ProjectRows } from './projects.tsx'
 import { QueuedAnswered, QueuedCountAnswered, QueuedCountPending, QueuedFallback } from './queued-stream.tsx'
 import { Rail, Segs } from './rail.tsx'
+import { sandboxBanner } from './sandbox-banner.tsx'
 import { ProjectSandboxMark } from './sandbox-mark.tsx'
 import { sandboxSlot } from './sandbox-slot.tsx'
 import { Skeleton } from './skeleton.tsx'
@@ -834,12 +835,22 @@ async function HeadlinePart({ ctx }: { ctx: Ctx }) {
   ) : null
 }
 
-async function BannerPart({ ctx }: { ctx: Ctx }) {
+async function LockPart({ ctx }: { ctx: Ctx }) {
   const [board, lockRead] = await Promise.all([ctx.reads.board, ctx.locks])
   const { only } = shape(board, ctx.param)
+  return <LockRows locks={lockRead} scope={only} now={new Date()} />
+}
+
+/** Its own part, so the sandbox rows' skeleton mounts before the registered-project read and not after it (#1167). */
+async function SandboxPart({ ctx }: { ctx: Ctx }) {
+  const { only } = shape(await ctx.reads.board, ctx.param)
+  return sandboxBanner(only)
+}
+
+async function BannerPart({ ctx }: { ctx: Ctx }) {
+  const board = await ctx.reads.board
   return (
     <>
-      <LockRows locks={lockRead} scope={only} now={new Date()} />
       {/* Repositories that are recorded and not yet conducted (#163). Above
         the lanes because it is not work, and absent entirely when there are none. */}
       <Pending projects={board.pending} />
@@ -1118,6 +1129,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               subscription. */}
             <Health
               projectKey={projectKey}
+              project={ctx.param}
               near={ctx.reads.day.then((d) => nearCeiling(d.day, d.ceilingUsd))}
               runnable={queue.then(
                 (q) => q.runnable,
@@ -1157,6 +1169,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               and not a fourth one. A fourth object is still argued for here. */}
           </span>
         </Bar>
+        <Suspense key={key('lock-banner')} fallback={null}>
+          <LockPart ctx={ctx} />
+        </Suspense>
+        <Suspense key={key('sandbox-banner')} fallback={null}>
+          <SandboxPart ctx={ctx} />
+        </Suspense>
         <Suspense key={key('banner')} fallback={null}>
           <BannerPart ctx={ctx} />
         </Suspense>

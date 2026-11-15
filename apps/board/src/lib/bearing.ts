@@ -57,6 +57,20 @@ export interface CodeNews {
   said: string
 }
 
+/**
+ * A required sandbox that is not running (#1167): only the *stopped* projects, since a degraded one asked for no
+ * more than it got. Server-built, like `CodeNews`; null when none is stopped. A failed read is a `SandboxNews` of its own
+ * saying so, never null.
+ */
+export interface SandboxNews {
+  /** What is wrong, in a few words. */
+  wrong: string
+  /** The command that fixes it, bare: the install command, or `lingtai doctor` where none is known. */
+  command: string
+  /** The whole of it, for the title. */
+  said: string
+}
+
 export interface Bearing {
   tone: Tone
   /** What the dot would say if a dot could speak. Read by a screen reader. */
@@ -101,13 +115,17 @@ export function bearing(
   board: Health | null,
   code: CodeNews | null,
   runnable: number | null,
+  sandbox: SandboxNews | null = null,
 ): Bearing {
   // The whole sentence carries both facts wherever there are two, so reducing
   // the chips did not make either unreachable. Every branch below goes through
   // it, including the two that are about the stream rather than the board: the
   // currency is a server prop and is known whether or not the socket is up, and
   // "nothing here is updating" is the moment somebody most wants the other half.
-  const also = (said: string) => (code ? `${said}; ${code.said}` : said)
+  const also = (said: string) => {
+    const withCode = code ? `${said}; ${code.said}` : said
+    return sandbox ? `${withCode}; ${sandbox.said}` : withCode
+  }
 
   if (socket === 'trouble') {
     return {
@@ -210,6 +228,17 @@ export function bearing(
   // Current, and being advanced by a process running code the repository has
   // moved past. #98's thirty-nine minutes: current and unpaused were both true
   // the whole time, and the fix that had landed could not run.
+  // A required sandbox that is not running comes before stale code: `lingtai restart` does not cure a missing
+  // `bwrap`, and the project is not taking work until something is installed or the recipe changes (#1167).
+  if (sandbox) {
+    return {
+      tone: 'warn',
+      label: sandbox.wrong,
+      why: sandbox.wrong,
+      command: sandbox.command,
+      title: also(board.lag === 0 ? `task_view is at the head — ${beat}` : `catching up — ${beat}`),
+    }
+  }
   if (code?.wrong) {
     return {
       tone: 'warn',
