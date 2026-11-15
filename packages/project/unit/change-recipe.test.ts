@@ -56,8 +56,23 @@ function setup(initial: Record<string, string>, failReplace = false) {
         { by, store, home: HOME },
       ).pipe(Effect.provideService(ProjectFiles, files)),
     )
+  const eventsFull = async () =>
+    (await store.read(projectStream('app'))).map((e) => {
+      const d = e.data as { by: string; source: string }
+      return { by: d.by, source: d.source }
+    })
+  const load = () =>
+    run(
+      loadProject('app', {
+        home: HOME,
+        store,
+        base: 'main',
+        ...skipSandboxHost,
+        signedIn: async () => ['claude-code' as const],
+      }).pipe(Effect.provideService(ProjectFiles, files), Effect.ignore),
+    )
   const events = async () => (await store.read(projectStream('app'))).map((e) => e.data as { by: string })
-  return { disk, store, order, files, text, events, run }
+  return { disk, store, order, files, text, events, eventsFull, load, run }
 }
 
 describe('changeRecipe', () => {
@@ -128,16 +143,24 @@ describe('changeRecipe', () => {
     expect((await readProjectState('app', t.store)).recipe?.by).toBe('human:me')
   })
 
-  it('two saves at once leave the last event agreeing with the file', async () => {
+  it('two saves at once each land with their own source and author', async () => {
     const t = setup({ [PATH]: GOOD })
     const B = EDITED.replace('feature', 'tech-debt')
     const [a, b] = await Promise.all([t.text(EDITED, GOOD, 'human:a'), t.text(B, GOOD, 'human:b')])
+    const landed = await t.eventsFull()
+    for (const [r, by, text] of [
+      [a, 'human:a', EDITED],
+      [b, 'human:b', B],
+    ] as const) {
+      if (r.ok) expect(landed).toContainEqual({ by, source: sourceOf(text) })
+    }
     expect([a.ok, b.ok].filter(Boolean).length).toBeGreaterThanOrEqual(1)
+    await t.load()
     const state = await readProjectState('app', t.store)
     expect(state.recipe?.sourceHash).toBe(sourceHashOf(sourceOf(t.disk.get(PATH)!)))
   })
 
-  it('a save that loses the version race records the file as a later writer left it', async () => {
+  it('an interleaved pair records each writer’s own source, and the next load records the file by file', async () => {
     const t = setup({ [PATH]: GOOD })
     const B = EDITED.replace('feature', 'tech-debt')
     const append = t.store.append.bind(t.store)
@@ -158,8 +181,16 @@ describe('changeRecipe', () => {
     release()
     expect(await a).toMatchObject({ ok: true })
     expect(t.disk.get(PATH)).toBe(B)
-    const state = await readProjectState('app', t.store)
-    expect(state.recipe?.sourceHash).toBe(sourceHashOf(sourceOf(B)))
+    // Each event carries its own writer's source and author; nothing was read back from the file.
+    expect(await t.eventsFull()).toEqual([
+      { by: 'human:b', source: sourceOf(B) },
+      { by: 'human:a', source: sourceOf(EDITED) },
+    ])
+    // The newest event is A's, not the file's; the next load records the file as it stands.
+    await t.load()
+    const events = await t.eventsFull()
+    expect(events.at(-1)).toEqual({ by: 'file', source: sourceOf(B) })
+    expect((await readProjectState('app', t.store)).recipe?.sourceHash).toBe(sourceHashOf(sourceOf(B)))
   })
 
   it('changes are applied to the snapshot they are compared with', async () => {

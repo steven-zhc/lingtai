@@ -22,7 +22,7 @@ import {
 } from '@lingtai/recipe'
 import { Cause, Effect } from 'effect'
 
-import { recordObservedRecipe } from './commands.ts'
+import { recordFileRecipe } from './commands.ts'
 import { draftRecipe } from './draft.ts'
 import { ProjectFiles, filesEffect } from './files.ts'
 import { recipePath, resolveLocalRecipeEffect } from './local.ts'
@@ -129,22 +129,12 @@ export const changeRecipe = Effect.fn('project.change-recipe')(function* (
   const written = text !== current
   if (written) yield* files.replace(path, text)
 
-  // What the file says **when the append is attempted**, hashed as `loadProject` hashes it: a save that lost the
-  // version race re-observes the file on its retry, so it never appends its own text over a later writer's.
-  yield* recordObservedRecipe(
-    project,
-    () =>
-      files.read(path).pipe(
-        Effect.flatMap((onDisk) =>
-          onDisk === null
-            ? Effect.fail(new Error(`${path} is gone`))
-            : Effect.sync(() => {
-                const source = sourceOf(onDisk)
-                return { sourceHash: sourceHashOf(source), source, by: options.by }
-              }),
-        ),
-      ),
-    store,
-  ).pipe(Effect.mapError((e) => new RecipeNotRecordedError(path, e)))
+  // The source this call wrote, on every attempt — never read back from the file. Two saves can interleave (A writes,
+  // B writes, B appends, A appends); the next `loadProject` sees the file differ from the newest event and records it
+  // `by: 'file'` (0128 §6), so the content is never lost, only who saved it.
+  const source = sourceOf(text)
+  yield* recordFileRecipe(project, { sourceHash: sourceHashOf(source), source, by: options.by }, store).pipe(
+    Effect.mapError((e) => new RecipeNotRecordedError(path, e)),
+  )
   return { ok: true, path, written, content: text } as SaveRecipeTextResult
 })
