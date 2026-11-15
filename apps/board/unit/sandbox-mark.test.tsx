@@ -1,4 +1,6 @@
 /** The sandbox mark on the filter's rows, the cards and the landed rows (#1166). */
+import { readFileSync } from 'node:fs'
+
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
@@ -17,7 +19,11 @@ describe('ProjectSandboxMark', () => {
     const out = renderToStaticMarkup(<ProjectSandboxMark state={st(name)} />)
     expect(out).toContain(`sbx-${name}`)
     expect(out).toContain(`aria-label="${SENTENCES[name]}"`)
-    expect(out).toContain(`>${GLYPH[name]}</span>`)
+    expect(out).toContain('<svg')
+    if (name === 'off') expect(out.match(/<path/g)).toHaveLength(1)
+    else expect(out).toContain(`d="${GLYPH[name]}"`)
+    // No text inside the mark: only the svg and its paths.
+    expect(out.slice(out.indexOf('<span class="sbx-mark"')).replace(/<[^>]*>/g, '')).toBe('')
     expect(out).not.toContain('<a')
     expect(out).not.toContain('pause-tag')
   })
@@ -66,20 +72,18 @@ const board = {
 } as unknown as BoardCard
 
 describe('cards and landed rows', () => {
-  it('Card carries the mark when given a state, and none otherwise', () => {
-    const el = (s?: SandboxState) =>
-      renderToStaticMarkup(<Card card={board} showProject={false} issue={null} paused={false} sandbox={s} />)
-    expect(el(st('degraded'))).toContain('sbx-degraded')
-    expect(el()).not.toContain('sbx')
+  it('Card draws no mark', () => {
+    expect(renderToStaticMarkup(<Card card={board} showProject={false} issue={null} paused={false} />)).not.toContain(
+      'sbx',
+    )
   })
 
-  it('a waiting Card carries it too', () => {
+  it('a waiting Card draws none either', () => {
     const w = { ...board, column: 'waiting', note: null, short: null, cause: null, triage: null, move: null } as never
-    const out = renderToStaticMarkup(<Card card={w} showProject issue={null} paused={false} sandbox={st('stopped')} />)
-    expect(out).toContain('sbx-stopped')
+    expect(renderToStaticMarkup(<Card card={w} showProject issue={null} paused={false} />)).not.toContain('sbx')
   })
 
-  it('LandedRow carries it outside the meta link', () => {
+  it('LandedRow draws none', () => {
     const c = {
       ...board,
       column: 'landed',
@@ -89,8 +93,20 @@ describe('cards and landed rows', () => {
       updatedAt: null,
       progress: null,
     }
-    const out = renderToStaticMarkup(<LandedRow card={c as never} showProject issue={null} sandbox={st('sandboxed')} />)
-    expect(out.indexOf('sbx-sandboxed')).toBeLessThan(out.indexOf('lmeta'))
     expect(renderToStaticMarkup(<LandedRow card={c as never} showProject issue={null} />)).not.toContain('sbx')
+  })
+})
+
+describe('the home rail', () => {
+  it('draws the sandbox slot once, immediately before <Health', () => {
+    const src = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8')
+    expect(src.match(/sandboxSlot\(/g)).toHaveLength(1)
+    const rail = src.slice(src.indexOf('className="rail"'))
+    const slot = rail.indexOf("sandboxSlot(param, key('sandbox'))")
+    const health = rail.indexOf('<Health')
+    expect(slot).toBeGreaterThan(-1)
+    expect(slot).toBeLessThan(health)
+    const between = rail.slice(slot + "sandboxSlot(param, key('sandbox'))".length, health)
+    expect(between.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').trim()).toBe('}')
   })
 })

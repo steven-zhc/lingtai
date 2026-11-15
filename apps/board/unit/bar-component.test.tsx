@@ -67,30 +67,14 @@ describe('Bar', () => {
   })
 })
 
-describe('Bar and the sandbox icon (#1163)', () => {
-  const icon = (
-    <a className="sbx sbx-sandboxed" href="/recipe/x#sandbox" aria-label="sandbox sandboxed" title="sandbox sandboxed">
-      <span className="sbx-mark" aria-hidden="true" />
-    </a>
-  )
-  const withIcon = renderToStaticMarkup(<Bar project="x" registered sandbox={icon} />)
-  const nav = withIcon.slice(withIcon.indexOf('class="topnav"'))
-
-  it('draws the icon in .topnav before Report', () => {
-    expect(nav.indexOf('class="sbx')).toBeGreaterThan(-1)
-    expect(nav.indexOf('class="sbx')).toBeLessThan(nav.indexOf('/report'))
-  })
-
-  it('admits exactly that icon: nothing else new in .topnav', () => {
-    // Byte-for-byte: the bar with the icon, less the icon's own markup, is the bar without it. Anything else
-    // added to `.topnav` (a `/spend` link, a chip) breaks the equality.
-    const iconHtml = renderToStaticMarkup(icon)
-    expect(withIcon.split(iconHtml)).toHaveLength(2)
-    expect(withIcon.replace(iconHtml, '')).toBe(renderToStaticMarkup(<Bar project="x" registered />))
-    const bare = renderToStaticMarkup(<Bar project="x" sandbox={icon} />)
-    expect(bare.replace(iconHtml, '')).toBe(renderToStaticMarkup(<Bar project="x" />))
-    expect(bare.replace(iconHtml, '')).not.toContain('/recipe/')
-    expect(bare.replace(iconHtml, '')).not.toContain('vsep')
+describe('Bar and the sandbox shield (#1183)', () => {
+  it('holds no shield in .topnav, on a registered project or on all', () => {
+    for (const html of [
+      renderToStaticMarkup(<Bar project="x" registered />),
+      renderToStaticMarkup(<Bar project={undefined} />),
+    ]) {
+      expect(html.slice(html.indexOf('class="topnav"'))).not.toContain('sbx')
+    }
   })
 
   it('lists each project of a tie in a details disclosure whose name is the sentence', () => {

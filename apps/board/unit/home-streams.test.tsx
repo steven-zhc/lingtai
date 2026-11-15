@@ -131,7 +131,9 @@ describe('the shell, with every read pending', () => {
       /<footer class="footer"><span class="spend"><span>Today<\/span><span class="figures"><span class="ct-pulse"/,
     )
     // the rail's paused slot is the pulse and not an absence
-    expect(html).toMatch(/<span class="rail"><span class="live"><\/span><span class="ct-pulse"/)
+    expect(html).toMatch(
+      /<span class="rail">(<span class="sbx sbx-skeleton" aria-hidden="true"><\/span>)?<span class="live"><\/span><span class="ct-pulse"/,
+    )
   })
 
   it('calls loadBoard once per render', async () => {
@@ -182,7 +184,9 @@ describe('the boundaries', () => {
     expect(html).not.toContain('sk-card')
     expect(html).not.toContain('sk-line')
     // Queued waits for the board and GitHub, not the day's spend: its empty line is drawn too, so all four columns count
-    expect(html).not.toMatch(/<span class="rail"><span class="live"><\/span><span class="ct-pulse"/)
+    expect(html).not.toMatch(
+      /<span class="rail">(<span class="sbx sbx-skeleton" aria-hidden="true"><\/span>)?<span class="live"><\/span><span class="ct-pulse"/,
+    )
     // the day's spend and the lags did not answer: the footer is still its frame, never \$0
     expect(html).toMatch(
       /<footer class="footer"><span class="spend"><span>Today<\/span><span class="figures"><span class="ct-pulse"/,

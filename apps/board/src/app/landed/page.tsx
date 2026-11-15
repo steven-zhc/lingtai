@@ -11,7 +11,6 @@
 
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
-import { sandboxSlot } from '@/app/sandbox-slot.tsx'
 import {
   currentLanded,
   landedContext,
@@ -60,7 +59,6 @@ export default async function LandedPage({ searchParams }: { searchParams: Promi
         project={only}
         registered={only !== undefined && projects.some((p) => p.project === only)}
         pause={await pauseSlot(only)}
-        sandbox={sandboxSlot(only)}
       >
         <span className="sep" />
         <span className="mono">landed{only === undefined ? '' : ` · ${only}`}</span>

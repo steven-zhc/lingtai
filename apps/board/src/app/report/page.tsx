@@ -15,7 +15,6 @@ import { report as buildReport, type Report } from '@lingtai/conductor/report'
 
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
-import { sandboxSlot } from '@/app/sandbox-slot.tsx'
 import { readDayReading } from '@/lib/day-spend'
 import { readControlOnce, readRegistered } from '@/lib/locks.ts'
 import {
@@ -106,7 +105,6 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
           registered={only !== undefined && projects.some((p) => p.project === only)}
           here="report"
           pause={await pauseSlot(only)}
-          sandbox={sandboxSlot(only)}
         >
           <span className="sep" />
           <span className="mono">report{only === undefined ? '' : ` · ${only}`}</span>

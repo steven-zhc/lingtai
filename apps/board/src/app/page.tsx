@@ -38,7 +38,7 @@ import { everyPaused, type LockMap, lockMap } from '@/lib/lock-marks.ts'
 import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { elapsed } from '@/lib/progress'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
-import { sandboxStates, type SandboxState } from '@/lib/sandbox-state.ts'
+import { sandboxStates } from '@/lib/sandbox-state.ts'
 import { billHasAny, billText } from '@/lib/spend'
 import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
@@ -61,7 +61,6 @@ import { AddProject, filterSummary, ProjectRows } from './projects.tsx'
 import { QueuedAnswered, QueuedCountAnswered, QueuedCountPending, QueuedFallback } from './queued-stream.tsx'
 import { Rail, Segs } from './rail.tsx'
 import { sandboxBanner } from './sandbox-banner.tsx'
-import { ProjectSandboxMark } from './sandbox-mark.tsx'
 import { sandboxSlot } from './sandbox-slot.tsx'
 import { Skeleton } from './skeleton.tsx'
 
@@ -197,7 +196,6 @@ export function Card({
   issue,
   paused,
   projectLocks = [],
-  sandbox,
   arrive = false,
   next = false,
 }: {
@@ -217,8 +215,6 @@ export function Card({
   paused: boolean
   /** What holds this card's project (#995): only marked here, the banner explains. */
   projectLocks?: readonly Lock[]
-  /** This card's project's sandbox state (#1166); absent draws no mark. */
-  sandbox?: SandboxState
 }) {
   if (card.column === 'waiting') {
     const fallback = card.note?.split(/\r?\n/, 1)[0]?.trim() ?? null
@@ -226,7 +222,6 @@ export function Card({
       <article className={`card waiting-card ${accent(card)}`}>
         <span className="id">
           {showProject ? <span className="proj">{card.project}</span> : null}
-          <ProjectSandboxMark state={sandbox} />
           <IssueRef href={issue} issue={card.ref} />
         </span>
         <Link className="ti" href={`/task/${encodeURIComponent(card.taskId)}`}>
@@ -296,7 +291,6 @@ export function Card({
             the whole thing this is for (#85). */}
         <KindDot card={card} />
         {showProject ? <span className="proj">{card.project} </span> : null}
-        <ProjectSandboxMark state={sandbox} />
         <IssueRef href={issue} issue={card.ref} /> · {card.kind}
         {/* Not amber, and not any of the state colours: "taken first" is a
             fact about the queue's order, not about a person being waited on. */}
@@ -509,12 +503,10 @@ export function LandedRow({
   card,
   showProject,
   issue,
-  sandbox,
 }: {
   card: BoardCard
   showProject: boolean
   issue: string | null
-  sandbox?: SandboxState
 }) {
   const said = [
     // First, and only when it is true: this column's heading says *Landed*, and
@@ -555,7 +547,6 @@ export function LandedRow({
         </span>
       ) : null}
       {showProject ? <span className="proj">{card.project}</span> : null}
-      <ProjectSandboxMark state={sandbox} />
       <IssueRef href={issue} issue={card.ref} />
       <Link className="lmeta" href={`/task/${encodeURIComponent(card.taskId)}`} title={card.title}>
         · {said.join(' · ')}
@@ -576,23 +567,15 @@ function Landed({
   cards,
   showProject,
   issue,
-  sandbox,
 }: {
   cards: BoardCard[]
   showProject: boolean
   issue: (card: BoardCard) => string | null
-  sandbox: ReadonlyMap<string, SandboxState>
 }) {
   const rows = (some: BoardCard[]) => (
     <ul className="landed">
       {some.map((c) => (
-        <LandedRow
-          key={c.taskId}
-          card={c}
-          showProject={showProject}
-          issue={issue(c)}
-          sandbox={sandbox.get(c.project)}
-        />
+        <LandedRow key={c.taskId} card={c} showProject={showProject} issue={issue(c)} />
       ))}
     </ul>
   )
@@ -731,7 +714,7 @@ function lockShape(lockRead: LockRead, only: string | undefined, registered: Reg
   const registeredNames = registered.map((p) => p.project).filter((p): p is string => p !== null)
   const locksInScope: LockMap = new Map([...projectLocks].filter(([p]) => only === undefined || p === only))
   const allPaused = only === undefined && everyPaused(projectLocks, registeredNames)
-  // One map for the page, built from the register already read: the filter, the cards and the rows all look in it.
+  // One map for the page, built from the register already read: the filter's rows look in it.
   const sandbox = sandboxStates(registered)
   return { projectLocks, uses, registeredNames, locksInScope, allPaused, sandbox }
 }
@@ -919,7 +902,7 @@ async function CardsPart({
   const col = board.columns.find((c) => c.id === id)
   if (col === undefined) return null
   const { only, onBoard, boardHalf } = shape(board, ctx.param)
-  const { projectLocks, uses, locksInScope, allPaused, sandbox } = lockShape(lockRead, only, registered)
+  const { projectLocks, uses, locksInScope, allPaused } = lockShape(lockRead, only, registered)
   const { ticketSources, queueOrder, askable } = board
   // Where each card's ticket lives, from the owners already loaded — a lookup,
   // not a request per card.
@@ -939,7 +922,6 @@ async function CardsPart({
       issue={ticket(card)}
       paused={control.paused}
       projectLocks={projectLocks.get(card.project) ?? []}
-      sandbox={sandbox.get(card.project)}
       next={next}
       arrive={arrive}
     />
@@ -992,8 +974,7 @@ async function CardsPart({
       </p>
     )
   }
-  if (col.id === 'landed')
-    return <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} sandbox={sandbox} />
+  if (col.id === 'landed') return <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
   return (
     <>
       {col.cards.map((card) => (
@@ -1004,7 +985,6 @@ async function CardsPart({
           issue={ticket(card)}
           paused={control.paused}
           projectLocks={projectLocks.get(card.project) ?? []}
-          sandbox={sandbox.get(card.project)}
         />
       ))}
     </>
@@ -1076,7 +1056,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         </Suspense>
         <Bar
           project={param}
-          sandbox={sandboxSlot(param, key('sandbox'))}
           actions={
             <Suspense key={key('actions')} fallback={null}>
               <ActionsPart ctx={ctx} />
@@ -1127,6 +1106,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               action in it when either is not. Never amber — that is the
               headline's, below. Outside every keyed boundary: it holds the
               subscription. */}
+            {/* The sandbox's one shield, before the dot and never after it: health's sentence and command follow the
+              dot when something is wrong, so a mark behind them would jump (#1183). Outside Health, which holds the
+              subscription; its own keyed boundary, so a project switch remounts it. */}
+            {sandboxSlot(param, key('sandbox'))}
             <Health
               projectKey={projectKey}
               project={ctx.param}

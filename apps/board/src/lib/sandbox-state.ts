@@ -68,14 +68,14 @@ export function sandboxState(facts: SandboxFacts): SandboxState {
   return { state: 'unknown', sentence: UNKNOWN_WHILE_REFUSED }
 }
 
-/** A shape per state, so colour is never the only difference: tick, exclamation, cross; off is a dashed empty box. */
+/** A shape per state, so colour is never the only difference: tick, exclamation, cross, question; off is an empty outline. Stroked path data in the shield's 16×16 box (#1183). */
 export const GLYPH: Record<SandboxStateName, string> = {
-  sandboxed: '✓',
-  degraded: '!',
-  stopped: '✕',
+  sandboxed: 'M5.5 7.9 7.3 9.7 10.6 6.2',
+  degraded: 'M8 5.1V8.3M8 10.5V10.6',
+  stopped: 'M6.1 6.1 9.9 9.9M9.9 6.1 6.1 9.9',
   off: '',
-  unknown: '?',
-  unreadable: '?',
+  unknown: 'M6.4 6.2A1.65 1.65 0 1 1 8.9 7.6C8.3 8 8 8.3 8 8.9M8 10.6V10.7',
+  unreadable: 'M6.4 6.2A1.65 1.65 0 1 1 8.9 7.6C8.3 8 8 8.3 8 8.9M8 10.6V10.7',
 }
 
 /** Each named project's state, from the register a page already holds (#1166). Unnamed projects are skipped. */
