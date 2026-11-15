@@ -8,7 +8,7 @@ import type { EventStore } from '@lingtai/event-store/store'
 import { RecipeMissingError, checkDeclared, isRefusal, plainWhen, sourceHashOf, sourceOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
-import { recordFileRecipe } from './commands.ts'
+import { recordObservedRecipe } from './commands.ts'
 import { ProjectFiles, filesEffect } from './files.ts'
 import { type LocalRecipeOptions, recipePath, resolveLocalRecipeEffect } from './local.ts'
 import { defaultStore, readProjectStateEffect } from './state.ts'
@@ -23,22 +23,27 @@ export const loadProject = Effect.fn('project.load')(function* (project: string,
 
   const files = filesEffect(yield* ProjectFiles)
   const path = recipePath(project, options.home ?? stateDir())
-  const text = yield* files.read(path)
-  if (text === null) {
-    return yield* Effect.fail(
-      new RecipeMissingError(
-        options.base ?? path,
-        `no recipe at ${path}. The recipe is yours and lives on this machine (0046 §3) — ` +
-          'nothing is read from the repository, and nothing needs committing to it',
-      ),
-    )
-  }
-  const source = sourceOf(text)
-  yield* plainWhen(() => checkDeclared(source, path), isRefusal)
-
-  const state: ProjectState = yield* recordFileRecipe(
+  // Observed inside the record, after the stream is read, so a read taken before another reader's newer edit
+  // was recorded is retaken on the lost race rather than appended over it.
+  let source = ''
+  const state: ProjectState = yield* recordObservedRecipe(
     project,
-    { sourceHash: sourceHashOf(source), source, by: 'file' },
+    () =>
+      Effect.gen(function* () {
+        const text = yield* files.read(path)
+        if (text === null) {
+          return yield* Effect.fail(
+            new RecipeMissingError(
+              options.base ?? path,
+              `no recipe at ${path}. The recipe is yours and lives on this machine (0046 §3) — ` +
+                'nothing is read from the repository, and nothing needs committing to it',
+            ),
+          )
+        }
+        source = sourceOf(text)
+        yield* plainWhen(() => checkDeclared(source, path), isRefusal)
+        return { sourceHash: sourceHashOf(source), source, by: 'file' as const }
+      }),
     store,
   )
   const recipe = yield* resolveLocalRecipeEffect(project, options, (p) =>
