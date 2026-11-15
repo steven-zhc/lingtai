@@ -878,8 +878,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // Only once the boundary is on the stream, and never able to stop the child: the boundary is the record.
           Effect.andThen(
             Effect.forEach(events, (event) => {
-              if (event.type !== 'SandboxBoundaryRecorded') return Effect.void
-              const kind = observedKindOf((event.data as { boundary: { kind: string; reason?: string } }).boundary)
+              // `before` carries boundaries and nothing else (`sandbox-record.ts`), so the boundary is read, not the type.
+              const boundary = (event.data as { boundary?: { kind: string; reason?: string } }).boundary
+              const kind = boundary === undefined ? null : observedKindOf(boundary)
               return kind === null ? Effect.void : observeTheSandbox(kind, stream)
             }),
           ),
