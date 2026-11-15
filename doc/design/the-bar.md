@@ -123,18 +123,19 @@ argued against the three objects that are there, not against the empty space
 beside them, which is the argument none of the six tickets above was asked to
 make. The frame is held to the same rule.
 
-**One exception, from 0.14 (S9c, [0.14.md](../milestone/0.14.0/0.14.md)).** The sandbox's state is
-an icon beside `Report`, with no text: the selected project's state, or the
-worst across all projects. It earns its place on the question health already
-answers, *is the system doing what I configured it to*, and it costs one
-icon's width. It is not a chip and carries no figure; its sentence is its
-tooltip. The next thing proposed for the bar is argued against it too.
+**The sandbox is part of health, from 0.14 (S9c, [0.14.md](../milestone/0.14.0/0.14.md)).** The
+sandbox's state is a shield drawn immediately before health's dot on the home page's bar, with no
+text: the selected project's state, or the worst across all projects. It is not a fourth object but a
+part of health, because it answers health's own question, *is the system doing what I configured it
+to*; it comes before the dot because the dot is followed by health's sentence and command when there
+is one, and a mark after them would move every time they appeared. It carries no figure; its sentence
+is its tooltip, and it leads to the recipe's sandbox section. It is on no other page's bar — those
+bars have no health either — and on no card or landed row: the state is the project's, so one mark per
+ticket says the same thing ten times. The filter's menu keeps a small mark beside each project's name,
+the one place projects are told apart; the banners under the bar say *degraded* and *stopped* in words.
 
-It is in the code in `Bar`'s `.topnav`, before `Report` (`apps/board/src/app/bar.tsx`),
-fed by `sandbox-slot.tsx` on every page that draws the bar except `/setup`.
-`apps/board/unit/bar-component.test.tsx` holds `.topnav` to Recipe, Pause, this
-icon and Report, so the next thing added there is where the argument has to be made.
-`apps/board/unit/projects.test.tsx` holds the code to the set *filter, health,
+It is in the code in `.rail`, before `<Health>` (`apps/board/src/app/page.tsx`), fed by
+`sandbox-slot.tsx`. `apps/board/unit/projects.test.tsx` holds the code to the set *filter, health,
 headline*.
 
 ### An affordance inside an object is not a new object
