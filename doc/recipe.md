@@ -201,3 +201,7 @@ and every key has a page of its own, such as [`run`](plugins/run.md),
 [`agent`](plugins/agent.md) and [`human`](plugins/human.md). The commands
 around the file are in [the CLI guide](cli.md); [the operating guide](operating.md)
 is the long reference.
+
+`sandbox:` is not a plugin. It sets what a run may read, write and reach
+(`enabled`, `required`, `network.allow`, `write`, `deny`), from v0.14.0; see
+[safety](safety.md).
