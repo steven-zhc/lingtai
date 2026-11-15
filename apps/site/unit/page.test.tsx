@@ -173,7 +173,7 @@ describe("the home page's argument", () => {
     expect(start).toBeLessThan(html.indexOf('class="why"'))
     expect(block).toContain('from v0.14.0')
     expect(block).toContain('href="/docs/safety/"')
-    expect(block).toContain('telemetry')
+    expect(block).toMatch(/telemetry/i)
     expect(block).toContain('On for new projects')
     expect(block).toContain('ILLUSTRATION')
     for (const heading of ['Blocked', 'Allowed', 'Reachable', 'Limited', 'Cannot be read']) {
