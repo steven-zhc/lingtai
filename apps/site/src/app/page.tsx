@@ -190,6 +190,10 @@ export function HomePage({ books }: { books: Books | null }) {
               </li>
             </ul>
             <img className="sandbox-diagram" src="/img/docs/sandbox.svg" alt={SANDBOX_ALT} width={760} height={400} />
+            <p className="sandbox-note">
+              The board&apos;s Sandbox tab does not list telemetry hosts such as <code>sentry.io</code>: those
+              connections are refused and recorded, but left off it.
+            </p>
           </section>
 
           <section className="why" aria-labelledby="why-title">

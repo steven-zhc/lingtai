@@ -178,6 +178,7 @@ describe("the home page's argument", () => {
     expect(block).toContain('telemetry')
     expect(SANDBOX_ALT).not.toContain('shown on the board')
     expect(block).toMatch(/alt="[^"]+"/)
+    expect(block).toContain('left off it')
   })
 
   it('no longer says what stopped being true', async () => {
