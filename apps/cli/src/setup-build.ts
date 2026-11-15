@@ -1,4 +1,4 @@
-import { diskFiles, readRecipeKeyEffect, recipePath } from '@lingtai/project'
+import { type RecipeDraft, recipePath } from '@lingtai/project'
 /**
  * The two questions #397 asks over `detect-setup.ts`'s suggestion: the
  * install command at `steps.prepared`, and the build commands at
@@ -11,7 +11,7 @@ import { diskFiles, readRecipeKeyEffect, recipePath } from '@lingtai/project'
  * as `packages/recipe/unit/write.test.ts` hands a `RecipeChange[]` to it
  * directly.
  */
-import { type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/recipe'
+import { type RecipeChange, resolveSource } from '@lingtai/recipe'
 import {
   type DetectedSetup,
   type SetupReader,
@@ -48,7 +48,8 @@ export interface AskInstallAndBuildInput {
    */
   recipeExisted?: boolean
   home?: string
-  files?: RecipeFiles
+  /** The recipe the answers so far have drafted. */
+  draft: RecipeDraft
   /** `question.ts`'s `kept` — what a refusal below says is already written. */
   kept?: string
   /**
@@ -75,16 +76,10 @@ function isRunAction(value: unknown): value is NamedRun & Record<string, unknown
 }
 
 /** The `run:` actions already at `path`, in file order — `[]` where the step is absent or writes none. */
-function currentRunActions(
-  project: string,
-  path: readonly string[],
-  options: { home?: string; files?: RecipeFiles },
-): Effect.Effect<NamedRun[], unknown> {
-  return Effect.gen(function* () {
-    const value = yield* readRecipeKeyEffect(project, path, options)
-    if (!Array.isArray(value)) return []
-    return value.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
-  })
+function currentRunActions(draft: RecipeDraft, path: readonly string[]): NamedRun[] {
+  const value = draft.get(path)
+  if (!Array.isArray(value)) return []
+  return value.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
 }
 
 /**
@@ -108,20 +103,17 @@ function currentRunActions(
 function resolvedRunActions(
   project: string,
   step: 'prepared' | 'build',
-  options: { home?: string; files?: RecipeFiles },
-): Effect.Effect<NamedRun[] | null, unknown> {
-  return Effect.gen(function* () {
-    const files = options.files ?? diskFiles
-    const path = recipePath(project, options.home)
-    const text = yield* lift(() => files.read(path))
-    if (text === null) return null
-    try {
-      const actions = resolveSource(text, path, path).recipe.steps[step] as unknown[]
-      return actions.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
-    } catch {
-      return null
-    }
-  })
+  options: { home?: string; draft: RecipeDraft },
+): NamedRun[] | null {
+  const path = recipePath(project, options.home)
+  const text = options.draft.text()
+  if (text === null) return null
+  try {
+    const actions = resolveSource(text, path, path).recipe.steps[step] as unknown[]
+    return actions.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
+  } catch {
+    return null
+  }
 }
 
 /** A flag that takes its value as a separate following token, e.g. `pnpm --filter web test`. */
@@ -265,10 +257,7 @@ function askInstall(
   previous?: string | null,
 ): Effect.Effect<{ run: string | null; refused: string } | { run: string | null }, unknown> {
   return Effect.gen(function* () {
-    const current = yield* currentRunActions(input.project, ['steps', 'prepared'], {
-      home: input.home,
-      files: input.files,
-    })
+    const current = currentRunActions(input.draft, ['steps', 'prepared'])
     const again = previous !== undefined
     const currentRun = again ? (previous ?? 'none') : (current[0]?.run ?? null)
 
@@ -420,13 +409,8 @@ function askBuild(
   previous?: NamedRun[],
 ): Effect.Effect<{ build: NamedRun[] } | { refused: string }, unknown> {
   return Effect.gen(function* () {
-    const originalBuild = (yield* readRecipeKeyEffect(input.project, ['steps', 'build'], {
-      home: input.home,
-      files: input.files,
-    })) as unknown[] | null
-    const current =
-      previous ??
-      (yield* currentRunActions(input.project, ['steps', 'build'], { home: input.home, files: input.files }))
+    const originalBuild = input.draft.get(['steps', 'build']) as unknown[] | null
+    const current = previous ?? currentRunActions(input.draft, ['steps', 'build'])
 
     if (input.given.build !== null) {
       if (input.given.build.includes('none') && input.given.build.length > 1) {
@@ -533,27 +517,23 @@ export function askInstallAndBuildEffect(
     if ('refused' in tried) return { refused: tried.refused }
 
     const changes: RecipeChange[] = []
-    const fileOptions = { home: input.home, files: input.files }
+    const fileOptions = { home: input.home, draft: input.draft }
 
-    const effectiveInstall = yield* resolvedRunActions(input.project, 'prepared', fileOptions)
+    const effectiveInstall = resolvedRunActions(input.project, 'prepared', fileOptions)
     const effectiveInstallRun = effectiveInstall?.[0]?.run ?? null
     if (effectiveInstall === null || install.run !== effectiveInstallRun) {
-      const originalPrepared = (yield* readRecipeKeyEffect(input.project, ['steps', 'prepared'], fileOptions)) as
-        | unknown[]
-        | null
+      const originalPrepared = input.draft.get(['steps', 'prepared']) as unknown[] | null
       const wanted = install.run === null ? [] : [{ name: 'install', run: install.run }]
       changes.push({ path: ['steps', 'prepared'], value: mergeRunActions(originalPrepared ?? [], wanted) })
     }
 
-    const effectiveBuild = yield* resolvedRunActions(input.project, 'build', fileOptions)
+    const effectiveBuild = resolvedRunActions(input.project, 'build', fileOptions)
     const sameBuild =
       effectiveBuild !== null &&
       effectiveBuild.length === build.build.length &&
       effectiveBuild.every((a, i) => a.run === build.build[i]!.run)
     if (!sameBuild) {
-      const originalBuild = (yield* readRecipeKeyEffect(input.project, ['steps', 'build'], fileOptions)) as
-        | unknown[]
-        | null
+      const originalBuild = input.draft.get(['steps', 'build']) as unknown[] | null
       changes.push({ path: ['steps', 'build'], value: mergeRunActions(originalBuild ?? [], build.build) })
     }
 

@@ -33,7 +33,8 @@ import type {
 } from '@lingtai/domain'
 import { cleared, resolveOffer, stepEndedsOf, waitWords, STEPS } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
-import { readRecipeKeyEffect, recipePath, setRecipeEffect } from '@lingtai/project'
+import { readRecipeKeyEffect, recipePath } from '@lingtai/project'
+import { seedRecipe } from '@lingtai/project/test/seed-recipe'
 import { landingChanges, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -410,7 +411,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     )
     const resolvedProposed = resolveSource(RECIPE, path, path).recipe.steps.proposed
     const changes = landingChanges({ land: 'hold' }, Array.isArray(rawProposed) ? rawProposed : resolvedProposed)
-    const result = await Effect.runPromise(setRecipeEffect(PROJECT, changes, { home: recipeHome, files }))
+    const result = await Effect.runPromise(seedRecipe(PROJECT, changes, { home: recipeHome, files }))
     expect(result.written).toBe(true)
 
     const store = memoryStore()
@@ -469,7 +470,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     )
     const resolvedProposed = resolveSource(current, path, path).recipe.steps.proposed
     const changes = landingChanges({ land: 'main' }, Array.isArray(rawProposed) ? rawProposed : resolvedProposed)
-    const result = await Effect.runPromise(setRecipeEffect(PROJECT, changes, { home: recipeHome, files }))
+    const result = await Effect.runPromise(seedRecipe(PROJECT, changes, { home: recipeHome, files }))
     expect(result.written).toBe(true)
     expect(result.text).not.toContain('human:')
 

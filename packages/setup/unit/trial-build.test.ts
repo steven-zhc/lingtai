@@ -3,7 +3,7 @@
  * running a real `git` and a real shell is integration (0060 §1).
  */
 import type { CommandOutcome, RunCommandOptions } from '@lingtai/actions'
-import type { RecipeFiles } from '@lingtai/recipe'
+import { draftRecipe, ProjectFiles } from '@lingtai/project'
 import { Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -12,7 +12,13 @@ import { liveTrialEffect, runTrialEffect, TrialInterrupted, type TrialAt, type T
 /** A fake port written as a promise, handed over as the Effect the port wants; a throw is the port's failure. */
 const lift = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 
-const files: RecipeFiles = { read: async () => null, replace: async () => {} }
+/** A draft over a recipe file holding `yml` (an absent one when null). */
+const draftOf = (yml: string | null) =>
+  Effect.runPromise(
+    draftRecipe('widget', { home: '/h' }).pipe(
+      Effect.provideService(ProjectFiles, { read: async () => yml, replace: async () => {} }),
+    ),
+  )
 const outcome = (ok: boolean, extra: Partial<CommandOutcome> = {}): CommandOutcome => ({
   ok,
   evidence: ok ? 'fine' : 'broke',
@@ -56,7 +62,7 @@ function fakes(
   return { deps, ran, removed, cuts }
 }
 
-const AT: TrialAt = { project: 'widget', owner: '', repo: 'widget', base: 'main', files, home: '/h' }
+const AT: TrialAt = { project: 'widget', owner: '', repo: 'widget', base: 'main', home: '/h' }
 
 describe('runTrialEffect', () => {
   it('runs install then each build command in order, in the provisioned worktree, and removes it', async () => {
@@ -183,16 +189,14 @@ describe('runTrialEffect', () => {
   it('uses a kept run: action’s timeout for the same command', async () => {
     const yml = 'steps:\n  build:\n    - run: pnpm build\n      timeout: 30m\n'
     const { deps, ran } = fakes({})
-    await Effect.runPromise(
-      runTrialEffect({ ...AT, files: { ...files, read: async () => yml } }, deps, null, ['pnpm build']),
-    )
+    await Effect.runPromise(runTrialEffect({ ...AT, draft: await draftOf(yml) }, deps, null, ['pnpm build']))
     expect(ran[0]!.timeoutLabel).toBe('30m')
   })
 
   it('cuts from the base and submodules the existing recipe declares, not the one handed in', async () => {
     const yml = 'repo:\n  base: release\n  submodules: true\n'
     const { deps, cuts } = fakes({})
-    await Effect.runPromise(runTrialEffect({ ...AT, files: { ...files, read: async () => yml } }, deps, null, ['x']))
+    await Effect.runPromise(runTrialEffect({ ...AT, draft: await draftOf(yml) }, deps, null, ['x']))
     expect(cuts).toEqual([{ base: 'release', submodules: true }])
   })
 
@@ -200,7 +204,7 @@ describe('runTrialEffect', () => {
     const yml =
       'repo:\n  base: release\nsteps:\n  admit:\n    - worktree:\n        base: next\n        submodules: true\n'
     const { deps, cuts } = fakes({})
-    await Effect.runPromise(runTrialEffect({ ...AT, files: { ...files, read: async () => yml } }, deps, null, ['x']))
+    await Effect.runPromise(runTrialEffect({ ...AT, draft: await draftOf(yml) }, deps, null, ['x']))
     expect(cuts).toEqual([{ base: 'next', submodules: true }])
   })
 
@@ -265,7 +269,7 @@ describe('fiber interruption and the Ctrl+C wrapper', () => {
 
   it('leaves no SIGINT listener behind on a pass, a red and a runner throw', async () => {
     const before = process.listenerCount('SIGINT')
-    const at = { project: 'widget', owner: '', repo: 'widget', base: 'main', files, home: '/h' }
+    const at = { project: 'widget', owner: '', repo: 'widget', base: 'main', home: '/h' }
     const live = (deps: TrialDeps) => Effect.runPromise(liveTrialEffect(at, null, ['x'], deps))
     await live(fakes({}).deps)
     await live(fakes({ x: outcome(false) }).deps)

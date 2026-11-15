@@ -573,3 +573,42 @@ describe('askRecipe — the trial run (#436)', () => {
     })
   })
 })
+
+describe('askRecipe — a draft, never a write (#1182)', () => {
+  it('a whole run writes nothing to the port, on an absent file and on an existing one', async () => {
+    const absent = mapFiles()
+    const first = await askRecipe(defaultsWorld(), {
+      ...BASE_AT,
+      project: 'widget',
+      local: true,
+      seeds: [
+        { path: ['repo', 'base'], value: 'main' },
+        { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
+        { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+      ],
+      kept: 'k',
+      again: 'a',
+      keptBeforeWrite: 'Nothing was written',
+      files: absent,
+    } satisfies RecipeAt)
+    expect(first).toMatchObject({ ok: true })
+    expect(absent.replaced).toEqual([])
+
+    const path = recipePath('widget', HOME)
+    const existing = mapFiles({
+      [path]: 'version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+    })
+    const second = await askRecipe(defaultsWorld(), {
+      ...BASE_AT,
+      project: 'widget',
+      local: true,
+      seeds: [],
+      kept: 'k',
+      again: 'a',
+      keptBeforeWrite: 'Nothing was written',
+      files: existing,
+    } satisfies RecipeAt)
+    expect(second).toMatchObject({ ok: true })
+    expect(existing.replaced).toEqual([])
+  })
+})

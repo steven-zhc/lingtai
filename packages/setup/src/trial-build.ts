@@ -1,7 +1,7 @@
 import { boundedEvidence, commandEffect, type CommandOutcome, type RunCommandOptions } from '@lingtai/actions'
 import { resolveAgentEnv, runnableEnv, productionPatterns } from '@lingtai/agent-env'
-import { readRecipeKeyEffect } from '@lingtai/project'
-import { parseDuration, type RecipeFiles } from '@lingtai/recipe'
+import type { RecipeDraft } from '@lingtai/project'
+import { parseDuration } from '@lingtai/recipe'
 import { provisionWorktreeEffect, removeWorktreeEffect, type ProvisionOptions } from '@lingtai/repo'
 import { Data, Effect, Ref } from 'effect'
 
@@ -82,7 +82,8 @@ export interface TrialAt {
   remote?: string
   token?: ProvisionOptions['token']
   home?: string
-  files?: RecipeFiles
+  /** The recipe as the answers so far have drafted it. */
+  draft?: RecipeDraft
   /** Aborted by Ctrl+C; the caller owns the listener. */
   interrupt?: AbortSignal
 }
@@ -98,9 +99,7 @@ function asStrings(value: unknown): string[] | undefined {
 
 /** A recipe key, or `null` when it cannot be read. */
 const recipeKey = (at: TrialAt, path: string[]): Effect.Effect<unknown> =>
-  readRecipeKeyEffect(at.project, path, { home: at.home, files: at.files }).pipe(
-    Effect.catch(() => Effect.succeed(null)),
-  )
+  Effect.succeed(at.draft === undefined ? null : at.draft.get(path))
 
 /** The timeouts of `run:` actions already in the file, by command text. */
 const keptTimeouts = (at: TrialAt): Effect.Effect<Map<string, string>> =>

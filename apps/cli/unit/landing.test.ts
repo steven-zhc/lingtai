@@ -1,4 +1,5 @@
 import { recipePath } from '@lingtai/project'
+import { draftOver } from '@lingtai/project/test/seed-recipe'
 import { type RecipeFiles, resolveSource } from '@lingtai/recipe'
 /**
  * `askLanding` and `askLimits` (#399) — the setup's questions over #392's
@@ -167,24 +168,26 @@ runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts:
 describe('askLanding', () => {
   it('a bare --land with no value is refused, and nothing is written', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLanding(world().world, PROJECT, '', {
       home: HOME,
-      files,
+      draft,
       defaultBranch: async () => 'main',
     })
     expect(result).toMatchObject({ refused: expect.any(String) })
     expect(files.replaced).toEqual([])
-    const resolved = resolveSource((await files.read(PATH))!, PATH, PATH).recipe
+    const resolved = resolveSource(draft.text()!, PATH, PATH).recipe
     expect(resolved.repo.base).toBe('main')
   })
 
   it('an empty repo.base already on disk answers nothing, so the default branch is fetched and offered', async () => {
     const files = mapFiles({ [PATH]: EMPTY_BASE })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w } = world(['land it without asking'])
     let calls = 0
     const result = await askLanding(w, PROJECT, null, {
       home: HOME,
-      files,
+      draft,
       defaultBranch: async () => {
         calls++
         return 'trunk'
@@ -192,16 +195,21 @@ describe('askLanding', () => {
     })
     expect(result).toEqual({ ok: true })
     expect(calls).toBe(1)
-    expect(resolveSource((await files.read(PATH))!, PATH, PATH).recipe.repo.base).toBe('trunk')
+    expect(resolveSource(draft.text()!, PATH, PATH).recipe.repo.base).toBe('trunk')
   })
 
   it('--land hold on a file with its own terse steps.proposed entry leaves that entry exactly as written', async () => {
     const files = mapFiles({ [PATH]: TERSE_PROPOSED })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w } = world()
-    const result = await askLanding(w, PROJECT, 'hold', { home: HOME, files, defaultBranch: async () => 'main' })
+    const result = await askLanding(w, PROJECT, 'hold', {
+      home: HOME,
+      draft,
+      defaultBranch: async () => 'main',
+    })
     expect(result).toEqual({ ok: true })
 
-    const written = (await files.read(PATH))!
+    const written = draft.text()!
     const smokeBlock = '  proposed:\n    - name: smoke\n      run: pnpm smoke\n'
     expect(TERSE_PROPOSED).toContain(smokeBlock)
     expect(written).toContain(smokeBlock)
@@ -213,10 +221,11 @@ describe('askLanding', () => {
 
   it('--land hold never calls defaultBranch — a flag already answers the question', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     let calls = 0
     const result = await askLanding(world().world, PROJECT, 'hold', {
       home: HOME,
-      files,
+      draft,
       defaultBranch: async () => {
         calls++
         return 'main'
@@ -228,11 +237,16 @@ describe('askLanding', () => {
 
   it('--land hold writes exactly one human: at steps.proposed, and leaves steps.merge untouched', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w } = world()
-    const result = await askLanding(w, PROJECT, 'hold', { home: HOME, files, defaultBranch: async () => 'main' })
+    const result = await askLanding(w, PROJECT, 'hold', {
+      home: HOME,
+      draft,
+      defaultBranch: async () => 'main',
+    })
     expect(result).toEqual({ ok: true })
 
-    const written = (await files.read(PATH))!
+    const written = draft.text()!
     expect(written.match(/human:/g)).toHaveLength(1)
     expect(resolveSource(written, PATH, PATH)).toBeTruthy()
 
@@ -248,22 +262,38 @@ describe('askLanding', () => {
 
   it('--land hold a second time writes nothing — written: false', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
-    await askLanding(world().world, PROJECT, 'hold', { home: HOME, files, defaultBranch: async () => 'main' })
-    expect(files.replaced).toHaveLength(1)
-    const afterFirst = await files.read(PATH)
+    const draft = await draftOver(PROJECT, { home: HOME, files })
+    await askLanding(world().world, PROJECT, 'hold', {
+      home: HOME,
+      draft,
+      defaultBranch: async () => 'main',
+    })
+    expect(draft.changes()).toHaveLength(1)
+    expect(files.replaced).toEqual([])
+    const afterFirst = draft.text()
 
-    await askLanding(world().world, PROJECT, 'hold', { home: HOME, files, defaultBranch: async () => 'main' })
-    expect(files.replaced).toHaveLength(1)
-    expect(await files.read(PATH)).toBe(afterFirst)
+    await askLanding(world().world, PROJECT, 'hold', {
+      home: HOME,
+      draft,
+      defaultBranch: async () => 'main',
+    })
+    expect(draft.changes()).toHaveLength(1)
+    expect(files.replaced).toEqual([])
+    expect(draft.text()).toBe(afterFirst)
   })
 
   it('--land release on a file holding at proposed sets repo.base, drops the hold, and keeps the judge', async () => {
     const files = mapFiles({ [PATH]: HOLDING })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w } = world()
-    const result = await askLanding(w, PROJECT, 'release', { home: HOME, files, defaultBranch: async () => 'main' })
+    const result = await askLanding(w, PROJECT, 'release', {
+      home: HOME,
+      draft,
+      defaultBranch: async () => 'main',
+    })
     expect(result).toEqual({ ok: true })
 
-    const written = (await files.read(PATH))!
+    const written = draft.text()!
     expect(written).not.toContain('human:')
     expect(written).toContain('judge: claude-code')
     const resolved = resolveSource(written, PATH, PATH).recipe
@@ -272,11 +302,16 @@ describe('askLanding', () => {
 
   it('--land hold on a file inheriting its steps from a preset keeps the preset build and adds only the hold', async () => {
     const files = mapFiles({ [PATH]: PRESET_NO_STEPS })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w } = world()
-    const result = await askLanding(w, PROJECT, 'hold', { home: HOME, files, defaultBranch: async () => 'main' })
+    const result = await askLanding(w, PROJECT, 'hold', {
+      home: HOME,
+      draft,
+      defaultBranch: async () => 'main',
+    })
     expect(result).toEqual({ ok: true })
 
-    const written = (await files.read(PATH))!
+    const written = draft.text()!
     const resolved = resolveSource(written, PATH, PATH).recipe
     // The preset's check is at `build:` (b21b89ea), and widening keeps it there.
     expect(resolved.steps.build).toEqual([
@@ -293,6 +328,7 @@ describe('askLanding', () => {
       [HOLDING, '[wait for me to approve]'],
     ] as const) {
       const files = mapFiles({ [PATH]: text })
+      const draft = await draftOver(PROJECT, { home: HOME, files })
       const seen: unknown[] = []
       const asked: string[] = []
       const w: QuestionWorld = {
@@ -303,7 +339,11 @@ describe('askLanding', () => {
         },
         log: () => {},
       }
-      await askLanding(w, PROJECT, null, { home: HOME, files, defaultBranch: async () => 'main' })
+      await askLanding(w, PROJECT, null, {
+        home: HOME,
+        draft,
+        defaultBranch: async () => 'main',
+      })
       expect(asked[0]).toContain('when an attempt is ready')
       expect(asked[0]).toContain(expected)
       expect(seen[0]).toEqual(['wait for me to approve', 'land it without asking'])
@@ -312,34 +352,37 @@ describe('askLanding', () => {
 
   it('wait writes one human: at steps.proposed', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLanding(world(['wait for me to approve']).world, PROJECT, null, {
       home: HOME,
-      files,
+      draft,
       defaultBranch: async () => 'main',
     })
     expect(result).toEqual({ ok: true })
-    const resolved = resolveSource((await files.read(PATH))!, PATH, PATH).recipe
+    const resolved = resolveSource(draft.text()!, PATH, PATH).recipe
     expect(resolved.steps.proposed.filter((a) => 'human' in a)).toHaveLength(1)
   })
 
   it('land removes the hold and leaves repo.base alone', async () => {
     const files = mapFiles({ [PATH]: HOLDING })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
       home: HOME,
-      files,
+      draft,
       defaultBranch: async () => 'other',
     })
     expect(result).toEqual({ ok: true })
-    const resolved = resolveSource((await files.read(PATH))!, PATH, PATH).recipe
+    const resolved = resolveSource(draft.text()!, PATH, PATH).recipe
     expect(resolved.steps.proposed.some((a) => 'human' in a)).toBe(false)
     expect(resolved.repo.base).toBe('main')
   })
 
   it('land with no hold to remove leaves the file byte for byte', async () => {
     const files = mapFiles({ [PATH]: PRESET_NO_STEPS })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
       home: HOME,
-      files,
+      draft,
       defaultBranch: async () => 'main',
     })
     expect(result).toEqual({ ok: true })
@@ -348,26 +391,28 @@ describe('askLanding', () => {
 
   it('land on a blank base whose default branch is named hold writes it as the base, not as a hold', async () => {
     const files = mapFiles({ [PATH]: EMPTY_BASE })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
       home: HOME,
-      files,
+      draft,
       defaultBranch: async () => 'hold',
     })
     expect(result).toEqual({ ok: true })
-    const resolved = resolveSource((await files.read(PATH))!, PATH, PATH).recipe
+    const resolved = resolveSource(draft.text()!, PATH, PATH).recipe
     expect(resolved.repo.base).toBe('hold')
     expect(resolved.steps.proposed.some((a) => 'human' in a)).toBe(false)
   })
 
   it('land on a base named hold removes the hold and keeps the base', async () => {
     const files = mapFiles({ [PATH]: HOLDING.replace('base: main', 'base: hold') })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
       home: HOME,
-      files,
+      draft,
       defaultBranch: async () => 'main',
     })
     expect(result).toEqual({ ok: true })
-    const resolved = resolveSource((await files.read(PATH))!, PATH, PATH).recipe
+    const resolved = resolveSource(draft.text()!, PATH, PATH).recipe
     expect(resolved.repo.base).toBe('hold')
     expect(resolved.steps.proposed.some((a) => 'human' in a)).toBe(false)
   })
@@ -375,9 +420,10 @@ describe('askLanding', () => {
   it('land on a blank base with no readable default branch is refused and writes nothing', async () => {
     const blank = FIXTURE.replace('base: main', 'base: ""')
     const files = mapFiles({ [PATH]: blank })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
       home: HOME,
-      files,
+      draft,
       defaultBranch: async () => null,
     })
     expect(result).toMatchObject({ refused: expect.stringContaining('no base branch to land on') })
@@ -386,11 +432,16 @@ describe('askLanding', () => {
 
   it("--land develop on a recipe cutting from steps.admit's worktree.base writes it there, and leaves repo.base untouched", async () => {
     const files = mapFiles({ [PATH]: WORKTREE_ADMIT })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w } = world()
-    const result = await askLanding(w, PROJECT, 'develop', { home: HOME, files, defaultBranch: async () => 'main' })
+    const result = await askLanding(w, PROJECT, 'develop', {
+      home: HOME,
+      draft,
+      defaultBranch: async () => 'main',
+    })
     expect(result).toEqual({ ok: true })
 
-    const written = (await files.read(PATH))!
+    const written = draft.text()!
     const resolved = resolveSource(written, PATH, PATH).recipe
     expect(resolved.repo.base).toBe('main')
     expect(resolved.steps.admit).toEqual([{ name: 'cut the tree', worktree: { base: 'develop', submodules: false } }])
@@ -398,8 +449,13 @@ describe('askLanding', () => {
 
   it('with no terminal and no flag, refuses naming --land, and replace is never called', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const w: QuestionWorld = { ask: async () => null, log: () => {} }
-    const result = await askLanding(w, PROJECT, null, { home: HOME, files, defaultBranch: async () => null })
+    const result = await askLanding(w, PROJECT, null, {
+      home: HOME,
+      draft,
+      defaultBranch: async () => null,
+    })
     expect(result).toMatchObject({ refused: expect.stringContaining('--land') })
     expect(files.replaced).toEqual([])
   })
@@ -417,13 +473,14 @@ steps:
 runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
 `
     const files = mapFiles({ [PATH]: COMMENTED_HOLD })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLanding(world().world, PROJECT, 'release', {
       home: HOME,
-      files,
+      draft,
       defaultBranch: async () => 'main',
     })
     expect(result).toEqual({ ok: true })
-    const written = (await files.read(PATH))!
+    const written = draft.text()!
     expect(written).not.toContain('human:')
     expect(written).not.toContain('I want to see every merge')
   })
@@ -450,11 +507,12 @@ runtime: {agent: claude-code, limits: {turns: 10, wall: 2h, rounds: 2, restarts:
 describe('askLimits', () => {
   it('--rounds 0 --wall 30m --budget 4 each land at their runtime.limits key', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w, lines } = world()
-    const result = await askLimits(w, PROJECT, { rounds: '0', wall: '30m', budget: '4' }, { home: HOME, files })
+    const result = await askLimits(w, PROJECT, { rounds: '0', wall: '30m', budget: '4' }, { home: HOME, draft })
     expect(result).toEqual({ ok: true })
 
-    const written = (await files.read(PATH))!
+    const written = draft.text()!
     const limits = resolveSource(written, PATH, PATH).recipe.runtime.limits
     expect(limits.rounds).toBe(0)
     expect(limits.wall).toBe('30m')
@@ -466,29 +524,32 @@ describe('askLimits', () => {
 
   it('--budget none removes usd', async () => {
     const files = mapFiles({ [PATH]: FIXTURE.replace('rounds: 2, restarts: 0', 'rounds: 2, restarts: 0, usd: 7') })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLimits(
       world().world,
       PROJECT,
       { rounds: '2', wall: '2m', budget: 'none' },
-      { home: HOME, files },
+      { home: HOME, draft },
     )
     expect(result).toEqual({ ok: true })
-    const written = (await files.read(PATH))!
+    const written = draft.text()!
     expect(resolveSource(written, PATH, PATH).recipe.runtime.limits.usd).toBeUndefined()
   })
 
   it('pressing enter on an inherited default writes nothing', async () => {
     const files = mapFiles({ [PATH]: INHERITING })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     // Three questions, three empty answers — the terminal's "enter" (#392).
-    const result = await askLimits(world(['', '', '']).world, PROJECT, {}, { home: HOME, files })
+    const result = await askLimits(world(['', '', '']).world, PROJECT, {}, { home: HOME, draft })
     expect(result).toEqual({ ok: true })
     expect(files.replaced).toEqual([])
   })
 
   it('the budget prompt shows an existing ceiling in money, formatted by show', async () => {
     const files = mapFiles({ [PATH]: FIXTURE.replace('rounds: 2, restarts: 0', 'rounds: 2, restarts: 0, usd: 7') })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w, asked } = world(['', '', ''])
-    await askLimits(w, PROJECT, {}, { home: HOME, files })
+    await askLimits(w, PROJECT, {}, { home: HOME, draft })
     // `show`'s `$${Number(value).toFixed(2)}` is what turns `usd: 7` into this
     // bracket — the prompt's own literal ("like $5") would satisfy a bare
     // `.includes('$')`, so this pins the formatted current value instead.
@@ -497,38 +558,43 @@ describe('askLimits', () => {
 
   it('the budget prompt shows "none" rather than money when no ceiling is set', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w, asked } = world(['', '', ''])
-    await askLimits(w, PROJECT, {}, { home: HOME, files })
+    await askLimits(w, PROJECT, {}, { home: HOME, draft })
     expect(asked[2]).toContain('[none]')
   })
 
   it('a Ctrl+C at the third question keeps the first two answers — each is its own setRecipe call', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     // Two typed answers, then the budget question's `ask` returns null — the
     // same shape a Ctrl+C leaves a readline-backed `ask` in.
-    const result = await askLimits(world(['0', '30m']).world, PROJECT, {}, { home: HOME, files })
+    const result = await askLimits(world(['0', '30m']).world, PROJECT, {}, { home: HOME, draft })
     expect(result).toMatchObject({ refused: expect.stringContaining('the spend ceiling') })
 
-    const written = (await files.read(PATH))!
+    const written = draft.text()!
     const limits = resolveSource(written, PATH, PATH).recipe.runtime.limits
     expect(limits.rounds).toBe(0)
     expect(limits.wall).toBe('30m')
-    expect(files.replaced).toHaveLength(2)
+    expect(draft.changes()).toHaveLength(2)
+    expect(files.replaced).toEqual([])
   })
 
   it('a wall narrower than steps.implement is refused by name, not thrown, with the rounds answer already written', async () => {
     const files = mapFiles({ [PATH]: NARROW_IMPLEMENT })
+    const draft = await draftOver(PROJECT, { home: HOME, files })
     // `steps.implement` is bounded to `wall: 10m`; writing the ceiling to
     // `5m` trips 0070 §5's narrowing refusal inside `setRecipe`'s own
     // `resolveSource` call, which must surface as `{refused}` rather than an
     // uncaught `RecipeInvalidError` — the flags pass validation (`5m` is a
     // valid positive duration), so only the write itself catches this.
-    const result = await askLimits(world().world, PROJECT, { rounds: '3', wall: '5m' }, { home: HOME, files })
+    const result = await askLimits(world().world, PROJECT, { rounds: '3', wall: '5m' }, { home: HOME, draft })
     expect(result).toMatchObject({ refused: expect.stringContaining('may only narrow') })
 
     // The rounds answer, asked and written first, stays on disk.
-    const written = (await files.read(PATH))!
+    const written = draft.text()!
     expect(resolveSource(written, PATH, PATH).recipe.runtime.limits.rounds).toBe(3)
-    expect(files.replaced).toHaveLength(1)
+    expect(draft.changes()).toHaveLength(1)
+    expect(files.replaced).toEqual([])
   })
 })

@@ -1,4 +1,5 @@
-import { recipePath, setRecipeEffect } from '@lingtai/project'
+import { recipePath } from '@lingtai/project'
+import { draftOver, seedRecipe } from '@lingtai/project/test/seed-recipe'
 /**
  * `askInstallAndBuild` (#397): the two questions over `detect-setup.ts`'s
  * suggestion, returned as `RecipeChange[]` for the caller to hand to
@@ -79,14 +80,18 @@ function mapFiles(initial: Record<string, string> = {}): RecordingFiles {
   }
 }
 
-function input(partial: Partial<AskInstallAndBuildInput> & { files: RecipeFiles }): AskInstallAndBuildInput {
+async function input(
+  partial: Partial<AskInstallAndBuildInput> & { files: RecipeFiles },
+): Promise<AskInstallAndBuildInput> {
+  const { files, ...rest } = partial
   return {
     project: 'app',
     reader: EMPTY_READER,
     given: { install: null, build: null, check: null },
     tryBuild: null,
     home: HOME,
-    ...partial,
+    draft: await draftOver('app', { home: HOME, files }),
+    ...rest,
   }
 }
 
@@ -105,7 +110,7 @@ describe('askInstallAndBuild', () => {
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({
+      await input({
         given: { install: 'pnpm install --frozen-lockfile', build: ['pnpm lint', 'pnpm test'], check: null },
         files,
       }),
@@ -122,7 +127,7 @@ describe('askInstallAndBuild', () => {
       },
     ])
 
-    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+    const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
     expect(written.written).toBe(true)
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.prepared).toEqual([
@@ -154,7 +159,7 @@ steps:
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['none'], check: null }, files }),
+      await input({ given: { install: 'none', build: ['none'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
     expect(result.changes).toEqual([
@@ -162,7 +167,7 @@ steps:
       { path: ['steps', 'build'], value: [] },
     ])
 
-    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+    const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.prepared).toEqual([])
     expect(resolved.recipe.steps.build).toEqual([])
@@ -171,7 +176,10 @@ steps:
   it('a --build with its value swallowed by the next flag (`""`) is refused rather than writing run: "" (#431 fix round, finding 2)', async () => {
     const files = mapFiles({ [PATH]: BASE })
     const { world: w } = world([])
-    const result = await askInstallAndBuild(w, input({ given: { install: 'none', build: [''], check: null }, files }))
+    const result = await askInstallAndBuild(
+      w,
+      await input({ given: { install: 'none', build: [''], check: null }, files }),
+    )
     expect(result).toEqual({ refused: expect.stringContaining('--build') })
     expect(files.replaced).toEqual([])
   })
@@ -179,7 +187,7 @@ steps:
   it('no TTY and no flags refuses by name, naming --install', async () => {
     const files = mapFiles({ [PATH]: BASE })
     const { world: w } = world([])
-    const result = await askInstallAndBuild(w, input({ files }))
+    const result = await askInstallAndBuild(w, await input({ files }))
     expect(result).toEqual({ refused: expect.stringContaining('--install') })
   })
 
@@ -190,7 +198,7 @@ steps:
       'package.json': JSON.stringify({ scripts: { 'fmt:check': 'oxfmt --check .', test: 'vitest run' } }),
     })
     const { world: w } = world(['', 'yes'])
-    const result = await askInstallAndBuild(w, input({ reader: detected, files }))
+    const result = await askInstallAndBuild(w, await input({ reader: detected, files }))
     if ('refused' in result) throw new Error(result.refused)
     const build = result.changes.find((c) => c.path.join('.') === 'steps.build')
     expect(build?.value).toEqual([
@@ -199,7 +207,7 @@ steps:
     ])
 
     // `because` is not a field a run: action may carry — setRecipe must accept this.
-    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+    const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.build).toEqual([
       { name: 'format', run: 'pnpm fmt:check', timeout: '15m', env: [] },
@@ -229,11 +237,11 @@ steps:
 `
     const files = mapFiles({ [PATH]: FIXTURE })
     const { world: w } = world(['', ''])
-    const result = await askInstallAndBuild(w, input({ files }))
+    const result = await askInstallAndBuild(w, await input({ files }))
     if ('refused' in result) throw new Error(result.refused)
     expect(result.changes).toEqual([])
 
-    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+    const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
     expect(written).toEqual({ path: PATH, text: FIXTURE, written: false })
   })
 
@@ -251,12 +259,12 @@ env:
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'pnpm install --frozen-lockfile', build: ['pnpm test'], check: null }, files }),
+      await input({ given: { install: 'pnpm install --frozen-lockfile', build: ['pnpm test'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
     expect(result.changes.some((c) => c.path.join('.') === 'steps.proposed')).toBe(false)
 
-    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+    const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
     expect(resolved.recipe.steps.proposed).toEqual([])
@@ -281,12 +289,12 @@ env:
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
+      await input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
     expect(result.changes.some((c) => c.path.join('.') === 'steps.prepared' && Array.isArray(c.value))).toBe(true)
 
-    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+    const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.prepared).toEqual([])
     // The preset declares nothing at `proposed`, so nothing runs there after the write either.
@@ -298,7 +306,7 @@ env:
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
+      await input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
     expect(result.changes).toEqual([
@@ -328,11 +336,11 @@ steps:
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
+      await input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
 
-    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+    const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.build).toEqual([
       { name: 'test', run: 'pnpm test', timeout: '45m', env: ['TURBO_TOKEN'] },
@@ -358,11 +366,11 @@ steps:
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['pnpm test', 'pnpm lint'], check: null }, files }),
+      await input({ given: { install: 'none', build: ['pnpm test', 'pnpm lint'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
 
-    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+    const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.build).toEqual([
       { name: 'test', run: 'pnpm test', timeout: '45m', env: ['TURBO_TOKEN'] },
@@ -375,7 +383,7 @@ steps:
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({
+      await input({
         given: { install: 'none', build: ['pnpm --filter web test', 'pnpm --filter web lint'], check: null },
         files,
       }),
@@ -393,7 +401,7 @@ steps:
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['pnpm exec playwright test'], check: null }, files }),
+      await input({ given: { install: 'none', build: ['pnpm exec playwright test'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
     const build = result.changes.find((c) => c.path.join('.') === 'steps.build')
@@ -414,12 +422,12 @@ env:
     const { world: w, lines } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['none'], check: null }, files }),
+      await input({ given: { install: 'none', build: ['none'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
     expect(lines).toContain('nothing will check a diff before review')
 
-    const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+    const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.build).toEqual([])
     expect(resolved.recipe.steps.proposed).toEqual([])
@@ -430,7 +438,7 @@ env:
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
+      await input({ given: { install: 'none', build: ['pnpm test'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
 
@@ -441,7 +449,7 @@ env:
       { path: ['env', 'plantAt'], value: '.env.local' },
       ...result.changes,
     ]
-    const written = await Effect.runPromise(setRecipeEffect('app', bundle, { home: HOME, files }))
+    const written = await Effect.runPromise(seedRecipe('app', bundle, { home: HOME, files }))
     const resolved = resolveSource(written.text, 'main', PATH)
     expect(resolved.recipe.steps.prepared).toEqual([])
     expect(resolved.recipe.steps.build).toEqual([{ name: 'test', run: 'pnpm test', timeout: '15m', env: [] }])
@@ -471,7 +479,7 @@ steps:
     const { world: w, lines } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'npm ci', build: ['pnpm test', 'pnpm lint'], check: null }, files }),
+      await input({ given: { install: 'npm ci', build: ['pnpm test', 'pnpm lint'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
     expect(result.changes.some((c) => c.path.join('.') === 'steps.proposed')).toBe(false)
@@ -483,7 +491,7 @@ steps:
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['pnpm -w test', 'pnpm -w lint'], check: null }, files }),
+      await input({ given: { install: 'none', build: ['pnpm -w test', 'pnpm -w lint'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
     const build = result.changes.find((c) => c.path.join('.') === 'steps.build')
@@ -496,7 +504,7 @@ steps:
   const typedBuild = async (build: string[], text = BASE) => {
     const files = mapFiles({ [PATH]: text })
     const { world: w } = world([])
-    const result = await askInstallAndBuild(w, input({ given: { install: 'none', build, check: null }, files }))
+    const result = await askInstallAndBuild(w, await input({ given: { install: 'none', build, check: null }, files }))
     if ('refused' in result) throw new Error(result.refused)
     return result.changes.find((c) => c.path.join('.') === 'steps.build')?.value as { name: string; run: string }[]
   }
@@ -527,13 +535,12 @@ steps:
     const { world: w } = world([])
     const result = await askInstallAndBuild(
       w,
-      input({ given: { install: 'none', build: ['pnpm fmt:check', 'uv run pytest'], check: null }, files }),
+      await input({ given: { install: 'none', build: ['pnpm fmt:check', 'uv run pytest'], check: null }, files }),
     )
     if ('refused' in result) throw new Error(result.refused)
     const build = result.changes.find((c) => c.path.join('.') === 'steps.build')?.value as { name: string }[]
     expect(build.map((b) => b.name)).toEqual(['fmt-check', 'uv run pytest'])
-    for (const change of result.changes)
-      await Effect.runPromise(setRecipeEffect('app', [change], { home: HOME, files }))
+    for (const change of result.changes) await Effect.runPromise(seedRecipe('app', [change], { home: HOME, files }))
     expect(() => resolveSource(files.replaced.at(-1)!.text, PATH, PATH)).not.toThrow()
   })
 
@@ -565,7 +572,7 @@ steps:
     const { world: w, lines } = world([''])
     const result = await askInstallAndBuild(
       w,
-      input({
+      await input({
         given: { install: 'none', build: ['pnpm test'], check: 'yes' },
         tryBuild: trial(async () => failing),
         files,
@@ -590,7 +597,7 @@ describe('a red trial build prints what ran and what did not', () => {
     }
     await askInstallAndBuild(
       w,
-      input({
+      await input({
         given: { install: 'none', build: ['a', 'b', 'c'], check: 'yes' },
         tryBuild: trial(async () => report),
         files,
@@ -639,7 +646,7 @@ describe('the PATH note', () => {
     const { world: w, lines } = world([])
     await askInstallAndBuild(
       w,
-      input({
+      await input({
         reader: reader({ 'uv.lock': '', 'pyproject.toml': '[tool.pytest.ini_options]\nx = 1\n' }),
         files,
         onPath: async () => false,
@@ -655,7 +662,7 @@ describe('the PATH note', () => {
     const { world: w, lines } = world([])
     await askInstallAndBuild(
       w,
-      input({
+      await input({
         reader: reader({ 'go.mod': 'module x\n' }),
         files,
         onPath: async (tool: string) => tool !== 'gofmt',
@@ -670,7 +677,7 @@ describe('the PATH note', () => {
     const { world: w, lines } = world([])
     await askInstallAndBuild(
       w,
-      input({
+      await input({
         reader: reader({ 'pom.xml': '<project/>', mvnw: '' }),
         files,
         onPath: async (tool: string) => tool !== 'java',
@@ -685,7 +692,7 @@ describe('the PATH note', () => {
     const { world: w, lines } = world([])
     await askInstallAndBuild(
       w,
-      input({
+      await input({
         reader: reader({ 'uv.lock': '' }),
         files,
         onPath: async () => {
@@ -709,7 +716,7 @@ describe('the trial outcome the card reads', () => {
       const { world: w } = world()
       const pending = askInstallAndBuild(
         w,
-        input({
+        await input({
           given: { install: 'none', build: ['a'], check: 'yes' },
           tryBuild: trial(async () => {
             await vi.advanceTimersByTimeAsync(125_000)
@@ -729,7 +736,7 @@ describe('the trial outcome the card reads', () => {
     const files = () => mapFiles({ [PATH]: BASE })
     const declined = await askInstallAndBuild(
       world().world,
-      input({
+      await input({
         given: { install: 'none', build: ['a'], check: 'no' },
         tryBuild: trial(async () => passing),
         files: files(),
@@ -738,12 +745,12 @@ describe('the trial outcome the card reads', () => {
     expect(declined).toMatchObject({ trial: { trial: 'not-run', because: 'declined' } })
     const unoffered = await askInstallAndBuild(
       world().world,
-      input({ given: { install: 'none', build: ['a'], check: null }, files: files() }),
+      await input({ given: { install: 'none', build: ['a'], check: null }, files: files() }),
     )
     expect(unoffered).toMatchObject({ trial: { trial: 'not-run', because: 'no checkout' } })
     const empty = await askInstallAndBuild(
       world().world,
-      input({ given: { install: 'none', build: [], check: null }, files: files() }),
+      await input({ given: { install: 'none', build: [], check: null }, files: files() }),
     )
     expect(empty).toMatchObject({ trial: { trial: 'not-run', because: 'no checks' } })
   })
@@ -755,7 +762,7 @@ describe('the trial outcome the card reads', () => {
     }
     const result = await askInstallAndBuild(
       world(['keep']).world,
-      input({
+      await input({
         given: { install: 'none', build: ['pnpm test'], check: 'yes' },
         tryBuild: trial(async () => failing),
         files: mapFiles({ [PATH]: BASE }),
@@ -787,7 +794,7 @@ describe('why a default is what it is (#773)', () => {
   it('is printed when the question is asked at a terminal', async () => {
     const files = mapFiles({ [PATH]: BASE })
     const { world: w, lines } = terminal()
-    await askInstallAndBuild(w, input({ reader: reader(UV), files }))
+    await askInstallAndBuild(w, await input({ reader: reader(UV), files }))
     expect(lines).toContain(ROOT)
   })
 
@@ -796,7 +803,7 @@ describe('why a default is what it is (#773)', () => {
     const { world: w, lines } = terminal()
     await askInstallAndBuild(
       w,
-      input({ reader: reader(UV), files, given: { install: 'make deps', build: ['none'], check: null } }),
+      await input({ reader: reader(UV), files, given: { install: 'make deps', build: ['none'], check: null } }),
     )
     expect(lines.join('\n')).not.toContain('is at the root')
   })
@@ -805,14 +812,14 @@ describe('why a default is what it is (#773)', () => {
     const files = mapFiles({ [PATH]: BASE })
     const lines: string[] = []
     const w = acceptingDefaults({ ask: async () => null, log: (line) => lines.push(line) })
-    await askInstallAndBuild(w, input({ reader: reader(UV), files }))
+    await askInstallAndBuild(w, await input({ reader: reader(UV), files }))
     expect(lines.join('\n')).not.toContain('is at the root')
   })
 
   it('is not printed when there is no terminal to ask at', async () => {
     const files = mapFiles({ [PATH]: BASE })
     const { world: w, lines } = world([])
-    await askInstallAndBuild(w, input({ reader: reader(UV), files }))
+    await askInstallAndBuild(w, await input({ reader: reader(UV), files }))
     expect(lines.join('\n')).not.toContain('is at the root')
   })
 })
@@ -862,7 +869,7 @@ describe('a failed trial offers keep, edit or drop (#758)', () => {
       const { w, asked } = asking(['', 'yes', 'no'])
       await askInstallAndBuild(
         w,
-        input({
+        await input({
           tryBuild: trial(async () => ok('a'), 'develop'),
           recipeExisted,
           files: mapFiles({ [PATH]: LISTED }),
@@ -880,7 +887,7 @@ describe('a failed trial offers keep, edit or drop (#758)', () => {
     const { w, asked } = asking(['', 'yes', 'yes', 'edit', 'no', 'x', '', 'yes'])
     const result = await askInstallAndBuild(
       w,
-      input({
+      await input({
         tryBuild: trial(async (_i, build) => {
           calls.push(build)
           return calls.length === 1 ? fail('a', ['b', 'c']) : ok('x')
@@ -900,7 +907,7 @@ describe('a failed trial offers keep, edit or drop (#758)', () => {
     const { w, asked } = asking(['', 'yes', 'yes', 'drop'])
     const result = await askInstallAndBuild(
       w,
-      input({
+      await input({
         tryBuild: trial(async (_i, build) => {
           calls.push(build)
           return calls.length === 1 ? fail('b', ['c']) : ok('a', 'c')
@@ -926,7 +933,7 @@ describe('a failed trial offers keep, edit or drop (#758)', () => {
     const { w, lines } = asking(['', 'yes', 'yes', 'drop'])
     const result = await askInstallAndBuild(
       w,
-      input({
+      await input({
         tryBuild: trial(async (_i, build) => {
           calls.push(build)
           return fail('a')
@@ -945,7 +952,7 @@ describe('a failed trial offers keep, edit or drop (#758)', () => {
     let n = 0
     await askInstallAndBuild(
       w,
-      input({
+      await input({
         tryBuild: trial(async () => (++n === 1 ? fail('npm ci', ['a', 'b', 'c']) : ok('a'))),
         files: mapFiles({ [PATH]: LISTED }),
       }),
@@ -958,7 +965,7 @@ describe('a failed trial offers keep, edit or drop (#758)', () => {
   it('refuses edit by naming --build or --install when the answer was a flag', async () => {
     const byBuild = await askInstallAndBuild(
       world(['edit']).world,
-      input({
+      await input({
         given: { install: 'none', build: ['a'], check: 'yes' },
         tryBuild: trial(async () => fail('a')),
         files: mapFiles({ [PATH]: BASE }),
@@ -967,7 +974,7 @@ describe('a failed trial offers keep, edit or drop (#758)', () => {
     expect(byBuild).toEqual({ refused: expect.stringContaining('--build') })
     const byInstall = await askInstallAndBuild(
       world(['edit']).world,
-      input({
+      await input({
         given: { install: 'npm ci', build: ['a'], check: 'yes' },
         tryBuild: trial(async () => fail('npm ci', ['a'])),
         files: mapFiles({ [PATH]: BASE }),

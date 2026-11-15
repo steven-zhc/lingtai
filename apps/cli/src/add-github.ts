@@ -28,7 +28,7 @@ import { sandboxHostHere } from '@lingtai/conductor/projects'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp, stateDir } from '@lingtai/env'
 import { createGitHubClient, GitHubFailed, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
-import { diskFiles, readRecipeKeyEffect, recipePath } from '@lingtai/project'
+import { diskFiles, readRecipeKeyEffect, recipePath, type RecipeDraft } from '@lingtai/project'
 import { type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { type Answers, EMPTY_SETUP_READER, type Picker, type ProposalReaders, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
@@ -424,7 +424,7 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     ...(reach === undefined || ref === null
       ? {}
       : {
-          tryBuild: (draft: RecipeFiles) =>
+          tryBuild: (draft: RecipeDraft) =>
             liveTrialBuild({
               project: repo,
               owner,
@@ -439,7 +439,7 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
                   ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),
                 }),
               ).pipe(Effect.flatMap((client) => lift(() => client.token()))),
-              files: draft,
+              draft,
             }),
         }),
     history: (project) => run(deps.history(project)),

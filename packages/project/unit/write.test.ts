@@ -6,7 +6,8 @@ import { type RecipeFiles, RecipeInvalidError, resolveSource } from '@lingtai/re
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { readRecipeKeyEffect, recipePath, setRecipeEffect } from '../src/index.ts'
+import { readRecipeKeyEffect, recipePath } from '../src/index.ts'
+import { seedRecipe } from '../test/seed-recipe.ts'
 
 const HOME = '/home/me/.lingtai'
 
@@ -59,7 +60,7 @@ describe('setRecipe', () => {
   it('keeps every comment and every other key, byte for byte, setting steps.build on a recipe with comments', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const result = await Effect.runPromise(
-      setRecipeEffect('app', [{ path: ['steps', 'build'], value: [{ name: 'lint', run: 'pnpm lint' }] }], {
+      seedRecipe('app', [{ path: ['steps', 'build'], value: [{ name: 'lint', run: 'pnpm lint' }] }], {
         home: HOME,
         files,
       }),
@@ -99,7 +100,7 @@ steps:
       { path: ['env', 'plantAt'], value: '.env.local' },
       { path: ['steps', 'build'], value: [{ name: 'test', run: 'pnpm test' }] },
     ]
-    const result = await Effect.runPromise(setRecipeEffect('app', changes, { home: HOME, files }))
+    const result = await Effect.runPromise(seedRecipe('app', changes, { home: HOME, files }))
 
     expect(result.written).toBe(true)
     expect(result.text).toContain('version: 2')
@@ -118,7 +119,7 @@ steps:
     const absent = mapFiles()
     await expect(
       Effect.runPromise(
-        setRecipeEffect('app', [{ path: ['steps', 'build'], value: [{ name: 't', run: 'x' }] }], {
+        seedRecipe('app', [{ path: ['steps', 'build'], value: [{ name: 't', run: 'x' }] }], {
           home: HOME,
           files: absent,
         }),
@@ -128,17 +129,13 @@ steps:
 
     const misspelled = mapFiles({ [PATH]: FIXTURE })
     await expect(
-      Effect.runPromise(
-        setRecipeEffect('app', [{ path: ['steps', 'merg'], value: [] }], { home: HOME, files: misspelled }),
-      ),
+      Effect.runPromise(seedRecipe('app', [{ path: ['steps', 'merg'], value: [] }], { home: HOME, files: misspelled })),
     ).rejects.toThrow(RecipeInvalidError)
     expect(misspelled.replaced).toEqual([])
 
     const emptied = mapFiles({ [PATH]: FIXTURE })
     await expect(
-      Effect.runPromise(
-        setRecipeEffect('app', [{ path: ['source', 'kinds'], value: [] }], { home: HOME, files: emptied }),
-      ),
+      Effect.runPromise(seedRecipe('app', [{ path: ['source', 'kinds'], value: [] }], { home: HOME, files: emptied })),
     ).rejects.toThrow(RecipeInvalidError)
     expect(emptied.replaced).toEqual([])
 
@@ -151,7 +148,7 @@ steps:
     const mistyped = mapFiles({ [PATH]: FIXTURE })
     await expect(
       Effect.runPromise(
-        setRecipeEffect('app', [{ path: ['reciep', 'base'], value: 'main' }], { home: HOME, files: mistyped }),
+        seedRecipe('app', [{ path: ['reciep', 'base'], value: 'main' }], { home: HOME, files: mistyped }),
       ),
     ).rejects.toThrow(/reciep: a recipe has no such key/)
     expect(mistyped.replaced).toEqual([])
@@ -169,7 +166,7 @@ env:
 `
     const files = mapFiles({ [PATH]: PRESET_FIXTURE })
     const result = await Effect.runPromise(
-      setRecipeEffect('app', [{ path: ['steps', 'build'], value: [{ name: 'test', run: 'pnpm test' }] }], {
+      seedRecipe('app', [{ path: ['steps', 'build'], value: [{ name: 'test', run: 'pnpm test' }] }], {
         home: HOME,
         files,
       }),
@@ -201,7 +198,7 @@ repo:
 `
     const files = mapFiles({ [PATH]: STUB })
     const result = await Effect.runPromise(
-      setRecipeEffect(
+      seedRecipe(
         'app',
         [
           { path: ['source', 'kinds'], value: ['bug'] },
@@ -236,7 +233,7 @@ repo:
     // (#395's write.ts:164 finding).
     const files = mapFiles()
     const result = await Effect.runPromise(
-      setRecipeEffect(
+      seedRecipe(
         'app',
         [
           { path: ['extends'], value: 'pnpm-workspace' },
@@ -261,7 +258,7 @@ repo:
   it('is a no-op when a change sets the value the file already has', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const result = await Effect.runPromise(
-      setRecipeEffect('app', [{ path: ['repo', 'base'], value: 'main' }], { home: HOME, files }),
+      seedRecipe('app', [{ path: ['repo', 'base'], value: 'main' }], { home: HOME, files }),
     )
 
     expect(result).toEqual({ path: PATH, text: FIXTURE, written: false })
@@ -301,7 +298,7 @@ describe('setRecipe orders a created recipe`s steps (#978)', () => {
       { path: ['steps', 'build'], value: run },
       { path: ['steps', 'prepared'], value: run },
     ]
-    const { text } = await Effect.runPromise(setRecipeEffect('app', changes, { home: HOME, files, said: SAID }))
+    const { text } = await Effect.runPromise(seedRecipe('app', changes, { home: HOME, files, said: SAID }))
     const steps = text.slice(text.indexOf('steps:'))
     expect(steps.indexOf('prepared:')).toBeLessThan(steps.indexOf('build:'))
     expect(text).toMatch(/# first\n {2}prepared:/)
@@ -314,7 +311,7 @@ describe('setRecipe orders a created recipe`s steps (#978)', () => {
       'version: 2\nrepo:\n  base: main\nenv:\n  plantAt: .env.local\nsource:\n  kinds: [bug]\nsteps:\n  build:\n    - name: x\n      run: "true"\n'
     const files = mapFiles({ [PATH]: existing })
     const { text } = await Effect.runPromise(
-      setRecipeEffect('app', [{ path: ['steps', 'prepared'], value: run }], { home: HOME, files }),
+      seedRecipe('app', [{ path: ['steps', 'prepared'], value: run }], { home: HOME, files }),
     )
     expect(text.indexOf('build:')).toBeLessThan(text.indexOf('prepared:'))
   })

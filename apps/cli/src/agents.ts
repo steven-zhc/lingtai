@@ -23,17 +23,13 @@
  */
 import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
-import { readRecipeKeyEffect } from '@lingtai/project'
-import type { RecipeChange, RecipeFiles } from '@lingtai/recipe'
+import type { RecipeDraft } from '@lingtai/project'
+import type { RecipeChange } from '@lingtai/recipe'
 import { isBuiltInJudge, unboundedTurnsChange } from '@lingtai/recipe'
 import { defaultAgents, remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { questionEffect, type Answered, type QuestionWorld } from './question.ts'
-
-function readKey(project: string, path: readonly (string | number)[], options: { home?: string; files?: RecipeFiles }) {
-  return Effect.orDie(readRecipeKeyEffect(project, path, options))
-}
 
 /** The phrasing `init.ts`'s look lines already use for a runtime that cannot run. */
 function whyMissing(r: RuntimeFound): string {
@@ -81,15 +77,14 @@ function findAgentAction(list: unknown): { index: number; action: Record<string,
  * and `editedInPlace` names the one action within a step this write edits
  * where it stands.
  */
-const leftoverRefusal = Effect.fn('agents.leftoverRefusal')(function* (
+function leftoverRefusal(
   at: AskAgentsAt,
-  readOpts: { home: string | undefined; files: RecipeFiles | undefined },
   signedInIds: readonly string[],
   world: QuestionWorld,
   editedInPlace: readonly { step: string; index: number }[],
   fullyReplaced: ReadonlySet<string>,
-): Effect.fn.Return<string | null> {
-  const steps = yield* readKey(at.project, ['steps'], readOpts)
+): string | null {
+  const steps = at.draft.get(['steps'])
   if (steps === null || typeof steps !== 'object') return null
   for (const [step, list] of Object.entries(steps as Record<string, unknown>)) {
     if (fullyReplaced.has(step) || !Array.isArray(list)) continue
@@ -122,7 +117,7 @@ const leftoverRefusal = Effect.fn('agents.leftoverRefusal')(function* (
     }
   }
   return null
-})
+}
 
 export interface AskAgentsAt {
   project: string
@@ -130,7 +125,8 @@ export interface AskAgentsAt {
   runtimes: readonly RuntimeFound[]
   flags: { agent?: string; model?: string; reviewer?: string; reviewerModel?: string }
   home?: string
-  files?: RecipeFiles
+  /** The recipe the answers so far have drafted. */
+  draft: RecipeDraft
   /** `question.ts`'s `kept` — what a refusal below says is already written. */
   kept?: string
 }
@@ -219,15 +215,14 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
       return Effect.succeed(`${whyMissing(found)} — ${remedyFor(found.state)}, or choose one of ${choiceList}${extra}`)
     }
 
-  const readOpts = { home: at.home, files: at.files }
-  const implementAction = findAgentAction(yield* readKey(at.project, ['steps', 'implement'], readOpts))
-  const reviewList = yield* readKey(at.project, ['steps', 'review'], readOpts)
+  const implementAction = findAgentAction(at.draft.get(['steps', 'implement']))
+  const reviewList = at.draft.get(['steps', 'review'])
   const reviewAction = findAgentAction(reviewList)
 
   const writingAgent = asRuntime(
     implementAction && typeof implementAction.action['agent'] === 'string'
       ? implementAction.action['agent']
-      : yield* readKey(at.project, ['runtime', 'agent'], readOpts),
+      : at.draft.get(['runtime', 'agent']),
   )
   const currentAgent = writingAgent !== null && signedInIds.includes(writingAgent) ? writingAgent : null
 
@@ -321,7 +316,7 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   else if (reviewAction) editedInPlace.push({ step: 'review', index: reviewAction.index })
   else fullyReplaced.add('review')
 
-  const leftover = yield* leftoverRefusal(at, readOpts, signedInIds, world, editedInPlace, fullyReplaced)
+  const leftover = leftoverRefusal(at, signedInIds, world, editedInPlace, fullyReplaced)
   if (leftover !== null) return { refused: leftover }
 
   let reviewerModel = ''
@@ -363,7 +358,7 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   if (
     writerCapabilities !== undefined &&
     !writerCapabilities.enforces.includes('turns') &&
-    (yield* readKey(at.project, ['runtime', 'limits', 'turns'], readOpts)) === null
+    at.draft.get(['runtime', 'limits', 'turns']) === null
   ) {
     changes.push(unboundedTurnsChange())
   }

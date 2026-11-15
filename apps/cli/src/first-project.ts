@@ -936,7 +936,7 @@ function runLocalBranch(
               base,
               remote,
               home: world.home,
-              files: draft,
+              draft,
             }),
           history: (project) => Effect.runPromiseWith(services)(world.history(project)),
           seeds,

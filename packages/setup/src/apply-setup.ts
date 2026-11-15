@@ -3,9 +3,9 @@
  * that follows it (#968).
  *
  * **Written once.** The questions are answered against a draft of the file
- * (`draftFiles`) that keeps every change made to it, in order, and never touches
+ * (`draftRecipe`) that keeps every change made to it, in order, and never touches
  * the disk; the changes are what arrive here as `Answers`, and this is the only
- * place they reach `~/.lingtai/<project>/recipe.yml` — in one `setRecipe` call. A
+ * place they reach `~/.lingtai/<project>/recipe.yml` — in one replace. A
  * refusal while asking therefore leaves nothing behind, and a page that collects
  * the same changes can call the same writer.
  *
@@ -25,7 +25,7 @@
  * accepted: the recipe either add wrote may stay.
  */
 import type { ProjectState } from '@lingtai/domain'
-import { diskFiles, recipePath, setRecipeEffect } from '@lingtai/project'
+import { diskFiles, draftRecipe, filesEffect, ProjectFiles, recipePath } from '@lingtai/project'
 import { type RecipeChange, type RecipeFiles, type Said } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
@@ -52,44 +52,24 @@ export function keptSentence(path: string): string {
 }
 
 /**
- * A `RecipeFiles` over a draft: reads fall through to `base` until the first
- * write, writes stay in memory, and every change set is kept for `applySetup`.
- */
-export function draftFiles(base: RecipeFiles, path: string): RecipeFiles & { changes: () => RecipeChange[] } {
-  let draft: string | undefined
-  const recorded: RecipeChange[] = []
-  return {
-    read: (p) => (p === path && draft !== undefined ? Promise.resolve(draft) : base.read(p)),
-    replace: (p, text) => {
-      if (p !== path) return Promise.reject(new Error(`a draft of ${path} was asked to write ${p}`))
-      draft = text
-      return Promise.resolve()
-    },
-    recorded: (changes) => {
-      recorded.push(...changes)
-    },
-    changes: () => [...recorded],
-  }
-}
-
-/**
  * The recipe text `applySetup` will leave on disk, computed without writing:
  * what a caller resolves (the base, the config hash) before it registers.
  */
 export function previewSetup(target: ApplyTarget, answers: Answers): Effect.Effect<string, SetupWriteError> {
   return Effect.gen(function* () {
-    const path = recipePath(answers.project, target.home)
-    const scratch = draftFiles(target.files ?? diskFiles, path)
     const unresolved = (err: unknown) => new SetupWriteError(`the recipe would not resolve: ${(err as Error).message}`)
-    const existing = yield* Effect.tryPromise({ try: () => scratch.read(path), catch: unresolved })
-    const written = yield* setRecipeEffect(answers.project, answers.changes, {
-      home: target.home,
-      files: scratch,
-      ...(existing === null && answers.said !== undefined ? { said: answers.said } : {}),
-    }).pipe(Effect.mapError(unresolved))
-    return written.text
+    const draft = yield* draftOver(target, answers).pipe(Effect.mapError(unresolved))
+    yield* draft.set(answers.changes).pipe(Effect.mapError(unresolved))
+    return draft.text() as string
   })
 }
+
+/** The draft of a project's recipe over `target`'s file port (the disk when it names none). */
+const draftOver = (target: ApplyTarget, answers: Answers) =>
+  draftRecipe(answers.project, {
+    home: target.home,
+    ...(answers.said === undefined ? {} : { said: answers.said }),
+  }).pipe(Effect.provideService(ProjectFiles, target.files ?? diskFiles))
 
 /**
  * Write the recipe once, then run `register`. Fails with `SetupWriteError`
@@ -102,17 +82,17 @@ export function applySetup<A, E>(
   register: Effect.Effect<A, E>,
 ): Effect.Effect<{ path: string; registered: A }, SetupWriteError | E> {
   return Effect.gen(function* () {
-    const files = target.files ?? diskFiles
+    const port = filesEffect(target.files)
     const path = recipePath(answers.project, target.home)
-    const before = yield* Effect.tryPromise({
-      try: () => files.read(path),
-      catch: (err) => new SetupWriteError(`could not read ${path}: ${(err as Error).message}`),
-    })
-    yield* setRecipeEffect(answers.project, answers.changes, {
-      home: target.home,
-      files,
-      ...(before === null && answers.said !== undefined ? { said: answers.said } : {}),
-    }).pipe(Effect.mapError((err) => new SetupWriteError(`${path} was not written: ${(err as Error).message}`)))
+    const refused = (err: unknown) => new SetupWriteError(`${path} was not written: ${(err as Error).message}`)
+    const draft = yield* draftOver(target, answers).pipe(
+      Effect.mapError((err) => new SetupWriteError(`could not read ${path}: ${(err as Error).message}`)),
+    )
+    const before = draft.text()
+    yield* draft.set(answers.changes).pipe(Effect.mapError(refused))
+    const text = draft.text()
+    // The one replace; #1177's `changeRecipe` takes it, and this stops holding a port.
+    if (text !== null && text !== before) yield* port.replace(path, text).pipe(Effect.mapError(refused))
     const registered = yield* register
     return { path, registered }
   })

@@ -4,7 +4,7 @@ import { type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/rec
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { alreadyAdded, alreadyAddedSentence, applySetup, draftFiles, previewSetup } from '../src/apply-setup.ts'
+import { alreadyAdded, alreadyAddedSentence, applySetup, previewSetup } from '../src/apply-setup.ts'
 
 const HOME = '/home/me/.lingtai'
 const path = recipePath('repo', HOME)
@@ -91,11 +91,13 @@ describe('applySetup (#968)', () => {
 
   it('a draft keeps every change and writes nothing to its base', async () => {
     const { files, store } = countingFiles()
-    const draft = draftFiles(files, path)
-    const { setRecipeEffect } = await import('@lingtai/project')
+    const { draftRecipe, ProjectFiles } = await import('@lingtai/project')
     const more: RecipeChange[] = [{ path: ['source', 'kinds'], value: ['bug', 'feature'] }]
-    await Effect.runPromise(setRecipeEffect('repo', CHANGES, { home: HOME, files: draft }))
-    await Effect.runPromise(setRecipeEffect('repo', more, { home: HOME, files: draft }))
+    const draft = await Effect.runPromise(
+      draftRecipe('repo', { home: HOME }).pipe(Effect.provideService(ProjectFiles, files)),
+    )
+    await Effect.runPromise(draft.set(CHANGES))
+    await Effect.runPromise(draft.set(more))
     expect(store.size).toBe(0)
     expect(draft.changes()).toEqual([...CHANGES, ...more])
   })
