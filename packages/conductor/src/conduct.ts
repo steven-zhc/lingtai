@@ -866,10 +866,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // What this pass's invocations were refused, by step; `runStep` drains it into the step's outcome (#1157).
     const refusals = makeRefusalCollector()
     /** Tells the Project what sandbox a run met. A failure is a log line: the next run's transition records it. */
+    let noteOnRunLog: (label: string, detail: string) => void = () => undefined
     const observeTheSandbox = (kind: 'sandboxed' | 'degraded' | 'off by choice', runId: string): Effect.Effect<void> =>
       observeSandbox(options.project.project!, { kind, runId }, store).pipe(
         Effect.catchCause((cause) =>
-          Effect.sync(() => log(`sandbox: observation not recorded — ${Cause.pretty(cause)}`)),
+          Effect.sync(() => {
+            const why = `observation not recorded — ${Cause.pretty(cause)}`
+            log(`sandbox: ${why}`)
+            noteOnRunLog('sandbox', why)
+          }),
         ),
       )
     const invocationAppends = (stream: string): InvocationAppends => ({
@@ -1891,6 +1896,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // The inner log's own close Effect, handed on lazily: it runs only when this Effect does.
         close: (fate) => Effect.suspend(() => opened?.close(fate) ?? Effect.void),
       }
+      noteOnRunLog = runLog.note
       /** Called by `claim`'s `queue:` action, and only once it holds the item. */
       const openTheRunLog: Effect.Effect<void> = Effect.gen(function* () {
         opened = yield* host.runLog({ path: runLogPath(home, project, runId) }).pipe(
@@ -3795,6 +3801,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
           const baseSha = asked.mergedOnto ?? continuation?.diffBaseSha ?? worktree?.baseSha ?? null
           if (baseSha === null) return { notRed: 'no base commit was cut' }
+          const baseKind = observedKindOfDecision(sandboxDecision, runSandbox !== undefined)
           const answer = yield* baseCheckFor(store, log, home).ask({
             project,
             base,
@@ -3809,6 +3816,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             timeoutMs: parseDuration(action.timeout),
             // The wrap travels on the question: the base check is one instance shared by every pass and project.
             ...(runSandbox === undefined ? {} : { sandbox: runSandbox }),
+            // Which unsandboxed boundary this pass ran under, so a join never lends one pass's answer to the other's.
+            ...(baseKind === null ? {} : { observedAs: baseKind }),
             tree: {
               cut: (path, sha) =>
                 detached(
@@ -3848,8 +3857,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           })
           // A command that ran is a run of the project's: observed from what the pass decided, never `BaseChecked.boundary`.
           if (answer.verdict !== 'unknown' && answer.from === 'ran') {
-            const kind = observedKindOfDecision(sandboxDecision, runSandbox !== undefined)
-            if (kind !== null) yield* observeTheSandbox(kind, runId)
+            if (baseKind !== null) yield* observeTheSandbox(baseKind, runId)
           }
           if (answer.verdict === 'red') {
             return { red: { command: action.run, base, baseSha, evidence: answer.evidence } }
