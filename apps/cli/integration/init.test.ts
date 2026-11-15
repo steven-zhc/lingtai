@@ -10,15 +10,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { type GitResult, pathExistsEffect } from '../src/first-project.ts'
-import {
-  type AppCheck,
-  type InitWorld,
-  type RuntimeFound,
-  configPath,
-  initCommandEffect,
-  liveMachine,
-  redact,
-} from '../src/init.ts'
+import { type AppCheck, type RuntimeFound, configPath, initCommandEffect, liveMachine, redact } from '../src/init.ts'
 import { flagsFromArgv } from '../test/flags.ts'
 import { type InitTestWorld, liftInitWorld } from '../test/init-world.ts'
 

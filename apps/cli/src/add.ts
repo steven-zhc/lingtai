@@ -34,7 +34,6 @@ import { Cause, Effect } from 'effect'
  * recipe disagrees (#75).
  */
 import { type AskedBeforeAdd, askBeforeGithubAddEffect, type AskBeforeGithubAddDeps, attempt } from './add-github.ts'
-import { lift } from './exit.ts'
 import {
   chooseFirstProjectEffect,
   liveFirstProjectWorld,

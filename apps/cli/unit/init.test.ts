@@ -10,7 +10,6 @@ import type { GitResult } from '../src/first-project.ts'
 import {
   type AppCheck,
   type DatabaseClient,
-  type InitWorld,
   type RuntimeFound,
   databaseCheck,
   initCommandEffect,

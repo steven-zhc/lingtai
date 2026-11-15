@@ -18,7 +18,7 @@ import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import type { FirstProjectWorld, GitResult, RegisterLocalPayload } from '../src/first-project.ts'
+import type { GitResult, RegisterLocalPayload } from '../src/first-project.ts'
 import { chooseFirstProjectEffect, liveFirstProjectWorld } from '../src/first-project.ts'
 import { flagsOf } from '../src/wizard-options.ts'
 import {

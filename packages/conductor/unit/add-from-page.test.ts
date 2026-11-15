@@ -58,6 +58,8 @@ const locker = {
 }
 
 const run = <A>(e: Effect.Effect<A, never>) => Effect.runPromise(e)
+const runWith = <A>(f: ReturnType<typeof files>, e: Effect.Effect<A, never>) =>
+  Effect.runPromise(e.pipe(Effect.provideService(ProjectFiles, f)))
 
 describe('addProject (#971)', () => {
   it('refuses a project already added and writes nothing', async () => {
@@ -112,7 +114,6 @@ describe('addProject (#971)', () => {
       locker,
       home: HOME,
       ...WHO(),
-      files: f,
       projects: async () => [] as ProjectState[],
       register: () => {
         registrations++
@@ -120,11 +121,11 @@ describe('addProject (#971)', () => {
       },
     })
 
-    const first = await run(addProject(FORM, ports(true)))
+    const first = await runWith(f, addProject(FORM, ports(true)))
     expect(first).toEqual({ ok: false, say: `the App is not installed. ${keptSentence(path)}` })
     expect(f.store.has(path)).toBe(true)
 
-    const second = await run(addProject(FORM, ports(false)))
+    const second = await runWith(f, addProject(FORM, ports(false)))
     expect(second).toEqual({ ok: true, project: FORM.project, path })
     expect(registrations).toBe(2)
   })
@@ -138,7 +139,6 @@ describe('addProject under two tabs and a retry (#971)', () => {
       locker,
       home: HOME,
       ...WHO(),
-      files: f,
       projects: async () => [...registered],
       register: () =>
         Effect.promise(async () => {
@@ -148,8 +148,8 @@ describe('addProject under two tabs and a retry (#971)', () => {
         }),
     })
     const [a, b] = await Promise.all([
-      run(addProject(FORM, ports('a'))),
-      run(addProject({ ...FORM, kinds: ['bug'] }, ports('b'))),
+      runWith(f, addProject(FORM, ports('a'))),
+      runWith(f, addProject({ ...FORM, kinds: ['bug'] }, ports('b'))),
     ])
     expect(a.ok).toBe(true)
     expect(b.ok).toBe(false)
@@ -163,7 +163,6 @@ describe('addProject under two tabs and a retry (#971)', () => {
       locker,
       home: HOME,
       ...WHO(),
-      files: f,
       projects: async () => [] as ProjectState[],
       register: () => (fail ? Effect.fail(new Error('no')) : Effect.void),
     })
@@ -173,9 +172,9 @@ describe('addProject under two tabs and a retry (#971)', () => {
       heldBy: 'agent:hold',
       limits: { turns: 500, wall: '9h', rounds: 7, restarts: 3 },
     }
-    await run(addProject(loud, ports(true)))
+    await runWith(f, addProject(loud, ports(true)))
     expect(f.store.get(path)).toContain('agent:hold')
-    await run(addProject(FORM, ports(false)))
+    await runWith(f, addProject(FORM, ports(false)))
     const text = f.store.get(path)!
     expect(text).not.toContain('agent:hold')
     expect(text).not.toContain('human:')
