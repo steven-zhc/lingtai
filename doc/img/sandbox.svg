@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" role="img" aria-label="Every agent run sits inside one srt sandbox: it reads and writes its worktree and temp directories, reaches only allowlisted hosts, and is refused your keys, logins and Lingtai's own state. Every refused connection is recorded and shown on the board.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" role="img" aria-label="Every agent run sits inside one srt sandbox: it reads and writes its worktree and temp directories, reaches only allowlisted hosts, and is refused your keys, logins and Lingtai's own state. Refused connections are recorded and shown on the board's Sandbox tab, except telemetry hosts; a refused file read is not reported.">
 <style>
 :root{--fg:#0f181c;--mute:#51636a;--line:#8aa0a6;--fill:rgba(11,106,112,.06);--acc:#0b6a70;--accf:rgba(11,106,112,.14);--warn:#a33029;--warnf:rgba(163,48,41,.08)}
 @media (prefers-color-scheme:dark){:root{--fg:#dde6e8;--mute:#93a7ad;--line:#5d757b;--fill:rgba(84,198,204,.07);--acc:#54c6cc;--accf:rgba(84,198,204,.16);--warn:#e8857c;--warnf:rgba(232,133,124,.10)}}
@@ -39,24 +39,28 @@ text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:
 <path class="ln" d="M326 174v20" marker-end="url(#a)"/>
 <path class="ln" d="M436 174v20" marker-end="url(#a)"/>
 
-<text class="s" x="381" y="282" text-anchor="middle">plus the paths your recipe adds</text>
-<text class="m" x="381" y="300" text-anchor="middle" fill="var(--mute)">sandbox.write · network.allow</text>
+<text class="s" x="381" y="272" text-anchor="middle">plus the mirror and runtime directory</text>
+<text class="s" x="381" y="290" text-anchor="middle">recipe lists only add:</text>
+<text class="m" x="381" y="308" text-anchor="middle" fill="var(--mute)">write · deny · network.allow</text>
 <text class="s" x="381" y="326" text-anchor="middle">new projects: on by default</text>
 
 <!-- files: refused -->
 <text class="s h" x="30" y="60">Files the run cannot read</text>
 <rect class="no" x="30" y="72" width="178" height="52" rx="6"/>
 <text class="h m" x="119" y="94" text-anchor="middle" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">~/.ssh · ~/.aws</text>
-<text class="s" x="119" y="112" text-anchor="middle">keys · ~/.gnupg</text>
+<text class="s" x="119" y="112" text-anchor="middle">keys · ~/.gnupg · ~/.netrc</text>
 <rect class="no" x="30" y="140" width="178" height="52" rx="6"/>
 <text class="h m" x="119" y="162" text-anchor="middle" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">~/.config/gh · ~/.npmrc</text>
-<text class="s" x="119" y="180" text-anchor="middle">logins · ~/.kube · ~/.netrc</text>
+<text class="s" x="119" y="180" text-anchor="middle">logins · ~/.kube</text>
 <rect class="no" x="30" y="208" width="178" height="52" rx="6"/>
 <text class="h m" x="119" y="230" text-anchor="middle" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">~/.lingtai</text>
-<text class="s" x="119" y="248" text-anchor="middle">Lingtai's config and log</text>
+<text class="s" x="119" y="248" text-anchor="middle">config · recipes · run logs</text>
 <rect class="no" x="30" y="276" width="178" height="52" rx="6"/>
-<text class="h" x="119" y="298" text-anchor="middle">Keychain · credentials</text>
-<text class="s" x="119" y="316" text-anchor="middle">your Claude login</text>
+<text class="h" x="119" y="298" text-anchor="middle">Keychain (macOS only)</text>
+<text class="s" x="119" y="316" text-anchor="middle">~/.claude/.credentials.json</text>
+<text class="s" x="119" y="346" text-anchor="middle">also ~/.docker/config.json and</text>
+<text class="s" x="119" y="361" text-anchor="middle">/var/run/docker.sock (Linux only)</text>
+<text class="s" x="119" y="380" text-anchor="middle">refused silently, not reported</text>
 <path class="lnw dash" d="M250 98H212"/><path class="lnw dash" d="M250 166H212"/><path class="lnw dash" d="M250 234H212"/><path class="lnw dash" d="M250 302H212"/>
 <path class="x" d="M244 92l12 12M256 92l-12 12"/><path class="x" d="M244 160l12 12M256 160l-12 12"/><path class="x" d="M244 228l12 12M256 228l-12 12"/><path class="x" d="M244 296l12 12M256 296l-12 12"/>
 
@@ -77,8 +81,9 @@ text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:
 
 <rect class="box" x="558" y="250" width="176" height="64" rx="6"/>
 <text class="h" x="646" y="273" text-anchor="middle">Board</text>
-<text class="s" x="646" y="290" text-anchor="middle">every refusal recorded,</text>
+<text class="s" x="646" y="290" text-anchor="middle">refused connections shown</text>
 <text class="s" x="646" y="305" text-anchor="middle">on the Sandbox tab</text>
+<text class="s" x="646" y="332" text-anchor="middle">except telemetry hosts</text>
 <path class="ln dash" d="M646 212v34" marker-end="url(#a)"/>
 <text class="s" x="654" y="234">logged</text>
 </svg>
