@@ -26,9 +26,9 @@ import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
 import { type RateRow, shipped } from '@lingtai/domain/rate-card'
-import { draftRecipe, ProjectFiles, recipePath, type RecipeDraft } from '@lingtai/project'
+import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
 import { readJson, snapshotPath } from '@lingtai/projector'
-import { baseOf, type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/recipe'
+import { baseOf, type RecipeChange, resolveSource } from '@lingtai/recipe'
 import { type Answers, ENV_PLANT_AT, SAID, type SetupReader } from '@lingtai/setup'
 import type { Proposal, RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -100,7 +100,6 @@ export interface RecipeAt {
   /** The command that changes what the summary shows — `lingtai add --local <dir>`, `lingtai add <owner>/<repo>`. */
   again: string
   home?: string
-  files?: RecipeFiles
   /** The prices fetched onto this machine, `null` where the file is there and cannot be read; defaults to the real snapshot, which under a test reads as none unless it has its own `LINGTAI_HOME` (#693). */
   rates?: () => readonly unknown[] | null
 }
@@ -197,8 +196,7 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
 ): Effect.fn.Return<Recipe, unknown> {
   // Every answer lands in this draft and nowhere else: `applySetup` (#968) is the one
   // writer of the file, so a refusal anywhere below leaves the disk as it was.
-  const made = draftRecipe(at.project, { home: at.home, said: SAID })
-  const draft = yield* at.files === undefined ? made : made.pipe(Effect.provideService(ProjectFiles, at.files))
+  const draft = yield* draftRecipe(at.project, { home: at.home, said: SAID })
 
   // Asked first, ahead of the existing-file seed write below — nothing is
   // written yet on either path, so a refusal here always says

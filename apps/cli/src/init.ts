@@ -136,8 +136,8 @@ import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type Queryable, type SchemaOutcome, createSchemaEffect } from '@lingtai/event-store/schema'
 import type { EventStore } from '@lingtai/event-store/store'
 import { ghStatusEffect, liveGh, type GhRun, type GhStatus } from '@lingtai/github'
-import { diskFiles, loadAllProjectsEffect, readRecipeKeyEffect, recipePath } from '@lingtai/project'
-import { kindsOf, resolveSource, ticketSourceOf, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
+import { loadAllProjectsEffect, projectsOnDisk, recipePath, recipeText, recipeValue } from '@lingtai/project'
+import { kindsOf, resolveSource, ticketSourceOf, type SignedIn } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, runtimeStateSentence, type RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -243,7 +243,6 @@ export interface InitWorld {
   projects: () => Effect.Effect<readonly ProjectState[], unknown>
   /** The lock an add is made under; the machine's file lock unless a test hands one in. */
   locker?: Locker
-  files: RecipeFiles
   /** The log a recipe written by the first project is recorded on: the process's own when absent. */
   store?: EventStore
   signedIn: SignedIn
@@ -450,7 +449,10 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
           const remote =
             p.project === null
               ? null
-              : yield* readRecipeKeyEffect(p.project, ['repo', 'remote'], { home, files: world.files })
+              : yield* recipeValue(p.project, ['repo', 'remote'], {
+                  home,
+                  ...(world.store === undefined ? {} : { store: world.store }),
+                })
           listed.push(
             typeof remote === 'string'
               ? `${p.project} — local, ${remote}`
@@ -586,16 +588,15 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     if (askProject) {
       // Built from `world` directly rather than through a live default (#394's
       // finding 6): every seam `chooseFirstProject` reaches for — `git`, the
-      // log, the recipe files, the App — is the one this test or process was
-      // handed, never `checkApp`, `loadAllProjects`, a bare `stateDir()` or
-      // `diskFiles` reached for underneath it.
+      // log, the App — is the one this test or process was
+      // handed, never `checkApp`, `loadAllProjects`, a bare `stateDir()`
+      // reached for underneath it.
       const firstProjectWorld: FirstProjectWorld = {
         ask: world.ask,
         log: world.log,
         git: world.runGit,
         projects: world.projects,
         locker: world.locker,
-        files: world.files,
         by: `human:${userInfo().username}`,
         ...(world.store === undefined ? {} : { store: world.store }),
         home,
@@ -682,7 +683,10 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
       if (chosen.project === 'local') {
         const recipeFile = recipePath(chosen.name, home)
         // Read back like `summariseRecipe` does: a recipe that cannot be read draws no card.
-        if ((yield* lift(() => world.files.read(recipeFile))) === null) {
+        if (
+          (yield* recipeText(chosen.name, { home, ...(world.store === undefined ? {} : { store: world.store }) })) ===
+          null
+        ) {
           return stop(`the recipe could not be read back from ${recipeFile}`)
         }
         held.length = 0
@@ -839,7 +843,7 @@ function whereAmI(world: InitWorld, registered: readonly ProjectState[], home: s
     let kinds: string[] = []
     yield* Effect.gen(function* () {
       const path = recipePath(project, home)
-      const text = yield* lift(() => world.files.read(path))
+      const text = yield* recipeText(project, { home, ...(world.store === undefined ? {} : { store: world.store }) })
       if (text !== null) {
         const recipe = resolveSource(text, path, path).recipe
         tickets = ticketSourceOf(recipe)
@@ -1231,7 +1235,7 @@ export function liveMachine(): InitWorld['machine'] {
         const entries = readdirSync(home, { withFileTypes: true })
           .filter((e) => e.isDirectory())
           .map((e) => e.name)
-        const projects = entries.filter((name) => existsSync(join(home, name, 'recipe.yml')))
+        const projects = projectsOnDisk(home)
         said.push(projects.length > 0 ? `projects: ${projects.join(', ')}` : 'no projects')
         if (entries.includes('versions')) {
           const versions = readdirSync(join(home, 'versions')).filter((v) => !v.startsWith('.'))
@@ -1356,7 +1360,6 @@ export function liveInitWorld(): InitWorld {
     open: (url) => lift(() => liveOpen(url)),
     runGit: liveGitEffect,
     projects: () => loadAllProjectsEffect(),
-    files: diskFiles,
     signedIn: signedInHere,
     registerLocal: (payload) =>
       addLocalEffect(

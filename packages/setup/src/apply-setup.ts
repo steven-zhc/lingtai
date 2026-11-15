@@ -25,16 +25,8 @@
  * accepted: the recipe either add wrote may stay.
  */
 import type { ProjectState } from '@lingtai/domain'
-import {
-  type ChangeOptions,
-  changeRecipe,
-  diskFiles,
-  draftRecipe,
-  ProjectFiles,
-  RecipeNotRecordedError,
-  recipePath,
-} from '@lingtai/project'
-import { type RecipeChange, type RecipeFiles, type Said } from '@lingtai/recipe'
+import { type ChangeOptions, changeRecipe, draftRecipe, RecipeNotRecordedError, recipePath } from '@lingtai/project'
+import { type RecipeChange, type Said } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 /** What the questions decided: every change they made to the recipe, in order. */
@@ -47,7 +39,6 @@ export interface Answers {
 
 export interface ApplyTarget {
   home?: string
-  files?: RecipeFiles
 }
 
 export class SetupWriteError extends Error {
@@ -72,12 +63,12 @@ export function previewSetup(target: ApplyTarget, answers: Answers): Effect.Effe
   })
 }
 
-/** The draft of a project's recipe over `target`'s file port (the disk when it names none). */
+/** The draft of a project's recipe, over whatever `ProjectFiles` the caller provides (the disk by default). */
 const draftOver = (target: ApplyTarget, answers: Answers) =>
   draftRecipe(answers.project, {
     home: target.home,
     ...(answers.said === undefined ? {} : { said: answers.said }),
-  }).pipe(Effect.provideService(ProjectFiles, target.files ?? diskFiles))
+  })
 
 /** Where `applySetup` writes, and who it says wrote it: `by` is `human:<user>`, and `store` the log (the process's own when absent). */
 export interface ApplyWriteTarget extends ApplyTarget {
@@ -107,7 +98,6 @@ export function applySetup<A, E>(
         ...(target.home === undefined ? {} : { home: target.home }),
       },
     ).pipe(
-      Effect.provideService(ProjectFiles, target.files ?? diskFiles),
       Effect.mapError((err) =>
         err instanceof RecipeNotRecordedError
           ? new SetupWriteError(err.message)

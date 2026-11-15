@@ -28,8 +28,8 @@ import { sandboxHostHere } from '@lingtai/conductor/projects'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp, stateDir } from '@lingtai/env'
 import { createGitHubClient, GitHubFailed, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
-import { diskFiles, readRecipeKeyEffect, recipePath, type RecipeDraft } from '@lingtai/project'
-import { type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/recipe'
+import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
+import { type RecipeChange, resolveSource } from '@lingtai/recipe'
 import { type Answers, EMPTY_SETUP_READER, type Picker, type ProposalReaders, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
 import { liveMachineText, liveTrialBuild, previewSetup } from '@lingtai/setup'
@@ -144,7 +144,6 @@ export interface AskBeforeGithubAddDeps {
    * successful add costs no second request.
    */
   picker: () => Effect.Effect<Picker, unknown>
-  files: RecipeFiles
   reader: (
     owner: string,
     repo: string,
@@ -172,7 +171,6 @@ const liveDeps: AskBeforeGithubAddDeps = {
   },
   ghAccess: (slug, log) => checkGhAccessEffect(slug, log),
   picker: livePickerEffect,
-  files: diskFiles,
   reader: liveGithubReader,
   ask: liveAsk,
   spin: liveSpin,
@@ -341,7 +339,9 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   // here, with every first-run answer and the seeds below (#432) — no flag is
   // refused for lack of a file any more.
   const path = recipePath(repo)
-  const existing = yield* lift(() => deps.files.read(path))
+  // Inside an add the file is read as a draft: nothing is recorded or written until `applySetup`.
+  const onDisk = yield* draftRecipe(repo)
+  const existing = onDisk.text()
   const world: QuestionWorld = {
     ask: deps.ask,
     ...(deps.spin === undefined ? {} : { spin: deps.spin }),
@@ -382,8 +382,8 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     // `widenStepsIfNeeded`). Named here, before `askRecipe`'s first question,
     // because showing that to a person is this caller's line to print, not
     // `agents.ts`'s.
-    const extendsPreset = yield* readRecipeKeyEffect(repo, ['extends'])
-    const stepsWritten = yield* readRecipeKeyEffect(repo, ['steps'])
+    const extendsPreset = onDisk.get(['extends'])
+    const stepsWritten = onDisk.get(['steps'])
     if (typeof extendsPreset === 'string' && stepsWritten === null) {
       console.log(
         `${path} extends ${extendsPreset} and writes no steps: of its own — the first answer here pins that ` +
@@ -447,7 +447,6 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     again: `lingtai add ${owner}/${repo}`,
     keptBeforeWrite: 'Nothing was written',
     kept: ADD_KEPT,
-    files: deps.files,
   })
   // `addCommand` hands this same `flags` object to `chooseFirstProject` once
   // this function returns — deleted here, so that call's `runGithubBranch`
@@ -479,7 +478,7 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   if (deps.claudeToken !== undefined) {
     // The recipe is a draft until `applySetup` writes it, so its final form is the preview of the answers.
     const final = yield* attempt(
-      previewSetup({ home: stateDir(), files: deps.files }, recipeResult.answers).pipe(
+      previewSetup({ home: stateDir() }, recipeResult.answers).pipe(
         Effect.map((text) => resolveSource(text, recipePath(repo), recipePath(repo)).recipe),
       ),
     )
