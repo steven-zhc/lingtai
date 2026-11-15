@@ -25,7 +25,15 @@
  * accepted: the recipe either add wrote may stay.
  */
 import type { ProjectState } from '@lingtai/domain'
-import { diskFiles, draftRecipe, filesEffect, ProjectFiles, recipePath } from '@lingtai/project'
+import {
+  type ChangeOptions,
+  changeRecipe,
+  diskFiles,
+  draftRecipe,
+  ProjectFiles,
+  RecipeNotRecordedError,
+  recipePath,
+} from '@lingtai/project'
 import { type RecipeChange, type RecipeFiles, type Said } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
@@ -71,28 +79,41 @@ const draftOver = (target: ApplyTarget, answers: Answers) =>
     ...(answers.said === undefined ? {} : { said: answers.said }),
   }).pipe(Effect.provideService(ProjectFiles, target.files ?? diskFiles))
 
+/** Where `applySetup` writes, and who it says wrote it: `by` is `human:<user>`, and `store` the log (the process's own when absent). */
+export interface ApplyWriteTarget extends ApplyTarget {
+  by: string
+  store?: ChangeOptions['store']
+}
+
 /**
- * Write the recipe once, then run `register`. Fails with `SetupWriteError`
- * before anything is written when the changes do not resolve; `register`'s own
- * failure is returned as it came, after the write — and the file stays.
+ * Write the recipe once — `changeRecipe`, the file and then the event naming `by` — then run `register`. Fails with
+ * `SetupWriteError` before anything is written when the changes do not resolve; `register`'s own failure is
+ * returned as it came, after the write — and the file stays. A recipe written and not recorded is reported and
+ * `register` does not run: a rerun of `lingtai add` registers.
  */
 export function applySetup<A, E>(
-  target: ApplyTarget,
+  target: ApplyWriteTarget,
   answers: Answers,
   register: Effect.Effect<A, E>,
 ): Effect.Effect<{ path: string; registered: A }, SetupWriteError | E> {
   return Effect.gen(function* () {
-    const port = filesEffect(target.files)
     const path = recipePath(answers.project, target.home)
-    const refused = (err: unknown) => new SetupWriteError(`${path} was not written: ${(err as Error).message}`)
-    const draft = yield* draftOver(target, answers).pipe(
-      Effect.mapError((err) => new SetupWriteError(`could not read ${path}: ${(err as Error).message}`)),
+    yield* changeRecipe(
+      answers.project,
+      { changes: answers.changes, ...(answers.said === undefined ? {} : { said: answers.said }) },
+      {
+        by: target.by,
+        ...(target.store === undefined ? {} : { store: target.store }),
+        ...(target.home === undefined ? {} : { home: target.home }),
+      },
+    ).pipe(
+      Effect.provideService(ProjectFiles, target.files ?? diskFiles),
+      Effect.mapError((err) =>
+        err instanceof RecipeNotRecordedError
+          ? new SetupWriteError(err.message)
+          : new SetupWriteError(`${path} was not written: ${(err as Error).message}`),
+      ),
     )
-    const before = draft.text()
-    yield* draft.set(answers.changes).pipe(Effect.mapError(refused))
-    const text = draft.text()
-    // The one replace; #1177's `changeRecipe` takes it, and this stops holding a port.
-    if (text !== null && text !== before) yield* port.replace(path, text).pipe(Effect.mapError(refused))
     const registered = yield* register
     return { path, registered }
   })

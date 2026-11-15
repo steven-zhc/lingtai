@@ -1,9 +1,31 @@
-import { type RecipeFiles } from '@lingtai/recipe'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { type HostFactsEffect, type RecipeFiles, type SaveRecipeTextResult, type SignedIn } from '@lingtai/recipe'
 import { fakeFacts, fakeSandboxHost } from '@lingtai/recipe/test/sandbox-host'
+import { Effect } from 'effect'
 /** `saveRecipeText` (#973): no filesystem — the file seam is a `Map`. */
 import { describe, expect, it } from 'vitest'
 
-import { machinePath, recipePath, saveRecipeText } from '../src/index.ts'
+import { machinePath, recipePath, changeRecipe, ProjectFiles } from '../src/index.ts'
+
+/** The text arm of `changeRecipe`, over a memory log and the `Map` port. */
+const saveRecipeText = (
+  project: string,
+  input: { loaded: string; text: string },
+  o: {
+    home?: string
+    files: RecipeFiles
+    base?: string | null
+    signedIn: SignedIn
+    hostFacts: HostFactsEffect
+  },
+) =>
+  Effect.runPromise(
+    changeRecipe(
+      project,
+      { text: input.text, expected: input.loaded, base: o.base, signedIn: o.signedIn, hostFacts: o.hostFacts },
+      { by: 'human:me', store: createMemoryEventStore(), home: o.home },
+    ).pipe(Effect.provideService(ProjectFiles, o.files)),
+  ) as Promise<SaveRecipeTextResult>
 
 const HOME = '/home/me/.lingtai'
 const PATH = recipePath('app', HOME)

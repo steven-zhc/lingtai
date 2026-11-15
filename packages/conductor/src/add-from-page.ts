@@ -25,6 +25,7 @@ import { basename, join } from 'node:path'
 import type { ProjectState } from '@lingtai/domain'
 import { githubApp, githubClientAuth } from '@lingtai/env'
 import { createFileLocker, type Locker } from '@lingtai/env/lock'
+import type { EventStore } from '@lingtai/event-store/store'
 import { GitHubFailed, makeGitHub, type GitHub } from '@lingtai/github'
 import { HOST_FOR_SAVING, diskFiles, loadAllProjects, loadProject, recipePath } from '@lingtai/project'
 import { baseOf, type RecipeFiles, resolveSource } from '@lingtai/recipe'
@@ -242,6 +243,10 @@ function answersFor(form: SetupForm, ports: { home?: string; files?: RecipeFiles
 export interface AddPorts {
   home?: string
   files?: RecipeFiles
+  /** Who adds: `human:<user>`, written on the recipe's event (0128 §3). */
+  by: string
+  /** The log the recipe's event goes to: the process's own when absent, a memory store in a test. */
+  store?: EventStore
   /** Every project with a stream: the reads `lingtai add` refuses an add from. */
   projects: () => Promise<readonly ProjectState[]>
   /** Where the cross-process lock is taken; the machine's lock directory unless a test hands one in. */
@@ -305,7 +310,11 @@ function checkAndWrite(form: SetupForm, ports: AddPorts, path: string): Effect.E
         ? Effect.succeed<Added>({ ok: false, say: alreadyAddedSentence(form.project, ports.home) })
         : answersFor(form, ports).pipe(
             Effect.flatMap((answers) =>
-              applySetup({ home: ports.home, files: ports.files }, answers, ports.register(form)),
+              applySetup(
+                { home: ports.home, files: ports.files, by: ports.by, store: ports.store },
+                answers,
+                ports.register(form),
+              ),
             ),
             Effect.map((done): Added => ({ ok: true, project: form.project, path: done.path })),
             Effect.catch((err) =>
@@ -374,8 +383,8 @@ export function liveRegister(target: SetupTarget, home?: string): AddPorts['regi
 }
 
 /** The live ports for one target. */
-export function livePorts(target: SetupTarget, home?: string): AddPorts {
-  return { home, projects: () => loadAllProjects(), register: liveRegister(target, home) }
+export function livePorts(target: SetupTarget, by: string, home?: string): AddPorts {
+  return { home, by, projects: () => loadAllProjects(), register: liveRegister(target, home) }
 }
 
 /** The name a directory is added as: its top level's last segment (0104 §15). */

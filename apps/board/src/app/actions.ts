@@ -63,7 +63,7 @@ import { allowedResolutions } from '@lingtai/domain/wait'
 import { machineDayCeiling, stateDir } from '@lingtai/env'
 import { hasGitHubApp, hasGitHubAuth } from '@lingtai/env'
 import { eventStore, log } from '@lingtai/event-store'
-import { HOST_FOR_SAVING, loadAllProjects, readProject, readProjectState, saveRecipeText } from '@lingtai/project'
+import { HOST_FOR_SAVING, loadAllProjects, readProject, readProjectState, changeRecipe } from '@lingtai/project'
 import { kindsOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
 import { Effect } from 'effect'
@@ -1009,14 +1009,18 @@ export async function saveRecipe(_previous: SaveRecipeState, form: FormData): Pr
   try {
     const state = await readProject(name)
     if (!state) return { ok: false, loaded, text, message: `no project named "${name}"` }
-    const result = await saveRecipeText(
-      name,
-      { loaded, text },
-      {
-        base: state.base ?? null,
-        signedIn: signedInHere,
-        hostFacts: HOST_FOR_SAVING.hostFacts,
-      },
+    const result = await Effect.runPromise(
+      changeRecipe(
+        name,
+        {
+          text,
+          expected: loaded,
+          base: state.base ?? null,
+          signedIn: signedInHere,
+          hostFacts: HOST_FOR_SAVING.hostFacts,
+        },
+        { by: actor(), store: eventStore },
+      ),
     )
     if (!result.ok) return { ok: false, loaded, text, message: result.message }
     revalidatePath(`/recipe/${encodeURIComponent(name)}`)

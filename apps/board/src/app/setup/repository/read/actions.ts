@@ -1,10 +1,4 @@
 'use server'
-/**
- * Step 2's two server actions (#971). **They take the form's answers and build
- * the changes here**: the page never hands the writer a `RecipeChange[]`, and
- * what names the project, the remote and the turn ceiling is read again on the
- * server rather than taken from the page.
- */
 import { everyRuntime } from '@lingtai/agent'
 import { addProject, livePorts, previewOf, readLocalTarget } from '@lingtai/conductor/add-from-page'
 import { attemptCeiling } from '@lingtai/conductor/ceiling'
@@ -14,6 +8,14 @@ import { parseDuration } from '@lingtai/recipe/duration'
 import { boundsBesides, ceilingOf } from '@lingtai/recipe/settings'
 import { LINGTAI_BASE, type SetupForm } from '@lingtai/setup'
 import { Effect } from 'effect'
+
+/**
+ * Step 2's two server actions (#971). **They take the form's answers and build
+ * the changes here**: the page never hands the writer a `RecipeChange[]`, and
+ * what names the project, the remote and the turn ceiling is read again on the
+ * server rather than taken from the page.
+ */
+import { actor } from '@/lib/actor'
 
 import type { AddResult, Preview } from './read-model.ts'
 
@@ -69,6 +71,6 @@ export async function previewAdd(form: SetupForm): Promise<Preview> {
 export async function addRepository(form: SetupForm): Promise<AddResult> {
   const checked = await trusted(form)
   if ('refused' in checked) return { ok: false, say: checked.refused }
-  const added = await Effect.runPromise(addProject(checked, livePorts(checked.target)))
+  const added = await Effect.runPromise(addProject(checked, livePorts(checked.target, actor())))
   return added.ok ? { ok: true, project: added.project } : added
 }
