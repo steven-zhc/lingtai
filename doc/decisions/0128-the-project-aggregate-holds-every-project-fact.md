@@ -148,22 +148,39 @@ The streams that exist, and what each holds:
    (§5) — read the Project's reduce and never the file, so a missing or broken
    file stops attempts and is said, but does not blank the board.
 
-7. **One module is the way in: `@lingtai/project`, and it owns the whole
-   stream.** It exports `loadProject(project)` — the Project, its recipe
-   resolved — and the project's commands as Effects: `changeRecipe`, `pause`,
+7. **One module is the way in: `@lingtai/project` owns the whole stream and
+   the recipe's whole life.** The file is the recipe's one source of truth,
+   because a person may edit it; inside the system, the module alone decides
+   how it is read and written, and nothing else touches it. The module's
+   surface is three kinds of operation and no file port:
+   - **read** — `loadProject(project)`, the Project with its recipe resolved,
+     and `recipeValue(project, keyPath)`, one key of the declared recipe;
+   - **draft** — `draftRecipe(project)`, an in-memory recipe a caller changes
+     (`set(changes)`), reads back (`get(path)`) and previews (`text()`)
+     without writing: what `lingtai add` and setup collect their answers
+     into, in place of a file port of their own;
+   - **change** — `changeRecipe(project, { changes | text, by, expected? })`,
+     the one write: it applies the changes (`editRecipe`), validates, refuses
+     a stale save where `expected` is not the file, writes the file, then
+     appends (§6). A draft is committed by handing its changes to
+     `changeRecipe`.
+   The project's other commands are Effects of the module too: `pause`,
    `resume`, and the conductor's `refuse`/`recover` transitions. Every append
-   to `prj-{project}` and every read of it goes through the module — today
-   they come from three packages and are reduced inline in seven places
-   (`doc/design/aggregate-audit.md` F6), and the board reaches pause and resume
-   by importing the daemon (F12). Nothing else reads `recipe.yml` or writes a
-   recipe: the conductor at an attempt's start, the
-   board's pages and its recipe editor, `lingtai add`, the setup module
-   ([0125](0125-setup-is-one-module-two-inputs.md)), and `lingtai doctor` all
-   go through it. Inside the module, whether a field is answered from the file
-   or from replaying the stream is the module's choice, and may change without
-   any caller changing. A unit test refuses any read of `recipe.yml` or any
-   write of a recipe outside `@lingtai/project`, the way the Effect ratchet
-   refuses an `async`.
+   to `prj-{project}` and every read of it goes through the module — before
+   this they came from three packages and were reduced inline in seven places
+   (`doc/design/aggregate-audit.md` F6), and the board reached pause and
+   resume by importing the daemon (F12). **No caller holds or passes a file
+   port**: `RecipeFiles` and `diskFiles` are the module's own, and a test
+   replaces the module's file service with an Effect layer, never with a
+   parameter. The conductor at an attempt's start, the board's pages and its
+   recipe editor, `lingtai add`, the setup module
+   ([0125](0125-setup-is-one-module-two-inputs.md)) and `lingtai doctor` all
+   call these operations, so a change to how a recipe is kept is a change to
+   this module alone. Inside the module, whether a field is answered from the
+   file or from replaying the stream is the module's choice. A unit test
+   refuses any read or write of `recipe.yml`, and any import of the module's
+   file port, outside `@lingtai/project`, the way the Effect ratchet refuses
+   an `async`.
 
 8. **The Project domain is two packages, one per layer.** `@lingtai/recipe`
    is what a recipe *is* — its schema, parsing, validation, the canonical form,
@@ -195,9 +212,12 @@ The streams that exist, and what each holds:
 
 ## Not built yet
 
-All of it: `@lingtai/project`, `ProjectRecipeChanged`, `ProjectSandboxObserved`,
-the file reconciliation of §6, the reader test of §7, `RecipeRecorded`'s
-retirement, and every caller moving to `loadProject`.
+Built: `@lingtai/project` (#1172), every `prj-` read and append through it
+(#1173, #1174), `ProjectRecipeChanged` and `ProjectSandboxObserved` in the
+domain (#1171). Not yet: the one-way read of §6 (`loadProject`), the module's
+file service, `draftRecipe` and `changeRecipe` as the only way to change a
+recipe, no caller holding a file port, the test of §7, `RecipeRecorded`'s
+retirement, and every caller moving to these operations.
 
 ## Not decided here
 
