@@ -51,14 +51,16 @@ text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:
 <text class="s" x="119" y="112" text-anchor="middle">keys · ~/.gnupg · ~/.netrc</text>
 <rect class="no" x="30" y="140" width="178" height="52" rx="6"/>
 <text class="h m" x="119" y="162" text-anchor="middle" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">~/.config/gh · ~/.npmrc</text>
-<text class="s" x="119" y="180" text-anchor="middle">logins · ~/.kube · Docker</text>
+<text class="s" x="119" y="180" text-anchor="middle">logins · ~/.kube</text>
 <rect class="no" x="30" y="208" width="178" height="52" rx="6"/>
 <text class="h m" x="119" y="230" text-anchor="middle" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">~/.lingtai</text>
 <text class="s" x="119" y="248" text-anchor="middle">config · recipes · run logs</text>
 <rect class="no" x="30" y="276" width="178" height="52" rx="6"/>
 <text class="h" x="119" y="298" text-anchor="middle">Keychain (macOS only)</text>
 <text class="s" x="119" y="316" text-anchor="middle">~/.claude/.credentials.json</text>
-<text class="s" x="119" y="346" text-anchor="middle">refused silently, not reported</text>
+<text class="s" x="119" y="346" text-anchor="middle">also ~/.docker/config.json and</text>
+<text class="s" x="119" y="361" text-anchor="middle">/var/run/docker.sock (Linux only)</text>
+<text class="s" x="119" y="380" text-anchor="middle">refused silently, not reported</text>
 <path class="lnw dash" d="M250 98H212"/><path class="lnw dash" d="M250 166H212"/><path class="lnw dash" d="M250 234H212"/><path class="lnw dash" d="M250 302H212"/>
 <path class="x" d="M244 92l12 12M256 92l-12 12"/><path class="x" d="M244 160l12 12M256 160l-12 12"/><path class="x" d="M244 228l12 12M256 228l-12 12"/><path class="x" d="M244 296l12 12M256 296l-12 12"/>
 
