@@ -9,7 +9,13 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { makeRunSandbox } from '../src/sandbox-decision.ts'
-import { boundaryOfDecision, recordUnwrapped, recordingWrap } from '../src/sandbox-record.ts'
+import {
+  boundaryOfDecision,
+  observedKindOf,
+  observedKindOfDecision,
+  recordUnwrapped,
+  recordingWrap,
+} from '../src/sandbox-record.ts'
 
 const policy = {
   allowedDomains: [],
@@ -181,5 +187,21 @@ describe('a run: command', () => {
     })
     await Effect.runPromise(action.run({ cwd: '/w', env: {}, log: undefined } as never))
     expect(s.log).toEqual(['before', 'spawn'])
+  })
+})
+
+describe('observedKindOf (#1180)', () => {
+  it('maps every boundary shape to the kind it observes', () => {
+    expect(observedKindOf({ kind: 'sandboxed' })).toBe('sandboxed')
+    expect(observedKindOf({ kind: 'unsandboxed', reason: 'degraded' })).toBe('degraded')
+    expect(observedKindOf({ kind: 'unsandboxed', reason: 'off by choice' })).toBe('off by choice')
+    expect(observedKindOf({ kind: 'refused' })).toBeNull()
+  })
+
+  it('reads a decision the base check ran under', () => {
+    const off = { kind: 'unsandboxed', reason: 'off by choice' } as const
+    expect(observedKindOfDecision(off, false)).toBe('off by choice')
+    expect(observedKindOfDecision(off, true)).toBe('sandboxed')
+    expect(observedKindOfDecision({ kind: 'refused', why: 'x' }, false)).toBeNull()
   })
 })

@@ -73,6 +73,12 @@ export interface BaseCheckQuestion {
    * for the same reason as `tree`. Absent is *unsandboxed*: the commands spawn as they always have.
    */
   sandbox?: RunSandbox
+  /**
+   * Which kind of boundary the asking pass ran under (#1180). Part of the in-flight key when unsandboxed, because
+   * *degraded* and *off by choice* are the same cache key but not the same observation: a join must not hand one
+   * pass the other's run.
+   */
+  observedAs?: string
 }
 
 /** The boundary of a command that ran with no sandbox, and what an event with no `boundary` reads as. */
@@ -323,7 +329,13 @@ export function createBaseCheck(deps: BaseCheckDeps): {
             unknownWith(`the sandbox policy could not be fingerprinted: ${(defect as Error).message}`),
           )
         }
-        const key = JSON.stringify([stream, q.baseSha, q.command, fingerprint])
+        const key = JSON.stringify([
+          stream,
+          q.baseSha,
+          q.command,
+          fingerprint,
+          fingerprint === UNSANDBOXED ? (q.observedAs ?? null) : null,
+        ])
         const shared = inFlight.get(key)
         if (shared) return Fiber.join(shared)
         const running = check(q, stream, path).pipe(

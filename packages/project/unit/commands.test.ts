@@ -8,7 +8,14 @@ import { type EventStore } from '@lingtai/event-store/store'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { otherOwner, pauseProject, recordTurn, registerProject, resumeProject } from '../src/commands.ts'
+import {
+  observeSandbox,
+  otherOwner,
+  pauseProject,
+  recordTurn,
+  registerProject,
+  resumeProject,
+} from '../src/commands.ts'
 
 const stream = projectStream('lingtai')
 const data = (owner: string | null) => ({ project: 'lingtai', owner, base: 'main', configHash: 'h', fromSha: 's' })
@@ -115,5 +122,33 @@ describe('otherOwner', () => {
     expect(otherOwner(state, 'other')).toBe('steven-zhc')
     expect(otherOwner(state, 'Steven-ZHC')).toBeNull()
     expect(otherOwner(reduceProject([]), 'other')).toBeNull()
+  })
+})
+
+describe('observeSandbox', () => {
+  const types = async (store: EventStore) => (await store.read(stream)).map((e) => e.type)
+  it('appends on the first observation and on a new kind, and nothing for the same kind', async () => {
+    const store = await configured()
+    await run(observeSandbox('lingtai', { kind: 'sandboxed', runId: 'a' }, store))
+    await run(observeSandbox('lingtai', { kind: 'sandboxed', runId: 'b' }, store))
+    expect(await types(store)).toEqual(['ProjectConfigured', 'ProjectSandboxObserved'])
+    await run(observeSandbox('lingtai', { kind: 'degraded', runId: 'c' }, store))
+    expect(await types(store)).toEqual(['ProjectConfigured', 'ProjectSandboxObserved', 'ProjectSandboxObserved'])
+  })
+
+  it('a lost race to the same kind re-reads and appends nothing more', async () => {
+    const real = await configured()
+    const store = racing(real, [
+      { type: 'ProjectSandboxObserved', actor: 'conductor', data: { kind: 'sandboxed', runId: 'x' } },
+    ])
+    await run(observeSandbox('lingtai', { kind: 'sandboxed', runId: 'a' }, store))
+    expect(await real.head(stream)).toBe(2)
+  })
+
+  it('a store whose read rejects fails with an Error and appends nothing', async () => {
+    const real = await configured()
+    const store = { ...real, read: () => Promise.reject(new Error('down')) } as EventStore
+    await expect(run(observeSandbox('lingtai', { kind: 'sandboxed', runId: 'a' }, store))).rejects.toBeInstanceOf(Error)
+    expect(await real.head(stream)).toBe(1)
   })
 })
