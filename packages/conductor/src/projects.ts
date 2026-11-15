@@ -88,7 +88,7 @@ export const signedInHere: SignedIn = signedInProbe(everyRuntime())
  * compares it with the recipe's `repo.base`.
  *
  * **`StepsResolved` does store a recipe, and it is not that snapshot** (0047
- * §1). It records the recipe a run that is *over* was given, beside the hash it
+ * §1, 0128 §4). It records the recipe a run that is *over* was given, beside the hash it
  * is verified by — a record, like `baseSha`, and nothing resolves from it. What
  * this refuses is *deciding* from a copy; reading the log's copy here, or
  * anywhere in `conductor`, `recipe` or `actions`, would be exactly that, and

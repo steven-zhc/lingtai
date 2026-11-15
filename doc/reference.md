@@ -149,7 +149,7 @@ are not — one per work item, attempt, lane and project, forever.
 | `chat-` | discussion, `chat-…` | [ChatState](glossary.md#the-log-and-its-states) | [RunSpent](events.json#RunSpent), [DiscussionAsked](events.json#DiscussionAsked), [DiscussionAnswered](events.json#DiscussionAnswered) |
 | `ext-` | extension, `ext-subscribers` (the only one so far) | none | [PluginFailed](events.json#PluginFailed) |
 | `bkl-` | finding, `bkl-{project}-{key}` | [Finding state](glossary.md#the-log-and-its-states) | [FindingAccepted](events.json#FindingAccepted), [FindingProposed](events.json#FindingProposed), [FindingDeclined](events.json#FindingDeclined) |
-| `rcp-` | recipe, `rcp-{configHash}` | none | [RecipeRecorded](events.json#RecipeRecorded) |
+| `rcp-` | recipe, `rcp-{configHash}` | none | [RecipeRecorded](events.json#RecipeRecorded) *(retired)* |
 | `acct-` | runtime account on this machine, `acct-{runtime}` | [AccountState](glossary.md#the-log-and-its-states) | [AccountLimitReached](events.json#AccountLimitReached), [AccountLimitLifted](events.json#AccountLimitLifted) |
 
 - [RunSpent](events.json#RunSpent) is on `pass-`, `chat-`, `ticket-` — spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`) or a ticket-level agent such as triage (`ticket-`).
