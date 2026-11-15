@@ -18,6 +18,7 @@ import Link from 'next/link'
 
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner } from '@/app/lock-banner.tsx'
+import { sandboxSlot } from '@/app/sandbox-slot.tsx'
 import { backlogChip, currentBacklog } from '@/lib/backlog'
 
 import { FooterFetched } from '../footer-fetched'
@@ -76,7 +77,7 @@ export default async function BacklogPage() {
   return (
     <>
       <main className="detail">
-        <Bar project={undefined}>
+        <Bar project={undefined} sandbox={sandboxSlot(undefined)}>
           <span className="sep" />
           <span>backlog</span>
           <span className="sep" />

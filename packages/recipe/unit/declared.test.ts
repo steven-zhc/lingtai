@@ -4,7 +4,17 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { PRESETS, RecipeInvalidError, checkDeclared, resolveSource, sourceHashOf, sourceOf } from '../src/index.ts'
+import {
+  PRESETS,
+  RecipeInvalidError,
+  SANDBOX_REQUIRED_REFUSAL,
+  checkDeclared,
+  declaredSandbox,
+  isSandboxRequiredRefusal,
+  resolveSource,
+  sourceHashOf,
+  sourceOf,
+} from '../src/index.ts'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 const MINIMAL = 'version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
@@ -64,5 +74,43 @@ describe('checkDeclared', () => {
       }
       if (resolves) expect(() => checkDeclared(text, '/r.yml')).not.toThrow()
     }
+  })
+})
+
+describe('declaredSandbox (#1163)', () => {
+  it('is an absent block when the key is not there, which is off by choice', () => {
+    expect(declaredSandbox(MINIMAL)).toEqual({ kind: 'block', block: undefined })
+  })
+  it('reads an enabled block, defaults filled', () => {
+    const got = declaredSandbox(`${MINIMAL}sandbox:\n  required: true\n`)
+    expect(got.kind).toBe('block')
+    if (got.kind === 'block') expect(got.block).toMatchObject({ enabled: true, required: true })
+  })
+  it('reads enabled: false as a block that is off', () => {
+    const got = declaredSandbox(`${MINIMAL}sandbox:\n  enabled: false\n`)
+    expect(got).toMatchObject({ kind: 'block', block: { enabled: false } })
+  })
+  it('is unreadable, never off, for text that is not YAML', () => {
+    expect(declaredSandbox('a: [unclosed').kind).toBe('unreadable')
+  })
+  it('is unreadable for a root that is not a mapping', () => {
+    expect(declaredSandbox('- a\n- b\n').kind).toBe('unreadable')
+  })
+  it('is unreadable for a block the schema refuses', () => {
+    expect(declaredSandbox(`${MINIMAL}sandbox:\n  bogus: 1\n`).kind).toBe('unreadable')
+    expect(declaredSandbox(`${MINIMAL}sandbox:\n  enabled: false\n  required: true\n`).kind).toBe('unreadable')
+  })
+})
+
+describe('isSandboxRequiredRefusal (#1163)', () => {
+  it('recognises the refusal checkSandboxBlock gives, wherever it sits in the detail', () => {
+    expect(isSandboxRequiredRefusal(SANDBOX_REQUIRED_REFUSAL)).toBe(true)
+    expect(
+      isSandboxRequiredRefusal(`recipe /r.yml is invalid:\n  ${SANDBOX_REQUIRED_REFUSAL} (no bwrap) — install`),
+    ).toBe(true)
+  })
+  it('does not take another refusal, nor a path refusal under sandbox', () => {
+    expect(isSandboxRequiredRefusal('sandbox.write[0]: collides with a protected path')).toBe(false)
+    expect(isSandboxRequiredRefusal('(root): expected a mapping')).toBe(false)
   })
 })
