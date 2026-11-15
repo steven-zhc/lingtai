@@ -381,7 +381,7 @@
 
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 820 470" role="img" aria-label="Three hosts — the CLI, the daemon and the board — sit above two columns of packages. The left column decides: domain, recipe, actions, agent-env and conductor. The right column touches the world: event-store, projector, github, repo, agent, env and hook. An arrow labelled implements points from the right column to the left.">
+        <svg viewBox="0 0 820 512" role="img" aria-label="Three hosts — the CLI, the daemon and the board — sit above two columns of packages. The left column decides: domain, recipe, actions, agent-env and conductor. The right column touches the world: event-store, projector, project, github, repo, agent, env and hook. An arrow labelled implements points from the right column to the left.">
           <defs>
             <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
@@ -421,7 +421,7 @@
 
           <rect x="20" y="280" width="340" height="40" fill="none" stroke="currentColor" opacity=".8"/>
           <text x="34" y="298" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">recipe</text>
-          <text x="34" y="313" font-size="11" fill="currentColor" opacity=".65">what the managed repository asked for</text>
+          <text x="34" y="313" font-size="11" fill="currentColor" opacity=".65">what a project's recipe says, validated and resolved</text>
 
           <rect x="20" y="328" width="340" height="40" fill="none" stroke="currentColor" opacity=".8"/>
           <text x="34" y="346" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">domain</text>
@@ -457,6 +457,10 @@
             <rect x="460" y="384" width="340" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
             <text x="474" y="399" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">hook</text>
             <text x="474" y="413" fill="currentColor" opacity=".65">one Bun binary, inside the agent's sandbox</text>
+
+            <rect x="460" y="426" width="340" height="34" fill="none" stroke="#2C6B67" style="stroke:var(--flow)" stroke-width="1.5"/>
+            <text x="474" y="441" font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">project</text>
+            <text x="474" y="455" fill="currentColor" opacity=".65">the recipe file and the project's log — one reader, one writer</text>
           </g>
 
           <!-- the arrow that points left -->

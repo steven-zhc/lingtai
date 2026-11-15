@@ -29,7 +29,7 @@ Everything lives under `LINGTAI_HOME`, which defaults to `~/.lingtai`:
 ```
 ~/.lingtai/
 ├── config.yml                   this machine: the database URL, the agent, ports
-├── <project>/recipe.yml         the recipe — gates, kinds, env names  — persistent
+├── <project>/recipe.yml         the recipe — gates, kinds, env names — persistent; the project's log holds every version
 ├── env/<project>.env            your values, per project — persistent
 ├── repos/<project>.git          bare mirror — persistent
 ├── worktrees/<project>/<runId>  one per run — disposable
@@ -41,7 +41,7 @@ Everything lives under `LINGTAI_HOME`, which defaults to `~/.lingtai`:
 | | Lifetime | Why there |
 |---|---|---|
 | `config.yml` | Persistent | **This machine's own configuration** — `database.store` and `database.url`, `github.*`, `board.port`, `board.host`, and nothing about how a project's work is run: the runtime, the assignee and the limits are each recipe's (`#372`, `#373`, `#375`). With the variables exported into a process, the only source there is: a variable overrides the key of the same name (`github.app_id` ↔ `LINGTAI_GITHUB_APP_ID`), and there is no env file ([config.example.yml](../config.example.yml)). Keep it `0600` — it carries a password and a webhook secret. Written by `lingtai init`, a value at a time, each after it was verified. **`database.store` is the machine's answer to *which store*, and the only one** ([0056](decisions-archive/0056-the-store-is-a-written-choice.md)): `postgres` or `sqlite`, never inferred from a variable being unset. Missing, every command says so and names `lingtai init` — see [Which store this machine runs](#which-store-this-machine-runs). |
-| `<project>/recipe.yml` | Persistent | **The recipe, and it is yours** ([0046](decisions-archive/0046-lingtai-is-personal.md) §3). Outside every worktree, so an agent cannot reach the rules of its own run — which is what `tamper` used to guard and no longer has to. |
+| `<project>/recipe.yml` | Persistent | **The recipe, and it is yours** ([0046](decisions-archive/0046-lingtai-is-personal.md) §3), to edit by hand if you like. Outside every worktree, so an agent cannot reach the rules of its own run — which is what `tamper` used to guard and no longer has to. **The project's log (`prj-{project}`) holds every version and who made it** ([0128](decisions/0128-the-project-aggregate-holds-every-project-fact.md)): a hand edit is recorded the next time anything reads the file, and nothing writes the file from the log. |
 | `env/<project>.env` | Persistent | **Yours, and the one layer the managed repository cannot write.** One connection string per project, so two projects can want the same variable name and mean different things — see [The layers](#the-layers). Not re-clonable; the one thing here worth backing up. |
 | `repos/<project>.git` | Persistent | Expensive. The first clone is a network round trip; after that every run is a `fetch`. This is why cutting a worktree took 1.7s in [experiment 005](experiments/005-rung-1-reaches-a-real-repository.md). |
 | `worktrees/<project>/<runId>` | One run | Cheap. Cut from the mirror, removed when the run ends — and removed *before* the integrator runs, because a worktree holding `agent/<n>` checked out stops git updating that ref. |
@@ -59,11 +59,14 @@ One thing in this repository is also not committed:
 Everything in those is either re-clonable from GitHub or belongs to a run that is
 over. The part that matters — the event log — is not here either: it is in
 Postgres on a machine that chose that store, and on a SQLite one it is
-`~/.lingtai/lingtai.db`, which this `rm -rf` does not touch. **`config.yml`,
-`<project>/recipe.yml` and `env/` are the exception**: you
-wrote all three, nothing else has a copy, and deleting them leaves a machine
-with no recipe for any project and no value for any name it requires — each
-refused by name until you write it again. Emptying the log itself, rather than
+`~/.lingtai/lingtai.db`, which this `rm -rf` does not touch. **`config.yml` and `env/` are the exception**: you wrote
+both, nothing else has a copy, and deleting them leaves a machine with no
+configuration and no value for any name it requires — each refused by name until
+you write it again. **`<project>/recipe.yml` is not lost by deleting it, but it
+is not rewritten either**: every version is on the project's log, nothing writes
+the file from it, and until you write the file again each read of that project is
+refused naming it, so its attempts stop (the board still shows the project from
+its log). Emptying the log itself, rather than
 the state around it, is [Resetting the log](#resetting-the-log).
 
 [#18]: https://github.com/steven-zhc/lingtai/issues/18
@@ -391,7 +394,10 @@ actually grants those four permissions is a per-repository question, and
 ([0046](decisions-archive/0046-lingtai-is-personal.md) §3,
 [#180](https://github.com/steven-zhc/lingtai/issues/180)), and the board's
 wizard writes a first one for you by reading the repository — its scripts, its
-labels, its default branch.
+labels, its default branch. Edit the file by hand whenever you like: the
+project's log records the edit the next time anything reads it, and a project
+added before [0128](decisions/0128-the-project-aggregate-holds-every-project-fact.md)
+gets its first recorded recipe the same way, with nothing for you to do.
 
 > **This replaced `<repo>/.lingtai/config.yaml`, and the reason is worth
 > keeping.** That file was read **from the base branch**, never from the branch
