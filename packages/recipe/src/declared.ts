@@ -38,8 +38,11 @@ export function checkDeclared(text: string, where: string): void {
   const retired = retiredTier(mapping)
   if (retired.length > 0) throw new RecipeInvalidError(ref, retired, where)
 
-  const runtime = asRecord(mapping['runtime']) ?? {}
-  const probe = 'agent' in runtime ? runtime : { ...runtime, agent: SCHEMA_PROBE_AGENT }
+  // Only an absent or null `runtime:` is the schema's to default; any other non-mapping stays as written to be refused.
+  const declaredRuntime = mapping['runtime']
+  const runtime = declaredRuntime == null ? {} : asRecord(declaredRuntime)
+  const probe =
+    runtime === null ? declaredRuntime : 'agent' in runtime ? runtime : { ...runtime, agent: SCHEMA_PROBE_AGENT }
   const parsed = Recipe.safeParse({ ...mapping, runtime: probe })
   if (!parsed.success) {
     throw new RecipeInvalidError(

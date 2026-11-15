@@ -35,6 +35,8 @@ describe('checkDeclared', () => {
     ['a non-mapping root', '- a\n- b\n'],
     ['an empty file', ''],
     ['an unknown key', `${MINIMAL}nonsense: 1\n`],
+    ['a runtime that is a list', `${MINIMAL}runtime:\n  - agent: codex\n`],
+    ['a runtime that is a scalar', `${MINIMAL}runtime: codex\n`],
     ['runtime.tier', `${MINIMAL}runtime:\n  tier: open\n`],
   ])('refuses %s', (_name, text) => {
     expect(() => checkDeclared(text, '/r.yml')).toThrow(RecipeInvalidError)
