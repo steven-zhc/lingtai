@@ -9,8 +9,8 @@
  * It reads the syntax tree and not the text, so **prose that names the file stays legal** — a message, a label, a
  * comment or a JSX string mentioning `recipe.yml` is not a read. What is refused, outside `packages/project/src`:
  *
- * 1. an import of the port — `ProjectFiles`, `diskFiles`, `filesEffect`, `readRecipeFile`, `replaceRecipeFile`,
- *    `readFileFace`, `replaceFileFace` from `@lingtai/project`, or `RecipeFiles` from `@lingtai/recipe`;
+ * 1. an import of the port — `ProjectFiles`, `diskFiles`, `filesEffect`, `readRecipeFile`, `replaceRecipeFile`
+ *    from `@lingtai/project`, or `RecipeFiles` from `@lingtai/recipe`;
  * 2. a read or write call — `readFile`, `writeFile`, `existsSync`, `stat`, `rename`, … or a port's `.read` /
  *    `.replace` — whose first argument is a recipe path: `recipePath(…)`, a string holding `recipe.yml`, a
  *    `join`/`resolve` of one, or a `const` in the same file that is one (one hop, no further).
@@ -33,8 +33,6 @@ const PORT_NAMES = new Set([
   'filesEffect',
   'readRecipeFile',
   'replaceRecipeFile',
-  'readFileFace',
-  'replaceFileFace',
   'RecipeFiles',
 ])
 

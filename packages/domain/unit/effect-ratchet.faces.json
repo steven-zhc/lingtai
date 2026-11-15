@@ -324,18 +324,6 @@
     "why": "the promise `GitHubClient` that `githubClientFor`, `projectClient` and `ownerlessClient` hand the board is built from it, and the board calls its members: apps/board/src/lib/task.ts, apps/board/src/app/actions.ts"
   },
   {
-    "file": "packages/project/src/files.ts",
-    "fn": "readFileFace",
-    "until": "0101 §7",
-    "why": "`diskFiles.read` is this: the default value of `ProjectFiles`, which no caller outside the module holds or passes (0128 §7, #1178)"
-  },
-  {
-    "file": "packages/project/src/files.ts",
-    "fn": "replaceFileFace",
-    "until": "0101 §7",
-    "why": "`diskFiles.replace` is this, in the same `diskFiles` object the default `ProjectFiles` holds (0128 §7, #1178)"
-  },
-  {
     "file": "packages/project/src/state.ts",
     "fn": "loadAllProjects",
     "until": "0101 §7",
