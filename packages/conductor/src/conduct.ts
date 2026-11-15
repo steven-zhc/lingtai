@@ -881,7 +881,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // every pass. `Effect.result` sees only the failure channel; this sees both.
     const given = options.recipe
     const recipeAt: Result.Result<ResolvedRecipe, string> = yield* (
-      given ? Effect.tryPromise(() => given()) : currentRecipeEffect(options.project, options.client)
+      given
+        ? Effect.tryPromise(() => given())
+        : currentRecipeEffect(options.project, options.client, undefined, { store })
     ).pipe(
       Effect.map((found) => Result.succeed(found)),
       Effect.catchCause((cause) => {

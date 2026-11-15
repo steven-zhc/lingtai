@@ -1,7 +1,7 @@
 import { type Runtime, everyRuntime } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import type { ProjectState, RuntimeId } from '@lingtai/domain'
-import { type LocalRecipeOptions, resolveLocalRecipeEffect } from '@lingtai/project'
+import { type LoadProjectOptions, loadProject } from '@lingtai/project'
 import { type HostAnswer, type HostFactsEffect, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
 import { BUILT_IN_DOMAINS, hostProgramsPresent, installFor } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
@@ -75,7 +75,9 @@ export const signedInHere: SignedIn = signedInProbe(everyRuntime())
  * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §3, #180).
  *
  * Read from the file every time rather than from anything stored: a snapshot
- * in Lingtai's database would be a second source of truth. No request is made
+ * in Lingtai's database would be a second source of truth. The read also records an
+ * edit the log has not seen (`loadProject`, 0128 §6) and never writes the file;
+ * `store` is the log it reads and appends to, the process's own when absent. No request is made
  * and nothing is read from the repository — an agent's blast radius is its
  * worktree, and this file is not in it, which is what 0005's *read from the
  * base branch* used to buy. `client` is unused and kept so every caller that
@@ -96,7 +98,7 @@ export const signedInHere: SignedIn = signedInProbe(everyRuntime())
  * What a lookup may be handed beyond a resolve's own: the three that default here and nowhere else. A test
  * names the host (`host`, `hostFacts`) so nothing spawns; production leaves both to `hostHere`.
  */
-export type RecipeLookupOptions = Omit<LocalRecipeOptions, 'base' | 'signedIn' | 'host' | 'hostFacts'> & {
+export type RecipeLookupOptions = Omit<LoadProjectOptions, 'base' | 'signedIn' | 'host' | 'hostFacts'> & {
   signedIn?: SignedIn
   host?: HostAnswer | 'skip'
   hostFacts?: HostFactsEffect
@@ -139,13 +141,14 @@ export function currentRecipeEffect(
   const project = state.project
   if (!project) return Effect.fail(new Error('no repository name recorded — re-run lingtai add'))
   // A recipe that is missing or invalid is a typed failure carrying today's message, never a defect.
-  return resolveLocalRecipeEffect(project, {
+  // Through `loadProject`, so a hand edit the log has not seen is recorded by whichever reader gets here first (0128 §6).
+  return loadProject(project, {
     ...options,
     base: base ?? state.base ?? null,
     signedIn: options.signedIn ?? signedInHere,
     host: options.host ?? hostHere,
     hostFacts: options.hostFacts ?? readHost,
-  })
+  }).pipe(Effect.map((loaded) => loaded.recipe))
 }
 
 /** `currentRecipeEffect` as the promise the CLI and the board await (a listed face, #790). */
