@@ -4,6 +4,8 @@
  * written, and the App is never consulted.
  */
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { ProjectFiles } from '@lingtai/project'
+import type { RecipeFiles } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
 import { applySetup } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -14,12 +16,22 @@ import { askBeforeGithubAddEffect, type AskBeforeGithubAddDeps } from '../src/ad
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 
 /** `askBeforeGithubAdd` writes nothing (#968); `applySetup` does, just before the registration — done here in its place. */
-async function askBeforeGithubAdd(...args: Parameters<typeof askBeforeGithubAddEffect>) {
-  const result = await Effect.runPromise(askBeforeGithubAddEffect(...args))
-  const deps = args[2]
-  if (typeof result === 'object' && deps !== undefined) {
+type TestDeps = AskBeforeGithubAddDeps & { files: RecipeFiles }
+
+async function askBeforeGithubAdd(
+  slug: string,
+  flags: Record<string, string>,
+  { files, ...deps }: TestDeps,
+  buildFlags?: readonly string[],
+) {
+  const result = await Effect.runPromise(
+    askBeforeGithubAddEffect(slug, flags, deps, buildFlags).pipe(Effect.provideService(ProjectFiles, files)),
+  )
+  if (typeof result === 'object') {
     await Effect.runPromise(
-      applySetup({ files: deps.files, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void),
+      applySetup({ by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void).pipe(
+        Effect.provideService(ProjectFiles, files),
+      ),
     )
   }
   return result
@@ -33,11 +45,11 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function depsFor(over: Partial<AskBeforeGithubAddDeps>) {
+function depsFor(over: Partial<TestDeps>) {
   const calls = { check: 0, picker: 0, writes: 0, reach: [] as unknown[] }
   const store: Record<string, string> = {}
   const reader: SetupReader = { has: () => Effect.succeed(false), read: () => Effect.succeed(null) }
-  const deps: AskBeforeGithubAddDeps = {
+  const deps: TestDeps = {
     check: () =>
       Effect.sync(() => {
         calls.check++

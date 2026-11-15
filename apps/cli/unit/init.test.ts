@@ -1,5 +1,6 @@
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { GhStatus } from '@lingtai/github'
+import { ProjectFiles } from '@lingtai/project'
 import type { RecipeFiles } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -33,11 +34,11 @@ import { githubInitSteps, hereSteps, localInitSteps } from '../src/next-steps.ts
 import { type NextStep, renderNextBlock, renderNextLine, stripColour } from '../src/output.ts'
 import { liftPort } from '../test/first-project-world.ts'
 import { flagsFromArgv } from '../test/flags.ts'
-import { type PromiseInitWorld, liftInitWorld, signalPort } from '../test/init-world.ts'
+import { type InitTestWorld, type PromiseInitWorld, liftInitWorld, signalPort } from '../test/init-world.ts'
 
 /** `initCommandEffect`, run to its exit code, the way every test here awaited `initCommand`. */
-const initCommand = (args: Parameters<typeof initCommandEffect>[0], world: InitWorld): Promise<number> =>
-  Effect.runPromise(initCommandEffect(args, world))
+const initCommand = (args: Parameters<typeof initCommandEffect>[0], world: InitTestWorld): Promise<number> =>
+  Effect.runPromise(initCommandEffect(args, world).pipe(Effect.provideService(ProjectFiles, world.files)))
 
 const PATH = '/home/me/.lingtai/config.yml'
 
@@ -73,7 +74,7 @@ const signedIn = (id: RuntimeFound['id']): RuntimeFound => ({
 })
 
 interface Harness {
-  world: InitWorld
+  world: InitTestWorld
   logged: string[]
   asked: string[]
   files: Map<string, string>

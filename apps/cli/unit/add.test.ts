@@ -1,5 +1,5 @@
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { recipePath } from '@lingtai/project'
+import { recipePath, ProjectFiles } from '@lingtai/project'
 import { type RecipeFiles } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
@@ -9,7 +9,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { type AddWorld, addFlowEffect } from '../src/add.ts'
 
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
-const addFlow = (...args: Parameters<typeof addFlowEffect>) => Effect.runPromise(addFlowEffect(...args))
+type AddTestWorld = AddWorld & { project: FirstProjectTestWorld }
+const addFlow = (flags: Parameters<typeof addFlowEffect>[0], world: AddTestWorld) =>
+  Effect.runPromise(addFlowEffect(flags, world).pipe(Effect.provideService(ProjectFiles, world.project.files)))
 import type { GitResult } from '../src/first-project.ts'
 /**
  * `addFlow` (#400, #435): `lingtai add` driven from `unit/` with no
@@ -17,7 +19,12 @@ import type { GitResult } from '../src/first-project.ts'
  * `addFlow` lives in its own module (`add.ts`'s own header).
  */
 import { stripColour } from '../src/output.ts'
-import { liftFirstProjectWorld, liftPort, type PromiseFirstProjectWorld } from '../test/first-project-world.ts'
+import {
+  type FirstProjectTestWorld,
+  liftFirstProjectWorld,
+  liftPort,
+  type PromiseFirstProjectWorld,
+} from '../test/first-project-world.ts'
 import { flagsFromArgv } from '../test/flags.ts'
 
 const before = process.env['NO_COLOR']
@@ -70,7 +77,7 @@ const GIT_PLAN: GitPlan = {
 }
 
 interface Harness {
-  world: AddWorld
+  world: AddTestWorld
   asked: string[]
   errors: string[]
   logged: string[]
@@ -121,7 +128,7 @@ function ttyHarness(): Harness {
     },
   }
   const logged: string[] = []
-  const world: AddWorld = {
+  const world: AddTestWorld = {
     project: liftFirstProjectWorld(project),
     error: (line) => errors.push(line),
     log: (line) => logged.push(line),
@@ -213,7 +220,6 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
       interactive: () => true,
       ghAccess: () => Effect.succeed({ login: 'sam', defaultBranch: 'main' }),
       picker: () => fx(async () => ({ installations: [], installUrl: null })),
-      files,
       reader: () => fx(async () => SETUP_READER),
       ask: async () => '',
       runtimes: () => fx(async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }]),

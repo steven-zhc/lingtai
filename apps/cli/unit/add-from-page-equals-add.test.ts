@@ -1,5 +1,5 @@
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { recipePath } from '@lingtai/project'
+import { recipePath, ProjectFiles } from '@lingtai/project'
 /**
  * The board's step 2 and `lingtai add` write the same recipe for the same
  * answers (#971). `askRecipe` is driven with `--defaults` over a
@@ -63,7 +63,9 @@ function mapFiles(): RecipeFiles & { store: Map<string, string> } {
 }
 
 const world: QuestionWorld = { ask: async () => '', log: () => {} }
-const askRecipe = (w: QuestionWorld, at: RecipeAt) => Effect.runPromise(askRecipeEffect(w, at))
+type TestAt = RecipeAt & { files: RecipeFiles }
+const askRecipe = (w: QuestionWorld, { files, ...at }: TestAt) =>
+  Effect.runPromise(askRecipeEffect(w, at).pipe(Effect.provideService(ProjectFiles, files)))
 
 /** A host that can sandbox, one that cannot, and one that dies — never the real check (#1160). */
 const HOST_CAN = Effect.void
@@ -122,7 +124,9 @@ async function viaAdd(
   })
   if (!('ok' in result)) throw new Error(JSON.stringify(result))
   await Effect.runPromise(
-    applySetup({ home: HOME, files, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void),
+    applySetup({ home: HOME, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void).pipe(
+      Effect.provideService(ProjectFiles, files),
+    ),
   )
   return files.store.get(recipePath(project, HOME))
 }
@@ -135,7 +139,9 @@ async function viaPage(form: (checks: { name: string; run: string }[], install: 
     detected.install?.run ?? '',
   )
   await Effect.runPromise(
-    applySetup({ home: HOME, files, by: 'human:me', store: createMemoryEventStore() }, setupAnswers(f), Effect.void),
+    applySetup({ home: HOME, by: 'human:me', store: createMemoryEventStore() }, setupAnswers(f), Effect.void).pipe(
+      Effect.provideService(ProjectFiles, files),
+    ),
   )
   return files.store.get(recipePath(f.project, HOME))
 }
@@ -293,7 +299,9 @@ describe('the sandbox step, new recipe (#1160)', () => {
     expect(lines.join('\n')).toContain('cannot run the sandbox yet: bwrap is missing; no bwrap on PATH')
     expect(lines.join('\n')).toContain('apt install bubblewrap')
     await Effect.runPromise(
-      applySetup({ home: HOME, files, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void),
+      applySetup({ home: HOME, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void).pipe(
+        Effect.provideService(ProjectFiles, files),
+      ),
     )
     expect(sandboxOf(files.store.get(recipePath('chapter-garden', HOME)))).toMatchObject({
       enabled: true,

@@ -14,7 +14,8 @@ import { checkInstallationEffect } from '@lingtai/conductor/onboard'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Installation } from '@lingtai/github'
 import { NotInstalledError } from '@lingtai/github'
-import { recipePath } from '@lingtai/project'
+import { recipePath, ProjectFiles } from '@lingtai/project'
+import type { RecipeFiles } from '@lingtai/recipe'
 import { resolveSource } from '@lingtai/recipe'
 import { applySetup } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -26,12 +27,22 @@ import { askBeforeGithubAddEffect, type AskBeforeGithubAddDeps } from '../src/ad
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 
 /** `askBeforeGithubAdd` writes nothing (#968); `applySetup` does, just before the registration — done here in its place. */
-async function askBeforeGithubAdd(...args: Parameters<typeof askBeforeGithubAddEffect>) {
-  const result = await Effect.runPromise(askBeforeGithubAddEffect(...args))
-  const deps = args[2]
-  if (typeof result === 'object' && deps !== undefined) {
+type TestDeps = AskBeforeGithubAddDeps & { files: RecipeFiles }
+
+async function askBeforeGithubAdd(
+  slug: string,
+  flags: Record<string, string>,
+  { files, ...deps }: TestDeps,
+  buildFlags?: readonly string[],
+) {
+  const result = await Effect.runPromise(
+    askBeforeGithubAddEffect(slug, flags, deps, buildFlags).pipe(Effect.provideService(ProjectFiles, files)),
+  )
+  if (typeof result === 'object') {
     await Effect.runPromise(
-      applySetup({ files: deps.files, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void),
+      applySetup({ by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void).pipe(
+        Effect.provideService(ProjectFiles, files),
+      ),
     )
   }
   return result
@@ -74,7 +85,7 @@ const GAPPY: Installation = {
 }
 
 interface Counted {
-  deps: AskBeforeGithubAddDeps
+  deps: TestDeps
   reads: string[]
   writes: number
   asks: number
@@ -98,7 +109,7 @@ function countedDeps(
   overrides: { runtimes?: AskBeforeGithubAddDeps['runtimes']; history?: AskBeforeGithubAddDeps['history'] } = {},
 ): Counted {
   const counted: Counted = {
-    deps: null as unknown as AskBeforeGithubAddDeps,
+    deps: null as unknown as TestDeps,
     reads: [],
     writes: 0,
     asks: 0,

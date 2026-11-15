@@ -1,6 +1,6 @@
 import { emptyProject, projectStream, type ProjectState } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { recipePath } from '@lingtai/project'
+import { recipePath, ProjectFiles } from '@lingtai/project'
 import { type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -40,7 +40,9 @@ describe('applySetup (#968)', () => {
       return 'registered'
     })
     const done = await Effect.runPromise(
-      applySetup({ home: HOME, files, ...WHO() }, { project: 'repo', changes: CHANGES }, register),
+      applySetup({ home: HOME, ...WHO() }, { project: 'repo', changes: CHANGES }, register).pipe(
+        Effect.provideService(ProjectFiles, files),
+      ),
     )
     expect(events).toEqual(['replace', 'register'])
     expect(done.registered).toBe('registered')
@@ -57,10 +59,10 @@ describe('applySetup (#968)', () => {
     await expect(
       Effect.runPromise(
         applySetup(
-          { home: HOME, files, ...WHO() },
+          { home: HOME, ...WHO() },
           { project: 'repo', changes: [{ path: ['repo', 'base'], value: 'main' }] },
           register,
-        ),
+        ).pipe(Effect.provideService(ProjectFiles, files)),
       ),
     ).rejects.toThrow()
     expect(store.size).toBe(0)
@@ -72,22 +74,28 @@ describe('applySetup (#968)', () => {
     await expect(
       Effect.runPromise(
         applySetup(
-          { home: HOME, files, ...WHO() },
+          { home: HOME, ...WHO() },
           { project: 'repo', changes: CHANGES },
           Effect.fail(new Error('append failed')),
-        ),
+        ).pipe(Effect.provideService(ProjectFiles, files)),
       ),
     ).rejects.toThrow('append failed')
     expect(store.has(path)).toBe(true)
     const again = await Effect.runPromise(
-      applySetup({ home: HOME, files, ...WHO() }, { project: 'repo', changes: CHANGES }, Effect.succeed('ok')),
+      applySetup({ home: HOME, ...WHO() }, { project: 'repo', changes: CHANGES }, Effect.succeed('ok')).pipe(
+        Effect.provideService(ProjectFiles, files),
+      ),
     )
     expect(again.registered).toBe('ok')
   })
 
   it('previewSetup shows the text applySetup writes, without writing', async () => {
     const { files, store } = countingFiles()
-    const text = await Effect.runPromise(previewSetup({ home: HOME, files }, { project: 'repo', changes: CHANGES }))
+    const text = await Effect.runPromise(
+      previewSetup({ home: HOME }, { project: 'repo', changes: CHANGES }).pipe(
+        Effect.provideService(ProjectFiles, files),
+      ),
+    )
     expect(store.size).toBe(0)
     expect(resolveSource(text, path, path).recipe.repo.remote).toBe('/repo')
   })
@@ -124,10 +132,10 @@ describe('applySetup — who (#1177)', () => {
     }) as typeof store.append
     await Effect.runPromise(
       applySetup(
-        { home: HOME, files, by: 'human:me', store },
+        { home: HOME, by: 'human:me', store },
         { project: 'repo', changes: CHANGES },
         Effect.sync(() => void events.push('register')),
-      ),
+      ).pipe(Effect.provideService(ProjectFiles, files)),
     )
     expect(events).toEqual(['replace', 'append', 'register'])
     const read = await store.read(projectStream('repo'))
@@ -137,7 +145,11 @@ describe('applySetup — who (#1177)', () => {
   it('previewSetup appends nothing', async () => {
     // previewSetup takes no store and no `by`: all it could reach is the port, and the port is never written.
     const { files, store, events } = countingFiles()
-    await Effect.runPromise(previewSetup({ home: HOME, files }, { project: 'repo', changes: CHANGES }))
+    await Effect.runPromise(
+      previewSetup({ home: HOME }, { project: 'repo', changes: CHANGES }).pipe(
+        Effect.provideService(ProjectFiles, files),
+      ),
+    )
     expect(events).toEqual([])
     expect(store.size).toBe(0)
   })
@@ -149,10 +161,10 @@ describe('applySetup — the registration fails (#968)', () => {
     await expect(
       Effect.runPromise(
         applySetup(
-          { home: HOME, files, ...WHO() },
+          { home: HOME, ...WHO() },
           { project: 'repo', changes: CHANGES },
           Effect.fail(new Error('refused')),
-        ),
+        ).pipe(Effect.provideService(ProjectFiles, files)),
       ),
     ).rejects.toThrow('refused')
     expect(store.get(path)).toContain('base: main')

@@ -6,7 +6,7 @@ import type { ProjectState } from '@lingtai/domain'
  * registers. Fake files and ports (0060 §1) — nothing here touches a disk.
  */
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { recipePath } from '@lingtai/project'
+import { recipePath, ProjectFiles } from '@lingtai/project'
 import { type RecipeFiles } from '@lingtai/recipe'
 import { keptSentence, LINGTAI_BASE, type Proposal, type SetupForm, SetupWriteError } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -67,10 +67,10 @@ describe('addProject (#971)', () => {
         locker,
         home: HOME,
         ...WHO(),
-        files: f,
+
         projects: async () => [{ project: 'Chapter-Garden' } as ProjectState],
         register: () => Effect.void,
-      }),
+      }).pipe(Effect.provideService(ProjectFiles, f)),
     )
     expect(out).toEqual({ ok: false, say: expect.stringContaining('is already added') })
     expect(f.store.size).toBe(0)
@@ -81,8 +81,8 @@ describe('addProject (#971)', () => {
     const out = await run(
       addProject(
         { ...FORM, base: '' },
-        { home: HOME, ...WHO(), files: f, projects: async () => [], register: () => Effect.void },
-      ),
+        { home: HOME, ...WHO(), projects: async () => [], register: () => Effect.void },
+      ).pipe(Effect.provideService(ProjectFiles, f)),
     )
     expect(out).toEqual({ ok: false, say: expect.stringContaining('no base branch') })
     expect(f.store.size).toBe(0)
@@ -98,8 +98,8 @@ describe('addProject (#971)', () => {
           remote: '/work/x',
           tickets: 'github',
         },
-        { home: HOME, ...WHO(), files: files(), projects: async () => [], register: () => Effect.void },
-      ),
+        { home: HOME, ...WHO(), projects: async () => [], register: () => Effect.void },
+      ).pipe(Effect.provideService(ProjectFiles, files())),
     )
     expect(out).toEqual({ ok: false, say: expect.stringContaining('no owner') })
   })
@@ -194,7 +194,7 @@ describe('exclusiveAdd refusal (#971)', () => {
 describe('previewOf (#971)', () => {
   it('is the text applySetup would write, and writes nothing', async () => {
     const f = files()
-    const out = await run(previewOf(FORM, { home: HOME, files: f }))
+    const out = await run(previewOf(FORM, { home: HOME }).pipe(Effect.provideService(ProjectFiles, f)))
     expect(out).toEqual({ text: expect.stringContaining('agent: claude-code') })
     expect(f.store.size).toBe(0)
   })
@@ -228,8 +228,8 @@ describe('a check whose command carries ":" (#971)', () => {
             { name: 'pnpm lint:check', run: 'pnpm lint:check' },
           ],
         },
-        { home: HOME, files: files() },
-      ),
+        { home: HOME },
+      ).pipe(Effect.provideService(ProjectFiles, files())),
     )
     expect(out).toEqual({ text: expect.stringContaining('lint-check') })
   })
@@ -246,8 +246,8 @@ describe('two checks whose names collide once ":" is replaced (#971)', () => {
             { name: 'lint-check', run: 'pnpm lint-check' },
           ],
         },
-        { home: HOME, files: files() },
-      ),
+        { home: HOME },
+      ).pipe(Effect.provideService(ProjectFiles, files())),
     )
     expect(out).toEqual({ text: expect.stringContaining('lint-check-2') })
   })

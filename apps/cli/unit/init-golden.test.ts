@@ -12,6 +12,7 @@
  * ticket that changes `init`'s words on purpose regenerates it, and says so in its diff.
  */
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { ProjectFiles } from '@lingtai/project'
 import type { RecipeFiles } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { expect, it } from 'vitest'
@@ -94,7 +95,12 @@ async function run(): Promise<{ code: number; lines: string[] }> {
       blocks: 'doctor: 3 ok, 0 not checked here, 0 not implemented yet, 0 failed',
     }),
   }
-  const code = await Effect.runPromise(initCommandEffect(flagsFromArgv(['--local', '/repo']), liftInitWorld(world)))
+  const lifted = liftInitWorld(world)
+  const code = await Effect.runPromise(
+    initCommandEffect(flagsFromArgv(['--local', '/repo']), lifted).pipe(
+      Effect.provideService(ProjectFiles, lifted.files),
+    ),
+  )
   return { code, lines: logged }
 }
 

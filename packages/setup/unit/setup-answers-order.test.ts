@@ -1,3 +1,4 @@
+import { ProjectFiles } from '@lingtai/project'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -26,7 +27,9 @@ describe('the preview of a new GitHub recipe', () => {
       sandbox: null,
     }
     const files = { read: () => Promise.resolve(null), replace: () => Promise.resolve() }
-    const text = await Effect.runPromise(previewSetup({ home: '/h/.lingtai', files }, setupAnswers(form)))
+    const text = await Effect.runPromise(
+      previewSetup({ home: '/h/.lingtai' }, setupAnswers(form)).pipe(Effect.provideService(ProjectFiles, files)),
+    )
     const at = ['prepared', 'implement', 'build', 'review', 'proposed', 'end'].map((k) => text.indexOf(`\n  ${k}:`))
     expect(at.every((i) => i > 0)).toBe(true)
     expect(at).toEqual([...at].sort((a, b) => a - b))

@@ -1,5 +1,5 @@
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { recipePath } from '@lingtai/project'
+import { recipePath, ProjectFiles } from '@lingtai/project'
 /**
  * `askRecipe` (#432): an absent file is created once, with every first-run
  * answer, the caller's seeds, and a comment above each block named in
@@ -17,20 +17,23 @@ import { isMap, isScalar, parseDocument, type Node, type YAMLMap } from 'yaml'
 import type { QuestionWorld } from '../src/question.ts'
 import { askRecipeEffect, ENV_PLANT_AT, SAID, type RecipeAt } from '../src/recipe-flow.ts'
 
-const askRecipe = (world: QuestionWorld, at: RecipeAt) => Effect.runPromise(askRecipeEffect(world, at))
+/** A test hands its seeded port in beside the question's options; it is provided, never passed (0128 §7). */
+type TestAt = RecipeAt & { files: RecipeFiles }
+const askRecipe = (world: QuestionWorld, { files, ...at }: TestAt) =>
+  Effect.runPromise(askRecipeEffect(world, at).pipe(Effect.provideService(ProjectFiles, files)))
 
 const HOME = '/home/me/.lingtai'
 
 /** `askRecipe` writes nothing (#968): the answers it returns are written by `applySetup`, as `lingtai add` does. */
-async function askAndWrite(world: QuestionWorld, at: RecipeAt): Promise<Awaited<ReturnType<typeof askRecipe>>> {
+async function askAndWrite(world: QuestionWorld, at: TestAt): Promise<Awaited<ReturnType<typeof askRecipe>>> {
   const result = await askRecipe(world, at)
   if ('ok' in result) {
     await Effect.runPromise(
       applySetup(
-        { home: at.home ?? HOME, files: at.files, by: 'human:me', store: createMemoryEventStore() },
+        { home: at.home ?? HOME, by: 'human:me', store: createMemoryEventStore() },
         result.answers,
         Effect.void,
-      ),
+      ).pipe(Effect.provideService(ProjectFiles, at.files)),
     )
   }
   return result
@@ -102,7 +105,7 @@ describe('askRecipe — an absent file (#432)', () => {
       again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files: mapFiles(),
-    } satisfies RecipeAt)
+    } satisfies TestAt)
 
     const headings = new Set(Object.values(SAID))
     expect(world.logged.filter((line) => [...headings].some((h) => line.includes(h)))).toEqual([])
@@ -126,7 +129,7 @@ describe('askRecipe — an absent file (#432)', () => {
       again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
-    } satisfies RecipeAt)
+    } satisfies TestAt)
 
     expect(result).toMatchObject({ ok: true })
     expect(files.replaced).toHaveLength(1)
@@ -186,7 +189,7 @@ describe('askRecipe — an absent file (#432)', () => {
       again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
-    } satisfies RecipeAt)
+    } satisfies TestAt)
 
     expect(result).toMatchObject({ ok: true })
     expect(files.replaced).toHaveLength(1)
@@ -234,7 +237,7 @@ steps:
       again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
-    } satisfies RecipeAt)
+    } satisfies TestAt)
 
     expect(result).toMatchObject({ ok: true })
     // Only `source.kinds` differs from the fixture — every other question
@@ -286,7 +289,7 @@ describe('askRecipe — --defaults (#433)', () => {
       again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
-    } satisfies RecipeAt)
+    } satisfies TestAt)
 
     expect(result).toMatchObject({ ok: true })
     expect(asked).toEqual([])
@@ -323,7 +326,7 @@ describe('askRecipe — --defaults (#433)', () => {
       again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
-    } satisfies RecipeAt)
+    } satisfies TestAt)
     const text = files.replaced.at(-1)?.text ?? before
     return { result, files, text, resolved: text === '' ? null : resolveSource(text, path, path).recipe }
   }
@@ -426,7 +429,7 @@ describe('askRecipe — --defaults (#433)', () => {
       again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
-    } satisfies RecipeAt)
+    } satisfies TestAt)
 
     expect(result).toMatchObject({ ok: true })
     expect(asked).toEqual(['use every default? [yes]: '])
@@ -457,7 +460,7 @@ describe('askRecipe — --defaults (#433)', () => {
       again: 'lingtai add --local /repo',
       keptBeforeWrite: 'Nothing was written',
       files,
-    } satisfies RecipeAt)
+    } satisfies TestAt)
 
     expect(result).toEqual({ refused: 'the kinds needs an answer: pass --kinds <a,b,c>. Nothing was written' })
     expect(files.replaced).toHaveLength(0)
@@ -492,7 +495,7 @@ describe('askRecipe — the trial run (#436)', () => {
             }
           }),
       },
-    } satisfies RecipeAt)
+    } satisfies TestAt)
     return { result, calls }
   }
 
@@ -559,7 +562,7 @@ describe('askRecipe — the trial run (#436)', () => {
           keptBeforeWrite: 'Nothing was written',
           files,
           tryBuild: failing,
-        } satisfies RecipeAt,
+        } satisfies TestAt,
       )
       return { result, logged, files }
     }
@@ -597,7 +600,7 @@ describe('askRecipe — a draft, never a write (#1182)', () => {
       again: 'a',
       keptBeforeWrite: 'Nothing was written',
       files: absent,
-    } satisfies RecipeAt)
+    } satisfies TestAt)
     expect(first).toMatchObject({ ok: true })
     expect(absent.replaced).toEqual([])
 
@@ -614,7 +617,7 @@ describe('askRecipe — a draft, never a write (#1182)', () => {
       again: 'a',
       keptBeforeWrite: 'Nothing was written',
       files: existing,
-    } satisfies RecipeAt)
+    } satisfies TestAt)
     expect(second).toMatchObject({ ok: true })
     expect(existing.replaced).toEqual([])
   })

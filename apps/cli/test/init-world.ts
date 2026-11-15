@@ -4,6 +4,7 @@
  * changes and no expected string moves. Each member is `Effect.tryPromise` with the rejection kept as its own
  * failure — never `Effect.promise`, which would make it a defect (CLI-01's `lift`).
  */
+import type { RecipeFiles } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import type { InitWorld } from '../src/init.ts'
@@ -16,9 +17,13 @@ type Promised<K extends keyof InitWorld> = InitWorld[K] extends (...args: infer 
   ? (...args: A) => Promise<R>
   : never
 
+/** A world whose recipe port is the test's own: provided as `ProjectFiles` around the Effect, never passed in (0128 §7). */
+export type InitTestWorld = InitWorld & { files: RecipeFiles }
+
 export type PromiseInitWorld = Omit<InitWorld, Ported | Ported2 | 'appeared' | 'pressed'> & {
   [K in Ported | Ported2]: Promised<K>
 } & {
+  files: RecipeFiles
   appeared: (signal: AbortSignal) => Promise<{ slug: string; owner: string }>
   pressed: (signal: AbortSignal) => Promise<void>
 }
@@ -29,7 +34,7 @@ export const signalPort =
   (): Effect.Effect<A, unknown> =>
     Effect.tryPromise({ try: (signal) => f(signal), catch: (e) => e })
 
-export function liftInitWorld(w: PromiseInitWorld): InitWorld {
+export function liftInitWorld(w: PromiseInitWorld): InitTestWorld {
   return {
     ...w,
     git: liftPort(w.git),
