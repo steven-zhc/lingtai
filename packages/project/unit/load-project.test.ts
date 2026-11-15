@@ -156,7 +156,7 @@ describe('loadProject', () => {
     const { files, map } = port({ [PATH]: A })
     await Effect.runPromise(load(store, files))
     let release!: () => void
-    const gate = new Promise<void>((r) => (release = r))
+    const held = new Promise<void>((r) => (release = r))
     let first = true
     const slow: RecipeFiles = {
       replace: files.replace,
@@ -164,7 +164,7 @@ describe('loadProject', () => {
         const text = await files.read(path)
         if (first) {
           first = false
-          await gate
+          await held
         }
         return text
       },
