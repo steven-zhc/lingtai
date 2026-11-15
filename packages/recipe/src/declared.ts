@@ -10,6 +10,7 @@ import { SCHEMA_PROBE_AGENT, asRecord } from './local.ts'
 import { applyPreset } from './presets.ts'
 import { Recipe } from './recipe.ts'
 import { RecipeInvalidError, retiredTier, unknownKeys } from './resolve.ts'
+import { SandboxBlock } from './sandbox-block.ts'
 import { refFor } from './write.ts'
 
 /** The text with every `\r\n` and `\r` made `\n`, and nothing else changed. */
@@ -61,4 +62,34 @@ export function checkDeclared(text: string, where: string): void {
       where,
     )
   }
+}
+
+/**
+ * What a recorded source declares for `sandbox:` (#1163), from the text alone — no host, no resolve. An absent key
+ * is `block: undefined`, which is *off by choice* (`sandboxDecision`'s rule). YAML that does not parse, a root that
+ * is not a mapping, or a block the schema refuses is `unreadable`, never off. No preset carries `sandbox`, so
+ * `extends:` cannot supply it and only this one key is validated.
+ */
+export type DeclaredSandbox =
+  | { readonly kind: 'block'; readonly block: SandboxBlock | undefined }
+  | { readonly kind: 'unreadable'; readonly why: string }
+
+export function declaredSandbox(source: string): DeclaredSandbox {
+  let raw: unknown
+  try {
+    raw = parseYaml(source)
+  } catch (err) {
+    return { kind: 'unreadable', why: `could not be parsed as YAML: ${(err as Error).message}` }
+  }
+  const mapping = asRecord(raw)
+  if (mapping === null) return { kind: 'unreadable', why: '(root): expected a mapping' }
+  if (!('sandbox' in mapping) || mapping['sandbox'] === undefined) return { kind: 'block', block: undefined }
+  const parsed = SandboxBlock.safeParse(mapping['sandbox'])
+  if (!parsed.success) {
+    return {
+      kind: 'unreadable',
+      why: parsed.error.issues.map((i) => `sandbox.${i.path.join('.')}: ${i.message}`).join('; '),
+    }
+  }
+  return { kind: 'block', block: parsed.data }
 }

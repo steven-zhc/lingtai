@@ -10,6 +10,8 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import type { SandboxMark } from '../lib/sandbox-state.ts'
+
 export const withProject = (path: string, project: string | undefined): string =>
   project === undefined ? path : `${path}?project=${encodeURIComponent(project)}`
 
@@ -19,6 +21,7 @@ export function Bar({
   registered = false,
   pause,
   actions,
+  sandbox,
   children,
 }: {
   /** The project in view, carried on the way home and on Report; none on `all`. */
@@ -34,6 +37,8 @@ export function Bar({
    * streams them. When given it replaces `registered` and `pause`.
    */
   actions?: ReactNode
+  /** The sandbox's one icon (#1163), already built by `sandboxSlot`; drawn before Report. */
+  sandbox?: ReactNode
   children?: ReactNode
 }) {
   return (
@@ -52,6 +57,7 @@ export function Bar({
         ) : project !== undefined && registered ? (
           <BarActions project={project} here={here} pause={pause} />
         ) : null}
+        {sandbox}
         <Link
           className={here === 'report' ? 'navlink on' : 'navlink'}
           href={withProject('/report', project)}
@@ -88,5 +94,77 @@ export function BarActions({
       </span>
       <span className="vsep" aria-hidden="true" />
     </>
+  )
+}
+
+/** A shape per state, so colour is never the only difference: tick, exclamation, cross; off is a dashed empty box. */
+const GLYPH: Record<SandboxMark['state'], string> = {
+  sandboxed: '✓',
+  degraded: '!',
+  stopped: '✕',
+  off: '',
+  unknown: '?',
+  unreadable: '?',
+}
+
+const sectionOf = (project: string) => `/recipe/${encodeURIComponent(project)}#sandbox`
+
+/**
+ * The sandbox's one icon (#1163): no text, its sentence as tooltip and accessible name. One project in the worst
+ * state is a plain link to its section; several (or one beside an unreadable one) are a `<details>` listing each. *Off* is grey and dashed.
+ */
+export function SandboxIcon({ mark }: { mark: SandboxMark }) {
+  const only = mark.projects.length === 1 && mark.unreadable.length === 0 ? mark.projects[0]! : undefined
+  const glyph = (
+    <span className="sbx-mark" aria-hidden="true">
+      {GLYPH[mark.state]}
+    </span>
+  )
+  if (mark.projects.length === 0) {
+    // No project to lead to (the listing itself failed): a focusable image, never a link to nowhere.
+    return (
+      <span
+        className={`sbx sbx-${mark.state}`}
+        role="img"
+        tabIndex={0}
+        aria-label={mark.sentence}
+        title={mark.sentence}
+      >
+        {glyph}
+      </span>
+    )
+  }
+  if (only !== undefined) {
+    return (
+      <Link
+        className={`sbx sbx-${mark.state}`}
+        href={sectionOf(only.project)}
+        aria-label={mark.sentence}
+        title={mark.sentence}
+      >
+        {glyph}
+      </Link>
+    )
+  }
+  return (
+    <details className={`sbx-list sbx-${mark.state}`}>
+      <summary className="sbx" aria-label={mark.sentence} title={mark.sentence}>
+        {glyph}
+      </summary>
+      <ul>
+        {mark.projects.map((p) => (
+          <li key={p.project}>
+            <Link href={sectionOf(p.project)}>
+              {p.project}: {p.sentence}
+            </Link>
+          </li>
+        ))}
+        {mark.unreadable.map((project) => (
+          <li key={project}>
+            <Link href={sectionOf(project)}>{project}: the sandbox state could not be read</Link>
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }

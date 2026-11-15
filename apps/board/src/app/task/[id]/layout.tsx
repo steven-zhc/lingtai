@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
+import { sandboxSlot } from '@/app/sandbox-slot.tsx'
 import { readRegistered } from '@/lib/locks.ts'
 import { billText, spendChip } from '@/lib/spend'
 import { defaultTabOf } from '@/lib/tabs'
@@ -156,7 +157,12 @@ export function TaskBody({
   return (
     <>
       <main className={detailClass(task.standing.state, Boolean(task.standing.afterMove))}>
-        <Bar project={task.ticket?.project ?? undefined} registered={registered} pause={pause}>
+        <Bar
+          project={task.ticket?.project ?? undefined}
+          registered={registered}
+          pause={pause}
+          sandbox={sandboxSlot(task.ticket?.project ?? undefined)}
+        >
           <span className="sep" />
           {/* Rank 8: one muted line, each identifier once. */}
           <DeferredCoords standing={task.standing} taskId={task.taskId} answer={github} />
