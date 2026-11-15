@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Bar, DOCS_MENU } from '@/app/chrome'
-import { HomePage, SANDBOX_ALT } from '@/app/page'
+import { HomePage } from '@/app/page'
 import { Receipt } from '@/app/receipt'
 import { dollars, receiptAt } from '@/app/replay-receipt'
 import { SHOTS } from '@/app/shots'
@@ -75,7 +75,7 @@ describe("the home page's argument", () => {
       'Agents do the work',
       'One ticket, filed to landed.',
       'The agent got it wrong. Twice.',
-      'The agent runs inside a sandbox.',
+      'Every run is sandboxed.',
       'Why not just give the agent the issue?',
       'Three steps to your first receipt.',
     ]
@@ -165,7 +165,7 @@ describe("the home page's argument", () => {
     expect(html).not.toMatch(/\bguarded\b/i)
   })
 
-  it('has a sandbox section before the first question, from v0.14.0, linking the safety page and the diagram', () => {
+  it('has a dark sandbox band before the first question, from v0.14.0, linking the safety page', () => {
     const html = renderToStaticMarkup(<HomePage books={null} />)
     const start = html.indexOf('class="sandbox-pitch"')
     expect(start).toBeGreaterThan(-1)
@@ -173,19 +173,32 @@ describe("the home page's argument", () => {
     expect(start).toBeLessThan(html.indexOf('class="why"'))
     expect(block).toContain('from v0.14.0')
     expect(block).toContain('href="/docs/safety/"')
-    expect(block).toContain('src="/img/docs/sandbox.svg"')
-    expect(SANDBOX_ALT.length).toBeGreaterThan(0)
-    expect(block).toContain('telemetry')
-    expect(block).toMatch(/alt="[^"]+"/)
+    expect(block).toMatch(/telemetry/i)
+    expect(block).toContain('On for new projects')
+    expect(block).toContain('ILLUSTRATION')
+    for (const heading of ['Blocked', 'Allowed', 'Reachable', 'Limited', 'Cannot be read']) {
+      expect(block).toContain(heading)
+    }
+    expect(block).not.toContain('sandbox.svg')
+    expect(block).not.toContain('sandbox-facts')
     expect(block).not.toContain('sandbox-note')
   })
 
-  it('holds the SVG aria-label, the home alt and the safety page alt equal', async () => {
+  it('no longer says "Not a sandbox" in the footer line', () => {
+    const html = renderToStaticMarkup(<HomePage books={null} />)
+    const start = html.indexOf('class="home-edges"')
+    expect(start).toBeGreaterThan(-1)
+    const line = html.slice(start, html.indexOf('</p>', start))
+    expect(line).not.toMatch(/not a sandbox/i)
+  })
+
+  it('holds the SVG aria-label and the safety page alt equal', async () => {
     const root = path.resolve(__dirname, '../../..')
     const svg = await readFile(path.join(root, 'doc/img/sandbox.svg'), 'utf8')
-    expect(/aria-label="([^"]*)"/.exec(svg)?.[1]).toBe(SANDBOX_ALT)
+    const label = /aria-label="([^"]*)"/.exec(svg)?.[1]
+    expect(label?.length).toBeGreaterThan(0)
     const safety = await readFile(path.join(root, 'doc/safety.md'), 'utf8')
-    expect(safety).toContain(`![${SANDBOX_ALT}](img/sandbox.svg)`)
+    expect(safety).toContain(`![${label}](img/sandbox.svg)`)
   })
 
   it('no longer says what stopped being true', async () => {

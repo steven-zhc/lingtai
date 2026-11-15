@@ -210,16 +210,45 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
   .home .tale-side { position: static; padding-top: 0; order: -1; }
 }
 
-/* The sandbox, one section before the first question */
-.sandbox-pitch { border-top: 1px solid var(--rule); padding: 56px 0 8px; }
-.sandbox-head { text-align: center; max-width: 640px; margin: 0 auto 28px; }
-.sandbox-head > * { margin-left: auto; margin-right: auto; }
-.sandbox-head h2 { text-wrap: balance; }
-.sandbox-head .sub { color: var(--ink-2); font-size: 17px; line-height: 1.6; margin: 0; }
-.sandbox-facts { list-style: none; margin: 0 auto 32px; padding: 0; max-width: 720px; display: grid; gap: 12px; }
-.sandbox-facts li { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 18px; color: var(--ink-2); line-height: 1.55; }
-.sandbox-facts b { color: var(--ink); }
-.sandbox-diagram { display: block; width: 100%; max-width: 760px; height: auto; margin: 0 auto 40px; }
+/* The sandbox: a dark band. The board's own dark tokens, under their own names, scoped to this
+   element so every rule inside (.kicker, .link, code, .tag.ill) reads them with no override.
+   Literal values, not var(): under prefers-color-scheme: dark the page's own ground is the same colour. */
+.home .sandbox-pitch {
+  --ground: #0c1316; --surface: #131e22; --surface-2: #0f1a1e; --ink: #dde6e8; --ink-2: #b4c4c8; --muted: #87999f;
+  --rule: #22333a; --rule-2: #2e434b; --accent: #54c6cc; --accent-ink: #7fdade; --pass: #61be86; --fail: #e2776e;
+  background: var(--ground); color: var(--ink); margin-inline: calc(50% - 50vw);
+  border-block: 1px solid var(--rule-2); padding: 64px 0;
+}
+.sandbox-inner { max-width: 80rem; margin: 0 auto; padding: 0 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 26rem); gap: 56px; align-items: start; }
+.sandbox-shield { display: block; color: var(--accent); margin: 0 0 14px; }
+.home .sandbox-pitch h2 { color: var(--ink); max-width: 14ch; margin: 0 0 16px; }
+.sandbox-pitch h2 .accent { display: block; color: var(--accent-ink); }
+.sandbox-sub { color: var(--ink-2); font-size: 18px; line-height: 1.55; margin: 0 0 22px; max-width: 34rem; }
+.sandbox-labels { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 0; font-weight: 600; color: var(--ink); }
+.sandbox-labels li + li::before { content: "·"; color: var(--muted); margin: 0 14px; }
+.sandbox-small { color: var(--muted); font-size: 13.5px; line-height: 1.5; margin: 0 0 18px; }
+.sandbox-side .sandbox-small { margin: 12px 0 0; }
+.sbx { margin: 0; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 12px; padding: 4px 18px 8px; color: var(--ink); font-size: 14px; }
+.sbx-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px dashed var(--rule-2); }
+.sbx-top b { display: block; font-size: 14.5px; }
+.sbx-top small { color: var(--muted); font: 600 11px var(--mono); }
+.sbx-group { padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.sbx-group:last-child { border-bottom: 0; }
+.home .sbx-group h3 { font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 8px; }
+.sbx-group h3 small { color: var(--muted); font: inherit; margin-left: 6px; }
+.sbx-group h3 small::before { content: "→ "; }
+.sbx-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.sbx-group li { display: flex; gap: 8px; align-items: baseline; }
+.sbx-group code { font: 13px var(--mono); color: var(--ink); }
+.sbx-group li small { color: var(--muted); font: 600 11px var(--mono); }
+.sbx .no { color: var(--fail); }
+.sbx .yes { color: var(--pass); }
+@media (prefers-color-scheme: dark) {
+  .home .sandbox-pitch { --ground: #131e22; --surface: #0f1a1e; }
+}
+@media (max-width: 860px) {
+  .sandbox-inner { grid-template-columns: minmax(0, 1fr); gap: 36px; }
+}
 
 /* Why not just give the agent the issue? */
 .why { border-top: 1px solid var(--rule); padding: 56px 0 8px; }

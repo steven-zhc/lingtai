@@ -27,10 +27,6 @@ const LEDGER = [
   { key: 'Record', alone: 'The chat transcript', lingtai: 'Every step recorded, and a receipt' },
 ]
 
-/** `doc/img/sandbox.svg`'s `aria-label`, and `doc/safety.md`'s alt for it: a test holds the three equal. */
-export const SANDBOX_ALT =
-  "Every agent run sits inside one srt sandbox: it reads and writes its worktree and temp directories, reaches only allowlisted hosts, and is refused your keys, logins and Lingtai's own state. Refused connections are recorded and shown on the board's Sandbox tab, except telemetry hosts; a refused file read is not reported."
-
 export const metadata: Metadata = { alternates: { canonical: '/' } }
 
 export function HomePage({ books }: { books: Books | null }) {
@@ -162,31 +158,136 @@ export function HomePage({ books }: { books: Books | null }) {
           </div>
 
           <section className="sandbox-pitch" aria-labelledby="sandbox-title">
-            <div className="sandbox-head">
-              <p className="kicker">Sandbox &middot; from v0.14.0</p>
-              <h2 id="sandbox-title">The agent runs inside a sandbox.</h2>
-              <p className="sub">What it can reach is a short list, and what it is refused is written down.</p>
-            </div>
-            <ul className="sandbox-facts">
-              <li>
-                <b>Your keys stay yours.</b> It cannot read <code>~/.ssh</code>, cloud keys, your GitHub, npm or Docker
-                logins, or Lingtai&apos;s own state.
-              </li>
-              <li>
-                <b>Its network is a short list.</b> It reaches only an allowlist of hosts, plus the ones you add.
-              </li>
-              <li>
-                <b>Refused connections are recorded.</b> The board shows them on the ticket they happened to, except
-                telemetry hosts such as <code>sentry.io</code>, which are refused and recorded but not shown.
-              </li>
-              <li>
-                <b>On for new projects.</b> One <code>sandbox</code> block in the recipe configures it.{' '}
+            <div className="sandbox-inner">
+              <div className="sandbox-copy">
+                <p className="kicker">Security &middot; from v0.14.0</p>
+                <svg
+                  className="sandbox-shield"
+                  viewBox="0 0 24 24"
+                  width="36"
+                  height="36"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 3 5 6v5.5c0 4.2 2.9 7.9 7 9.5 4.1-1.6 7-5.3 7-9.5V6l-7-3Z" />
+                  <path d="m9 12 2.2 2.2L15.2 10" />
+                </svg>
+                <h2 id="sandbox-title">
+                  Every run is sandboxed. <span className="accent">Your keys stay yours.</span>
+                </h2>
+                <p className="sandbox-sub">
+                  Claude Code, Codex and your checks run in one sandbox, so you can leave it overnight.
+                </p>
+                <ul className="sandbox-labels">
+                  <li>No keys</li>
+                  <li>Allowlisted network</li>
+                  <li>Refusals on the ticket</li>
+                </ul>
+                <p className="sandbox-small">
+                  On for new projects &middot; one <code>sandbox</code> block in the recipe.
+                </p>
                 <a className="link" href="/docs/safety/">
                   What an agent can touch →
                 </a>
-              </li>
-            </ul>
-            <img className="sandbox-diagram" src="/img/docs/sandbox.svg" alt={SANDBOX_ALT} width={760} height={400} />
+              </div>
+              <div className="sandbox-side">
+                <figure className="sbx" aria-label="Illustration of a ticket's Sandbox tab on the board">
+                  <div className="sbx-top">
+                    <span>
+                      <b>#42 &middot; add reading time to chapters</b>
+                      <small>Attempt 1</small>
+                    </span>
+                    <span className="tag ill">ILLUSTRATION</span>
+                  </div>
+                  <div className="sbx-group">
+                    <h3>Blocked</h3>
+                    <ul>
+                      <li>
+                        <span className="no" aria-hidden="true">
+                          ✗
+                        </span>
+                        <code>pastebin.com:443</code> <small>1×</small>
+                      </li>
+                      <li>
+                        <span className="no" aria-hidden="true">
+                          ✗
+                        </span>
+                        <code>203.0.113.7:22</code> <small>3×</small>
+                      </li>
+                    </ul>
+                  </div>
+                  <div className="sbx-group">
+                    <h3>
+                      Allowed <small>Reachable</small>
+                    </h3>
+                    <ul>
+                      <li>
+                        <span className="yes" aria-hidden="true">
+                          ✓
+                        </span>
+                        <code>api.anthropic.com</code>
+                      </li>
+                      <li>
+                        <span className="yes" aria-hidden="true">
+                          ✓
+                        </span>
+                        <code>api.openai.com</code>
+                      </li>
+                      <li>
+                        <span className="yes" aria-hidden="true">
+                          ✓
+                        </span>
+                        <code>registry.npmjs.org</code>
+                      </li>
+                    </ul>
+                  </div>
+                  <div className="sbx-group">
+                    <h3>
+                      Limited <small>Cannot be read</small>
+                    </h3>
+                    <ul>
+                      <li>
+                        <span className="no" aria-hidden="true">
+                          ✗
+                        </span>
+                        <code>~/.ssh</code>
+                      </li>
+                      <li>
+                        <span className="no" aria-hidden="true">
+                          ✗
+                        </span>
+                        <code>~/.aws</code>
+                      </li>
+                      <li>
+                        <span className="no" aria-hidden="true">
+                          ✗
+                        </span>
+                        <code>~/.config/gh</code>
+                      </li>
+                      <li>
+                        <span className="no" aria-hidden="true">
+                          ✗
+                        </span>
+                        <code>~/.npmrc</code>
+                      </li>
+                      <li>
+                        <span className="no" aria-hidden="true">
+                          ✗
+                        </span>
+                        <code>~/.lingtai</code>
+                      </li>
+                    </ul>
+                  </div>
+                </figure>
+                <p className="sandbox-small">
+                  Telemetry hosts such as <code>sentry.io</code> are refused but not listed.
+                </p>
+              </div>
+            </div>
           </section>
 
           <section className="why" aria-labelledby="why-title">
@@ -364,7 +465,7 @@ export function HomePage({ books }: { books: Books | null }) {
           </section>
 
           <p className="home-edges">
-            Not a sandbox &middot; runs on one machine &middot; not yet 1.0 &mdash;{' '}
+            Runs on one machine &middot; not yet 1.0 &mdash;{' '}
             <a className="link" href="/docs/requirements/">
               what it needs, and what it doesn&apos;t do yet →
             </a>
