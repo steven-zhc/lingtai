@@ -10,7 +10,7 @@ import type { ProjectState } from '@lingtai/domain'
  * The four are states and not levels: *off* is grey and never an alarm. `unknown` and `unreadable` are what
  * cannot be said, and are never drawn as *sandboxed*.
  */
-import { declaredSandbox, isSandboxRequiredRefusal, type DeclaredSandbox } from '@lingtai/recipe'
+import { declaredSandbox, isSandboxRequiredRefusal, sandboxRequiredReason, type DeclaredSandbox } from '@lingtai/recipe'
 
 export type SandboxStateName = 'stopped' | 'degraded' | 'unreadable' | 'unknown' | 'off' | 'sandboxed'
 
@@ -96,3 +96,57 @@ export function worstOf(states: ReadonlyMap<string, SandboxState>): SandboxMark 
   if (worst !== 'unreadable' && unreadable.length > 0) sentence += `; ${unreadable.length} could not be read`
   return { state: worst, projects, unreadable: worst === 'unreadable' ? [] : unreadable, sentence }
 }
+
+/**
+ * One row under the bar (#1167). `stopped` and `degraded` only: *off by choice* is a decision and never a banner,
+ * and `unknown` / `unreadable` are what cannot be said, which the icon says.
+ */
+export interface SandboxBannerRow {
+  kind: 'stopped' | 'degraded'
+  project: string
+  /** Stopped: the host's own reason, or the fixed sentence when the refusal's shape is not the known one. Degraded: the fixed sentence (the observation carries no *why*). */
+  reason: string
+}
+
+/** The banner rows for the projects in `scope`, in the order given. Pure. */
+export function sandboxBannerRows(
+  projects: readonly { project: string; facts: SandboxFacts }[],
+  scope: string | undefined,
+): SandboxBannerRow[] {
+  const rows: SandboxBannerRow[] = []
+  for (const { project, facts } of projects) {
+    if (scope !== undefined && project !== scope) continue
+    const { state: name } = sandboxState(facts)
+    if (name === 'stopped') {
+      rows.push({
+        kind: 'stopped',
+        project,
+        reason: (facts.refused === null ? undefined : sandboxRequiredReason(facts.refused)) ?? SENTENCES.stopped,
+      })
+    } else if (name === 'degraded') {
+      rows.push({ kind: 'degraded', project, reason: SENTENCES.degraded })
+    }
+  }
+  return rows
+}
+
+/** What a health sentence says about stopped projects, or null when none stands (#1167). */
+export function stoppedProjects(
+  projects: readonly { project: string; facts: SandboxFacts }[],
+  scope: string | undefined,
+): string[] {
+  return sandboxBannerRows(projects, scope)
+    .filter((r) => r.kind === 'stopped')
+    .map((r) => r.project)
+}
+
+/**
+ * How many sandbox rows each scope drew at its last render (`''` is *all projects*), so the slot's skeleton can be
+ * as many as will replace it. Per process, like `lastOffered`. **Before any answer it is 0, not a guess**: these
+ * rows are absent in the ordinary case, and a placeholder would move the page there.
+ */
+const lastRows = new Map<string, number>()
+
+export const lastSandboxRows = (scope: string | undefined): number => lastRows.get(scope ?? '') ?? 0
+export const rememberSandboxRows = (scope: string | undefined, n: number): void => void lastRows.set(scope ?? '', n)
+export const forgetSandboxRows = (): void => lastRows.clear()

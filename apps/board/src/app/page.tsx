@@ -59,6 +59,7 @@ import { Pending } from './pending.tsx'
 import { AddProject, filterSummary, ProjectRows } from './projects.tsx'
 import { QueuedAnswered, QueuedCountAnswered, QueuedCountPending, QueuedFallback } from './queued-stream.tsx'
 import { Rail, Segs } from './rail.tsx'
+import { sandboxBanner } from './sandbox-banner.tsx'
 import { sandboxSlot } from './sandbox-slot.tsx'
 import { Skeleton } from './skeleton.tsx'
 
@@ -805,6 +806,7 @@ async function BannerPart({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <LockRows locks={lockRead} scope={only} now={new Date()} />
+      {sandboxBanner(only)}
       {/* Repositories that are recorded and not yet conducted (#163). Above
         the lanes because it is not work, and absent entirely when there are none. */}
       <Pending projects={board.pending} />
@@ -1080,6 +1082,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               subscription. */}
             <Health
               projectKey={projectKey}
+              project={ctx.param}
               near={ctx.reads.day.then((d) => nearCeiling(d.day, d.ceilingUsd))}
               runnable={queue.then(
                 (q) => q.runnable,

@@ -26,10 +26,16 @@ import {
 import { withProject } from './bar.tsx'
 import { ContinueToday } from './continue-today.tsx'
 import { LiftButton, PauseButton, ResumeButton } from './pause-button.tsx'
+import { sandboxBanner } from './sandbox-banner.tsx'
 
 export async function LockBanner({ project }: { project: string | undefined }) {
   const read = await readProjectLocks()
-  return <LockRows locks={read} scope={project} now={new Date()} />
+  return (
+    <>
+      <LockRows locks={read} scope={project} now={new Date()} />
+      {sandboxBanner(project)}
+    </>
+  )
 }
 
 /**

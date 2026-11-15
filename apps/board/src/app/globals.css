@@ -3163,6 +3163,11 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .sbx-list { position: relative; }
 .sbx-list ul { position: absolute; right: 0; margin: 4px 0 0; padding: 6px 10px; list-style: none; white-space: nowrap; background: var(--bg, canvas); border: 1px solid var(--muted); border-radius: 6px; z-index: 10; }
 
+/* The sandbox rows under the bar (#1167): red when stopped, amber when degraded. */
+.sbanner .sbx-stopped, .sbanner .sbx-stopped .sub, .sbanner .sbx-stopped .what a { color: var(--fail); }
+.sbanner .sbx-degraded, .sbanner .sbx-degraded .sub, .sbanner .sbx-degraded .what a { color: var(--warn); }
+.sbanner .sbx-stopped code, .sbanner .sbx-degraded code { color: inherit; }
+
 /* /report (#689). Everything is prefixed `rp-`; series wear --s1..--s4 and
    --muted, never the board's state hues. */
 .rp { gap: 1rem; }
