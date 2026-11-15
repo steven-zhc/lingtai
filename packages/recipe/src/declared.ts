@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { parse as parseYaml } from 'yaml'
 
 import { SCHEMA_PROBE_AGENT, asRecord } from './local.ts'
+import { applyPreset } from './presets.ts'
 import { Recipe } from './recipe.ts'
 import { RecipeInvalidError, retiredTier, unknownKeys } from './resolve.ts'
 import { refFor } from './write.ts'
@@ -33,17 +34,26 @@ export function checkDeclared(text: string, where: string): void {
   const mapping = asRecord(raw)
   if (mapping === null) throw new RecipeInvalidError(ref, ['(root): expected a mapping'], where)
 
-  const unknown = unknownKeys(mapping)
+  // The preset first, as the resolve does: it may satisfy a field the file omits (`steps:` empty, `repo:` absent).
+  // An unknown preset name is the resolve's to refuse, so the file is checked as written.
+  let applied: Record<string, unknown> = mapping
+  try {
+    applied = asRecord(applyPreset(mapping).recipe) ?? mapping
+  } catch {
+    // unknown `extends:` — left to the resolve
+  }
+
+  const unknown = unknownKeys(applied)
   if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where)
-  const retired = retiredTier(mapping)
+  const retired = retiredTier(applied)
   if (retired.length > 0) throw new RecipeInvalidError(ref, retired, where)
 
   // Only an absent or null `runtime:` is the schema's to default; any other non-mapping stays as written to be refused.
-  const declaredRuntime = mapping['runtime']
+  const declaredRuntime = applied['runtime']
   const runtime = declaredRuntime == null ? {} : asRecord(declaredRuntime)
   const probe =
     runtime === null ? declaredRuntime : 'agent' in runtime ? runtime : { ...runtime, agent: SCHEMA_PROBE_AGENT }
-  const parsed = Recipe.safeParse({ ...mapping, runtime: probe })
+  const parsed = Recipe.safeParse({ ...applied, runtime: probe })
   if (!parsed.success) {
     throw new RecipeInvalidError(
       ref,
