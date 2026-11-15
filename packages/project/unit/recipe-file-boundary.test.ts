@@ -119,12 +119,17 @@ function constOf(id: ts.Identifier): ts.Expression | undefined {
 function isRecipePath(node: ts.Expression, follow: boolean, bare = true): boolean {
   const n = unwrap(node)
   // `bare` false: a string that merely contains the name is prose (`message.replace('recipe.yml', …)`), not a path.
-  if (ts.isStringLiteralLike(n)) return bare && n.text.includes('recipe.yml')
+  // A port's path ends in `/recipe.yml`; a bare `'recipe.yml'` as `.replace`'s search text is prose.
+  const names = (text: string) => (bare ? text.includes('recipe.yml') : /[\\/]recipe\.yml$/.test(text))
+  if (ts.isStringLiteralLike(n)) return names(n.text)
   if (ts.isTemplateExpression(n))
     return (
-      bare &&
-      (n.head.text.includes('recipe.yml') ||
-        n.templateSpans.some((s) => s.literal.text.includes('recipe.yml') || isRecipePath(s.expression, false)))
+      (bare && n.head.text.includes('recipe.yml')) ||
+      n.templateSpans.some(
+        (s, i) =>
+          (bare ? s.literal.text.includes('recipe.yml') : i === n.templateSpans.length - 1 && names(s.literal.text)) ||
+          isRecipePath(s.expression, false),
+      )
     )
   if (ts.isBinaryExpression(n)) return isRecipePath(n.left, follow, bare) || isRecipePath(n.right, follow, bare)
   if (ts.isCallExpression(n)) {
@@ -185,6 +190,34 @@ export function recipeFileUses(file: string, text: string): string[] {
       (PORT_NAMES.has(node.name.text) || node.name.text === 'replaceFileFace' || node.name.text === 'readFileFace')
     )
       at(node, `uses ${node.expression.text}.${node.name.text}, the module's file port`)
+    const isFace = (name: string) => PORT_NAMES.has(name) || name === 'replaceFileFace' || name === 'readFileFace'
+    // `const { ProjectFiles } = project`, `project['ProjectFiles']`, and `recipe.RecipeFiles` in a type position.
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isObjectBindingPattern(node.name) &&
+      node.initializer !== undefined &&
+      ts.isIdentifier(unwrap(node.initializer)) &&
+      namespaces.has((unwrap(node.initializer) as ts.Identifier).text)
+    )
+      for (const el of node.name.elements) {
+        const key = el.propertyName ?? el.name
+        if (ts.isIdentifier(key) && isFace(key.text)) at(el, `destructures ${key.text} from a namespace import`)
+      }
+    if (
+      ts.isElementAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      namespaces.has(node.expression.text) &&
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      isFace(node.argumentExpression.text)
+    )
+      at(node, `uses ${node.expression.text}['${node.argumentExpression.text}'], the module's file port`)
+    if (
+      ts.isQualifiedName(node) &&
+      ts.isIdentifier(node.left) &&
+      namespaces.has(node.left.text) &&
+      isFace(node.right.text)
+    )
+      at(node, `names ${node.left.text}.${node.right.text}, the module's file port`)
     if (ts.isCallExpression(node)) {
       const name = calleeName(node)
       if (name !== undefined && FILE_CALLS.has(name)) {
@@ -252,6 +285,8 @@ describe('the checker', () => {
     ['files.read(recipePath(name, home))', 'read(…) on a recipe path'],
     ["deps.files.replace(resolve(home, 'recipe.yml'), text)", 'replace(…) on a recipe path'],
     ['lift(() => world.files.read(recipePath(project, world.home)))', 'read(…) on a recipe path'],
+    ["files.read('/h/x/recipe.yml')", 'read(…) on a recipe path'],
+    ['const path = `${home}/${name}/recipe.yml`; files.replace(path, text)', 'replace(…) on a recipe path'],
     ["rename(tempPath, recipePath('x'))", 'rename(…) on a recipe path'],
     ["await copyFile(tempPath, join(home, 'x', 'recipe.yml'))", 'copyFile(…) on a recipe path'],
     ["renameSync(tmp, recipePath('x'))", 'renameSync(…) on a recipe path'],
@@ -272,6 +307,17 @@ describe('the checker', () => {
     ["import { diskFiles } from '../../project/src/files.ts'", "module's file port"],
     ["import * as project from '@lingtai/project'\nconst port = yield* project.ProjectFiles", 'project.ProjectFiles'],
     ["import * as p from '@lingtai/project'\np.diskFiles.read(x)", 'p.diskFiles'],
+    ["import * as project from '@lingtai/project'\nconst { ProjectFiles } = project", 'destructures ProjectFiles'],
+    [
+      "import * as project from '@lingtai/project'\nconst { diskFiles: d, recipePath } = project",
+      'destructures diskFiles',
+    ],
+    ["import * as project from '@lingtai/project'\nconst port = project['ProjectFiles']", "project['ProjectFiles']"],
+    [
+      "import * as recipe from '@lingtai/recipe'\nconst o: { files: recipe.RecipeFiles } = x",
+      'names recipe.RecipeFiles',
+    ],
+    ["import * as p from '@lingtai/project'\ntype T = typeof p.ProjectFiles", 'p.ProjectFiles'],
   ])('catches %s', (code, why) => {
     const uses = found(code)
     expect(uses).toHaveLength(1)
