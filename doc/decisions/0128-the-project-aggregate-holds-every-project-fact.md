@@ -140,7 +140,11 @@ The streams that exist, and what each holds:
    (written beside, then renamed into place), then `ProjectRecipeChanged`
    with the person who changed it. A process that dies between the two leaves
    a file the log has not seen, which the next read records as `by: 'file'`:
-   the content is never lost, only who saved it. A recipe written before the
+   the content is never lost, only who saved it. Two saves that interleave
+   (A writes, B writes, B appends, A appends) are the same window: each event
+   carries the source its own call wrote, the file ends as B's, the next read
+   records B's as `by: 'file'`, and nothing reads the file back, compares and
+   sets, or locks to close it. A recipe written before the
    project is registered is appended all the same; an add abandoned before
    registration leaves a `prj-` stream with a recipe and no registration,
    which is listed as neither registered nor pending.
