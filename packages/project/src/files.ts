@@ -32,18 +32,21 @@ export const replaceRecipeFile = (path: string, text: string): Effect.Effect<voi
     yield* Effect.tryPromise({ try: () => rename(partial, path), catch: failed('replace') })
   }).pipe(Effect.uninterruptible)
 
-/** The file seam's disk read, as the promise `diskFiles` holds it. */
-export function readFileFace(path: string): Promise<string | null> {
-  return Effect.runPromise(readRecipeFile(path))
+/**
+ * The file seam: a `Map`-backed one for tests, `diskFiles` for the real thing. Written over `node:fs/promises`
+ * directly and not as `Effect.runPromise` around the two Effects above, so it is no face for the ratchet to hold:
+ * an Effect caller never reaches it (`filesEffect` takes the Effects themselves for the disk), and it is the
+ * default value of `ProjectFiles`, which no caller outside this module holds or passes (0128 §7, #1178).
+ */
+export const diskFiles: RecipeFiles = {
+  read: (path) =>
+    readFile(path, 'utf8').catch((err: unknown) => (isMissing(err) ? null : Promise.reject(failed('read')(err)))),
+  replace: (path, text) =>
+    mkdir(dirname(path), { recursive: true })
+      .then(() => writeFile(`${path}.${process.pid}.partial`, text))
+      .then(() => rename(`${path}.${process.pid}.partial`, path))
+      .catch((err: unknown) => Promise.reject(failed('replace')(err))),
 }
-
-/** The file seam's disk write, as the promise `diskFiles` holds it. */
-export function replaceFileFace(path: string, text: string): Promise<void> {
-  return Effect.runPromise(replaceRecipeFile(path, text))
-}
-
-/** The file seam: a `Map`-backed one for tests, `diskFiles` for the real thing. */
-export const diskFiles: RecipeFiles = { read: readFileFace, replace: replaceFileFace }
 
 /**
  * A port, seen from inside an Effect. Nothing given, or `diskFiles` itself, is

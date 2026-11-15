@@ -4,16 +4,24 @@
  * so a fake never changes and no expected string moves. Each member is `Effect.tryPromise` with the rejection kept
  * as its own failure — never `Effect.promise`, which would make it a defect (CLI-01's `lift`).
  */
+import type { RecipeFiles } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import type { FirstProjectWorld, GitResult } from '../src/first-project.ts'
 
 type Github = FirstProjectWorld['github']
 
+/**
+ * A world whose recipe port is the test's own: **never passed to the code under test** (0128 §7) — the test provides it
+ * as `ProjectFiles` around the Effect it runs.
+ */
+export type FirstProjectTestWorld = FirstProjectWorld & { files: RecipeFiles }
+
 export interface PromiseFirstProjectWorld extends Omit<
   FirstProjectWorld,
   'git' | 'exists' | 'projects' | 'runtimes' | 'register' | 'history' | 'inFlight' | 'removeMirror' | 'github'
 > {
+  files: RecipeFiles
   git: (dir: string, args: readonly string[]) => Promise<GitResult>
   exists: (path: string) => Promise<boolean>
   projects: () => Promise<Effect.Success<ReturnType<FirstProjectWorld['projects']>>>
@@ -41,7 +49,7 @@ export const liftPort =
   (...args: Args): Effect.Effect<A, unknown> =>
     Effect.tryPromise({ try: () => f(...args), catch: (e) => e })
 
-export function liftFirstProjectWorld(w: PromiseFirstProjectWorld): FirstProjectWorld {
+export function liftFirstProjectWorld(w: PromiseFirstProjectWorld): FirstProjectTestWorld {
   const { inFlight, removeMirror, github, ...rest } = w
   return {
     ...rest,

@@ -1,5 +1,5 @@
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { recipePath } from '@lingtai/project'
+import { recipePath, ProjectFiles } from '@lingtai/project'
 /** The sandbox step's proposal and answers (#1160) — a fake host throughout, never the real check (0060 §1). */
 import { LIMIT_DEFAULTS, resolveSource } from '@lingtai/recipe'
 import { SandboxUnavailable } from '@lingtai/sandbox'
@@ -80,10 +80,10 @@ describe('the answers write the block', () => {
     }
     await Effect.runPromise(
       applySetup(
-        { home: HOME, files, by: 'human:me', store: createMemoryEventStore() },
+        { home: HOME, by: 'human:me', store: createMemoryEventStore() },
         setupAnswers(form(sandbox)),
         Effect.void,
-      ),
+      ).pipe(Effect.provideService(ProjectFiles, files)),
     )
     const text = store.get(recipePath('widget', HOME))!
     const path = recipePath('widget', HOME)

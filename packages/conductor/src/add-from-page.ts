@@ -27,8 +27,8 @@ import { githubApp, githubClientAuth } from '@lingtai/env'
 import { createFileLocker, type Locker } from '@lingtai/env/lock'
 import type { EventStore } from '@lingtai/event-store/store'
 import { GitHubFailed, makeGitHub, type GitHub } from '@lingtai/github'
-import { HOST_FOR_SAVING, diskFiles, loadAllProjects, loadProject, recipePath } from '@lingtai/project'
-import { baseOf, type RecipeFiles, resolveSource } from '@lingtai/recipe'
+import { HOST_FOR_SAVING, draftRecipe, loadAllProjects, loadProject, recipePath } from '@lingtai/project'
+import { baseOf, resolveSource } from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
 import {
   alreadyAdded,
@@ -191,12 +191,9 @@ export function proposalFor(
  * *new*: the step is still offered, on by default, and the write decides again — `setupChanges` drops the block over
  * a recipe that turns out to exist, so offering it never touches an existing project.
  */
-export function recipeIsNew(project: string, ports: { home?: string; files?: RecipeFiles } = {}) {
-  return Effect.tryPromise({
-    try: () => (ports.files ?? diskFiles).read(recipePath(project, ports.home)),
-    catch: reasonOf,
-  }).pipe(
-    Effect.map((text) => text === null),
+export function recipeIsNew(project: string, ports: { home?: string } = {}) {
+  return draftRecipe(project, ports.home === undefined ? {} : { home: ports.home }).pipe(
+    Effect.map((draft) => draft.text() === null),
     Effect.orElseSucceed(() => true),
   )
 }
@@ -221,7 +218,7 @@ export function localTicketsOf(proposal: Proposal): { source: 'db'; because: str
 /** The recipe text the form would write, or why it would not resolve — nothing is written. */
 export function previewOf(
   form: SetupForm,
-  ports: { home?: string; files?: RecipeFiles } = {},
+  ports: { home?: string } = {},
 ): Effect.Effect<{ text: string } | { refused: string }, never> {
   const refused = refusalOf(form)
   if (refused !== null) return Effect.succeed({ refused })
@@ -232,17 +229,15 @@ export function previewOf(
 }
 
 /** The answers, written in full when a recipe is already on disk (`setupChanges`' `rewrite`). */
-function answersFor(form: SetupForm, ports: { home?: string; files?: RecipeFiles }) {
-  const files = ports.files ?? diskFiles
-  return Effect.tryPromise({
-    try: () => files.read(recipePath(form.project, ports.home)),
-    catch: (err) => new SetupWriteError(`could not read the recipe: ${reasonOf(err)}`),
-  }).pipe(Effect.map((existing) => setupAnswers(form, existing !== null)))
+function answersFor(form: SetupForm, ports: { home?: string }) {
+  return draftRecipe(form.project, ports.home === undefined ? {} : { home: ports.home }).pipe(
+    Effect.mapError((err) => new SetupWriteError(`could not read the recipe: ${reasonOf(err)}`)),
+    Effect.map((draft) => setupAnswers(form, draft.text() !== null)),
+  )
 }
 
 export interface AddPorts {
   home?: string
-  files?: RecipeFiles
   /** Who adds: `human:<user>`, written on the recipe's event (0128 §3). */
   by: string
   /** The log the recipe's event goes to: the process's own when absent, a memory store in a test. */
@@ -310,11 +305,7 @@ function checkAndWrite(form: SetupForm, ports: AddPorts, path: string): Effect.E
         ? Effect.succeed<Added>({ ok: false, say: alreadyAddedSentence(form.project, ports.home) })
         : answersFor(form, ports).pipe(
             Effect.flatMap((answers) =>
-              applySetup(
-                { home: ports.home, files: ports.files, by: ports.by, store: ports.store },
-                answers,
-                ports.register(form),
-              ),
+              applySetup({ home: ports.home, by: ports.by, store: ports.store }, answers, ports.register(form)),
             ),
             Effect.map((done): Added => ({ ok: true, project: form.project, path: done.path })),
             Effect.catch((err) =>

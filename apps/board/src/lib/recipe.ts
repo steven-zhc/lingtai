@@ -21,7 +21,7 @@ import { describeAssignee } from '@lingtai/conductor/filter'
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { STEPS, type ProjectState, type Step } from '@lingtai/domain'
 import type { GitHubClient } from '@lingtai/github'
-import { diskFiles, machinePath, recipePath } from '@lingtai/project'
+import { machinePath, recipePath, recipeText } from '@lingtai/project'
 import {
   LIMIT_DEFAULTS,
   MachineConfigInvalidError,
@@ -45,6 +45,7 @@ import {
   type PluginSecrets,
   type Recipe,
 } from '@lingtai/recipe'
+import { Context, Effect } from 'effect'
 
 /**
  * The limits `a pass` is made of, from the recipe rather than listed again here.
@@ -433,10 +434,13 @@ function faultOf(err: unknown, recipe: string): { at: string; fault: 'recipe' | 
     : { at: recipe, fault: 'recipe' }
 }
 
+/** Run outside any fiber, uncounted — the board's edge (as `locks.ts`). */
+const runEffect = Effect.runPromiseWith(Context.empty())
+
 /** The file's text, or null when it is not there or cannot be read — `projectRecipe` never throws. */
-async function textIfReadable(path: string): Promise<string | null> {
+async function textIfReadable(project: string): Promise<string | null> {
   try {
-    return await diskFiles.read(path)
+    return await runEffect(recipeText(project))
   } catch {
     return null
   }
@@ -480,7 +484,7 @@ export async function projectRecipe(
       ok: false,
       project,
       ...fault,
-      text: fault.fault === 'recipe' ? await textIfReadable(at) : null,
+      text: fault.fault === 'recipe' ? await textIfReadable(project) : null,
       problem: (err as Error).message.replace(/\s*\n\s*/g, ' ').trim(),
     }
   }

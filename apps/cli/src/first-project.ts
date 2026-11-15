@@ -61,21 +61,13 @@ import type { EventStore } from '@lingtai/event-store/store'
 import { ghStatusEffect, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
 import {
   HOST_FOR_SAVING,
-  diskFiles,
+  draftRecipe,
   loadAllProjectsEffect,
-  readRecipeKeyEffect,
   recipePath,
   resolveDraftRecipeEffect,
 } from '@lingtai/project'
 import { readTasksEffect } from '@lingtai/projector'
-import {
-  baseOf,
-  landOnBranchChanges,
-  resolveSource,
-  type RecipeFiles,
-  type ResolvedRecipe,
-  type SignedIn,
-} from '@lingtai/recipe'
+import { baseOf, landOnBranchChanges, resolveSource, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
 import { type Picker, type ProposalReaders, type RepositoryList, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
@@ -174,7 +166,6 @@ export interface FirstProjectWorld extends QuestionWorld {
   projects: () => Effect.Effect<readonly ProjectState[], unknown>
   /** The lock an add is made under (`exclusiveAdd`): the machine's file lock unless a test hands one in. */
   locker?: Locker
-  files: RecipeFiles
   /** Who adds, on the recipe's event: `human:<user>`. */
   by: string
   /** The log the recipe's event goes to — the process's own when absent. */
@@ -587,10 +578,9 @@ function runLocalBranch(
       }
     }
     // Read for an unregistered recipe too: one the old `add` wrote and never registered still has a mirror to rebuild.
-    const existingRemote = yield* readRecipeKeyEffect(name, ['repo', 'remote'], {
-      home: world.home,
-      files: world.files,
-    })
+    // One read of the file for the whole flow, as a draft: inside an add nothing is recorded or written until `applySetup`.
+    const onDisk = yield* draftRecipe(name, { home: world.home })
+    const existingRemote = onDisk.get(['repo', 'remote'])
     if (typeof existingRemote === 'string' && existingRemote !== remote) {
       // A checkout with no `origin` has only the top level to match.
       const got = yield* world.git(toplevel, ['remote', 'get-url', 'origin'])
@@ -621,25 +611,18 @@ function runLocalBranch(
     }
 
     let fromSha = ''
-    const proposedNow = yield* readRecipeKeyEffect(name, ['steps', 'proposed'], {
-      home: world.home,
-      files: world.files,
-    })
+    const proposedNow = onDisk.get(['steps', 'proposed'])
     const currentProposed = Array.isArray(proposedNow) ? (proposedNow as unknown[]) : []
     // The base the recipe resolves: a `worktree:` at `admit` says it ahead of `repo.base` (`baseOf`), so that
     // is the one compared, moved and seeded below.
-    const recipeOptions = { home: world.home, files: world.files }
-    const admitNow = yield* readRecipeKeyEffect(name, ['steps', 'admit'], recipeOptions)
+    const admitNow = onDisk.get(['steps', 'admit'])
     const declaredAtAdmit = Array.isArray(admitNow)
       ? (admitNow as unknown[]).find(
           (entry): entry is { worktree: { base?: unknown } } =>
             typeof entry === 'object' && entry !== null && 'worktree' in entry,
         )
       : undefined
-    const currentBase =
-      declaredAtAdmit !== undefined
-        ? declaredAtAdmit.worktree.base
-        : yield* readRecipeKeyEffect(name, ['repo', 'base'], recipeOptions)
+    const currentBase = declaredAtAdmit !== undefined ? declaredAtAdmit.worktree.base : onDisk.get(['repo', 'base'])
     // `lingtai-base` is made from the checked-out branch when absent. A `--land <branch>` with no `--base`
     // names the branch the person means to land on, and `askLanding` would move the base there anyway.
     const given = flags['land']
@@ -659,7 +642,7 @@ function runLocalBranch(
     if (initRerun) {
       world.log(`${found.project} is already added — its recipe is ${recipePath(found.project!, world.home)}`)
       const recipeAt = recipePath(name, world.home)
-      const existing = yield* lift(() => world.files.read(recipeAt))
+      const existing = onDisk.text()
       if (existing !== null) {
         const recipe = resolveSource(existing, recipeAt, recipeAt).recipe
         return {
@@ -756,8 +739,7 @@ function runLocalBranch(
       // `--install none` asks for no command, so a repair that adds none honours it; any other answer would be dropped.
       const installFlag = flags['install']
       // ... but not over a recipe that already names one, written or inherited from its preset.
-      const recipeNow =
-        installFlag === 'none' ? yield* lift(() => world.files.read(recipePath(name, world.home))) : null
+      const recipeNow = installFlag === 'none' ? onDisk.text() : null
       let prepared: unknown = null
       if (recipeNow !== null) {
         // Resolved as the repair will leave it (with the base and remote it supplies), so a recipe that
@@ -765,7 +747,7 @@ function runLocalBranch(
         // resolve is taken to keep its install, never to have none.
         prepared = yield* refusingOn(
           previewSetup(
-            { home: world.home, files: world.files },
+            { home: world.home },
             {
               project: name,
               changes: [
@@ -858,7 +840,7 @@ function runLocalBranch(
     }
 
     const path = recipePath(name, world.home)
-    const existingText = yield* lift(() => world.files.read(path))
+    const existingText = onDisk.text()
 
     // `env.plantAt` has no schema default (`recipe.ts`'s `plantAt: z.string()`)
     // — a brand-new file needs it or it will not resolve at all, and nothing a
@@ -951,7 +933,6 @@ function runLocalBranch(
             madeKept === null ? world.kept : `No recipe was written, and nothing was registered; ${madeKept} is kept`,
           kept: seededKept,
           home: world.home,
-          files: world.files,
         })
     if ('refused' in recipeResult) return { refused: recipeResult.refused }
 
@@ -959,9 +940,7 @@ function runLocalBranch(
     // project (#431's Watch out) — re-read the file it left behind rather than
     // trust the `base` this function's own question settled.
     const previewedOrRefused = yield* refusingOn(
-      previewSetup({ home: world.home, files: world.files }, recipeResult.answers).pipe(
-        Effect.map((text) => ({ previewed: text })),
-      ),
+      previewSetup({ home: world.home }, recipeResult.answers).pipe(Effect.map((text) => ({ previewed: text }))),
       (error) => ({ refused: `${errorText(error)}. ${ADD_KEPT}` }),
     )
     if ('refused' in previewedOrRefused) return previewedOrRefused
@@ -989,7 +968,6 @@ function runLocalBranch(
       ...HOST_FOR_SAVING,
       base: final,
       // The recipe is still only a draft (`applySetup` is its one writer), so it is resolved over that text.
-      read: (p) => world.files.read(p),
     })
 
     // `register`'s live implementation (`addLocal`, `onboard.ts` — the only place a directory gets a
@@ -1000,7 +978,7 @@ function runLocalBranch(
         // Under the lock the board's Add takes; a project not yet registered is checked again inside it,
         // since another process may have added it since the read above.
         const write = applySetup(
-          { home: world.home, files: world.files, by: world.by, store: world.store },
+          { home: world.home, by: world.by, store: world.store },
           recipeResult.answers,
           Effect.suspend(() =>
             world.register({
@@ -1385,7 +1363,6 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     git: liveGitEffect,
     exists: pathExistsEffect,
     projects: () => loadAllProjectsEffect(),
-    files: diskFiles,
     by: `human:${userInfo().username}`,
     home,
     sandboxHost: () => sandboxHostHere(),

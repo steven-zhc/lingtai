@@ -324,18 +324,6 @@
     "why": "the promise `GitHubClient` that `githubClientFor`, `projectClient` and `ownerlessClient` hand the board is built from it, and the board calls its members: apps/board/src/lib/task.ts, apps/board/src/app/actions.ts"
   },
   {
-    "file": "packages/project/src/files.ts",
-    "fn": "readFileFace",
-    "until": "0101 §7",
-    "why": "`diskFiles.read` is this, and the board calls it: apps/board/src/lib/recipe.ts"
-  },
-  {
-    "file": "packages/project/src/files.ts",
-    "fn": "replaceFileFace",
-    "until": "0101 §7",
-    "why": "`diskFiles.replace` is this, in the same `diskFiles` object the board imports: apps/board/src/lib/recipe.ts"
-  },
-  {
     "file": "packages/project/src/state.ts",
     "fn": "loadAllProjects",
     "until": "0101 §7",

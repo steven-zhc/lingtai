@@ -4,6 +4,7 @@
  * the first merge — and that taking every default cannot slip past it.
  */
 import type { RateRow } from '@lingtai/domain/rate-card'
+import { ProjectFiles } from '@lingtai/project'
 import { type RecipeFiles } from '@lingtai/recipe'
 import { EMPTY_SETUP_READER } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
@@ -14,7 +15,9 @@ import { stripColour } from '../src/output.ts'
 import type { QuestionWorld } from '../src/question.ts'
 import { askRecipeEffect, ENV_PLANT_AT, priceHints, type RecipeAt, type Summary } from '../src/recipe-flow.ts'
 
-const askRecipe = (world: QuestionWorld, at: RecipeAt) => Effect.runPromise(askRecipeEffect(world, at))
+type TestAt = RecipeAt & { files: RecipeFiles }
+const askRecipe = (world: QuestionWorld, { files, ...at }: TestAt) =>
+  Effect.runPromise(askRecipeEffect(world, at).pipe(Effect.provideService(ProjectFiles, files)))
 
 const HOME = '/home/me/.lingtai'
 const CONFIRM = /register anyway\?/
@@ -43,7 +46,7 @@ function terminal(answer: (prompt: string) => string | null = () => ''): Questio
   }
 }
 
-const at = (over: Partial<RecipeAt>): RecipeAt => ({
+const at = (over: Partial<TestAt>): TestAt => ({
   project: 'widget',
   local: true,
   runtimes: RUNTIMES,

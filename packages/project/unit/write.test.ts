@@ -1,3 +1,4 @@
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { type RecipeFiles, RecipeInvalidError, resolveSource } from '@lingtai/recipe'
 /**
  * `setRecipe` and `readRecipeKey` (#395): the writer around `editRecipe`
@@ -6,7 +7,7 @@ import { type RecipeFiles, RecipeInvalidError, resolveSource } from '@lingtai/re
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { readRecipeKeyEffect, recipePath } from '../src/index.ts'
+import { ProjectFiles, recipePath, recipeValue } from '../src/index.ts'
 import { seedRecipe } from '../test/seed-recipe.ts'
 
 const HOME = '/home/me/.lingtai'
@@ -266,19 +267,33 @@ repo:
   })
 })
 
-describe('readRecipeKey', () => {
+describe('recipeValue', () => {
   it('returns the current value for a written key', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
-    expect(await Effect.runPromise(readRecipeKeyEffect('app', ['source', 'kinds'], { home: HOME, files }))).toEqual([
-      'bug',
-    ])
+    expect(
+      await Effect.runPromise(
+        recipeValue('app', ['source', 'kinds'], { home: HOME, store: createMemoryEventStore() }).pipe(
+          Effect.provideService(ProjectFiles, files),
+        ),
+      ),
+    ).toEqual(['bug'])
   })
 
   it('returns null for an unwritten key, and null for an absent file', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
-    expect(await Effect.runPromise(readRecipeKeyEffect('app', ['runtime', 'agent'], { home: HOME, files }))).toBeNull()
     expect(
-      await Effect.runPromise(readRecipeKeyEffect('app', ['source', 'kinds'], { home: HOME, files: mapFiles() })),
+      await Effect.runPromise(
+        recipeValue('app', ['runtime', 'agent'], { home: HOME, store: createMemoryEventStore() }).pipe(
+          Effect.provideService(ProjectFiles, files),
+        ),
+      ),
+    ).toBeNull()
+    expect(
+      await Effect.runPromise(
+        recipeValue('app', ['source', 'kinds'], { home: HOME, store: createMemoryEventStore() }).pipe(
+          Effect.provideService(ProjectFiles, mapFiles()),
+        ),
+      ),
     ).toBeNull()
   })
 })

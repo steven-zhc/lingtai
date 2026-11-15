@@ -4,27 +4,19 @@ import { join } from 'node:path'
 
 import type { ProjectState } from '@lingtai/domain'
 import { storeChoice } from '@lingtai/env'
-import { recipePath } from '@lingtai/project'
+import { recipePath, ProjectFiles } from '@lingtai/project'
 import { type RecipeFiles } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { type GitResult, pathExistsEffect } from '../src/first-project.ts'
-import {
-  type AppCheck,
-  type InitWorld,
-  type RuntimeFound,
-  configPath,
-  initCommandEffect,
-  liveMachine,
-  redact,
-} from '../src/init.ts'
+import { type AppCheck, type RuntimeFound, configPath, initCommandEffect, liveMachine, redact } from '../src/init.ts'
 import { flagsFromArgv } from '../test/flags.ts'
-import { liftInitWorld } from '../test/init-world.ts'
+import { type InitTestWorld, liftInitWorld } from '../test/init-world.ts'
 
 /** `initCommandEffect`, run to its exit code, the way every test here awaited `initCommand`. */
-const initCommand = (args: Parameters<typeof initCommandEffect>[0], w: InitWorld): Promise<number> =>
-  Effect.runPromise(initCommandEffect(args, w))
+const initCommand = (args: Parameters<typeof initCommandEffect>[0], w: InitTestWorld): Promise<number> =>
+  Effect.runPromise(initCommandEffect(args, w).pipe(Effect.provideService(ProjectFiles, w.files)))
 
 /**
  * `lingtai init` (#186), against a world with no database, GitHub, runtime or
@@ -138,7 +130,7 @@ function database() {
   return { created: false }
 }
 
-function world(home: string, script: Script, db = database()): { world: InitWorld; seen: Recorded } {
+function world(home: string, script: Script, db = database()): { world: InitTestWorld; seen: Recorded } {
   const seen: Recorded = {
     lines: [],
     asked: [],

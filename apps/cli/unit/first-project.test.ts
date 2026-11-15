@@ -10,7 +10,7 @@ import type { ProjectState } from '@lingtai/domain'
  */
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { type AppReader, GitHubFailed, type GhRun, type GhStatus } from '@lingtai/github'
-import { resolveLocalRecipeEffect, recipePath } from '@lingtai/project'
+import { resolveLocalRecipeEffect, recipePath, ProjectFiles } from '@lingtai/project'
 import { type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { listRepositories as list, type Picker, type SetupReader } from '@lingtai/setup'
@@ -18,14 +18,22 @@ import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import type { FirstProjectWorld, GitResult, RegisterLocalPayload } from '../src/first-project.ts'
+import type { GitResult, RegisterLocalPayload } from '../src/first-project.ts'
 import { chooseFirstProjectEffect, liveFirstProjectWorld } from '../src/first-project.ts'
 import { flagsOf } from '../src/wizard-options.ts'
-import { liftFirstProjectWorld, liftPort, type PromiseFirstProjectWorld } from '../test/first-project-world.ts'
+import {
+  type FirstProjectTestWorld,
+  liftFirstProjectWorld,
+  liftPort,
+  type PromiseFirstProjectWorld,
+} from '../test/first-project-world.ts'
 
 /** `chooseFirstProjectEffect`, run to its outcome, the way every test here awaited `chooseFirstProject`. */
-const chooseFirstProject = (...args: Parameters<typeof chooseFirstProjectEffect>) =>
-  Effect.runPromise(chooseFirstProjectEffect(...args))
+const chooseFirstProject = (
+  world: FirstProjectTestWorld,
+  ...rest: DropFirst<Parameters<typeof chooseFirstProjectEffect>>
+) => Effect.runPromise(chooseFirstProjectEffect(world, ...rest).pipe(Effect.provideService(ProjectFiles, world.files)))
+type DropFirst<T extends readonly unknown[]> = T extends readonly [unknown, ...infer R] ? R : never
 
 const before = process.env['NO_COLOR']
 beforeAll(() => {
@@ -92,7 +100,7 @@ function runtimesFrom(signedIn: readonly string[]): RuntimeFound[] {
 const EMPTY_SETUP_READER: SetupReader = { has: () => Effect.succeed(false), read: () => Effect.succeed(null) }
 
 interface Harness {
-  world: FirstProjectWorld
+  world: FirstProjectTestWorld
   asked: string[]
   logged: string[]
   registered: RegisterLocalPayload[]

@@ -2,7 +2,7 @@ import { exclusiveAdd } from '@lingtai/conductor/add-from-page'
 import type { GithubReach } from '@lingtai/conductor/onboard'
 import { githubAuthKind, storeChoice, type StoreChoice } from '@lingtai/env'
 import { parseSlug } from '@lingtai/github'
-import { recipePath } from '@lingtai/project'
+import { recipePath, recipeText } from '@lingtai/project'
 import { resolveSource } from '@lingtai/recipe'
 import {
   alreadyAdded,
@@ -34,7 +34,6 @@ import { Cause, Effect } from 'effect'
  * recipe disagrees (#75).
  */
 import { type AskedBeforeAdd, askBeforeGithubAddEffect, type AskBeforeGithubAddDeps, attempt } from './add-github.ts'
-import { lift } from './exit.ts'
 import {
   chooseFirstProjectEffect,
   liveFirstProjectWorld,
@@ -282,7 +281,7 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
     // The card reads the recipe back as written, as the local path does; a read that fails says so and draws no card.
     const read = yield* attempt(
       Effect.gen(function* () {
-        const text = yield* lift(() => world.project.files.read(path))
+        const text = yield* recipeText(repo, world.project.store === undefined ? {} : { store: world.project.store })
         if (text === null) return yield* Effect.fail(new Error(`${path} is not there to read`))
         return cardRecipe(resolveSource(text, path, path).recipe, `${owner}/${repo}`)
       }),
@@ -367,7 +366,7 @@ function addWithSetup(
     Effect.flatMap((projects) =>
       alreadyAdded(projects, answers.project) === undefined
         ? applySetup(
-            { files: world.files, by: world.by, store: world.store },
+            { by: world.by, store: world.store },
             answers,
             world.github.add(opts, log).pipe(
               Effect.mapError((err) => (err instanceof Error ? err : new Error(String(err)))),

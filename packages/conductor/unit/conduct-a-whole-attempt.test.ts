@@ -33,7 +33,8 @@ import type {
 } from '@lingtai/domain'
 import { cleared, resolveOffer, stepEndedsOf, waitWords, STEPS } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
-import { readRecipeKeyEffect, recipePath } from '@lingtai/project'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { ProjectFiles, recipePath, recipeValue } from '@lingtai/project'
 import { seedRecipe } from '@lingtai/project/test/seed-recipe'
 import { landingChanges, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -407,7 +408,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // does not — the same contract `askLanding` relies on
     // (`apps/cli/src/landing.ts`) so this pins the claim it actually makes.
     const rawProposed = await Effect.runPromise(
-      readRecipeKeyEffect(PROJECT, ['steps', 'proposed'], { home: recipeHome, files }),
+      recipeValue(PROJECT, ['steps', 'proposed'], { home: recipeHome, store: createMemoryEventStore() }).pipe(
+        Effect.provideService(ProjectFiles, files),
+      ),
     )
     const resolvedProposed = resolveSource(RECIPE, path, path).recipe.steps.proposed
     const changes = landingChanges({ land: 'hold' }, Array.isArray(rawProposed) ? rawProposed : resolvedProposed)
@@ -466,7 +469,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // does not — the same contract `askLanding` relies on
     // (`apps/cli/src/landing.ts`) so this pins the claim it actually makes.
     const rawProposed = await Effect.runPromise(
-      readRecipeKeyEffect(PROJECT, ['steps', 'proposed'], { home: recipeHome, files }),
+      recipeValue(PROJECT, ['steps', 'proposed'], { home: recipeHome, store: createMemoryEventStore() }).pipe(
+        Effect.provideService(ProjectFiles, files),
+      ),
     )
     const resolvedProposed = resolveSource(current, path, path).recipe.steps.proposed
     const changes = landingChanges({ land: 'main' }, Array.isArray(rawProposed) ? rawProposed : resolvedProposed)

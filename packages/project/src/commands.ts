@@ -160,10 +160,11 @@ export const recordFileRecipe = (
  * As `recordFileRecipe`, but the observation is made **inside** the attempt, after the stream is read and before the
  * append at that version: `observe` runs again on the retry of a lost race, so an observation taken before another
  * reader recorded a newer edit is never appended over it — the version check guards the file observation too.
+ * An observation that answers `null` records nothing.
  */
 export const recordObservedRecipe = (
   project: string,
-  observe: () => Effect.Effect<PayloadOf<'ProjectRecipeChanged'>, unknown>,
+  observe: () => Effect.Effect<PayloadOf<'ProjectRecipeChanged'> | null, unknown>,
   store: EventStore,
 ): Effect.Effect<ProjectState, Error> =>
   Effect.gen(function* () {
@@ -171,7 +172,8 @@ export const recordObservedRecipe = (
       Effect.gen(function* () {
         const state = reduceProject(yield* readProjectEvents(project, store))
         const seen = yield* observe()
-        const next = recipeChange(state, seen)
+        // `null`: the observation found nothing to record (no file, or text the check refuses).
+        const next = seen === null ? null : recipeChange(state, seen)
         if (next !== null) yield* appendAt(store, project, state.version, next)
       }),
     )
