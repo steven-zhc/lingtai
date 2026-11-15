@@ -40,6 +40,14 @@ else is not writable, which is why the deny list above is unwritable too. Never
 writable even inside those: the mirror's `config`, `hooks/` and `info/`, and the
 directory of hook sockets.
 
+**Each runtime adds one writable directory of its own** (`caller_additions`):
+a Claude Code run gets the run's own configuration directory
+(`packages/agent/src/claude-sandbox.ts:205`), and a Codex run gets the whole
+Codex home, `~/.codex`, except its `config.toml`, `AGENTS.md` and `rules`, which
+stay read-only (`packages/agent/src/codex-sandbox.ts:157-161`). So a Codex run
+can change `~/.codex/auth.json` and the rest of that directory without any
+`write` in the recipe.
+
 **Network.** A run may connect to the built-in hosts and the project's
 `network.allow`, and to nothing else (`BUILT_IN_DOMAINS`, `policy.ts:59-73`):
 
@@ -95,8 +103,13 @@ The rules (ADR 0127 §13, checked in `packages/recipe/src/sandbox.ts` and
   configuration directories (`~/.claude`, `~/.claude.json`, `~/.codex`) and the
   host's tool and cache directories. A `write` that is `$HOME` or contains it
   is refused; `~/work/fixtures` is not.
-- A `deny` inside the worktree or the mirror is refused, because the run's
-  `allowRead` overrides `denyRead` there.
+- A `deny` is held to the same protected-path check as a `write`
+  (`checkSandboxBlock` runs `refuseProtected` on both lists): one that is, lies
+  inside or contains a protected path is refused too, such as the runtimes'
+  configuration directories (`~/.codex/auth.json` is inside `~/.codex`), the
+  host's tool and cache directories, or the deny list itself. It is also refused
+  inside the worktree or the mirror, because the run's `allowRead` overrides
+  `denyRead` there.
 
 A recipe that still says `runtime.tier` is refused, with its replacement by
 value (`packages/recipe/src/resolve.ts:295-305`): `tier: sandboxed` becomes
