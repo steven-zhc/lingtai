@@ -1,6 +1,8 @@
 import type { RecipeForEffect } from '@lingtai/conductor/filter'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import type { ProjectState } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { ProjectFiles } from '@lingtai/project'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -138,9 +140,15 @@ function recipeOf(text: string): RecipeForEffect {
   return ((state: ProjectState, client: unknown) =>
     currentRecipeEffect(state, client, undefined, {
       home: '/nonexistent-home',
-      read: async (p: string) => (p.endsWith('recipe.yml') ? text : null),
+      store: createMemoryEventStore(),
+      host: 'skip',
       signedIn: async () => [],
-    })) as RecipeForEffect
+    }).pipe(
+      Effect.provideService(ProjectFiles, {
+        read: async (p: string) => (p.endsWith('recipe.yml') ? text : null),
+        replace: async () => {},
+      }),
+    )) as RecipeForEffect
 }
 
 const RECIPE = `
