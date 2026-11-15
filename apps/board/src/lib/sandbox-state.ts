@@ -38,6 +38,10 @@ export const SENTENCES: Record<SandboxStateName, string> = {
   sandboxed: 'sandboxed',
 }
 
+/** Unknown with a recipe recorded: another refusal stands and no run has met a sandbox. */
+export const UNKNOWN_WHILE_REFUSED =
+  'not yet known: the project is refused for another reason, and no run has met a sandbox'
+
 const state = (name: SandboxStateName): SandboxState => ({ state: name, sentence: SENTENCES[name] })
 
 /** The facts a `ProjectState` holds, with nothing read beyond it. */
@@ -59,7 +63,9 @@ export function sandboxState(facts: SandboxFacts): SandboxState {
   if (observed === 'sandboxed') return state('sandboxed')
   // No record, or an `off by choice` run from before the block was enabled: sandboxed while nothing refuses, and
   // not known while some other refusal (a broken recipe, not a host) stands.
-  return refused === null ? state('sandboxed') : state('unknown')
+  if (refused === null) return state('sandboxed')
+  // A recipe is recorded: the cause is the other refusal, never a missing recipe.
+  return { state: 'unknown', sentence: UNKNOWN_WHILE_REFUSED }
 }
 
 /** How much each state needs a person, worst first. `unreadable` is not ranked: it is counted beside the rest. */

@@ -2,7 +2,7 @@
 import { SANDBOX_REQUIRED_REFUSAL, declaredSandbox } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { SENTENCES, sandboxState, worstOf, type SandboxFacts } from '../src/lib/sandbox-state.ts'
+import { SENTENCES, UNKNOWN_WHILE_REFUSED, sandboxState, worstOf, type SandboxFacts } from '../src/lib/sandbox-state.ts'
 
 const on = declaredSandbox('sandbox:\n  enabled: true\n')
 const off = declaredSandbox('sandbox:\n  enabled: false\n')
@@ -37,6 +37,11 @@ describe('sandboxState', () => {
   it('not yet known: another refusal stands and nothing observed', () => {
     expect(name({ refused: 'something else' })).toBe('unknown')
     expect(name({ refused: 'something else', observed: 'off by choice' })).toBe('unknown')
+  })
+  it('does not say no recipe is recorded when a recipe is, whatever else refuses', () => {
+    const s = sandboxState(facts({ refused: 'auth: runtime refused', observed: 'off by choice' }))
+    expect(s.sentence).toBe(UNKNOWN_WHILE_REFUSED)
+    expect(s.sentence).not.toContain('no recipe')
   })
   it('not yet known: no recipe recorded, never sandboxed', () => {
     expect(name({ declared: 'none' })).toBe('unknown')

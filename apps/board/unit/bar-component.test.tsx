@@ -82,14 +82,15 @@ describe('Bar and the sandbox icon (#1163)', () => {
   })
 
   it('admits exactly that icon: nothing else new in .topnav', () => {
-    const rest = nav.replace(/<a class="sbx[^"]*"[\s\S]*?<\/a>/, '')
-    // Recipe and its separator belong to a registered project; the icon is the only addition.
-    expect(rest.match(/\/recipe\//g)).toHaveLength(1)
-    expect(rest).toContain('/report')
+    // Byte-for-byte: the bar with the icon, less the icon's own markup, is the bar without it. Anything else
+    // added to `.topnav` (a `/spend` link, a chip) breaks the equality.
+    const iconHtml = renderToStaticMarkup(icon)
+    expect(withIcon.split(iconHtml)).toHaveLength(2)
+    expect(withIcon.replace(iconHtml, '')).toBe(renderToStaticMarkup(<Bar project="x" registered />))
     const bare = renderToStaticMarkup(<Bar project="x" sandbox={icon} />)
-    const bareRest = bare.slice(bare.indexOf('class="topnav"')).replace(/<a class="sbx[^"]*"[\s\S]*?<\/a>/, '')
-    expect(bareRest).not.toContain('/recipe/')
-    expect(bareRest).not.toContain('vsep')
+    expect(bare.replace(iconHtml, '')).toBe(renderToStaticMarkup(<Bar project="x" />))
+    expect(bare.replace(iconHtml, '')).not.toContain('/recipe/')
+    expect(bare.replace(iconHtml, '')).not.toContain('vsep')
   })
 
   it('lists each project of a tie in a details disclosure whose name is the sentence', () => {
