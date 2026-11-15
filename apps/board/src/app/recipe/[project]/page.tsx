@@ -15,6 +15,7 @@ import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { loadProjectBlocked } from '@/lib/project-sandbox'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
 import { recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
+import { sandboxStates } from '@/lib/sandbox-state.ts'
 
 import { FooterFetched } from '../../footer-fetched'
 import { StepRow } from '../../step-row'
@@ -381,6 +382,7 @@ export default async function RecipePage({
     registered,
     app: hasGitHubAuth(),
     locks: lockMap(await readProjectLocks()),
+    sandbox: sandboxStates(projects),
   }
   const view = await projectRecipe(state)
   const builtIn = await Effect.runPromise(builtInSandboxEffect(name))

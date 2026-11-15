@@ -12,12 +12,14 @@ import { Bar } from '@/app/bar.tsx'
 import { Projects } from '@/app/projects.tsx'
 import { sandboxSlot } from '@/app/sandbox-slot.tsx'
 import type { LockMap } from '@/lib/lock-marks.ts'
+import type { SandboxState } from '@/lib/sandbox-state.ts'
 
 export type RecipeBarFilter = {
   filters: string[]
   registered: readonly string[]
   app: boolean
   locks: LockMap
+  sandbox?: ReadonlyMap<string, SandboxState>
 }
 
 export function RecipeBar({
@@ -26,12 +28,13 @@ export function RecipeBar({
   registered,
   app,
   locks,
+  sandbox,
   pause,
 }: { project: string; pause?: ReactNode } & RecipeBarFilter) {
   return (
     <Bar project={project} registered here="recipe" pause={pause} sandbox={sandboxSlot(project)}>
       <span className="sep" />
-      <Projects filters={filters} only={project} app={app} registered={registered} locks={locks} />
+      <Projects filters={filters} only={project} app={app} registered={registered} locks={locks} sandbox={sandbox} />
     </Bar>
   )
 }
