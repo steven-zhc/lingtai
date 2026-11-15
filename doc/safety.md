@@ -16,6 +16,10 @@ quoted from `packages/sandbox/src/policy.ts` and `refusals.ts`, and go stale if
 those change. The sandbox measurements are
 [experiment 017](milestone/0.14.0/017-srt-under-lingtai.md)'s.
 
+![Every agent run sits inside one srt sandbox: it reads and writes its worktree and temp directories, reaches only allowlisted hosts, and is refused your keys, logins and Lingtai's own state. Every refused connection is recorded and shown on the board.](img/sandbox.svg)
+
+[Open the diagram at full size](img/sandbox.svg).
+
 ## What the sandbox refuses and allows
 
 **Reads.** A sandboxed run may read everything except the built-in deny list

@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" role="img" aria-label="Every agent run sits inside one srt sandbox: it reads and writes its worktree and temp directories, reaches only allowlisted hosts, and is refused your keys, logins and Lingtai's own state. Every refused connection is recorded and shown on the board.">
+<style>
+:root{--fg:#0f181c;--mute:#51636a;--line:#8aa0a6;--fill:rgba(11,106,112,.06);--acc:#0b6a70;--accf:rgba(11,106,112,.14);--warn:#a33029;--warnf:rgba(163,48,41,.08)}
+@media (prefers-color-scheme:dark){:root{--fg:#dde6e8;--mute:#93a7ad;--line:#5d757b;--fill:rgba(84,198,204,.07);--acc:#54c6cc;--accf:rgba(84,198,204,.16);--warn:#e8857c;--warnf:rgba(232,133,124,.10)}}
+text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--fg)}
+.s{font-size:11.5px;fill:var(--mute)}.h{font-weight:600}.m{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+.box{fill:var(--fill);stroke:var(--line);stroke-width:1.2}
+.acc{fill:var(--accf);stroke:var(--acc);stroke-width:1.6}
+.no{fill:var(--warnf);stroke:var(--warn);stroke-width:1.2}
+.zone{fill:none;stroke:var(--line);stroke-width:1.2;stroke-dasharray:5 4}
+.wall{fill:none;stroke:var(--acc);stroke-width:2.6}
+.ln{fill:none;stroke:var(--line);stroke-width:1.4}.lna{fill:none;stroke:var(--acc);stroke-width:1.6}.lnw{fill:none;stroke:var(--warn);stroke-width:1.4}
+.x{fill:none;stroke:var(--warn);stroke-width:2.2;stroke-linecap:round}
+.dash{stroke-dasharray:4 3}
+.tw{fill:var(--warn)}.ta{fill:var(--acc)}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+
+<rect class="zone" x="10" y="10" width="740" height="380" rx="10"/>
+<text class="s h" x="24" y="30">Your machine</text>
+
+<!-- the boundary -->
+<rect class="wall" x="250" y="54" width="262" height="292" rx="16"/>
+<path d="M381 38 l12 4.5 v8 c0 6.5-4.6 11.5-12 14 c-7.4-2.5-12-7.5-12-14 v-8z" fill="var(--accf)" stroke="var(--acc)" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M376 51.5l3.6 3.6 6.6-7" class="lna" stroke-linecap="round" stroke-linejoin="round"/>
+<text class="h ta" x="381" y="84" text-anchor="middle">srt sandbox</text>
+<text class="s" x="381" y="100" text-anchor="middle">one boundary, every run</text>
+
+<rect class="acc" x="276" y="116" width="210" height="58" rx="8"/>
+<text class="h" x="381" y="140" text-anchor="middle">Agent run</text>
+<text class="s" x="381" y="158" text-anchor="middle">Claude Code · Codex · your checks</text>
+
+<rect class="box" x="276" y="196" width="100" height="56" rx="6"/>
+<text class="h" x="326" y="219" text-anchor="middle">Worktree</text>
+<text class="s" x="326" y="237" text-anchor="middle">read · write</text>
+<rect class="box" x="386" y="196" width="100" height="56" rx="6"/>
+<text class="h" x="436" y="219" text-anchor="middle">Temp · cache</text>
+<text class="s" x="436" y="237" text-anchor="middle">write</text>
+<path class="ln" d="M326 174v20" marker-end="url(#a)"/>
+<path class="ln" d="M436 174v20" marker-end="url(#a)"/>
+
+<text class="s" x="381" y="282" text-anchor="middle">plus the paths your recipe adds</text>
+<text class="m" x="381" y="300" text-anchor="middle" fill="var(--mute)">sandbox.write · network.allow</text>
+<text class="s" x="381" y="326" text-anchor="middle">new projects: on by default</text>
+
+<!-- files: refused -->
+<text class="s h" x="30" y="60">Files the run cannot read</text>
+<rect class="no" x="30" y="72" width="178" height="52" rx="6"/>
+<text class="h m" x="119" y="94" text-anchor="middle" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">~/.ssh · ~/.aws</text>
+<text class="s" x="119" y="112" text-anchor="middle">keys · ~/.gnupg</text>
+<rect class="no" x="30" y="140" width="178" height="52" rx="6"/>
+<text class="h m" x="119" y="162" text-anchor="middle" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">~/.config/gh · ~/.npmrc</text>
+<text class="s" x="119" y="180" text-anchor="middle">logins · ~/.kube · ~/.netrc</text>
+<rect class="no" x="30" y="208" width="178" height="52" rx="6"/>
+<text class="h m" x="119" y="230" text-anchor="middle" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">~/.lingtai</text>
+<text class="s" x="119" y="248" text-anchor="middle">Lingtai's config and log</text>
+<rect class="no" x="30" y="276" width="178" height="52" rx="6"/>
+<text class="h" x="119" y="298" text-anchor="middle">Keychain · credentials</text>
+<text class="s" x="119" y="316" text-anchor="middle">your Claude login</text>
+<path class="lnw dash" d="M250 98H212"/><path class="lnw dash" d="M250 166H212"/><path class="lnw dash" d="M250 234H212"/><path class="lnw dash" d="M250 302H212"/>
+<path class="x" d="M244 92l12 12M256 92l-12 12"/><path class="x" d="M244 160l12 12M256 160l-12 12"/><path class="x" d="M244 228l12 12M256 228l-12 12"/><path class="x" d="M244 296l12 12M256 296l-12 12"/>
+
+<!-- network -->
+<text class="s h" x="558" y="60">Network</text>
+<rect class="acc" x="558" y="72" width="176" height="64" rx="6"/>
+<text class="h" x="646" y="94" text-anchor="middle">Allowlist</text>
+<text class="s" x="646" y="111" text-anchor="middle">Anthropic · OpenAI</text>
+<text class="s" x="646" y="126" text-anchor="middle">GitHub · npm · your hosts</text>
+<path class="lna" d="M512 104H554" marker-end="url(#a)"/>
+<text class="s ta" x="533" y="97" text-anchor="middle">✓</text>
+
+<rect class="no" x="558" y="160" width="176" height="52" rx="6"/>
+<text class="h" x="646" y="183" text-anchor="middle">Any other host</text>
+<text class="s" x="646" y="201" text-anchor="middle">connection refused</text>
+<path class="lnw dash" d="M512 186H554"/>
+<path class="x" d="M506 180l12 12M518 180l-12 12"/>
+
+<rect class="box" x="558" y="250" width="176" height="64" rx="6"/>
+<text class="h" x="646" y="273" text-anchor="middle">Board</text>
+<text class="s" x="646" y="290" text-anchor="middle">every refusal recorded,</text>
+<text class="s" x="646" y="305" text-anchor="middle">on the Sandbox tab</text>
+<path class="ln dash" d="M646 212v34" marker-end="url(#a)"/>
+<text class="s" x="654" y="234">logged</text>
+</svg>
