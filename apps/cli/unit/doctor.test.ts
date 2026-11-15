@@ -19,8 +19,10 @@ import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { emptyControl, type ProjectState } from '@lingtai/domain'
 import type { StoreChoice } from '@lingtai/env'
 import type { LogQueries } from '@lingtai/event-store'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { UnconvergedUpdate } from '@lingtai/event-store/queries'
 import type { GhRun } from '@lingtai/github'
+import { ProjectFiles } from '@lingtai/project'
 import type { Projection } from '@lingtai/projector'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -662,9 +664,15 @@ steps: {}
         recipe: (s, c) =>
           currentRecipeEffect(s, c, undefined, {
             home: '/nonexistent-home',
-            read: async (p: string) => (p.endsWith('recipe.yml') ? text : null),
+            store: createMemoryEventStore(),
+            host: 'skip',
             signedIn: async () => [],
-          }),
+          }).pipe(
+            Effect.provideService(ProjectFiles, {
+              read: async (p: string) => (p.endsWith('recipe.yml') ? text : null),
+              replace: async () => {},
+            }),
+          ),
         agentEnv: async () => ({
           values: {},
           merged: {},

@@ -16,7 +16,7 @@ import {
   parseSlug,
   permissionGaps,
 } from '@lingtai/github'
-import { registerProject, recipePath, HOST_FOR_SAVING, resolveLocalRecipeEffect } from '@lingtai/project'
+import { registerProject, recipePath, HOST_FOR_SAVING, loadProject } from '@lingtai/project'
 import {
   RECIPE_PATH,
   baseDivergence,
@@ -533,8 +533,8 @@ export const addEffect = Effect.fn('onboard.add')(function* (
   //    command's. A `--base` a person typed and the file contradicts is refused
   //    by name rather than overruled (#75); a remembered one is a hint, and the
   //    file's `repo.base` is adopted over it (#163).
-  const local = yield* resolveLocalRecipeEffect(repo, { signedIn: signedInHere, ...HOST_FOR_SAVING }).pipe(
-    Effect.map((recipe) => ({ recipe }) as const),
+  const local = yield* loadProject(repo, { signedIn: signedInHere, ...HOST_FOR_SAVING, store: eventStore }).pipe(
+    Effect.map((loaded) => ({ recipe: loaded.recipe }) as const),
     Effect.catch((err) => Effect.succeed({ err } as const)),
   )
   if ('err' in local) {

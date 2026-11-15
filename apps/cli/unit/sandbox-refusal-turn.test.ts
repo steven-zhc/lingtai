@@ -5,10 +5,10 @@
  * host answer a counting fake: nothing here spawns `bwrap`. The refusal is one `ProjectRefused` however many
  * sweeps see it, and the first sweep after the host can is the `ProjectRecovered` (0126: not a pause).
  */
-import { currentRecipe } from '@lingtai/conductor'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { readProject, recipePath } from '@lingtai/project'
+import { ProjectFiles, readProject, recipePath } from '@lingtai/project'
 import { fakeSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -57,12 +57,19 @@ describe('a required sandbox on a host that cannot provide it', () => {
           work: (project, where) =>
             Effect.promise(async () => {
               where.ref = 'main'
-              await currentRecipe(project, undefined, 'main', {
-                home: HOME,
-                signedIn: async () => ['claude-code'],
-                read: async (p) => (p === recipePath(PROJECT, HOME) ? RECIPE : null),
-                ...host,
-              })
+              await Effect.runPromise(
+                currentRecipeEffect(project, undefined, 'main', {
+                  home: HOME,
+                  store,
+                  signedIn: async () => ['claude-code'],
+                  ...host,
+                }).pipe(
+                  Effect.provideService(ProjectFiles, {
+                    read: async (p) => (p === recipePath(PROJECT, HOME) ? RECIPE : null),
+                    replace: async () => {},
+                  }),
+                ),
+              )
               return 'looked' as const
             }),
         }),
@@ -72,14 +79,14 @@ describe('a required sandbox on a host that cannot provide it', () => {
 
     expect((await sweep()).refused).toHaveLength(1)
     expect((await sweep()).refused).toHaveLength(1)
-    expect(await types()).toEqual(['ProjectConfigured', 'ProjectRefused'])
-    const refused = (await store.read(projectStream(PROJECT)))[1]!
+    expect(await types()).toEqual(['ProjectConfigured', 'ProjectRecipeChanged', 'ProjectRefused'])
+    const refused = (await store.read(projectStream(PROJECT))).find((e) => e.type === 'ProjectRefused')!
     expect((refused.data as { detail: string }).detail).toContain('sandbox.required:')
 
     can = true
     expect((await sweep()).refused).toEqual([])
     expect((await sweep()).refused).toEqual([])
-    expect(await types()).toEqual(['ProjectConfigured', 'ProjectRefused', 'ProjectRecovered'])
+    expect(await types()).toEqual(['ProjectConfigured', 'ProjectRecipeChanged', 'ProjectRefused', 'ProjectRecovered'])
     expect(host.asked.host).toBe(4)
   })
 })

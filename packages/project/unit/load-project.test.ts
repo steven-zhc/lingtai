@@ -150,4 +150,33 @@ describe('loadProject', () => {
     )
     expect(await events(store)).toEqual(['ProjectRecipeChanged'])
   })
+
+  it('a read delayed past another reader’s newer edit does not record its older observation over it', async () => {
+    const store = createMemoryEventStore()
+    const { files, map } = port({ [PATH]: A })
+    await Effect.runPromise(load(store, files))
+    let release!: () => void
+    const held = new Promise<void>((r) => (release = r))
+    let first = true
+    const slow: RecipeFiles = {
+      replace: files.replace,
+      read: async (path) => {
+        const text = await files.read(path)
+        if (first) {
+          first = false
+          await held
+        }
+        return text
+      },
+    }
+    const delayed = Effect.runPromise(load(store, slow))
+    await new Promise((r) => setTimeout(r, 10))
+    map.set(PATH, B)
+    await Effect.runPromise(load(store, files))
+    release()
+    await delayed
+    await Effect.runPromise(load(store, files))
+    const recorded = (await store.read(projectStream(P))).map((e) => (e.data as { sourceHash: string }).sourceHash)
+    expect(recorded).toEqual([sourceHashOf(A), sourceHashOf(B)])
+  })
 })

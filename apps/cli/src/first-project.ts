@@ -63,7 +63,7 @@ import {
   loadAllProjectsEffect,
   readRecipeKeyEffect,
   recipePath,
-  resolveLocalRecipeEffect,
+  resolveDraftRecipeEffect,
 } from '@lingtai/project'
 import { readTasksEffect } from '@lingtai/projector'
 import {
@@ -977,13 +977,13 @@ function runLocalBranch(
       finalFromSha = check.stdout.trim()
     }
 
-    const resolved = yield* resolveLocalRecipeEffect(name, {
+    const resolved = yield* resolveDraftRecipeEffect(name, previewed, {
       home: world.home,
       signedIn: world.signedIn,
       ...HOST_FOR_SAVING,
       base: final,
       // The recipe is still only a draft (`applySetup` is its one writer), so it is resolved over that text.
-      read: (p) => (p === path ? Promise.resolve(previewed) : world.files.read(p)),
+      read: (p) => world.files.read(p),
     })
 
     // `register`'s live implementation (`addLocal`, `onboard.ts` — the only place a directory gets a

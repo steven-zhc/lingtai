@@ -27,6 +27,10 @@ describe('checkDeclared', () => {
   it('passes sandbox.required, which only a host can refuse', () => {
     expect(() => checkDeclared(`${MINIMAL}sandbox:\n  required: true\n`, '/r.yml')).not.toThrow()
   })
+  it('applies a known preset before validating, so an empty steps: block inherits the preset’s', () => {
+    expect(() => checkDeclared(`${MINIMAL}extends: pnpm-workspace\nsteps:\n`, '/r.yml')).not.toThrow()
+  })
+
   it('passes extends: without consulting a preset', () => {
     expect(() => checkDeclared(`${MINIMAL}extends: no-such-preset\n`, '/r.yml')).not.toThrow()
   })
