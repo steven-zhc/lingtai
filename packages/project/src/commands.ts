@@ -14,6 +14,7 @@ import {
   recipeChange,
   projectStream,
   resumeTransition,
+  sandboxObservation,
   turnTransition,
 } from '@lingtai/domain'
 import { reduceProject } from '@lingtai/domain'
@@ -91,6 +92,19 @@ export const recordTurn = (project: string, seen: TurnObservation, store: EventS
     store,
     project,
     (state) => turnTransition(state, seen),
+    () => undefined,
+  )
+
+/** Records the sandbox a run met when it is not the kind on record; the same kind appends nothing (0128 §5, #1180). */
+export const observeSandbox = (
+  project: string,
+  seen: PayloadOf<'ProjectSandboxObserved'>,
+  store: EventStore,
+): Effect.Effect<void, Error> =>
+  transitionProject(
+    store,
+    project,
+    (state) => sandboxObservation(state, seen),
     () => undefined,
   )
 

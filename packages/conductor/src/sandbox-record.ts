@@ -50,6 +50,29 @@ export const boundaryOfDecision = (decision: NotSandboxed) =>
       ? ({ kind: 'unsandboxed', reason: 'degraded', why: decision.why } as const)
       : ({ kind: 'unsandboxed', reason: 'off by choice' } as const)
 
+/** What a boundary says about the project's sandbox (0128 §5, #1180); `refused` started no child, so nothing. */
+export const observedKindOf = (boundary: {
+  kind: string
+  reason?: string
+}): 'sandboxed' | 'degraded' | 'off by choice' | null =>
+  boundary.kind === 'sandboxed'
+    ? 'sandboxed'
+    : boundary.kind === 'unsandboxed'
+      ? boundary.reason === 'degraded'
+        ? 'degraded'
+        : boundary.reason === 'off by choice'
+          ? 'off by choice'
+          : null
+      : null
+
+/** The kind a decision the base check ran under means: the wrap was handed, or the unsandboxed boundary of it. */
+export const observedKindOfDecision = (decision: SandboxDecision, wrapped: boolean) =>
+  wrapped
+    ? ('sandboxed' as const)
+    : decision.kind === 'unsandboxed'
+      ? observedKindOf(boundaryOfDecision(decision))
+      : null
+
 const keysOf = (keys: InvocationKeys, commandId: string) => ({
   step: keys.step,
   action: keys.action,
