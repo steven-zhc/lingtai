@@ -1134,8 +1134,9 @@ export type RunSpent = z.infer<typeof RunSpent>
  * hash of ([ADR 0047](../../../doc/decisions-archive/0047-the-recipe-a-run-got-is-on-the-log.md)),
  * so a past run is explicable after the file has moved and after the recipe has
  * no commits to read it at. **It is a record, never a source**: nothing in
- * `conductor`, `recipe` or `actions` reads it back to decide anything — the next
- * run's recipe is read from the base branch, as ever (0005) — and
+ * `conductor`, `recipe`, `actions` or `project` reads it back to decide
+ * anything — an attempt resolves from the Project's declared recipe
+ * (`loadProject`, 0128 §4, §6) — and
  * `conductor/unit/recorded-recipe.test.ts` holds that line.
  *
  * @summary The conductor worked out the plan for a run: what will happen at each of its ten steps.
@@ -1146,29 +1147,29 @@ export const StepsResolved = z.object({
   /** Every step, in order, with the ordered action names resolved for it. */
   steps: z.array(z.object({ step: Step, actions: z.array(z.string()) })).length(10),
   /**
-   * **Absent on every event written since #930**, and optional for the ones
-   * written before it: those carry `canonical(recipe)` inline, and the log is
-   * append-only. The body is now on `rcp-<configHash>` as one `RecipeRecorded`.
-   * Absent, not empty — nothing recorded it here, and today's recipe read back
-   * onto it would be the log claiming a configuration nobody ran.
+   * **Present on every event written since 0128 §4.** Optional only because
+   * the log holds events written between #930 and 0128 §4 without it, whose
+   * body is on `rcp-<configHash>` as one `RecipeRecorded`, and the log is
+   * append-only. Absent, not empty — nothing recorded it here, and today's
+   * recipe read back onto it would be the log claiming a configuration nobody
+   * ran.
    */
   recipe: z.record(z.string(), z.unknown()).optional(),
 })
 
 /**
- * The canonical recipe a `configHash` is the hash of, recorded once.
+ * **Retired** (0128 §4). Readable for ever, appended never: `RETIRED` below,
+ * refused by `store.append`.
  *
- * The first and only event of `rcp-<configHash>`, appended at version 0 just
- * before the `StepsResolved` that names the hash: a second writer for the same
- * hash loses at the append, and that loss means *already recorded*. One stream
- * per hash for the whole installation, because the hash is the content.
- * 0100 §14.
+ * It recorded the canonical recipe a `configHash` is the hash of, once, on
+ * `rcp-<configHash>` (0100 §14, #930). The Project now holds the declared
+ * recipe and a run's `StepsResolved` carries the resolved one again, so a
+ * second shared place for a recipe's content is not needed.
  *
- * **A record, never a source**, as `StepsResolved.recipe` was: nothing reads it
- * back to decide anything, and `conductor/unit/recorded-recipe.test.ts` holds
- * that line.
+ * The rows stay because the log holds them, and a read that drops a row breaks
+ * every later append's version (0019, as the note on `OutboxDelivered` says).
  *
- * @summary The conductor recorded a recipe, once, under the hash that names it.
+ * @summary No longer written: the conductor recorded a recipe, once, under the hash that names it; a run's `StepsResolved` carries it again.
  */
 export const RecipeRecorded = z.object({
   configHash: z.string(),
@@ -2704,7 +2705,7 @@ export const EVENT_AT = {
   RunFailed: [...AGENT_STEPS, 'end'],
   RunSpent: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge', 'outside'],
   StepsResolved: ['claim', 'admit', 'implement'],
-  RecipeRecorded: ['claim', 'admit', 'implement'],
+  RecipeRecorded: [],
   EndActionsResolved: ['end'],
   StepStarted: ['admit', 'prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge'],
   StepEnded: ['admit', 'prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge', 'end'],
@@ -2798,6 +2799,7 @@ export const RETIRED: ReadonlySet<EventType> = new Set<EventType>([
   'PassRouted',
   'ConductorShutdownWithdrawn',
   'ProjectOnboardingStarted',
+  'RecipeRecorded',
 ])
 
 export function isRetiredEventType(t: string): boolean {

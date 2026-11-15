@@ -1,5 +1,6 @@
 /**
- * The recipe a run was given, recorded once per hash as `RecipeRecorded` (#191, ADR 0047, #930).
+ * The recipe a run ran under, carried on its own `StepsResolved` (0128 §4, after #191, ADR 0047, #930).
+ * `RecipeRecorded` is retired: still parsed, appended never.
  *
  * Three promises 0047 makes, and each is a test here rather than a sentence
  * there, because each fails silently:
@@ -9,19 +10,30 @@
  *   writer — including after Postgres's `jsonb` has reordered every key.
  * - **It holds no secret.** The log is permanent and the board's public
  *   snapshot is downstream of it, so being wrong once is unbounded (§4).
- * - **Nothing decides from it.** A conductor that resolves from the log has
- *   recreated what `projects.ts`'s `currentRecipe` refuses (§1).
+ * - **Nothing decides from it.** A run's record is never a source: an attempt
+ *   resolves from the Project's declared recipe (0128 §4, §6), and a conductor
+ *   that resolves from the log has recreated what `projects.ts` refuses (§1).
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { parsePayload } from '@lingtai/domain'
+import { RETIRED, parsePayload, projectStream, recipeStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { RECIPE_PATH, type Recipe, hashRecipe, resolveRecipe } from '@lingtai/recipe'
+import { ProjectFiles, recipePath } from '@lingtai/project'
+import {
+  RECIPE_PATH,
+  RecipeMissingError,
+  type Recipe,
+  type RecipeFiles,
+  hashRecipe,
+  resolveRecipe,
+} from '@lingtai/recipe'
+import { Cause, Effect, Exit } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { recipeRecorded, recordRecipe, stepsResolved } from '../src/steps-resolved.ts'
+import { currentRecipeEffect } from '../src/projects.ts'
+import { stepsResolved } from '../src/steps-resolved.ts'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const OWN = readFileSync(join(ROOT, '.lingtai/config.yaml'), 'utf8')
@@ -61,13 +73,16 @@ function shuffled(value: unknown): unknown {
   )
 }
 
-describe('the recipe on RecipeRecorded', () => {
+const recipeOf = (resolved: Awaited<ReturnType<typeof resolve>>) =>
+  parsePayload('StepsResolved', stepsResolved('pass-1', resolved))
+
+describe('the recipe on StepsResolved', () => {
   it.each([
     ["this repository's own recipe", OWN],
     ['a recipe declaring every env surface', DECLARING],
   ])('is the body its configHash is the hash of — %s', async (_, source) => {
     const resolved = await resolve(source)
-    const payload = parsePayload('RecipeRecorded', recipeRecorded(resolved))
+    const payload = recipeOf(resolved)
 
     expect(payload.recipe).toBeDefined()
     // Out through the log and back, keys in whatever order the store likes.
@@ -77,8 +92,8 @@ describe('the recipe on RecipeRecorded', () => {
   })
 
   it('changes when the recipe does, so the hash is proving something', async () => {
-    const before = recipeRecorded(await resolve(DECLARING))
-    const after = recipeRecorded(await resolve(DECLARING.replace('pnpm test', 'pnpm test:db')))
+    const before = recipeOf(await resolve(DECLARING))
+    const after = recipeOf(await resolve(DECLARING.replace('pnpm test', 'pnpm test:db')))
     expect(after.recipe).not.toEqual(before.recipe)
     expect(hashRecipe(before.recipe as unknown as Recipe)).not.toBe(after.configHash)
   })
@@ -102,11 +117,11 @@ describe('the recipe on RecipeRecorded', () => {
     Object.assign(process.env, values)
     try {
       for (const source of [DECLARING, OWN]) {
-        const appended = JSON.stringify(parsePayload('RecipeRecorded', recipeRecorded(await resolve(source))))
+        const appended = JSON.stringify(recipeOf(await resolve(source)))
         for (const value of Object.values(values)) expect(appended).not.toContain(value)
         expect(appended).not.toContain('sentinel')
       }
-      const declaring = JSON.stringify(recipeRecorded(await resolve(DECLARING)))
+      const declaring = JSON.stringify(recipeOf(await resolve(DECLARING)))
       for (const name of ['SECRET_REQUIRED_URL', 'SECRET_ALLOWED_TOKEN', 'SECRET_DENIED_KEY', 'SECRET_ACTION_TOKEN']) {
         expect(declaring).toContain(name)
       }
@@ -120,37 +135,91 @@ describe('the recipe on RecipeRecorded', () => {
 })
 
 describe('the plan and the stream', () => {
-  it('stepsResolved carries no recipe key, and a stored v4 event with one still parses', async () => {
+  it('stepsResolved carries the recipe, and a stored plan without one still parses', async () => {
     const resolved = await resolve(DECLARING)
     const plan = stepsResolved('pass-1', resolved)
-    expect('recipe' in plan).toBe(false)
-    expect(() => parsePayload('StepsResolved', plan)).not.toThrow()
-    const stored = { ...plan, recipe: recipeRecorded(resolved).recipe }
-    expect(parsePayload('StepsResolved', stored).recipe).toBeDefined()
+    expect('recipe' in plan).toBe(true)
+    expect(parsePayload('StepsResolved', plan).recipe).toBeDefined()
+    // Written between #930 and 0128 §4: no recipe, and the log still reads.
+    const { recipe: _, ...older } = plan
+    expect(() => parsePayload('StepsResolved', older)).not.toThrow()
   })
 
-  it('records once per hash, still appends every plan, and gives a different recipe its own stream', async () => {
+  it('appending a plan writes nothing to rcp-, and RecipeRecorded is refused at append', async () => {
     const store = createMemoryEventStore()
     const a = await resolve(DECLARING)
-    const b = await resolve(DECLARING.replace('pnpm test', 'pnpm test:db'))
     for (const run of ['pass-1', 'pass-2']) {
-      await recordRecipe(store, a)
       await store.append(run, 0, [
         { type: 'StepsResolved', actor: 'conductor', data: parsePayload('StepsResolved', stepsResolved(run, a)) },
       ])
     }
-    expect(await recordRecipe(store, a)).toBe('already')
-    expect(await store.read(`rcp-${a.configHash}`)).toHaveLength(1)
-    expect(await store.read('pass-1')).toHaveLength(1)
-    expect(await store.read('pass-2')).toHaveLength(1)
-    expect(await recordRecipe(store, b)).toBe('recorded')
-    expect(await store.read(`rcp-${b.configHash}`)).toHaveLength(1)
+    expect(await store.read(recipeStream(a.configHash))).toHaveLength(0)
+    expect(RETIRED.has('RecipeRecorded')).toBe(true)
+    await expect(
+      store.append(recipeStream(a.configHash), 0, [
+        {
+          type: 'RecipeRecorded',
+          actor: 'conductor',
+          data: { configHash: a.configHash, recipe: stepsResolved('pass-1', a).recipe },
+        },
+      ]),
+    ).rejects.toThrow()
   })
 })
 
 /**
- * Nothing that decides reads the recorded recipe back (0047 §1). Only a view
- * may; `conductor`, `recipe` and `actions` are the packages that decide.
+ * 0128 §4: the Project's declared source is what an attempt resolves from. The
+ * read is `currentRecipeEffect`, which `conduct.ts` makes when it is handed no
+ * recipe; a failure of it is answered `stage: 'recipe'` at `conduct.ts`'s recipe
+ * read, held by `conduct-a-recipe-read-that-dies.test.ts`.
+ */
+describe('an attempt resolves from the Project’s declared recipe', () => {
+  const HOME = '/h'
+  const state = { project: 'lingtai', owner: null, base: 'main' } as Parameters<typeof currentRecipeEffect>[0]
+  const A = 'version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
+
+  const run = (map: Map<string, string>) => {
+    const writes: string[] = []
+    const files: RecipeFiles = {
+      read: async (p) => map.get(p) ?? null,
+      replace: async (p, text) => void (writes.push(p), map.set(p, text)),
+    }
+    const store = createMemoryEventStore()
+    const exit = Effect.runPromiseExit(
+      currentRecipeEffect(state, undefined, undefined, {
+        home: HOME,
+        store,
+        host: 'skip',
+        signedIn: async () => ['claude-code'],
+      }).pipe(Effect.provideService(ProjectFiles, files)),
+    )
+    return { exit, store, writes }
+  }
+
+  it('records the file’s source A on prj- and resolves A’s configHash', async () => {
+    const { exit, store } = run(new Map([[recipePath('lingtai', HOME), A]]))
+    const result = await exit
+    expect(Exit.isSuccess(result)).toBe(true)
+    if (!Exit.isSuccess(result)) return
+    const changed = (await store.read(projectStream('lingtai'))).filter((e) => e.type === 'ProjectRecipeChanged')
+    expect(changed).toHaveLength(1)
+    expect(changed[0]?.data).toMatchObject({ by: 'file' })
+    expect(JSON.stringify(result.value)).toContain((await resolve(A)).configHash)
+  })
+
+  it('with no file on disk fails with RecipeMissingError and writes nothing', async () => {
+    const { exit, store, writes } = run(new Map())
+    const result = await exit
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBeInstanceOf(RecipeMissingError)
+    expect(await store.read(projectStream('lingtai'))).toHaveLength(0)
+    expect(writes).toEqual([])
+  })
+})
+
+/**
+ * Nothing that decides reads a run's recorded recipe back (0047 §1, 0128 §4). Only a view
+ * may; `conductor`, `recipe`, `actions` and `project` are the packages that decide.
  *
  * A reading of the source rather than of types, so it is a tripwire and not a
  * proof: it catches the three ways this codebase reads a payload — a parsed
@@ -159,7 +228,7 @@ describe('the plan and the stream', () => {
  * fails here rather than passing everything.
  */
 describe('nothing decides from the recorded recipe', () => {
-  const PACKAGES = ['packages/conductor/src', 'packages/recipe/src', 'packages/actions/src']
+  const PACKAGES = ['packages/conductor/src', 'packages/recipe/src', 'packages/actions/src', 'packages/project/src']
 
   const walk = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((e) =>

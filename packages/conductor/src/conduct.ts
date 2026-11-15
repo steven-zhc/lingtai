@@ -285,7 +285,7 @@ import {
   sandboxOutcomeOf,
   type InvocationAppends,
 } from './sandbox-record.ts'
-import { recordRecipe, stepsResolved } from './steps-resolved.ts'
+import { stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, editEndedWaitsEffect, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
 
@@ -4499,15 +4499,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     }),
                   },
                 ])
-                // Before the plan that names its hash, and at version 0 (see
-                // `recordRecipe`); only a refusal other than "already there"
-                // is a defect, kept for the handler as `appendNow` keeps one.
-                yield* Effect.promise(() =>
-                  recordRecipe(store, resolved).catch((defect: unknown) => {
-                    unappended ??= defect
-                    throw defect
-                  }),
-                )
                 yield* appendNow(runId, [
                   {
                     type: 'StepsResolved',
