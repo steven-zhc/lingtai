@@ -176,9 +176,16 @@ describe("the home page's argument", () => {
     expect(block).toContain('src="/img/docs/sandbox.svg"')
     expect(SANDBOX_ALT.length).toBeGreaterThan(0)
     expect(block).toContain('telemetry')
-    expect(SANDBOX_ALT).not.toContain('shown on the board')
     expect(block).toMatch(/alt="[^"]+"/)
-    expect(block).toContain('left off it')
+    expect(block).not.toContain('sandbox-note')
+  })
+
+  it('holds the SVG aria-label, the home alt and the safety page alt equal', async () => {
+    const root = path.resolve(__dirname, '../../..')
+    const svg = await readFile(path.join(root, 'doc/img/sandbox.svg'), 'utf8')
+    expect(/aria-label="([^"]*)"/.exec(svg)?.[1]).toBe(SANDBOX_ALT)
+    const safety = await readFile(path.join(root, 'doc/safety.md'), 'utf8')
+    expect(safety).toContain(`![${SANDBOX_ALT}](img/sandbox.svg)`)
   })
 
   it('no longer says what stopped being true', async () => {

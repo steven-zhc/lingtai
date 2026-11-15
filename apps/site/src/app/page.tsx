@@ -27,12 +27,9 @@ const LEDGER = [
   { key: 'Record', alone: 'The chat transcript', lingtai: 'Every step recorded, and a receipt' },
 ]
 
-/**
- * `doc/img/sandbox.svg`'s `aria-label`, except its last sentence: the diagram says every refused connection is
- * shown on the board, and the board leaves telemetry hosts out (ADR 0127 §17).
- */
+/** `doc/img/sandbox.svg`'s `aria-label`, and `doc/safety.md`'s alt for it: a test holds the three equal. */
 export const SANDBOX_ALT =
-  "Every agent run sits inside one srt sandbox: it reads and writes its worktree and temp directories, reaches only allowlisted hosts, and is refused your keys, logins and Lingtai's own state. Every refused connection is recorded; the board shows them except telemetry hosts such as sentry.io."
+  "Every agent run sits inside one srt sandbox: it reads and writes its worktree and temp directories, reaches only allowlisted hosts, and is refused your keys, logins and Lingtai's own state. Refused connections are recorded and shown on the board's Sandbox tab, except telemetry hosts; a refused file read is not reported."
 
 export const metadata: Metadata = { alternates: { canonical: '/' } }
 
@@ -190,10 +187,6 @@ export function HomePage({ books }: { books: Books | null }) {
               </li>
             </ul>
             <img className="sandbox-diagram" src="/img/docs/sandbox.svg" alt={SANDBOX_ALT} width={760} height={400} />
-            <p className="sandbox-note">
-              The board&apos;s Sandbox tab does not list telemetry hosts such as <code>sentry.io</code>: those
-              connections are refused and recorded, but left off it.
-            </p>
           </section>
 
           <section className="why" aria-labelledby="why-title">
