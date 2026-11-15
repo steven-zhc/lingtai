@@ -1,4 +1,4 @@
-# 0128 — The Project aggregate holds every fact about a project, and its recipe file is a projection of it
+# 0128 — The Project aggregate holds every fact about a project, and its log records every recipe its file declared
 
 **Status** accepted · 2026-11-14 · not yet built
 
@@ -6,10 +6,11 @@ A project is one aggregate, `prj-{project}`, and everything Lingtai knows
 about a project is reduced from that stream: where its code lives, whether it
 is paused or refused, which recipe it runs, and which sandbox boundary its runs
 actually met. The recipe is part of that aggregate, not an aggregate of its
-own: every change to it is an event on `prj-{project}`, and
-`~/.lingtai/<project>/recipe.yml` is a projection of those events that the
-project module keeps — a person may still edit it by hand, and the module
-records that edit as an event the next time it reads. One module,
+own: every change to it is an event on `prj-{project}`. The file,
+`~/.lingtai/<project>/recipe.yml`, stays what a person declares — edited by
+hand or saved by the board — and the log is its history: the module reads the
+file, and a declaration the log has not seen yet is appended as an event. The
+direction is one way, file to log; nothing writes the file from the log. One module,
 `@lingtai/project`, is the only way in: it hands out the Project, with its
 recipe, and it is the only code that writes a recipe or reads the file. Inside
 it, whether a field comes from replaying the stream or from the file is its own
@@ -111,42 +112,41 @@ The streams that exist, and what each holds:
    [0108](0108-a-refusal-buys-a-round.md) §13) is a run of the project's too,
    and is observed the same way.
 
-6. **The recipe file is a projection the project module keeps.**
-   `~/.lingtai/<project>/recipe.yml` is written by the module after the event
-   that changed the recipe is appended — the event first, then the file. On
-   every read the module compares the hash of the file's canonical text with
-   the Project's `sourceHash` — never a resolved hash, which moves with the
-   host:
+6. **The file is the declaration, and the log records it — one way.**
+   `~/.lingtai/<project>/recipe.yml` is the recipe a person declared, and the
+   module never writes it from the log. On every read the module compares the
+   hash of the file's canonical text with the Project's `sourceHash` — never a
+   resolved hash, which moves with the host:
    - **equal** — nothing to do;
-   - **the file differs and the Project has a recipe** — the file was edited
-     outside the module: append `ProjectRecipeChanged { by: 'file' }` with the
-     file's content, then answer with it. A hand edit is a change like any
-     other, and the log says when it was seen;
-   - **the Project has no recipe yet** (a project from before this decision)
-     — append the first `ProjectRecipeChanged` from the file, `by: 'file'`;
-     no person does anything;
-   - **the file is missing while the Project has a recipe** — the module
-     creates the file from the Project, as one step that writes only if the
-     file is still not there, so an edit that arrives meanwhile is never
-     overwritten; a missing projection is rebuilt, never read as *no recipe*;
-   - **the file is there but cannot be read** — it is left as it is, never
-     overwritten, because what it holds was never seen; the read error is
-     said, and the attempt resolves from the Project's recipe all the same;
-   - **the file's text is not a valid declaration** — YAML that does not
-     parse, or a field the recipe's own schema refuses — nothing is appended,
-     and the read fails with that refusal. This check is the declared text's
-     alone: no host probe, no signed-in runtime, no machine file and no preset
-     is consulted, so a hand edit is recorded even while this host cannot
-     sandbox or two runtimes are signed in; whether the recipe then *resolves*
-     on this host is the attempt's question, refused there as today.
+   - **the file differs, or the Project has no recipe yet** (a project from
+     before this decision) — append `ProjectRecipeChanged { by: 'file' }` with
+     the file's content, then answer with it. A hand edit is a change like any
+     other, and the log says when it was first seen;
+   - **the file is missing, cannot be read, or is not a valid declaration**
+     (YAML that does not parse, or a field the recipe's own schema refuses) —
+     nothing is appended and nothing is written; the read fails with that
+     refusal, which names the file and the error, as an attempt is refused
+     today. The validity check is the declared text's alone: no host probe,
+     no signed-in runtime, no machine file and no preset is consulted, so a
+     hand edit is recorded even while this host cannot sandbox or two
+     runtimes are signed in; whether the recipe then *resolves* on this host
+     is the attempt's question, refused there as today.
    Two readers that notice the same edit at once both append at the version
    they read; the second meets a concurrency error, re-reads, finds the hash
    already recorded, and appends nothing.
-   A recipe written by `lingtai add` or setup before the project is registered
-   is appended all the same, so *the event first, then the file* holds from the
-   first write; an add abandoned before registration leaves a `prj-` stream
-   with a recipe and no registration, which is listed as neither registered
-   nor pending.
+   **A recipe is written only by `changeRecipe`** — the board's save, setup
+   ([0125](0125-setup-is-one-module-two-inputs.md)) and `lingtai add` — and it
+   writes **the file first, then the event**: the file replaced as one step
+   (written beside, then renamed into place), then `ProjectRecipeChanged`
+   with the person who changed it. A process that dies between the two leaves
+   a file the log has not seen, which the next read records as `by: 'file'`:
+   the content is never lost, only who saved it. A recipe written before the
+   project is registered is appended all the same; an add abandoned before
+   registration leaves a `prj-` stream with a recipe and no registration,
+   which is listed as neither registered nor pending.
+   Readers that need a project's state — the board's pages, the sandbox state
+   (§5) — read the Project's reduce and never the file, so a missing or broken
+   file stops attempts and is said, but does not blank the board.
 
 7. **One module is the way in: `@lingtai/project`, and it owns the whole
    stream.** It exports `loadProject(project)` — the Project, its recipe
