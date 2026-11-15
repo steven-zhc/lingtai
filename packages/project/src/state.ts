@@ -29,6 +29,9 @@ import { Effect } from 'effect'
 const defaultLog = (): Effect.Effect<Log> =>
   Effect.promise(() => import('@lingtai/event-store')).pipe(Effect.map((m) => m.log))
 
+/** The process-wide store, reached only when nobody supplied one. */
+export const defaultStore = (): Effect.Effect<EventStore> => defaultLog().pipe(Effect.map((l) => l.store))
+
 /**
  * Every project stream that has ever been written to.
  *

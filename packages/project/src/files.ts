@@ -6,7 +6,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 import { type RecipeFailed, type RecipeFiles, failed, isMissing } from '@lingtai/recipe'
-import { Effect } from 'effect'
+import { Context, Effect } from 'effect'
 
 /** The file's text, or null when it is not there. */
 export const readRecipeFile = (path: string): Effect.Effect<string | null, RecipeFailed> =>
@@ -66,3 +66,11 @@ export function filesEffect(files: RecipeFiles | undefined) {
     recorded: (changes: Parameters<NonNullable<RecipeFiles['recorded']>>[0]): void => files.recorded?.(changes),
   }
 }
+
+/**
+ * The file port `loadProject` reads through (0128 §7): the disk unless a test provides another with
+ * `Effect.provideService(ProjectFiles, port)`. A service and not a parameter, so no caller holds one.
+ */
+export const ProjectFiles = Context.Reference<RecipeFiles>('@lingtai/project/ProjectFiles', {
+  defaultValue: () => diskFiles,
+})

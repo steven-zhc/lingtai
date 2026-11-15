@@ -48,18 +48,23 @@ export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'ctl-' | 'cha
  */
 /**
  * Events declared before anything appends them, for the ticket that appends them (#1164 for the two sandbox
- * events of #1156, #1175 for `ProjectRecipeChanged`, #1180 for `ProjectSandboxObserved`), and the one event still read from old logs that nothing appends any more:
+ * events of #1156, #1180 for `ProjectSandboxObserved`), and the one event still read from old logs that nothing appends any more:
  * `ConductorPaused`, whose only appender was the tier refusal #1158 deleted, kept so every written pause decodes.
  * `events-json.test.ts` accepts an event here with no site, and fails the moment the finder finds one, so the
  * entry is deleted in the commit that adds the append.
  */
 export const NOT_YET_APPENDED: ReadonlySet<EventType> = new Set<EventType>([
   'ConductorPaused',
-  'ProjectRecipeChanged',
   'ProjectSandboxObserved',
 ])
 
 export const ELSEWHERE: readonly { event: EventType; why: string; file: string; anchor: string }[] = [
+  {
+    event: 'ProjectRecipeChanged',
+    why: '`transitionProject` appends `[next]`, the value `recipeChange` returns, so the finder cannot attribute it',
+    file: 'packages/domain/src/project.ts',
+    anchor: "type: 'ProjectRecipeChanged'",
+  },
   {
     event: 'ConductorShutdownRequested',
     why: "type is the call's first argument, a string",

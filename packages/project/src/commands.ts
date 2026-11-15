@@ -11,6 +11,7 @@ import {
   type ToAppend,
   type TurnObservation,
   pauseTransition,
+  recipeChange,
   projectStream,
   resumeTransition,
   turnTransition,
@@ -19,7 +20,7 @@ import { reduceProject } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store/store'
 import { Effect } from 'effect'
 
-import { readProjectEvents } from './state.ts'
+import { readProjectEvents, readProjectStateEffect } from './state.ts'
 
 /** What `pauseProject` / `resumeProject` did. */
 export type ProjectPauseAnswer =
@@ -130,3 +131,22 @@ export const registerProject = (
       return { kind: 'registered', before, priorEvents: events.length } as RegisterAnswer
     }),
   )
+
+/**
+ * Records a recipe declaration the log has not seen (0128 §6) and answers the state as it then stands — after the
+ * append, or after the pass that won the race did it. An equal `sourceHash` appends nothing.
+ */
+export const recordFileRecipe = (
+  project: string,
+  seen: PayloadOf<'ProjectRecipeChanged'>,
+  store: EventStore,
+): Effect.Effect<ProjectState, Error> =>
+  Effect.gen(function* () {
+    yield* transitionProject(
+      store,
+      project,
+      (state) => recipeChange(state, seen),
+      () => undefined,
+    )
+    return yield* readProjectStateEffect(project, store)
+  })

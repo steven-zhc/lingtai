@@ -287,7 +287,7 @@ export function resolveSource(
  * asked for containment, and dropping it falls to no sandbox. Lingtai does not
  * rewrite the recipe.
  */
-function retiredTier(raw: unknown): string[] {
+export function retiredTier(raw: unknown): string[] {
   if (typeof raw !== 'object' || raw === null) return []
   const runtime = (raw as Record<string, unknown>)['runtime']
   if (typeof runtime !== 'object' || runtime === null || !('tier' in runtime)) return []
@@ -331,7 +331,7 @@ function retiredTier(raw: unknown): string[] {
  * `steps:` replaced it rather than renaming it, and promoting a block that held
  * five of the ten would leave the other five configured by nobody.
  */
-function unknownKeys(raw: unknown): string[] {
+export function unknownKeys(raw: unknown): string[] {
   if (typeof raw !== 'object' || raw === null) return []
   const declared = Object.keys(Recipe.shape)
   return Object.keys(raw)
