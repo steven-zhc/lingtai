@@ -92,12 +92,18 @@ async function news(): Promise<CodeNews | null> {
 }
 
 /**
- * The projects in scope whose required sandbox is not running, or null when none is or the read failed (the lock
- * row says a failed read; health's own failure sentence covers the rest, #1167).
+ * The projects in scope whose required sandbox is not running, or null when none is. **A failed read is not none**:
+ * health reads its own facts and never sees this rejection, so it says the uncertainty itself (#1167).
  */
 export async function sandboxNews(project: string | undefined): Promise<SandboxNews | null> {
   const facts = await readSandboxFacts().catch(() => null)
-  if (facts === null) return null
+  if (facts === null) {
+    return {
+      wrong: 'sandbox state unreadable',
+      command: 'lingtai doctor',
+      said: 'could not read which projects require a sandbox',
+    }
+  }
   const stopped = stoppedProjects(facts, project)
   if (stopped.length === 0) return null
   const install = installFor(process.platform)?.command

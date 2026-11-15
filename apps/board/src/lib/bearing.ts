@@ -59,8 +59,8 @@ export interface CodeNews {
 
 /**
  * A required sandbox that is not running (#1167): only the *stopped* projects, since a degraded one asked for no
- * more than it got. Server-built, like `CodeNews`; null when none is stopped or the read failed (the lock row
- * says a failed read, not a second sentence here).
+ * more than it got. Server-built, like `CodeNews`; null when none is stopped. A failed read is a `SandboxNews` of its own
+ * saying so, never null.
  */
 export interface SandboxNews {
   /** What is wrong, in a few words. */

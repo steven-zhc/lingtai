@@ -11,6 +11,7 @@
  * renders it without a store.
  */
 import Link from 'next/link'
+import { Suspense } from 'react'
 
 import { isPaused, joinNames } from '@/lib/lock-marks.ts'
 import {
@@ -28,11 +29,21 @@ import { ContinueToday } from './continue-today.tsx'
 import { LiftButton, PauseButton, ResumeButton } from './pause-button.tsx'
 import { sandboxBanner } from './sandbox-banner.tsx'
 
-export async function LockBanner({ project }: { project: string | undefined }) {
+async function Locks({ project }: { project: string | undefined }) {
   const read = await readProjectLocks()
+  return <LockRows locks={read} scope={project} now={new Date()} />
+}
+
+/**
+ * Not `async`: the sandbox rows' own boundary mounts at once, beside the lock read and not after it, so its
+ * skeleton covers the registered-project read both share (#1167).
+ */
+export function LockBanner({ project }: { project: string | undefined }) {
   return (
     <>
-      <LockRows locks={read} scope={project} now={new Date()} />
+      <Suspense fallback={null}>
+        <Locks project={project} />
+      </Suspense>
       {sandboxBanner(project)}
     </>
   )

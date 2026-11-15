@@ -800,13 +800,22 @@ async function HeadlinePart({ ctx }: { ctx: Ctx }) {
   ) : null
 }
 
-async function BannerPart({ ctx }: { ctx: Ctx }) {
+async function LockPart({ ctx }: { ctx: Ctx }) {
   const [board, lockRead] = await Promise.all([ctx.reads.board, ctx.locks])
   const { only } = shape(board, ctx.param)
+  return <LockRows locks={lockRead} scope={only} now={new Date()} />
+}
+
+/** Its own part, so the sandbox rows' skeleton mounts before the registered-project read and not after it (#1167). */
+async function SandboxPart({ ctx }: { ctx: Ctx }) {
+  const { only } = shape(await ctx.reads.board, ctx.param)
+  return sandboxBanner(only)
+}
+
+async function BannerPart({ ctx }: { ctx: Ctx }) {
+  const board = await ctx.reads.board
   return (
     <>
-      <LockRows locks={lockRead} scope={only} now={new Date()} />
-      {sandboxBanner(only)}
       {/* Repositories that are recorded and not yet conducted (#163). Above
         the lanes because it is not work, and absent entirely when there are none. */}
       <Pending projects={board.pending} />
@@ -1122,6 +1131,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               and not a fourth one. A fourth object is still argued for here. */}
           </span>
         </Bar>
+        <Suspense key={key('lock-banner')} fallback={null}>
+          <LockPart ctx={ctx} />
+        </Suspense>
+        <Suspense key={key('sandbox-banner')} fallback={null}>
+          <SandboxPart ctx={ctx} />
+        </Suspense>
         <Suspense key={key('banner')} fallback={null}>
           <BannerPart ctx={ctx} />
         </Suspense>
