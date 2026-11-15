@@ -1,6 +1,6 @@
 # 0128 — The Project aggregate holds every fact about a project, and its log records every recipe its file declared
 
-**Status** accepted · 2026-11-14 · not yet built
+**Status** accepted · 2026-11-14
 
 A project is one aggregate, `prj-{project}`, and everything Lingtai knows
 about a project is reduced from that stream: where its code lives, whether it
@@ -213,15 +213,6 @@ The streams that exist, and what each holds:
   is replaced by this decision.
 - A recipe's content is stored once per project that uses it, not once for all;
   a recipe is a few kilobytes and changes rarely.
-
-## Not built yet
-
-Built: `@lingtai/project` (#1172), every `prj-` read and append through it
-(#1173, #1174), `ProjectRecipeChanged` and `ProjectSandboxObserved` in the
-domain (#1171). Not yet: the one-way read of §6 (`loadProject`), the module's
-file service, `draftRecipe` and `changeRecipe` as the only way to change a
-recipe, no caller holding a file port, the test of §7, `RecipeRecorded`'s
-retirement, and every caller moving to these operations.
 
 ## Not decided here
 

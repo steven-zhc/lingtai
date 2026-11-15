@@ -22,6 +22,17 @@ writing outside its worktree. Treat the file as configuration you own, keep
 tickets from asking an agent to edit it, and read `steps.proposed` again if you
 doubt it.
 
+You may still edit it by hand, and the project's log (`prj-{project}`) keeps
+every version of it and who made it. A change made through Lingtai (the board's
+save, setup, `lingtai add`) writes the file and then appends the version to the
+log; a hand edit is recorded the next time anything reads the file. Text that
+does not parse, or that the schema refuses, is recorded nowhere and the project
+is refused, naming the file. **Nothing writes the file from the log**: if it is
+missing, the project's attempts stop until you put one back, and the board still
+shows the project from its log. A project added before this gets its first
+recorded recipe the first time anything reads it, with nothing for you to do. A
+run's own `StepsResolved` holds the recipe it ran under.
+
 ## What a choice becomes
 
 An attempt has ten fixed steps: `claim`, `admit`, `prepared`, `design`,
