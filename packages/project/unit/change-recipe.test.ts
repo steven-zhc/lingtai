@@ -2,7 +2,7 @@
 import { projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { RecipeFiles } from '@lingtai/recipe'
-import { fakeSandboxHost } from '@lingtai/recipe/test/sandbox-host'
+import { fakeSandboxHost, skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -103,10 +103,13 @@ describe('changeRecipe', () => {
     expect(t.disk.get(PATH)).toBe(EDITED)
     t.store.append = append
     await t.run(
-      loadProject('app', { home: HOME, store: t.store, base: 'main' }).pipe(
-        Effect.provideService(ProjectFiles, t.files),
-        Effect.ignore,
-      ),
+      loadProject('app', {
+        home: HOME,
+        store: t.store,
+        base: 'main',
+        ...skipSandboxHost,
+        signedIn: async () => ['claude-code' as const],
+      }).pipe(Effect.provideService(ProjectFiles, t.files), Effect.ignore),
     )
     expect((await t.events()).map((e) => e.by)).toEqual(['file'])
   })

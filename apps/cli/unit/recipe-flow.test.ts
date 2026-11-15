@@ -1,3 +1,4 @@
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { recipePath } from '@lingtai/project'
 /**
  * `askRecipe` (#432): an absent file is created once, with every first-run
@@ -24,7 +25,13 @@ const HOME = '/home/me/.lingtai'
 async function askAndWrite(world: QuestionWorld, at: RecipeAt): Promise<Awaited<ReturnType<typeof askRecipe>>> {
   const result = await askRecipe(world, at)
   if ('ok' in result) {
-    await Effect.runPromise(applySetup({ home: at.home ?? HOME, files: at.files }, result.answers, Effect.void))
+    await Effect.runPromise(
+      applySetup(
+        { home: at.home ?? HOME, files: at.files, by: 'human:me', store: createMemoryEventStore() },
+        result.answers,
+        Effect.void,
+      ),
+    )
   }
   return result
 }

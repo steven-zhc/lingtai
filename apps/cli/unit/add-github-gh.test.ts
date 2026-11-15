@@ -3,6 +3,7 @@
  * checked where the App check is on an App machine, before a recipe answer is
  * written, and the App is never consulted.
  */
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { SetupReader } from '@lingtai/setup'
 import { applySetup } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -17,7 +18,9 @@ async function askBeforeGithubAdd(...args: Parameters<typeof askBeforeGithubAddE
   const result = await Effect.runPromise(askBeforeGithubAddEffect(...args))
   const deps = args[2]
   if (typeof result === 'object' && deps !== undefined) {
-    await Effect.runPromise(applySetup({ files: deps.files }, result.answers, Effect.void))
+    await Effect.runPromise(
+      applySetup({ files: deps.files, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void),
+    )
   }
   return result
 }

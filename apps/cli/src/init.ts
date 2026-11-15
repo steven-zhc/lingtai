@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process'
+import { existsSync, readdirSync } from 'node:fs'
 /**
  * `lingtai init`: from a machine with a binary and nothing else to the board,
  * on the wizard (#186, [doc/design/1.0.md](../../../doc/design/1.0.md) *The
@@ -105,8 +107,7 @@
  * `InitWorld`, so a test drives every other step and every interruption with
  * no database, network or browser.
  */
-import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { userInfo } from 'node:os'
 import { basename, join } from 'node:path'
 
 import { addLocalEffect } from '@lingtai/conductor/onboard'
@@ -133,6 +134,7 @@ import { paint } from '@lingtai/env/colour'
 import type { Locker } from '@lingtai/env/lock'
 import { createFileLocker, type HeldLock } from '@lingtai/env/lock'
 import { type Queryable, type SchemaOutcome, createSchemaEffect } from '@lingtai/event-store/schema'
+import type { EventStore } from '@lingtai/event-store/store'
 import { ghStatusEffect, liveGh, type GhRun, type GhStatus } from '@lingtai/github'
 import { diskFiles, loadAllProjectsEffect, readRecipeKeyEffect, recipePath } from '@lingtai/project'
 import { kindsOf, resolveSource, ticketSourceOf, type RecipeFiles, type SignedIn } from '@lingtai/recipe'
@@ -242,6 +244,8 @@ export interface InitWorld {
   /** The lock an add is made under; the machine's file lock unless a test hands one in. */
   locker?: Locker
   files: RecipeFiles
+  /** The log a recipe written by the first project is recorded on: the process's own when absent. */
+  store?: EventStore
   signedIn: SignedIn
   /** `FirstProjectWorld.register` for the local branch — appends `ProjectConfigured`. */
   registerLocal: (payload: RegisterLocalPayload) => Effect.Effect<{ line: string; updated: boolean }, unknown>
@@ -592,6 +596,8 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         projects: world.projects,
         locker: world.locker,
         files: world.files,
+        by: `human:${userInfo().username}`,
+        ...(world.store === undefined ? {} : { store: world.store }),
         home,
         signedIn: world.signedIn,
         // Already probed above, for the "look" lines — a second probe for the

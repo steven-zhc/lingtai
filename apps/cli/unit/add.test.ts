@@ -1,3 +1,4 @@
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { recipePath } from '@lingtai/project'
 import { type RecipeFiles } from '@lingtai/recipe'
 import type { SetupReader } from '@lingtai/setup'
@@ -96,6 +97,8 @@ function ttyHarness(): Harness {
     projects: async () => [],
     locker: { tryLock: async () => ({ ok: true as const, lock: { release: async () => {} } }) },
     files: mapFiles(),
+    by: 'human:me',
+    store: createMemoryEventStore(),
     home: HOME,
     signedIn: async () => ['claude-code'] as never[],
     runtimes: async () =>

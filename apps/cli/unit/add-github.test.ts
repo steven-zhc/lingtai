@@ -1,3 +1,4 @@
+import { checkInstallationEffect } from '@lingtai/conductor/onboard'
 /**
  * `askBeforeGithubAdd` (#402): the installation and its permissions are
  * checked before a single question is asked or a single answer written. A
@@ -10,7 +11,7 @@
  * these tests pin the whole chain — `askBeforeGithubAdd` gating on its
  * result — rather than a stand-in that always returns null.
  */
-import { checkInstallationEffect } from '@lingtai/conductor/onboard'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Installation } from '@lingtai/github'
 import { NotInstalledError } from '@lingtai/github'
 import { recipePath } from '@lingtai/project'
@@ -29,7 +30,9 @@ async function askBeforeGithubAdd(...args: Parameters<typeof askBeforeGithubAddE
   const result = await Effect.runPromise(askBeforeGithubAddEffect(...args))
   const deps = args[2]
   if (typeof result === 'object' && deps !== undefined) {
-    await Effect.runPromise(applySetup({ files: deps.files }, result.answers, Effect.void))
+    await Effect.runPromise(
+      applySetup({ files: deps.files, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void),
+    )
   }
   return result
 }

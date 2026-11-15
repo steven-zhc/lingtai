@@ -1,13 +1,14 @@
+import { resolve } from 'node:path'
+
+import { ownerlessRefusal } from '@lingtai/conductor'
+import type { ProjectState } from '@lingtai/domain'
 /**
  * `chooseFirstProject` (#394): the local branch against a Map-backed `files`
  * seam and a programmable `git`, and the GitHub branch against the real
  * `choose`/`listRepositories` fed a fake reader — no filesystem, no network,
  * so this is `unit/` by 0060 §1.
  */
-import { resolve } from 'node:path'
-
-import { ownerlessRefusal } from '@lingtai/conductor'
-import type { ProjectState } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { type AppReader, GitHubFailed, type GhRun, type GhStatus } from '@lingtai/github'
 import { resolveLocalRecipeEffect, recipePath } from '@lingtai/project'
 import { type RecipeFiles, resolveSource } from '@lingtai/recipe'
@@ -141,6 +142,8 @@ function harness(options: {
     projects: async () => options.projects ?? [],
     locker: { tryLock: async () => ({ ok: true as const, lock: { release: async () => {} } }) },
     files,
+    by: 'human:me',
+    store: createMemoryEventStore(),
     home: HOME,
     signedIn: async () => signedIn as never[],
     runtimes: async () => runtimesFrom(signedIn),

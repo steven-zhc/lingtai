@@ -818,6 +818,9 @@ importers:
         specifier: ^2.8.1
         version: 2.9.0
     devDependencies:
+      '@lingtai/event-store':
+        specifier: workspace:*
+        version: link:../event-store
       '@lingtai/sandbox':
         specifier: workspace:*
         version: link:../sandbox

@@ -1,4 +1,5 @@
-import { emptyProject, type ProjectState } from '@lingtai/domain'
+import { emptyProject, projectStream, type ProjectState } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { recipePath } from '@lingtai/project'
 import { type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -14,6 +15,8 @@ const CHANGES: RecipeChange[] = [
   { path: ['env', 'plantAt'], value: '.env.local' },
   { path: ['source', 'kinds'], value: ['bug'] },
 ]
+
+const WHO = () => ({ by: 'human:me', store: createMemoryEventStore() })
 
 function countingFiles(initial: Record<string, string> = {}) {
   const store = new Map(Object.entries(initial))
@@ -37,7 +40,7 @@ describe('applySetup (#968)', () => {
       return 'registered'
     })
     const done = await Effect.runPromise(
-      applySetup({ home: HOME, files }, { project: 'repo', changes: CHANGES }, register),
+      applySetup({ home: HOME, files, ...WHO() }, { project: 'repo', changes: CHANGES }, register),
     )
     expect(events).toEqual(['replace', 'register'])
     expect(done.registered).toBe('registered')
@@ -54,7 +57,7 @@ describe('applySetup (#968)', () => {
     await expect(
       Effect.runPromise(
         applySetup(
-          { home: HOME, files },
+          { home: HOME, files, ...WHO() },
           { project: 'repo', changes: [{ path: ['repo', 'base'], value: 'main' }] },
           register,
         ),
@@ -69,7 +72,7 @@ describe('applySetup (#968)', () => {
     await expect(
       Effect.runPromise(
         applySetup(
-          { home: HOME, files },
+          { home: HOME, files, ...WHO() },
           { project: 'repo', changes: CHANGES },
           Effect.fail(new Error('append failed')),
         ),
@@ -77,7 +80,7 @@ describe('applySetup (#968)', () => {
     ).rejects.toThrow('append failed')
     expect(store.has(path)).toBe(true)
     const again = await Effect.runPromise(
-      applySetup({ home: HOME, files }, { project: 'repo', changes: CHANGES }, Effect.succeed('ok')),
+      applySetup({ home: HOME, files, ...WHO() }, { project: 'repo', changes: CHANGES }, Effect.succeed('ok')),
     )
     expect(again.registered).toBe('ok')
   })
@@ -110,12 +113,45 @@ describe('applySetup (#968)', () => {
   })
 })
 
+describe('applySetup — who (#1177)', () => {
+  it('writes the file, then appends one event naming the caller, then registers', async () => {
+    const { files, events } = countingFiles()
+    const store = createMemoryEventStore()
+    const append = store.append.bind(store)
+    store.append = ((...args: Parameters<typeof append>) => {
+      events.push('append')
+      return append(...args)
+    }) as typeof store.append
+    await Effect.runPromise(
+      applySetup(
+        { home: HOME, files, by: 'human:me', store },
+        { project: 'repo', changes: CHANGES },
+        Effect.sync(() => void events.push('register')),
+      ),
+    )
+    expect(events).toEqual(['replace', 'append', 'register'])
+    const read = await store.read(projectStream('repo'))
+    expect(read.map((e) => [e.type, (e.data as { by: string }).by])).toEqual([['ProjectRecipeChanged', 'human:me']])
+  })
+
+  it('previewSetup appends nothing', async () => {
+    const { files } = countingFiles()
+    const store = createMemoryEventStore()
+    await Effect.runPromise(previewSetup({ home: HOME, files }, { project: 'repo', changes: CHANGES }))
+    expect(await store.read(projectStream('repo'))).toEqual([])
+  })
+})
+
 describe('applySetup — the registration fails (#968)', () => {
   it('leaves the recipe it wrote and returns the registration’s error', async () => {
     const { files, store } = countingFiles()
     await expect(
       Effect.runPromise(
-        applySetup({ home: HOME, files }, { project: 'repo', changes: CHANGES }, Effect.fail(new Error('refused'))),
+        applySetup(
+          { home: HOME, files, ...WHO() },
+          { project: 'repo', changes: CHANGES },
+          Effect.fail(new Error('refused')),
+        ),
       ),
     ).rejects.toThrow('refused')
     expect(store.get(path)).toContain('base: main')

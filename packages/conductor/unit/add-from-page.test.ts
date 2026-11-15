@@ -1,10 +1,11 @@
+import type { ProjectState } from '@lingtai/domain'
 /**
  * `addProject` and the rules the board's step 2 leans on (#971): a project
  * already added is refused before anything is written, a refusal names itself,
  * a registration that fails leaves the recipe and says so, and its retry
  * registers. Fake files and ports (0060 §1) — nothing here touches a disk.
  */
-import type { ProjectState } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { recipePath } from '@lingtai/project'
 import { type RecipeFiles } from '@lingtai/recipe'
 import { keptSentence, LINGTAI_BASE, type Proposal, type SetupForm, SetupWriteError } from '@lingtai/setup'
@@ -13,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 
 import { addProject, exclusiveAdd, localTicketsOf, previewOf } from '../src/add-from-page.ts'
 
+const WHO = () => ({ by: 'human:me', store: createMemoryEventStore() })
 const HOME = '/home/me/.lingtai'
 
 const FORM: SetupForm = {
@@ -64,6 +66,7 @@ describe('addProject (#971)', () => {
       addProject(FORM, {
         locker,
         home: HOME,
+        ...WHO(),
         files: f,
         projects: async () => [{ project: 'Chapter-Garden' } as ProjectState],
         register: () => Effect.void,
@@ -78,7 +81,7 @@ describe('addProject (#971)', () => {
     const out = await run(
       addProject(
         { ...FORM, base: '' },
-        { home: HOME, files: f, projects: async () => [], register: () => Effect.void },
+        { home: HOME, ...WHO(), files: f, projects: async () => [], register: () => Effect.void },
       ),
     )
     expect(out).toEqual({ ok: false, say: expect.stringContaining('no base branch') })
@@ -95,7 +98,7 @@ describe('addProject (#971)', () => {
           remote: '/work/x',
           tickets: 'github',
         },
-        { home: HOME, files: files(), projects: async () => [], register: () => Effect.void },
+        { home: HOME, ...WHO(), files: files(), projects: async () => [], register: () => Effect.void },
       ),
     )
     expect(out).toEqual({ ok: false, say: expect.stringContaining('no owner') })
@@ -108,6 +111,7 @@ describe('addProject (#971)', () => {
     const ports = (fail: boolean) => ({
       locker,
       home: HOME,
+      ...WHO(),
       files: f,
       projects: async () => [] as ProjectState[],
       register: () => {
@@ -133,6 +137,7 @@ describe('addProject under two tabs and a retry (#971)', () => {
     const ports = (marker: string) => ({
       locker,
       home: HOME,
+      ...WHO(),
       files: f,
       projects: async () => [...registered],
       register: () =>
@@ -157,6 +162,7 @@ describe('addProject under two tabs and a retry (#971)', () => {
     const ports = (fail: boolean) => ({
       locker,
       home: HOME,
+      ...WHO(),
       files: f,
       projects: async () => [] as ProjectState[],
       register: () => (fail ? Effect.fail(new Error('no')) : Effect.void),
