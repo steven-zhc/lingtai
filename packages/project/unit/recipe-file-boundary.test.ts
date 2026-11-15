@@ -53,10 +53,26 @@ const FILE_CALLS = new Set([
   'accessSync',
   'copyFile',
   'copyFileSync',
+  'link',
+  'linkSync',
+  'symlink',
+  'symlinkSync',
   'unlink',
   'unlinkSync',
   'read',
   'replace',
+])
+
+/** Calls whose second argument is a path too. */
+const TWO_PATHS = new Set([
+  'rename',
+  'renameSync',
+  'copyFile',
+  'copyFileSync',
+  'link',
+  'linkSync',
+  'symlink',
+  'symlinkSync',
 ])
 
 const calleeName = (node: ts.CallExpression): string | undefined => {
@@ -100,15 +116,17 @@ function constOf(id: ts.Identifier): ts.Expression | undefined {
 }
 
 /** Whether `node` is a path to a recipe file; an identifier is followed once, to its `const`. */
-function isRecipePath(node: ts.Expression, follow: boolean): boolean {
+function isRecipePath(node: ts.Expression, follow: boolean, bare = true): boolean {
   const n = unwrap(node)
-  if (ts.isStringLiteralLike(n)) return n.text.includes('recipe.yml')
+  // `bare` false: a string that merely contains the name is prose (`message.replace('recipe.yml', …)`), not a path.
+  if (ts.isStringLiteralLike(n)) return bare && n.text.includes('recipe.yml')
   if (ts.isTemplateExpression(n))
     return (
-      n.head.text.includes('recipe.yml') ||
-      n.templateSpans.some((s) => s.literal.text.includes('recipe.yml') || isRecipePath(s.expression, false))
+      bare &&
+      (n.head.text.includes('recipe.yml') ||
+        n.templateSpans.some((s) => s.literal.text.includes('recipe.yml') || isRecipePath(s.expression, false)))
     )
-  if (ts.isBinaryExpression(n)) return isRecipePath(n.left, follow) || isRecipePath(n.right, follow)
+  if (ts.isBinaryExpression(n)) return isRecipePath(n.left, follow, bare) || isRecipePath(n.right, follow, bare)
   if (ts.isCallExpression(n)) {
     const name = calleeName(n)
     if (name === 'recipePath') return true
@@ -117,7 +135,7 @@ function isRecipePath(node: ts.Expression, follow: boolean): boolean {
   }
   if (ts.isIdentifier(n) && follow) {
     const init = constOf(n)
-    return init !== undefined && isRecipePath(init, false)
+    return init !== undefined && isRecipePath(init, false, bare)
   }
   return false
 }
@@ -132,6 +150,7 @@ export function recipeFileUses(file: string, text: string): string[] {
     file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   )
   const found: string[] = []
+  const namespaces = new Set<string>()
   const at = (node: ts.Node, why: string) =>
     found.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}: ${why}`)
 
@@ -143,6 +162,13 @@ export function recipeFileUses(file: string, text: string): string[] {
         : node.exportClause !== undefined && ts.isNamedExports(node.exportClause)
           ? node.exportClause
           : undefined
+      if (
+        ts.isImportDeclaration(node) &&
+        node.importClause?.namedBindings !== undefined &&
+        ts.isNamespaceImport(node.importClause.namedBindings) &&
+        (from === '@lingtai/project' || from === '@lingtai/recipe')
+      )
+        namespaces.add(node.importClause.namedBindings.name.text)
       if (/(^|\/)project\/src\/files(\.ts)?$/.test(from)) at(node, `imports the module's file port from ${from}`)
       else if (named !== undefined && (from === '@lingtai/project' || from === '@lingtai/recipe'))
         if (ts.isNamedImports(named) || ts.isNamedExports(named))
@@ -152,11 +178,22 @@ export function recipeFileUses(file: string, text: string): string[] {
             if (refused) at(el, `imports ${name} from ${from}`)
           }
     }
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      namespaces.has(node.expression.text) &&
+      (PORT_NAMES.has(node.name.text) || node.name.text === 'replaceFileFace' || node.name.text === 'readFileFace')
+    )
+      at(node, `uses ${node.expression.text}.${node.name.text}, the module's file port`)
     if (ts.isCallExpression(node)) {
       const name = calleeName(node)
-      const first = node.arguments[0]
-      if (name !== undefined && FILE_CALLS.has(name) && first !== undefined && isRecipePath(first, true))
-        at(node, `${name}(…) on a recipe path`)
+      if (name !== undefined && FILE_CALLS.has(name)) {
+        // A port's `.read`/`.replace` takes a path; a bare string there is `String.prototype.replace`'s search text.
+        const bare = name !== 'read' && name !== 'replace'
+        // A move or copy names two paths: the destination replaces a recipe as surely as a write does.
+        const both = TWO_PATHS.has(name) ? node.arguments.slice(0, 2) : node.arguments.slice(0, 1)
+        if (both.some((a) => isRecipePath(a, true, bare))) at(node, `${name}(…) on a recipe path`)
+      }
     }
     ts.forEachChild(node, visit)
   }
@@ -215,6 +252,9 @@ describe('the checker', () => {
     ['files.read(recipePath(name, home))', 'read(…) on a recipe path'],
     ["deps.files.replace(resolve(home, 'recipe.yml'), text)", 'replace(…) on a recipe path'],
     ['lift(() => world.files.read(recipePath(project, world.home)))', 'read(…) on a recipe path'],
+    ["rename(tempPath, recipePath('x'))", 'rename(…) on a recipe path'],
+    ["await copyFile(tempPath, join(home, 'x', 'recipe.yml'))", 'copyFile(…) on a recipe path'],
+    ["renameSync(tmp, recipePath('x'))", 'renameSync(…) on a recipe path'],
   ])('catches %s', (code, why) => {
     const uses = found(code)
     expect(uses).toHaveLength(1)
@@ -230,6 +270,8 @@ describe('the checker', () => {
     ["import type { RecipeFiles } from '@lingtai/recipe'", 'RecipeFiles'],
     ["export { diskFiles } from '@lingtai/project'", 'diskFiles'],
     ["import { diskFiles } from '../../project/src/files.ts'", "module's file port"],
+    ["import * as project from '@lingtai/project'\nconst port = yield* project.ProjectFiles", 'project.ProjectFiles'],
+    ["import * as p from '@lingtai/project'\np.diskFiles.read(x)", 'p.diskFiles'],
   ])('catches %s', (code, why) => {
     const uses = found(code)
     expect(uses).toHaveLength(1)
@@ -254,6 +296,9 @@ describe('the checker', () => {
     ['readFileSync(configPath)'],
     ["const c = join(home, 'config.yml'); existsSync(c)"],
     ["'x'.replace(/a/, 'b')"],
+    ["console.log(message.replace('recipe.yml', path))"],
+    ['console.log(message.replace(`recipe.yml`, path))'],
+    ["import * as project from '@lingtai/project'\nproject.recipeText(p)"],
     ['map.read(key)'],
     // what the module does export is legal to import and call
     ["import { recipeText, recipeValue, projectsOnDisk, recipePath, changeRecipe } from '@lingtai/project'"],
