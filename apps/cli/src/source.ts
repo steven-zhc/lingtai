@@ -11,13 +11,12 @@
  * `@lingtai/recipe`'s `answers.ts`, next to `landingChanges`.
  */
 import { paint } from '@lingtai/env/colour'
-import { diskFiles, readRecipeKeyEffect, recipePath } from '@lingtai/project'
+import { type RecipeDraft, recipePath } from '@lingtai/project'
 import {
   kindsChanges,
   kindsOf,
   type Recipe,
   type RecipeChange,
-  type RecipeFiles,
   resolveSource,
   SETUP_KINDS,
   ticketsChange,
@@ -28,10 +27,6 @@ import { Effect } from 'effect'
 
 import { lift } from './exit.ts'
 import { type QuestionWorld, questionEffect } from './question.ts'
-
-function readKey(project: string, path: readonly (string | number)[], options: { home?: string; files?: RecipeFiles }) {
-  return Effect.orDie(readRecipeKeyEffect(project, path, options))
-}
 
 export type SourceAnswer = { changes: RecipeChange[] } | { refused: string }
 
@@ -47,7 +42,8 @@ export type TicketsAnswer = { changes: RecipeChange[]; current: TicketSource } |
 
 export interface SourceDeps {
   home?: string
-  files?: RecipeFiles
+  /** The recipe the answers so far have drafted. */
+  draft: RecipeDraft
   /** `question.ts`'s `kept` — what a refusal here says is already written, from a caller's earlier steps. */
   kept?: string
   /** What `askKinds` offers where the file names no kinds: a `Proposal`'s `kinds`; `SETUP_KINDS` where absent. */
@@ -65,20 +61,16 @@ export interface TicketsDeps extends SourceDeps {
  * for the same reason: "unknown" is the only safe reading for a file that
  * is not there yet, or not there on its own.
  */
-const resolvedRecipe = Effect.fn('source.resolvedRecipe')(function* (
-  project: string,
-  options: { home?: string; files?: RecipeFiles },
-): Effect.fn.Return<Recipe | null, unknown> {
-  const files = options.files ?? diskFiles
-  const path = recipePath(project, options.home)
-  const text = yield* lift(() => files.read(path))
+function resolvedRecipe(project: string, draft: RecipeDraft, home?: string): Recipe | null {
+  const path = recipePath(project, home)
+  const text = draft.text()
   if (text === null) return null
   try {
     return resolveSource(text, path, path).recipe
   } catch {
     return null
   }
-})
+}
 
 /** Why a project with work items in the log cannot change its ticket source. */
 export const DIFFERENT_SOURCE_CLASH = 'a different source would number its own tickets into those same streams'
@@ -117,7 +109,7 @@ export const askTickets = Effect.fn('source.askTickets')(function* (
   // re-read on a second machine or a re-provisioned `~/.lingtai` must not read
   // as `github` merely because the file naming its real source is not here
   // (#432 fix round, finding 1).
-  const rawTickets = yield* readKey(project, ['source', 'tickets'], { home: deps.home, files: deps.files })
+  const rawTickets = deps.draft.get(['source', 'tickets'])
   const current: TicketSource = ticketSourceOf(rawTickets, history)
 
   if (history.length > 0) {
@@ -175,7 +167,7 @@ export const askKinds = Effect.fn('source.askKinds')(function* (
   given: string | null,
   deps: SourceDeps,
 ): Effect.fn.Return<SourceAnswer, unknown> {
-  const resolved = yield* resolvedRecipe(project, { home: deps.home, files: deps.files })
+  const resolved = resolvedRecipe(project, deps.draft, deps.home)
   // Read raw rather than through `resolvedRecipe` alone, the same asymmetry
   // `askTickets` above was fixed for: a file that writes `source.kinds` but
   // does not resolve on its own (`env.plantAt` still missing, say) still has
@@ -183,8 +175,7 @@ export const askKinds = Effect.fn('source.askKinds')(function* (
   // "unknown" for that file the same as for one that is absent — which would
   // offer `SETUP_KINDS` as the default and let Enter silently replace what
   // was actually written.
-  const rawKinds =
-    resolved === null ? yield* readKey(project, ['source', 'kinds'], { home: deps.home, files: deps.files }) : null
+  const rawKinds = resolved === null ? deps.draft.get(['source', 'kinds']) : null
   const currentKinds =
     resolved !== null ? kindsOf(resolved) : Array.isArray(rawKinds) ? rawKinds.map((k) => String(k)) : null
   const currentDisplay = currentKinds === null ? null : currentKinds.join(', ')
@@ -211,6 +202,6 @@ export const askKinds = Effect.fn('source.askKinds')(function* (
     currentKinds !== null && currentKinds.length === parsed.length && currentKinds.every((k, i) => k === parsed[i])
   if (unchanged) return { changes: [] }
 
-  const rawClaim = yield* readKey(project, ['steps', 'claim'], { home: deps.home, files: deps.files })
+  const rawClaim = deps.draft.get(['steps', 'claim'])
   return { changes: kindsChanges(parsed, Array.isArray(rawClaim) ? rawClaim : null) }
 })

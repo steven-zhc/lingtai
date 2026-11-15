@@ -3,78 +3,19 @@
  * none, checking the result with the resolver a daemon reads it with, and replacing it atomically. The edit
  * itself is a function of text and stays in `@lingtai/recipe`'s `write.ts`, `emit.ts` and `resolve.ts`.
  *
- * `setRecipe`'s caller is `lingtai add` (`apps/cli/src/lingtai.ts`'s `addCommand`), through
- * `apps/cli/src/agents.ts`'s `askAgents`.
  */
 import {
   type RecipeFiles,
-  type RecipeChange,
-  type Said,
   type SaveRecipeTextResult,
-  type SetRecipeResult,
   type SignedIn,
   type HostFactsEffect,
-  commentWritten,
-  editedText,
-  isRefusal,
   messageOf,
-  orderSteps,
-  plainWhen,
-  refFor,
-  resolveSource,
-  widenStepsIfNeeded,
 } from '@lingtai/recipe'
 import { Cause, Effect } from 'effect'
-import { isNode, parseDocument } from 'yaml'
 
+import { keyIn } from './draft.ts'
 import { filesEffect } from './files.ts'
 import { recipePath, resolveLocalRecipeEffect } from './local.ts'
-
-/**
- * Sets `changes` on a project's recipe: creates the file when it is absent,
- * edits it in place — keeping every key it was not asked to change, and the
- * comments beside them; a key it removes goes with its comments (0104 §14) —
- * when it exists. Validates the result with `resolveSource`, the same
- * function a daemon reads the file with, before anything is written: a change
- * the resolver would refuse is refused by name, and the file is left exactly
- * as it was ([doc/design/the-plugin-body.md](../../../doc/design/the-plugin-body.md)
- * — a running daemon refuses a key its code does not know, #148).
- *
- * `written` is false when the change set a value the file already had —
- * `editRecipe` returns the same text, and nothing is replaced.
- *
- * `said`, given only alongside the file's creation, is the sentence each
- * block was asked about: `commentWritten` prints it above whichever of those
- * blocks `changes` actually wrote, never widening the text to spell out a
- * schema or plugin-schema default nobody chose (doc/design/400.md §*A new
- * file is created once, with `said`*; #432 fix round, finding 2). Ignored
- * once the file exists — 0104 §14 governs an edit to it from then on, and a
- * comment there is not protected.
- */
-export const setRecipeEffect = Effect.fn('recipe.set')(function* (
-  project: string,
-  changes: readonly RecipeChange[],
-  options?: { home?: string; files?: RecipeFiles; said?: Said },
-) {
-  const files = filesEffect(options?.files)
-  const path = recipePath(project, options?.home)
-  const existing = yield* files.read(path)
-  const widened = yield* plainWhen(() => widenStepsIfNeeded(existing, changes, path), isRefusal)
-  let text = yield* plainWhen(() => editedText(existing, widened, path), isRefusal)
-
-  if (existing === null) text = orderSteps(text)
-  if (existing === null && options?.said !== undefined) {
-    text = commentWritten(text, options.said)
-  }
-
-  const final = text
-  yield* plainWhen(() => resolveSource(final, refFor(final, path), path), isRefusal)
-
-  files.recorded(changes)
-  if (existing !== null && text === existing) return { path, text, written: false } satisfies SetRecipeResult
-  yield* files.replace(path, text)
-  return { path, text, written: true } satisfies SetRecipeResult
-})
 
 /**
  * The value at `path` in a project's recipe, or null when the file is absent
@@ -92,10 +33,7 @@ export const readRecipeKeyEffect = Effect.fn('recipe.read-key')(function* (
 ) {
   const files = filesEffect(options?.files)
   const recipeFilePath = recipePath(project, options?.home)
-  const text = yield* files.read(recipeFilePath)
-  if (text === null) return null
-  const value = parseDocument(text).getIn(path)
-  return value === undefined ? null : isNode(value) ? value.toJSON() : value
+  return keyIn(yield* files.read(recipeFilePath), path)
 })
 
 /**

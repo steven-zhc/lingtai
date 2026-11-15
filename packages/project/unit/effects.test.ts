@@ -11,7 +11,8 @@ import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { resolveLocalRecipeEffect, setRecipeEffect } from '../src/index.ts'
+import { resolveLocalRecipeEffect } from '../src/index.ts'
+import { seedRecipe } from '../test/seed-recipe.ts'
 
 const HOME = '/nowhere'
 const files = (map: Record<string, string>) => async (p: string) => map[p] ?? null
@@ -68,7 +69,7 @@ describe('the faces reject with the package errors, not wrappers', () => {
 describe('a port that rejects makes the face reject with RecipeFailed', () => {
   it('RecipeFiles.read', async () => {
     const err = await Effect.runPromise(
-      setRecipeEffect('p', [], {
+      seedRecipe('p', [], {
         home: HOME,
         files: { read: async () => Promise.reject(new Error('EACCES: denied')), replace: async () => {} },
       }),

@@ -15,11 +15,10 @@
  * prove it holds or lands a pass, not only that it resolves.
  */
 import { paint } from '@lingtai/env/colour'
-import { diskFiles, readRecipeKeyEffect, recipePath, setRecipeEffect } from '@lingtai/project'
+import { type RecipeDraft, recipePath } from '@lingtai/project'
 import {
   type Recipe,
   type RecipeChange,
-  type RecipeFiles,
   type SetRecipeResult,
   type TurnLimit,
   baseOf,
@@ -40,7 +39,8 @@ import { type QuestionWorld, questionEffect } from './question.ts'
 
 export interface LandingDeps {
   home?: string
-  files?: RecipeFiles
+  /** The recipe the answers so far have drafted. */
+  draft: RecipeDraft
   /**
    * The repository's default branch — asked only when nothing else answers
    * it: no flag, and the file's own base is a blank `repo.base: ""` rather
@@ -62,21 +62,16 @@ type Answered = { ok: true } | { refused: string }
  * never reaches the terminal to be asked again (#399).
  */
 function setRecipeOrRefuse(
-  project: string,
   changes: readonly RecipeChange[],
-  options: { home?: string; files?: RecipeFiles },
+  options: { draft: RecipeDraft },
 ): Effect.Effect<SetRecipeResult | { refused: string }> {
-  return setRecipeEffect(project, changes, options).pipe(recovering((err) => Effect.succeed({ refused: err.message })))
+  return options.draft.set(changes).pipe(recovering((err) => Effect.succeed({ refused: (err as Error).message })))
 }
 
-function readKey(project: string, path: readonly (string | number)[], options: { home?: string; files?: RecipeFiles }) {
-  return Effect.orDie(readRecipeKeyEffect(project, path, options))
-}
-
-const resolvedFile = Effect.fn('landing.resolvedFile')(function* (
+function resolvedFile(
   project: string,
-  options: { home?: string; files?: RecipeFiles },
-): Effect.fn.Return<
+  options: { home?: string; draft: RecipeDraft },
+):
   | {
       text: string
       recipe: Recipe
@@ -86,12 +81,9 @@ const resolvedFile = Effect.fn('landing.resolvedFile')(function* (
       limits: { turns: TurnLimit; wall: string; rounds: number; restarts: number; usd?: number }
       agent: string
     }
-  | { refused: string },
-  unknown
-> {
-  const files = options.files ?? diskFiles
+  | { refused: string } {
   const path = recipePath(project, options.home)
-  const text = yield* lift(() => files.read(path))
+  const text = options.draft.text()
   if (text === null) return { refused: `no recipe at ${path} — lingtai add reads this project's own refusal for that` }
   let resolved
   try {
@@ -108,7 +100,7 @@ const resolvedFile = Effect.fn('landing.resolvedFile')(function* (
     limits: ceilingOf(resolved.recipe),
     agent: resolved.recipe.runtime.agent,
   }
-})
+}
 
 /** The recipe's `runtime.limits.usd` is written, but only claude-code enforces it. */
 export function dollarCeilingNote(named: unknown): string {
@@ -145,13 +137,13 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
   land: string | null,
   deps: LandingDeps,
 ): Effect.fn.Return<Answered, unknown> {
-  const options = { home: deps.home, files: deps.files }
-  const file = yield* resolvedFile(project, options)
+  const options = { home: deps.home, draft: deps.draft }
+  const file = resolvedFile(project, options)
   if ('refused' in file) return file
 
   const currentlyHolds = file.proposed.some((action) => 'human' in action)
-  const rawProposed = () => readKey(project, ['steps', 'proposed'], options)
-  const rawAdmit = () => readKey(project, ['steps', 'admit'], options)
+  const rawProposed = () => options.draft.get(['steps', 'proposed'])
+  const rawAdmit = () => options.draft.get(['steps', 'admit'])
 
   let changes: ReturnType<typeof landingChanges>
   if (land !== null) {
@@ -168,8 +160,8 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
       kept: deps.kept,
     })
     if ('refused' in result) return result
-    const proposed = yield* rawProposed()
-    const admit = yield* rawAdmit()
+    const proposed = rawProposed()
+    const admit = rawAdmit()
     changes = landingChanges(
       { land: result.answer },
       Array.isArray(proposed) ? proposed : file.proposed,
@@ -187,8 +179,8 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
       kept: deps.kept,
     })
     if ('refused' in result) return result
-    const proposed = yield* rawProposed()
-    const admit = yield* rawAdmit()
+    const proposed = rawProposed()
+    const admit = rawAdmit()
     const rawP = Array.isArray(proposed) ? proposed : file.proposed
     const rawA = Array.isArray(admit) ? admit : file.admit
     if (result.answer === WAIT) {
@@ -207,8 +199,8 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
       changes = landOnBranchChanges(base, rawP, rawA)
     }
   }
-  const hadSteps = (yield* readKey(project, ['steps'], options)) !== null
-  const written = yield* setRecipeOrRefuse(project, changes, options)
+  const hadSteps = options.draft.get(['steps']) !== null
+  const written = yield* setRecipeOrRefuse(changes, options)
   if ('refused' in written) return written
   if (written.written && !hadSteps && changes.some((c) => c.path[0] === 'steps')) {
     world.log(
@@ -247,9 +239,9 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
   world: QuestionWorld,
   project: string,
   flags: LimitsFlags,
-  options: { home?: string; files?: RecipeFiles; kept?: string },
+  options: { home?: string; draft: RecipeDraft; kept?: string },
 ): Effect.fn.Return<Answered, unknown> {
-  const file = yield* resolvedFile(project, options)
+  const file = resolvedFile(project, options)
   if ('refused' in file) return file
   const { limits } = file
 
@@ -265,7 +257,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
   if ('refused' in rounds) return rounds
   const roundsValue = Number(rounds.answer)
   if (roundsValue !== limits.rounds) {
-    const written = yield* setRecipeOrRefuse(project, [roundsChange(roundsValue)], options)
+    const written = yield* setRecipeOrRefuse([roundsChange(roundsValue)], options)
     if ('refused' in written) return written
   }
 
@@ -287,7 +279,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
   })
   if ('refused' in wall) return wall
   if (wall.answer !== limits.wall) {
-    const written = yield* setRecipeOrRefuse(project, [wallChange(wall.answer)], options)
+    const written = yield* setRecipeOrRefuse([wallChange(wall.answer)], options)
     if ('refused' in written) return written
   }
 
@@ -309,16 +301,16 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
   const usdValue =
     budget.answer.trim().toLowerCase() === 'none' ? null : Number(budget.answer.trim().replace(/^\$/, ''))
   if ((usdValue ?? null) !== (limits.usd ?? null)) {
-    const written = yield* setRecipeOrRefuse(project, [budgetChange(usdValue)], options)
+    const written = yield* setRecipeOrRefuse([budgetChange(usdValue)], options)
     if ('refused' in written) return written
   }
 
-  const after = yield* resolvedFile(project, options)
+  const after = resolvedFile(project, options)
   if ('refused' in after) return after
   // The runtime the file names, not `resolveSource`'s schema default: a recipe
   // naming none runs whichever runtime this machine detects (local.ts), which
   // may not be claude-code.
-  const named = yield* readKey(project, ['runtime', 'agent'], options)
+  const named = options.draft.get(['runtime', 'agent'])
   if (after.limits.usd !== undefined && named !== 'claude-code') {
     world.log(paint.muted(dollarCeilingNote(named)))
   }

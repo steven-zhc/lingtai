@@ -1,4 +1,5 @@
-import { recipePath, resolveLocalRecipeEffect, setRecipeEffect } from '@lingtai/project'
+import { recipePath, resolveLocalRecipeEffect } from '@lingtai/project'
+import { draftOver, seedRecipe } from '@lingtai/project/test/seed-recipe'
 /**
  * `askAgents` (#398): which agent writes the change, and which cold-reviews
  * it, as per-project recipe questions. A fake `QuestionWorld` with scripted
@@ -91,7 +92,7 @@ describe('askAgents at a terminal that draws selects', () => {
       runtimes: both,
       flags: {},
       home: HOME,
-      files: mapFiles({ [PATH]: FIXTURE }),
+      draft: await draftOver('app', { home: HOME, files: mapFiles({ [PATH]: FIXTURE }) }),
     })
     expect('refused' in result).toBe(false)
     expect(shapes).toEqual([
@@ -109,7 +110,7 @@ describe('askAgents at a terminal that draws selects', () => {
       runtimes: both,
       flags: {},
       home: HOME,
-      files: mapFiles({ [PATH]: WITH_MODEL }),
+      draft: await draftOver('app', { home: HOME, files: mapFiles({ [PATH]: WITH_MODEL }) }),
     })
     if ('refused' in result) throw new Error(result.refused)
     expect(result.modelChanges).toContainEqual({ path: ['steps', 'implement', 0, 'model'], value: undefined })
@@ -123,7 +124,7 @@ describe('askAgents at a terminal that draws selects', () => {
       runtimes: both,
       flags: {},
       home: HOME,
-      files: mapFiles({ [PATH]: named }),
+      draft: await draftOver('app', { home: HOME, files: mapFiles({ [PATH]: named }) }),
     })
     if ('refused' in result) throw new Error(result.refused)
     expect(result.modelChanges).not.toContainEqual({ path: ['steps', 'implement', 0, 'model'], value: undefined })
@@ -136,7 +137,7 @@ describe('askAgents at a terminal that draws selects', () => {
       runtimes: both,
       flags: {},
       home: HOME,
-      files: mapFiles({ [PATH]: WITH_MODEL }),
+      draft: await draftOver('app', { home: HOME, files: mapFiles({ [PATH]: WITH_MODEL }) }),
     })
     if ('refused' in result) throw new Error(result.refused)
     expect(asked.some((p) => p.includes('which model — its name'))).toBe(true)
@@ -154,7 +155,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       expect('refused' in result).toBe(false)
       expect(lines.some((l) => l.includes('codex is installed and signed out'))).toBe(true)
@@ -168,7 +169,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: { agent: 'codex' },
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       expect(result).toHaveProperty('refused')
       expect((result as { refused: string }).refused).toContain('codex is installed and signed out')
@@ -183,7 +184,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       expect('refused' in result).toBe(false)
       expect(asked.length).toBeGreaterThan(1)
@@ -201,7 +202,7 @@ describe('askAgents', () => {
         ],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       const line = lines.find((l) => l.includes('codex'))
       expect(line).toContain('codex is installed but does not start: dyld[1]: Library not loaded')
@@ -217,7 +218,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       const line = lines.find((l) => l.includes('pnpm install is not a runtime'))
       expect(line).toContain('choose one of claude-code, codex')
@@ -232,7 +233,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: { agent: '' },
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       const refused = (result as { refused: string }).refused
       expect(refused).toMatch(/^no agent is chosen yet — choose one of claude-code, codex/)
@@ -250,7 +251,7 @@ describe('askAgents', () => {
         ],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       expect(result).toHaveProperty('refused')
       expect(asked).toEqual([])
@@ -265,7 +266,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       const reviewerPrompt = asked.find((p) => p.includes('cold reviewer'))!
@@ -288,7 +289,7 @@ describe('askAgents', () => {
         runtimes: codexOnly,
         flags: { agent: 'codex', model: '', reviewer: 'none' },
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       expect(JSON.stringify(result.changes)).not.toContain('"model"')
@@ -304,7 +305,7 @@ describe('askAgents', () => {
         runtimes: codexOnly,
         flags: { agent: 'codex', reviewer: 'none' },
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       expect((result as { refused: string }).refused).toContain("--model ''")
     })
@@ -316,7 +317,7 @@ describe('askAgents', () => {
         runtimes: codexOnly,
         flags: { agent: 'codex', model: '', reviewer: 'codex' },
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       expect((result as { refused: string }).refused).toContain("--reviewer-model ''")
     })
@@ -337,7 +338,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       expect(result).toHaveProperty('refused')
       const refusal = (result as { refused: string }).refused
@@ -359,7 +360,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       expect(lines.some((l) => l.includes('second review'))).toBe(false)
@@ -375,7 +376,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       expect(lines.some((l) => l.includes('second review') && l.includes('left as written'))).toBe(true)
@@ -401,7 +402,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       expect(result).toHaveProperty('refused')
       const refusal = (result as { refused: string }).refused
@@ -420,7 +421,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out' })],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       expect(result).toHaveProperty('refused')
       const refusal = (result as { refused: string }).refused
@@ -440,7 +441,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       expect(asked.some((p) => p.includes('[codex]'))).toBe(true)
@@ -458,7 +459,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex', { state: 'not-installed', detail: 'spawn codex ENOENT' })],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       expect(asked.some((p) => p.includes('cold reviewer') && p.includes('[claude-code]'))).toBe(true)
@@ -483,7 +484,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex', { state: 'not-installed', detail: 'spawn codex ENOENT' })],
         flags: { model: 'X' },
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       expect(result.modelChanges).toContainEqual({ path: ['steps', 'review', 0, 'model'], value: undefined })
@@ -504,7 +505,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       expect(asked[0]).toContain('[codex]')
@@ -521,7 +522,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       expect(result.changes).toContainEqual({ path: ['runtime', 'agent'], value: 'claude-code' })
@@ -537,7 +538,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       const modelPrompt = asked.find((p) => p.includes('which model'))!
@@ -556,12 +557,12 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
 
-      await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
-      const written = await Effect.runPromise(setRecipeEffect('app', result.modelChanges, { home: HOME, files }))
+      await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
+      const written = await Effect.runPromise(seedRecipe('app', result.modelChanges, { home: HOME, files }))
       expect(written.text).not.toContain('model: opus')
       expect(written.text).not.toContain('opus, because the review prompt')
     })
@@ -577,12 +578,12 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
 
-      await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
-      const written = await Effect.runPromise(setRecipeEffect('app', result.modelChanges, { home: HOME, files }))
+      await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
+      const written = await Effect.runPromise(seedRecipe('app', result.modelChanges, { home: HOME, files }))
 
       expect(written.text).toContain('the writer: this is the action that opens the branch')
       const resolved = await Effect.runPromise(
@@ -606,7 +607,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex', { state: 'signed-out', detail: 'not signed in' })],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       expect(asked[0]).not.toContain('[codex]')
@@ -626,12 +627,12 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       expect(result.changes).toContainEqual({ path: ['runtime', 'agent'], value: 'claude-code' })
 
-      const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+      const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
       const resolved = await Effect.runPromise(
         resolveLocalRecipeEffect('app', {
           home: HOME,
@@ -654,7 +655,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: { reviewer: 'none' },
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
       expect(result.changes).toContainEqual({ path: ['steps', 'review'], value: [] })
@@ -671,7 +672,7 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: { reviewer: 'none', reviewerModel: 'opus' },
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       expect(result).toHaveProperty('refused')
       // Writer, then its model: two questions asked before the reviewer flag
@@ -689,10 +690,10 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: { reviewer: 'none' },
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
-      const { text } = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+      const { text } = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
       const resolved = await Effect.runPromise(
         resolveLocalRecipeEffect('app', {
           home: HOME,
@@ -714,12 +715,12 @@ describe('askAgents', () => {
       runtimes: [runtime('claude-code'), runtime('codex')],
       flags: {},
       home: HOME,
-      files,
+      draft: await draftOver('app', { home: HOME, files }),
     })
     if ('refused' in result) throw new Error(result.refused)
 
-    await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
-    await Effect.runPromise(setRecipeEffect('app', result.modelChanges, { home: HOME, files }))
+    await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
+    await Effect.runPromise(seedRecipe('app', result.modelChanges, { home: HOME, files }))
     const resolved = await Effect.runPromise(
       resolveLocalRecipeEffect('app', {
         home: HOME,
@@ -747,10 +748,10 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code')],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
-      const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+      const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
       expect(written.written).toBe(false)
     })
 
@@ -762,11 +763,11 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code')],
         flags: { model: 'x' },
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
-      await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
-      const written = await Effect.runPromise(setRecipeEffect('app', result.modelChanges, { home: HOME, files }))
+      await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
+      const written = await Effect.runPromise(seedRecipe('app', result.modelChanges, { home: HOME, files }))
       expect(written.written).toBe(true)
       expect(written.text).toContain('model: x')
       expect(written.text).toContain('Read the ticket.')
@@ -780,10 +781,10 @@ describe('askAgents', () => {
         runtimes: [runtime('claude-code'), runtime('codex')],
         flags: {},
         home: HOME,
-        files,
+        draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
-      const written = await Effect.runPromise(setRecipeEffect('app', result.changes, { home: HOME, files }))
+      const written = await Effect.runPromise(seedRecipe('app', result.changes, { home: HOME, files }))
       const resolved = await Effect.runPromise(
         resolveLocalRecipeEffect('app', {
           home: HOME,
@@ -808,7 +809,7 @@ describe('a runtime that cannot hold a turn count (#547)', () => {
       runtimes: [runtime('claude-code'), runtime('codex')],
       flags: { agent, reviewer: 'none', model: '' },
       home: HOME,
-      files: mapFiles({ [PATH]: fixture }),
+      draft: await draftOver('app', { home: HOME, files: mapFiles({ [PATH]: fixture }) }),
     })
     if ('refused' in result) throw new Error(result.refused)
     return result.changes.filter((c) => c.path.join('.') === 'runtime.limits.turns')

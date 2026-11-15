@@ -1,4 +1,5 @@
 import { recipePath } from '@lingtai/project'
+import { draftOver } from '@lingtai/project/test/seed-recipe'
 /**
  * `askTickets` and `askKinds` (#396) — the setup's two questions over #392's
  * seam, writing nothing themselves. No filesystem: the recipe file is a
@@ -99,7 +100,11 @@ describe('askTickets', () => {
   it('a GitHub project with no flags offers github, and Enter writes nothing', async () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w, asked } = world([''])
-    const result = await askTickets(w, PROJECT, false, null, { home: HOME, files, history: noHistory })
+    const result = await askTickets(w, PROJECT, false, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history: noHistory,
+    })
     expect(result).toEqual({ changes: [], current: 'github' })
     expect(asked[0]).toContain('[github]')
   })
@@ -107,14 +112,22 @@ describe('askTickets', () => {
   it('a GitHub project answering db writes source.tickets', async () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w } = world(['db'])
-    const result = await askTickets(w, PROJECT, false, null, { home: HOME, files, history: noHistory })
+    const result = await askTickets(w, PROJECT, false, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history: noHistory,
+    })
     expect(result).toEqual({ changes: [{ path: ['source', 'tickets'], value: 'db' }], current: 'db' })
   })
 
   it('--tickets db on a GitHub project writes source.tickets without asking', async () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w, asked } = world()
-    const result = await askTickets(w, PROJECT, false, 'db', { home: HOME, files, history: noHistory })
+    const result = await askTickets(w, PROJECT, false, 'db', {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history: noHistory,
+    })
     expect(result).toEqual({ changes: [{ path: ['source', 'tickets'], value: 'db' }], current: 'db' })
     expect(asked).toEqual([])
   })
@@ -122,7 +135,11 @@ describe('askTickets', () => {
   it('a local project is never prompted and gets db', async () => {
     const files = mapFiles()
     const { world: w, asked } = world()
-    const result = await askTickets(w, PROJECT, true, null, { home: HOME, files, history: noHistory })
+    const result = await askTickets(w, PROJECT, true, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history: noHistory,
+    })
     expect(result).toEqual({ changes: [{ path: ['source', 'tickets'], value: 'db' }], current: 'db' })
     expect(asked).toEqual([])
   })
@@ -130,14 +147,22 @@ describe('askTickets', () => {
   it('a local project already at db writes nothing', async () => {
     const files = mapFiles({ [PATH]: DB_FIXTURE })
     const { world: w } = world()
-    const result = await askTickets(w, PROJECT, true, null, { home: HOME, files, history: noHistory })
+    const result = await askTickets(w, PROJECT, true, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history: noHistory,
+    })
     expect(result).toEqual({ changes: [], current: 'db' })
   })
 
   it('--tickets github on a local project is refused, and the refusal names the reason', async () => {
     const files = mapFiles()
     const { world: w } = world()
-    const result = await askTickets(w, PROJECT, true, 'github', { home: HOME, files, history: noHistory })
+    const result = await askTickets(w, PROJECT, true, 'github', {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history: noHistory,
+    })
     expect(result).toMatchObject({
       refused: expect.stringContaining('a project with no owner cannot take its tickets from GitHub'),
     })
@@ -147,7 +172,11 @@ describe('askTickets', () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w, asked, lines } = world()
     const history = async () => ['ticket-app-12']
-    const result = await askTickets(w, PROJECT, false, null, { home: HOME, files, history })
+    const result = await askTickets(w, PROJECT, false, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history,
+    })
     expect(result).toEqual({ changes: [], current: 'github' })
     expect(asked).toEqual([])
     expect(lines.some((l) => l.includes('ticket-app-12') && l.includes('same streams'))).toBe(true)
@@ -157,7 +186,11 @@ describe('askTickets', () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w } = world()
     const history = async () => ['ticket-app-12']
-    const result = await askTickets(w, PROJECT, false, 'db', { home: HOME, files, history })
+    const result = await askTickets(w, PROJECT, false, 'db', {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history,
+    })
     expect(result).toMatchObject({ refused: expect.stringContaining('ticket-app-12') })
   })
 
@@ -165,7 +198,11 @@ describe('askTickets', () => {
     const files = mapFiles({ [PATH]: DB_FIXTURE })
     const { world: w } = world()
     const history = async () => ['ticket-app-3']
-    const result = await askTickets(w, PROJECT, false, null, { home: HOME, files, history })
+    const result = await askTickets(w, PROJECT, false, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history,
+    })
     expect(result).toEqual({ changes: [], current: 'db' })
   })
 
@@ -173,7 +210,11 @@ describe('askTickets', () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w } = world()
     const history = async () => ['ticket-app-9']
-    const result = await askTickets(w, PROJECT, true, null, { home: HOME, files, history })
+    const result = await askTickets(w, PROJECT, true, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history,
+    })
     expect(result).toEqual({ changes: [], current: 'github' })
   })
 
@@ -183,14 +224,22 @@ describe('askTickets', () => {
     // --tickets github against a file that actually says db is a real
     // switch, and must be written — not silently matched against a wrongly
     // computed "current: github" and treated as already applied.
-    const result = await askTickets(w, PROJECT, false, 'github', { home: HOME, files, history: noHistory })
+    const result = await askTickets(w, PROJECT, false, 'github', {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history: noHistory,
+    })
     expect(result).toEqual({ changes: [{ path: ['source', 'tickets'], value: 'github' }], current: 'github' })
   })
 
   it('a file that does not resolve on its own offers its actual source.tickets as the default, not github', async () => {
     const files = mapFiles({ [PATH]: UNRESOLVABLE_DB_FIXTURE })
     const { world: w, asked } = world([''])
-    const result = await askTickets(w, PROJECT, false, null, { home: HOME, files, history: noHistory })
+    const result = await askTickets(w, PROJECT, false, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+      history: noHistory,
+    })
     expect(asked[0]).toContain('[db]')
     expect(result).toEqual({ changes: [], current: 'db' })
   })
@@ -199,7 +248,11 @@ describe('askTickets', () => {
     const files = mapFiles()
     const { world: w, asked, lines } = world()
     const history = async () => ['ticket-widget-3', 'db ticket #7']
-    const result = await askTickets(w, 'widget', false, null, { home: HOME, files, history })
+    const result = await askTickets(w, 'widget', false, null, {
+      home: HOME,
+      draft: await draftOver('widget', { home: HOME, files }),
+      history,
+    })
     expect(result).toEqual({ changes: [], current: 'db' })
     expect(asked).toEqual([])
     expect(lines.some((l) => l.includes('db') && l.includes('kept'))).toBe(true)
@@ -209,7 +262,11 @@ describe('askTickets', () => {
     const files = mapFiles()
     const { world: w } = world()
     const history = async () => ['ticket-widget-3']
-    const result = await askTickets(w, 'widget', false, null, { home: HOME, files, history })
+    const result = await askTickets(w, 'widget', false, null, {
+      home: HOME,
+      draft: await draftOver('widget', { home: HOME, files }),
+      history,
+    })
     expect(result).toEqual({ changes: [], current: 'github' })
   })
 })
@@ -218,7 +275,10 @@ describe('askKinds', () => {
   it('the default with no file is bug, feature, tech-debt, documentation', async () => {
     const files = mapFiles()
     const { world: w, asked } = world([''])
-    const result = await askKinds(w, PROJECT, null, { home: HOME, files })
+    const result = await askKinds(w, PROJECT, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+    })
     expect(asked[0]).toContain('[bug, feature, tech-debt, documentation]')
     expect(result).toEqual({
       changes: [{ path: ['source', 'kinds'], value: ['bug', 'feature', 'tech-debt', 'documentation'] }],
@@ -228,7 +288,10 @@ describe('askKinds', () => {
   it('--kinds feature,bug is written as [feature, bug]', async () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w, asked } = world()
-    const result = await askKinds(w, PROJECT, 'feature,bug', { home: HOME, files })
+    const result = await askKinds(w, PROJECT, 'feature,bug', {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+    })
     expect(asked).toEqual([])
     expect(result).toEqual({ changes: [{ path: ['source', 'kinds'], value: ['feature', 'bug'] }] })
   })
@@ -236,7 +299,10 @@ describe('askKinds', () => {
   it('pressing enter on the existing kinds writes nothing', async () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w, asked } = world([''])
-    const result = await askKinds(w, PROJECT, null, { home: HOME, files })
+    const result = await askKinds(w, PROJECT, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+    })
     expect(asked[0]).toContain('[bug]')
     expect(result).toEqual({ changes: [] })
   })
@@ -244,14 +310,20 @@ describe('askKinds', () => {
   it('an empty list is refused and asked again', async () => {
     const files = mapFiles({ [PATH]: GITHUB_FIXTURE })
     const { world: w } = world([' , ', 'bug'])
-    const result = await askKinds(w, PROJECT, null, { home: HOME, files })
+    const result = await askKinds(w, PROJECT, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+    })
     expect(result).toEqual({ changes: [] })
   })
 
   it('a file that does not resolve on its own still has its source.kinds read, not defaulted to SETUP_KINDS (#396 fix round, finding 2)', async () => {
     const files = mapFiles({ [PATH]: UNRESOLVABLE_KINDS_FIXTURE })
     const { world: w, asked } = world([''])
-    const result = await askKinds(w, PROJECT, null, { home: HOME, files })
+    const result = await askKinds(w, PROJECT, null, {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+    })
     // The bracket must offer what the file actually says, not SETUP_KINDS —
     // otherwise Enter here silently replaces [bug] with the default three.
     expect(asked[0]).toContain('[bug]')
@@ -262,12 +334,18 @@ describe('askKinds', () => {
   it('a different --kinds against a file that does not resolve on its own is still a real change', async () => {
     const files = mapFiles({ [PATH]: UNRESOLVABLE_KINDS_FIXTURE })
     const { world: w } = world()
-    const result = await askKinds(w, PROJECT, 'feature,bug', { home: HOME, files })
+    const result = await askKinds(w, PROJECT, 'feature,bug', {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
+    })
     expect(result).toEqual({ changes: [{ path: ['source', 'kinds'], value: ['feature', 'bug'] }] })
   })
 
   it('a repeated label is refused by name', async () => {
-    const result = await askKinds(world().world, PROJECT, 'bug,bug', { home: HOME, files: mapFiles() })
+    const result = await askKinds(world().world, PROJECT, 'bug,bug', {
+      home: HOME,
+      draft: await draftOver(PROJECT, { home: HOME, files: mapFiles() }),
+    })
     expect(result).toMatchObject({ refused: expect.stringContaining('named twice') })
   })
 })
@@ -278,7 +356,7 @@ describe('kept — neither question claims "Nothing was written" once a caller h
     const { world: w } = world([null])
     const result = await askTickets(w, PROJECT, false, null, {
       home: HOME,
-      files,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
       history: noHistory,
       kept: 'the writer and reviewer chosen above are kept',
     })
@@ -291,7 +369,7 @@ describe('kept — neither question claims "Nothing was written" once a caller h
     const { world: w } = world()
     const result = await askTickets(w, PROJECT, true, 'github', {
       home: HOME,
-      files,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
       history: noHistory,
       kept: 'the store chosen above is kept',
     })
@@ -303,7 +381,7 @@ describe('kept — neither question claims "Nothing was written" once a caller h
     const { world: w } = world([null])
     const result = await askKinds(w, PROJECT, null, {
       home: HOME,
-      files,
+      draft: await draftOver(PROJECT, { home: HOME, files }),
       kept: 'the ticket source chosen above is kept',
     })
     expect(result).toMatchObject({ refused: expect.stringContaining('the ticket source chosen above is kept') })
