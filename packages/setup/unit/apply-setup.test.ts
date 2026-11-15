@@ -135,10 +135,11 @@ describe('applySetup — who (#1177)', () => {
   })
 
   it('previewSetup appends nothing', async () => {
-    const { files } = countingFiles()
-    const store = createMemoryEventStore()
+    // previewSetup takes no store and no `by`: all it could reach is the port, and the port is never written.
+    const { files, store, events } = countingFiles()
     await Effect.runPromise(previewSetup({ home: HOME, files }, { project: 'repo', changes: CHANGES }))
-    expect(await store.read(projectStream('repo'))).toEqual([])
+    expect(events).toEqual([])
+    expect(store.size).toBe(0)
   })
 })
 

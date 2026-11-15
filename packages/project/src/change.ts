@@ -22,7 +22,7 @@ import {
 } from '@lingtai/recipe'
 import { Cause, Effect } from 'effect'
 
-import { recordFileRecipe } from './commands.ts'
+import { recordObservedRecipe } from './commands.ts'
 import { draftRecipe } from './draft.ts'
 import { ProjectFiles, filesEffect } from './files.ts'
 import { recipePath, resolveLocalRecipeEffect } from './local.ts'
@@ -70,17 +70,20 @@ export const changeRecipe = Effect.fn('project.change-recipe')(function* (
 
   const files = filesEffect(yield* ProjectFiles)
   const path = recipePath(project, options.home ?? stateDir())
-  const current = yield* files.read(path)
 
+  // One snapshot of the file per arm: the text edited, the text compared with, and what is replaced are the same read.
+  let current: string | null
   let text: string
   if ('changes' in input) {
     const draft = yield* draftRecipe(project, {
       ...(options.home === undefined ? {} : { home: options.home }),
       ...(input.said === undefined ? {} : { said: input.said }),
     })
+    current = draft.text()
     yield* draft.set(input.changes)
     text = draft.text() as string
   } else {
+    current = yield* files.read(path)
     if (current === null)
       return { ok: false, reason: 'missing', message: `no recipe at ${path}` } as SaveRecipeTextResult
     // `expected` is carried exactly (the form JSON-encodes it), so this is byte for byte.
@@ -126,10 +129,22 @@ export const changeRecipe = Effect.fn('project.change-recipe')(function* (
   const written = text !== current
   if (written) yield* files.replace(path, text)
 
-  // What the file now says, hashed as `loadProject` hashes it, so the next load finds it recorded.
-  const source = sourceOf(text)
-  yield* recordFileRecipe(project, { sourceHash: sourceHashOf(source), source, by: options.by }, store).pipe(
-    Effect.mapError((e) => new RecipeNotRecordedError(path, e)),
-  )
+  // What the file says **when the append is attempted**, hashed as `loadProject` hashes it: a save that lost the
+  // version race re-observes the file on its retry, so it never appends its own text over a later writer's.
+  yield* recordObservedRecipe(
+    project,
+    () =>
+      files.read(path).pipe(
+        Effect.flatMap((onDisk) =>
+          onDisk === null
+            ? Effect.fail(new Error(`${path} is gone`))
+            : Effect.sync(() => {
+                const source = sourceOf(onDisk)
+                return { sourceHash: sourceHashOf(source), source, by: options.by }
+              }),
+        ),
+      ),
+    store,
+  ).pipe(Effect.mapError((e) => new RecipeNotRecordedError(path, e)))
   return { ok: true, path, written, content: text } as SaveRecipeTextResult
 })

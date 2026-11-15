@@ -1,7 +1,7 @@
 /** `changeRecipe` (#1177): the file first, then the event naming who — a `Map` port and a memory log. */
 import { projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import type { RecipeFiles } from '@lingtai/recipe'
+import { type RecipeFiles, sourceHashOf, sourceOf } from '@lingtai/recipe'
 import { fakeSandboxHost, skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -128,14 +128,60 @@ describe('changeRecipe', () => {
     expect((await readProjectState('app', t.store)).recipe?.by).toBe('human:me')
   })
 
-  it('two changes at once both land in order', async () => {
+  it('two saves at once leave the last event agreeing with the file', async () => {
     const t = setup({ [PATH]: GOOD })
-    await Promise.all([
-      t.text(EDITED, GOOD, 'human:a'),
-      t.text(EDITED.replace('feature', 'tech-debt'), GOOD, 'human:b'),
-    ])
-    const by = (await t.events()).map((e) => e.by)
-    expect(by.length).toBeGreaterThanOrEqual(1)
-    expect(by.every((b) => b.startsWith('human:'))).toBe(true)
+    const B = EDITED.replace('feature', 'tech-debt')
+    const [a, b] = await Promise.all([t.text(EDITED, GOOD, 'human:a'), t.text(B, GOOD, 'human:b')])
+    expect([a.ok, b.ok].filter(Boolean).length).toBeGreaterThanOrEqual(1)
+    const state = await readProjectState('app', t.store)
+    expect(state.recipe?.sourceHash).toBe(sourceHashOf(sourceOf(t.disk.get(PATH)!)))
+  })
+
+  it('a save that loses the version race records the file as a later writer left it', async () => {
+    const t = setup({ [PATH]: GOOD })
+    const B = EDITED.replace('feature', 'tech-debt')
+    const append = t.store.append.bind(t.store)
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    let first = true
+    t.store.append = (async (...args: Parameters<typeof append>) => {
+      if (first) {
+        first = false
+        await gate
+      }
+      return append(...args)
+    }) as typeof t.store.append
+    const a = t.text(EDITED, GOOD, 'human:a')
+    // A has written EDITED and is held before its append commits.
+    while (t.disk.get(PATH) !== EDITED) await new Promise((r) => setTimeout(r, 0))
+    expect(await t.text(B, EDITED, 'human:b')).toMatchObject({ ok: true, written: true })
+    release()
+    expect(await a).toMatchObject({ ok: true })
+    expect(t.disk.get(PATH)).toBe(B)
+    const state = await readProjectState('app', t.store)
+    expect(state.recipe?.sourceHash).toBe(sourceHashOf(sourceOf(B)))
+  })
+
+  it('changes are applied to the snapshot they are compared with', async () => {
+    const t = setup({ [PATH]: GOOD })
+    const original = t.files.read
+    let reads = 0
+    t.files.read = async (p) => {
+      const got = await original(p)
+      // Another writer installs EDITED right after the first read of the file.
+      if (++reads === 1) t.disk.set(PATH, EDITED)
+      return got
+    }
+    // These changes turn EDITED back into GOOD's text: against the first read that is "no change".
+    const r = await t.run(
+      changeRecipe(
+        'app',
+        { changes: [{ path: ['source', 'kinds'], value: ['bug'] }] },
+        { by: 'human:me', store: t.store, home: HOME },
+      ).pipe(Effect.provideService(ProjectFiles, t.files)),
+    )
+    expect(r).toMatchObject({ ok: true })
+    expect(t.disk.get(PATH)).toBe(await original(PATH))
+    expect(await t.events()).toHaveLength(1)
   })
 })
