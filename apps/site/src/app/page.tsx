@@ -27,6 +27,10 @@ const LEDGER = [
   { key: 'Record', alone: 'The chat transcript', lingtai: 'Every step recorded, and a receipt' },
 ]
 
+/** The `aria-label` of `doc/img/sandbox.svg`, verbatim. */
+export const SANDBOX_ALT =
+  "Every agent run sits inside one srt sandbox: it reads and writes its worktree and temp directories, reaches only allowlisted hosts, and is refused your keys, logins and Lingtai's own state. Every refused connection is recorded and shown on the board."
+
 export const metadata: Metadata = { alternates: { canonical: '/' } }
 
 export function HomePage({ books }: { books: Books | null }) {
@@ -157,6 +161,33 @@ export function HomePage({ books }: { books: Books | null }) {
             <ReplayReceipt />
           </div>
 
+          <section className="sandbox-pitch" aria-labelledby="sandbox-title">
+            <div className="sandbox-head">
+              <p className="kicker">Sandbox &middot; from v0.14.0</p>
+              <h2 id="sandbox-title">The agent runs inside a sandbox.</h2>
+              <p className="sub">What it can reach is a short list, and what it is refused is written down.</p>
+            </div>
+            <ul className="sandbox-facts">
+              <li>
+                <b>Your keys stay yours.</b> It cannot read <code>~/.ssh</code>, cloud keys, your GitHub, npm or Docker
+                logins, or Lingtai&apos;s own state.
+              </li>
+              <li>
+                <b>Its network is a short list.</b> It reaches only an allowlist of hosts, plus the ones you add.
+              </li>
+              <li>
+                <b>Refused connections are recorded.</b> Each one is shown on the board, on the ticket it happened to.
+              </li>
+              <li>
+                <b>On for new projects.</b> One <code>sandbox</code> block in the recipe configures it.{' '}
+                <a className="link" href="/docs/safety/">
+                  What an agent can touch →
+                </a>
+              </li>
+            </ul>
+            <img className="sandbox-diagram" src="/img/docs/sandbox.svg" alt={SANDBOX_ALT} width={760} height={400} />
+          </section>
+
           <section className="why" aria-labelledby="why-title">
             <div className="why-head">
               <p className="kicker">The first question</p>
@@ -276,8 +307,9 @@ export function HomePage({ books }: { books: Books | null }) {
                     Can it read my <code>~/.ssh</code>?<span className="faq-tag">HONEST ANSWER</span>
                   </summary>
                   <p>
-                    By default, yes. A Claude Code agent runs as your user, so it can read what you can. Lingtai keeps
-                    its own secrets away from the agent, but it is not a sandbox. If you need one, run it inside yours.{' '}
+                    From v0.14.0, not in a sandboxed project: <code>~/.ssh</code> is on its deny list. Still readable
+                    inside it: the agent&apos;s own login token for that run. A project whose recipe has no{' '}
+                    <code>sandbox</code> block, or has <code>enabled: false</code>, runs as your user, as before.{' '}
                     <a className="link" href="/docs/safety/">
                       What an agent can touch →
                     </a>

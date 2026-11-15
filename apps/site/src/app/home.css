@@ -210,6 +210,17 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
   .home .tale-side { position: static; padding-top: 0; order: -1; }
 }
 
+/* The sandbox, one section before the first question */
+.sandbox-pitch { border-top: 1px solid var(--rule); padding: 56px 0 8px; }
+.sandbox-head { text-align: center; max-width: 640px; margin: 0 auto 28px; }
+.sandbox-head > * { margin-left: auto; margin-right: auto; }
+.sandbox-head h2 { text-wrap: balance; }
+.sandbox-head .sub { color: var(--ink-2); font-size: 17px; line-height: 1.6; margin: 0; }
+.sandbox-facts { list-style: none; margin: 0 auto 32px; padding: 0; max-width: 720px; display: grid; gap: 12px; }
+.sandbox-facts li { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 18px; color: var(--ink-2); line-height: 1.55; }
+.sandbox-facts b { color: var(--ink); }
+.sandbox-diagram { display: block; width: 100%; max-width: 760px; height: auto; margin: 0 auto 40px; }
+
 /* Why not just give the agent the issue? */
 .why { border-top: 1px solid var(--rule); padding: 56px 0 8px; }
 .why-head { text-align: center; max-width: 640px; margin: 0 auto 32px; }

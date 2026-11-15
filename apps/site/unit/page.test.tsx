@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Bar, DOCS_MENU } from '@/app/chrome'
-import { HomePage } from '@/app/page'
+import { HomePage, SANDBOX_ALT } from '@/app/page'
 import { Receipt } from '@/app/receipt'
 import { dollars, receiptAt } from '@/app/replay-receipt'
 import { SHOTS } from '@/app/shots'
@@ -75,6 +75,7 @@ describe("the home page's argument", () => {
       'Agents do the work',
       'One ticket, filed to landed.',
       'The agent got it wrong. Twice.',
+      'The agent runs inside a sandbox.',
       'Why not just give the agent the issue?',
       'Three steps to your first receipt.',
     ]
@@ -158,8 +159,23 @@ describe("the home page's argument", () => {
     expect(honest).toContain('~/.ssh')
     expect(honest).toContain('HONEST ANSWER')
     expect(honest).toContain('href="/docs/safety/"')
-    expect(honest.indexOf('By default, yes')).toBeLessThan(honest.indexOf('not a sandbox'))
+    expect(honest).not.toContain('not a sandbox')
+    expect(honest).toContain('login token')
+    expect(honest).toContain('enabled: false')
     expect(html).not.toMatch(/\bguarded\b/i)
+  })
+
+  it('has a sandbox section before the first question, from v0.14.0, linking the safety page and the diagram', () => {
+    const html = renderToStaticMarkup(<HomePage books={null} />)
+    const start = html.indexOf('class="sandbox-pitch"')
+    expect(start).toBeGreaterThan(-1)
+    const block = html.slice(start, html.indexOf('</section>', start))
+    expect(start).toBeLessThan(html.indexOf('class="why"'))
+    expect(block).toContain('from v0.14.0')
+    expect(block).toContain('href="/docs/safety/"')
+    expect(block).toContain('src="/img/docs/sandbox.svg"')
+    expect(SANDBOX_ALT.length).toBeGreaterThan(0)
+    expect(block).toMatch(/alt="[^"]+"/)
   })
 
   it('no longer says what stopped being true', async () => {
