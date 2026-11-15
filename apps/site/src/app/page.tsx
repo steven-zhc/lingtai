@@ -195,15 +195,15 @@ export function HomePage({ books }: { books: Books | null }) {
                 </a>
               </div>
               <div className="sandbox-side">
-                <figure className="sbx" aria-label="Illustration of a ticket's Sandbox tab on the board">
-                  <div className="sbx-top">
+                <figure className="home-sbx" aria-label="Illustration of a ticket's Sandbox tab on the board">
+                  <div className="home-sbx-top">
                     <span>
                       <b>#42 &middot; add reading time to chapters</b>
                       <small>Attempt 1</small>
                     </span>
                     <span className="tag ill">ILLUSTRATION</span>
                   </div>
-                  <div className="sbx-group">
+                  <div className="home-sbx-group">
                     <h3>Blocked</h3>
                     <ul>
                       <li>
@@ -220,7 +220,7 @@ export function HomePage({ books }: { books: Books | null }) {
                       </li>
                     </ul>
                   </div>
-                  <div className="sbx-group">
+                  <div className="home-sbx-group">
                     <h3>
                       Allowed <small>Reachable</small>
                     </h3>
@@ -245,7 +245,7 @@ export function HomePage({ books }: { books: Books | null }) {
                       </li>
                     </ul>
                   </div>
-                  <div className="sbx-group">
+                  <div className="home-sbx-group">
                     <h3>
                       Limited <small>Cannot be read</small>
                     </h3>

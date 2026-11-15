@@ -176,6 +176,7 @@ describe("the home page's argument", () => {
     expect(block).toMatch(/telemetry/i)
     expect(block).toContain('On for new projects')
     expect(block).toContain('ILLUSTRATION')
+    expect(block).toContain('class="home-sbx"')
     for (const heading of ['Blocked', 'Allowed', 'Reachable', 'Limited', 'Cannot be read']) {
       expect(block).toContain(heading)
     }
