@@ -1,0 +1,96 @@
+/** The sandbox mark on the filter's rows, the cards and the landed rows (#1166). */
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+
+import { Card, LandedRow } from '../src/app/page.tsx'
+import { Projects } from '../src/app/projects.tsx'
+import { ProjectSandboxMark } from '../src/app/sandbox-mark.tsx'
+import type { BoardCard } from '../src/lib/board.ts'
+import { GLYPH, SENTENCES, sandboxStates, type SandboxState, type SandboxStateName } from '../src/lib/sandbox-state.ts'
+import { emptyBill } from '../src/lib/spend.ts'
+
+const NAMES = Object.keys(SENTENCES) as SandboxStateName[]
+const st = (state: SandboxStateName): SandboxState => ({ state, sentence: SENTENCES[state] })
+
+describe('ProjectSandboxMark', () => {
+  it.each(NAMES)('renders %s with its class, glyph and sentence, and is no link', (name) => {
+    const out = renderToStaticMarkup(<ProjectSandboxMark state={st(name)} />)
+    expect(out).toContain(`sbx-${name}`)
+    expect(out).toContain(`aria-label="${SENTENCES[name]}"`)
+    expect(out).toContain(`>${GLYPH[name]}</span>`)
+    expect(out).not.toContain('<a')
+    expect(out).not.toContain('pause-tag')
+  })
+
+  it('draws nothing without a state', () => {
+    expect(renderToStaticMarkup(<ProjectSandboxMark state={undefined} />)).toBe('')
+  })
+})
+
+describe('sandboxStates', () => {
+  it('skips a project with no name', () => {
+    expect(sandboxStates([{ project: null } as never]).size).toBe(0)
+  })
+})
+
+describe('the filter menu', () => {
+  const locks = new Map([['b', [{ kind: 'paused' as const, by: 'x', since: new Date(0) }]]])
+  const render = (sandbox?: ReadonlyMap<string, SandboxState>) =>
+    renderToStaticMarkup(
+      <Projects filters={['a', 'b']} only={undefined} app registered={['a', 'b']} locks={locks} sandbox={sandbox} />,
+    )
+
+  it('puts the mark beside the pause tag on a paused row, and none in the summary or all-projects tab', () => {
+    const out = render(new Map([['b', st('off')]]))
+    const row = out.slice(out.indexOf('href="/?project=b"'))
+    expect(row).toContain('sbx-off')
+    expect(row).toContain('pause-tag')
+    const head = out.slice(0, out.indexOf('href="/?project=a"'))
+    expect(head).not.toContain('sbx')
+  })
+
+  it('renders as before when no map is given', () => {
+    expect(render()).not.toContain('sbx')
+  })
+})
+
+const board = {
+  taskId: 't',
+  project: 'p',
+  column: 'queued',
+  ref: '1',
+  kind: 'bug',
+  title: 'T',
+  costUsd: emptyBill(),
+  repairCostUsd: emptyBill(),
+} as unknown as BoardCard
+
+describe('cards and landed rows', () => {
+  it('Card carries the mark when given a state, and none otherwise', () => {
+    const el = (s?: SandboxState) =>
+      renderToStaticMarkup(<Card card={board} showProject={false} issue={null} paused={false} sandbox={s} />)
+    expect(el(st('degraded'))).toContain('sbx-degraded')
+    expect(el()).not.toContain('sbx')
+  })
+
+  it('a waiting Card carries it too', () => {
+    const w = { ...board, column: 'waiting', note: null, short: null, cause: null, triage: null, move: null } as never
+    const out = renderToStaticMarkup(<Card card={w} showProject issue={null} paused={false} sandbox={st('stopped')} />)
+    expect(out).toContain('sbx-stopped')
+  })
+
+  it('LandedRow carries it outside the meta link', () => {
+    const c = {
+      ...board,
+      column: 'landed',
+      closed: false,
+      turns: null,
+      costUsd: emptyBill(),
+      updatedAt: null,
+      progress: null,
+    }
+    const out = renderToStaticMarkup(<LandedRow card={c as never} showProject issue={null} sandbox={st('sandboxed')} />)
+    expect(out.indexOf('sbx-sandboxed')).toBeLessThan(out.indexOf('lmeta'))
+    expect(renderToStaticMarkup(<LandedRow card={c as never} showProject issue={null} />)).not.toContain('sbx')
+  })
+})
