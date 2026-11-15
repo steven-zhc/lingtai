@@ -7,7 +7,6 @@ import { Suspense, type ReactNode } from 'react'
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
 import { BlockedList } from '@/app/sandbox-panel.tsx'
-import { sandboxSlot } from '@/app/sandbox-slot.tsx'
 import { Skeleton } from '@/app/skeleton.tsx'
 import { filterOptions, onBoardProjects } from '@/lib/board'
 import { lockMap } from '@/lib/lock-marks.ts'
@@ -233,7 +232,7 @@ export function Recipe({
     <>
       <main className="detail">
         {bar === undefined ? (
-          <Bar project={view.project} registered here="recipe" pause={pause} sandbox={sandboxSlot(view.project)} />
+          <Bar project={view.project} registered here="recipe" pause={pause} />
         ) : (
           <RecipeBar project={view.project} {...bar} pause={pause} />
         )}

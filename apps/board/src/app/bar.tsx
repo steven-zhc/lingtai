@@ -10,7 +10,8 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
-import { GLYPH, type SandboxMark } from '../lib/sandbox-state.ts'
+import type { SandboxMark } from '../lib/sandbox-state.ts'
+import { SandboxShield } from './sandbox-shield.tsx'
 
 export const withProject = (path: string, project: string | undefined): string =>
   project === undefined ? path : `${path}?project=${encodeURIComponent(project)}`
@@ -21,7 +22,6 @@ export function Bar({
   registered = false,
   pause,
   actions,
-  sandbox,
   children,
 }: {
   /** The project in view, carried on the way home and on Report; none on `all`. */
@@ -37,8 +37,6 @@ export function Bar({
    * streams them. When given it replaces `registered` and `pause`.
    */
   actions?: ReactNode
-  /** The sandbox's one icon (#1163), already built by `sandboxSlot`; drawn before Report. */
-  sandbox?: ReactNode
   children?: ReactNode
 }) {
   return (
@@ -57,7 +55,6 @@ export function Bar({
         ) : project !== undefined && registered ? (
           <BarActions project={project} here={here} pause={pause} />
         ) : null}
-        {sandbox}
         <Link
           className={here === 'report' ? 'navlink on' : 'navlink'}
           href={withProject('/report', project)}
@@ -101,15 +98,11 @@ const sectionOf = (project: string) => `/recipe/${encodeURIComponent(project)}#s
 
 /**
  * The sandbox's one icon (#1163): no text, its sentence as tooltip and accessible name. One project in the worst
- * state is a plain link to its section; several (or one beside an unreadable one) are a `<details>` listing each. *Off* is grey and dashed.
+ * state is a plain link to its section; several (or one beside an unreadable one) are a `<details>` listing each. *Off* is a grey, empty, solid outline.
  */
 export function SandboxIcon({ mark }: { mark: SandboxMark }) {
   const only = mark.projects.length === 1 && mark.unreadable.length === 0 ? mark.projects[0]! : undefined
-  const glyph = (
-    <span className="sbx-mark" aria-hidden="true">
-      {GLYPH[mark.state]}
-    </span>
-  )
+  const glyph = <SandboxShield state={mark.state} />
   if (mark.projects.length === 0) {
     // No project to lead to (the listing itself failed): a focusable image, never a link to nowhere.
     return (
