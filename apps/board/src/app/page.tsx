@@ -1107,7 +1107,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               headline's, below. Outside every keyed boundary: it holds the
               subscription. */}
             {/* The sandbox's one shield, before the dot and never after it: health's sentence and command follow the
-              dot when something is wrong, so a mark behind them would jump (#1183). Outside `<Health>`, which holds the
+              dot when something is wrong, so a mark behind them would jump (#1183). Outside Health, which holds the
               subscription; its own keyed boundary, so a project switch remounts it. */}
             {sandboxSlot(param, key('sandbox'))}
             <Health

@@ -23,7 +23,7 @@ describe('ProjectSandboxMark', () => {
     if (name === 'off') expect(out.match(/<path/g)).toHaveLength(1)
     else expect(out).toContain(`d="${GLYPH[name]}"`)
     // No text inside the mark: only the svg and its paths.
-    expect(out.slice(out.indexOf('class="sbx-mark"')).replace(/<[^>]*>/g, '')).toBe('')
+    expect(out.slice(out.indexOf('<span class="sbx-mark"')).replace(/<[^>]*>/g, '')).toBe('')
     expect(out).not.toContain('<a')
     expect(out).not.toContain('pause-tag')
   })
