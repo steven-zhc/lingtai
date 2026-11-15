@@ -1,3 +1,4 @@
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { recipePath } from '@lingtai/project'
 /**
  * The board's step 2 and `lingtai add` write the same recipe for the same
@@ -120,7 +121,9 @@ async function viaAdd(
     files,
   })
   if (!('ok' in result)) throw new Error(JSON.stringify(result))
-  await Effect.runPromise(applySetup({ home: HOME, files }, result.answers, Effect.void))
+  await Effect.runPromise(
+    applySetup({ home: HOME, files, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void),
+  )
   return files.store.get(recipePath(project, HOME))
 }
 
@@ -131,7 +134,9 @@ async function viaPage(form: (checks: { name: string; run: string }[], install: 
     detected.build.map(({ name, run }) => ({ name, run })),
     detected.install?.run ?? '',
   )
-  await Effect.runPromise(applySetup({ home: HOME, files }, setupAnswers(f), Effect.void))
+  await Effect.runPromise(
+    applySetup({ home: HOME, files, by: 'human:me', store: createMemoryEventStore() }, setupAnswers(f), Effect.void),
+  )
   return files.store.get(recipePath(f.project, HOME))
 }
 
@@ -287,7 +292,9 @@ describe('the sandbox step, new recipe (#1160)', () => {
     if (!('ok' in result)) throw new Error(JSON.stringify(result))
     expect(lines.join('\n')).toContain('cannot run the sandbox yet: bwrap is missing; no bwrap on PATH')
     expect(lines.join('\n')).toContain('apt install bubblewrap')
-    await Effect.runPromise(applySetup({ home: HOME, files }, result.answers, Effect.void))
+    await Effect.runPromise(
+      applySetup({ home: HOME, files, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void),
+    )
     expect(sandboxOf(files.store.get(recipePath('chapter-garden', HOME)))).toMatchObject({
       enabled: true,
       required: false,

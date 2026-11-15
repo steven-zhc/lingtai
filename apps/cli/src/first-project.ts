@@ -43,6 +43,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { readFile, rm, stat } from 'node:fs/promises'
+import { userInfo } from 'node:os'
 import { basename, join, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -56,6 +57,7 @@ import { held } from '@lingtai/daemon'
 import type { ProjectState } from '@lingtai/domain'
 import { boardHost, boardPort, boardReachHost, githubAuthKind, stateDir } from '@lingtai/env'
 import type { Locker } from '@lingtai/env/lock'
+import type { EventStore } from '@lingtai/event-store/store'
 import { ghStatusEffect, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
 import {
   HOST_FOR_SAVING,
@@ -173,6 +175,10 @@ export interface FirstProjectWorld extends QuestionWorld {
   /** The lock an add is made under (`exclusiveAdd`): the machine's file lock unless a test hands one in. */
   locker?: Locker
   files: RecipeFiles
+  /** Who adds, on the recipe's event: `human:<user>`. */
+  by: string
+  /** The log the recipe's event goes to — the process's own when absent. */
+  store?: EventStore
   /** `stateDir()` unless a test says otherwise. */
   home: string
   /**
@@ -994,7 +1000,7 @@ function runLocalBranch(
         // Under the lock the board's Add takes; a project not yet registered is checked again inside it,
         // since another process may have added it since the read above.
         const write = applySetup(
-          { home: world.home, files: world.files },
+          { home: world.home, files: world.files, by: world.by, store: world.store },
           recipeResult.answers,
           Effect.suspend(() =>
             world.register({
@@ -1380,6 +1386,7 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     exists: pathExistsEffect,
     projects: () => loadAllProjectsEffect(),
     files: diskFiles,
+    by: `human:${userInfo().username}`,
     home,
     sandboxHost: () => sandboxHostHere(),
     claudeToken: (recipe) =>

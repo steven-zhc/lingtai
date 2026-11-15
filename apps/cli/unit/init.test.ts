@@ -1,3 +1,4 @@
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { GhStatus } from '@lingtai/github'
 import type { RecipeFiles } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -171,6 +172,7 @@ function harness(
         files.set(p, text)
       },
     } as RecipeFiles,
+    store: createMemoryEventStore(),
     signedIn: async () => ['claude-code'] as never[],
     registerLocal: async (payload) => ({ line: `added ${payload.project}`, updated: false }),
     history: async () => [],

@@ -367,7 +367,7 @@ function addWithSetup(
     Effect.flatMap((projects) =>
       alreadyAdded(projects, answers.project) === undefined
         ? applySetup(
-            { files: world.files },
+            { files: world.files, by: world.by, store: world.store },
             answers,
             world.github.add(opts, log).pipe(
               Effect.mapError((err) => (err instanceof Error ? err : new Error(String(err)))),

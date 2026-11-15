@@ -11,6 +11,7 @@
  * it is a module rather than a file snapshot because `vitest -u` would rewrite the reference this test holds. A
  * ticket that changes `init`'s words on purpose regenerates it, and says so in its diff.
  */
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { RecipeFiles } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { expect, it } from 'vitest'
@@ -83,6 +84,7 @@ async function run(): Promise<{ code: number; lines: string[] }> {
         files.set(p, text)
       },
     } as RecipeFiles,
+    store: createMemoryEventStore(),
     signedIn: async () => ['claude-code'] as never[],
     registerLocal: async (payload) => ({ line: `added ${payload.project}`, updated: false }),
     history: async () => [],
