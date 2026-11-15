@@ -27,9 +27,12 @@ const LEDGER = [
   { key: 'Record', alone: 'The chat transcript', lingtai: 'Every step recorded, and a receipt' },
 ]
 
-/** The `aria-label` of `doc/img/sandbox.svg`, verbatim. */
+/**
+ * `doc/img/sandbox.svg`'s `aria-label`, except its last sentence: the diagram says every refused connection is
+ * shown on the board, and the board leaves telemetry hosts out (ADR 0127 §17).
+ */
 export const SANDBOX_ALT =
-  "Every agent run sits inside one srt sandbox: it reads and writes its worktree and temp directories, reaches only allowlisted hosts, and is refused your keys, logins and Lingtai's own state. Every refused connection is recorded and shown on the board."
+  "Every agent run sits inside one srt sandbox: it reads and writes its worktree and temp directories, reaches only allowlisted hosts, and is refused your keys, logins and Lingtai's own state. Every refused connection is recorded; the board shows them except telemetry hosts such as sentry.io."
 
 export const metadata: Metadata = { alternates: { canonical: '/' } }
 
@@ -176,7 +179,8 @@ export function HomePage({ books }: { books: Books | null }) {
                 <b>Its network is a short list.</b> It reaches only an allowlist of hosts, plus the ones you add.
               </li>
               <li>
-                <b>Refused connections are recorded.</b> Each one is shown on the board, on the ticket it happened to.
+                <b>Refused connections are recorded.</b> The board shows them on the ticket they happened to, except
+                telemetry hosts such as <code>sentry.io</code>, which are refused and recorded but not shown.
               </li>
               <li>
                 <b>On for new projects.</b> One <code>sandbox</code> block in the recipe configures it.{' '}

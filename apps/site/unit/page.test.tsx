@@ -175,6 +175,8 @@ describe("the home page's argument", () => {
     expect(block).toContain('href="/docs/safety/"')
     expect(block).toContain('src="/img/docs/sandbox.svg"')
     expect(SANDBOX_ALT.length).toBeGreaterThan(0)
+    expect(block).toContain('telemetry')
+    expect(SANDBOX_ALT).not.toContain('shown on the board')
     expect(block).toMatch(/alt="[^"]+"/)
   })
 
