@@ -1,7 +1,8 @@
 # 018 — Would an acceptance agent have caught it?
 
-**Set up** 2026-11-16 · **Run** pilot A1 2026-11-16, the rest not yet ·
-**Result** A1 caught (below). The question behind it is [design/acceptance.md](../design/acceptance.md).
+**Set up** 2026-11-16 · **Run** all eight 2026-11-16 · **Result** caught 5 of 8
+(3 by a check a script can run, 1 by visual judgement, 1 probable), missed 2, 1 not
+verified; $24.14 in all. The question behind it is [design/acceptance.md](../design/acceptance.md).
 
 ## Why
 
@@ -112,4 +113,47 @@ a script.
 
 ## Result
 
-[Filled in when all eight have run.]
+Every case ran with [`018/prompt.md`](018/prompt.md) through
+[`018/run-case.sh`](018/run-case.sh) (and [`eval-case.sh`](018/eval-case.sh) for
+the four whose agents named their files without the issue number). Each case's
+`ACCEPTANCE.md` and tests are in `018/<case>/`.
+
+| Case | Cost · turns · min | Base | Caught? | By what |
+|---|---|---|---|---|
+| A1 #1196 → #1237 | $3.82 · 63 · 9.1 | 57/57 fail | **yes** | the style table, run with `getComputedStyle`: borders `--muted`, headings 15.8px bold, no Blocked header, no pill, 3 chips overflowing, the `/private` twin twice |
+| A2 #1188 → #1189 | $1.78 · 22 · 4.1 | 25/25 fail | **yes, by judgement** | checklist 8 (*the card shows Blocked, Allowed → Reachable and Limited → Cannot be read*): at 1360px the card's groups sit side by side and run past the window (right edge 1540px), so *Limited* is not on screen — [`A2/landed-1360.png`](018/A2/landed-1360.png). No row a script can check says *one column*; the ticket gave no mock CSS |
+| A3 #789 → #794 | $2.64 · 55 · 5.4 | 31/31 fail | **yes** | the style table: S5 wants the spine's nodes as 24px circles, landed draws 81×59 boxes with no radius; links are the browser's `rgb(0, 0, 238)`; the commit note is above the entries; the meta line takes two lines — [`A3/landed.png`](018/A3/landed.png). One test (the commit note last) also fails on landed and passes on the fix |
+| A4 #885 → #899 | $3.73 · 57 · 8.6 | 33/33 fail | **not verified** | checklist 12 (*nothing overflows its box … the tab row wraps*) is the defect, but the page was not rendered: it needs the board at 2026-11-05's code with a long refusal on a task. The agent could not read the mock (a claude.ai artifact) |
+| B1 #1151 → #1193 | $3.11 · 51 · 5.7 | 31/31 fail | **no** | 31 unit tests over fakes; landed and fixed fail the same 18 (interface guesses). The defect needs a real srt run on macOS reaching a socket, which no check exercised |
+| B2 #594 → #1044 | $2.19 · 37 · 3.6 | 9/9 fail | **probable** | two tests — *the review after a base-moved merge is handed the refusal's paths and shas* — fail on landed exactly where #1044's defect is; on the fix the file no longer loads (`pass.ts` was moved since), so *green on the fix* is not shown |
+| B3 #923 → #926 | $3.94 · 72 · 6.8 | 10/10 fail | **no** | 9 pass on landed; the one red test is about a second writer of `RunPrompted`, not *the claim and continuation carry the body* |
+| B4 #621 → #770 | $2.93 · 63 · 5.7 | 87/87 fail | **yes, partly** | six tests (*`--issue` that is not a number is a usage error naming the flag*) fail on landed — `'seven' is not a integer` does not name `--issue` — and pass on the fix. That is #770's *by name*; its empty and fractional values were not tried |
+
+**Cannot fail: 0 of 8.** Every check written was red on its base.
+
+**What it says.**
+
+1. **For a page, the acceptance works and is cheap, if it is run.** Three of the
+   four UI defects were in the acceptance the agent wrote, mostly as style-table
+   rows and checklist items rather than tests. None was found by a unit test. A
+   pipeline therefore needs the harness to run them: the page on fixture data, a
+   browser, the style table as a script, and a judge for the checklist.
+2. **For behaviour, it catches what the ticket asks and misses what only a real
+   run shows.** B4 and B2 are inside the ticket's own words; B1 (a socket on
+   macOS) and B3 are not reachable by a unit test over fakes. The prompt asked
+   for end-to-end checks, and the agents still wrote unit tests — no case
+   wrote an integration test that started a real process.
+3. **Retrospective failures are mostly interface guesses.** Between half and
+   most of the red tests on each landed tree fail because the agent had to guess
+   a name or a shape (A1 ~21 of 27, B1 18, A4 27). Run before `implement`, those
+   are the interface handed to the implementer; run after, they are noise. Only
+   a forward trial can measure how often they mislead.
+4. **Cost: $1.78 to $3.94, median about $3, 4 to 9 minutes**, on top of today's
+   attempt.
+
+**What to try next, before any ADR.** A forward trial on the next few UI tickets
+in the queue (#1237, #1197): the acceptance written at `design`, run by hand at
+`build` with the style table and checklist, to see whether the implementer meets
+it and how often its guessed interface misleads. For behaviour, a prompt that
+requires one integration check that runs the real process, tried again on B1 and
+B3.

@@ -1,0 +1,764 @@
+/**
+ * Acceptance for "the task page's record is one tab per subject — Ticket and
+ * each attempt — and a tab is read when opened" (TICKET.md; #882's child 3).
+ *
+ * Written before the change. Every test names the *Want* clause, *Done when*
+ * line or *Edge* it proves. What it assumes of the new code is only what the
+ * ticket names:
+ *
+ * - routes `app/task/[id]/layout.tsx` (default export the layout, `{ params,
+ *   children }`; named export `TaskBody`, `{ task, now?, children? }`, which
+ *   draws the bar, `Standing`, the tab row and `children`),
+ *   `app/task/[id]/page.tsx` (the default tab), `app/task/[id]/attempt/[n]/page.tsx`
+ *   and `app/task/[id]/ticket/page.tsx` — each child's default export takes
+ *   `{ params }` and resolves to the element it renders;
+ * - `loadAttemptTab(taskId, n)` and `loadTicketTab(taskId)` in `src/lib/task.ts`;
+ * - the tab row's links are `<a href="/task/<id>/attempt/N">` / `…/ticket`,
+ *   labelled `Attempt N …` / `Ticket …`; the selected one carries
+ *   `aria-current="page"` or `aria-selected="true"`; the rest of the attempts
+ *   sit inside one element whose text says *earlier attempts*.
+ *
+ * Everything outside the system is stubbed — the event store, GitHub, the
+ * spend read, the recipe read — so this is the unit half (0060 §1). The suite
+ * has no DOM, so a ten-line HTML tree reader below stands in for one.
+ */
+import type { Envelope } from '@lingtai/domain'
+import { reduceTicket } from '@lingtai/domain'
+import { readProjectTicket } from '@lingtai/conductor/read-ticket'
+import { currentRecipe, loadProject } from '@lingtai/conductor/projects'
+import { githubClientFor, projectFilter } from '@lingtai/conductor/filter'
+import { readControl, readStatus } from '@lingtai/daemon/control'
+import { eventStore } from '@lingtai/event-store'
+import { readTasks } from '@lingtai/projector/task-view'
+import { isValidElement, Children, type ReactElement, type ReactNode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { outgoingFor } from '../src/lib/prompt.ts'
+import { queuedFor } from '../src/lib/queued.ts'
+import { recipeOfAttempt } from '../src/lib/recipe.ts'
+import { currentSpend } from '../src/lib/spend.ts'
+import { presentAttemptEvents, standingOf, totalsOf, type AttemptView, type TaskDetail } from '../src/lib/task.ts'
+import { measure } from '../src/lib/timing.ts'
+
+// ---------------------------------------------------------------- the stubs
+
+const nav = vi.hoisted(() => ({ segments: [] as string[] }))
+
+vi.mock('next/navigation', async (original) => ({
+  ...(await original<typeof import('next/navigation')>()),
+  useSelectedLayoutSegments: () => nav.segments,
+  useSelectedLayoutSegment: () => nav.segments[0] ?? null,
+  usePathname: () => `/task/ticket-lingtai-885${nav.segments.length ? `/${nav.segments.join('/')}` : ''}`,
+  useRouter: () => ({ replace: () => {}, push: () => {}, refresh: () => {}, prefetch: () => {}, back: () => {} }),
+}))
+vi.mock('@lingtai/event-store', async (original) => ({
+  ...(await original<typeof import('@lingtai/event-store')>()),
+  eventStore: { read: vi.fn() },
+}))
+vi.mock('@lingtai/conductor/projects', async (original) => ({
+  ...(await original<typeof import('@lingtai/conductor/projects')>()),
+  loadProject: vi.fn(),
+  currentRecipe: vi.fn(),
+}))
+vi.mock('@lingtai/conductor/read-ticket', () => ({ readProjectTicket: vi.fn() }))
+vi.mock('@lingtai/conductor/filter', async (original) => ({
+  ...(await original<typeof import('@lingtai/conductor/filter')>()),
+  githubClientFor: vi.fn(),
+  projectFilter: vi.fn(),
+}))
+vi.mock('@lingtai/projector/task-view', async (original) => ({
+  ...(await original<typeof import('@lingtai/projector/task-view')>()),
+  readTasks: vi.fn(),
+}))
+vi.mock('@lingtai/daemon/control', async (original) => ({
+  ...(await original<typeof import('@lingtai/daemon/control')>()),
+  readStatus: vi.fn(),
+  readControl: vi.fn(),
+}))
+vi.mock('@lingtai/repo', async (original) => ({
+  ...(await original<typeof import('@lingtai/repo')>()),
+  refSha: vi.fn(),
+  mirrorBranchSha: vi.fn(),
+  mirrorPathFor: vi.fn(),
+}))
+vi.mock('../src/lib/spend.ts', async (original) => ({
+  ...(await original<typeof import('../src/lib/spend.ts')>()),
+  currentSpend: vi.fn(),
+}))
+vi.mock('../src/lib/recipe.ts', async (original) => ({
+  ...(await original<typeof import('../src/lib/recipe.ts')>()),
+  recipeOfAttempt: vi.fn(),
+}))
+vi.mock('../src/lib/queued.ts', async (original) => ({
+  ...(await original<typeof import('../src/lib/queued.ts')>()),
+  queuedFor: vi.fn(),
+}))
+vi.mock('../src/lib/prompt.ts', async (original) => ({
+  ...(await original<typeof import('../src/lib/prompt.ts')>()),
+  outgoingFor: vi.fn(),
+}))
+vi.mock('../src/lib/timing.ts', async (original) => {
+  const real = await original<typeof import('../src/lib/timing.ts')>()
+  return { ...real, measure: vi.fn(real.measure) }
+})
+vi.mock('../src/lib/task.ts', async (original) => {
+  const real = await original<typeof import('../src/lib/task.ts')>()
+  return { ...real, loadTask: vi.fn(real.loadTask) }
+})
+
+// Imported per test, so a route that does not exist yet fails each test that
+// needs it rather than the whole file at collection.
+const layoutRoute = () => import('../src/app/task/[id]/layout.tsx')
+const defaultRoute = () => import('../src/app/task/[id]/page.tsx')
+const attemptRoute = () => import('../src/app/task/[id]/attempt/[n]/page.tsx')
+const ticketRoute = () => import('../src/app/task/[id]/ticket/page.tsx')
+const taskLib = () => import('../src/lib/task.ts')
+
+const NOW = new Date('2026-11-05T09:00:00Z')
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(NOW)
+})
+afterAll(() => vi.useRealTimers())
+
+// ---------------------------------------------------------------- the log
+
+const ITEM = 'ticket-lingtai-885'
+const at = (path: string) => `/task/${encodeURIComponent(ITEM)}${path}`
+const runId = (i: number) => `pass-${String(i).padStart(8, '0')}-0000-0000-0000-000000000000`
+const base = (i: number) => `${i}${i}${i}${i}bad`.padEnd(40, '0')
+const head = (i: number) => `${i}${i}${i}${i}fed`.padEnd(40, '0')
+const turns = (i: number) => 10 * i + 7
+const WORKTREE = (i: number) => `/Users/someone/.lingtai/worktrees/lingtai/${runId(i)}`
+const WAIT_RAW = 'WAIT-RAW: the reviewer refused, and this is the whole of what it said'
+
+let seq = 0n
+function e(streamId: string, type: string, data: unknown, when = '2026-11-04T04:00:00Z'): Envelope {
+  seq += 1n
+  return {
+    seq,
+    streamId,
+    version: 1,
+    type,
+    schemaVer: 1,
+    data,
+    actor: 'conductor',
+    causation: null,
+    at: new Date(when),
+  } as Envelope
+}
+
+function verdict(name: string, evidence: string, v: 'accepted' | 'refused', onSha: string) {
+  return {
+    plugin: 'run',
+    name,
+    onSha,
+    evidence,
+    yields: 'verdict',
+    result: { _tag: 'Completed', assessment: { verdict: v, findings: [] } },
+  }
+}
+
+/** One attempt's own stream: started, prompted, a file, proposed, one review, finished. */
+function attemptStream(i: number, { refused = false, finished = true } = {}): Envelope[] {
+  const r = runId(i)
+  return [
+    e(r, 'RunStarted', { baseSha: base(i) }),
+    e(r, 'RunPrompted', { prompt: `PROMPT-OF-ATTEMPT-${i}\n`, promptVersion: `ticket@19${i}`, bytes: 4100 + i }),
+    e(r, 'RunTouchedFile', { path: `${WORKTREE(i)}/apps/board/src/file-${i}.ts`, op: 'edit' }),
+    e(r, 'RunProposedCompletion', { headSha: head(i) }),
+    e(r, 'StepStarted', { step: 'proposed', round: 0 }),
+    e(r, 'StepEnded', {
+      outcome: {
+        step: 'proposed',
+        round: 0,
+        actions: [verdict('review', `VERDICT-EVIDENCE-${i}`, refused ? 'refused' : 'accepted', head(i))],
+      },
+    }),
+    ...(finished ? [e(r, 'RunFinished', { turns: turns(i), durationMs: 60_000 * i, exitCode: 0 })] : []),
+  ]
+}
+
+interface Scenario {
+  /** How many attempts. */
+  n: number
+  /** The attempt whose review refused — the one `standing.deciding` will name. */
+  refused?: number
+  /** Whether the ticket is stopped at a wait (on the last attempt) now. */
+  waiting?: boolean
+}
+
+/** The ticket's own stream and every claim's, keyed by stream id. */
+function log({ n, refused, waiting = false }: Scenario): Map<string, Envelope[]> {
+  const own: Envelope[] = []
+  const streams = new Map<string, Envelope[]>()
+  for (let i = 1; i <= n; i += 1) {
+    own.push(e(ITEM, 'TicketClaimed', { runId: runId(i), worker: 'conductor:1', title: null, kind: null }))
+    streams.set(runId(i), attemptStream(i, { refused: i === refused }))
+    if (i < n || !waiting) own.push(e(ITEM, 'TicketReleased', { runId: runId(i), reason: 'released', cause: null }))
+  }
+  if (waiting && n > 0) {
+    own.push(
+      e(ITEM, 'WaitStarted', {
+        waitId: 'wait-885',
+        reason: {
+          _tag: 'CheckRefused',
+          run: { runId: runId(n) },
+          step: 'proposed',
+          action: 'review',
+          evidence: WAIT_RAW,
+          findings: [],
+        },
+      }),
+    )
+  }
+  streams.set(ITEM, own)
+  return streams
+}
+
+/** What `loadTask` would have reduced, built from the same log with today's exports. */
+function detail(s: Scenario): TaskDetail {
+  const streams = log(s)
+  const own = streams.get(ITEM)!
+  const claims = reduceTicket(own).claims
+  const runs: AttemptView[] = claims.map((c, i) => presentAttemptEvents(c, i + 1, streams.get(c.runId) ?? []))
+  return {
+    taskId: ITEM,
+    waiting: { previous: null, next: null },
+    unpushedMirror: null,
+    standing: standingOf(own, runs),
+    want: null,
+    ticket: {
+      project: 'lingtai',
+      ref: '885',
+      title: 'TICKET-TITLE the record is one tab per subject',
+      kind: 'feature',
+      labels: ['feature'],
+      url: 'https://github.com/example/lingtai/issues/885',
+      compareUrl: null,
+      body: 'TICKET-BODY',
+      found: true,
+      askedGitHub: true,
+      problem: null,
+    },
+    runs,
+    discussions: [],
+    outgoing: null,
+    queued: null,
+    held: null,
+    totals: totalsOf(runs),
+    spendCurrency: { lag: 0 },
+    history: [],
+  } as unknown as TaskDetail
+}
+
+function serve(s: Scenario) {
+  const streams = log(s)
+  vi.mocked(eventStore.read).mockImplementation((async (stream: string) => streams.get(stream) ?? []) as never)
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  nav.segments = []
+  vi.mocked(loadProject).mockResolvedValue({ owner: 'o', base: 'main' } as Awaited<ReturnType<typeof loadProject>>)
+  vi.mocked(currentRecipe).mockResolvedValue({ recipe: {} } as Awaited<ReturnType<typeof currentRecipe>>)
+  vi.mocked(readProjectTicket).mockResolvedValue({
+    ok: true,
+    from: 'github',
+    ticket: { title: 'TICKET-TITLE from GitHub', labels: [], kind: null, body: 'TICKET-BODY from GitHub' },
+  } as unknown as Awaited<ReturnType<typeof readProjectTicket>>)
+  vi.mocked(githubClientFor).mockResolvedValue({} as Awaited<ReturnType<typeof githubClientFor>>)
+  vi.mocked(projectFilter).mockResolvedValue({ ok: false, error: 'not read in a test' } as unknown as Awaited<
+    ReturnType<typeof projectFilter>
+  >)
+  vi.mocked(readTasks).mockResolvedValue([])
+  vi.mocked(readStatus).mockResolvedValue(null)
+  vi.mocked(readControl).mockRejectedValue(new Error('the control stream is not read in a test'))
+  vi.mocked(currentSpend).mockResolvedValue({ rows: [], currency: { lag: 0 } } as unknown as Awaited<
+    ReturnType<typeof currentSpend>
+  >)
+  vi.mocked(recipeOfAttempt).mockResolvedValue({ of: 'none', why: 'not read in a test' })
+  vi.mocked(queuedFor).mockResolvedValue(null as unknown as Awaited<ReturnType<typeof queuedFor>>)
+  vi.mocked(outgoingFor).mockResolvedValue(null as unknown as Awaited<ReturnType<typeof outgoingFor>>)
+})
+
+// ---------------------------------------------------------------- rendering
+
+type Page = (props: { params: Promise<Record<string, string>> }) => Promise<unknown>
+
+async function renderChild(page: Page, params: Record<string, string>): Promise<string> {
+  const element = (await page({ params: Promise.resolve({ id: ITEM, ...params }) })) as ReactNode
+  return renderToStaticMarkup(<>{element}</>)
+}
+
+async function attemptTab(n: number | string): Promise<string> {
+  nav.segments = ['attempt', String(n)]
+  return renderChild((await attemptRoute()).default as Page, { n: String(n) })
+}
+async function ticketTab(): Promise<string> {
+  nav.segments = ['ticket']
+  return renderChild((await ticketRoute()).default as Page, {})
+}
+async function defaultTab(): Promise<string> {
+  nav.segments = []
+  return renderChild((await defaultRoute()).default as Page, {})
+}
+
+/** The layout's body around a child's markup, at the path `segments` names. */
+async function whole(task: TaskDetail, segments: string[], child = '<p>CHILD</p>'): Promise<string> {
+  nav.segments = segments
+  const { TaskBody } = await layoutRoute()
+  const Body = TaskBody as (props: { task: TaskDetail; children?: ReactNode }) => ReactElement
+  return renderToStaticMarkup(
+    <Body task={task}>
+      <div dangerouslySetInnerHTML={{ __html: child }} />
+    </Body>,
+  )
+}
+
+// ---------------------------------------------------------------- an HTML tree, without a DOM
+
+interface El {
+  tag: string
+  attrs: Record<string, string>
+  kids: (El | string)[]
+  parent: El | null
+}
+const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr'])
+const decode = (s: string) =>
+  s
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#x27;', "'")
+    .replaceAll('&#39;', "'")
+    .replaceAll('&nbsp;', ' ')
+    .replaceAll('&amp;', '&')
+
+function parse(html: string): El {
+  const root: El = { tag: '#root', attrs: {}, kids: [], parent: null }
+  let cur = root
+  const re = /<!--[\s\S]*?-->|<\/([a-zA-Z0-9-]+)\s*>|<([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^\s=>/]+(?:="[^"]*")?)*)\s*(\/?)>|([^<]+)/g
+  for (const m of html.matchAll(re)) {
+    if (m[0].startsWith('<!--')) continue
+    if (m[1] !== undefined) {
+      let n: El | null = cur
+      while (n !== null && n.tag !== m[1].toLowerCase()) n = n.parent
+      if (n?.parent) cur = n.parent
+    } else if (m[2] !== undefined) {
+      const attrs: Record<string, string> = {}
+      for (const a of (m[3] ?? '').matchAll(/([^\s=]+)(?:="([^"]*)")?/g)) attrs[a[1]!] = decode(a[2] ?? '')
+      const el: El = { tag: m[2].toLowerCase(), attrs, kids: [], parent: cur }
+      cur.kids.push(el)
+      if (!VOID.has(el.tag) && m[4] !== '/') cur = el
+    } else if (m[5] !== undefined) cur.kids.push(decode(m[5]))
+  }
+  return root
+}
+const text = (el: El): string => el.kids.map((k) => (typeof k === 'string' ? k : text(k))).join('')
+function all(el: El, pred: (e: El) => boolean, out: El[] = []): El[] {
+  for (const k of el.kids) {
+    if (typeof k === 'string') continue
+    if (pred(k)) out.push(k)
+    all(k, pred, out)
+  }
+  return out
+}
+function closest(el: El, pred: (e: El) => boolean): El | null {
+  for (let p = el.parent; p !== null; p = p.parent) if (pred(p)) return p
+  return null
+}
+const squash = (s: string) => s.replace(/\s+/g, ' ').trim()
+
+/** The `<details>` whose `<summary>` reads `name` first, case aside. */
+function section(root: El, name: string): El | undefined {
+  const summary = all(
+    root,
+    (e) => e.tag === 'summary' && squash(text(e)).toLowerCase().startsWith(name.toLowerCase()),
+  )[0]
+  return summary?.parent?.tag === 'details' ? summary.parent : undefined
+}
+
+const TAB_HREF = new RegExp(`^/task/${encodeURIComponent(ITEM)}/(attempt/\\d+|ticket)$`)
+
+interface TabRow {
+  /** `ticket` or `attempt/N`, for each tab link, in page order. */
+  tabs: string[]
+  labels: string[]
+  selected: string[]
+  /** The same keys, for the links inside *earlier attempts*. */
+  earlier: string[]
+}
+function tabRow(html: string): TabRow {
+  const root = parse(html)
+  const isEarlier = (e: El) => /earlier attempts/i.test(text(e)) && e.tag !== '#root'
+  const links = all(
+    root,
+    (e) => e.tag === 'a' && TAB_HREF.test(e.attrs.href ?? '') && /^(Ticket|Attempt \d+)\b/.test(squash(text(e))),
+  )
+  const keyOf = (a: El) => a.attrs.href!.replace(`/task/${encodeURIComponent(ITEM)}/`, '')
+  // The smallest element that says *earlier attempts* and holds a link.
+  const earlierBox = all(root, isEarlier)
+    .filter((e) => links.some((a) => closest(a, (p) => p === e)))
+    .at(-1)
+  const inEarlier = (a: El) => earlierBox !== undefined && closest(a, (p) => p === earlierBox) !== null
+  const tabs = links.filter((a) => !inEarlier(a))
+  return {
+    tabs: tabs.map(keyOf),
+    labels: tabs.map((a) => squash(text(a))),
+    selected: tabs.filter((a) => a.attrs['aria-current'] === 'page' || a.attrs['aria-selected'] === 'true').map(keyOf),
+    earlier: links.filter(inEarlier).map(keyOf),
+  }
+}
+
+// ================================================================ the tests
+
+describe('Want: one tab per subject — Ticket, then Attempt N for each attempt, newest first; each its own URL', () => {
+  it('Want + Edge "Tab facts": the tab row is links — Ticket first, then Attempt 3, 2, 1 — each with its outcome, and Ticket with its event count', async () => {
+    const row = tabRow(await whole(detail({ n: 3 }), ['attempt', '2']))
+    expect(row.tabs).toEqual(['ticket', 'attempt/3', 'attempt/2', 'attempt/1'])
+    expect(row.labels[0]).toMatch(/^Ticket\b.*\d+ events?/)
+    expect(row.labels[1]).toMatch(/^Attempt 3\b.*\bfinished\b/)
+    expect(row.earlier).toEqual([])
+  })
+
+  it('Want: none of the five old tabs (History, Diff, Findings, Attempts) is in the row', async () => {
+    const html = await whole(detail({ n: 2 }), [])
+    const root = parse(html)
+    expect(all(root, (e) => e.attrs.role === 'tabpanel')).toEqual([])
+    const tabWords = all(root, (e) => e.attrs.role === 'tab' || e.tag === 'button').map((b) => squash(text(b)))
+    for (const old of ['History', 'Diff', 'Findings', 'Attempts']) {
+      expect(tabWords.some((w) => w.toLowerCase().startsWith(old.toLowerCase()))).toBe(false)
+    }
+    expect(tabRow(html).tabs).toContain('ticket')
+  })
+
+  it('Done when 6: with six attempts, the three newest have tabs, the deciding (1) and the open one (2) have tabs though older, and 3 is under *earlier attempts*', async () => {
+    const row = tabRow(await whole(detail({ n: 6, refused: 1, waiting: true }), ['attempt', '2']))
+    expect(row.tabs[0]).toBe('ticket')
+    expect([...row.tabs].sort()).toEqual(['attempt/1', 'attempt/2', 'attempt/4', 'attempt/5', 'attempt/6', 'ticket'])
+    expect(row.earlier).toEqual(['attempt/3'])
+  })
+
+  it('Done when 6: at most five attempt tabs, and with nothing older open or deciding the rest are all earlier', async () => {
+    const row = tabRow(await whole(detail({ n: 6 }), ['attempt', '6']))
+    expect(row.tabs).toEqual(['ticket', 'attempt/6', 'attempt/5', 'attempt/4'])
+    expect([...row.earlier].sort()).toEqual(['attempt/1', 'attempt/2', 'attempt/3'])
+  })
+
+  it('Want "each tab is its own URL" + Edge "The selected tab": the tab the path names is the one marked, and only it', async () => {
+    const t = detail({ n: 3 })
+    expect(tabRow(await whole(t, ['attempt', '2'])).selected).toEqual(['attempt/2'])
+    expect(tabRow(await whole(t, ['ticket'])).selected).toEqual(['ticket'])
+  })
+
+  it('Edge "The selected tab": at /task/<id> the default tab is marked — the deciding attempt, not the newest', async () => {
+    const row = tabRow(await whole(detail({ n: 3, refused: 2, waiting: true }), []))
+    expect(row.selected).toEqual(['attempt/2'])
+  })
+})
+
+describe('Done when 1: each route renders the bar, Standing and one tab, and no other tab’s content', () => {
+  it('/task/<id>/attempt/<n>: the bar, Standing, attempt 2’s tab selected and its content — no other attempt’s, no ticket body', async () => {
+    serve({ n: 3, refused: 2, waiting: true })
+    const child = await attemptTab(2)
+    const html = await whole(detail({ n: 3, refused: 2, waiting: true }), ['attempt', '2'], child)
+    expect(html).toContain('← Lingtai')
+    expect(html).toMatch(/data-rank="(state|subject)"/)
+    expect(tabRow(html).selected).toEqual(['attempt/2'])
+    expect(child).toContain('PROMPT-OF-ATTEMPT-2')
+    expect(child).toContain(base(2).slice(0, 7))
+    for (const other of [1, 3]) {
+      expect(child).not.toContain(`PROMPT-OF-ATTEMPT-${other}`)
+      expect(child).not.toContain(base(other).slice(0, 7))
+      expect(child).not.toContain(`VERDICT-EVIDENCE-${other}`)
+    }
+    expect(child).not.toContain('The ticket, as it was written')
+  })
+
+  it('/task/<id>/ticket: the bar, Standing, Ticket selected; the ticket and its events — no attempt’s prompt, steps or base', async () => {
+    serve({ n: 2 })
+    const child = await ticketTab()
+    const html = await whole(detail({ n: 2 }), ['ticket'], child)
+    expect(html).toContain('← Lingtai')
+    expect(tabRow(html).selected).toEqual(['ticket'])
+    expect(child).toContain('The ticket, as it was written')
+    expect(child).toContain('TICKET-BODY from GitHub')
+    expect(child).toContain('TicketClaimed')
+    for (const i of [1, 2]) {
+      expect(child).not.toContain(`PROMPT-OF-ATTEMPT-${i}`)
+      expect(child).not.toContain(`VERDICT-EVIDENCE-${i}`)
+      expect(child).not.toContain(base(i).slice(0, 7))
+    }
+  })
+
+  it('/task/<id>: the bar, Standing and exactly one tab — the newest attempt’s — rendered in place', async () => {
+    serve({ n: 2 })
+    const child = await defaultTab()
+    const html = await whole(detail({ n: 2 }), [], child)
+    expect(html).toContain('← Lingtai')
+    expect(tabRow(html).selected).toEqual(['attempt/2'])
+    expect(child).toContain('PROMPT-OF-ATTEMPT-2')
+    expect(child).not.toContain('PROMPT-OF-ATTEMPT-1')
+    expect(child).not.toContain('The ticket, as it was written')
+  })
+})
+
+describe('Done when 2: the default tab is the deciding attempt, else the newest, else Ticket', () => {
+  it('the deciding attempt (2 of 3), not the newest', async () => {
+    serve({ n: 3, refused: 2, waiting: true })
+    const html = await defaultTab()
+    expect(html).toContain(base(2).slice(0, 7))
+    expect(html).not.toContain(base(3).slice(0, 7))
+    expect(html).not.toContain(base(1).slice(0, 7))
+  })
+
+  it('else the newest attempt (3 of 3)', async () => {
+    serve({ n: 3 })
+    const html = await defaultTab()
+    expect(html).toContain(base(3).slice(0, 7))
+    expect(html).not.toContain(base(2).slice(0, 7))
+  })
+
+  it('Edge "No attempts yet": else Ticket — and the tab row has only Ticket', async () => {
+    serve({ n: 0 })
+    vi.mocked(eventStore.read).mockImplementation((async (stream: string) =>
+      stream === ITEM ? [e(ITEM, 'TicketLabelled', { labels: ['feature'] })] : []) as never)
+    const html = await defaultTab()
+    expect(html).toContain('The ticket, as it was written')
+    const row = tabRow(await whole(detail({ n: 0 }), []))
+    expect(row.tabs).toEqual(['ticket'])
+    expect(row.selected).toEqual(['ticket'])
+  })
+
+  it('Edge "The default tab": rendered in place, not a redirect', async () => {
+    serve({ n: 2 })
+    const html = await defaultTab()
+    expect(html).toContain('PROMPT-OF-ATTEMPT-2')
+    // One tab's content, not a page of every tab with the rest hidden.
+    expect(html).not.toContain('PROMPT-OF-ATTEMPT-1')
+    expect(html).not.toMatch(/role="tabpanel"/)
+  })
+})
+
+describe('Done when 3: an attempt tab’s order', () => {
+  it('summary line, base/head line, Steps (rail, then verdicts), the reasoning (deciding only), then Changes, Prompt, Recipe, Run log, Events — closed', async () => {
+    serve({ n: 3, refused: 2, waiting: true })
+    const html = await attemptTab(2)
+    const root = parse(html)
+    const flat = text(root)
+
+    const summary = flat.indexOf(`${turns(2)} turns`)
+    const meta = flat.indexOf(base(2).slice(0, 7))
+    const steps = flat.indexOf('Steps')
+    const rail = html.indexOf('class="segs"')
+    const evidence = flat.indexOf('VERDICT-EVIDENCE-2')
+    const reasoning = flat.indexOf(WAIT_RAW)
+    expect(summary).toBeGreaterThanOrEqual(0)
+    expect(meta).toBeGreaterThan(summary)
+    expect(steps).toBeGreaterThan(meta)
+    expect(rail).toBeGreaterThan(html.indexOf('Steps'))
+    expect(evidence).toBeGreaterThan(steps)
+    expect(reasoning).toBeGreaterThan(evidence)
+
+    const names = ['Changes', 'Prompt', 'Recipe', 'Run log', 'Events']
+    const sections = names.map((n) => section(root, n))
+    sections.forEach((s, i) => expect(s, `the ${names[i]} section`).toBeDefined())
+    const positions = sections.map((s) => flat.indexOf(text(s!)))
+    expect(positions[0]).toBeGreaterThan(reasoning)
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions)
+    for (const [i, s] of sections.entries()) expect(s!.attrs.open, `${names[i]} is closed`).toBeUndefined()
+  })
+
+  it('the wait’s reasoning is only on the attempt the page is deciding on', async () => {
+    serve({ n: 3, refused: 2, waiting: true })
+    expect(await attemptTab(2)).toContain(WAIT_RAW)
+    expect(await attemptTab(3)).not.toContain(WAIT_RAW)
+    expect(await attemptTab(1)).not.toContain(WAIT_RAW)
+  })
+
+  it('Fix (6): the Run log section is RunLog’s own <details>, not wrapped in a second one', async () => {
+    serve({ n: 2 })
+    const log = section(parse(await attemptTab(1)), 'Run log')
+    expect(log).toBeDefined()
+    expect(closest(log!, (p) => p.tag === 'details')).toBeNull()
+  })
+
+  it('Edge "Changes": each path relative to the repository, never under the worktree', async () => {
+    serve({ n: 2 })
+    const changes = section(parse(await attemptTab(1)), 'Changes')
+    expect(changes).toBeDefined()
+    const said = text(changes!)
+    expect(said).toContain('apps/board/src/file-1.ts')
+    expect(said).not.toContain('.lingtai/worktrees')
+    expect(said).not.toContain(runId(1))
+  })
+
+  it('Edge "Prompt": captioned by its size, its version in the title attribute only', async () => {
+    serve({ n: 2 })
+    const prompt = section(parse(await attemptTab(1)), 'Prompt')
+    expect(prompt).toBeDefined()
+    const summary = all(prompt!, (e) => e.tag === 'summary')[0]!
+    expect(squash(text(summary))).toMatch(/4[.,]?\d*\s*(bytes|KB|kB|B)\b/)
+    expect(text(summary)).not.toContain('ticket@191')
+    expect(all(summary, (e) => (e.attrs.title ?? '').includes('ticket@191')).length + (summary.attrs.title?.includes('ticket@191') ? 1 : 0)).toBeGreaterThan(0)
+  })
+
+  it('Edge "The Events section": this attempt’s stream only, with no stream-id or seq heading', async () => {
+    serve({ n: 2 })
+    const events = section(parse(await attemptTab(1)), 'Events')
+    expect(events).toBeDefined()
+    const said = text(events!)
+    expect(said).toContain('RunPrompted')
+    expect(said).not.toContain('TicketClaimed')
+    expect(said).not.toContain('PROMPT-OF-ATTEMPT-2')
+    expect(all(events!, (e) => (e.attrs.class ?? '').split(' ').includes('hglabel'))).toEqual([])
+  })
+})
+
+describe('Done when 4 + Watch out "the words are the glossary’s"', () => {
+  it('a ticket with one attempt labels it `Attempt 1`; tab labels carry no `pass-` and no `the run`', async () => {
+    const row = tabRow(await whole(detail({ n: 1 }), []))
+    expect(row.labels.some((l) => /^Attempt 1\b/.test(l))).toBe(true)
+    for (const label of row.labels) {
+      expect(label).not.toContain('pass-')
+      expect(label.toLowerCase()).not.toContain('the run')
+    }
+  })
+
+  it('the summary line and the meta line carry no `pass-` and no `the run`; the run id is in a title attribute', async () => {
+    serve({ n: 1 })
+    const html = await attemptTab(1)
+    const flat = text(parse(html))
+    const top = flat.slice(0, flat.indexOf('Steps'))
+    expect(flat.indexOf('Steps')).toBeGreaterThan(0)
+    expect(top).toContain(`${turns(1)} turns`)
+    expect(top).not.toContain('pass-')
+    expect(top.toLowerCase()).not.toContain('the run')
+    expect(html).toMatch(new RegExp(`title="[^"]*${runId(1)}`))
+  })
+
+  it('`Steps`, not `Findings`, names the verdict list', async () => {
+    serve({ n: 1 })
+    const root = parse(await attemptTab(1))
+    const heads = all(root, (e) => /^(h[2-6]|summary|p)$/.test(e.tag)).map((e) => squash(text(e)))
+    expect(heads).toContain('Steps')
+    expect(heads.some((h) => /^findings$/i.test(h))).toBe(false)
+  })
+})
+
+describe('Done when 5 + Watch out "a tab switch must not re-run loadTask"', () => {
+  it('loadAttemptTab never calls readProjectTicket, readControl, outgoingFor or queuedFor, and runs recipesFor for one attempt', async () => {
+    serve({ n: 3, refused: 2, waiting: true })
+    const { loadAttemptTab } = (await taskLib()) as unknown as {
+      loadAttemptTab: (taskId: string, n: number) => Promise<unknown>
+    }
+    expect(loadAttemptTab).toBeTypeOf('function')
+    await loadAttemptTab(ITEM, 2)
+    expect(readProjectTicket).not.toHaveBeenCalled()
+    expect(readControl).not.toHaveBeenCalled()
+    expect(outgoingFor).not.toHaveBeenCalled()
+    expect(queuedFor).not.toHaveBeenCalled()
+    expect(recipeOfAttempt).toHaveBeenCalledTimes(1)
+    const [run] = vi.mocked(recipeOfAttempt).mock.calls[0]!
+    expect((run as AttemptView).runId).toBe(runId(2))
+    // It reads the ticket stream and every claim's, and spend (Fix 3).
+    const read = vi.mocked(eventStore.read).mock.calls.map((c) => c[0])
+    expect(read).toEqual(expect.arrayContaining([ITEM, runId(1), runId(2), runId(3)]))
+    expect(currentSpend).toHaveBeenCalled()
+  })
+
+  it('loadTicketTab reads the ticket stream and asks GitHub once, and reads no attempt or recipe', async () => {
+    serve({ n: 2 })
+    const { loadTicketTab } = (await taskLib()) as unknown as { loadTicketTab: (taskId: string) => Promise<unknown> }
+    expect(loadTicketTab).toBeTypeOf('function')
+    await loadTicketTab(ITEM)
+    expect(readProjectTicket).toHaveBeenCalledTimes(1)
+    expect(recipeOfAttempt).not.toHaveBeenCalled()
+    expect(readControl).not.toHaveBeenCalled()
+    expect(vi.mocked(eventStore.read).mock.calls.map((c) => c[0])).toEqual([ITEM])
+  })
+
+  it('an attempt tab renders in its own `page /task tab` measure, with no github.issue read and no loadTask', async () => {
+    serve({ n: 3, refused: 2, waiting: true })
+    const { loadTask } = await taskLib()
+    await attemptTab(2)
+    const calls = vi.mocked(measure).mock.calls
+    expect(calls.map((c) => c[1]?.label)).toEqual(['/task tab'])
+    const [, timings] = await (vi.mocked(measure).mock.results[0]!.value as Promise<[unknown, { name: string }[]]>)
+    expect(timings.map((t) => t.name)).not.toContain('github.issue')
+    expect(readProjectTicket).not.toHaveBeenCalled()
+    expect(loadTask).not.toHaveBeenCalled()
+  })
+
+  it('the default tab (/task/<id>) does not call loadTask or ask GitHub either, when it is an attempt', async () => {
+    serve({ n: 2 })
+    const { loadTask } = await taskLib()
+    await defaultTab()
+    expect(loadTask).not.toHaveBeenCalled()
+    expect(readProjectTicket).not.toHaveBeenCalled()
+    expect(vi.mocked(measure).mock.calls.map((c) => c[1]?.label)).toEqual(['/task tab'])
+  })
+})
+
+describe('Edges', () => {
+  it('Edge "Follow": the layout mounts Follow around TaskBody, which is handed the loaded task and the tab', async () => {
+    const stub = detail({ n: 1 })
+    const { loadTask } = await taskLib()
+    vi.mocked(loadTask).mockResolvedValueOnce(stub)
+    const route = await layoutRoute()
+    const Layout = route.default as unknown as (p: {
+      params: Promise<{ id: string }>
+      children: ReactNode
+    }) => Promise<ReactElement<{ children: ReactNode }>>
+    const child = <p>THE-TAB</p>
+    const out = await Layout({ params: Promise.resolve({ id: ITEM }), children: child })
+    const { Follow } = await import('../src/app/live.tsx')
+    const follow = Children.toArray(out.props.children)
+      .filter(isValidElement)
+      .find((el) => el.type === Follow) as ReactElement<{ children: ReactNode }> | undefined
+    expect(follow).toBeDefined()
+    const body = Children.toArray(follow!.props.children)
+      .filter(isValidElement)
+      .find((el) => el.type === route.TaskBody) as ReactElement<{ task: TaskDetail; children: ReactNode }> | undefined
+    expect(body?.props.task).toBe(stub)
+    expect(body?.props.children).toBe(child)
+    expect(vi.mocked(measure).mock.calls.map((c) => c[1]?.label)).toContain('/task')
+  })
+
+  it.each(['0', '4', 'x'])('Edge "attempt/[n] that is not an attempt": /attempt/%s is notFound()', async (n) => {
+    serve({ n: 3 })
+    const page = (await attemptRoute()).default as Page
+    await expect(page({ params: Promise.resolve({ id: ITEM, n }) })).rejects.toMatchObject({
+      digest: expect.stringMatching(/404/),
+    })
+  })
+
+  it('Edge "The pointers": Standing links to the attempt’s tab by absolute path, and no `#attempt-N` or `#record-*` fragment is left', async () => {
+    const html = await whole(detail({ n: 3, refused: 2, waiting: true }), [])
+    expect(html).not.toMatch(/href="#attempt-/)
+    expect(html).not.toMatch(/href="#record-/)
+    expect(html).toContain(`href="${at('/attempt/2')}"`)
+  })
+
+  it('Edge "A read that fails in a child loader": the tab says what failed, and does not throw', async () => {
+    serve({ n: 2 })
+    vi.mocked(eventStore.read).mockImplementation((async (stream: string) => {
+      if (stream === runId(1)) throw new Error('STREAM-READ-REFUSED')
+      return log({ n: 2 }).get(stream) ?? []
+    }) as never)
+    const html = await attemptTab(1)
+    expect(html).toContain('STREAM-READ-REFUSED')
+  })
+
+  it('Fix (6): Reveal, openTo, panelOf and the attempt Latch are deleted; useLatch and fragmentId are kept', async () => {
+    const latch = (await import('../src/app/latch.tsx')) as Record<string, unknown>
+    expect(latch.Reveal).toBeUndefined()
+    expect(latch.openTo).toBeUndefined()
+    expect(latch.panelOf).toBeUndefined()
+    expect(latch.Latch).toBeUndefined()
+    expect(latch.useLatch).toBeTypeOf('function')
+    expect(latch.fragmentId).toBeTypeOf('function')
+  })
+})

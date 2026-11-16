@@ -1,0 +1,367 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { STEPS } from '@lingtai/domain'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+
+import { REPOSITORY, type EventsDoc } from '../../../packages/domain/scripts/events.ts'
+import { Bar } from '../src/app/chrome'
+import { EventsBody } from '../src/app/docs/events/events-body'
+import EventsPage from '../src/app/docs/events/page'
+
+/**
+ * Acceptance for the events page rewrite (TICKET.md, "the events page lists
+ * every event once under the pass's spine"). Everything here is rendered with
+ * `renderToStaticMarkup` — **no client JS runs** — which is the ticket's
+ * Watch-out made into the test harness: what is checked is what a search
+ * engine and a `#Name` link read.
+ *
+ * The filter's logic is held by `acceptance-events-page-filter.test.ts`.
+ */
+
+const here = path.dirname(fileURLToPath(import.meta.url))
+const site = path.join(here, '..')
+const read = (rel: string) => readFileSync(path.join(here, rel), 'utf8')
+const doc = JSON.parse(read('../../../doc/events.json')) as EventsDoc
+type Entry = EventsDoc['events'][number]
+const html = renderToStaticMarkup(<EventsBody doc={doc} />)
+
+const esc = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+const escText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const text = (s: string) =>
+  s
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+const count = (hay: string, needle: string) => hay.split(needle).length - 1
+
+/** The rendered markup of one entry: from its `id="Name"` to the next event's id (or the end). */
+function entryOf(markup: string, events: Entry[], name: string): string {
+  const starts = events
+    .map((e) => markup.indexOf(`id="${e.name}"`))
+    .filter((i) => i >= 0)
+    .sort((a, b) => a - b)
+  const at = markup.indexOf(`id="${name}"`)
+  expect(at, `no element has id="${name}"`).toBeGreaterThanOrEqual(0)
+  const next = starts.find((i) => i > at) ?? markup.length
+  return markup.slice(at, next)
+}
+
+const groups = [...new Set(doc.events.map((e) => e.group))]
+const atStep = (id: string) => doc.events.filter((e) => (id === 'none' ? e.at.length === 0 : e.at.includes(id))).length
+
+function entry(over: Partial<Entry> & { name: string }): Entry {
+  return {
+    group: 'g',
+    stream: ['s-'],
+    schemaVersion: 1,
+    retired: false,
+    at: ['claim'],
+    summary: null,
+    definition: `${REPOSITORY}/blob/abc/packages/domain/src/events.ts#L1`,
+    sites: [],
+    subscribers: `on: [${over.name}]`,
+    ...over,
+  } as Entry
+}
+
+describe('Want: every event exactly once, each with its own anchor, readable without a click (JS off)', () => {
+  it('Done when 1: the page contains each of the events in doc/events.json exactly once, with id equal to its name', () => {
+    expect(doc.events.length).toBe(66)
+    for (const e of doc.events) expect(count(html, `id="${e.name}"`), `id="${e.name}"`).toBe(1)
+  })
+
+  it('Want: nothing about an event is behind a click — no <details>, nothing rendered hidden', () => {
+    expect(html).not.toContain('<details')
+    expect(html).not.toMatch(/\shidden(=""|\s|>)/)
+    expect(html).not.toMatch(/display:\s*none/)
+  })
+
+  it('Want "grouped by group": a heading per group with its count, and each group\'s events contiguous under it', () => {
+    const headings = [...html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)].map((m) => text(m[1]!))
+    for (const g of groups) {
+      const n = doc.events.filter((e) => e.group === g).length
+      expect(
+        headings.some((h) => h.includes(g) && new RegExp(`\\b${n}\\b`).test(h)),
+        `no <h2> names group "${g}" with ${n}`,
+      ).toBe(true)
+    }
+    const order = [...doc.events].sort(
+      (a, b) => html.indexOf(`id="${a.name}"`) - html.indexOf(`id="${b.name}"`),
+    )
+    const runs = order.map((e) => e.group).filter((g, i, all) => i === 0 || all[i - 1] !== g)
+    expect(runs, 'a group is split into more than one run').toEqual([...new Set(runs)])
+  })
+
+  it('What to build "Entries": line one is the name, the retired badge and the step chips; line two the summary; line three stream, schema vN, defined, appended, subscribe', () => {
+    for (const e of doc.events) {
+      const chunk = entryOf(html, doc.events, e.name)
+      const t = text(chunk)
+      expect(t, e.name).toContain(e.name)
+      if (e.retired) expect(t.toLowerCase(), `${e.name} is retired`).toContain('retired')
+      for (const step of e.at) expect(t, `${e.name} chip ${step}`).toContain(step)
+      if (e.at.length === 0) expect(t, `${e.name} has no step`).toContain('no step')
+      if (e.summary === null) expect(t, e.name).toContain('no description in the source')
+      for (const s of e.stream) expect(t, `${e.name} stream`).toContain(s)
+      expect(t, `${e.name} schema`).toContain(`schema v${e.schemaVersion}`)
+      expect(chunk, `${e.name} defined`).toContain(`href="${esc(e.definition)}"`)
+      for (const site of e.sites) expect(chunk, `${e.name} appended`).toContain(`href="${esc(site)}"`)
+      if (e.sites.length === 0) expect(t, `${e.name} has no site`).toContain('no append site found')
+      expect(chunk, `${e.name} subscribe`).toContain(escText(e.subscribers))
+    }
+  })
+
+  it('Done when 5 (existing case, now per entry): every event\'s links and subscribe snippet are on the page inside that event\'s own entry', () => {
+    for (const e of doc.events) {
+      const chunk = entryOf(html, doc.events, e.name)
+      expect(chunk).toContain(`href="${esc(e.definition)}"`)
+      for (const site of e.sites) expect(chunk).toContain(`href="${esc(site)}"`)
+      expect(chunk).toContain(escText(e.subscribers))
+    }
+  })
+
+  it('What to build "footer line": the line naming doc/events.json and the sha stays, after the last entry', () => {
+    const foot = html.lastIndexOf('doc/events.json')
+    expect(foot).toBeGreaterThan(-1)
+    expect(html.slice(foot)).toContain(doc.sha.slice(0, 7))
+    const ids = doc.events.map((e) => html.indexOf(`id="${e.name}"`))
+    expect(ids.every((i) => i >= 0), 'an entry has no id, so "after the last entry" means nothing').toBe(true)
+    expect(foot).toBeGreaterThan(Math.max(...ids))
+  })
+})
+
+describe('Want: the pass\'s spine on top, filtering by step', () => {
+  /** Spine nodes are the first twelve `data-step` controls, before the first entry. */
+  function spine(markup: string, events: Entry[]) {
+    const firstEntry = Math.min(...events.map((e) => markup.indexOf(`id="${e.name}"`)).filter((i) => i >= 0))
+    const head = markup.slice(0, firstEntry)
+    const nodes = [...head.matchAll(/<(button|a)\b[^>]*data-step="([^"]+)"[^>]*>([\s\S]*?)<\/\1>/g)].map((m) => ({
+      step: m[2]!,
+      tag: m[0]!,
+      text: text(m[3]!),
+    }))
+    return nodes
+  }
+
+  it('Done when 2: ten steps in pass order, then outside and no step, before every entry', () => {
+    expect(spine(html, doc.events).map((n) => n.step)).toEqual([...STEPS, 'outside', 'none'])
+  })
+
+  it('Done when 2: each spine node carries the count of events at it, from the data', () => {
+    expect(spine(html, doc.events)).toHaveLength(12)
+    for (const n of spine(html, doc.events)) {
+      const want = atStep(n.step)
+      expect(n.text, `${n.step} should show ${want}`).toMatch(new RegExp(`(^|\\D)${want}(\\D|$)`))
+    }
+    expect(spine(html, doc.events).find((n) => n.step === 'none')?.text).toContain('no step')
+  })
+
+  it('Edge "a node with 0 is drawn disabled": a step no event is at cannot be clicked into an empty page', () => {
+    const only = { sha: 'abc', events: [entry({ name: 'OnlyAtClaim', at: ['claim'] })] } as EventsDoc
+    const markup = renderToStaticMarkup(<EventsBody doc={only} />)
+    const nodes = spine(markup, only.events)
+    expect(nodes.map((n) => n.step)).toEqual([...STEPS, 'outside', 'none'])
+    for (const n of nodes) {
+      const disabled = /\sdisabled(=""|\s|>)|aria-disabled="true"/.test(n.tag)
+      expect(disabled, `${n.step}`).toBe(n.step !== 'claim')
+    }
+  })
+
+  it('What to build: a step chip on an entry is a control for the same filter as the spine', () => {
+    const chunk = entryOf(html, doc.events, 'RunSpent')
+    const chips = [...chunk.matchAll(/data-step="([^"]+)"/g)].map((m) => m[1])
+    const rs = doc.events.find((e) => e.name === 'RunSpent')!
+    expect(chips.sort()).toEqual([...rs.at].sort())
+  })
+
+  it('The old drawing is gone: no .ev-drawing, no per-step #at-<step> sections', () => {
+    expect(html).not.toContain('ev-drawing')
+    for (const at of [...STEPS, 'outside']) expect(html).not.toContain(`id="at-${at}"`)
+  })
+})
+
+describe('Done when 4: the summary is inline markdown', () => {
+  const sha = 'feedface0000000000000000000000000000beef'
+  const md = {
+    sha,
+    events: [
+      entry({
+        name: 'MarkdownCase',
+        summary: 'Uses `the code`, **the bold** and [0022](../../../doc/decisions-archive/0022-the-seams.md).',
+      }),
+      entry({ name: 'NullCase', summary: null }),
+      entry({ name: 'UnclosedCase', summary: '**A stopped run kept `as its own <img src=x onerror=alert(1)>' }),
+    ],
+  } as EventsDoc
+  const markup = renderToStaticMarkup(<EventsBody doc={md} />)
+
+  it('`code`, **bold** and a relative link render as <code>, <strong> and an <a> to GitHub at the doc\'s sha', () => {
+    const chunk = entryOf(markup, md.events, 'MarkdownCase')
+    expect(chunk).toMatch(/<code[^>]*>the code<\/code>/)
+    expect(chunk).toMatch(/<strong[^>]*>the bold<\/strong>/)
+    expect(chunk).toMatch(
+      new RegExp(`<a [^>]*href="${REPOSITORY}/blob/${sha}/doc/decisions-archive/0022-the-seams\\.md"[^>]*>0022</a>`),
+    )
+    expect(chunk).not.toContain('**')
+    expect(chunk).not.toContain('](')
+  })
+
+  it('null renders "no description in the source"', () => {
+    expect(text(entryOf(markup, md.events, 'NullCase'))).toContain('no description in the source')
+  })
+
+  it('Edge "unclosed markdown": rendered as text, never as broken HTML', () => {
+    const chunk = entryOf(markup, md.events, 'UnclosedCase')
+    expect(text(chunk)).toContain('**A stopped run kept')
+    expect(chunk).not.toMatch(/<strong/)
+    expect(chunk).not.toMatch(/<img/)
+  })
+
+  it('on the real data: a relative link in doc/events.json resolves against packages/domain/src/events.ts', () => {
+    const withLink = doc.events.filter((e) => e.summary !== null && /\]\(\.\.\//.test(e.summary))
+    expect(withLink.length).toBeGreaterThan(0)
+    for (const e of withLink) {
+      const rel = /\]\((\.\.\/[^)]+)\)/.exec(e.summary!)![1]!
+      const resolved = path.posix.normalize(path.posix.join('packages/domain/src', rel))
+      expect(entryOf(html, doc.events, e.name), e.name).toContain(`href="${REPOSITORY}/blob/${doc.sha}/${resolved}"`)
+    }
+  })
+})
+
+describe('The page in its frame', () => {
+  it('Want "the right rail as the group contents": a Contents rail lists every group with its count, linking an id on the page', async () => {
+    const page = renderToStaticMarkup(await EventsPage())
+    const m = /<(nav|aside)\b[^>]*aria-label="Contents"[^>]*>([\s\S]*?)<\/\1>/.exec(page)
+    expect(m, 'no element with aria-label="Contents"').not.toBeNull()
+    const rail = m![2]!
+    for (const g of groups) {
+      const n = doc.events.filter((e) => e.group === g).length
+      const link = [...rail.matchAll(/<a [^>]*href="#([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].find((l) =>
+        text(l[2]!).includes(g),
+      )
+      expect(link, `rail has no link for "${g}"`).toBeDefined()
+      expect(text(link![2]!), `rail count for "${g}"`).toMatch(new RegExp(`(^|\\D)${n}(\\D|$)`))
+      expect(page, `rail links #${link![1]} but nothing has that id`).toContain(`id="${link![1]}"`)
+    }
+  })
+
+  it('Done when 5 (existing cases): the sidebar has Events current and the bar links Events between Plugins and GitHub', async () => {
+    const page = renderToStaticMarkup(await EventsPage())
+    expect(page).toContain('aria-label="Documentation"')
+    const links = [...page.matchAll(/<a [^>]*href="\/docs\/events"[^>]*>/g)].map((x) => x[0])
+    expect(links.some((a) => a.includes('aria-current="page"'))).toBe(true)
+    const bar = renderToStaticMarkup(<Bar />)
+    const at = (href: string) => bar.indexOf(`href="${href}"`)
+    expect(at('/docs/events')).toBeGreaterThan(at('/docs/plugins'))
+    expect(at('/docs/events')).toBeLessThan(bar.indexOf('>GitHub<'))
+    // and the page under them is the new one
+    expect(count(page, `id="${doc.events[0]!.name}"`)).toBe(1)
+  })
+})
+
+describe('Watch out: the client component takes events as props and reaches nothing server-only', () => {
+  const dir = path.join(site, 'src/app/docs/events')
+  const clientFiles = readdirSync(dir)
+    .filter((f) => /\.tsx?$/.test(f))
+    .map((f) => path.join(dir, f))
+    .filter((f) => /^\s*['"]use client['"]/m.test(readFileSync(f, 'utf8')))
+
+  function resolve(from: string, spec: string): string | null {
+    let base: string
+    if (spec.startsWith('@/')) base = path.join(site, 'src', spec.slice(2))
+    else if (spec.startsWith('.')) base = path.resolve(path.dirname(from), spec)
+    else return null
+    for (const cand of [base, `${base}.ts`, `${base}.tsx`, path.join(base, 'index.ts'), path.join(base, 'index.tsx')])
+      if (existsSync(cand) && !cand.endsWith('/')) {
+        try {
+          readFileSync(cand)
+          return cand
+        } catch {
+          /* a directory */
+        }
+      }
+    return null
+  }
+
+  /** Every value import reached from `file`, transitively, within the repository. Type-only imports are erased and skipped. */
+  function reach(file: string, seen = new Map<string, string[]>()): Map<string, string[]> {
+    if (seen.has(file)) return seen
+    const src = readFileSync(file, 'utf8')
+    const specs = [...src.matchAll(/^\s*(?:import|export)\s+(?!type\b)[^'"]*?from\s+['"]([^'"]+)['"]/gm)].map((m) => m[1]!)
+    seen.set(file, specs)
+    for (const s of specs) {
+      const next = resolve(file, s)
+      if (next !== null) reach(next, seen)
+    }
+    return seen
+  }
+
+  it('there is a "use client" component for the spine and the filter beside the page', () => {
+    expect(clientFiles.length, `no "use client" file in ${dir}`).toBeGreaterThan(0)
+  })
+
+  it('no "use client" graph on this page imports node:*, fs, or the module that reads events.json', () => {
+    expect(clientFiles.length).toBeGreaterThan(0)
+    const readsEvents = path.join(site, 'src/lib/events.ts')
+    for (const f of clientFiles) {
+      for (const [file, specs] of reach(f)) {
+        expect(file, `${path.relative(site, f)} reaches ${path.relative(site, readsEvents)}`).not.toBe(readsEvents)
+        for (const s of specs)
+          expect(s, `${path.relative(site, file)} imports ${s}`).not.toMatch(/^(node:|fs$|fs\/|path$)/)
+      }
+    }
+  })
+
+  it('Done when 5 (existing case, widened): no event is named in the page\'s own source, the client component included', () => {
+    expect(clientFiles.length).toBeGreaterThan(0)
+    const sources = [
+      ...readdirSync(dir)
+        .filter((f) => /\.tsx?$/.test(f))
+        .map((f) => path.join(dir, f)),
+      path.join(site, 'src/lib/events.ts'),
+      path.join(site, 'src/lib/event-filter.ts'),
+    ]
+    for (const file of sources) {
+      const source = readFileSync(file, 'utf8')
+      for (const e of doc.events) expect(source, `${file} names ${e.name}`).not.toContain(e.name)
+    }
+  })
+})
+
+describe('Edges in site.css: the sticky spine and the anchors under it', () => {
+  const css = read('../src/app/site.css')
+  const start = css.indexOf('/* --- /docs/events/')
+  const rest = css.slice(start)
+  const end = rest.slice(1).search(/\/\* --- /)
+  const block = end < 0 ? rest : rest.slice(0, end + 1)
+
+  it('Want "sticky": the events block makes the spine position: sticky', () => {
+    expect(block).toMatch(/position:\s*sticky/)
+  })
+
+  it('Edge "sticky spine and anchors": entries carry scroll-margin-top so #Name lands below the spine', () => {
+    expect(block).toMatch(/scroll-margin-top:/)
+  })
+
+  it('Edge "≤1080px": the spine (not the old drawing) scrolls horizontally inside its own box', () => {
+    const rules = [...block.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sel: m[1]!.trim(), body: m[2]! }))
+    // `.ev-body pre` scrolls a code block, and `.ev-drawing` is the drawing this replaces; neither is the spine.
+    const scrolls = rules.filter(
+      (r) => /overflow-x:\s*auto/.test(r.body) && !/ev-drawing|\bpre\b|\bcode\b/.test(r.sel),
+    )
+    expect(scrolls.map((r) => r.sel), 'no rule but .ev-drawing scrolls horizontally').not.toEqual([])
+  })
+
+  it('the one-section-at-a-time :target rules are gone with the drawing', () => {
+    expect(block).not.toContain('.ev-section:target')
+    expect(block).not.toContain('.ev-drawing')
+  })
+})

@@ -1,0 +1,574 @@
+/**
+ * Acceptance for S5: a sandboxed Codex run goes through srt with Codex's own sandbox off, the operator's Codex
+ * profile denies on the run, and the Codex home's configuration write-denied (ADR 0127 §1, §15, §16).
+ *
+ * Unit: nothing here starts srt or Codex. `node:fs` is replaced for the fixture paths only (the hook wiring, the
+ * operator's `config.toml`, a linked worktree's `.git`), the way `interruption.test.ts` does it, `spawn` is a
+ * stand-in that records its call, and `request.sandbox.wrap` is a fake `Sandbox.wrap` that records its input.
+ * The recorded wrap input is then put through `@lingtai/sandbox`'s own `resolvedPolicy`, so the claims about what
+ * srt is handed are made against the policy the package would really build, not against our reading of it.
+ *
+ * The fixture is the real layout: the worktree's `.git` is a file pointing into `<stateDir>/repos/p.git`, so
+ * today's argv carries `--add-dir` and its absence in the sandboxed argv means something. The project cache is
+ * `cacheDir(host, 'p')` = `/state/cache/p`, beside the mirror `mirrorDir(host, 'p')` = `/state/repos/p.git`.
+ */
+import type { spawn } from 'node:child_process'
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
+
+import { resolvedPolicy, type HostFacts, type WrapInput } from '@lingtai/sandbox'
+import { Effect, Exit, Fiber } from 'effect'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import * as codex from '../src/codex.ts'
+import { codexArgv, codexRun, createCodexRuntime, gitWritableRoots, userPermissionsFrom } from '../src/codex.ts'
+import type { RunSandbox } from '../src/claude-sandbox.ts'
+import { renderSettings } from '../src/hook-config.ts'
+import type { RunRequest } from '../src/runtime.ts'
+
+// ── the files the adapter reads, by path ────────────────────────────────────────────────────────────────────
+
+const HOME = '/home/op'
+const CODEX_HOME = `${HOME}/.codex`
+const CWD = '/work/tree'
+const STATE = '/state'
+const MIRROR = `${STATE}/repos/p.git`
+const CACHE = `${STATE}/cache/p`
+const SETTINGS = `${STATE}/runs/r1/settings.json`
+const GIT_DIR = `${MIRROR}/worktrees/r1`
+
+const files = new Map<string, string>()
+const present = new Set<string>()
+
+const enoent = (path: string) => Object.assign(new Error(`ENOENT: no such file or directory, open '${path}'`), { code: 'ENOENT' })
+
+vi.mock('node:fs', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs')>()
+  const owned = (p: unknown) => typeof p === 'string' && (p.startsWith('/home/op') || p.startsWith('/work/') || p.startsWith('/state') || p.startsWith('/opt/codex-home'))
+  return {
+    ...real,
+    readFileSync: ((path: unknown, ...rest: unknown[]) => {
+      if (typeof path === 'string' && files.has(path)) return files.get(path)
+      if (owned(path)) throw enoent(String(path))
+      return (real.readFileSync as (...a: unknown[]) => unknown)(path, ...rest)
+    }) as typeof real.readFileSync,
+    statSync: ((path: unknown, ...rest: unknown[]) => {
+      if (path === `${CWD}/.git`) return { isDirectory: () => false, isFile: () => true }
+      if (owned(path)) throw enoent(String(path))
+      return (real.statSync as (...a: unknown[]) => unknown)(path, ...rest)
+    }) as typeof real.statSync,
+    existsSync: ((path: unknown) =>
+      typeof path === 'string' && (present.has(path) || files.has(path))
+        ? true
+        : owned(path)
+          ? false
+          : real.existsSync(path as string)) as typeof real.existsSync,
+    mkdirSync: ((path: unknown, ...rest: unknown[]) =>
+      owned(path) ? undefined : (real.mkdirSync as (...a: unknown[]) => unknown)(path, ...rest)) as typeof real.mkdirSync,
+  }
+})
+
+const wiring = () => renderSettings({ runId: 'r1', hookBinary: '/opt/lingtai/lingtai-hook' })
+
+/** A profile naming `default_permissions = "mine"` whose filesystem table denies each key. */
+const profileDenying = (...keys: string[]) =>
+  `default_permissions = "mine"\n[permissions.mine]\nextends = ":workspace"\n[permissions.mine.filesystem]\n` +
+  keys.map((k) => `${JSON.stringify(k)} = "deny"\n`).join('')
+
+const setConfig = (text: string | null, home = CODEX_HOME) => {
+  const path = `${home}/config.toml`
+  if (text === null) files.delete(path)
+  else files.set(path, text)
+}
+
+beforeEach(() => {
+  files.clear()
+  present.clear()
+  files.set(SETTINGS, JSON.stringify(wiring()))
+  // A linked worktree, as `cutTree()` makes one: today's argv names its git stores with `--add-dir`.
+  files.set(`${CWD}/.git`, `gitdir: ${GIT_DIR}\n`)
+  files.set(`${GIT_DIR}/commondir`, '../..\n')
+  for (const store of ['objects', 'refs', 'logs']) present.add(`${MIRROR}/${store}`)
+  // A plain config by default: a model, no permissions profile. Neither `config.toml`'s siblings nor `rules/` exist.
+  setConfig('model = "gpt-5.6"\n')
+})
+
+// ── the stand-ins ───────────────────────────────────────────────────────────────────────────────────────────
+
+type SpawnCall = { command: string; args: readonly string[]; options: Record<string, unknown> }
+
+const child = (closes: boolean) => {
+  const c = Object.assign(new EventEmitter(), {
+    pid: undefined,
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(),
+  })
+  if (closes) setImmediate(() => c.emit('close', 0))
+  return c
+}
+
+const SRT = '/usr/local/bin/srt'
+const POLICY_VARS = { XDG_CACHE_HOME: `${CACHE}/xdg-cache`, DO_NOT_TRACK: '1' }
+
+const harness = (
+  opts: {
+    decision?: RunSandbox['decision'] | 'absent'
+    env?: Record<string, string>
+    wrap?: RunSandbox['wrap']
+    closes?: boolean
+  } = {},
+) => {
+  const wrapped: WrapInput[] = []
+  const spawned: SpawnCall[] = []
+  const stops: string[] = []
+  const decision = opts.decision ?? { kind: 'sandboxed', project_additions: { network: ['example.com'] } }
+  const sandbox: RunSandbox | undefined =
+    decision === 'absent'
+      ? undefined
+      : {
+          decision,
+          project: 'p',
+          mirror: MIRROR,
+          worktree: CWD,
+          runDir: `${STATE}/runs/r1/claude`,
+          operatorClaudeDir: `${HOME}/.claude`,
+          hostHome: HOME,
+          read: [],
+          wrap:
+            opts.wrap ??
+            ((input) =>
+              Effect.sync(() => {
+                wrapped.push(input)
+                return { argv: [SRT, '--settings', '/tmp/srt-x.json', '--', ...input.command], env: { ...input.env, ...POLICY_VARS }, commandId: 'cmd-1' }
+              })),
+        }
+  const request: RunRequest = {
+    runId: 'r1',
+    cwd: CWD,
+    prompt: 'do it',
+    settingsPath: SETTINGS,
+    env: opts.env ?? { HOME, PATH: '/usr/bin', KEEP: '1' },
+    limits: { wallMs: 60_000 },
+    ...(sandbox === undefined ? {} : { sandbox }),
+  }
+  const options = {
+    binary: 'codex',
+    spawn: ((command: string, args: readonly string[], options: Record<string, unknown>) => {
+      spawned.push({ command, args, options })
+      return child(opts.closes ?? true)
+    }) as unknown as typeof spawn,
+    stopProcesses: (marker: string) =>
+      Effect.sync(() => {
+        stops.push(marker)
+      }),
+  }
+  return { request, options, wrapped, spawned, stops }
+}
+
+const run = (h: ReturnType<typeof harness>) => Effect.runPromise(codexRun(h.options, h.request))
+
+/** The host the recorded wrap input is resolved against: the same `HOME` and `stateDir` the fixture uses. */
+const HOST: HostFacts = { platform: 'linux', home: HOME, tmpdir: '/tmp', stateDir: STATE, path: ['/usr/bin'] }
+
+const policyOf = (input: WrapInput) =>
+  resolvedPolicy(HOST, {
+    project: input.project,
+    worktree: input.worktree,
+    mirror: input.mirror,
+    project_additions: input.project_additions,
+    caller_additions: input.caller_additions,
+  })
+
+/** Whether `path` is one of `entries` or lies inside one. */
+const coveredBy = (path: string, entries: readonly string[]) =>
+  entries.some((e) => path === e || path.startsWith(e.endsWith('/') ? e : `${e}/`))
+
+const flagValue = (args: readonly string[], flag: string) => args[args.indexOf(flag) + 1]
+
+// ── Want: sandboxed → through Sandbox.wrap, with --sandbox danger-full-access ────────────────────────────────
+
+describe('Want: a sandboxed Codex run goes through Sandbox.wrap with Codex’s own sandbox off', () => {
+  it('Done when 3: one wrap whose command is codex exec … --sandbox danger-full-access, no profile -c, no --add-dir', async () => {
+    setConfig(profileDenying('~/secret'))
+    const h = harness()
+    await run(h)
+
+    expect(h.wrapped).toHaveLength(1)
+    const input = h.wrapped[0]!
+    const cmd = input.command
+    expect(cmd[0]).toBe('codex')
+    expect(cmd[1]).toBe('exec')
+    expect(flagValue(cmd, '--sandbox')).toBe('danger-full-access')
+    expect(cmd.filter((a) => a === '--sandbox')).toHaveLength(1)
+    expect(cmd.some((a) => a.startsWith('default_permissions='))).toBe(false)
+    expect(cmd.some((a) => a.startsWith('permissions.'))).toBe(false)
+    expect(cmd.some((a) => a.startsWith('profiles'))).toBe(false)
+    expect(cmd).not.toContain('--add-dir')
+    // Everything else the run needs is still there.
+    expect(flagValue(cmd, '--cd')).toBe(CWD)
+    expect(cmd).toContain('approval_policy=never')
+    expect(cmd).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+    expect(cmd.at(-2)).toBe('--')
+    expect(cmd.at(-1)).toBe('do it')
+
+    // The run's own inputs, not the conductor's guesses.
+    expect(input.project).toBe('p')
+    expect(input.worktree).toBe(CWD)
+    expect(input.mirror).toBe(MIRROR)
+    expect(input.project_additions).toEqual({ network: ['example.com'] })
+  })
+
+  it('Done when 3 / Watch out: the spawn is the wrap’s argv and env, with no shell; srt’s env is the only env', async () => {
+    const h = harness()
+    await run(h)
+
+    expect(h.spawned).toHaveLength(1)
+    const s = h.spawned[0]!
+    expect(s.command).toBe(SRT)
+    expect(s.args.slice(0, 4)).toEqual(['--settings', '/tmp/srt-x.json', '--', 'codex'])
+    expect(s.options.shell ?? false).toBe(false)
+    expect(s.options.cwd).toBe(CWD)
+    // Exactly what `wrap` returned: the caller's filtered env plus the policy's variables, marker included.
+    const wrappedEnv = { ...h.wrapped[0]!.env, ...POLICY_VARS }
+    expect(s.options.env).toEqual(wrappedEnv)
+  })
+
+  it('Done when 3 / 6: the env handed to wrap carries LINGTAI_CODEX_PROCESS_MARKER and the run’s filtered env', async () => {
+    const h = harness()
+    await run(h)
+    const env = h.wrapped[0]!.env
+    expect(env).toMatchObject({ HOME, PATH: '/usr/bin', KEEP: '1' })
+    expect(env.LINGTAI_CODEX_PROCESS_MARKER).toMatch(/\S{8,}/)
+  })
+})
+
+// ── Want: the Codex home writable, its configuration write-denied whether it exists or not ───────────────────
+
+describe('Want: ~/.codex writable as a caller addition, config.toml, AGENTS.md and rules/ write-denied always', () => {
+  it('Done when 3 / 9: the Codex home is a caller write; its three configuration paths are on denyWrite though none exists', async () => {
+    const h = harness()
+    await run(h)
+    const caller = h.wrapped[0]!.caller_additions
+    expect(caller?.write).toContain(CODEX_HOME)
+    expect(caller?.denyWrite).toEqual(
+      expect.arrayContaining([`${CODEX_HOME}/config.toml`, `${CODEX_HOME}/AGENTS.md`, `${CODEX_HOME}/rules`]),
+    )
+    // The fixture has no AGENTS.md and no rules/: still denied, or a run could create them.
+    expect(files.has(`${CODEX_HOME}/AGENTS.md`)).toBe(false)
+  })
+
+  it('Done when 9: config.toml stays readable, auth.json and sessions/ stay writable, in the policy srt would get', async () => {
+    const h = harness()
+    await run(h)
+    const input = h.wrapped[0]!
+    expect(input.caller_additions?.deny ?? []).not.toContain(`${CODEX_HOME}/config.toml`)
+
+    const policy = policyOf(input)
+    expect(policy.allowWrite).toContain(CODEX_HOME)
+    expect(policy.denyWrite).toEqual(
+      expect.arrayContaining([`${CODEX_HOME}/config.toml`, `${CODEX_HOME}/AGENTS.md`, `${CODEX_HOME}/rules`]),
+    )
+    expect(coveredBy(`${CODEX_HOME}/config.toml`, policy.denyRead)).toBe(false)
+    for (const writable of [`${CODEX_HOME}/auth.json`, `${CODEX_HOME}/sessions`, `${CODEX_HOME}/sessions/2026/x.jsonl`]) {
+      expect(coveredBy(writable, policy.denyWrite)).toBe(false)
+      expect(coveredBy(writable, policy.denyRead)).toBe(false)
+      expect(coveredBy(writable, policy.allowWrite)).toBe(true)
+    }
+  })
+
+  it('Want: $CODEX_HOME, when set, is the Codex home in place of ~/.codex', async () => {
+    const home = '/opt/codex-home'
+    setConfig('model = "gpt-5.6"\n', home)
+    const h = harness({ env: { HOME, PATH: '/usr/bin', CODEX_HOME: home } })
+    await run(h)
+    const caller = h.wrapped[0]!.caller_additions
+    expect(caller?.write).toContain(home)
+    expect(caller?.write ?? []).not.toContain(CODEX_HOME)
+    expect(caller?.denyWrite).toEqual(
+      expect.arrayContaining([`${home}/config.toml`, `${home}/AGENTS.md`, `${home}/rules`]),
+    )
+  })
+})
+
+// ── Want: the operator's Codex profile denies on this run ────────────────────────────────────────────────────
+
+describe('Want: the operator’s Codex profile denies on this run, as absolute paths', () => {
+  it('Done when 5: deny keys reach caller_additions.deny absolute: ~/ against HOME, relative against cwd, a glob as written', async () => {
+    setConfig(profileDenying('~/secret', '/abs/private', '../elsewhere', '/vault/**/*.pem'))
+    const h = harness()
+    await run(h)
+    expect(h.wrapped).toHaveLength(1)
+    const deny = h.wrapped[0]!.caller_additions?.deny ?? []
+    expect(deny).toEqual(
+      expect.arrayContaining([`${HOME}/secret`, '/abs/private', '/work/elsewhere', '/vault/**/*.pem']),
+    )
+    for (const d of deny) expect(d.startsWith('/')).toBe(true)
+    // And they land where srt reads them: both lists.
+    const policy = policyOf(h.wrapped[0]!)
+    expect(policy.denyRead).toContain(`${HOME}/secret`)
+    expect(policy.denyWrite).toContain(`${HOME}/secret`)
+  })
+
+  it('Done when 5: a :special key refuses a sandboxed run by name, before wrap', async () => {
+    setConfig(profileDenying(':tmpdir'))
+    const h = harness()
+    const outcome = await run(h)
+    expect(outcome.failure).not.toBeNull()
+    expect(outcome.failure!.detail).toContain(':tmpdir')
+    expect(h.wrapped).toHaveLength(0)
+    expect(h.spawned).toHaveLength(0)
+  })
+
+  it('Done when 5 / Edges: an unreadable profile refuses a sandboxed run with its reason, before wrap', async () => {
+    setConfig('default_permissions = ')
+    const h = harness()
+    const outcome = await run(h)
+    expect(outcome.failure).not.toBeNull()
+    expect(outcome.failure!.detail).toMatch(/TOML/)
+    expect(h.wrapped).toHaveLength(0)
+    expect(h.spawned).toHaveLength(0)
+  })
+
+  it('Done when 5 / Edges: kept adds no denies, and the explicit danger-full-access still stands', async () => {
+    setConfig('sandbox_mode = "read-only"\n' + profileDenying('/abs/private'))
+    const h = harness()
+    const outcome = await run(h)
+    expect(outcome.failure?.detail ?? '').not.toMatch(/permission profile/)
+    expect(h.wrapped).toHaveLength(1)
+    expect(h.wrapped[0]!.caller_additions?.deny ?? []).toEqual([])
+    expect(flagValue(h.wrapped[0]!.command, '--sandbox')).toBe('danger-full-access')
+  })
+
+  /** One case each. `<worktree>/secrets` is the one today's `denyCoveringRoot` lets through. */
+  const VOIDED: ReadonlyArray<readonly [string, string]> = [
+    ['is the worktree', CWD],
+    ['lies inside the worktree', `${CWD}/secrets`],
+    ['contains the worktree', '/work'],
+    ['is the mirror', MIRROR],
+    ['lies inside the mirror', `${MIRROR}/objects`],
+    ['contains the mirror', `${STATE}/repos`],
+    ['is the project cache', CACHE],
+    ['lies inside the project cache', `${CACHE}/npm`],
+    ['contains the project cache', `${STATE}/cache`],
+    ['is the Codex home', '~/.codex'],
+    ['lies inside the Codex home', '~/.codex/sessions'],
+    ['contains the Codex home', HOME],
+  ]
+
+  for (const [relation, key] of VOIDED) {
+    it(`Done when 5 / Watch out: a deny that ${relation} (${key}) refuses a sandboxed run before wrap`, async () => {
+      setConfig(profileDenying(key))
+      const h = harness()
+      const outcome = await run(h)
+      expect(outcome.failure).not.toBeNull()
+      const resolved = key.startsWith('~/') ? `${HOME}/${key.slice(2)}` : key
+      expect(outcome.failure!.detail.includes(key) || outcome.failure!.detail.includes(resolved)).toBe(true)
+      expect(h.wrapped).toHaveLength(0)
+      expect(h.spawned).toHaveLength(0)
+
+      // The control: the same run with a deny that collides with nothing is wrapped, carrying it. Without
+      // this, today's `denyCoveringRoot` (which refuses a deny over a git store) would pass the half above.
+      setConfig(profileDenying('/abs/elsewhere'))
+      const control = harness()
+      await run(control)
+      expect(control.wrapped).toHaveLength(1)
+      expect(control.wrapped[0]!.caller_additions?.deny).toContain('/abs/elsewhere')
+    })
+  }
+})
+
+// ── Done when 8: the exported conversion ─────────────────────────────────────────────────────────────────────
+
+/**
+ * The ticket asks for *an exported function*; this names it `absoluteProfileDenies(verdict, { home, cwd })` in
+ * `codex.ts`. Its answer may be a list, `{ paths }`, or a refusal carrying `why` (as a value or a thrown error);
+ * `normalise` reads any of those, so only the name and the arguments are pinned.
+ */
+type Converted = { ok: true; paths: string[] } | { ok: false; why: string }
+const normalise = (call: () => unknown): Converted => {
+  let out: unknown
+  try {
+    out = call()
+    if (Effect.isEffect(out)) {
+      const exit = Effect.runSyncExit(out as Effect.Effect<unknown, unknown>)
+      if (Exit.isFailure(exit)) return { ok: false, why: JSON.stringify(exit.cause) + String(exit.cause) }
+      out = exit.value
+    }
+  } catch (e) {
+    return { ok: false, why: e instanceof Error ? e.message : String(e) }
+  }
+  const o = out as Record<string, unknown> | unknown[]
+  if (Array.isArray(o)) return { ok: true, paths: o as string[] }
+  if (o && typeof o === 'object') {
+    if (Array.isArray(o.paths)) return { ok: true, paths: o.paths as string[] }
+    for (const k of ['why', 'reason', 'sentence', 'message', 'detail']) {
+      if (typeof o[k] === 'string') return { ok: false, why: o[k] as string }
+    }
+  }
+  return { ok: false, why: `unrecognised answer ${JSON.stringify(out)}` }
+}
+
+describe('Done when 8: an exported function turns a UserPermissions verdict into absolute deny paths', () => {
+  const convert = (verdict: codex.UserPermissions, at = { home: HOME, cwd: CWD }) => {
+    const fn = (codex as unknown as Record<string, unknown>).absoluteProfileDenies
+    expect(typeof fn, 'codex.ts exports absoluteProfileDenies').toBe('function')
+    return normalise(() => (fn as (v: unknown, a: unknown) => unknown)(verdict, at))
+  }
+
+  it('resolves ~/ against home, a relative key against cwd, keeps absolute and globbed keys as written', () => {
+    const verdict = userPermissionsFrom(profileDenying('~/secret', '/abs/x', 'rel/y', '../up', '/vault/**/*.pem'))
+    expect(convert(verdict)).toEqual({
+      ok: true,
+      paths: [`${HOME}/secret`, '/abs/x', `${CWD}/rel/y`, '/work/up', '/vault/**/*.pem'],
+    })
+  })
+
+  it('answers no paths for none and for kept', () => {
+    expect(convert({ kind: 'none' })).toEqual({ ok: true, paths: [] })
+    expect(convert({ kind: 'kept', why: 'sandbox_mode' })).toEqual({ ok: true, paths: [] })
+  })
+
+  it('refuses a :special key by name', () => {
+    const answer = convert({ kind: 'denies', paths: ['/abs/x', ':tmpdir'] })
+    expect(answer.ok).toBe(false)
+    expect(answer.ok === false && answer.why).toContain(':tmpdir')
+  })
+})
+
+// ── Done when 1, 7: refusals before anything is spawned ──────────────────────────────────────────────────────
+
+describe('a run that must not start, starts nothing', () => {
+  it('Done when 1: a refused decision fails by name, and neither wrap nor spawn is called', async () => {
+    const wrap = vi.fn<RunSandbox['wrap']>()
+    const h = harness({ decision: { kind: 'refused', why: 'bwrap is not installed' }, wrap })
+    const outcome = await run(h)
+    expect(outcome.failure).not.toBeNull()
+    expect(outcome.failure!.detail).toContain('sandbox required and unavailable on this host')
+    expect(wrap).not.toHaveBeenCalled()
+    expect(h.spawned).toHaveLength(0)
+  })
+
+  it('Done when 7: a wrap failure ends the run as a crash carrying srt’s sentences, and nothing is spawned', async () => {
+    const h = harness({
+      wrap: () => Effect.fail({ message: 'host dependencies are missing: bubblewrap (bwrap) not found' }),
+    })
+    const outcome = await run(h)
+    expect(outcome.failure?.kind).toBe('crash')
+    expect(outcome.failure?.detail).toContain('bubblewrap (bwrap) not found')
+    expect(h.spawned).toHaveLength(0)
+  })
+})
+
+// ── Done when 6: stopping a wrapped run through the marker ───────────────────────────────────────────────────
+
+describe('Done when 6: a wrapped run is stopped through the marker it handed to wrap', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('interrupting the run scans for the very marker that was in the env given to wrap', async () => {
+    const h = harness({ closes: false })
+    const fiber = Effect.runFork(codexRun(h.options, h.request))
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.wrapped).toHaveLength(1)
+    expect(h.spawned).toHaveLength(1)
+
+    let interrupted = false
+    void Effect.runPromise(Fiber.interrupt(fiber)).then(() => (interrupted = true))
+    await vi.advanceTimersByTimeAsync(5_100)
+
+    const marker = h.wrapped[0]!.env.LINGTAI_CODEX_PROCESS_MARKER
+    expect(marker).toBeDefined()
+    expect(h.stops).toContain(marker)
+    expect((h.spawned[0]!.options.env as Record<string, string>).LINGTAI_CODEX_PROCESS_MARKER).toBe(marker)
+    expect(interrupted).toBe(true)
+  })
+})
+
+// ── Want, second sentence, and Done when 2 / 4: unsandboxed is today's, and danger-full-access only when wrapped ──
+
+describe('Want: when the run is not sandboxed it is exactly today’s, and the decision is the only switch', () => {
+  it('Done when 2: no sandbox on the request spawns today’s argv and env; the same request sandboxed is wrapped', async () => {
+    setConfig(profileDenying('~/secret'))
+    const today = harness({ decision: 'absent' })
+    await run(today)
+
+    const expected = codexArgv(today.request, 'do it', {
+      settings: wiring(),
+      sandbox: 'workspace-write',
+      writable: gitWritableRoots(CWD),
+      denies: ['~/secret'],
+    })
+    expect(gitWritableRoots(CWD).length).toBeGreaterThan(0)
+    expect(today.wrapped).toHaveLength(0)
+    expect(today.spawned).toHaveLength(1)
+    const s = today.spawned[0]!
+    expect(s.command).toBe('codex')
+    expect(s.args).toEqual(expected)
+    expect(s.options).toMatchObject({ cwd: CWD, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+    expect(s.options.env).toEqual({ ...today.request.env, LINGTAI_CODEX_PROCESS_MARKER: expect.any(String) })
+
+    // The control: the only difference is the decision, and with it the run is wrapped.
+    const sandboxed = harness()
+    await run(sandboxed)
+    expect(sandboxed.wrapped).toHaveLength(1)
+    expect(sandboxed.spawned[0]!.command).toBe(SRT)
+  })
+
+  it('Done when 4: danger-full-access is in no argv built without a sandboxed decision, and in the one built with it', () => {
+    setConfig(profileDenying('~/secret'))
+    const base = { runId: 'r1', cwd: CWD, settingsPath: SETTINGS, env: { HOME }, limits: { wallMs: 60_000 } }
+    const unsandboxedArgvs: string[][] = []
+    for (const sandbox of ['workspace-write', 'read-only'] as const) {
+      for (const extra of [
+        {},
+        { writable: ['/g/objects'] },
+        { denies: ['/x'] },
+        { denies: ['/x'], overrideIn: 'p' },
+        { denies: ['/x'], overrideIn: 'dev.local', profiles: { 'dev.local': { model: 'm' } } },
+        { outputSchemaPath: '/tmp/schema.json' },
+      ]) {
+        unsandboxedArgvs.push(codexArgv(base, 'p', { settings: wiring(), sandbox, ...extra }))
+        unsandboxedArgvs.push(codexArgv({ ...base, model: 'gpt-5.6' }, 'p', { settings: null, sandbox, ...extra }))
+      }
+      const runtime = createCodexRuntime({ sandbox })
+      unsandboxedArgvs.push([...runtime.invocation!(base).args])
+      const refused = harness({ decision: { kind: 'refused', why: 'no srt' } }).request.sandbox!
+      unsandboxedArgvs.push([...runtime.invocation!({ ...base, sandbox: refused }).args])
+    }
+    for (const args of unsandboxedArgvs) expect(args.join(' ')).not.toContain('danger-full-access')
+
+    // The positive control: the branch that may carry it does.
+    const sandboxed = harness().request.sandbox!
+    const shown = createCodexRuntime().invocation!({ ...base, sandbox: sandboxed })
+    expect(flagValue(shown.args, '--sandbox')).toBe('danger-full-access')
+  })
+})
+
+// ── Edges: invocation() ───────────────────────────────────────────────────────────────────────────────────────
+
+describe('Edges: invocation() shows the argv Codex runs with, without srt’s prefix', () => {
+  it('sandboxed: codex itself, --sandbox danger-full-access, no profile -c and no --add-dir; absent: today’s', () => {
+    setConfig(profileDenying('~/secret'))
+    const base = { runId: 'r1', cwd: CWD, settingsPath: SETTINGS, env: { HOME }, limits: { wallMs: 60_000 } }
+    const runtime = createCodexRuntime({ binary: 'codex' })
+
+    const shown = runtime.invocation!({ ...base, sandbox: harness().request.sandbox! })
+    expect(shown.command).toBe('codex')
+    expect(shown.args[0]).toBe('exec')
+    expect(shown.args).not.toContain(SRT)
+    expect(flagValue(shown.args, '--sandbox')).toBe('danger-full-access')
+    expect(shown.args.some((a) => a.startsWith('default_permissions='))).toBe(false)
+    expect(shown.args).not.toContain('--add-dir')
+
+    const plain = runtime.invocation!(base)
+    expect(plain.args).toEqual(
+      codexArgv(base, plain.args.at(-1)!, {
+        settings: wiring(),
+        sandbox: 'workspace-write',
+        writable: gitWritableRoots(CWD),
+        denies: ['~/secret'],
+      }),
+    )
+  })
+})

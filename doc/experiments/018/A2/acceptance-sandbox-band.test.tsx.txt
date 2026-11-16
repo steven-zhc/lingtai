@@ -1,0 +1,426 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+
+import { HomePage } from '@/app/page'
+
+/**
+ * Acceptance for "the home page's sandbox section is a dark band that says every
+ * run is sandboxed, beside a drawing of the Sandbox tab" (TICKET.md). Each test
+ * names the Want clause or Done-when line it proves.
+ */
+
+const root = path.resolve(import.meta.dirname, '../../..')
+const read = (p: string) => readFileSync(path.join(root, p), 'utf8')
+
+const html = renderToStaticMarkup(<HomePage books={null} />)
+
+/** Markup to the words a reader reads, on one line. */
+const text = (h: string) =>
+  h
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&#x27;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+/** The `sandbox-pitch` section's own markup, from its opening tag to its closing one. */
+function band(): string {
+  const mark = html.indexOf('sandbox-pitch')
+  expect(mark, 'the home page has a sandbox-pitch section').toBeGreaterThan(-1)
+  const start = html.lastIndexOf('<section', mark)
+  let depth = 0
+  for (const m of html.slice(start).matchAll(/<section\b|<\/section>/g)) {
+    depth += m[0] === '</section>' ? -1 : 1
+    if (depth === 0) return html.slice(start, start + m.index + '</section>'.length)
+  }
+  throw new Error('sandbox-pitch never closes')
+}
+
+/** The first element with this tag inside `h`, whole. */
+function element(h: string, tag: string): string | null {
+  const start = h.search(new RegExp(`<${tag}\\b`))
+  if (start < 0) return null
+  let depth = 0
+  for (const m of h.slice(start).matchAll(new RegExp(`<${tag}\\b|</${tag}>`, 'g'))) {
+    depth += m[0] === `</${tag}>` ? -1 : 1
+    if (depth === 0) return h.slice(start, start + m.index + `</${tag}>`.length)
+  }
+  return null
+}
+
+// ---------------------------------------------------------------- the CSS
+
+type Rule = { selector: string; body: string; media: string }
+
+/** A small CSS reader: every rule with the @media it sits in, comments removed. */
+function rules(css: string): Rule[] {
+  const src = css.replace(/\/\*[\s\S]*?\*\//g, '')
+  const out: Rule[] = []
+  const walk = (s: string, media: string) => {
+    let i = 0
+    while (i < s.length) {
+      const open = s.indexOf('{', i)
+      if (open < 0) return
+      const head = s.slice(i, open).trim()
+      let depth = 1
+      let j = open + 1
+      while (j < s.length && depth > 0) {
+        if (s[j] === '{') depth++
+        else if (s[j] === '}') depth--
+        j++
+      }
+      const inner = s.slice(open + 1, j - 1)
+      if (head.startsWith('@media')) walk(inner, head)
+      else if (!head.startsWith('@')) out.push({ selector: head, body: inner, media })
+      i = j
+    }
+  }
+  walk(src, '')
+  return out
+}
+
+const decl = (body: string, prop: string) =>
+  [...body.matchAll(new RegExp(`(?:^|;|\\s)${prop}\\s*:\\s*([^;]+)`, 'g'))].map((m) => m[1]!.trim())
+
+const globalsCss = read('apps/board/src/app/globals.css')
+const siteCss = read('apps/site/src/app/site.css')
+const homeCss = read('apps/site/src/app/home.css')
+const allRules = [...rules(globalsCss), ...rules(siteCss), ...rules(homeCss)]
+const homeRules = rules(homeCss)
+const sandboxRules = homeRules.filter((r) => /sandbox/.test(r.selector))
+
+/** Every definition of every custom property in the three stylesheets. */
+const tokens = new Map<string, string[]>()
+for (const r of allRules) {
+  for (const m of r.body.matchAll(/(--[\w-]+)\s*:\s*([^;]+)/g)) {
+    tokens.set(m[1]!, [...(tokens.get(m[1]!) ?? []), m[2]!.trim()])
+  }
+}
+
+const norm = (hex: string) => {
+  const h = hex.toLowerCase()
+  return h.length === 4 ? `#${h[1]}${h[1]}${h[2]}${h[2]}${h[3]}${h[3]}` : h
+}
+
+/** Every hex a value can come to, following `var()` through every definition. */
+function resolve(value: string, seen = new Set<string>()): string[] {
+  const hex = /^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.exec(value.trim())
+  if (hex) return [norm(hex[0])]
+  const v = /^var\(\s*(--[\w-]+)\s*(?:,\s*(.+))?\)$/.exec(value.trim())
+  if (!v) return []
+  const name = v[1]!
+  if (seen.has(name)) return []
+  const defs = tokens.get(name)
+  if (!defs) return v[2] ? resolve(v[2], seen) : []
+  return defs.flatMap((d) => resolve(d, new Set([...seen, name])))
+}
+
+const BOARD_DARK = {
+  ground: '#0c1316',
+  surface: '#131e22',
+  rule: '#22333a',
+  ink: '#dde6e8',
+  ink2: '#b4c4c8',
+  accent: '#54c6cc',
+  accentInk: '#7fdade',
+}
+const DARK_GROUNDS = new Set(['#0c1316', '#131e22', '#0f1a1e'])
+const BOARD_HEXES = new Set([...globalsCss.matchAll(/#[0-9a-f]{6}\b|#[0-9a-f]{3}\b/gi)].map((m) => norm(m[0])))
+const CORAL = ['#fd5d3f', '#ff7256', '--way-in']
+
+function luminance(hex: string): number {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+  const [r, g, b] = c.map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+}
+const contrast = (a: string, b: string) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (hi! + 0.05) / (lo! + 0.05)
+}
+
+// ---------------------------------------------------------------- the band's copy
+
+describe('Want: one band headed "Every run is sandboxed. / Your keys stay yours."', () => {
+  it('Want/heading: h2#sandbox-title says "Every run is sandboxed." and then, on its own line, "Your keys stay yours."', () => {
+    const h2 = /<h2[^>]*id="sandbox-title"[^>]*>([\s\S]*?)<\/h2>/.exec(band())
+    expect(h2, 'h2#sandbox-title is in the band').not.toBeNull()
+    expect(text(h2![1]!)).toBe('Every run is sandboxed. Your keys stay yours.')
+    // its own line: the second sentence is its own element (or follows a <br>), so CSS can colour and break it
+    expect(h2![1]).toMatch(/(<br\s*\/?>\s*|<(\w+)[^>]*>\s*)Your keys stay yours\./)
+  })
+
+  it('Want/heading: the heading sits between the receipt and "Why not just give the agent the issue?"', () => {
+    const at = (s: string) => html.indexOf(s)
+    expect(at('Every run is sandboxed.')).toBeGreaterThan(at('The agent got it wrong. Twice.'))
+    expect(at('Every run is sandboxed.')).toBeLessThan(at('Why not just give the agent the issue?'))
+    expect(html).not.toContain('The agent runs inside a sandbox.')
+  })
+
+  it('Done when 1 / agreed design: the left column runs kicker, shield, heading, sentence, three labels, "On for new projects", the safety link — in that order, before the card', () => {
+    const b = band()
+    const t = text(b)
+    expect(t).toContain('Security · from v0.14.0')
+    expect(t).toContain('Claude Code, Codex and your checks run in one sandbox, so you can leave it overnight.')
+    expect(t).toContain('On for new projects · one sandbox block in the recipe.')
+    expect(b).toMatch(/<code>sandbox<\/code>/)
+    expect(b).toMatch(/<a[^>]*href="\/docs\/safety\/"[^>]*>\s*What an agent can touch →\s*<\/a>/)
+
+    const kicker = b.indexOf('Security')
+    const shield = b.indexOf('<svg', kicker)
+    const h2 = b.indexOf('id="sandbox-title"')
+    const sentence = b.indexOf('so you can leave it overnight')
+    const labels = b.indexOf('No keys')
+    const onFor = b.indexOf('On for new projects')
+    const link = b.indexOf('What an agent can touch')
+    const card = b.indexOf('<figure')
+    const order = [kicker, shield, h2, sentence, labels, onFor, link, card]
+    expect(order.every((i) => i > -1), `missing: ${JSON.stringify(order)}`).toBe(true)
+    expect(order).toEqual([...order].sort((a, z) => a - z))
+  })
+
+  it('Agreed design: the shield above the heading is aria-hidden', () => {
+    const b = band()
+    const before = b.slice(0, b.indexOf('id="sandbox-title"'))
+    expect(before).toMatch(/<svg[^>]*aria-hidden="true"/)
+  })
+
+  it('Want: three short labels — No keys · Allowlisted network · Refusals on the ticket — as one list of three', () => {
+    const b = band()
+    const lists = [...b.matchAll(/<ul\b[\s\S]*?<\/ul>/g)].map((m) => m[0])
+    const labels = lists.find((l) => l.includes('No keys'))
+    expect(labels, 'the labels are a list').toBeDefined()
+    const items = [...labels!.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]!))
+    expect(items).toEqual(['No keys', 'Allowlisted network', 'Refusals on the ticket'])
+  })
+
+  it('Watch out: the heading does not overclaim — "On for new projects" sits directly under the labels', () => {
+    const b = band()
+    const afterLabels = b.slice(b.indexOf('Refusals on the ticket'))
+    const next = text(afterLabels.slice(afterLabels.indexOf('</ul>')))
+    expect(next.startsWith('On for new projects')).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------- the card
+
+describe("Want: a small drawing of the board's real Sandbox tab", () => {
+  const card = () => {
+    const f = element(band(), 'figure')
+    expect(f, 'the card is a <figure> inside the band').not.toBeNull()
+    return f!
+  }
+
+  it('Edges/accessibility: the card is a figure whose accessible name says it is an illustration of the Sandbox tab', () => {
+    const f = card()
+    const label = /^<figure[^>]*aria-label="([^"]*)"/.exec(f)?.[1]
+    const by = /^<figure[^>]*aria-labelledby="([^"]*)"/.exec(f)?.[1]
+    const byText = by ? text(new RegExp(`id="${by}"[^>]*>([\\s\\S]*?)</`).exec(html)?.[1] ?? '') : undefined
+    const caption = /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/.exec(f)?.[1]
+    const name = label ?? byText ?? (caption ? text(caption) : '')
+    expect(name).toMatch(/illustration/i)
+    expect(name).toMatch(/Sandbox tab/i)
+  })
+
+  it('Agreed design: the card carries the receipt\'s ILLUSTRATION tag', () => {
+    expect(card()).toContain('<span class="tag ill">ILLUSTRATION</span>')
+  })
+
+  it("Done when 2 / Watch out: the card's headings are the panel's own — Blocked, Allowed → Reachable, Limited → Cannot be read", () => {
+    const t = text(card())
+    for (const h of ['Blocked', 'Allowed', 'Reachable', 'Limited', 'Cannot be read']) expect(t).toContain(h)
+    expect(t.indexOf('Reachable')).toBeGreaterThan(t.indexOf('Allowed'))
+    expect(t.indexOf('Cannot be read')).toBeGreaterThan(t.indexOf('Limited'))
+    expect(t).toMatch(/#\d+/)
+    expect(t).toContain('Attempt 1')
+  })
+
+  it('Agreed design: Reachable lists the three allowlisted hosts; Cannot be read lists the five paths', () => {
+    const t = text(card())
+    for (const host of ['api.anthropic.com', 'api.openai.com', 'registry.npmjs.org']) expect(t).toContain(host)
+    for (const p of ['~/.ssh', '~/.aws', '~/.config/gh', '~/.npmrc', '~/.lingtai']) expect(t).toContain(p)
+  })
+
+  it('Done when 2 / Watch out: Blocked shows refused connections with counts and no file refusal', () => {
+    const t = text(card())
+    const from = t.indexOf('Blocked')
+    const ends = ['Allowed', 'Limited'].map((h) => t.indexOf(h, from)).filter((i) => i > from)
+    const blocked = t.slice(from, ends.length ? Math.min(...ends) : undefined)
+    const refused = [...blocked.matchAll(/\S+:\d+\s*\d+\s*×/g)]
+    expect(refused.length, `Blocked: "${blocked}"`).toBeGreaterThanOrEqual(2)
+    expect(blocked).not.toMatch(/~\/|\/\.|\bread\b/i)
+    expect(t).not.toMatch(/refused (file )?read/i)
+  })
+
+  it('Done when 2 / Watch out: no per-role host labels, and nothing claims a run actually reached a host', () => {
+    const t = text(card())
+    expect(t).not.toMatch(/\b(writer|build|builder|reviewer|implementer|judge|Policy \d)\b/i)
+    expect(t).not.toMatch(/\breached\b/i)
+  })
+
+  it('Edges/accessibility: every ✗ and ✓ in the band is aria-hidden, with text beside it', () => {
+    card()
+    const glyphs = [...band().matchAll(/<(\w+)[^>]*aria-hidden="true"[^>]*>\s*[✗✓]\s*<\/\1>\s*([^<\s][^<]*|<[^/])/g)]
+    const total = (band().match(/[✗✓]/g) ?? []).length
+    expect(glyphs.length, 'each hidden glyph has text or an element after it').toBe(total)
+    const shown = band().replace(/<(\w+)[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/\1>/g, '')
+    expect(shown).not.toMatch(/[✗✓]/)
+  })
+
+  it('Done when 1: under the card, one small line says telemetry hosts such as sentry.io are refused but not listed', () => {
+    const b = band()
+    const after = text(b.slice(b.indexOf('</figure>') + '</figure>'.length))
+    expect(after).toContain('Telemetry hosts such as sentry.io are refused but not listed.')
+    expect(b).toMatch(/<code>sentry\.io<\/code>/)
+  })
+})
+
+// ---------------------------------------------------------------- what leaves the page
+
+describe('Want: the page no longer contradicts itself', () => {
+  it('Done when 3: the four cards and the diagram are gone from the home page', () => {
+    expect(html).not.toContain('sandbox-facts')
+    expect(html).not.toContain('sandbox-diagram')
+    expect(html).not.toContain('sandbox.svg')
+  })
+
+  it('Done when 3: /docs/safety still shows the diagram, with the SVG\'s own aria-label as its alt', () => {
+    const svg = read('doc/img/sandbox.svg')
+    const label = /aria-label="([^"]*)"/.exec(svg)?.[1]
+    expect(label?.length).toBeGreaterThan(0)
+    expect(read('doc/safety.md')).toContain(`![${label}](img/sandbox.svg)`)
+    // and the home page no longer carries the diagram's alt anywhere
+    expect(html).not.toContain(label!.slice(0, 40))
+  })
+
+  it('Done when 4: the home-edges line no longer says "Not a sandbox", and nothing on the page does', () => {
+    const edges = /<p class="home-edges">([\s\S]*?)<\/p>/.exec(html)
+    expect(edges, 'the home-edges line is still there').not.toBeNull()
+    expect(text(edges![1]!)).not.toMatch(/not a sandbox/i)
+    expect(text(edges![1]!)).toContain('runs on one machine')
+    expect(text(html)).not.toMatch(/not a sandbox/i)
+  })
+
+  it('Done when 5: page.test.tsx is moved to the new heading, the "On for new projects" line and the home-edges check', () => {
+    const t = read('apps/site/unit/page.test.tsx')
+    expect(t).toContain('Every run is sandboxed.')
+    expect(t).not.toContain("'The agent runs inside a sandbox.'")
+    expect(t).toContain('On for new projects')
+    expect(t).toMatch(/Not a sandbox/)
+    expect(t).not.toContain(`toContain('src="/img/docs/sandbox.svg"')`)
+  })
+})
+
+// ---------------------------------------------------------------- the band's look
+
+describe('Want: one full-width dark band, in the board dark palette', () => {
+  it('Agreed design/band: the board\'s dark tokens are named as site tokens in home.css; no coral, no new hue', () => {
+    const defined = new Set(
+      [...homeCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/--[\w-]+\s*:\s*(#[0-9a-f]{3,6})\b/gi)].map((m) =>
+        norm(m[1]!),
+      ),
+    )
+    for (const [name, hex] of Object.entries(BOARD_DARK)) {
+      expect(defined.has(hex), `home.css names the board's dark ${name} ${hex} as a token`).toBe(true)
+    }
+    const hexes = [...homeCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/#[0-9a-f]{6}\b|#[0-9a-f]{3}\b/gi)].map((m) =>
+      norm(m[0]),
+    )
+    expect(hexes.filter((h) => !BOARD_HEXES.has(h)), 'every hex in home.css is a board hex').toEqual([])
+    for (const r of sandboxRules) for (const c of CORAL) expect(r.body.toLowerCase()).not.toContain(c)
+    expect(band()).not.toMatch(/class="[^"]*\b(way-in|claim)\b/)
+  })
+
+  it('Want/band: the band\'s ground is dark — .sandbox-pitch\'s background comes only to the board\'s dark grounds', () => {
+    const grounds = homeRules
+      .filter((r) => /(^|,)\s*(\.home\s+)?\.sandbox-pitch\s*(,|$)/.test(r.selector))
+      .flatMap((r) => [...decl(r.body, 'background'), ...decl(r.body, 'background-color')])
+      .flatMap((v) => resolve(v))
+    expect(grounds.length, '.sandbox-pitch sets a background').toBeGreaterThan(0)
+    expect(grounds.filter((g) => !DARK_GROUNDS.has(g))).toEqual([])
+  })
+
+  it('Want/band: the band is full width, breaking out of .wrap', () => {
+    const b = band()
+    const inWrap = (() => {
+      const at = html.indexOf(b)
+      const before = html.slice(0, at)
+      const opens = (before.match(/<div class="wrap"/g) ?? []).length
+      // a wrap is still open at the band when more wraps opened than this page closed around it
+      const wrapStart = before.lastIndexOf('<div class="wrap"')
+      if (wrapStart < 0) return false
+      const between = html.slice(wrapStart, at)
+      let depth = 0
+      for (const m of between.matchAll(/<div\b|<\/div>/g)) depth += m[0] === '</div>' ? -1 : 1
+      return opens > 0 && depth > 0
+    })()
+    const bleeds = sandboxRules.some((r) => /100vw|50vw|100dvw|100svw/.test(r.body))
+    expect(!inWrap || bleeds, 'the band is outside .wrap, or its CSS breaks out of it').toBe(true)
+  })
+
+  it('Want/heading: "Your keys stay yours." is in the accent colour', () => {
+    const h2 = /<h2[^>]*id="sandbox-title"[^>]*>([\s\S]*?)<\/h2>/.exec(band())?.[1] ?? ''
+    const el = /<(\w+)((?:\s+[\w-]+="[^"]*")*)\s*>\s*Your keys stay yours\./.exec(h2)
+    expect(el, 'the second line is its own element').not.toBeNull()
+    const tag = el![1]!
+    const cls = /class="([^"]*)"/.exec(el![2]!)?.[1]?.split(/\s+/) ?? []
+    const mine = homeRules.filter((r) =>
+      r.selector.split(',').some((s) => {
+        const last = s.trim().split(/\s+|>/).pop() ?? ''
+        return cls.some((c) => last.includes(`.${c}`)) || (/sandbox/.test(s) && last === tag)
+      }),
+    )
+    const colours = mine.flatMap((r) => decl(r.body, 'color')).flatMap((v) => resolve(v))
+    expect(colours.length, 'a home.css rule colours the second line').toBeGreaterThan(0)
+    expect(colours.every((c) => c === BOARD_DARK.accent || c === BOARD_DARK.accentInk)).toBe(true)
+  })
+
+  it('Edges/accessibility: every text colour the band sets clears 4.5:1 on the dark ground, in both schemes', () => {
+    const checked: string[] = []
+    for (const r of sandboxRules) {
+      if (decl(r.body, 'background').length || decl(r.body, 'background-color').length) continue
+      for (const v of decl(r.body, 'color')) {
+        for (const hex of resolve(v)) {
+          for (const ground of [BOARD_DARK.ground, BOARD_DARK.surface]) {
+            checked.push(`${r.selector} ${hex} on ${ground}: ${contrast(hex, ground).toFixed(2)}`)
+            expect(contrast(hex, ground), `${r.selector} { color: ${v} } → ${hex} on ${ground}`).toBeGreaterThanOrEqual(
+              4.5,
+            )
+          }
+        }
+      }
+    }
+    expect(checked.length, 'the band sets its own text colours').toBeGreaterThan(0)
+  })
+
+  it('Edges/dark scheme: the band stays distinct from a dark page — a border, or a ground other than the page\'s', () => {
+    const own = homeRules.filter((r) => /\.sandbox-pitch\b(?![\w-])/.test(r.selector) && !/\s/.test(r.selector.split(',')[0]!.trim().replace(/^\.home\s+/, '')))
+    const bordered = own.some((r) => /(^|;|\s)border(-top|-bottom|-block)?\s*:\s*(?!none|0\b)/.test(r.body))
+    const grounds = own
+      .filter((r) => !/prefers-color-scheme:\s*light/.test(r.media))
+      .flatMap((r) => [...decl(r.body, 'background'), ...decl(r.body, 'background-color')])
+      .flatMap((v) => resolve(v))
+    expect(grounds.length, '.sandbox-pitch sets a ground').toBeGreaterThan(0)
+    expect(bordered || !grounds.includes(BOARD_DARK.ground)).toBe(true)
+  })
+
+  it('Edges/narrow widths: under about 860px the two columns stack', () => {
+    const narrow = sandboxRules.filter((r) => {
+      const w = /max-width:\s*(\d+)px/.exec(r.media)
+      return w && Number(w[1]) >= 760 && Number(w[1]) <= 960
+    })
+    expect(narrow.length, 'a sandbox rule under an @media (max-width: 760–960px)').toBeGreaterThan(0)
+    expect(
+      narrow.some((r) =>
+        /grid-template-columns\s*:\s*(1fr|minmax\([^)]*\))\s*(;|$)|flex-direction\s*:\s*column|display\s*:\s*block/.test(
+          r.body,
+        ),
+      ),
+    ).toBe(true)
+  })
+})

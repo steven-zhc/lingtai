@@ -1,0 +1,106 @@
+/**
+ * Acceptance for #594, the pass half: **the review that runs after the system
+ * merged a moved base in is handed the `base-moved` refusal's
+ * `{ paths, fromSha, toSha }` on its `ActionContext.baseMoved`, and an ordinary
+ * review is handed nothing.**
+ *
+ * Over fakes, in `a-base-that-moved.test.ts`'s (#593) own shape: the lane
+ * answers `base-moved` and then lands, `mergeBase` answers a new head, and a
+ * `review` action records the context each visit was given. What that context
+ * becomes in the prompt is `packages/actions/unit/acceptance-594.test.ts`.
+ */
+import type { Action, ActionContext, ActionResult } from '@lingtai/actions'
+import { STEPS } from '@lingtai/domain'
+import { StepMap } from '@lingtai/recipe'
+import { describe, expect, it } from 'vitest'
+
+import { runPass, type PassOptions, type StepBodies, type StepEnding } from '../src/pass.ts'
+
+const context: ActionContext = { runId: 'pass-1', onSha: 'abc1234def', cwd: '/nowhere', env: {} }
+const PASSED: ActionResult = { verdict: 'passed', evidence: 'green', findings: [] }
+
+const bodies = Object.fromEntries(
+  STEPS.map((step) => [step, async (): Promise<StepEnding> => ({ ending: 'passed' })]),
+) as unknown as StepBodies
+
+const recipe = { steps: StepMap.parse({ merge: [{ name: 'land the branch', merge: { strategy: 'merge-commit' } }] }) }
+
+const moved = (toSha: string, paths = ['src/recipe.ts', 'src/judge.ts'], fromSha = 'fork0001'): ActionResult => ({
+  verdict: 'failed',
+  evidence: 'main moved on files the branch also changed',
+  findings: [],
+  because: 'base-moved',
+  baseMoved: { paths, fromSha, toSha },
+})
+
+type Seen = { onSha: string; baseMoved: unknown }
+
+/** Walks a pass whose lane answers `answers` in order and then lands; records every review's context. */
+async function walk(answers: readonly ActionResult[]) {
+  const reviews: Seen[] = []
+  let calls = 0
+  let merges = 0
+  const lane: Action = {
+    name: 'land the branch',
+    kind: 'merge',
+    yields: 'merge',
+    run: async () => answers[calls++] ?? { ...PASSED, merged: 'merge-sha' },
+  }
+  const review: Action = {
+    name: 'cold review',
+    kind: 'agent',
+    yields: 'verdict',
+    run: async (ctx) => {
+      reviews.push({ onSha: ctx.onSha, baseMoved: (ctx as ActionContext & { baseMoved?: unknown }).baseMoved })
+      return PASSED
+    },
+  }
+  const actionsAt: PassOptions['actionsAt'] = (step, actions) => {
+    if (step === 'merge') return [lane]
+    if (step === 'review') return [review]
+    if (step === 'admit')
+      return [{ name: 'cut', kind: 'worktree', yields: 'worktree', run: async (c) => ({ ...PASSED, head: c.onSha }) }]
+    if (step === 'implement')
+      return [{ name: 'write', kind: 'agent', yields: 'commit', run: async () => ({ ...PASSED, head: 'c0ffee0' }) }]
+    return actions.map((a) => ({ name: a.name, kind: 'run', yields: 'verdict', run: async () => PASSED }) as Action)
+  }
+  const result = await runPass({
+    recipe,
+    context,
+    emit: () => {},
+    bodies,
+    actionsAt,
+    ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+    mergeBase: async () => ({ head: `merged-${++merges}` }),
+  })
+  return { result, reviews }
+}
+
+describe('#594 — which review is told what landed on the base', () => {
+  it('Want + Fix: the review after a base-moved merge is handed the refusal’s paths and shas; the first review is handed none', async () => {
+    const { result, reviews } = await walk([moved('base-1')])
+
+    expect(result.end).toMatchObject({ _tag: 'Landed' })
+    expect(reviews).toHaveLength(2)
+    // The ordinary review, on the way through: nothing.
+    expect(reviews[0]).toEqual({ onSha: 'c0ffee0', baseMoved: undefined })
+    // The review on the merge commit: exactly what the lane refused with.
+    expect(reviews[1]).toEqual({
+      onSha: 'merged-1',
+      baseMoved: { paths: ['src/recipe.ts', 'src/judge.ts'], fromSha: 'fork0001', toSha: 'base-1' },
+    })
+  })
+
+  it('Want: a second base-moved merge hands the next review the second refusal’s own paths and shas, not the first’s', async () => {
+    const { reviews } = await walk([
+      moved('base-1'),
+      moved('base-2', ['src/conduct.ts'], 'base-1'),
+    ])
+
+    expect(reviews.map((r) => r.baseMoved)).toEqual([
+      undefined,
+      { paths: ['src/recipe.ts', 'src/judge.ts'], fromSha: 'fork0001', toSha: 'base-1' },
+      { paths: ['src/conduct.ts'], fromSha: 'base-1', toSha: 'base-2' },
+    ])
+  })
+})

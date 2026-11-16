@@ -1,0 +1,102 @@
+/**
+ * Acceptance for *every paid agent call records the prompt it was handed as
+ * `RunPrompted`, tagged with its `RunSpent`'s `for`* — the domain's half.
+ *
+ * Three claims live here because they are the domain's own: the payload carries
+ * an optional `for` (and an event stored without one still parses), the attempt
+ * reducer reads `prompt`/`prompts`/`promptMeta` only off a `RunPrompted` with no
+ * `for`, and the generated `doc/events.json` knows about the second writer.
+ *
+ * The dispatches themselves are proved where they run:
+ * `packages/conductor/unit/acceptance-run-prompted.test.ts` (review, judge, fix,
+ * design) and `apps/cli/unit/acceptance-run-prompted.test.ts` (triage,
+ * discussion).
+ */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { describe, expect, it } from 'vitest'
+
+import type { EventsDoc } from '../scripts/events.ts'
+import { parsePayload, reduceAttempt, type Envelope } from '../src/index.ts'
+import { makeStream } from '../test/support.ts'
+
+const FIX_FOR = { _tag: 'Action', step: 'implement', name: 'write the change', round: 1 } as const
+
+const root = join(fileURLToPath(import.meta.url), '..', '..', '..', '..')
+
+describe('RunPrompted carries the `for` of the call it prompted', () => {
+  it('Done when 1: `for` is `SpentFor.optional()` — kept when given, and an event without it still parses', () => {
+    // An event as every stored one is today: no `for`, which means the hooked implement run.
+    const stored = parsePayload('RunPrompted', { promptVersion: 'ticket@3', bytes: 12, prompt: 'do the thing' })
+    expect(stored).toEqual({ promptVersion: 'ticket@3', bytes: 12, prompt: 'do the thing' })
+    expect((stored as { for?: unknown }).for).toBeUndefined()
+
+    // A fix round's: the same `for` its `RunSpent` carries, kept rather than stripped.
+    const fix = parsePayload('RunPrompted', {
+      promptVersion: 'fix@1',
+      bytes: 9,
+      prompt: 'fix brief',
+      for: FIX_FOR,
+    })
+    expect((fix as { for?: unknown }).for).toEqual(FIX_FOR)
+
+    // Each `SpentFor` variant is accepted, since each paid call has one.
+    for (const f of [
+      { _tag: 'Action', step: 'review', name: 'cold reviewer', round: 0 },
+      { _tag: 'Action', step: 'design', name: 'draft', round: 0 },
+      { _tag: 'Judge', when: 'findings' },
+      { _tag: 'Discussion' },
+    ]) {
+      const parsed = parsePayload('RunPrompted', { promptVersion: 'x', bytes: 1, prompt: 'p', for: f })
+      expect((parsed as { for?: unknown }).for).toEqual(f)
+    }
+  })
+})
+
+describe('the attempt keeps the implementer’s prompt (Want: “The attempt’s own `prompt` stays the implementer’s”)', () => {
+  it('Done when 4: an implement RunPrompted (no `for`) then a fix one (with `for`) leaves `prompt` the implementer’s and `prompts` at 1', () => {
+    const e = makeStream('pass-acceptance-prompted')
+    const events: Envelope[] = [
+      e('RunPrompted', { promptVersion: 'ticket@3', bytes: 15, prompt: 'the implementer' }),
+      e('RunPrompted', {
+        promptVersion: 'fix@1',
+        bytes: 13,
+        prompt: 'the fix brief',
+        for: FIX_FOR,
+      } as never),
+      e('RunPrompted', {
+        promptVersion: 'review@1',
+        bytes: 16,
+        prompt: 'the cold reviewer',
+        for: { _tag: 'Action', step: 'review', name: 'cold reviewer', round: 1 },
+      } as never),
+    ]
+
+    const state = reduceAttempt(events)
+
+    expect(state.prompt).toBe('the implementer')
+    expect(state.prompts).toBe(1)
+    expect(state.promptMeta).toEqual({ version: 'ticket@3', bytes: 15 })
+  })
+})
+
+describe('doc/events.json is regenerated (Edges: “Generated docs”)', () => {
+  const committed = JSON.parse(readFileSync(join(root, 'doc', 'events.json'), 'utf8')) as EventsDoc
+  const named = (name: string) => committed.events.find((e) => e.name === name)!
+
+  it('Done when 6: RunPrompted names a second writer beside the hook, and every stream its RunSpent goes to', () => {
+    const prompted = named('RunPrompted')
+    const spent = named('RunSpent')
+
+    // The hook's line, and the helper's.
+    expect(prompted.sites.length).toBeGreaterThanOrEqual(2)
+    expect(prompted.sites.some((s) => s.includes('packages/agent/src/hook-socket.ts'))).toBe(true)
+    expect(prompted.sites.some((s) => !s.includes('packages/agent/src/hook-socket.ts'))).toBe(true)
+
+    // Edges, “Stream”: the prompt goes where the call's `RunSpent` goes — the
+    // pass for review/design/judge/fix, `ticket-` for triage, `chat-` for a discussion.
+    for (const stream of spent.stream) expect(prompted.stream).toContain(stream)
+  })
+})

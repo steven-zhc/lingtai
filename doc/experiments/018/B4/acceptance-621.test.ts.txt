@@ -1,0 +1,490 @@
+/**
+ * Acceptance for the ticket *the commands that answer a wait print one verdict
+ * and take --json* — `approve`, `requeue`, `grant-fix-round`, `close`,
+ * `answer`, `now`.
+ *
+ * Every case drives the real entry, `runCli` (`apps/cli/src/cli.ts`), with the
+ * argv a person types, so it proves the command is on `@effect/cli`'s root
+ * command and not only that some renderer exists. What is stubbed is the
+ * package boundary each command calls and nothing in `apps/cli`: the decision
+ * functions in `@lingtai/conductor` (which take a file lock and read the log —
+ * integration by 0060 §1), `requestRun` in `@lingtai/daemon`, the GitHub client
+ * in `@lingtai/conductor/filter`, `hasGitHubApp`, and `withProjector`. The log
+ * `grant-fix-round` reads for the item's state is a memory store.
+ *
+ * **The `--json` shape this acceptance fixes** (ADR 0121 §5 plus the ticket's
+ * *Want*): `{ version: 1, command, outcome: 'accepted' | 'refused', … }`, with
+ * `reason` carrying the conductor's refusal code where it has one
+ * (`reason-required`, `no-saved-head`, …) and `detail` its sentence. Every
+ * other fact the old prose carried is a field too: `ticketId`, `continuesAt`,
+ * `unscheduled`, the project and the issue.
+ *
+ * **The text verdict**: under `NO_COLOR` exactly one line carries 0121 §2's
+ * `✓` (accepted) or `✗` (refused), and an accepted command closes on a line
+ * starting `next:` (0121 §1) — what happens next.
+ */
+import { ticketStream } from '@lingtai/domain'
+import { aClaim, aRunRef, aWait } from '@lingtai/domain/test/events'
+import { makeStream } from '@lingtai/domain/test/support'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@lingtai/conductor', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  loadProject: vi.fn(),
+  currentRecipe: vi.fn(),
+  ownerlessClient: vi.fn(),
+  approve: vi.fn(),
+  requeue: vi.fn(),
+  answer: vi.fn(),
+  close: vi.fn(),
+  resolveWait: vi.fn(),
+}))
+vi.mock('@lingtai/conductor/filter', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  projectClient: vi.fn(),
+}))
+vi.mock('@lingtai/env', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  hasGitHubApp: () => true,
+}))
+vi.mock('@lingtai/daemon', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  requestRun: vi.fn(async () => undefined),
+}))
+vi.mock('@lingtai/event-store', async (importOriginal) => {
+  const { createMemoryEventStore } = await import('@lingtai/event-store/memory')
+  return { ...(await importOriginal<Record<string, unknown>>()), eventStore: createMemoryEventStore() }
+})
+vi.mock('../src/projector.ts', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  withProjector: async <T>(_log: unknown, work: () => Promise<T>) => work(),
+}))
+
+import * as conductor from '@lingtai/conductor'
+import * as filter from '@lingtai/conductor/filter'
+import * as daemon from '@lingtai/daemon'
+import { eventStore } from '@lingtai/event-store'
+
+import { runCli } from '../src/cli.ts'
+import { commandHelp } from '../src/help.ts'
+import { routeOf } from '../src/migrated.ts'
+import { stripColour } from '../src/output.ts'
+
+const PROJECT = 'lingtai'
+const ISSUE = 7
+const TICKET = ticketStream(PROJECT, ISSUE)
+const SHA = 'a'.repeat(40)
+const ESC = String.fromCharCode(27)
+
+const COMMANDS = ['approve', 'requeue', 'grant-fix-round', 'close', 'answer', 'now'] as const
+type Verb = (typeof COMMANDS)[number]
+
+/** The argv a person types for each command, before any `--json`/`--no-color`. */
+const ARGV: Record<Verb, string[]> = {
+  approve: ['approve', PROJECT, '--issue', String(ISSUE)],
+  requeue: ['requeue', PROJECT, '--issue', String(ISSUE), '--note', 'base moved'],
+  'grant-fix-round': ['grant-fix-round', PROJECT, '--issue', String(ISSUE)],
+  close: ['close', PROJECT, '--issue', String(ISSUE), 'superseded by #700'],
+  answer: ['answer', PROJECT, '--issue', String(ISSUE), 'use the second option'],
+  now: ['now', PROJECT, '--issue', String(ISSUE)],
+}
+
+const m = <T>(f: T) => f as unknown as ReturnType<typeof vi.fn>
+
+/** stdout, whether written directly or through `console.log`, in order; stderr apart. */
+async function capture(args: string[]): Promise<{ code: number; out: string; err: string }> {
+  let out = ''
+  let err = ''
+  vi.spyOn(process.stdout, 'write').mockImplementation((t: string | Uint8Array) => ((out += String(t)), true))
+  vi.spyOn(process.stderr, 'write').mockImplementation((t: string | Uint8Array) => ((err += String(t)), true))
+  vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void (out += `${a.map(String).join(' ')}\n`))
+  vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => void (err += `${a.map(String).join(' ')}\n`))
+  const code = await runCli(['node', 'lingtai', ...args])
+  return { code, out, err }
+}
+
+/** The one document `--json` printed — and a failure if stdout held anything else. */
+function oneDocument(out: string): Record<string, unknown> {
+  const lines = out.split('\n').filter((l) => l.trim() !== '')
+  expect(lines, `stdout under --json must be exactly one JSON value:\n${out}`).toHaveLength(1)
+  return JSON.parse(lines[0]!) as Record<string, unknown>
+}
+
+/** The sentence a refusal or an error document carries: `error.message`, or a refusal's `detail`. */
+function messageOf(doc: Record<string, unknown>): string {
+  const error = doc['error'] as { message?: string } | undefined
+  return String(error?.message ?? doc['detail'] ?? '')
+}
+
+function verdictLines(out: string): string[] {
+  return out.split('\n').filter((l) => l.includes('✓') || l.includes('✗'))
+}
+
+function lastLine(out: string): string {
+  return out.split('\n').filter((l) => l.trim() !== '').at(-1) ?? ''
+}
+
+async function seedBlocked(): Promise<void> {
+  const item = makeStream(TICKET)
+  const events = [
+    ...aClaim(item, 'pass-7'),
+    ...aWait(item, {
+      _tag: 'CheckRefused',
+      run: aRunRef('pass-7'),
+      step: 'proposed',
+      action: 'build',
+      evidence: 'tsc failed',
+      findings: [],
+    }),
+  ]
+  await eventStore.append(TICKET, (await eventStore.read(TICKET)).length, events)
+}
+
+/** What each decision function answers, accepted or refused. */
+function accepting(): void {
+  m(conductor.approve).mockResolvedValue({ ok: true, ticketId: TICKET, runId: 'pass-7', continuesAt: 'merge' })
+  m(conductor.requeue).mockResolvedValue({ ok: true, ticketId: TICKET, detail: 'back in the queue' })
+  m(conductor.answer).mockResolvedValue({ ok: true, ticketId: TICKET, detail: 'answered — back in the queue' })
+  m(conductor.close).mockResolvedValue({
+    ok: true,
+    ticketId: TICKET,
+    detail: 'closed by human:test — the queue will not offer it again',
+  })
+  m(conductor.resolveWait).mockResolvedValue({ ok: true, ticketId: TICKET })
+}
+
+function refusing(): void {
+  m(conductor.approve).mockResolvedValue({
+    ok: false,
+    ticketId: TICKET,
+    reason: 'reason-required',
+    detail: 'build refused the head; approving waives it, so --note must say why',
+  })
+  m(conductor.requeue).mockResolvedValue({ ok: false, ticketId: TICKET, detail: `${TICKET} is claimed, not blocked` })
+  m(conductor.answer).mockResolvedValue({ ok: false, ticketId: TICKET, detail: `${TICKET} is not asking anything` })
+  m(conductor.close).mockResolvedValue({ ok: false, ticketId: TICKET, detail: `${TICKET} has landed — nothing to close` })
+  m(conductor.resolveWait).mockResolvedValue({
+    ok: false,
+    ticketId: TICKET,
+    reason: 'no-saved-head',
+    detail: 'the held run saved no head to fix',
+  })
+}
+
+const saved = { ...process.env }
+
+beforeEach(async () => {
+  vi.clearAllMocks()
+  process.env['NO_COLOR'] = '1'
+  delete process.env['FORCE_COLOR']
+  m(conductor.loadProject).mockResolvedValue({ project: PROJECT, owner: 'steven-zhc', base: 'main' })
+  m(filter.projectClient).mockResolvedValue({ client: { refSha: async () => SHA }, resolved: {} })
+})
+
+beforeAll(seedBlocked)
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]
+  Object.assign(process.env, saved)
+})
+
+describe('Want: parsed by @effect/cli — each command is on the root command', () => {
+  it.each(COMMANDS)('Done when 1: %s routes to @effect/cli, with and without --json', (verb) => {
+    expect(routeOf(ARGV[verb])).toBe('effect')
+    expect(routeOf([...ARGV[verb], '--json'])).toBe('effect')
+  })
+
+  it.each(COMMANDS)('Done when 1: runCli answers `%s` rather than refusing it as an unknown subcommand', async (verb) => {
+    accepting()
+    const r = await capture([...ARGV[verb], '--json'])
+    expect(oneDocument(r.out)).not.toHaveProperty('error')
+    expect(r.code).toBe(0)
+  })
+
+  it.each(COMMANDS)('Want: `lingtai %s --help` names --json, so a script can find the stable form', (verb) => {
+    expect(commandHelp(verb)).toContain('--json')
+  })
+})
+
+describe('Want: --json reports the outcome — accepted', () => {
+  beforeEach(accepting)
+
+  it('approve: { outcome: accepted } with the ticket and the step it continues at (facts the old line had)', async () => {
+    const r = await capture([...ARGV.approve, '--json'])
+    expect(r.code).toBe(0)
+    expect(oneDocument(r.out)).toMatchObject({
+      version: 1,
+      command: 'approve',
+      outcome: 'accepted',
+      ticketId: TICKET,
+      continuesAt: 'merge',
+    })
+  })
+
+  it('approve: an approval whose continuation was not scheduled still says why (the old "but … not scheduled" fact)', async () => {
+    m(conductor.approve).mockResolvedValue({
+      ok: true,
+      ticketId: TICKET,
+      runId: 'pass-7',
+      continuesAt: 'merge',
+      unscheduled: 'append retries exhausted',
+    })
+    const r = await capture([...ARGV.approve, '--json'])
+    expect(oneDocument(r.out)).toMatchObject({
+      command: 'approve',
+      outcome: 'accepted',
+      unscheduled: 'append retries exhausted',
+    })
+  })
+
+  it.each([
+    ['requeue', 'back in the queue'],
+    ['answer', 'answered — back in the queue'],
+    ['close', 'closed by human:test — the queue will not offer it again'],
+  ] as const)('%s: { outcome: accepted } with the ticket and the detail the old output printed', async (verb, detail) => {
+    const r = await capture([...ARGV[verb], '--json'])
+    expect(r.code).toBe(0)
+    expect(oneDocument(r.out)).toMatchObject({ version: 1, command: verb, outcome: 'accepted', ticketId: TICKET, detail })
+  })
+
+  it('grant-fix-round: { outcome: accepted } with the ticket (the old "fix round granted for <ticket>" fact)', async () => {
+    const r = await capture([...ARGV['grant-fix-round'], '--json'])
+    expect(r.code).toBe(0)
+    expect(oneDocument(r.out)).toMatchObject({
+      version: 1,
+      command: 'grant-fix-round',
+      outcome: 'accepted',
+      ticketId: TICKET,
+    })
+  })
+
+  it('now: { outcome: accepted } naming the project and the issue requested (the old "requested <p> #<n>" fact)', async () => {
+    const r = await capture([...ARGV.now, '--json'])
+    expect(r.code).toBe(0)
+    const doc = oneDocument(r.out)
+    expect(doc).toMatchObject({ version: 1, command: 'now', outcome: 'accepted', project: PROJECT })
+    expect(String(doc['issue'])).toBe(String(ISSUE))
+    expect(m(daemon.requestRun)).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Want: --json reports the outcome — refused, with the reason code', () => {
+  beforeEach(refusing)
+
+  it('approve: reason-required is the API — it is the `reason` field, exit 1', async () => {
+    const r = await capture([...ARGV.approve, '--json'])
+    expect(r.code).toBe(1)
+    expect(oneDocument(r.out)).toMatchObject({
+      version: 1,
+      command: 'approve',
+      outcome: 'refused',
+      reason: 'reason-required',
+      ticketId: TICKET,
+      detail: 'build refused the head; approving waives it, so --note must say why',
+    })
+  })
+
+  it('grant-fix-round: no-saved-head is the API — it is the `reason` field, exit 1', async () => {
+    const r = await capture([...ARGV['grant-fix-round'], '--json'])
+    expect(r.code).toBe(1)
+    expect(oneDocument(r.out)).toMatchObject({
+      version: 1,
+      command: 'grant-fix-round',
+      outcome: 'refused',
+      reason: 'no-saved-head',
+      detail: 'the held run saved no head to fix',
+    })
+  })
+
+  it.each([
+    ['requeue', 'is claimed, not blocked'],
+    ['answer', 'is not asking anything'],
+    ['close', 'has landed'],
+  ] as const)('%s: { outcome: refused } keeps the state the refusal named, exit 1', async (verb, fact) => {
+    const r = await capture([...ARGV[verb], '--json'])
+    expect(r.code).toBe(1)
+    const doc = oneDocument(r.out)
+    expect(doc).toMatchObject({ version: 1, command: verb, outcome: 'refused', ticketId: TICKET })
+    expect(String(doc['detail'])).toContain(fact)
+  })
+
+  it('grant-fix-round: an item not waiting on a fix decision is refused under --json, and nothing is resolved', async () => {
+    const r = await capture(['grant-fix-round', PROJECT, '--issue', '8', '--json'])
+    expect(r.code).toBe(1)
+    expect(oneDocument(r.out)).toMatchObject({ command: 'grant-fix-round', outcome: 'refused' })
+    expect(m(conductor.resolveWait)).not.toHaveBeenCalled()
+  })
+
+  it.each(COMMANDS)('%s: a project never added is one document on stdout, non-zero, naming the project', async (verb) => {
+    m(conductor.loadProject).mockResolvedValue(null)
+    const argv = [...ARGV[verb]]
+    argv[1] = 'nosuchproject'
+    const r = await capture([...argv, '--json'])
+    // `now` appended RunRequested for any name before; the others refused. Either way,
+    // what it printed is one document a script can parse.
+    const doc = oneDocument(r.out)
+    expect(doc).toMatchObject({ version: 1, command: verb })
+    // Parsed, so never the parser's own complaint: the command itself answered.
+    expect((doc['error'] as { code?: string } | undefined)?.code).not.toBe('usage')
+    if (verb !== 'now') {
+      expect(r.code).not.toBe(0)
+      expect(JSON.stringify(doc)).toContain('nosuchproject')
+    }
+  })
+})
+
+describe('Want: one verdict line plus what happens next, through the output module', () => {
+  it.each(COMMANDS)('%s accepted: exactly one ✓ verdict line, and it closes on `next:`', async (verb) => {
+    accepting()
+    const r = await capture(ARGV[verb])
+    expect(r.code).toBe(0)
+    const verdicts = verdictLines(r.out)
+    expect(verdicts, r.out).toHaveLength(1)
+    expect(verdicts[0]).toContain('✓')
+    expect(lastLine(r.out).trimStart().startsWith('next:'), r.out).toBe(true)
+  })
+
+  it.each([
+    ['approve', 'reason-required'],
+    ['grant-fix-round', 'no-saved-head'],
+    ['requeue', 'is claimed, not blocked'],
+    ['answer', 'is not asking anything'],
+    ['close', 'has landed'],
+  ] as const)('%s refused: exactly one ✗ verdict line, and the text keeps "%s"', async (verb, fact) => {
+    refusing()
+    const r = await capture(ARGV[verb])
+    expect(r.code).toBe(1)
+    const verdicts = verdictLines(r.out)
+    expect(verdicts, r.out).toHaveLength(1)
+    expect(verdicts[0]).toContain('✗')
+    expect(r.out).toContain(fact)
+  })
+
+  it('approve accepted: the text keeps the ticket and the step it continues at', async () => {
+    accepting()
+    const r = await capture(ARGV.approve)
+    expect(r.out).toContain(TICKET)
+    expect(r.out).toContain('merge')
+  })
+
+  it('now accepted: the text keeps the project and the issue', async () => {
+    accepting()
+    const r = await capture(ARGV.now)
+    expect(r.out).toContain(PROJECT)
+    expect(r.out).toContain(`#${ISSUE}`)
+  })
+})
+
+describe('Done when 1: plain under NO_COLOR / non-TTY, the same text with colour forced', () => {
+  it.each(COMMANDS)('%s: no escape under NO_COLOR; FORCE_COLOR paints it and stripping gives the same text', async (verb) => {
+    accepting()
+    const plain = await capture(ARGV[verb])
+    expect(plain.code).toBe(0)
+    expect(plain.out).not.toContain(ESC)
+    vi.restoreAllMocks()
+
+    delete process.env['NO_COLOR']
+    process.env['FORCE_COLOR'] = '1'
+    accepting()
+    const painted = await capture(ARGV[verb])
+    expect(painted.out, 'the verdict goes through paint, not a bare string').toContain(ESC)
+    expect(stripColour(painted.out)).toBe(plain.out)
+  })
+
+  it.each(COMMANDS)('%s: --no-color is NO_COLOR for the process, and beats FORCE_COLOR', async (verb) => {
+    delete process.env['NO_COLOR']
+    process.env['FORCE_COLOR'] = '1'
+    accepting()
+    const r = await capture([...ARGV[verb], '--no-color'])
+    expect(r.code).toBe(0)
+    expect(r.out).not.toContain(ESC)
+    expect(verdictLines(r.out)).toHaveLength(1)
+  })
+
+  it.each(COMMANDS)('%s --json: no colour even with FORCE_COLOR', async (verb) => {
+    delete process.env['NO_COLOR']
+    process.env['FORCE_COLOR'] = '1'
+    accepting()
+    const r = await capture([...ARGV[verb], '--json'])
+    expect(r.out).not.toContain(ESC)
+    expect(oneDocument(r.out)).toMatchObject({ version: 1, command: verb, outcome: 'accepted' })
+  })
+})
+
+describe('Done when 3: no fact the old parser carried is lost', () => {
+  it('approve --reject is still refused by name, pointing at requeue, and approves nothing', async () => {
+    accepting()
+    const r = await capture([...ARGV.approve, '--reject'])
+    expect(r.code).not.toBe(0)
+    expect(`${r.out}${r.err}`).toContain('requeue')
+    expect(m(conductor.approve)).not.toHaveBeenCalled()
+  })
+
+  it('answer: an unquoted sentence after the project still arrives whole', async () => {
+    accepting()
+    const r = await capture(['answer', PROJECT, '--issue', String(ISSUE), 'use', 'the', 'second', 'option'])
+    expect(r.code).toBe(0)
+    expect(m(conductor.answer)).toHaveBeenCalledWith(expect.objectContaining({ answer: 'use the second option' }))
+  })
+
+  it('close: an unquoted reason after the project still arrives whole', async () => {
+    accepting()
+    const r = await capture(['close', PROJECT, '--issue', String(ISSUE), 'superseded', 'by', '#700'])
+    expect(r.code).toBe(0)
+    expect(m(conductor.close)).toHaveBeenCalledWith(expect.objectContaining({ reason: 'superseded by #700' }))
+  })
+
+  it('requeue: --note left off is recorded as "" rather than invented (#424)', async () => {
+    accepting()
+    const r = await capture(['requeue', PROJECT, '--issue', String(ISSUE)])
+    expect(r.code).toBe(0)
+    expect(m(conductor.requeue)).toHaveBeenCalledWith(expect.objectContaining({ note: '' }))
+  })
+
+  it('grant-fix-round: --if-head reaches the resolution as the sha it was granted on', async () => {
+    accepting()
+    const r = await capture([...ARGV['grant-fix-round'], '--if-head', '53fe949'])
+    expect(r.code).toBe(0)
+    expect(m(conductor.resolveWait)).toHaveBeenCalledWith(
+      expect.objectContaining({ resolution: expect.objectContaining({ _tag: 'GrantFixRound', onSha: '53fe949' }) }),
+    )
+  })
+
+  it('a blank close reason is refused before anything is decided — under --json as one document', async () => {
+    accepting()
+    const r = await capture(['close', PROJECT, '--issue', String(ISSUE), '--json'])
+    expect(r.code).not.toBe(0)
+    const doc = oneDocument(r.out)
+    expect(doc).toMatchObject({ version: 1, command: 'close' })
+    // The old fact: nothing lifts a close, so it needs a reason — and the document says that is what is missing.
+    expect(messageOf(doc)).toMatch(/reason/i)
+    expect(m(conductor.close)).not.toHaveBeenCalled()
+  })
+
+  it('a blank answer is refused before anything is decided — under --json as one document', async () => {
+    accepting()
+    const r = await capture(['answer', PROJECT, '--issue', String(ISSUE), '--json'])
+    expect(r.code).not.toBe(0)
+    const doc = oneDocument(r.out)
+    expect(doc).toMatchObject({ version: 1, command: 'answer' })
+    // The old fact: an answer nobody wrote is refused, and the document says the answer is what is missing.
+    expect(messageOf(doc)).toMatch(/answer|choice/i)
+    expect(m(conductor.answer)).not.toHaveBeenCalled()
+  })
+
+  it.each(COMMANDS)('%s: --issue that is not a number is a usage error, not a decision', async (verb) => {
+    accepting()
+    const argv = [...ARGV[verb]]
+    argv[3] = 'seven'
+    const r = await capture([...argv, '--json'])
+    expect(r.code).not.toBe(0)
+    const doc = oneDocument(r.out)
+    expect(doc).toMatchObject({ version: 1, command: verb, error: { code: 'usage' } })
+    // About the flag that was wrong, not about a subcommand the parser has never heard of.
+    expect(messageOf(doc)).toMatch(/issue/i)
+    for (const f of [conductor.approve, conductor.requeue, conductor.answer, conductor.close, conductor.resolveWait])
+      expect(m(f)).not.toHaveBeenCalled()
+    expect(m(daemon.requestRun)).not.toHaveBeenCalled()
+  })
+})

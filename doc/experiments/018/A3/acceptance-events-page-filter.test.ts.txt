@@ -1,0 +1,105 @@
+import { readFileSync } from 'node:fs'
+
+import { describe, expect, it } from 'vitest'
+
+import type { EventsDoc } from '../../../packages/domain/scripts/events.ts'
+
+/**
+ * Acceptance for the events page's filter (TICKET.md, Done when 3, and What to
+ * build "The filter in the URL" / "Groups").
+ *
+ * There is no DOM in this repository's unit project, so the filter is held as
+ * the pure, client-safe module the client component calls:
+ *
+ *   apps/site/src/lib/event-filter.ts
+ *     stepFromSearch(search: string): string | null
+ *       `?step=<step>|outside|none` → that value; anything else → null (all shown)
+ *     filterGroups(events, step: string | null): { group: string; total: number; events: Entry[] }[]
+ *       every group, in the order it first appears in `events`; `events` is the
+ *       ones `step` leaves visible, `total` the group's size unfiltered — so a
+ *       group with `events.length === 0` is the one the page hides, and the
+ *       heading's `n of N` and the rail's count are `events.length` / `total`.
+ *     stepAfterHash(events, step: string | null, hash: string): string | null
+ *       the step to keep once `location.hash` is `hash`: null when `#Name` names
+ *       an event the step hides, `step` otherwise.
+ *
+ * It is imported dynamically so each case fails on its own line until it exists.
+ */
+
+const doc = JSON.parse(readFileSync(new URL('../../../doc/events.json', import.meta.url), 'utf8')) as EventsDoc
+type Entry = EventsDoc['events'][number]
+type Group = { group: string; total: number; events: Entry[] }
+type Filter = {
+  stepFromSearch: (search: string) => string | null
+  filterGroups: (events: Entry[], step: string | null) => Group[]
+  stepAfterHash: (events: Entry[], step: string | null, hash: string) => string | null
+}
+const load = async (): Promise<Filter> => (await import('../src/lib/event-filter')) as unknown as Filter
+
+const names = (gs: Group[]) => gs.flatMap((g) => g.events.map((e) => e.name)).sort()
+const groupsInOrder = [...new Set(doc.events.map((e) => e.group))]
+
+describe('Done when 3: the filter', () => {
+  it('?step=review leaves exactly the events whose at includes review, and hides groups with none', async () => {
+    const f = await load()
+    const step = f.stepFromSearch('?step=review')
+    expect(step).toBe('review')
+    const gs = f.filterGroups(doc.events, step)
+    expect(names(gs)).toEqual(doc.events.filter((e) => e.at.includes('review')).map((e) => e.name).sort())
+    const without = groupsInOrder.filter((g) => !doc.events.some((e) => e.group === g && e.at.includes('review')))
+    expect(without.length, 'some group has no review event in today\'s data').toBeGreaterThan(0)
+    for (const g of without) expect(gs.find((x) => x.group === g)?.events, g).toEqual([])
+  })
+
+  it('?step=none leaves exactly the events with an empty at', async () => {
+    const f = await load()
+    const step = f.stepFromSearch('?step=none')
+    expect(step).toBe('none')
+    const gs = f.filterGroups(doc.events, step)
+    const want = doc.events.filter((e) => e.at.length === 0).map((e) => e.name).sort()
+    expect(want.length).toBe(3)
+    expect(names(gs)).toEqual(want)
+  })
+
+  it('?step=outside leaves exactly the events whose at includes outside (38 today)', async () => {
+    const f = await load()
+    const gs = f.filterGroups(doc.events, f.stepFromSearch('?step=outside'))
+    expect(names(gs)).toEqual(doc.events.filter((e) => e.at.includes('outside')).map((e) => e.name).sort())
+    expect(names(gs).length).toBe(38)
+  })
+
+  it('an unknown value is ignored: all shown', async () => {
+    const f = await load()
+    for (const q of ['?step=bogus', '?step=', '?step=REVIEW', '?other=review', '']) {
+      const step = f.stepFromSearch(q)
+      expect(step, q).toBeNull()
+      expect(names(f.filterGroups(doc.events, step)), q).toEqual(doc.events.map((e) => e.name).sort())
+    }
+  })
+
+  it('What to build "Groups": every group in order, with its unfiltered total for "n of N"', async () => {
+    const f = await load()
+    const gs = f.filterGroups(doc.events, 'review')
+    expect(gs.map((g) => g.group)).toEqual(groupsInOrder)
+    expect(groupsInOrder.length).toBe(12)
+    for (const g of gs) expect(g.total, g.group).toBe(doc.events.filter((e) => e.group === g.group).length)
+    const all = f.filterGroups(doc.events, null)
+    for (const g of all) expect(g.events.length, g.group).toBe(g.total)
+  })
+
+  it('What to build: a #EventName that the current filter hides drops the filter; one it shows keeps it', async () => {
+    const f = await load()
+    const hidden = doc.events.find((e) => !e.at.includes('review'))!
+    const shown = doc.events.find((e) => e.at.includes('review'))!
+    expect(f.stepAfterHash(doc.events, 'review', `#${hidden.name}`)).toBeNull()
+    expect(f.stepAfterHash(doc.events, 'review', `#${shown.name}`)).toBe('review')
+    expect(f.stepAfterHash(doc.events, 'review', '#not-an-event')).toBe('review')
+    expect(f.stepAfterHash(doc.events, 'review', '')).toBe('review')
+  })
+
+  it('Watch out: the filter module is client-safe — no node:, fs, or the events.json reader', () => {
+    const src = readFileSync(new URL('../src/lib/event-filter.ts', import.meta.url), 'utf8')
+    const values = [...src.matchAll(/^\s*import\s+(?!type\b)[^'"]*?from\s+['"]([^'"]+)['"]/gm)].map((m) => m[1])
+    for (const s of values) expect(s).not.toMatch(/^(node:|fs$|path$|@\/lib\/events$|\.\/events$)/)
+  })
+})
