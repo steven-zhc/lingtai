@@ -94,26 +94,19 @@ export interface CloseOptions {
  * how the silence gets in. Read from the base branch, never from an agent's
  * (0005).
  */
-import {
-  parsePayload,
-  type ProjectState,
-  reduceTicket,
-  type ToAppend,
-  type WaitId,
-  ticketStream,
-} from '@lingtai/domain'
-import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+import { type ProjectState, type WaitId, ticketStream } from '@lingtai/domain'
+import { type EventStore, eventStore } from '@lingtai/event-store'
 import type { StepAction } from '@lingtai/recipe'
 import type { ResolvedRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import { decidingEffect } from './deciding.ts'
-import { resolveEndActions } from './end-step.ts'
 import { labelsFor } from './labels.ts'
 import { asFailure } from './port-face.ts'
 import { currentRecipe } from './projects.ts'
-import { resolveWaitHoldingEffect } from './resolve-wait.ts'
+import { resolveRefusal, staleResult } from './resolve-wait.ts'
 import { tellGitHubAboutEffect, type IssueChannel, type RefChannel } from './tell.ts'
+import { closeTicketEffect } from './ticket/commands.ts'
 
 export interface CloseOutcome {
   ok: boolean
@@ -150,32 +143,11 @@ export function closeHoldingEffect(
   ticketId: string,
 ): Effect.Effect<CloseOutcome, unknown> {
   return Effect.gen(function* () {
-    const events = yield* Effect.promise(() => store.read(ticketId))
-    const item = reduceTicket(events)
-
-    if (item.lifecycle.status === 'closed') {
-      return { ok: false, ticketId, reason: 'already-closed', detail: `${ticketId} is already closed` }
-    }
-    if (item.lifecycle.status === 'landed') {
-      // Not an error a person needs to work around: it is done, and saying so is
-      // more useful than appending a second ending over the first.
-      return { ok: false, ticketId, reason: 'landed', detail: `${ticketId} landed — there is nothing to close` }
-    }
-
-    if (options.ifVersion !== undefined && item.version !== options.ifVersion) {
-      return {
-        ok: false,
-        ticketId,
-        reason: 'changed',
-        detail: `${ticketId} changed since it was checked — read it again`,
-      }
-    }
-
     // Before the close is recorded, so an unreadable recipe refuses rather than
     // appending a terminal whose point silently could not run — `approve`'s rule
-    // and its reason (0005, 0044).
-    let end: readonly StepAction[] = []
-    if (options.state && options.client) {
+    // and its reason (0005, 0044). The owner asks only once the ticket can be closed.
+    const loadEnd = Effect.gen(function* () {
+      if (!(options.state && options.client)) return { ok: true as const, end: [] as readonly StepAction[] }
       const state = options.state
       // The seam, the await and the `.recipe.steps.end` read are all inside the
       // catch, as they were: an unreadable recipe refuses, whatever made it so.
@@ -189,78 +161,76 @@ export function closeHoldingEffect(
       )
       if (!loaded.ok) {
         return {
-          ok: false,
-          ticketId,
-          reason: 'recipe-unreadable',
-          detail: `${loaded.failure.message}. Nothing was closed.`,
+          ok: false as const,
+          refused: {
+            ok: false,
+            ticketId,
+            reason: 'recipe-unreadable',
+            detail: `${loaded.failure.message}. Nothing was closed.`,
+          } satisfies CloseOutcome,
         }
       }
-      end = loaded.steps
-    }
-
-    // One transaction. The outcome and what its point resolved to cannot come
-    // apart, and the version check that guards the close guards both.
-    const ended = resolveEndActions(events, end, 'closed')
-    const closedEvent: ToAppend = {
-      type: 'TicketClosed',
-      actor: options.by,
-      data: parsePayload('TicketClosed', { by: options.by, reason: options.reason }),
-    }
+      return { ok: true as const, end: loaded.steps }
+    })
 
     // **A blocked item resolves its wait in the same append as the close**
-    // (#465, 0118 §11) — `Close` is always offered, so `resolveWaitHolding`'s
-    // `allowedResolutions` check never refuses it; closing is still the fact
-    // that is on the log either way. A close while nothing is waiting — the
-    // ordinary case — appends `TicketClosed` and `ended` directly, as it
-    // always has: there is no wait here for anything to resolve.
-    if (item.lifecycle.status === 'blocked') {
-      // The card that rendered this close showed no wait at all — a queued
-      // card's Close (#508) — and the item turns out to be blocked after all.
-      // Refusing by name is the same guard `approve.ts` closes for `Approve`:
-      // resolving whatever is open now would close a wait nobody was shown.
-      if (options.waitId === null) {
-        return {
-          ok: false,
-          ticketId,
-          reason: 'wait-moved',
-          detail:
-            `this card showed no wait and ${ticketId} is now waiting on ${item.lifecycle.waitId} — ` +
-            `nothing was closed. Reload and read it again.`,
+    // (#465, 0118 §11): the owner appends `WaitResolved`, `TicketClosed` and the
+    // `end` plan at once, so the outcome and what its point resolved to cannot
+    // come apart and one version check guards all of it.
+    const closed = yield* closeTicketEffect(ticketId, {
+      store,
+      by: options.by,
+      reason: options.reason,
+      waitId: options.waitId,
+      ifVersion: options.ifVersion,
+      loadEnd,
+    })
+    if (!closed.ok) {
+      if ('refused' in closed) return closed.refused
+      if ('decline' in closed) {
+        switch (closed.decline.reason) {
+          case 'already-closed':
+            return { ok: false, ticketId, reason: 'already-closed', detail: `${ticketId} is already closed` }
+          case 'landed':
+            // Not an error a person needs to work around: it is done, and saying so is
+            // more useful than appending a second ending over the first.
+            return { ok: false, ticketId, reason: 'landed', detail: `${ticketId} landed — there is nothing to close` }
+          case 'changed':
+            return {
+              ok: false,
+              ticketId,
+              reason: 'changed',
+              detail: `${ticketId} changed since it was checked — read it again`,
+            }
         }
       }
-      const resolved = yield* resolveWaitHoldingEffect(
-        {
-          ticketId,
-          waitId: options.waitId ?? item.lifecycle.waitId,
-          resolution: { _tag: 'Close' },
-          by: options.by,
-          note: options.reason,
-          with: [closedEvent, ...ended],
-          store,
-        },
-        ticketId,
-      )
-      if (!resolved.ok) {
-        return { ok: false, ticketId, reason: resolved.reason, detail: resolved.detail }
+      if ('refusal' in closed) {
+        // The card that rendered this close showed no wait at all — a queued
+        // card's Close (#508) — and the item turns out to be blocked after all.
+        // Refusing by name is the same guard `approve.ts` closes for `Approve`:
+        // resolving whatever is open now would close a wait nobody was shown.
+        if (closed.refusal.reason === 'wait-moved') {
+          return {
+            ok: false,
+            ticketId,
+            reason: 'wait-moved',
+            detail:
+              `this card showed no wait and ${ticketId} is now waiting on ${closed.refusal.waitId} — ` +
+              `nothing was closed. Reload and read it again.`,
+          }
+        }
+        const refused = resolveRefusal(ticketId, closed.refusal)
+        return { ok: false, ticketId, reason: refused.reason, detail: refused.detail }
       }
-    } else {
       // Something moved between the read and the append — a pass claimed it, or
       // a gate answered. Say so rather than closing over a decision nobody saw.
-      const lost = yield* Effect.tryPromise({
-        try: () => store.append(ticketId, item.version, [closedEvent, ...ended]),
-        catch: asFailure,
-      }).pipe(
-        Effect.uninterruptible,
-        Effect.as(false),
-        Effect.catchIf(
-          (err) => err instanceof ConcurrencyError,
-          () => Effect.succeed(true),
-        ),
-      )
-      if (lost) {
-        return { ok: false, ticketId, reason: 'changed', detail: `${ticketId} changed while closing — read it again` }
+      if (closed.blocked) {
+        const stale = staleResult(ticketId, false)
+        return { ok: false, ticketId, reason: stale.reason, detail: stale.detail }
       }
+      return { ok: false, ticketId, reason: 'changed', detail: `${ticketId} changed while closing — read it again` }
     }
+    const ended = closed.ended
 
     // Resolved, then done, in that order and never the reverse: the resolution is
     // a fact and is already on the log; this is I/O that must not be able to undo

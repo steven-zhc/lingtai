@@ -75,6 +75,24 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'TicketReleased'",
   },
   {
+    event: 'TicketClosed',
+    why: "`ticket.ts`'s transition returns the event and `conductor/src/ticket/commands.ts` appends the value, so the finder cannot attribute it",
+    file: 'packages/domain/src/ticket.ts',
+    anchor: "type: 'TicketClosed'",
+  },
+  {
+    event: 'TicketSplit',
+    why: "`ticket.ts`'s transition returns the event and `conductor/src/ticket/commands.ts` appends the value, so the finder cannot attribute it",
+    file: 'packages/domain/src/ticket.ts',
+    anchor: "type: 'TicketSplit'",
+  },
+  {
+    event: 'WaitResolved',
+    why: "`ticket.ts`'s transition returns the event and `conductor/src/ticket/commands.ts` appends the value, so the finder cannot attribute it",
+    file: 'packages/domain/src/ticket.ts',
+    anchor: "type: 'WaitResolved'",
+  },
+  {
     event: 'ProjectSandboxObserved',
     why: '`transitionProject` appends `[next]`, the value `sandboxObservation` returns, so the finder cannot attribute it',
     file: 'packages/domain/src/project.ts',
@@ -272,18 +290,6 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     why: 'handed to `options.emit`, which appends',
     file: 'packages/conductor/src/run-attempt.ts',
     anchor: "type: 'StepStarted',",
-  },
-  {
-    event: 'TicketClosed',
-    why: 'the event is built, then handed on',
-    file: 'packages/conductor/src/close.ts',
-    anchor: "type: 'TicketClosed',",
-  },
-  {
-    event: 'TicketSplit',
-    why: 'the array is chosen by a conditional first',
-    file: 'packages/conductor/src/resolve-wait.ts',
-    anchor: "? [{ type: 'TicketSplit', actor: options.by, data: parsePayload('TicketSplit', options.split) }]",
   },
   {
     event: 'TicketDiscovered',

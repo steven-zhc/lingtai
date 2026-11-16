@@ -21,21 +21,14 @@
  * decision, and the answer reaches the agent through the prompt
  * (`nextPrompt`), not through the issue.
  */
-import { parsePayload, ticketReducer, waitsFromState, type WaitId, ticketStream } from '@lingtai/domain'
+import { ticketReducer, waitsFromState, type WaitId, ticketStream } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
-import {
-  ConcurrencyError,
-  type EventStore,
-  eventStore,
-  log,
-  readThroughSnapshot,
-  type SnapshotReadOptions,
-} from '@lingtai/event-store'
+import { type EventStore, eventStore, log, readThroughSnapshot, type SnapshotReadOptions } from '@lingtai/event-store'
 import { Effect } from 'effect'
 
 import { decidingEffect } from './deciding.ts'
-import { asFailure } from './port-face.ts'
 import { resolveWaitHoldingEffect } from './resolve-wait.ts'
+import { askTicketEffect } from './ticket/commands.ts'
 
 export interface AskOutcome {
   ok: boolean
@@ -62,46 +55,27 @@ export function askEffect(options: AskOptions): Effect.Effect<AskOutcome, unknow
       return { ok: false, ticketId, reason: 'blank', detail: 'a question needs a question' }
     }
 
-    const item = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', {
+    const asked = yield* askTicketEffect(ticketId, {
+      store,
       snapshots,
       writer: options.writer,
+      question: options.question,
+      by: options.by,
+      waitId: crypto.randomUUID() as WaitId,
     })
-    if (item.lifecycle.status !== 'backlog') {
+    if (!asked.ok && 'refusal' in asked) {
       // The state it is in, for the reason `requeue` names it: "cannot ask" sends
       // nobody anywhere, and "it is already running" answers why.
       return {
         ok: false,
         ticketId,
         reason: 'not-backlog',
-        detail: `${ticketId} is ${item.lifecycle.status} — a question before a run can only be asked of an item nothing holds`,
+        detail: `${ticketId} is ${asked.refusal.status} — a question before a run can only be asked of an item nothing holds`,
       }
     }
-
     // A conductor claimed it between the read and the append: the claim won,
-    // which is the right outcome — say so rather than retrying onto a run. Any
-    // other failure is the append's own and rejects the face.
-    const lost = yield* Effect.tryPromise({
-      try: () =>
-        store.append(ticketId, item.version, [
-          {
-            type: 'WaitStarted',
-            actor: options.by,
-            data: parsePayload('WaitStarted', {
-              waitId: crypto.randomUUID(),
-              reason: { _tag: 'OwnQuestion', question: options.question, by: options.by },
-            }),
-          },
-        ]),
-      catch: asFailure,
-    }).pipe(
-      Effect.uninterruptible,
-      Effect.as(false),
-      Effect.catchIf(
-        (err) => err instanceof ConcurrencyError,
-        () => Effect.succeed(true),
-      ),
-    )
-    if (lost) {
+    // which is the right outcome — say so rather than retrying onto a run.
+    if (!asked.ok) {
       return { ok: false, ticketId, reason: 'changed', detail: `${ticketId} changed while asking — read it again` }
     }
 
