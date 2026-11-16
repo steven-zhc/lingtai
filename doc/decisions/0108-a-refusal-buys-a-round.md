@@ -332,10 +332,10 @@ fixes the bounds and the endings that router works inside.
   drawn from `rounds` rather than `CONFLICT_ROUNDS_LIMIT = 2`; and
   `attemptCeiling` saying the one total of §8. §17's second run, §18's
   answers, and §19's *respond* half — `packages/domain/src/failure/` holds
-  *classify* (`classify.ts`), *explain* (`explain.ts`) and the account-limit
-  wait (`respond.ts`), and `platform-errors.md`'s *What Lingtai recognises
-  today* is generated from the table; what is left is `judge.ts`'s
-  `BUILT_IN_FOR` and `routing.ts`.
+  *classify* (`classify.ts`), *explain* (`explain.ts`) and, in `respond.ts`, the
+  account-limit wait, `offerFor`, its two bounds and `BUILT_IN_FOR`; and
+  `platform-errors.md`'s *What Lingtai recognises today* is generated from the
+  table.
 
 - **`backlog:` does not set the bar.** The plugin is declared in
   `packages/recipe/src/recipe.ts`, but the `minor` bar is still a literal in

@@ -452,55 +452,6 @@ export const BUILT_IN: Record<BuiltInJudge, BuiltIn> = {
   'merge-the-base': () => 'human',
 }
 
-/**
- * Which directions a built-in answers, and which cost money.
- *
- * A **total** record over the thirteen, so a fourteenth direction does not
- * compile until somebody has said which kind it is — `RUN_OWNER`'s argument in
- * `attribution.ts`, and `#197`'s receipt for what a default costs.
- *
- * `null` does not mean *no judge*. It means **no judge that spends nothing**:
- * the ten are the directions where deciding is a judgement, and 0061 §3's
- * measurement is the whole argument for the split on the first five —
- *
- *     red           34   back to implement with the error       mechanical
- *     verify-failed   26   back to implement with the new base    mechanical
- *     conflict       6   text: resolve · intent: a person
- *     needs-input    —   interrupt, or go round stating the assumption
- *     findings     231   the lines or the approach              ← the judgement
- *
- * — one judge for all twelve pays an agent sixty times to reach a mechanical
- * conclusion, and makes anyone replacing it reimplement the mechanical branches
- * correctly or the loop breaks.
- *
- * **`#471`'s seven are `null` too**, which brings the ten to this count. Each
- * is a judgement nothing built-in should make unasked — rebasing a
- * `MergeRefused{dirty-base}`, restarting a `BudgetExhausted` from the kept
- * work once something builds that (#468; today's `restart` releases the
- * ticket and starts from the base in a fresh worktree, keeping nothing) — so
- * declaring nothing reaches a person, the same floor every direction already
- * has.
- */
-export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
-  red: 'same-worktree',
-  'verify-failed': 'same-worktree',
-  conflict: null,
-  'needs-input': null,
-  findings: null,
-  'setup-refused': null,
-  'check-refused': null,
-  'answer-unreadable': null,
-  'nothing-produced': null,
-  'fixer-disagrees': null,
-  'merge-refused': null,
-  'budget-exhausted': null,
-  // Allowing a host or installing the sandbox is the operator's (#1157).
-  'sandbox-refused': null,
-  // Free and mechanical: the base moved on the branch's own files, so merge it in
-  // and build and review again (#593). Bounded by `BASE_MERGES_LIMIT`, not by a judge.
-  'base-moved': 'merge-the-base',
-}
-
 /** Where the pass goes, and whether the judge had to be overruled to send it there. */
 export interface Judgement {
   /** The destination. **Always one the brief offered**, whatever the judge said. */

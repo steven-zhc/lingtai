@@ -115,12 +115,13 @@ import { readdir, readFile } from 'node:fs/promises'
 import { type AgentActionDeps, ActionUnavailableError, type ActionDeps, verdictFor } from '@lingtai/actions'
 import { actionsFromRecipe } from '@lingtai/actions/promise-actions'
 import { type Finding, SEVERITIES, STEPS, type Severity, type Step } from '@lingtai/domain'
+import { BUILT_IN_FOR } from '@lingtai/domain'
 import { type ActionKind, type StepAction, JudgeWhen, StepMap, PLUGINS, servesStep, whyNoKindAt } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
 import { decideBacklog } from '../src/backlog.ts'
 import { resolveEndActions } from '../src/end-step.ts'
-import { BUILT_IN_FOR, judgeDeclaredAt } from '../src/judge.ts'
+import { judgeDeclaredAt } from '../src/judge.ts'
 import { NOT_BUILT_YET } from '../src/run-attempt.ts'
 
 /**

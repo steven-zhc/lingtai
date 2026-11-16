@@ -9,6 +9,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { Spent } from '../src/attempt-next.ts'
+import { offerFor } from '../src/failure/respond.ts'
 import type { Proposal } from '../src/proposal.ts'
 import type { ExcludedCandidate } from '../src/route.ts'
 import {
@@ -16,7 +17,6 @@ import {
   decideRoute,
   ImpossibleRouteError,
   type JudgeReply,
-  offerFor,
   type RouteDecision,
   type RouteOffer,
   routeNext,

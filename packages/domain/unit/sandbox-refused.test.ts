@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 
 import { Action, StepOutcome } from '../src/action.ts'
 import { nextOf } from '../src/attempt-next.ts'
+import { offerFor } from '../src/failure/respond.ts'
 import { Proposal, StoredProposal, fromOf } from '../src/proposal.ts'
-import { offerFor } from '../src/routing.ts'
 import type { Step } from '../src/vocabulary.ts'
 
 const run = { runId: 'pass-1' }

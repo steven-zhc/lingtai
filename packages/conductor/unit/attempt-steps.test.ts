@@ -36,6 +36,7 @@ import {
  */
 import type { RunOutcome, Runtime } from '@lingtai/agent'
 import type { Envelope, PayloadOf, ToAppend } from '@lingtai/domain'
+import { BUILT_IN_FOR } from '@lingtai/domain'
 import { StepMap, type QueueSettings, type StepAction } from '@lingtai/recipe'
 import type { Worktree } from '@lingtai/repo'
 import { Cause, Effect, Fiber } from 'effect'
@@ -51,7 +52,7 @@ import {
   type AttemptPorts,
   type Worked,
 } from '../src/attempt-steps.ts'
-import { BUILT_IN, BUILT_IN_FOR, judgeDeclaredAt } from '../src/judge.ts'
+import { BUILT_IN, judgeDeclaredAt } from '../src/judge.ts'
 import { NEEDS_INPUT, outcomeOf, type AttemptOptions, type AttemptOver } from '../src/run-attempt.ts'
 import { claimStep, runAttempt } from '../test/promise-faces.ts'
 

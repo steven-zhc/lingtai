@@ -1,7 +1,7 @@
 /**
  * `proposed`'s route, as the shell calls it (#462, 0120 §3).
  *
- * `routing.ts` in `@lingtai/domain` is the pure half — `offerFor`, `decideRoute`,
+ * `routing.ts` and `failure/respond.ts` in `@lingtai/domain` are the pure half — `offerFor`, `decideRoute`,
  * `routeNext` — and this file is what sits between that and the two kinds of
  * decider a recipe can declare: `whenOf` and `destinationOf` translate between
  * the domain's `Proposal`/`CandidateId` vocabulary and the pass's own
@@ -17,7 +17,7 @@ import type { ActionFinding } from '@lingtai/actions'
 import {
   decideRoute,
   ImpossibleRouteError,
-  offerFor,
+  BUILT_IN_FOR,
   routeNext,
   type Candidate,
   type ExcludedCandidate,
@@ -35,10 +35,9 @@ import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import type { Judged, Judging } from './attempt-steps.ts'
-import { BUILT_IN_FOR } from './judge.ts'
 import type { Ceiling, Destination, StepRouted } from './run-attempt.ts'
 
-export { decideRoute, offerFor, routeNext }
+export { decideRoute, routeNext }
 export type { AttemptNext, RouteDecision, RouteOffer, RoutingPolicy, Spent }
 
 /** 0120 §2's mapping, read off the proposal rather than off an ending — replaces `directionOf` for routing. */

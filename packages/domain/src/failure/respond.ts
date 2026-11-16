@@ -48,10 +48,19 @@
  * miss is the behaviour from before it existed, and it never touches the
  * ticket's wait.
  *
+ * **The second answer is what a failure buys** (0108 §19): `offerFor`, its two
+ * bounds and `BUILT_IN_FOR`, below `standDown`.
+ *
  * Nothing here does I/O and nothing here appends. `conduct.ts` is where the
  * lock is written, and it is one call.
  */
+import type { Spent } from '../attempt-next.ts'
 import type { PayloadOf, RuntimeId } from '../events.ts'
+import type { BuiltInJudge } from '../judges.ts'
+import type { JudgeWhen, Proposal } from '../proposal.ts'
+import type { CandidateId, ExcludedCandidate } from '../route.ts'
+import { ImpossibleRouteError, type Candidate, type RouteOffer, type RoutingPolicy } from '../routing.ts'
+import { STEPS, type Step } from '../vocabulary.ts'
 
 /** Which of `standDown`'s four sources the `until` came from; `AccountLimitReached`'s own field. */
 export type UntilFrom = PayloadOf<'AccountLimitReached'>['untilFrom']
@@ -470,4 +479,236 @@ function nextWallClock(now: Date, zone: string, hour: number, minute: number): D
   const candidate = at(today['day']!)
   // Date.UTC normalises the overflow, so "the 32nd" is the 1st of next month.
   return candidate.getTime() > now.getTime() ? candidate : at(today['day']! + 1)
+}
+
+// ─── What a failure buys (0108 §19) ───
+
+/**
+ * **At most this many base merges per pass, then a person** (#593). A constant
+ * and not a recipe knob: the number is the ticket's, and a knob is a value
+ * somebody can set to a loop. The merges cost no agent, so it bounds nothing
+ * `rounds` or `restarts` do — it bounds a base that keeps moving.
+ */
+export const BASE_MERGES_LIMIT = 2
+
+/**
+ * **At most this many merge-conflict fix rounds per pass, then a person** (#653).
+ * A constant and not a recipe knob, for `BASE_MERGES_LIMIT`'s reason. Unlike it,
+ * a conflict round runs an agent — it is a round `rounds` does not count, so a
+ * review that spent them all does not leave a conflict at merge with nothing.
+ */
+export const CONFLICT_ROUNDS_LIMIT = 2
+
+/**
+ * Whether a proposal born at `step` got far enough for `implement` to have
+ * something to fix — `judge.ts`'s own `anAgentHasRun`, read off `STEPS`
+ * rather than a second list of the steps that qualify.
+ */
+function bornAtOrAfterImplement(step: Step): boolean {
+  return STEPS.indexOf(step) >= STEPS.indexOf('implement')
+}
+
+/**
+ * **0120 §3's offer, built from the proposal, the two ceilings and what this
+ * pass has already spent.**
+ *
+ * Each candidate a paid round or restart would cost carries exactly one
+ * exclusion when it is withheld — a criterion first, then a ceiling
+ * (`judged`'s own order, `attempt-steps.ts:891-907`): a refusal with nothing to
+ * hold an agent to buys nothing at either extent (0038 §2), and raising a
+ * ceiling would not have helped where that is why it is missing.
+ * `'hand-to-person'` is always available, so the set returned here is never
+ * empty — the same floor `onOffer` keeps today (`run-attempt.ts:974-976`).
+ *
+ * **No fix candidate ever sends `merge` back to `build`**: `FixRound.to` admits
+ * only `'design' | 'implement'`, so a `merge`-born proposal's `fix-lines`
+ * lands at `'implement'` by the type it is built from, not by a check here.
+ * `merge-base` is the one candidate that does, and it is a `MergeBase` and not a
+ * `FixRound` for that reason: it spends no round (#593).
+ */
+export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent): RouteOffer {
+  const available: Candidate[] = []
+  const unavailable: ExcludedCandidate[] = []
+
+  function round(id: CandidateId, to: 'design' | 'implement', hasCriterion: boolean): void {
+    if (!hasCriterion) {
+      unavailable.push({ id, because: { _tag: 'NoCriterion' } })
+      return
+    }
+    if (spent.rounds >= policy.rounds) {
+      unavailable.push({ id, because: { _tag: 'CeilingReached', ceiling: 'rounds' } })
+      return
+    }
+    available.push({ id, next: { _tag: 'FixRound', to, round: spent.rounds + 1 } })
+  }
+
+  function restart(hasCriterion: boolean): void {
+    if (!hasCriterion) {
+      unavailable.push({ id: 'restart', because: { _tag: 'NoCriterion' } })
+      return
+    }
+    if (spent.restarts >= policy.restarts) {
+      unavailable.push({ id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } })
+      return
+    }
+    available.push({
+      id: 'restart',
+      next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: spent.restarts + 1 } },
+    })
+  }
+
+  // `default` assigns `proposal` to a `never`, so a new `Proposal` variant
+  // left without a cell here is a `tsc` error, not a silent fallthrough.
+  switch (proposal._tag) {
+    case 'InputNeeded':
+      round('state-assumption', proposal.from, true)
+      break
+    case 'BuildRed':
+      round('fix-lines', 'implement', proposal.output.trim() !== '')
+      break
+    case 'SandboxRefused':
+      // Nothing is pushed, not even to `unavailable`: allowing a host or
+      // installing the sandbox is the operator's, so the hold says *nothing
+      // but a person was on offer* (#1157).
+      break
+    case 'VerifyRed':
+      round('fix-lines', 'implement', proposal.output.trim() !== '')
+      break
+    case 'MergeConflict': {
+      // Its own budget, never `rounds`: `round` stays what `rounds` is so the
+      // review's counter is not reset by the lap this buys.
+      const conflict = (spent.conflictRounds ?? 0) + 1
+      if (conflict > CONFLICT_ROUNDS_LIMIT) {
+        unavailable.push({ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'conflict-rounds' } })
+      } else {
+        available.push({ id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: spent.rounds, conflict } })
+      }
+      break
+    }
+    case 'BaseMoved': {
+      // Free, so neither a criterion nor `rounds` applies: only the base
+      // having moved on again and again, and a `toSha` to merge.
+      if (proposal.toSha === null) {
+        unavailable.push({ id: 'merge-base', because: { _tag: 'NoCriterion' } })
+      } else if ((spent.baseMerges ?? 0) >= BASE_MERGES_LIMIT) {
+        unavailable.push({ id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } })
+      } else {
+        available.push({
+          id: 'merge-base',
+          next: { _tag: 'MergeBase', toSha: proposal.toSha, merge: (spent.baseMerges ?? 0) + 1 },
+        })
+      }
+      break
+    }
+    case 'ReviewFindings': {
+      // `fix.ts:375`'s `actionable`: a finding without a failure scenario is an opinion.
+      const hasCriterion = proposal.findings.some((f) => f.failureScenario.trim() !== '')
+      round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
+      break
+    }
+    case 'ReviewEmpty':
+    // 0108 §14: no reviewer was paid and nothing holds an agent to a round, so
+    // only a person is on offer and no judge is asked.
+    case 'DiffTooLarge':
+      round('fix-lines', 'implement', false)
+      restart(false)
+      break
+    case 'SetupRefused': {
+      const hasCriterion = proposal.output.trim() !== ''
+      if (bornAtOrAfterImplement(proposal.from)) round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
+      break
+    }
+    case 'CheckRefused': {
+      const hasCriterion = proposal.output.trim() !== ''
+      round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
+      break
+    }
+    case 'AnswerUnreadable': {
+      const hasCriterion = proposal.raw.trim() !== ''
+      if (bornAtOrAfterImplement(proposal.from)) round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
+      break
+    }
+    case 'NothingProduced':
+      round('fix-lines', 'implement', false)
+      restart(false)
+      break
+    case 'FixerDisagrees': {
+      const hasCriterion = proposal.said !== null && proposal.said.trim() !== ''
+      round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
+      break
+    }
+    case 'MergeRefused': {
+      const hasCriterion = proposal.output.trim() !== ''
+      round('fix-lines', 'implement', hasCriterion)
+      restart(hasCriterion)
+      break
+    }
+    case 'BudgetExhausted': {
+      if (bornAtOrAfterImplement(proposal.from)) round('fix-lines', 'implement', true)
+      restart(true)
+      break
+    }
+    default: {
+      const unhandled: never = proposal
+      throw new ImpossibleRouteError(`unhandled proposal: ${JSON.stringify(unhandled)}`)
+    }
+  }
+
+  available.push({ id: 'hand-to-person', next: { _tag: 'HandToPerson' } })
+
+  return { proposal, available, unavailable }
+}
+
+/**
+ * Which directions a built-in answers, and which cost money.
+ *
+ * A **total** record over the thirteen, so a fourteenth direction does not
+ * compile until somebody has said which kind it is — `RUN_OWNER`'s argument in
+ * `attribution.ts`, and `#197`'s receipt for what a default costs.
+ *
+ * `null` does not mean *no judge*. It means **no judge that spends nothing**:
+ * the ten are the directions where deciding is a judgement, and 0061 §3's
+ * measurement is the whole argument for the split on the first five —
+ *
+ *     red           34   back to implement with the error       mechanical
+ *     verify-failed   26   back to implement with the new base    mechanical
+ *     conflict       6   text: resolve · intent: a person
+ *     needs-input    —   interrupt, or go round stating the assumption
+ *     findings     231   the lines or the approach              ← the judgement
+ *
+ * — one judge for all twelve pays an agent sixty times to reach a mechanical
+ * conclusion, and makes anyone replacing it reimplement the mechanical branches
+ * correctly or the loop breaks.
+ *
+ * **`#471`'s seven are `null` too**, which brings the ten to this count. Each
+ * is a judgement nothing built-in should make unasked — rebasing a
+ * `MergeRefused{dirty-base}`, restarting a `BudgetExhausted` from the kept
+ * work once something builds that (#468; today's `restart` releases the
+ * ticket and starts from the base in a fresh worktree, keeping nothing) — so
+ * declaring nothing reaches a person, the same floor every direction already
+ * has.
+ */
+export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
+  red: 'same-worktree',
+  'verify-failed': 'same-worktree',
+  conflict: null,
+  'needs-input': null,
+  findings: null,
+  'setup-refused': null,
+  'check-refused': null,
+  'answer-unreadable': null,
+  'nothing-produced': null,
+  'fixer-disagrees': null,
+  'merge-refused': null,
+  'budget-exhausted': null,
+  // Allowing a host or installing the sandbox is the operator's (#1157).
+  'sandbox-refused': null,
+  // Free and mechanical: the base moved on the branch's own files, so merge it in
+  // and build and review again (#593). Bounded by `BASE_MERGES_LIMIT`, not by a judge.
+  'base-moved': 'merge-the-base',
 }

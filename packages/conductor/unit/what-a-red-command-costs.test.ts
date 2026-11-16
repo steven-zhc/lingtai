@@ -29,10 +29,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { nextOf, offerFor, type Proposal, type Step, type StepOutcome } from '@lingtai/domain'
+import { BUILT_IN_FOR } from '@lingtai/domain'
 import { runPlugin } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { BUILT_IN_FOR } from '../src/judge.ts'
 import { destinationOf, whenOf } from '../src/proposed-route.ts'
 
 /**

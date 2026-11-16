@@ -547,7 +547,7 @@ export async function withTriageReadiness(
  * `#471`'s seven `JudgeWhen` values — a `judge:` may legally name one of
  * these since the schema widened to take the whole enum, but nothing
  * proposes them until `#472` wires `nextOf` to do it (`doc/design/471.md`,
- * `BUILT_IN_FOR` in `packages/conductor/src/judge.ts`). The `judge` case
+ * `BUILT_IN_FOR` in `packages/domain/src/failure/respond.ts`). The `judge` case
  * below reads this set so the panel never describes a call that cannot fire.
  */
 const NOT_YET_ROUTED: ReadonlySet<string> = new Set([
