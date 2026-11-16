@@ -35,7 +35,7 @@ see *A required sandbox the host cannot provide*.
    | --- | --- | --- | --- | --- |
    | A person's pause | `prj-{project}` | `ProjectPaused {project, by}` | `ProjectResumed {project, by}` | A person: `lingtai resume [project]`, the board's banner, or the bar with that project selected |
    | The day's ceiling | `ctl-conductor` | `DayCeilingReached {day, reportedUsd, estimatedUsd, ceilingUsd}` | `DayCeilingLifted {day, why: new-day \| config-raised \| config-removed}`, or `{day, why: person, by, toUsd}` | The guard; or a person raising today's ceiling (§7) |
-   | A platform account's limit | `acct-{platform}` | `AccountLimitReached {account, until, untilFrom, said}` | `AccountLimitLifted {account}`, or `{account, by}` | The guard, once `until` has passed; or a person who knows it is over (§7) |
+   | A platform account's limit | `acct-{platform}` | `AccountLimitReached {account, until, untilFrom, said, limit?}` | `AccountLimitLifted {account}`, or `{account, by}` | The guard, once `until` has passed; or a person who knows it is over (§7) |
 
    A project's own state is the Project aggregate's. The ceiling is the
    installation's budget. An account is shared by every project on the machine
@@ -49,12 +49,21 @@ see *A required sandbox the host cannot provide*.
    `AccountLimitReached` for the platform, and the guard stops new work on
    every project that uses it until `until`. `until` is the platform's own word
    where it gives one — `retry-after`, or GitHub's `x-ratelimit-reset` —
-   recorded in `untilFrom`; where it gives none, one minute, doubling on each
-   limit met again before an unlock (`untilFrom: 'backoff'`). Which answers are
+   recorded in `untilFrom` (`'retry-after'`, `'ratelimit-reset'`); where it
+   gives none, one minute, doubling on each limit met again, capped at an hour
+   and never stopped (`untilFrom: 'doubling'`; `'backoff'` is a runtime's
+   message that named no time, read against the recipe's backoff). The doubling
+   count is the account's own state: it starts again at one minute after a
+   person's lift, or after a lock whose `until` a header gave. A runtime's lock
+   carries `limit`, the kind of limit its message named (a 5-hour or weekly
+   usage limit, a monthly spend limit) and the reset it gave, read once when
+   the lock is appended. Which answers are
    a rate limit, and which header carries the wait, is the failure module's
    table ([0108](0108-a-refusal-buys-a-round.md) §19,
    [doc/design/platform-errors.md](../design/platform-errors.md)): a
-   permission 403 is never one. **The call that met the limit is not a
+   permission 403 is never one. Any call the conductor makes may lock the
+   account, a look's as much as an attempt's: the look makes most of a code
+   host's calls. **The call that met the limit is not a
    failure of its attempt**: the attempt waits for the unlock and makes the
    same call again, in place — no agent run, no round, and nothing redone — as
    any attempt in flight goes on under a lock (§6).
@@ -84,15 +93,15 @@ see *A required sandbox the host cannot provide*.
    | Check | Locks | Unlocks |
    | --- | --- | --- |
    | Day ceiling | `DayCeilingReached` when today's spend reaches the ceiling | `DayCeilingLifted {why: new-day \| config-raised \| config-removed}` |
-   | Account limit | none: the attempt that met the limit appends `AccountLimitReached` where it learned of it | `AccountLimitLifted` once `until` has passed |
+   | Account limit | none: the conductor's call that met the limit (an attempt's, or for a code host a look's) appends `AccountLimitReached` where it learned of it | `AccountLimitLifted` once `until` has passed |
 
    The entry point is built with the person's pause (#991), when its only
    check reads `prj-` and appends nothing, so every gate calls it from the
    first; the ceiling and the account limit are each a check added to it. A new
    check is a function added to the guard; neither the work loop nor any gate
    changes.
-   The guard is the only writer of these events besides that attempt and a
-   person (§7), and a test holds that. It replaces `dayCeilingPause`, which
+   The guard is the only writer of these events besides the conductor's call
+   that met the limit and a person (§7), and a test holds that. It replaces `dayCeilingPause`, which
    asked the same question before each claim.
 
    **Nothing runs on a timer of its own.** A look happens at start, after every
@@ -145,7 +154,7 @@ see *A required sandbox the host cannot provide*.
 
    An account limit is lifted when its `until` passes, or by a person who knows
    it is over before then — a runtime signed back in, an `until` read wrong:
-   `AccountLimitLifted {runtime, by}`. A restart does not lift it. If the limit
+   `AccountLimitLifted {account, by}`. A restart does not lift it. If the limit
    still holds, the next run meets it, never starts, and locks it again; that
    costs one run that never started, and nothing else. `lingtai pause` and
    `lingtai resume` with no project mean every registered project.
