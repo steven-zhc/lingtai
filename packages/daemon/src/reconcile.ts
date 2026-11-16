@@ -72,11 +72,11 @@ import { readdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
+import { claudeConfigDirFor } from '@lingtai/conductor/run-log'
 // A subpath, never the barrel — the rule `converge.ts` states and for the same
 // reason: `@lingtai/conductor`'s index pulls in the gate pipeline and its
 // child-process types, and the board imports this package.
-import { conductorWorker } from '@lingtai/conductor/claim'
-import { claudeConfigDirFor } from '@lingtai/conductor/run-log'
+import { conductorWorker, releaseDeadWorkerEffect } from '@lingtai/conductor/ticket'
 import {
   type Envelope,
   reduceTicket,
@@ -237,7 +237,7 @@ export interface ReconcileOptions {
   /** Offered every ticket snapshot a read produces. The daemon passes its own; doctor's dry run passes none. */
   writer?: SnapshotReadOptions['writer']
   /**
-   * What this conductor calls itself, as `claim.ts` would write it.
+   * What this conductor calls itself, as `ticket/commands.ts` would write it.
    *
    * The premise of the whole claim check (0027): this process holds
    * `lingtai:daemon`, therefore it is the only conductor, therefore a claim
@@ -562,7 +562,7 @@ export const releaseForeignClaimsEffect = Effect.fn('daemon.releaseForeignClaims
  * other conductor is alive — and that was enough while every agent died with
  * the conductor that spawned it. Since 0030 §3 the agent is detached, so it
  * outlives its conductor, and a claim's worker may name a process that is still
- * running and still spending. `claim.ts` has recorded host and pid since the
+ * running and still spending. `ticket/commands.ts` has recorded host and pid since the
  * beginning, *"so a stuck lease can be traced to a process"*. Nothing ever
  * traced it. This does.
  *
@@ -674,44 +674,34 @@ const releaseOne = (f: Finding, store: EventStore, options: ReconcileOptions, lo
     Effect.gen(function* () {
       // Re-read rather than trust the finding. Between the scan and here this
       // conductor could have claimed the item itself, and releasing a live
-      // claim is a far worse outcome than leaving a dead one — the same rule
-      // the worktree check follows for the same reason.
-      const state = yield* readThroughSnapshot(store, ticketReducer, f.stream, 'all', readOf(options))
-      const life = state.lifecycle
-      const mine = options.worker ?? conductorWorker()
-      if (life.status !== 'claimed' || life.worker === mine) {
+      // claim is a far worse outcome than leaving a dead one — the owner's
+      // release refuses it, and the kill below runs only past that refusal.
+      const released = yield* releaseDeadWorkerEffect(
+        f.stream,
+        { mine: options.worker ?? conductorWorker(), lock: DAEMON_LOCK_KEY },
+        store,
+        {
+          ...readOf(options),
+          // The process, before the claim (0030 §5). A detached agent outlives
+          // the conductor that started it, so a claim whose worker is still alive
+          // is one with something still spending against it — and releasing the
+          // ticket while that runs is how two agents end up on one branch.
+          //
+          // Whichever way it goes, the claim is released: what changes is whether
+          // the sentence says `killed` or names a process nobody dared touch.
+          beforeAppend: (held) =>
+            Effect.gen(function* () {
+              const fate = yield* killWorkerEffect(held.worker)
+              f.actual = `${f.actual} — ${fate}`
+              log(paint.pass(`reconciled: ${f.stream} worker ${held.worker} — ${fate}`))
+            }),
+        },
+      )
+      if (!released.ok) {
         f.action = 'reported'
         f.actual = `${f.actual} (claimed again before it could be released)`
         return
       }
-      // The process, before the claim (0030 §5). A detached agent outlives
-      // the conductor that started it, so a claim whose worker is still alive
-      // is one with something still spending against it — and releasing the
-      // ticket while that runs is how two agents end up on one branch.
-      //
-      // Whichever way it goes, the claim is released: what changes is whether
-      // the sentence says `killed` or names a process nobody dared touch.
-      const fate = yield* killWorkerEffect(life.worker)
-      f.actual = `${f.actual} — ${fate}`
-      log(paint.pass(`reconciled: ${f.stream} worker ${life.worker} — ${fate}`))
-      yield* attempt(() =>
-        store.append(f.stream, state.version, [
-          {
-            type: 'TicketReleased',
-            actor: 'conductor',
-            data: parsePayload('TicketReleased', {
-              runId: life.runId,
-              // The lock, not a timestamp. Whoever reads this back should be
-              // able to check the claim: `life.worker` is not `mine`, and there
-              // is only ever one of us.
-              reason: `${mine} holds ${DAEMON_LOCK_KEY}, so ${life.worker} was not coming back`,
-              // Neither caller here has one of 0120's ReleaseCause variants to
-              // name — none describes "the conductor holding this claim died".
-              cause: null,
-            }),
-          },
-        ]),
-      )
       log(paint.pass(`reconciled: released ${f.stream}`))
     }).pipe(
       // A store of the process is a defect when it fails, so `Effect.catch` alone would miss it; the `try` this

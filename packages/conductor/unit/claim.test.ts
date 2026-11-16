@@ -11,8 +11,8 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { claimTicketEffect, continueTicketEffect } from '../src/claim.ts'
 import { resolveWaitHoldingEffect } from '../src/resolve-wait.ts'
+import { claimTicketEffect, continueTicketEffect } from '../src/ticket/commands.ts'
 
 const PROJECT = 'lingtai'
 const SHA = 'a'.repeat(40)

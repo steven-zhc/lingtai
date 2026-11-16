@@ -2,15 +2,6 @@ export { readState } from './snapshot-state.ts'
 export { recordPrompt } from './record-prompt.ts'
 export { resolvePromptRefs, type PromptRefPorts } from './prompt-refs.ts'
 export {
-  claimTicketEffect,
-  conductorWorker,
-  releaseTicketEffect,
-  type Claim,
-  type ClaimOptions,
-  type ClaimRefusal,
-  type ClaimResult,
-} from './claim.ts'
-export {
   considerIssue,
   DEPENDENCIES_UNREAD,
   dependenciesUnread,

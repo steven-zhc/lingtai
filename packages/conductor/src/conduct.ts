@@ -241,7 +241,6 @@ import {
 import { armForState, conflictResolvedOf, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
 import { createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
-import { claimTicketEffect, continueTicketEffect, releaseTicketEffect, type SplitChildState } from './claim.ts'
 import { closeHoldingEffect } from './close.ts'
 import { runnableNowEffect, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
@@ -288,6 +287,12 @@ import {
 import { stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, editEndedWaitsEffect, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
 import type { Tickets } from './ticket-store.ts'
+import {
+  claimTicketEffect,
+  continueTicketEffect,
+  releaseTicketEffect,
+  type SplitChildState,
+} from './ticket/commands.ts'
 
 /** A run's cost in words: dollars to the cent, or `cost unknown` — never `$0.00` for a cost nobody reported (0110 §7). */
 /**
@@ -1593,7 +1598,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         /**
          * **A run that took nothing releases nothing** (`#269`).
          *
-         * `releaseTicket` appends whoever holds it (`claim.ts`), so a release
+         * `releaseTicket` appends whoever holds it (`ticket/commands.ts`), so a release
          * from a run that never claimed writes `TicketReleased` over **another
          * conductor's live item** and `lingtai:queued` over its `lingtai:working`
          * while its agent is still working. The `claim` branch at the bottom
@@ -2933,7 +2938,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * write that failed — ENOSPC, `~/.lingtai` not writable after a
            * permissions change — became a **defect**, which the handler at the
            * bottom of `runOnce` answers with `release(…)`: `releaseTicket`
-           * appends whoever holds it (`claim.ts`), so a failure here appended
+           * appends whoever holds it (`ticket/commands.ts`), so a failure here appended
            * `TicketReleased` to another conductor's live item and wrote
            * `lingtai:queued` over its `lingtai:working` while its agent was still
            * working. The `claim` branch guards declines the pass reports; a defect

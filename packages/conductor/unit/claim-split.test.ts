@@ -9,8 +9,8 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
-import { claimTicketEffect } from '../src/claim.ts'
 import { closeHoldingEffect } from '../src/close.ts'
+import { claimTicketEffect } from '../src/ticket/commands.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
 
 async function splitParent() {

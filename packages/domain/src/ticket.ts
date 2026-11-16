@@ -21,8 +21,15 @@
  */
 import type { WaitId } from './action.ts'
 import { claimShapeOf } from './claims.ts'
-import type { Envelope } from './envelope.ts'
-import type { PayloadOf, ReleaseCause, SplitChild, Tier, TriageStartedBy } from './events.ts'
+import type { Envelope, ToAppend } from './envelope.ts'
+import {
+  parsePayload,
+  type PayloadOf,
+  type ReleaseCause,
+  type SplitChild,
+  type Tier,
+  type TriageStartedBy,
+} from './events.ts'
 import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
 import { waitWords } from './wait-words.ts'
 import type { Resolution, TriageResult, WaitReason } from './wait.ts'
@@ -761,4 +768,162 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
 
 export function reduceTicket(events: readonly Envelope[]): TicketState {
   return events.reduce(reduceTicketEvent, emptyTicket)
+}
+
+/** How one recorded child of a split stands on GitHub. `stateReason` null is *not reported*, never *completed*. */
+export interface SplitChildState {
+  number: number
+  stateReason: 'completed' | 'not_planned' | null
+}
+
+/** What a claim learned about a split's children: not asked, unreadable, or read. */
+export type SplitChildren =
+  | null
+  | { readonly unreadable: string }
+  | { readonly read: readonly { number: number; state: string; stateReason?: 'completed' | 'not_planned' | null }[] }
+
+/** Why a claim is refused by the ticket's own state. A lost race is a fact about the append, not here. */
+export type ClaimDecline =
+  | { reason: 'held'; by: string; runId: string }
+  | { reason: 'not-claimable'; status: string }
+  | { reason: 'split-done'; version: number; waitId: string; children: SplitChildState[] }
+  | { reason: 'split-open'; open: number[] }
+  | { reason: 'split-unreadable'; detail: string }
+
+/** The claim: `TicketClaimed`, or why the ticket cannot be claimed. */
+export function claimTransition(
+  state: TicketState,
+  input: {
+    runId: string
+    worker: string
+    title?: string | null
+    kind?: string | null
+    body?: string
+    children: SplitChildren
+  },
+): { ok: true; events: ToAppend<PayloadOf<'TicketClaimed'>>[] } | { ok: false; refusal: ClaimDecline } {
+  const life = state.lifecycle
+  // Held is held. There is no expiry to fall through to (0027).
+  if (life.status === 'claimed') {
+    return { ok: false, refusal: { reason: 'held', by: life.worker, runId: life.runId } }
+  }
+  if (life.status !== 'backlog') return { ok: false, refusal: { reason: 'not-claimable', status: life.status } }
+
+  if (state.split !== null && input.children !== null) {
+    if ('unreadable' in input.children) {
+      return { ok: false, refusal: { reason: 'split-unreadable', detail: input.children.unreadable } }
+    }
+    const read = input.children.read
+    const open = read.filter((i) => i.state !== 'closed').map((i) => i.number)
+    if (open.length > 0) return { ok: false, refusal: { reason: 'split-open', open } }
+    return {
+      ok: false,
+      refusal: {
+        reason: 'split-done',
+        version: state.version,
+        waitId: state.split.waitId,
+        children: read.map((i) => ({ number: i.number, stateReason: i.stateReason ?? null })),
+      },
+    }
+  }
+
+  return {
+    ok: true,
+    events: [
+      {
+        type: 'TicketClaimed',
+        actor: 'conductor',
+        data: parsePayload('TicketClaimed', {
+          runId: input.runId,
+          worker: input.worker,
+          title: input.title ?? null,
+          kind: input.kind ?? null,
+          ...(input.body !== undefined ? { body: input.body } : {}),
+        }),
+      },
+    ],
+  }
+}
+
+export type ContinueDecline =
+  /** Not `approved` — a requeue, a second approval, a close, all land between the approval and this claim. */
+  | { reason: 'not-approved'; status: string }
+  /** Approved onto a different run than the one this call means to continue. */
+  | { reason: 'wrong-run'; runId: string }
+
+/** The continuation: `TicketContinued` for the run approved, or why not. */
+export function continueTransition(
+  state: TicketState,
+  input: { runId: string; worker: string; body?: string },
+): { ok: true; events: ToAppend<PayloadOf<'TicketContinued'>>[] } | { ok: false; refusal: ContinueDecline } {
+  const life = state.lifecycle
+  if (life.status !== 'approved') return { ok: false, refusal: { reason: 'not-approved', status: life.status } }
+  if (life.runId !== input.runId) return { ok: false, refusal: { reason: 'wrong-run', runId: life.runId } }
+  return {
+    ok: true,
+    events: [
+      {
+        type: 'TicketContinued',
+        actor: 'conductor',
+        data: parsePayload('TicketContinued', {
+          runId: input.runId,
+          worker: input.worker,
+          ...(input.body !== undefined ? { body: input.body } : {}),
+        }),
+      },
+    ],
+  }
+}
+
+/** A release by a run's own conductor, or the one a conductor makes for a claim by a worker that is gone. */
+export type ReleaseInput =
+  | { by: 'run'; runId: string; reason: string; cause: ReleaseCause | null }
+  | { by: 'dead-worker'; mine: string; lock: string }
+
+/** A release the ticket will not make: the claim moved on between the scan and the write. */
+export type ReleaseDecline = { reason: 'moved-on'; status: string; worker?: string }
+
+export function releaseTransition(
+  state: TicketState,
+  input: ReleaseInput,
+): { ok: true; events: ToAppend<PayloadOf<'TicketReleased'>>[] } | { ok: false; refusal: ReleaseDecline } {
+  if (input.by === 'run') {
+    return {
+      ok: true,
+      events: [
+        {
+          type: 'TicketReleased',
+          actor: 'conductor',
+          data: parsePayload('TicketReleased', { runId: input.runId, reason: input.reason, cause: input.cause }),
+        },
+      ],
+    }
+  }
+  const life = state.lifecycle
+  // Releasing a live claim is a far worse outcome than leaving a dead one.
+  if (life.status !== 'claimed' || life.worker === input.mine) {
+    return {
+      ok: false,
+      refusal: {
+        reason: 'moved-on',
+        status: life.status,
+        ...(life.status === 'claimed' ? { worker: life.worker } : {}),
+      },
+    }
+  }
+  return {
+    ok: true,
+    events: [
+      {
+        type: 'TicketReleased',
+        actor: 'conductor',
+        data: parsePayload('TicketReleased', {
+          runId: life.runId,
+          // The lock, not a timestamp: whoever reads this back can check the claim.
+          reason: `${input.mine} holds ${input.lock}, so ${life.worker} was not coming back`,
+          cause: null,
+        }),
+      },
+    ],
+  }
 }
