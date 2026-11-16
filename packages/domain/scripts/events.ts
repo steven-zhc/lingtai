@@ -63,6 +63,12 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'TicketLanded',",
   },
   {
+    event: 'WaitStarted',
+    why: 'the owner builds the event and hands it to its own `appendOnTicket`, so the finder cannot attribute it',
+    file: 'packages/conductor/src/ticket/commands.ts',
+    anchor: "type: 'WaitStarted',",
+  },
+  {
     event: 'DispatchRefused',
     why: 'the owner builds the event and hands it to its own `appendOnTicket`, so the finder cannot attribute it',
     file: 'packages/conductor/src/ticket/commands.ts',
