@@ -1440,7 +1440,7 @@ describe('when the merge lane refuses what every step passed', () => {
     // The lane pushed the branch on its way in, and the ending published the arm
     // beside it — the second push is the one that was missing.
     const both = 'git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1'
-    expect(did).toContain('git push HEAD:refs/heads/agent/7')
+    expect(did.some((d) => /^git push [0-9a-f]{40}:refs\/heads\/agent\/7$/.test(d))).toBe(true)
     expect(did).toContain(both)
     expect(did.indexOf('integrate')).toBeLessThan(did.indexOf(both))
     // Before the person is asked, like every other ending that asks one.
