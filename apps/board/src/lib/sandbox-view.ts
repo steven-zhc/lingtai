@@ -445,10 +445,16 @@ export interface Summary {
   readonly srt: string | 'differs' | null
   /**
    * **An unknown is never a number.** `orMore` is set by an incomplete read or by a run whose refusals are pending,
-   * lost or unreadable; `unknownRuns` counts the latter. `none recorded` is the ordinary state of a clean run and
-   * counts as nothing.
+   * lost or unreadable; `unknownRuns` counts the latter. `none recorded` is the ordinary state of a clean run, but it
+   * is also what a failed append leaves, so it adds nothing to `count` and is counted in `unrecordedRuns`: a total is
+   * confirmed only where that is zero.
    */
-  readonly refused: { readonly count: number; readonly orMore: boolean; readonly unknownRuns: number }
+  readonly refused: {
+    readonly count: number
+    readonly orMore: boolean
+    readonly unknownRuns: number
+    readonly unrecordedRuns: number
+  }
 }
 
 export function summaryOf(rows: readonly RunRow[]): Summary {
@@ -470,7 +476,9 @@ export function summaryOf(rows: readonly RunRow[]): Summary {
   let count = 0
   let orMore = false
   let unknownRuns = 0
+  let unrecordedRuns = 0
   for (const { refusals: f } of rows) {
+    if (f.kind === 'none recorded') unrecordedRuns += 1
     if (f.kind === 'refused') {
       count += f.count
       if (f.incomplete) orMore = true
@@ -486,7 +494,7 @@ export function summaryOf(rows: readonly RunRow[]): Summary {
     tone,
     why,
     srt: versions.size === 0 ? null : versions.size === 1 ? [...versions][0]! : 'differs',
-    refused: { count, orMore, unknownRuns },
+    refused: { count, orMore, unknownRuns, unrecordedRuns },
   }
 }
 
@@ -573,14 +581,14 @@ export interface PolicyDiffers {
   readonly runs: readonly string[]
   /** What it has beyond the common set. */
   readonly extra: ReachSet
-  /** What the others have that it lacks. */
+  /** What the others have that it lacks: entries it does not *list*, which is not what it permits. */
   readonly lacks: ReachSet
+  /** Paths it re-allows inside a root every policy denies reading, beyond what every policy re-allows. */
+  readonly exceptions: PolicyGroup['denyRead'][number][]
 }
 
 export const isEmptyReach = (r: ReachSet) =>
   r.domains.length + r.writable.length + r.denyRead.length + r.denyWrite.length === 0
-
-const denyReadKey = (d: PolicyGroup['denyRead'][number]) => `${d.path}\0${[...d.except].sort().join('\0')}`
 
 /**
  * What every policy has, and per policy what it has beyond that or lacks. Entries are compared by their full recorded
@@ -590,7 +598,7 @@ export function reachOf(policies: readonly PolicyGroup[]): { common: ReachSet; d
   const keyed = (g: PolicyGroup) => ({
     domains: new Map(g.domains.map((d) => [d.host, d])),
     writable: new Map(g.writable.map((w) => [w, w])),
-    denyRead: new Map(g.denyRead.map((d) => [denyReadKey(d), d])),
+    denyRead: new Map(g.denyRead.map((d) => [d.path, d])),
     denyWrite: new Map(g.denyWrite.map((w) => [w, w])),
   })
   const k = policies.map(keyed)
@@ -602,6 +610,11 @@ export function reachOf(policies: readonly PolicyGroup[]): { common: ReachSet; d
     return [...first]
       .filter(([key]) => everyHas(f, key))
       .map(([key, v]) => {
+        if (f === 'denyRead') {
+          // A root is denied for every policy; what is re-allowed in it is what every policy re-allows.
+          const own = k.map((x) => x.denyRead.get(key)!.except)
+          return { path: key, except: own[0]!.filter((e) => own.every((x) => x.includes(e))) }
+        }
         if (f !== 'domains') return v
         // A host any policy recorded as the recipe's is the recipe's.
         const hit = k.map((x) => x.domains.get(key)!).find((d) => d.source === 'recipe')
@@ -624,10 +637,16 @@ export function reachOf(policies: readonly PolicyGroup[]): { common: ReachSet; d
       for (const x of k) for (const [key, v] of x[f]) if (!own[f].has(key) && !seen.has(key)) seen.set(key, v)
       return [...seen.values()] as unknown as ReachSet[F]
     }
+    const exceptions = [...own.denyRead.values()].flatMap((d) => {
+      const shared = common.denyRead.find((c) => c.path === d.path)
+      const more = shared === undefined ? [] : d.except.filter((e) => !shared.except.includes(e))
+      return more.length === 0 ? [] : [{ path: d.path, except: more }]
+    })
     return {
       policy: n + 1,
       letter: policyLetter(n + 1),
       runs: g.runs,
+      exceptions,
       extra: {
         domains: extraOf('domains'),
         writable: extraOf('writable'),

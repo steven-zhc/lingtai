@@ -87,13 +87,15 @@ function headlineOf(s: Summary, attempt: number | null): string {
 /** **An unknown is never a number**: where any run's refusals are unknown the figure says *or more*, or says nothing countable. */
 function refusedFigure(r: Summary['refused']): string {
   if (r.count === 0 && r.unknownRuns > 0) return `refusals unknown for ${plural(r.unknownRuns, 'run', 'runs')}`
+  // `none recorded` is also what a failed append leaves, so a total with such a run in it is what was recorded.
+  if (!r.orMore && r.unrecordedRuns > 0) return r.count === 0 ? 'no refusal recorded' : `${r.count} recorded as refused`
   const n = `${r.count}${r.orMore ? ' or more' : ''}`
   return `${n} ${r.count === 1 && !r.orMore ? 'connection' : 'connections'} refused`
 }
 
 function SummaryBar({ summary, attempt }: { summary: Summary; attempt: number | null }) {
   const s = summary
-  const unknown = s.refused.orMore
+  const unknown = s.refused.orMore || s.refused.unrecordedRuns > 0
   const line =
     s.state === 'none'
       ? null
@@ -107,7 +109,7 @@ function SummaryBar({ summary, attempt }: { summary: Summary; attempt: number | 
             .join(' · ')
         : [
             s.why,
-            s.srt === 'differs' ? 'srt differs per run' : null,
+            s.srt === 'differs' ? 'srt differs per run' : s.srt === null ? null : `srt ${s.srt}`,
             "the merge is Lingtai's own and runs outside the sandbox",
           ]
             .filter((x) => x !== null)
@@ -319,7 +321,17 @@ interface Named {
   denyWrite: Chip[]
 }
 
-function PolicyDifference({ d, named, lacks }: { d: PolicyDiffers; named: Named; lacks: Named }) {
+function PolicyDifference({
+  d,
+  named,
+  lacks,
+  exceptions,
+}: {
+  d: PolicyDiffers
+  named: Named
+  lacks: Named
+  exceptions: Named['denyRead']
+}) {
   const parts: React.ReactNode[] = []
   const push = (verb: string, chips: React.ReactNode, n: number) => {
     if (n > 0)
@@ -335,8 +347,10 @@ function PolicyDifference({ d, named, lacks }: { d: PolicyDiffers; named: Named;
   push('also cannot write', <ChipList chips={named.denyWrite} />, named.denyWrite.length)
   push('does not reach', <HostChips hosts={lacks.domains.map((x) => x.host)} />, lacks.domains.length)
   push('does not write', <ChipList chips={lacks.writable} />, lacks.writable.length)
-  push('can read', <DenyChips entries={lacks.denyRead} />, lacks.denyRead.length)
-  push('can write', <ChipList chips={lacks.denyWrite} />, lacks.denyWrite.length)
+  // Not listing a denial is not holding a permission: another entry may cover the path, so these say only that.
+  push('does not deny reading', <ChipList chips={lacks.denyRead.map((x) => x.chip)} />, lacks.denyRead.length)
+  push('does not deny writing', <ChipList chips={lacks.denyWrite} />, lacks.denyWrite.length)
+  push('also re-allows reading', <DenyChips entries={exceptions} />, exceptions.length)
   return (
     <li>
       <span className="sbletter">{d.letter}</span> <span className="mono">{d.runs.join(', ')}</span>{' '}
@@ -374,7 +388,14 @@ export function SandboxPanel({
   })
   const common = reach === null ? null : nameSet(reach.common)
   const differs =
-    reach === null ? [] : reach.differs.map((d) => ({ d, extra: nameSet(d.extra), lacks: nameSet(d.lacks) }))
+    reach === null
+      ? []
+      : reach.differs.map((d) => ({
+          d,
+          extra: nameSet(d.extra),
+          lacks: nameSet(d.lacks),
+          exceptions: nameSet({ domains: [], writable: [], denyRead: d.exceptions, denyWrite: [] }).denyRead,
+        }))
   const legend = legendOf(drawn)
   const groups = common === null ? null : vendorGroupsOf(common.domains)
 
@@ -444,8 +465,8 @@ export function SandboxPanel({
             <>
               <p className="sbhead">Where the policies differ</p>
               <ul className="sbdiffers">
-                {differs.map(({ d, extra, lacks }) => (
-                  <PolicyDifference key={d.letter} d={d} named={extra} lacks={lacks} />
+                {differs.map(({ d, extra, lacks, exceptions }) => (
+                  <PolicyDifference key={d.letter} d={d} named={extra} lacks={lacks} exceptions={exceptions} />
                 ))}
               </ul>
             </>

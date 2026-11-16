@@ -601,6 +601,13 @@ const group = (over: Partial<PolicyGroup> = {}): PolicyGroup => ({
   ...over,
 })
 
+const view2 = (a: PolicyGroup, b: PolicyGroup) => ({
+  rows: [],
+  policies: [a, b],
+  claudeCodeAuth: false,
+  blocked: { hosts: [], caveats: [] },
+})
+
 describe('what the runs could reach (#1196)', () => {
   it('lists the common set once and names each policy’s one extra path', () => {
     const { common, differs } = reachOf([
@@ -620,6 +627,18 @@ describe('what the runs could reach (#1196)', () => {
     expect(differs[1]!.lacks.writable).toEqual(['/tmp'])
     expect(differs[0]!.extra.writable).toEqual(['/tmp'])
     expect(reachOf([group()]).differs).toEqual([])
+  })
+  it('never turns a denial a policy does not list into a permission', () => {
+    const a = group({ denyRead: [{ path: '/lh', except: ['/lh/runs/a'] }], denyWrite: ['/x/.codex/config.toml'] })
+    const b = group({ denyRead: [{ path: '/lh', except: [] }], denyWrite: [] })
+    const { common, differs } = reachOf([a, b])
+    expect(common.denyRead).toEqual([{ path: '/lh', except: [] }])
+    expect(differs[0]!.exceptions).toEqual([{ path: '/lh', except: ['/lh/runs/a'] }])
+    expect(differs[1]!.lacks.denyWrite).toEqual(['/x/.codex/config.toml'])
+    const html = renderToStaticMarkup(<SandboxPanel view={{ ...view2(a, b) }} roots={ROOTS} />)
+    expect(html).not.toContain('can read')
+    expect(html).not.toContain('can write')
+    expect(html).toContain('does not deny writing')
   })
   it('groups hosts by vendor, the recipe’s own apart', () => {
     expect(vendorGroupsOf(group().domains)).toEqual({
@@ -652,9 +671,54 @@ describe('the summary (#1196)', () => {
   it('counts a plain sum only where every read is known', () => {
     const s = summaryOf([
       row({ refusals: { kind: 'refused', count: 3, incomplete: false } }),
-      row({ refusals: { kind: 'none recorded' } }),
+      row({ refusals: { kind: 'none refused' } }),
     ])
-    expect(s).toMatchObject({ state: 'all', tone: 'ok', refused: { count: 3, orMore: false, unknownRuns: 0 } })
+    expect(s).toMatchObject({
+      state: 'all',
+      tone: 'ok',
+      refused: { count: 3, orMore: false, unknownRuns: 0, unrecordedRuns: 0 },
+    })
+  })
+  it('does not draw none recorded as a confirmed zero or a confirmed total', () => {
+    const view = (rows: RunRow[]) => ({
+      rows,
+      policies: [],
+      claudeCodeAuth: false,
+      blocked: { hosts: [], caveats: [] },
+    })
+    const none = renderToStaticMarkup(<SandboxPanel view={view([row({ refusals: { kind: 'none recorded' } })])} />)
+    expect(none).toContain('no refusal recorded')
+    expect(none).not.toContain('0 connections refused')
+    const some = renderToStaticMarkup(
+      <SandboxPanel
+        view={view([
+          row({ refusals: { kind: 'refused', count: 2, incomplete: false } }),
+          row({ key: 'k2', refusals: { kind: 'none recorded' } }),
+        ])}
+      />,
+    )
+    expect(some).toContain('2 recorded as refused')
+    expect(some).not.toContain('2 connections refused')
+  })
+  it('keeps the one recorded srt version where another run has none', () => {
+    const html = renderToStaticMarkup(
+      <SandboxPanel
+        view={{
+          rows: [
+            row(),
+            row({
+              key: 'k2',
+              srtVersion: null,
+              mark: { state: 'degraded', tone: 'signal', why: 'srt missing' },
+            }),
+          ],
+          policies: [],
+          claudeCodeAuth: false,
+          blocked: { hosts: [], caveats: [] },
+        }}
+      />,
+    )
+    expect(html).toContain('srt 0.0.83')
   })
   it.each([
     [{ kind: 'pending' }],
