@@ -928,6 +928,8 @@ export interface AttemptOptions {
           readonly base: string
           readonly baseSha: string
           readonly evidence: string
+          /** The boundary the answer was recorded under (0108 §13). */
+          readonly boundary: string
         }
       }
     | { readonly notRed: string }

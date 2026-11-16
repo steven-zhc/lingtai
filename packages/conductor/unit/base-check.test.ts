@@ -84,7 +84,7 @@ describe('baseCheck', () => {
       o.run === 'pnpm typecheck' ? outcome({ ok: false, exitCode: 1, evidence: '58 errors' }) : outcome(),
     )
     const answer = await Effect.runPromise(port.ask(question()))
-    expect(answer).toEqual({ verdict: 'red', exitCode: 1, evidence: '58 errors', from: 'ran' })
+    expect(answer).toEqual({ verdict: 'red', exitCode: 1, evidence: '58 errors', boundary: 'unsandboxed', from: 'ran' })
     expect(calls).toEqual(['pnpm install', 'pnpm typecheck'])
     expect(tree.cut).toHaveBeenCalledWith(`/wt/proj/base-aaaaaaa-pass-1`, SHA)
     expect(tree.remove).toHaveBeenCalledTimes(1)
@@ -95,7 +95,12 @@ describe('baseCheck', () => {
 
   it('answers green on exit 0', async () => {
     const { port } = setup()
-    expect(await Effect.runPromise(port.ask(question()))).toEqual({ verdict: 'green', exitCode: 0, from: 'ran' })
+    expect(await Effect.runPromise(port.ask(question()))).toEqual({
+      verdict: 'green',
+      exitCode: 0,
+      boundary: 'unsandboxed',
+      from: 'ran',
+    })
   })
 
   it('answers from the log without running anything', async () => {
@@ -105,7 +110,7 @@ describe('baseCheck', () => {
     await Effect.runPromise(first.port.ask(question()))
     const second = createBaseCheck({ ...first.deps, run: vi.fn() })
     const answer = await Effect.runPromise(second.ask(question({ runId: 'pass-2' })))
-    expect(answer).toEqual({ verdict: 'red', exitCode: 2, evidence: 'x', from: 'log' })
+    expect(answer).toEqual({ verdict: 'red', exitCode: 2, evidence: 'x', boundary: 'unsandboxed', from: 'log' })
   })
 
   it('runs again for the same command on a different sha', async () => {

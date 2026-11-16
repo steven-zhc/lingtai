@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 
 /**
  * **What a check says on the commit a pass was cut at** (#743, 0108 §13) — the
  * port the guard in #744 asks before a `build` refusal buys a round.
- * `conduct.ts` builds one per store and `runAttempt` asks it through `baseIsRed`.
+ * `conduct.ts` builds one per store and `runAttempt` asks it through `baseIsRed`. The question
+ * is built by `baseCheckQuestion` below, which needs a project and its recipe and no attempt: a
+ * pass is one caller of it.
  *
  * It answers from the log when a `BaseChecked` for this commit, this
  * command and this boundary is already on `int-<project>-<base>`, and otherwise cuts a throwaway
@@ -43,9 +47,17 @@ import {
   boundedEvidence,
   wrapRefusal,
 } from '@lingtai/actions'
+import { extensionEnv, productionPatterns, renderEnvFile, runnableEnv, type AgentEnv } from '@lingtai/agent-env'
 import { integrationStream, parsePayload } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
+import { parseDuration, submodulesOf, type ResolvedRecipe } from '@lingtai/recipe'
+import { mirrorPathFor, mirrorWrite, type TokenSource } from '@lingtai/repo'
 import { Effect, Fiber, Result } from 'effect'
+
+import { Repo } from './ports.ts'
+import { runtimesOf } from './runtimes-of.ts'
+import { makeRunSandbox, type PassSandbox } from './sandbox-decision.ts'
+import { observedKindOfDecision } from './sandbox-record.ts'
 
 export interface BaseCheckQuestion {
   project: string
@@ -99,8 +111,8 @@ export interface BaseCheckTree {
 }
 
 export type BaseCheckAnswer =
-  | { verdict: 'green'; exitCode: 0; from: 'log' | 'ran' }
-  | { verdict: 'red'; exitCode: number; evidence: string; from: 'log' | 'ran' }
+  | { verdict: 'green'; exitCode: 0; boundary: string; from: 'log' | 'ran' }
+  | { verdict: 'red'; exitCode: number; evidence: string; boundary: string; from: 'log' | 'ran' }
   | { verdict: 'unknown'; why: string }
 
 export interface BaseCheckDeps {
@@ -153,8 +165,14 @@ export function createBaseCheck(deps: BaseCheckDeps): {
         if (data.baseSha !== q.baseSha || data.command !== q.command) continue
         if ((data.boundary ?? UNSANDBOXED) !== boundary) continue
         return data.ok
-          ? answered({ verdict: 'green', exitCode: 0, from: 'log' })
-          : answered({ verdict: 'red', exitCode: data.exitCode ?? 1, evidence: data.evidence ?? '', from: 'log' })
+          ? answered({ verdict: 'green', exitCode: 0, boundary, from: 'log' })
+          : answered({
+              verdict: 'red',
+              exitCode: data.exitCode ?? 1,
+              evidence: data.evidence ?? '',
+              boundary,
+              from: 'log',
+            })
       }
       return undefined
     })
@@ -291,8 +309,8 @@ export function createBaseCheck(deps: BaseCheckDeps): {
         deps.note(`base check: could not record BaseChecked on ${stream}: ${(recorded.failure as Error).message}`)
       }
       return ok
-        ? answered({ verdict: 'green', exitCode: 0, from: 'ran' })
-        : answered({ verdict: 'red', exitCode: outcome.exitCode, evidence, from: 'ran' })
+        ? answered({ verdict: 'green', exitCode: 0, boundary: ran.boundary, from: 'ran' })
+        : answered({ verdict: 'red', exitCode: outcome.exitCode, evidence, boundary: ran.boundary, from: 'ran' })
     })
   }
 
@@ -352,3 +370,137 @@ export function createBaseCheck(deps: BaseCheckDeps): {
     },
   }
 }
+
+export interface BaseCheckQuestionInput {
+  project: string
+  base: string
+  baseSha: string
+  recipe: ResolvedRecipe['recipe']
+  /** The name of the `build` action whose `run:` is checked. */
+  action: string
+  /** What `host.resolveEnv` gave: `merged` feeds each command's env, `values` is planted. */
+  env: AgentEnv
+  home: string
+  /** The host's sandbox, as `decidePassSandbox(recipe.sandbox, host)` decided it: one rule, never a second. */
+  sandbox: PassSandbox
+  /** Names the cut worktree and is written as `BaseChecked.runId`. A pass passes its own `runId`. */
+  checkId: string
+  signal: AbortSignal
+  token: TokenSource | undefined
+  gitEnv: NodeJS.ProcessEnv | undefined
+}
+
+export type BuiltBaseCheckQuestion =
+  | {
+      question: BaseCheckQuestion
+      /** What the pass observes of its sandbox, for `observeTheSandbox`; null when nothing is to be said. */
+      observed: ReturnType<typeof observedKindOfDecision>
+    }
+  | { notBuilt: string }
+
+/**
+ * **The base check's question, built from a project and its recipe and no attempt** (#1206, 0122 §2).
+ * A pass and a look both ask through this, so a question is built one way. It never throws: a read that
+ * fails, or a sandbox the host cannot provide, is `notBuilt` — never an unsandboxed question in its place,
+ * because that answer would be recorded under a boundary no pass asks about.
+ *
+ * The git runs against the mirror, not a pass's worktree, so there is no attempt in scope.
+ */
+export const baseCheckQuestion = (input: BaseCheckQuestionInput): Effect.Effect<BuiltBaseCheckQuestion, never, Repo> =>
+  Effect.gen(function* () {
+    const { recipe, sandbox: passSandbox, project, home } = input
+    const decision = passSandbox.decision
+    if (decision.kind === 'refused') return { notBuilt: decision.why }
+    if (decision.kind === 'sandboxed' && passSandbox.service === undefined) {
+      return {
+        notBuilt: 'the recipe sandboxes its runs and this host provided no Sandbox service to wrap them with',
+      }
+    }
+    const action = recipe.steps.build.find((a) => a.name === input.action)
+    if (action === undefined || !('run' in action)) return { notBuilt: 'not a run: action in the recipe' }
+
+    const built = Result.try({
+      try: () => {
+        const envFor = (declared: readonly string[]): Record<string, string> =>
+          runnableEnv(extensionEnv(input.env.merged, declared, productionPatterns(recipe.env.refuseHosts)).values)
+        return {
+          prepared: recipe.steps.prepared.flatMap((a) =>
+            'run' in a ? [{ run: a.run, env: envFor(a.env), timeoutMs: parseDuration(a.timeout) }] : [],
+          ),
+          env: envFor(action.env),
+          timeoutMs: parseDuration(action.timeout),
+        }
+      },
+      catch: (error) => (error as Error).message,
+    })
+    if (Result.isFailure(built)) return { notBuilt: built.failure }
+
+    // Read before any mirror write, so a permit holder is never carried into the detached runs.
+    const repo = yield* Repo
+    const services = yield* Effect.context()
+    const detached = Effect.runPromiseWith(services)
+    const mirror = mirrorPathFor(project, home)
+    const git = (args: string[], cwd: string) => repo.git(args, { token: input.token, env: input.gitEnv, cwd })
+
+    // Without `appends`: the base check names no step, so it records nothing on an attempt, and the wrap is identical.
+    const runSandbox =
+      decision.kind === 'sandboxed' && passSandbox.service !== undefined
+        ? makeRunSandbox(passSandbox.service, {
+            project,
+            mirror,
+            cache: join(home, 'cache', project),
+            additions: decision.project_additions,
+            codexNamed: runtimesOf(recipe).includes('codex'),
+          })
+        : undefined
+    const observed = observedKindOfDecision(decision, runSandbox !== undefined)
+
+    const question: BaseCheckQuestion = {
+      project,
+      base: input.base,
+      baseSha: input.baseSha,
+      command: action.run,
+      prepared: built.success.prepared,
+      env: built.success.env,
+      runId: input.checkId,
+      signal: input.signal,
+      timeoutMs: built.success.timeoutMs,
+      ...(runSandbox === undefined ? {} : { sandbox: runSandbox }),
+      ...(observed === null ? {} : { observedAs: observed }),
+      tree: {
+        cut: (path, sha) =>
+          detached(
+            Effect.gen(function* () {
+              const cut = yield* Effect.result(
+                mirrorWrite(mirror, git(['worktree', 'add', '--force', '--detach', path, sha], mirror)),
+              )
+              if (Result.isFailure(cut)) return yield* Effect.die(new Error(cut.failure.detail))
+              if (submodulesOf(recipe)) {
+                // `worktree add` leaves submodule directories empty, as `provisionWorktree` says.
+                yield* repo.git(['submodule', 'update', '--init', '--recursive'], {
+                  token: input.token,
+                  env: input.gitEnv,
+                  cwd: path,
+                })
+              }
+            }),
+          ),
+        remove: (path) =>
+          detached(
+            Effect.gen(function* () {
+              const gone = yield* Effect.result(
+                mirrorWrite(mirror, git(['worktree', 'remove', '--force', path], mirror)),
+              )
+              if (Result.isFailure(gone)) return yield* Effect.die(new Error(gone.failure.detail))
+            }),
+          ),
+        plant: (path) => {
+          const plantedAt = resolve(path, recipe.env.plantAt)
+          return mkdir(dirname(plantedAt), { recursive: true }).then(() =>
+            writeFile(plantedAt, renderEnvFile(input.env.values), { mode: 0o600 }),
+          )
+        },
+      },
+    }
+    return { question, observed }
+  })

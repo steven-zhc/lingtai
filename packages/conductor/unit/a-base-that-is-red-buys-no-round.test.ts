@@ -63,7 +63,9 @@ const run = (ceilings: { rounds: number }, over: Partial<AttemptOptions>) =>
     ),
   )
 
-const red = { red: { command: 'pnpm test', base: 'main', baseSha: SHA, evidence: 'base: 58 errors' } }
+const red = {
+  red: { command: 'pnpm test', base: 'main', baseSha: SHA, evidence: 'base: 58 errors', boundary: 'unsandboxed' },
+}
 
 describe('a build refusal the base shares', () => {
   it('holds for a person with the base evidence, buys no round, and visits implement once', async () => {
@@ -134,7 +136,15 @@ describe('a build refusal the base shares', () => {
         }),
       )
       return answer.verdict === 'red'
-        ? { red: { command: 'pnpm test', base: 'main', baseSha: SHA, evidence: answer.evidence } }
+        ? {
+            red: {
+              command: 'pnpm test',
+              base: 'main',
+              baseSha: SHA,
+              evidence: answer.evidence,
+              boundary: answer.boundary,
+            },
+          }
         : { notRed: answer.verdict }
     }
     const first = await run({ rounds: 2 }, { baseIsRed })
