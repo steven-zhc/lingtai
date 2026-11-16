@@ -7,7 +7,21 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { SandboxMark, SandboxPanel } from '@/app/sandbox-panel'
-import { allowHrefOf, markOfAction, METADATA_HOSTS, sandboxViewOf } from '@/lib/sandbox-view'
+import {
+  allowHrefOf,
+  chipsOf,
+  markOfAction,
+  METADATA_HOSTS,
+  policyLetter,
+  reachOf,
+  sandboxViewOf,
+  shortNameOf,
+  summaryOf,
+  vendorGroupsOf,
+  type PathRoots,
+  type PolicyGroup,
+  type RunRow,
+} from '@/lib/sandbox-view'
 import { attemptOfQuery, defaultTabOf, sameTab, sandboxTabPath, tabPath } from '@/lib/tabs'
 
 const RUN = 'pass-sbx-1'
@@ -538,5 +552,182 @@ describe('what the record does not say is not drawn as fact (#1161, round 1)', (
     ])
     expect(markOfAction(state.sandbox, 'proposed', 'judge:findings')?.state).toBe('sandboxed')
     expect(markOfAction(state.sandbox, 'proposed', 'the approach')).toBeNull()
+  })
+})
+
+const ROOTS: PathRoots = { home: '/Users/s', lingtaiHome: '/Users/s/.lingtai', project: 'proj' }
+
+describe('short names (#1196)', () => {
+  const name = (p: string) => shortNameOf(p, ROOTS).label
+  it('names each of the five roots', () => {
+    expect(name('/Users/s/.codex')).toBe('~/.codex')
+    expect(name('/Users/s/.lingtai/runs/a1/claude')).toBe('<lingtai home>/runs/a1/claude')
+    expect(name('/Users/s/.lingtai/worktrees/proj/pass-1/src')).toBe('<worktree>/src')
+    expect(name('/Users/s/.lingtai/repos/proj.git')).toBe('<mirror>')
+    expect(name('/Users/s/.lingtai/cache/proj')).toBe('<cache>')
+  })
+  it('lets the longest prefix win, matches only at a slash, and leaves the rest as it is', () => {
+    expect(name('/Users/s/.lingtai/repos/proj.git/hooks')).toBe('<mirror>/hooks')
+    expect(name('/Users/s/.lingtai/repos/other.git')).toBe('<lingtai home>/repos/other.git')
+    expect(name('/Users/s/.lingtaix/a')).toBe('~/.lingtaix/a')
+    expect(name('/Users/s/.lingtai')).toBe('<lingtai home>')
+    expect(name('/var/folders/ab/T/x')).toBe('/var/folders/ab/T/x')
+    expect(name('/tmp')).toBe('/tmp')
+  })
+  it('makes a path and its /private twin one chip with both spellings in the title', () => {
+    const chips = chipsOf(['/tmp', '/private/tmp', '/Users/s/.codex'], ROOTS)
+    expect(chips.map((c) => [c.label, c.fulls])).toEqual([
+      ['/tmp', ['/tmp', '/private/tmp']],
+      ['~/.codex', ['/Users/s/.codex']],
+    ])
+  })
+  it('letters policies A to Z and then AA', () => {
+    expect([1, 2, 26, 27, 28].map(policyLetter)).toEqual(['A', 'B', 'Z', 'AA', 'AB'])
+  })
+})
+
+const group = (over: Partial<PolicyGroup> = {}): PolicyGroup => ({
+  runs: ['implement · agent'],
+  srtVersion: '0.0.83',
+  writable: ['/wt', '/tmp'],
+  domains: [
+    { host: 'api.anthropic.com', source: 'built in' },
+    { host: 'registry.npmjs.org', source: 'built in' },
+    { host: 'example.org', source: 'recipe' },
+  ],
+  denyRead: [{ path: '/Users/s/.ssh', except: [] }],
+  denyWrite: ['/wt/.git/hooks'],
+  weakerNetwork: false,
+  ...over,
+})
+
+describe('what the runs could reach (#1196)', () => {
+  it('lists the common set once and names each policy’s one extra path', () => {
+    const { common, differs } = reachOf([
+      group({ runs: ['implement'], writable: ['/wt', '/tmp', '/Users/s/.lingtai/runs/a1/claude'] }),
+      group({ runs: ['review'], writable: ['/wt', '/tmp', '/Users/s/.codex'] }),
+      group({ runs: ['build'] }),
+    ])
+    expect(common.writable).toEqual(['/wt', '/tmp'])
+    expect(differs.map((d) => [d.letter, d.extra.writable])).toEqual([
+      ['A', ['/Users/s/.lingtai/runs/a1/claude']],
+      ['B', ['/Users/s/.codex']],
+      ['C', []],
+    ])
+  })
+  it('says what a policy lacks, and draws no differences for one policy', () => {
+    const { differs } = reachOf([group(), group({ writable: ['/wt'] })])
+    expect(differs[1]!.lacks.writable).toEqual(['/tmp'])
+    expect(differs[0]!.extra.writable).toEqual(['/tmp'])
+    expect(reachOf([group()]).differs).toEqual([])
+  })
+  it('groups hosts by vendor, the recipe’s own apart', () => {
+    expect(vendorGroupsOf(group().domains)).toEqual({
+      vendors: [
+        { vendor: 'Anthropic', hosts: ['api.anthropic.com'] },
+        { vendor: 'npm', hosts: ['registry.npmjs.org'] },
+      ],
+      recipe: ['example.org'],
+    })
+    expect(vendorGroupsOf([{ host: 'x.test', source: 'not recorded' }]).vendors).toEqual([
+      { vendor: 'Other', hosts: ['x.test'] },
+    ])
+  })
+})
+
+describe('the summary (#1196)', () => {
+  const row = (over: Partial<RunRow> = {}): RunRow => ({
+    key: 'k',
+    step: 'implement',
+    action: 'agent',
+    runtime: 'claude-code',
+    ordinal: null,
+    mark: { state: 'sandboxed', tone: 'ok', why: null },
+    weakerNetwork: false,
+    srtVersion: '0.0.83',
+    policy: 1,
+    refusals: { kind: 'none recorded' },
+    ...over,
+  })
+  it('counts a plain sum only where every read is known', () => {
+    const s = summaryOf([
+      row({ refusals: { kind: 'refused', count: 3, incomplete: false } }),
+      row({ refusals: { kind: 'none recorded' } }),
+    ])
+    expect(s).toMatchObject({ state: 'all', tone: 'ok', refused: { count: 3, orMore: false, unknownRuns: 0 } })
+  })
+  it.each([
+    [{ kind: 'pending' }],
+    [{ kind: 'lost' }],
+    [{ kind: 'unreadable', reason: 'x' }],
+    [{ kind: 'refused', count: 1, incomplete: true }],
+  ] as const)('never makes %j a plain total', (refusals) => {
+    expect(
+      summaryOf([row({ refusals: { kind: 'refused', count: 2, incomplete: false } }), row({ refusals })]).refused
+        .orMore,
+    ).toBe(true)
+  })
+  it('says unknown for K runs where only unknowns are there', () => {
+    const html = renderToStaticMarkup(
+      <SandboxPanel
+        view={{
+          rows: [row({ refusals: { kind: 'pending' } }), row({ key: 'k2', refusals: { kind: 'lost' } })],
+          policies: [],
+          claudeCodeAuth: false,
+          blocked: { hosts: [], caveats: [] },
+        }}
+      />,
+    )
+    expect(html).toContain('refusals unknown for 2 runs')
+  })
+  it('reads all, some, off and none, each with its tone', () => {
+    const off = row({ mark: { state: 'off by choice', tone: 'muted', why: null }, srtVersion: null, policy: null })
+    const stopped = row({ mark: { state: 'stopped', tone: 'fail', why: 'no srt' } })
+    const degraded = row({ mark: { state: 'degraded', tone: 'signal', why: 'srt missing' } })
+    expect(summaryOf([row(), row()]).state).toBe('all')
+    expect(summaryOf([row(), degraded])).toMatchObject({
+      state: 'some',
+      tone: 'signal',
+      sandboxed: 1,
+      why: 'srt missing',
+    })
+    expect(summaryOf([row(), stopped, degraded])).toMatchObject({ state: 'some', tone: 'fail', why: 'no srt' })
+    expect(summaryOf([off])).toMatchObject({ state: 'off', tone: 'muted' })
+    expect(summaryOf([])).toMatchObject({ state: 'none', total: 0 })
+    expect(summaryOf([row(), row({ srtVersion: '0.0.90' })]).srt).toBe('differs')
+  })
+})
+
+describe('the redrawn tab (#1196)', () => {
+  it('draws its sections in order, with a Kind column and short names', () => {
+    const state = fold((e) => [
+      e('SandboxBoundaryRecorded', { ...keys('c1'), boundary: sandboxed }),
+      e('SandboxBoundaryRecorded', {
+        ...keys('c2', 'review', 'cold', 'codex'),
+        boundary: {
+          kind: 'sandboxed',
+          srtVersion: '0.0.83',
+          policy: { ...policy(), allowWrite: ['/wt', '/Users/s/.codex'] },
+        },
+      }),
+    ])
+    const html = renderToStaticMarkup(<SandboxPanel view={sandboxViewOf(state, 'p')} roots={ROOTS} attempt={2} />)
+    const at = ['Summary', 'Blocked', 'Runs', 'What the runs could reach'].map((l) => html.indexOf(`aria-label="${l}"`))
+    expect(at.every((n) => n >= 0)).toBe(true)
+    expect([...at].sort((a, b) => a - b)).toEqual(at)
+    expect(html).toContain('Every run of attempt 2 ran inside the sandbox')
+    expect(html).toContain('agent · claude-code')
+    expect(html).toContain('Where the policies differ')
+    expect(html).toContain('~/.codex')
+    expect(html).toContain('title="/Users/s/.codex"')
+    expect(html.indexOf('Not covered')).toBeGreaterThan(at[3]!)
+  })
+  it('draws no reach where the recipe turned the sandbox off', () => {
+    const state = fold((e) => [
+      e('SandboxBoundaryRecorded', { ...keys('c1'), boundary: { kind: 'unsandboxed', reason: 'off by choice' } }),
+    ])
+    const html = renderToStaticMarkup(<SandboxPanel view={sandboxViewOf(state, 'p')} />)
+    expect(html).toContain('ran without the sandbox: the recipe turns it off')
+    expect(html).not.toContain('What the runs could reach')
   })
 })

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./policy": "./src/policy.ts",
     "./host": "./src/host.ts",
     "./live": "./src/live.ts"
   },

@@ -3431,3 +3431,29 @@ button.navlink { font-family: inherit; cursor: pointer; }
 .sbrows { border-collapse: collapse; width: 100%; }
 .sbrows td { padding: 0.2rem 0.75rem 0.2rem 0; vertical-align: baseline; }
 .sbmark { font-family: var(--mono); font-size: 0.85em; }
+
+/* The Sandbox tab, redrawn (#1196). */
+.sbrows th { text-align: left; font-weight: normal; color: var(--muted); padding: 0.2rem 0.75rem 0.2rem 0; }
+.sbrows .r { text-align: right; }
+.sbsummary { display: flex; align-items: center; gap: 0.9rem; border: 1px solid var(--muted); border-radius: 6px; padding: 0.7rem 0.9rem; }
+.sbsummary .sbx-mark { width: 26px; height: 26px; }
+.sbsummary-text { flex: 1; }
+.sbsummary-text p { margin: 0; }
+.sbsummary-head { font-weight: 600; }
+.sbsummary-figs { display: flex; gap: 1.5rem; }
+.sbblocked { background: var(--signal-soft); border-radius: 6px; padding: 0.2rem 0.6rem; }
+.sbblocked:has(> p.empty) { background: none; padding: 0; }
+.sbbtn { border: 1px solid var(--signal); border-radius: 4px; padding: 0.1rem 0.5rem; white-space: nowrap; }
+.sbtag { font-family: var(--mono); font-size: 0.85em; border: 1px solid var(--muted); border-radius: 4px; padding: 0 0.35rem; color: var(--muted); }
+.sbtag.agent { background: var(--held-soft); border-color: var(--held); color: var(--held); }
+.sbletter { font-family: var(--mono); font-size: 0.8em; border: 1px solid var(--muted); border-radius: 3px; padding: 0 0.3rem; }
+.sbboxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75rem; }
+.sbbox { border: 1px solid var(--muted); border-radius: 6px; padding: 0.5rem 0.7rem; }
+.sbbox p { margin: 0.2rem 0; }
+.sbbox-title { display: flex; justify-content: space-between; font-weight: 600; }
+.sbchip { display: inline-block; font-family: var(--mono); font-size: 0.8em; border: 1px solid var(--muted); border-radius: 4px; padding: 0 0.35rem; margin: 0.1rem 0.25rem 0.1rem 0; }
+.sbdiffers { list-style: none; padding-left: 0; }
+.sbdiffers li { margin: 0.3rem 0; }
+.sblegend { margin-top: 0.5rem; font-size: 0.85em; }
+.sblegend p { margin: 0.1rem 0; }
+.sbnotes { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 0.75rem; }
