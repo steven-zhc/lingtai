@@ -182,8 +182,8 @@ export function takeBooks(rows: readonly ReportTicketRow[], o: TakeBooksOptions)
   // title is never shown, but it still moves the percentiles, as it moves the median.
   // A receipt carries a number and no project, and the page links it to one repository:
   // a number that two public projects both offer as a candidate names neither, so it is
-  // never chosen. Only candidates count: another project's untitled, unpriced or
-  // out-of-window ticket of the same number is not a rival receipt.
+  // never chosen. Every public ticket counts, eligible or not: another project's closed,
+  // untitled or out-of-window #42 still makes the number name two tickets.
   const candidates = landed.flatMap((row) => {
     const cost = dollars(row)
     const issue = Number(parseTicketStream(row.ticket)?.issue)
@@ -193,8 +193,10 @@ export function takeBooks(rows: readonly ReportTicketRow[], o: TakeBooksOptions)
       : [{ row, cost, issue, title }]
   })
   const projectsByIssue = new Map<number, Set<string>>()
-  for (const c of candidates)
-    projectsByIssue.set(c.issue, (projectsByIssue.get(c.issue) ?? new Set()).add(c.row.project!))
+  for (const t of publicRows) {
+    const n = Number(parseTicketStream(t.ticket)?.issue)
+    if (Number.isInteger(n)) projectsByIssue.set(n, (projectsByIssue.get(n) ?? new Set()).add(t.project!))
+  }
   const pool = candidates.filter((c) => projectsByIssue.get(c.issue)!.size === 1)
   const chosen: Receipt[] = pickByPercentile(pool, costs).map(({ percentile, pick: { row, issue, title, cost } }) => ({
     median: false,

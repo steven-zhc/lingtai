@@ -234,18 +234,22 @@ describe('takeBooks', () => {
     expect(got.map((r) => (r.median ? null : r.number))).toEqual([7])
   })
 
-  it("is not suppressed by another public project's ineligible ticket of the same number", () => {
+  it('never chooses a number another public project also has, even as an ineligible ticket', () => {
     const other = 'owner/other'
     const priced = (n: number) => ({
       Work: { reportedCents: n * 100, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 },
     })
-    const rows = [1, 2, 3].map((n) => row({ issue: String(n), cost: priced(n) }))
-    const old = [1, 2, 3].map((n) =>
-      row({ project: other, issue: String(n), outcome: 'closed', outcomeAt: new Date(2026, 8, 1) }),
-    )
-    const titles = new Map([1, 2, 3].map((n) => [titleKey(OPEN, String(n)), `t${n}`] as const))
-    const open = new Set([OPEN, other])
-    expect(books([...rows, ...old], { open, titles }).receipts.slice(1)).toHaveLength(3)
+    const rows = [
+      row({ issue: '42', cost: priced(1) }),
+      row({ project: other, issue: '42', outcome: 'closed', outcomeAt: new Date(2026, 8, 1) }),
+      row({ issue: '7', cost: priced(3) }),
+    ]
+    const titles = new Map([
+      [titleKey(OPEN, '42'), 'mine'],
+      [titleKey(OPEN, '7'), 'seven'],
+    ])
+    const got = books(rows, { open: new Set([OPEN, other]), titles }).receipts.slice(1)
+    expect(got.map((r) => (r.median ? null : r.number))).toEqual([7])
   })
 
   it('never publishes an untitled ticket, and its cost still moves the percentiles', () => {
