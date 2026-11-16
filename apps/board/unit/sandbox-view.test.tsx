@@ -10,6 +10,7 @@ import { SandboxMark, SandboxPanel } from '@/app/sandbox-panel'
 import {
   allowHrefOf,
   chipsOf,
+  foldChips,
   markOfAction,
   METADATA_HOSTS,
   policyLetter,
@@ -561,7 +562,7 @@ describe('short names (#1196)', () => {
   const name = (p: string) => shortNameOf(p, ROOTS).label
   it('names each of the five roots', () => {
     expect(name('/Users/s/.codex')).toBe('~/.codex')
-    expect(name('/Users/s/.lingtai/runs/a1/claude')).toBe('<lingtai home>/runs/a1/claude')
+    expect(name('/Users/s/.lingtai/runs/a1/claude')).toBe('<run dir>/claude')
     expect(name('/Users/s/.lingtai/worktrees/proj/pass-1/src')).toBe('<worktree>/src')
     expect(name('/Users/s/.lingtai/repos/proj.git')).toBe('<mirror>')
     expect(name('/Users/s/.lingtai/cache/proj')).toBe('<cache>')
@@ -795,5 +796,28 @@ describe('the redrawn tab (#1196)', () => {
     const html = renderToStaticMarkup(<SandboxPanel view={sandboxViewOf(state, 'p')} />)
     expect(html).toContain('ran without the sandbox: the recipe turns it off')
     expect(html).not.toContain('What the runs could reach')
+  })
+})
+
+describe('the twin and the fold (#1237)', () => {
+  it('draws a path and its /private twin as one chip, a trailing slash aside', () => {
+    const chips = chipsOf(['/var/folders/x/T/', '/private/var/folders/x/T'], ROOTS)
+    expect(chips).toHaveLength(1)
+    expect(chips[0]!.label).toBe('/var/folders/x/T')
+    expect(chips[0]!.fulls).toEqual(['/var/folders/x/T/', '/private/var/folders/x/T'])
+  })
+  it('draws the attempt run directory as <run dir>', () => {
+    expect(shortNameOf('/Users/s/.lingtai/runs/p1/claude/settings.json', ROOTS).label).toBe(
+      '<run dir>/claude/settings.json',
+    )
+    expect(shortNameOf('/Users/s/.lingtai/runs/p1', ROOTS).label).toBe('<run dir>')
+    expect(shortNameOf('/Users/s/.lingtai/runs', ROOTS).label).toBe('<lingtai home>/runs')
+  })
+  it('folds three or more paths under one parent, and leaves two', () => {
+    const base = '/Users/s/.lingtai/runs/p1/claude'
+    const three = foldChips(chipsOf([`${base}/a`, `${base}/b`, `${base}/c`, '/etc/x'], ROOTS), ROOTS)
+    expect(three.map((c) => c.label)).toEqual(['<run dir>/claude/… (3)', '/etc/x'])
+    expect(three[0]!.members).toHaveLength(3)
+    expect(foldChips(chipsOf([`${base}/a`, `${base}/b`], ROOTS), ROOTS)).toHaveLength(2)
   })
 })

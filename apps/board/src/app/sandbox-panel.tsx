@@ -21,11 +21,13 @@ import {
   CLAUDE_CODE_AUTH,
   chipsOf,
   clockOf,
+  foldChips,
   legendOf,
   NOT_COVERED,
   policyLetter,
   reachOf,
   summaryOf,
+  TOKEN_MEANING,
   vendorGroupsOf,
 } from '@/lib/sandbox-view'
 
@@ -123,13 +125,13 @@ function SummaryBar({ summary, attempt }: { summary: Summary; attempt: number | 
       </div>
       {s.state === 'none' ? null : (
         <div className="sbsummary-figs">
-          <span>
+          <span className="sbfig">
             <b>
               {s.sandboxed}/{s.total}
-            </b>{' '}
-            runs sandboxed
+            </b>
+            <span>runs sandboxed</span>
           </span>
-          <span className={s.refused.count > 0 || unknown ? 'hold' : undefined}>
+          <span className={`sbfig${s.refused.count > 0 || unknown ? ' hold' : ''}`}>
             <b>{refusedFigure(s.refused)}</b>
           </span>
         </div>
@@ -143,7 +145,9 @@ function KindCell({ row }: { row: RunRow }) {
   return row.runtime === null ? (
     <span className="sbtag">command</span>
   ) : (
-    <span className="sbtag agent">agent · {row.runtime}</span>
+    <span className="sbtag agent">
+      <span aria-hidden="true">★ </span>agent · {row.runtime}
+    </span>
   )
 }
 
@@ -230,33 +234,44 @@ export function BlockedList({
           <p className="empty">{empty}</p>
         ) : null
       ) : (
-        <table className="sbrows">
-          <tbody>
-            {blocked.hosts.map((h) => (
-              <tr key={h.label}>
-                <td className="mono">{h.label}</td>
-                <td>{h.count}×</td>
-                <td>{h.from.join(', ')}</td>
-                <td>
-                  <time dateTime={h.firstAt} title={time === 'clock' ? h.firstAt : undefined}>
-                    {time === 'clock' ? clockOf(h.firstAt) : h.firstAt}
-                  </time>
-                </td>
-                <td>
-                  {h.allowHref === null ? null : (
-                    <Link
-                      href={stamped(h.allowHref, stamp)}
-                      prefetch={false}
-                      className={time === 'clock' ? 'sbbtn' : undefined}
-                    >
-                      Allow on this project
-                    </Link>
-                  )}
-                </td>
+        <div className="sbblocked">
+          <table className="sbrows">
+            <thead>
+              <tr>
+                <th>Host</th>
+                <th>Refused</th>
+                <th>By</th>
+                <th>First</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {blocked.hosts.map((h) => (
+                <tr key={h.label}>
+                  <td className="mono">{h.label}</td>
+                  <td>{h.count}×</td>
+                  <td>{h.from.join(', ')}</td>
+                  <td>
+                    <time dateTime={h.firstAt} title={time === 'clock' ? h.firstAt : undefined}>
+                      {time === 'clock' ? clockOf(h.firstAt) : h.firstAt}
+                    </time>
+                  </td>
+                  <td>
+                    {h.allowHref === null ? null : (
+                      <Link
+                        href={stamped(h.allowHref, stamp)}
+                        prefetch={false}
+                        className={time === 'clock' ? 'sbbtn' : undefined}
+                      >
+                        Allow on this project
+                      </Link>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   )
@@ -266,7 +281,11 @@ function ChipList({ chips }: { chips: readonly Chip[] }) {
   return (
     <>
       {chips.map((c) => (
-        <code key={c.fulls[0]} className="sbchip" title={c.fulls.join(' = ')}>
+        <code
+          key={c.fulls[0]}
+          className={`sbchip${c.token !== null && c.label === c.token ? ' short' : ''}`}
+          title={c.members === undefined ? c.fulls.join(' = ') : c.members.map((m) => m.fulls.join(' = ')).join('\n')}
+        >
           {c.label}
         </code>
       ))}
@@ -326,13 +345,16 @@ function PolicyDifference({
   named,
   lacks,
   exceptions,
+  roots,
 }: {
+  roots: PathRoots
   d: PolicyDiffers
   named: Named
   lacks: Named
   exceptions: Named['denyRead']
 }) {
   const parts: React.ReactNode[] = []
+  const fold = (chips: readonly Chip[]) => foldChips(chips, roots)
   const push = (verb: string, chips: React.ReactNode, n: number) => {
     if (n > 0)
       parts.push(
@@ -342,21 +364,21 @@ function PolicyDifference({
       )
   }
   push('also reaches', <HostChips hosts={named.domains.map((x) => x.host)} />, named.domains.length)
-  push('also writes', <ChipList chips={named.writable} />, named.writable.length)
+  push('also writes', <ChipList chips={fold(named.writable)} />, named.writable.length)
   push('also cannot read', <DenyChips entries={named.denyRead} />, named.denyRead.length)
-  push('also cannot write', <ChipList chips={named.denyWrite} />, named.denyWrite.length)
+  push('also cannot write', <ChipList chips={fold(named.denyWrite)} />, named.denyWrite.length)
   push('does not reach', <HostChips hosts={lacks.domains.map((x) => x.host)} />, lacks.domains.length)
-  push('does not write', <ChipList chips={lacks.writable} />, lacks.writable.length)
+  push('does not write', <ChipList chips={fold(lacks.writable)} />, lacks.writable.length)
   // Not listing a denial is not holding a permission: another entry may cover the path, so these say only that.
-  push('does not deny reading', <ChipList chips={lacks.denyRead.map((x) => x.chip)} />, lacks.denyRead.length)
-  push('does not deny writing', <ChipList chips={lacks.denyWrite} />, lacks.denyWrite.length)
+  push('does not deny reading', <ChipList chips={fold(lacks.denyRead.map((x) => x.chip))} />, lacks.denyRead.length)
+  push('does not deny writing', <ChipList chips={fold(lacks.denyWrite)} />, lacks.denyWrite.length)
   // Only the re-allowed paths are permitted; the root around them stays denied, so it is named as context and never as a permission.
   push(
     'also re-allows reading',
     <>
       {exceptions.map((x) => (
         <span key={x.chip.fulls[0]}>
-          <ChipList chips={x.except} />
+          <ChipList chips={fold(x.except)} />
           <span className="empty"> inside {x.chip.label}, which stays denied </span>
         </span>
       ))}
@@ -418,17 +440,15 @@ export function SandboxPanel({
       </section>
 
       <section aria-label="Blocked">
-        <h3>Blocked</h3>
-        <div className="sbblocked">
-          <BlockedList blocked={blocked} time="clock" />
-        </div>
+        <h3 className="sbh">Blocked</h3>
+        <BlockedList blocked={blocked} time="clock" />
         <p className="empty">
           Telemetry hosts are not counted. A refused file read is not listed: srt does not report one.
         </p>
       </section>
 
       <section aria-label="Runs">
-        <h3>Runs</h3>
+        <h3 className="sbh">Runs</h3>
         {rows.length === 0 ? (
           <p className="empty">No wrapped run was recorded for this attempt.</p>
         ) : (
@@ -438,7 +458,7 @@ export function SandboxPanel({
 
       {common === null || groups === null || reach === null ? null : (
         <section aria-label="What the runs could reach">
-          <h3>What the runs could reach</h3>
+          <h3 className="sbh">What the runs could reach</h3>
           {policies.length > 1 ? <p className="empty">What every policy has, listed once.</p> : null}
           <div className="sbboxes">
             <ReachBox title="Reachable" count={common.domains.length}>
@@ -475,10 +495,17 @@ export function SandboxPanel({
           </div>
           {differs.length === 0 ? null : (
             <>
-              <p className="sbhead">Where the policies differ</p>
+              <p className="sbh">Where the policies differ</p>
               <ul className="sbdiffers">
                 {differs.map(({ d, extra, lacks, exceptions }) => (
-                  <PolicyDifference key={d.letter} d={d} named={extra} lacks={lacks} exceptions={exceptions} />
+                  <PolicyDifference
+                    key={d.letter}
+                    roots={roots}
+                    d={d}
+                    named={extra}
+                    lacks={lacks}
+                    exceptions={exceptions}
+                  />
                 ))}
               </ul>
             </>
@@ -487,7 +514,7 @@ export function SandboxPanel({
             <div className="sblegend empty" aria-label="Short names">
               {legend.map((l) => (
                 <p key={l.token}>
-                  <code>{l.token}</code>{' '}
+                  <code>{l.token}</code> {TOKEN_MEANING[l.token] ?? ''}{' '}
                   {l.paths.map((p, n) => (
                     <code key={p}>
                       {n === 0 ? '' : ', '}
