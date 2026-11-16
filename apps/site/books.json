@@ -2,18 +2,18 @@
   "version": 1,
   "window": {
     "from": "2026-11-01",
-    "to": "2026-11-15"
+    "to": "2026-11-16"
   },
-  "capturedAt": "2026-11-16T01:29:09.609Z",
-  "commit": "e99b9798",
+  "capturedAt": "2026-11-16T13:58:46.110Z",
+  "commit": "687f913a",
   "outcomes": {
-    "landed": 369,
+    "landed": 370,
     "closed": 2,
     "open": 0,
     "landedByKind": [
       {
         "kind": "bug",
-        "count": 51
+        "count": 52
       },
       {
         "kind": "documentation",
@@ -31,64 +31,64 @@
   },
   "fixRounds": {
     "median": 0,
-    "zeroOrOneShare": 0.8021680216802168,
-    "fiveOrMoreShare": 0.04065040650406504
+    "zeroOrOneShare": 0.8027027027027027,
+    "fiveOrMoreShare": 0.04054054054054054
   },
   "cost": {
     "median": 3.95,
-    "mean": 5.936937669376691,
-    "p90": 10.3,
+    "mean": 5.926486486486485,
+    "p90": 10.13,
     "includesEstimates": true,
     "costUnknown": 5
   },
   "machineMinutes": {
-    "median": 11.9942,
-    "mean": 16.551607271906054
+    "median": 11.990008333333334,
+    "mean": 16.524580135135135
   },
   "elapsedMinutes": {
-    "median": 12.324733333333333,
-    "mean": 43.778885140018076,
-    "withinHourShare": 0.9051490514905149
+    "median": 12.320291666666666,
+    "mean": 43.67827337837839,
+    "withinHourShare": 0.9054054054054054
   },
-  "waitedShare": 0.07859078590785908,
+  "waitedShare": 0.07837837837837838,
   "spendShare": [
     {
       "purpose": "Work",
-      "share": 0.6489639129562607
+      "share": 0.6492952034378902
     },
     {
       "purpose": "Answering",
-      "share": 0.2967128430368961
+      "share": 0.29643282014379935
     },
     {
       "purpose": "Judge",
-      "share": 0.028067694092771947
+      "share": 0.02804120519252089
     },
     {
       "purpose": "Triage",
-      "share": 0.026255549914071273
+      "share": 0.026230771225789585
     }
   ],
   "receipts": [
     {
       "median": true,
       "fixRounds": 0,
-      "machineMinutes": 11.9942,
+      "machineMinutes": 11.990008333333334,
       "waits": 0,
       "cost": 3.95
     },
     {
       "median": false,
-      "number": 1088,
-      "title": "tech-debt(cli): a command's exit code is a typed `CommandExit` its handler fails with, and status, events, doctor, init, add, the seven answer verbs and board set no `handlerCode`",
+      "number": 837,
+      "title": "fix(domain): a discussion is folded once, by reduceChat, and an answer with no open ask counts for nothing",
       "kind": "tech-debt",
       "outcome": "landed",
       "percentile": 25,
       "fixRounds": 0,
       "passes": 1,
       "waits": 0,
-      "machineMinutes": 11.849,
-      "cost": 2.74
+      "machineMinutes": 15.473633333333334,
+      "cost": 2.72
     },
     {
       "median": false,
@@ -105,21 +105,21 @@
     },
     {
       "median": false,
-      "number": 1137,
-      "title": "tech-debt(rates, beacon): the last two non-host faces go — rates and the beacon are Effects — and the ratchet refuses a listed face nothing references",
-      "kind": "tech-debt",
+      "number": 1146,
+      "title": "feat(sandbox): one sandbox policy as a module, @lingtai/sandbox, that wraps nothing yet",
+      "kind": "feature",
       "outcome": "landed",
       "percentile": 90,
-      "fixRounds": 2,
+      "fixRounds": 3,
       "passes": 2,
-      "waits": 1,
-      "machineMinutes": 24.35425,
-      "cost": 10.3
+      "waits": 2,
+      "machineMinutes": 20.497066666666665,
+      "cost": 10.13
     }
   ],
   "landedAllTime": {
-    "count": 699,
+    "count": 700,
     "since": "2026-09-08",
-    "asOf": "2026-11-16T01:29:09.609Z"
+    "asOf": "2026-11-16T13:58:46.110Z"
   }
 }
