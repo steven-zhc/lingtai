@@ -22,6 +22,11 @@ const LEDGER = [
     lingtai: "Run separately; the agent can't skip them",
   },
   { key: 'Rules', alone: 'Usually in the repo it can edit', lingtai: 'Outside anything it can edit' },
+  {
+    key: 'Sandbox',
+    alone: 'Can read your keys and logins',
+    lingtai: 'Sandboxed: keys unreadable, network allowlisted',
+  },
   { key: 'After a crash', alone: 'Depends on your session', lingtai: 'Saved; it carries on after a restart' },
   { key: 'Cost', alone: "Your provider's dashboard", lingtai: 'Per ticket, with a daily limit' },
   { key: 'Record', alone: 'The chat transcript', lingtai: 'Every step recorded, and a receipt' },
@@ -403,19 +408,6 @@ export function HomePage({ books }: { books: Books | null }) {
                 <details className="faq-item">
                   <summary>Can it weaken its own checks?</summary>
                   <p>No. Your rules live outside the repository the agent edits, so it can&apos;t change them.</p>
-                </details>
-                <details className="faq-item honest">
-                  <summary>
-                    Can it read my <code>~/.ssh</code>?<span className="faq-tag">HONEST ANSWER</span>
-                  </summary>
-                  <p>
-                    From v0.14.0, not in a sandboxed project: <code>~/.ssh</code> is on its deny list. Still readable
-                    inside it: the agent&apos;s own login token for that run. A project whose recipe has no{' '}
-                    <code>sandbox</code> block, or has <code>enabled: false</code>, runs as your user, as before.{' '}
-                    <a className="link" href="/docs/safety/">
-                      What an agent can touch →
-                    </a>
-                  </p>
                 </details>
               </div>
             </div>

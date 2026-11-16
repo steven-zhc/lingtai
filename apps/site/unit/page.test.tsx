@@ -141,11 +141,11 @@ describe("the home page's argument", () => {
     expect(home).toContain('href="#setup"')
   })
 
-  it('answers the common questions under the ledger, honestly about ~/.ssh', () => {
+  it('answers the common questions under the ledger, with no ~/.ssh question', () => {
     const html = renderToStaticMarkup(<HomePage books={null} />)
     const faq = html.slice(html.indexOf('class="faq"'))
     const block = faq.slice(0, faq.indexOf('</section>'))
-    expect(block.match(/<details/g)).toHaveLength(6)
+    expect(block.match(/<details/g)).toHaveLength(5)
     for (const q of [
       'Will it break main?',
       'Will it run up a bill?',
@@ -155,13 +155,8 @@ describe("the home page's argument", () => {
     ]) {
       expect(block).toContain(q)
     }
-    const honest = block.slice(block.indexOf('faq-item honest'))
-    expect(honest).toContain('~/.ssh')
-    expect(honest).toContain('HONEST ANSWER')
-    expect(honest).toContain('href="/docs/safety/"')
-    expect(honest).not.toContain('not a sandbox')
-    expect(honest).toContain('login token')
-    expect(honest).toContain('enabled: false')
+    expect(block).not.toContain('~/.ssh')
+    expect(block).not.toContain('faq-item honest')
     expect(html).not.toMatch(/\bguarded\b/i)
   })
 
@@ -240,6 +235,7 @@ describe('why not just give the agent the issue', () => {
     ["Who says it's done", 'Your checks, a cold review, and your OK'],
     ['Checks', "Run separately; the agent can't skip them"],
     ['Rules', 'Outside anything it can edit'],
+    ['Sandbox', 'Sandboxed: keys unreadable, network allowlisted'],
     ['After a crash', 'Saved; it carries on after a restart'],
     ['Cost', 'Per ticket, with a daily limit'],
     ['Record', 'Every step recorded, and a receipt'],
@@ -247,8 +243,12 @@ describe('why not just give the agent the issue', () => {
     expect(rows.find((r) => r.key === key)?.lingtai).toBe(claim)
   })
 
+  it('says the agent alone can read your keys and logins', () => {
+    expect(rows.find((r) => r.key === 'Sandbox')?.alone).toBe('Can read your keys and logins')
+  })
+
   it('keeps the agent-alone column fair', () => {
-    expect(rows).toHaveLength(6)
+    expect(rows).toHaveLength(7)
     const page = text(html)
     for (const unfair of ['The session is gone', 'Found out later', 'A transcript, maybe', 'Logs and transcripts']) {
       expect(page).not.toContain(unfair)
@@ -260,7 +260,7 @@ describe('why not just give the agent the issue', () => {
     expect(html).toMatch(/<a class="why-ref" href="#replay"/)
     expect(html).toContain('<table')
     expect(html.match(/scope="col"/g)).toHaveLength(2)
-    expect(html.match(/scope="row"/g)).toHaveLength(6)
+    expect(html.match(/scope="row"/g)).toHaveLength(7)
   })
 })
 
