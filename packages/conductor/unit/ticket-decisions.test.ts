@@ -36,12 +36,15 @@ describe('closeTicketEffect', () => {
         store,
         by: 'human:steven',
         reason: 'no longer wanted',
-        loadEnd: Effect.succeed({ ok: true as const, end: [] }),
+        loadEnd: Effect.succeed({
+          ok: true as const,
+          end: [{ name: 'close it', when: 'closed', close: true }] as never,
+        }),
       }),
     )
     expect(result.ok).toBe(true)
     expect(append).toHaveBeenCalledTimes(1)
-    expect(append.mock.calls[0]![2].map((e) => e.type)).toEqual(['WaitResolved', 'TicketClosed'])
+    expect(append.mock.calls[0]![2].map((e) => e.type)).toEqual(['WaitResolved', 'TicketClosed', 'EndActionsResolved'])
     expect(reduceTicket(await store.read(ticketId)).lifecycle.status).toBe('closed')
   })
 
@@ -99,6 +102,32 @@ describe('resolveTicketWaitEffect', () => {
     expect(result).toEqual({ ok: false, lost: true, written: false })
   })
 
+  it('refuses a prepare that changes the resolution to one the wait does not offer', async () => {
+    const store = createMemoryEventStore()
+    await store.append(ticketId, 0, [
+      makeStream(ticketId)('WaitStarted', {
+        waitId: W,
+        reason: { _tag: 'OwnQuestion', question: 'q', by: 'steven' },
+      }),
+    ])
+    const result = await Effect.runPromise(
+      resolveTicketWaitEffect<string>(ticketId, {
+        store,
+        waitId: W,
+        resolution: { _tag: 'AnswerQuestion', choice: 'x' },
+        by: 'human:steven',
+        note: '',
+        prepare: () =>
+          Effect.succeed({
+            ok: true as const,
+            prepared: { resolution: { _tag: 'Approve', onSha: 'a'.repeat(40) } as const },
+          }),
+      }),
+    )
+    expect(result).toMatchObject({ ok: false, refusal: { reason: 'not-offered', resolution: 'Approve' } })
+    expect((await store.read(ticketId)).map((e) => e.type)).toEqual(['WaitStarted'])
+  })
+
   it('never calls prepare for a refusal the ticket makes', async () => {
     const { store } = await blockedStore()
     const prepare = vi.fn()
@@ -118,6 +147,22 @@ describe('resolveTicketWaitEffect', () => {
 })
 
 describe('askTicketEffect', () => {
+  it('answers lost when a claim lands between its read and its append', async () => {
+    const store = createMemoryEventStore()
+    const item = makeStream(ticketId)
+    const read = store.read.bind(store)
+    store.read = (async (...args: Parameters<typeof read>) => {
+      const events = await read(...args)
+      if (events.length === 0) await store.append(ticketId, 0, aClaim(item, 'pass-41'))
+      return events
+    }) as typeof store.read
+    const result = await Effect.runPromise(
+      askTicketEffect(ticketId, { store, question: 'q?', by: 'human:steven', waitId: W }),
+    )
+    expect(result).toEqual({ ok: false, lost: true })
+    expect((await store.read(ticketId)).map((e) => e.type)).not.toContain('WaitStarted')
+  })
+
   it('appends the question, and answers lost when a claim won', async () => {
     const store = createMemoryEventStore()
     expect(

@@ -49,7 +49,7 @@ import {
   releaseTransition,
   ticketReducer,
 } from '@lingtai/domain'
-import type { Resolution } from '@lingtai/domain/wait'
+import { allowedResolutions, type Resolution } from '@lingtai/domain/wait'
 import {
   ConcurrencyError,
   type EventStore,
@@ -379,6 +379,14 @@ export function resolveTicketWaitEffect<R>(
     if (!prepared.ok) return { ok: false, refused: prepared.refused } as const
     const { resolution, answers } = prepared.prepared
     const written = prepared.prepared.wroteBody === true
+    // What is written is checked, not what was asked: `prepare` may rewrite a resolution (a grant's head), never its kind.
+    if (resolution._tag !== options.resolution._tag || !allowedResolutions(block.reason).includes(resolution._tag)) {
+      return {
+        ok: false,
+        refusal: { reason: 'not-offered', resolution: resolution._tag, waitReason: block.reason },
+        written,
+      } as const
+    }
 
     // A split resolves only with its written children, checked after the caller's own checks of the plan.
     const events = resolvedEvents(state, block, {
