@@ -70,6 +70,7 @@ export class PermissionDenied extends GitHubFailed {
             `its account needs access to the repository, or \`gh auth refresh\` must grant the scope (${denied.message})`
         : `the App's \`${permission}\` permission at \`${level}\` is missing for this endpoint — ` +
             `the installation must grant it, or the owner must accept the App's updated permissions (${denied.message})`,
+      denied,
     )
     this.permission = permission
     this.level = level
@@ -574,7 +575,13 @@ export const makeGitHub = (
         call,
         (err) =>
           err.status === 403 &&
-          classify({ platform: 'github', status: err.status, text: err.detail })?.kind !== 'rate-limited',
+          classify({
+            platform: 'github',
+            status: err.status,
+            text: err.detail,
+            ratelimitRemaining: err.ratelimitRemaining,
+            retryAfter: err.retryAfter,
+          })?.kind !== 'rate-limited',
         (err) => Effect.fail(new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')),
       )
 

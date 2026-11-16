@@ -35,7 +35,7 @@ interface Call {
   body: unknown
 }
 
-type Reply = { status: number; json: unknown }
+type Reply = { status: number; json: unknown; headers?: Record<string, string> }
 
 /** Routes by `METHOD path` (query included), recording everything but the token request. */
 function stub(routes: Record<string, Reply | Reply[]>): Call[] {
@@ -54,7 +54,7 @@ function stub(routes: Record<string, Reply | Reply[]>): Call[] {
     const hit = routes[`${method} ${path}`]
     if (hit === undefined) return new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 })
     const reply = Array.isArray(hit) ? hit.shift()! : hit
-    return new Response(JSON.stringify(reply.json), { status: reply.status })
+    return new Response(JSON.stringify(reply.json), { status: reply.status, headers: reply.headers })
   })
   return calls
 }
@@ -204,5 +204,21 @@ describe('sub-issue and blocked-by links', () => {
 
     expect(err).toBeInstanceOf(GitHubFailed)
     expect(err).not.toBeInstanceOf(PermissionDenied)
+  })
+
+  it('reads a 403 with x-ratelimit-remaining: 0 as rate limited whatever its message says', async () => {
+    stub({
+      [`GET ${REPO}/issues/599/sub_issues?per_page=100&page=1`]: {
+        status: 403,
+        json: { message: 'Resource not accessible by integration' },
+        headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1700000000' },
+      },
+    })
+
+    const err = await (await client()).listSubIssues(599).catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(GitHubFailed)
+    expect(err).not.toBeInstanceOf(PermissionDenied)
+    expect(err).toMatchObject({ ratelimitRemaining: 0, ratelimitReset: 1700000000, retryAfter: null })
   })
 })

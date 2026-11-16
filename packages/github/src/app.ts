@@ -28,7 +28,7 @@ import { createSign } from 'node:crypto'
 import { Data, Effect, Ref, Semaphore } from 'effect'
 
 import type { BodyChanged } from './client.ts'
-import { observedRequest, remainingOf } from './observe.ts'
+import { type RateLimitHeaders, observedRequest, rateLimitHeadersOf, remainingOf } from './observe.ts'
 
 export const GITHUB_API = 'https://api.github.com'
 
@@ -80,9 +80,20 @@ export class GitHubFailed extends Data.TaggedError('GitHubFailed')<{
   readonly status: number
   readonly path: string
   readonly detail: string
+  /** The response's `x-ratelimit-remaining`; null when absent, unparsable, or no response (the `gh` CLI). */
+  readonly ratelimitRemaining: number | null
+  readonly ratelimitReset: number | null
+  readonly retryAfter: number | null
 }> {
-  constructor(status: number, path: string, detail: string) {
-    super({ status, path, detail })
+  constructor(status: number, path: string, detail: string, limits?: Partial<RateLimitHeaders>) {
+    super({
+      status,
+      path,
+      detail,
+      ratelimitRemaining: limits?.ratelimitRemaining ?? null,
+      ratelimitReset: limits?.ratelimitReset ?? null,
+      retryAfter: limits?.retryAfter ?? null,
+    })
   }
 
   override get message(): string {
@@ -181,14 +192,25 @@ export const githubJson = <T>(
               },
               body: body === undefined ? undefined : JSON.stringify(body),
               signal,
-            }).then((response): Promise<{ ok: true; data: unknown } | { ok: false; status: number; text: string }> => {
-              report(remainingOf(response))
-              return !response.ok
-                ? response.text().then((text) => ({ ok: false, status: response.status, text }))
-                : response.status === 204
-                  ? Promise.resolve({ ok: true, data: undefined })
-                  : response.json().then((data: unknown) => ({ ok: true, data }))
-            }),
+            }).then(
+              (
+                response,
+              ): Promise<
+                { ok: true; data: unknown } | { ok: false; status: number; text: string; limits: RateLimitHeaders }
+              > => {
+                report(remainingOf(response))
+                return !response.ok
+                  ? response.text().then((text) => ({
+                      ok: false,
+                      status: response.status,
+                      text,
+                      limits: rateLimitHeadersOf(response),
+                    }))
+                  : response.status === 204
+                    ? Promise.resolve({ ok: true, data: undefined })
+                    : response.json().then((data: unknown) => ({ ok: true, data }))
+              },
+            ),
           (result) => !result.ok,
         ),
       catch: failed(path),
@@ -200,7 +222,7 @@ export const githubJson = <T>(
       } catch {
         // Not JSON. The raw prefix is more useful than nothing.
       }
-      return yield* new GitHubFailed(result.status, path, message)
+      return yield* new GitHubFailed(result.status, path, message, result.limits)
     }
     return result.data as T
   })

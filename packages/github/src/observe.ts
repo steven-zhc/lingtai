@@ -70,3 +70,25 @@ export function remainingOf(response: { readonly headers: { get(name: string): s
   if (raw === null || !/^\d+$/.test(raw)) return undefined
   return Number(raw)
 }
+
+/** What GitHub said about its limits on a failed response; each is null when absent or not plain digits. */
+export interface RateLimitHeaders {
+  readonly ratelimitRemaining: number | null
+  readonly ratelimitReset: number | null
+  readonly retryAfter: number | null
+}
+
+/** An HTTP-date `retry-after` is null too: absent is never `0`. */
+export function rateLimitHeadersOf(response: {
+  readonly headers: { get(name: string): string | null }
+}): RateLimitHeaders {
+  const num = (name: string): number | null => {
+    const raw = response.headers.get(name)
+    return raw === null || !/^\d+$/.test(raw) ? null : Number(raw)
+  }
+  return {
+    ratelimitRemaining: num('x-ratelimit-remaining'),
+    ratelimitReset: num('x-ratelimit-reset'),
+    retryAfter: num('retry-after'),
+  }
+}
