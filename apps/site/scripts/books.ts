@@ -19,10 +19,10 @@ import { countLanded, takeBooks, titleKey, type MergeRead } from './take-books.t
  * and this is a different file.
  *
  *     LINGTAI_DATABASE_URL=… LINGTAI_SITE_PUBLIC_PROJECTS=owner/repo \
- *       pnpm --filter @lingtai/site books --from 2026-10-02 --to 2026-10-31 --receipt 640 --receipt 603
+ *       pnpm --filter @lingtai/site books --from 2026-10-02 --to 2026-10-31
  *
  * **It refuses and writes nothing**, rather than a partial file: a read that fails, a projection that is behind or has no
- * checkpoint, a `--receipt` it cannot stand behind. `lingtai report` is the
+ * checkpoint. `lingtai report` is the
  * opposite on the lag — it prints anyway and says so on stderr — because there
  * the figures are read by the operator; here they are published.
  *
@@ -126,16 +126,13 @@ function refuse(lines: string[]): never {
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
-    options: { from: { type: 'string' }, to: { type: 'string' }, receipt: { type: 'string', multiple: true } },
+    options: { from: { type: 'string' }, to: { type: 'string' } },
   })
   const from = day(values.from)
   const to = day(values.to)
   if (from === null || to === null || values.from === undefined || values.to === undefined) {
     refuse(['--from and --to are required, as YYYY-MM-DD.'])
   }
-  const receipts = values.receipt ?? []
-  const badReceipt = receipts.filter((n) => !/^\d+$/.test(n))
-  if (badReceipt.length > 0) refuse([`--receipt takes an issue number, not ${badReceipt.join(', ')}.`])
 
   // No URL is required: with none, the store is the machine's chosen one
   // (`config.yml`, SQLite or Postgres), as `lingtai report` reads it. An exported
@@ -164,7 +161,7 @@ async function main(): Promise<void> {
 
     const rows = await readTicketReport({ url })
     // `readTasks` hides a card closed longer ago than its retention, 2 days by
-    // default: a receipt from the start of the window would come back untitled.
+    // default: a candidate receipt from the start of the window would come back untitled.
     const retentionDays = Math.ceil((now.getTime() - window.from.getTime()) / DAY) + 1
     const tasks = await readTasks({ url, retentionDays })
     const titles = new Map(tasks.map((t) => [titleKey(t.project, t.issue), t.title] as const))
@@ -179,13 +176,11 @@ async function main(): Promise<void> {
       capturedAt: now,
       commit: head(),
       open,
-      receipts,
       titles,
     })
-    if (!taken.ok) refuse(taken.refusals)
-    const books = { ...taken.books, landedAllTime }
+    const books = { ...taken, landedAllTime }
 
-    const n = taken.books.outcomes.landed + taken.books.outcomes.closed + taken.books.outcomes.open
+    const n = taken.outcomes.landed + taken.outcomes.closed + taken.outcomes.open
     if (n === 0) console.log('books: 0 public tickets in the window')
 
     // Whole or not at all: a crash halfway leaves the last release's books.
@@ -193,7 +188,7 @@ async function main(): Promise<void> {
     await writeFile(tmp, `${JSON.stringify(books, null, 2)}\n`)
     await rename(tmp, BOOKS_FILE)
     console.log(
-      `books: ${taken.books.outcomes.landed} landed, ${taken.books.outcomes.closed} closed, ${taken.books.outcomes.open} open, ${taken.books.receipts.length} receipts, ${landedAllTime.count} closed by Lingtai's merges since ${landedAllTime.since} → ${BOOKS_FILE}`,
+      `books: ${taken.outcomes.landed} landed, ${taken.outcomes.closed} closed, ${taken.outcomes.open} open, ${taken.receipts.length} receipts, ${landedAllTime.count} closed by Lingtai's merges since ${landedAllTime.since} → ${BOOKS_FILE}`,
     )
   } catch (err) {
     refuse([`the log could not be read: ${err instanceof Error ? err.message : String(err)}`])

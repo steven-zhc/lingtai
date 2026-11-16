@@ -47,27 +47,37 @@ describe('the books section', () => {
     expect(t).toContain('THE MEDIAN TICKET')
     expect(t).toContain('1 of 283 landed')
     expect(html).toContain('r-stamp on">TYPICAL')
-    expect(t).toContain('ISSUE #782 · BUG')
+    expect(t).toContain('ISSUE #782 · BUG · 25TH PERCENTILE BY COST')
+    expect(t).toContain('ISSUE #664 · 50TH PERCENTILE BY COST')
     expect(html).toContain('r-stamp on">LANDED')
     expect(html).toContain('r-stamp closed on">NOT LANDED')
     expect(t).toContain('Attempts 2')
     expect(html).toContain('href="https://github.com/steven-zhc/lingtai/issues/782"')
     expect(t).toContain('Open #664 →')
     expect(t).toContain('lingtai report --from 2026-10-02 --to 2026-10-31 --project lingtai')
-    expect(t).toContain('No totals are published.')
+    expect(t).toContain('The one total above is counted from GitHub.')
+    expect(t).not.toContain('No totals are published')
   })
 
-  it('shows the all-time figure first, dated, and nothing when the key is absent (#1191)', () => {
-    const withIt = text(
-      render(
-        books((b) => {
-          b.landedAllTime = { count: 1234, since: '2026-09-01', asOf: '2026-11-15T10:00:00.000Z' }
-        }),
-      ),
+  it('puts the all-time figure in a card in the heading, dated, and draws no number without it (#1192)', () => {
+    const h = render(
+      books((b) => {
+        b.landedAllTime = { count: 1234, since: '2026-09-01', asOf: '2026-11-15T10:00:00.000Z' }
+      }),
     )
-    expect(withIt).toContain("1,234 issues closed by Lingtai's own merges, since 2026-09-01")
-    expect(withIt).toContain('as of 2026-11-15')
-    expect(t).not.toContain('closed by Lingtai')
+    const withIt = text(h)
+    expect(withIt).toContain('1,234 issues closed by its own merges since 2026-09-01 · as of 2026-11-15')
+    expect(withIt).toContain(
+      'Every ticket it finished on its own repository this month, 2026-10-02 → 2026-10-31 . Nothing left out.',
+    )
+    const head = h.slice(h.indexOf('class="books-head"'), h.indexOf('class="outcome"'))
+    expect(head.indexOf('books-title')).toBeLessThan(head.indexOf('books-total'))
+    expect(head.indexOf('Open its books')).toBeLessThan(head.indexOf('1,234'))
+    expect(head).toContain('REAL DATA')
+    const bare = html.slice(html.indexOf('class="books-head"'), html.indexOf('class="outcome"'))
+    expect(bare).toContain('REAL DATA')
+    expect(bare).not.toContain('books-total')
+    expect(t).not.toContain('closed by its own merges')
   })
 
   it('has no Discussion key when its share rounds to 0%, and no stamp on an open receipt', () => {

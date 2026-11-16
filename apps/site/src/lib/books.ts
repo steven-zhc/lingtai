@@ -37,6 +37,8 @@ export interface Receipt {
   title: string
   kind: string | null
   outcome: 'open' | 'landed' | 'closed'
+  /** Which cost percentile this ticket stands for: the landed ticket nearest it. */
+  percentile: 25 | 50 | 90
   fixRounds: number
   passes: number
   waits: number
@@ -137,6 +139,7 @@ function receiptOk(v: unknown): boolean {
     title: str,
     kind: (x) => x === null || str(x),
     outcome: (x) => str(x) && OUTCOMES.includes(x),
+    percentile: (x) => x === 25 || x === 50 || x === 90,
     fixRounds: num,
     passes: num,
     waits: num,
