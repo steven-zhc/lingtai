@@ -2,8 +2,19 @@
 import { describe, expect, it } from 'vitest'
 
 import { type WaitId } from '../src/action.ts'
-import { claimTransition, continueTransition, releaseTransition, reduceTicket } from '../src/ticket.ts'
-import { aClaim, aSplit } from '../test/events.ts'
+import {
+  askTransition,
+  claimTransition,
+  closeChecks,
+  closeTransition,
+  continueTransition,
+  releaseTransition,
+  reduceTicket,
+  resolvedEvents,
+  resolveWaitTransition,
+} from '../src/ticket.ts'
+import type { Resolution } from '../src/wait.ts'
+import { aClaim, anAttemptRef, aResolution, aSplit, aWait } from '../test/events.ts'
 import { makeStream } from '../test/support.ts'
 
 const WAIT = '11111111-1111-4111-8111-111111111111' as WaitId
@@ -124,6 +135,186 @@ describe('releaseTransition', () => {
     expect(releaseTransition(backlog(), { by: 'dead-worker', mine: 'host:2', lock: 'l' })).toEqual({
       ok: false,
       refusal: { reason: 'moved-on', status: 'backlog' },
+    })
+  })
+})
+
+describe('the person decides a wait', () => {
+  const W = '22222222-2222-4222-8222-222222222222' as WaitId
+  const question = {
+    _tag: 'AgentQuestion',
+    run: anAttemptRef('run-1'),
+    step: 'implement',
+    question: 'which?',
+  } as const
+  const blocked = () => reduceTicket([...aClaim(item(), 'run-1'), ...aWait(item(), question, W)])
+  const own = () =>
+    reduceTicket([item()('WaitStarted', { waitId: W, reason: { _tag: 'OwnQuestion', question: 'q', by: 'steven' } })])
+  const block = () => {
+    const life = blocked().lifecycle
+    if (life.status !== 'blocked') throw new Error('not blocked')
+    return life
+  }
+
+  it('refuses a wait the ticket is not on', () => {
+    const other = '33333333-3333-4333-8333-333333333333' as WaitId
+    expect(resolveWaitTransition(blocked(), { waitId: other, resolution: { _tag: 'Close' } })).toEqual({
+      ok: false,
+      refusal: { reason: 'not-blocked', waitId: other },
+    })
+    expect(resolveWaitTransition(backlog(), { waitId: W, resolution: { _tag: 'Close' } })).toMatchObject({
+      ok: false,
+      refusal: { reason: 'not-blocked' },
+    })
+  })
+
+  it('refuses a resolution the wait does not offer', () => {
+    expect(
+      resolveWaitTransition(own(), { waitId: W, resolution: { _tag: 'Approve', onSha: 'a'.repeat(40) } }),
+    ).toMatchObject({
+      ok: false,
+      refusal: { reason: 'not-offered', resolution: 'Approve' },
+    })
+  })
+
+  it('goes ahead with the block it resolves', () => {
+    expect(resolveWaitTransition(blocked(), { waitId: W, resolution: { _tag: 'Close' } })).toMatchObject({
+      ok: true,
+      kind: 'proceed',
+      block: { waitId: W, runId: 'run-1' },
+    })
+  })
+
+  it('answers an approval that already landed with a repeat, and no events', () => {
+    const sha = 'a'.repeat(40)
+    const approved = reduceTicket([
+      ...aClaim(item(), 'run-1'),
+      ...aWait(item(), question, W),
+      ...aResolution(item(), W, { _tag: 'Approve', onSha: sha }),
+    ])
+    expect(approved.lifecycle.status).toBe('approved')
+    expect(resolveWaitTransition(approved, { waitId: W, resolution: { _tag: 'Approve', onSha: sha } })).toEqual({
+      ok: true,
+      kind: 'repeat',
+      runId: 'run-1',
+    })
+    expect(
+      resolveWaitTransition(approved, { waitId: W, resolution: { _tag: 'Approve', onSha: 'b'.repeat(40) } }),
+    ).toMatchObject({ ok: false, refusal: { reason: 'not-blocked' } })
+  })
+
+  it("a requeue records the resolution and the person's release, acting as the person", () => {
+    const d = resolvedEvents(blocked(), block(), {
+      waitId: W,
+      by: 'steven',
+      resolution: { _tag: 'Requeue' },
+      note: 'n',
+    })
+    if (!d.ok) throw new Error('refused')
+    expect(d.events.map((e) => e.type)).toEqual(['WaitResolved', 'TicketReleased'])
+    expect(d.events[1]).toMatchObject({
+      actor: 'steven',
+      data: { runId: 'run-1', reason: 'Requeued by steven.', cause: { _tag: 'ByPerson', waitId: W } },
+    })
+  })
+
+  it('a wait no run holds has no release, and a close never releases', () => {
+    const q = own()
+    const life = q.lifecycle
+    if (life.status !== 'blocked') throw new Error('not blocked')
+    const d = resolvedEvents(q, life, {
+      waitId: W,
+      by: 'steven',
+      resolution: { _tag: 'AnswerQuestion', choice: 'x' },
+      note: 'x',
+    })
+    expect(d.ok && d.events.map((e) => e.type)).toEqual(['WaitResolved'])
+    const c = resolvedEvents(blocked(), block(), { waitId: W, by: 'steven', resolution: { _tag: 'Close' }, note: '' })
+    expect(c.ok && c.events.map((e) => e.type)).toEqual(['WaitResolved'])
+  })
+
+  it('refuses a split whose children were not written for this wait', () => {
+    const resolution: Resolution = { _tag: 'Split', children: [], blockedBy: [] }
+    expect(resolvedEvents(blocked(), block(), { waitId: W, by: 'steven', resolution, note: '' })).toEqual({
+      ok: false,
+      refusal: { reason: 'split-not-written' },
+    })
+    expect(
+      resolvedEvents(blocked(), block(), {
+        waitId: W,
+        by: 'steven',
+        resolution,
+        note: '',
+        split: { waitId: '44444444-4444-4444-8444-444444444444', children: [], blockedBy: [] },
+      }),
+    ).toEqual({ ok: false, refusal: { reason: 'split-not-written' } })
+  })
+})
+
+describe('askTransition', () => {
+  const W = '55555555-5555-4555-8555-555555555555' as WaitId
+  it('starts an own question on a backlog ticket', () => {
+    expect(askTransition(backlog(), { waitId: W, question: 'which?', by: 'steven' })).toMatchObject({
+      ok: true,
+      events: [
+        {
+          type: 'WaitStarted',
+          actor: 'steven',
+          data: { waitId: W, reason: { _tag: 'OwnQuestion', question: 'which?', by: 'steven' } },
+        },
+      ],
+    })
+  })
+
+  it('refuses a ticket something holds', () => {
+    expect(askTransition(claimed(), { waitId: W, question: 'q', by: 'steven' })).toEqual({
+      ok: false,
+      refusal: { reason: 'not-backlog', status: 'claimed' },
+    })
+  })
+})
+
+describe('closeChecks and closeTransition', () => {
+  const W = '66666666-6666-4666-8666-666666666666' as WaitId
+  const blocked = () =>
+    reduceTicket([
+      ...aClaim(item(), 'run-1'),
+      ...aWait(item(), { _tag: 'AgentQuestion', run: anAttemptRef('run-1'), step: 'implement', question: 'q' }, W),
+    ])
+  const closed = () => reduceTicket([item()('TicketClosed', { by: 'steven', reason: 'no' })])
+
+  it('names each terminal and a moved stream', () => {
+    expect(closeChecks(closed(), {})).toEqual({ reason: 'already-closed' })
+    expect(closeChecks(backlog(), {})).toBeNull()
+    expect(closeChecks(backlog(), { ifVersion: 3 })).toEqual({ reason: 'changed' })
+    expect(closeChecks(claimed(), { ifVersion: claimed().version })).toBeNull()
+  })
+
+  it('closes a backlog ticket with TicketClosed and its plan only', () => {
+    const d = closeTransition(backlog(), { by: 'steven', reason: 'r', waitId: undefined, ended: [] })
+    expect(d).toMatchObject({ ok: true, blocked: false })
+    if (d.ok) expect(d.events.map((e) => e.type)).toEqual(['TicketClosed'])
+  })
+
+  it('resolves the wait it closes in the same events, ahead of TicketClosed and the plan', () => {
+    const ended = { type: 'StepsResolved', actor: 'conductor', data: {} }
+    const d = closeTransition(blocked(), { by: 'steven', reason: 'r', waitId: undefined, ended: [ended] as never })
+    expect(d).toMatchObject({ ok: true, blocked: true })
+    if (d.ok) expect(d.events.map((e) => e.type)).toEqual(['WaitResolved', 'TicketClosed', 'StepsResolved'])
+  })
+
+  it('refuses a card that showed no wait when the ticket is blocked', () => {
+    expect(closeTransition(blocked(), { by: 'steven', reason: 'r', waitId: null, ended: [] })).toEqual({
+      ok: false,
+      refusal: { reason: 'wait-moved', waitId: W },
+    })
+  })
+
+  it('refuses a wait that is not the one open', () => {
+    const other = '77777777-7777-4777-8777-777777777777' as WaitId
+    expect(closeTransition(blocked(), { by: 'steven', reason: 'r', waitId: other, ended: [] })).toMatchObject({
+      ok: false,
+      refusal: { reason: 'not-blocked' },
     })
   })
 })

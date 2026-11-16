@@ -25,11 +25,14 @@
  */
 import {
   CONTROL_STREAM,
+  matchHead,
   parsePayload,
   parseTicketStream,
   type PayloadOf,
+  type BlockedLifecycle,
+  type ResolveRefusal,
+  type TicketState,
   attemptReducer,
-  ticketReducer,
   triageAnswersText,
   triageFactsFromState,
   type AttemptState,
@@ -37,27 +40,15 @@ import {
   type ToAppend,
   type WaitId,
 } from '@lingtai/domain'
-import {
-  allowedResolutions,
-  describeSplitProblem,
-  splitPlanProblems,
-  type Resolution,
-  type WaitReason,
-} from '@lingtai/domain/wait'
-import {
-  ConcurrencyError,
-  type EventStore,
-  eventStore,
-  log,
-  readThroughSnapshot,
-  type SnapshotReadOptions,
-} from '@lingtai/event-store'
+import { describeSplitProblem, splitPlanProblems, type Resolution, type WaitReason } from '@lingtai/domain/wait'
+import { type EventStore, eventStore, log, readThroughSnapshot, type SnapshotReadOptions } from '@lingtai/event-store'
 import { Effect } from 'effect'
 
 import { agentBranch } from './branches.ts'
 import { decidingEffect } from './deciding.ts'
 import { asFailure } from './port-face.ts'
 import type { IssueChannel } from './tell.ts'
+import { type PreparedResolve, resolveTicketWaitEffect } from './ticket/commands.ts'
 import { writeSectionEffect } from './write-section.ts'
 
 /**
@@ -194,17 +185,6 @@ export function resolveWaitEffect(options: ResolveWaitOptions): Effect.Effect<Re
   )
 }
 
-/**
- * `--if-head` names the saved head in full or by a prefix of at least 7 hex
- * characters (#668). The comparison is against the one saved head, never a
- * lookup, so a prefix cannot be ambiguous.
- */
-function matchHead(given: string, head: string): 'match' | 'bad-sha' | 'mismatch' {
-  const sha = given.toLowerCase()
-  if (!/^[0-9a-f]{7,40}$/.test(sha)) return 'bad-sha'
-  return head.startsWith(sha) ? 'match' : 'mismatch'
-}
-
 export function resolveWaitHoldingEffect(
   options: ResolveWaitOptions,
   ticketId: string,
@@ -225,235 +205,45 @@ export function resolveWaitHoldingEffect(
         detail: `--if-head needs a commit SHA of at least 7 hex characters, not ${options.resolution.onSha} — nothing was resolved.`,
       }
 
-    const item = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', {
+    // **The way out of a continuation this call could not schedule**: a second
+    // `Approve` naming the very same wait and sha is not a second resolution, so
+    // the owner appends nothing and answers `repeat` (#465). `WaitResolved{Approve}`
+    // already committed the first time, but the retried `ContinueRequested` append
+    // below may have exhausted its retries and left no row for a conductor to
+    // act on — this asks only for the row the first one was owed.
+    const outcome = yield* resolveTicketWaitEffect<ResolveWaitResult>(ticketId, {
+      store,
       snapshots: options.snapshots,
       writer: options.writer,
+      waitId: options.waitId,
+      resolution: options.resolution,
+      by: options.by,
+      note,
+      split: options.split,
+      with: options.with,
+      prepare: (item, block) => prepare(options, store, ticketId, note, item, block),
     })
-
-    // **The way out of a continuation this call could not schedule**, read
-    // before the `not-blocked` refusal below rather than instead of it (#465).
-    // `WaitResolved{Approve}` already committed the first time — the
-    // lifecycle moved to `approved` — but the retried `ContinueRequested`
-    // append further down may have exhausted its retries and left no row for
-    // a conductor to act on. A second `Approve` naming the very same wait and
-    // sha is not a second resolution, so it writes no second `WaitResolved`
-    // — `resolveWait` stays the only writer of that event, which
-    // `resolve-wait.test.ts`'s own check holds to — and asks only for the
-    // row the first one was owed.
-    if (
-      (options.resolution._tag === 'Approve' || options.resolution._tag === 'GrantFixRound') &&
-      item.lifecycle.status === 'approved' &&
-      item.lifecycle.waitId === options.waitId &&
-      (options.resolution._tag === 'GrantFixRound'
-        ? item.lifecycle.grantRef !== undefined &&
-          (!options.resolution.onSha || matchHead(options.resolution.onSha, item.lifecycle.onSha ?? '') === 'match')
-        : item.lifecycle.onSha === options.resolution.onSha)
-    ) {
+    if (!outcome.ok) {
+      if ('refused' in outcome) return outcome.refused
+      if ('refusal' in outcome) {
+        return outcome.refusal.reason === 'not-blocked' && outcome.written
+          ? {
+              ok: false,
+              ticketId,
+              reason: 'not-blocked',
+              detail: `${ticketId} is not waiting on ${options.waitId} any more — the answers were written into the body, nothing was resolved.`,
+              written: true,
+            }
+          : resolveRefusal(ticketId, outcome.refusal)
+      }
+      return staleResult(ticketId, outcome.written)
+    }
+    if (outcome.kind === 'repeat') {
       const parsed = parseTicketStream(ticketId)!
-      const unscheduled = yield* requestContinuation(
-        store,
-        options.by,
-        parsed.project,
-        parsed.issue,
-        item.lifecycle.runId,
-      )
+      const unscheduled = yield* requestContinuation(store, options.by, parsed.project, parsed.issue, outcome.runId)
       return unscheduled === null ? { ok: true, ticketId } : { ok: true, ticketId, unscheduled }
     }
-
-    if (item.lifecycle.status !== 'blocked' || item.lifecycle.waitId !== options.waitId) {
-      return {
-        ok: false,
-        ticketId,
-        reason: 'not-blocked',
-        detail: `${ticketId} is not waiting on ${options.waitId} — nothing was resolved. Reload and read it again.`,
-      }
-    }
-    const block = item.lifecycle
-    const reason = block.reason
-
-    const allowed = allowedResolutions(reason)
-    if (!allowed.includes(options.resolution._tag)) {
-      return {
-        ok: false,
-        ticketId,
-        reason: 'not-offered',
-        detail: `${options.resolution._tag} is not offered for ${describeReason(reason)} — nothing was resolved.`,
-      }
-    }
-
-    // **A split is checked, and resolves only with its written children (#561,
-    // #562, #601).** Appending `WaitResolved{Split}` without `options.split` would
-    // record a completed choice with no child opened, and 0118 §11 says a partial
-    // split cannot resolve the wait. Every refusal returns before any append.
-    if (options.resolution._tag === 'Split') {
-      if (options.kinds === undefined)
-        return {
-          ok: false,
-          ticketId,
-          reason: 'no-kinds',
-          detail:
-            "a split needs the recipe's kinds to check each child is visible to the queue — nothing was resolved.",
-        }
-      const problems = splitPlanProblems(options.resolution, { kinds: options.kinds })
-      if (problems.length > 0)
-        return {
-          ok: false,
-          ticketId,
-          reason: 'invalid-split',
-          detail: `the split plan is refused — nothing was created or resolved: ${problems.map(describeSplitProblem).join('; ')}.`,
-        }
-      let written: PayloadOf<'TicketSplit'> | null = null
-      try {
-        written = parsePayload('TicketSplit', options.split)
-      } catch {
-        // Not a split payload at all — refused below, the same as none.
-      }
-      if (written === null || written.waitId !== options.waitId)
-        return {
-          ok: false,
-          ticketId,
-          reason: 'split-not-written',
-          detail: "the split's children have not been written to GitHub — nothing was resolved.",
-        }
-    }
-
-    let resolution = options.resolution
-    if (resolution._tag === 'GrantFixRound') {
-      const saved = yield* savedHead(store, ticketId, block.runId, {
-        snapshots: options.snapshots,
-        writer: options.writer,
-      })
-      if (!saved.ok) return saved
-      const { head, ref } = saved
-      if (resolution.onSha && matchHead(resolution.onSha, head) !== 'match') {
-        return {
-          ok: false,
-          ticketId,
-          reason: 'stale',
-          detail: `The saved head is ${head}, not the displayed ${resolution.onSha}. Reload this wait before granting a round.`,
-        }
-      }
-      if (options.client === undefined)
-        return {
-          ok: false,
-          ticketId,
-          reason: 'no-client',
-          detail: 'A remote ref check is required before granting a fix round.',
-        }
-      const remote = yield* refShaOrNull(options.client, `heads/${ref}`)
-      if (remote !== head) {
-        return {
-          ok: false,
-          ticketId,
-          reason: 'stale',
-          detail: `${ref} is ${remote ?? 'missing'}, not the saved ${head}. Restore that ref to the saved head or requeue for a fresh attempt.`,
-        }
-      }
-      resolution = { _tag: 'GrantFixRound', onSha: head, ref }
-    }
-
-    if (resolution._tag === 'Approve') {
-      const refused = yield* checkApprove(options, store, ticketId, block.runId, resolution.onSha, note, block.reason)
-      if (refused !== null) return refused
-    }
-
-    // **The wait's triage answers go into the body before it resolves** (#921,
-    // 0118 §6): every refusal above has already returned, so a body is never
-    // written for a refusal it was always going to get. Never reached by the
-    // reschedule path, which returned earlier, nor by `EditBodyAndRequeue`, which
-    // wrote its own text.
-    let version = item.version
-    let written = false
-    let recorded: PayloadOf<'WaitResolved'>['answers']
-    if (resolution._tag === 'EditBodyAndRequeue' && options.writtenSection !== undefined)
-      recorded = { picks: [], section: options.writtenSection }
-    if (resolution._tag === 'GrantFixRound' || resolution._tag === 'Requeue') {
-      const triage = triageFactsFromState(item, options.waitId).result
-      const answers = triage?._tag === 'TriageAdvised' ? triageAnswersText(triage.cause, options.picks) : null
-      if (answers !== null && !answers.ok)
-        return {
-          ok: false,
-          ticketId,
-          reason: 'stale',
-          detail: `${answers.detail} — nothing was written or resolved. Reload and read it again.`,
-        }
-      if (answers !== null && answers.text !== '') {
-        if (options.github === undefined)
-          return {
-            ok: false,
-            ticketId,
-            reason: 'no-github',
-            detail:
-              "the wait's triage answers have to be written into the body first, and there is no GitHub to write to — nothing was resolved.",
-          }
-        const result = yield* writeSectionEffect({
-          store,
-          github: options.github,
-          ticketId,
-          key: `${ticketId}/${options.waitId}`,
-          text: answers.text,
-        })
-        if (!result.written) return { ok: false, ticketId, reason: 'write-failed', detail: result.detail }
-        written = true
-        recorded = { picks: answers.picks, section: answers.text }
-        // The write recorded its own events on this stream, so the version read
-        // above is behind: read again, and check the wait is still the one open.
-        const fresh = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', {
-          snapshots: options.snapshots,
-          writer: options.writer,
-        })
-        if (fresh.lifecycle.status !== 'blocked' || fresh.lifecycle.waitId !== options.waitId)
-          return {
-            ok: false,
-            ticketId,
-            reason: 'not-blocked',
-            detail: `${ticketId} is not waiting on ${options.waitId} any more — the answers were written into the body, nothing was resolved.`,
-            written,
-          }
-        version = fresh.version
-      }
-    }
-
-    // A `ConcurrencyError` is the one failure answered here; any other is the
-    // append's own and rejects the face as it always did.
-    const lost = yield* Effect.tryPromise({
-      try: () =>
-        store.append(ticketId, version, [
-          ...(resolution._tag === 'Split'
-            ? [{ type: 'TicketSplit', actor: options.by, data: parsePayload('TicketSplit', options.split) }]
-            : []),
-          {
-            type: 'WaitResolved',
-            actor: options.by,
-            data: parsePayload('WaitResolved', {
-              waitId: options.waitId,
-              by: options.by,
-              resolution,
-              note,
-              ...(recorded ? { answers: recorded } : {}),
-            }),
-          },
-          ...releaseOf(options, resolution, block.runId),
-          ...(options.with ?? []),
-        ]),
-      catch: asFailure,
-    }).pipe(
-      Effect.uninterruptible,
-      Effect.as(false),
-      Effect.catchIf(
-        (err) => err instanceof ConcurrencyError,
-        () => Effect.succeed(true),
-      ),
-    )
-    if (lost) {
-      return {
-        ok: false,
-        ticketId,
-        reason: 'stale',
-        detail: `${ticketId} moved while this was being resolved. Nothing was resolved — reload and read it again.`,
-        ...(written ? { written } : {}),
-      }
-    }
+    const { resolution, runId } = outcome
 
     // **What tells the next pass which issue to look at, not what wakes it**
     // (`ContinueRequested`'s own header, #465) — `WaitResolved` above is
@@ -481,8 +271,7 @@ export function resolveWaitHoldingEffect(
     if (resolution._tag === 'Approve' || resolution._tag === 'GrantFixRound') {
       const parsed = parseTicketStream(ticketId)
       if (parsed !== null) {
-        unscheduled =
-          (yield* requestContinuation(store, options.by, parsed.project, parsed.issue, block.runId!)) ?? undefined
+        unscheduled = (yield* requestContinuation(store, options.by, parsed.project, parsed.issue, runId!)) ?? undefined
       }
     }
 
@@ -490,7 +279,163 @@ export function resolveWaitHoldingEffect(
   })
 }
 
-type Refused = { ok: false; ticketId: string; reason: string; detail: string }
+type Refused = { ok: false; ticketId: string; reason: string; detail: string; written?: boolean }
+
+/**
+ * What the ticket's state cannot say: the split plan against the recipe, the saved head and the remote ref, `Approve`'s
+ * checks and the wait's triage answers written into the body. Run by the owner between its read and its append, against
+ * that same read, so no check here refuses on a ticket the append would not have been made against.
+ */
+function prepare(
+  options: ResolveWaitOptions,
+  store: EventStore,
+  ticketId: string,
+  note: string,
+  item: TicketState,
+  block: BlockedLifecycle,
+): Effect.Effect<{ ok: true; prepared: PreparedResolve } | { ok: false; refused: Refused }, unknown> {
+  return Effect.gen(function* () {
+    const refuse = (refused: Refused) => ({ ok: false, refused }) as const
+    // **A split is checked, and resolves only with its written children (#561,
+    // #562, #601).** Every refusal returns before any append.
+    if (options.resolution._tag === 'Split') {
+      if (options.kinds === undefined)
+        return refuse({
+          ok: false,
+          ticketId,
+          reason: 'no-kinds',
+          detail:
+            "a split needs the recipe's kinds to check each child is visible to the queue — nothing was resolved.",
+        })
+      const problems = splitPlanProblems(options.resolution, { kinds: options.kinds })
+      if (problems.length > 0)
+        return refuse({
+          ok: false,
+          ticketId,
+          reason: 'invalid-split',
+          detail: `the split plan is refused — nothing was created or resolved: ${problems.map(describeSplitProblem).join('; ')}.`,
+        })
+    }
+
+    let resolution = options.resolution
+    if (resolution._tag === 'GrantFixRound') {
+      const saved = yield* savedHead(store, ticketId, block.runId, {
+        snapshots: options.snapshots,
+        writer: options.writer,
+      })
+      if (!saved.ok) return refuse(saved)
+      const { head, ref } = saved
+      if (resolution.onSha && matchHead(resolution.onSha, head) !== 'match') {
+        return refuse({
+          ok: false,
+          ticketId,
+          reason: 'stale',
+          detail: `The saved head is ${head}, not the displayed ${resolution.onSha}. Reload this wait before granting a round.`,
+        })
+      }
+      if (options.client === undefined)
+        return refuse({
+          ok: false,
+          ticketId,
+          reason: 'no-client',
+          detail: 'A remote ref check is required before granting a fix round.',
+        })
+      const remote = yield* refShaOrNull(options.client, `heads/${ref}`)
+      if (remote !== head) {
+        return refuse({
+          ok: false,
+          ticketId,
+          reason: 'stale',
+          detail: `${ref} is ${remote ?? 'missing'}, not the saved ${head}. Restore that ref to the saved head or requeue for a fresh attempt.`,
+        })
+      }
+      resolution = { _tag: 'GrantFixRound', onSha: head, ref }
+    }
+
+    if (resolution._tag === 'Approve') {
+      const refused = yield* checkApprove(options, store, ticketId, block.runId, resolution.onSha, note, block.reason)
+      if (refused !== null) return refuse(refused as Refused)
+    }
+
+    // **The wait's triage answers go into the body before it resolves** (#921,
+    // 0118 §6): every refusal above has already returned, so a body is never
+    // written for a refusal it was always going to get.
+    let recorded: PayloadOf<'WaitResolved'>['answers']
+    let wroteBody = false
+    if (resolution._tag === 'EditBodyAndRequeue' && options.writtenSection !== undefined)
+      recorded = { picks: [], section: options.writtenSection }
+    if (resolution._tag === 'GrantFixRound' || resolution._tag === 'Requeue') {
+      const triage = triageFactsFromState(item, options.waitId).result
+      const answers = triage?._tag === 'TriageAdvised' ? triageAnswersText(triage.cause, options.picks) : null
+      if (answers !== null && !answers.ok)
+        return refuse({
+          ok: false,
+          ticketId,
+          reason: 'stale',
+          detail: `${answers.detail} — nothing was written or resolved. Reload and read it again.`,
+        })
+      if (answers !== null && answers.text !== '') {
+        if (options.github === undefined)
+          return refuse({
+            ok: false,
+            ticketId,
+            reason: 'no-github',
+            detail:
+              "the wait's triage answers have to be written into the body first, and there is no GitHub to write to — nothing was resolved.",
+          })
+        const result = yield* writeSectionEffect({
+          store,
+          github: options.github,
+          ticketId,
+          key: `${ticketId}/${options.waitId}`,
+          text: answers.text,
+        })
+        if (!result.written) return refuse({ ok: false, ticketId, reason: 'write-failed', detail: result.detail })
+        wroteBody = true
+        recorded = { picks: answers.picks, section: answers.text }
+      }
+    }
+    return { ok: true, prepared: { resolution, ...(recorded ? { answers: recorded } : {}), wroteBody } } as const
+  })
+}
+
+/** What the ticket's own refusal is called to the person, in the words it always was. */
+export function resolveRefusal(ticketId: string, refusal: ResolveRefusal): Refused {
+  switch (refusal.reason) {
+    case 'not-blocked':
+      return {
+        ok: false,
+        ticketId,
+        reason: 'not-blocked',
+        detail: `${ticketId} is not waiting on ${refusal.waitId} — nothing was resolved. Reload and read it again.`,
+      }
+    case 'not-offered':
+      return {
+        ok: false,
+        ticketId,
+        reason: 'not-offered',
+        detail: `${refusal.resolution} is not offered for ${describeReason(refusal.waitReason)} — nothing was resolved.`,
+      }
+    case 'split-not-written':
+      return {
+        ok: false,
+        ticketId,
+        reason: 'split-not-written',
+        detail: "the split's children have not been written to GitHub — nothing was resolved.",
+      }
+  }
+}
+
+/** The append lost to another writer: nothing was resolved, and it is never retried here. */
+export function staleResult(ticketId: string, written: boolean): Refused & { written?: boolean } {
+  return {
+    ok: false,
+    ticketId,
+    reason: 'stale',
+    detail: `${ticketId} moved while this was being resolved. Nothing was resolved — reload and read it again.`,
+    ...(written ? { written } : {}),
+  }
+}
 
 /**
  * The clean head a held run published and a fix can continue from.
@@ -704,33 +649,4 @@ function refShaOrNull(
   return Effect.tryPromise({ try: () => client.refSha(ref), catch: asFailure }).pipe(
     Effect.catch(() => Effect.succeed(null)),
   )
-}
-
-/**
- * **A person's requeue gives the claim up on the log** (0118 §7): the held run
- * is released with `cause: ByPerson`, in the same append as the resolution.
- * Only a wait a run holds has a claim to release — an `OwnQuestion` has no run.
- * Restarts are counted from `cause: Restart` alone, so this adds none.
- */
-function releaseOf(options: { waitId: WaitId; by: string }, resolution: Resolution, runId: string | null): ToAppend[] {
-  if (runId === null) return []
-  if (resolution._tag !== 'Requeue' && resolution._tag !== 'EditBodyAndRequeue' && resolution._tag !== 'Split')
-    return []
-  const how =
-    resolution._tag === 'EditBodyAndRequeue'
-      ? ' with an edited body'
-      : resolution._tag === 'Split'
-        ? ' after a split'
-        : ''
-  return [
-    {
-      type: 'TicketReleased',
-      actor: options.by,
-      data: parsePayload('TicketReleased', {
-        runId,
-        reason: `Requeued by ${options.by}${how}.`,
-        cause: { _tag: 'ByPerson', waitId: options.waitId },
-      }),
-    },
-  ]
 }

@@ -23,7 +23,21 @@
  * exclusion is the constraint. Neither is a number.
  */
 import {
+  type AskDecline,
+  type BlockedLifecycle,
   type ClaimDecline,
+  type CloseDecline,
+  type CloseRefusal,
+  type PayloadOf,
+  type ResolveRefusal,
+  type TicketState,
+  type WaitId,
+  askTransition,
+  closeChecks,
+  closeTransition,
+  reduceTicket,
+  resolvedEvents,
+  resolveWaitTransition,
   type ContinueDecline,
   type ReleaseCause,
   type ReleaseDecline,
@@ -36,7 +50,7 @@ import {
   ticketReducer,
   type ToAppend,
 } from '@lingtai/domain'
-import type { WaitReason } from '@lingtai/domain/wait'
+import { allowedResolutions, type Resolution, type WaitReason } from '@lingtai/domain/wait'
 import {
   ConcurrencyError,
   type EventStore,
@@ -290,6 +304,179 @@ function releaseWith(
       catch: (error) => error,
     })
     return { ok: true } as const
+  })
+}
+
+/** The append at an expected version: `true` when another writer got there first, any other failure the caller's. */
+function appendLost(
+  store: EventStore,
+  ticketId: string,
+  version: number,
+  events: readonly ToAppend[],
+): Effect.Effect<boolean, unknown> {
+  return Effect.tryPromise({ try: () => store.append(ticketId, version, events), catch: (error) => error }).pipe(
+    Effect.uninterruptible,
+    Effect.as(false),
+    Effect.catchIf(
+      (err) => err instanceof ConcurrencyError,
+      () => Effect.succeed(true),
+    ),
+  )
+}
+
+/**
+ * What the caller's own checks settled, between the ticket's and the append: the resolution it will record (a
+ * `GrantFixRound` is rewritten to the head it was checked against), the triage answers it wrote into the body, and
+ * whether it wrote one — the stream moved by its own events then, so the version is read again.
+ */
+export type PreparedResolve = {
+  resolution: Resolution
+  answers?: PayloadOf<'WaitResolved'>['answers']
+  wroteBody?: boolean
+}
+
+export type ResolveTicketWaitResult<R> =
+  | { ok: true; kind: 'repeat'; runId: string }
+  | { ok: true; kind: 'resolved'; resolution: Resolution; runId: string | null }
+  | { ok: false; refusal: ResolveRefusal; written: boolean }
+  /** `prepare` refused: the caller's own answer, passed through whole. */
+  | { ok: false; refused: R }
+  /** Another writer appended first; nothing was resolved. Never retried. */
+  | { ok: false; lost: true; written: boolean }
+
+/**
+ * A person's resolution of a wait (0118 §11): the transition decides from one read, the caller's `prepare` makes the
+ * checks that are not the ticket's own (GitHub, the recipe, the attempt's saved head) against that same read, and
+ * one append at the version carries every event.
+ */
+export function resolveTicketWaitEffect<R>(
+  ticketId: string,
+  options: SnapshotReadOptions & {
+    store: EventStore
+    waitId: WaitId
+    resolution: Resolution
+    by: string
+    note: string
+    /** Events appended after the resolution, in the same append. */
+    with?: readonly ToAppend[]
+    split?: unknown
+    prepare?: (
+      state: TicketState,
+      block: BlockedLifecycle,
+    ) => Effect.Effect<{ ok: true; prepared: PreparedResolve } | { ok: false; refused: R }, unknown>
+  },
+): Effect.Effect<ResolveTicketWaitResult<R>, unknown> {
+  return Effect.gen(function* () {
+    const store = options.store
+    const read = { snapshots: options.snapshots, writer: options.writer }
+    const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', read)
+
+    const decided = resolveWaitTransition(state, { waitId: options.waitId, resolution: options.resolution })
+    if (!decided.ok) return { ok: false, refusal: decided.refusal, written: false } as const
+    if (decided.kind === 'repeat') return { ok: true, kind: 'repeat', runId: decided.runId } as const
+    const block = decided.block
+
+    const prepared: { ok: true; prepared: PreparedResolve } | { ok: false; refused: R } = options.prepare
+      ? yield* options.prepare(state, block)
+      : { ok: true, prepared: { resolution: options.resolution } }
+    if (!prepared.ok) return { ok: false, refused: prepared.refused } as const
+    const { resolution, answers } = prepared.prepared
+    const written = prepared.prepared.wroteBody === true
+    // What is written is checked, not what was asked: `prepare` may rewrite a resolution (a grant's head), never its kind.
+    if (resolution._tag !== options.resolution._tag || !allowedResolutions(block.reason).includes(resolution._tag)) {
+      return {
+        ok: false,
+        refusal: { reason: 'not-offered', resolution: resolution._tag, waitReason: block.reason },
+        written,
+      } as const
+    }
+
+    // A split resolves only with its written children, checked after the caller's own checks of the plan.
+    const events = resolvedEvents(state, block, {
+      waitId: options.waitId,
+      by: options.by,
+      resolution,
+      note: options.note,
+      ...(answers ? { answers } : {}),
+      split: options.split,
+    })
+    if (!events.ok) return { ok: false, refusal: events.refusal, written } as const
+
+    let version = state.version
+    if (written) {
+      // The body write recorded its own events on this stream: read again, and check the wait is still the one open.
+      const fresh = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', read)
+      const again = resolveWaitTransition(fresh, { waitId: options.waitId, resolution: options.resolution })
+      if (!again.ok || again.kind !== 'proceed') {
+        return { ok: false, refusal: { reason: 'not-blocked', waitId: options.waitId }, written } as const
+      }
+      version = fresh.version
+    }
+
+    const lost = yield* appendLost(store, ticketId, version, [...events.events, ...(options.with ?? [])])
+    if (lost) return { ok: false, lost: true, written } as const
+    return { ok: true, kind: 'resolved', resolution, runId: block.runId } as const
+  })
+}
+
+export type AskTicketResult = { ok: true } | { ok: false; refusal: AskDecline } | { ok: false; lost: true }
+
+/** A question to a person before any run. A claim that landed first won, and is said so rather than retried. */
+export function askTicketEffect(
+  ticketId: string,
+  options: SnapshotReadOptions & { store: EventStore; question: string; by: string; waitId: WaitId },
+): Effect.Effect<AskTicketResult, unknown> {
+  return Effect.gen(function* () {
+    const state = yield* readThroughSnapshot(options.store, ticketReducer, ticketId, 'all', options)
+    const decided = askTransition(state, { waitId: options.waitId, question: options.question, by: options.by })
+    if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
+    const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
+    return lost ? ({ ok: false, lost: true } as const) : ({ ok: true } as const)
+  })
+}
+
+export type CloseTicketResult<R> =
+  | { ok: true; ended: readonly ToAppend[] }
+  | { ok: false; decline: CloseDecline }
+  | { ok: false; refusal: CloseRefusal }
+  /** `loadEnd` refused: the caller's own answer, passed through whole. */
+  | { ok: false; refused: R }
+  | { ok: false; lost: true; blocked: boolean }
+
+/**
+ * Ending a ticket (#151). **A blocked item's wait is resolved in this same append** (#465, 0118 §11) — `TicketClosed`
+ * and the end plan ride behind `WaitResolved`, never a resolve and then a close. `loadEnd` reads the recipe's `end`
+ * steps and runs only once the ticket has said it can be closed.
+ */
+export function closeTicketEffect<R>(
+  ticketId: string,
+  options: {
+    store: EventStore
+    by: string
+    reason: string
+    waitId?: WaitId | null
+    ifVersion?: number
+    loadEnd: Effect.Effect<{ ok: true; end: readonly StepAction[] } | { ok: false; refused: R }, unknown>
+  },
+): Effect.Effect<CloseTicketResult<R>, unknown> {
+  return Effect.gen(function* () {
+    const events = yield* Effect.promise(() => options.store.read(ticketId))
+    const state = reduceTicket(events)
+
+    const declined = closeChecks(state, { ifVersion: options.ifVersion })
+    if (declined !== null) return { ok: false, decline: declined } as const
+
+    const loaded = yield* options.loadEnd
+    if (!loaded.ok) return { ok: false, refused: loaded.refused } as const
+
+    // One transaction: the outcome and what its point resolved to cannot come apart.
+    const ended = resolveEndActions(events, loaded.end, 'closed')
+    const decided = closeTransition(state, { by: options.by, reason: options.reason, waitId: options.waitId, ended })
+    if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
+
+    const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
+    if (lost) return { ok: false, lost: true, blocked: decided.blocked } as const
+    return { ok: true, ended } as const
   })
 }
 

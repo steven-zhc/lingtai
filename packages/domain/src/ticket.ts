@@ -32,7 +32,7 @@ import {
 } from './events.ts'
 import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
 import { waitWords } from './wait-words.ts'
-import type { Resolution, TriageResult, WaitReason } from './wait.ts'
+import { allowedResolutions, type Resolution, type TriageResult, type WaitReason } from './wait.ts'
 
 /** How an attempt ended: the later of a release and a question put to a person (D13). */
 export type AttemptEnding =
@@ -879,6 +879,8 @@ export function continueTransition(
 export type ReleaseInput =
   | { by: 'run'; runId: string; reason: string; cause: ReleaseCause | null }
   | { by: 'dead-worker'; mine: string; lock: string }
+  /** A person's requeue, edit or split gives the held run's claim up (0118 §7): the actor is the person. */
+  | { by: 'person'; person: string; runId: string; waitId: WaitId; how: 'Requeue' | 'EditBodyAndRequeue' | 'Split' }
 
 /** A release the ticket will not make: the claim moved on between the scan and the write. */
 export type ReleaseDecline = { reason: 'moved-on'; status: string; worker?: string }
@@ -890,6 +892,14 @@ export function releaseTransition(
   let data: PayloadOf<'TicketReleased'>
   if (input.by === 'run') {
     data = parsePayload('TicketReleased', { runId: input.runId, reason: input.reason, cause: input.cause })
+  } else if (input.by === 'person') {
+    const how =
+      input.how === 'EditBodyAndRequeue' ? ' with an edited body' : input.how === 'Split' ? ' after a split' : ''
+    data = parsePayload('TicketReleased', {
+      runId: input.runId,
+      reason: `Requeued by ${input.person}${how}.`,
+      cause: { _tag: 'ByPerson', waitId: input.waitId },
+    })
   } else {
     const life = state.lifecycle
     // Releasing a live claim is a far worse outcome than leaving a dead one.
@@ -910,5 +920,183 @@ export function releaseTransition(
       cause: null,
     })
   }
-  return { ok: true, events: [{ type: 'TicketReleased', actor: 'conductor', data }] }
+  return {
+    ok: true,
+    events: [{ type: 'TicketReleased', actor: input.by === 'person' ? input.person : 'conductor', data }],
+  }
+}
+
+/**
+ * `--if-head` names the saved head in full or by a prefix of at least 7 hex characters (#668). The comparison is
+ * against the one saved head, never a lookup, so a prefix cannot be ambiguous.
+ */
+export function matchHead(given: string, head: string): 'match' | 'bad-sha' | 'mismatch' {
+  const sha = given.toLowerCase()
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) return 'bad-sha'
+  return head.startsWith(sha) ? 'match' : 'mismatch'
+}
+
+export type BlockedLifecycle = Extract<TicketLifecycle, { status: 'blocked' }>
+
+/** What a person's resolution of a wait is refused for, read off the ticket's own state. */
+export type ResolveRefusal =
+  /** The ticket is not waiting on that wait — it moved, or the page is stale. */
+  | { reason: 'not-blocked'; waitId: WaitId }
+  /** The wait's reason does not offer that resolution. */
+  | { reason: 'not-offered'; resolution: Resolution['_tag']; waitReason: WaitReason }
+  /** A split resolves only with the children it wrote. */
+  | { reason: 'split-not-written' }
+
+/**
+ * Whether a resolution can go ahead: `repeat` when it is an approval that already landed (it appends nothing to the
+ * ticket — the continuation it was owed is asked for again), `proceed` with the block it resolves, or a refusal.
+ */
+export function resolveWaitTransition(
+  state: TicketState,
+  input: { waitId: WaitId; resolution: Resolution },
+):
+  | { ok: true; kind: 'repeat'; runId: string }
+  | { ok: true; kind: 'proceed'; block: BlockedLifecycle }
+  | { ok: false; refusal: ResolveRefusal } {
+  const life = state.lifecycle
+  const { resolution } = input
+  if (
+    (resolution._tag === 'Approve' || resolution._tag === 'GrantFixRound') &&
+    life.status === 'approved' &&
+    life.waitId === input.waitId &&
+    (resolution._tag === 'GrantFixRound'
+      ? life.grantRef !== undefined && (!resolution.onSha || matchHead(resolution.onSha, life.onSha ?? '') === 'match')
+      : life.onSha === resolution.onSha)
+  ) {
+    return { ok: true, kind: 'repeat', runId: life.runId }
+  }
+  if (life.status !== 'blocked' || life.waitId !== input.waitId)
+    return { ok: false, refusal: { reason: 'not-blocked', waitId: input.waitId } }
+  if (!allowedResolutions(life.reason).includes(resolution._tag)) {
+    return {
+      ok: false,
+      refusal: { reason: 'not-offered', resolution: resolution._tag, waitReason: life.reason },
+    }
+  }
+  return { ok: true, kind: 'proceed', block: life }
+}
+
+/**
+ * The events a resolution appends, in order: a split's `TicketSplit` (only when the payload the caller wrote names
+ * this wait), `WaitResolved`, and — for a requeue, an edit or a split of a wait a run holds — the person's release.
+ */
+export function resolvedEvents(
+  state: TicketState,
+  block: BlockedLifecycle,
+  input: {
+    waitId: WaitId
+    by: string
+    resolution: Resolution
+    note: string
+    answers?: PayloadOf<'WaitResolved'>['answers']
+    split?: unknown
+  },
+): { ok: true; events: ToAppend[] } | { ok: false; refusal: ResolveRefusal } {
+  const events: ToAppend[] = []
+  const { resolution } = input
+  if (resolution._tag === 'Split') {
+    let written: PayloadOf<'TicketSplit'> | null = null
+    try {
+      written = parsePayload('TicketSplit', input.split)
+    } catch {
+      // Not a split payload at all — refused below, the same as none.
+    }
+    if (written === null || written.waitId !== input.waitId)
+      return { ok: false, refusal: { reason: 'split-not-written' } }
+    events.push({ type: 'TicketSplit', actor: input.by, data: written })
+  }
+  events.push({
+    type: 'WaitResolved',
+    actor: input.by,
+    data: parsePayload('WaitResolved', {
+      waitId: input.waitId,
+      by: input.by,
+      resolution,
+      note: input.note,
+      ...(input.answers ? { answers: input.answers } : {}),
+    }),
+  })
+  if (
+    block.runId !== null &&
+    (resolution._tag === 'Requeue' || resolution._tag === 'EditBodyAndRequeue' || resolution._tag === 'Split')
+  ) {
+    const released = releaseTransition(state, {
+      by: 'person',
+      person: input.by,
+      runId: block.runId,
+      waitId: input.waitId,
+      how: resolution._tag,
+    })
+    if (released.ok) events.push(...released.events)
+  }
+  return { ok: true, events }
+}
+
+export type AskDecline = { reason: 'not-backlog'; status: TicketStatus }
+
+/** A question asked of a person before any run: only of an item nothing holds. */
+export function askTransition(
+  state: TicketState,
+  input: { waitId: WaitId; question: string; by: string },
+): { ok: true; events: ToAppend[] } | { ok: false; refusal: AskDecline } {
+  if (state.lifecycle.status !== 'backlog') {
+    return { ok: false, refusal: { reason: 'not-backlog', status: state.lifecycle.status } }
+  }
+  return {
+    ok: true,
+    events: [
+      {
+        type: 'WaitStarted',
+        actor: input.by,
+        data: parsePayload('WaitStarted', {
+          waitId: input.waitId,
+          reason: { _tag: 'OwnQuestion', question: input.question, by: input.by },
+        }),
+      },
+    ],
+  }
+}
+
+export type CloseDecline = { reason: 'already-closed' } | { reason: 'landed' } | { reason: 'changed' }
+
+/** A close is refused from either terminal, and when the stream moved since the caller's decision (#604). */
+export function closeChecks(state: TicketState, input: { ifVersion?: number }): CloseDecline | null {
+  if (state.lifecycle.status === 'closed') return { reason: 'already-closed' }
+  if (state.lifecycle.status === 'landed') return { reason: 'landed' }
+  if (input.ifVersion !== undefined && state.version !== input.ifVersion) return { reason: 'changed' }
+  return null
+}
+
+export type CloseRefusal = ResolveRefusal | { reason: 'wait-moved'; waitId: WaitId }
+
+/**
+ * The close: `TicketClosed` and the end plan, and — **in the same append** — the wait's resolution first when the item
+ * is blocked (#465, 0118 §11). `waitId` is the wait the caller was shown: `undefined` takes whatever is open, `null` is
+ * a card that showed none, which refuses a close that turns out to be blocked.
+ */
+export function closeTransition(
+  state: TicketState,
+  input: { by: string; reason: string; waitId: WaitId | null | undefined; ended: readonly ToAppend[] },
+): { ok: true; events: ToAppend[]; blocked: boolean } | { ok: false; refusal: CloseRefusal } {
+  const closed: ToAppend = {
+    type: 'TicketClosed',
+    actor: input.by,
+    data: parsePayload('TicketClosed', { by: input.by, reason: input.reason }),
+  }
+  const life = state.lifecycle
+  if (life.status !== 'blocked') return { ok: true, events: [closed, ...input.ended], blocked: false }
+  if (input.waitId === null) return { ok: false, refusal: { reason: 'wait-moved', waitId: life.waitId } }
+  const waitId = input.waitId ?? life.waitId
+  const resolution: Resolution = { _tag: 'Close' }
+  const decided = resolveWaitTransition(state, { waitId, resolution })
+  if (!decided.ok) return decided
+  if (decided.kind === 'repeat') return { ok: false, refusal: { reason: 'not-blocked', waitId } }
+  const resolved = resolvedEvents(state, decided.block, { waitId, by: input.by, resolution, note: input.reason.trim() })
+  if (!resolved.ok) return resolved
+  return { ok: true, events: [...resolved.events, closed, ...input.ended], blocked: true }
 }
