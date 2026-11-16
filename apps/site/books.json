@@ -1,81 +1,81 @@
 {
   "version": 1,
   "window": {
-    "from": "2026-11-14",
+    "from": "2026-11-01",
     "to": "2026-11-15"
   },
-  "capturedAt": "2026-11-15T23:26:20.277Z",
-  "commit": "917cfb62",
+  "capturedAt": "2026-11-16T01:02:28.975Z",
+  "commit": "19f49240",
   "outcomes": {
-    "landed": 23,
-    "closed": 0,
+    "landed": 368,
+    "closed": 2,
     "open": 0,
     "landedByKind": [
       {
         "kind": "bug",
-        "count": 1
+        "count": 51
       },
       {
         "kind": "documentation",
-        "count": 5
+        "count": 39
       },
       {
         "kind": "feature",
-        "count": 13
+        "count": 126
       },
       {
         "kind": "tech-debt",
-        "count": 4
+        "count": 152
       }
     ]
   },
   "fixRounds": {
-    "median": 1,
-    "zeroOrOneShare": 0.6521739130434783,
-    "fiveOrMoreShare": 0.17391304347826086
+    "median": 0,
+    "zeroOrOneShare": 0.8043478260869565,
+    "fiveOrMoreShare": 0.04076086956521739
   },
   "cost": {
-    "median": 4.47,
-    "mean": 9.21565217391304,
-    "p90": 24.48,
+    "median": 3.95,
+    "mean": 5.9338858695652155,
+    "p90": 10.3,
     "includesEstimates": true,
-    "costUnknown": 0
+    "costUnknown": 5
   },
   "machineMinutes": {
-    "median": 17.053216666666668,
-    "mean": 29.34481739130435
+    "median": 11.990008333333334,
+    "mean": 16.545462907608695
   },
   "elapsedMinutes": {
-    "median": 17.054283333333334,
-    "mean": 119.16036449275362,
-    "withinHourShare": 0.8260869565217391
+    "median": 12.320291666666666,
+    "mean": 43.846725181159435,
+    "withinHourShare": 0.904891304347826
   },
-  "waitedShare": 0.17391304347826086,
+  "waitedShare": 0.07880434782608696,
   "spendShare": [
     {
       "purpose": "Work",
-      "share": 0.5383922037053438
+      "share": 0.6497876526613574
     },
     {
       "purpose": "Answering",
-      "share": 0.3865902917384515
+      "share": 0.2959561632306385
     },
     {
       "purpose": "Judge",
-      "share": 0.0343948181267127
+      "share": 0.027915740911748227
     },
     {
       "purpose": "Triage",
-      "share": 0.040622686429491954
+      "share": 0.026340443196255874
     }
   ],
   "receipts": [
     {
       "median": true,
-      "fixRounds": 1,
-      "machineMinutes": 17.053216666666668,
+      "fixRounds": 0,
+      "machineMinutes": 11.990008333333334,
       "waits": 0,
-      "cost": 4.47
+      "cost": 3.95
     },
     {
       "median": false,
@@ -113,5 +113,10 @@
       "machineMinutes": 78.24505,
       "cost": 24.48
     }
-  ]
+  ],
+  "landedAllTime": {
+    "count": 698,
+    "since": "2026-09-08",
+    "asOf": "2026-11-16T01:02:28.975Z"
+  }
 }
