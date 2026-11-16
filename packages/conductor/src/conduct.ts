@@ -3374,7 +3374,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // if origin already holds the sha being landed, the push is done. The check is part of
           // each try, so a failed read is another try rather than an early exit.
           const pushed = yield* gitAskedEffect(
-            ['push', `--force-with-lease=refs/heads/${branch}:${lease ?? ''}`, 'origin', `HEAD:refs/heads/${branch}`],
+            [
+              'push',
+              `--force-with-lease=refs/heads/${branch}:${lease ?? ''}`,
+              'origin',
+              `${on.onSha}:refs/heads/${branch}`,
+            ],
             options.unreachableWaits ?? UNREACHABLE_WAITS,
             (err) =>
               /stale info/i.test(err.stderr ?? err.detail)
@@ -3469,7 +3474,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `toSha`, not the base's tip: it is what the lane's trial merge just proved
        * clean, so the merge here is clean by construction. If the base has moved
        * again since, the next visit to `merge` sees that and counts it, which is
-       * what `BASE_MERGES_LIMIT` bounds. **Not pushed here**: `land` pushes `HEAD`
+       * what `BASE_MERGES_LIMIT` bounds. **Not pushed here**: `land` pushes `onSha`
        * against `lease` on the next visit to `merge`, and this commit is a
        * fast-forward of the head it pushed last; any ending before that publishes
        * from the finalizer. A third push site would be a third place `lease` has

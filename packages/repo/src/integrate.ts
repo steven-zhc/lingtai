@@ -492,6 +492,13 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         waits,
       )
 
+      // The lane lands the commit the steps checked and nothing else: a branch on origin
+      // that is anything other than `headSha` is refused, never merged and never retried.
+      const fetchedHead = (yield* at(['rev-parse', laneBranch], mirror)).trim()
+      if (fetchedHead !== options.headSha) {
+        return yield* refuse('head-moved', `expected ${options.headSha} found ${fetchedHead}`)
+      }
+
       // What an earlier integration was killed in the middle of, before this one
       // adds a directory of its own: see `WORKTREE_IS_ABANDONED_AFTER`. A
       // registration whose directory is already gone is git's own `prune` to
@@ -596,7 +603,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
             `${options.branch} does not merge into ${options.base}:\n${mergedIn.failure.detail}`,
           )
         }
-        const headSha = yield* at(['rev-parse', laneBranch], mirror)
+        const headSha = fetchedHead
         return yield* refuse(
           'conflict',
           `${options.branch} does not merge into ${options.base}:\n${paths.join('\n')}`,
