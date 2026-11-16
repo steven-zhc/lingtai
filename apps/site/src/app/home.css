@@ -202,8 +202,6 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
 .faq-item summary::after { content: "+"; margin-left: auto; font: 500 18px var(--mono); color: var(--muted); }
 .faq-item[open] summary::after { content: "−"; }
 .faq-item p { margin: 0 0 16px; color: var(--ink-2); font-size: 14.5px; line-height: 1.6; }
-.faq-item.honest { border-color: var(--signal); }
-.faq-tag { font: 600 9.5px var(--mono); letter-spacing: .08em; color: var(--signal); background: var(--signal-soft); border-radius: 4px; padding: 2px 6px; }
 
 @media (max-width: 1080px) {
   .home .tale { grid-template-columns: minmax(0, 1fr); }
