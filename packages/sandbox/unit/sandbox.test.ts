@@ -204,9 +204,12 @@ describe.each(['linux', 'darwin'])('policy on %s', (platform) => {
     expect(cfg.network.strictAllowlist).toBeUndefined()
     if (platform === 'linux') {
       expect(cfg.network.allowAllUnixSockets).toBe(true)
+      expect(cfg.network.allowUnixSockets).toBeUndefined()
       expect(cfg.enableWeakerNetworkIsolation).toBeUndefined()
     } else {
-      expect(cfg.network.allowUnixSockets).toEqual([`${host.tmpdir}/lingtai`])
+      // Seatbelt matches the real path, so both spellings of the temp directory are allowed.
+      expect(host.tmpdirReal).toBeDefined()
+      expect(cfg.network.allowUnixSockets).toEqual([`${host.tmpdir}/lingtai`, `${host.tmpdirReal}/lingtai`])
       expect(cfg.enableWeakerNetworkIsolation).toBe(true)
     }
     expect(f.registered.map((r) => r.lists.allowedDomains)).toHaveLength(3)

@@ -49,6 +49,9 @@ true.
 
 7. **On Linux the hook socket gets through with `allowAllUnixSockets`, and
    known dangerous sockets are read-denied**, `/var/run/docker.sock` first.
+   On macOS only the hook-socket directory, `<tmpdir>/lingtai`, is
+   reachable, under both its `TMPDIR` spelling and its real path, because
+   Seatbelt matches the real path.
 
 8. **A sandboxed Claude Code run holds a long-lived token and a configuration
    directory of its own.** The operator's login is denied to the run (§12), and
@@ -158,6 +161,7 @@ true.
       with them, for a moment, another run's network id. That gives that
       project's allowlist and nothing more.
     - On Linux every Unix socket is reachable.
+    - On macOS only the hook-socket directory is, under both temp spellings.
 
 ---
 *Replaces the tier of [0106](0106-a-role-keeps-its-powers-across-runtimes.md) §4.*

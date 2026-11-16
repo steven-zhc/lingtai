@@ -7,8 +7,10 @@
  * HOME is. Network cases need the internet and are integration by 0060 §1 on two counts.
  */
 import { spawn } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { createServer, connect, type Server } from 'node:net'
+import { homedir, tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 
 import { Host, isTelemetryHost, Sandbox, type HostFacts, type WrapInput } from '@lingtai/sandbox'
@@ -253,5 +255,117 @@ describe.skipIf(!supported)('0.14.0 acceptance: a wrapped run', { timeout: 60_00
       expect(r.code).not.toBe(0)
       expect(isTelemetryHost('sentry.io')).toBe(true)
     })
+  })
+})
+
+const MARKER = 'lingtai-socket-marker'
+const CLIENT =
+  "const s=require('net').connect(process.argv[1]);let d='';s.on('data',(c)=>d+=c);s.on('end',()=>console.log(d));s.on('error',(e)=>{console.log(e.code);process.exit(1)})"
+
+describe.skipIf(!supported)('a wrapped run and a Unix socket', { timeout: 60_000 }, () => {
+  let root: string
+  let host: HostFacts
+  let worktree: string
+  let mirror: string
+  let runtime: ManagedRuntime.ManagedRuntime<Sandbox, never>
+  let sandbox: Sandbox['Service']
+  const servers: Server[] = []
+  const sockets: string[] = []
+
+  /** A listener in this process, outside the sandbox, that writes the marker to each connection. */
+  const listen = (path: string) =>
+    new Promise<void>((resolve, reject) => {
+      const server = createServer((c) => c.end(MARKER))
+      server.on('error', reject)
+      server.listen(path, () => {
+        servers.push(server)
+        sockets.push(path)
+        resolve()
+      })
+    })
+
+  const connectUnwrapped = (path: string) =>
+    new Promise<string>((resolve, reject) => {
+      const c = connect(path)
+      let data = ''
+      c.on('data', (d: Buffer) => (data += d.toString()))
+      c.on('end', () => resolve(data))
+      c.on('error', reject)
+    })
+
+  const wrappedClient = (path: string) =>
+    Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const w = yield* sandbox.wrap({
+            project: 'acceptance',
+            worktree,
+            mirror,
+            command: [process.execPath, '-e', CLIENT, path],
+            env: { PATH: host.path.join(delimiter), HOME: host.home, TMPDIR: host.tmpdir },
+          })
+          return yield* Effect.promise(() => run(w.argv, w.env))
+        }),
+      ),
+    )
+
+  beforeAll(async () => {
+    root = await realpath(await mkdtemp(join(homedir(), '.lingtai-acceptance-sock-')))
+    const home = join(root, 'home')
+    const state = join(home, '.lingtai')
+    worktree = join(root, 'worktree')
+    mirror = join(state, 'repos', 'acceptance.git')
+    await mkdir(worktree, { recursive: true })
+    await mkdir(join(mirror, 'objects'), { recursive: true })
+    await writeFile(join(mirror, 'config'), '[core]\n')
+
+    // The temp facts are the machine's, as `readHost` fills them: `TMPDIR` as spelled, and its real path when different.
+    const tmp = tmpdir()
+    const real = await realpath(tmp)
+    const path = (process.env['PATH'] ?? '').split(delimiter).filter((p) => p.startsWith('/'))
+    host = {
+      platform: process.platform,
+      home,
+      tmpdir: tmp,
+      tmpdirReal: real === tmp ? undefined : real,
+      stateDir: state,
+      pnpmHome: undefined,
+      pathRaw: path.join(delimiter),
+      path,
+    }
+    await mkdir(join(tmp, 'lingtai'), { recursive: true })
+
+    runtime = ManagedRuntime.make(
+      SandboxLayer.pipe(Layer.provide(Layer.mergeAll(SrtLive, SandboxFsLive, Layer.succeed(Host, host)))),
+    )
+    sandbox = await runtime.runPromise(
+      Effect.gen(function* () {
+        return yield* Sandbox
+      }),
+    )
+  })
+
+  afterAll(async () => {
+    if (runtime) await runtime.dispose()
+    await Promise.all(servers.map((s) => new Promise((r) => s.close(r))))
+    // Only the sockets this block made: the directory is shared with any live daemon's hook sockets.
+    for (const s of sockets) await rm(s, { force: true })
+    if (root) await rm(root, { recursive: true, force: true })
+  })
+
+  it('reaches a socket in the hook-socket directory, under the spelling TMPDIR gives', async () => {
+    const path = join(host.tmpdir, 'lingtai', `acc-${randomBytes(4).toString('hex')}.sock`)
+    await listen(path)
+    expect(await connectUnwrapped(path)).toBe(MARKER)
+    const r = await wrappedClient(path)
+    expect(r.out.trim(), r.err).toBe(MARKER)
+  })
+
+  it.skipIf(process.platform !== 'darwin')('is refused a socket outside it, under the same temp root', async () => {
+    const path = join(host.tmpdir, `acc-${randomBytes(4).toString('hex')}.sock`)
+    await listen(path)
+    expect(await connectUnwrapped(path)).toBe(MARKER)
+    const r = await wrappedClient(path)
+    expect(r.out.trim(), r.err).toBe('EPERM')
   })
 })

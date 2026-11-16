@@ -160,9 +160,7 @@ export const instanceConfig = (host: HostFacts) => ({
   network: {
     allowedDomains: [...BUILT_IN_DOMAINS],
     deniedDomains: [] as string[],
-    ...(host.platform === 'linux'
-      ? { allowAllUnixSockets: true }
-      : { allowUnixSockets: [posix.join(host.tmpdir, SOCKET_DIR_NAME)] }),
+    ...(host.platform === 'linux' ? { allowAllUnixSockets: true } : { allowUnixSockets: socketDirs(host) }),
   },
   filesystem: { denyRead: [] as string[], allowWrite: [] as string[], denyWrite: [] as string[] },
   ...(host.platform === 'darwin' ? { enableWeakerNetworkIsolation: true } : {}),
