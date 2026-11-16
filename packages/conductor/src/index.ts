@@ -96,8 +96,8 @@ export {
   type PriorAttempt,
   type PromptBudget,
 } from './attempts.ts'
+export { recordEndPlanEffect } from './ticket/commands.ts'
 export {
-  appendEndActionsEffect,
   endedWithoutEndActionsEffect,
   resolveEndActions,
   type TerminalOutcome,

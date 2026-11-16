@@ -290,6 +290,9 @@ import type { Tickets } from './ticket-store.ts'
 import {
   claimTicketEffect,
   continueTicketEffect,
+  holdTicketEffect,
+  landTicketEffect,
+  refuseDispatchEffect,
   releaseTicketEffect,
   type SplitChildState,
 } from './ticket/commands.ts'
@@ -814,14 +817,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * returns (see `unappended`), rather than having its report believed.
      */
     let unappended: unknown = null
-    const appendNow = (stream: string, events: readonly ToAppend[]): Effect.Effect<number> =>
-      appendAt(stream, events).pipe(
+    const remembered = <A>(effect: Effect.Effect<A>): Effect.Effect<A> =>
+      effect.pipe(
         Effect.tapDefect((defect) =>
           Effect.sync(() => {
             unappended ??= defect
           }),
         ),
       )
+    const appendNow = (stream: string, events: readonly ToAppend[]): Effect.Effect<number> =>
+      remembered(appendAt(stream, events))
 
     /**
      * The same, at a version the caller already holds rather than one read here.
@@ -1211,13 +1216,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // Never silently downgrade. The refusal is an event on the work item so the
       // board can say why nothing ran.
       const runtime = refusedBy?.id ?? options.runtime.capabilities.id
-      yield* appendNow(ticketId, [
-        {
-          type: 'DispatchRefused',
-          actor: 'conductor',
-          data: parsePayload('DispatchRefused', { runtime, missing }),
-        },
-      ])
+      yield* remembered(refuseDispatchEffect(ticketId, { runtime, missing }, store, ticketSnapshots))
       return {
         ok: false,
         ticketId,
@@ -1532,9 +1531,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * carried out for a block that was never recorded.
      *
      * So it is held here and appended *by* the ending, in one transaction with
-     * it. Where the ending is a release the two cannot be one transaction —
-     * `releaseTicket` owns its own read and version — and there the order is
-     * what carries the rule: the release first, the resolution after it.
+     * it: `land`, `hold` and a failed ending's `release` each carry the plan.
      */
     let endPlan: readonly ToAppend[] = []
     /**
@@ -1632,27 +1629,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // is already set, so nothing would run it again.
         return Effect.uninterruptible(
           Effect.gen(function* () {
-            /** Whether the release reached the log — the gate on the append after it. */
-            let backInTheQueue = true
+            // The plan rides in the release's own append: both are written or neither.
+            const withPlan = endedAs === 'failed' && endPlan.length > 0
             const gave = yield* Effect.result(
-              releaseTicketEffect(ticketId, runId, reason, store, cause, ticketSnapshots),
+              releaseTicketEffect(ticketId, runId, reason, store, cause, {
+                ...ticketSnapshots,
+                ...(withPlan ? { endPlan } : {}),
+              }),
             )
             if (Result.isFailure(gave)) {
-              backInTheQueue = false
+              // Said rather than raised: the run has already ended, and a throw here
+              // would replace the reason it ended with the reason the bookkeeping did.
               log(`the item was not released: ${whyOf(gave.failure)}`)
-            }
-            if (backInTheQueue && endedAs === 'failed' && endPlan.length > 0) {
-              const recorded = yield* Effect.result(
-                appendAt(ticketId, endPlan).pipe(Effect.catchDefect((defect) => Effect.fail(defect))),
-              )
-              if (Result.isFailure(recorded)) {
-                // Said rather than raised: the run has already ended and the item
-                // is already back, and a throw here would replace the reason it
-                // ended with the reason the bookkeeping did.
-                log(`end actions not recorded: ${whyOf(recorded.failure)}`)
-              } else {
-                endResolved = endPlan
-              }
+            } else if (withPlan && gave.success.ok) {
+              endResolved = endPlan
             }
             yield* tellGitHubAboutEffect({
               store,
@@ -2700,13 +2690,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const merged = mergeCommit
           if (merged === null) return Effect.succeed(false)
           if (released) return Effect.succeed(true)
-          return appendNow(ticketId, [
-            {
-              type: 'TicketLanded',
-              actor: 'conductor',
-              data: parsePayload('TicketLanded', { mergeCommit: merged, base }),
-            },
-          ]).pipe(
+          return remembered(landTicketEffect(ticketId, { mergeCommit: merged, base }, store, ticketSnapshots)).pipe(
             // A refusal is a defect now; retried as a failure, as it was.
             Effect.catchDefect((defect) => Effect.fail(defect)),
             Effect.retry({ times: 2 }),
@@ -5428,19 +5412,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // ---- landed -------------------------------------------------------------
       const merged = landedAt()
       if (outcome === 'landed' && merged !== null) {
-        yield* appendNow(ticketId, [
-          {
-            type: 'TicketLanded',
-            actor: 'conductor',
-            data: parsePayload('TicketLanded', { mergeCommit: merged, base }),
-          },
-          // **In the same append as the landing, so the two cannot come apart**
-          // (`end-step.ts`, `endPlan`). The pass resolved this against `landed`
-          // before this line and appended nothing; one transaction is what makes
-          // an `EndActionsResolved{landed}` over an unrecorded landing
-          // unreachable rather than merely unlikely.
-          ...endPlan,
-        ])
+        // **In the same append as the landing, so the two cannot come apart**
+        // (`endPlan`). The pass resolved this against `landed` before this line
+        // and appended nothing; one transaction is what makes an
+        // `EndActionsResolved{landed}` over an unrecorded landing unreachable
+        // rather than merely unlikely.
+        yield* remembered(landTicketEffect(ticketId, { mergeCommit: merged, base, endPlan }, store, ticketSnapshots))
         endResolved = endPlan
         // What is left is telling the issue, which reads the plan that was just
         // appended rather than the stream.
@@ -5708,17 +5685,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           ])
         }
         const waitId = crypto.randomUUID()
-        yield* appendNow(ticketId, [
-          {
-            type: 'WaitStarted',
-            actor: 'conductor',
-            data: parsePayload('WaitStarted', { waitId, reason }),
-          },
-          // In the same append as the block, for the landing's reason: a
-          // `when: blocked` action recorded as carried out for a block the log
-          // does not carry is the same orphan one ending along (`endPlan`).
-          ...endPlan,
-        ])
+        // The plan rides in the same append as the block, for the landing's
+        // reason: a `when: blocked` action recorded as carried out for a block
+        // the log does not carry is the same orphan one ending along (`endPlan`).
+        yield* remembered(holdTicketEffect(ticketId, { waitId, reason, endPlan }, store, ticketSnapshots))
         endResolved = endPlan
         released = true
         yield* tellGitHubAboutEffect({
