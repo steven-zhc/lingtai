@@ -42,7 +42,6 @@ import { type Envelope, parsePayload, parseTicketStream, type PayloadOf, type To
 import type { LogQueries } from '@lingtai/event-store/log'
 // Type-only and by submodule, for the reason `projects.ts` gives: the barrel
 // builds a Postgres client at import.
-import type { EventStore } from '@lingtai/event-store/store'
 import { type StepAction, kindOfAction, kindRefusedAt, whyNoKindAt } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
