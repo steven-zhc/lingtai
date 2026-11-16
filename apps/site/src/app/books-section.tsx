@@ -119,7 +119,7 @@ function receiptCard(r: MedianReceipt | RealReceipt, landed: number) {
   return (
     <Receipt
       key={r.number}
-      issue={r.kind ? `ISSUE #${r.number} · ${r.kind.toUpperCase()}` : `ISSUE #${r.number}`}
+      issue={joined([`ISSUE #${r.number}`, r.kind && r.kind.toUpperCase(), `${r.percentile}TH PERCENTILE BY COST`])}
       title={r.title}
       status={status}
       rows={rows}
@@ -149,24 +149,29 @@ export function BooksSection({ books }: { books: Books }) {
 
   return (
     <section className="books" id="books" aria-labelledby="books-title">
-      {books.landedAllTime ? (
-        <div className="books-total">
-          <div className="books-total-n">{books.landedAllTime.count.toLocaleString('en-US')}</div>
-          <div className="books-total-l">
-            issues closed by Lingtai&apos;s own merges, since {books.landedAllTime.since}
-            <span>as of {books.landedAllTime.asOf.slice(0, 10)}</span>
-          </div>
-        </div>
-      ) : null}
       <div className="books-head">
         <div>
           <p className="kicker">The work, in the open</p>
           <h2 id="books-title">Lingtai builds Lingtai. Open its books.</h2>
+          <p>
+            Every ticket it finished on its own repository this month, <code>{window.from}</code> →{' '}
+            <code>{window.to}</code>. Nothing left out.
+          </p>
         </div>
-        <p>
-          <span className="real-badge">● REAL DATA</span> Every ticket Lingtai finished on its own repository,{' '}
-          <code>{window.from}</code> → <code>{window.to}</code>. Nothing left out.
-        </p>
+        {books.landedAllTime ? (
+          <div className="books-total">
+            <span className="real-badge">● REAL DATA</span>
+            <div className="books-total-n">{books.landedAllTime.count.toLocaleString('en-US')}</div>
+            <div className="books-total-l">issues closed by its own merges</div>
+            <div className="books-total-s">
+              since {books.landedAllTime.since} · as of {books.landedAllTime.asOf.slice(0, 10)}
+            </div>
+          </div>
+        ) : (
+          <div className="books-badge">
+            <span className="real-badge">● REAL DATA</span>
+          </div>
+        )}
       </div>
 
       {finished > 0 ? (
@@ -283,7 +288,7 @@ export function BooksSection({ books }: { books: Books }) {
         <code>
           lingtai report --from {window.from} --to {window.to} --project lingtai
         </code>
-        . No totals are published.
+        . The one total above is counted from GitHub.
       </p>
     </section>
   )

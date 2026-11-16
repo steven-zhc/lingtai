@@ -22,6 +22,7 @@ export const BOOKS_FILE_FIXTURE = {
     {
       median: false,
       number: 782,
+      percentile: 25,
       title: 'a landed one',
       kind: 'bug',
       outcome: 'landed',
@@ -34,6 +35,7 @@ export const BOOKS_FILE_FIXTURE = {
     {
       median: false,
       number: 664,
+      percentile: 50,
       title: 'a closed one',
       kind: null,
       outcome: 'closed',
@@ -46,6 +48,7 @@ export const BOOKS_FILE_FIXTURE = {
     {
       median: false,
       number: 539,
+      percentile: 90,
       title: 'an open one',
       kind: 'feature',
       outcome: 'open',

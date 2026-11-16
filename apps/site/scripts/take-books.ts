@@ -31,13 +31,9 @@ export interface TakeBooksOptions {
   commit: string | null
   /** Projects whose tickets may be named. */
   open: ReadonlySet<string>
-  /** Bare issue numbers. */
-  receipts: readonly string[]
   /** `project#issue` → the card's title, or null. */
   titles: ReadonlyMap<string, string | null>
 }
-
-export type TakeBooks = { ok: true; books: Books } | { ok: false; refusals: string[] }
 
 export interface MergeRead {
   subject: string
@@ -87,11 +83,43 @@ const median = (xs: readonly number[]): number | null => {
   return s.length % 2 === 1 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2
 }
 
-/** Nearest rank, not interpolated: the smallest value with at least 90% of the sample at or below it. */
-export function p90(xs: readonly number[]): number | null {
+/** Nearest rank, not interpolated: the smallest value with at least `q` of the sample at or below it. */
+export function percentile(xs: readonly number[], q: number): number | null {
   if (xs.length === 0) return null
   const s = [...xs].sort((a, b) => a - b)
-  return s[Math.ceil(0.9 * s.length) - 1]!
+  return s[Math.max(Math.ceil(q * s.length) - 1, 0)]!
+}
+
+export const p90 = (xs: readonly number[]): number | null => percentile(xs, 0.9)
+
+/** The percentiles a real receipt stands for, in the order they choose. */
+export const RECEIPT_PERCENTILES = [25, 50, 90] as const
+
+/**
+ * The candidate nearest each of the 25th, 50th and 90th percentile of `costs`,
+ * choosing in that order. A candidate is chosen once: when the nearest to a
+ * percentile is taken, the next nearest unchosen one stands for it. Equal
+ * distance goes to the lower issue number. As many as there are candidates, up
+ * to three; none is invented.
+ */
+export function pickByPercentile<T extends { cost: number; issue: number }>(
+  candidates: readonly T[],
+  costs: readonly number[],
+): { percentile: 25 | 50 | 90; pick: T }[] {
+  const left = [...candidates]
+  const out: { percentile: 25 | 50 | 90; pick: T }[] = []
+  for (const q of RECEIPT_PERCENTILES) {
+    const target = percentile(costs, q / 100)
+    if (target === null || left.length === 0) continue
+    let best = 0
+    for (let i = 1; i < left.length; i++) {
+      const a = Math.abs(left[i]!.cost - target)
+      const b = Math.abs(left[best]!.cost - target)
+      if (a < b || (a === b && left[i]!.issue < left[best]!.issue)) best = i
+    }
+    out.push({ percentile: q, pick: left.splice(best, 1)[0]! })
+  }
+  return out
 }
 
 const share = (xs: readonly boolean[]): number | null =>
@@ -143,48 +171,36 @@ function spendShare(landed: readonly ReportTicketRow[]): { purpose: string; shar
   return [...known, ...others].map((purpose) => ({ purpose, share: byPurpose.get(purpose)! / denominator }))
 }
 
-export function takeBooks(rows: readonly ReportTicketRow[], o: TakeBooksOptions): TakeBooks {
+export function takeBooks(rows: readonly ReportTicketRow[], o: TakeBooksOptions): Books {
   const publicRows = rows.filter((r) => r.project !== null && o.open.has(r.project))
   const r = report({ tickets: publicRows, spend: [], window: o.window, project: null, kinds: null })
   const landed = publicRows.filter((t) => t.outcome === 'landed' && placed(t, o.window))
 
-  // Receipts: every refusal is collected, and a refusal writes nothing.
-  const refusals: string[] = []
-  const chosen: Receipt[] = []
-  for (const n of o.receipts) {
-    const matches = publicRows.filter((t) => parseTicketStream(t.ticket)?.issue === n)
-    const projects = new Set(matches.map((t) => t.project))
-    const row = matches[0]
-    if (row === undefined) {
-      refusals.push(`#${n}: no ticket_report row in a public project`)
-    } else if (projects.size > 1) {
-      refusals.push(`#${n}: ambiguous — it is a ticket in ${[...projects].join(' and ')}`)
-    } else if (!placed(row, o.window)) {
-      refusals.push(`#${n}: its outcome is not in the window ${o.from} → ${o.to}`)
-    } else {
-      const title = o.titles.get(titleKey(row.project!, n)) ?? null
-      if (title === null || title === '') {
-        refusals.push(`#${n}: no title on its task_view card, and a receipt without one is not published`)
-      } else {
-        chosen.push({
-          median: false,
-          number: Number(n),
-          title,
-          kind: row.kind,
-          outcome: row.outcome,
-          fixRounds: row.fixRounds,
-          passes: row.passes,
-          waits: row.waits.length,
-          machineMinutes: row.machineMs / MINUTE,
-          cost: dollars(row),
-        })
-      }
-    }
-  }
-  if (refusals.length > 0) return { ok: false, refusals }
-
   const f = r.landed
   const costs = known(landed.map(dollars))
+  // The pool is smaller than the sample the targets come from: a ticket with no
+  // title is never shown, but it still moves the percentiles, as it moves the median.
+  const pool = landed.flatMap((row) => {
+    const cost = dollars(row)
+    const issue = Number(parseTicketStream(row.ticket)?.issue)
+    const title = o.titles.get(titleKey(row.project!, String(issue))) ?? null
+    return cost === null || !Number.isInteger(issue) || title === null || title === ''
+      ? []
+      : [{ row, cost, issue, title }]
+  })
+  const chosen: Receipt[] = pickByPercentile(pool, costs).map(({ percentile, pick: { row, issue, title, cost } }) => ({
+    median: false,
+    number: issue,
+    title,
+    kind: row.kind,
+    outcome: row.outcome,
+    percentile,
+    fixRounds: row.fixRounds,
+    passes: row.passes,
+    waits: row.waits.length,
+    machineMinutes: row.machineMs / MINUTE,
+    cost,
+  }))
   // Runs, not rounded cents: a $0.004 estimate rounds to 0 and is still an estimate.
   const pricedEstimates = landed.some((t) => Object.values(t.cost).some((c) => c.estimatedRuns > 0))
   const elapsed = landed.map(elapsedMinutes).filter((x): x is number => x !== null)
@@ -229,5 +245,5 @@ export function takeBooks(rows: readonly ReportTicketRow[], o: TakeBooksOptions)
     spendShare: spendShare(landed),
     receipts: [...(medianTicket === null ? [] : [medianTicket]), ...chosen],
   }
-  return { ok: true, books }
+  return books
 }

@@ -2,7 +2,14 @@ import type { ReportTicketRow } from '@lingtai/conductor/report'
 import { report, resolveWindow } from '@lingtai/conductor/report'
 import { describe, expect, it } from 'vitest'
 
-import { countLanded, takeBooks, p90, titleKey, type TakeBooksOptions } from '../scripts/take-books.ts'
+import {
+  countLanded,
+  pickByPercentile,
+  takeBooks,
+  p90,
+  titleKey,
+  type TakeBooksOptions,
+} from '../scripts/take-books.ts'
 import { parseBooks, type Books } from '../src/lib/books.ts'
 
 const OPEN = 'owner/open'
@@ -42,16 +49,13 @@ function opts(over: Partial<TakeBooksOptions> = {}): TakeBooksOptions {
     capturedAt: new Date('2026-11-01T00:00:00Z'),
     commit: 'abc1234',
     open: new Set([OPEN]),
-    receipts: [],
     titles: new Map([[titleKey(OPEN, '1'), 'a title']]),
     ...over,
   }
 }
 
 function books(rows: ReportTicketRow[], over: Partial<TakeBooksOptions> = {}): Books {
-  const t = takeBooks(rows, opts(over))
-  if (!t.ok) throw new Error(t.refusals.join('; '))
-  return t.books
+  return takeBooks(rows, opts(over))
 }
 
 function keys(v: unknown): string[] {
@@ -92,8 +96,9 @@ describe('takeBooks', () => {
   it('leaves a non-public project out of every figure and out of the receipts', () => {
     const shut = row({ project: SHUT, issue: '2', fixRounds: 9, outcome: 'closed' })
     expect(books([row(), shut])).toEqual(books([row()]))
-    const t = takeBooks([row(), shut], opts({ receipts: ['2'] }))
-    expect(t.ok).toBe(false)
+    const titles = new Map([[titleKey(SHUT, '2'), 't']])
+    const b = books([shut], { open: new Set([OPEN, SHUT]), titles })
+    expect(b.receipts).toEqual([])
   })
 
   it('gives null, not 0, for a window with no landed ticket, and no median receipt', () => {
@@ -162,10 +167,16 @@ describe('takeBooks', () => {
       issue: '2',
       cost: { Work: { reportedCents: 0, reportedRuns: 0, estimatedUsd: 0, estimatedRuns: 0, unknown: 1 } },
     })
-    const b = books([row(), unpriced], { receipts: ['2'], titles: new Map([[titleKey(OPEN, '2'), 't']]) })
+    const b = books([row(), unpriced], {
+      titles: new Map([
+        [titleKey(OPEN, '1'), 't'],
+        [titleKey(OPEN, '2'), 't'],
+      ]),
+    })
     expect(b.cost).toMatchObject({ median: 3.55, mean: 3.55, p90: 3.55, costUnknown: 1 })
     expect(b.receipts[0]).toMatchObject({ median: true, cost: 3.55 })
-    expect(b.receipts[1]).toMatchObject({ number: 2, cost: null })
+    expect(b.receipts).toHaveLength(2)
+    expect(b.receipts[1]).toMatchObject({ number: 1, percentile: 25 })
     const only = books([unpriced])
     expect(only.cost).toMatchObject({ median: null, mean: null, p90: null, costUnknown: 1 })
     expect(only.receipts[0]).toMatchObject({ median: true, cost: null })
@@ -186,40 +197,91 @@ describe('takeBooks', () => {
     expect(p90([])).toBeNull()
   })
 
-  it('puts the median ticket first, labelled, then each receipt', () => {
-    const b = books(
-      [row({ issue: '1', fixRounds: 3 }), row({ issue: '2', fixRounds: 1 }), row({ issue: '3', fixRounds: 1 })],
-      {
-        receipts: ['1'],
-      },
+  it('puts the median ticket first, then the receipts by percentile, each carrying it', () => {
+    const rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) =>
+      row({
+        issue: String(i),
+        cost: { Work: { reportedCents: i * 100, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 } },
+      }),
     )
-    expect(b.receipts[0]).toEqual({ median: true, fixRounds: 1, machineMinutes: 10, waits: 0, cost: 3.55 })
-    expect(b.receipts[1]).toMatchObject({
-      median: false,
-      number: 1,
-      title: 'a title',
-      kind: 'bug',
-      outcome: 'landed',
-      fixRounds: 3,
-      cost: 3.55,
+    const titles = new Map(rows.map((_, i) => [titleKey(OPEN, String(i + 1)), `t${i + 1}`] as const))
+    const b = books(rows, { titles })
+    expect(b.receipts[0]).toMatchObject({ median: true })
+    // nearest rank: 25th is the 3rd of 10, 50th the 5th, 90th the 9th.
+    expect(b.receipts.slice(1)).toMatchObject([
+      { median: false, number: 3, title: 't3', percentile: 25, cost: 3 },
+      { number: 5, percentile: 50, cost: 5 },
+      { number: 9, percentile: 90, cost: 9 },
+    ])
+  })
+
+  it('never publishes an untitled ticket, and its cost still moves the percentiles', () => {
+    const rows = [1, 2, 3, 4].map((i) =>
+      row({
+        issue: String(i),
+        cost: { Work: { reportedCents: i * 100, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 } },
+      }),
+    )
+    // #1 is the 25th percentile and has no title: the next nearest, #2, stands for it.
+    const titles = new Map([2, 3, 4].map((i) => [titleKey(OPEN, String(i)), `t${i}`] as const))
+    const got = books(rows, { titles }).receipts.slice(1)
+    expect(got.map((r) => (r.median ? null : [r.number, r.percentile]))).toEqual([
+      [2, 25],
+      [3, 50],
+      [4, 90],
+    ])
+  })
+})
+
+describe('pickByPercentile', () => {
+  const c = (issue: number, cost: number) => ({ issue, cost })
+  const costs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  const all = costs.map((x) => c(x, x))
+  const picked = (xs: ReturnType<typeof pickByPercentile>) => xs.map((x) => [x.percentile, x.pick.issue])
+
+  it('takes three distinct tickets nearest the 25th, 50th and 90th', () => {
+    expect(picked(pickByPercentile(all, costs))).toEqual([
+      [25, 3],
+      [50, 5],
+      [90, 9],
+    ])
+  })
+
+  it('gives the next nearest unchosen ticket when the nearest is taken', () => {
+    // Targets 3, 5, 9; only one ticket sits near them all, so each later one moves on.
+    const near = [c(1, 5), c(2, 4), c(3, 6), c(4, 10)]
+    expect(picked(pickByPercentile(near, costs))).toEqual([
+      [25, 2],
+      [50, 1],
+      [90, 4],
+    ])
+  })
+
+  it('leaves out a ticket that is not a candidate, and invents none when there are fewer than three', () => {
+    expect(picked(pickByPercentile([c(7, 7), c(8, 8)], costs))).toEqual([
+      [25, 7],
+      [50, 8],
+    ])
+    expect(pickByPercentile([], costs)).toEqual([])
+    expect(pickByPercentile(all, [])).toEqual([])
+  })
+
+  it('breaks a tie to the lower issue number', () => {
+    // 2 and 4 are both one from the 25th percentile's target, 3.
+    expect(picked(pickByPercentile([c(9, 4), c(5, 2)], costs))[0]).toEqual([25, 5])
+  })
+
+  it('never chooses an unpriced ticket: a ticket with no cost is not in the pool', () => {
+    const unpriced = row({
+      issue: '2',
+      cost: { Work: { reportedCents: 0, reportedRuns: 0, estimatedUsd: 0, estimatedRuns: 0, unknown: 1 } },
     })
+    const b = books([unpriced], { titles: new Map([[titleKey(OPEN, '2'), 't']]) })
+    expect(b.receipts).toEqual([{ median: true, fixRounds: 1, machineMinutes: 10, waits: 0, cost: null }])
   })
+})
 
-  it('refuses a receipt by name: no row, outside the window, no title, two projects', () => {
-    const reason = (rows: ReportTicketRow[], over: Partial<TakeBooksOptions>) => {
-      const t = takeBooks(rows, opts(over))
-      return t.ok ? null : t.refusals.join('; ')
-    }
-    expect(reason([row()], { receipts: ['9'] })).toMatch(/#9: no ticket_report row/)
-    expect(reason([row({ outcomeAt: new Date(2026, 8, 1) })], { receipts: ['1'] })).toMatch(
-      /#1: its outcome is not in the window/,
-    )
-    expect(reason([row()], { receipts: ['1'], titles: new Map() })).toMatch(/#1: no title/)
-    expect(
-      reason([row(), row({ project: 'owner/other' })], { receipts: ['1'], open: new Set([OPEN, 'owner/other']) }),
-    ).toMatch(/#1: ambiguous/)
-  })
-
+describe('takeBooks, continued', () => {
   it('carries no total: no key says so and no figure is the landed tickets summed', () => {
     const rows = [1, 2, 3].map((i) =>
       row({
@@ -235,7 +297,7 @@ describe('takeBooks', () => {
 })
 
 describe('parseBooks', () => {
-  const valid = (): Books => books([row()], { receipts: ['1'] })
+  const valid = (): Books => books([row()])
 
   it('reads what takeBooks wrote, through JSON', () => {
     const b = valid()
@@ -250,6 +312,11 @@ describe('parseBooks', () => {
     expect(parseBooks(missing)).toBeNull()
     expect(parseBooks({ ...b, grandTotal: 1 })).toBeNull()
     expect(parseBooks({ ...b, cost: { ...b.cost, total: 1 } })).toBeNull()
+    const bad = JSON.parse(JSON.stringify(valid()))
+    bad.receipts[1].percentile = 75
+    expect(parseBooks(bad)).toBeNull()
+    delete bad.receipts[1].percentile
+    expect(parseBooks(bad)).toBeNull()
     expect(parseBooks(null)).toBeNull()
     expect(parseBooks('books')).toBeNull()
   })
