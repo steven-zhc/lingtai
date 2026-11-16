@@ -19,7 +19,14 @@ import type { RuntimeId } from '../events.ts'
 /** What was seen, and by whom. The caller hands over words; it never says what they mean. */
 export type Seen =
   | { readonly platform: 'git'; readonly text: string }
-  | { readonly platform: 'github'; readonly status: number; readonly text: string }
+  | {
+      readonly platform: 'github'
+      readonly status: number
+      readonly text: string
+      /** `x-ratelimit-remaining` and `retry-after`, when GitHub sent them as plain numbers; null or absent otherwise. */
+      readonly ratelimitRemaining?: number | null
+      readonly retryAfter?: number | null
+    }
   /** A runtime's own words. Which runtime wrote them is the answer, not the question. */
   | { readonly platform: 'runtime'; readonly text: string }
 
@@ -53,6 +60,11 @@ interface GitHubRow extends RowBase {
   readonly status: number
   /** Without one, the status alone matches. */
   readonly pattern?: RegExp
+  /** A header that says it too; tested like `pattern`. */
+  readonly headers?: (seen: {
+    readonly ratelimitRemaining?: number | null
+    readonly retryAfter?: number | null
+  }) => boolean
 }
 
 interface RuntimeRow extends RowBase {
@@ -117,6 +129,21 @@ export const FAILURE_ROWS: readonly FailureRow[] = [
     says: 'a status of 429.',
   },
   {
+    // The headers only add a yes: a remaining count above zero does not say a secondary limit is absent.
+    platform: 'github',
+    kind: 'rate-limited',
+    status: 403,
+    headers: (seen) => seen.ratelimitRemaining === 0,
+    says: 'a status of 403 with `x-ratelimit-remaining: 0`: the primary limit is spent, whatever the detail says.',
+  },
+  {
+    platform: 'github',
+    kind: 'rate-limited',
+    status: 403,
+    headers: (seen) => seen.retryAfter !== undefined && seen.retryAfter !== null,
+    says: 'a status of 403 with a `retry-after`: GitHub says when to come back.',
+  },
+  {
     platform: 'github',
     kind: 'rate-limited',
     status: 403,
@@ -154,15 +181,15 @@ export const FAILURE_ROWS: readonly FailureRow[] = [
  * transient: the caller does what it did before there was a row.
  */
 export function classify(seen: Seen): Classified | null {
-  if (seen.text === '') return null
   for (const row of FAILURE_ROWS) {
     if (row.platform !== seen.platform) continue
     if (row.platform === 'github') {
       if (seen.platform !== 'github' || seen.status !== row.status) continue
       if (row.pattern !== undefined && !row.pattern.test(seen.text)) continue
+      if (row.headers !== undefined && !row.headers(seen)) continue
       return { platform: 'github', kind: row.kind }
     }
-    if (!row.pattern.test(seen.text)) continue
+    if (seen.text === '' || !row.pattern.test(seen.text)) continue
     if (row.platform === 'git') return { platform: 'git', kind: row.kind }
     return { platform: 'runtime', kind: row.kind, runtime: row.runtime }
   }

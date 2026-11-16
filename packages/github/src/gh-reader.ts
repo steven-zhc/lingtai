@@ -14,7 +14,7 @@ import { Effect } from 'effect'
 
 import { GITHUB_API, GitHubFailed } from './app.ts'
 import { type GhRun, ghTokenEffect, liveGh } from './gh.ts'
-import { observedRequest, remainingOf } from './observe.ts'
+import { type RateLimitHeaders, observedRequest, rateLimitHeadersOf, remainingOf } from './observe.ts'
 
 const TIMEOUT = '15 seconds'
 
@@ -34,7 +34,7 @@ export function createGhReader(run: GhRun = liveGh): GhReader {
         // on a non-2xx or an unreadable body.
         type Read =
           | { kind: 'ok'; data: unknown }
-          | { kind: 'status'; status: number; text: string }
+          | { kind: 'status'; status: number; text: string; limits: RateLimitHeaders }
           | { kind: 'unread'; error: Error }
         const read = yield* Effect.tryPromise({
           try: (signal) =>
@@ -55,7 +55,17 @@ export function createGhReader(run: GhRun = liveGh): GhReader {
                   const unread = (err: unknown): Read => ({ kind: 'unread', error: asError(err) })
                   return response.ok
                     ? response.json().then((data: unknown): Read => ({ kind: 'ok', data }), unread)
-                    : response.text().then((text): Read => ({ kind: 'status', status: response.status, text }), unread)
+                    : response
+                        .text()
+                        .then(
+                          (text): Read => ({
+                            kind: 'status',
+                            status: response.status,
+                            text,
+                            limits: rateLimitHeadersOf(response),
+                          }),
+                          unread,
+                        )
                 }),
               (value) => value.kind !== 'ok',
             ),
@@ -69,7 +79,7 @@ export function createGhReader(run: GhRun = liveGh): GhReader {
           } catch {
             // Not JSON. The raw prefix is more useful than nothing.
           }
-          return yield* Effect.fail(new GitHubFailed(read.status, path, message))
+          return yield* Effect.fail(new GitHubFailed(read.status, path, message, read.limits))
         }
         return read.data as T
       }).pipe(

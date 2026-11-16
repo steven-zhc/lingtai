@@ -24,7 +24,7 @@ const SECTIONS: readonly Section[] = [
     title: 'GitHub API',
     of: (r) => r.platform === 'github',
     unmatched:
-      "`classify` reads it for `asLinkCall`, which keeps a rate-limited 403 from being called a missing permission. `githubJson` keeps the status and the body's `message` and drops every header, so `retry-after`, `x-ratelimit-remaining` and `x-ratelimit-reset` are never read, and nothing retries a GitHub API call by status.",
+      "`classify` reads it for `asLinkCall`, which keeps a rate-limited 403 from being called a missing permission. `githubJson` keeps the status, the body's `message` and the response's `x-ratelimit-remaining`, `x-ratelimit-reset` and `retry-after` (null when absent or not plain digits); `classify` reads the first and last. Errors from the `gh` CLI carry no headers. Nothing retries or waits on these fields yet.",
   },
   {
     title: 'git',

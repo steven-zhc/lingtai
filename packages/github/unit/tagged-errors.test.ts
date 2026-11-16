@@ -9,7 +9,13 @@ import type { GhRun } from '../src/gh.ts'
 import { convertManifestEffect } from '../src/manifest.ts'
 
 const rateLimited = (err: GitHubFailed): boolean =>
-  classify({ platform: 'github', status: err.status, text: err.detail })?.kind === 'rate-limited'
+  classify({
+    platform: 'github',
+    status: err.status,
+    text: err.detail,
+    ratelimitRemaining: err.ratelimitRemaining,
+    retryAfter: err.retryAfter,
+  })?.kind === 'rate-limited'
 
 describe('the tagged errors', () => {
   it('GitHubFailed keeps its message rule', () => {
