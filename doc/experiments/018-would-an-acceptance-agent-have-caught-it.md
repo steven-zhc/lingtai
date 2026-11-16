@@ -1,7 +1,7 @@
 # 018 — Would an acceptance agent have caught it?
 
-**Set up** 2026-11-16 · **Run** pilot (one case) 2026-11-16, the rest not yet ·
-**Result** none. The question behind it is [design/acceptance.md](../design/acceptance.md).
+**Set up** 2026-11-16 · **Run** pilot A1 2026-11-16, the rest not yet ·
+**Result** A1 caught (below). The question behind it is [design/acceptance.md](../design/acceptance.md).
 
 ## Why
 
@@ -60,21 +60,55 @@ false alarms with reasons; the acceptance run's cost and turns; wall time.
 
 ## The prompt
 
-> You write the acceptance for this ticket, before anyone implements it. You do
-> not implement it. Read `TICKET.md`. For every line under *Done when*, write
-> one check that would pass only when that line is true: a vitest test in the
-> package the ticket names (`<package>/unit/acceptance-<issue>.test.ts`, or
-> `integration/` when it needs a process, the filesystem or git), or, for a
-> line only a person can check, a numbered item in `ACCEPTANCE.md` saying
-> exactly what to look at. Then write `ACCEPTANCE.md`: each *Done when* line,
-> the check that proves it. Run your tests with `npx vitest run <files>`: they
-> must fail on this checkout, because nothing is built yet; a test that passes
-> here proves nothing and must be rewritten. Do not edit any file outside
-> your tests and `ACCEPTANCE.md`.
+[`018/prompt.md`](018/prompt.md). It asks for checks that prove the ticket's
+**Want** end to end, with *Done when* as the minimum: B4 (#621) and B1 (#1151)
+showed, before any run, that their defects lie outside every *Done when* line —
+#621 never asked for flag validation, and every one of #1151's lines is a unit
+test over fakes, none a real Codex run reaching its hook. A prompt that only
+mirrors *Done when* would miss both by construction.
 
-## Pilot
+## Pilot: A1 (#1196 → #1237)
 
-[Filled in after the first case runs.]
+**Run** 2026-11-16, on `49bfd9d9` (`424613370f`'s first parent), with #1196's
+body as claimed and the mock already in the tree. `claude -p`, Opus 5.5:
+**$3.82, 63 turns, 9 min 6 s.** Output in [`018/A1/`](018/A1/): `ACCEPTANCE.md`
+(a 48-row style table, a 23-item visual checklist, a map of every *Want* clause
+and *Done when* line) and 57 tests in two files.
+
+| Step | Result |
+|---|---|
+| Base | 57 of 57 tests fail, each on an assertion about what the ticket builds. *Cannot fail*: 0. |
+| Landed (`424613370f`) | 30 pass, 27 fail. |
+| Landed, the page | the style rows checked by `getComputedStyle` on the demo attempt, and the checklist's overflow and twin items: **every one fails, each for a reason #1237 names** (table below). |
+| Fixed | not yet: #1237 has not landed. |
+
+| Check | Expected | Landed |
+|---|---|---|
+| S1 summary | `1px solid var(--rule)`, 10px, grid | `--muted` (`#5e6e74`), 6px, flex |
+| S14 part heading | 12px, 600, uppercase, `--muted` | 15.8px, 700, none, `--ink` |
+| S23 Blocked header row | Host · Refused · By · First | no `th` |
+| S31 boundary pill | `--pass-soft` | transparent |
+| S33 / S37 box, chip | `--rule` border; chip on `--ground` | `--muted` border; chip transparent |
+| Checklist 15: no chip leaves its box | 0 | 3 (`/var/folders/…`) |
+| Checklist 17: a `/private` twin is one chip | one | two (`…/T/` and `/private/…/T`) |
+
+**Caught: yes**, by the style table and the checklist, not by the tests.
+
+**The 27 failing tests are not 27 findings.** About 21 fail on an interface the
+agent had to guess (`shortNameOf` returning a string, a `BUILT_IN_VENDORS`
+export, `aria-label="Legend"`, a header `Kind` not `kind`), and two on wording
+(*outside the sandbox* for the ticket's *outside it*; no *the set above, nothing
+more* row). Looking back, those read as false alarms; in a pipeline that writes
+the acceptance first, they are the interface the implementer is handed, and an
+implementation would meet them. A retrospective run cannot tell the two apart,
+so the rest of the cases count them separately.
+
+**What the pilot says about the design.** The checks that caught it were the
+UI half, and they were checked by hand here (`getComputedStyle` in a browser on
+the demo board). The agent took exact values from the mock's CSS and noticed the
+mock's `--rule-2` is the board's `--surface-2`. A pipeline needs the harness the
+design draft names: the board on fixture data, a browser, the style table run as
+a script.
 
 ## Result
 

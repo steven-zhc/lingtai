@@ -1,0 +1,44 @@
+/**
+ * Acceptance for the Sandbox tab redraw: the vendor of every built-in host (Done when 6). The board groups
+ * *Reachable* by these vendors; a built-in host with none would fall under *Other* silently, so this list and
+ * `BUILT_IN_DOMAINS` are held equal here. See `ACCEPTANCE.md`.
+ */
+import { describe, expect, it } from 'vitest'
+
+import * as policy from '../src/policy.ts'
+
+const VENDORS = ['Anthropic', 'OpenAI', 'npm', 'GitHub']
+
+function vendors(): Record<string, string> {
+  const v = (policy as Record<string, unknown>)['BUILT_IN_VENDORS']
+  expect(v, 'BUILT_IN_VENDORS beside BUILT_IN_DOMAINS in packages/sandbox/src/policy.ts').toBeDefined()
+  return v instanceof Map ? Object.fromEntries(v) : (v as Record<string, string>)
+}
+
+describe('Done when 6: every host in BUILT_IN_DOMAINS has a vendor', () => {
+  it('names the same hosts as BUILT_IN_DOMAINS, no more and no fewer, so adding one without a vendor fails here', () => {
+    expect(Object.keys(vendors()).sort()).toEqual([...policy.BUILT_IN_DOMAINS].sort())
+  })
+
+  it('uses only the four vendor groups the tab draws', () => {
+    for (const [host, vendor] of Object.entries(vendors())) expect(VENDORS, host).toContain(vendor)
+  })
+
+  it("puts each host under the vendor the agreed mock shows", () => {
+    expect(vendors()).toEqual({
+      'api.anthropic.com': 'Anthropic',
+      '*.anthropic.com': 'Anthropic',
+      'claude.ai': 'Anthropic',
+      '*.claude.ai': 'Anthropic',
+      'api.openai.com': 'OpenAI',
+      '*.openai.com': 'OpenAI',
+      'chatgpt.com': 'OpenAI',
+      '*.chatgpt.com': 'OpenAI',
+      'registry.npmjs.org': 'npm',
+      '*.npmjs.org': 'npm',
+      'github.com': 'GitHub',
+      '*.github.com': 'GitHub',
+      '*.githubusercontent.com': 'GitHub',
+    })
+  })
+})

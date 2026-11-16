@@ -1,0 +1,676 @@
+/**
+ * Acceptance for the Sandbox tab redraw (feature(board): the task page's Sandbox tab leads with what was blocked and
+ * lists what the runs could reach once). Written before the change; see `ACCEPTANCE.md` for the map from each *Want*
+ * clause and *Done when* line to the test here that proves it, and for the interface these tests assume.
+ *
+ * Render tests read sections and texts, never pixels (the ticket's *Edges: the cost to later tickets*).
+ */
+import { homedir, tmpdir } from 'node:os'
+
+import { reduceAttempt, type Envelope } from '@lingtai/domain'
+import { makeStream } from '@lingtai/domain/test/support'
+import { stateDir } from '@lingtai/env'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+
+import { SandboxTab } from '@/app/sandbox-tab'
+import * as sandboxView from '@/lib/sandbox-view'
+import { sandboxViewOf, type SandboxView } from '@/lib/sandbox-view'
+
+// ---------------------------------------------------------------------------------------------------------------
+// Fixtures: the demo attempt the ticket was agreed on (chapter-garden #1 on studio), with paths of the test's own.
+// ---------------------------------------------------------------------------------------------------------------
+
+const RUN = 'pass-acc-1196'
+const PROJECT = 'p'
+
+/** Every host in `BUILT_IN_DOMAINS` (packages/sandbox/src/policy.ts:59-73), in its order. */
+const BUILT_IN = [
+  'api.anthropic.com',
+  '*.anthropic.com',
+  'claude.ai',
+  '*.claude.ai',
+  'api.openai.com',
+  '*.openai.com',
+  'chatgpt.com',
+  '*.chatgpt.com',
+  'registry.npmjs.org',
+  '*.npmjs.org',
+  'github.com',
+  '*.github.com',
+  '*.githubusercontent.com',
+]
+
+type Policy = {
+  allowedDomains: string[]
+  recipeDomains?: string[]
+  allowRead: string[]
+  allowWrite: string[]
+  denyRead: string[]
+  denyWrite: string[]
+  weakerNetworkIsolation: boolean
+  srtVersion: string
+}
+
+/** The set every policy of the demo shares. No path here is under `homedir()` or `stateDir()`. */
+const common = (over: Partial<Policy> = {}): Policy => ({
+  allowedDomains: BUILT_IN,
+  recipeDomains: [],
+  allowRead: ['/', '/etc/secrets/public'],
+  allowWrite: ['/srv/wt', '/tmp', '/private/tmp'],
+  denyRead: ['/etc/secrets'],
+  denyWrite: ['/srv/wt/.git/hooks'],
+  weakerNetworkIsolation: false,
+  srtVersion: '0.0.83',
+  ...over,
+})
+
+const keys = (commandId: string, step: string, action: string, runtime?: string) => ({
+  step: step as 'implement',
+  action,
+  ...(runtime === undefined ? {} : { runtime }),
+  runId: RUN,
+  commandId,
+})
+
+type Boundary =
+  | { kind: 'sandboxed'; srtVersion: string; policy: Policy }
+  | { kind: 'unsandboxed'; reason: 'off by choice' }
+  | { kind: 'unsandboxed'; reason: 'degraded'; why: string }
+  | { kind: 'refused'; why: string }
+
+const sandboxed = (policy: Policy): Boundary => ({ kind: 'sandboxed', srtVersion: policy.srtVersion, policy })
+
+const entry = (host: string, count: number, firstAt: string, telemetry = false) => ({
+  host,
+  port: 443,
+  count,
+  firstAt,
+  telemetry,
+})
+
+interface Inv {
+  id: string
+  step: string
+  action: string
+  runtime?: string
+  boundary: Boundary
+  /** undefined: no refusal record (pending). */
+  refusals?:
+    | { kind: 'entries'; entries: ReturnType<typeof entry>[]; complete: boolean }
+    | { kind: 'unreadable'; reason: string }
+}
+
+function fold(invs: readonly Inv[], extra: (e: ReturnType<typeof makeStream>) => Envelope[] = () => []) {
+  const e = makeStream(RUN)
+  return reduceAttempt([
+    e('RunStarted', {
+      ticketId: `ticket-${PROJECT}-1`,
+      runtime: 'claude-code',
+      model: 'm',
+      promptVersion: 'v',
+      baseSha: 'b',
+      configHash: 'c',
+      worktree: '/srv/wt',
+      invocation: null,
+    }),
+    ...invs.flatMap((i) => {
+      const k = keys(i.id, i.step, i.action, i.runtime)
+      const out: Envelope[] = [e('SandboxBoundaryRecorded', { ...k, boundary: i.boundary as never })]
+      if (i.refusals !== undefined) out.push(e('SandboxConnectionsRefused', { ...k, read: i.refusals as never }))
+      return out
+    }),
+    ...extra(e),
+  ])
+}
+
+const none = { kind: 'entries' as const, entries: [], complete: true }
+
+/** The four runs of the demo: install and build under A, implement under B, review under C. */
+function demo(over: Partial<Record<'install' | 'build' | 'implement' | 'review', Partial<Inv>>> = {}): Inv[] {
+  return [
+    {
+      id: 'c1',
+      step: 'prepared',
+      action: 'install',
+      boundary: sandboxed(common()),
+      refusals: none,
+      ...over.install,
+    },
+    {
+      id: 'c2',
+      step: 'build',
+      action: 'build',
+      boundary: sandboxed(common()),
+      refusals: none,
+      ...over.build,
+    },
+    {
+      id: 'c3',
+      step: 'implement',
+      action: 'write the change',
+      runtime: 'claude-code',
+      boundary: sandboxed(common({ allowWrite: [...common().allowWrite, '/srv/runs/claude'] })),
+      refusals: { kind: 'entries', complete: true, entries: [entry('example.com', 1, '2026-11-16T17:40:28.963Z')] },
+      ...over.implement,
+    },
+    {
+      id: 'c4',
+      step: 'review',
+      action: 'review',
+      runtime: 'codex',
+      boundary: sandboxed(common({ allowWrite: [...common().allowWrite, '/opt/codex-home'] })),
+      refusals: {
+        kind: 'entries',
+        complete: true,
+        entries: [entry('mcp.postman.com', 3, '2026-11-16T17:40:45.681Z'), entry('o.sentry.io', 7, '2026-11-16T17:40:46.000Z', true)],
+      },
+      ...over.review,
+    },
+  ]
+}
+
+const viewOf = (invs: readonly Inv[], superseded = false) => sandboxViewOf(fold(invs), PROJECT, superseded)
+
+function tab(view: SandboxView | null, selected = 1, attempts: readonly number[] = [1]): string {
+  return renderToStaticMarkup(
+    <SandboxTab detail={{ taskId: `ticket-${PROJECT}-1`, project: PROJECT, attempts, selected, view }} />,
+  )
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Reading the markup: no DOM library is in the workspace, so a small balanced-tag walker.
+// ---------------------------------------------------------------------------------------------------------------
+
+const decode = (s: string) =>
+  s
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+
+/** The visible text: tags become spaces, entities are decoded, whitespace is collapsed. */
+const textOf = (html: string) =>
+  decode(html.replace(/<[^>]*>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim()
+
+/** The outer HTML of the element carrying `aria-label="<label>"`, or null. */
+function part(html: string, label: string): string | null {
+  const at = html.indexOf(`aria-label="${label}"`)
+  if (at === -1) return null
+  const start = html.lastIndexOf('<', at)
+  const name = /^<([a-zA-Z0-9]+)/.exec(html.slice(start))![1]!
+  const tag = new RegExp(`<(/?)${name}(?=[\\s>/])[^>]*>`, 'g')
+  tag.lastIndex = start
+  let depth = 0
+  for (let m = tag.exec(html); m !== null; m = tag.exec(html)) {
+    if (m[0].endsWith('/>')) continue
+    depth += m[1] === '/' ? -1 : 1
+    if (depth === 0) return html.slice(start, m.index + m[0].length)
+  }
+  return html.slice(start)
+}
+
+function mustPart(html: string, label: string): string {
+  const p = part(html, label)
+  expect(p, `a part labelled "${label}"`).not.toBeNull()
+  return p!
+}
+
+/** The text of each `<tr>` inside `html`. */
+const rowsOf = (html: string) =>
+  [...html.matchAll(/<tr[\s>][\s\S]*?<\/tr>/g)].map((m) => textOf(m[0])).filter((t) => t !== '')
+
+const count = (hay: string, needle: string) => hay.split(needle).length - 1
+
+/** The text after `label` up to the next of `stops`, within `text`. */
+function segment(text: string, label: string, stops: readonly string[]): string {
+  const at = text.indexOf(label)
+  expect(at, `"${label}" in the text`).toBeGreaterThan(-1)
+  const rest = text.slice(at + label.length)
+  const ends = stops.map((s) => rest.indexOf(` ${s} `)).filter((n) => n !== -1)
+  return rest.slice(0, ends.length === 0 ? undefined : Math.min(...ends))
+}
+
+const SUMMARY = 'Summary'
+const BLOCKED = 'Blocked'
+const RUNS = 'Runs'
+const REACH = 'What the runs could reach'
+const LEGEND = 'Legend'
+const AUTH = 'How Claude Code signs in here'
+const NOT_COVERED = 'Not covered'
+
+// ---------------------------------------------------------------------------------------------------------------
+
+describe('Want: the tab leads with a one-line answer, then Blocked, Runs, the reach, the legend and the notes', () => {
+  it('Done when 1: renders summary, Blocked, Runs, the reach boxes with the differences, the legend, then the two notes, in that order, under the attempt switcher', () => {
+    const html = tab(viewOf(demo()), 2, [1, 2])
+    const order = ['aria-label="Attempt"', ...[SUMMARY, BLOCKED, RUNS, REACH, LEGEND].map((l) => `aria-label="${l}"`)]
+    const at = order.map((needle) => html.indexOf(needle))
+    for (const [n, i] of at.entries()) expect(i, order[n]).toBeGreaterThan(-1)
+    expect([...at].sort((a, b) => a - b)).toEqual(at)
+    // The differences are part of the reach, and the two notes come after the legend.
+    expect(textOf(mustPart(html, REACH))).toMatch(/Where the (\w+ )?policies differ/)
+    const legendAt = html.indexOf(`aria-label="${LEGEND}"`)
+    for (const note of [AUTH, NOT_COVERED]) {
+      expect(html.indexOf(`aria-label="${note}"`), note).toBeGreaterThan(legendAt)
+    }
+  })
+
+  it('Problem: the per-policy Allowed and Limited lists are gone, so Blocked is no longer below ~130 lines', () => {
+    const html = tab(viewOf(demo()))
+    expect(html).not.toContain('aria-label="Allowed"')
+    expect(html).not.toContain('aria-label="Limited"')
+    expect(textOf(html)).not.toMatch(/Policy \d+:/)
+  })
+})
+
+describe('Want: "did this attempt run inside the sandbox" in one line (the summary)', () => {
+  it('all runs sandboxed: the sentence, the mono line with the merge sentence, and the two figures', () => {
+    const html = tab(viewOf(demo()))
+    const summary = textOf(mustPart(html, SUMMARY))
+    expect(summary).toContain('Every run of attempt 1 ran inside the sandbox')
+    expect(summary).toContain("4 runs · srt 0.0.83 · the merge is Lingtai's own and runs outside it")
+    expect(summary).toMatch(/4\/4 runs sandboxed/)
+    // Telemetry (o.sentry.io, 7) is not counted: 1 + 3.
+    expect(summary).toMatch(/(^|\s)4 connections refused/)
+  })
+
+  it('names the attempt it shows, not the newest', () => {
+    expect(textOf(mustPart(tab(viewOf(demo()), 2, [1, 2, 3]), SUMMARY))).toContain('Every run of attempt 2 ran inside the sandbox')
+  })
+
+  it('the merge sentence moves from Runs into the summary', () => {
+    const html = tab(viewOf(demo()))
+    expect(textOf(mustPart(html, RUNS))).not.toMatch(/merge is Lingtai/)
+    expect(textOf(mustPart(html, SUMMARY))).toMatch(/merge is Lingtai's own/)
+  })
+
+  it('a degraded run: "3 of 4 runs of attempt N", srt\'s own reason on the mono line, 3/4', () => {
+    const html = tab(
+      viewOf(demo({ build: { boundary: { kind: 'unsandboxed', reason: 'degraded', why: 'bubblewrap is missing' }, refusals: undefined } })),
+    )
+    const summary = textOf(mustPart(html, SUMMARY))
+    expect(summary).toContain('3 of 4 runs of attempt 1 ran inside the sandbox')
+    expect(summary).toContain('bubblewrap is missing')
+    expect(summary).toMatch(/3\/4 runs sandboxed/)
+    expect(summary).not.toContain('Every run')
+  })
+
+  it('a stopped run: "3 of 4 runs", with why it was stopped', () => {
+    const html = tab(viewOf(demo({ install: { boundary: { kind: 'refused', why: 'srt failed its probe' }, refusals: undefined } })))
+    const summary = textOf(mustPart(html, SUMMARY))
+    expect(summary).toContain('3 of 4 runs of attempt 1 ran inside the sandbox')
+    expect(summary).toContain('srt failed its probe')
+  })
+
+  it('srt versions that differ: the mono line says "srt differs per run" and each run row shows its own', () => {
+    const html = tab(
+      viewOf(demo({ review: { boundary: sandboxed(common({ srtVersion: '0.0.90', allowWrite: [...common().allowWrite, '/opt/codex-home'] })) } })),
+    )
+    expect(textOf(mustPart(html, SUMMARY))).toContain('srt differs per run')
+    const runs = rowsOf(mustPart(html, RUNS))
+    expect(runs.find((r) => r.startsWith('review'))).toContain('0.0.90')
+    expect(runs.find((r) => r.startsWith('implement'))).toContain('0.0.83')
+  })
+
+  it('Edges, a read that fails: an attempt with no rows says "No wrapped run was recorded for this attempt." and draws no figures', () => {
+    const summary = textOf(mustPart(tab(viewOf([])), SUMMARY))
+    expect(summary).toContain('No wrapped run was recorded for this attempt.')
+    expect(summary).not.toMatch(/runs sandboxed|connections refused/)
+  })
+
+  it('Edges, off by choice: "This attempt ran without the sandbox: the recipe turns it off", and no reach or legend', () => {
+    const off: Boundary = { kind: 'unsandboxed', reason: 'off by choice' }
+    const invs = demo().map((i) => ({ ...i, boundary: off, refusals: undefined }))
+    const html = tab(viewOf(invs))
+    expect(textOf(mustPart(html, SUMMARY))).toContain('This attempt ran without the sandbox: the recipe turns it off')
+    expect(part(html, REACH)).toBeNull()
+    expect(part(html, LEGEND)).toBeNull()
+    expect(textOf(html)).not.toMatch(/What the runs could reach/)
+  })
+
+  it('Edges, degraded: the reach is still drawn for the policies that exist', () => {
+    const html = tab(
+      viewOf(demo({ build: { boundary: { kind: 'unsandboxed', reason: 'degraded', why: 'x' }, refusals: undefined } })),
+    )
+    expect(part(html, REACH)).not.toBeNull()
+  })
+})
+
+describe('Watch out / Done when 3: an unknown is never a number', () => {
+  const cases: [string, Partial<Inv>][] = [
+    ['pending', { refusals: undefined }],
+    ['unreadable', { refusals: { kind: 'unreadable', reason: 'no store' } }],
+  ]
+  for (const [kind, over] of cases) {
+    it(`a ${kind} run makes the summary say "or more" or "unknown", never a plain total`, () => {
+      const view = viewOf(demo({ review: over }))
+      expect(view.rows.find((r) => r.step === 'review')!.refusals.kind).toBe(kind)
+      const summary = textOf(mustPart(tab(view), SUMMARY))
+      expect(summary).toMatch(/or more|unknown/)
+      expect(summary).not.toMatch(/(^|\s)\d+ connections? refused/)
+    })
+  }
+
+  it('a lost run (the attempt ended with it open) makes the summary say so, never a plain total', () => {
+    const view = viewOf(demo({ review: { refusals: undefined } }), true)
+    expect(view.rows.find((r) => r.step === 'review')!.refusals.kind).toBe('lost')
+    const summary = textOf(mustPart(tab(view), SUMMARY))
+    expect(summary).toMatch(/or more|unknown/)
+    expect(summary).not.toMatch(/(^|\s)\d+ connections? refused/)
+  })
+
+  it('an incomplete read is a lower bound: "or more"', () => {
+    const view = viewOf(
+      demo({
+        review: {
+          refusals: { kind: 'entries', complete: false, entries: [entry('mcp.postman.com', 3, '2026-11-16T17:40:45.681Z')] },
+        },
+      }),
+    )
+    const summary = textOf(mustPart(tab(view), SUMMARY))
+    expect(summary).toMatch(/4 or more/)
+  })
+
+  it("Edges: a row's own Refusals cell is unchanged, in the new Runs table beside its Kind", () => {
+    const html = tab(viewOf(demo({ review: { refusals: { kind: 'unreadable', reason: 'no store' } } })))
+    const review = rowsOf(mustPart(html, RUNS)).find((r) => r.startsWith('review'))!
+    expect(review).toContain('refusals could not be read (no store)')
+    expect(review).toContain('agent · codex')
+  })
+})
+
+describe('Want: then what was blocked (Blocked)', () => {
+  it('Done when 7: a host, its count, who, and the time as HH:MM:SS UTC with the ISO time in title', () => {
+    const blocked = mustPart(tab(viewOf(demo())), BLOCKED)
+    const rows = rowsOf(blocked)
+    const postman = rows.find((r) => r.includes('mcp.postman.com'))!
+    expect(postman).toContain('3×')
+    expect(postman).toContain('review · review · codex')
+    expect(blocked).toMatch(/<[^>]*title="2026-11-16T17:40:45\.681Z"[^>]*>\s*17:40:45 UTC\s*</)
+    expect(blocked).toMatch(/<[^>]*title="2026-11-16T17:40:28\.963Z"[^>]*>\s*17:40:28 UTC\s*</)
+    expect(textOf(blocked)).not.toContain('2026-11-16T17:40:45.681Z')
+  })
+
+  it('keeps Allow on this project, from the existing allowHref, at the end of the row that carries the UTC time', () => {
+    const blocked = mustPart(tab(viewOf(demo())), BLOCKED)
+    expect(blocked).toContain('href="/recipe/p?edit=1&amp;allow=mcp.postman.com#sandbox"')
+    expect(count(blocked, 'Allow on this project')).toBe(2)
+    const postman = rowsOf(blocked).find((r) => r.includes('mcp.postman.com'))!
+    expect(postman).toMatch(/17:40:45 UTC Allow on this project$/)
+  })
+
+  it('says, muted, that telemetry is not counted and a refused file read is not listed', () => {
+    expect(textOf(mustPart(tab(viewOf(demo())), BLOCKED))).toContain(
+      'Telemetry hosts are not counted. A refused file read is not listed: srt does not report one.',
+    )
+  })
+
+  it('keeps the empty sentence and the caveats as today, under the new note', () => {
+    const quiet = demo().map((i) => ({ ...i, refusals: none }))
+    const empty = textOf(mustPart(tab(viewOf(quiet)), BLOCKED))
+    expect(empty).toContain('No refused connection was recorded.')
+    expect(empty).toContain('Telemetry hosts are not counted.')
+    const pending = textOf(mustPart(tab(viewOf(demo({ review: { refusals: undefined } }))), BLOCKED))
+    expect(pending).toMatch(/refusals are read when the run ends/)
+    expect(pending).toContain('Telemetry hosts are not counted.')
+  })
+})
+
+describe('Want: then the runs (Runs, Done when 4)', () => {
+  it('has a Kind column: "agent · <runtime>" where runtime is set, "command" where it is null', () => {
+    const runs = rowsOf(mustPart(tab(viewOf(demo())), RUNS))
+    const row = (step: string) => runs.find((r) => r.startsWith(step))!
+    expect(runs[0]).toMatch(/Kind/)
+    expect(row('prepared')).toContain('command')
+    expect(row('build')).toContain('command')
+    expect(row('implement')).toContain('agent · claude-code')
+    expect(row('review')).toContain('agent · codex')
+    expect(row('prepared')).not.toContain('agent')
+  })
+
+  it('the step cell is "step · action", and the policy is a letter: A, A, B, C', () => {
+    const runs = rowsOf(mustPart(tab(viewOf(demo())), RUNS))
+    const tokens = (step: string) => runs.find((r) => r.startsWith(step))!.split(' ')
+    expect(runs.some((r) => r.startsWith('implement · write the change'))).toBe(true)
+    expect(tokens('prepared')).toContain('A')
+    expect(tokens('build')).toContain('A')
+    expect(tokens('implement')).toContain('B')
+    expect(tokens('review')).toContain('C')
+    expect(textOf(mustPart(tab(viewOf(demo())), RUNS))).not.toMatch(/policy \d/)
+  })
+
+  it('a run with no policy shows — in the Policy column (its Refused cell is the existing — as well)', () => {
+    const runs = rowsOf(
+      mustPart(tab(viewOf(demo({ build: { boundary: { kind: 'unsandboxed', reason: 'degraded', why: 'x' }, refusals: undefined } }))), RUNS),
+    )
+    const build = runs.find((r) => r.startsWith('build'))!.split(' ')
+    expect(build).toContain('command')
+    expect(build.filter((t) => t === '—')).toHaveLength(2)
+    expect(build).not.toContain('A')
+  })
+})
+
+describe('Want: what the runs could reach, listed once, with only the differences per policy (Done when 2)', () => {
+  it('lists the common entries once and names each extra path under "Where the policies differ"', () => {
+    const html = tab(viewOf(demo()))
+    const reach = mustPart(html, REACH)
+    const text = textOf(reach)
+    // The common set, once on the whole tab.
+    expect(count(html, 'title="/srv/wt"')).toBe(1)
+    expect(count(html, 'title="/srv/wt/.git/hooks"')).toBe(1)
+    expect(count(html, 'title="/etc/secrets"')).toBe(1)
+    expect(count(html, '>api.anthropic.com<')).toBe(1)
+    // The four boxes, in order, each with a count.
+    const boxes = ['Reachable', 'Writable', 'Cannot be read', 'Cannot be written']
+    const at = boxes.map((b) => text.indexOf(b))
+    for (const [n, i] of at.entries()) expect(i, boxes[n]).toBeGreaterThan(-1)
+    expect([...at].sort((a, b) => a - b)).toEqual(at)
+    expect(text).toMatch(/Reachable 13\b/)
+    for (const b of boxes.slice(1)) expect(text).toMatch(new RegExp(`${b} \\d+`))
+    // The differences: each extra path, only there.
+    const diff = segment(text, 'policies differ', [])
+    expect(diff).toMatch(/also writes \/srv\/runs\/claude/)
+    expect(diff).toMatch(/also writes \/opt\/codex-home/)
+    expect(diff).toContain('the set above, nothing more')
+    expect(count(html, 'title="/srv/runs/claude"')).toBe(1)
+    expect(count(html, 'title="/opt/codex-home"')).toBe(1)
+  })
+
+  it('Cannot be read carries the except paths as one line under the chips', () => {
+    const text = textOf(mustPart(tab(viewOf(demo())), REACH))
+    expect(segment(text, 'Cannot be read', ['Cannot be written'])).toMatch(/except .*\/etc\/secrets\/public/)
+  })
+
+  it('says what a policy lacks that others have ("does not write …")', () => {
+    const shared = [...common().allowWrite, '/srv/shared-ab']
+    const html = tab(
+      viewOf(
+        demo({
+          install: { boundary: sandboxed(common({ allowWrite: shared })) },
+          build: { boundary: sandboxed(common({ allowWrite: shared })) },
+        }),
+      ),
+    )
+    const diff = segment(textOf(mustPart(html, REACH)), 'policies differ', [])
+    expect(diff).toMatch(/does not write \/srv\/shared-ab/)
+  })
+
+  it('Edges, one policy: the common set is that policy and "Where the policies differ" is not drawn', () => {
+    const one = demo().map((i) => ({ ...i, boundary: sandboxed(common()) }))
+    const text = textOf(mustPart(tab(viewOf(one)), REACH))
+    expect(text).not.toMatch(/policies differ/)
+    expect(text).toContain('/srv/wt')
+  })
+
+  it('Edges, many policies: every policy gets its row, nothing is folded', () => {
+    const many: Inv[] = [1, 2, 3, 4, 5].map((n) => ({
+      id: `m${n}`,
+      step: n === 5 ? 'review' : 'implement',
+      action: n === 5 ? 'second' : `round ${n}`,
+      runtime: 'claude-code',
+      boundary: sandboxed(common({ allowWrite: [...common().allowWrite, `/srv/round-${n}`] })),
+      refusals: none,
+    }))
+    const diff = segment(textOf(mustPart(tab(viewOf(many)), REACH)), 'policies differ', [])
+    for (const n of [1, 2, 3, 4, 5]) expect(diff).toMatch(new RegExp(`also writes /srv/round-${n}`))
+    for (const letter of ['A', 'B', 'C', 'D', 'E']) expect(diff.split(' ')).toContain(letter)
+  })
+})
+
+describe('Want: Reachable groups hosts by vendor, then This recipe', () => {
+  const GROUPS = ['Anthropic', 'OpenAI', 'npm', 'GitHub', 'This recipe', 'Other', 'Writable']
+
+  it('groups the built-in hosts as Anthropic, OpenAI, npm, GitHub, then This recipe with "none added"', () => {
+    const text = textOf(mustPart(tab(viewOf(demo())), REACH))
+    const at = ['Anthropic', 'OpenAI', 'npm', 'GitHub', 'This recipe'].map((g) => text.indexOf(` ${g} `))
+    for (const i of at) expect(i).toBeGreaterThan(-1)
+    expect([...at].sort((a, b) => a - b)).toEqual(at)
+    expect(segment(text, ' Anthropic ', GROUPS)).toContain('api.anthropic.com')
+    expect(segment(text, ' Anthropic ', GROUPS)).toContain('*.claude.ai')
+    expect(segment(text, ' OpenAI ', GROUPS)).toContain('chatgpt.com')
+    expect(segment(text, ' npm ', GROUPS)).toContain('registry.npmjs.org')
+    expect(segment(text, ' GitHub ', GROUPS)).toContain('*.githubusercontent.com')
+    expect(segment(text, ' This recipe ', GROUPS)).toContain('none added')
+  })
+
+  it("lists the recipe's own hosts under This recipe, and a built-in host with no vendor under Other", () => {
+    const p = common({ allowedDomains: [...BUILT_IN, 'example.org', 'mirror.example.net'], recipeDomains: ['example.org'] })
+    const text = textOf(mustPart(tab(viewOf(demo().map((i) => ({ ...i, boundary: sandboxed(p) })))), REACH))
+    expect(segment(text, ' This recipe ', GROUPS)).toContain('example.org')
+    expect(segment(text, ' This recipe ', GROUPS)).not.toContain('none added')
+    expect(segment(text, ' Other ', GROUPS)).toContain('mirror.example.net')
+  })
+
+  it('Edges, source not recorded: the host is listed under its vendor group, not under This recipe', () => {
+    const { recipeDomains: _gone, ...older } = common({ allowedDomains: ['github.com', 'example.org'] })
+    const text = textOf(mustPart(tab(viewOf(demo().map((i) => ({ ...i, boundary: sandboxed(older as Policy) })))), REACH))
+    expect(segment(text, ' GitHub ', GROUPS)).toContain('github.com')
+    expect(segment(text, ' This recipe ', GROUPS)).not.toContain('example.org')
+    expect(segment(text, ' This recipe ', GROUPS)).not.toContain('github.com')
+  })
+})
+
+describe('Want: short path names, the full path one hover away (Done when 5)', () => {
+  const home = homedir()
+  const lingtai = stateDir()
+  const mirror = `${lingtai}/repos/${PROJECT}.git`
+  const cache = `${lingtai}/cache/${PROJECT}`
+  const named = () =>
+    demo().map((i) => ({
+      ...i,
+      boundary: sandboxed(
+        common({
+          allowRead: ['/', cache],
+          allowWrite: ['/srv/wt', mirror, cache, '/tmp', '/private/tmp', tmpdir()],
+          denyRead: [`${home}/.ssh`, lingtai],
+          denyWrite: [`${mirror}/hooks`],
+        }),
+      ),
+    }))
+
+  it("draws each path by its short name, longest prefix first, with the full path in the chip's title", () => {
+    const reach = mustPart(tab(viewOf(named())), REACH)
+    const chip = (short: string, full: string) =>
+      new RegExp(`<[^>]*title="${full.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>\\s*${short.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*<`)
+    expect(reach).toMatch(chip('~/.ssh', `${home}/.ssh`))
+    expect(reach).toMatch(chip('&lt;lingtai home&gt;', lingtai))
+    expect(reach).toMatch(chip('&lt;mirror&gt;', mirror))
+    expect(reach).toMatch(chip('&lt;cache&gt;', cache))
+    // Longest prefix wins: a mirror path, not `<lingtai home>/repos/…`.
+    expect(reach).toMatch(chip('&lt;mirror&gt;/hooks', `${mirror}/hooks`))
+    expect(textOf(reach)).not.toContain('<lingtai home>/repos')
+  })
+
+  it('the /private twins are one chip, the shorter spelling, with both spellings in its title', () => {
+    const reach = mustPart(tab(viewOf(demo())), REACH)
+    expect(count(reach, '>/tmp<')).toBe(1)
+    expect(count(reach, '>/private/tmp<')).toBe(0)
+    const title = /title="([^"]*\/private\/tmp[^"]*)"/.exec(reach)?.[1]
+    expect(title).toBeDefined()
+    expect(title!.replace('/private/tmp', '')).toContain('/tmp')
+  })
+
+  it("Watch out: no $TMPDIR token, the board's temp directory stays a path, in a chip titled with it", () => {
+    const html = tab(viewOf(named()))
+    expect(html).not.toMatch(/TMPDIR|&lt;tmp|&lt;temp/i)
+    const tmp = tmpdir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    expect(mustPart(html, REACH)).toMatch(new RegExp(`title="[^"]*${tmp}[^"]*"`))
+  })
+
+  it('the legend lists every short name used and its full path, and no name that is not used', () => {
+    const legend = textOf(mustPart(tab(viewOf(named())), LEGEND))
+    for (const [short, full] of [
+      ['~', home],
+      ['<lingtai home>', lingtai],
+      ['<mirror>', mirror],
+      ['<cache>', cache],
+    ] as const) {
+      expect(legend, short).toContain(short)
+      expect(legend, short).toContain(full)
+    }
+    expect(legend).not.toContain('<worktree>')
+  })
+})
+
+describe('Want: the two notes at the foot', () => {
+  it('How Claude Code signs in here only where it is shown today, and Not covered always', () => {
+    const withClaude = tab(viewOf(demo()))
+    expect(textOf(mustPart(withClaude, AUTH))).toContain(sandboxView.CLAUDE_CODE_AUTH)
+    expect(textOf(mustPart(withClaude, NOT_COVERED))).toContain(sandboxView.NOT_COVERED[0]!)
+    const codexOnly = demo().filter((i) => i.runtime !== 'claude-code')
+    const html = tab(viewOf(codexOnly))
+    expect(part(html, AUTH)).toBeNull()
+    expect(part(html, NOT_COVERED)).not.toBeNull()
+  })
+})
+
+describe('Done when 5 (pure): the short name of a path', () => {
+  type Places = { home: string; lingtaiHome: string; project: string; runId: string }
+  const shortNameOf = (sandboxView as unknown as { shortNameOf?: (path: string, places: Places) => string })
+    .shortNameOf
+  const places: Places = {
+    home: '/Users/x',
+    lingtaiHome: '/Users/x/demo-lingtai',
+    project: 'chapter-garden',
+    runId: 'pass-c45',
+  }
+
+  it('is exported from apps/board/src/lib/sandbox-view.ts', () => {
+    expect(typeof shortNameOf).toBe('function')
+  })
+
+  const cases: [string, string][] = [
+    ['/Users/x', '~'],
+    ['/Users/x/.ssh', '~/.ssh'],
+    ['/Users/xy/file', '/Users/xy/file'],
+    ['/Users/x/demo-lingtai', '<lingtai home>'],
+    ['/Users/x/demo-lingtai/config.yml', '<lingtai home>/config.yml'],
+    ['/Users/x/demo-lingtai/worktrees/chapter-garden/pass-c45', '<worktree>'],
+    ['/Users/x/demo-lingtai/worktrees/chapter-garden/pass-c45/.git/hooks', '<worktree>/.git/hooks'],
+    ['/Users/x/demo-lingtai/repos/chapter-garden.git', '<mirror>'],
+    ['/Users/x/demo-lingtai/repos/chapter-garden.git/hooks', '<mirror>/hooks'],
+    ['/Users/x/demo-lingtai/repos/chapter-garden.gitx', '<lingtai home>/repos/chapter-garden.gitx'],
+    ['/Users/x/demo-lingtai/repos/other.git', '<lingtai home>/repos/other.git'],
+    ['/Users/x/demo-lingtai/cache/chapter-garden', '<cache>'],
+    ['/Users/x/demo-lingtai/cache/chapter-garden/pnpm', '<cache>/pnpm'],
+    ['/opt/elsewhere', '/opt/elsewhere'],
+    ['/tmp', '/tmp'],
+    ['/var/folders/y7/b4/T', '/var/folders/y7/b4/T'],
+  ]
+  for (const [path, short] of cases) {
+    it(`${path} → ${short}`, () => {
+      expect(shortNameOf?.(path, places)).toBe(short)
+    })
+  }
+
+  it('a Lingtai home outside the home directory is still <lingtai home>, never ~/…', () => {
+    const away = { ...places, lingtaiHome: '/srv/lingtai' }
+    expect(shortNameOf?.('/srv/lingtai/repos/chapter-garden.git/info', away)).toBe('<mirror>/info')
+    expect(shortNameOf?.('/srv/lingtai', away)).toBe('<lingtai home>')
+  })
+})
