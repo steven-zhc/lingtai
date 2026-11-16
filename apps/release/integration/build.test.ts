@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -90,6 +91,29 @@ describe('pnpm build', () => {
     expect(pkg.private).toBeUndefined()
     expect(pkg.bin).toEqual({ lingtai: 'lingtai.cjs' })
   })
+
+  // A sandboxed run's worktree is under the read-denied `~/.lingtai`. A Bun program compiled with `.env`
+  // autoload starts with an empty `process.env` when a directory above its working directory cannot be
+  // listed, so the hook saw no socket and refused every call of every sandboxed run on macOS.
+  it.runIf(process.platform === 'darwin')(
+    'reads its own variables when a directory above its working directory cannot be listed',
+    () => {
+      const hook = join(first, 'packages', 'hook', 'bin', 'lingtai-hook')
+      const above = join(realpathSync(work), 'denied')
+      const cwd = join(above, 'worktree')
+      mkdirSync(cwd, { recursive: true })
+      const profile = `(version 1)\n(allow default)\n(deny file-read-data (literal "${above}"))\n`
+      const ran = spawnSync('sandbox-exec', ['-p', profile, hook], {
+        cwd,
+        input: '',
+        encoding: 'utf8',
+        env: { PATH: process.env['PATH'], LINGTAI_HOOK_SOCKET: join(work, 'absent.sock'), LINGTAI_HOOK_RUN_ID: 'r' },
+      })
+      expect(ran.status).toBe(2)
+      expect(ran.stderr).not.toContain('are not set')
+      expect(ran.stderr).toContain('absent.sock')
+    },
+  )
 
   it('leaves no native file in the board, so it is the same on every platform', () => {
     expect(nativeFiles(join(first, 'board'))).toEqual([])

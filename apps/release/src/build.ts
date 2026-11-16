@@ -52,10 +52,17 @@ export async function buildRelease({ out, root = ROOT }: BuildOptions): Promise<
 function buildAttemptAssets(root: string, out: string): void {
   const hook = join(out, 'packages', 'hook', 'bin', 'lingtai-hook')
   mkdirSync(join(out, 'packages', 'hook', 'bin'), { recursive: true })
-  const built = spawnSync('bun', ['build', '--compile', '--minify', '--outfile', hook, 'src/lingtai-hook.ts'], {
-    cwd: join(root, 'packages', 'hook'),
-    encoding: 'utf8',
-  })
+  // `--no-compile-autoload-dotenv`: a compiled Bun program looks for `.env` from its working directory up, and
+  // when a sandbox refuses to list one of those directories (a run's worktree is under the read-denied `~/.lingtai`)
+  // it starts with an empty `process.env`, so the hook sees no socket and refuses every call. It reads no `.env`.
+  const built = spawnSync(
+    'bun',
+    ['build', '--compile', '--minify', '--no-compile-autoload-dotenv', '--outfile', hook, 'src/lingtai-hook.ts'],
+    {
+      cwd: join(root, 'packages', 'hook'),
+      encoding: 'utf8',
+    },
+  )
   if (built.status !== 0) {
     throw new Error(
       `hook build failed: ${built.error?.message ?? `exited ${built.status}`}\n${built.stdout}\n${built.stderr}`,
