@@ -638,6 +638,8 @@ describe('what the runs could reach (#1196)', () => {
     const html = renderToStaticMarkup(<SandboxPanel view={{ ...view2(a, b) }} roots={ROOTS} />)
     expect(html).not.toContain('can read')
     expect(html).not.toContain('can write')
+    expect(html).toContain('inside')
+    expect(html).toContain('which stays denied')
     expect(html).toContain('does not deny writing')
   })
   it('groups hosts by vendor, the recipe’s own apart', () => {

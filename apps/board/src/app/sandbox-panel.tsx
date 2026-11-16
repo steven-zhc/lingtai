@@ -350,7 +350,19 @@ function PolicyDifference({
   // Not listing a denial is not holding a permission: another entry may cover the path, so these say only that.
   push('does not deny reading', <ChipList chips={lacks.denyRead.map((x) => x.chip)} />, lacks.denyRead.length)
   push('does not deny writing', <ChipList chips={lacks.denyWrite} />, lacks.denyWrite.length)
-  push('also re-allows reading', <DenyChips entries={exceptions} />, exceptions.length)
+  // Only the re-allowed paths are permitted; the root around them stays denied, so it is named as context and never as a permission.
+  push(
+    'also re-allows reading',
+    <>
+      {exceptions.map((x) => (
+        <span key={x.chip.fulls[0]}>
+          <ChipList chips={x.except} />
+          <span className="empty"> inside {x.chip.label}, which stays denied </span>
+        </span>
+      ))}
+    </>,
+    exceptions.length,
+  )
   return (
     <li>
       <span className="sbletter">{d.letter}</span> <span className="mono">{d.runs.join(', ')}</span>{' '}
