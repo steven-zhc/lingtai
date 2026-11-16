@@ -67,7 +67,9 @@ describe('the books section', () => {
     )
     const withIt = text(h)
     expect(withIt).toContain('1,234 issues closed by its own merges since 2026-09-01 · as of 2026-11-15')
-    expect(withIt).toContain('Every ticket it finished on its own repository this month, 2026-10-02 → 2026-10-31.')
+    expect(withIt).toContain(
+      'Every ticket it finished on its own repository this month, 2026-10-02 → 2026-10-31 . Nothing left out.',
+    )
     const head = h.slice(h.indexOf('class="books-head"'), h.indexOf('class="outcome"'))
     expect(head.indexOf('books-title')).toBeLessThan(head.indexOf('books-total'))
     expect(head.indexOf('Open its books')).toBeLessThan(head.indexOf('1,234'))
