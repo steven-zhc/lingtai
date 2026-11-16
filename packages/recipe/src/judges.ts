@@ -1,5 +1,5 @@
 /**
- * The built-in judges, alone in a file with nothing to import.
+ * The built-in judges' predicate. The list itself is a leaf in `@lingtai/domain/judges`, the one import here.
  *
  * `settings.ts` is read by the board's wizard, which is a client component, and
  * a value imported from `recipe.ts` drags `@lingtai/env` and its `node:fs` into
@@ -7,9 +7,9 @@
  * re-exports all of this, so nothing importing it from there changes.
  */
 
-/** See `JudgeName` in `recipe.ts` for what the list means and why it is this short. */
-export const BUILT_IN_JUDGES = ['same-worktree', 'merge-the-base'] as const
-export type BuiltInJudge = (typeof BUILT_IN_JUDGES)[number]
+import { BUILT_IN_JUDGES, type BuiltInJudge } from '@lingtai/domain/judges'
+
+export { BUILT_IN_JUDGES, type BuiltInJudge }
 
 /**
  * Which half of `JudgeName` a name is — **a function rather than a comparison

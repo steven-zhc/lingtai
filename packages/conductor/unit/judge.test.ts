@@ -1,6 +1,5 @@
 import type { ActionFinding } from '@lingtai/actions'
 import { RuntimeId, STEPS } from '@lingtai/domain'
-import { BUILT_IN_JUDGES, JudgeWhen, StepMap, judgePlugin, readFields } from '@lingtai/recipe'
 /**
  * **The workflow counts; the judge chooses** —
  * [0061](../../../doc/decisions-archive/0061-the-recipe-is-the-pipeline.md) §3, and the
@@ -28,12 +27,13 @@ import { BUILT_IN_JUDGES, JudgeWhen, StepMap, judgePlugin, readFields } from '@l
  * Unit, under `--project unit`: nothing here reads a database, spawns anything
  * or touches the filesystem.
  */
+import { BUILT_IN_FOR } from '@lingtai/domain'
+import { BUILT_IN_JUDGES, JudgeWhen, StepMap, judgePlugin, readFields } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
   BUILT_IN,
-  BUILT_IN_FOR,
   DESTINATIONS,
   type BuiltIn,
   type Destination,
