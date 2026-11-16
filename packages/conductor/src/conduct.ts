@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join, posix, resolve } from 'node:path'
+import { dirname, join, posix } from 'node:path'
 
 import {
   NO_DESIGN,
@@ -37,7 +37,7 @@ import {
   taggedTrace,
   type RunSandbox,
 } from '@lingtai/agent'
-import { extensionEnv, productionPatterns, renderEnvFile, runnableEnv } from '@lingtai/agent-env'
+import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
 import {
   type SpentFor,
   WIP_COMMIT_PREFIX,
@@ -240,7 +240,7 @@ import {
   bodiesFor,
 } from './attempt-steps.ts'
 import { armForState, conflictResolvedOf, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
-import { createBaseCheck } from './base-check.ts'
+import { baseCheckQuestion, createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
 import { closeHoldingEffect } from './close.ts'
 import { runnableNowEffect, type TicketSource } from './discover.ts'
@@ -280,7 +280,6 @@ import {
   recordUnwrapped,
   recordingWrap,
   observedKindOf,
-  observedKindOfDecision,
   sandboxOutcomeOf,
   type InvocationAppends,
 } from './sandbox-record.ts'
@@ -3781,9 +3780,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * this conductor, which is what makes two asks about one commit one run (0122).
        */
       /**
-       * **One wrap for the pass, whoever asks** (#1153): the `run:` commands' (S6a) and the base check's. Built once, so
-       * a command is wrapped one way. The base check is told it on the question, and its keys name no step, so it
-       * appends nothing here.
+       * **The `run:` commands' wrap** (#1153, S6a). The base check builds an identical one in `baseCheckQuestion`
+       * with no appends (its keys name no step, so it appends nothing here), so a command is wrapped one way.
        */
       const runSandbox =
         sandboxDecision.kind === 'sandboxed' && passSandbox.service !== undefined
@@ -3800,76 +3798,48 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       yield* Effect.addFinalizer(() => Effect.sync(() => baseAbort.abort()))
       const baseIsRed = (asked: { action: string; mergedOnto: string | null }) =>
         Effect.gen(function* () {
-          // Read before any mirror write, so a permit holder is never carried into the detached runs.
-          const services = yield* Effect.context()
-          const detached = Effect.runPromiseWith(services)
-          const action = recipe.steps.build.find((a) => a.name === asked.action)
-          if (action === undefined || !('run' in action)) {
-            runLog.note('base', `base not checked: \`${asked.action}\` is not a run: action in the recipe's build list`)
-            return { notRed: 'not a run: action in the recipe' }
-          }
           const baseSha = asked.mergedOnto ?? continuation?.diffBaseSha ?? worktree?.baseSha ?? null
-          if (baseSha === null) return { notRed: 'no base commit was cut' }
-          const baseKind = observedKindOfDecision(sandboxDecision, runSandbox !== undefined)
-          const answer = yield* baseCheckFor(store, log, home).ask({
+          const built = yield* baseCheckQuestion({
             project,
             base,
-            baseSha,
-            command: action.run,
-            prepared: recipe.steps.prepared.flatMap((a) =>
-              'run' in a ? [{ run: a.run, env: envForExtension(a.env), timeoutMs: parseDuration(a.timeout) }] : [],
-            ),
-            env: envForExtension(action.env),
-            runId,
+            // Checked below: a pass with no base commit builds nothing.
+            baseSha: baseSha ?? '',
+            recipe,
+            action: asked.action,
+            env,
+            home,
+            sandbox: passSandbox,
+            checkId: runId,
             signal: baseAbort.signal,
-            timeoutMs: parseDuration(action.timeout),
-            // The wrap travels on the question: the base check is one instance shared by every pass and project.
-            ...(runSandbox === undefined ? {} : { sandbox: runSandbox }),
-            // Which unsandboxed boundary this pass ran under, so a join never lends one pass's answer to the other's.
-            ...(baseKind === null ? {} : { observedAs: baseKind }),
-            tree: {
-              cut: (path, sha) =>
-                detached(
-                  Effect.gen(function* () {
-                    const cut = yield* mirrorWrite(
-                      mirrorPathFor(project, home),
-                      gitAskedEffect(['worktree', 'add', '--force', '--detach', path, sha]),
-                    )
-                    if (Result.isFailure(cut)) return yield* Effect.die(new Error(cut.failure.detail))
-                    if (submodulesOf(recipe)) {
-                      // `worktree add` leaves submodule directories empty, as `provisionWorktree` says.
-                      yield* repo.git(['submodule', 'update', '--init', '--recursive'], {
-                        token: options.token,
-                        env: options.gitEnv,
-                        cwd: path,
-                      })
-                    }
-                  }),
-                ),
-              remove: (path) =>
-                detached(
-                  Effect.gen(function* () {
-                    const gone = yield* mirrorWrite(
-                      mirrorPathFor(project, home),
-                      gitAskedEffect(['worktree', 'remove', '--force', path]),
-                    )
-                    if (Result.isFailure(gone)) return yield* Effect.die(new Error(gone.failure.detail))
-                  }),
-                ),
-              plant: (path) => {
-                const plantedAt = resolve(path, recipe.env.plantAt)
-                return mkdir(dirname(plantedAt), { recursive: true }).then(() =>
-                  writeFile(plantedAt, renderEnvFile(env.values), { mode: 0o600 }),
-                )
-              },
-            },
-          })
+            token: options.token,
+            gitEnv: options.gitEnv,
+          }).pipe(Effect.provideService(Repo, repo))
+          if ('notBuilt' in built) {
+            runLog.note(
+              'base',
+              built.notBuilt === 'not a run: action in the recipe'
+                ? `base not checked: \`${asked.action}\` is not a run: action in the recipe's build list`
+                : `base not checked: ${built.notBuilt}`,
+            )
+            return { notRed: built.notBuilt }
+          }
+          if (baseSha === null) return { notRed: 'no base commit was cut' }
+          const { question, observed } = built
+          const answer = yield* baseCheckFor(store, log, home).ask(question)
           // A command that ran is a run of the project's: observed from what the pass decided, never `BaseChecked.boundary`.
           if (answer.verdict !== 'unknown' && answer.from === 'ran') {
-            if (baseKind !== null) yield* observeTheSandbox(baseKind, runId)
+            if (observed !== null) yield* observeTheSandbox(observed, runId)
           }
           if (answer.verdict === 'red') {
-            return { red: { command: action.run, base, baseSha, evidence: answer.evidence } }
+            return {
+              red: {
+                command: question.command,
+                base,
+                baseSha,
+                evidence: answer.evidence,
+                boundary: answer.boundary,
+              },
+            }
           }
           if (answer.verdict === 'unknown') runLog.note('base', `base not checked: ${answer.why}`)
           return { notRed: answer.verdict }
