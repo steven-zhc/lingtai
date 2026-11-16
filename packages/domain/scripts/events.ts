@@ -57,6 +57,18 @@ export const NOT_YET_APPENDED: ReadonlySet<EventType> = new Set<EventType>(['Con
 
 export const ELSEWHERE: readonly { event: EventType; why: string; file: string; anchor: string }[] = [
   {
+    event: 'TicketLanded',
+    why: 'the owner builds the event and hands it to its own `appendOnTicket`, so the finder cannot attribute it',
+    file: 'packages/conductor/src/ticket/commands.ts',
+    anchor: "type: 'TicketLanded',",
+  },
+  {
+    event: 'DispatchRefused',
+    why: 'the owner builds the event and hands it to its own `appendOnTicket`, so the finder cannot attribute it',
+    file: 'packages/conductor/src/ticket/commands.ts',
+    anchor: "type: 'DispatchRefused',",
+  },
+  {
     event: 'TicketClaimed',
     why: "`ticket.ts`'s transition returns the event and `conductor/src/ticket/commands.ts` appends the value, so the finder cannot attribute it",
     file: 'packages/domain/src/ticket.ts',
@@ -338,7 +350,7 @@ export const STREAMS = {
   RunSpent: ['pass-', 'chat-', 'ticket-'],
   StepsResolved: ['pass-'],
   RecipeRecorded: ['rcp-'],
-  EndActionsResolved: ['pass-'],
+  EndActionsResolved: ['ticket-'],
   StepStarted: ['pass-'],
   StepEnded: ['pass-'],
   FindingAccepted: ['bkl-'],

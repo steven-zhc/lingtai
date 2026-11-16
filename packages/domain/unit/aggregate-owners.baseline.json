@@ -2,9 +2,7 @@
   "ticket-": {
     "apps/board/src/app/actions.ts": 1,
     "apps/cli/src/triage.ts": 3,
-    "packages/conductor/src/conduct.ts": 5,
     "packages/conductor/src/discuss.ts": 2,
-    "packages/conductor/src/end-step.ts": 1,
     "packages/conductor/src/split-ticket.ts": 1,
     "packages/conductor/src/tell.ts": 1,
     "packages/daemon/src/converge.ts": 1
