@@ -4,10 +4,10 @@
     "from": "2026-11-01",
     "to": "2026-11-15"
   },
-  "capturedAt": "2026-11-16T01:07:07.548Z",
-  "commit": "be4d346d",
+  "capturedAt": "2026-11-16T01:29:09.609Z",
+  "commit": "e99b9798",
   "outcomes": {
-    "landed": 368,
+    "landed": 369,
     "closed": 2,
     "open": 0,
     "landedByKind": [
@@ -21,7 +21,7 @@
       },
       {
         "kind": "feature",
-        "count": 126
+        "count": 127
       },
       {
         "kind": "tech-debt",
@@ -31,56 +31,95 @@
   },
   "fixRounds": {
     "median": 0,
-    "zeroOrOneShare": 0.8043478260869565,
-    "fiveOrMoreShare": 0.04076086956521739
+    "zeroOrOneShare": 0.8021680216802168,
+    "fiveOrMoreShare": 0.04065040650406504
   },
   "cost": {
     "median": 3.95,
-    "mean": 5.9338858695652155,
+    "mean": 5.936937669376691,
     "p90": 10.3,
     "includesEstimates": true,
     "costUnknown": 5
   },
   "machineMinutes": {
-    "median": 11.990008333333334,
-    "mean": 16.545462907608695
+    "median": 11.9942,
+    "mean": 16.551607271906054
   },
   "elapsedMinutes": {
-    "median": 12.320291666666666,
-    "mean": 43.846725181159435,
-    "withinHourShare": 0.904891304347826
+    "median": 12.324733333333333,
+    "mean": 43.778885140018076,
+    "withinHourShare": 0.9051490514905149
   },
-  "waitedShare": 0.07880434782608696,
+  "waitedShare": 0.07859078590785908,
   "spendShare": [
     {
       "purpose": "Work",
-      "share": 0.6497876526613574
+      "share": 0.6489639129562607
     },
     {
       "purpose": "Answering",
-      "share": 0.2959561632306385
+      "share": 0.2967128430368961
     },
     {
       "purpose": "Judge",
-      "share": 0.027915740911748227
+      "share": 0.028067694092771947
     },
     {
       "purpose": "Triage",
-      "share": 0.026340443196255874
+      "share": 0.026255549914071273
     }
   ],
   "receipts": [
     {
       "median": true,
       "fixRounds": 0,
-      "machineMinutes": 11.990008333333334,
+      "machineMinutes": 11.9942,
       "waits": 0,
       "cost": 3.95
+    },
+    {
+      "median": false,
+      "number": 1088,
+      "title": "tech-debt(cli): a command's exit code is a typed `CommandExit` its handler fails with, and status, events, doctor, init, add, the seven answer verbs and board set no `handlerCode`",
+      "kind": "tech-debt",
+      "outcome": "landed",
+      "percentile": 25,
+      "fixRounds": 0,
+      "passes": 1,
+      "waits": 0,
+      "machineMinutes": 11.849,
+      "cost": 2.74
+    },
+    {
+      "median": false,
+      "number": 933,
+      "title": "fix(board): a recorded prompt is shown as it was handed, expanded from its references, on the attempt tab and in its events",
+      "kind": "bug",
+      "outcome": "landed",
+      "percentile": 50,
+      "fixRounds": 0,
+      "passes": 1,
+      "waits": 0,
+      "machineMinutes": 16.323033333333335,
+      "cost": 3.95
+    },
+    {
+      "median": false,
+      "number": 1137,
+      "title": "tech-debt(rates, beacon): the last two non-host faces go — rates and the beacon are Effects — and the ratchet refuses a listed face nothing references",
+      "kind": "tech-debt",
+      "outcome": "landed",
+      "percentile": 90,
+      "fixRounds": 2,
+      "passes": 2,
+      "waits": 1,
+      "machineMinutes": 24.35425,
+      "cost": 10.3
     }
   ],
   "landedAllTime": {
-    "count": 698,
+    "count": 699,
     "since": "2026-09-08",
-    "asOf": "2026-11-16T01:07:07.548Z"
+    "asOf": "2026-11-16T01:29:09.609Z"
   }
 }
