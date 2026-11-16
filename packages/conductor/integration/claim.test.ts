@@ -17,7 +17,7 @@ import { Effect } from 'effect'
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { claimTicketEffect, releaseTicketEffect } from '../src/index.ts'
+import { claimTicketEffect, releaseTicketEffect } from '../src/ticket/commands.ts'
 
 const created = new Set<string>()
 let a: Db

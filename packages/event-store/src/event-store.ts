@@ -524,3 +524,7 @@ export function makePostgresEvents(client: Db): EventsPort {
 export function createEventStore(client: Db): EventStore {
   return promiseStore(makePostgresEvents(client))
 }
+
+// The snapshot read, reachable from this type-only submodule so an aggregate's owner can read through a snapshot
+// without importing the barrel (which opens the process store). `snapshot-read.ts` imports this file for a type only.
+export { readThroughSnapshot, type SnapshotReadOptions } from './snapshot-read.ts'

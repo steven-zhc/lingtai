@@ -8,7 +8,7 @@ import { createMemoryEventStore, createMemorySnapshotStore } from '@lingtai/even
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { claimTicketEffect } from '../src/claim.ts'
+import { claimTicketEffect } from '../src/ticket/commands.ts'
 
 describe('claimTicket with a snapshot below the head', () => {
   it('appends at the head, and a second claim racing it loses', async () => {

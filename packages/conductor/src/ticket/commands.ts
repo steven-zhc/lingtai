@@ -1,4 +1,3 @@
-import { parsePayload, ticketReducer, type ReleaseCause } from '@lingtai/domain'
 /**
  * Claiming a work item.
  *
@@ -24,15 +23,28 @@ import { parsePayload, ticketReducer, type ReleaseCause } from '@lingtai/domain'
  * exclusion is the constraint. Neither is a number.
  */
 import {
+  type ClaimDecline,
+  type ContinueDecline,
+  type ReleaseCause,
+  type ReleaseDecline,
+  type SplitChildren,
+  type SplitChildState,
+  claimTransition,
+  continueTransition,
+  releaseTransition,
+  ticketReducer,
+} from '@lingtai/domain'
+import {
   ConcurrencyError,
   type EventStore,
-  eventStore,
   readThroughSnapshot,
   type SnapshotReadOptions,
-} from '@lingtai/event-store'
+} from '@lingtai/event-store/store'
 import { Effect, Result } from 'effect'
 
-import type { Tickets } from './ticket-store.ts'
+import type { Tickets } from '../ticket-store.ts'
+
+export type { SplitChildState }
 
 export interface ClaimOptions extends SnapshotReadOptions {
   runId: string
@@ -56,18 +68,13 @@ export interface ClaimOptions extends SnapshotReadOptions {
   kind?: string | null
   /** The ticket body the pass fetched; recorded on the claim as given, left off when absent. */
   body?: string
-  store?: EventStore
+  /** Required: the owner opens no process store (the board imports it). */
+  store: EventStore
   /**
    * Where a split's children are asked about (#604). Omitted, a recorded split
    * is not looked at and the claim is what it always was.
    */
   children?: Pick<Tickets, 'getIssue'>
-}
-
-/** How one recorded child of a split stands on GitHub. `stateReason` null is *not reported*, never *completed*. */
-export interface SplitChildState {
-  number: number
-  stateReason: 'completed' | 'not_planned' | null
 }
 
 export interface Claim {
@@ -78,26 +85,8 @@ export interface Claim {
   version: number
 }
 
-export type ClaimRefusal =
-  /**
-   * Someone else holds it. No countdown: there is nothing to count down to,
-   * and a caller that waited for one would wait for ever.
-   */
-  | { reason: 'held'; by: string; runId: string }
-  /** Another claimant won the append. Re-read and look again. */
-  | { reason: 'lost-race' }
-  /** Not in a state that can be claimed — landed, or blocked on a person. */
-  | { reason: 'not-claimable'; status: string }
-  /**
-   * The stream has a `TicketSplit` and every child it recorded is closed
-   * (#604): nothing is left for an agent to change. Nothing was appended; the
-   * caller closes the ticket.
-   */
-  | { reason: 'split-done'; version: number; waitId: string; children: SplitChildState[] }
-  /** A recorded child is still open, so the ticket should not have been eligible. Nothing was appended. */
-  | { reason: 'split-open'; open: number[] }
-  /** A recorded child could not be read. Nothing was appended, so nothing is held. */
-  | { reason: 'split-unreadable'; detail: string }
+/** The ticket's own refusals, plus the append's: another claimant won it. Re-read and look again. */
+export type ClaimRefusal = ClaimDecline | { reason: 'lost-race' }
 
 export type ClaimResult = { ok: true; claim: Claim } | { ok: false; refusal: ClaimRefusal }
 
@@ -121,56 +110,42 @@ export function conductorWorker(): string {
  */
 export function claimTicketEffect(ticketId: string, options: ClaimOptions): Effect.Effect<ClaimResult, unknown> {
   return Effect.gen(function* () {
-    const store = options.store ?? eventStore
+    const store = options.store
     const worker = options.worker ?? conductorWorker()
 
     const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options)
 
-    if (state.lifecycle.status === 'claimed') {
-      // Held is held. There is no expiry to fall through to, so the only way past
-      // this is an appended release — which is what a conductor that has just
-      // proved itself alone does at startup.
-      const held = state.lifecycle
-      return { ok: false, refusal: { reason: 'held', by: held.worker, runId: held.runId } } as const
-    }
-    if (state.lifecycle.status !== 'backlog') {
-      return { ok: false, refusal: { reason: 'not-claimable', status: state.lifecycle.status } } as const
-    }
-
-    if (state.split !== null && options.children !== undefined) {
+    // The read is IO, so it is the command's; the decision is the transition's. Asked only where it always was —
+    // never of a held or landed ticket, which would be a network call on every pass that finds one.
+    let children: SplitChildren = null
+    if (state.lifecycle.status === 'backlog' && state.split !== null && options.children !== undefined) {
       // Exactly the numbers the split recorded — never the body, never GitHub's
       // sub-issue list, which a person may have added to by hand. A read that
       // throws is a refusal, not an exception: nothing was appended, so the caller
       // must not treat the ticket as possibly held — and a partial read must not
       // pass for *all closed*.
       const asked = state.split.children.map((c) => c.number)
-      const children = options.children
+      const source = options.children
       const attempted = yield* Effect.result(
         Effect.tryPromise({
-          try: () => Promise.all(asked.map((n) => children.getIssue(n))),
+          try: () => Promise.all(asked.map((n) => source.getIssue(n))),
           catch: (error) => error,
         }),
       )
-      if (Result.isFailure(attempted)) {
-        const error = attempted.failure
-        return {
-          ok: false,
-          refusal: { reason: 'split-unreadable', detail: error instanceof Error ? error.message : String(error) },
-        } as const
-      }
-      const read = attempted.success
-      const open = read.filter((i) => i.state !== 'closed').map((i) => i.number)
-      if (open.length > 0) return { ok: false, refusal: { reason: 'split-open', open } } as const
-      return {
-        ok: false,
-        refusal: {
-          reason: 'split-done',
-          version: state.version,
-          waitId: state.split.waitId,
-          children: read.map((i) => ({ number: i.number, stateReason: i.stateReason ?? null })),
-        },
-      } as const
+      children = Result.isFailure(attempted)
+        ? { unreadable: attempted.failure instanceof Error ? attempted.failure.message : String(attempted.failure) }
+        : { read: attempted.success }
     }
+
+    const decided = claimTransition(state, {
+      runId: options.runId,
+      worker,
+      ...(options.title !== undefined ? { title: options.title } : {}),
+      ...(options.kind !== undefined ? { kind: options.kind } : {}),
+      ...(options.body !== undefined ? { body: options.body } : {}),
+      children,
+    })
+    if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
 
     // Every rejection is the caller's to see as a typed failure — not only the
     // `ConcurrencyError` this answers. The caller treats *any* failure of this
@@ -178,20 +153,7 @@ export function claimTicketEffect(ticketId: string, options: ClaimOptions): Effe
     // its `Effect.result` and leave an item held by nobody.
     const appended = yield* Effect.result(
       Effect.tryPromise({
-        try: () =>
-          store.append(ticketId, state.version, [
-            {
-              type: 'TicketClaimed',
-              actor: 'conductor',
-              data: parsePayload('TicketClaimed', {
-                runId: options.runId,
-                worker,
-                title: options.title ?? null,
-                kind: options.kind ?? null,
-                ...(options.body !== undefined ? { body: options.body } : {}),
-              }),
-            },
-          ]),
+        try: () => store.append(ticketId, state.version, decided.events),
         catch: (error) => error,
       }),
     )
@@ -207,10 +169,7 @@ export function claimTicketEffect(ticketId: string, options: ClaimOptions): Effe
 }
 
 export type ContinueRefusal =
-  /** Not `approved` — a requeue, a second approval, a close, all land between the approval and this claim. */
-  | { reason: 'not-approved'; status: string }
-  /** Approved onto a different run than the one this call means to continue. */
-  | { reason: 'wrong-run'; runId: string }
+  | ContinueDecline
   /** Another claimant won the append — the daemon and a CLI/board call raced for the same continuation. */
   | { reason: 'lost-race' }
 
@@ -233,36 +192,25 @@ export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: 
 export function continueTicketEffect(
   ticketId: string,
   runId: string,
-  options: { worker?: string; body?: string; store?: EventStore } & SnapshotReadOptions = {},
+  options: { worker?: string; body?: string; store: EventStore } & SnapshotReadOptions,
 ): Effect.Effect<ContinueResult, unknown> {
   return Effect.gen(function* () {
-    const store = options.store ?? eventStore
+    const store = options.store
     const worker = options.worker ?? conductorWorker()
 
     const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options)
 
-    if (state.lifecycle.status !== 'approved') {
-      return { ok: false, refusal: { reason: 'not-approved', status: state.lifecycle.status } } as const
-    }
-    if (state.lifecycle.runId !== runId) {
-      return { ok: false, refusal: { reason: 'wrong-run', runId: state.lifecycle.runId } } as const
-    }
+    const decided = continueTransition(state, {
+      runId,
+      worker,
+      ...(options.body !== undefined ? { body: options.body } : {}),
+    })
+    if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
 
     // Typed failures for every rejection, for `claimTicketEffect`'s reason.
     const appended = yield* Effect.result(
       Effect.tryPromise({
-        try: () =>
-          store.append(ticketId, state.version, [
-            {
-              type: 'TicketContinued',
-              actor: 'conductor',
-              data: parsePayload('TicketContinued', {
-                runId,
-                worker,
-                ...(options.body !== undefined ? { body: options.body } : {}),
-              }),
-            },
-          ]),
+        try: () => store.append(ticketId, state.version, decided.events),
         catch: (error) => error,
       }),
     )
@@ -274,6 +222,8 @@ export function continueTicketEffect(
     return { ok: true, claim: { ticketId, runId, worker, version: written!.version } } as const
   })
 }
+
+export type ReleaseResult = { ok: true } | { ok: false; refusal: ReleaseDecline }
 
 /**
  * Hands the item back. The only way back: there is no expiry (0027).
@@ -287,22 +237,51 @@ export function releaseTicketEffect(
   ticketId: string,
   runId: string,
   reason: string,
-  store: EventStore = eventStore,
+  store: EventStore,
   cause: ReleaseCause | null = null,
   options: SnapshotReadOptions = {},
-): Effect.Effect<void, unknown> {
+): Effect.Effect<ReleaseResult, unknown> {
+  return releaseWith(ticketId, { by: 'run', runId, reason, cause }, store, options)
+}
+
+/**
+ * The release a conductor that holds the daemon lock makes for a claim by a worker that is gone.
+ *
+ * `beforeAppend` runs between the transition's answer and the append, against the same read — the kill that must
+ * precede it (`daemon/reconcile.ts`, #87) happens there, so a claim that moved on is never killed for, and a write
+ * that loses to a newer one fails rather than succeeding on a re-read.
+ */
+export function releaseDeadWorkerEffect(
+  ticketId: string,
+  input: { mine: string; lock: string },
+  store: EventStore,
+  options: SnapshotReadOptions & {
+    beforeAppend?: (held: { runId: string; worker: string }) => Effect.Effect<void, unknown>
+  } = {},
+): Effect.Effect<ReleaseResult, unknown> {
+  return releaseWith(ticketId, { by: 'dead-worker', ...input }, store, options)
+}
+
+function releaseWith(
+  ticketId: string,
+  input: Parameters<typeof releaseTransition>[1],
+  store: EventStore,
+  options: SnapshotReadOptions & {
+    beforeAppend?: (held: { runId: string; worker: string }) => Effect.Effect<void, unknown>
+  },
+): Effect.Effect<ReleaseResult, unknown> {
   return Effect.gen(function* () {
     const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options)
+    const decided = releaseTransition(state, input)
+    if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
+    if (options.beforeAppend !== undefined && state.lifecycle.status === 'claimed') {
+      const { runId, worker } = state.lifecycle
+      yield* options.beforeAppend({ runId, worker })
+    }
     yield* Effect.tryPromise({
-      try: () =>
-        store.append(ticketId, state.version, [
-          {
-            type: 'TicketReleased',
-            actor: 'conductor',
-            data: parsePayload('TicketReleased', { runId, reason, cause }),
-          },
-        ]),
+      try: () => store.append(ticketId, state.version, decided.events),
       catch: (error) => error,
     })
+    return { ok: true } as const
   })
 }

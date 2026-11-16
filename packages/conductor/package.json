@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./claim": "./src/claim.ts",
+    "./ticket": "./src/ticket/commands.ts",
     "./run-log": "./src/run-log.ts",
     "./snapshot-state": "./src/snapshot-state.ts",
     "./projects": "./src/projects.ts",

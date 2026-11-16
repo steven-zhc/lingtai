@@ -57,6 +57,24 @@ export const NOT_YET_APPENDED: ReadonlySet<EventType> = new Set<EventType>(['Con
 
 export const ELSEWHERE: readonly { event: EventType; why: string; file: string; anchor: string }[] = [
   {
+    event: 'TicketClaimed',
+    why: "`ticket.ts`'s transition returns the event and `conductor/src/ticket/commands.ts` appends the value, so the finder cannot attribute it",
+    file: 'packages/domain/src/ticket.ts',
+    anchor: "type: 'TicketClaimed'",
+  },
+  {
+    event: 'TicketContinued',
+    why: "`ticket.ts`'s transition returns the event and `conductor/src/ticket/commands.ts` appends the value, so the finder cannot attribute it",
+    file: 'packages/domain/src/ticket.ts',
+    anchor: "type: 'TicketContinued'",
+  },
+  {
+    event: 'TicketReleased',
+    why: "`ticket.ts`'s transition returns the event and `conductor/src/ticket/commands.ts` appends the value, so the finder cannot attribute it",
+    file: 'packages/domain/src/ticket.ts',
+    anchor: "type: 'TicketReleased'",
+  },
+  {
     event: 'ProjectSandboxObserved',
     why: '`transitionProject` appends `[next]`, the value `sandboxObservation` returns, so the finder cannot attribute it',
     file: 'packages/domain/src/project.ts',

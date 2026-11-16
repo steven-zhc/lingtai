@@ -15,7 +15,7 @@
  */
 import { spawn } from 'node:child_process'
 
-import { conductorWorker } from '@lingtai/conductor/claim'
+import { conductorWorker } from '@lingtai/conductor/ticket'
 import type { Envelope } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'

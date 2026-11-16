@@ -1,4 +1,4 @@
-import { conductorWorker } from '@lingtai/conductor/claim'
+import { conductorWorker } from '@lingtai/conductor/ticket'
 import {
   CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
