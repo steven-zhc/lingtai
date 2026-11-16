@@ -2,7 +2,7 @@ import type { ReportTicketRow } from '@lingtai/conductor/report'
 import { report, resolveWindow } from '@lingtai/conductor/report'
 import { describe, expect, it } from 'vitest'
 
-import { takeBooks, p90, titleKey, type TakeBooksOptions } from '../scripts/take-books.ts'
+import { countLanded, takeBooks, p90, titleKey, type TakeBooksOptions } from '../scripts/take-books.ts'
 import { parseBooks, type Books } from '../src/lib/books.ts'
 
 const OPEN = 'owner/open'
@@ -252,5 +252,57 @@ describe('parseBooks', () => {
     expect(parseBooks({ ...b, cost: { ...b.cost, total: 1 } })).toBeNull()
     expect(parseBooks(null)).toBeNull()
     expect(parseBooks('books')).toBeNull()
+  })
+
+  it('accepts landedAllTime, well shaped, and still refuses any other total (#1191)', () => {
+    const b = JSON.parse(JSON.stringify(valid()))
+    const fig = { count: 612, since: '2026-09-01', asOf: '2026-11-15T10:00:00.000Z' }
+    expect(parseBooks({ ...b, landedAllTime: fig })?.landedAllTime).toEqual(fig)
+    expect(parseBooks(b)?.landedAllTime).toBeUndefined()
+    expect(parseBooks({ ...b, landedAllTime: { count: 612, since: '2026-09-01' } })).toBeNull()
+    expect(parseBooks({ ...b, landedAllTime: { ...fig, extra: 1 } })).toBeNull()
+    expect(parseBooks({ ...b, landedAllTime: 612 })).toBeNull()
+    expect(parseBooks({ ...b, landedAllTime: fig, totalCost: 1 })).toBeNull()
+  })
+})
+
+describe('countLanded (#1191)', () => {
+  const merge = (n: number | string, at: string) => ({
+    subject: `Merge branch 'agent/${n}' into HEAD`,
+    committedAt: at,
+  })
+  const asOf = new Date('2026-11-15T10:00:00Z')
+
+  it('counts a requeued issue once, and takes the earliest merge date', () => {
+    const got = countLanded(
+      [merge(5, '2026-10-03T10:00:00+08:00'), merge(5, '2026-09-02T10:00:00+08:00'), merge(6, '2026-10-04T10:00:00Z')],
+      new Set([5, 6]),
+      asOf,
+    )
+    expect(got).toEqual({ count: 2, since: '2026-09-02', asOf: asOf.toISOString() })
+  })
+
+  it('leaves out a merged issue that is not closed, and a pull request number', () => {
+    const got = countLanded([merge(5, '2026-10-03T10:00:00Z'), merge(7, '2026-10-04T10:00:00Z')], new Set([5]), asOf)
+    expect(got?.count).toBe(1)
+  })
+
+  it('ignores a subject that does not match exactly', () => {
+    const got = countLanded(
+      [
+        merge(5, '2026-10-03T10:00:00Z'),
+        { subject: 'Merge pull request #9 from x/agent/9', committedAt: '2026-10-01T00:00:00Z' },
+        { subject: "Merge branch 'feature/9' into main", committedAt: '2026-10-01T00:00:00Z' },
+        { subject: "Merge branch 'agent/x' into HEAD", committedAt: '2026-10-01T00:00:00Z' },
+      ],
+      new Set([5, 9]),
+      asOf,
+    )
+    expect(got).toEqual({ count: 1, since: '2026-10-03', asOf: asOf.toISOString() })
+  })
+
+  it('is null, never 0, when no merge matches or none is closed', () => {
+    expect(countLanded([], new Set([1]), asOf)).toBeNull()
+    expect(countLanded([merge(5, '2026-10-03T10:00:00Z')], new Set(), asOf)).toBeNull()
   })
 })

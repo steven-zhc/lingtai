@@ -11,9 +11,12 @@ import { repoRoot } from './docs.ts'
  * read the log (`deploy-site.yml`), so a deploy shows the same real books until
  * the next release replaces them.
  *
- * **No total of any kind is in this file**, and `parseBooks` refuses a key it
- * does not know, so a total slipped in later fails to read rather than
- * rendering. A figure that could not be computed is `null`, never `0`.
+ * **No total of any kind is in this file, with one exception**, and `parseBooks`
+ * refuses a key it does not know, so a total slipped in later fails to read
+ * rather than rendering. The exception is `landedAllTime`, the number of issues
+ * Lingtai's own merges closed: the operator's decision of 2026-11-15 (#1191),
+ * lifting #811's rule for that one figure and no other. A figure that could not
+ * be computed is `null`, never `0`; `landedAllTime` is absent instead.
  *
  * This module is the type and the reader only. The shaping needs the
  * conductor's `report()`, which must never reach the Next graph, so it lives
@@ -51,8 +54,19 @@ export interface MedianReceipt {
   cost: number | null
 }
 
+/** Issues closed by Lingtai's own merges of `agent/<n>`, all time (#1191). */
+export interface LandedAllTime {
+  count: number
+  /** `YYYY-MM-DD` of the earliest counted merge. */
+  since: string
+  /** When it was counted, ISO. */
+  asOf: string
+}
+
 export interface Books {
   version: 1
+  /** Absent when it could not be computed, and in files from before #1191. */
+  landedAllTime?: LandedAllTime
   /** `YYYY-MM-DD`, local days, `to` included. */
   window: { from: string; to: string }
   capturedAt: string
@@ -96,6 +110,8 @@ const KEYS = [
   'receipts',
 ]
 
+const OPTIONAL = 'landedAllTime'
+
 type Rec = Record<string, unknown>
 const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v)
 const str = (v: unknown): v is string => typeof v === 'string'
@@ -133,8 +149,9 @@ function receiptOk(v: unknown): boolean {
 export function parseBooks(value: unknown): Books | null {
   if (!isRec(value) || value.version !== 1) return null
   const keys = Object.keys(value)
-  if (keys.length !== KEYS.length || !KEYS.every((k) => k in value)) return null
+  if (!KEYS.every((k) => k in value) || keys.some((k) => k !== OPTIONAL && !KEYS.includes(k))) return null
   const ok =
+    (!(OPTIONAL in value) || shaped(value[OPTIONAL], { count: num, since: str, asOf: str })) &&
     shaped(value.window, { from: str, to: str }) &&
     str(value.capturedAt) &&
     (value.commit === null || str(value.commit)) &&

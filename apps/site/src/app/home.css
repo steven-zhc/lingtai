@@ -309,6 +309,10 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
 
 /* the books (#814) */
 .books { border-top: 1px solid var(--rule); }
+.books-total { display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap; margin-bottom: 26px; }
+.books-total-n { font-size: 84px; font-weight: 600; letter-spacing: -.05em; line-height: 1; }
+.books-total-l { font-size: 17px; color: var(--ink-2); line-height: 1.4; }
+.books-total-l span { display: block; font: 11px var(--mono); color: var(--muted); margin-top: 4px; }
 .books-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .85fr); gap: 40px; align-items: end; margin-bottom: 30px; }
 .books-head p:not(.kicker) { margin: 0; color: var(--ink-2); font-size: 16px; }
 .real-badge { display: inline-block; font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--pass); background: var(--pass-soft); border: 1px solid var(--pass); border-radius: 999px; padding: 4px 11px; margin-right: 6px; }

@@ -7,7 +7,7 @@ import { projectionLag, readTicketReport } from '@lingtai/projector'
 import { readTasks } from '@lingtai/projector/task-view'
 
 import { BOOKS_FILE } from '../src/lib/books.ts'
-import { takeBooks, titleKey } from './take-books.ts'
+import { countLanded, takeBooks, titleKey, type MergeRead } from './take-books.ts'
 
 /**
  * Takes Lingtai's own books for the front page (#811).
@@ -25,6 +25,9 @@ import { takeBooks, titleKey } from './take-books.ts'
  * checkpoint, a `--receipt` it cannot stand behind. `lingtai report` is the
  * opposite on the lag — it prints anyway and says so on stderr — because there
  * the figures are read by the operator; here they are published.
+ *
+ * It also needs `git` with `origin/main` fetched (the operator runs `git fetch`
+ * first; this never writes refs) and `gh` signed in, for `landedAllTime` (#1191).
  *
  * Only public projects are counted at all: a private project's tickets are left
  * out of every figure, not merely untitled.
@@ -58,6 +61,50 @@ function publishable(): Set<string> {
 function head(): string | null {
   try {
     return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim()
+  } catch {
+    return null
+  }
+}
+
+/** Merge commits on `origin/main`, or null when git cannot read them. */
+function merges(): MergeRead[] | null {
+  try {
+    const out = execFileSync('git', ['log', 'origin/main', '--merges', '--format=%H%x00%s%x00%cI'], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    })
+    return out
+      .split('\n')
+      .filter((l) => l !== '')
+      .map((l) => {
+        const [, subject = '', committedAt = ''] = l.split('\0')
+        return { subject, committedAt }
+      })
+  } catch {
+    return null
+  }
+}
+
+/** Numbers of closed issues (not pull requests) on the repository, or null when GitHub cannot be read. */
+function closedIssues(): Set<number> | null {
+  try {
+    const out = execFileSync(
+      'gh',
+      [
+        'api',
+        '--paginate',
+        'repos/steven-zhc/lingtai/issues?state=closed&per_page=100',
+        '--jq',
+        '.[] | select(.pull_request | not) | .number',
+      ],
+      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+    )
+    return new Set(
+      out
+        .split('\n')
+        .filter((l) => /^\d+$/.test(l))
+        .map(Number),
+    )
   } catch {
     return null
   }
@@ -104,6 +151,13 @@ async function main(): Promise<void> {
   if (from.getTime() > to.getTime()) refuse([`--from ${values.from} is after --to ${values.to}`])
   const window = resolveWindow({ from, to }, now)
 
+  const mergeLog = merges()
+  if (mergeLog === null) refuse(['git could not read origin/main — fetch it first.'])
+  const closed = closedIssues()
+  if (closed === null) refuse(['GitHub could not be read for closed issues — is `gh` signed in?'])
+  const landedAllTime = countLanded(mergeLog, closed, now)
+  if (landedAllTime === null) refuse(['no merge of agent/<n> on origin/main — is it fetched?'])
+
   try {
     const notes = lagNotes(await projectionLag(url))
     if (notes.length > 0) refuse(notes)
@@ -129,16 +183,17 @@ async function main(): Promise<void> {
       titles,
     })
     if (!taken.ok) refuse(taken.refusals)
+    const books = { ...taken.books, landedAllTime }
 
     const n = taken.books.outcomes.landed + taken.books.outcomes.closed + taken.books.outcomes.open
     if (n === 0) console.log('books: 0 public tickets in the window')
 
     // Whole or not at all: a crash halfway leaves the last release's books.
     const tmp = `${BOOKS_FILE}.tmp`
-    await writeFile(tmp, `${JSON.stringify(taken.books, null, 2)}\n`)
+    await writeFile(tmp, `${JSON.stringify(books, null, 2)}\n`)
     await rename(tmp, BOOKS_FILE)
     console.log(
-      `books: ${taken.books.outcomes.landed} landed, ${taken.books.outcomes.closed} closed, ${taken.books.outcomes.open} open, ${taken.books.receipts.length} receipts → ${BOOKS_FILE}`,
+      `books: ${taken.books.outcomes.landed} landed, ${taken.books.outcomes.closed} closed, ${taken.books.outcomes.open} open, ${taken.books.receipts.length} receipts, ${landedAllTime.count} closed by Lingtai's merges since ${landedAllTime.since} → ${BOOKS_FILE}`,
     )
   } catch (err) {
     refuse([`the log could not be read: ${err instanceof Error ? err.message : String(err)}`])
