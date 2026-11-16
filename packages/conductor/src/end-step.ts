@@ -152,32 +152,6 @@ export function resolveEndActions(
   ]
 }
 
-/**
- * The same thing, on its own append.
- *
- * For the one caller that cannot batch: a release is appended by
- * `releaseTicket`, which owns its own read and version. Everything else
- * should use `resolveEndActions` and keep the two facts in one transaction.
- */
-export function appendEndActionsEffect(
-  store: EventStore,
-  ticketId: string,
-  actions: readonly StepAction[],
-  outcome: TerminalOutcome,
-): Effect.Effect<ToAppend[], unknown> {
-  return Effect.gen(function* () {
-    if (actions.length === 0) return []
-    const events = yield* Effect.tryPromise({ try: () => store.read(ticketId), catch: (error) => error })
-    const toAppend = resolveEndActions(events, actions, outcome)
-    if (toAppend.length === 0) return []
-    yield* Effect.tryPromise({ try: () => store.append(ticketId, events.length, toAppend), catch: (error) => error })
-    // Returned so the caller can carry them out. Resolving and doing are two
-    // steps on purpose — the resolution is a fact and belongs in one transaction
-    // with the outcome, and the doing is I/O that must not be able to undo it.
-    return toAppend
-  })
-}
-
 // ------------------------------------------------------- what did not run ----
 
 /** A work item that ended with a plan at `end` and no record of it running. */

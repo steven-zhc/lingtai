@@ -332,7 +332,7 @@ export const STREAMS = {
   RunSpent: ['pass-', 'chat-', 'ticket-'],
   StepsResolved: ['pass-'],
   RecipeRecorded: ['rcp-'],
-  EndActionsResolved: ['pass-'],
+  EndActionsResolved: ['ticket-'],
   StepStarted: ['pass-'],
   StepEnded: ['pass-'],
   FindingAccepted: ['bkl-'],

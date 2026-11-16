@@ -31,17 +31,22 @@ import {
   type SplitChildState,
   claimTransition,
   continueTransition,
+  parsePayload,
   releaseTransition,
   ticketReducer,
+  type ToAppend,
 } from '@lingtai/domain'
+import type { WaitReason } from '@lingtai/domain/wait'
 import {
   ConcurrencyError,
   type EventStore,
   readThroughSnapshot,
   type SnapshotReadOptions,
 } from '@lingtai/event-store/store'
+import { type StepAction } from '@lingtai/recipe'
 import { Effect, Result } from 'effect'
 
+import { resolveEndActions, type TerminalOutcome } from '../end-step.ts'
 import type { Tickets } from '../ticket-store.ts'
 
 export type { SplitChildState }
@@ -239,7 +244,7 @@ export function releaseTicketEffect(
   reason: string,
   store: EventStore,
   cause: ReleaseCause | null = null,
-  options: SnapshotReadOptions = {},
+  options: SnapshotReadOptions & { endPlan?: readonly ToAppend[] } = {},
 ): Effect.Effect<ReleaseResult, unknown> {
   return releaseWith(ticketId, { by: 'run', runId, reason, cause }, store, options)
 }
@@ -268,6 +273,8 @@ function releaseWith(
   store: EventStore,
   options: SnapshotReadOptions & {
     beforeAppend?: (held: { runId: string; worker: string }) => Effect.Effect<void, unknown>
+    /** What `end` resolved for a failed ending: appended in the same append as the release. */
+    endPlan?: readonly ToAppend[]
   },
 ): Effect.Effect<ReleaseResult, unknown> {
   return Effect.gen(function* () {
@@ -279,9 +286,101 @@ function releaseWith(
       yield* options.beforeAppend({ runId, worker })
     }
     yield* Effect.tryPromise({
-      try: () => store.append(ticketId, state.version, decided.events),
+      try: () => store.append(ticketId, state.version, [...decided.events, ...(options.endPlan ?? [])]),
       catch: (error) => error,
     })
     return { ok: true } as const
+  })
+}
+
+/**
+ * The writers below append what an attempt's ending decided, at the version
+ * they read. None checks the ticket's state (none did in `conduct.ts`), and a
+ * store that refuses is a defect, as `conduct.ts`'s `appendAt` made it: the
+ * caller remembers it as the attempt's own (`appendNow`).
+ */
+function appendOnTicket(
+  store: EventStore,
+  ticketId: string,
+  options: SnapshotReadOptions,
+  events: readonly ToAppend[],
+): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options).pipe(Effect.orDie)
+    yield* Effect.promise(() => store.append(ticketId, state.version, events))
+  })
+}
+
+/** The runtime cannot fail closed: the board says why nothing ran. */
+export function refuseDispatchEffect(
+  ticketId: string,
+  input: { runtime: string; missing: readonly string[] },
+  store: EventStore,
+  options: SnapshotReadOptions = {},
+): Effect.Effect<void> {
+  return appendOnTicket(store, ticketId, options, [
+    {
+      type: 'DispatchRefused',
+      actor: 'conductor',
+      data: parsePayload('DispatchRefused', { runtime: input.runtime, missing: [...input.missing] }),
+    },
+  ])
+}
+
+/**
+ * `TicketLanded` and the end plan, **one append**: an `EndActionsResolved{landed}`
+ * over an unrecorded landing must be unreachable, not merely unlikely.
+ */
+export function landTicketEffect(
+  ticketId: string,
+  input: { mergeCommit: string; base: string; endPlan?: readonly ToAppend[] },
+  store: EventStore,
+  options: SnapshotReadOptions = {},
+): Effect.Effect<void> {
+  return appendOnTicket(store, ticketId, options, [
+    {
+      type: 'TicketLanded',
+      actor: 'conductor',
+      data: parsePayload('TicketLanded', { mergeCommit: input.mergeCommit, base: input.base }),
+    },
+    ...(input.endPlan ?? []),
+  ])
+}
+
+/** `WaitStarted` and the end plan, one append, for the landing's reason. */
+export function holdTicketEffect(
+  ticketId: string,
+  input: { waitId: string; reason: WaitReason; endPlan?: readonly ToAppend[] },
+  store: EventStore,
+  options: SnapshotReadOptions = {},
+): Effect.Effect<void> {
+  return appendOnTicket(store, ticketId, options, [
+    {
+      type: 'WaitStarted',
+      actor: 'conductor',
+      data: parsePayload('WaitStarted', { waitId: input.waitId, reason: input.reason }),
+    },
+    ...(input.endPlan ?? []),
+  ])
+}
+
+/**
+ * `EndActionsResolved` alone, for `cli end` replaying an ending. Returns what
+ * it wrote, so the caller can carry it out: resolving and doing are two steps
+ * on purpose.
+ */
+export function recordEndPlanEffect(
+  store: EventStore,
+  ticketId: string,
+  actions: readonly StepAction[],
+  outcome: TerminalOutcome,
+): Effect.Effect<ToAppend[], unknown> {
+  return Effect.gen(function* () {
+    if (actions.length === 0) return []
+    const events = yield* Effect.tryPromise({ try: () => store.read(ticketId), catch: (error) => error })
+    const toAppend = resolveEndActions(events, actions, outcome)
+    if (toAppend.length === 0) return []
+    yield* Effect.tryPromise({ try: () => store.append(ticketId, events.length, toAppend), catch: (error) => error })
+    return toAppend
   })
 }
