@@ -234,6 +234,20 @@ describe('takeBooks', () => {
     expect(got.map((r) => (r.median ? null : r.number))).toEqual([7])
   })
 
+  it("is not suppressed by another public project's ineligible ticket of the same number", () => {
+    const other = 'owner/other'
+    const priced = (n: number) => ({
+      Work: { reportedCents: n * 100, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 },
+    })
+    const rows = [1, 2, 3].map((n) => row({ issue: String(n), cost: priced(n) }))
+    const old = [1, 2, 3].map((n) =>
+      row({ project: other, issue: String(n), outcome: 'closed', outcomeAt: new Date(2026, 8, 1) }),
+    )
+    const titles = new Map([1, 2, 3].map((n) => [titleKey(OPEN, String(n)), `t${n}`] as const))
+    const open = new Set([OPEN, other])
+    expect(books([...rows, ...old], { open, titles }).receipts.slice(1)).toHaveLength(3)
+  })
+
   it('never publishes an untitled ticket, and its cost still moves the percentiles', () => {
     const rows = [1, 2, 3, 4].map((i) =>
       row({
