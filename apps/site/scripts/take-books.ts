@@ -180,9 +180,17 @@ export function takeBooks(rows: readonly ReportTicketRow[], o: TakeBooksOptions)
   const costs = known(landed.map(dollars))
   // The pool is smaller than the sample the targets come from: a ticket with no
   // title is never shown, but it still moves the percentiles, as it moves the median.
+  // A receipt carries a number and no project, and the page links it to one repository:
+  // a number that is a ticket in two public projects names neither, so it is never chosen.
+  const projectsByIssue = new Map<number, Set<string>>()
+  for (const t of publicRows) {
+    const n = Number(parseTicketStream(t.ticket)?.issue)
+    projectsByIssue.set(n, (projectsByIssue.get(n) ?? new Set()).add(t.project!))
+  }
   const pool = landed.flatMap((row) => {
     const cost = dollars(row)
     const issue = Number(parseTicketStream(row.ticket)?.issue)
+    if ((projectsByIssue.get(issue)?.size ?? 0) > 1) return []
     const title = o.titles.get(titleKey(row.project!, String(issue))) ?? null
     return cost === null || !Number.isInteger(issue) || title === null || title === ''
       ? []

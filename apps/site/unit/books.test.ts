@@ -215,6 +215,25 @@ describe('takeBooks', () => {
     ])
   })
 
+  it('never chooses an issue number that is a ticket in two public projects', () => {
+    const other = 'owner/other'
+    const priced = (n: number) => ({
+      Work: { reportedCents: n * 100, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 },
+    })
+    const rows = [
+      row({ issue: '42', cost: priced(1) }),
+      row({ project: other, issue: '42', cost: priced(2) }),
+      row({ issue: '7', cost: priced(3) }),
+    ]
+    const titles = new Map([
+      [titleKey(OPEN, '42'), 'mine'],
+      [titleKey(other, '42'), 'theirs'],
+      [titleKey(OPEN, '7'), 'seven'],
+    ])
+    const got = books(rows, { open: new Set([OPEN, other]), titles }).receipts.slice(1)
+    expect(got.map((r) => (r.median ? null : r.number))).toEqual([7])
+  })
+
   it('never publishes an untitled ticket, and its cost still moves the percentiles', () => {
     const rows = [1, 2, 3, 4].map((i) =>
       row({
