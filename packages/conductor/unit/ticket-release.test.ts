@@ -7,7 +7,7 @@ import { ConcurrencyError } from '@lingtai/event-store/store'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { releaseDeadWorkerEffect } from '../src/ticket/commands.ts'
+import { releaseDeadWorkerEffect, releaseTicketEffect } from '../src/ticket/commands.ts'
 
 const ticketId = ticketStream('lingtai', 9)
 
@@ -35,14 +35,7 @@ describe('releaseDeadWorkerEffect', () => {
     const out = await Effect.runPromise(
       Effect.flip(
         releaseDeadWorkerEffect(ticketId, { mine: 'me:1', lock: 'l' }, store, {
-          beforeAppend: () =>
-            Effect.tryPromise({
-              try: () =>
-                store.append(ticketId, 1, [
-                  { type: 'TicketReleased', actor: 'x', data: { runId: 'run-1', reason: 'r', cause: null } },
-                ]),
-              catch: (e) => e,
-            }).pipe(Effect.asVoid),
+          beforeAppend: () => releaseTicketEffect(ticketId, 'run-1', 'someone else first', store).pipe(Effect.asVoid),
         }),
       ),
     )
