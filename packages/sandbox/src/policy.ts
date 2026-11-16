@@ -190,6 +190,7 @@ export const policyVariables = (host: HostFacts, project: string): Record<string
     XDG_CACHE_HOME: posix.join(cache, 'xdg-cache'),
     XDG_DATA_HOME: posix.join(cache, 'xdg-data'),
     npm_config_store_dir: posix.join(cache, 'pnpm-store'),
+    pnpm_config_store_dir: posix.join(cache, 'pnpm-store'),
     npm_config_cache: posix.join(cache, 'npm'),
     PIP_CACHE_DIR: posix.join(cache, 'pip'),
     DO_NOT_TRACK: '1',

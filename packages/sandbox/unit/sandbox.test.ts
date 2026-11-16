@@ -283,6 +283,7 @@ describe('wrap', () => {
       XDG_CACHE_HOME: `${cache}/xdg-cache`,
       XDG_DATA_HOME: `${cache}/xdg-data`,
       npm_config_store_dir: `${cache}/pnpm-store`,
+      pnpm_config_store_dir: `${cache}/pnpm-store`,
       npm_config_cache: `${cache}/npm`,
       PIP_CACHE_DIR: `${cache}/pip`,
       DO_NOT_TRACK: '1',
