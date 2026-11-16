@@ -70,7 +70,6 @@ export {
   type RunLogFollowed,
 } from './run-log.ts'
 export { nextPrompt, renderPrompt, type NextPrompt, type PromptEdit } from './prompt.ts'
-export { parseResetAt, standDown } from './never-started.ts'
 export {
   runQueue,
   tallyTurnEffect,

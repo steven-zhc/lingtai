@@ -44,8 +44,8 @@
  * `AttributedFailure` here, because a `Failure` name is already owned
  * elsewhere once both are re-exported from this package's index.
  */
-import type { BlockDiagnosis, BlockRecommendation } from './events.ts'
-import type { RefusalReason, RunFailureKind } from './vocabulary.ts'
+import type { BlockDiagnosis, BlockRecommendation } from '../events.ts'
+import type { RefusalReason, RunFailureKind } from '../vocabulary.ts'
 
 /**
  * Who owns a failure — and so what a card can honestly say about it.

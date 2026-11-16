@@ -88,11 +88,6 @@ export class GitHubFailed extends Data.TaggedError('GitHubFailed')<{
   override get message(): string {
     return `${this.status} on ${this.path}: ${this.detail}`
   }
-
-  /** A 429, or a 403 whose detail says GitHub is throttling rather than refusing. */
-  get rateLimited(): boolean {
-    return this.status === 429 || (this.status === 403 && /rate limit/i.test(this.detail))
-  }
 }
 
 /** The App is not installed on that repository — the failure 0006 exists to surface. */

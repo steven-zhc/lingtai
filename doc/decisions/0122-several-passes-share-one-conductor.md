@@ -50,21 +50,20 @@ and the dollar ceiling lands before any N > 1.
 2. **Who runs together.** Order is `selectRunnable`'s (`packages/conductor/src/queue.ts`,
    called from `schedule.ts`) and does not change: kind, then issue number. A look
    fills free slots by walking that order and **skipping**, not stopping at, any
-   candidate that collides with an attempt in flight in the same project: a higher
-   ticket that collides waits for the collision to clear and a lower one that does
-   not collide takes the slot.
+   candidate a requirement links to an attempt in flight in the same project: a
+   higher ticket that is linked waits for the link to clear and a lower one that is
+   not takes the slot. **What runs together is decided by requirements, never by
+   which files a ticket's text names**: a ticket is one requirement, sized and
+   tested on its own, and two such tickets run side by side whatever files they
+   share.
    - **A blocked-by chain never runs together.** This is already so: a ticket with
      an open blocker is passed over as `blocked-by`
      (`packages/conductor/src/discover.ts`), and a blocker in flight is open until
      it lands and closes. A→B→C excludes C through B. Nothing is built for it.
-   - **Tickets whose `Fix` rows name the same file never run together.** The files
-     are the backticked tokens in the four-row table's `Fix` cell that contain a
-     `/` or an extension, with a trailing `:line` removed. Two tickets collide when
-     any path is equal, or when a bare file name equals the last segment of the
-     other's path. **A ticket with no `Fix` row, or none naming a file, collides
-     with nothing**: everything else runs, and no agent is paid to predict scope.
-     What this lets through is caught by the re-review on a moved base (§3, #593)
-     and by conflict waits (#589).
+   - **Two tickets that change the same file still run together.** A shared file
+     is not a dependency between requirements, and nothing reads a ticket's text
+     to guess one. Where the second to land meets a base that moved under it, the
+     re-review on a moved base (§3, #593) and the `conflict` route answer it.
    - **A ticket whose base is red is passed over as `base-red`**
      ([0108](0108-a-refusal-buys-a-round.md) §13), and it is the queue's look
      that decides when the base is green again. When a project has a
@@ -219,8 +218,9 @@ and the dollar ceiling lands before any N > 1.
   `lingtai status`, `doctor` and the board's bar read the set.
 - Until a ceiling is configured nothing changes for anyone: one attempt in the
   whole installation, as today.
-- Two tickets that collide in a way a `Fix` row did not predict both run, and the
-  second to land pays a re-review on the new base. That cost is chosen over paying
-  an agent to predict scope.
+- Two tickets that touch the same file both run, and the second to land pays a
+  re-review on the new base, or a `conflict` round. That cost is chosen over
+  holding a slot idle on a guess read from a ticket's text, or paying an agent to
+  predict scope.
 
 _New topic; replaces no archived ADR. The design discussion is #341 and #636._
