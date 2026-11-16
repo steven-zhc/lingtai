@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sandbox — mock (agreed 2026-11-16)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ground:#f1f4f4;--surface:#fff;--ink:#0f181c;--ink-2:#33434a;--muted:#5e6e74;--rule:#d8e0e1;--rule-2:#e9eeee;
+  --accent:#0b6a70;--accent-soft:#dcedee;--accent-ink:#075056;
+  --signal:#9c5a08;--signal-soft:#f7ead6;--pass:#2c7a4c;--pass-soft:#dfeee4;--fail:#a33029;--fail-soft:#f6e1de;
+  --sans:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:14px/1.5 var(--sans);padding:32px 40px 80px}
+.label{font:600 13px var(--sans);color:var(--accent-ink);letter-spacing:.02em;margin:0 0 10px;display:flex;gap:10px;align-items:baseline}
+.label small{font-weight:400;color:var(--muted)}
+.frame{max-width:1180px;margin:0 auto 56px}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:22px 26px}
+.mono{font-family:var(--mono);font-size:12.5px}
+.muted{color:var(--muted)}
+h2{font-size:15px;margin:0;font-weight:600}
+h3{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* page chrome (context only) */
+.crumbs{font-size:13px;color:var(--muted);margin-bottom:6px}
+.title{font-size:20px;font-weight:600;margin:0 0 14px}
+.tabs{display:flex;gap:22px;border-bottom:1px solid var(--rule);margin-bottom:18px}
+.tabs span{padding:8px 0;font-size:13.5px;color:var(--muted)}
+.tabs span.on{color:var(--ink);font-weight:600;border-bottom:2px solid var(--accent);margin-bottom:-1px}
+.tabs .count{display:inline-block;margin-left:6px;background:var(--signal-soft);color:var(--signal);border-radius:9px;padding:0 7px;font-size:11.5px;font-weight:600}
+
+/* summary */
+.summary{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;padding:16px 20px;border:1px solid var(--rule);border-radius:10px;background:linear-gradient(0deg,var(--surface),var(--surface))}
+.shield{width:38px;height:38px;border-radius:10px;background:var(--pass-soft);display:grid;place-items:center}
+.shield svg{width:20px;height:20px}
+.summary .big{font-size:15.5px;font-weight:600}
+.summary .sub{color:var(--muted);font-size:13px}
+.stats{display:flex;gap:26px}
+.stat{text-align:right}
+.stat b{display:block;font-size:20px;font-weight:600;line-height:1.1}
+.stat span{font-size:11.5px;color:var(--muted)}
+.stat.sig b{color:var(--signal)}
+
+.pill{display:inline-flex;align-items:center;gap:5px;font:500 11.5px var(--sans);padding:1px 8px;border-radius:9px;white-space:nowrap}
+.pill.ok{background:var(--pass-soft);color:var(--pass)}
+.pill.sig{background:var(--signal-soft);color:var(--signal)}
+.pill.off{background:var(--rule-2);color:var(--muted)}
+.pill.fail{background:var(--fail-soft);color:var(--fail)}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.chip{display:inline-block;font:12px var(--mono);background:var(--ground);border:1px solid var(--rule-2);border-radius:6px;padding:1px 7px;margin:0 4px 5px 0;color:var(--ink-2);white-space:nowrap}
+.chip.own{background:var(--accent-soft);border-color:#bcdcde;color:var(--accent-ink)}
+.chip.tok{background:#fff;border-style:dashed}
+.btn{display:inline-block;font:500 12.5px var(--sans);border:1px solid var(--accent);color:var(--accent);border-radius:7px;padding:4px 11px;background:#fff;white-space:nowrap}
+.btn.solid{background:var(--accent);color:#fff}
+.btn.ghost{border-color:var(--rule);color:var(--ink-2)}
+
+section.blk{margin-top:22px}
+table{width:100%;border-collapse:collapse}
+th{font:600 11.5px var(--sans);color:var(--muted);text-align:left;padding:0 10px 7px;border-bottom:1px solid var(--rule)}
+td{padding:9px 10px;border-bottom:1px solid var(--rule-2);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+
+.blocked{border:1px solid #ecd6b3;background:#fffaf2;border-radius:10px;padding:14px 16px 6px}
+.blocked th{border-color:#ecd6b3}
+.blocked td{border-color:#f3e6cf}
+.host{font:500 13px var(--mono)}
+.why{font-size:12px;color:var(--muted)}
+.note{font-size:12.5px;color:var(--muted);margin:8px 0 0}
+.note.inline{margin:10px 2px 8px}
+
+.step{font:12.5px var(--mono)}
+.step b{font-weight:500;color:var(--ink)}
+.kind{display:inline-flex;align-items:center;gap:5px;font:500 11.5px var(--mono);padding:1px 8px;border-radius:6px;white-space:nowrap}
+.kind.cmd{color:var(--muted);border:1px solid var(--rule)}
+.kind.agent{color:#4b3f8a;background:#ece8f7;border:1px solid #d9d2f0}
+.kind svg{width:11px;height:11px;fill:currentColor}
+.polref{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:5px;border:1px solid var(--rule);font:600 11px var(--mono);color:var(--ink-2)}
+
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.box{border:1px solid var(--rule);border-radius:10px;padding:13px 14px 8px;background:var(--surface)}
+.box h4{margin:0 0 9px;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:baseline}
+.box h4 small{font-weight:400;color:var(--muted);font-size:11.5px}
+.grp{font-size:11.5px;color:var(--muted);margin:2px 0 4px}
+.diff{margin-top:14px;border:1px solid var(--rule);border-radius:10px;padding:12px 14px}
+.diff .row{display:grid;grid-template-columns:28px 230px 1fr;gap:10px;align-items:center;padding:5px 0}
+.legend{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12px;margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--ground)}
+.legend dt{font-family:var(--mono);color:var(--accent-ink)}
+.legend dd{margin:0;font-family:var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.foot{margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.foot .box{background:var(--ground);border-color:var(--rule-2)}
+.foot ul{margin:0;padding-left:18px;font-size:12.5px;color:var(--ink-2)}
+.foot li{margin-bottom:4px}
+
+/* recipe */
+.rhead{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}
+.rhead .state{display:flex;gap:10px;align-items:center;margin-top:6px;font-size:13px;color:var(--ink-2)}
+.toggle{width:34px;height:19px;border-radius:10px;background:var(--pass);position:relative}
+.toggle:after{content:"";position:absolute;right:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff}
+.grid3{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:14px;margin-top:6px}
+.empty-own{font-size:12.5px;color:var(--muted);border:1px dashed var(--rule);border-radius:7px;padding:6px 9px;margin-bottom:10px}
+.empty-own a{font-weight:500}
+.sep{height:1px;background:var(--rule-2);margin:8px 0 9px}
+details summary{cursor:pointer;font-size:12px;color:var(--muted);list-style:none;margin-bottom:6px}
+details summary::-webkit-details-marker{display:none}
+details summary:before{content:"▸ ";color:var(--muted)}
+details[open] summary:before{content:"▾ "}
+.anno{position:relative}
+.ann{position:absolute;right:-232px;width:210px;font-size:12px;line-height:1.45;color:#5b4a1e;background:#fff6d8;border:1px solid #ecdca3;border-radius:8px;padding:8px 10px}
+.ann:before{content:"";position:absolute;left:-7px;top:12px;border:7px solid transparent;border-left:0;border-right-color:#ecdca3}
+.wrap{max-width:1180px;margin:0 auto;padding-right:240px;box-sizing:content-box}
+</style>
+</head>
+<body>
+
+<!-- ============================ A: TASK PAGE TAB ============================ -->
+<div class="wrap">
+<p class="label">设计 A · 任务页的 Sandbox 标签 <small>chapter-garden #1 · attempt 1 · 用 studio 上那次演示的真实数据</small></p>
+<div class="card">
+  <div class="tabs" style="font-family:var(--mono);letter-spacing:.08em"><span>TICKET <small class="muted">5 events</small></span><span class="on">SANDBOX</span><span>ATTEMPT 1 <small class="muted">finished · $0.10 + 1 unknown</small></span></div>
+  <div style="text-align:right;margin:-6px 0 12px"><span class="mono" style="border-bottom:2px solid var(--accent);padding-bottom:2px">Attempt 1</span></div>
+
+  <div class="anno">
+  <div class="summary">
+    <div class="shield"><svg viewBox="0 0 24 24" fill="none" stroke="#2c7a4c" stroke-width="2"><path d="M12 3l7 3v6c0 4.5-3 7.7-7 9-4-1.3-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></div>
+    <div>
+      <div class="big">Every run of attempt 1 ran inside the sandbox</div>
+      <div class="sub">4 runs · srt 0.0.83 · the merge is Lingtai's own and runs outside it</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>4/4</b><span>runs sandboxed</span></div>
+      <div class="stat sig"><b>4</b><span>connections refused</span></div>
+          </div>
+  </div>
+  <div class="ann" style="top:4px">一行回答“这次跑在沙箱里吗”。有运行没进沙箱时，盾牌换成 signal（degraded）或 fail（stopped）色，句子改成 “3 of 4 runs…”。有运行的拒绝记录未知（pending、lost、unreadable）时，数字写 “4 or more”，不写成确定的总数。标签栏和 attempt 切换保持现在的样子，标签上不加数字。</div>
+  </div>
+
+  <section class="blk anno">
+    <h3>Blocked</h3>
+    <div class="blocked">
+      <table>
+        <thead><tr><th>Host</th><th>Refused</th><th>By</th><th>First</th><th class="r"></th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="host">example.com</span></td>
+            <td>1×</td>
+            <td class="step"><b>implement</b> · claude-code</td>
+            <td><span title="2026-11-16T17:40:28.963Z">17:40:28 UTC</span></td>
+            <td class="r"><a class="btn">Allow on this project</a></td>
+          </tr>
+          <tr>
+            <td><span class="host">mcp.postman.com</span></td>
+            <td>3×</td>
+            <td class="step"><b>review</b> · codex</td>
+            <td><span title="2026-11-16T17:40:45.681Z">17:40:45 UTC</span></td>
+            <td class="r"><a class="btn">Allow on this project</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Telemetry hosts are not counted. A refused file read is not listed: srt does not report one.</p>
+    <div class="ann" style="top:60px">放到最上面，因为这是唯一可能要你动手的部分。时间用 UTC，和看板其他地方一致，悬停显示完整 ISO 时间。“By” 写明是哪一步的哪个 runtime，这样一眼就能看出 postman 是 Codex 自己的 MCP 去连的。</div>
+  </section>
+
+  <section class="blk anno">
+    <h3>Runs</h3>
+    <table>
+      <thead><tr><th>Step</th><th>Kind</th><th>Boundary</th><th>Policy</th><th class="r">Refused</th></tr></thead>
+      <tbody>
+        <tr><td class="step"><b>prepared</b> · install</td><td><span class="kind cmd">command</span></td><td><span class="pill ok"><span class="dot"></span>sandboxed</span></td><td><span class="polref">A</span></td><td class="r muted">none</td></tr>
+        <tr><td class="step"><b>build</b> · build</td><td><span class="kind cmd">command</span></td><td><span class="pill ok"><span class="dot"></span>sandboxed</span></td><td><span class="polref">A</span></td><td class="r muted">none</td></tr>
+        <tr><td class="step"><b>implement</b> · write the change</td><td><span class="kind agent"><svg viewBox="0 0 16 16"><path d="M8 1.5l1.6 3.6 3.9.4-2.9 2.6.8 3.8L8 10l-3.4 1.9.8-3.8L2.5 5.5l3.9-.4z"/></svg>agent · claude-code</span></td><td><span class="pill ok"><span class="dot"></span>sandboxed</span></td><td><span class="polref">B</span></td><td class="r" style="color:var(--signal);font-weight:600">1</td></tr>
+        <tr><td class="step"><b>review</b> · review</td><td><span class="kind agent"><svg viewBox="0 0 16 16"><path d="M8 1.5l1.6 3.6 3.9.4-2.9 2.6.8 3.8L8 10l-3.4 1.9.8-3.8L2.5 5.5l3.9-.4z"/></svg>agent · codex</span></td><td><span class="pill ok"><span class="dot"></span>sandboxed</span></td><td><span class="polref">C</span></td><td class="r" style="color:var(--signal);font-weight:600">3</td></tr>
+      </tbody>
+    </table>
+    <div class="ann" style="top:30px">按时间顺序一步一行。Kind 列区分 <b>agent</b>（跑了 LLM，花钱，被拒的连接通常来自这里）和 <b>command</b>（install、build 这类 shell 命令）。数据来自 <span class="mono">RunRow.runtime</span>：有值是 agent，没有值是 command。不在沙箱里的运行显示 <span style="color:#9c5a08">degraded</span> 或 <span style="color:#a33029">stopped</span>，并附上 srt 给的原因。srt 版本挪到顶上的摘要里（所有运行都一样时只写一次）。</div>
+  </section>
+
+  <section class="blk anno">
+    <h3>What the runs could reach</h3>
+    <div class="grid4">
+      <div class="box">
+        <h4>Reachable <small>13 hosts</small></h4>
+        <div class="grp">Anthropic</div>
+        <span class="chip">api.anthropic.com</span><span class="chip">*.anthropic.com</span><span class="chip">claude.ai</span><span class="chip">*.claude.ai</span>
+        <div class="grp">OpenAI</div>
+        <span class="chip">api.openai.com</span><span class="chip">*.openai.com</span><span class="chip">chatgpt.com</span><span class="chip">*.chatgpt.com</span>
+        <div class="grp">npm</div>
+        <span class="chip">registry.npmjs.org</span><span class="chip">*.npmjs.org</span>
+        <div class="grp">GitHub</div>
+        <span class="chip">github.com</span><span class="chip">*.github.com</span><span class="chip">*.githubusercontent.com</span>
+        <div class="grp">This recipe</div>
+        <span class="muted" style="font-size:12px">none added</span>
+      </div>
+      <div class="box">
+        <h4>Writable <small>5</small></h4>
+        <span class="chip tok">&lt;worktree&gt;</span><span class="chip tok">&lt;mirror&gt;</span><span class="chip tok">&lt;cache&gt;</span><span class="chip" title="/tmp · /private/tmp">/tmp</span><span class="chip" title="/var/folders/y7/b4lkp2c90p165_gygx2txt100000gn/T · /private/var/folders/…/T">/var/folders/y7/…/T</span>
+        <p class="note" style="margin-top:4px">A path and its /private twin are one chip.</p>
+      </div>
+      <div class="box">
+        <h4>Cannot be read <small>11</small></h4>
+        <span class="chip">~/.ssh</span><span class="chip">~/.aws</span><span class="chip">~/.gnupg</span><span class="chip">~/.config/gh</span><span class="chip">~/.netrc</span><span class="chip">~/.npmrc</span><span class="chip">~/.kube</span><span class="chip">~/.docker/config.json</span><span class="chip">~/.claude/.credentials.json</span><span class="chip">~/Library/Keychains</span><span class="chip tok">&lt;lingtai home&gt;</span>
+        <p class="note" style="margin-top:4px">except <span class="mono">&lt;worktree&gt;</span>, <span class="mono">&lt;mirror&gt;</span>, <span class="mono">&lt;cache&gt;</span> inside it</p>
+      </div>
+      <div class="box">
+        <h4>Cannot be written <small>4</small></h4>
+        <span class="chip tok">&lt;mirror&gt;/config</span><span class="chip tok">&lt;mirror&gt;/hooks</span><span class="chip tok">&lt;mirror&gt;/info</span><span class="chip">/var/folders/y7/…/T/lingtai</span>
+        <p class="note" style="margin-top:4px">The last holds the hook sockets.</p>
+      </div>
+    </div>
+
+    <div class="diff">
+      <h3 style="margin-bottom:4px">Where the three policies differ</h3>
+      <div class="row"><span class="polref">A</span><span class="step"><b>prepared</b>, <b>build</b></span><span class="muted" style="font-size:13px">the set above, nothing more</span></div>
+      <div class="row"><span class="polref">B</span><span class="step"><b>implement</b> · claude-code</span><span style="font-size:13px">also writes <span class="chip tok" style="margin:0">&lt;lingtai home&gt;/runs/&lt;attempt&gt;/claude</span> <span class="muted">— Claude Code's own config directory</span></span></div>
+      <div class="row"><span class="polref">C</span><span class="step"><b>review</b> · codex</span><span style="font-size:13px">also writes <span class="chip" style="margin:0">~/.codex</span> <span class="muted">— Codex's login is readable to it</span></span></div>
+    </div>
+
+    <dl class="legend">
+      <dt>~</dt><dd>/Users/steven</dd>
+      <dt>&lt;lingtai home&gt;</dt><dd>/Users/steven/demo-lingtai</dd>
+      <dt>&lt;worktree&gt;</dt><dd>/Users/steven/demo-lingtai/worktrees/chapter-garden/pass-c4587156-e6bf-422f-a494-c065bbf93bad</dd>
+      <dt>&lt;mirror&gt;</dt><dd>/Users/steven/demo-lingtai/repos/chapter-garden.git</dd>
+      <dt>&lt;cache&gt;</dt><dd>/Users/steven/demo-lingtai/cache/chapter-garden</dd>
+          </dl>
+    <div class="ann" style="top:30px">现在的页面把三条 policy 各列一遍，几乎完全一样，有 120 多行。这里改成只列一次共同的部分，再用一个小表写出三条 policy 的差别。长路径换成占位符（~、&lt;lingtai home&gt;、&lt;worktree&gt;、&lt;mirror&gt;、&lt;cache&gt;），底下的图例给出完整路径，悬停任何一个占位符也能看到。临时目录不用占位符，因为看板进程的临时目录不一定和 daemon 的相同；/var 和 /private/var 两种写法合成一条。域名按厂商分组，分组用一张固定的表，因为这些内置域名本身就是常量。</div>
+  </section>
+
+  <div class="foot">
+    <div class="box"><h4>How Claude Code signs in here</h4><p style="margin:0;font-size:12.5px;color:var(--ink-2)">A sandboxed Claude Code run uses a long-lived token of its own (<span class="mono">lingtai token claude</span>). It never reads your login.</p></div>
+    <div class="box"><h4>Not covered</h4><ul><li>Codex's login stays readable to a Codex run.</li><li>srt does not report a refused file read or write.</li><li>srt is a research preview, pinned per run.</li></ul></div>
+  </div>
+</div>
+</div>
+
+<!-- ============================ B: RECIPE PAGE ============================ -->
+<div class="wrap" style="margin-top:56px">
+<p class="label">设计 B · Recipe 页的 Sandbox 卡片 <small>放进现在的 recipe 页面里（左栏卡片，右边是 recipe.yml），只显示配置，不再有 Recently blocked</small></p>
+<div class="anno">
+<img src="recipe-sandbox.png" style="width:100%;border:1px solid var(--rule);border-radius:12px;display:block" alt="recipe page with the new Sandbox card">
+<div class="ann" style="top:1200px">和左栏其他卡片同一个样式：左边是大写的键，中间是值，右边是来源（← built in、← recipe.yml），跟 “Also set” 和步骤列表一样。每一行先列 “this recipe” 自己加的条目，再列内置的，所以一眼能看出这个 recipe 改了什么。域名按厂商分组，长路径换成占位符，底下的图例给出完整路径。<br><br>~/secrets 那一条只是示例，用来展示 recipe 自己的 deny 条目长什么样，真实的 recipe 里没有。</div>
+</div>
+</div>
+</body>
+</html>
