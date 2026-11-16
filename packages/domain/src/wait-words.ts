@@ -1,3 +1,4 @@
+import type { BlockDiagnosis, BlockRecommendation } from './events.ts'
 /**
  * What `task_view`, the board and every other reader of a wait reduced before
  * 0118's `WaitReason` existed — rebuilt from the `WaitReason` directly now
@@ -17,8 +18,7 @@
  * too — accepted, the same way a few other small differences from before
  * 0118 already were (see the retained note below on 400-character clipping).
  */
-import { diagnoseRefusal } from './attribution.ts'
-import type { BlockDiagnosis, BlockRecommendation } from './events.ts'
+import { diagnoseRefusal } from './failure/explain.ts'
 import type { Proposal } from './proposal.ts'
 import type { Finding, RefusalReason } from './vocabulary.ts'
 import type { EscalationBecause, AttemptRef, WaitReason } from './wait.ts'

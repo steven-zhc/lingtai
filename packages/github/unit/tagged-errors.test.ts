@@ -1,3 +1,4 @@
+import { classify } from '@lingtai/domain'
 import { Effect, Fiber } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -6,6 +7,9 @@ import { BodyChanged, PermissionDenied } from '../src/client.ts'
 import { ghTokenEffect } from '../src/gh.ts'
 import type { GhRun } from '../src/gh.ts'
 import { convertManifestEffect } from '../src/manifest.ts'
+
+const rateLimited = (err: GitHubFailed): boolean =>
+  classify({ platform: 'github', status: err.status, text: err.detail })?.kind === 'rate-limited'
 
 describe('the tagged errors', () => {
   it('GitHubFailed keeps its message rule', () => {
@@ -35,10 +39,10 @@ describe('the tagged errors', () => {
     )
   })
   it('rateLimited', () => {
-    expect(new GitHubFailed(429, '/', 'x').rateLimited).toBe(true)
-    expect(new GitHubFailed(403, '/', 'API rate limit exceeded').rateLimited).toBe(true)
-    expect(new GitHubFailed(403, '/', 'Resource not accessible by integration').rateLimited).toBe(false)
-    expect(new GitHubFailed(404, '/', 'Not Found').rateLimited).toBe(false)
+    expect(rateLimited(new GitHubFailed(429, '/', 'x'))).toBe(true)
+    expect(rateLimited(new GitHubFailed(403, '/', 'API rate limit exceeded'))).toBe(true)
+    expect(rateLimited(new GitHubFailed(403, '/', 'Resource not accessible by integration'))).toBe(false)
+    expect(rateLimited(new GitHubFailed(404, '/', 'Not Found'))).toBe(false)
   })
 })
 

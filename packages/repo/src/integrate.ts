@@ -61,8 +61,10 @@ import { basename } from 'node:path'
  */
 import { integrationStream } from '@lingtai/domain'
 import {
+  UNREACHABLE_WAITS,
   WIP_COMMIT_PREFIX,
   type RefusalReason,
+  classify,
   baseProtectedRemedies,
   parsePayload,
   reduceIntegration,
@@ -74,14 +76,7 @@ import { type Duration, Effect, Result } from 'effect'
 import { type GitRunOptions, RepoFailed, type TokenSource, gitEffect } from './git.ts'
 import { landingSubject } from './landing-subject.ts'
 import { mirrorWrite } from './mirror-lock.ts'
-import {
-  BASE_PROTECTED,
-  PUSH_REJECTED,
-  UNREACHABLE_WAITS,
-  isRemoteErrorFailure,
-  isUnreachableFailure,
-  retryUnreachable,
-} from './network.ts'
+import { retryUnreachable } from './network.ts'
 import { worktreePath } from './worktree.ts'
 
 export interface IntegrateOptions {
@@ -459,7 +454,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         ),
       )
       // Git refuses a push to the branch a non-bare repository has checked out,
-      // in a form `PUSH_REJECTED` does not read — so a local remote is asked
+      // in a form the `push-rejected` row does not read — so a local remote is asked
       // first, before anything is fetched or pushed (0104 §15). A failed read
       // is a `RepoFailed` and lands as `unexpected`: never "nothing checked out".
       if (options.remote !== undefined && isLocalRemote(options.remote)) {
@@ -677,23 +672,25 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         Effect.catchTag('RepoFailed', (e) => (e.exitCode === 1 ? Effect.succeed(false) : Effect.fail(e))),
       )
       const pushTry = at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd).pipe(
-        Effect.catchTag('RepoFailed', (err) =>
-          isRemoteErrorFailure(err) || PUSH_REJECTED.test(err.stderr ?? err.detail)
+        Effect.catchTag('RepoFailed', (err) => {
+          const said = classify({ platform: 'git', text: err.stderr ?? err.detail })?.kind
+          return said === 'remote-error' || said === 'push-rejected'
             ? landedAlready.pipe(
                 Effect.orElseSucceed(() => false),
                 Effect.flatMap((landed) => (landed ? Effect.succeed('') : Effect.fail(err))),
               )
-            : Effect.fail(err),
-        ),
+            : Effect.fail(err)
+        }),
       )
       const pushed = yield* Effect.result(retryUnreachable(pushTry, waits))
       if (Result.isFailure(pushed)) {
         // A push that failed for some other reason is not this lane's business
         // to read, and goes to the unexpected channel at the bottom.
-        if (BASE_PROTECTED.test(pushed.failure.detail)) {
+        const said = classify({ platform: 'git', text: pushed.failure.detail })?.kind
+        if (said === 'base-protected') {
           return yield* refuse('base-protected', `${baseProtectedRemedies(options.base)}\n${pushed.failure.detail}`)
         }
-        if (!PUSH_REJECTED.test(pushed.failure.detail)) return yield* Effect.fail(pushed.failure)
+        if (said !== 'push-rejected') return yield* Effect.fail(pushed.failure)
         return { lostThePush: true, detail: pushed.failure.detail } satisfies LostPush
       }
       // The mirror's `refs/heads/<base>` is Lingtai's own copy of the truth;
@@ -715,14 +712,15 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // refused anywhere above still leaves an event behind — which is the
       // entire difference from six silent `return 1`s — and now the compiler
       // knows that is the only thing it has to answer for.
-      Effect.catchTag('RepoFailed', (err) =>
+      Effect.catchTag('RepoFailed', (err) => {
         // origin did not answer, after the tries: nothing was judged (#1029).
-        isUnreachableFailure(err)
+        const said = classify({ platform: 'git', text: err.stderr ?? err.detail })?.kind
+        return said === 'unreachable'
           ? refuse('unreachable', `origin could not be reached: ${err.detail}`)
-          : isRemoteErrorFailure(err)
+          : said === 'remote-error'
             ? refuse('remote-error', `GitHub answered a server error on the push: ${err.detail}`)
-            : refuse('unexpected', `the integration failed unexpectedly: ${err.detail}`),
-      ),
+            : refuse('unexpected', `the integration failed unexpectedly: ${err.detail}`)
+      }),
       // And the defect channel, for what is not a git failure at all. It is the
       // remains of the catch-all rather than the catch-all: everything the type
       // system can see has already been handled one line up.

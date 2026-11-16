@@ -1,3 +1,4 @@
+import { classify, parseResetAt, standDown } from '@lingtai/domain'
 /**
  * Reading a reset time out of prose — the one place
  * [0031](../../../doc/decisions-archive/0031-a-run-that-never-started.md) allows the
@@ -19,7 +20,10 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { accountWallOf, parseResetAt, standDown } from '../src/never-started.ts'
+const accountWallOf = (text: string) => {
+  const said = classify({ platform: 'runtime', text })
+  return said?.kind === 'account-limit' ? said.runtime : null
+}
 
 /** What the log actually held, six times, on the night 0031 is about. */
 const QUOTA = "You've hit your session limit · resets 11pm (America/Chicago)"

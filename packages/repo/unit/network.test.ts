@@ -1,8 +1,14 @@
+import { classify, remoteErrorRef } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { RepoFailed } from '../src/git.ts'
-import { isRemoteError, isRemoteErrorFailure, isUnreachable, remoteErrorRef, retryUnreachable } from '../src/network.ts'
+import { retryUnreachable } from '../src/network.ts'
+
+const kindOf = (text: string) => classify({ platform: 'git', text })?.kind
+const isUnreachable = (text: string): boolean => kindOf(text) === 'unreachable'
+const isRemoteError = (text: string): boolean => kindOf(text) === 'remote-error'
+const isRemoteErrorFailure = (err: RepoFailed): boolean => isRemoteError(err.stderr ?? err.detail)
 
 describe('isUnreachable', () => {
   it.each([

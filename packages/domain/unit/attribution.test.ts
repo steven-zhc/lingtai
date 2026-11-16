@@ -22,7 +22,7 @@ import { RUN_FAILURE_KINDS, type RefusalReason } from '@lingtai/domain'
  */
 import { describe, expect, it } from 'vitest'
 
-import { diagnoseRefusal, whoseFailure } from '../src/attribution.ts'
+import { diagnoseRefusal, whoseFailure } from '../src/failure/explain.ts'
 
 const conflict = {
   source: 'integration' as const,

@@ -10,6 +10,7 @@
  * The one exception is discovery, which reads issues *once* to learn that a work
  * item exists. After that the log is the authority.
  */
+import { classify } from '@lingtai/domain'
 import { Data, Effect } from 'effect'
 
 import {
@@ -571,7 +572,9 @@ export const makeGitHub = (
     const asLinkCall = <A>(level: 'read' | 'write', call: E<A>): E<A> =>
       Effect.catchIf(
         call,
-        (err) => err.status === 403 && !err.rateLimited,
+        (err) =>
+          err.status === 403 &&
+          classify({ platform: 'github', status: err.status, text: err.detail })?.kind !== 'rate-limited',
         (err) => Effect.fail(new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')),
       )
 

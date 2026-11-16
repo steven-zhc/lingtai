@@ -65,7 +65,7 @@ export function gitInvocation(
   // Never prompt: a hung credential prompt inside a daemon is indistinguishable
   // from a slow clone.
   env['GIT_TERMINAL_PROMPT'] = '0'
-  // English stderr, so `isUnreachable`, `PUSH_REJECTED` and `BASE_PROTECTED` read git's words (#1029).
+  // English stderr, so `classify`'s git rows (`@lingtai/domain`) read git's words (#1029).
   env['LC_ALL'] = 'C'
   return { args: argv, env }
 }
