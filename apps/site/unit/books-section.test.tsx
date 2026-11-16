@@ -57,6 +57,19 @@ describe('the books section', () => {
     expect(t).toContain('No totals are published.')
   })
 
+  it('shows the all-time figure first, dated, and nothing when the key is absent (#1191)', () => {
+    const withIt = text(
+      render(
+        books((b) => {
+          b.landedAllTime = { count: 1234, since: '2026-09-01', asOf: '2026-11-15T10:00:00.000Z' }
+        }),
+      ),
+    )
+    expect(withIt).toContain("1,234 issues closed by Lingtai's own merges, since 2026-09-01")
+    expect(withIt).toContain('as of 2026-11-15')
+    expect(t).not.toContain('closed by Lingtai')
+  })
+
   it('has no Discussion key when its share rounds to 0%, and no stamp on an open receipt', () => {
     expect(t).not.toContain('Discussion')
     const open = html.slice(html.indexOf('ISSUE #539'))

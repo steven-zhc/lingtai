@@ -149,6 +149,15 @@ export function BooksSection({ books }: { books: Books }) {
 
   return (
     <section className="books" id="books" aria-labelledby="books-title">
+      {books.landedAllTime ? (
+        <div className="books-total">
+          <div className="books-total-n">{books.landedAllTime.count.toLocaleString('en-US')}</div>
+          <div className="books-total-l">
+            issues closed by Lingtai&apos;s own merges, since {books.landedAllTime.since}
+            <span>as of {books.landedAllTime.asOf.slice(0, 10)}</span>
+          </div>
+        </div>
+      ) : null}
       <div className="books-head">
         <div>
           <p className="kicker">The work, in the open</p>

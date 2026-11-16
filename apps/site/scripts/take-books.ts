@@ -17,8 +17,9 @@ import type { Books, MedianReceipt, Receipt } from '../src/lib/books.ts'
  * is dollars; `ticketMoney` is the one place they meet, and everything below is
  * cents from it, divided by 100 once.
  *
- * **There is no total.** Nothing here is named or computed as one: spend is
- * published as shares whose denominator is never written down.
+ * **There is no total in `takeBooks`.** Nothing there is named or computed as one: spend is
+ * published as shares whose denominator is never written down. The one total in
+ * the file, `landedAllTime` (#1191), is counted by `countLanded` below.
  */
 
 export interface TakeBooksOptions {
@@ -37,6 +38,40 @@ export interface TakeBooksOptions {
 }
 
 export type TakeBooks = { ok: true; books: Books } | { ok: false; refusals: string[] }
+
+export interface MergeRead {
+  subject: string
+  /** Committer date, ISO. */
+  committedAt: string
+}
+
+/**
+ * Issues closed by Lingtai's own merges (#1191): the distinct `n` with a merge
+ * of `agent/<n>` that GitHub reports closed. Counts issues, not merges — a
+ * requeued issue has several. Null when no subject matches: that is the wrong
+ * checkout, never a zero.
+ */
+export function countLanded(
+  merges: readonly MergeRead[],
+  closed: ReadonlySet<number>,
+  asOf: Date,
+): { count: number; since: string; asOf: string } | null {
+  const seen = new Set<number>()
+  let first: string | null = null
+  let matched = false
+  for (const m of merges) {
+    const hit = /^Merge branch 'agent\/(\d+)'/.exec(m.subject)
+    if (hit === null) continue
+    matched = true
+    const n = Number(hit[1])
+    if (!closed.has(n)) continue
+    seen.add(n)
+    const day = m.committedAt.slice(0, 10)
+    if (first === null || day < first) first = day
+  }
+  if (!matched || first === null) return null
+  return { count: seen.size, since: first, asOf: asOf.toISOString() }
+}
 
 export const titleKey = (project: string, issue: string): string => `${project}#${issue}`
 
