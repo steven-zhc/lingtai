@@ -165,7 +165,7 @@ const land = (git: ReturnType<typeof lazyGit>) =>
     base: 'main',
     branch: 'agent/1',
     ticketId: 't',
-    headSha: '0'.repeat(40),
+    headSha: '1'.repeat(40),
     stepsPassed: true,
     home: '/fake-home',
     store: createMemoryEventStore(),

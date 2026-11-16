@@ -55,6 +55,7 @@ describe('whose failure it is', () => {
       'push-rejected',
       'lane-busy',
       'wip-commit',
+      'head-moved',
       'unreachable',
       'remote-error',
       'unexpected',
@@ -111,6 +112,7 @@ describe('whose failure it is', () => {
       'remote-error',
       'lane-busy',
       'wip-commit',
+      'head-moved',
       'base-protected',
       'unexpected',
     ]
@@ -185,6 +187,16 @@ describe('a refusal, read for a person', () => {
     expect(reading.recommendation?.action).toBe('approve')
   })
 
+  it('says the branch is not the commit the steps passed for head-moved, and recommends requeue, never approve (#1209)', () => {
+    const detail = `expected ${'a'.repeat(40)} found ${'b'.repeat(40)}`
+    const reading = diagnoseRefusal({ reason: 'head-moved', detail, branch: 'agent/1', base: 'main' })
+    expect(reading.what).toContain('a'.repeat(40))
+    expect(reading.what).toContain('b'.repeat(40))
+    expect(reading.recommendation?.action).toBe('requeue')
+    const bare = diagnoseRefusal({ reason: 'head-moved', detail: 'x', branch: 'agent/1', base: 'main' })
+    expect(bare.recommendation?.action).not.toBe('approve')
+  })
+
   const REASONS: RefusalReason[] = [
     'conflict',
     'dirty-base',
@@ -200,6 +212,7 @@ describe('a refusal, read for a person', () => {
     // repository's own history.
     'lane-busy',
     'wip-commit',
+    'head-moved',
     'base-protected',
     'unexpected',
   ]

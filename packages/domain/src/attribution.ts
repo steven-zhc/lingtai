@@ -169,6 +169,12 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
    */
   'wip-commit': 'lingtai',
   /**
+   * The branch on origin is not the sha the steps passed on — a step that
+   * committed after the checks, or a push from outside. Nothing about the
+   * diff was judged, and nobody meant it as a hold.
+   */
+  'head-moved': 'lingtai',
+  /**
    * A repository setting refused the push. Not `repository` — that is the diff
    * or its gates — and not `lingtai`, since nothing in Lingtai is broken. Only a
    * person's change to the branch's protection, or to the recipe's base, lifts
@@ -307,6 +313,17 @@ const REFUSAL_READING: Record<
     move: {
       action: 'approve',
       why: 'once the remote has another branch checked out, approving re-runs only the land — a requeue would pay for the work again',
+    },
+  },
+  'head-moved': {
+    says: ({ branch, base, detail }) => {
+      const shas = /expected (\S+) found (\S+)/.exec(detail)
+      const which = shas === null ? '' : ` (the steps passed ${shas[1]}; origin holds ${shas[2]})`
+      return `${branch} on origin is not the commit the steps passed${which}, so it was not merged into ${base}.`
+    },
+    move: {
+      action: 'requeue',
+      why: 'approving would re-land the same commit against the same moved branch; a requeue starts again from the base',
     },
   },
   unreachable: {

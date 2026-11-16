@@ -43,7 +43,7 @@ const land = (fake: ReturnType<typeof fakeGit>, over: { base?: string; remote?: 
     base: over.base ?? 'lingtai-base',
     branch: 'agent/771',
     ticketId: 't',
-    headSha: '0'.repeat(40),
+    headSha: '1'.repeat(40),
     stepsPassed: true,
     home: '/fake-home',
     store: createMemoryEventStore(),

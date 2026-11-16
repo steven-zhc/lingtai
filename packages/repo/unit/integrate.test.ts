@@ -114,7 +114,7 @@ const options = (git: ReturnType<typeof fakeGit>['git']) => ({
   base: BASE,
   branch: BRANCH,
   ticketId: `ticket-${PROJECT}`,
-  headSha: '0'.repeat(40),
+  headSha: '1'.repeat(40),
   stepsPassed: true,
   home: '/fake-home',
   store: createMemoryEventStore(),
@@ -227,6 +227,19 @@ describe('the merge lane refuses a WIP commit (#468)', () => {
     const fake = fakeGit({ subjects: ['implement the fix', 'wip: partial refactor'] })
     const result = await integrate(options(fake.git))
     expect(result.ok, JSON.stringify(result)).toBe(true)
+  })
+})
+
+describe('a branch that is not the commit the steps checked (#1209)', () => {
+  it('is refused head-moved before anything is merged or pushed', async () => {
+    const fake = fakeGit()
+    const opts = { ...options(fake.git), headSha: '2'.repeat(40) }
+    const result = await integrate(opts)
+    expect(result).toMatchObject({ ok: false, reason: 'head-moved' })
+    expect(fake.calls.filter((c) => c.args[0] === 'merge' || c.args[0] === 'push')).toHaveLength(0)
+    const events = await opts.store.read(integrationStream(PROJECT, BASE))
+    expect(events.filter((e) => e.type === 'IntegrationRefused')).toHaveLength(1)
+    expect(JSON.stringify(events, (_k, v) => (typeof v === 'bigint' ? Number(v) : v))).toContain('head-moved')
   })
 })
 

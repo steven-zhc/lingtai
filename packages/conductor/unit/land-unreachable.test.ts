@@ -66,6 +66,13 @@ describe('the branch push in landNow', () => {
     expect(lane()).toBe(1)
   })
 
+  it('pushes the sha the steps checked, never HEAD (#1209)', async () => {
+    const { pushes } = await land(TIMEOUT, 0)
+    const branchPush = pushes[0] ?? []
+    expect(branchPush.at(-1)).toMatch(/^[0-9a-f]{40}:refs\/heads\/agent\/7$/)
+    expect(branchPush.at(-1)).not.toMatch(/^HEAD:/)
+  })
+
   it('is unreachable, not push-rejected, when the tries run out', async () => {
     // Three tries fail; the end-of-pass publish after them is another push, and succeeds.
     // (Three consecutive failures of the first push, then the lane never runs.)

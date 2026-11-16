@@ -78,6 +78,9 @@ export const RefusalReason = z.enum([
   // GitHub answered the push with a 5xx and kept answering it through the lane's own
   // tries — nothing about the branch or the base was judged, and approve re-runs only the land (#1125).
   'remote-error',
+  // The branch on origin is not the commit the steps passed on — the lane refuses before
+  // merging anything, and never retries it: a person requeues from the base.
+  'head-moved',
 ])
 export type RefusalReason = z.infer<typeof RefusalReason>
 
