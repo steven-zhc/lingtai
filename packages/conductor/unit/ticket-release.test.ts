@@ -36,11 +36,13 @@ describe('releaseDeadWorkerEffect', () => {
       Effect.flip(
         releaseDeadWorkerEffect(ticketId, { mine: 'me:1', lock: 'l' }, store, {
           beforeAppend: () =>
-            Effect.tryPromise(() =>
-              store.append(ticketId, 1, [
-                { type: 'TicketReleased', actor: 'x', data: { runId: 'run-1', reason: 'r', cause: null } },
-              ]),
-            ).pipe(Effect.asVoid),
+            Effect.tryPromise({
+              try: () =>
+                store.append(ticketId, 1, [
+                  { type: 'TicketReleased', actor: 'x', data: { runId: 'run-1', reason: 'r', cause: null } },
+                ]),
+              catch: (e) => e,
+            }).pipe(Effect.asVoid),
         }),
       ),
     )

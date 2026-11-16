@@ -887,43 +887,28 @@ export function releaseTransition(
   state: TicketState,
   input: ReleaseInput,
 ): { ok: true; events: ToAppend<PayloadOf<'TicketReleased'>>[] } | { ok: false; refusal: ReleaseDecline } {
+  let data: PayloadOf<'TicketReleased'>
   if (input.by === 'run') {
-    return {
-      ok: true,
-      events: [
-        {
-          type: 'TicketReleased',
-          actor: 'conductor',
-          data: parsePayload('TicketReleased', { runId: input.runId, reason: input.reason, cause: input.cause }),
+    data = parsePayload('TicketReleased', { runId: input.runId, reason: input.reason, cause: input.cause })
+  } else {
+    const life = state.lifecycle
+    // Releasing a live claim is a far worse outcome than leaving a dead one.
+    if (life.status !== 'claimed' || life.worker === input.mine) {
+      return {
+        ok: false,
+        refusal: {
+          reason: 'moved-on',
+          status: life.status,
+          ...(life.status === 'claimed' ? { worker: life.worker } : {}),
         },
-      ],
+      }
     }
+    data = parsePayload('TicketReleased', {
+      runId: life.runId,
+      // The lock, not a timestamp: whoever reads this back can check the claim.
+      reason: `${input.mine} holds ${input.lock}, so ${life.worker} was not coming back`,
+      cause: null,
+    })
   }
-  const life = state.lifecycle
-  // Releasing a live claim is a far worse outcome than leaving a dead one.
-  if (life.status !== 'claimed' || life.worker === input.mine) {
-    return {
-      ok: false,
-      refusal: {
-        reason: 'moved-on',
-        status: life.status,
-        ...(life.status === 'claimed' ? { worker: life.worker } : {}),
-      },
-    }
-  }
-  return {
-    ok: true,
-    events: [
-      {
-        type: 'TicketReleased',
-        actor: 'conductor',
-        data: parsePayload('TicketReleased', {
-          runId: life.runId,
-          // The lock, not a timestamp: whoever reads this back can check the claim.
-          reason: `${input.mine} holds ${input.lock}, so ${life.worker} was not coming back`,
-          cause: null,
-        }),
-      },
-    ],
-  }
+  return { ok: true, events: [{ type: 'TicketReleased', actor: 'conductor', data }] }
 }
