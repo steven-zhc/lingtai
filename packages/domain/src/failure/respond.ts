@@ -42,40 +42,19 @@
  * apart — the first is a fault in this parser, and the sentence quotes the
  * fragment so a reader is pointed at it rather than away from it.
  *
- * **One reading here is a verdict, and it is safe for the same reason** (#655).
- * `accountWallOf` decides whether a run that *did* start ended on the
- * runtime's own account-limit sentence, and which runtime's, and the one thing
- * that decides is a lock on that account. A false match idles the projects using it until `until`; a miss is
- * the behaviour from before it existed. It never touches the ticket's wait.
+ * **The one reading that is a verdict is not here.** Whether a run that *did* start
+ * ended on the runtime's own account-limit sentence is a `classify` row (#655,
+ * #1011): a false match idles the projects using the account until `until`, a
+ * miss is the behaviour from before it existed, and it never touches the
+ * ticket's wait.
  *
  * Nothing here does I/O and nothing here appends. `conduct.ts` is where the
  * lock is written, and it is one call.
  */
-import type { PayloadOf, RuntimeId } from '@lingtai/domain'
+import type { PayloadOf, RuntimeId } from '../events.ts'
 
 /** Which of `standDown`'s four sources the `until` came from; `AccountLimitReached`'s own field. */
 export type UntilFrom = PayloadOf<'AccountLimitReached'>['untilFrom']
-
-/**
- * Whether a failure's detail is a runtime's own account-limit sentence.
- *
- * The runtimes' sentences and nothing looser: a word like *limit* turns up in
- * a test's output and in an agent's prose (#655). The sentence is looked for as
- * a substring, because a fix round and a drafting agent wrap it in their own.
- */
-const ACCOUNT_WALLS: readonly { readonly runtime: RuntimeId; readonly pattern: RegExp }[] = [
-  // Codex, first: it says `You've hit your usage limit` as well as `You have hit …`,
-  // and Claude Code's looser pattern below would claim the first form.
-  { runtime: 'codex', pattern: /\bYou(?:(?:'|\u2019)ve| have) hit your usage limit\b/i },
-  // Claude Code: `You've hit your monthly spend limit`, `…session limit`, `…weekly limit`.
-  { runtime: 'claude-code', pattern: /\bYou(?:'|\u2019)ve hit your (?!usage limit)[a-z ]{0,30}limit\b/i },
-  { runtime: 'claude-code', pattern: /\byour session limit resets\b/i },
-]
-
-/** The runtime whose own account-limit sentence `detail` holds, or null (#1011). */
-export function accountWallOf(detail: string): RuntimeId | null {
-  return ACCOUNT_WALLS.find((wall) => wall.pattern.test(detail))?.runtime ?? null
-}
 
 /**
  * A reset time read out of a runtime's own message, or null.
@@ -275,7 +254,7 @@ function clockReset(detail: string, now: Date, zone: string | undefined): { at: 
  * `judge:` do, both being `{of: "step"}` — and need their own where they differ.
  * A variant stretched over a case it is false about is `#133`.
  */
-export type NeverStarted =
+export type StandDownWhat =
   | { readonly of: 'run' }
   /** The point's action, as `point:action` — what the card and the chip name. */
   | { readonly of: 'step'; readonly step: string }
@@ -304,7 +283,7 @@ export type NeverStarted =
   | { readonly of: 'mid-run'; readonly step: string }
 
 /** What each opens with, and whose words the quote at the end is. */
-function subject(what: NeverStarted): { opening: string; whose: string } {
+function subject(what: StandDownWhat): { opening: string; whose: string } {
   if (what.of === 'run') {
     return {
       opening: 'a run ended without ever starting — no turns taken, nothing spent',
@@ -360,7 +339,7 @@ export function standDown(input: {
   detail: string
   /** `source.backoff` in milliseconds, for when the message named no time. */
   backoffMs: number
-  what: NeverStarted
+  what: StandDownWhat
   /** The runtime that met the wall: the account the sentence says is locked. */
   runtime: RuntimeId
   now?: Date

@@ -48,6 +48,10 @@ import {
   DIFF_FLAGS,
 } from '@lingtai/domain'
 import {
+  UNREACHABLE_WAITS,
+  classify,
+  standDown,
+  type StandDownWhat,
   type ReleaseCause,
   type AttemptState,
   type RuntimeId,
@@ -212,9 +216,6 @@ import {
 } from '@lingtai/recipe'
 import { DEFAULT_ACTION, isBuiltInJudge, type SandboxDecision } from '@lingtai/recipe'
 import {
-  UNREACHABLE_WAITS,
-  isRemoteErrorFailure,
-  isUnreachableFailure,
   mirrorPathFor,
   mirrorWrite,
   retryUnreachable,
@@ -252,7 +253,6 @@ import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
-import { accountWallOf, type NeverStarted, standDown } from './never-started.ts'
 import { AgentHost, Repo } from './ports.ts'
 import { currentRecipeEffect } from './projects.ts'
 import { signedInHere } from './projects.ts'
@@ -295,6 +295,12 @@ import type { Tickets } from './ticket-store.ts'
  * about one commit and command one run, so it cannot be a local of a pass. Keyed by the store
  * because a store is one log; `log` is the first caller's, which is the conductor's own.
  */
+/** The runtime whose own account-limit sentence `detail` holds, or null (#1011). */
+function wallOf(detail: string): RuntimeId | null {
+  const said = classify({ platform: 'runtime', text: detail })
+  return said?.kind === 'account-limit' ? said.runtime : null
+}
+
 const baseChecks = new WeakMap<EventStore, ReturnType<typeof createBaseCheck>>()
 function baseCheckFor(store: EventStore, log: (line: string) => void, home: string) {
   let check = baseChecks.get(store)
@@ -1672,7 +1678,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * appends nothing, so the first `until` stands. A failed append is logged and
      * swallowed: it must not replace the reason the run ended.
      */
-    const standDownAccount = (what: NeverStarted, runtime: RuntimeId, detail: string): Effect.Effect<void> =>
+    const standDownAccount = (what: StandDownWhat, runtime: RuntimeId, detail: string): Effect.Effect<void> =>
       Effect.gen(function* () {
         const it =
           what.of === 'run'
@@ -2548,7 +2554,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                         gitHere(['ls-remote', 'origin', `refs/heads/${branch}`, `refs/heads/${arm}`]),
                       )
                       if (Result.isFailure(listed))
-                        return yield* Effect.fail(isUnreachableFailure(listed.failure) ? listed.failure : err)
+                        return yield* Effect.fail(
+                          classify({ platform: 'git', text: listed.failure.stderr ?? listed.failure.detail })?.kind ===
+                            'unreachable'
+                            ? listed.failure
+                            : err,
+                        )
                       const held = new Map(
                         listed.success
                           .split('\n')
@@ -3248,7 +3259,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
           if (outcome.failure) {
             // #655: the judge's crash is the ticket's wait, and the account's wall locks the runtime that said it.
-            const walled = outcome.failure.kind === 'crash' ? accountWallOf(outcome.failure.detail) : null
+            const walled = outcome.failure.kind === 'crash' ? wallOf(outcome.failure.detail) : null
             if (walled !== null) {
               yield* standDownAccount({ of: 'mid-run', step: 'proposed' }, walled, outcome.failure.detail)
             }
@@ -3386,19 +3397,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ? Effect.gen(function* () {
                     const listed = yield* Effect.result(gitHere(['ls-remote', 'origin', `refs/heads/${branch}`]))
                     if (Result.isFailure(listed))
-                      return yield* Effect.fail(isUnreachableFailure(listed.failure) ? listed.failure : err)
+                      return yield* Effect.fail(
+                        classify({ platform: 'git', text: listed.failure.stderr ?? listed.failure.detail })?.kind ===
+                          'unreachable'
+                          ? listed.failure
+                          : err,
+                      )
                     return listed.success.split(/\s/)[0] === on.onSha ? '' : yield* Effect.fail(err)
                   })
                 : Effect.fail(err),
           )
           if (Result.isFailure(pushed)) {
+            const said = classify({ platform: 'git', text: pushed.failure.stderr ?? pushed.failure.detail })?.kind
             return {
               notMerged: {
-                reason: isUnreachableFailure(pushed.failure)
-                  ? 'unreachable'
-                  : isRemoteErrorFailure(pushed.failure)
-                    ? 'remote-error'
-                    : 'push-rejected',
+                reason: said === 'unreachable' || said === 'remote-error' ? said : 'push-rejected',
                 detail: pushed.failure.detail,
               },
             }
@@ -4960,7 +4973,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           stoppedBy = fixed.failure ? fixed.failure.kind : null
           // #655: `committed` below drops the failure, so the blocked branch never sees
           // the account's wall a fixer met after it had committed. Lock the account here instead.
-          const walled = fixed.failure?.kind === 'crash' ? accountWallOf(fixed.failure.detail) : null
+          const walled = fixed.failure?.kind === 'crash' ? wallOf(fixed.failure.detail) : null
           if (fixed.failure && walled !== null) {
             yield* standDownAccount({ of: 'mid-run', step: 'implement' }, walled, fixed.failure.detail)
           }
@@ -5716,7 +5729,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         })
         // #655: a run that started and met the account's limit. The wait above is
         // the ticket's and is already written; this only locks the account.
-        const walled = reason._tag === 'AgentCrashed' && reason.cause === 'crash' ? accountWallOf(reason.detail) : null
+        const walled = reason._tag === 'AgentCrashed' && reason.cause === 'crash' ? wallOf(reason.detail) : null
         if (reason._tag === 'AgentCrashed' && walled !== null) {
           yield* standDownAccount({ of: 'mid-run', step: reason.step }, walled, reason.detail)
         }

@@ -36,7 +36,7 @@ fixes the bounds and the endings that router works inside.
    resolve, a missing GitHub App or env value, no hook binary, an unreachable
    database: nothing in the repository is broken, so nothing an agent could do
    would help. `conduct.ts` answers these before it claims (for example
-   `stage: "recipe"`), and `whoseFailure` in `packages/conductor/src/attribution.ts`
+   `stage: "recipe"`), and `whoseFailure` in `packages/domain/src/failure/explain.ts`
    names the owner on the card (`lingtai` or `repository`). The owner decides the
    sentence a person reads, never a purchase.
 
@@ -151,7 +151,7 @@ fixes the bounds and the endings that router works inside.
     stops: no round, no judge, no question for a person. The attempt appends
     `AccountLimitReached` on `acct-{runtime}`, for the runtime that agent ran on,
     with an `until` ([0126](0126-a-stop-is-a-lock-and-an-unlock.md) §2);
-    `standDown` (`packages/conductor/src/never-started.ts`) reads a reset time out
+    `standDown` (`packages/domain/src/failure/respond.ts`) reads a reset time out
     of the message (an ISO instant, a dated clock, or a wall clock, at most a week
     out) and falls back to `source.backoff`. A lock already holding is left alone.
     The lock holds every project whose recipe uses that runtime, is lifted by the
@@ -331,10 +331,11 @@ fixes the bounds and the endings that router works inside.
   raised from 2 to 10 and `TRANSIENT_RETRIES_LIMIT` added; the conflict budget
   drawn from `rounds` rather than `CONFLICT_ROUNDS_LIMIT = 2`; and
   `attemptCeiling` saying the one total of §8. §17's second run, §18's
-  answers, and §19's module — today the rules are in `network.ts`,
-  `github/src/app.ts`, `never-started.ts`, `judge.ts`'s `BUILT_IN_FOR`,
-  `routing.ts` and `attribution.ts`, and `platform-errors.md` is written by
-  hand.
+  answers, and §19's *respond* half — `packages/domain/src/failure/` holds
+  *classify* (`classify.ts`), *explain* (`explain.ts`) and the account-limit
+  wait (`respond.ts`), and `platform-errors.md`'s *What Lingtai recognises
+  today* is generated from the table; what is left is `judge.ts`'s
+  `BUILT_IN_FOR` and `routing.ts`.
 
 - **`backlog:` does not set the bar.** The plugin is declared in
   `packages/recipe/src/recipe.ts`, but the `minor` bar is still a literal in
