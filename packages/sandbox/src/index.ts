@@ -1,5 +1,6 @@
 export {
   BUILT_IN_DOMAINS,
+  BUILT_IN_DOMAIN_VENDORS,
   SRT_VERSION,
   resolvedPolicy,
   cacheDir,

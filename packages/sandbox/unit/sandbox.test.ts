@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import pkg from '../package.json' with { type: 'json' }
 import {
   BUILT_IN_DOMAINS,
+  BUILT_IN_DOMAIN_VENDORS,
   Host,
   Sandbox,
   SandboxFs,
@@ -716,5 +717,11 @@ describe('policyFingerprint (#1153)', () => {
 
   it('hashes the pinned srt version', () => {
     expect(JSON.stringify(fingerprintSource(host, inputFor(host)))).toContain(`"srtVersion":"${SRT_VERSION}"`)
+  })
+})
+
+describe('the vendor of each built-in host (#1196)', () => {
+  it('names every built-in host and no other', () => {
+    expect(Object.keys(BUILT_IN_DOMAIN_VENDORS).sort()).toEqual([...BUILT_IN_DOMAINS].sort())
   })
 })

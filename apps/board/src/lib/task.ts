@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+
 import { ceilingReached, daySpend, startOfLocalDay } from '@lingtai/conductor'
 import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
@@ -44,7 +46,7 @@ import {
   type TriageStatus,
   type WaitReason,
 } from '@lingtai/domain/wait'
-import { machineDayCeiling } from '@lingtai/env'
+import { machineDayCeiling, stateDir } from '@lingtai/env'
 import { hasGitHubAuth } from '@lingtai/env'
 /**
  * One task, reduced from its streams on demand.
@@ -113,7 +115,7 @@ import { typicalAttemptMs, type StartEstimate } from './queued-estimate.ts'
 import { inFlightOf, queuedFor, refused as refusedQueued, type InFlight, type QueuedView } from './queued.ts'
 import { recipeOfAttempt, type AttemptRecipe } from './recipe.ts'
 import { runningPanelOf, type RunningPanelView } from './running.ts'
-import { sandboxViewOf, type SandboxView } from './sandbox-view.ts'
+import { sandboxViewOf, type PathRoots, type SandboxView } from './sandbox-view.ts'
 import { savedFixWork } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
 import {
@@ -2131,6 +2133,8 @@ export interface SandboxTabDetail {
   /** The attempt shown; null for a ticket with no attempt yet. */
   selected: number | null
   view: SandboxView | null
+  /** What the short names of paths stand for: this process's own, which is the daemon's in the ordinary case. */
+  roots: PathRoots
 }
 
 /**
@@ -2143,11 +2147,12 @@ export async function loadSandboxTab(taskId: string, wanted: number | null): Pro
   const project = parseTicketStream(taskId)?.project ?? ''
   const attempts = states.map((_, i) => i + 1)
   const selected = wanted ?? attempts.at(-1) ?? null
-  if (selected === null) return { taskId, project, attempts, selected, view: null }
+  const roots: PathRoots = { home: homedir(), lingtaiHome: stateDir(), project }
+  if (selected === null) return { taskId, project, attempts, selected, view: null, roots }
   const at = states[selected - 1]
   if (at === undefined) return null
   const over = at.ended || selected < states.length
-  return { taskId, project, attempts, selected, view: sandboxViewOf(at.state, project, over) }
+  return { taskId, project, attempts, selected, view: sandboxViewOf(at.state, project, over), roots }
 }
 
 /**

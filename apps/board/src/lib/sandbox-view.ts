@@ -16,6 +16,7 @@ import {
   type SandboxInvocation,
 } from '@lingtai/domain'
 import { isNetworkEntry } from '@lingtai/recipe'
+import { BUILT_IN_DOMAIN_VENDORS } from '@lingtai/sandbox/policy'
 
 type SandboxPolicy = Extract<NonNullable<SandboxInvocation['boundary']>, { kind: 'sandboxed' }>['policy']
 
@@ -412,4 +413,276 @@ export function projectBlockedOf(
     allowHref: allowHrefOf(project, h.host),
   }))
   return { hosts, caveats: [...new Set(caveats)] }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The redrawn tab (#1196): what is drawn above the policies, and the policies once. All pure.
+// ---------------------------------------------------------------------------------------------------------------
+
+/** `A` for the first policy, `B` for the second, … `Z`, then `AA`: a long attempt never runs out of letters. */
+export function policyLetter(n: number): string {
+  let out = ''
+  for (let k = n; k > 0; k = Math.floor((k - 1) / 26)) out = String.fromCharCode(65 + ((k - 1) % 26)) + out
+  return out
+}
+
+/** `HH:MM:SS UTC` of an ISO time; the string as it came where it does not parse. */
+export function clockOf(iso: string): string {
+  const at = new Date(iso)
+  return Number.isNaN(at.getTime()) ? iso : `${at.toISOString().slice(11, 19)} UTC`
+}
+
+export type SummaryState = 'none' | 'all' | 'some' | 'off'
+
+export interface Summary {
+  readonly state: SummaryState
+  readonly sandboxed: number
+  readonly total: number
+  readonly tone: Tone
+  /** The first reason a run was stopped or went unsandboxed, a stopped run's first. */
+  readonly why: string | null
+  /** The one srt version every sandboxed run shares, `'differs'` where they do not, null where none is recorded. */
+  readonly srt: string | 'differs' | null
+  /**
+   * **An unknown is never a number.** `orMore` is set by an incomplete read or by a run whose refusals are pending,
+   * lost or unreadable; `unknownRuns` counts the latter. `none recorded` is the ordinary state of a clean run, but it
+   * is also what a failed append leaves, so it adds nothing to `count` and is counted in `unrecordedRuns`: a total is
+   * confirmed only where that is zero.
+   */
+  readonly refused: {
+    readonly count: number
+    readonly orMore: boolean
+    readonly unknownRuns: number
+    readonly unrecordedRuns: number
+  }
+}
+
+export function summaryOf(rows: readonly RunRow[]): Summary {
+  const total = rows.length
+  const sandboxed = rows.filter((r) => r.mark.state === 'sandboxed').length
+  const stopped = rows.filter((r) => r.mark.state === 'stopped')
+  const recorded = rows.filter((r) => r.mark.state !== 'not recorded')
+  const state: SummaryState =
+    total === 0
+      ? 'none'
+      : sandboxed === total
+        ? 'all'
+        : sandboxed === 0 && recorded.length > 0 && recorded.every((r) => r.mark.state === 'off by choice')
+          ? 'off'
+          : 'some'
+  const tone: Tone = state === 'all' ? 'ok' : state === 'off' ? 'muted' : stopped.length > 0 ? 'fail' : 'signal'
+  const why = [...stopped, ...rows].find((r) => r.mark.why !== null)?.mark.why ?? null
+  const versions = new Set(rows.flatMap((r) => (r.srtVersion === null ? [] : [r.srtVersion])))
+  let count = 0
+  let orMore = false
+  let unknownRuns = 0
+  let unrecordedRuns = 0
+  for (const { refusals: f } of rows) {
+    if (f.kind === 'none recorded') unrecordedRuns += 1
+    if (f.kind === 'refused') {
+      count += f.count
+      if (f.incomplete) orMore = true
+    } else if (f.kind === 'pending' || f.kind === 'lost' || f.kind === 'unreadable') {
+      orMore = true
+      unknownRuns += 1
+    }
+  }
+  return {
+    state,
+    sandboxed,
+    total,
+    tone,
+    why,
+    srt: versions.size === 0 ? null : versions.size === 1 ? [...versions][0]! : 'differs',
+    refused: { count, orMore, unknownRuns, unrecordedRuns },
+  }
+}
+
+/** The directories a short name stands for. Supplied by the loader: this module reads no environment. */
+export interface PathRoots {
+  readonly home: string
+  readonly lingtaiHome: string
+  readonly project: string
+}
+
+export interface Chip {
+  readonly label: string
+  /** Every full spelling, `/private` twin included. */
+  readonly fulls: readonly string[]
+  /** The short name's token and the directory it stood for here; null where the path is drawn as it is. */
+  readonly token: string | null
+  readonly prefix: string | null
+}
+
+const trimSlash = (p: string) => (p.length > 1 ? p.replace(/\/+$/, '') : p)
+
+/**
+ * The short name of a path. Longest prefix wins; a prefix matches only at a `/`; a path equal to its prefix is the bare
+ * token; a path matching none is itself, and so is a temp path (the board's `$TMPDIR` is not proven to be the daemon's).
+ */
+export function shortNameOf(path: string, roots: PathRoots): Pick<Chip, 'label' | 'token' | 'prefix'> {
+  const lh = trimSlash(roots.lingtaiHome)
+  const home = trimSlash(roots.home)
+  const rest = (prefix: string) => path.slice(prefix.length)
+  const worktrees = `${lh}/worktrees/${roots.project}/`
+  if (lh !== '' && roots.project !== '' && path.startsWith(worktrees)) {
+    const segment = path.slice(worktrees.length).split('/')[0]!
+    if (segment !== '') {
+      const prefix = `${worktrees}${segment}`
+      return { label: `<worktree>${rest(prefix)}`, token: '<worktree>', prefix }
+    }
+  }
+  const candidates: [string, string][] = [
+    ['<mirror>', `${lh}/repos/${roots.project}.git`],
+    ['<cache>', `${lh}/cache/${roots.project}`],
+    ['<lingtai home>', lh],
+    ['~', home],
+  ]
+  for (const [token, prefix] of candidates) {
+    if (prefix === '' || prefix === '/') continue
+    if (roots.project === '' && (token === '<mirror>' || token === '<cache>')) continue
+    if (within(path, prefix)) return { label: `${token}${rest(prefix)}`, token, prefix }
+  }
+  return { label: path, token: null, prefix: null }
+}
+
+/** One chip per path, a path and its `/private` twin being one chip under the shorter spelling. */
+export function chipsOf(paths: readonly string[], roots: PathRoots): Chip[] {
+  const all = new Set(paths)
+  const chips: Chip[] = []
+  for (const p of all) {
+    if (p.startsWith('/private/') && all.has(p.slice('/private'.length))) continue
+    const twin = `/private${p}`
+    chips.push({ ...shortNameOf(p, roots), fulls: all.has(twin) ? [p, twin] : [p] })
+  }
+  return chips
+}
+
+/** Each short name the chips used and the directories it stood for. */
+export function legendOf(chips: readonly Chip[]): { token: string; paths: string[] }[] {
+  const byToken = new Map<string, Set<string>>()
+  for (const c of chips) {
+    if (c.token === null || c.prefix === null) continue
+    byToken.set(c.token, (byToken.get(c.token) ?? new Set()).add(c.prefix))
+  }
+  return [...byToken].map(([token, paths]) => ({ token, paths: [...paths] }))
+}
+
+export interface ReachSet {
+  readonly domains: readonly PolicyGroup['domains'][number][]
+  readonly writable: readonly string[]
+  readonly denyRead: readonly PolicyGroup['denyRead'][number][]
+  readonly denyWrite: readonly string[]
+}
+
+export interface PolicyDiffers {
+  readonly policy: number
+  readonly letter: string
+  readonly runs: readonly string[]
+  /** What it has beyond the common set. */
+  readonly extra: ReachSet
+  /** What the others have that it lacks: entries it does not *list*, which is not what it permits. */
+  readonly lacks: ReachSet
+  /** Paths it re-allows inside a root every policy denies reading, beyond what every policy re-allows. */
+  readonly exceptions: PolicyGroup['denyRead'][number][]
+}
+
+export const isEmptyReach = (r: ReachSet) =>
+  r.domains.length + r.writable.length + r.denyRead.length + r.denyWrite.length === 0
+
+/**
+ * What every policy has, and per policy what it has beyond that or lacks. Entries are compared by their full recorded
+ * form (a host, a path, a root with its re-allowed paths), never by their short names.
+ */
+export function reachOf(policies: readonly PolicyGroup[]): { common: ReachSet; differs: PolicyDiffers[] } {
+  const keyed = (g: PolicyGroup) => ({
+    domains: new Map(g.domains.map((d) => [d.host, d])),
+    writable: new Map(g.writable.map((w) => [w, w])),
+    denyRead: new Map(g.denyRead.map((d) => [d.path, d])),
+    denyWrite: new Map(g.denyWrite.map((w) => [w, w])),
+  })
+  const k = policies.map(keyed)
+  const fields = ['domains', 'writable', 'denyRead', 'denyWrite'] as const
+  const everyHas = (f: (typeof fields)[number], key: string) => k.every((x) => x[f].has(key))
+  const commonOf = <F extends (typeof fields)[number]>(f: F): ReachSet[F] => {
+    const first = k[0]?.[f]
+    if (first === undefined) return [] as unknown as ReachSet[F]
+    return [...first]
+      .filter(([key]) => everyHas(f, key))
+      .map(([key, v]) => {
+        if (f === 'denyRead') {
+          // A root is denied for every policy; what is re-allowed in it is what every policy re-allows.
+          const own = k.map((x) => x.denyRead.get(key)!.except)
+          return { path: key, except: own[0]!.filter((e) => own.every((x) => x.includes(e))) }
+        }
+        if (f !== 'domains') return v
+        // A host any policy recorded as the recipe's is the recipe's.
+        const hit = k.map((x) => x.domains.get(key)!).find((d) => d.source === 'recipe')
+        return hit ?? v
+      }) as unknown as ReachSet[F]
+  }
+  const common: ReachSet = {
+    domains: commonOf('domains'),
+    writable: commonOf('writable'),
+    denyRead: commonOf('denyRead'),
+    denyWrite: commonOf('denyWrite'),
+  }
+  if (policies.length < 2) return { common, differs: [] }
+  const differs = policies.map((g, n): PolicyDiffers => {
+    const own = k[n]!
+    const extraOf = <F extends (typeof fields)[number]>(f: F) =>
+      [...own[f]].filter(([key]) => !everyHas(f, key)).map(([, v]) => v) as unknown as ReachSet[F]
+    const lacksOf = <F extends (typeof fields)[number]>(f: F): ReachSet[F] => {
+      const seen = new Map<string, unknown>()
+      for (const x of k) for (const [key, v] of x[f]) if (!own[f].has(key) && !seen.has(key)) seen.set(key, v)
+      return [...seen.values()] as unknown as ReachSet[F]
+    }
+    const exceptions = [...own.denyRead.values()].flatMap((d) => {
+      const shared = common.denyRead.find((c) => c.path === d.path)
+      const more = shared === undefined ? [] : d.except.filter((e) => !shared.except.includes(e))
+      return more.length === 0 ? [] : [{ path: d.path, except: more }]
+    })
+    return {
+      policy: n + 1,
+      letter: policyLetter(n + 1),
+      runs: g.runs,
+      exceptions,
+      extra: {
+        domains: extraOf('domains'),
+        writable: extraOf('writable'),
+        denyRead: extraOf('denyRead'),
+        denyWrite: extraOf('denyWrite'),
+      },
+      lacks: {
+        domains: lacksOf('domains'),
+        writable: lacksOf('writable'),
+        denyRead: lacksOf('denyRead'),
+        denyWrite: lacksOf('denyWrite'),
+      },
+    }
+  })
+  return { common, differs }
+}
+
+const VENDOR_ORDER = ['Anthropic', 'OpenAI', 'npm', 'GitHub', 'Other'] as const
+
+/** *Reachable* by vendor, then the recipe's own hosts. A host recorded `not recorded` is under its vendor, never the recipe. */
+export function vendorGroupsOf(domains: readonly PolicyGroup['domains'][number][]): {
+  vendors: { vendor: string; hosts: string[] }[]
+  recipe: string[]
+} {
+  const by = new Map<string, string[]>()
+  const recipe: string[] = []
+  for (const d of domains) {
+    if (d.source === 'recipe') {
+      recipe.push(d.host)
+      continue
+    }
+    const vendor = BUILT_IN_DOMAIN_VENDORS[d.host] ?? 'Other'
+    by.set(vendor, [...(by.get(vendor) ?? []), d.host])
+  }
+  return {
+    vendors: VENDOR_ORDER.flatMap((vendor) => (by.has(vendor) ? [{ vendor, hosts: by.get(vendor)! }] : [])),
+    recipe,
+  }
 }

@@ -72,6 +72,23 @@ export const BUILT_IN_DOMAINS: readonly string[] = [
   '*.githubusercontent.com',
 ]
 
+/** The vendor each built-in host belongs to: what the board groups *Reachable* by (#1196). A unit test holds the keys equal to `BUILT_IN_DOMAINS`. */
+export const BUILT_IN_DOMAIN_VENDORS: Readonly<Record<string, 'Anthropic' | 'OpenAI' | 'npm' | 'GitHub'>> = {
+  'api.anthropic.com': 'Anthropic',
+  '*.anthropic.com': 'Anthropic',
+  'claude.ai': 'Anthropic',
+  '*.claude.ai': 'Anthropic',
+  'api.openai.com': 'OpenAI',
+  '*.openai.com': 'OpenAI',
+  'chatgpt.com': 'OpenAI',
+  '*.chatgpt.com': 'OpenAI',
+  'registry.npmjs.org': 'npm',
+  '*.npmjs.org': 'npm',
+  'github.com': 'GitHub',
+  '*.github.com': 'GitHub',
+  '*.githubusercontent.com': 'GitHub',
+}
+
 const unique = (xs: readonly string[]): string[] => [...new Set(xs)]
 
 /** `<stateDir>/cache/<project>`: the policy's own (plan decision 11). */
