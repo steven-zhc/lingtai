@@ -512,6 +512,9 @@ export interface Chip {
   /** The short name's token and the directory it stood for here; null where the path is drawn as it is. */
   readonly token: string | null
   readonly prefix: string | null
+  /** Set on a folded chip: how many paths it stands for, and the chips it replaced. */
+  readonly folded?: number
+  readonly members?: readonly Chip[]
 }
 
 const trimSlash = (p: string) => (p.length > 1 ? p.replace(/\/+$/, '') : p)
@@ -532,6 +535,14 @@ export function shortNameOf(path: string, roots: PathRoots): Pick<Chip, 'label' 
       return { label: `<worktree>${rest(prefix)}`, token: '<worktree>', prefix }
     }
   }
+  const runs = `${lh}/runs/`
+  if (lh !== '' && path.startsWith(runs)) {
+    const segment = path.slice(runs.length).split('/')[0]!
+    if (segment !== '') {
+      const prefix = `${runs}${segment}`
+      return { label: `<run dir>${rest(prefix)}`, token: '<run dir>', prefix }
+    }
+  }
   const candidates: [string, string][] = [
     ['<mirror>', `${lh}/repos/${roots.project}.git`],
     ['<cache>', `${lh}/cache/${roots.project}`],
@@ -546,16 +557,57 @@ export function shortNameOf(path: string, roots: PathRoots): Pick<Chip, 'label' 
   return { label: path, token: null, prefix: null }
 }
 
-/** One chip per path, a path and its `/private` twin being one chip under the shorter spelling. */
+/** One chip per path, a path and its `/private` twin (a trailing `/` aside) being one chip under the shorter spelling. */
 export function chipsOf(paths: readonly string[], roots: PathRoots): Chip[] {
   const all = new Set(paths)
+  const byStripped = new Map<string, string>()
+  for (const p of all) if (!byStripped.has(trimSlash(p))) byStripped.set(trimSlash(p), p)
   const chips: Chip[] = []
   for (const p of all) {
-    if (p.startsWith('/private/') && all.has(p.slice('/private'.length))) continue
-    const twin = `/private${p}`
-    chips.push({ ...shortNameOf(p, roots), fulls: all.has(twin) ? [p, twin] : [p] })
+    const s = trimSlash(p)
+    if (s.startsWith('/private/') && byStripped.has(s.slice('/private'.length))) continue
+    const twin = byStripped.get(`/private${s}`)
+    chips.push(
+      twin === undefined ? { ...shortNameOf(p, roots), fulls: [p] } : { ...shortNameOf(s, roots), fulls: [p, twin] },
+    )
   }
   return chips
+}
+
+/** What a short name that needs saying stands for, drawn before its directory in the legend. */
+export const TOKEN_MEANING: Readonly<Record<string, string>> = {
+  '<run dir>': "the attempt's own run directory,",
+}
+
+/** Three or more paths under one parent directory are one chip, `<parent>/… (N)`; fewer are left as they are. */
+export function foldChips(chips: readonly Chip[], roots: PathRoots): Chip[] {
+  const parentOf = (c: Chip) => {
+    const full = trimSlash(c.fulls[0]!)
+    const at = full.lastIndexOf('/')
+    return at <= 0 ? '/' : full.slice(0, at)
+  }
+  const groups = new Map<string, Chip[]>()
+  for (const c of chips) groups.set(parentOf(c), [...(groups.get(parentOf(c)) ?? []), c])
+  const out: Chip[] = []
+  for (const c of chips) {
+    const parent = parentOf(c)
+    const group = groups.get(parent)!
+    if (group.length < 3) {
+      out.push(c)
+      continue
+    }
+    if (group[0] !== c) continue
+    const short = shortNameOf(parent, roots)
+    out.push({
+      label: `${short.label}/… (${group.length})`,
+      fulls: group.flatMap((m) => m.fulls),
+      token: short.token,
+      prefix: short.prefix,
+      folded: group.length,
+      members: group,
+    })
+  }
+  return out
 }
 
 /** Each short name the chips used and the directories it stood for. */
