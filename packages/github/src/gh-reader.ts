@@ -55,17 +55,15 @@ export function createGhReader(run: GhRun = liveGh): GhReader {
                   const unread = (err: unknown): Read => ({ kind: 'unread', error: asError(err) })
                   return response.ok
                     ? response.json().then((data: unknown): Read => ({ kind: 'ok', data }), unread)
-                    : response
-                        .text()
-                        .then(
-                          (text): Read => ({
-                            kind: 'status',
-                            status: response.status,
-                            text,
-                            limits: rateLimitHeadersOf(response),
-                          }),
-                          unread,
-                        )
+                    : response.text().then(
+                        (text): Read => ({
+                          kind: 'status',
+                          status: response.status,
+                          text,
+                          limits: rateLimitHeadersOf(response),
+                        }),
+                        unread,
+                      )
                 }),
               (value) => value.kind !== 'ok',
             ),

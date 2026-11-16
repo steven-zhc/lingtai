@@ -200,14 +200,12 @@ export const githubJson = <T>(
               > => {
                 report(remainingOf(response))
                 return !response.ok
-                  ? response
-                      .text()
-                      .then((text) => ({
-                        ok: false,
-                        status: response.status,
-                        text,
-                        limits: rateLimitHeadersOf(response),
-                      }))
+                  ? response.text().then((text) => ({
+                      ok: false,
+                      status: response.status,
+                      text,
+                      limits: rateLimitHeadersOf(response),
+                    }))
                   : response.status === 204
                     ? Promise.resolve({ ok: true, data: undefined })
                     : response.json().then((data: unknown) => ({ ok: true, data }))
