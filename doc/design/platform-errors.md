@@ -144,8 +144,9 @@ clear, once the runtime's own retries are spent:
 `UNREACHABLE`. One correction: GitHub documents `fatal: the remote end hung up
 unexpectedly` as one symptom of the **2 GiB push limit**, which is repeatable,
 and `UNREACHABLE` retries it as transient. Retrying an oversized push costs only
-the waits, and §15's bound stops it, but the hold that follows says
-*origin could not be reached* when the cause is the size.
+the waits, and §15's bound stops it, and the hold that follows
+names both causes — an origin that could not be reached, or a push over the
+limit — when `hung up` is the only sign.
 
 **Always a person** — every one of these fails the same way when retried:
 GitHub `401`, a permission `403`, `404`, `409`, `422`; `GH006`, `GH013`, push

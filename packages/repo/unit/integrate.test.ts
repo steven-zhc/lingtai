@@ -330,6 +330,26 @@ describe('a fetch or push that cannot reach origin is retried in place (#1029)',
     expect(count(fake.calls, 'push')).toBe(3)
   })
 
+  const HUNG = 'fatal: the remote end hung up unexpectedly'
+
+  it('names both causes when a push only hung up (#1131)', async () => {
+    const fake = fakeGit({ failPush: HUNG })
+    const { result } = await run(fake)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('unreachable')
+    expect(result.detail).toMatch(/^origin could not be reached, or the push is over GitHub's 2 GiB limit: /)
+    expect(count(fake.calls, 'push')).toBe(3)
+  })
+
+  it("keeps today's words when a fetch hung up, or a push hung up beside a reset (#1131)", async () => {
+    for (const fake of [fakeGit({ failFetch: HUNG }), fakeGit({ failPush: `${HUNG}\nConnection reset by peer` })]) {
+      const { result } = await run(fake)
+      if (result.ok) throw new Error('unreachable')
+      expect(result.reason).toBe('unreachable')
+      expect(result.detail).toMatch(/^origin could not be reached: /)
+    }
+  })
+
   const ERROR_5XX = ' ! [remote rejected]   HEAD -> main (Internal Server Error)'
 
   it('lands a base push that 5xx-ed but whose merge is already on origin, never no-commits (#1125)', async () => {

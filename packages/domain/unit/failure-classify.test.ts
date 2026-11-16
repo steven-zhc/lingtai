@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { FAILURE_ROWS, classify } from '../src/failure/classify.ts'
+import { FAILURE_ROWS, classify, unreachableCause } from '../src/failure/classify.ts'
 import { spliceRecognised } from '../src/failure/doc.ts'
 
 const git = (text: string) => classify({ platform: 'git', text })?.kind ?? null
@@ -85,5 +85,15 @@ describe('doc/design/platform-errors.md', () => {
       doc === spliceRecognised(doc),
       'doc/design/platform-errors.md is stale — run `pnpm docs:errors` and commit it',
     ).toBe(true)
+  })
+})
+
+describe('unreachableCause (#1131)', () => {
+  const HUNG = 'fatal: the remote end hung up unexpectedly'
+  it.each(['', ' (after 3 tries)'])('tells the causes apart%s', (tail) => {
+    expect(unreachableCause(HUNG + tail)).toBe('origin-or-size')
+    expect(unreachableCause(`${HUNG}\nConnection reset by peer${tail}`)).toBe('origin')
+    expect(unreachableCause(`remote: fatal: pack exceeds maximum allowed size\n${HUNG}${tail}`)).toBe('size')
+    expect(unreachableCause(`fatal: early EOF${tail}`)).toBe('origin')
   })
 })
