@@ -954,6 +954,25 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
         })
         continue
       }
+      // **A rerun in place is not a second read** (#1201): a `file-brief:` reads a file the cut-off run may
+      // have edited, and the rerun is owed the brief the first run had. `context.design` is that brief.
+      if (context.rerun !== undefined && action.kind === 'file-brief') {
+        const briefed = context.design
+        context.log?.note(
+          `${step}:${action.name}`,
+          'not read again — a rerun in place keeps the brief it was cut off with',
+        )
+        results.push({
+          action: action.name,
+          verdict: 'passed',
+          evidence: 'not read again: this is a rerun in place, briefed with the design the cut-off run was',
+          findings: [],
+          ...(briefed?.locator === undefined || briefed.document === undefined
+            ? {}
+            : { document: briefed.document, locator: briefed.locator }),
+        })
+        continue
+      }
       const waiver = options.waived?.find((w) => w.name === action.name && !waiversSpent.has(w.name))
       if (waiver !== undefined) {
         waiversSpent.add(waiver.name)

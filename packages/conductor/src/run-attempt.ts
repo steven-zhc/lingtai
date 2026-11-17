@@ -2020,7 +2020,22 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           const again = rerunInPlace(reason.cause, reason.detail, transientRetriesSpent)
           if (again !== null) {
             transientRetriesSpent += 1
-            rerun = { reached: visitedBefore, context: visitContext }
+            // The design this visit's agent was briefed with, after any `file-brief:` read it back: the
+            // rerun is handed that, never a second read of a file the cut-off run may have edited.
+            const briefedWith = reached.results.filter((each) => each.document !== undefined).at(-1)
+            rerun = {
+              reached: visitedBefore,
+              context:
+                briefedWith?.document === undefined
+                  ? visitContext
+                  : {
+                      ...visitContext,
+                      design: {
+                        document: briefedWith.document,
+                        ...(briefedWith.locator === undefined ? {} : { locator: briefedWith.locator }),
+                      },
+                    },
+            }
             yield* options.emit({
               type: 'StepRerunInPlace',
               data: {
@@ -2424,7 +2439,11 @@ function runVisit(
         context: {
           ...reaching.context,
           ...(readClippedAt === undefined ? {} : { readClippedAt }),
-          design: designOn(reached),
+          // A rerun in place (#1201) carries the design the cut-off visit was briefed with.
+          design:
+            reaching.context.rerun !== undefined && reaching.context.design !== undefined
+              ? reaching.context.design
+              : designOn(reached),
           again:
             spec.step === 'implement' &&
             options.from?.step === 'implement' &&

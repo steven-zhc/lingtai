@@ -3231,3 +3231,47 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
     expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed', cause: 'timeout' } })
   })
 })
+
+describe('a rerun in place keeps the brief a file-brief read (#1201)', () => {
+  it('does not read the file again, so the rerun is handed the design the cut-off run was', async () => {
+    const { bodies } = watching()
+    const { actionsAt: base } = watchingActions()
+    let file = 'the design as first written'
+    let reads = 0
+    const seen: (string | undefined)[] = []
+    let lap = 0
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+      step === 'implement'
+        ? [
+            {
+              name: 'read the design',
+              kind: 'file-brief',
+              yields: 'nothing',
+              run: async () => {
+                reads += 1
+                return { ...PASSED, document: file, locator: 'doc/design.md' }
+              },
+            },
+            {
+              name: 'write the change',
+              kind: 'agent',
+              yields: 'commit',
+              run: async (seenWith) => {
+                seen.push(seenWith.design?.document)
+                if (lap++ === 0) {
+                  file = 'the design as the cut-off run edited it'
+                  return { ...crashed('API Error: 503'), runtime: 'claude-code' }
+                }
+                return { ...PASSED, head: 'feedface00' }
+              },
+            },
+          ]
+        : base(step, actions)
+    const { emit } = events()
+
+    await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(seen).toEqual(['the design as first written', 'the design as first written'])
+    expect(reads).toBe(1)
+  })
+})
