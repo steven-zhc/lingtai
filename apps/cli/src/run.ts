@@ -472,6 +472,8 @@ export function run(
       }
 
       let common: CommonPassOptions
+      // The listing before an attempt is a look (0126 §2): through the client that fails, never waits.
+      let discovery: TurnClient | undefined
       if (client === null) {
         /**
          * **An owner-less project names its own remote and its own ticket
@@ -535,6 +537,11 @@ export function run(
         const tickets = yield* world
           .ticketsFor(project, resolved.recipe, owned)
           .pipe(Effect.mapError((err) => refuse((err as Error).message)))
+
+        const lookTickets = yield* world
+          .ticketsFor(project, resolved.recipe, client)
+          .pipe(Effect.mapError((err) => refuse((err as Error).message)))
+        discovery = ticketedClientOf(client, lookTickets)
 
         common = {
           project,
@@ -644,6 +651,7 @@ export function run(
             ? null
             : yield* world.runQueue({
                 ...common,
+                ...(discovery ? { discovery } : {}),
                 prompt,
                 // Asked rather than stored: a project that reorders its kinds, or adds
                 // an exclusion, must not need a projection rebuild.
