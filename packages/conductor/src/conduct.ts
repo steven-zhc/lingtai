@@ -4825,7 +4825,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
               },
               ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
-              ...(continuation?.declined === undefined ? {} : { declined: continuation.declined }),
+              ...(again.objection != null
+                ? { overruled: { objection: again.objection, ruling: again.why } }
+                : continuation?.declined === undefined
+                  ? {}
+                  : { declined: continuation.declined }),
             }),
             // Appended as a part, never to the finished string, so no recorded offset
             // depends on where the text before it happened to end.

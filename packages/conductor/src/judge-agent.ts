@@ -161,7 +161,30 @@ say what. If the ticket is clear and the message names what is left, or where th
 work stopped, another round can finish it: choose \`implement\`.`,
 }
 
-/** Total on purpose: a fifteenth reason does not compile until somebody writes what it is asked. #1199 replaces `fixer-disagrees`. */
+/** 0108 §18: the fixer declined a round — it changed nothing and said why. */
+const FIXER_DISAGREES_ROW: WhenRow = {
+  arrived: (on, evidence) => `${
+    on.findings.length > 0
+      ? `The findings the fixer was sent with, verbatim:\n\n${on.findings.map(said).join('\n')}`
+      : 'The round was not bought on findings, so the fixer was sent no list of them.'
+  }
+
+The fixer's message, verbatim:
+
+${on.evidence.trim() === '' ? '(it said nothing)' : `\`\`\`\n${evidence}\n\`\`\``}`,
+  means: {
+    implement: 'the reviewer is right: one more round, and the fixer is told it was overruled and why',
+  },
+  weigh: `The question is **whether the fixer's objection shows that a finding cannot happen,
+or is not this diff's — or merely restates that it declined**. An objection that
+names the code, the test or the rule that makes a finding impossible is a fixer
+that is right: choose \`waiting\` and say so, because a person decides what
+happens to a change its fixer disputes. An objection with no such ground — it
+disagrees, or says the code is fine, without showing it — is the reviewer's
+to win: choose \`implement\`. If you cannot tell, choose \`waiting\`.`,
+}
+
+/** Total on purpose: a fifteenth reason does not compile until somebody writes what it is asked. */
 const WHEN_ROWS: Record<JudgeWhen, WhenRow> = {
   red: REFUSED_ROW,
   'verify-failed': REFUSED_ROW,
@@ -172,7 +195,7 @@ const WHEN_ROWS: Record<JudgeWhen, WhenRow> = {
   'check-refused': REFUSED_ROW,
   'answer-unreadable': REFUSED_ROW,
   'nothing-produced': NOTHING_PRODUCED_ROW,
-  'fixer-disagrees': REFUSED_ROW,
+  'fixer-disagrees': FIXER_DISAGREES_ROW,
   'merge-refused': REFUSED_ROW,
   'budget-exhausted': REFUSED_ROW,
   'base-moved': REFUSED_ROW,

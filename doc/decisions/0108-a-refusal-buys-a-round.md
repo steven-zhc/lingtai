@@ -328,9 +328,11 @@ fixes the bounds and the endings that router works inside.
   `base-red` in the queue and the check rerun per base commit (today the
   attempt still holds for a person, `base is red: <check>`); §15's landing
   continued from the saved head after the lane's retries; §17's second run, §18's
-  answer for `fixer-disagrees` (#1199; the `nothing-produced` row is built, #1198:
-  `offerFor` offers the round when the implementer said something, and a judge
-  declared there is shown the ticket and the message), and §19's *respond* half — `packages/domain/src/failure/` holds
+  answer (built, #1198 and #1199: `offerFor` offers the round when the
+  implementer said something, and a judge declared at `nothing-produced` is shown
+  the ticket and the message; one declared at `fixer-disagrees` is shown the
+  findings and the fixer's message, and the round it buys keeps them as
+  `recheck`), and §19's *respond* half — `packages/domain/src/failure/` holds
   *classify* (`classify.ts`), *explain* (`explain.ts`) and, in `respond.ts`, the
   account-limit wait, `offerFor`, its two bounds and `BUILT_IN_FOR`; and
   `platform-errors.md`'s *What Lingtai recognises today* is generated from the

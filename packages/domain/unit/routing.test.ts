@@ -345,15 +345,14 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     })
   })
 
-  it('FixerDisagrees with a non-blank `said`: fix-lines{round 1}, restart{restart 1} and hand-to-person', () => {
+  it('FixerDisagrees with a non-blank `said`: fix-lines{round 1} and hand-to-person, and no restart (0108 §7, #1199)', () => {
     expect(offerFor(fixerDisagrees, policy, zero)).toEqual({
       proposal: fixerDisagrees,
       available: [
         { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
-      unavailable: [],
+      unavailable: [{ id: 'restart', because: { _tag: 'NoCriterion' } }],
     })
   })
 

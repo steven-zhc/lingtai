@@ -534,6 +534,11 @@ export function fixBriefParts(input: {
    * own heading and never the criterion: the findings above are that.
    */
   declined?: string
+  /**
+   * A judge overruled the previous fixer's objection (#1199): its message
+   * verbatim, then the ruling. Replaces `declined`, which is older.
+   */
+  overruled?: { objection: string; ruling: string }
 }): RecordPart[] {
   const clip = input.diff.length > input.diffBytes
   const clipped = clip
@@ -587,7 +592,7 @@ session. What you have is below, and the code in front of you.
     ...(typeof evidence === 'string' ? [evidence] : evidence),
     ...(input.refusal.on === 'conflict' ? [openFindingsContext(input.refusal.findings)] : []),
     `
-${adviceSection(input.advice)}${declinedSection(input.declined)}
+${adviceSection(input.advice)}${declinedSection(input.declined)}${overruledSection(input.overruled)}
 ${unfinished ? '## The ticket — this is the job' : '## The ticket the reviewer held this change to'}
 
 ${input.ticket.title}
@@ -694,6 +699,28 @@ ${declined}
 
 That is the previous fixer's own answer, not the reviewer's. The criterion is
 the findings (or the absence of any) above; you may disagree with this text.
+`
+}
+
+function overruledSection(overruled: { objection: string; ruling: string } | undefined): string {
+  if (overruled === undefined) return ''
+  return `
+## The previous fixer declined this round, and a judge ruled against its objection
+
+The previous fixer's objection:
+
+\`\`\`
+${overruled.objection}
+\`\`\`
+
+The judge's ruling, which overrules that objection:
+
+\`\`\`
+${overruled.ruling}
+\`\`\`
+
+The findings above stand. Make the change they ask for; do not decline again on
+the same ground.
 `
 }
 

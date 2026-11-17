@@ -646,7 +646,8 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
     case 'FixerDisagrees': {
       const hasCriterion = proposal.said !== null && proposal.said.trim() !== ''
       round('fix-lines', 'implement', hasCriterion)
-      restart(hasCriterion)
+      // 0108 §7: a restart is offered only for `findings`.
+      restart(false)
       break
     }
     case 'MergeRefused': {
