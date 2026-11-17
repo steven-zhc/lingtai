@@ -3032,6 +3032,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               plantAt: recipe.env.plantAt,
               kept: keptWip,
             })
+            // A rollback that failed leaves conflict markers or staged edits: no agent starts on that.
+            if (carried?.wedged !== undefined) return { notCut: carried.wedged }
             if (carried !== null) {
               carriedWork = carried
               log(
@@ -3049,7 +3051,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     arm: keptWip.arm,
                     sha: keptWip.sha,
                     parentSha: keptWip.parentSha,
-                    ...carried,
+                    applied: carried.applied,
+                    leftOut: carried.leftOut,
+                    unapplied: carried.unapplied,
                   }),
                 },
               ])

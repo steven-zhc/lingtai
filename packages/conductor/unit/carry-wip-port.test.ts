@@ -70,7 +70,7 @@ describe('carryKeptWork', () => {
   it('restores a conflicted rename at both ends, literally', () => {
     const { result, calls } = carry({
       'apply --numstat': '1\t1\tnew.txt\0',
-      'diff --name-status': 'R090\0old.txt\0new.txt\0',
+      'diff --raw': ':100644 100644 a b R090\0old.txt\0new.txt\0',
       'apply --3way': { fail: 'conflicts' },
       'diff --name-only': 'new.txt\0',
       'cat-file -e HEAD:new.txt': { fail: 'absent' },
@@ -126,6 +126,36 @@ describe('carryKeptWork', () => {
     expect(result).toEqual({ applied: ['a.txt'], leftOut: ['b.txt'], unapplied: null })
     expect(calls).toContain('apply --3way --include=a.txt /wt/.git/lingtai-wip.patch')
     expect(calls.some((c) => c.includes('rm -f'))).toBe(false)
+  })
+
+  it('names a submodule update as left out rather than staging and unstaging it', () => {
+    const { result, calls } = carry({
+      'apply --numstat': '1\t0\ta.ts\0',
+      'diff --raw': ':100644 100644 a b M\0a.ts\0:160000 160000 c d M\0sub\0',
+    })
+    expect(result).toEqual({ applied: ['a.ts'], leftOut: ['sub'], unapplied: null })
+    expect(calls.find((c) => c.startsWith('diff --no-color'))).toContain('--ignore-submodules=all')
+  })
+
+  it('carries nothing when the patch omits a path the diff names', () => {
+    const { result, calls } = carry({
+      'apply --numstat': '1\t0\ta.ts\0',
+      'diff --raw': ':100644 100644 a b M\0a.ts\0:100644 100644 c d M\0b.ts\0',
+    })
+    expect(result?.unapplied).toContain('b.ts')
+    expect(calls).not.toContain('apply --3way /wt/.git/lingtai-wip.patch')
+  })
+
+  it('is wedged, not merely empty, when the tree cannot be returned to the base', () => {
+    const { result } = carry({
+      'apply --numstat': '1\t0\ta.ts\0' + '1\t1\tc.ts\0',
+      'apply --3way': { fail: 'conflicts' },
+      'diff --name-only': 'c.ts\0',
+      '--literal-pathspecs checkout': { fail: 'index.lock' },
+      'status --porcelain': ' M a.ts\0',
+      'reset --hard': { fail: 'index.lock' },
+    })
+    expect(result?.wedged).toContain('could not be returned')
   })
 
   it('has nothing to carry for an empty WIP', () => {
