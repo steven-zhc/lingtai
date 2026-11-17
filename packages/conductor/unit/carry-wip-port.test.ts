@@ -139,6 +139,14 @@ describe('carryKeptWork', () => {
     )
   })
 
+  it('counts a submodule replaced by a file as applied once, not left out', () => {
+    const { result } = carry({
+      'apply --numstat': '0\t1\tsub\0' + '1\t0\tsub\0',
+      'diff --raw': ':160000 000000 a b D\0sub\0:000000 100644 c d A\0sub\0',
+    })
+    expect(result).toEqual({ applied: ['sub'], leftOut: [], unapplied: null })
+  })
+
   it('carries nothing when the patch omits a path the diff names', () => {
     const { result, calls } = carry({
       'apply --numstat': '1\t0\ta.ts\0',

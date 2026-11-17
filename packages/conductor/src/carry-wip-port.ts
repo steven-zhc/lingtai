@@ -98,7 +98,7 @@ export function carryKeptWork(options: {
     // submodule's checkout never moves. It is never carried, and is named instead.
     const gitlinks = entries.filter((e) => e.gitlink).map((e) => e.path)
     const carriable = entries.filter((e) => !e.gitlink).map((e) => e.path)
-    const touched = numstatPaths(listed.success)
+    const touched = [...new Set(numstatPaths(listed.success))]
     // The patch must name every path the diff does: anything `apply` would skip is not a carry.
     const missing = carriable.filter((p) => !touched.includes(p))
     if (missing.length > 0) return none(`the diff could not be read in full (not in the patch: ${missing.join(', ')})`)
@@ -166,7 +166,13 @@ export function carryKeptWork(options: {
     const unstaged = yield* git(['reset', '-q'])
     if (Result.isFailure(unstaged))
       return yield* giveUp(`the carried edits could not be unstaged (${unstaged.failure.detail})`)
-    return { applied: touched.filter((p) => !leftOut.includes(p)), leftOut: [...leftOut, ...gitlinks], unapplied: null }
+    // A submodule replaced by a file (or the reverse) is in the patch and was applied: it is not left out.
+    const gitlinksLeft = gitlinks.filter((p) => !touched.includes(p))
+    return {
+      applied: touched.filter((p) => !leftOut.includes(p)),
+      leftOut: [...leftOut, ...gitlinksLeft],
+      unapplied: null,
+    }
   })
 }
 

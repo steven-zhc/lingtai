@@ -3011,7 +3011,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           log(`worktree ${provisioned.success.path} at ${provisioned.success.baseSha.slice(0, 7)}`)
           // **A stopped run's kept WIP is applied here, before any agent runs** (#1170, 0109 §8):
           // a `design` agent runs in this worktree too, so `implement` is not early enough. A
-          // continuation has no `lastRun`; a failure to carry is the brief's to say, never a `notCut`.
+          // continuation has no `lastRun`; a failure to carry is the brief's to say, except a wedged tree (a rollback that failed), which is a `notCut`.
           const keptWip = lastRun?.kept.at(-1)
           if (continuation === null && previous && keptWip) {
             const carried = yield* carryKeptWork({
