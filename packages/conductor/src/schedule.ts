@@ -47,6 +47,11 @@ import type { Slots } from './slots.ts'
 export interface ScheduleOptions {
   project: ProjectState
   client: TurnClient
+  /**
+   * What the queue listing before an attempt reads through (0126 §2: a look fails on a rate limit,
+   * it never sleeps, or one project's wait would hold every later project's sweep). Absent, `client`.
+   */
+  discovery?: TurnClient
   runtime: Runtime
   hookBinary: string
   /** The process's one sandbox service (#1150); handed to every `runOnce`. */
@@ -225,9 +230,10 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       // pass is running changes the answer, and the old cached queue would have
       // taken it anyway.
       // `orDie`: a listing that failed ends the pass as it always did (a defect), never as an empty queue.
-      const offered = yield* runnableNowEffect({ client: options.client, queue: queueOf(options.recipe) }).pipe(
-        Effect.orDie,
-      )
+      const offered = yield* runnableNowEffect({
+        client: options.discovery ?? options.client,
+        queue: queueOf(options.recipe),
+      }).pipe(Effect.orDie)
       // Once, not once round the loop. It is a fact about the repository and
       // the same sentence would be true of every ticket in the queue — the
       // reason the `env` refusal above is reported per project rather than per

@@ -399,7 +399,7 @@ export function run(
             auth: githubClientAuth(),
             owner,
             repo: options.project,
-            onRateLimited: githubLimitPort(options.store ?? eventStore, log),
+            onRateLimited: githubLimitPort(options.store ?? eventStore, log, { wait: false }),
           }),
         // `NotInstalledError` says what to do about it, and every other failure
         // here is the App or the network. Either way a person reads one line.
@@ -472,6 +472,8 @@ export function run(
       }
 
       let common: CommonPassOptions
+      // The listing before an attempt is a look (0126 §2): through the client that fails, never waits.
+      let discovery: TurnClient | undefined
       if (client === null) {
         /**
          * **An owner-less project names its own remote and its own ticket
@@ -520,7 +522,10 @@ export function run(
       } else {
         // Bound here, not read off the outer `let`: a closure below must not
         // rely on a narrowing a `let` does not carry into it.
-        const owned = client
+        // The pass's client (0126 §2): it waits out the lock. Passed to `ticketsFor` too —
+        // `ticketedClientOf` overwrites the ticket verbs unless `tickets === client` — and the
+        // recipe read above keeps the look's `client`, which fails on the first rate limit.
+        const owned = client.withRateLimited(githubLimitPort(options.store ?? eventStore, log, { wait: true }))
 
         for (const line of statedBeforeDispatch(resolved.recipe)) log(line)
 
@@ -532,6 +537,11 @@ export function run(
         const tickets = yield* world
           .ticketsFor(project, resolved.recipe, owned)
           .pipe(Effect.mapError((err) => refuse((err as Error).message)))
+
+        const lookTickets = yield* world
+          .ticketsFor(project, resolved.recipe, client)
+          .pipe(Effect.mapError((err) => refuse((err as Error).message)))
+        discovery = ticketedClientOf(client, lookTickets)
 
         common = {
           project,
@@ -641,6 +651,7 @@ export function run(
             ? null
             : yield* world.runQueue({
                 ...common,
+                ...(discovery ? { discovery } : {}),
                 prompt,
                 // Asked rather than stored: a project that reorders its kinds, or adds
                 // an exclusion, must not need a projection rebuild.

@@ -99,10 +99,12 @@ steps:
 
 /** Enough of a `GitHubClient` for `runnableNow` to find nothing runnable. */
 function stubGitHubClient(): GitHubClient {
-  return {
+  const client = {
     listOpenIssues: async () => [],
     token: async () => 'installation-token',
+    withRateLimited: () => client,
   } as unknown as GitHubClient
+  return client
 }
 
 describe('conductWork, a pass across a project with no owner and a GitHub project', () => {

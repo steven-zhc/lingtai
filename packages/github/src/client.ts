@@ -11,7 +11,7 @@
  * item exists. After that the log is the authority.
  */
 import { classify } from '@lingtai/domain'
-import { Data, Effect } from 'effect'
+import { Data, Duration, Effect } from 'effect'
 
 import {
   type AppAuth,
@@ -381,6 +381,12 @@ export interface GitHub {
    * run it per git invocation.
    */
   readonly token: E<string>
+  /**
+   * The same client — same installation, same token cache — with another port (0126 §2). A look
+   * keeps the one that answers `fail`; the pass is handed one that answers `retry`, so a call it
+   * makes waits out the lock and is made again. Makes no installation lookup and mints no token.
+   */
+  withRateLimited(port: RateLimitedPort | undefined): GitHub
 }
 
 /**
@@ -414,6 +420,8 @@ export interface GitHubClient {
   addBlockedBy(issue: number, blocker: number): Promise<void>
   listBlockedBy(issue: number): Promise<LinkedIssue[]>
   token(): Promise<string>
+  /** `GitHub.withRateLimited`, in the promise face. */
+  withRateLimited(port: RateLimitedPort | undefined): GitHubClient
 }
 
 /** How far `listIssuesSince` pages before it refuses to answer rather than answer short. */
@@ -434,12 +442,17 @@ export interface CreateClientOptions {
   /** Stops the installation lookup when it aborts; later requests take their own. */
   signal?: AbortSignal
   /**
-   * Told when a call is answered with a rate limit, before it fails as it always did. Only the
-   * conductor passes one (0126 §2). It cannot fail: a lock that could not be written never
-   * changes the error the call fails with.
+   * Asked when a call is answered with a rate limit (0126 §2): the port locks the account and
+   * says whether the call is made again after a wait or fails with the error it met. Only the
+   * conductor passes one, and only the pass's derived client (`withRateLimited`) is answered
+   * `retry`. It cannot fail: a lock that could not be written answers `fail`.
    */
-  onRateLimited?: (failed: GitHubFailed) => Effect.Effect<void, never>
+  onRateLimited?: RateLimitedPort
 }
+
+/** What a port answers a rate-limited call with. */
+export type RateLimitAnswer = { kind: 'fail' } | { kind: 'retry'; after: Duration.Duration }
+export type RateLimitedPort = (failed: GitHubFailed) => Effect.Effect<RateLimitAnswer, never>
 
 function isGh(auth: AppAuth | { kind: 'gh' }): auth is { kind: 'gh' } {
   return 'kind' in auth && auth.kind === 'gh'
@@ -556,15 +569,38 @@ const isRateLimited = (err: GitHubFailed): boolean =>
     retryAfter: err.retryAfter,
   })?.kind === 'rate-limited'
 
+/**
+ * The shortest a call waits before it is made again after a rate limit, whatever `until` says.
+ * doc/design/platform-errors.md §1: calling again before the limit is over "may result in the
+ * banning of your integration" — a port that answers a past `until` must not become a tight loop.
+ */
+export const MIN_RATE_LIMIT_WAIT = Duration.minutes(1)
+
 export const makeGitHub = (
   options: Omit<CreateClientOptions, 'signal'>,
 ): Effect.Effect<GitHub, GitHubFailed | NotInstalledError> =>
   Effect.gen(function* () {
     const { auth, owner, repo } = options
-    const locking = <A, X, R>(eff: Effect.Effect<A, X, R>) =>
-      Effect.tapError(eff, (err) =>
-        err instanceof GitHubFailed && isRateLimited(err) ? (options.onRateLimited?.(err) ?? Effect.void) : Effect.void,
-      )
+    /** Runs `eff`; on a rate limit asks `port`, and on `retry` sleeps and runs it again, unbounded. */
+    const lockingWith =
+      (port: RateLimitedPort | undefined) =>
+      <A, X, R>(eff: Effect.Effect<A, X, R>): Effect.Effect<A, X, R> => {
+        const attempt: Effect.Effect<A, X, R> = Effect.catchIf(
+          eff,
+          (err): err is X => err instanceof GitHubFailed && isRateLimited(err) && port !== undefined,
+          (err) =>
+            Effect.flatMap(port!(err as GitHubFailed), (answer) =>
+              answer.kind === 'retry'
+                ? Effect.andThen(
+                    Effect.sleep(Duration.max(answer.after, MIN_RATE_LIMIT_WAIT)),
+                    Effect.suspend(() => attempt),
+                  )
+                : Effect.fail(err),
+            ),
+        )
+        return attempt
+      }
+    const locking = lockingWith(options.onRateLimited)
     let installation: Installation | null = null
     let token: E<string>
     if (isGh(auth)) {
@@ -576,264 +612,271 @@ export const makeGitHub = (
       token = yield* installationToken(auth, installation.id)
     }
 
-    const send = <T>(method: string, path: string, body?: unknown): E<T> =>
-      locking(Effect.flatMap(token, (t) => githubJson<T>(method, path, t, body)))
+    const build = (port: RateLimitedPort | undefined): GitHub => {
+      const locking = lockingWith(port)
+      const send = <T>(method: string, path: string, body?: unknown): E<T> =>
+        locking(Effect.flatMap(token, (t) => githubJson<T>(method, path, t, body)))
 
-    const repoPath = `/repos/${owner}/${repo}`
+      const repoPath = `/repos/${owner}/${repo}`
 
-    /** The internal id of an issue in this repository. A 404 fails: there is no such issue to link. */
-    const idOf = (number: number): E<number> =>
-      Effect.map(send<{ id: number }>('GET', `${repoPath}/issues/${number}`), (raw) => raw.id)
+      /** The internal id of an issue in this repository. A 404 fails: there is no such issue to link. */
+      const idOf = (number: number): E<number> =>
+        Effect.map(send<{ id: number }>('GET', `${repoPath}/issues/${number}`), (raw) => raw.id)
 
-    /**
-     * Runs a link call, turning a 403 that is a missing permission into
-     * `PermissionDenied`. A secondary rate limit is also a 403 and is passed on
-     * unchanged: calling it a permission would send a person to the wrong page.
-     */
-    const asLinkCall = <A>(level: 'read' | 'write', call: E<A>): E<A> =>
-      Effect.catchIf(
-        call,
-        (err) => err.status === 403 && !isRateLimited(err),
-        (err) => Effect.fail(new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')),
-      )
+      /**
+       * Runs a link call, turning a 403 that is a missing permission into
+       * `PermissionDenied`. A secondary rate limit is also a 403 and is passed on
+       * unchanged: calling it a permission would send a person to the wrong page.
+       */
+      const asLinkCall = <A>(level: 'read' | 'write', call: E<A>): E<A> =>
+        Effect.catchIf(
+          call,
+          (err) => err.status === 403 && !isRateLimited(err),
+          (err) => Effect.fail(new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')),
+        )
 
-    const listLinked = (path: string): E<LinkedIssue[]> =>
-      asLinkCall(
-        'read',
-        Effect.gen(function* () {
-          const out: LinkedIssue[] = []
-          for (let page = 1; ; page++) {
-            if (page > LINK_PAGES) {
-              return yield* new GitHubFailed(
-                0,
-                path,
-                `more than ${LINK_PAGES * 100} issues are linked at ${path} — the listing is incomplete, ` +
-                  `so it cannot say a link is not there`,
+      const listLinked = (path: string): E<LinkedIssue[]> =>
+        asLinkCall(
+          'read',
+          Effect.gen(function* () {
+            const out: LinkedIssue[] = []
+            for (let page = 1; ; page++) {
+              if (page > LINK_PAGES) {
+                return yield* new GitHubFailed(
+                  0,
+                  path,
+                  `more than ${LINK_PAGES * 100} issues are linked at ${path} — the listing is incomplete, ` +
+                    `so it cannot say a link is not there`,
+                )
+              }
+              // A 404 is not an empty list either: it is the issue or the repository.
+              const raw = yield* send<(Parameters<typeof toIssue>[0] & { id: number; repository_url?: string })[]>(
+                'GET',
+                `${path}?per_page=100&page=${page}`,
               )
+              for (const each of raw) {
+                const repository = each.repository_url?.replace(/^.*\/repos\//, '') ?? `${owner}/${repo}`
+                out.push({ ...toIssue(each), repository, id: each.id })
+              }
+              if (raw.length < 100) break
             }
-            // A 404 is not an empty list either: it is the issue or the repository.
-            const raw = yield* send<(Parameters<typeof toIssue>[0] & { id: number; repository_url?: string })[]>(
+            return out
+          }),
+        )
+
+      const github: GitHub = {
+        owner,
+        repo,
+        installation,
+        // The same source `send` uses, handed out so git can authenticate too — a mint refused for
+        // rate is the same account limit, so this entry point locks as `send` does.
+        token: locking(token),
+        withRateLimited: (next) => build(next),
+        request: <T>(method: string, path: string, body?: unknown) =>
+          Effect.withSpan(send<T>(method, path, body), 'github.request'),
+
+        comment: Effect.fn('github.comment')(function* (issue: number, body: string) {
+          return yield* send<{ id: number }>('POST', `${repoPath}/issues/${issue}/comments`, { body })
+        }),
+
+        editComment: Effect.fn('github.editComment')(function* (_issue: number, commentId: number, body: string) {
+          yield* send<unknown>('PATCH', `${repoPath}/issues/comments/${commentId}`, { body })
+        }),
+
+        closeIssue: Effect.fn('github.closeIssue')(function* (
+          issue: number,
+          reason: 'completed' | 'not_planned' = 'completed',
+        ) {
+          yield* send<unknown>('PATCH', `${repoPath}/issues/${issue}`, { state: 'closed', state_reason: reason })
+        }),
+
+        updateBody: Effect.fn('github.updateBody')(function* (
+          issue: number,
+          body: string,
+          opts?: { ifUnchanged?: string },
+        ) {
+          if (opts?.ifUnchanged !== undefined) {
+            const current = toIssue(yield* send<Parameters<typeof toIssue>[0]>('GET', `${repoPath}/issues/${issue}`))
+            if (current.body !== opts.ifUnchanged) return yield* new BodyChanged(issue)
+          }
+          yield* send<unknown>('PATCH', `${repoPath}/issues/${issue}`, { body })
+        }),
+
+        setLabels: Effect.fn('github.setLabels')(function* (issue: number, labels: readonly string[]) {
+          yield* send<unknown>('PUT', `${repoPath}/issues/${issue}/labels`, { labels: [...labels] })
+        }),
+
+        addLabels: Effect.fn('github.addLabels')(function* (issue: number, labels: readonly string[]) {
+          yield* send<unknown>('POST', `${repoPath}/issues/${issue}/labels`, { labels: [...labels] })
+        }),
+
+        defaultBranch: Effect.fn('github.defaultBranch')(function* () {
+          const raw = yield* send<{ default_branch: string }>('GET', repoPath)
+          return raw.default_branch
+        }),
+
+        fileAt: Effect.fn('github.fileAt')(function* (path: string, ref: string) {
+          // A missing file is an answer, not a failure — a repository with no
+          // recipe is a repository that has not been onboarded yet.
+          const raw = yield* send<{ content?: string; encoding?: string }>(
+            'GET',
+            `${repoPath}/contents/${path}?ref=${encodeURIComponent(ref)}`,
+          ).pipe(
+            Effect.catchIf(
+              (err) => err.status === 404,
+              () => Effect.succeed(null),
+            ),
+          )
+          if (raw === null || !raw.content) return null
+          return Buffer.from(raw.content, (raw.encoding as BufferEncoding) ?? 'base64').toString('utf8')
+        }),
+
+        refSha: Effect.fn('github.refSha')(function* (ref: string) {
+          const raw = yield* send<{ sha: string }>('GET', `${repoPath}/commits/${encodeURIComponent(ref)}`)
+          return raw.sha
+        }),
+
+        matchingRefs: Effect.fn('github.matchingRefs')(function* (prefix: string) {
+          // **Nothing swallowed, and not even a 404.** This endpoint answers a 200
+          // and `[]` when no ref shares the prefix, so unlike `fileAt` it has no
+          // status that means *absence* — a 404 here is the repository, not the
+          // refs, and reading it as an empty list would tell a sweep there was
+          // nothing to delete on a remote it can no longer see.
+          const raw = yield* send<{ ref: string }[]>('GET', `${repoPath}/git/matching-refs/${prefix}`)
+          return raw.map((each) => each.ref.replace(/^refs\//, ''))
+        }),
+
+        deleteRef: Effect.fn('github.deleteRef')(function* (ref: string) {
+          yield* send<unknown>('DELETE', `${repoPath}/git/refs/${ref}`)
+        }),
+
+        listOpenIssues: Effect.fn('github.listOpenIssues')(function* () {
+          const out: Issue[] = []
+          for (let page = 1; page <= 10; page++) {
+            const raw = yield* send<Parameters<typeof toIssue>[0][]>(
               'GET',
-              `${path}?per_page=100&page=${page}`,
+              `${repoPath}/issues?state=open&per_page=100&page=${page}`,
             )
-            for (const each of raw) {
-              const repository = each.repository_url?.replace(/^.*\/repos\//, '') ?? `${owner}/${repo}`
-              out.push({ ...toIssue(each), repository, id: each.id })
-            }
+            // GitHub returns pull requests from the issues endpoint. A PR is not a
+            // work item.
+            const issues = raw.filter((r) => !('pull_request' in r))
+            out.push(...issues.map(toIssue))
             if (raw.length < 100) break
           }
           return out
         }),
-      )
 
-    const github: GitHub = {
-      owner,
-      repo,
-      installation,
-      // The same source `send` uses, handed out so git can authenticate too — a mint refused for
-      // rate is the same account limit, so this entry point locks as `send` does.
-      token: locking(token),
-      request: <T>(method: string, path: string, body?: unknown) =>
-        Effect.withSpan(send<T>(method, path, body), 'github.request'),
-
-      comment: Effect.fn('github.comment')(function* (issue: number, body: string) {
-        return yield* send<{ id: number }>('POST', `${repoPath}/issues/${issue}/comments`, { body })
-      }),
-
-      editComment: Effect.fn('github.editComment')(function* (_issue: number, commentId: number, body: string) {
-        yield* send<unknown>('PATCH', `${repoPath}/issues/comments/${commentId}`, { body })
-      }),
-
-      closeIssue: Effect.fn('github.closeIssue')(function* (
-        issue: number,
-        reason: 'completed' | 'not_planned' = 'completed',
-      ) {
-        yield* send<unknown>('PATCH', `${repoPath}/issues/${issue}`, { state: 'closed', state_reason: reason })
-      }),
-
-      updateBody: Effect.fn('github.updateBody')(function* (
-        issue: number,
-        body: string,
-        opts?: { ifUnchanged?: string },
-      ) {
-        if (opts?.ifUnchanged !== undefined) {
-          const current = toIssue(yield* send<Parameters<typeof toIssue>[0]>('GET', `${repoPath}/issues/${issue}`))
-          if (current.body !== opts.ifUnchanged) return yield* new BodyChanged(issue)
-        }
-        yield* send<unknown>('PATCH', `${repoPath}/issues/${issue}`, { body })
-      }),
-
-      setLabels: Effect.fn('github.setLabels')(function* (issue: number, labels: readonly string[]) {
-        yield* send<unknown>('PUT', `${repoPath}/issues/${issue}/labels`, { labels: [...labels] })
-      }),
-
-      addLabels: Effect.fn('github.addLabels')(function* (issue: number, labels: readonly string[]) {
-        yield* send<unknown>('POST', `${repoPath}/issues/${issue}/labels`, { labels: [...labels] })
-      }),
-
-      defaultBranch: Effect.fn('github.defaultBranch')(function* () {
-        const raw = yield* send<{ default_branch: string }>('GET', repoPath)
-        return raw.default_branch
-      }),
-
-      fileAt: Effect.fn('github.fileAt')(function* (path: string, ref: string) {
-        // A missing file is an answer, not a failure — a repository with no
-        // recipe is a repository that has not been onboarded yet.
-        const raw = yield* send<{ content?: string; encoding?: string }>(
-          'GET',
-          `${repoPath}/contents/${path}?ref=${encodeURIComponent(ref)}`,
-        ).pipe(
-          Effect.catchIf(
-            (err) => err.status === 404,
-            () => Effect.succeed(null),
-          ),
-        )
-        if (raw === null || !raw.content) return null
-        return Buffer.from(raw.content, (raw.encoding as BufferEncoding) ?? 'base64').toString('utf8')
-      }),
-
-      refSha: Effect.fn('github.refSha')(function* (ref: string) {
-        const raw = yield* send<{ sha: string }>('GET', `${repoPath}/commits/${encodeURIComponent(ref)}`)
-        return raw.sha
-      }),
-
-      matchingRefs: Effect.fn('github.matchingRefs')(function* (prefix: string) {
-        // **Nothing swallowed, and not even a 404.** This endpoint answers a 200
-        // and `[]` when no ref shares the prefix, so unlike `fileAt` it has no
-        // status that means *absence* — a 404 here is the repository, not the
-        // refs, and reading it as an empty list would tell a sweep there was
-        // nothing to delete on a remote it can no longer see.
-        const raw = yield* send<{ ref: string }[]>('GET', `${repoPath}/git/matching-refs/${prefix}`)
-        return raw.map((each) => each.ref.replace(/^refs\//, ''))
-      }),
-
-      deleteRef: Effect.fn('github.deleteRef')(function* (ref: string) {
-        yield* send<unknown>('DELETE', `${repoPath}/git/refs/${ref}`)
-      }),
-
-      listOpenIssues: Effect.fn('github.listOpenIssues')(function* () {
-        const out: Issue[] = []
-        for (let page = 1; page <= 10; page++) {
-          const raw = yield* send<Parameters<typeof toIssue>[0][]>(
-            'GET',
-            `${repoPath}/issues?state=open&per_page=100&page=${page}`,
+        createIssue: Effect.fn('github.createIssue')(function* (input: {
+          title: string
+          body: string
+          labels: readonly string[]
+        }) {
+          return toIssue(
+            yield* send<Parameters<typeof toIssue>[0]>('POST', `${repoPath}/issues`, {
+              title: input.title,
+              body: input.body,
+              labels: [...input.labels],
+            }),
           )
-          // GitHub returns pull requests from the issues endpoint. A PR is not a
-          // work item.
-          const issues = raw.filter((r) => !('pull_request' in r))
-          out.push(...issues.map(toIssue))
-          if (raw.length < 100) break
-        }
-        return out
-      }),
+        }),
 
-      createIssue: Effect.fn('github.createIssue')(function* (input: {
-        title: string
-        body: string
-        labels: readonly string[]
-      }) {
-        return toIssue(
-          yield* send<Parameters<typeof toIssue>[0]>('POST', `${repoPath}/issues`, {
-            title: input.title,
-            body: input.body,
-            labels: [...input.labels],
-          }),
-        )
-      }),
+        addSubIssue: Effect.fn('github.addSubIssue')(function* (parent: number, child: number) {
+          const path = `${repoPath}/issues/${parent}/sub_issues`
+          yield* asLinkCall(
+            'write',
+            Effect.gen(function* () {
+              yield* send<unknown>('POST', path, { sub_issue_id: yield* idOf(child) })
+            }),
+          )
+        }),
 
-      addSubIssue: Effect.fn('github.addSubIssue')(function* (parent: number, child: number) {
-        const path = `${repoPath}/issues/${parent}/sub_issues`
-        yield* asLinkCall(
-          'write',
-          Effect.gen(function* () {
-            yield* send<unknown>('POST', path, { sub_issue_id: yield* idOf(child) })
-          }),
-        )
-      }),
+        listSubIssues: Effect.fn('github.listSubIssues')(function* (parent: number) {
+          return yield* listLinked(`${repoPath}/issues/${parent}/sub_issues`)
+        }),
 
-      listSubIssues: Effect.fn('github.listSubIssues')(function* (parent: number) {
-        return yield* listLinked(`${repoPath}/issues/${parent}/sub_issues`)
-      }),
+        addBlockedBy: Effect.fn('github.addBlockedBy')(function* (issue: number, blocker: number) {
+          const path = `${repoPath}/issues/${issue}/dependencies/blocked_by`
+          yield* asLinkCall(
+            'write',
+            Effect.gen(function* () {
+              yield* send<unknown>('POST', path, { issue_id: yield* idOf(blocker) })
+            }),
+          )
+        }),
 
-      addBlockedBy: Effect.fn('github.addBlockedBy')(function* (issue: number, blocker: number) {
-        const path = `${repoPath}/issues/${issue}/dependencies/blocked_by`
-        yield* asLinkCall(
-          'write',
-          Effect.gen(function* () {
-            yield* send<unknown>('POST', path, { issue_id: yield* idOf(blocker) })
-          }),
-        )
-      }),
+        listBlockedBy: Effect.fn('github.listBlockedBy')(function* (issue: number) {
+          return yield* listLinked(`${repoPath}/issues/${issue}/dependencies/blocked_by`)
+        }),
 
-      listBlockedBy: Effect.fn('github.listBlockedBy')(function* (issue: number) {
-        return yield* listLinked(`${repoPath}/issues/${issue}/dependencies/blocked_by`)
-      }),
-
-      listIssuesSince: Effect.fn('github.listIssuesSince')(function* (since: Date) {
-        const out: Issue[] = []
-        for (let page = 1; ; page++) {
-          if (page > LIST_SINCE_PAGES) {
-            return yield* new GitHubFailed(
-              0,
-              `${repoPath}/issues`,
-              `more than ${LIST_SINCE_PAGES * 100} issues in ${owner}/${repo} were created since ${since.toISOString()} — ` +
-                `the listing is incomplete, so it cannot say an issue is not there`,
+        listIssuesSince: Effect.fn('github.listIssuesSince')(function* (since: Date) {
+          const out: Issue[] = []
+          for (let page = 1; ; page++) {
+            if (page > LIST_SINCE_PAGES) {
+              return yield* new GitHubFailed(
+                0,
+                `${repoPath}/issues`,
+                `more than ${LIST_SINCE_PAGES * 100} issues in ${owner}/${repo} were created since ${since.toISOString()} — ` +
+                  `the listing is incomplete, so it cannot say an issue is not there`,
+              )
+            }
+            // `since` filters on `updated_at`, which every issue created since also
+            // passes; the order is by creation, so the window ends at the first
+            // issue older than it.
+            const raw = yield* send<(Parameters<typeof toIssue>[0] & { created_at: string })[]>(
+              'GET',
+              `${repoPath}/issues?state=all&since=${encodeURIComponent(since.toISOString())}` +
+                `&sort=created&direction=desc&per_page=100&page=${page}`,
             )
+            const inWindow = raw.filter((r) => Date.parse(r.created_at) >= since.getTime())
+            out.push(...inWindow.filter((r) => !('pull_request' in r)).map(toIssue))
+            if (raw.length < 100 || inWindow.length < raw.length) break
           }
-          // `since` filters on `updated_at`, which every issue created since also
-          // passes; the order is by creation, so the window ends at the first
-          // issue older than it.
-          const raw = yield* send<(Parameters<typeof toIssue>[0] & { created_at: string })[]>(
-            'GET',
-            `${repoPath}/issues?state=all&since=${encodeURIComponent(since.toISOString())}` +
-              `&sort=created&direction=desc&per_page=100&page=${page}`,
-          )
-          const inWindow = raw.filter((r) => Date.parse(r.created_at) >= since.getTime())
-          out.push(...inWindow.filter((r) => !('pull_request' in r)).map(toIssue))
-          if (raw.length < 100 || inWindow.length < raw.length) break
-        }
-        return out.reverse()
-      }),
+          return out.reverse()
+        }),
 
-      getIssue: Effect.fn('github.getIssue')(function* (number: number) {
-        return toIssue(yield* send<Parameters<typeof toIssue>[0]>('GET', `${repoPath}/issues/${number}`))
-      }),
+        getIssue: Effect.fn('github.getIssue')(function* (number: number) {
+          return toIssue(yield* send<Parameters<typeof toIssue>[0]>('GET', `${repoPath}/issues/${number}`))
+        }),
+      }
+      return github
     }
-    return github
+    return build(options.onRateLimited)
   })
 
 /** The promise object over a `GitHub`: every member an arrow into the one face. */
+const toClient = (github: GitHub): GitHubClient => ({
+  owner: github.owner,
+  repo: github.repo,
+  installation: github.installation,
+  request: <T>(method: string, path: string, body?: unknown) => runGitHub(github.request<T>(method, path, body)),
+  // A fresh run per call, never a memoised promise: an installation token
+  // lasts an hour and git resolves this per invocation.
+  token: () => runGitHub(github.token),
+  defaultBranch: () => runGitHub(github.defaultBranch()),
+  fileAt: (path, ref) => runGitHub(github.fileAt(path, ref)),
+  refSha: (ref) => runGitHub(github.refSha(ref)),
+  matchingRefs: (prefix) => runGitHub(github.matchingRefs(prefix)),
+  deleteRef: (ref) => runGitHub(github.deleteRef(ref)),
+  listOpenIssues: () => runGitHub(github.listOpenIssues()),
+  listIssuesSince: (since) => runGitHub(github.listIssuesSince(since)),
+  getIssue: (number, signal) => runGitHub(github.getIssue(number), signal),
+  comment: (issue, body) => runGitHub(github.comment(issue, body)),
+  setLabels: (issue, labels) => runGitHub(github.setLabels(issue, labels)),
+  addLabels: (issue, labels) => runGitHub(github.addLabels(issue, labels)),
+  editComment: (issue, commentId, body) => runGitHub(github.editComment(issue, commentId, body)),
+  closeIssue: (issue, reason) => runGitHub(github.closeIssue(issue, reason)),
+  updateBody: (issue, body, opts) => runGitHub(github.updateBody(issue, body, opts)),
+  createIssue: (input) => runGitHub(github.createIssue(input)),
+  addSubIssue: (parent, child) => runGitHub(github.addSubIssue(parent, child)),
+  listSubIssues: (parent) => runGitHub(github.listSubIssues(parent)),
+  addBlockedBy: (issue, blocker) => runGitHub(github.addBlockedBy(issue, blocker)),
+  listBlockedBy: (issue) => runGitHub(github.listBlockedBy(issue)),
+  withRateLimited: (port) => toClient(github.withRateLimited(port)),
+})
+
 const makeGitHubClient = (
   options: CreateClientOptions,
-): Effect.Effect<GitHubClient, GitHubFailed | NotInstalledError> =>
-  Effect.map(makeGitHub(options), (github): GitHubClient => ({
-    owner: github.owner,
-    repo: github.repo,
-    installation: github.installation,
-    request: <T>(method: string, path: string, body?: unknown) => runGitHub(github.request<T>(method, path, body)),
-    // A fresh run per call, never a memoised promise: an installation token
-    // lasts an hour and git resolves this per invocation.
-    token: () => runGitHub(github.token),
-    defaultBranch: () => runGitHub(github.defaultBranch()),
-    fileAt: (path, ref) => runGitHub(github.fileAt(path, ref)),
-    refSha: (ref) => runGitHub(github.refSha(ref)),
-    matchingRefs: (prefix) => runGitHub(github.matchingRefs(prefix)),
-    deleteRef: (ref) => runGitHub(github.deleteRef(ref)),
-    listOpenIssues: () => runGitHub(github.listOpenIssues()),
-    listIssuesSince: (since) => runGitHub(github.listIssuesSince(since)),
-    getIssue: (number, signal) => runGitHub(github.getIssue(number), signal),
-    comment: (issue, body) => runGitHub(github.comment(issue, body)),
-    setLabels: (issue, labels) => runGitHub(github.setLabels(issue, labels)),
-    addLabels: (issue, labels) => runGitHub(github.addLabels(issue, labels)),
-    editComment: (issue, commentId, body) => runGitHub(github.editComment(issue, commentId, body)),
-    closeIssue: (issue, reason) => runGitHub(github.closeIssue(issue, reason)),
-    updateBody: (issue, body, opts) => runGitHub(github.updateBody(issue, body, opts)),
-    createIssue: (input) => runGitHub(github.createIssue(input)),
-    addSubIssue: (parent, child) => runGitHub(github.addSubIssue(parent, child)),
-    listSubIssues: (parent) => runGitHub(github.listSubIssues(parent)),
-    addBlockedBy: (issue, blocker) => runGitHub(github.addBlockedBy(issue, blocker)),
-    listBlockedBy: (issue) => runGitHub(github.listBlockedBy(issue)),
-  }))
+): Effect.Effect<GitHubClient, GitHubFailed | NotInstalledError> => Effect.map(makeGitHub(options), toClient)
 
 /** `options.signal` stops the installation lookup; later requests take their own. */
 export function createGitHubClient(options: CreateClientOptions): Promise<GitHubClient> {

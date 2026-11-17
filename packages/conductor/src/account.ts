@@ -17,9 +17,9 @@ import {
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
-import type { GitHubFailed } from '@lingtai/github'
+import type { GitHubFailed, RateLimitAnswer } from '@lingtai/github'
 import type { ResolvedRecipe } from '@lingtai/recipe'
-import { Effect } from 'effect'
+import { Clock, Duration, Effect } from 'effect'
 
 import { currentRecipe } from './projects.ts'
 import { runtimesOf } from './runtimes-of.ts'
@@ -132,21 +132,30 @@ export const accountsFor = (
  * The port a conducted GitHub client is built with (0126 §2): locks `acct-github` when a call it
  * made met a rate limit. It cannot fail — a lock that could not be written is one line on the log
  * and the call fails as it would have.
+ *
+ * `wait: false` (a look) answers `fail`. `wait: true` (the pass) answers `retry` after the lock's
+ * `until` — the one it appended, or the standing one's — and the client lifts that to a minimum.
+ * **A store failure answers `fail` even then**: with no lock on the log there is no `until` to
+ * wait for, and nothing on the banner would say why the pass stood still.
  */
 export const githubLimitPort =
-  (store: EventStore, log: (line: string) => void, now: () => Date = () => new Date()) =>
-  (failed: GitHubFailed): Effect.Effect<void, never> =>
+  (store: EventStore, log: (line: string) => void, options: { wait: boolean; now?: () => Date } = { wait: false }) =>
+  (failed: GitHubFailed): Effect.Effect<RateLimitAnswer, never> =>
     Effect.gen(function* () {
       // The deadline is worked out from the very state the append is asserted against: a lost
       // race re-reads and asks again, so `until` and `doublings` can never come from different reads.
       let reason = ''
+      let until: Date | null = null
+      const nowMs = yield* Clock.currentTimeMillis
+      const now = options.now?.() ?? new Date(nowMs)
       const answer = yield* transitionAccount<ReachAnswer>(
         store,
         'github',
         (state) => {
           if (state.limit !== null) return null
-          const at = githubLimitUntil({ failed, now: now(), account: state })
+          const at = githubLimitUntil({ failed, now, account: state })
           reason = at.reason
+          until = at.until
           return reachTransition(state, 'github', {
             until: at.until.toISOString(),
             untilFrom: at.untilFrom,
@@ -157,4 +166,15 @@ export const githubLimitPort =
         { kind: 'appended' },
       )
       if (answer.kind === 'appended') log(reason)
-    }).pipe(Effect.catch((e) => Effect.sync(() => log(`could not lock acct-github: ${String(e)}`))))
+      if (!options.wait) return { kind: 'fail' } as const
+      const standing: Date | null = answer.kind === 'already' ? answer.until : until
+      if (standing === null) return { kind: 'fail' } as const
+      return { kind: 'retry', after: Duration.millis(Math.max(0, standing.getTime() - nowMs)) } as const
+    }).pipe(
+      Effect.catch((e) =>
+        Effect.sync((): RateLimitAnswer => {
+          log(`could not lock acct-github: ${String(e)}`)
+          return { kind: 'fail' }
+        }),
+      ),
+    )
