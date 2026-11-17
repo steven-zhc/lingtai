@@ -158,18 +158,27 @@ fixes the bounds and the endings that router works inside.
     guard once `until` has passed or by a person (0126 §7), and names which agent met the wall. The item is released
     (`failed`) and keeps its place; any commits are published first. **A run that
     started and met the account's limit locks the account the same way** — a crash
-    whose detail is the runtime's own account-limit sentence (`accountWallOf`:
+    whose detail is the runtime's own account-limit sentence (`wallOf`:
     Claude Code's *You've hit your … limit*, Codex's *You have hit your usage
     limit*) appends the same `AccountLimitReached`, with the same `until` and
-    fallback — but the item is **not** released: it keeps its crash wait (§12),
-    and the match adds the lock and changes nothing else.
+    fallback, and then the ticket is released `AccountLimit{ runId, step,
+    runtime }` — the lock first, so nothing claims it into the wall — and no
+    wait is written. **The first claim after the lock lifts, at its `until` or
+    by `lingtai account lift`, continues the same attempt:** the worktree
+    re-cut at the saved head with the kept WIP applied, and the cut-off step run
+    again with the cut-off run's recorded prompt under a new dispatch id
+    (`:rerun:<n>`), once per lift, spending no round, restart or transient
+    retry. Where the lock did not append the ticket keeps its crash wait; where
+    the saved head cannot be continued the attempt restarts if a restart is
+    left, and is a person's wait otherwise. A person's moves on the queued
+    ticket are `lingtai close` and `lingtai account lift`.
 
 12. **An agent that started and did not finish judged nothing, and stops only
     the attempt.** A crash, a spent turn budget, a missing receipt, or a fixer that
     committed nothing ends the step `did-not-finish` (`StepDidNotFinish`). It buys
     no round, reaches no judge, is not retried, and does not pause the conductor,
     because a crash is local — except a crash whose detail is the runtime's account-limit
-    sentence, which pauses it as §11 says and is still the ticket's wait. The item is blocked for a person; the card offers no
+    sentence, which locks the account as §11 says and releases the ticket to be continued after the lift. Any other crash blocks the item for a person; the card offers no
     approval, because no step judged the diff, and the move left is requeue.
     **A run that a transient error cut off is run again in place, not held.**
     When the runtime's own detail is an API error a retry can clear — a 5xx, a
@@ -322,6 +331,13 @@ fixes the bounds and the endings that router works inside.
   implementer deserves a retry of its own is unmeasured and not offered.
 
 ## Not built yet
+
+- **The continuation of an account limit is built (#1205); the continuation's
+  other cause is not.** `ReleaseCause.AccountLimit` and the owner's continue
+  transition on a queued ticket are in. A judge's crash at `proposed` on the
+  wall keeps its wait, a person rerunning a step is #1218, and `BaseRed` is
+  #1211, on the same source. Actions listed before the cut-off one in its step
+  run again rather than keeping their results.
 
 - **The 2026-11-13 amendment.** §12's transient rerun is built (#1201: the
   rows are in `classify`'s table and `StepRerunInPlace` is the count; a

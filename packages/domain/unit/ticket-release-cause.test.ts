@@ -31,7 +31,7 @@ describe('a release with a cause', () => {
 
   it('round-trips through the codec, and the reducer version is 2', () => {
     const state = reduceTicket(released(limit))
-    expect(decodeTicket(encodeTicket(state)).claims[0]?.ended).toEqual(state.claims[0]?.ended)
+    expect(decodeTicket(encodeTicket(state), 'ticket').claims[0]?.ended).toEqual(state.claims[0]?.ended)
     expect(ticketReducer.version).toBe(2)
   })
 
