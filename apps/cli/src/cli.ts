@@ -176,6 +176,7 @@ export const INTEGER_FLAGS = {
   approve: ['issue'],
   requeue: ['issue'],
   'grant-fix-round': ['issue'],
+  rerun: ['issue'],
   ask: ['issue'],
   answer: ['issue'],
   close: ['issue'],
@@ -271,6 +272,24 @@ const grantFixRound = Command.make(
       }),
     ),
 ).pipe(Command.withDescription(definitionOf('grant-fix-round').task))
+
+const rerun = Command.make(
+  'rerun',
+  {
+    project: projectArg,
+    issue: integerOption('rerun', 'issue'),
+    ifHead: optionalText('if-head'),
+    json,
+    noColor,
+  },
+  (args) =>
+    answerWith('rerun', args, (progress) =>
+      Effect.gen(function* () {
+        const { rerunVerdict } = yield* lift(() => import('./rerun.ts'))
+        return yield* rerunVerdict({ project: args.project, issue: args.issue, ifHead: given(args.ifHead) }, progress)
+      }),
+    ),
+).pipe(Command.withDescription(definitionOf('rerun').task))
 
 const close = Command.make(
   'close',
@@ -1335,6 +1354,7 @@ export const root = Command.make('lingtai').pipe(
     approve,
     requeue,
     grantFixRound,
+    rerun,
     close,
     ask,
     answer,
@@ -1425,6 +1445,9 @@ function flagValue(args: readonly string[], name: string): string | null | undef
 /** The sentences a flag with no value has always been refused with, and exit 2 (#621). */
 const TAKES: Record<string, { flag: string; sentence: string; trimmed: boolean }[]> = {
   requeue: [{ flag: 'into-body', sentence: '--into-body takes text', trimmed: true }],
+  rerun: [
+    { flag: 'if-head', sentence: '--if-head takes the commit SHA, full or at least 7 characters', trimmed: false },
+  ],
   'grant-fix-round': [
     { flag: 'if-head', sentence: '--if-head takes the commit SHA, full or at least 7 characters', trimmed: false },
   ],

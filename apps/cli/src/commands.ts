@@ -329,6 +329,19 @@ export const COMMANDS = [
     examples: ['lingtai grant-fix-round lingtai --issue <n> --if-head <sha>'],
   }),
   define({
+    name: 'rerun',
+    group: 'waiting on you',
+    task: 'run the step that stopped again, on the saved work',
+    effect: 'changes',
+    usage: [
+      'lingtai rerun <project> --issue <n> [--if-head <sha>] [--json]',
+      '  The same attempt runs the step a crash or a red stopped again, on its',
+      '  saved head: no fixer, nothing cut from base, and no round or restart',
+      '  spent. --if-head refuses if the saved head is a different commit.',
+    ],
+    examples: ['lingtai rerun lingtai --issue <n> --if-head <sha>'],
+  }),
+  define({
     name: 'requeue',
     group: 'waiting on you',
     task: 'end a wait with a new run',

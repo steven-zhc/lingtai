@@ -5983,7 +5983,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * otherwise the wait below is the person's, and it names the head — the cut's own `notCut` detail.
          */
         // A person who chose this attempt over a restart is not restarted past: the wait names the head (#1218).
-        if (headGone !== null && continuation?.released?.by !== 'person' && reduced.restarts.length < ceiling.restarts) {
+        if (
+          headGone !== null &&
+          continuation?.released?.by !== 'person' &&
+          reduced.restarts.length < ceiling.restarts
+        ) {
           const restart = reduced.restarts.length + 1
           const why = `the saved head cannot be continued (${headGone}) — restart ${restart} of ${ceiling.restarts}`
           log(why)

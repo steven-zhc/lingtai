@@ -42,7 +42,6 @@ import {
   headOf,
   reduceAttempt,
   rerunHeadOf,
-  savedHeadOf,
   reduceTicket,
   routesOf,
   stepOutcomesOf,

@@ -38,6 +38,8 @@ export function waitCommand(
       entries.push(reason._tag === 'SignoffRequired' ? base('approve') : `${base('approve')} --note "<why>"`)
     } else if (tag === 'GrantFixRound') {
       entries.push(base('grant-fix-round'))
+    } else if (tag === 'RerunStep') {
+      entries.push(base('rerun'))
     } else if (tag === 'AnswerQuestion') {
       entries.push(`${base('answer')} "<choice>"`)
     }

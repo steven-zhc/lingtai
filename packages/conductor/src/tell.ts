@@ -437,7 +437,9 @@ function resolutionWords(resolution: PayloadOf<'WaitResolved'>['resolution'], by
     }
     case 'RerunStep': {
       const name = who(by)
-      return name === '' ? 'The step, run again on the saved work.' : `The step, run again on the saved work by ${name}.`
+      return name === ''
+        ? 'The step, run again on the saved work.'
+        : `The step, run again on the saved work by ${name}.`
     }
     case 'Requeue':
     case 'EditBodyAndRequeue':
