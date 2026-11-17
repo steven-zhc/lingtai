@@ -102,10 +102,10 @@ export const liftPassedAccountLimit = (store: EventStore, account: Account, now:
 
 /**
  * The state of each `acct-{account}` the project uses — its recipe's runtimes, and `github` when it has an owner — and no other
- * (0126 §5). **A recipe that does not resolve gives the empty map and not a
- * failure**: the project is held by its refused recipe, which every start
- * already meets, and a failure here would skip it before that refusal is
- * recorded. A store read that fails is a failure.
+ * (0126 §5). **A recipe that does not resolve gives no runtime accounts and not
+ * a failure** — `github` is still there for an owned project — the project is
+ * held by its refused recipe, which every start already meets, and a failure
+ * here would skip it before that refusal is recorded. A store read that fails is a failure.
  */
 export const accountsFor = (
   store: EventStore,

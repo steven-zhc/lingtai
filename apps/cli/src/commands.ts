@@ -32,7 +32,7 @@ export type CommandDefinition = {
 /** The projections `lingtai projection` knows; `help.test.ts` holds this to `PROJECTIONS` in `projection.ts`. */
 export const PROJECTION_NAMES = ['task_view', 'finding_backlog', 'spend', 'ticket_report'] as const
 
-/** The runtimes `lingtai account` knows; `account-lift.test.ts` holds this to `RuntimeId`. */
+/** The accounts `lingtai account` knows; `account-lift.test.ts` holds this to `Account`. */
 export const ACCOUNT_NAMES = ['claude-code', 'codex', 'github'] as const
 
 const define = <const N extends string>(

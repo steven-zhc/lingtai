@@ -72,7 +72,7 @@ export function everyPaused(map: LockMap, registered: readonly string[]): boolea
 /** A project's standing under the first lock that holds it: the card's words and the panel's. */
 export interface LockStanding {
   /** The short word the panel's chip uses. */
-  kind: 'ceiling' | 'usage limit' | 'paused'
+  kind: 'ceiling' | 'usage limit' | 'rate limit' | 'paused'
   text: string
   title: string
   /** What the request waits for, as a clause after *until*. */
@@ -99,7 +99,7 @@ export function lockStanding(project: string, locks: readonly Lock[] | undefined
     const until = whenLabel(limit.until, now)
     const words = accountWords(limit.account)
     return {
-      kind: 'usage limit',
+      kind: words.limit === 'rate limit' ? 'rate limit' : 'usage limit',
       text: `${words.name} is at its ${words.limit} until ${until} — nothing will start`,
       title:
         limit.account === 'github'

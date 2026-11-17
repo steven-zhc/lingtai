@@ -112,7 +112,7 @@ export function projectStream(project: string): string {
 
 export const ACCOUNT_STREAM_PREFIX = 'acct-'
 
-/** `acct-{account}` — whether a platform's account is at its usage limit (0126 §2). */
+/** `acct-{account}` — whether a platform's account is at its limit (0126 §2). */
 export function accountStream(account: Account): string {
   return `${ACCOUNT_STREAM_PREFIX}${account}`
 }

@@ -23,6 +23,7 @@ import {
   type Lock,
   Account,
   accountWords,
+  runtimeAccounts,
   whenLabel,
   untilFromWords,
 } from '@lingtai/domain'
@@ -70,8 +71,9 @@ export type ProjectLocks =
       ok: true
       held: readonly HeldProject[]
       /**
-       * The runtimes each registered project's recipe uses, held or not (#1010);
-       * a project whose recipe does not resolve has no entry.
+       * The accounts each registered project uses, held or not (#1010): its recipe's
+       * runtimes and `github` with an owner. A project whose recipe does not
+       * resolve has no entry, so it is never reported as taking work.
        */
       uses?: ReadonlyMap<string, readonly Account[]>
       /** Today's ceiling as every reader says it; undefined when the control read failed or nothing is set. */
@@ -109,7 +111,8 @@ export const readProjectLocks = cache(async (): Promise<ProjectLocks> => {
       // A failed `acct-` read fails the whole read: unknown is never *not limited*.
       const accounts = await run(accountsFor(eventStore, project))
       const locks = locksOn({ project, control: state, accounts })
-      if (project.project !== null && accounts.size > 0) uses.set(project.project, [...accounts.keys()].sort())
+      if (project.project !== null && runtimeAccounts([...accounts.keys()]).length > 0)
+        uses.set(project.project, [...accounts.keys()].sort())
       if (project.project !== null && locks.length > 0) held.push({ project: project.project, locks })
     }
     held.sort((a, b) => (a.project < b.project ? -1 : a.project > b.project ? 1 : 0))

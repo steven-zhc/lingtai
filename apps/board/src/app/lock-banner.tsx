@@ -1,4 +1,4 @@
-import { accountWords, runtimeAccounts } from '@lingtai/domain'
+import { runtimeAccounts } from '@lingtai/domain'
 /**
  * The rows under the bar: the day's ceiling, then each paused project in scope
  * (#994, #1006, 0126 §8).
@@ -112,7 +112,7 @@ function AccountRow({ row, scope }: { row: Extract<BannerRow, { kind: 'account' 
   }
   return (
     <div className={row.passed ? 'pbrow passed' : 'pbrow'}>
-      <b className="lab">{accountWords(row.account).name} limit</b>
+      <b className="lab">{row.account === 'github' ? 'GitHub rate limit' : `${row.account} limit`}</b>
       <span className="what" title={row.title}>
         until {row.untilLabel}
         {row.passed ? <span className="sub"> — passed · lifts when the conductor next looks</span> : <> · {tail}</>}

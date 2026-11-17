@@ -2367,27 +2367,27 @@ export const ProjectRecovered = z.object({
 export const ProjectPaused = z.object({ project: z.string().min(1), by: z.string() })
 
 /**
- * A runtime's account met its usage limit. `until` is when the runtime said it
+ * An account (a runtime's, or `github`) met its limit. `until` is when the runtime said it
  * resets, or the configured backoff when it said nothing readable; `untilFrom`
  * says which, in the order `standDown` tries them. Only an attempt meeting the
  * wall appends it, and only when no limit stands (0126 §3).
  *
- * @summary A runtime's account reached its usage limit; no project whose recipe uses it starts new work until it is lifted.
+ * @summary An account (a runtime's, or github) reached its limit; no project that uses it starts new work until it is lifted.
  */
 export const AccountLimitReached = z.object({
   account: Account,
   /** ISO instant. */
   until: z.string().datetime({ offset: true }),
   untilFrom: z.enum(['message', 'message-latest', 'backoff', 'backoff-unreadable']),
-  /** The runtime's own words, whitespace-collapsed, at most 200 characters. */
+  /** The platform's own words, whitespace-collapsed, at most 200 characters. */
   said: z.string().max(200),
 })
 
 /**
- * A runtime's usage limit ended: the guard saw `until` pass (no `by`), or a
+ * An account's limit ended: the guard saw `until` pass (no `by`), or a
  * person said it is over (`by`).
  *
- * @summary A runtime's usage limit was lifted: its time passed, or a person said it is over.
+ * @summary An account's limit was lifted: its time passed, or a person said it is over.
  */
 export const AccountLimitLifted = z.union([
   // `by` first: a union takes the first member that parses, and the bare shape would strip it.
