@@ -1131,3 +1131,27 @@ describe('blocked by on the local ticket form (#1227)', () => {
     ])
   })
 })
+
+describe('new --blocked-by when a later link fails (#1227)', () => {
+  it('says which links landed', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    for (const title of ['one', 'two', 'three']) await tickets.createIssue({ title, body: '', labels: ['bug'] })
+    const real = tickets.addBlockedBy
+    let calls = 0
+    const flaky = {
+      ...tickets,
+      addBlockedBy: (a: number, b: number) => (++calls === 2 ? Promise.reject(new Error('store down')) : real(a, b)),
+    } as typeof tickets
+    const lines: string[] = []
+    const code = await ticketNew({ project: 'p', title: 't', label: 'bug', blockedBy: '1,3' }, (l) => lines.push(l), {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => flaky,
+      env: EDITOR_ENV,
+    })
+    expect(code).toBe(1)
+    const out = lines.join('\n')
+    expect(out).toContain('#4 is blocked by #1 but not #3')
+    expect(out).not.toContain('without its blocked by links')
+  })
+})

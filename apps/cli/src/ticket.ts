@@ -635,15 +635,30 @@ const firstMissing = (tickets: DbTicketsEffects, numbers: readonly number[]): Ef
     return null
   })
 
-/** Links `issue` to each blocker in turn; stops at the first refusal and returns it, `null` when all landed. */
-const linkAll = (tickets: DbTicketsEffects, issue: number, blockers: readonly number[]): Effect.Effect<string | null> =>
+/** Links `issue` to each blocker in turn; stops at the first refusal. `landed` is every link written before it. */
+const linkAll = (
+  tickets: DbTicketsEffects,
+  issue: number,
+  blockers: readonly number[],
+): Effect.Effect<{ why: string; landed: number[] } | null> =>
   Effect.gen(function* () {
+    const landed: number[] = []
     for (const b of blockers) {
       const added = yield* attempt(tickets.addBlockedBy(issue, b))
-      if (!added.ok) return added.why
+      if (!added.ok) return { why: added.why, landed }
+      landed.push(b)
     }
     return null
   })
+
+/** What a refused `linkAll` says about the links: which landed and which did not. */
+const linkState = (issue: number, blockers: readonly number[], landed: readonly number[]): string =>
+  landed.length === 0
+    ? `#${issue} exists without its blocked by links`
+    : `#${issue} is blocked by ${landed.map((n) => `#${n}`).join(', ')} but not ${blockers
+        .filter((n) => !landed.includes(n))
+        .map((n) => `#${n}`)
+        .join(', ')}`
 
 export interface TicketNewOptions {
   project?: string
@@ -736,7 +751,7 @@ const newFromFlags = (
     log(`${symbol.pass()} created #${created.number}  ${created.title}`)
     const linked = yield* linkAll(tickets, created.number, blockers.numbers)
     if (linked !== null) {
-      log(`${linked} — #${created.number} exists without its blocked by links`)
+      log(`${linked.why} — ${linkState(created.number, blockers.numbers, linked.landed)}`)
       return 1
     }
     if (kindOf(created, kinds) === null) {
@@ -838,7 +853,9 @@ const newFromEditor = (
     log(`${symbol.pass()} created #${created.number}  ${created.title}`)
     const linked = yield* linkAll(tickets, created.number, after.form.blockedBy)
     if (linked !== null) {
-      log(`${linked} — #${created.number} exists without its blocked by links; your text is kept at ${edited.path}`)
+      log(
+        `${linked.why} — ${linkState(created.number, after.form.blockedBy, linked.landed)}; your text is kept at ${edited.path}`,
+      )
       return 1
     }
     yield* edited.discard()
