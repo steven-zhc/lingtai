@@ -84,6 +84,7 @@ import type { ProjectState } from '@lingtai/domain'
 import {
   continuationOf,
   grantCriterion,
+  rerunStepOf,
   standingFor,
   waivedActionsAt,
   type KeptAt,
@@ -317,6 +318,12 @@ import {
   releaseTicketEffect,
   type SplitChildState,
 } from './ticket/commands.ts'
+
+/** How many times a person asked for `RerunStep` on `runId`'s waits: one summand of a rerun's dispatch suffix (#1218). */
+function personRerunsOf(waits: ReturnType<typeof waitsFromState>, runId: string): number {
+  return waits.filter((w) => w.resolution?._tag === 'RerunStep' && 'run' in w.reason && w.reason.run.runId === runId)
+    .length
+}
 
 /** A run's cost in words: dollars to the cent, or `cost unknown` — never `$0.00` for a cost nobody reported (0110 §7). */
 /**
@@ -1353,10 +1360,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const head = releasedHeadOf(releasedEvents)
         const spent = continuationSpent(releasedState)
         // Each lift is one release naming this run, so this rerun's number among them is their count.
-        const accountReruns = accountLimitReleases(
-          yield* Effect.promise(() => store.read(ticketId)),
-          releasedFrom.runId,
-        )
+        const releases = accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), releasedFrom.runId)
+        // A person's rerun of this attempt is a rerun too: its dispatch id is its own (#1218).
+        const accountReruns = releases + personRerunsOf(waitsFromState(reduced), releasedFrom.runId)
         const cutOff = cutOffPromptOf(releasedEvents)
         // The call the wall cut off is the release's own step: another step's last call is not it.
         const cutOffFor = cutOff !== null && cutOff.for.step === cause.step ? cutOff.for : null
@@ -1377,7 +1383,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           readClipped: undefined,
           roundLimit: undefined,
           onSha: 'at' in head ? head.at : '',
-          resumedWaitId: `account-limit:${accountReruns}` as WaitId,
+          resumedWaitId: `account-limit:${releases}` as WaitId,
           roundsSpent: continuationRound(releasedState, false),
           baseMergesSpent: spent.baseMerges,
           conflictRoundsSpent: spent.conflictRounds,
@@ -1386,6 +1392,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           landedOnBase: landedOnBaseOf(releasedEvents),
           conflictResolved: conflictResolvedOf(releasedEvents),
           released: {
+            by: 'release' as const,
             runId: releasedFrom.runId,
             head,
             rerun:
@@ -1406,6 +1413,62 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       if (reason === undefined) return null
       const runEvents = yield* Effect.promise(() => store.read(options.continuing!.runId))
       const runState = reduceAttempt(runEvents)
+      /**
+       * **A person's `RerunStep` continues the same attempt at the step that stopped, on the saved head** (#1218):
+       * #1205's re-cut and recorded-prompt rerun, asked for by a wait's resolution rather than by a release. The
+       * wait's own resolution says so — the lifecycle carries no new field — and `rerunStepOf` names the step, as it
+       * named the offer. No grant, no criterion and no round: the counters are the attempt's own, unchanged.
+       */
+      const approvedWait = waitsFromState(reduced).find((w) => w.waitId === approvedWaitId)
+      if (approvedWait?.resolution?._tag === 'RerunStep') {
+        const step = rerunStepOf(reason)
+        if (step === null) return null
+        const head = releasedHeadOf(runEvents)
+        const spent = continuationSpent(runState)
+        const accountReruns =
+          accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), options.continuing.runId) +
+          personRerunsOf(waitsFromState(reduced), options.continuing.runId)
+        const cutOff = cutOffPromptOf(runEvents)
+        // The call the stop cut off is the rerun step's own: another step's last call is not it.
+        const cutOffFor = cutOff !== null && cutOff.for.step === step ? cutOff.for : null
+        const recordedPrompt =
+          cutOff?.prompt == null || cutOffFor === null ? null : yield* recordedPromptOf(cutOff.prompt)
+        return {
+          step,
+          waive: waivedActionsAt(waitsFromState(reduced), stepOutcomesOf(runEvents), options.continuing.runId, step),
+          grantRef: undefined,
+          advice: undefined,
+          declined: undefined,
+          grant: undefined,
+          findings: undefined,
+          conflict: undefined,
+          readClipped: undefined,
+          roundLimit: undefined,
+          onSha: 'at' in head ? head.at : approvedOnSha,
+          resumedWaitId: approvedWaitId,
+          roundsSpent: continuationRound(runState, false),
+          baseMergesSpent: spent.baseMerges,
+          conflictRoundsSpent: spent.conflictRounds,
+          transientRetriesSpent: spent.transientRetries,
+          diffBaseSha: diffBaseShaOf(runEvents),
+          landedOnBase: landedOnBaseOf(runEvents),
+          conflictResolved: conflictResolvedOf(runEvents),
+          released: {
+            by: 'person' as const,
+            runId: options.continuing.runId,
+            head,
+            rerun:
+              cutOffFor?._tag === 'Action'
+                ? {
+                    for: cutOffFor,
+                    prompt: recordedPrompt,
+                    accountReruns,
+                    askedAgain: askedAgainOn(runEvents, cutOffFor.step),
+                  }
+                : { for: null, prompt: null, accountReruns },
+          },
+        }
+      }
       const granted = reduced.lifecycle.grantRef !== undefined
       // A crash that stands in for a wait carries that wait's advice (#654).
       const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
@@ -2977,7 +3040,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                       ...ticketSnapshots,
                       body: issue.body,
                       // The head, prompt and lock check were read at this version: a newer release is another look's.
-                      ...(continuation.released !== undefined ? { expectVersion: reduced.version } : {}),
+                      ...(continuation.released?.by === 'release' ? { expectVersion: reduced.version } : {}),
                     })
                   : // The claim carries what the task is, because it is now the
                     // only place a title enters the log at all.
@@ -5919,7 +5982,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * **A released attempt whose saved head is gone starts over if a restart is left** (#1205, 0108 §15);
          * otherwise the wait below is the person's, and it names the head — the cut's own `notCut` detail.
          */
-        if (headGone !== null && reduced.restarts.length < ceiling.restarts) {
+        // A person who chose this attempt over a restart is not restarted past: the wait names the head (#1218).
+        if (headGone !== null && continuation?.released?.by !== 'person' && reduced.restarts.length < ceiling.restarts) {
           const restart = reduced.restarts.length + 1
           const why = `the saved head cannot be continued (${headGone}) — restart ${restart} of ${ceiling.restarts}`
           log(why)
