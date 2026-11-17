@@ -250,6 +250,48 @@ summary: 给人读的一句话
 
 ---
 
+## 八点五、现在有哪些设置控制循环的出口（2026-11-17 盘点）
+
+### recipe 里可以改的（`~/.lingtai/lingtai/recipe.yml`）
+
+| 设置 | 当前值 | 管什么 | 计数范围 |
+|---|---|---|---|
+| `runtime.limits.turns` | 350 | 一次 agent 运行最多多少轮 | 每次运行 |
+| `runtime.limits.wall` | 75m | 一次 agent 运行最长多久 | 每次运行 |
+| `runtime.limits.usd` | 未设置 | 一次 agent 运行最多花多少钱 | 每次运行 |
+| `runtime.limits.rounds` | 4（方案定为 6） | 修复轮；冲突轮单独计数，但用同一个上限 | 每个 attempt |
+| `runtime.limits.restarts` | 2 | 从 base 重来 | 每张票 |
+| `source.backoff` | 1h | 票放回队列后，最早多久能再被领 | 每次放回 |
+| `triage.limits` | turns 100、wall 15m、usd $10 | 一次 triage 调用 | 每次调用 |
+| `runtime.budget.diff` | 400000 字节 | diff 超过这个大小就不交给 review，直接交给人（0108 §14） | 每次 review |
+| `runtime.concurrency` | 2 | 同时跑几张票（不是出口） | — |
+
+### 代码里的常量（`packages/domain/src/failure/respond.ts`，0108 §8 规定不进 recipe）
+
+| 常量 | 值 | 管什么 | 计数范围 |
+|---|---|---|---|
+| `TRANSIENT_RETRIES_LIMIT` | 3 | R：原地重做 | 每个 attempt |
+| `TRANSIENT_WAITS` | 1、5、15 分钟 | 每次 R 之前等多久 | — |
+| `BASE_MERGES_LIMIT` | 10 | base 动了以后自动合并 | 每个 attempt |
+
+### 全局总闸
+
+| 设置 | 当前值 | 管什么 |
+|---|---|---|
+| 当天花费上限 | $200 | 当天花到这个数就不再开新的 attempt（0126） |
+
+### 一张票最多自动跑多少次
+
+0108 §8 的公式：`(restarts + 1) × (2 × rounds + 1 + TRANSIENT_RETRIES_LIMIT)` 次 agent 运行（`attemptCeiling`）。
+
+- 现在：3 × (8 + 1 + 3) = 36 次，最长 36 × 75 分钟。
+- `rounds` 改成 6 之后：3 × (12 + 1 + 3) = 48 次。
+
+### 和方案对不上的两处
+
+1. **wall/turns 用完后"接着做"算进 `rounds`**（第五节第 2 类）。`wall`、`turns` 管一次运行，`rounds` 管一个 attempt，两层能对上；但上面的公式要把这种"接着做"也算进去。改写 ADR 时一起改公式。
+2. **【待定】没有单张票的花费上限。** 现在只有一次运行的 `usd`（未设置）和全局当天的 $200。一张票在各项上限之内最多可以跑 48 次运行。建议加一个出口：**每张票累计花费超过 $X 就交给人（H，`limit`）**，例如 $30。依据：最近 7 天最贵的 #1152 上报约 $20、加估算约 $30；feature 票的中位数约 $7。
+
 ## 九、和现在相比要改的地方
 
 | # | 改动 | 涉及 |
@@ -278,4 +320,4 @@ summary: 给人读的一句话
 - 拆过票的母票零提交 = `AlreadyDone`，系统自动以 `satisfied` 关闭，不走 merge。（已定）
 - implement 的五种结果、统一的提问格式、implement 之后沿用现有路由（三点五节）。（已定）
 
-**目前没有待定项。** 下一步：把这份方案改写进 ADR 0108 和 0118，再按第九节切票。
+**待定：单张票的花费上限（八点五节）。** 下一步：把这份方案改写进 ADR 0108 和 0118，再按第九节切票。
