@@ -285,6 +285,16 @@ export const ReleaseCause = z.discriminatedUnion('_tag', [
   z.object({ _tag: z.literal('NeverStarted'), scope: z.enum(['conductor', 'work-item']) }),
   z.object({ _tag: z.literal('ByPerson'), waitId: WaitId }),
   z.object({ _tag: z.literal('ClaimUnconfirmed') }),
+  /**
+   * An agent step's run met its runtime's account limit (0108 §11). The attempt stays the ticket's: the
+   * first claim after the lock lifts continues `runId` at `step`.
+   */
+  z.object({
+    _tag: z.literal('AccountLimit'),
+    runId: z.string(),
+    step: z.enum(['design', 'implement', 'review']),
+    runtime: RuntimeId,
+  }),
 ])
 export type ReleaseCause = z.infer<typeof ReleaseCause>
 

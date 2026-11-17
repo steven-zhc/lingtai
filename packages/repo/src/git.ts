@@ -92,6 +92,8 @@ export class RepoFailed extends Data.TaggedError('RepoFailed')<{
   readonly exitCode?: number | null
   readonly stdout?: string
   readonly stderr?: string
+  /** The continuation's saved head is not where it was recorded (`provision`'s `at` check), so it cannot be continued (#1205). */
+  readonly stale?: boolean
 }> {
   /** So a face's rejection reads as `execFile`'s own error did. */
   override get message(): string {

@@ -27,7 +27,7 @@ const Claim = z.strictObject({
   at: IsoDate,
   ended: z
     .discriminatedUnion('kind', [
-      z.strictObject({ kind: z.literal('released'), reason: z.string() }),
+      z.strictObject({ kind: z.literal('released'), reason: z.string(), cause: ReleaseCause.nullable() }),
       z.strictObject({ kind: z.literal('asked'), reason: WaitReason }),
     ])
     .nullable(),
@@ -169,7 +169,7 @@ export function decodeTicket(stored: unknown, projection: string, subject?: stri
 /** The ticket reduce as a snapshottable reducer (0124 §1). A snapshot is discarded, not rebuilt, so no remedy is named. */
 export const ticketReducer: Reducer<TicketState> = {
   name: 'ticket',
-  version: 1,
+  version: 2,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

@@ -37,9 +37,11 @@ import { createHash } from 'node:crypto'
  * exactly one home — the schema — and this file states the shape of the bound
  * without also deciding it.
  */
-import type { AnswerRecord, AttemptEnding, Envelope, Finding, AttemptState } from '@lingtai/domain'
+import type { AnswerRecord, AttemptEnding, Envelope, Finding, AttemptState, PayloadOf } from '@lingtai/domain'
 import {
   headOf,
+  reduceAttempt,
+  savedHeadOf,
   reduceTicket,
   routesOf,
   stepOutcomesOf,
@@ -688,4 +690,41 @@ export function answersBrief(answers: readonly AnswerRecord[]): string {
     lines.push('', `**Asked:** ${a.question!.trim()}`, '', `**Answered by ${a.by}:** ${a.answer.trim()}`)
   }
   return lines.join('\n')
+}
+
+/**
+ * Where a released attempt is re-cut, and what is carried onto the cut (#1205): `at` is the commit, `atRef` the ref
+ * that must still carry it (`null`: none does, it is the attempt's base), `carry` the kept WIP put on it uncommitted.
+ * `cannot` says why the head is not one to continue. #1211 adds the `BaseRed` cause to this, on the same rows.
+ */
+export type ReleasedHead =
+  | { readonly at: string; readonly atRef: string | null; readonly carry: PayloadOf<'RunKeptUncommitted'> | null }
+  | { readonly cannot: string }
+
+export function releasedHeadOf(runEvents: readonly Envelope[]): ReleasedHead {
+  const state = reduceAttempt(runEvents)
+  const head = savedHeadOf(state)
+  const published = state.published
+  switch (head._tag) {
+    case 'Saved': {
+      // The clean head stands whether or not a WIP sits on it: the edits the cut-off run made on top of a
+      // committed head are the arm's commit whose parent is that head.
+      const carry = state.kept.find((k) => k.sha === published?.armSha && k.parentSha === head.head) ?? null
+      return { at: head.head, atRef: head.ref, carry }
+    }
+    case 'WipHead': {
+      const carry = state.kept.find((k) => k.sha === head.armSha && k.arm === head.arm)
+      return carry === undefined
+        ? { cannot: `the kept work ${head.armSha.slice(0, 7)} on ${head.arm} was never recorded` }
+        : { at: carry.parentSha, atRef: null, carry }
+    }
+    case 'BranchDiverged':
+      return { cannot: `${head.branch} was not published: ${head.arm} holds the work, and the branch is somebody else's` }
+    case 'NoSavedHead': {
+      // Nothing committed is a fact the publish records; its absence is not one.
+      if (published?.outcome !== 'nothing-committed') return { cannot: 'the run recorded no saved head' }
+      const base = diffBaseShaOf(runEvents)
+      return base === null ? { cannot: 'the attempt recorded no base commit' } : { at: base, atRef: null, carry: null }
+    }
+  }
 }

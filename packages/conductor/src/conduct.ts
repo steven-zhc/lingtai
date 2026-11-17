@@ -1706,9 +1706,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      *
      * **Once, not once per item.** A limit already standing answers `already` and
      * appends nothing, so the first `until` stands. A failed append is logged and
-     * swallowed: it must not replace the reason the run ended.
+     * swallowed: it must not replace the reason the run ended. **It answers whether the account is locked
+     * now** (`true` on `appended` and on `already`), so a release that waits on the lock (#1205) is made
+     * only behind one that stands.
      */
-    const standDownAccount = (what: StandDownWhat, runtime: RuntimeId, detail: string): Effect.Effect<void> =>
+    const standDownAccount = (what: StandDownWhat, runtime: RuntimeId, detail: string): Effect.Effect<boolean> =>
       Effect.gen(function* () {
         const it =
           what.of === 'run'
@@ -1733,8 +1735,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         } else {
           log(`${it} ${met}; ${runtime} is already locked until ${answer.until.toISOString()}`)
         }
+        // Locked now, by this append or an earlier one: what a release that waits on the lock may rely on (#1205).
+        return true
       }).pipe(
-        Effect.catch((error) => Effect.sync(() => log(`could not lock the ${runtime} account: ${error.message}`))),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            log(`could not lock the ${runtime} account: ${error.message}`)
+            return false
+          }),
+        ),
       )
 
     /**
@@ -5707,6 +5716,32 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       if (outcome === 'blocked') {
         const held = stopped?.ending.ending === 'held'
         const reason = waitReasonFor()
+        /**
+         * **A run an account limit cut off is the ticket's to take again, not a person's** (0108 §11, #1205).
+         * The lock first and the release second: a look between the two would claim the ticket and walk
+         * straight back into the wall. Where the lock did not append (a read or an append failed) the ticket
+         * keeps today's crash wait, since a release nothing holds back is a loop of walls.
+         */
+        if (
+          reason._tag === 'AgentCrashed' &&
+          reason.cause === 'crash' &&
+          (reason.step === 'design' || reason.step === 'implement' || reason.step === 'review')
+        ) {
+          const wall = wallOf(reason.detail)
+          if (wall !== null && (yield* standDownAccount({ of: 'mid-run', step: reason.step }, wall, reason.detail))) {
+            const why = `the ${reason.step} step's agent met the ${wall} account limit; taken again once it lifts`
+            runLog.note('account-limit', why)
+            yield* release(why, { _tag: 'AccountLimit', runId, step: reason.step, runtime: wall })
+            return {
+              ok: false,
+              ticketId,
+              runId,
+              stage: reason.step,
+              detail: why,
+              summary: summaryOf(),
+            } satisfies RunOnceResult
+          }
+        }
         const said_ = waitWords(reason, { branch, base, findings })
         /**
          * **Something judged this diff and said no** — the second half of when a
