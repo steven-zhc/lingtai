@@ -58,23 +58,53 @@ const WITH_BLOCK =
 
 describe('withAllowedHost', () => {
   it('creates the block when it is absent and keeps the comments', () => {
-    const out = withAllowedHost(GOOD, 'registry.example.com')
+    const r = withAllowedHost(GOOD, 'registry.example.com')
+    const out = r?.kind === 'added' ? r.text : ''
     expect(out).toContain('# mine')
     expect(out).toContain('# priority')
     expect(out).toMatch(/sandbox:\s+network:\s+allow:\s+- registry\.example\.com/)
   })
 
   it('appends to an existing list, comments kept', () => {
-    const out = withAllowedHost(WITH_BLOCK, 'cdn.example.com')!
+    const r = withAllowedHost(WITH_BLOCK, 'cdn.example.com')
+    const out = r?.kind === 'added' ? r.text : ''
     expect(out).toContain('# already')
     expect(out).toContain('- cdn.example.com')
   })
 
-  it('does not append twice, and drafts nothing for a host the recipe would refuse', () => {
-    expect(withAllowedHost(WITH_BLOCK, 'example.org')).toBeNull()
+  it('does not append twice: it says where the host already is', () => {
+    const r = withAllowedHost(WITH_BLOCK, 'example.org')
+    expect(r).toEqual({
+      kind: 'listed',
+      lines: [WITH_BLOCK.split('\n').findIndex((l) => l.includes('example.org')) + 1],
+    })
+  })
+
+  it('drafts nothing for a host the recipe would refuse', () => {
     expect(withAllowedHost(GOOD, 'not a host')).toBeNull()
     expect(withAllowedHost(GOOD, '169.254.169.254')).toBeNull()
     expect(withAllowedHost('a: [', 'example.org')).toBeNull()
+  })
+
+  const at = (r: ReturnType<typeof withAllowedHost>) => {
+    if (r?.kind !== 'added') throw new Error('not added')
+    const rows = r.text.split('\n')
+    return r.lines.map((n) => rows[n - 1]!.trim())
+  }
+
+  it('reports four lines where there was no sandbox block, comments above and all', () => {
+    expect(at(withAllowedHost(GOOD, 'a.example.com'))).toEqual(['sandbox:', 'network:', 'allow:', '- a.example.com'])
+  })
+
+  it('reports three lines when sandbox: is there and network: is not', () => {
+    const text = GOOD + 'sandbox:\n  enabled: true\n'
+    expect(at(withAllowedHost(text, 'a.example.com'))).toEqual(['network:', 'allow:', '- a.example.com'])
+  })
+
+  it('reports one line for an existing block list, and the allow line for a flow list', () => {
+    expect(at(withAllowedHost(WITH_BLOCK, 'cdn.example.com'))).toEqual(['- cdn.example.com'])
+    const flow = GOOD + 'sandbox:\n  network:\n    allow: [example.org]\n'
+    expect(at(withAllowedHost(flow, 'cdn.example.com'))).toEqual([expect.stringContaining('allow:')])
   })
 
   it('a prefilled Save succeeds: loaded is the file’s bytes, text is the draft', async () => {
@@ -83,7 +113,8 @@ describe('withAllowedHost', () => {
       read: async (p) => store.get(p) ?? null,
       replace: async (p, text) => void store.set(p, text),
     }
-    const draft = withAllowedHost(GOOD, 'registry.example.com')!
+    const r = withAllowedHost(GOOD, 'registry.example.com')
+    const draft = r?.kind === 'added' ? r.text : ''
     // Drafting wrote nothing.
     expect(store.get(PATH)).toBe(GOOD)
     const result = await saveRecipeText(
