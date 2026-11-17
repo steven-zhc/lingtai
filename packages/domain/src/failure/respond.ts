@@ -726,6 +726,7 @@ export function offerFor(
       // dispatched to be asked: `proposed` and `merge` have none to re-dispatch.
       if (
         (proposal.from === 'design' || proposal.from === 'review') &&
+        proposal.raw.trim() !== '' &&
         !askedAgain &&
         (spent.transientRetries ?? 0) < TRANSIENT_RETRIES_LIMIT
       ) {

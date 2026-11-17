@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import type { Action, ActionContext, ActionFinding, ActionResult } from '@lingtai/actions'
+import { rerunId, type Action, type ActionContext, type ActionFinding, type ActionResult } from '@lingtai/actions'
 import { STEPS, type Step } from '@lingtai/domain'
 import { StepMap, type StepAction } from '@lingtai/recipe'
 /**
@@ -3376,5 +3376,205 @@ describe('a rerun in place resumes at the cut-off action, whatever came before i
     expect(cleans).toBe(1)
     expect(editsSeenByAgent).toEqual([false, true])
     expect(result.steps.some((s) => s.step === 'build')).toBe(true)
+  })
+})
+
+// ------------------------------------- a setup a registry refused, an answer unread (#1224) ----
+
+describe('a rule runs a step again in place before any judge (#1224, 0108 §18)', () => {
+  const REGISTRY = ' ERR_PNPM_FETCH_503  GET https://registry.npmjs.org/left-pad: Service Unavailable'
+
+  /** `prepared` fails with each output in turn, then passes. */
+  const installing = (outputs: readonly string[]) => {
+    const contexts: ActionContext[] = []
+    const { actionsAt: base } = watchingActions()
+    let lap = 0
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+      step === 'prepared'
+        ? [
+            {
+              name: 'install',
+              kind: 'run',
+              yields: 'verdict',
+              run: async (seenWith) => {
+                contexts.push(seenWith)
+                const output = outputs[lap++]
+                return output === undefined
+                  ? PASSED
+                  : { verdict: 'failed', evidence: output, findings: [], runtime: 'claude-code' }
+              },
+            },
+          ]
+        : base(step, actions)
+    return { actionsAt, contexts }
+  }
+
+  it('reruns prepared after 1 minute on a registry 5xx, counts one retry, and asks no judge', async () => {
+    const { bodies } = watching()
+    const { actionsAt, contexts } = installing([REGISTRY])
+    const { emit, seen } = events()
+    let judged = 0
+    const judge = () => {
+      judged += 1
+      return Effect.die('no judge may be asked')
+    }
+
+    const result = await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      judge: judge as never,
+    })
+
+    expect(judged).toBe(0)
+    expect(seen.filter((e) => e.type === 'StepRerunInPlace').map((e) => e.data)).toMatchObject([
+      { step: 'prepared', rerun: 1, waitMs: 60_000 },
+    ])
+    expect(contexts).toHaveLength(2)
+    // The whole step again, from its first action: nothing is skipped as already done.
+    expect(contexts[1]!.resumedAfter).toBeUndefined()
+    expect(result.steps.some((s) => s.step === 'implement')).toBe(true)
+    expect(result.end).not.toMatchObject({ _tag: 'WaitOnPerson' })
+    expect(result.routes).toHaveLength(1)
+    expect(result.routes[0]).toMatchObject({ reply: { _tag: 'Selected', candidate: 'rerun-setup' } })
+  })
+
+  it('waits the whole minute on the clock before running prepared again', async () => {
+    const { bodies } = watching()
+    const { actionsAt, contexts } = installing([REGISTRY])
+    const { emit } = events()
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+        )
+        yield* TestClock.adjust('59 seconds')
+        expect(contexts).toHaveLength(1)
+        yield* TestClock.adjust('2 seconds')
+        for (let i = 0; i < 4; i++) yield* TestClock.adjust('20 minutes')
+        yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(TestClock.layer())),
+    )
+    expect(contexts).toHaveLength(2)
+  })
+
+  it('holds for a person on setup output that is on no registry row, as today', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = installing(['ERR_PNPM_FETCH_404  GET https://registry.npmjs.org/nope: Not Found'])
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'SetupRefused' } },
+    })
+  })
+
+  it('gives today’s answer once the attempt has spent its transient retries', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = installing(Array.from({ length: 4 }, () => REGISTRY))
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(seen.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(3)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { proposal: { _tag: 'SetupRefused' } } })
+  })
+
+  describe('an agent whose answer could not be read', () => {
+    const unreadable: ActionResult = { verdict: 'failed', evidence: 'garbled', findings: [], unreadable: true }
+    const recipe = () => recipeWith({ review: [{ name: 'cold review', agent: 'claude-code', prompt: '' }] })
+
+    /** A reviewer that answers each of `answers` in turn, then passes. */
+    const reviewing = (answers: readonly ActionResult[]) => {
+      const contexts: ActionContext[] = []
+      const { actionsAt: base } = watchingActions()
+      let lap = 0
+      const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+        step === 'review'
+          ? [
+              {
+                name: 'cold review',
+                kind: 'agent',
+                yields: 'verdict',
+                run: async (seenWith) => {
+                  contexts.push(seenWith)
+                  return { ...(answers[lap++] ?? PASSED), runtime: 'claude-code' }
+                },
+              },
+            ]
+          : base(step, actions)
+      return { actionsAt, contexts }
+    }
+
+    it('is asked once more at once, under a new dispatch id, and spends no round', async () => {
+      const { bodies } = watching()
+      const { actionsAt, contexts } = reviewing([unreadable])
+      const { emit, seen } = events()
+
+      const result = await walkOnTestClock({ recipe: recipe(), context, emit, bodies, actionsAt })
+
+      expect(contexts.map((c) => c.rerun)).toEqual([undefined, 1])
+      const ids = contexts.map((c) => rerunId('pass-1:review:cold review:abc1234', c))
+      expect(new Set(ids).size).toBe(2)
+      expect(ids[1]).toMatch(/:rerun:1$/)
+      expect(seen.filter((e) => e.type === 'StepRerunInPlace').map((e) => e.data)).toMatchObject([
+        { step: 'review', rerun: 1, waitMs: 0 },
+      ])
+      expect(result.routes).toHaveLength(1)
+      expect(result.routes[0]).toMatchObject({ reply: { _tag: 'Selected', candidate: 'ask-again' } })
+      expect(result.end).not.toMatchObject({ _tag: 'WaitOnPerson' })
+      expect(result.steps.filter((s) => s.step === 'implement')).toHaveLength(1)
+    })
+
+    it('goes where it goes today when it is unreadable twice in a row', async () => {
+      const { bodies } = watching()
+      const { actionsAt, contexts } = reviewing([unreadable, unreadable])
+      const { emit, seen } = events()
+
+      const result = await walkOnTestClock({ recipe: recipe(), context, emit, bodies, actionsAt })
+
+      expect(contexts).toHaveLength(2)
+      expect(seen.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(1)
+      expect(result.end).toMatchObject({
+        _tag: 'WaitOnPerson',
+        reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'AnswerUnreadable', from: 'review' } },
+      })
+    })
+
+    it('gives today’s offer once the transient retries are spent', async () => {
+      const { bodies } = watching()
+      const { actionsAt: reviewer, contexts } = reviewing([unreadable])
+      // Three transient crashes at `implement` spend the attempt's whole count first.
+      let crashes = 0
+      const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+        step === 'implement'
+          ? [
+              {
+                name: 'write the change',
+                kind: 'agent',
+                yields: 'commit',
+                run: async () =>
+                  crashes++ < 3
+                    ? { ...crashed('crash: API Error: 503 upstream'), runtime: 'claude-code' }
+                    : { ...PASSED, head: 'feedface00' },
+              },
+            ]
+          : reviewer(step, actions)
+      const { emit, seen } = events()
+
+      const result = await walkOnTestClock({ recipe: recipe(), context, emit, bodies, actionsAt })
+
+      expect(seen.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(3)
+      expect(contexts).toHaveLength(1)
+      expect(result.end).toMatchObject({
+        _tag: 'WaitOnPerson',
+        reason: { proposal: { _tag: 'AnswerUnreadable' } },
+      })
+    })
   })
 })

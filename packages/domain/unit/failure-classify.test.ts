@@ -63,6 +63,28 @@ describe('classify', () => {
     '<title>Attention Required! | Cloudflare</title>',
   ])('reads a transient sentence: %s', (text) => expect(runtime(text)).toBe('transient:claude-code'))
 
+  const registry = (text: string) => classify({ platform: 'registry', text })?.kind ?? null
+
+  it.each([
+    ' ERR_PNPM_FETCH_500  GET https://registry.npmjs.org/x: Internal Server Error',
+    ' ERR_PNPM_FETCH_502  GET https://registry.npmjs.org/x: Bad Gateway',
+    ' ERR_PNPM_FETCH_503  GET https://registry.npmjs.org/x: Service Unavailable',
+    ' ERR_PNPM_FETCH_504  GET https://registry.npmjs.org/x: Gateway Timeout',
+    ' ERR_PNPM_META_FETCH_FAIL  GET https://registry.npmjs.org/x: Value of "node" must be of type string',
+    'npm ERR! code E500\nnpm ERR! 500 Internal Server Error - GET https://registry.npmjs.org/x',
+    'npm ERR! code E502',
+    'npm error code E503',
+    'npm ERR! code E504',
+  ])('reads a package registry 5xx as transient: %s', (text) => expect(registry(text)).toBe('transient'))
+
+  it('does not read a registry 404, a bare status, or a status in a test name as transient', () => {
+    expect(registry(' ERR_PNPM_FETCH_404  GET https://registry.npmjs.org/x: Not Found')).toBeNull()
+    expect(registry('npm ERR! code E404')).toBeNull()
+    expect(registry('npm ERR! code ELIFECYCLE')).toBeNull()
+    expect(registry('FAIL handles E503 from the upstream')).toBeNull()
+    expect(registry('')).toBeNull()
+  })
+
   it('does not read a bare 403 or a 4xx as transient', () => {
     expect(runtime('API Error: 403 Forbidden')).toBeNull()
     expect(runtime('API Error: 400 invalid_request_error')).toBeNull()
