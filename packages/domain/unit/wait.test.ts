@@ -11,6 +11,7 @@ import { Proposal as ProposalSchema, type Proposal } from '../src/proposal.ts'
 import { TRIAGE_SENTENCE_MAX } from '../src/triage.ts'
 import {
   allowedResolutions,
+  rerunStepOf,
   continuationOf,
   grantCriterion,
   recommendedResolution,
@@ -73,7 +74,14 @@ describe('allowedResolutions', () => {
       evidence: 'the check failed',
       findings: [],
     })
-    expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
+    expect(allowedResolutions(reason)).toEqual([
+      'Approve',
+      'Requeue',
+      'EditBodyAndRequeue',
+      'Close',
+      'GrantFixRound',
+      'RerunStep',
+    ])
   })
 
   it('CheckRefused with no evidence and no finding: no GrantFixRound', () => {
@@ -85,7 +93,7 @@ describe('allowedResolutions', () => {
       evidence: '  ',
       findings: [],
     })
-    expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close', 'RerunStep'])
   })
 
   it('CheckRefused unpushed: neither Approve nor GrantFixRound', () => {
@@ -159,7 +167,14 @@ describe('allowedResolutions', () => {
 
     it('BuildRed: Requeue, EditBodyAndRequeue, Close — no Approve, a red build cannot be merged', () => {
       const reason = parseProposed({ _tag: 'BuildRed', output: 'FAIL ...' })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Split', 'Close', 'GrantFixRound'])
+      expect(allowedResolutions(reason)).toEqual([
+        'Requeue',
+        'EditBodyAndRequeue',
+        'Split',
+        'Close',
+        'GrantFixRound',
+        'RerunStep',
+      ])
     })
 
     it('ReviewFindings: Approve, Requeue, EditBodyAndRequeue, Close', () => {
@@ -293,12 +308,14 @@ describe('allowedResolutions', () => {
         'EditBodyAndRequeue',
         'Close',
         'GrantFixRound',
+        'RerunStep',
       ])
       expect(allowedResolutions(parseProposed({ ...proposal, output: ' ' }))).toEqual([
         'Approve',
         'Requeue',
         'EditBodyAndRequeue',
         'Close',
+        'RerunStep',
       ])
       const unpushed = parseReason({ _tag: 'ProposedEscalated', run: unpushedRun, proposal, because })
       expect(allowedResolutions(unpushed)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
@@ -405,7 +422,68 @@ describe('allowedResolutions', () => {
       cause: 'crash',
       detail: 'the agent crashed',
     })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close', 'RerunStep'])
+  })
+
+  describe('RerunStep (#1218)', () => {
+    const crashAt = (step: string, extra: object = {}) =>
+      parseReason({ _tag: 'AgentCrashed', run, step, cause: 'crash', detail: 'x', ...extra })
+    const proposed = (proposal: unknown, r: unknown = run) =>
+      parseReason({ _tag: 'ProposedEscalated', run: r, proposal, because: { _tag: 'NotAsked' } })
+
+    it('a crash at design, implement or review reruns that step; at no other', () => {
+      for (const step of ['design', 'implement', 'review'] as const) {
+        expect(allowedResolutions(crashAt(step))).toContain('RerunStep')
+        expect(rerunStepOf(crashAt(step))).toBe(step)
+      }
+      for (const step of ['admit', 'prepared', 'build', 'proposed', 'merge']) {
+        expect(allowedResolutions(crashAt(step))).not.toContain('RerunStep')
+      }
+    })
+
+    it('a red build reruns build', () => {
+      const reason = proposed({ _tag: 'BuildRed', output: 'FAIL' })
+      expect(allowedResolutions(reason)).toContain('RerunStep')
+      expect(rerunStepOf(reason)).toBe('build')
+    })
+
+    it('a check that refused at proposed reruns proposed; one that refused at merge does not', () => {
+      const direct = { _tag: 'CheckRefused', run, action: 'watch:ci', evidence: 'x', findings: [] }
+      expect(rerunStepOf(parseReason({ ...direct, step: 'proposed' }))).toBe('proposed')
+      expect(allowedResolutions(parseReason({ ...direct, step: 'merge' }))).not.toContain('RerunStep')
+      const inner = { _tag: 'CheckRefused', output: 'x', action: 'run:lint' }
+      expect(allowedResolutions(proposed({ ...inner, from: 'proposed' }))).toContain('RerunStep')
+      expect(allowedResolutions(proposed({ ...inner, from: 'merge' }))).not.toContain('RerunStep')
+    })
+
+    it('not a red verify, a merge conflict, a refused setup, or an unpushed run', () => {
+      expect(allowedResolutions(proposed({ _tag: 'VerifyRed', output: 'x' }))).not.toContain('RerunStep')
+      expect(
+        allowedResolutions(
+          proposed({ _tag: 'MergeConflict', output: 'x', paths: ['a.ts'], baseSha: 'a', headSha: null }),
+        ),
+      ).not.toContain('RerunStep')
+      expect(
+        allowedResolutions(
+          parseReason({ _tag: 'SetupRefused', run, step: 'prepared', action: 'run:install', why: 'x' }),
+        ),
+      ).not.toContain('RerunStep')
+      const unpushed = { runId: 'pass-1', unpushed: { branch: 'agent/1', said: 'push failed' } }
+      expect(allowedResolutions(proposed({ _tag: 'BuildRed', output: 'FAIL' }, unpushed))).not.toContain('RerunStep')
+    })
+
+    it('a standing crash offers what the stood wait offered, not a rerun', () => {
+      const standing = {
+        waitId: 'wait-1',
+        reason: {
+          _tag: 'ProposedEscalated',
+          run,
+          proposal: { _tag: 'BuildRed', output: 'FAIL' },
+          because: { _tag: 'NotAsked' },
+        },
+      }
+      expect(allowedResolutions(crashAt('implement', { standing }))).not.toContain('RerunStep')
+    })
   })
 
   it('AnswerUnreadable: EditBodyAndRequeue, Requeue, Close', () => {
@@ -1221,7 +1299,7 @@ describe('AgentCrashed{standing} (#654)', () => {
   })
 
   it('without standing, today’s row', () => {
-    expect(allowedResolutions(crash())).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
+    expect(allowedResolutions(crash())).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close', 'RerunStep'])
     expect(continuationOf(crash(), [])).toBeNull()
   })
 

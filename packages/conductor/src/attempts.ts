@@ -41,7 +41,7 @@ import type { AnswerRecord, AttemptEnding, Envelope, Finding, AttemptState, Payl
 import {
   headOf,
   reduceAttempt,
-  savedHeadOf,
+  rerunHeadOf,
   reduceTicket,
   routesOf,
   stepOutcomesOf,
@@ -702,39 +702,8 @@ export type ReleasedHead =
   | { readonly cannot: string }
 
 export function releasedHeadOf(runEvents: readonly Envelope[]): ReleasedHead {
-  const state = reduceAttempt(runEvents)
-  const head = savedHeadOf(state)
-  const published = state.published
-  switch (head._tag) {
-    case 'Saved': {
-      // The clean head stands whether or not a WIP sits on it: the edits the cut-off run made on top of a
-      // committed head are the arm's commit whose parent is that head.
-      const carry = state.kept.find((k) => k.sha === published?.armSha && k.parentSha === head.head) ?? null
-      // An arm commit published beside the head whose record is missing is work nobody can put back: a missing
-      // record is not an absent WIP, and a re-cut on the clean head would publish over the arm that holds it.
-      if (carry === null && published?.armSha != null && published.armSha !== head.head) {
-        return { cannot: `the kept work ${published.armSha.slice(0, 7)} on ${published.arm} was never recorded` }
-      }
-      return { at: head.head, atRef: head.ref, carry }
-    }
-    case 'WipHead': {
-      const carry = state.kept.find((k) => k.sha === head.armSha && k.arm === head.arm)
-      return carry === undefined
-        ? { cannot: `the kept work ${head.armSha.slice(0, 7)} on ${head.arm} was never recorded` }
-        : { at: carry.parentSha, atRef: null, carry }
-    }
-    case 'BranchDiverged':
-      return {
-        cannot: `${head.branch} was not published: ${head.arm} holds the work, and the branch is somebody else's`,
-      }
-    case 'NoSavedHead': {
-      // Nothing committed is a fact the publish records; its absence is not one.
-      if (published?.armSha != null) {
-        return { cannot: `the kept work ${published.armSha.slice(0, 7)} on ${published.arm} was never recorded` }
-      }
-      if (published?.outcome !== 'nothing-committed') return { cannot: 'the run recorded no saved head' }
-      const base = diffBaseShaOf(runEvents)
-      return base === null ? { cannot: 'the attempt recorded no base commit' } : { at: base, atRef: null, carry: null }
-    }
-  }
+  const head = rerunHeadOf(reduceAttempt(runEvents))
+  if (!('atBase' in head)) return head
+  const base = diffBaseShaOf(runEvents)
+  return base === null ? { cannot: 'the attempt recorded no base commit' } : { at: base, atRef: null, carry: null }
 }

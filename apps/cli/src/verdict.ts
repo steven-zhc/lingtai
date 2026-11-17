@@ -75,6 +75,7 @@ export const VERBS = {
   approve: { accepted: 'approved', refused: 'not approved' },
   requeue: { accepted: 'requeued', refused: 'not requeued' },
   'grant-fix-round': { accepted: 'fix round granted', refused: 'fix round refused' },
+  rerun: { accepted: 'step rerun', refused: 'step not rerun' },
   close: { accepted: 'closed', refused: 'not closed' },
   ask: { accepted: 'asked', refused: 'not asked' },
   answer: { accepted: 'answered', refused: 'not answered' },

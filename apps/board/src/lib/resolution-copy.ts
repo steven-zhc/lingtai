@@ -13,6 +13,11 @@ export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; conseq
     consequence:
       'Start from the saved branch and head for one additional paid fix round. Build and review run again; this does not waive either refusal.',
   },
+  RerunStep: {
+    title: 'Rerun this step on the saved work',
+    consequence:
+      'Run the step that stopped again, in this attempt, on its saved head. No fixer is dispatched and nothing is cut from base; no round or restart is spent.',
+  },
   AnswerQuestion: {
     title: 'Answer the question',
     consequence: 'Give the answer to the next attempt, or withdraw the question and return the ticket to the queue.',

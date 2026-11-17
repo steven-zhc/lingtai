@@ -662,7 +662,12 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
       // not a fresh claim, and `block.runId` is never null here:
       // `allowedResolutions` offers `Approve` for no `WaitReason` that lacks
       // a run.
-      if ((d.resolution._tag === 'Approve' || d.resolution._tag === 'GrantFixRound') && block !== null) {
+      if (
+        (d.resolution._tag === 'Approve' ||
+          d.resolution._tag === 'GrantFixRound' ||
+          d.resolution._tag === 'RerunStep') &&
+        block !== null
+      ) {
         return {
           ...state,
           ...at,
@@ -1001,6 +1006,16 @@ export function resolveWaitTransition(
     (resolution._tag === 'GrantFixRound'
       ? life.grantRef !== undefined && (!resolution.onSha || matchHead(resolution.onSha, life.onSha ?? '') === 'match')
       : life.onSha === resolution.onSha)
+  ) {
+    return { ok: true, kind: 'repeat', runId: life.runId }
+  }
+  // A rerun whose continuation was never scheduled is asked for again the same way (#1218).
+  if (
+    resolution._tag === 'RerunStep' &&
+    life.status === 'approved' &&
+    life.waitId === input.waitId &&
+    state.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution._tag === 'RerunStep' &&
+    (!resolution.onSha || matchHead(resolution.onSha, life.onSha ?? '') === 'match')
   ) {
     return { ok: true, kind: 'repeat', runId: life.runId }
   }

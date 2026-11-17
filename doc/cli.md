@@ -316,6 +316,7 @@ lingtai end replay lingtai --issue <n>
 | answer a question a ticket was held on | [lingtai answer](#lingtai-answer) |
 | hold a ticket on a decision before any run | [lingtai ask](#lingtai-ask) |
 | one more implementation round on saved work | [lingtai grant-fix-round](#lingtai-grant-fix-round) |
+| run the step that stopped again, on the saved work | [lingtai rerun](#lingtai-rerun) |
 | end a wait with a new run | [lingtai requeue](#lingtai-requeue) |
 | end a ticket nobody is going to do | [lingtai close](#lingtai-close) |
 
@@ -386,6 +387,23 @@ lingtai grant-fix-round <project> --issue <n> [--if-head <sha>] [--json]
 
 ```sh
 lingtai grant-fix-round lingtai --issue <n> --if-head <sha>
+```
+
+### lingtai rerun
+
+Run the step that stopped again, on the saved work.
+
+Changes state — `--json` on its verdict (version 1).
+
+```text
+lingtai rerun <project> --issue <n> [--if-head <sha>] [--json]
+  The same attempt runs the step a crash or a red stopped again, on its
+  saved head: no fixer, nothing cut from base, and no round or restart
+  spent. --if-head refuses if the saved head is a different commit.
+```
+
+```sh
+lingtai rerun lingtai --issue <n> --if-head <sha>
 ```
 
 ### lingtai requeue
