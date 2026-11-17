@@ -57,6 +57,18 @@ export const NOT_YET_APPENDED: ReadonlySet<EventType> = new Set<EventType>(['Con
 
 export const ELSEWHERE: readonly { event: EventType; why: string; file: string; anchor: string }[] = [
   {
+    event: 'PromptEdited',
+    why: 'the owner builds the event and hands it to its own append, so the finder cannot attribute it',
+    file: 'packages/conductor/src/ticket/commands.ts',
+    anchor: "type: 'PromptEdited',",
+  },
+  {
+    event: 'DiscussionHeld',
+    why: 'the owner builds the event and hands it to its own append, so the finder cannot attribute it',
+    file: 'packages/conductor/src/ticket/commands.ts',
+    anchor: "type: 'DiscussionHeld',",
+  },
+  {
     event: 'TicketLanded',
     why: 'the owner builds the event and hands it to its own `appendOnTicket`, so the finder cannot attribute it',
     file: 'packages/conductor/src/ticket/commands.ts',
