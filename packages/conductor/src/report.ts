@@ -371,6 +371,7 @@ export const REASON_WORDS: Record<WaitReason['_tag'], string> = {
 export const RESOLUTION_WORDS: Record<Resolution['_tag'], string> = {
   Approve: 'approved',
   GrantFixRound: 'a fix round granted',
+  RerunStep: 'the step run again',
   AnswerQuestion: 'answered',
   Requeue: 'started over',
   EditBodyAndRequeue: 'ticket edited, started over',

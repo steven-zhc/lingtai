@@ -662,7 +662,8 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
       // not a fresh claim, and `block.runId` is never null here:
       // `allowedResolutions` offers `Approve` for no `WaitReason` that lacks
       // a run.
-      if ((d.resolution._tag === 'Approve' || d.resolution._tag === 'GrantFixRound') && block !== null) {
+      if ((d.resolution._tag === 'Approve' || d.resolution._tag === 'GrantFixRound' || d.resolution._tag === 'RerunStep') &&
+        block !== null) {
         return {
           ...state,
           ...at,

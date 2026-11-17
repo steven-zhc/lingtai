@@ -36,6 +36,7 @@ import {
   triageAnswersText,
   triageFactsFromState,
   type AttemptState,
+  rerunHeadOf,
   savedHeadOf,
   type ToAppend,
   type WaitId,
@@ -44,6 +45,7 @@ import { describeSplitProblem, splitPlanProblems, type Resolution, type WaitReas
 import { type EventStore, eventStore, log, readThroughSnapshot, type SnapshotReadOptions } from '@lingtai/event-store'
 import { Effect } from 'effect'
 
+import { diffBaseShaOf } from './attempts.ts'
 import { agentBranch } from './branches.ts'
 import { decidingEffect } from './deciding.ts'
 import { asFailure } from './port-face.ts'
@@ -268,7 +270,7 @@ export function resolveWaitHoldingEffect(
     // notice (`unscheduled`, below, and `approve()`'s own "way out" above), not
     // a reason to say the approval itself did not happen.
     let unscheduled: string | undefined
-    if (resolution._tag === 'Approve' || resolution._tag === 'GrantFixRound') {
+    if (resolution._tag === 'Approve' || resolution._tag === 'GrantFixRound' || resolution._tag === 'RerunStep') {
       const parsed = parseTicketStream(ticketId)
       if (parsed !== null) {
         unscheduled = (yield* requestContinuation(store, options.by, parsed.project, parsed.issue, runId!)) ?? undefined
@@ -350,6 +352,68 @@ function prepare(
         })
       }
       resolution = { _tag: 'GrantFixRound', onSha: head, ref }
+    }
+
+    if (resolution._tag === 'RerunStep') {
+      // **The saved head a rerun continues from** (#1218): `rerunHeadOf`'s own table, the one the re-cut reads, so
+      // what this accepts is exactly what the next pass can cut. Every refusal is before any append.
+      if (block.runId === null)
+        return refuse({ ok: false, ticketId, reason: 'no-run', detail: 'No held run has work to continue.' })
+      const state = yield* readThroughSnapshot(store, attemptReducer, block.runId, 'all', {
+        snapshots: options.snapshots,
+        writer: options.writer,
+      })
+      const head = rerunHeadOf(state)
+      if ('cannot' in head)
+        return refuse({
+          ok: false,
+          ticketId,
+          reason: 'no-rerun-head',
+          detail: `Run ${block.runId} has no saved head a rerun can continue: ${head.cannot}. Requeue for a fresh attempt.`,
+        })
+      let at: string
+      let atRef: string | null = null
+      if ('atBase' in head) {
+        const base = diffBaseShaOf(yield* Effect.promise(() => store.read(block.runId!)))
+        if (base === null)
+          return refuse({
+            ok: false,
+            ticketId,
+            reason: 'no-rerun-head',
+            detail: `Run ${block.runId} recorded no base commit to rerun on. Requeue for a fresh attempt.`,
+          })
+        at = base
+      } else {
+        at = head.at
+        atRef = head.atRef
+      }
+      if (resolution.onSha && matchHead(resolution.onSha, at) !== 'match') {
+        return refuse({
+          ok: false,
+          ticketId,
+          reason: 'stale',
+          detail: `The saved head is ${at}, not the displayed ${resolution.onSha}. Reload this wait before rerunning.`,
+        })
+      }
+      if (atRef !== null) {
+        if (options.client === undefined)
+          return refuse({
+            ok: false,
+            ticketId,
+            reason: 'no-client',
+            detail: 'A remote ref check is required before rerunning a step on the saved head.',
+          })
+        const remote = yield* refShaOrNull(options.client, `heads/${atRef}`)
+        if (remote !== at) {
+          return refuse({
+            ok: false,
+            ticketId,
+            reason: 'stale',
+            detail: `${atRef} is ${remote ?? 'missing'}, not the saved ${at}. Restore that ref to the saved head or requeue for a fresh attempt.`,
+          })
+        }
+      }
+      resolution = { _tag: 'RerunStep', onSha: at, ref: atRef }
     }
 
     if (resolution._tag === 'Approve') {

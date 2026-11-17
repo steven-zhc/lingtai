@@ -246,6 +246,16 @@ export type WaitReason = z.infer<typeof WaitReason>
 const Approve = z.object({ _tag: z.literal('Approve'), onSha: z.string() })
 /** One human-authorized implement round on the saved remote ref. */
 const GrantFixRound = z.object({ _tag: z.literal('GrantFixRound'), onSha: z.string(), ref: z.string() })
+/**
+ * Run the step a stop outside the diff ended again, in the same attempt, on its saved head (#1218). `onSha` is the
+ * head the person saw (`''`: no check); `ref` the ref that must still carry it, `null` where none does (a kept WIP,
+ * or nothing committed: the attempt's base). Named apart from `attempt-next.ts`'s own `RerunStep`, the walk's.
+ */
+const RerunStepResolution = z.object({
+  _tag: z.literal('RerunStep'),
+  onSha: z.string(),
+  ref: z.string().nullable(),
+})
 /** A new pass, from the base. */
 const Requeue = z.object({ _tag: z.literal('Requeue') })
 /** Write into the body, then requeue. */
@@ -259,6 +269,7 @@ const Close = z.object({ _tag: z.literal('Close') })
 export const Resolution = z.discriminatedUnion('_tag', [
   Approve,
   GrantFixRound,
+  RerunStepResolution,
   Requeue,
   EditBodyAndRequeue,
   AnswerQuestion,
@@ -280,10 +291,12 @@ export const TriageAdvice = z.enum(['Approve', 'GrantFixRound', 'Requeue', 'Edit
 export type TriageAdvice = z.infer<typeof TriageAdvice>
 
 type AssertEqual<T, U> = [T] extends [U] ? ([U] extends [T] ? true : never) : never
-// a Resolution tag added later must be added here or excluded here on purpose
+// a Resolution tag added later must be added here or excluded here on purpose.
+// `RerunStep` is excluded on purpose (#1218): triage cannot tell a flaky red from a real one, and a follow-up
+// adds it once people have used the move.
 const _triageAdviceCoversResolution: AssertEqual<
   TriageAdvice,
-  Exclude<Resolution['_tag'], 'AnswerQuestion'>
+  Exclude<Resolution['_tag'], 'AnswerQuestion' | 'RerunStep'>
 > = true as const
 
 /**
@@ -499,7 +512,35 @@ export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
   return [
     ...(unpushed ? table.filter((tag) => tag !== 'Approve') : table),
     ...(fixable && !unpushed ? (['GrantFixRound'] as const) : []),
+    ...(rerunStepOf(reason) !== null && !unpushed ? (['RerunStep'] as const) : []),
   ]
+}
+
+/**
+ * The step a `RerunStep` runs again, or `null` where the wait does not offer it (#1218): one answer for the offer and
+ * for the continuation, so they cannot disagree. A crash at `design`, `implement` or `review`; a red `build`; a
+ * declared check that refused at `proposed`. Not `merge` (`VerifyRed` reruns the merge, which `Approve` and the lane
+ * own), not `SetupRefused`, and not a standing crash, whose offer is the stood wait's own.
+ */
+export function rerunStepOf(reason: WaitReason): Step | null {
+  switch (reason._tag) {
+    case 'AgentCrashed':
+      if (reason.standing !== undefined) return null
+      return reason.step === 'design' || reason.step === 'implement' || reason.step === 'review' ? reason.step : null
+    case 'CheckRefused':
+      return reason.step === 'proposed' ? 'proposed' : null
+    case 'ProposedEscalated':
+      switch (reason.proposal._tag) {
+        case 'BuildRed':
+          return 'build'
+        case 'CheckRefused':
+          return fromOf(reason.proposal) === 'proposed' ? 'proposed' : null
+        default:
+          return null
+      }
+    default:
+      return null
+  }
 }
 
 /** Where an `Approve` continues the run, and the action it waives there — `null` for `waive` where nothing is waived. */

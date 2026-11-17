@@ -795,6 +795,54 @@ export function savedHeadOf(state: AttemptState): SavedHead {
 }
 
 /**
+ * Where a stopped attempt is re-cut, and what is carried onto the cut (#1205, #1218): `at` is the commit, `atRef` the
+ * ref that must still carry it (`null`: none does), `carry` the kept WIP put on it uncommitted. `atBase` is a head
+ * with nothing committed, which is the attempt's own base commit — the caller names it, because the state alone does
+ * not. `cannot` says why the head is not one to continue. The conductor's re-cut and the person's `RerunStep` ask
+ * this one table, and the board asks it to say whether the move can be made.
+ */
+export type RerunHead =
+  | { readonly at: string; readonly atRef: string | null; readonly carry: PayloadOf<'RunKeptUncommitted'> | null }
+  | { readonly atBase: true }
+  | { readonly cannot: string }
+
+export function rerunHeadOf(state: AttemptState): RerunHead {
+  const head = savedHeadOf(state)
+  const published = state.published
+  switch (head._tag) {
+    case 'Saved': {
+      // The clean head stands whether or not a WIP sits on it: the edits the cut-off run made on top of a
+      // committed head are the arm's commit whose parent is that head.
+      const carry = state.kept.find((k) => k.sha === published?.armSha && k.parentSha === head.head) ?? null
+      // An arm commit published beside the head whose record is missing is work nobody can put back: a missing
+      // record is not an absent WIP, and a re-cut on the clean head would publish over the arm that holds it.
+      if (carry === null && published?.armSha != null && published.armSha !== head.head) {
+        return { cannot: `the kept work ${published.armSha.slice(0, 7)} on ${published.arm} was never recorded` }
+      }
+      return { at: head.head, atRef: head.ref, carry }
+    }
+    case 'WipHead': {
+      const carry = state.kept.find((k) => k.sha === head.armSha && k.arm === head.arm)
+      return carry === undefined
+        ? { cannot: `the kept work ${head.armSha.slice(0, 7)} on ${head.arm} was never recorded` }
+        : { at: carry.parentSha, atRef: null, carry }
+    }
+    case 'BranchDiverged':
+      return {
+        cannot: `${head.branch} was not published: ${head.arm} holds the work, and the branch is somebody else's`,
+      }
+    case 'NoSavedHead': {
+      // Nothing committed is a fact the publish records; its absence is not one.
+      if (published?.armSha != null) {
+        return { cannot: `the kept work ${published.armSha.slice(0, 7)} on ${published.arm} was never recorded` }
+      }
+      if (published?.outcome !== 'nothing-committed') return { cannot: 'the run recorded no saved head' }
+      return { atBase: true }
+    }
+  }
+}
+
+/**
  * The refusal a fixer was still answering, or `undefined`: `refusal` is not
  * cleared by a later pass, so it counts only while its own gate's latest verdict
  * is still `failed` (#935).
