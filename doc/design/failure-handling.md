@@ -107,9 +107,9 @@ questions: 最多 5 个
 
 | 动作 | 做什么 | 从哪里出发 | 计入哪个上限 |
 |---|---|---|---|
-| **R 重做这一步** | 只重做出错的这一步，不重走整个流程 | 工作分支的 head，包括灵台提交的 WIP commit。其他没提交的改动丢掉（复位到 head） | `TRANSIENT_RETRIES_LIMIT`（每个 attempt 3 次） |
-| **F 修复轮** | 带着拒绝的证据（findings、命令输出、冲突文件）回到 implement 去修，修完再走 build 和 review | 同一个 worktree，当前 head | `rounds`；冲突轮单独计数 |
-| **S 从头重来** | 方向错了，开一个新 attempt | base。旧方案推到 arm 分支留档，旧改动一律不带 | `restarts` |
+| **R 重做这一步** | 只重做出错的这一步，不重走整个流程 | 工作分支的 head，包括灵台提交的 WIP commit。其他没提交的改动丢掉（复位到 head） | `redos`（每个 attempt 3 次） |
+| **F 修复轮** | 带着拒绝的证据（findings、命令输出、冲突文件）回到 implement 去修，修完再走 build 和 review | 同一个 worktree，当前 head | 修复轮记 `fixRounds`，冲突轮记 `conflictRounds` |
+| **S 从头重来** | 方向错了，开一个新 attempt | base。旧方案推到 arm 分支留档，旧改动一律不带 | `startOvers` |
 | **P 拆票** | 票太大：开子票，用 blocked-by 串起来；母票按方案关闭，或等子票落地后重做 | 子票从 base 开始；母票重做时也从 base 开始 | 只拆一层 |
 | **H 交给人** | 停在 Waiting 页面，页面显示 triage 的回答，或者是哪个上限用完了 | — | — |
 
@@ -144,7 +144,7 @@ questions: 最多 5 个
 | 瞬时 API 错误（5xx、529、429、Cloudflare） | 规则 → **R** |
 | 不认识的崩溃、没有回执 | 规则 → **R** |
 | 回答读不懂 | 规则 → **R**（不再单独记"重问一次"，并入 R 的上限） |
-| wall 或 turns 用完 | triage：`TicketTooBig` 并附拆票方案 → **P**；`TicketTooBig` 没有方案 → 把耗时点写进正文，然后 **R**（算进 `rounds`）；只是没做完 → **R**（算进 `rounds`） |
+| wall 或 turns 用完 | triage：`TicketTooBig` 并附拆票方案 → **P**；`TicketTooBig` 没有方案 → 把耗时点写进正文，然后 **R**（记到 `redos`）；只是没做完 → **R**（记到 `redos`） |
 | R 的次数用完 | **H**（limit） |
 
 ### 第 3 类：对代码的判断不通过
@@ -157,7 +157,7 @@ questions: 最多 5 个
 | 修复轮没有提交（fixer 不同意 reviewer） | judge 裁定：fixer 对 → 放行，在 backlog 记一条；reviewer 对 → **F** |
 | implement 第一次就没产出 commit | judge：票写得不清楚 → **H**（unclear）；只是没做完 → **R** |
 | 合并冲突 | triage `ConflictingHunks`：冲突块少（≤5）→ **F**（冲突轮）；冲突块多且两边逻辑矛盾 → **S**；有只能由人判断的冲突块 → **H** |
-| `rounds` 用完 | **H**（limit）；triage 判定 `WrongApproach` → **S** |
+| `fixRounds` 或 `conflictRounds` 用完 | **H**（limit）；triage 判定 `WrongApproach` → **S** |
 
 ### 第 4 类：票本身的问题
 
@@ -173,7 +173,7 @@ questions: 最多 5 个
 | 情况 | 处理 |
 |---|---|
 | base 动了 | 规则：把 base 合进来，重新 build；只有 base 的改动碰到分支改过的文件，review 才重新做（#1210）。每个 attempt 最多 10 次 |
-| push 遇到瞬时错误 | 规则：从保存的 head 重新落地（#1221），计入 `TRANSIENT_RETRIES_LIMIT` |
+| push 遇到瞬时错误 | 规则：从保存的 head 重新落地（#1221），记到 `landRetries` |
 | push 被拒且重试也没用 | **H**（environment） |
 | 分支已经不在了 | **S** |
 
@@ -211,10 +211,10 @@ summary: 给人读的一句话
 
 | triage 判断的原因 | 系统执行 | 前提 | 前提不满足时 |
 |---|---|---|---|
-| `FixableLines` | **F** | 还有 `rounds` | **H**（limit） |
-| `WrongApproach` | **S** | 还有 `restarts` | **H**（limit） |
+| `FixableLines` | **F** | 还有 `fixRounds` | **H**（limit） |
+| `WrongApproach` | **S** | 还有 `startOvers` | **H**（limit） |
 | `TicketTooBig` 并附拆票方案 | **P** | 这张票本身不是自动拆出来的 | **H**（limit） |
-| `TicketTooBig` 没有方案 | 把耗时点写进正文，然后 **R** | 还有 `rounds` | **H**（limit） |
+| `TicketTooBig` 没有方案 | 把耗时点写进正文，然后 **R** | 还有 `redos` | **H**（limit） |
 | `ConflictingHunks` | 冲突块少 **F**，多 **S** | 没有只能由人判断的冲突块 | **H**（unclear） |
 | `SetupBroken` | **H**（environment） | — | — |
 | `UndecidedQuestion` | **H**（unclear） | — | — |
@@ -235,16 +235,44 @@ summary: 给人读的一句话
 
 ---
 
-## 八、上限（防止死循环）
+## 八、上限的名字和数值（名字已定待确认 2026-11-17）
 
-| 上限 | 管什么 | 现在 | 建议 |
-|---|---|---|---|
-| `TRANSIENT_RETRIES_LIMIT` | R：每个 attempt 的重做次数（瞬时错误、崩溃、没有回执、回答读不懂） | 3 | 3 |
-| `rounds` | F：修复轮；wall/turns 用完后"接着做"，按 attempt 计 | 4 | **6**（已定） |
-| 冲突轮 | 按 attempt 单独计数 | 同 `rounds` | 同 `rounds` |
-| `BASE_MERGES_LIMIT` | base 动了之后的合并，按 attempt 计 | 10 | 10 |
-| `restarts` | S：从头重来，按票计 | 2 | 2 |
-| 拆票层数 | P | — | 1 |
+**规则：每个上限一个名字，名字说清它数的是什么、按什么范围计数。** 两个上限即使数值相同，意义不同就用两个名字，不共用一个参数。下文和以后的 ADR、代码、recipe、看板都只用这些名字。
+
+| 名字 | 数的是什么 | 计数范围 | 值 | 放在哪 | 旧名字 |
+|---|---|---|---|---|---|
+| `run.turns` | 一次 agent 运行的轮数 | 每次运行 | 350 | recipe | `runtime.limits.turns` |
+| `run.wall` | 一次 agent 运行的时长 | 每次运行 | 75m | recipe | `runtime.limits.wall` |
+| `run.usd` | 一次 agent 运行的花费 | 每次运行 | 未设置 | recipe | `runtime.limits.usd` |
+| **`fixRounds`** | **修复轮**（F）：build 红、review 有 findings，回 implement 修 | 每个 attempt | **6** | recipe | `rounds` |
+| **`conflictRounds`** | **冲突轮**（F）：合并冲突，回 implement 解 | 每个 attempt | **6** | recipe | 没有自己的名字，借用 `rounds` 的值 |
+| **`redos`** | **重做这一步**（R）：瞬时错误、崩溃、没有回执、回答读不懂，以及 wall/turns 用完后的"接着做" | 每个 attempt | 3 | 常量 | `TRANSIENT_RETRIES_LIMIT` |
+| `redoWaits` | 每次 R 之前等多久 | — | 1、5、15 分钟 | 常量 | `TRANSIENT_WAITS` |
+| **`landRetries`** | push 遇到瞬时错误后，从保存的 head 重新落地（#1221） | 每个 attempt | 3 | 常量 | 现在和 R 共用 `TRANSIENT_RETRIES_LIMIT` 的计数，要分开 |
+| `baseMerges` | base 动了之后自动合并 | 每个 attempt | 10 | 常量 | `BASE_MERGES_LIMIT` |
+| `checkReruns` | 检查红了立刻再跑 | 每次红 | 1 | 常量 | 0108 §17，没有名字 |
+| **`startOvers`** | **从头重来**（S） | 每张票 | 2 | recipe | `restarts` |
+| **`ticket.usd`** | 一张票累计花费 | 每张票 | **【待定】$30** | recipe | 没有，新加 |
+| `splitDepth` | 自动拆票的层数（P） | 每张票 | 1 | 常量 | 没有，新加 |
+| `designQuestions` | design 阶段提问的次数 | 每张票 | 2 | 常量 | #649 的 `designAsks`，没有名字 |
+| `triage.turns` / `triage.wall` / `triage.usd` | 一次 triage 调用 | 每次调用 | 100 / 15m / $10 | recipe | `triage.limits` |
+
+**几处改动说明：**
+- **`restarts` 改名为 `startOvers`**：`restart` 已经是 `lingtai restart`（重启 daemon）的名字，一个词指两件事，容易混。
+- **`conflictRounds` 从 `rounds` 里分出来，成为自己的参数**：修复轮和冲突轮的起因、证据、修法都不一样，只是碰巧上限相同。分开后可以各自调整。
+- **`landRetries` 从 `TRANSIENT_RETRIES_LIMIT` 里分出来**：重新落地只是再 push 一次，不跑 agent；重做一步要跑 agent。两件事意义不同，现在却共用一个计数，分开以后互不占用次数。
+- **wall/turns 用完后的"接着做"改记到 `redos`**：它本身就是 R（从 head 把这一步重做一遍），不再记进 `fixRounds`（第五节第 2 类同步修改）。
+- **recipe 按计数范围分组**：
+
+  ```yaml
+  runtime:
+    limits:
+      run:     { turns: 350, wall: 75m }      # 一次 agent 运行
+      attempt: { fixRounds: 6, conflictRounds: 6 }   # 一个 attempt
+      ticket:  { startOvers: 2, usd: 30 }     # 一张票
+  ```
+
+- **一张票最多自动跑多少次**：`(startOvers + 1) × (1 + fixRounds + conflictRounds + redos)` 次 agent 运行（`landRetries` 和 `baseMerges` 不跑 agent，不计入） = 3 × (1 + 6 + 6 + 3) = 48 次，同时受 `ticket.usd` 限制，先到哪个算哪个。
 
 **调到 6 的依据**：最近 7 天 lingtai 落地 228 张票，0 到 1 轮修完的占 79%，5 轮以上的占 4%（只看 feature 票是 13%）。按"第几次 review 通过"统计：第 4 次 review 时 16 张过了 8 张，第 5 次时 8 张过了 1 张。人工额外给轮的票里，#1170、#1177 都是多给 1 轮就过了。调到 6，能覆盖"再给一两轮就能过"的那批票；受影响的约 4%，每张多花大约 $1–2。
 
@@ -303,15 +331,12 @@ summary: 给人读的一句话
 
 ### 一张票最多自动跑多少次
 
-0108 §8 的公式：`(restarts + 1) × (2 × rounds + 1 + TRANSIENT_RETRIES_LIMIT)` 次 agent 运行（`attemptCeiling`）。
-
-- 现在：3 × (8 + 1 + 3) = 36 次，最长 36 × 75 分钟。
-- `rounds` 改成 6 之后：3 × (12 + 1 + 3) = 48 次。
+0108 §8 现在的公式：`(restarts + 1) × (2 × rounds + 1 + TRANSIENT_RETRIES_LIMIT)` 次 agent 运行（`attemptCeiling`），也就是 3 × (8 + 1 + 3) = 36 次，最长 36 × 75 分钟。按第八节改名、分开之后的公式见第八节。
 
 ### 和方案对不上的两处
 
-1. **wall/turns 用完后"接着做"算进 `rounds`**（第五节第 2 类）。`wall`、`turns` 管一次运行，`rounds` 管一个 attempt，两层能对上；但上面的公式要把这种"接着做"也算进去。改写 ADR 时一起改公式。
-2. **【待定】没有单张票的花费上限。** 现在只有一次运行的 `usd`（未设置）和全局当天的 $200。一张票在各项上限之内最多可以跑 48 次运行。建议加一个出口：**每张票累计花费超过 $X 就交给人（H，`limit`）**，例如 $30。依据：最近 7 天最贵的 #1152 上报约 $20、加估算约 $30；feature 票的中位数约 $7。
+1. **wall/turns 用完后的"接着做"**：已改为记到 `redos`（第八节）。
+2. **【待定】没有单张票的花费上限**（第八节的 `ticket.usd`）。 现在只有一次运行的 `usd`（未设置）和全局当天的 $200。一张票在各项上限之内最多可以跑 48 次运行。建议加一个出口：**每张票累计花费超过 $X 就交给人（H，`limit`）**，例如 $30。依据：最近 7 天最贵的 #1152 上报约 $20、加估算约 $30；feature 票的中位数约 $7。
 
 ## 九、和现在相比要改的地方
 
@@ -325,7 +350,7 @@ summary: 给人读的一句话
 | 6 | triage 的回答改成第六节的格式；系统按原因自动执行，记成 `by: triage` | 0108 §16，0118，`wait.ts`，triage 的 prompt |
 | 7 | wall/turns 用完时交给 triage，由它判断拆票还是接着做 | 0108 §12 |
 | 8 | 自动拆票，只拆一层，母票按方案处理 | 0118 §12 |
-| 9 | `rounds` 从 4 调到 6 | 本机 recipe（只改配置） |
+| 9 | 按第八节改名、分组：`rounds` → `fixRounds`（6）和 `conflictRounds`（6），`restarts` → `startOvers`，`TRANSIENT_RETRIES_LIMIT` → `redos` 等；新加 `ticket.usd` | recipe 的 schema、`attemptCeiling`、`respond.ts`、看板和 CLI 的文案、本机 recipe |
 | 10 | #1218、#1219（人在页面上点"重跑这一步"）改成走 R | 0.15.0 里已有的票，改正文 |
 | 12 | implement 的五种结果由 agent 声明并按 commit 核对；去掉 `nothing-produced`（并入 `AgentFailed`）；路由加原因 `already-done` 和去向 end；票加终态 `satisfied` | implement 的 prompt，`proposal.ts`，路由，ticket 的 reducer，看板 |
 | 13 | design 提问、implement 的 `Unclear`、triage 的 `UndecidedQuestion` 三处统一用 `TriageQuestion` 格式，答案用 `triageAnswersText` 写进正文 | `agent-action.ts`，`triage.ts`，Waiting 页面 |
@@ -336,7 +361,8 @@ summary: 给人读的一句话
 ## 十、已定与待定
 
 - 母票一律放回队列；子票全部落地后，母票做验收并补完剩下的部分。（已定）
-- `rounds` 从 4 调到 6。（已定）
+- `fixRounds` 定为 6。（已定）
+- 上限的名字（第八节）：每个上限一个名字，同值不同义也分开。【待定】名字待确认。
 - **R 的触发范围**：只有"这一步本身没做完"（第 2 类：agent 崩溃、超时、turns 用完、没有回执、回答读不懂）才走 R。"这一步做完了但结论是不通过"（第 3 类：build 红、review 有 findings）走修复轮 F，不走 R。（已定）
 - 拆过票的母票零提交 = `AlreadyDone`，系统自动以 `satisfied` 关闭，不走 merge。（已定）
 - implement 的五种结果、统一的提问格式、implement 之后沿用现有路由（三点五节）。（已定）
