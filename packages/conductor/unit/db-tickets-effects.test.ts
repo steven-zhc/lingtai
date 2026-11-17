@@ -54,7 +54,7 @@ describe('createIssue retry', () => {
     )
     const issue = await dbTickets(sql, 'p').createIssue({ title: 't', body: '', labels: [] })
     expect(issue.number).toBe(1)
-    expect(calls.insert).toBe(4)
+    expect(calls.insert).toBe(3)
   })
 
   it('rejects with the eighth duplicate itself', async () => {
