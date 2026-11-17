@@ -80,6 +80,14 @@
     "reason": "Idempotency: has this outcome's plan already been appended (plan §1.5)."
   },
   {
+    "file": "packages/conductor/src/flaky-port.ts",
+    "function": "flakyPortOf",
+    "type": "BaseChecked",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads the base's records of one command, to see whether a failing test failed there before; one event type, nothing reduced (0108 §17)."
+  },
+  {
     "file": "packages/conductor/src/prompt-refs.ts",
     "function": "fetchStepValue",
     "type": "StepEnded",
