@@ -1838,7 +1838,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       what: StandDownWhat,
       runtime: RuntimeId,
       detail: string,
-    ): Effect.Effect<{ locked: boolean; limit: NamedLimit | null; now: Date }> =>
+    ): Effect.Effect<{ locked: boolean; limit: NamedLimit | null; now: Date; untilFrom: string; said: string }> =>
       Effect.gen(function* () {
         const it =
           what.of === 'run'
@@ -1867,12 +1867,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           log(`${it} ${met}; ${runtime} is already locked until ${answer.until.toISOString()}`)
         }
         // Locked now, by this append or an earlier one: what a release that waits on the lock may rely on (#1205).
-        return { locked: true, limit, now }
+        return { locked: true, limit, now, untilFrom, said }
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
             log(`could not lock the ${runtime} account: ${error.message}`)
-            return { locked: false, limit: null, now: new Date() }
+            return { locked: false, limit: null, now: new Date(), untilFrom: 'backoff', said: '' }
           }),
         ),
       )
@@ -3523,7 +3523,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               const stood = yield* standDownAccount({ of: 'mid-run', step: 'proposed' }, walled, outcome.failure.detail)
               if (stood.limit !== null) {
                 return held(
-                  `the "${named}" judge did not answer: ${limitSentence(walled, stood.limit, stood.now)} — ` +
+                  `the "${named}" judge did not answer: ${limitSentence(walled, stood.limit, stood.now, { untilFrom: stood.untilFrom, said: stood.said })} — ` +
                     `${outcome.failure.detail} — so the attempt is held for a person (${spent})`,
                 )
               }

@@ -136,10 +136,10 @@ function oneSentence(project: string, lock: Lock, now: Date): string {
       return `daily ceiling reached — today $${money(lock.reportedUsd)} reported + ~$${money(lock.estimatedUsd)} est. of a $${money(lock.ceilingUsd)} ceiling; lingtai ceiling raise <usd> goes on today`
     case 'account':
       if (lock.named) {
-        const sentence = limitSentence(lock.account, lock.named, now)
+        const sentence = limitSentence(lock.account, lock.named, now, { untilFrom: lock.untilFrom, said: lock.said })
         const lift = `lingtai account lift ${lock.account}`
         return lock.named.resetsAt === null
-          ? `lingtai waits for ${sentence}; it lifts itself at ${whenLabel(lock.until, now)} (${untilFromWords(lock.untilFrom)}) — ${lift} once raised`
+          ? `lingtai waits for ${sentence}; it lifts itself at ${whenLabel(lock.until, now)} (${untilFromWords(lock.untilFrom)}) — ${lift} once ${lock.untilFrom === 'backoff-unreadable' ? 'it is over' : 'raised'}`
           : `lingtai waits for ${sentence} — ${lift} once it is over`
       }
       return `lingtai waits for ${accountWords(lock.account).name}'s ${accountWords(lock.account).limit} until ${whenLabel(lock.until, now)} (${untilFromWords(lock.untilFrom)}) — lingtai account lift ${lock.account} once it is over`

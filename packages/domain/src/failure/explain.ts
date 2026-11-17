@@ -82,14 +82,24 @@ export function limitSentence(
   account: string,
   limit: { kind: keyof typeof KIND_WORDS; resetsAt: Date | string | null },
   now: Date,
+  /** How the lock's `until` was got: an unreadable reset is not an absent one, and a latest-bound is not the reset. */
+  basis?: { untilFrom: string; said: string },
 ): string {
   const name = ACCOUNT_NAMES[account] ?? account
   const head = `${name}'s ${KIND_WORDS[limit.kind]}`
-  if (limit.resetsAt === null) return `${head} — no reset named`
+  if (limit.resetsAt === null) {
+    return basis?.untilFrom === 'backoff-unreadable'
+      ? `${head} — its message named a reset this build could not read ("${basis.said}")`
+      : `${head} — no reset named`
+  }
   const at = new Date(limit.resetsAt)
-  return at.getTime() <= now.getTime()
-    ? `${head}, reset ${whenLabel(at, now)} — passed`
-    : `${head}, resets ${whenLabel(at, now)}`
+  const latest = basis?.untilFrom === 'message-latest'
+  const label = whenLabel(at, now)
+  if (at.getTime() <= now.getTime())
+    return `${head}, ${latest ? `reset by ${label} at the latest` : `reset ${label}`} — passed`
+  return latest
+    ? `${head}, resets no later than ${label} (the latest its message could mean)`
+    : `${head}, resets ${label}`
 }
 
 /**
