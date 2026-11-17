@@ -1,8 +1,8 @@
-import { reduceAttempt } from '@lingtai/domain'
+import { decideRoute, offerFor, reduceAttempt, type Proposal, type Spent } from '@lingtai/domain'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
-import { continuationRound } from '../src/conduct.ts'
+import { continuationRound, continuationSpent } from '../src/conduct.ts'
 
 describe('continuation round accounting', () => {
   it('counts a grant already included in an automatic round only once', () => {
@@ -14,5 +14,41 @@ describe('continuation round accounting', () => {
     expect(continuationRound(reduceAttempt(run), true)).toBe(3)
     expect(continuationRound(reduceAttempt(run), false)).toBe(2)
     expect(continuationRound(reduceAttempt(run.slice(0, 1)), true)).toBe(1)
+  })
+})
+
+describe('continuation spent accounting (#1200)', () => {
+  const policy = { rounds: 2, restarts: 0, conflictRounds: 2 }
+  const none = { rounds: 0, restarts: 0 }
+  const routed = (
+    event: ReturnType<typeof makeStream>,
+    proposal: Proposal,
+    spent: Spent,
+    candidate: 'merge-base' | 'fix-lines',
+  ) => {
+    const offer = offerFor(proposal, policy, spent)
+    const reply = { _tag: 'Selected', candidate, why: 'w' } as const
+    return event('ProposalRouted', {
+      runId: 'pass-1200',
+      offer: { ...offer, ended: null },
+      reply,
+      decision: decideRoute(offer, reply),
+    })
+  }
+
+  it('reads two MergeBase routes and one conflict FixRound back, with transientRetries absent', () => {
+    const event = makeStream('pass-1200')
+    const moved: Proposal = { _tag: 'BaseMoved', paths: ['a.ts'], fromSha: 'f', toSha: 't' }
+    const conflict: Proposal = { _tag: 'MergeConflict', output: 'x', paths: ['a.ts'], baseSha: null, headSha: null }
+    const run = reduceAttempt([
+      routed(event, moved, { ...none, baseMerges: 0 }, 'merge-base'),
+      routed(event, moved, { ...none, baseMerges: 1 }, 'merge-base'),
+      routed(event, conflict, { ...none, conflictRounds: 0 }, 'fix-lines'),
+    ])
+    expect(run.baseMerges).toBe(2)
+    expect(run.conflictRounds).toBe(1)
+    expect(run.transientRetries).toBeUndefined()
+    expect(continuationSpent(run)).toEqual({ baseMerges: 2, conflictRounds: 1 })
+    expect(continuationSpent(reduceAttempt([]))).toEqual({ baseMerges: 0, conflictRounds: 0 })
   })
 })
