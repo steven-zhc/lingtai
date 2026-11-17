@@ -221,7 +221,7 @@ questions: 最多 5 个
 | recipe 解析不了、没配 App、数据库连不上 | 认领之前就挡掉，不认领、不花钱（0108 §1） |
 | prepared 失败，原因是瞬时错误（registry 5xx） | 规则 → `redoStep` |
 | prepared 失败，其他原因 | triage 判定 `SetupBroken` → `askPerson`（environment） |
-| agent 根本没启动（账户额度用完） | 规则：锁住这个账户，额度重置后自动解锁；解锁后从保存的 head 重新做这一步（#1205） |
+| agent 根本没启动（账户额度用完） | 规则：锁住这个账户，额度重置后自动解锁；解锁后从保存的 head 重新做这一步（#1205）。这条路径不计次数：等待不花钱，也不跑 agent；没有重置时间的额度（例如月度花费）由人解锁 |
 
 ### 第 2 类：一步没跑完（agent 异常结束）
 
@@ -259,6 +259,7 @@ questions: 最多 5 个
 | 情况 | 处理 |
 |---|---|
 | base 动了 | 规则：`mergeBaseBranch`，重新 build；只有 base 的改动碰到分支改过的文件，review 才重做（#1210）。**这是成本上的取舍，不是保证**：文件不重叠不代表语义不冲突（base 改了一个 API 的默认行为，分支改了另一个文件里的调用方），这时 build 是唯一的防线。沿用的 review 绑定它当时看的 head、base 和检查结果 |
+| `baseBranchMerges` 用完（base 一直在动） | `askPerson`（limit） |
 | push 遇到瞬时错误 | 规则：`retryLanding`，从保存的 head 重新落地（#1221） |
 | push 被拒且重试也没用 | `askPerson`（environment） |
 | 分支已经不在了 | `startNewAttempt` |
