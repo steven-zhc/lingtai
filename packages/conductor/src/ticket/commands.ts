@@ -60,6 +60,7 @@ import {
 import { type StepAction } from '@lingtai/recipe'
 import { Effect, Result } from 'effect'
 
+import { editHash } from '../attempts.ts'
 import { resolveEndActions, type TerminalOutcome } from '../end-step.ts'
 import type { Tickets } from '../ticket-store.ts'
 
@@ -549,6 +550,72 @@ export function holdTicketEffect(
     },
     ...(input.endPlan ?? []),
   ])
+}
+
+/**
+ * The one `PromptEdited` both writers build. The hash is the digest the next run's `promptVersion` will carry, from
+ * the same function, so the event and the version cannot name different numbers for one edit; null on a removal.
+ * It does not trim: what is typed is what the attempt is told, byte for byte.
+ */
+function promptEdited(input: { text: string; by: string; basedOn: string | null; chatId: string | null }): ToAppend {
+  return {
+    type: 'PromptEdited',
+    actor: input.by,
+    data: parsePayload('PromptEdited', {
+      text: input.text,
+      hash: input.text.trim() === '' ? null : editHash(input.text),
+      by: input.by,
+      basedOn: input.basedOn,
+      chatId: input.chatId,
+    }),
+  }
+}
+
+/**
+ * A person's edit to the next attempt's prompt (#104). It decides nothing about state, so a lost race re-reads the
+ * head once and appends there; `basedOn` records what the person saw and is never checked. A second lost race fails.
+ */
+export function editPromptEffect(
+  store: EventStore,
+  ticketId: string,
+  input: { text: string; basedOn: string | null; by: string },
+): Effect.Effect<void, unknown> {
+  return Effect.gen(function* () {
+    const events = [promptEdited({ ...input, chatId: null })]
+    const head = () => Effect.tryPromise({ try: () => store.head(ticketId), catch: (error) => error })
+    const lost = yield* appendLost(store, ticketId, yield* head(), events)
+    if (!lost) return
+    const at = yield* head()
+    yield* Effect.tryPromise({ try: () => store.append(ticketId, at, events), catch: (error) => error })
+  })
+}
+
+/**
+ * `DiscussionHeld`, preceded in the same append by the `PromptEdited` a `prompt` outcome adopts: one decision, one
+ * append, so neither is written without the other. No retry: a lost race is the conclusion's failure.
+ */
+export function concludeDiscussionOnTicketEffect(
+  store: EventStore,
+  ticketId: string,
+  input: { chatId: string; by: string } & (
+    | { outcome: 'prompt'; prompt: string }
+    | { outcome: 'ticket' | 'none'; prompt?: undefined }
+  ),
+): Effect.Effect<void, unknown> {
+  return Effect.gen(function* () {
+    const { chatId, by } = input
+    const head = yield* Effect.tryPromise({ try: () => store.head(ticketId), catch: (error) => error })
+    const held: ToAppend = {
+      type: 'DiscussionHeld',
+      actor: by,
+      data: parsePayload('DiscussionHeld', { chatId, outcome: input.outcome, by }),
+    }
+    // `basedOn` is null and that is the honest value: the assistant proposes a sentence, not a change to a
+    // document, so nobody was looking at a composed prompt when this was adopted (#104).
+    const events =
+      input.outcome === 'prompt' ? [promptEdited({ text: input.prompt, by, basedOn: null, chatId }), held] : [held]
+    yield* Effect.tryPromise({ try: () => store.append(ticketId, head, events), catch: (error) => error })
+  })
 }
 
 /**

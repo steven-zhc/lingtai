@@ -43,10 +43,10 @@ import { githubClientFor, projectClient } from '@lingtai/conductor/filter'
 import { recheck } from '@lingtai/conductor/onboard'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, signedInHere } from '@lingtai/conductor/projects'
-import { editHash } from '@lingtai/conductor/prompt'
 import { resolveWait } from '@lingtai/conductor/resolve-wait'
 import { readState } from '@lingtai/conductor/snapshot-state'
 import { splitTicket, type SplitPlanInput } from '@lingtai/conductor/split-ticket'
+import { editPromptEffect } from '@lingtai/conductor/ticket'
 import { githubTicketStore } from '@lingtai/conductor/ticket-store'
 import { requestRun, resumeConductor } from '@lingtai/daemon/control'
 import {
@@ -739,23 +739,7 @@ export async function editPrompt(input: {
     if (!parseTicketStream(input.taskId)) return { ok: false, detail: 'this id is not a ticket' }
     const text = input.text
     const by = actor()
-    const events = await eventStore.read(input.taskId)
-    await eventStore.append(input.taskId, events.length, [
-      {
-        type: 'PromptEdited',
-        actor: by,
-        data: parsePayload('PromptEdited', {
-          text,
-          // The same digest the next run's `promptVersion` will carry, from the
-          // same function, so the event and the version cannot name different
-          // numbers for one edit. Null on a removal: there is nothing to hash.
-          hash: text.trim() === '' ? null : editHash(text),
-          by,
-          basedOn: input.basedOn || null,
-          chatId: null,
-        }),
-      },
-    ])
+    await Effect.runPromise(editPromptEffect(eventStore, input.taskId, { text, basedOn: input.basedOn || null, by }))
 
     revalidatePath(`/task/${input.taskId}`)
     return {
