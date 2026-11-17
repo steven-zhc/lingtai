@@ -8,13 +8,15 @@ import {
   closeChecks,
   closeTransition,
   continueTransition,
+  finishTriageTransition,
+  startTriageTransition,
   releaseTransition,
   reduceTicket,
   resolvedEvents,
   resolveWaitTransition,
 } from '../src/ticket.ts'
 import type { Resolution } from '../src/wait.ts'
-import { aClaim, anAttemptRef, aResolution, aSplit, aWait } from '../test/events.ts'
+import { aClaim, anAttemptRef, aResolution, aSplit, aTriageStart, aWait } from '../test/events.ts'
 import { makeStream } from '../test/support.ts'
 
 const WAIT = '11111111-1111-4111-8111-111111111111' as WaitId
@@ -318,3 +320,79 @@ describe('closeChecks and closeTransition', () => {
     })
   })
 })
+
+describe('startTriageTransition and finishTriageTransition', () => {
+  const W = '66666666-6666-4666-8666-666666666666' as WaitId
+  const question = { _tag: 'AgentQuestion', run: anAttemptRef('run-1'), step: 'implement', question: 'q' } as const
+  const by = { _tag: 'Mechanical' } as const
+  const blocked = (...more: ReturnType<typeof aTriageStart>) =>
+    reduceTicket([...aClaim(item(), 'run-1'), ...aWait(item(), question, W), ...more])
+  const failed = { _tag: 'TriageFailed', why: 'x' } as const
+  const done = { waitId: W, attempt: 1, headSha: 'sha', result: failed, by } as const
+
+  it('starts attempt 1 of a wait with none started', () => {
+    expect(startTriageTransition(blocked(), { waitId: W, attempt: 1, by })).toMatchObject({
+      ok: true,
+      events: [{ type: 'TriageStarted', data: { waitId: W, attempt: 1 } }],
+    })
+  })
+
+  it('refuses a wait that is not current', () => {
+    expect(startTriageTransition(backlog(), { waitId: aWaitIdOther(), attempt: 1, by })).toMatchObject({ ok: true })
+    const resolved = reduceTicket([
+      ...aClaim(item(), 'run-1'),
+      ...aWait(item(), question, W),
+      ...aResolution(item(), W, { _tag: 'Close' }),
+      item()('TicketClosed', { by: 'steven', reason: 'x' }),
+    ])
+    expect(startTriageTransition(resolved, { waitId: W, attempt: 1, by })).toEqual({
+      ok: false,
+      refusal: { reason: 'wait-not-current' },
+    })
+  })
+
+  it('refuses when this attempt already started', () => {
+    const state = blocked(...aTriageStart(item(), W, 1))
+    expect(startTriageTransition(state, { waitId: W, attempt: 1, by })).toEqual({
+      ok: false,
+      refusal: { reason: 'already-started', attempt: 1 },
+    })
+  })
+
+  it('refuses when a later attempt already started', () => {
+    const state = blocked(...aTriageStart(item(), W, 2))
+    expect(startTriageTransition(state, { waitId: W, attempt: 1, by })).toMatchObject({
+      ok: false,
+      refusal: { reason: 'already-started', attempt: 2 },
+    })
+  })
+
+  it('starts the next attempt after an earlier one', () => {
+    const state = blocked(...aTriageStart(item(), W, 1))
+    expect(startTriageTransition(state, { waitId: W, attempt: 2, by })).toMatchObject({ ok: true })
+  })
+
+  it('finishes a current wait and refuses one that is not', () => {
+    expect(finishTriageTransition(blocked(), done)).toMatchObject({ ok: true, events: [{ type: 'WaitTriaged' }] })
+    const resolved = reduceTicket([
+      ...aClaim(item(), 'run-1'),
+      ...aWait(item(), question, W),
+      ...aResolution(item(), W, { _tag: 'Close' }),
+      item()('TicketClosed', { by: 'steven', reason: 'x' }),
+    ])
+    expect(finishTriageTransition(resolved, done)).toEqual({ ok: false, refusal: { reason: 'wait-not-current' } })
+  })
+
+  it('refuses a finish when the stream moved past the version the caller decided on', () => {
+    const state = blocked()
+    expect(finishTriageTransition(state, { ...done, ifVersion: state.version })).toMatchObject({ ok: true })
+    expect(finishTriageTransition(state, { ...done, ifVersion: state.version - 1 })).toEqual({
+      ok: false,
+      refusal: { reason: 'changed' },
+    })
+  })
+})
+
+function aWaitIdOther(): WaitId {
+  return '77777777-7777-4777-8777-777777777777' as WaitId
+}

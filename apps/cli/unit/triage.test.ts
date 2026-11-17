@@ -1021,6 +1021,10 @@ describe('waitTriage', () => {
     const waitId = aWaitId()
     const store = racedBySameWaitTriageStarted(createMemoryEventStore(), waitId, 1)
     const ticketId = ticketStream('lingtai', 23)
+    // The race is read off the reduce, which only holds a wait the ticket started.
+    await store.append(ticketId, 0, [
+      { type: 'WaitStarted', actor: 'human:steven', data: { waitId, reason: OWN_QUESTION } },
+    ])
     const { runtime } = stubRuntime(() => ADVISED)
     const deps = fakeDeps(store, runtime)
 
@@ -1028,15 +1032,15 @@ describe('waitTriage', () => {
 
     expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'another attempt was already starting' })
     const events = await store.read(ticketId)
-    expect(typesOf(events)).toEqual(['TriageStarted'])
+    expect(typesOf(events)).toEqual(['WaitStarted', 'TriageStarted'])
   })
 
   it('retries the read RunSpent takes before checking whether its call already landed, rather than losing the ledger row to a transient read failure', async () => {
-    // Store reads in order: (0) waitTriage's own initial read, (1) the prompt
-    // record's read (#923), (2) RunSpent's first read for this call, (3) the
-    // final WaitTriaged append's version read. Failing call 2 is this ticket's
-    // own blocker scenario.
-    const store = flakyReadAtCall(createMemoryEventStore(), 2)
+    // Store reads in order: (0) waitTriage's own initial read, (1) the start's
+    // read, (2) the prompt record's read (#923), (3) RunSpent's first read for
+    // this call, (4) the final WaitTriaged's read. Failing call 3 is this
+    // ticket's own blocker scenario.
+    const store = flakyReadAtCall(createMemoryEventStore(), 3)
     const ticketId = ticketStream('lingtai', 24)
     const { runtime } = stubRuntime(() => ADVISED)
     const deps = fakeDeps(store, runtime)

@@ -48,22 +48,6 @@
     "reason": "A trigger: it hands a resumed project to the triage catch-up and keeps no state (0126 §6)."
   },
   {
-    "file": "apps/cli/src/triage.ts",
-    "function": "spend",
-    "type": "RunSpent",
-    "count": 1,
-    "class": "select",
-    "reason": "Idempotency: whether this attempt's spend has already landed in the events appended since it read the stream (plan §1.9)."
-  },
-  {
-    "file": "apps/cli/src/triage.ts",
-    "function": "waitTriageWithin",
-    "type": "TriageStarted",
-    "count": 1,
-    "class": "select",
-    "reason": "Race detection over the events appended since this attempt read the stream (plan §1.6)."
-  },
-  {
     "file": "packages/conductor/src/base-check.ts",
     "function": "lookup",
     "type": "BaseChecked",
@@ -126,6 +110,14 @@
     "count": 1,
     "class": "reaction",
     "reason": "Reacts to the plan just appended in options.appended, and reduces no stream."
+  },
+  {
+    "file": "packages/conductor/src/ticket/commands.ts",
+    "function": "recordTriageRun",
+    "type": "RunSpent",
+    "count": 1,
+    "class": "select",
+    "reason": "Idempotency: whether this attempt's spend has already landed in the events appended since it read the stream (plan §1.9)."
   },
   {
     "file": "packages/daemon/src/converge.ts",
