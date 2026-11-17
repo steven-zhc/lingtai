@@ -216,7 +216,7 @@ export interface AttemptState {
    */
   roundsOpened: readonly number[]
 
-  /** The last `RunFailed`. Never cleared: a later `RunFinished` does not undo it (D3). */
+  /** The last `RunFailed`. A later `RunFinished` does not undo it (D3); only a `StepRerunInPlace` clears it, because the rerun is the run now (#1201). */
   failure: { readonly kind: RunFailureKind; readonly detail: string } | null
   /** The last refused verdict, by `step:action` key. Not cleared by a later pass or a new head. */
   refusal: {
@@ -245,7 +245,7 @@ export interface AttemptState {
   baseMerges?: number
   /** The conflict rounds this attempt's routes bought (#1200). Absent until one is reduced, read as 0. */
   conflictRounds?: number
-  /** The transient retries this attempt's routes made: a `land-again` route raises it (#1221), and #1201's reruns will. Absent reads as 0. */
+  /** The reruns of a run an API error cut off (`StepRerunInPlace`, #1201; #1221 spends it too); absent reads as 0. */
   transientRetries?: number
 
   version: number
@@ -574,6 +574,13 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
     // `StepStarted` sets `step` and raises `implementRound` when it is an
     // `implement` start; `lingtai attach`'s run log is where a running step's
     // current action is now.
+    // A rerun in place raises the count by its own number, never by one: a replay cannot double it (#1201).
+    case 'StepRerunInPlace': {
+      const d = event.data as PayloadOf<'StepRerunInPlace'>
+      // The cut-off's failure is not the attempt's: the rerun is the run now, so a recovery reads as one.
+      return { ...state, ...at, failure: null, transientRetries: Math.max(state.transientRetries ?? 0, d.rerun) }
+    }
+
     case 'StepStarted': {
       const d = event.data as PayloadOf<'StepStarted'>
       return {

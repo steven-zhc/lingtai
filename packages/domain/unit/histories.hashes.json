@@ -74,5 +74,6 @@
   "control.everyControlEvent": "b2b4929de41b16066d39554c38237ff66c12bc3ff764c0a27c714b61675c2c14",
   "ticket.everyTicketType": "b0df2e91bb03fc3af677b5b980b1d53f4e5ae422604bad295b353413d638586b",
   "attempt.sandboxRecorded": "ba4ece084156acfc6474c29dbe530f7a17a4a34b94e4b99562260383eb1d3391",
-  "attempt.everyAttemptEvent": "5e48dcc817446617e931ed70866fdfec7ee07db4970335330577385ded6bd0de"
+  "attempt.stepRerunInPlace": "3303efa6aab87ec2fa5f2270ab70c62460946305f74d955070b26643cf7a2121",
+  "attempt.everyAttemptEvent": "4bc15fe0f9acc3cbc5a09f96f64893ff705c8e4c69f6e267acc1dd1b75fbc2cf"
 }

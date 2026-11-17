@@ -225,6 +225,12 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'ProposalRouted' as const,",
   },
   {
+    event: 'StepRerunInPlace',
+    why: 'the walk emits it through the pass-level `emit`, which appends the type it is handed',
+    file: 'packages/conductor/src/run-attempt.ts',
+    anchor: "type: 'StepRerunInPlace',",
+  },
+  {
     event: 'ProjectRecovered',
     why: 'returned from a function; the caller appends it',
     file: 'packages/domain/src/project.ts',
@@ -394,6 +400,7 @@ export const STREAMS = {
   BaseChecked: ['int-'],
   PassRouted: ['pass-'],
   ProposalRouted: ['pass-'],
+  StepRerunInPlace: ['pass-'],
   ConductorPaused: ['ctl-'],
   ConductorResumed: ['ctl-'],
   DayCeilingReached: ['ctl-'],

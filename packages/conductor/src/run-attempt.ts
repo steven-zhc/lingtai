@@ -107,6 +107,7 @@ import {
   lastCommitEvidence,
   nextOf,
   offerFor,
+  rerunInPlace,
   routeNext,
   STEPS,
   TRANSIENT_RETRIES_LIMIT,
@@ -825,6 +826,7 @@ export type AttemptEvent =
   | ActionEvent
   | { type: 'StepStarted'; data: PayloadOf<'StepStarted'> }
   | { type: 'StepEnded'; data: PayloadOf<'StepEnded'> }
+  | { type: 'StepRerunInPlace'; data: PayloadOf<'StepRerunInPlace'> }
 
 export interface AttemptOptions {
   /**
@@ -996,7 +998,7 @@ export interface AttemptOptions {
     /** The base merges and conflict rounds the attempt's stream already holds: per attempt, not per pass (0108 §8, #1200). */
     readonly baseMergesSpent?: number
     readonly conflictRoundsSpent?: number
-    /** The transient retries the attempt's stream already holds (#1221). */
+    /** The reruns in place the attempt's stream already holds (0108 §8, #1201): per attempt, so a continuation keeps it. */
     readonly transientRetriesSpent?: number
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
     readonly landedOnBase?: {
@@ -1377,6 +1379,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     const landedAgainThisPass = { times: 0, minutes: 0 }
     /** The merge-conflict fix rounds this attempt (#653), per attempt for the same reason. */
     let conflictRoundsSpent = options.from?.conflictRoundsSpent ?? 0
+    /**
+     * **What the cut-off visit was handed** (#1201), to hand back: its context and the visits before it.
+     * The brief is derived from the visit list (`designOn`, `sentBackTo`), not from the context alone, and the
+     * cut-off visit is on `steps` by now — so the rerun is given the list as the first one saw it.
+     */
+    let rerun: { readonly reached: readonly StepReached[]; readonly context: ActionContext } | null = null
     const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
     // A restart is automatic fix routing too, and a bigger kind than a round: the lap
     // that spends a human grant ends at a person rather than at a restart nobody
@@ -1901,7 +1909,10 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         }
         applyConflictMerge(asked.baseSha, got.conflicted)
       }
-      const visitContext = contextFor()
+      const visitContext: ActionContext =
+        rerun === null ? contextFor() : { ...rerun.context, rerun: transientRetriesSpent }
+      const visitedBefore: readonly StepReached[] = rerun === null ? [...steps] : rerun.reached
+      rerun = null
       /**
        * **Once per spine visit, before the pipeline runs** (0120 §1,
        * `events.ts`'s own `StepStarted` doc). `claim` and `end` run outside this
@@ -1916,7 +1927,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         spec,
         options,
         bodies,
-        [...steps],
+        visitedBefore,
         {
           context: visitContext,
           // Nothing but `end` is told the outcome, because nothing but `end` runs
@@ -2066,6 +2077,48 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // (`#472`): every other fall-short is a `Propose` now, handled by the
         // branch above. No router visit for either — `conduct.ts` (`#466`) reads
         // `next.reason` directly.
+        //
+        // **Except a crash a transient API error caused** (0108 §12, #1201): that run is run again
+        // in place, with what it was handed. The count is on the stream before the wait, so a daemon
+        // that dies during it has spent the retry.
+        const reason = next.reason
+        if (reason._tag === 'AgentCrashed' && (at === 'design' || at === 'implement' || at === 'review')) {
+          const again = rerunInPlace(reason.cause, reason.detail, transientRetriesSpent)
+          if (again !== null) {
+            transientRetriesSpent += 1
+            // The design this visit's agent was briefed with, after any `file-brief:` read it back: the
+            // rerun is handed that, never a second read of a file the cut-off run may have edited.
+            const briefedWith = reached.results.filter((each) => each.document !== undefined).at(-1)
+            rerun = {
+              reached: visitedBefore,
+              context: {
+                ...(briefedWith?.document === undefined
+                  ? visitContext
+                  : {
+                      ...visitContext,
+                      design: {
+                        document: briefedWith.document,
+                        ...(briefedWith.locator === undefined ? {} : { locator: briefedWith.locator }),
+                      },
+                    }),
+                // Everything before the action the crash stopped at, which is the last result.
+                resumedAfter: reached.results.slice(0, -1),
+              },
+            }
+            yield* options.emit({
+              type: 'StepRerunInPlace',
+              data: {
+                runId: options.context.runId,
+                step: at,
+                rerun: transientRetriesSpent,
+                said: reason.detail,
+                waitMs: Duration.toMillis(Duration.fromInputUnsafe(again.wait)),
+              },
+            })
+            yield* Effect.sleep(again.wait)
+            continue
+          }
+        }
         stopped = { step: at, ending }
         end = next
         break
@@ -2455,7 +2508,11 @@ function runVisit(
         context: {
           ...reaching.context,
           ...(readClippedAt === undefined ? {} : { readClippedAt }),
-          design: designOn(reached),
+          // A rerun in place (#1201) carries the design the cut-off visit was briefed with.
+          design:
+            reaching.context.rerun !== undefined && reaching.context.design !== undefined
+              ? reaching.context.design
+              : designOn(reached),
           again:
             spec.step === 'implement' &&
             options.from?.step === 'implement' &&

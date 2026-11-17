@@ -1185,6 +1185,10 @@ export const lateHistories = {
     laneWaited: late_laneWaited,
     implementThenReviewed: late_implementThenReviewed,
     proposalRoutedByReference: late_proposalRoutedByReference,
+    // Read lazily: built after the control fixture, whose stamped counters it would otherwise shift.
+    get stepRerunInPlace() {
+      return late_stepRerunInPlace
+    },
   },
   ticket: {
     titledByClaims: late_titledByClaims,
@@ -1410,6 +1414,7 @@ export const COVERS = {
     'MergeLaneWaited',
     'PassRouted',
     'ProposalRouted',
+    'StepRerunInPlace',
     'RunRefsPublished',
     'RunKeptUncommitted',
     'SandboxBoundaryRecorded',
@@ -1510,6 +1515,22 @@ const late_everyTicketTypeOnOneStream = stamp(
   })(),
 )
 
+/** #1201: two reruns in place raise the attempt's count by their own number. */
+function stepRerunInPlace(): readonly Envelope[] {
+  const run = anAttempt(attemptStream('step-rerun-in-place'))
+  const rerun = (n: number, waitMs: number) =>
+    run.event('StepRerunInPlace', { runId: run.runId, step: 'implement', rerun: n, said: 'API Error: 503', waitMs })
+  return [
+    runStarted(run, runTicket),
+    run.event('StepStarted', { runId: run.runId, step: 'implement', round: 0 }),
+    rerun(1, 60_000),
+    run.event('StepStarted', { runId: run.runId, step: 'implement', round: 0 }),
+    rerun(2, 300_000),
+  ].map((e, i) => ({ ...e, seq: BigInt(9_500_000 + i), at: new Date(START_MS - 172_800_000 + i * STEP_MS) }))
+}
+
+const late_stepRerunInPlace = stepRerunInPlace()
+
 /**
  * The attempt reducer's fixture (#878): the first event of each type it handles, taken from the attempt histories
  * above in the order they first appear, on one stream. The terminal events go last, so nothing after them is a no-op.
@@ -1529,9 +1550,11 @@ const late_everyAttemptType = stamp(
     return ordered.map((e, i) => ({ ...e, streamId, version: i + 1 }))
   })(),
 )
-// The two sandbox types (#1161) are in the fixture and not in the count: the control fixture is stamped after this
+// The two sandbox types (#1161) and `StepRerunInPlace` (#1201) are in the fixture and not in the count: the control fixture is stamped after this
 // one, and its committed hash is over the `seq` it was given before they existed (0124 §3).
-nextSeq -= BigInt(late_everyAttemptType.filter((e) => e.type.startsWith('Sandbox')).length)
+nextSeq -= BigInt(
+  late_everyAttemptType.filter((e) => e.type.startsWith('Sandbox') || e.type === 'StepRerunInPlace').length,
+)
 
 /**
  * The control fixture's last event (version 3 of the control reducer): a start after a standing request, which

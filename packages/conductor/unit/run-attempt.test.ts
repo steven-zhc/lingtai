@@ -21,7 +21,8 @@ import { StepMap, type StepAction } from '@lingtai/recipe'
  * process is spawned, no agent is paid and no person is asked. That is why this
  * is in `unit/` and why the `build` point runs it (0060 §1).
  */
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
+import { TestClock } from 'effect/testing'
 import { describe, expect, it } from 'vitest'
 
 import type { TerminalOutcome } from '../src/end-step.ts'
@@ -39,6 +40,8 @@ import {
   type StepEnding,
   type StepReached,
   type StepWork,
+  attemptPortsFrom,
+  runAttemptEffect,
 } from '../src/run-attempt.ts'
 import { runAttempt } from '../test/promise-faces.ts'
 
@@ -3037,5 +3040,341 @@ describe('a route names the StepEnded it was taken from', () => {
     const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.routes.map((r) => r.ended)).toEqual([null])
+  })
+})
+
+// ------------------------------------------------- a transient cut-off (#1201) ----
+
+/** Walk to the end on a `TestClock`, so a wait of minutes costs nothing. */
+const walkOnTestClock = (options: AttemptOptions) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(runAttemptEffect(attemptPortsFrom(options)))
+      for (let i = 0; i < 8; i++) yield* TestClock.adjust('20 minutes')
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.provide(TestClock.layer())),
+  )
+
+const crashed = (detail: string, interrupted: 'crash' | 'timeout' = 'crash'): ActionResult => ({
+  verdict: 'did-not-finish',
+  evidence: detail,
+  findings: [],
+  interrupted,
+})
+
+describe('a run a transient API error cut off is run again in place (#1201)', () => {
+  /** An `implement` that crashes with each detail in turn, then commits. */
+  const implementing = (details: readonly string[], interrupted: 'crash' | 'timeout' = 'crash') => {
+    const contexts: ActionContext[] = []
+    const { actionsAt: base } = watchingActions()
+    let lap = 0
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+      step === 'implement'
+        ? [
+            {
+              name: 'write the change',
+              kind: 'agent',
+              yields: 'commit',
+              run: async (seenWith) => {
+                contexts.push(seenWith)
+                const detail = details[lap++]
+                return detail === undefined
+                  ? { ...PASSED, head: 'feedface00' }
+                  : { ...crashed(detail, interrupted), runtime: 'claude-code' }
+              },
+            },
+          ]
+        : base(step, actions)
+    return { actionsAt, contexts }
+  }
+
+  it('reruns twice with waits of 1 and 5 minutes, and reaches build', async () => {
+    const { bodies } = watching()
+    const { actionsAt, contexts } = implementing(['crash: API Error: 503 upstream', 'crash: API Error: 502 gateway'])
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    const reruns = seen.filter((e) => e.type === 'StepRerunInPlace').map((e) => e.data)
+    expect(reruns).toMatchObject([
+      { step: 'implement', rerun: 1, waitMs: 60_000 },
+      { step: 'implement', rerun: 2, waitMs: 300_000 },
+    ])
+    expect(result.end).not.toMatchObject({ _tag: 'WaitOnPerson' })
+    expect(result.steps.some((s) => s.step === 'build')).toBe(true)
+    // the cut-off visits are history and the rerun is told it is one
+    expect(contexts.map((c) => c.rerun)).toEqual([undefined, 1, 2])
+  })
+
+  it('holds the fourth transient crash of an attempt, counted over the attempt and not the step', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = implementing(Array.from({ length: 4 }, () => 'API Error: 503'))
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(seen.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(3)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed', cause: 'crash' } })
+  })
+
+  /** Agent steps that crash with each detail in turn (per step), then pass. */
+  const crashingAt = (plan: Partial<Record<'implement' | 'review', readonly string[]>>) => {
+    const { actionsAt: base } = watchingActions()
+    const laps = { implement: 0, review: 0 }
+    const dispatched: string[] = []
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+      step === 'implement' || step === 'review'
+        ? [
+            {
+              name: `agent at ${step}`,
+              kind: 'agent',
+              yields: step === 'implement' ? 'commit' : 'verdict',
+              run: async () => {
+                dispatched.push(step)
+                const detail = plan[step]?.[laps[step]++]
+                return detail === undefined
+                  ? { ...PASSED, head: 'feedface00' }
+                  : { ...crashed(detail), runtime: 'claude-code' }
+              },
+            },
+          ]
+        : base(step, actions)
+    return { actionsAt, dispatched }
+  }
+
+  it('counts over the attempt, not the step: two at implement, then a third and a fourth at review hold', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = crashingAt({
+      implement: ['API Error: 503', 'API Error: 503'],
+      review: ['API Error: 502', 'API Error: 502'],
+    })
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    const reruns = seen.filter((e) => e.type === 'StepRerunInPlace').map((e) => e.data)
+    expect(reruns).toMatchObject([
+      { step: 'implement', rerun: 1 },
+      { step: 'implement', rerun: 2 },
+      { step: 'review', rerun: 3 },
+    ])
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed', cause: 'crash' } })
+  })
+
+  it('waits the whole of each wait before it dispatches the rerun', async () => {
+    const { bodies } = watching()
+    const { actionsAt, dispatched } = crashingAt({ implement: ['API Error: 503', 'API Error: 503'] })
+    const { emit } = events()
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+        )
+        yield* TestClock.adjust('1 second')
+        expect(dispatched).toEqual(['implement'])
+        yield* TestClock.adjust('58 seconds')
+        expect(dispatched).toEqual(['implement'])
+        yield* TestClock.adjust('1 second')
+        expect(dispatched).toEqual(['implement', 'implement'])
+        yield* TestClock.adjust('299 seconds')
+        expect(dispatched).toEqual(['implement', 'implement'])
+        yield* TestClock.adjust('1 second')
+        expect(dispatched.slice(0, 3)).toEqual(['implement', 'implement', 'implement'])
+        for (let i = 0; i < 4; i++) yield* TestClock.adjust('20 minutes')
+        yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(TestClock.layer())),
+    )
+  })
+
+  it('spends what a continuation already spent', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = implementing(['API Error: 503'])
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      from: { step: 'implement', waive: undefined, transientRetriesSpent: 3 },
+    } as unknown as AttemptOptions)
+
+    expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed' } })
+  })
+
+  it.each([
+    ['the account wall', "You've hit your monthly spend limit · API Error: 503"],
+    ['a sentence on no row', 'the model wandered off'],
+    ['a bare 403', 'API Error: 403 Forbidden'],
+  ])('holds for %s as it did', async (_name, detail) => {
+    const { bodies } = watching()
+    const { actionsAt } = implementing([detail])
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed' } })
+  })
+
+  it('never reruns a timeout, whatever its detail says', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = implementing(['API Error: 503'], 'timeout')
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed', cause: 'timeout' } })
+  })
+})
+
+describe('a rerun in place keeps the brief a file-brief read (#1201)', () => {
+  it('does not read the file again, so the rerun is handed the design the cut-off run was', async () => {
+    const { bodies } = watching()
+    const { actionsAt: base } = watchingActions()
+    let file = 'the design as first written'
+    let reads = 0
+    const seen: (string | undefined)[] = []
+    let lap = 0
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+      step === 'implement'
+        ? [
+            {
+              name: 'read the design',
+              kind: 'file-brief',
+              yields: 'nothing',
+              run: async () => {
+                reads += 1
+                return { ...PASSED, document: file, locator: 'doc/design.md' }
+              },
+            },
+            {
+              name: 'write the change',
+              kind: 'agent',
+              yields: 'commit',
+              run: async (seenWith) => {
+                seen.push(seenWith.design?.document)
+                if (lap++ === 0) {
+                  file = 'the design as the cut-off run edited it'
+                  return { ...crashed('API Error: 503'), runtime: 'claude-code' }
+                }
+                return { ...PASSED, head: 'feedface00' }
+              },
+            },
+          ]
+        : base(step, actions)
+    const { emit } = events()
+
+    await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(seen).toEqual(['the design as first written', 'the design as first written'])
+    expect(reads).toBe(1)
+  })
+})
+
+describe('a file-brief the crash stopped before it ran still runs on the rerun (#1201)', () => {
+  it('reads once and holds for the missing file, as it does without the crash', async () => {
+    const { bodies } = watching()
+    const { actionsAt: base } = watchingActions()
+    const make = (crashFirst: boolean) => {
+      let reads = 0
+      let lap = 0
+      const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+        step === 'implement'
+          ? [
+              {
+                name: 'write the change',
+                kind: 'agent',
+                yields: 'commit',
+                run: async () =>
+                  crashFirst && lap++ === 0
+                    ? { ...crashed('API Error: 503'), runtime: 'claude-code' }
+                    : { ...PASSED, head: 'feedface00' },
+              },
+              {
+                name: 'read the design',
+                kind: 'file-brief',
+                yields: 'nothing',
+                run: async () => {
+                  reads += 1
+                  return { verdict: 'failed', evidence: 'doc/missing.md is not there', findings: [] }
+                },
+              },
+            ]
+          : base(step, actions)
+      return { actionsAt, reads: () => reads }
+    }
+
+    const plain = make(false)
+    const withCrash = make(true)
+    const a = await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit: events().emit,
+      bodies,
+      actionsAt: plain.actionsAt,
+    })
+    const b = await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit: events().emit,
+      bodies,
+      actionsAt: withCrash.actionsAt,
+    })
+
+    expect(plain.reads()).toBe(1)
+    expect(withCrash.reads()).toBe(1)
+    expect(b.steps.some((s) => s.step === 'build')).toBe(a.steps.some((s) => s.step === 'build'))
+    expect(b.end).toEqual(a.end)
+  })
+})
+
+describe('a rerun in place resumes at the cut-off action, whatever came before it (#1201)', () => {
+  it('does not run a preceding run action again, so its clean cannot delete the cut-off edits', async () => {
+    const { bodies } = watching()
+    const { actionsAt: base } = watchingActions()
+    const tree = new Set<string>()
+    let cleans = 0
+    let lap = 0
+    const editsSeenByAgent: boolean[] = []
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+      step === 'implement'
+        ? [
+            {
+              name: 'clean the tree',
+              kind: 'run',
+              yields: 'nothing',
+              run: async () => {
+                cleans += 1
+                tree.clear()
+                return { ...PASSED, evidence: 'cleaned' }
+              },
+            },
+            {
+              name: 'write the change',
+              kind: 'agent',
+              yields: 'commit',
+              run: async () => {
+                editsSeenByAgent.push(tree.has('uncommitted.ts'))
+                if (lap++ === 0) {
+                  tree.add('uncommitted.ts')
+                  return { ...crashed('API Error: 503'), runtime: 'claude-code' }
+                }
+                return { ...PASSED, head: 'feedface00' }
+              },
+            },
+          ]
+        : base(step, actions)
+    const { emit } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(cleans).toBe(1)
+    expect(editsSeenByAgent).toEqual([false, true])
+    expect(result.steps.some((s) => s.step === 'build')).toBe(true)
   })
 })

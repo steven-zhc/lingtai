@@ -520,6 +520,18 @@ export interface ActionContext {
   prompted?: (promptVersion: string, prompt: string | ComposedPrompt, runtimeVersion: string | null) => Promise<void>
   /** The commit this verdict is about, and the only thing that makes it stale. */
   onSha: string
+  /**
+   * **This visit is the Nth rerun in place of one a transient API error cut off** (0108 §12, #1201);
+   * absent on any other. Every agent dispatch id carries it (`rerunId`), because Claude Code's session
+   * id is derived from the dispatch id and a reused one is refused.
+   */
+  rerun?: number
+  /**
+   * On a rerun, the results the cut-off visit recorded for the actions **before** the one that was cut
+   * off, by position (#1201). Those actions are not run again, whatever their kind — a `run:` whose clean
+   * step resets the tree would delete the edits the cut-off agent left — and each stands with its verdict.
+   */
+  resumedAfter?: readonly PipelineResult['results'][number][]
   /** The worktree. Actions run where the agent worked, never anywhere else. */
   cwd: string
   /**
@@ -934,6 +946,26 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
     const keptSpent = new Set<string>()
 
     for (const [index, action] of actions.entries()) {
+      // **A rerun in place resumes at the action that was cut off** (#1201): every action before it, of any
+      // kind, keeps the verdict the cut-off visit gave it and is not executed again.
+      const resumedResult = context.rerun === undefined ? undefined : context.resumedAfter?.[index]
+      if (resumedResult !== undefined) {
+        context.log?.note(`${step}:${action.name}`, 'not run again — a rerun in place resumes at the cut-off action')
+        results.push({
+          ...resumedResult,
+          evidence: `not run again: this is a rerun in place; ${resumedResult.evidence}`,
+        })
+        if (resumedResult.document !== undefined) {
+          context = {
+            ...context,
+            design: {
+              document: resumedResult.document,
+              ...(resumedResult.locator === undefined ? {} : { locator: resumedResult.locator }),
+            },
+          }
+        }
+        continue
+      }
       const kept = options.kept?.find((k) => k.name === action.name && !keptSpent.has(k.name))
       if (kept !== undefined && !options.waived?.some((w) => w.name === action.name)) {
         keptSpent.add(kept.name)
@@ -989,11 +1021,14 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
        * A retry could only help where attempt 1 died *before* opening a session,
        * and 0057's own subject is an agent that started — which opened one.
        *
-       * So what a `did-not-finish` costs is 0057 §1–3 and nothing else, and
-       * that is the half that works: no round (§2), no stand-down (§3), and the
-       * pass reports it to a person. Whether to spend another agent on it is
+       * So this loop never retries. What a `did-not-finish` costs is 0057 §1–3: no
+       * round (§2), no stand-down (§3), and the pass reports it. Whether another
+       * agent is spent on it is decided above this loop, not by a constant in it: a
+       * crash a transient API error caused is run again automatically, in place and
+       * under a dispatch id of its own, within the attempt's `TRANSIENT_RETRIES_LIMIT`
+       * (0108 §12, #1201); any other is a person's, or
        * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
-       * §3c's judge, not a constant in a loop here.
+       * §3c's judge.
        */
       const started = Date.now()
       context.log?.note(tag, `started · ${action.kind} on ${context.onSha.slice(0, 7)}${round}`)
@@ -1010,6 +1045,13 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
               prompted: (promptVersion, prompt, runtimeVersion) =>
                 recordPrompt({ for: spentFor, promptVersion, runtimeVersion, prompt }),
             }
+      // **Only the action that was cut off is a rerun** (#1201): this is it (every one before it was
+      // skipped above), so every action after it in the step's list runs as on any visit — a fresh
+      // dispatch id, a fresh `startedAt`, its own diff.
+      if (context.rerun !== undefined) {
+        const { rerun: _rerun, resumedAfter: _resumedAfter, ...rest } = context
+        context = rest
+      }
 
       // Named by kind, never by `action.name` (#791): a recipe author writes the
       // name and it can be the command itself.
@@ -1245,4 +1287,9 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
 function elapsed(ms: number): string {
   const s = Math.round(ms / 1000)
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
+}
+
+/** `id`, with `:rerun:<n>` when this visit is a rerun in place (#1201): a session id is never reused. */
+export function rerunId(id: string, context: Pick<ActionContext, 'rerun'>): string {
+  return context.rerun === undefined ? id : `${id}:rerun:${context.rerun}`
 }

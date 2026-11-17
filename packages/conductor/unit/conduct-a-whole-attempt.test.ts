@@ -56,6 +56,7 @@ import {
   fakePorts,
   memoryStore,
   once,
+  onceOnTestClock,
   project,
   refusingRuntime,
   runtime,
@@ -1507,6 +1508,185 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(run.map((e) => e.type)).not.toContain('RunProposedCompletion')
     expect(did).not.toContain('integrate')
     expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).not.toContain('TicketLanded')
+  })
+
+  /**
+   * **A run a transient API error cut off is run again in place** (0108 §12, #1201): the same brief, a
+   * dispatch id of its own each time (Claude Code's session id derives from it, and a reused one is refused),
+   * and a receipt measured from where the *first* run found the tree.
+   */
+  it('reruns a cut-off implementer under a new dispatch id, and does not call its commit nothing', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const ids: string[] = []
+    const prompts: string[] = []
+    let crashes = 2
+    const flaky: Runtime = {
+      ...runtime,
+      run: (request) => {
+        if (['review', 'fix', 'design'].some((k) => request.runId.includes(`:${k}:`))) return runtime.run(request)
+        ids.push(request.runId)
+        prompts.push(request.prompt)
+        if (crashes-- > 0) {
+          return Effect.succeed({
+            exitCode: 1,
+            turns: 1,
+            durationMs: 500,
+            costUsd: 0.1,
+            failure: { kind: 'crash' as const, detail: 'API Error: 503 {"type":"error"}' },
+            text: null,
+            sessionId: 'sess-cut',
+          })
+        }
+        return runtime.run(request)
+      },
+    }
+
+    const result = await onceOnTestClock(
+      {
+        project,
+        client: fakeGitHub([], DRAFTED),
+        runtime: flaky,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+      },
+      // The first `wire` commits, as the real agent's work would: the rerun's `rev-parse` then answers a head
+      // that is already past where the first run found the tree.
+      fakePorts(did, store, true),
+    )
+
+    expect(result.ok, JSON.stringify(result)).not.toBe('held')
+    expect(ids).toHaveLength(3)
+    expect(new Set(ids).size).toBe(3)
+    expect(ids[1]).toBe(`${ids[0]}:rerun:1`)
+    expect(ids[2]).toBe(`${ids[0]}:rerun:2`)
+    expect(prompts[1]).toBe(prompts[0])
+    expect(prompts[2]).toBe(prompts[0])
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
+    const reruns = run.filter((e) => e.type === 'StepRerunInPlace').map((e) => e.data as PayloadOf<'StepRerunInPlace'>)
+    expect(reruns.map((r) => [r.step, r.rerun, r.waitMs])).toEqual([
+      ['implement', 1, 60_000],
+      ['implement', 2, 300_000],
+    ])
+    // Each cut-off run keeps its own failure, and the cut-off is not read as "committed nothing".
+    expect(run.filter((e) => e.type === 'RunFailed')).toHaveLength(2)
+    expect(run.map((e) => e.type)).toContain('RunProposedCompletion')
+  })
+
+  it('does not hand a later implementer the cut-off agent’s start: it holds as produced no commits', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const ids: string[] = []
+    const two = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  implement:
+    - name: agent A
+      agent: claude-code
+      prompt: do the first half
+    - name: agent B
+      agent: claude-code
+      prompt: do the second half
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`
+    const flaky: Runtime = {
+      ...runtime,
+      run: (request) => {
+        if (['review', 'fix', 'design'].some((k) => request.runId.includes(`:${k}:`))) return runtime.run(request)
+        ids.push(request.runId)
+        // A commits (the fake tree moves at its `wire`), is cut off, and its rerun commits nothing more.
+        return ids.length === 1
+          ? Effect.succeed({
+              exitCode: 1,
+              turns: 1,
+              durationMs: 500,
+              costUsd: 0.1,
+              failure: { kind: 'crash' as const, detail: 'API Error: 503 {"type":"error"}' },
+              text: null,
+              sessionId: 'sess-cut',
+            })
+          : runtime.run(request)
+      },
+    }
+
+    const result = await onceOnTestClock(
+      {
+        project,
+        client: fakeGitHub([], two),
+        runtime: flaky,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store, true),
+    )
+
+    // A, A's rerun, then B: B is dispatched once, fresh, and is not a rerun.
+    expect(ids).toHaveLength(3)
+    expect(ids[1]).toBe(`${ids[0]}:rerun:1`)
+    expect(ids[2]).not.toContain(':rerun:')
+    // B committed nothing, so the step holds; A's commit is not recorded as B's.
+    expect(result.ok).toBe('held')
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
+    expect(run.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(1)
+    expect(run.filter((e) => e.type === 'RunProposedCompletion')).toHaveLength(1)
+  })
+
+  it('reruns a cut-off fix round with the very prompt it was cut off with', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const fixes: { id: string; prompt: string }[] = []
+    const fixerRuntime: Runtime = {
+      ...runtime,
+      run: (request) => {
+        if (request.runId.includes(':review:')) return refusingRuntime.run(request)
+        if (!request.runId.includes(':fix:')) return runtime.run(request)
+        fixes.push({ id: request.runId, prompt: request.prompt })
+        return fixes.length === 1
+          ? Effect.succeed({
+              exitCode: 1,
+              turns: 1,
+              durationMs: 500,
+              costUsd: 0.1,
+              failure: { kind: 'crash' as const, detail: 'Repeated 529 Overloaded errors' },
+              text: null,
+              sessionId: 'sess-cut',
+            })
+          : runtime.run(request)
+      },
+    }
+
+    await onceOnTestClock(
+      {
+        project,
+        client: fakeGitHub([], JUDGED),
+        runtime: fixerRuntime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store, true),
+    )
+
+    expect(fixes.length).toBeGreaterThanOrEqual(2)
+    expect(fixes[1]!.id).toBe(`${fixes[0]!.id}:rerun:1`)
+    expect(fixes[1]!.prompt).toBe(fixes[0]!.prompt)
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
+    expect(run.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(1)
   })
 
   /**

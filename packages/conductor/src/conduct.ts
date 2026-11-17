@@ -23,6 +23,7 @@ import {
   makeWorkAction,
   makeWorktreeAction,
   commandEffect,
+  rerunId,
 } from '@lingtai/actions'
 import type { LandedCommit, LandedPath, LandedTitle } from '@lingtai/actions'
 import { FAILED, markFailed } from '@lingtai/actions/spans'
@@ -310,6 +311,12 @@ import {
 function wallOf(detail: string): RuntimeId | null {
   const said = classify({ platform: 'runtime', text: detail })
   return said?.kind === 'account-limit' ? said.runtime : null
+}
+
+/** Whether `detail` is a runtime sentence a rerun can clear (0108 §12, #1201). */
+function transientSaid(detail: string): boolean {
+  const said = classify({ platform: 'runtime', text: detail })
+  return said?.platform === 'runtime' && said.kind === 'transient'
 }
 
 const baseChecks = new WeakMap<EventStore, ReturnType<typeof createBaseCheck>>()
@@ -1845,6 +1852,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * there is nothing in the worktree it could have left dirty.
        */
       let stoppedBy: string | null = null
+      /** Where the first implementer dispatch found the tree: a rerun's receipt is measured from it too (#1201). */
+      let implementerStartedAt: string | null = null
+      /** The diff the first fix-round dispatch was briefed with: a rerun is briefed with the same one (#1201). */
+      let fixDiffSeen: { text: string; from: string | null; to: string | null } | null = null
       /**
        * Conflict fix rounds dispatched so far (#653). A conflict round leaves
        * `round` where `rounds` was, so `round` alone would hand Claude Code the
@@ -4522,7 +4533,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * true: prose in a prompt is not a guard, and the agent that ignores it is
            * exactly the one the guard is for.
            */
-          const startedAt = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+          const startedAt =
+            brief.context.rerun !== undefined && implementerStartedAt !== null
+              ? implementerStartedAt
+              : yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+          implementerStartedAt = startedAt
           const implementDecision = yield* decideSandbox
           const wired = yield* Effect.result(
             host.wire({
@@ -4548,8 +4563,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const spend = spendFor(spec.limits)
           const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id)
           const agentEnv = runnableEnv({ ...env.values, ...wiring.env })
+          // The session id derives from this, never the stream's `runId` (#1201).
+          const dispatchId = rerunId(runId, brief.context)
           const spawned = dispatched.invocation?.({
-            runId,
+            runId: dispatchId,
             cwd: tree.path,
             settingsPath: wiring.settingsPath,
             env: agentEnv,
@@ -4669,7 +4686,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 // the socket's scope closes (#1043).
                 const outcome = yield* dispatched.run({
                   ...(brief.context.signal === undefined ? {} : { signal: brief.context.signal }),
-                  runId,
+                  runId: dispatchId,
                   cwd: tree.path,
                   prompt: implementerParts.map((part) => (typeof part === 'string' ? part : part.text)).join(''),
                   ...(spec.model === undefined ? {} : { model: spec.model }),
@@ -4679,7 +4696,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   limits: spend,
                   ...(yield* sandboxOf(
                     implementDecision,
-                    { runId, worktree: tree.path },
+                    { runId: dispatchId, worktree: tree.path },
                     { stream: runId, step: 'implement', action: spec.name, runtime: dispatched.capabilities.id },
                   )),
                 })
@@ -4872,10 +4889,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
           // Keyed on where the fix came from and not on `refusal`: a conflict round
           // keeps its own session id whichever brief it was given.
-          const fixId =
+          const fixId = rerunId(
             from === 'merge'
               ? `${runId}:fix:${round}:merge:${continuation?.resumedWaitId ?? 'start'}:${++conflictFixes}`
-              : `${runId}:fix:${round}`
+              : `${runId}:fix:${round}`,
+            brief.context,
+          )
 
           log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
           runLog.note('fix', `round ${round} for ${from}`)
@@ -4898,9 +4917,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // there is a continuation — see `baseShaOr`'s own comment.
           // The reviewer's own spelling (`DIFF_FLAGS`), as `fixBrief`'s doc says the
           // two should be looking at the same change, and the two shas it ran between.
-          const underReview = yield* changeStart(continuation?.diffBaseSha ?? tree.baseSha).pipe(
-            Effect.flatMap((start) => diffBetween(start)),
-          )
+          // A rerun in place (#1201) is handed the diff the cut-off round saw, not the partly fixed tree.
+          const underReview =
+            brief.context.rerun !== undefined && fixDiffSeen !== null
+              ? fixDiffSeen
+              : yield* changeStart(continuation?.diffBaseSha ?? tree.baseSha).pipe(
+                  Effect.flatMap((start) => diffBetween(start)),
+                )
+          fixDiffSeen = underReview
           // The same flag `firstDispatch` sets before its own dispatch, and for
           // the same reason (`#468`): an agent is running, and nothing has
           // judged what it leaves in the worktree if it is interrupted here.
@@ -5026,7 +5050,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               neverStarted: { agent: dispatched.capabilities.id, detail: fixed.failure.detail },
             }
           }
-          if (!committed) {
+          // **A fixer that committed and was then cut off by a transient API error** is still cut off
+          // (#1201): the walk reruns it in place, so the commit is not the end of the round.
+          const cutOffTransient = fixed.failure?.kind === 'crash' && transientSaid(fixed.failure.detail)
+          if (!committed || cutOffTransient) {
             // A decline judged the findings or the refusal rather than being cut
             // off mid-run, so `interrupted` does not stand for it either; a
             // crash or a wall does, in the runtime's own word for it (`#468`).

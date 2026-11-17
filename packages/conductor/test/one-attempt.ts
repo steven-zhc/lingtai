@@ -32,7 +32,8 @@ import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import type { GitHubClient, Issue } from '@lingtai/github'
 import { resolveRecipe } from '@lingtai/recipe'
 import { RepoFailed } from '@lingtai/repo'
-import { Effect, Layer } from 'effect'
+import { Effect, Fiber, Layer } from 'effect'
+import { TestClock } from 'effect/testing'
 
 import { runOnce } from '../src/conduct.ts'
 import { AgentHost, Repo, type RunPorts } from '../src/ports.ts'
@@ -74,6 +75,24 @@ export const once = async (
     }).pipe(Effect.provide(Layer.merge(withPorts(ports), beside))),
   )
 }
+
+/**
+ * `once` on a `TestClock`, advanced past every wait a walk could take (#1201): a rerun in place sleeps
+ * minutes, and a test must not.
+ */
+export const onceOnTestClock = (options: Parameters<typeof once>[0], ports: RunPorts) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(
+        runOnce({
+          recipe: () => resolveRecipe((p, r) => options.client.fileAt(p, r), options.project.base ?? 'main'),
+          ...options,
+        }).pipe(Effect.provide(withPorts(ports))),
+      )
+      for (let i = 0; i < 8; i++) yield* TestClock.adjust('20 minutes')
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.provide(TestClock.layer())),
+  )
 
 export const PROJECT = 'purecheck'
 
