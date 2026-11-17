@@ -196,13 +196,13 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
   },
   {
     event: 'IssueUpdated',
-    why: 'type is a string argument of `recordEffect`',
+    why: 'type is a string argument of `recordIssueUpdate`',
     file: 'packages/conductor/src/write-section.ts',
-    anchor: "recordEffect(store, ticketId, 'IssueUpdated', {",
+    anchor: "recordIssueUpdate(store, ticketId, 'IssueUpdated', {",
   },
   {
     event: 'IssueUpdateFailed',
-    why: 'type is a string argument of `recordEffect`',
+    why: 'type is a string argument of `recordIssueUpdate`',
     file: 'packages/conductor/src/tell.ts',
     anchor: "'IssueUpdateFailed', // the update threw",
   },

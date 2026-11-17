@@ -591,6 +591,48 @@ export function editPromptEffect(
 }
 
 /**
+ * What Lingtai wrote to GitHub about a ticket (`IssueUpdated`, `IssueUpdateFailed`). A fact about GitHub rather than a
+ * decision about the stream, so no transition refuses it: append at the head just read, one attempt. It fails when the
+ * read or the append does; whether that matters is the caller's, and each caller says so at its call.
+ */
+export function recordIssueUpdate<T extends 'IssueUpdated' | 'IssueUpdateFailed'>(
+  store: EventStore,
+  ticketId: string,
+  type: T,
+  data: PayloadOf<T>,
+): Effect.Effect<void, unknown> {
+  return Effect.gen(function* () {
+    const at = yield* Effect.tryPromise({ try: () => store.head(ticketId), catch: (error) => error })
+    yield* Effect.tryPromise({
+      try: () => store.append(ticketId, at, [{ type, actor: 'conductor', data: parsePayload(type, data) }]),
+      catch: (error) => error,
+    })
+  })
+}
+
+/**
+ * A split's progress on GitHub (`SplitStarted`, `SplitFailed`, `SplitChildWritten`, `SplitLinkWritten`), written by
+ * `by`. Facts about GitHub, not decisions about the stream: append at its current version, once more if it moved.
+ */
+export function recordSplitProgress<
+  T extends 'SplitStarted' | 'SplitFailed' | 'SplitChildWritten' | 'SplitLinkWritten',
+>(store: EventStore, ticketId: string, type: T, data: PayloadOf<T>, by: string): Effect.Effect<void, unknown> {
+  const once = Effect.gen(function* () {
+    const at = yield* Effect.tryPromise({ try: () => store.head(ticketId), catch: (error) => error })
+    yield* Effect.tryPromise({
+      try: () => store.append(ticketId, at, [{ type, actor: by, data: parsePayload(type, data) }]),
+      catch: (error) => error,
+    })
+  })
+  return once.pipe(
+    Effect.catchIf(
+      (e) => e instanceof ConcurrencyError,
+      () => once,
+    ),
+  )
+}
+
+/**
  * `DiscussionHeld`, preceded in the same append by the `PromptEdited` a `prompt` outcome adopts: one decision, one
  * append, so neither is written without the other. No retry: a lost race is the conclusion's failure.
  */

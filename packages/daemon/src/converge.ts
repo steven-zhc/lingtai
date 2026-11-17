@@ -65,10 +65,10 @@ import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 // One wording for *what a part-way sweep had already deleted*, shared rather
 // than written twice: the inline sweep and this one record the same row.
 import { sweepFailure, type RefChannel } from '@lingtai/conductor/tell'
+import { recordIssueUpdate } from '@lingtai/conductor/ticket'
 import { ticketedClientOf, ticketsForEffect, type Tickets } from '@lingtai/conductor/ticket-store'
 import {
   parseTicketStream,
-  parsePayload,
   reduceTicket,
   WAIT_EVENTS,
   TICKET_STREAM_PREFIX,
@@ -545,12 +545,14 @@ export const convergeIssuesEffect = (
             Effect.catch((err) => Effect.succeed({ err })),
           )
           if (failure === null) {
-            yield* record(store, d.ticketId, 'IssueUpdated', {
-              project: d.project,
-              issue: String(d.issue),
-              change: d.change,
-              detail: `converged by reconcile: ${d.expected}`,
-            })
+            yield* quietly(
+              recordIssueUpdate(store, d.ticketId, 'IssueUpdated', {
+                project: d.project,
+                issue: String(d.issue),
+                change: d.change,
+                detail: `converged by reconcile: ${d.expected}`,
+              }),
+            )
             converged.push(d)
             // A repair that came out right, in the colour a verdict that passed
             // wears. It is not chrome: something was wrong and now is not.
@@ -560,12 +562,14 @@ export const convergeIssuesEffect = (
           // Recorded, not retried. The next reconcile recomputes the target from
           // the log and tries again on its own; a counter here would be the
           // machinery 0022 deleted, growing back one field at a time.
-          yield* record(store, d.ticketId, 'IssueUpdateFailed', {
-            project: d.project,
-            issue: String(d.issue),
-            change: d.change,
-            error: sweepFailure(failure.err, gone),
-          })
+          yield* quietly(
+            recordIssueUpdate(store, d.ticketId, 'IssueUpdateFailed', {
+              project: d.project,
+              issue: String(d.issue),
+              change: d.change,
+              error: sweepFailure(failure.err, gone),
+            }),
+          )
           log(
             paint.fail(
               `reconcile could not converge ${d.project}#${d.issue} ${d.change}: ${(failure.err as Error).message}`,
@@ -578,19 +582,9 @@ export const convergeIssuesEffect = (
     return { divergences, converged }
   })
 
-/** Same silence as `tell.ts`: losing the record must not lose the write. */
-const record = (
-  store: EventStore,
-  ticketId: string,
-  type: 'IssueUpdated' | 'IssueUpdateFailed',
-  data: Record<string, string>,
-): Effect.Effect<void> =>
-  Effect.gen(function* () {
-    const at = (yield* attempt(() => store.read(ticketId))).length
-    yield* attempt(() => store.append(ticketId, at, [{ type, actor: 'conductor', data: parsePayload(type, data) }]))
-  }).pipe(
-    // The next pass recomputes from GitHub, so an unwritten record costs a
-    // request rather than a fact. A defect is swallowed too: a failed append that killed
-    // the converge would skip every remaining divergence and leave no `Reconciled`.
-    Effect.catchCause((cause) => unlessInterrupted(cause, () => Effect.void)),
-  )
+/**
+ * Same silence as `tell.ts`, interrupts excepted: losing the record must not lose the write.
+ * The next pass recomputes from GitHub, so an unwritten record costs a request rather than a fact. A defect is
+ * swallowed too: a failed append that killed the converge would skip every remaining divergence and leave no `Reconciled`.
+ */
+const quietly = Effect.catchCause((cause: Cause.Cause<unknown>) => unlessInterrupted(cause, () => Effect.void))

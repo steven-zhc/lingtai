@@ -28,7 +28,7 @@ import { inSpanEffectIn } from '@lingtai/actions/spans'
  * network — which is the whole point of a caller naming its own requirement.
  */
 import { landingCommentTriedOf, parseTicketStream, ticketReducer } from '@lingtai/domain'
-import { type PayloadOf, type ToAppend, parsePayload } from '@lingtai/domain'
+import { type PayloadOf, type ToAppend } from '@lingtai/domain'
 import { readThroughSnapshot, type EventStore, type SnapshotReadOptions } from '@lingtai/event-store'
 import { context } from '@opentelemetry/api'
 import { Effect, Result } from 'effect'
@@ -36,6 +36,7 @@ import { Effect, Result } from 'effect'
 import { agentBranch, armPrefix } from './branches.ts'
 import { foreignLabels } from './labels.ts'
 import type { Tickets } from './ticket-store.ts'
+import { recordIssueUpdate } from './ticket/commands.ts'
 
 /** What this needs of GitHub, and nothing more. */
 export type IssueChannel = Pick<Tickets, 'comment' | 'editComment' | 'setLabels' | 'closeIssue' | 'updateBody'> & {
@@ -183,35 +184,39 @@ export function tellGitHubEffect(options: TellOptions): Effect.Effect<Told> {
       )
       if (Result.isFailure(written)) {
         const err = written.failure
-        yield* recordEffect(
-          store,
-          ticketId,
-          'IssueUpdateFailed', // the update threw
-          {
-            project,
-            issue: String(issue),
-            change: change.kind,
-            error: (err as Error).message,
-            ...(change.kind === 'comment-edited' || (change.kind === 'comment' && change.waitId !== undefined)
-              ? { waitId: change.waitId! }
-              : {}),
-          },
+        yield* quietly(
+          recordIssueUpdate(
+            store,
+            ticketId,
+            'IssueUpdateFailed', // the update threw
+            {
+              project,
+              issue: String(issue),
+              change: change.kind,
+              error: (err as Error).message,
+              ...(change.kind === 'comment-edited' || (change.kind === 'comment' && change.waitId !== undefined)
+                ? { waitId: change.waitId! }
+                : {}),
+            },
+          ),
         )
         return { recorded: 'IssueUpdateFailed', error: err } as const
       }
       const detail = written.success
-      yield* recordEffect(store, ticketId, 'IssueUpdated', {
-        project,
-        issue: String(issue),
-        change: change.kind,
-        detail,
-        ...(change.kind === 'comment' || change.kind === 'comment-edited'
-          ? {
-              ...(change.waitId !== undefined ? { waitId: change.waitId } : {}),
-              ...(change.kind === 'comment' && change.question !== undefined ? { question: change.question } : {}),
-            }
-          : {}),
-      })
+      yield* quietly(
+        recordIssueUpdate(store, ticketId, 'IssueUpdated', {
+          project,
+          issue: String(issue),
+          change: change.kind,
+          detail,
+          ...(change.kind === 'comment' || change.kind === 'comment-edited'
+            ? {
+                ...(change.waitId !== undefined ? { waitId: change.waitId } : {}),
+                ...(change.kind === 'comment' && change.question !== undefined ? { question: change.question } : {}),
+              }
+            : {}),
+        }),
+      )
       return { recorded: 'IssueUpdated' } as const
     }),
   )
@@ -340,22 +345,26 @@ function sweepRefsHeldEffect(options: {
         }).pipe(Effect.catchDefect((defect) => Effect.fail(defect))),
       )
       if (Result.isFailure(swept)) {
-        yield* recordEffect(store, ticketId, 'IssueUpdateFailed', {
+        yield* quietly(
+          recordIssueUpdate(store, ticketId, 'IssueUpdateFailed', {
+            project,
+            issue: String(issue),
+            change: 'refs',
+            error: sweepFailure(swept.failure, gone),
+          }),
+        )
+        return false
+      }
+      yield* quietly(
+        recordIssueUpdate(store, ticketId, 'IssueUpdated', {
           project,
           issue: String(issue),
           change: 'refs',
-          error: sweepFailure(swept.failure, gone),
-        })
-        return false
-      }
-      yield* recordEffect(store, ticketId, 'IssueUpdated', {
-        project,
-        issue: String(issue),
-        change: 'refs',
-        // The names and not the count, because *which* arms went is the only thing
-        // a reader coming back to this row can no longer get from the remote.
-        detail: gone.length === 0 ? 'none' : gone.join(','),
-      })
+          // The names and not the count, because *which* arms went is the only thing
+          // a reader coming back to this row can no longer get from the remote.
+          detail: gone.length === 0 ? 'none' : gone.join(','),
+        }),
+      )
       return true
     }),
   )
@@ -390,26 +399,8 @@ export function sweepFailure(err: unknown, gone: readonly string[]): string {
  * does, a swallowed append here is a fact nothing recovers. Swallowing is still
  * right: failing the caller would turn a lost record into a lost merge.
  *
- * Exported for `writeSection` (`edit-body.ts`, #422) alone, which appends a
- * second `IssueUpdated` when a write `tellGitHub` recorded as failed is found
- * on the read-back anyway — the call threw, but it had already landed.
  */
-export function recordEffect(
-  store: EventStore,
-  ticketId: string,
-  type: 'IssueUpdated' | 'IssueUpdateFailed',
-  data: Record<string, string>,
-): Effect.Effect<void> {
-  return attempt(() => store.read(ticketId)).pipe(
-    Effect.flatMap((events) =>
-      attempt(() =>
-        store.append(ticketId, events.length, [{ type, actor: 'conductor', data: parsePayload(type, data) }]),
-      ),
-    ),
-    // Deliberately silent: see above.
-    Effect.catchCause(() => Effect.void),
-  )
-}
+export const quietly = Effect.catchCause(() => Effect.void)
 
 function firstLine(text: string): string {
   return (
