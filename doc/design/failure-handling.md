@@ -229,7 +229,7 @@ summary: 给人读的一句话
    - **验收**：对照母票正文的 Done when，逐条检查是否已经满足。
    - **补完**：子票没覆盖到的部分，在这次 attempt 里做掉。
 
-   如果验收通过、也没有剩下的事，agent 不提交任何东西，只说明每条 Done when 由哪张子票满足。系统据此关闭母票，不走 merge。这种情况不当作 `nothing-produced` 去问 judge。【待定】这条"拆过票的母票零提交 = 验收通过"的规则需要确认。
+   如果验收通过、也没有剩下的事，agent 不提交任何东西，只说明每条 Done when 由哪张子票满足。这就是 implement 的 `AlreadyDone`（三点五节）：系统自动以 `satisfied` 关闭母票，不走 merge。（已定）
 4. **只拆一层**：自动拆出来的子票如果又被判定 `TicketTooBig` → **H**，不再自动拆。
 5. 子票必须按 write-ticket 的规范写（原则 6）。现在 triage 写的子票还达不到，0.18.0 会把同一套写票能力用到这里。
 
@@ -264,6 +264,8 @@ summary: 给人读的一句话
 | 8 | 自动拆票，只拆一层，母票按方案处理 | 0118 §12 |
 | 9 | `rounds` 从 4 调到 6 | 本机 recipe（只改配置） |
 | 10 | #1218、#1219（人在页面上点"重跑这一步"）改成走 R | 0.15.0 里已有的票，改正文 |
+| 12 | implement 的五种结果由 agent 声明并按 commit 核对；去掉 `nothing-produced`（并入 `AgentFailed`）；路由加原因 `already-done` 和去向 end；票加终态 `satisfied` | implement 的 prompt，`proposal.ts`，路由，ticket 的 reducer，看板 |
+| 13 | design 提问、implement 的 `Unclear`、triage 的 `UndecidedQuestion` 三处统一用 `TriageQuestion` 格式，答案用 `triageAnswersText` 写进正文 | `agent-action.ts`，`triage.ts`，Waiting 页面 |
 | 11 | write-ticket 的 Edges 清单、design 的提问清单都加上"一个动作被重做或跳过时，同一步里的其他动作怎么办" | write-ticket skill，`agent-action.ts:1398-1405` |
 
 ---
@@ -273,4 +275,7 @@ summary: 给人读的一句话
 - 母票一律放回队列；子票全部落地后，母票做验收并补完剩下的部分。（已定）
 - `rounds` 从 4 调到 6。（已定）
 - **R 的触发范围**：只有"这一步本身没做完"（第 2 类：agent 崩溃、超时、turns 用完、没有回执、回答读不懂）才走 R。"这一步做完了但结论是不通过"（第 3 类：build 红、review 有 findings）走修复轮 F，不走 R。（已定）
-- 【待定】拆过票的母票零提交 = 验收通过，关闭母票、不走 merge。
+- 拆过票的母票零提交 = `AlreadyDone`，系统自动以 `satisfied` 关闭，不走 merge。（已定）
+- implement 的五种结果、统一的提问格式、implement 之后沿用现有路由（三点五节）。（已定）
+
+**目前没有待定项。** 下一步：把这份方案改写进 ADR 0108 和 0118，再按第九节切票。
