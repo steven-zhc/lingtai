@@ -166,10 +166,11 @@ export function carryKeptWork(options: {
     const unstaged = yield* git(['reset', '-q'])
     if (Result.isFailure(unstaged))
       return yield* giveUp(`the carried edits could not be unstaged (${unstaged.failure.detail})`)
-    // A submodule replaced by a file (or the reverse) is in the patch and was applied: it is not left out.
-    const gitlinksLeft = gitlinks.filter((p) => !touched.includes(p))
+    // A submodule is never carried, even where the patch names its path: a file replaced by a submodule
+    // leaves only the file's deletion in the patch, and `reset` takes the gitlink back. Always named.
+    const gitlinksLeft = gitlinks.filter((p) => !leftOut.includes(p))
     return {
-      applied: touched.filter((p) => !leftOut.includes(p)),
+      applied: touched.filter((p) => !leftOut.includes(p) && !gitlinks.includes(p)),
       leftOut: [...leftOut, ...gitlinksLeft],
       unapplied: null,
     }
