@@ -1835,6 +1835,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       let stoppedBy: string | null = null
       /** Where the first implementer dispatch found the tree: a rerun's receipt is measured from it too (#1201). */
       let implementerStartedAt: string | null = null
+      /** The diff the first fix-round dispatch was briefed with: a rerun is briefed with the same one (#1201). */
+      let fixDiffSeen: { text: string; from: string | null; to: string | null } | null = null
       /**
        * Conflict fix rounds dispatched so far (#653). A conflict round leaves
        * `round` where `rounds` was, so `round` alone would hand Claude Code the
@@ -4815,9 +4817,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // there is a continuation — see `baseShaOr`'s own comment.
           // The reviewer's own spelling (`DIFF_FLAGS`), as `fixBrief`'s doc says the
           // two should be looking at the same change, and the two shas it ran between.
-          const underReview = yield* changeStart(continuation?.diffBaseSha ?? tree.baseSha).pipe(
-            Effect.flatMap((start) => diffBetween(start)),
-          )
+          // A rerun in place (#1201) is handed the diff the cut-off round saw, not the partly fixed tree.
+          const underReview =
+            brief.context.rerun !== undefined && fixDiffSeen !== null
+              ? fixDiffSeen
+              : yield* changeStart(continuation?.diffBaseSha ?? tree.baseSha).pipe(
+                  Effect.flatMap((start) => diffBetween(start)),
+                )
+          fixDiffSeen = underReview
           // The same flag `firstDispatch` sets before its own dispatch, and for
           // the same reason (`#468`): an agent is running, and nothing has
           // judged what it leaves in the worktree if it is interrupted here.
