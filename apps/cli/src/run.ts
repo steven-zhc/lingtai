@@ -384,9 +384,10 @@ export function run(
       // A standing GitHub limit is heeded before the client's first request (0126 §5): building
       // it looks up the installation, which is a call GitHub would answer with the same limit.
       const github = yield* readAccount(options.store ?? eventStore, 'github').pipe(
-        Effect.catch(() => Effect.succeed(null)),
+        // A read that failed says nothing about the lock, so it is not "no lock": no client is built.
+        Effect.catch((e) => refuse(`could not read the GitHub account's limit: ${String(e)}`)),
       )
-      if (github?.limit != null && github.limit.until.getTime() > Date.now()) {
+      if (github.limit !== null && github.limit.until.getTime() > Date.now()) {
         const { name, limit } = accountWords('github')
         return yield* Effect.fail(
           new ProjectLocked({ sentence: `${name}'s ${limit} stands until ${github.limit.until.toISOString()}` }),
