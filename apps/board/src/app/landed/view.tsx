@@ -108,6 +108,13 @@ function Notes({ row, entries }: { row: TicketReportRow; entries: readonly Backl
       {decisions.map((w) => (
         <p key={w.waitId} className="ld-decision">
           A person decided: {moveTitle(w.resolution!)}
+          {w.by === null ? null : (
+            <span className="ld-by">
+              {' '}
+              — {w.by}
+              {w.onSha === null ? '' : `, on ${w.onSha.slice(0, 7)}`}
+            </span>
+          )}
         </p>
       ))}
       {entries.length === 0 ? null : (

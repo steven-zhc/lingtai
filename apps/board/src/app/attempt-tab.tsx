@@ -11,6 +11,7 @@ import type { AttemptTabDetail, AttemptView } from '@/lib/task'
 
 import { Evidence, RunDiff } from './evidence.tsx'
 import { HistoryRow } from './history-row.tsx'
+import { LandingLineView } from './landing-line.tsx'
 import { DocumentBody } from './markdown.tsx'
 import { Segs } from './rail.tsx'
 import { RunLog } from './run-log.tsx'
@@ -107,6 +108,7 @@ export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDet
         {run.headSha ? <span className="mono">head {run.headSha.slice(0, 7)}</span> : null}
         {run.diff ? <span className="mono">{run.diff.branch}</span> : null}
       </p>
+      {run.landing == null ? null : <LandingLineView line={run.landing} />}
 
       <h3 className="asechead">Steps</h3>
       {/* All ten, always — including the ones nothing was configured at. A step

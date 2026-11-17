@@ -130,7 +130,15 @@ describe('takeBooks', () => {
         issue: '2',
         passTimes: [new Date(2026, 9, 10, 14, 0).toISOString(), new Date(2026, 9, 10, 9, 0).toISOString()],
         waits: [
-          { waitId: 'w', at: new Date().toISOString(), reason: 'SignoffRequired', triage: null, resolution: null },
+          {
+            waitId: 'w',
+            at: new Date().toISOString(),
+            reason: 'SignoffRequired',
+            triage: null,
+            resolution: null,
+            by: null,
+            onSha: null,
+          },
         ],
       }),
     ]

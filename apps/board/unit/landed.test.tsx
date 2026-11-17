@@ -119,7 +119,9 @@ describe('/landed page', () => {
 
   it('writes a decision in ink with the move title, the findings, and the clip', () => {
     const r = row({
-      waits: [{ waitId: 'w1', at: '', reason: 'x', triage: null, resolution: 'Approve' }],
+      waits: [
+        { waitId: 'w1', at: '', reason: 'x', triage: null, resolution: 'Approve', by: 'alice', onSha: '2f5bea9aaaa' },
+      ],
       summaryClipped: { read: 100, of: 900 },
     })
     const backlog = new Map([
@@ -127,6 +129,7 @@ describe('/landed page', () => {
     ])
     const out = html(data([r], { backlog }))
     expect(out).toContain('A person decided:')
+    expect(out).toContain('— alice, on 2f5bea9')
     expect(out).toContain('1 minor finding sent to the backlog')
     expect(out).toContain('a minor claim')
     expect(out).toContain('the reviewer read the first 100 of 900')
