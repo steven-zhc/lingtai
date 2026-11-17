@@ -738,6 +738,10 @@ function routedLine(d: Payload, { branch, endedAt }: Reading): string {
   const data = d as unknown as PayloadOf<'PassRouted'> | PayloadOf<'ProposalRouted'>
   const from = fromOf(data.offer.proposal)
   const move = routeMove(data.offer, data.reply, data.decision)
+  // A rule's landing again (#1221): `boardFactOf` has no fact for it, so the reason and the wait are said here.
+  if (move._tag === 'LandAgain') {
+    return `${from} → merge — ${clip(data.reply._tag === 'Selected' ? data.reply.why : 'landing again from the same head')}`
+  }
   if (move._tag !== 'WaitOnPerson') {
     // `boardFactOf` already answers `RoundOpened`/`Restarted` for these —
     // reaching here with one is that mapping disagreeing with this one.

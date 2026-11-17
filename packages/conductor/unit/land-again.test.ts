@@ -16,11 +16,22 @@ import { RECIPE, fakeGitHub, fakePorts, memoryStore, once, project, runtime } fr
 
 const MERGE_ERROR = ' ! [remote rejected]   main -> main (Internal Server Error)'
 
+/** Real sleeps, so the elapsed time is measurable; the sentences name them. */
+const WAITS = ['40 millis', '80 millis', '120 millis'] as const
+
 type Refusal = { reason: string; detail: string }
 
 /** The lane refuses `refusals` times in a row with `refusal`, then lands. */
-async function land(refusal: Refusal, refusals: number, recipe = RECIPE) {
+async function land(refusal: Refusal, refusals: number, recipe = RECIPE, refuseRoutes = false) {
+  const began = Date.now()
   const store = memoryStore()
+  if (refuseRoutes) {
+    const append = store.append.bind(store)
+    store.append = ((stream: string, at: number, events: readonly { type: string }[]) =>
+      events.some((e) => e.type === 'ProposalRouted')
+        ? Promise.reject(new Error('store refused'))
+        : append(stream, at, events as never)) as typeof store.append
+  }
   const did: string[] = []
   const ports = fakePorts(did, store, true)
   let lane = 0
@@ -43,16 +54,20 @@ async function land(refusal: Refusal, refusals: number, recipe = RECIPE) {
       home: '/tmp/fake-home',
       store,
       unreachableWaits: ['0 millis', '0 millis'],
-      transientWaits: ['1 millis', '2 millis', '3 millis'],
+      transientWaits: WAITS,
     },
     ports,
   )
+  const elapsed = Date.now() - began
   const events = [...store.streams.values()].flat()
   const routes = events.filter((e) => e.type === 'ProposalRouted')
-  const landAgains = routes.filter((e) => JSON.stringify(e.data).includes('"land-again"'))
+  // The routes a rule selected: the decision's own candidate, not any offer that merely mentions one.
+  const replyOf = (e: (typeof routes)[number]) =>
+    (e.data as { reply: { _tag: string; candidate?: string; why?: string } }).reply
+  const landAgains = routes.filter((e) => replyOf(e)._tag === 'Selected' && replyOf(e).candidate === 'land-again')
   const visits = (step: string) =>
     events.filter((e) => e.type === 'StepEnded' && JSON.stringify(e.data).includes(`"step":"${step}"`)).length
-  return { result, lane: () => lane, routes, landAgains, visits, events }
+  return { result, lane: () => lane, routes, landAgains, visits, events, elapsed, replyOf }
 }
 
 describe('a landing the lane refused because origin did not answer', () => {
@@ -75,13 +90,27 @@ describe('a landing the lane refused because origin did not answer', () => {
   })
 
   it('takes exactly TRANSIENT_RETRIES_LIMIT land-agains, then holds for a person and says how many', async () => {
-    const { result, lane, landAgains, events } = await land({ reason: 'remote-error', detail: MERGE_ERROR }, 99)
+    const { result, lane, landAgains, events, elapsed } = await land(
+      { reason: 'remote-error', detail: MERGE_ERROR },
+      99,
+    )
     expect(result.ok).not.toBe(true)
     expect(landAgains).toHaveLength(TRANSIENT_RETRIES_LIMIT)
+    // The waits were slept, in order, one per retry: 40 + 80 + 120 ms at least.
+    expect(elapsed).toBeGreaterThanOrEqual(240)
     // The first land, and one per retry.
     expect(lane()).toBe(TRANSIENT_RETRIES_LIMIT + 1)
     const held = JSON.stringify(events, (_k, v) => (typeof v === 'bigint' ? Number(v) : v))
     expect(held).toContain('"landedAgain":{"times":3')
+  })
+
+  it('names each retry and its wait in the route it records', async () => {
+    const { landAgains, replyOf } = await land({ reason: 'remote-error', detail: MERGE_ERROR }, 99)
+    expect(landAgains.map((e) => replyOf(e).why)).toEqual([
+      expect.stringContaining('after 40ms, retry 1 of 3'),
+      expect.stringContaining('after 80ms, retry 2 of 3'),
+      expect.stringContaining('after 120ms, retry 3 of 3'),
+    ])
   })
 
   it('is not asked of a declared judge while a land-again is on offer', async () => {
@@ -97,10 +126,36 @@ steps:
       when: merge-refused
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 `
-    const { result, landAgains, events } = await land({ reason: 'remote-error', detail: MERGE_ERROR }, 1, recipe)
+    // Judge-first would answer the first refusal with the judge's own reply, and no route would be a `land-again`.
+    const { result, landAgains, routes, replyOf } = await land(
+      { reason: 'remote-error', detail: MERGE_ERROR },
+      1,
+      recipe,
+    )
     if (result.ok !== true) throw new Error(`did not land: ${JSON.stringify(result)}`)
     expect(landAgains).toHaveLength(1)
-    expect(JSON.stringify(events, (_k, v) => (typeof v === 'bigint' ? Number(v) : v))).not.toContain('"Judged"')
+    expect(routes).toHaveLength(1)
+    expect(replyOf(routes[0]!)._tag).toBe('Selected')
+  })
+
+  it('asks a declared judge once the retries are spent', async () => {
+    const recipe = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  proposed:
+    - name: the lines
+      judge: same-worktree
+      when: merge-refused
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`
+    const { landAgains, routes, replyOf } = await land({ reason: 'remote-error', detail: MERGE_ERROR }, 3, recipe)
+    expect(landAgains).toHaveLength(TRANSIENT_RETRIES_LIMIT)
+    // The route after the three land-agains is the judge's: its reply is not a rule's land-again.
+    const after = routes.slice(TRANSIENT_RETRIES_LIMIT)
+    for (const r of after) expect(replyOf(r).candidate).not.toBe('land-again')
   })
 
   it.each(['push-rejected', 'base-protected', 'unexpected'])('does not land %s again', async (reason) => {
@@ -108,5 +163,18 @@ runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
     expect(result.ok).not.toBe(true)
     expect(lane()).toBe(1)
     expect(landAgains).toHaveLength(0)
+  })
+
+  it('spends no retry when its route cannot be recorded: it holds, having landed once', async () => {
+    const { result, lane, landAgains, elapsed } = await land(
+      { reason: 'remote-error', detail: MERGE_ERROR },
+      99,
+      RECIPE,
+      true,
+    )
+    expect(result.ok).not.toBe(true)
+    expect(lane()).toBe(1)
+    expect(landAgains).toHaveLength(0)
+    expect(elapsed).toBeLessThan(40)
   })
 })

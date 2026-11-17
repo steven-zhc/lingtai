@@ -1074,6 +1074,8 @@ export interface AttemptPortOptions {
   readonly mergeBase?: (toSha: string) => Effect.Effect<MergeBaseAnswer>
   /** The waits before each `land-again`, indexed by the retries already made; absent is `TRANSIENT_WAITS` (#1221). */
   readonly transientWaits?: readonly Duration.Input[]
+  /** Appends one route durably, answering false when the store refused; a `land-again` is taken only once it did (#1221). */
+  readonly appendRoute?: (route: RouteTaken) => Effect.Effect<boolean>
   /**
    * Starts the merge of the lane's `baseSha` in the attempt's own worktree, with `--no-commit`,
    * before a conflict round's agent does (#1120). Effect-only: it is not on `AttemptOptions`.
@@ -1185,6 +1187,8 @@ export interface RouteTaken {
    * walk — position cannot say which `StepEnded` it was.
    */
   readonly ended: { readonly version: number; readonly action: string } | null
+  /** Already appended before the walk returned (a `land-again`, #1221), so the batch skips it. */
+  readonly appended?: boolean
 }
 
 /** The limits that take a destination off the offer. `base-merges` is the free one (#593): it bounds a base that keeps moving, and costs no agent. */
@@ -1667,13 +1671,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // Read before `record` moves `onSha` to the merge commit (#671).
         const approvedHeadStands = approvedAt !== null && onSha === approvedAt
         const reviewedHeadStands = reviewedSha !== null && reviewedSha === onSha
-        record({
-          step: 'proposed',
-          ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
-          results: [],
-        })
         const chose = routed.chose ?? routed.to
-        routes.push({
+        const taken: RouteTaken = {
           from: reported?.step ?? 'proposed',
           chose,
           to: routed.to,
@@ -1683,7 +1682,36 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           reply,
           decision,
           ended,
+        }
+        // **A land-again spends a retry, so its route is durable before anything is spent** (#1221): the
+        // batch after the walk is best effort and a replay would count none. A store that refuses holds the
+        // attempt for a person exactly as it stood, with nothing recorded and nothing waited.
+        let appended = false
+        if (next._tag === 'LandAgain') {
+          appended = options.appendRoute === undefined ? false : yield* options.appendRoute(taken)
+          if (options.appendRoute !== undefined && !appended) {
+            stopped = reported
+            end = {
+              _tag: 'WaitOnPerson',
+              reason: {
+                _tag: 'ProposedEscalated',
+                run: { runId: options.context.runId },
+                proposal: offer.proposal,
+                because: {
+                  _tag: 'JudgeHandedOver',
+                  why: 'the route to land again could not be recorded, so no retry was spent',
+                },
+              },
+            }
+            return false
+          }
+        }
+        record({
+          step: 'proposed',
+          ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
+          results: [],
         })
+        routes.push(appended ? { ...taken, appended: true } : taken)
 
         switch (next._tag) {
           case 'MergeBase':
