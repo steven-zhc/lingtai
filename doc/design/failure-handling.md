@@ -22,30 +22,30 @@
 | head | 工作分支当前最新的 commit |
 | WIP | implement 的 agent 异常结束时还没提交的代码，由灵台替它提交成一个 commit（第三节） |
 
-**动作**（第五节）：失败后系统做的事，一共六个，加三个由规则直接执行的。
+**动作**（第五节）：失败后系统做的事，一共六个，加三个由规则直接执行的。**名字一律是"动词 + 名词"**，读起来就是接下来要做的事。
 
 | 词 | 中文 | 出发点 |
 |---|---|---|
 | `redoStep` | 重做这一步 | ↻ 同一步再做一遍 |
-| `fix` | 修复 | ➡ 接着往下做 |
-| `conflictFix` | 解冲突 | ➡ 接着往下做 |
-| `startOver` | 从头重来 | ⟲ 从 base 重来 |
-| `split` | 拆票 | ⟲ 从 base 重来 |
-| `toPerson` | 交给人 | — |
+| `fixRefusal` | 修掉被拒的地方（build 红、review 的 findings） | ➡ 接着往下做 |
+| `resolveConflict` | 解决合并冲突 | ➡ 接着往下做 |
+| `startNewAttempt` | 开一个新的 attempt（从头重来） | ⟲ 从 base 重来 |
+| `splitTicket` | 拆这张票 | ⟲ 从 base 重来 |
+| `askPerson` | 交给人决定 | — |
 | `rerunCommand` | 检查红了立刻再跑（规则） | ↻ 同一步再做一遍 |
 | `mergeBaseBranch` | base 动了合并进来（规则） | ➡ 接着往下做 |
-| `retryLand` | 重新落地（规则） | ↻ 同一步再做一遍 |
+| `retryLanding` | 重新落地（规则） | ↻ 同一步再做一遍 |
 
 **出发点**：
 - **➡ 接着往下做**：同一个 attempt，从当前 head 往前走，已有的 commit 都保留，再加新的。
 - **↻ 同一步再做一遍**：只把刚才出问题的那一步（或那一次检查）原样再做一遍，起点是当前 head。不往前推进，不回到 attempt 的开头，也不开新的 attempt。
 - **⟲ 从 base 重来**：开新的 attempt，从 base 开始，旧的改动不带。
 
-**上限**（第九节）：每个动作有自己的上限，名字由动作名变成复数：`redoStep` → `stepRedos`、`rerunCommand` → `commandReruns`、`fix` → `fixes`、`conflictFix` → `conflictFixes`、`startOver` → `startOvers`、`mergeBaseBranch` → `baseBranchMerges`、`retryLand` → `landRetries`；`split` 的上限是 `splitDepth`。
+**上限**（第九节）：每个动作有自己的上限，名字由动作名变成复数：`redoStep` → `stepRedos`、`rerunCommand` → `commandReruns`、`fixRefusal` → `refusalFixes`、`resolveConflict` → `conflictResolutions`、`startNewAttempt` → `newAttempts`、`mergeBaseBranch` → `baseBranchMerges`、`retryLanding` → `landingRetries`；`splitTicket` 的上限是 `splitDepth`。
 
 **implement 的结果**（第四节）：`Implemented`、`AgentFailed`、`Disputed`、`AlreadyDone`、`Unclear`。
 
-**`toPerson` 的三种**：`unclear`（需求不清楚）、`environment`（环境坏了）、`limit`（某个上限用完了）。
+**`askPerson` 的三种**：`unclear`（需求不清楚）、`environment`（环境坏了）、`limit`（某个上限用完了）。
 
 **票的终态**：`landed`（合进 main）、`satisfied`（已实现，这次没有合入代码）、被人 `Close`。
 
@@ -59,10 +59,10 @@
 2. **triage 只给建议，不动手；系统读它的建议去执行。**（已定）以前 triage 的建议写给人看，人照着去点按钮；现在系统照着去点。triage 只调用一次，给出一个结构化回答：机器读 `action`，人读 `summary`，页面直接显示这个回答（第七节）。
 3. **从已经提交的东西接着做。**（已定）失败不扔掉已有的 commit。只有判定方向错了，才从 base 重来。
 4. **没提交的丢了很正常。**（已定）不为保住没提交的东西写复杂逻辑；丢了顶多多 `redoStep` 一次，花不了多少 token。唯一的例外是 implement 的 agent 异常结束时留下的代码，由灵台替它提交（第三节）。
-5. **每条自动路径都有上限**，用完才交给人。（已定）这是第 1 条"程序必须有出口"的落实：每条路径都有计数和上限，用完时留下结束标识，写明是哪个上限、用了几次（`toPerson` 的 `limit`）。
+5. **每条自动路径都有上限**，用完才交给人。（已定）这是第 1 条"程序必须有出口"的落实：每条路径都有计数和上限，用完时留下结束标识，写明是哪个上限、用了几次（`askPerson` 的 `limit`）。
 6. **开票时把不了关，所以在 design 阶段把关。**（已定）票可能是人在 GitHub 上手工开的，系统现在也没有开票功能，开票时的质量我们限制不了。所以：
    - **design 阶段是系统唯一能把关的地方**：发现业务规则不清楚，就提问，进 Waiting 页面等人回答（`AgentQuestion`，#649）。
-   - **系统自己开的票**（`split` 出来的子票，以及以后 0.18 在看板上生成的票）**必须按 write-ticket 的规范写**。
+   - **系统自己开的票**（`splitTicket` 出来的子票，以及以后 0.18 在看板上生成的票）**必须按 write-ticket 的规范写**。
    - 失败处理只管怎么恢复，不替票补需求。
 
 ---
@@ -86,12 +86,12 @@
 
 ## 三、WIP（已定）
 
-> **WIP 只有一种来源：implement 这一步的 agent（首次实现，或 `fix` 里的 fixer）异常结束时，worktree 里还没提交的代码。灵台把它作为一个普通 commit 直接提交到这个 attempt 的工作分支 `agent/<n>`，再 push。**
+> **WIP 只有一种来源：implement 这一步的 agent（首次实现，或 `fixRefusal` 里的 fixer）异常结束时，worktree 里还没提交的代码。灵台把它作为一个普通 commit 直接提交到这个 attempt 的工作分支 `agent/<n>`，再 push。**
 
 - **异常结束指**：crash、timeout、`run.turns` 或 `run.usd` 用完，以及 agent 还在跑时 attempt 被停掉（`interrupted`）。
 - **不产生 WIP 的情况**：
   - design、review、merge：它们不写代码。现在的代码也只在 implement 里设置 `stoppedBy`（`conduct.ts:4684-4812`、`4931-5085`）。
-  - `conflictFix`：再做时会重新 merge、重新拿到冲突标记，存下来没有意义。
+  - `resolveConflict`：再做时会重新 merge、重新拿到冲突标记，存下来没有意义。
   - agent 正常结束但零提交：不算异常，按 agent 声明的类型处理（第四节）。
   - agent 根本没启动（never-started）：它什么都没碰。
 - **内容**：`git add -A` 能收进去的改动，不包括被 `.gitignore` 忽略的文件，也不包括种进去的 env 文件。commit message 用固定前缀，例如 `wip: implement cut off by <原因>`。日志里记一条 `RunKeptUncommitted`。
@@ -99,7 +99,7 @@
   - lane 原本拒绝带 `wip:` commit 的分支（`packages/repo/src/integrate.ts:520-536`），理由是"做到一半的 commit 不能落到 main"。现在落地的永远是 build 和 review 检查过的那个 head（#1209）。
   - implement 要求分块提交，agent 自己的中间 commit 也不保证每个都能编译，WIP commit 和它们没区别。
   - lane 用 merge commit 合进 main，main 的 first-parent 链上每个点都是检查过的。
-- **配套要改的**：删掉 lane 的 `wip-commit` 拒绝；判断"有没有产出 commit"时不算 WIP commit（按 message 前缀识别）；`keepUncommittedWork` 改为提交到工作分支，`conflictFix` 和零提交时不提交；**删掉 #1170**（把 WIP 打到下一个 attempt 的新 worktree 上）：同一个 attempt 里 `redoStep` 直接从 head 做，换 attempt 只剩 `startOver`，而 `startOver` 不该带旧改动。
+- **配套要改的**：删掉 lane 的 `wip-commit` 拒绝；判断"有没有产出 commit"时不算 WIP commit（按 message 前缀识别）；`keepUncommittedWork` 改为提交到工作分支，`resolveConflict` 和零提交时不提交；**删掉 #1170**（把 WIP 打到下一个 attempt 的新 worktree 上）：同一个 attempt 里 `redoStep` 直接从 head 做，换 attempt 只剩 `startNewAttempt`，而 `startNewAttempt` 不该带旧改动。
 
 ---
 
@@ -111,9 +111,9 @@ agent 在最终回答里**明确声明**属于哪一种，系统再核对一次�
 |---|---|---|---|
 | `Implemented` | 做完了 | 正常结束，有至少 1 个 agent 自己的 commit | 直接进 build，不经过路由 |
 | `AgentFailed` | 没做完 | 异常结束（第三节）；或零提交又没说明原因 | 有 WIP 就提交 → `redoStep` |
-| `Disputed` | `fix` 里的 fixer 认为 finding 不成立 | 零提交，说明不同意哪条、为什么 | 路由（`fixer-disagrees`）→ judge 裁定：fixer 对 → 这条 finding 作废并记进 backlog，往下走；reviewer 对 → 带着 judge 的理由再 `fix` |
-| `AlreadyDone` | 要做的事 base 上已经有了 | 零提交，逐条说明每项 Done when 由什么满足 | 路由（新原因 `already-done`）→ 不走 build、review、merge，直接到 end，终态 `satisfied`。`split` 过的母票（子票全部落地）由系统自动关闭；其他情况（重复票、被别的票顺手修了）交给人确认后再关 |
-| `Unclear` | 照着票写的做不下去 | 零提交，按下面的格式列出问题 | 路由（`needs-input`，现有的 `InputNeeded{from: 'implement'}`）→ `toPerson`（unclear）→ 人回答，答案写进正文 → `redoStep` |
+| `Disputed` | `fixRefusal` 里的 fixer 认为 finding 不成立 | 零提交，说明不同意哪条、为什么 | 路由（`fixer-disagrees`）→ judge 裁定：fixer 对 → 这条 finding 作废并记进 backlog，往下走；reviewer 对 → 带着 judge 的理由再 `fixRefusal` |
+| `AlreadyDone` | 要做的事 base 上已经有了 | 零提交，逐条说明每项 Done when 由什么满足 | 路由（新原因 `already-done`）→ 不走 build、review、merge，直接到 end，终态 `satisfied`。`splitTicket` 过的母票（子票全部落地）由系统自动关闭；其他情况（重复票、被别的票顺手修了）交给人确认后再关 |
+| `Unclear` | 照着票写的做不下去 | 零提交，按下面的格式列出问题 | 路由（`needs-input`，现有的 `InputNeeded{from: 'implement'}`）→ `askPerson`（unclear）→ 人回答，答案写进正文 → `redoStep` |
 
 ### 提问的格式（已定）
 
@@ -144,15 +144,15 @@ questions: 最多 5 个
 | 动作 | 做什么 | 出发点 | 上限 |
 |---|---|---|---|
 | **`redoStep`** 重做这一步 | 只重做出错的这一步，不重走整个流程 | ↻ 工作分支的 head（含 WIP commit），其他没提交的改动丢掉 | `stepRedos` |
-| **`fix`** 修复 | build 红、review 有 findings：带着证据（命令输出、findings）回 implement，在当前 head 上修，修完再走 build 和 review | ➡ 同一个 worktree，当前 head | `fixes` |
-| **`conflictFix`** 解冲突 | 合并冲突：带着冲突文件回 implement，在当前 head 上重新 merge、把冲突解掉，再走 build 和 review | ➡ 当前 head | `conflictFixes` |
-| **`startOver`** 从头重来 | 方向错了，开一个新 attempt | ⟲ base；旧方案推到 arm 分支留档，旧改动一律不带 | `startOvers` |
-| **`split`** 拆票 | 票太大：开子票，用 blocked-by 串起来；母票放回队列，等子票全部落地后验收并补完（第八节） | ⟲ 子票和母票都从 base 开始 | `splitDepth` |
-| **`toPerson`** 交给人 | 停在 Waiting 页面，按 `unclear`、`environment`、`limit` 显示需要人做什么 | — | — |
+| **`fixRefusal`** 修复 | build 红、review 有 findings：带着证据（命令输出、findings）回 implement，在当前 head 上修，修完再走 build 和 review | ➡ 同一个 worktree，当前 head | `refusalFixes` |
+| **`resolveConflict`** 解冲突 | 合并冲突：带着冲突文件回 implement，在当前 head 上重新 merge、把冲突解掉，再走 build 和 review | ➡ 当前 head | `conflictResolutions` |
+| **`startNewAttempt`** 从头重来 | 方向错了，开一个新 attempt | ⟲ base；旧方案推到 arm 分支留档，旧改动一律不带 | `newAttempts` |
+| **`splitTicket`** 拆票 | 票太大：开子票，用 blocked-by 串起来；母票放回队列，等子票全部落地后验收并补完（第八节） | ⟲ 子票和母票都从 base 开始 | `splitDepth` |
+| **`askPerson`** 交给人 | 停在 Waiting 页面，按 `unclear`、`environment`、`limit` 显示需要人做什么 | — | — |
 
-`fix` 和 `conflictFix` 做法一样（回 implement 在 head 上改），但起因和证据不同，所以是两个动作、两个上限。
+`fixRefusal` 和 `resolveConflict` 做法一样（回 implement 在 head 上改），但起因和证据不同，所以是两个动作、两个上限。
 
-另外三个**由规则直接执行**，不经过 triage：`rerunCommand`（`commandReruns`）、`mergeBaseBranch`（`baseBranchMerges`）、`retryLand`（`landRetries`）。
+另外三个**由规则直接执行**，不经过 triage：`rerunCommand`（`commandReruns`）、`mergeBaseBranch`（`baseBranchMerges`）、`retryLanding`（`landingRetries`）。
 
 **`redoStep` 和 `rerunCommand` 都是"同一步再做一遍"，但不合并**（2026-11-17）：
 
@@ -162,7 +162,7 @@ questions: 最多 5 个
 | 再做什么 | 整个 step，包括再跑一次 agent | 只把那条检查命令再跑一次，不跑 agent |
 | 花不花钱 | 花（一次 agent run） | 不花（只花检查的时间） |
 | 等多久 | 1、5、15 分钟 | 立刻 |
-| 第二次的结果怎么用 | 当成这一步的结果，照常往下走 | 和第一次比：红了又绿 → 按 flaky 规则放行，记一条 backlog；两次都红 → 走 `fix` |
+| 第二次的结果怎么用 | 当成这一步的结果，照常往下走 | 和第一次比：红了又绿 → 按 flaky 规则放行，记一条 backlog；两次都红 → 走 `fixRefusal` |
 | 上限 | `stepRedos` 3 次 | `commandReruns` 1 次 |
 
 合并成一个会出两个问题：检查一红就要等 1 分钟、还占掉 agent 重做的次数；flaky 判断需要"同一个 commit 上两次结果对比"，`redoStep` 没有这层意思。如果检查命令本身没跑完（进程被杀、超时），那是"没做完"，走 `redoStep`。
@@ -177,7 +177,7 @@ questions: 最多 5 个
 - review 也走 `redoStep`，但不加这段说明：review 只读已提交的东西，没有什么会丢。
 - implement 判断"有没有产出 commit"时，拿这一步**最初**开始时的 sha 来比，并且不算 WIP commit。
 - **implement 的 brief 要求分块提交**：每完成一块能跑通的部分就提交一次，被打断时丢得最少。
-- **只有"这一步本身没做完"才走 `redoStep`**（第六节第 2 类）。"这一步做完了、结论是不通过"（build 红、review 有 findings）走 `fix`，不走 `redoStep`。
+- **只有"这一步本身没做完"才走 `redoStep`**（第六节第 2 类）。"这一步做完了、结论是不通过"（build 红、review 有 findings）走 `fixRefusal`，不走 `redoStep`。
 - 触发 `redoStep` 的入口：瞬时错误、不认识的崩溃、没有回执、回答读不懂（规则，自动）；`run.turns`/`run.wall` 用完后 triage 判断"只是没做完"（自动）；`Unclear` 被人回答之后；人在页面上点"在保存的工作上重做这一步"（#1218、#1219，改成走 `redoStep`）。
 
 ---
@@ -190,7 +190,7 @@ questions: 最多 5 个
 |---|---|
 | recipe 解析不了、没配 App、数据库连不上 | 认领之前就挡掉，不认领、不花钱（0108 §1） |
 | prepared 失败，原因是瞬时错误（registry 5xx） | 规则 → `redoStep` |
-| prepared 失败，其他原因 | triage 判定 `SetupBroken` → `toPerson`（environment） |
+| prepared 失败，其他原因 | triage 判定 `SetupBroken` → `askPerson`（environment） |
 | agent 根本没启动（账户额度用完） | 规则：锁住这个账户，额度重置后自动解锁；解锁后从保存的 head 重新做这一步（#1205） |
 
 ### 第 2 类：一步没跑完（agent 异常结束）
@@ -200,44 +200,44 @@ questions: 最多 5 个
 | 瞬时 API 错误（5xx、529、429、Cloudflare） | 规则 → `redoStep` |
 | 不认识的崩溃、没有回执 | 规则 → `redoStep` |
 | 回答读不懂 | 规则 → `redoStep`（不再单独记"重问一次"） |
-| `run.turns` 或 `run.wall` 用完 | triage：`TicketTooBig` 并附拆票方案 → `split`；`TicketTooBig` 没有方案 → 把耗时点写进正文，然后 `redoStep`；只是没做完 → `redoStep` |
-| `stepRedos` 用完 | `toPerson`（limit） |
+| `run.turns` 或 `run.wall` 用完 | triage：`TicketTooBig` 并附拆票方案 → `splitTicket`；`TicketTooBig` 没有方案 → 把耗时点写进正文，然后 `redoStep`；只是没做完 → `redoStep` |
+| `stepRedos` 用完 | `askPerson`（limit） |
 
 ### 第 3 类：对代码的判断不通过
 
 | 情况 | 处理 |
 |---|---|
-| build 红 | 规则：`rerunCommand`（0108 §17）；红了又绿且满足 flaky 的三个条件 → 放行，在 backlog 记一条 minor。base 上也红 → 放回队列，保留 head（0108 §13）。否则 → `fix` |
-| review 有 findings | triage：`FixableLines` → `fix`；`WrongApproach` → `startOver` |
-| review 的 diff 太大，读不完 | triage：`TicketTooBig` 并附方案 → `split`；否则 → `toPerson`（limit） |
+| build 红 | 规则：`rerunCommand`（0108 §17）；红了又绿且满足 flaky 的三个条件 → 放行，在 backlog 记一条 minor。base 上也红 → 放回队列，保留 head（0108 §13）。否则 → `fixRefusal` |
+| review 有 findings | triage：`FixableLines` → `fixRefusal`；`WrongApproach` → `startNewAttempt` |
+| review 的 diff 太大，读不完 | triage：`TicketTooBig` 并附方案 → `splitTicket`；否则 → `askPerson`（limit） |
 | implement 零提交 | 按 agent 声明的结果处理（第四节）：`Disputed`、`AlreadyDone`、`Unclear`，或按 `AgentFailed` 处理 |
-| 合并冲突 | 冲突块不超过 5 个 → `conflictFix`；更多时 triage `ConflictingHunks`：两边逻辑矛盾 → `startOver`；有只能由人判断的冲突块 → `toPerson`（unclear）；否则 → `conflictFix` |
-| `fixes` 或 `conflictFixes` 用完 | triage 判定 `WrongApproach` → `startOver`；否则 → `toPerson`（limit） |
+| 合并冲突 | 冲突块不超过 5 个 → `resolveConflict`；更多时 triage `ConflictingHunks`：两边逻辑矛盾 → `startNewAttempt`；有只能由人判断的冲突块 → `askPerson`（unclear）；否则 → `resolveConflict` |
+| `refusalFixes` 或 `conflictResolutions` 用完 | triage 判定 `WrongApproach` → `startNewAttempt`；否则 → `askPerson`（limit） |
 
 ### 第 4 类：票本身的问题
 
 | 情况 | 处理 |
 |---|---|
-| design 阶段提问（`AgentQuestion`） | `toPerson`（unclear） |
-| triage 判定 `UndecidedQuestion` | `toPerson`（unclear） |
-| triage 判定 `TicketTooBig` | `split` |
-| triage 判定 `WrongApproach` | `startOver` |
+| design 阶段提问（`AgentQuestion`） | `askPerson`（unclear） |
+| triage 判定 `UndecidedQuestion` | `askPerson`（unclear） |
+| triage 判定 `TicketTooBig` | `splitTicket` |
+| triage 判定 `WrongApproach` | `startNewAttempt` |
 
 ### 第 5 类：落地时的问题
 
 | 情况 | 处理 |
 |---|---|
 | base 动了 | 规则：`mergeBaseBranch`，重新 build；只有 base 的改动碰到分支改过的文件，review 才重做（#1210） |
-| push 遇到瞬时错误 | 规则：`retryLand`，从保存的 head 重新落地（#1221） |
-| push 被拒且重试也没用 | `toPerson`（environment） |
-| 分支已经不在了 | `startOver` |
+| push 遇到瞬时错误 | 规则：`retryLanding`，从保存的 head 重新落地（#1221） |
+| push 被拒且重试也没用 | `askPerson`（environment） |
+| 分支已经不在了 | `startNewAttempt` |
 
 ### 第 6 类：triage 自己失败
 
 | 情况 | 处理 |
 |---|---|
 | triage 崩溃，或回答读不懂 | 规则：再问一次（`triageRetries`） |
-| 还是失败 | `toPerson`，页面写明"triage 没有给出建议" |
+| 还是失败 | `askPerson`，页面写明"triage 没有给出建议" |
 
 ---
 
@@ -246,38 +246,38 @@ questions: 最多 5 个
 ### 回答的格式
 
 ```
-action:  redoStep | fix | conflictFix | startOver | split | toPerson
+action:  redoStep | fixRefusal | resolveConflict | startNewAttempt | splitTicket | askPerson
 cause:   triage 判断的原因（现有六种之一）
 附带的内容：
-  redoStep     →  正文要补的一句（可选，比如"turns 主要耗在 X 上"）
-  fix          →  要改的行：[{path, line, what}]
-  conflictFix  →  每个冲突块的建议解法
-  startOver    →  一句话：旧方案哪里错了（写进下一个 attempt 的 brief）
-  split        →  拆票方案：子票列表，以及母票还有没有剩余部分
-  toPerson     →  unclear（问题和选项，第四节的格式） | environment（哪里坏了、怎么修）
+  redoStep         →  正文要补的一句（可选，比如"turns 主要耗在 X 上"）
+  fixRefusal       →  要改的行：[{path, line, what}]
+  resolveConflict  →  每个冲突块的建议解法
+  startNewAttempt  →  一句话：旧方案哪里错了（写进下一个 attempt 的 brief）
+  splitTicket      →  拆票方案：子票列表，以及母票还有没有剩余部分
+  askPerson        →  unclear（问题和选项，第四节的格式） | environment（哪里坏了、怎么修）
 summary: 给人读的一句话
 ```
 
-- **页面直接读这个回答。** `toPerson` 时按种类显示"需要你做什么"：unclear 显示问题和选项，人在页面上作答，答案写进正文后 `redoStep`；environment 显示哪里坏了、用什么命令修。其他五个动作时，页面只显示一行"系统做了什么、为什么"，不开 wait。
+- **页面直接读这个回答。** `askPerson` 时按种类显示"需要你做什么"：unclear 显示问题和选项，人在页面上作答，答案写进正文后 `redoStep`；environment 显示哪里坏了、用什么命令修。其他五个动作时，页面只显示一行"系统做了什么、为什么"，不开 wait。
 - **`limit` 由系统给出，不来自 triage**，写明是哪个上限、用了几次。
-- **`Approve`（跳过拒绝直接落地）和 `Close`（关票）只留给人**，triage 不能选。唯一的例外是 `split` 过的母票得到 `AlreadyDone` 时，由系统以 `satisfied` 关闭（第四节）。
+- **`Approve`（跳过拒绝直接落地）和 `Close`（关票）只留给人**，triage 不能选。唯一的例外是 `splitTicket` 过的母票得到 `AlreadyDone` 时，由系统以 `satisfied` 关闭（第四节）。
 - 所有自动执行都在日志里记成 `by: triage`。
 
 ### 原因 → 动作
 
 | triage 判断的原因 | 系统执行 | 前提 | 前提不满足时 |
 |---|---|---|---|
-| `FixableLines` | `fix` | 还有 `fixes` | `toPerson`（limit） |
-| `WrongApproach` | `startOver` | 还有 `startOvers` | `toPerson`（limit） |
-| `TicketTooBig` 并附拆票方案 | `split` | 这张票不是 `split` 出来的子票（`splitDepth`） | `toPerson`（limit） |
-| `TicketTooBig` 没有方案 | 把耗时点写进正文，然后 `redoStep` | 还有 `stepRedos` | `toPerson`（limit） |
-| `ConflictingHunks` | 能逐块解 → `conflictFix`；两边逻辑矛盾 → `startOver` | 没有只能由人判断的冲突块；还有 `conflictFixes` / `startOvers` | 有人判断的块 → `toPerson`（unclear）；上限用完 → `toPerson`（limit） |
-| `SetupBroken` | `toPerson`（environment） | — | — |
-| `UndecidedQuestion` | `toPerson`（unclear） | — | — |
+| `FixableLines` | `fixRefusal` | 还有 `refusalFixes` | `askPerson`（limit） |
+| `WrongApproach` | `startNewAttempt` | 还有 `newAttempts` | `askPerson`（limit） |
+| `TicketTooBig` 并附拆票方案 | `splitTicket` | 这张票不是 `splitTicket` 出来的子票（`splitDepth`） | `askPerson`（limit） |
+| `TicketTooBig` 没有方案 | 把耗时点写进正文，然后 `redoStep` | 还有 `stepRedos` | `askPerson`（limit） |
+| `ConflictingHunks` | 能逐块解 → `resolveConflict`；两边逻辑矛盾 → `startNewAttempt` | 没有只能由人判断的冲突块；还有 `conflictResolutions` / `newAttempts` | 有人判断的块 → `askPerson`（unclear）；上限用完 → `askPerson`（limit） |
+| `SetupBroken` | `askPerson`（environment） | — | — |
+| `UndecidedQuestion` | `askPerson`（unclear） | — | — |
 
 ---
 
-## 八、拆票（`split`，已定）
+## 八、拆票（`splitTicket`，已定）
 
 1. triage 写拆票方案：最多 8 张子票，每张有标题、正文、kind，以及子票之间的先后关系。
 2. 系统直接开票，**不加 `agent:hold`**，用 blocked-by 串起来，子票按顺序进队列。写入过程沿用 0118 §12 已经做好的部分（标记、对账、中断后可以重试）。
@@ -286,7 +286,7 @@ summary: 给人读的一句话
    - **补完**：子票没覆盖到的部分，在这次 attempt 里做掉。
 
    验收通过、也没有剩下的事，agent 零提交并声明 `AlreadyDone`，说明每条 Done when 由哪张子票满足；系统自动以 `satisfied` 关闭母票，不走 merge。
-4. **只拆一层**（`splitDepth` = 1）：`split` 出来的子票如果又被判定 `TicketTooBig` → `toPerson`（limit），不再自动拆。
+4. **只拆一层**（`splitDepth` = 1）：`splitTicket` 出来的子票如果又被判定 `TicketTooBig` → `askPerson`（limit），不再自动拆。
 5. 子票必须按 write-ticket 的规范写（原则 6）。现在 triage 写的子票还达不到，0.18.0 会把同一套写票能力用到这里。
 
 ---
@@ -297,16 +297,16 @@ summary: 给人读的一句话
 
 | 上限 | 数的是什么 | 出发点 | 计数范围 | 值 | 放在哪 | 旧名字 |
 |---|---|---|---|---|---|---|
-| **`fixes`** | `fix`：build 红、review 有 findings，回 implement 在 head 上修 | ➡ 接着往下做 | 每个 attempt | **6** | recipe | `rounds` |
-| **`conflictFixes`** | `conflictFix`：合并冲突，回 implement 在 head 上解 | ➡ 接着往下做 | 每个 attempt | **6** | recipe | 没有自己的名字，借用 `rounds` 的值 |
+| **`refusalFixes`** | `fixRefusal`：build 红、review 有 findings，回 implement 在 head 上修 | ➡ 接着往下做 | 每个 attempt | **6** | recipe | `rounds` |
+| **`conflictResolutions`** | `resolveConflict`：合并冲突，回 implement 在 head 上解 | ➡ 接着往下做 | 每个 attempt | **6** | recipe | 没有自己的名字，借用 `rounds` 的值 |
 | `baseBranchMerges` | `mergeBaseBranch`：base 动了合并进来，再 build | ➡ 接着往下做 | 每个 attempt | 10 | 常量 | `BASE_MERGES_LIMIT` |
-| **`landRetries`** | `retryLand`：push 遇到瞬时错误后，同一个 head 再落地一次（#1221），不跑 agent | ↻ 同一步再做一遍 | 每个 attempt | 3 | 常量 | 现在和 `redoStep` 共用 `TRANSIENT_RETRIES_LIMIT` 的计数 |
+| **`landingRetries`** | `retryLanding`：push 遇到瞬时错误后，同一个 head 再落地一次（#1221），不跑 agent | ↻ 同一步再做一遍 | 每个 attempt | 3 | 常量 | 现在和 `redoStep` 共用 `TRANSIENT_RETRIES_LIMIT` 的计数 |
 | **`stepRedos`** | `redoStep`：瞬时错误、崩溃、没有回执、回答读不懂、`run.turns`/`run.wall` 用完后的"接着做" | ↻ 同一步再做一遍 | 每个 attempt | 3 | 常量 | `TRANSIENT_RETRIES_LIMIT` |
 | `stepRedoWaits` | 每次 `redoStep` 之前等多久 | （跟随 `stepRedos`） | — | 1、5、15 分钟 | 常量 | `TRANSIENT_WAITS` |
 | `commandReruns` | `rerunCommand`：检查红了，在同一个 commit 上立刻再跑 | ↻ 同一步再做一遍 | 每次红 | 1 | 常量 | 0108 §17，没有名字 |
-| **`startOvers`** | `startOver`：从头重来 | ⟲ 从 base 重来 | 每张票 | 2 | recipe | `restarts` |
-| `splitDepth` | `split`：自动拆票的层数 | ⟲ 从 base 重来 | 每张票 | **1** | 常量 | 没有，新加 |
-| `run.turns` | 一次 run 的轮数 | ■ 封顶（用完 → triage 决定 `split` 还是 `redoStep`） | 每次 run | 350 | recipe | `runtime.limits.turns` |
+| **`newAttempts`** | `startNewAttempt`：从头重来 | ⟲ 从 base 重来 | 每张票 | 2 | recipe | `restarts` |
+| `splitDepth` | `splitTicket`：自动拆票的层数 | ⟲ 从 base 重来 | 每张票 | **1** | 常量 | 没有，新加 |
+| `run.turns` | 一次 run 的轮数 | ■ 封顶（用完 → triage 决定 `splitTicket` 还是 `redoStep`） | 每次 run | 350 | recipe | `runtime.limits.turns` |
 | `run.wall` | 一次 run 的时长 | ■ 封顶（同上） | 每次 run | 75m | recipe | `runtime.limits.wall` |
 | `run.usd` | 一次 run 的花费 | ■ 封顶（同上） | 每次 run | 未设置 | recipe | `runtime.limits.usd` |
 | `designQuestions` | design 阶段停下来提问的次数（每次最多 5 个问题） | ■ 封顶（用完 → design 不能再问，必须自己决定） | 每张票 | **5**（现在是 2） | 常量 | #649 的 `designAsks` |
@@ -316,9 +316,9 @@ summary: 给人读的一句话
 **■ 封顶**：本身不重跑任何东西，用完时触发括号里写的动作。
 
 **改动说明：**
-- **`rounds` 拆成 `fixes` 和 `conflictFixes`，不再叫 round**：round 听起来像"再来一轮"，容易被理解成整个 attempt 重来；这两个动作其实是在当前 head 上接着修。两者起因和证据不同，分成两个参数，可以各自调整。
-- **`restarts` 改名为 `startOvers`**：`restart` 已经是 `lingtai restart`（重启 daemon）的名字。
-- **`landRetries` 从 `TRANSIENT_RETRIES_LIMIT` 里分出来**：重新落地只是再 push 一次，不跑 agent；`redoStep` 要跑 agent。现在两者共用一个计数，会互相占用次数。
+- **`rounds` 拆成 `refusalFixes` 和 `conflictResolutions`，不再叫 round**：round 听起来像"再来一轮"，容易被理解成整个 attempt 重来；这两个动作其实是在当前 head 上接着修。两者起因和证据不同，分成两个参数，可以各自调整。
+- **`restarts` 改名为 `newAttempts`**：`restart` 已经是 `lingtai restart`（重启 daemon）的名字。
+- **`landingRetries` 从 `TRANSIENT_RETRIES_LIMIT` 里分出来**：重新落地只是再 push 一次，不跑 agent；`redoStep` 要跑 agent。现在两者共用一个计数，会互相占用次数。
 - **`run.turns`/`run.wall` 用完后的"接着做"记到 `stepRedos`**：它本身就是 `redoStep`。
 - **recipe 按计数范围分组**：
 
@@ -326,14 +326,14 @@ summary: 给人读的一句话
   runtime:
     limits:
       run:     { turns: 350, wall: 75m }           # 一次 run
-      attempt: { fixes: 6, conflictFixes: 6 }       # 一个 attempt
-      ticket:  { startOvers: 2 }                    # 一张票
+      attempt: { refusalFixes: 6, conflictResolutions: 6 }       # 一个 attempt
+      ticket:  { newAttempts: 2 }                    # 一张票
   ```
 
-- **一张票最多自动跑多少次 run**：`(startOvers + 1) × (1 + fixes + conflictFixes + stepRedos)` = 3 × (1 + 6 + 6 + 3) = 48 次。`landRetries`、`baseBranchMerges`、`commandReruns` 不跑 agent，不计入。
+- **一张票最多自动跑多少次 run**：`(newAttempts + 1) × (1 + refusalFixes + conflictResolutions + stepRedos)` = 3 × (1 + 6 + 6 + 3) = 48 次。`landingRetries`、`baseBranchMerges`、`commandReruns` 不跑 agent，不计入。
 - **单张票的花费上限这次不加**：系统还没有按票统计花费的设计。以后需要时叫 `ticket.usd`，放在 `ticket` 分组里。
 
-**`fixes` 定为 6 的依据**：最近 7 天 lingtai 落地 228 张票，0 到 1 次修完的占 79%，5 次以上的占 4%（只看 feature 票是 13%）。按"第几次 review 通过"统计：第 4 次 review 时 16 张过了 8 张，第 5 次时 8 张过了 1 张。人工额外给修复的票里，#1170、#1177 都是多给 1 次就过了。
+**`refusalFixes` 定为 6 的依据**：最近 7 天 lingtai 落地 228 张票，0 到 1 次修完的占 79%，5 次以上的占 4%（只看 feature 票是 13%）。按"第几次 review 通过"统计：第 4 次 review 时 16 张过了 8 张，第 5 次时 8 张过了 1 张。人工额外给修复的票里，#1170、#1177 都是多给 1 次就过了。
 
 ---
 
@@ -348,8 +348,8 @@ summary: 给人读的一句话
 | `runtime.limits.turns` | 350 | 一次 run 最多多少轮 | 每次 run | `run.turns` |
 | `runtime.limits.wall` | 75m | 一次 run 最长多久 | 每次 run | `run.wall` |
 | `runtime.limits.usd` | 未设置 | 一次 run 最多花多少钱 | 每次 run | `run.usd` |
-| `runtime.limits.rounds` | 4 | 修复的上限；冲突也用这个数值，但两个计数器各算各的（`run-attempt.ts:1625` 把 `conflictRounds` 设成 `ceilings.rounds`） | 每个 attempt | `fixes` + `conflictFixes` |
-| `runtime.limits.restarts` | 2 | 从 base 重来 | 每张票 | `startOvers` |
+| `runtime.limits.rounds` | 4 | 修复的上限；冲突也用这个数值，但两个计数器各算各的（`run-attempt.ts:1625` 把 `conflictRounds` 设成 `ceilings.rounds`） | 每个 attempt | `refusalFixes` + `conflictResolutions` |
+| `runtime.limits.restarts` | 2 | 从 base 重来 | 每张票 | `newAttempts` |
 | `source.backoff` | 1h | 票放回队列后，最早多久能再被领 | 每次放回 | 不变 |
 | `triage.limits` | turns 100、wall 15m、usd $10 | 一次 triage 调用 | 每次调用 | `triage.*` |
 | `runtime.budget.diff` | 400000 字节 | diff 超过这个大小就不交给 review，直接交给人（0108 §14） | 每次 review | 不变 |
@@ -361,7 +361,7 @@ summary: 给人读的一句话
 
 | 位置 | 值 | 管什么 | 新名字 |
 |---|---|---|---|
-| `TRANSIENT_RETRIES_LIMIT`（`domain/src/failure/respond.ts:586`） | 3 | 原地重跑被瞬时错误打断的 run；落地重试也算在里面 | `stepRedos`、`landRetries` |
+| `TRANSIENT_RETRIES_LIMIT`（`domain/src/failure/respond.ts:586`） | 3 | 原地重跑被瞬时错误打断的 run；落地重试也算在里面 | `stepRedos`、`landingRetries` |
 | `TRANSIENT_WAITS`（`respond.ts:589`） | 1、5、15 分钟 | 每次重跑之前等多久 | `stepRedoWaits` |
 | `BASE_MERGES_LIMIT`（`respond.ts:579`） | 10 | base 动了之后自动合并 | `baseBranchMerges` |
 | 检查红了再跑一次（0108 §17） | 1 次 | build、声明的检查或 base check 红了立刻再跑 | `commandReruns` |
@@ -376,7 +376,7 @@ summary: 给人读的一句话
 |---|---|---|
 | `READS_PER_TURN` | 6 | triage 或讨论一轮最多读几个文件 |
 | `MAX_READ_ROUNDS`（`conductor/src/read-step.ts:29`） | 4 | 最多读几轮再必须给出回答 |
-| `CONFLICT_ROUND_HUNKS` | 5 | 冲突块不超过 5 个，一律 `conflictFix`，不管 triage 怎么判断 |
+| `CONFLICT_ROUND_HUNKS` | 5 | 冲突块不超过 5 个，一律 `resolveConflict`，不管 triage 怎么判断 |
 | `MERGE_HUNKS_ONE_BY_ONE` | 20 | 冲突块超过 20 个，就整体判断，不逐块判断 |
 | `TRIAGE_QUESTIONS_MAX` / `TRIAGE_ANSWERS_MAX` | 5 / 4 | 最多问 5 个问题，每个问题最多 4 个选项 |
 | `TRIAGE_FIXES_MAX` | 20 | `FixableLines` 最多列 20 处要改的地方 |
@@ -394,7 +394,7 @@ summary: 给人读的一句话
 
 | # | 改动 | 涉及 |
 |---|---|---|
-| 1 | WIP 直接提交到工作分支；`conflictFix` 和零提交时不提交；删掉 lane 的 `wip-commit` 拒绝；判断"有没有产出"时不算 WIP commit | `conduct.ts` 的 `keepUncommittedWork`，`integrate.ts`，0108 |
+| 1 | WIP 直接提交到工作分支；`resolveConflict` 和零提交时不提交；删掉 lane 的 `wip-commit` 拒绝；判断"有没有产出"时不算 WIP commit | `conduct.ts` 的 `keepUncommittedWork`，`integrate.ts`，0108 |
 | 2 | 删掉 #1170 的 WIP 携带 | `carry-wip-port.ts`，`conduct.ts` 的 `cut` |
 | 3 | `redoStep` 统一成一个工作流：从 head 整步重跑，brief 加说明；去掉 #1201 那套从被打断的动作接着跑 | 0108 §12，`run-attempt.ts`，`action.ts` |
 | 4 | 不认识的崩溃、没有回执、回答读不懂都走 `redoStep`；#1205 的 `askedAgainOn` 随之删掉 | 0108 §12、§18，`attempt.ts` |
@@ -402,10 +402,10 @@ summary: 给人读的一句话
 | 6 | implement 的五种结果由 agent 声明并按 commit 核对；去掉 `nothing-produced`（并入 `AgentFailed`）；路由加原因 `already-done` 和去向 end；票加终态 `satisfied` | implement 的 prompt，`proposal.ts`，路由，ticket 的 reducer，看板 |
 | 7 | design 提问、implement 的 `Unclear`、triage 的 `UndecidedQuestion` 统一用 `TriageQuestion` 格式，答案用 `triageAnswersText` 写进正文 | `agent-action.ts`，`triage.ts`，Waiting 页面 |
 | 8 | triage 的回答改成第七节的格式；系统按原因自动执行，记成 `by: triage`；triage 失败再问一次 | 0108 §16，0118，`wait.ts`，triage 的 prompt |
-| 9 | `run.turns`/`run.wall` 用完时交给 triage，由它判断 `split` 还是 `redoStep` | 0108 §12 |
-| 10 | 自动 `split`：只拆一层，母票放回队列，子票落地后验收并补完 | 0118 §12 |
-| 11 | 上限按第九节改名、分组：`rounds` → `fixes`（6）和 `conflictFixes`（6），`restarts` → `startOvers`，`TRANSIENT_RETRIES_LIMIT` → `stepRedos` 和 `landRetries`，等等；`designQuestions` 从 2 改为 5 | recipe 的 schema，`attemptCeiling`，`respond.ts`，本机 recipe |
-| 12 | 代码和界面里的 "round" 改成 fix：`GrantFixRound`、`FixRequested`、"Continue fixing current work"、"fix round" 等文案 | domain 事件和 resolution 的名字，看板，CLI |
+| 9 | `run.turns`/`run.wall` 用完时交给 triage，由它判断 `splitTicket` 还是 `redoStep` | 0108 §12 |
+| 10 | 自动 `splitTicket`：只拆一层，母票放回队列，子票落地后验收并补完 | 0118 §12 |
+| 11 | 上限按第九节改名、分组：`rounds` → `refusalFixes`（6）和 `conflictResolutions`（6），`restarts` → `newAttempts`，`TRANSIENT_RETRIES_LIMIT` → `stepRedos` 和 `landingRetries`，等等；`designQuestions` 从 2 改为 5 | recipe 的 schema，`attemptCeiling`，`respond.ts`，本机 recipe |
+| 12 | 代码和界面里的 "round"、"restart"、"requeue" 等改成第零节的动作名（`fixRefusal`、`resolveConflict`、`startNewAttempt`……）：`GrantFixRound`、`FixRequested`、"Continue fixing current work"、"fix round" 等文案 | domain 事件和 resolution 的名字，看板，CLI |
 | 13 | #1218、#1219（人在页面上点"重做这一步"）改成走 `redoStep` | 0.15.0 里已有的票，改正文 |
 | 14 | write-ticket 的 Edges 清单、design 的提问清单都加上"一个动作被重做或跳过时，同一步里的其他动作怎么办" | write-ticket skill，`agent-action.ts:1398-1405` |
 
@@ -420,11 +420,11 @@ summary: 给人读的一句话
 - 原则 1–6；处理分三层。
 - WIP：只来自 implement 的 agent 异常结束，由灵台提交到工作分支；删掉 #1170。
 - implement 的五种结果：`Implemented`、`AgentFailed`、`Disputed`、`AlreadyDone`、`Unclear`；提问统一用 `TriageQuestion` 格式；沿用现有路由，新加 `already-done` 和终态 `satisfied`。
-- 六个动作：`redoStep`、`fix`、`conflictFix`、`startOver`、`split`、`toPerson`；规则直接执行的三个：`rerunCommand`、`mergeBaseBranch`、`retryLand`。
-- `redoStep` 只用于"这一步本身没做完"；"做完了但不通过"走 `fix`。
-- `split`：全自动，只拆一层，母票放回队列，子票落地后验收并补完。
-- 上限名字和数值见第九节：`fixes` 6、`conflictFixes` 6、`stepRedos` 3、`landRetries` 3、`startOvers` 2、`splitDepth` 1、`designQuestions` 5；单张票的花费上限这次不加。
-- `Approve` 和 `Close` 只留给人；`split` 过的母票 `AlreadyDone` 时系统以 `satisfied` 关闭是唯一例外。
+- 六个动作：`redoStep`、`fixRefusal`、`resolveConflict`、`startNewAttempt`、`splitTicket`、`askPerson`；规则直接执行的三个：`rerunCommand`、`mergeBaseBranch`、`retryLanding`。
+- `redoStep` 只用于"这一步本身没做完"；"做完了但不通过"走 `fixRefusal`。
+- `splitTicket`：全自动，只拆一层，母票放回队列，子票落地后验收并补完。
+- 上限名字和数值见第九节：`refusalFixes` 6、`conflictResolutions` 6、`stepRedos` 3、`landingRetries` 3、`newAttempts` 2、`splitDepth` 1、`designQuestions` 5；单张票的花费上限这次不加。
+- `Approve` 和 `Close` 只留给人；`splitTicket` 过的母票 `AlreadyDone` 时系统以 `satisfied` 关闭是唯一例外。
 
 【待定】只剩一条：第十一节第 12 条里事件改名怎么处理旧事件，切票时定。
 
