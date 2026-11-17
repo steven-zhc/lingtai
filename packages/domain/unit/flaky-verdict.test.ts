@@ -95,6 +95,19 @@ describe('flakyVerdict', () => {
     expect(v.evidence).toContain('could not be read')
   })
 
+  it('keeps the shared assertion for every test of a consecutive FAIL group', () => {
+    const second = 'src/b.test.ts > other'
+    const first = [` FAIL  ${ENTRY}`, ` FAIL  ${second}`, 'AssertionError: shared', ' Test Files  2 failed (3)'].join(
+      '\n',
+    )
+    const records: BaseRecord[] = [{ sha: 'abcdef1', ok: false, evidence: first }]
+    const v = flakyVerdict(holds({ first, baseRecords: records }))
+    expect(v.passed).toBe(true)
+    if (!v.passed) return
+    expect(v.findings).toHaveLength(2)
+    for (const f of v.findings) expect(f.failureScenario).toContain('AssertionError: shared')
+  })
+
   it('requires every named test to be known', () => {
     const second = 'src/b.test.ts > other'
     const first = [` FAIL  ${ENTRY}`, ` FAIL  ${second}`, ' Test Files  2 failed (3)'].join('\n')

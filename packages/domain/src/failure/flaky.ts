@@ -121,9 +121,12 @@ export function flakyVerdict(input: FlakyInput): FlakyVerdict {
     const own: string[] = []
     for (let i = 0; i < lines.length; i++) {
       if (!isFail(lines[i] as string) || !(lines[i] as string).includes(entry)) continue
+      // Consecutive FAIL lines share one error, printed after the last of them: skip the group to reach it.
       let j = i + 1
+      while (j < lines.length && isFail(lines[j] as string)) j++
+      const bodyStart = j
       while (j < lines.length && !isFail(lines[j] as string) && !isSummary(lines[j] as string)) j++
-      own.push(...lines.slice(i, j))
+      own.push(lines[i] as string, ...lines.slice(bodyStart, j))
     }
     return {
       file: fileOf(entry),
