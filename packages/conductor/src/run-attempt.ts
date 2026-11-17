@@ -1395,6 +1395,18 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     let askingAgain: Step | null = null
     /** This visit is itself an `ask-again`'s (#1224). Cleared when the visit starts, so a later arrival is asked once more. */
     let arrivedAskedAgain = false
+    /** The one place `StepRerunInPlace` is appended: a crash's rerun and a rule's both spend the count before the wait. */
+    const emitRerunInPlace = (step: Step, retry: number, said: string, wait: Duration.Input) =>
+      options.emit({
+        type: 'StepRerunInPlace',
+        data: {
+          runId: options.context.runId,
+          step,
+          rerun: retry,
+          said,
+          waitMs: Duration.toMillis(Duration.fromInputUnsafe(wait)),
+        },
+      })
     /** The rerun an agent step is handed: the design it was briefed with, and every action before the one cut off or unread. */
     const rerunOf = (visit: NonNullable<typeof lastVisit>): NonNullable<typeof rerun> => {
       // The design this visit's agent was briefed with, after any `file-brief:` read it back: the
@@ -1772,23 +1784,16 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // **A rerun in place spends a retry too, and is durable first** (#1224), as a crash's is: a
         // daemon that dies during the wait has spent it. The route itself goes in the end-of-walk batch.
         if (next._tag === 'RerunStep') {
-          yield* options.emit({
-            type: 'StepRerunInPlace',
-            data: {
-              runId: options.context.runId,
-              step: next.step,
-              rerun: next.retry,
-              said:
-                next.step === 'prepared'
-                  ? offer.proposal._tag === 'SetupRefused'
-                    ? offer.proposal.output
-                    : ''
-                  : offer.proposal._tag === 'AnswerUnreadable'
-                    ? offer.proposal.raw
-                    : '',
-              waitMs: Duration.toMillis(Duration.fromInputUnsafe(rerunWait)),
-            },
-          })
+          yield* emitRerunInPlace(
+            next.step,
+            next.retry,
+            offer.proposal._tag === 'SetupRefused'
+              ? offer.proposal.output
+              : offer.proposal._tag === 'AnswerUnreadable'
+                ? offer.proposal.raw
+                : '',
+            rerunWait,
+          )
         }
         record({
           step: 'proposed',
@@ -2182,16 +2187,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           if (again !== null) {
             transientRetriesSpent += 1
             rerun = rerunOf({ context: visitContext, reached: visitedBefore, results: reached.results })
-            yield* options.emit({
-              type: 'StepRerunInPlace',
-              data: {
-                runId: options.context.runId,
-                step: at,
-                rerun: transientRetriesSpent,
-                said: reason.detail,
-                waitMs: Duration.toMillis(Duration.fromInputUnsafe(again.wait)),
-              },
-            })
+            yield* emitRerunInPlace(at, transientRetriesSpent, reason.detail, again.wait)
             yield* Effect.sleep(again.wait)
             continue
           }
