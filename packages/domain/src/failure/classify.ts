@@ -201,3 +201,32 @@ export function remoteErrorRef(text: string): string | null {
   const m = /^\s*!\s+\[remote rejected\]\s+\S+\s+->\s+(\S+)/im.exec(text)
   return m?.[1]?.replace(/^refs\/heads\//, '') ?? null
 }
+
+/**
+ * The lane's opening words for an `unreachable` refusal, one per cause (#1131). Git prints
+ * `the remote end hung up unexpectedly` for a dropped connection and for a push over GitHub's
+ * 2 GiB limit alike, so the lane writes which it could tell, and the sentence reads these rather
+ * than git's words a second time.
+ */
+export const UNREACHABLE_PHRASE = {
+  origin: 'origin could not be reached: ',
+  'origin-or-size': "origin could not be reached, or the push is over GitHub's 2 GiB limit: ",
+  size: "the push is over GitHub's 2 GiB limit: ",
+} as const
+
+export type UnreachableCause = keyof typeof UNREACHABLE_PHRASE
+
+const HUNG_UP = /remote end hung up unexpectedly/gi
+
+/**
+ * Why `text`, already read as `unreachable`, could not be reached. `size` when git's server names
+ * the limit; `origin-or-size` when `hung up` is the only unreachable sign left; else `origin`.
+ */
+export function unreachableCause(text: string): UnreachableCause {
+  if (/pack exceeds maximum allowed size/i.test(text)) return 'size'
+  const row = FAILURE_ROWS.find((r) => r.platform === 'git' && r.kind === 'unreachable')
+  if (row === undefined || row.platform === 'github' || row.pattern === undefined) return 'origin'
+  if (!HUNG_UP.test(text)) return 'origin'
+  HUNG_UP.lastIndex = 0
+  return row.pattern.test(text.replace(HUNG_UP, '')) ? 'origin' : 'origin-or-size'
+}

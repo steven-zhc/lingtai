@@ -64,7 +64,9 @@ import {
   UNREACHABLE_WAITS,
   WIP_COMMIT_PREFIX,
   type RefusalReason,
+  UNREACHABLE_PHRASE,
   classify,
+  unreachableCause,
   baseProtectedRemedies,
   parsePayload,
   reduceIntegration,
@@ -714,9 +716,12 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       // knows that is the only thing it has to answer for.
       Effect.catchTag('RepoFailed', (err) => {
         // origin did not answer, after the tries: nothing was judged (#1029).
-        const said = classify({ platform: 'git', text: err.stderr ?? err.detail })?.kind
+        const text = err.stderr ?? err.detail
+        const said = classify({ platform: 'git', text })?.kind
+        // Only a push can be over the size limit; a fetch that hung up is an origin that did not answer.
+        const cause = err.operation === 'git push' ? unreachableCause(text) : 'origin'
         return said === 'unreachable'
-          ? refuse('unreachable', `origin could not be reached: ${err.detail}`)
+          ? refuse('unreachable', `${UNREACHABLE_PHRASE[cause]}${err.detail}`)
           : said === 'remote-error'
             ? refuse('remote-error', `GitHub answered a server error on the push: ${err.detail}`)
             : refuse('unexpected', `the integration failed unexpectedly: ${err.detail}`)

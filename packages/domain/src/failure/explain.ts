@@ -46,6 +46,7 @@
  */
 import type { BlockDiagnosis, BlockRecommendation } from '../events.ts'
 import type { RefusalReason, RunFailureKind } from '../vocabulary.ts'
+import { UNREACHABLE_PHRASE } from './classify.ts'
 
 /**
  * Who owns a failure — and so what a card can honestly say about it.
@@ -327,8 +328,12 @@ const REFUSAL_READING: Record<
     },
   },
   unreachable: {
-    says: ({ branch, base }) =>
-      `origin could not be reached while ${branch} was being landed on ${base}, after 3 tries; nothing about ${branch} was judged.`,
+    says: ({ branch, base, detail }) =>
+      detail.startsWith(UNREACHABLE_PHRASE.size)
+        ? `the push of ${base} is over GitHub's 2 GiB limit, found while ${branch} was being landed on ${base}, after 3 tries; nothing about ${branch} was judged.`
+        : detail.startsWith(UNREACHABLE_PHRASE['origin-or-size'])
+          ? `origin could not be reached, or the push is over GitHub's 2 GiB limit, while ${branch} was being landed on ${base}, after 3 tries; check the push's size as well as the network; nothing about ${branch} was judged.`
+          : `origin could not be reached while ${branch} was being landed on ${base}, after 3 tries; nothing about ${branch} was judged.`,
     move: {
       action: 'approve',
       why: 'approving re-runs only the land, at the head the steps already passed — a requeue would pay for the work again',

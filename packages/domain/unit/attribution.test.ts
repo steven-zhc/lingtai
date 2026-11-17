@@ -1,4 +1,4 @@
-import { RUN_FAILURE_KINDS, type RefusalReason } from '@lingtai/domain'
+import { RUN_FAILURE_KINDS, UNREACHABLE_PHRASE, type RefusalReason } from '@lingtai/domain'
 /**
  * Whose failure it is, and what a person is told about it.
  *
@@ -175,6 +175,29 @@ describe('a refusal, read for a person', () => {
       'origin could not be reached while agent/1 was being landed on main, after 3 tries; nothing about agent/1 was judged.',
     )
     expect(reading.recommendation?.action).toBe('approve')
+  })
+
+  it('names both causes when the hold says hung up was the only sign (#1131)', () => {
+    const reading = diagnoseRefusal({
+      reason: 'unreachable',
+      detail: UNREACHABLE_PHRASE['origin-or-size'] + 'fatal: the remote end hung up unexpectedly',
+      branch: 'agent/1',
+      base: 'main',
+    })
+    expect(reading.what).toContain('origin could not be reached, or the push is over GitHub')
+    expect(reading.what).toContain('2 GiB')
+    expect(reading.recommendation?.action).toBe('approve')
+  })
+
+  it('says the push is over the limit when git named the size (#1131)', () => {
+    const reading = diagnoseRefusal({
+      reason: 'unreachable',
+      detail: UNREACHABLE_PHRASE.size + 'pack exceeds maximum allowed size',
+      branch: 'agent/1',
+      base: 'main',
+    })
+    expect(reading.what).not.toContain('could not be reached')
+    expect(reading.what).toContain('2 GiB')
   })
 
   it('says GitHub answered a server error for remote-error, and recommends approve (#1125)', () => {
