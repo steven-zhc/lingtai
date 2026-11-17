@@ -63,6 +63,44 @@
 
 ---
 
+## 三点五、implement 的五种结果（已定 2026-11-17）
+
+agent 在最终回答里**明确声明**属于哪一种，系统再核对一次：**有 commit 就算成功**（灵台提交的 WIP commit 不算），直接进 build，做得对不对交给 build 和 review 去查；**零提交时按 agent 声明的类型处理**；没有声明，或者声明成功却零提交，都按 agent 异常处理。
+
+| 类型 | 意思 | 判定 | 下一步 |
+|---|---|---|---|
+| **成功** `Implemented` | 做完了 | 正常结束，有至少 1 个 agent 自己的 commit | 直接进 build（不经过路由） |
+| **agent 异常** `AgentFailed` | 没做完 | 崩溃、超时、turns/`usd` 用完、被打断、没有回执；或者零提交、又没说明原因 | 灵台把 WIP 作为 commit 提交到工作分支 → **R** |
+| **有异议** `Disputed` | 修复轮里 fixer 认为 finding 不成立 | 零提交，说明不同意哪条、为什么 | 路由（`fixer-disagrees`）→ judge 裁定：fixer 对 → 这条 finding 作废并记进 backlog，往下走；reviewer 对 → 带着 judge 的理由走 **F** |
+| **票已实现** `AlreadyDone` | 要做的事 base 上已经有了 | 零提交，逐条说明每项 Done when 由什么满足 | 路由（新原因 `already-done`）→ 不走 build/review/merge，直接到 end，终态记为 **已实现（`satisfied`）**。拆过票的母票（所有子票都已落地）由系统自动关闭；其他情况（重复票、被别的票顺手修了）交给人确认后再关 |
+| **需求不明确** `Unclear` | 照着票写的做不下去 | 零提交，按下面的格式列出问题 | 路由（`needs-input`，现有的 `InputNeeded{from: 'implement'}`）→ **H**（unclear）→ 人回答，答案写进正文 → **R** |
+
+**票的终态因此有三种**：`landed`（合进 main）、`satisfied`（已实现，这次没有合入代码）、被人 `Close`。
+
+### 需求不明确时的输出格式【待定】
+
+design 阶段提问（`agent-action.ts:1407-1440`）、implement 声明 `Unclear`、triage 判定 `UndecidedQuestion`，这三处统一用同一个格式，也就是现在 triage 的 `TriageQuestion`（`packages/domain/src/triage.ts`）：
+
+```
+questions: 最多 5 个
+  - id
+    text:        一句话问题
+    answers:     2–4 个选项，每个 {id, text}，text 写明选了它会怎么做
+    recommended: 推荐的那个选项的 id
+```
+
+页面把问题按 1、2、3 列出来，每个问题下列选项，推荐项排第一、带标记，人也可以不选选项、自己写答案。回答完，系统把"问题 → 答案"写进正文的一个固定小节，然后重做这一步。这些现有的 triage 已经在做（`triageAnswersText`，#921），三处只是共用它。
+
+### implement 之后怎么走：不需要新加一步【待定】
+
+现在的流程是：
+- **成功**：implement 之后直接进 build → review → proposed。
+- **不成功**：带着原因（`when:`）先到 `proposed` 的路由，由路由决定去哪（`packages/domain/src/proposal.ts` 的 `JudgeWhen`，十四种原因）。`nothing-produced`、`fixer-disagrees`、`needs-input` 现在已经这样走。
+
+所以不用新加一步，只需要：
+1. 把五种结果对应到路由的原因：`Disputed` → `fixer-disagrees`（已有）；`Unclear` → `needs-input`（已有）；`AlreadyDone` → 新加 `already-done`；`AgentFailed` 由规则直接处理成 R，不经过路由；`nothing-produced` 去掉，并入 `AgentFailed`。
+2. 路由加一个新去向 **end（以 `satisfied` 关闭）**：不走 build、review、merge，直接到 end。
+
 ## 四、五个处理动作
 
 所有失败最后都落到这五个动作之一。
