@@ -409,7 +409,10 @@ summary: 给人读的一句话
 | 13 | #1218、#1219（人在页面上点"重做这一步"）改成走 `redoStep` | 0.15.0 里已有的票，改正文 |
 | 14 | write-ticket 的 Edges 清单、design 的提问清单都加上"一个动作被重做或跳过时，同一步里的其他动作怎么办" | write-ticket skill，`agent-action.ts:1398-1405` |
 
-第 12 条涉及事件名（`FixRequested` 等）。日志里已经有旧名字的事件，是用 `packages/domain/src/upcast.ts` 在读的时候改成新名字，还是新旧两个名字并存，切票时再定。
+第 12 条涉及事件名（`FixRequested` 等）。已定（2026-11-17）：**旧事件不迁移、不 upcast，留在日志里**。改名时：
+
+- 旧名字留在事件目录里，加进 `RETIRED`（`packages/domain/src/events.ts:2890`）：不再写，只读。不能直接删掉：读到目录里没有的类型，`decodeRow` 会抛 `LogPredatesHoldError`（`packages/event-store/src/event-store.ts:250`），daemon 启动前的检查（`:303`）也会拒绝启动。
+- reducer 只认新名字，旧事件读到就跳过。现在没有停在半路的票，跳过旧事件不影响任何进行中的状态；已经结束的票重放后，页面上的历史轮次可能少算，可以接受。
 
 ---
 
@@ -426,6 +429,8 @@ summary: 给人读的一句话
 - 上限名字和数值见第九节：`refusalFixes` 6、`conflictResolutions` 6、`stepRedos` 3、`landingRetries` 3、`newAttempts` 2、`splitDepth` 1、`designQuestions` 5；单张票的花费上限这次不加。
 - `Approve` 和 `Close` 只留给人；`splitTicket` 过的母票 `AlreadyDone` 时系统以 `satisfied` 关闭是唯一例外。
 
-【待定】只剩一条：第十一节第 12 条里事件改名怎么处理旧事件，切票时定。
+- 事件改名：旧事件留在日志里，旧名字进 `RETIRED`，reducer 跳过（第十一节末尾）。
+
+没有待定项。
 
 下一步：把这份方案改写进 ADR 0108 和 0118，再按第十一节切票。
