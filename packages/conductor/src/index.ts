@@ -37,7 +37,9 @@ export {
   type RecipeFor,
   type PlannedAction,
   type ProjectFilter,
+  type TicketLinks,
 } from './filter.ts'
+export type { TicketLink } from './db-tickets.ts'
 export {
   backingOff,
   heldUntil,
@@ -164,5 +166,6 @@ export {
   readAccount,
   type LiftAnswer,
   type ReachAnswer,
+  githubLimitPort,
 } from './account.ts'
 export { runtimesOf } from './runtimes-of.ts'

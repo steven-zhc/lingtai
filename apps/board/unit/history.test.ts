@@ -140,6 +140,17 @@ const SAMPLES = {
       deletions: 0,
     },
   ],
+  RunAppliedKeptWork: [
+    {
+      fromRunId: 'pass-1',
+      arm: 'agent/59-attempt-1',
+      sha: SHA,
+      parentSha: SHA,
+      applied: ['a.ts'],
+      leftOut: [],
+      unapplied: null,
+    },
+  ],
   RunProposedCompletion: [{ headSha: SHA }],
   RunFinished: [{ exitCode: 0, turns: 3, durationMs: 1000 }],
   SandboxBoundaryRecorded: [

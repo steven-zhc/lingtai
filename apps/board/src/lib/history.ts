@@ -373,6 +373,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   RunKeptUncommitted: (d) =>
     `kept ${need(d, 'files')} file(s) +${need(d, 'insertions')} −${need(d, 'deletions')} as ${sha(d, 'sha')} ` +
     `on ${need(d, 'arm')} — stopped by ${need(d, 'stoppedBy')}`,
+  RunAppliedKeptWork: (d) =>
+    d['unapplied'] === null
+      ? `carried ${(d['applied'] as unknown[]).length} file(s) of ${sha(d, 'sha')} from ${need(d, 'arm')}` +
+        ((d['leftOut'] as unknown[]).length > 0 ? `, ${(d['leftOut'] as unknown[]).length} left out` : '')
+      : `did not carry ${sha(d, 'sha')} from ${need(d, 'arm')} — ${need(d, 'unapplied')}`,
   RunProposedCompletion: (d) => `head ${sha(d, 'headSha')}`,
   SandboxBoundaryRecorded: (d) => `${need(d, 'action')} ran ${need(d['boundary'] as Payload, 'kind')}`,
   SandboxConnectionsRefused: (d) => {
@@ -735,6 +740,10 @@ function routedLine(d: Payload, { branch, endedAt }: Reading): string {
   const data = d as unknown as PayloadOf<'PassRouted'> | PayloadOf<'ProposalRouted'>
   const from = fromOf(data.offer.proposal)
   const move = routeMove(data.offer, data.reply, data.decision)
+  // A rule's landing again (#1221): `boardFactOf` has no fact for it, so the reason and the wait are said here.
+  if (move._tag === 'LandAgain') {
+    return `${from} → merge — ${clip(data.reply._tag === 'Selected' ? data.reply.why : 'landing again from the same head')}`
+  }
   if (move._tag !== 'WaitOnPerson') {
     // `boardFactOf` already answers `RoundOpened`/`Restarted` for these —
     // reaching here with one is that mapping disagreeing with this one.

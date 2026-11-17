@@ -10,6 +10,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { type DbTickets, dbTickets, ensureTicketTablesEffect } from '../src/db-tickets.ts'
+import { describeTicketLinksContract } from '../test/ticket-links-contract.ts'
 import { describeTicketsContract } from '../test/tickets-contract.ts'
 
 function freshStore(): TicketSql {
@@ -57,6 +58,12 @@ describe('ensureTicketTables on SQLite', () => {
       { name: 'number', type: 'INTEGER', notnull: 1, dflt_value: null, pk: 0 },
       { name: 'body', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
       { name: 'created_at', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 },
+    ])
+
+    expect(await columns(sql, 'ticket_links')).toEqual([
+      { name: 'project', type: 'TEXT', notnull: 1, dflt_value: null, pk: 1 },
+      { name: 'number', type: 'INTEGER', notnull: 1, dflt_value: null, pk: 2 },
+      { name: 'blocked_by', type: 'INTEGER', notnull: 1, dflt_value: null, pk: 3 },
     ])
   })
 
@@ -278,3 +285,5 @@ describe('dbTickets, beyond the shared contract', () => {
     expect(insertAttempts).toBe(1)
   })
 })
+
+describeTicketLinksContract('dbTickets on SQLite', () => ({ store: freshDbTickets('p'), project: 'p' }))

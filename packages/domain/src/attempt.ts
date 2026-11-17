@@ -606,6 +606,15 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
         state.sandbox?.some((i) => !i.ended) === true
           ? { sandbox: state.sandbox.map((i) => (i.ended ? i : { ...i, ended: true })) }
           : {}
+      if (next._tag === 'LandAgain') {
+        return {
+          ...state,
+          ...settled,
+          ...at,
+          transientRetries: Math.max(state.transientRetries ?? 0, next.retry),
+          route: d,
+        }
+      }
       if (next._tag === 'MergeBase') {
         return { ...state, ...settled, ...at, baseMerges: Math.max(state.baseMerges ?? 0, next.merge), route: d }
       }

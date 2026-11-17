@@ -62,6 +62,9 @@ const effectsOf = (t: DbTickets): DbTicketsEffects => ({
   closeIssue: (n, reason) => typed(() => t.closeIssue(n, reason)),
   updateBody: (n, body, opts) => typed(() => t.updateBody(n, body, opts)),
   updateFields: (n, expected, next) => typed(() => t.updateFields(n, expected, next)),
+  addBlockedBy: (n, b) => typed(() => t.addBlockedBy(n, b)),
+  removeBlockedBy: (n, b) => typed(() => t.removeBlockedBy(n, b)),
+  listBlockedBy: (n) => typed(() => t.listBlockedBy(n)),
 })
 
 const adapt = (r: TicketReading): TicketReadingEffect => ({
@@ -360,7 +363,9 @@ describe('lingtai ticket list --json (#624)', () => {
       command: 'ticket list',
       project: 'p',
       all: false,
-      tickets: [{ number: 1, kind: 'bug', title: 'a bug', state: 'open', labels: ['bug', 'agent:hold'] }],
+      tickets: [
+        { number: 1, kind: 'bug', title: 'a bug', state: 'open', labels: ['bug', 'agent:hold'], blockedBy: [] },
+      ],
     })
   })
 
@@ -944,6 +949,7 @@ describe('renderTicketForm / parseTicketForm round-trip (#386)', () => {
     const form = {
       title: "the sample's tests fail on an empty input",
       labels: ['bug', 'agent:hold'],
+      blockedBy: [3, 5],
       body: 'first paragraph.\n\nsecond paragraph, after a blank line.',
     }
     const rendered = renderTicketForm(form)
@@ -955,6 +961,7 @@ describe('renderTicketForm / parseTicketForm round-trip (#386)', () => {
     const form = {
       title: 'body carries header-shaped lines',
       labels: ['feature'],
+      blockedBy: [],
       body: 'labels: not actually a header\n#! not actually an instruction',
     }
     const rendered = renderTicketForm(form)
@@ -962,14 +969,14 @@ describe('renderTicketForm / parseTicketForm round-trip (#386)', () => {
   })
 
   it('an extra trailing newline on save still parses equal to the original', () => {
-    const form = { title: 'tidy save', labels: ['bug'], body: 'the body' }
+    const form = { title: 'tidy save', labels: ['bug'], blockedBy: [], body: 'the body' }
     const rendered = renderTicketForm(form)
     const savedWithExtraNewline = `${rendered}\n`
     expect(parseTicketForm(savedWithExtraNewline)).toEqual({ ok: true, form })
   })
 
   it('instructions passed to render are dropped by parse wherever they fall in the header', () => {
-    const form = { title: 'x', labels: ['bug'], body: 'y' }
+    const form = { title: 'x', labels: ['bug'], blockedBy: [], body: 'y' }
     const rendered = renderTicketForm(form, ['#! kinds: bug, feature — one belongs in labels:'])
     expect(parseTicketForm(rendered)).toEqual({ ok: true, form })
   })
@@ -993,5 +1000,158 @@ describe('renderTicketForm / parseTicketForm round-trip (#386)', () => {
     const parsed = parseTicketForm(text)
     expect(parsed.ok).toBe(false)
     expect(!parsed.ok && parsed.why).toContain('title')
+  })
+})
+
+describe('blocked by on the local ticket form (#1227)', () => {
+  const readingFor = (tickets: ReturnType<typeof dbTickets>, extra: Partial<TicketReading> = {}): TicketReading => ({
+    projects: async () => [project('p')],
+    recipeFor: async () => recipeFrom(DB_YAML),
+    ticketsFor: async () => tickets,
+    env: EDITOR_ENV,
+    ...extra,
+  })
+  const seed = async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    for (const title of ['one', 'two', 'three']) await tickets.createIssue({ title, body: '', labels: ['bug'] })
+    return tickets
+  }
+
+  it('round-trips blockedBy, with or without links', () => {
+    for (const blockedBy of [[3, 5], []]) {
+      const form = { title: 't', labels: ['bug'], blockedBy, body: 'b' }
+      expect(parseTicketForm(renderTicketForm(form))).toEqual({ ok: true, form })
+    }
+  })
+
+  it('reads #-prefixed, unsorted and repeated numbers as ascending and unique', () => {
+    const parsed = parseTicketForm('t\nlabels: bug\nblocked by: #5, 3, 5\n\nbody')
+    expect(parsed.ok && parsed.form.blockedBy).toEqual([3, 5])
+  })
+
+  it('refuses a non-number and a title starting blocked by:, by name', () => {
+    const bad = parseTicketForm('t\nlabels: bug\nblocked by: x\n\nbody')
+    expect(!bad.ok && bad.why).toContain('"x" is not a ticket number')
+    const zero = parseTicketForm('t\nlabels: bug\nblocked by: 0\n\nbody')
+    expect(zero.ok).toBe(false)
+    const title = parseTicketForm('blocked by: 3\nlabels: bug\n\nbody')
+    expect(!title.ok && title.why).toContain('blocked by:')
+  })
+
+  it('new --blocked-by creates the ticket and its links', async () => {
+    const tickets = await seed()
+    const { log } = sink()
+    const code = await ticketNew(
+      { project: 'p', title: 't', label: 'bug', blockedBy: '3,#1' },
+      log,
+      readingFor(tickets),
+    )
+    expect(code).toBe(0)
+    expect((await tickets.listBlockedBy(4)).map((l) => l.number)).toEqual([1, 3])
+  })
+
+  it('new --blocked-by naming a missing ticket writes nothing and names it', async () => {
+    const tickets = await seed()
+    const { log, lines } = sink()
+    const code = await ticketNew({ project: 'p', title: 't', blockedBy: '9' }, log, readingFor(tickets))
+    expect(code).toBe(1)
+    expect(lines.join('\n')).toContain('#9')
+    await expect(tickets.getIssue(4)).rejects.toThrow()
+  })
+
+  it('--blocked-by without --title is refused as --label is', async () => {
+    const tickets = await seed()
+    const { log, lines } = sink()
+    expect(await ticketNew({ project: 'p', blockedBy: '1' }, log, readingFor(tickets))).toBe(1)
+    expect(lines[0]).toContain('--blocked-by needs --title')
+  })
+
+  it('edit shows a closed blocker, and removing it removes the link', async () => {
+    const tickets = await seed()
+    await tickets.addBlockedBy(2, 1)
+    await tickets.closeIssue(1)
+    const fake = fakeEdit((initial) => initial.replace('blocked by: 1', 'blocked by: '))
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: 2 }, log, readingFor(tickets, { edit: fake.edit }))).toBe(0)
+    expect(fake.calls[0]!.initial).toContain('blocked by: 1')
+    expect(await tickets.listBlockedBy(2)).toEqual([])
+    expect(lines.join('\n')).toContain('blocked by -#1')
+  })
+
+  it('edit that touches nothing writes nothing, whatever links the ticket has', async () => {
+    const tickets = await seed()
+    await tickets.addBlockedBy(2, 1)
+    const fake = fakeEdit((initial) => initial)
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: 2 }, log, readingFor(tickets, { edit: fake.edit }))).toBe(0)
+    expect(lines.join('\n')).toContain('no change')
+    expect((await tickets.listBlockedBy(2)).map((l) => l.number)).toEqual([1])
+  })
+
+  it('edit adding a cycle exits 1, keeps the text, and says what was written', async () => {
+    const tickets = await seed()
+    await tickets.addBlockedBy(3, 2)
+    const fake = fakeEdit((initial) => initial.replace('blocked by: ', 'blocked by: 3'))
+    const { log, lines } = sink()
+    expect(await ticketEdit({ project: 'p', issue: 2 }, log, readingFor(tickets, { edit: fake.edit }))).toBe(1)
+    expect(lines.join('\n')).toContain('nothing written')
+    expect(lines.join('\n')).toContain('refused blocked by +#3')
+    expect(lines.join('\n')).toContain('your text is kept at /fake/p-2.md')
+    expect(fake.discards).toBe(0)
+  })
+
+  it('edit refuses a self-block and a missing blocker before writing anything', async () => {
+    const tickets = await seed()
+    for (const n of ['2', '9']) {
+      const fake = fakeEdit((initial) =>
+        initial.replace('labels: bug', 'labels: feature').replace('blocked by: ', `blocked by: ${n}`),
+      )
+      const { log } = sink()
+      expect(await ticketEdit({ project: 'p', issue: 2 }, log, readingFor(tickets, { edit: fake.edit }))).toBe(1)
+      expect((await tickets.getIssue(2)).labels.map((l) => l.name)).toEqual(['bug'])
+    }
+  })
+
+  it('list shows an open blocker and not a closed one; --json carries blockedBy', async () => {
+    const tickets = await seed()
+    await tickets.addBlockedBy(3, 1)
+    await tickets.addBlockedBy(3, 2)
+    await tickets.closeIssue(2)
+    const { log, lines } = sink()
+    expect(await ticketList({ project: 'p' }, log, readingFor(tickets))).toBe(0)
+    const row3 = lines.find((l) => l.includes('#3'))!
+    expect(row3).toContain('[blocked by #1]')
+    expect(row3).not.toContain('#2')
+    const json = sink()
+    await ticketList({ project: 'p', json: true }, json.log, readingFor(tickets))
+    const doc = JSON.parse(json.lines.join('\n')) as { tickets: { number: number; blockedBy: number[] }[] }
+    expect(doc.tickets.map((t) => [t.number, t.blockedBy])).toEqual([
+      [1, []],
+      [3, [1]],
+    ])
+  })
+})
+
+describe('new --blocked-by when a later link fails (#1227)', () => {
+  it('says which links landed', async () => {
+    const tickets = dbTickets(freshSql(), 'p')
+    for (const title of ['one', 'two', 'three']) await tickets.createIssue({ title, body: '', labels: ['bug'] })
+    const real = tickets.addBlockedBy
+    let calls = 0
+    const flaky = {
+      ...tickets,
+      addBlockedBy: (a: number, b: number) => (++calls === 2 ? Promise.reject(new Error('store down')) : real(a, b)),
+    } as typeof tickets
+    const lines: string[] = []
+    const code = await ticketNew({ project: 'p', title: 't', label: 'bug', blockedBy: '1,3' }, (l) => lines.push(l), {
+      projects: async () => [project('p')],
+      recipeFor: async () => recipeFrom(DB_YAML),
+      ticketsFor: async () => flaky,
+      env: EDITOR_ENV,
+    })
+    expect(code).toBe(1)
+    const out = lines.join('\n')
+    expect(out).toContain('#4 is blocked by #1 but not #3')
+    expect(out).not.toContain('without its blocked by links')
   })
 })

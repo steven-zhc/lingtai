@@ -113,8 +113,8 @@ describe('runningPanelOf', () => {
     const refusal = { key: 'review:cold', evidence: 'x', findings: [] }
     const verdicts = (buildStale: boolean) =>
       [
-        { step: 'build:run', state: 'passed', stale: buildStale, evidence: null, findings: [] },
-        { step: 'review:cold', state: 'failed', stale: true, evidence: null, findings: [] },
+        { step: 'build:run', state: 'passed', stale: buildStale, evidence: null, onSha: null, findings: [] },
+        { step: 'review:cold', state: 'failed', stale: true, evidence: null, onSha: null, findings: [] },
       ] as AttemptView['steps']
     // Build's verdict is about the old head: it runs again.
     expect(panelOf(run({ progress, refusal, steps: verdicts(true) })).then).toEqual(['build', 'review', 'merge'])

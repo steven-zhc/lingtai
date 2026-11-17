@@ -109,8 +109,9 @@ function mergeRefusedColumns(
   reason: RefusalReason,
   raw: string,
   pass: { branch: string; base: string },
+  landedAgain?: { times: number; minutes: number },
 ): WaitWords {
-  const reading = diagnoseRefusal({ reason, detail: raw, branch: pass.branch, base: pass.base })
+  const reading = diagnoseRefusal({ reason, detail: raw, branch: pass.branch, base: pass.base, landedAgain })
   const question = `${reason}: ${raw}`.slice(0, 400)
   return {
     line: question,
@@ -322,7 +323,7 @@ function escalatedColumns(
         proposal.said,
       )
     case 'MergeRefused':
-      return mergeRefusedColumns(run, proposal.reason, proposal.output, pass)
+      return mergeRefusedColumns(run, proposal.reason, proposal.output, pass, proposal.landedAgain)
     case 'BaseMoved':
       return mergeRefusedColumns(run, 'base-moved', baseMovedText(proposal), pass)
     case 'BudgetExhausted':

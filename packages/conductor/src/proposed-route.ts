@@ -102,6 +102,8 @@ export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal
         return candidate.next.to
       case 'MergeBase':
         return 'build'
+      case 'LandAgain':
+        return 'merge'
       case 'Requeued':
         return 'claim'
       case 'HandToPerson':
@@ -113,6 +115,8 @@ export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal
       return 'implement'
     case 'merge-base':
       return 'build'
+    case 'land-again':
+      return 'merge'
     case 'restart':
       return 'claim'
     case 'hand-to-person':

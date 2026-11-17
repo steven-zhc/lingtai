@@ -273,6 +273,8 @@ describe('waits and the top eight', () => {
     reason,
     triage: cause === null ? null : { attempt: 1, result: 'TriageAdvised', cause },
     resolution: 'Approved',
+    by: null,
+    onSha: null,
   })
 
   it('cross-tabulates reason by triage cause, null meaning no cause', () => {

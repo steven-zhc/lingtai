@@ -1007,7 +1007,9 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
       const round = context.round ? ` · round ${context.round}` : ''
 
       /**
-       * **One run of the action, and no retry** (`#234`).
+       * **One run of the action, and no retry** (`#234`) — for an `agent:` action.
+       * A `run:` at `build`, `proposed` or `merge` is the one exception: it reruns once
+       * when it exits non-zero, inside `makeProcessAction`, and never here (#1222).
        *
        * [0057](../../../doc/decisions-archive/0057-a-gate-that-did-not-finish.md) §4 put
        * one here and it never once ran. The session id is a hash of

@@ -108,6 +108,7 @@ import {
 } from './board.ts'
 import { shownOf, type PromptShown } from './expand-prompts.ts'
 import { type HistoryLine, summarise, toLine } from './history.ts'
+import { landingLineOf, type LandingLine } from './landing-line'
 import { readProjectLocks } from './locks.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
 import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './prompt.ts'
@@ -155,6 +156,8 @@ export interface StepVerdict {
    */
   stale: boolean
   evidence: string | null
+  /** The commit the verdict is about; null where the stream did not record one. */
+  onSha: string | null
   findings: Finding[]
 }
 
@@ -294,6 +297,8 @@ export interface AttemptView {
   at: string
   baseSha: string | null
   headSha: string | null
+  /** The line under base/head on the landing attempt of a landed ticket; null on every other. */
+  landing: LandingLine | null
   /**
    * The recipe this run was given, as `StepsResolved` hashed it. Null where the
    * stream has no `StepsResolved`, which is a run whose recipe nothing can
@@ -1178,10 +1183,24 @@ export function presentAttempt(
       state.headSha === null ||
       s.onSha === state.headSha
     )
-    return { step: s.step, state: s.verdict, stale, evidence: s.evidence, findings: [...s.findings] }
+    return {
+      step: s.step,
+      state: s.verdict,
+      stale,
+      evidence: s.evidence,
+      onSha: s.onSha ?? null,
+      findings: [...s.findings],
+    }
   })
   if (state.step !== null) {
-    steps.push({ step: `${state.step.step}:`, state: 'running', stale: false, evidence: null, findings: [] })
+    steps.push({
+      step: `${state.step.step}:`,
+      state: 'running',
+      stale: false,
+      evidence: null,
+      onSha: null,
+      findings: [],
+    })
   }
 
   return {
@@ -1190,6 +1209,7 @@ export function presentAttempt(
     at: claim.at.toISOString(),
     baseSha: state.baseSha,
     headSha: state.headSha,
+    landing: null,
     configHash: state.resolved?.configHash ?? null,
     turns: state.receipt?.turns ?? null,
     // Filled in by `loadTask`, from `spend` — this reduce has no database to
@@ -1787,7 +1807,12 @@ export const readAttempts = cache(async (taskId: string) => {
     // is unknown rather than free (0110 §7, `#498`'s review).
     const rowsForRun = spend.filter((row) => row.pass === r.runId)
     const costUsd = rowsForRun.length > 0 ? totalBill(billOf(rowsForRun)) : unknownBill(1)
-    return { ...r, costUsd }
+    const life = ticketState.lifecycle
+    const landing =
+      landed && life.status === 'landed' && r.runId === reduced[last]?.runId
+        ? landingLineOf({ steps: r.steps, headSha: r.headSha, mergeCommit: life.mergeCommit })
+        : null
+    return { ...r, costUsd, landing }
   })
 
   // The running panel reads the attempt with the recipe's plan folded in, so it

@@ -378,6 +378,7 @@ export const STREAMS = {
   RunProducedDiff: ['pass-'],
   RunRefsPublished: ['pass-'],
   RunKeptUncommitted: ['pass-'],
+  RunAppliedKeptWork: ['pass-'],
   RunProposedCompletion: ['pass-'],
   RunFinished: ['pass-'],
   SandboxBoundaryRecorded: ['pass-'],

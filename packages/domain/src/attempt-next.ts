@@ -87,12 +87,25 @@ export const MergeBase = z.object({
 })
 export type MergeBase = z.infer<typeof MergeBase>
 
+/**
+ * The landing run again from the head the steps already passed, after the lane's
+ * own tries ended `unreachable` or `remote-error` (#1221; 0108 §15). `retry` is
+ * the count this makes, against `TRANSIENT_RETRIES_LIMIT`. It moves no `onSha`
+ * and spends no round: a rule's move, never offered to a chooser.
+ */
+export const LandAgain = z.object({
+  _tag: z.literal('LandAgain'),
+  retry: z.number().int(),
+})
+export type LandAgain = z.infer<typeof LandAgain>
+
 /** 0120 §4's next move, with what it spends. */
 export const AttemptNext = z.discriminatedUnion('_tag', [
   Advance,
   Propose,
   FixRound,
   MergeBase,
+  LandAgain,
   Requeued,
   WaitOnPerson,
   Landed,
@@ -104,7 +117,13 @@ export type AttemptNext = z.infer<typeof AttemptNext>
  * base merges the system made this pass (#593), and the conflict rounds (#653) — absent is none. Reduced from
  * events, never parsed.
  */
-export type Spent = { rounds: number; restarts: number; baseMerges?: number; conflictRounds?: number }
+export type Spent = {
+  rounds: number
+  restarts: number
+  baseMerges?: number
+  conflictRounds?: number
+  transientRetries?: number
+}
 
 type NextOfResult = Extract<AttemptNext, { _tag: 'Advance' | 'Propose' | 'WaitOnPerson' | 'Requeued' | 'Landed' }>
 
@@ -464,6 +483,8 @@ export function spentAfter(spent: Spent, next: AttemptNext): Spent {
         : { ...spent, conflictRounds: next.conflict }
     case 'MergeBase':
       return { ...spent, baseMerges: next.merge }
+    case 'LandAgain':
+      return { ...spent, transientRetries: next.retry }
     case 'Requeued':
       return next.cause._tag === 'Restart' ? { ...spent, rounds: 0, restarts: next.cause.restart } : spent
     case 'Advance':

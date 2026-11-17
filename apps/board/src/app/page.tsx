@@ -688,9 +688,7 @@ function shape(board: BoardRead, param: string | undefined) {
         return id === 'landed' ? [] : c.cards.map((card): [string, typeof id] => [`${card.project}#${card.ref}`, id])
       }),
     ),
-    repositories: new Map(
-      askable.flatMap((f) => (f.links === null ? [] : [[f.project, `${f.links.owner}/${f.links.repo}`] as const])),
-    ),
+    repositories: new Map(askable.flatMap((f) => (f.links === null ? [] : [[f.project, f.links.repository] as const]))),
   }
   // The one number an operator acts on *in the next minute*: how many need me.
   // What it has cost is the other number #81 wanted, and it is a click away on

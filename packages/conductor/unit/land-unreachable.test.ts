@@ -52,6 +52,7 @@ async function land(pushDetail: string | undefined, failures: number, lsFailures
       home: '/tmp/fake-home',
       store,
       unreachableWaits: ['0 millis', '0 millis'],
+      transientWaits: ['0 millis', '0 millis', '0 millis'],
     },
     ports,
   )
@@ -74,9 +75,8 @@ describe('the branch push in landNow', () => {
   })
 
   it('is unreachable, not push-rejected, when the tries run out', async () => {
-    // Three tries fail; the end-of-pass publish after them is another push, and succeeds.
-    // (Three consecutive failures of the first push, then the lane never runs.)
-    const { result, pushes, lane, store } = await land(TIMEOUT, 3)
+    // Every push fails, so the lane's tries and every land-again (#1221) run out and the lane never runs.
+    const { result, pushes, lane, store } = await land(TIMEOUT, 99)
     expect(result.ok).not.toBe(true)
     expect(pushes.slice(0, 3).every((a) => a.some((x) => x.startsWith('--force-with-lease')))).toBe(true)
     expect(lane()).toBe(0)
@@ -113,7 +113,7 @@ describe('the branch push in landNow', () => {
     })
 
     it('ends remote-error, not push-rejected, when the tries run out', async () => {
-      const { result, lane, store } = await land(FIVE_HUNDRED, 3)
+      const { result, lane, store } = await land(FIVE_HUNDRED, 99)
       expect(result.ok).not.toBe(true)
       expect(lane()).toBe(0)
       const logged = logOf(store)

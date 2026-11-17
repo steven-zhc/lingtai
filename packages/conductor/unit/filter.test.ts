@@ -277,6 +277,22 @@ describe('projectFilter, for a project with no owner', () => {
     expect(filter.client).toBe(tickets)
   })
 
+  it('fills links from a store that reads them, with the project as repository, and leaves memory tickets null', async () => {
+    const listBlockedBy = vi.fn(async () => [{ repository: 'name', number: 1, title: 't', state: 'open' as const }])
+    const withLinks = Object.assign(memoryTickets(), { listBlockedBy })
+    const filter = await projectFilter(ownerlessState, clientFor, recipeOf(RECIPE_OWNERLESS), async () => withLinks)
+    expect(filter.ok).toBe(true)
+    if (!filter.ok) return
+    expect(filter.links?.repository).toBe(ownerlessState.project)
+    await filter.links?.listBlockedBy(3)
+    expect(listBlockedBy).toHaveBeenCalledWith(3)
+
+    const plain = await projectFilter(ownerlessState, clientFor, recipeOf(RECIPE_OWNERLESS), async () =>
+      memoryTickets(),
+    )
+    expect(plain.ok && plain.links).toBe(null)
+  })
+
   it('refuses by name when the recipe does not say source.tickets: db', async () => {
     const filter = await projectFilter(ownerlessState, clientFor, recipeOf(RECIPE_OWNERLESS_NO_DB))
 

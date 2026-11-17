@@ -15,10 +15,12 @@ import {
   ticketsForEffect,
   type TurnClient,
   type RunOnceResult,
+  githubLimitPort,
+  readAccount,
 } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { lockedEffect, makeGuard, readControlEffect } from '@lingtai/daemon'
-import type { ControlState, ProjectState } from '@lingtai/domain'
+import { accountWords, type ControlState, type ProjectState } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
 import { eventStore, log as theLog, type EventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
@@ -379,8 +381,26 @@ export function run(
       }
       // Bound now: a property narrowing does not survive into the closure below.
       const owner = project.owner
+      // A standing GitHub limit is heeded before the client's first request (0126 §5): building
+      // it looks up the installation, which is a call GitHub would answer with the same limit.
+      const github = yield* readAccount(options.store ?? eventStore, 'github').pipe(
+        // A read that failed says nothing about the lock, so it is not "no lock": no client is built.
+        Effect.catch((e) => refuse(`could not read the GitHub account's limit: ${String(e)}`)),
+      )
+      if (github.limit !== null && github.limit.until.getTime() > Date.now()) {
+        const { name, limit } = accountWords('github')
+        return yield* Effect.fail(
+          new ProjectLocked({ sentence: `${name}'s ${limit} stands until ${github.limit.until.toISOString()}` }),
+        )
+      }
       client = yield* Effect.tryPromise({
-        try: () => world.createGitHubClient({ auth: githubClientAuth(), owner, repo: options.project }),
+        try: () =>
+          world.createGitHubClient({
+            auth: githubClientAuth(),
+            owner,
+            repo: options.project,
+            onRateLimited: githubLimitPort(options.store ?? eventStore, log, { wait: false }),
+          }),
         // `NotInstalledError` says what to do about it, and every other failure
         // here is the App or the network. Either way a person reads one line.
         catch: (err) => refuse((err as Error).message),
@@ -452,6 +472,8 @@ export function run(
       }
 
       let common: CommonPassOptions
+      // The listing before an attempt is a look (0126 §2): through the client that fails, never waits.
+      let discovery: TurnClient | undefined
       if (client === null) {
         /**
          * **An owner-less project names its own remote and its own ticket
@@ -500,7 +522,10 @@ export function run(
       } else {
         // Bound here, not read off the outer `let`: a closure below must not
         // rely on a narrowing a `let` does not carry into it.
-        const owned = client
+        // The pass's client (0126 §2): it waits out the lock. Passed to `ticketsFor` too —
+        // `ticketedClientOf` overwrites the ticket verbs unless `tickets === client` — and the
+        // recipe read above keeps the look's `client`, which fails on the first rate limit.
+        const owned = client.withRateLimited(githubLimitPort(options.store ?? eventStore, log, { wait: true }))
 
         for (const line of statedBeforeDispatch(resolved.recipe)) log(line)
 
@@ -512,6 +537,11 @@ export function run(
         const tickets = yield* world
           .ticketsFor(project, resolved.recipe, owned)
           .pipe(Effect.mapError((err) => refuse((err as Error).message)))
+
+        const lookTickets = yield* world
+          .ticketsFor(project, resolved.recipe, client)
+          .pipe(Effect.mapError((err) => refuse((err as Error).message)))
+        discovery = ticketedClientOf(client, lookTickets)
 
         common = {
           project,
@@ -621,6 +651,7 @@ export function run(
             ? null
             : yield* world.runQueue({
                 ...common,
+                ...(discovery ? { discovery } : {}),
                 prompt,
                 // Asked rather than stored: a project that reorders its kinds, or adds
                 // an exclusion, must not need a projection rebuild.

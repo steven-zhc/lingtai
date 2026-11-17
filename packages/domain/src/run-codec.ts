@@ -199,7 +199,9 @@ export const attemptReducer: Reducer<AttemptState> = {
   // cut before this lacks them.
   // 5: the sandbox events fold into `sandbox` (#1161); a version-4 snapshot was cut by a reducer that ignored them.
   // 6: route moves fold into `baseMerges` and `conflictRounds` (#1200); a version-5 snapshot was cut by a reducer that ignored them.
-  version: 7,
+  // 7: a `land-again` route folds into `transientRetries` (#1221); a version-6 snapshot was cut by a reducer that ignored it.
+  // 8: a `StepRerunInPlace` folds into `transientRetries` and clears `failure` (#1201); a version-7 snapshot was cut by a reducer that ignored it.
+  version: 8,
   initial: emptyAttempt,
   reduceEvent: reduceAttemptEvent,
   encode: encodeRun,

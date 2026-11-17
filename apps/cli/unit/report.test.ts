@@ -275,6 +275,8 @@ describe('lingtai report’s text', () => {
       reason: 'CheckRefused',
       triage: { attempt: 1, result: 'advice', cause: 'ConflictingHunks' },
       resolution: 'AnswerQuestion',
+      by: null,
+      onSha: null,
     }
     const cost = {
       Work: { reportedCents: 100, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 },

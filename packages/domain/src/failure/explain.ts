@@ -263,10 +263,19 @@ export function whoseFailure(failure: AttributedFailure): FailureOwner {
  * `dirty-base` is Lingtai's own checkout, which requeueing walks straight back
  * into.
  */
+/** What a rule's re-landings cost before the retries ran out (#1221); said after the lane's own tries. */
+type LandedAgain = { times: number; minutes: number }
+
+function againSaid(landedAgain: LandedAgain | undefined): string {
+  if (landedAgain === undefined || landedAgain.times < 1) return ''
+  const minutes = Math.round(landedAgain.minutes)
+  return `, landed again ${landedAgain.times} time${landedAgain.times === 1 ? '' : 's'} over ${minutes} minute${minutes === 1 ? '' : 's'}`
+}
+
 const REFUSAL_READING: Record<
   RefusalReason,
   {
-    says: (where: { branch: string; base: string; detail: string }) => string
+    says: (where: { branch: string; base: string; detail: string; landedAgain?: LandedAgain }) => string
     /** The move this refusal implies, or null when nobody can name one. */
     move: BlockRecommendation | null
   }
@@ -328,23 +337,23 @@ const REFUSAL_READING: Record<
     },
   },
   unreachable: {
-    says: ({ branch, base, detail }) =>
+    says: ({ branch, base, detail, landedAgain }) =>
       detail.startsWith(UNREACHABLE_PHRASE.size)
-        ? `the push of ${base} is over GitHub's 2 GiB limit, found while ${branch} was being landed on ${base}, after 3 tries; nothing about ${branch} was judged.`
+        ? `the push of ${base} is over GitHub's 2 GiB limit, found while ${branch} was being landed on ${base}, after 3 tries${againSaid(landedAgain)}; nothing about ${branch} was judged.`
         : detail.startsWith(UNREACHABLE_PHRASE['origin-or-size'])
-          ? `origin could not be reached, or the push is over GitHub's 2 GiB limit, while ${branch} was being landed on ${base}, after 3 tries; check the push's size as well as the network; nothing about ${branch} was judged.`
-          : `origin could not be reached while ${branch} was being landed on ${base}, after 3 tries; nothing about ${branch} was judged.`,
+          ? `origin could not be reached, or the push is over GitHub's 2 GiB limit, while ${branch} was being landed on ${base}, after 3 tries${againSaid(landedAgain)}; check the push's size as well as the network; nothing about ${branch} was judged.`
+          : `origin could not be reached while ${branch} was being landed on ${base}, after 3 tries${againSaid(landedAgain)}; nothing about ${branch} was judged.`,
     move: {
       action: 'approve',
       why: 'approving re-runs only the land, at the head the steps already passed — a requeue would pay for the work again',
     },
   },
   'remote-error': {
-    says: ({ branch, base, detail }) => {
+    says: ({ branch, base, detail, landedAgain }) => {
       const ref = /->\s+(?:refs\/heads\/)?(\S+)\s+\(/.exec(detail)?.[1]
       const push = ref === undefined ? 'the push' : ref === base ? `the push of ${base}` : `the push of ${ref}`
       const tries = /\(after (\d+) tries\)/.exec(detail)?.[1] ?? '3'
-      return `GitHub answered a server error on ${push} while ${branch} was being landed on ${base}, after ${tries} tries; nothing about ${branch} or ${base} is wrong.`
+      return `GitHub answered a server error on ${push} while ${branch} was being landed on ${base}, after ${tries} tries${againSaid(landedAgain)}; nothing about ${branch} or ${base} is wrong.`
     },
     move: {
       action: 'approve',
@@ -462,10 +471,17 @@ export function diagnoseRefusal(input: {
   detail: string
   branch: string
   base: string
+  /** What a rule's re-landings cost, when the retries are spent (#1221). */
+  landedAgain?: LandedAgain
 }): BlockDiagnosis {
   const reading = REFUSAL_READING[input.reason as RefusalReason] ?? null
   // A caller that does not know the base passes `''`; the sentences print it as given, so say what is true.
-  const where = { branch: input.branch, base: input.base === '' ? 'the base' : input.base, detail: input.detail }
+  const where = {
+    branch: input.branch,
+    base: input.base === '' ? 'the base' : input.base,
+    detail: input.detail,
+    landedAgain: input.landedAgain,
+  }
   const owner = whoseFailure({ source: 'integration', reason: input.reason, detail: input.detail })
   return {
     what: reading ? reading.says(where) : `${input.branch} was refused: ${input.reason}.`,

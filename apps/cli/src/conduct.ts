@@ -36,6 +36,7 @@ import {
   type RunOnceResult,
   type ScheduleResult,
   type Slots,
+  githubLimitPort,
 } from '@lingtai/conductor'
 import { readControlEffect } from '@lingtai/daemon'
 import { type ControlState, type ProjectState, turnTransition } from '@lingtai/domain'
@@ -249,6 +250,7 @@ export function conductWork(
       if (options.max === 0) return 'looked-away' as const
 
       let common: CommonPassOptions
+      let discovery: CommonPassOptions['client']
       let resolved: ResolvedRecipe
 
       if (project.owner === null) {
@@ -281,10 +283,16 @@ export function conductWork(
           ...(options.snapshotWriter ? { snapshotWriter: options.snapshotWriter } : {}),
           log: options.log,
         }
+        discovery = common.client
       } else {
         const owner = project.owner
         const client = yield* Effect.promise(() =>
-          world.createGitHubClient({ auth: githubClientAuth(), owner, repo: name }),
+          world.createGitHubClient({
+            auth: githubClientAuth(),
+            owner,
+            repo: name,
+            onRateLimited: githubLimitPort(store, options.log, { wait: false }),
+          }),
         )
         where.ref = project.base ?? (yield* Effect.promise(() => client.defaultBranch()))
         const ref = where.ref
@@ -295,19 +303,27 @@ export function conductWork(
         // log already has GitHub-numbered work items) is durable: a throw after
         // `looked()` is not recorded as a `ProjectRefused` (see below).
         const recipe = resolved.recipe
-        const tickets = yield* world.ticketsFor(project, recipe, client).pipe(Effect.orDie)
+        // **The pass's client, not the look's** (0126 §2): its calls wait out the lock and are made
+        // again. `ticketsFor` returns this very object for a `github` source and `ticketedClientOf`
+        // overwrites the ticket verbs unless `tickets === client`, so handing the look's `client`
+        // here would send `comment`, `setLabels` and `closeIssue` back to the one that fails.
+        const passClient = client.withRateLimited(githubLimitPort(store, options.log, { wait: true }))
+        const tickets = yield* world.ticketsFor(project, recipe, passClient).pipe(Effect.orDie)
+        // Discovery is a look: the listing before an attempt goes through the client that fails.
+        const lookTickets = yield* world.ticketsFor(project, recipe, client).pipe(Effect.orDie)
+        discovery = ticketedClientOf(client, lookTickets)
         // Looked at, now — not when the run below returns, which can be an hour
         // away, all of it with a refusal on record for a project being worked.
         yield* where.looked
 
         common = {
           project,
-          client: ticketedClientOf(client, tickets),
+          client: ticketedClientOf(passClient, tickets),
           // **The runtime the recipe named** (`#313`).
           runtime: createRuntime(resolved.recipe.runtime.agent),
           // A function, not a snapshot: an installation token lasts an hour and a
           // run's wall limit is two.
-          token: () => client.token(),
+          token: () => passClient.token(),
           hookBinary: options.hookBinary,
           sandbox: processSandbox,
           prompt: options.prompt,
@@ -505,7 +521,7 @@ export function conductWork(
       // pending — because the only thing that consumes one is the item ceasing
       // to be queued.
       // `orDie`: a listing that failed ends the look as it always did (a rejection, now a defect), never as an empty queue.
-      const offered = yield* runnableNowEffect({ client: common.client, queue: queueOf(resolved.recipe) }).pipe(
+      const offered = yield* runnableNowEffect({ client: discovery, queue: queueOf(resolved.recipe) }).pipe(
         Effect.orDie,
       )
       const selected = yield* Effect.promise(() =>
@@ -557,6 +573,7 @@ export function conductWork(
         const ran: ScheduleResult = yield* world
           .runQueue({
             ...common,
+            discovery,
             ...(options.tell
               ? {
                   took: (entry: { issue: string; title: string }) => tellTaking(entry.issue, entry.title),
@@ -649,7 +666,8 @@ export function conductorTurn(options: ConductOptions = {}): Effect.Effect<TurnO
     // Whether a look awaits its pass must not depend on which project is visited
     // first, so with a ceiling and several projects each recipe is asked once up front.
     const ceilingSet = machineDayCeiling() !== undefined
-    const anyMany = options.slots && ceilingSet && projects.length > 1 ? yield* anyWantsMany(projects) : false
+    const anyMany =
+      options.slots && ceilingSet && projects.length > 1 ? yield* anyWantsMany(projects, log, options.locked) : false
 
     return yield* conductProjects({
       projects,
@@ -724,6 +742,8 @@ export function endingLine(result: RunOnceResult, options: { project: string; pr
 /** Whether any project's recipe asks for more than one slot. A recipe that cannot be read asks for one. */
 function anyWantsMany(
   projects: readonly ProjectState[],
+  log: (line: string) => void,
+  locked?: (project: string) => Effect.Effect<string | null>,
   world: ConductWorld = liveConductWorld(),
 ): Effect.Effect<boolean> {
   return Effect.gen(function* () {
@@ -737,9 +757,17 @@ function anyWantsMany(
           )
           return concurrencyOf(recipe) > 1
         }
+        // A locked project takes no work, so what its recipe asks for is moot — and asking would
+        // make installation requests throughout a GitHub cooldown (0126 §5).
+        if (locked && (yield* locked(name)) !== null) return false
         const owner = project.owner
         const client = yield* Effect.promise(() =>
-          world.createGitHubClient({ auth: githubClientAuth(), owner, repo: name }),
+          world.createGitHubClient({
+            auth: githubClientAuth(),
+            owner,
+            repo: name,
+            onRateLimited: githubLimitPort(eventStore, log, { wait: false }),
+          }),
         )
         const base = project.base ?? (yield* Effect.promise(() => client.defaultBranch()))
         const { recipe } = yield* Effect.promise(() => world.currentRecipe(project, client, base))

@@ -180,11 +180,14 @@ export type Account = z.infer<typeof Account>
  *
  *   `unreachable`    git could not reach origin for the lane's fetch or push, or
  *                    for the branch push before it, after three tries (#1029).
- *                    Nothing was judged; approve re-runs only the land.
+ *                    Nothing was judged; a rule re-runs the land first, up to
+ *                    `TRANSIENT_RETRIES_LIMIT` times (#1221), and then approve
+ *                    re-runs only the land.
  *
  *   `remote-error`   GitHub answered the branch push, the base push or the
  *                    publish with a 5xx on every one of three tries (#1125).
- *                    Nothing was judged; approve re-runs only the land.
+ *                    Nothing was judged; a rule re-runs the land first (#1221),
+ *                    and then approve re-runs only the land.
  *
  *   `unexpected`     the merge failed in a way that is not a conflict — a
  *                    dropped store connection, a failed fetch, a failed push
@@ -906,6 +909,28 @@ export const RunKeptUncommitted = z.object({
   files: z.number().int(),
   insertions: z.number().int(),
   deletions: z.number().int(),
+})
+
+/**
+ * **The conductor applied the previous attempt's kept WIP to this attempt's
+ * fresh worktree, uncommitted, before any agent ran** (#1170, 0109 §8). Its
+ * own type rather than a field on `RunKeptUncommitted`, which belongs to the
+ * run that stopped. `unapplied` is why nothing was applied (the arm could not
+ * be fetched, the diff could not be read), and null when something was.
+ *
+ * @summary The conductor carried a stopped run's uncommitted edits into the new worktree before the agent started.
+ */
+export const RunAppliedKeptWork = z.object({
+  /** The run whose `RunKeptUncommitted` this carries. */
+  fromRunId: z.string(),
+  arm: z.string(),
+  sha: z.string(),
+  parentSha: z.string(),
+  /** Paths now in the worktree, uncommitted. */
+  applied: z.array(z.string()),
+  /** Paths left at the base's version because the patch did not apply to them. */
+  leftOut: z.array(z.string()),
+  unapplied: z.string().nullable(),
 })
 
 /**
@@ -2389,7 +2414,8 @@ export const ProjectPaused = z.object({ project: z.string().min(1), by: z.string
  * An account (a runtime's, or `github`) met its limit. `until` is when the runtime said it
  * resets, or the configured backoff when it said nothing readable; `untilFrom`
  * says which, in the order `standDown` tries them. Only an attempt meeting the
- * wall appends it, and only when no limit stands (0126 §3).
+ * wall, or the conductor's GitHub call that met the limit, appends it, and only when no limit
+ * stands (0126 §3).
  *
  * @summary An account (a runtime's, or github) reached its limit; no project that uses it starts new work until it is lifted.
  */
@@ -2397,7 +2423,15 @@ export const AccountLimitReached = z.object({
   account: Account,
   /** ISO instant. */
   until: z.string().datetime({ offset: true }),
-  untilFrom: z.enum(['message', 'message-latest', 'backoff', 'backoff-unreadable']),
+  untilFrom: z.enum([
+    'message',
+    'message-latest',
+    'backoff',
+    'backoff-unreadable',
+    'retry-after',
+    'ratelimit-reset',
+    'doubling',
+  ]),
   /** The platform's own words, whitespace-collapsed, at most 200 characters. */
   said: z.string().max(200),
 })
@@ -2623,6 +2657,7 @@ export const EVENTS = {
   RunProducedDiff,
   RunRefsPublished,
   RunKeptUncommitted,
+  RunAppliedKeptWork,
   RunProposedCompletion,
   RunFinished,
   SandboxBoundaryRecorded,
@@ -2730,6 +2765,7 @@ export const EVENT_AT = {
   RunProducedDiff: ['implement', 'end'],
   RunRefsPublished: ['implement', 'end'],
   RunKeptUncommitted: ['implement', 'end'],
+  RunAppliedKeptWork: ['admit'],
   RunProposedCompletion: ['implement', 'end'],
   RunFinished: [...AGENT_STEPS, 'end'],
   SandboxBoundaryRecorded: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge'],
