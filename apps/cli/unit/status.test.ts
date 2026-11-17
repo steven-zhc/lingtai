@@ -752,6 +752,7 @@ describe('what holds new work (#1005)', () => {
       until: new Date(2026, 10, 11, 23, 0),
       untilFrom: 'message' as const,
       said: 'limit',
+      named: null,
       since: new Date(2026, 10, 11, 18, 2),
       seq: 1n,
     }
@@ -763,6 +764,21 @@ describe('what holds new work (#1005)', () => {
       "lingtai waits for claude-code's usage limit until 23:00 (read from its message) — lingtai account lift claude-code once it is over",
     )
     expect(out).toContain('nothing starts: account')
+  })
+
+  it('prints the named limit on the account lock’s line (#1214)', () => {
+    const limit = {
+      until: new Date(2099, 10, 11, 23, 0),
+      untilFrom: 'message' as const,
+      said: 'limit',
+      named: { kind: '5-hour' as const, resetsAt: new Date(2099, 10, 11, 23, 20) },
+      since: new Date(2026, 10, 11, 18, 2),
+      seq: 1n,
+    }
+    const accounts = new Map([['claude-code' as const, { ...emptyAccount, runtime: 'claude-code' as const, limit }]])
+    const r = report(control({}))
+    r.projects[0]!.locks = locksOn({ control: control({}), accounts })
+    expect(text(r)).toContain("Claude Code's 5-hour limit, resets 2099-11-11 23:20")
   })
 
   it('says a passed ceiling lifts at the next look, and does not count it as stopping', () => {

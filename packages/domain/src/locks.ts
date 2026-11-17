@@ -7,10 +7,11 @@
  * `locksOn`'s input is an object so each can add what it reads without
  * changing what a caller passes.
  */
-import type { AccountState } from './account.ts'
+import type { AccountLimit, AccountState } from './account.ts'
 import type { ControlState } from './control.ts'
 import type { ToAppend } from './envelope.ts'
 import { type Account, type PayloadOf, RuntimeId } from './events.ts'
+import { limitSentence, whenLabel } from './failure/explain.ts'
 import type { ProjectState } from './project.ts'
 
 export type Lock =
@@ -33,6 +34,7 @@ export type Lock =
       until: Date
       untilFrom: PayloadOf<'AccountLimitReached'>['untilFrom']
       said: string
+      named?: AccountLimit['named']
     }
 
 /**
@@ -77,6 +79,7 @@ export function locksOn(input: {
       until: limit.until,
       untilFrom: limit.untilFrom,
       said: limit.said,
+      named: limit.named,
     })
   }
   const paused = input.project?.paused ?? null
@@ -89,16 +92,7 @@ export const NO_ACCOUNTS: ReadonlyMap<Account, AccountState> = new Map()
 
 const money = (n: number): string => n.toFixed(2)
 
-const pad = (n: number): string => String(n).padStart(2, '0')
-const clock = (d: Date): string => `${pad(d.getHours())}:${pad(d.getMinutes())}`
-
-/** `HH:MM` when `at` is today, otherwise the date and the time. */
-export function whenLabel(at: Date, now: Date): string {
-  if (Number.isNaN(at.getTime())) return 'an unreadable time'
-  const sameDay =
-    at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth() && at.getDate() === now.getDate()
-  return sameDay ? clock(at) : `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${clock(at)}`
-}
+export { whenLabel }
 
 /** How an account is named in a sentence, and what its limit is called. The one place these words are written. */
 export function accountWords(account: Account): { name: string; limit: string } {
@@ -141,6 +135,13 @@ function oneSentence(project: string, lock: Lock, now: Date): string {
     case 'ceiling':
       return `daily ceiling reached — today $${money(lock.reportedUsd)} reported + ~$${money(lock.estimatedUsd)} est. of a $${money(lock.ceilingUsd)} ceiling; lingtai ceiling raise <usd> goes on today`
     case 'account':
+      if (lock.named) {
+        const sentence = limitSentence(lock.account, lock.named, now, { untilFrom: lock.untilFrom, said: lock.said })
+        const lift = `lingtai account lift ${lock.account}`
+        return lock.named.resetsAt === null
+          ? `lingtai waits for ${sentence}; it lifts itself at ${whenLabel(lock.until, now)} (${untilFromWords(lock.untilFrom)}) — ${lift} once ${lock.untilFrom === 'backoff-unreadable' ? 'it is over' : 'raised'}`
+          : `lingtai waits for ${sentence} — ${lift} once it is over`
+      }
       return `lingtai waits for ${accountWords(lock.account).name}'s ${accountWords(lock.account).limit} until ${whenLabel(lock.until, now)} (${untilFromWords(lock.untilFrom)}) — lingtai account lift ${lock.account} once it is over`
     default: {
       const never: never = lock

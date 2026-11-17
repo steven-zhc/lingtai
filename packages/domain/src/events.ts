@@ -2447,6 +2447,16 @@ export const AccountLimitReached = z.object({
   ]),
   /** The platform's own words, whitespace-collapsed, at most 200 characters. */
   said: z.string().max(200),
+  /**
+   * Which limit it was and when it resets, read once when the wall was met (#1214). `resetsAt` is
+   * null when the platform named no reset that was read. Absent on events written before this.
+   */
+  limit: z
+    .object({
+      kind: z.enum(['5-hour', 'weekly', 'monthly-spend', 'rate', 'usage']),
+      resetsAt: z.string().datetime({ offset: true }).nullable(),
+    })
+    .optional(),
 })
 
 /**

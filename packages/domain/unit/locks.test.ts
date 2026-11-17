@@ -66,11 +66,48 @@ describe('the day ceiling as a lock', () => {
         until: new Date(2026, 10, 11, 23, 0),
         untilFrom,
         said: 'limit',
+        named: null,
         since: new Date(2026, 10, 11, 18, 2),
         seq: 1n,
       },
     })
     const now = new Date(2026, 10, 11, 20, 0)
+
+    it('names the limit, its reset and that it passed (#1214)', () => {
+      const withNamed = (named: NonNullable<AccountState['limit']>['named']): AccountState => ({
+        ...limited('message'),
+        limit: { ...limited('message').limit!, named },
+      })
+      const sentence = (st: AccountState, at = now) =>
+        lockSentence('p', locksOn({ accounts: new Map([['claude-code', st]]) }), at)
+      const past = sentence(withNamed({ kind: '5-hour', resetsAt: new Date(2026, 10, 11, 19, 20) }))
+      expect(past).toContain("Claude Code's 5-hour limit, reset 19:20 — passed")
+      const future = sentence(withNamed({ kind: '5-hour', resetsAt: new Date(2026, 10, 11, 23, 20) }))
+      expect(future).toContain("Claude Code's 5-hour limit, resets 23:20")
+      expect(future).not.toContain('passed')
+      const monthly = sentence(withNamed({ kind: 'monthly-spend', resetsAt: null }))
+      expect(monthly).toContain("Claude Code's monthly spend limit — no reset named")
+      expect(monthly).toContain('lingtai account lift claude-code')
+      expect(sentence(limited('message'))).toContain("claude-code's usage limit until 23:00")
+      const unreadable = sentence({
+        ...limited('backoff-unreadable'),
+        limit: {
+          ...limited('backoff-unreadable').limit!,
+          said: 'resets blorp',
+          named: { kind: 'weekly', resetsAt: null },
+        },
+      })
+      expect(unreadable).toContain('could not read ("resets blorp")')
+      expect(unreadable).not.toContain('no reset named')
+      const latest = sentence({
+        ...limited('message-latest'),
+        limit: {
+          ...limited('message-latest').limit!,
+          named: { kind: 'usage', resetsAt: new Date(2026, 10, 12, 14, 0) },
+        },
+      })
+      expect(latest).toContain('resets no later than 2026-11-12 14:00 (the latest its message could mean)')
+    })
 
     it('is no lock for an unlimited account, one per limited account, and none for an absent runtime', () => {
       expect(locksOn({ accounts: new Map([['claude-code', emptyAccount]]) })).toEqual([])

@@ -8,6 +8,7 @@
  */
 import type { Envelope, ToAppend } from './envelope.ts'
 import type { PayloadOf, Account } from './events.ts'
+import type { LimitKind } from './failure/respond.ts'
 
 export type AccountLimit = {
   /**
@@ -19,6 +20,8 @@ export type AccountLimit = {
   until: Date
   untilFrom: PayloadOf<'AccountLimitReached'>['untilFrom']
   said: string
+  /** Which limit and its reset, as the first event named them; null on events from before #1214. */
+  named: { kind: LimitKind; resetsAt: Date | null } | null
   /** The first `AccountLimitReached`'s time and seq, so *since when* needs no clock. */
   since: Date
   seq: bigint
@@ -57,7 +60,16 @@ export function reduceAccountEvent(state: AccountState, event: Envelope): Accoun
         ...at,
         account: d.account,
         doublings,
-        limit: { until: new Date(d.until), untilFrom: d.untilFrom, said: d.said, since: event.at, seq: event.seq },
+        limit: {
+          until: new Date(d.until),
+          untilFrom: d.untilFrom,
+          said: d.said,
+          named: d.limit
+            ? { kind: d.limit.kind, resetsAt: d.limit.resetsAt ? new Date(d.limit.resetsAt) : null }
+            : null,
+          since: event.at,
+          seq: event.seq,
+        },
       }
     }
     case 'AccountLimitLifted': {

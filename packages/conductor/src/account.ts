@@ -160,6 +160,7 @@ export const githubLimitPort =
             until: at.until.toISOString(),
             untilFrom: at.untilFrom,
             said: at.said,
+            limit: at.limit,
           })
         },
         (state) => ({ kind: 'already', until: state.limit!.until }),
