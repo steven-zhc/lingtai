@@ -59,6 +59,7 @@ describe('carryKeptWork', () => {
       'apply --numstat': '1\t0\ta.ts\0 1\t1\tc.ts\0'.replace(' ', ''),
       'apply --3way': { fail: 'conflicts' },
       'diff --name-only': 'c.ts\0',
+      '--literal-pathspecs ls-tree': '100644 blob x\tp\0',
     })
     expect(result).toEqual({ applied: ['a.ts'], leftOut: ['c.ts'], unapplied: null })
     expect(calls).toContain('--literal-pathspecs checkout HEAD -- c.ts')
@@ -70,10 +71,11 @@ describe('carryKeptWork', () => {
   it('restores a conflicted rename at both ends, literally', () => {
     const { result, calls } = carry({
       'apply --numstat': '1\t1\tnew.txt\0',
+      '--literal-pathspecs ls-tree': '100644 blob x\tz\0',
       'diff --raw': ':100644 100644 a b R090\0old.txt\0new.txt\0',
       'apply --3way': { fail: 'conflicts' },
       'diff --name-only': 'new.txt\0',
-      'cat-file -e HEAD:new.txt': { fail: 'absent' },
+      '--literal-pathspecs ls-tree -z HEAD -- new.txt': '',
     })
     expect(result).toEqual({ applied: [], leftOut: ['new.txt'], unapplied: null })
     expect(calls).toContain('--literal-pathspecs rm -f -q -- new.txt')
@@ -85,6 +87,7 @@ describe('carryKeptWork', () => {
       'apply --numstat': '1\t0\ta.ts\0' + '1\t1\tc.ts\0',
       'apply --3way': { fail: 'conflicts' },
       'diff --name-only': 'c.ts\0',
+      '--literal-pathspecs ls-tree': '100644 blob x\tp\0',
       '--literal-pathspecs checkout': { fail: 'index.lock' },
     })
     expect(result?.unapplied).toContain('could not be restored')
@@ -143,6 +146,7 @@ describe('carryKeptWork', () => {
     const { result, calls } = carry({
       'apply --numstat': '0\t1\tsub\0' + '1\t0\tsub\0',
       'diff --raw': ':160000 000000 a b D\0sub\0:000000 100644 c d A\0sub\0',
+      '--literal-pathspecs ls-tree': '100644 blob x\tp\0',
     })
     expect(result).toEqual({ applied: [], leftOut: ['sub'], unapplied: null })
     // the worktree is restored too, before the unstaging reset, not only the report
@@ -165,6 +169,7 @@ describe('carryKeptWork', () => {
       'apply --numstat': '1\t0\ta.ts\0' + '1\t1\tc.ts\0',
       'apply --3way': { fail: 'conflicts' },
       'diff --name-only': 'c.ts\0',
+      '--literal-pathspecs ls-tree': '100644 blob x\tp\0',
       '--literal-pathspecs checkout': { fail: 'index.lock' },
       'status --porcelain': ' M a.ts\0',
       'reset --hard': { fail: 'index.lock' },
@@ -174,5 +179,18 @@ describe('carryKeptWork', () => {
 
   it('has nothing to carry for an empty WIP', () => {
     expect(carry({ 'apply --numstat': '' }).result).toBeNull()
+  })
+
+  it('restores a base submodule that a file replaced with checkout, not rm, though its commit is not in the object database', () => {
+    const { result, calls } = carry({
+      'apply --numstat': '0\t1\tsub\0' + '1\t0\tsub\0',
+      'diff --raw': ':160000 100644 a b T\0sub\0',
+      // the path is in HEAD's tree as a gitlink; `cat-file -e` would fail for it, so it must not be asked
+      '--literal-pathspecs ls-tree -z HEAD -- sub': '160000 commit abc\tsub\0',
+      'cat-file': { fail: 'missing object' },
+    })
+    expect(result).toEqual({ applied: [], leftOut: ['sub'], unapplied: null })
+    expect(calls).toContain('--literal-pathspecs checkout HEAD -- sub')
+    expect(calls.some((c) => c.includes('rm -f') || c.startsWith('cat-file'))).toBe(false)
   })
 })

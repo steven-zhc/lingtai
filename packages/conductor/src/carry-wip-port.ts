@@ -153,11 +153,7 @@ export function carryKeptWork(options: {
         if (from !== undefined) restore.add(from)
       }
       for (const path of restore) {
-        const known = yield* git(['cat-file', '-e', `HEAD:${path}`])
-        // `--literal-pathspecs`: a name such as `a*.txt` is a file, never a pattern.
-        const done = Result.isSuccess(known)
-          ? yield* git(['--literal-pathspecs', 'checkout', 'HEAD', '--', path])
-          : yield* git(['--literal-pathspecs', 'rm', '-f', '-q', '--', path])
+        const done = yield* restoreToBase(git, path)
         if (Result.isFailure(done))
           return yield* giveUp(`${path} could not be restored to the base (${done.failure.detail})`)
       }
@@ -166,10 +162,7 @@ export function carryKeptWork(options: {
     // or the reverse) goes back to the base in the tree too, not only in the report. Before `reset`, while
     // the index still holds it, so a path the base lacks can be removed.
     for (const path of gitlinks.filter((p) => touched.includes(p))) {
-      const known = yield* git(['cat-file', '-e', `HEAD:${path}`])
-      const done = Result.isSuccess(known)
-        ? yield* git(['--literal-pathspecs', 'checkout', 'HEAD', '--', path])
-        : yield* git(['--literal-pathspecs', 'rm', '-f', '-q', '--', path])
+      const done = yield* restoreToBase(git, path)
       if (Result.isFailure(done))
         return yield* giveUp(`${path} could not be restored to the base (${done.failure.detail})`)
     }
@@ -185,6 +178,23 @@ export function carryKeptWork(options: {
       leftOut: [...leftOut, ...gitlinksLeft],
       unapplied: null,
     }
+  })
+}
+
+/**
+ * Puts one path back as the base (`HEAD`) has it, or removes it where the base has none.
+ * Whether HEAD holds the path is asked of its tree (`ls-tree`), never `cat-file -e`: that asks
+ * whether the object is available, and a submodule's commit is not in this object database.
+ */
+function restoreToBase(git: RawGit, path: string): ReturnType<GitHere> {
+  return Effect.gen(function* () {
+    const inTree = yield* git(['--literal-pathspecs', 'ls-tree', '-z', 'HEAD', '--', path], { trim: false })
+    // An unreadable tree is not an absent path: removing on a guess could delete what the base has.
+    if (Result.isFailure(inTree)) return inTree
+    // `--literal-pathspecs`: a name such as `a*.txt` is a file, never a pattern.
+    return inTree.success !== ''
+      ? yield* git(['--literal-pathspecs', 'checkout', 'HEAD', '--', path])
+      : yield* git(['--literal-pathspecs', 'rm', '-f', '-q', '--', path])
   })
 }
 
