@@ -238,7 +238,7 @@ describe('lingtai doctor: account limits (#1009)', () => {
       {
         type: 'AccountLimitReached',
         actor: 'conductor',
-        data: { runtime: 'claude-code', until: until.toISOString(), untilFrom: 'message', said: 'limit' },
+        data: { account: 'claude-code', until: until.toISOString(), untilFrom: 'message', said: 'limit' },
       },
     ])
 
@@ -271,7 +271,7 @@ describe('lingtai doctor: account limits (#1009)', () => {
       {
         type: 'AccountLimitReached',
         actor: 'conductor',
-        data: { runtime: 'codex', until: until.toISOString(), untilFrom: 'message', said: 'limit' },
+        data: { account: 'codex', until: until.toISOString(), untilFrom: 'message', said: 'limit' },
       },
     ])
     const both = await Effect.runPromise(

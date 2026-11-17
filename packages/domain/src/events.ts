@@ -141,6 +141,13 @@ export const RuntimeId = z.enum(['claude-code', 'codex'])
 export type RuntimeId = z.infer<typeof RuntimeId>
 
 /**
+ * A platform whose account a limit can stand on (0126 §2): a runtime, or a code
+ * host. Where a value names an account it is this, never `RuntimeId`.
+ */
+export const Account = z.enum([...RuntimeId.options, 'github'])
+export type Account = z.infer<typeof Account>
+
+/**
  * Why an integration did not happen. Moved to `vocabulary.ts` by #445, for the
  * same reason `Step` was; re-exported above under the same name.
  *
@@ -2360,32 +2367,32 @@ export const ProjectRecovered = z.object({
 export const ProjectPaused = z.object({ project: z.string().min(1), by: z.string() })
 
 /**
- * A runtime's account met its usage limit. `until` is when the runtime said it
+ * An account (a runtime's, or `github`) met its limit. `until` is when the runtime said it
  * resets, or the configured backoff when it said nothing readable; `untilFrom`
  * says which, in the order `standDown` tries them. Only an attempt meeting the
  * wall appends it, and only when no limit stands (0126 §3).
  *
- * @summary A runtime's account reached its usage limit; no project whose recipe uses it starts new work until it is lifted.
+ * @summary An account (a runtime's, or github) reached its limit; no project that uses it starts new work until it is lifted.
  */
 export const AccountLimitReached = z.object({
-  runtime: RuntimeId,
+  account: Account,
   /** ISO instant. */
   until: z.string().datetime({ offset: true }),
   untilFrom: z.enum(['message', 'message-latest', 'backoff', 'backoff-unreadable']),
-  /** The runtime's own words, whitespace-collapsed, at most 200 characters. */
+  /** The platform's own words, whitespace-collapsed, at most 200 characters. */
   said: z.string().max(200),
 })
 
 /**
- * A runtime's usage limit ended: the guard saw `until` pass (no `by`), or a
+ * An account's limit ended: the guard saw `until` pass (no `by`), or a
  * person said it is over (`by`).
  *
- * @summary A runtime's usage limit was lifted: its time passed, or a person said it is over.
+ * @summary An account's limit was lifted: its time passed, or a person said it is over.
  */
 export const AccountLimitLifted = z.union([
   // `by` first: a union takes the first member that parses, and the bare shape would strip it.
-  z.object({ runtime: RuntimeId, by: z.string() }),
-  z.object({ runtime: RuntimeId }),
+  z.object({ account: Account, by: z.string() }),
+  z.object({ account: Account }),
 ])
 
 /**
@@ -2783,6 +2790,9 @@ const BUMPED: Partial<Record<EventType, number>> = {
   Reconciled: 2,
   // 2: a retired advice is rewritten on read (#591). See the upcaster.
   WaitTriaged: 2,
+  // 2: `runtime` became `account`, which names a platform (0126 §2, #1212).
+  AccountLimitReached: 2,
+  AccountLimitLifted: 2,
 }
 
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(

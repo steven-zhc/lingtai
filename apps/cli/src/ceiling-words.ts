@@ -64,7 +64,7 @@ export function lockJson(lock: Lock): Record<string, unknown> {
     case 'account':
       return {
         kind: 'account',
-        runtime: lock.runtime,
+        account: lock.account,
         by: lock.by,
         since: lock.since.toISOString(),
         until: lock.until.toISOString(),

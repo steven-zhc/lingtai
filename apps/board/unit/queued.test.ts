@@ -20,6 +20,7 @@ import {
   type EpicTicket,
   type QueueEntry,
 } from '../src/lib/board.ts'
+import { lockStanding } from '../src/lib/lock-marks.ts'
 import { runNowCaption, type QueuedView } from '../src/lib/queued.ts'
 
 function queued(over: Partial<TaskCard> & { issue: string; kind: string }): TaskCard {
@@ -391,7 +392,7 @@ describe('queuedStanding: a runtime at its usage limit (#1010)', () => {
   const card = { column: 'queued', runnableAt: null, project: 'lingtai' } as const
   const limit = (until: Date): Lock => ({
     kind: 'account',
-    runtime: 'claude-code',
+    account: 'claude-code',
     by: 'lingtai',
     since: new Date(2026, 10, 11, 17, 0),
     until,
@@ -404,6 +405,13 @@ describe('queuedStanding: a runtime at its usage limit (#1010)', () => {
     expect(s?.state).toBe('paused')
     expect(s?.text).toBe('claude-code is at its usage limit until 23:00 — nothing will start')
     expect(queuedStanding(card, false, now.getTime(), [limit(new Date(2026, 10, 11, 17, 30))])).toBeNull()
+  })
+
+  it('calls a github lock a rate limit, in the chip and the text', () => {
+    const gh = { ...limit(new Date(2026, 10, 11, 23, 0)), account: 'github' } as Lock
+    const s = lockStanding('lingtai', [gh], now)
+    expect(s?.kind).toBe('rate limit')
+    expect(s?.text).toBe('GitHub is at its rate limit until 23:00 — nothing will start')
   })
 
   it('is outranked by the conductor-wide pause', () => {

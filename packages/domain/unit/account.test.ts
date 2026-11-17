@@ -6,6 +6,7 @@ import {
   emptyAccount,
   liftTransition,
   reachTransition,
+  parseStoredPayload,
   reduceAccount,
 } from '../src/index.ts'
 
@@ -14,8 +15,8 @@ const reached = (until: string, at: string, seq: bigint, version: number): Envel
   streamId: 'acct-claude-code',
   version,
   type: 'AccountLimitReached',
-  schemaVer: 1,
-  data: { runtime: 'claude-code', until, untilFrom: 'message', said: 'limit' },
+  schemaVer: 2,
+  data: { account: 'claude-code', until, untilFrom: 'message', said: 'limit' },
   actor: 'conductor',
   causation: null,
   at: new Date(at),
@@ -25,8 +26,8 @@ const lifted = (seq: bigint, version: number): Envelope => ({
   streamId: 'acct-claude-code',
   version,
   type: 'AccountLimitLifted',
-  schemaVer: 1,
-  data: { runtime: 'claude-code' },
+  schemaVer: 2,
+  data: { account: 'claude-code' },
   actor: 'conductor',
   causation: null,
   at: new Date('2026-01-01T03:00:00Z'),
@@ -75,23 +76,56 @@ describe('the Account aggregate', () => {
     expect(liftTransition(limited, 'claude-code', 'human:x')).toMatchObject({
       type: 'AccountLimitLifted',
       actor: 'human:x',
-      data: { runtime: 'claude-code', by: 'human:x' },
+      data: { account: 'claude-code', by: 'human:x' },
     })
   })
 
   it('accountCheck lifts at and after until, never before, never when nothing stands', () => {
     const state = reduceAccount([reached('2026-01-01T05:00:00Z', '2026-01-01T01:00:00Z', 7n, 1)])
-    const check = (now: string) => accountCheck({ state, runtime: 'claude-code', now: new Date(now) })
+    const check = (now: string) => accountCheck({ state, account: 'claude-code', now: new Date(now) })
     expect(check('2026-01-01T04:59:59Z')).toEqual([])
     expect(check('2026-01-01T05:00:00Z')).toMatchObject([
-      { type: 'AccountLimitLifted', data: { runtime: 'claude-code' } },
+      { type: 'AccountLimitLifted', data: { account: 'claude-code' } },
     ])
     expect(check('2026-01-02T00:00:00Z')).toHaveLength(1)
-    expect(accountCheck({ state: emptyAccount, runtime: 'claude-code', now: new Date() })).toEqual([])
+    expect(accountCheck({ state: emptyAccount, account: 'claude-code', now: new Date() })).toEqual([])
   })
 
   it('never lifts a limit whose until does not parse', () => {
     const state = reduceAccount([reached('not a date', '2026-01-01T01:00:00Z', 7n, 1)])
-    expect(accountCheck({ state, runtime: 'claude-code', now: new Date('2030-01-01') })).toEqual([])
+    expect(accountCheck({ state, account: 'claude-code', now: new Date('2030-01-01') })).toEqual([])
+  })
+
+  it('reduces a stored schemaVer 1 row, which says runtime, to the state it had before', () => {
+    const old = parseStoredPayload('AccountLimitReached', 1, {
+      runtime: 'claude-code',
+      until: '2026-01-01T05:00:00Z',
+      untilFrom: 'message',
+      said: 'limit',
+    })
+    const oldLift = parseStoredPayload('AccountLimitLifted', 1, { runtime: 'claude-code', by: 'human:x' })
+    expect(old).toEqual({ account: 'claude-code', until: '2026-01-01T05:00:00Z', untilFrom: 'message', said: 'limit' })
+    expect(oldLift).toEqual({ account: 'claude-code', by: 'human:x' })
+    expect(parseStoredPayload('AccountLimitLifted', 1, { runtime: 'codex' })).toEqual({ account: 'codex' })
+    const a = reduceAccount([{ ...reached('2026-01-01T05:00:00Z', '2026-01-01T01:00:00Z', 7n, 1), data: old }])
+    const b = reduceAccount([reached('2026-01-01T05:00:00Z', '2026-01-01T01:00:00Z', 7n, 1)])
+    expect(a).toEqual(b)
+    expect(a.account).toBe('claude-code')
+  })
+
+  it('names github as an account and refuses another code host', () => {
+    expect(
+      liftTransition(
+        reduceAccount([
+          {
+            ...reached('2026-01-01T05:00:00Z', '2026-01-01T01:00:00Z', 7n, 1),
+            data: { account: 'github', until: '2026-01-01T05:00:00Z', untilFrom: 'message', said: '' },
+          },
+        ]),
+        'github',
+        'human:x',
+      )?.data,
+    ).toEqual({ account: 'github', by: 'human:x' })
+    expect(() => parseStoredPayload('AccountLimitLifted', 2, { account: 'gitlab' })).toThrow()
   })
 })

@@ -448,7 +448,10 @@ export const PREFIXES = {
   'ext-': { onePer: 'extension, `ext-subscribers` (the only one so far)', state: null },
   'bkl-': { onePer: 'finding, `bkl-{project}-{key}`', state: 'Finding state' },
   'rcp-': { onePer: 'recipe, `rcp-{configHash}`', state: null },
-  'acct-': { onePer: 'runtime account on this machine, `acct-{runtime}`', state: 'AccountState' },
+  'acct-': {
+    onePer: 'platform account on this machine (a runtime, or `github`), `acct-{account}`',
+    state: 'AccountState',
+  },
 } as const satisfies { readonly [P in StreamPrefix]: { readonly onePer: string; readonly state: string | null } }
 
 /** Why a type is on more than one prefix. A type on several with no row here fails the generator. */
