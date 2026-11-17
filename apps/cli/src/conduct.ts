@@ -27,7 +27,6 @@ import {
   declinedBeforeWork,
   ownerlessClientEffect,
   ticketedClientOf,
-  readFixFilesEffect,
   runOnce,
   runQueue,
   runnableNowEffect,
@@ -37,7 +36,6 @@ import {
   type RunOnceResult,
   type ScheduleResult,
   type Slots,
-  waitsFor,
 } from '@lingtai/conductor'
 import { readControlEffect } from '@lingtai/daemon'
 import { type ControlState, type ProjectState, turnTransition } from '@lingtai/domain'
@@ -365,7 +363,7 @@ export function conductWork(
       }
       // Passes already in flight, in any project, keep the look detached even when the
       // limit has since fallen to one or the ceiling has been removed: awaiting would
-      // ignore them, and the slot count and the same-file rule are what keep a lowered
+      // ignore them, and the slot count is what keeps a lowered
       // limit honest until they have drained.
       const detached =
         slots !== undefined && ((slots.ceilingSet && (limit > 1 || slots.anyMany === true)) || slots.set.size > 0)
@@ -382,9 +380,8 @@ export function conductWork(
         return !declinedBeforeWork(result)
       }
       /**
-       * Starts one pass into a slot and does not wait for it — unless its `Fix` row
-       * names a file a pass in flight names, in which case nothing starts and it says
-       * so (0122 §2). The same rule `runQueue` applies, for the rows that jump it.
+       * Starts one pass into a slot and does not wait for it — and a pause or lock
+       * stops it (0122 §2).
        */
       const launch = (issue: number, continuing?: { runId: string }): Effect.Effect<boolean> =>
         Effect.gen(function* () {
@@ -400,21 +397,14 @@ export function conductWork(
             say(`${name}: #${issue} not started — ${lock}`)
             return false
           }
-          const files = yield* readFixFilesEffect(common.client, issue)
-          const why = waitsFor(files, slots!.set.of(name))
-          if (why !== null) {
-            options.log(`${name}: #${issue} ${why}`)
-            return false
-          }
-          // Asked again after the read: the issue fetch can take long enough for a
-          // pause to land, and the answer above is a fact about before it.
+          // Asked once more right before the slot is taken: the answer above is a fact about before it.
           const pausedAfter = options.paused ? yield* options.paused : null
           const lockAfter = pausedAfter === null && options.locked ? yield* options.locked(name) : null
           if (pausedAfter !== null || lockAfter !== null) {
             say(`${name}: #${issue} not started — ${pausedAfter ?? lockAfter}`)
             return false
           }
-          const leave = slots!.set.enter({ project: name, issue: String(issue), files })
+          const leave = slots!.set.enter({ project: name, issue: String(issue) })
           options.outcome.ran += 1
           // Run with the look's services and not forked: the pass outlives the look, which a child
           // fiber would not, and the drain waits for it through `started` (0122 §4).

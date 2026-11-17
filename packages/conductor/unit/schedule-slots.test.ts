@@ -26,7 +26,6 @@ const world = {
   taken: new Set<string>(),
   started: [] as number[],
   releases: new Map<number, () => void>(),
-  failBody: new Set<number>(),
 }
 
 vi.mock('../src/queue.ts', () => ({
@@ -68,7 +67,6 @@ const client = {
       subIssues: null,
     })),
   getIssue: async (n: number) => {
-    if (world.failBody.has(n)) throw new Error('boom')
     return { body: world.issues.find((i) => i.number === n)!.body }
   },
 }
@@ -100,7 +98,6 @@ beforeEach(() => {
   world.taken = new Set()
   world.started = []
   world.releases = new Map()
-  world.failBody = new Set()
 })
 
 describe('runQueue with slots', () => {
@@ -124,24 +121,17 @@ describe('runQueue with slots', () => {
     expect(world.started).toEqual([1, 2, 3])
   })
 
-  it('a same-file pair runs one after the other, and a lower ticket that does not collide takes the slot', async () => {
+  it('a shared file holds nothing back: both tickets start when two slots are free', async () => {
     world.issues = [
       { number: 1, body: fix('`src/work-loop.ts:40`') },
       { number: 2, body: fix('rewrite `work-loop.ts`') },
-      { number: 3, body: fix('`docs/other.md`') },
     ]
     const slots = createSlots()
     const lines: string[] = []
     await look(slots, 2, lines)
 
-    expect(world.started).toEqual([1, 3])
-    expect(lines.some((l) => l.includes('waits for #1 in flight — both name `src/work-loop.ts`'))).toBe(true)
-
-    world.releases.get(1)!()
-    world.releases.get(3)!()
-    await settle()
-    await look(slots, 2)
-    expect(world.started).toEqual([1, 3, 2])
+    expect(world.started).toEqual([1, 2])
+    expect(lines.some((l) => l.includes('waits for'))).toBe(false)
   })
 
   it('a blocked-by pair runs one after the other', async () => {
@@ -158,26 +148,6 @@ describe('runQueue with slots', () => {
     await settle()
     world.issues = [{ number: 2, body: fix('`b.ts`'), blockedBy: 0 }]
     await look(slots, 2)
-    expect(world.started).toEqual([1, 2])
-  })
-
-  it('a Fix row that cannot be read collides with what is in flight, rather than counting as no files', async () => {
-    world.issues = [
-      { number: 1, body: fix('`a.ts`') },
-      { number: 2, body: fix('`b.ts`') },
-    ]
-    world.failBody.add(2)
-    const slots = createSlots()
-    await look(slots, 2)
-    expect(world.started).toEqual([1])
-  })
-
-  it('a ticket with no Fix row collides with nothing', async () => {
-    world.issues = [
-      { number: 1, body: 'no table' },
-      { number: 2, body: fix('`b.ts`') },
-    ]
-    await look(createSlots(), 2)
     expect(world.started).toEqual([1, 2])
   })
 

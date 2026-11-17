@@ -12,11 +12,6 @@ export interface Slot {
   project: string
   /** The ticket's number, as `Runnable.issue` carries it. */
   issue: string
-  /**
-   * What its `Fix` row names, read when it was started — or null when that read
-   * failed, which collides with everything: an unread value is never an empty one.
-   */
-  files: readonly string[] | null
 }
 
 export interface Slots {

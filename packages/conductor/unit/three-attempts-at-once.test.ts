@@ -260,29 +260,22 @@ describe('three passes through runQueue with slots', () => {
     for (const n of [1, 2, 3]) expect(landed(n)).toBe(true)
   })
 
-  it('runs a same-file pair in turn', async () => {
+  it('a shared file holds nothing back: both tickets are claimed in the first look', async () => {
     const rt = barrier()
     const slots = createSlots()
     const handed: Promise<boolean | void>[] = []
     const lines: string[] = []
-    const c = client({ 1: fix('`src/x.ts`'), 2: fix('rewrite `src/x.ts`'), 3: fix('`docs/other.md`') })
+    const c = client({ 1: fix('`src/x.ts`'), 2: fix('rewrite `src/x.ts`') })
     const ports = portsPerRun(world.store)
 
     await look(c, slots, ports, rt, handed, { log: (l) => lines.push(l) })
     await until(() => rt.entered === 2)
     expect(ticket(1).some((e) => e.type === 'TicketClaimed')).toBe(true)
-    expect(ticket(3).some((e) => e.type === 'TicketClaimed')).toBe(true)
-    expect(ticket(2)).toHaveLength(0)
-    expect(lines.some((l) => l.includes('waits for #1 in flight — both name `src/x.ts`'))).toBe(true)
+    expect(ticket(2).some((e) => e.type === 'TicketClaimed')).toBe(true)
+    expect(lines.some((l) => l.includes('waits for'))).toBe(false)
 
     rt.release()
     await settled(handed)
-    // The work loop looks again after a settle (#638); only now can #2 start.
-    await look(c, slots, ports, rt, handed)
-    await settled(handed)
-
-    expect(landed(2)).toBe(true)
-    expect(seqOf(2, 'TicketClaimed')).toBeGreaterThan(seqOf(1, 'TicketLanded'))
   })
 
   it('a drain starts nothing and waits for all three', async () => {
