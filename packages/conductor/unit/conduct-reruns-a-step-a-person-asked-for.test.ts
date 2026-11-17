@@ -106,7 +106,10 @@ describe('a step a person asked to run again', () => {
     )
     expect(resolved).toMatchObject({ ok: true })
 
-    const second = await once({ ...base, continuing: { runId } }, fakePorts([], store, true, { at: head, implementerCommits: false }))
+    const second = await once(
+      { ...base, continuing: { runId } },
+      fakePorts([], store, true, { at: head, implementerCommits: false }),
+    )
     expect(second.runId).toBe(runId)
     expect(seen).toHaveLength(2)
     expect(seen[1]!.id).toBe(`${seen[0]!.id}:rerun:1`)
