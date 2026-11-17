@@ -2426,3 +2426,23 @@ describe('Approve on a DiffTooLarge wait (#892)', () => {
     expect(html).not.toContain('merging…')
   })
 })
+
+const CRASHED: StandingView = {
+  ...HELD,
+  reason: { _tag: 'AgentCrashed', run: { runId: RUN_2 }, step: 'review', cause: 'crash', detail: 'killed' },
+}
+
+it('offers the rerun on a crash with a saved head, after the grant would sit and before starting over', () => {
+  const html = render({ ...CRASHED, rerunWork: { head: SHA, ref: null } }, OUTGOING)
+  expect(html).toContain('data-resolution="RerunStep"')
+  expect(html).toContain(`Rerun this step on ${SHA.slice(0, 7)}</button>`)
+  expect(html).not.toContain('Cannot rerun on saved work')
+  expect(html.indexOf('data-resolution="RerunStep"')).toBeLessThan(html.indexOf('data-resolution="Requeue"'))
+})
+
+it('shows the refusal and no button where the rerun has no usable head', () => {
+  const html = render({ ...CRASHED, rerunWork: { refusal: 'no head here' } }, OUTGOING)
+  expect(html).toContain('Cannot rerun on saved work')
+  expect(html).toContain('no head here')
+  expect(html).not.toContain('Rerun this step on')
+})

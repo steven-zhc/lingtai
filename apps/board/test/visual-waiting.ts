@@ -453,6 +453,10 @@ export async function preview(name: CaseName) {
     // This inert preview uses its recorded published ref/head as the remote
     // answer; loadTask checks that ref again before offering a live move.
     previewStanding.fixWork = savedFixWork(standing.runId, runs.get(standing.runId) ?? [])
+    // Staged for the #1219 comparison: no real wait offers both this card and the grant, so the preview carries
+    // both fields and the order function puts the rerun beside it. Drawn only where `allowedResolutions` offers it.
+    const saved = previewStanding.fixWork
+    previewStanding.rerunWork = 'head' in saved ? { head: saved.head, ref: saved.ref } : saved
   }
   const progress = foldedRuns.find((run) => run.runId === standing.runId)?.progress ?? null
   // The preview's fixtures carry no `RunSpent`, so no round was granted (#826).

@@ -20,7 +20,7 @@ vi.mock('@lingtai/project', async (orig) => ({
 vi.mock('@lingtai/conductor/ownerless', () => ({ ownerlessClient: vi.fn(async () => ({ client: {} })) }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
-import { continueFixingCard, requeueCard } from '../src/app/actions.ts'
+import { continueFixingCard, requeueCard, rerunStepCard } from '../src/app/actions.ts'
 
 beforeEach(() => {
   conductor.requeue.mockClear()
@@ -37,4 +37,23 @@ it('passes the picks of continueFixingCard to the conductor unchanged', async ()
   const waitId = aWaitId()
   await continueFixingCard({ project: 'p', issue: 1, waitId, onSha: 'abc', picks: { 1: 'b' } })
   expect(conductor.resolveWait).toHaveBeenCalledWith(expect.objectContaining({ picks: { 1: 'b' } }))
+})
+
+it('sends rerunStepCard’s shown head as a RerunStep, and never an empty one', async () => {
+  const waitId = aWaitId()
+  await rerunStepCard({ project: 'p', issue: 1, waitId, onSha: 'abc' })
+  expect(conductor.resolveWait).toHaveBeenCalledWith(
+    expect.objectContaining({ resolution: { _tag: 'RerunStep', onSha: 'abc', ref: null } }),
+  )
+  conductor.resolveWait.mockClear()
+  expect(await rerunStepCard({ project: 'p', issue: 1, waitId, onSha: '' })).toMatchObject({ ok: false })
+  expect(conductor.resolveWait).not.toHaveBeenCalled()
+})
+
+it('shows the server’s stale refusal as the card’s detail', async () => {
+  conductor.resolveWait.mockResolvedValueOnce({ ok: false, reason: 'stale', detail: 'stale: moved' } as never)
+  expect(await rerunStepCard({ project: 'p', issue: 1, waitId: aWaitId(), onSha: 'abc' })).toEqual({
+    ok: false,
+    detail: 'stale: moved',
+  })
 })

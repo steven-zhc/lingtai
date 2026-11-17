@@ -26,6 +26,7 @@ import {
   approveCard,
   closeCard,
   continueFixingCard,
+  rerunStepCard,
   editBodyAndRequeueCard,
   requeueCard,
   runNow,
@@ -311,6 +312,47 @@ export function ContinueFixing({
           }}
         >
           {pending ? 'granting…' : 'Continue fixing current work'}
+        </button>
+      )}
+      {detail ? <p className={done ? 'decided' : 'refusal'}>{detail}</p> : null}
+    </div>
+  )
+}
+
+/** `ContinueFixing`'s sibling: rerun the stopped step on the saved head shown, never primary (#1219). */
+export function RerunStepButton({
+  project,
+  issue,
+  waitId,
+  onSha,
+}: {
+  project: string
+  issue: number
+  waitId: WaitId
+  onSha: string
+}) {
+  const [pending, setPending] = useState(false)
+  const [detail, setDetail] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+  const [, startTransition] = useTransition()
+  return (
+    <div className="decide">
+      {done ? null : (
+        <button
+          className="btn"
+          disabled={pending}
+          onClick={() => {
+            setPending(true)
+            setDetail(null)
+            startTransition(async () => {
+              const result = await rerunStepCard({ project, issue, waitId, onSha })
+              setPending(false)
+              setDone(result.ok)
+              setDetail(result.detail)
+            })
+          }}
+        >
+          {pending ? 'rerunning…' : `Rerun this step on ${onSha.slice(0, 7)}`}
         </button>
       )}
       {detail ? <p className={done ? 'decided' : 'refusal'}>{detail}</p> : null}
