@@ -330,7 +330,7 @@ fixes the bounds and the endings that router works inside.
   continued from the saved head after the lane's retries; `BASE_MERGES_LIMIT`
   raised from 2 to 10 and `TRANSIENT_RETRIES_LIMIT` added; the conflict budget
   drawn from `rounds` rather than `CONFLICT_ROUNDS_LIMIT = 2`; and
-  `attemptCeiling` saying the one total of §8. §17's second run, §18's
+  `attemptCeiling` saying the one total of §8. §17's second run (the base check's half is built, #1207; the rerun of `build` and declared checks is #1222's), §18's
   answer (built, #1198 and #1199: `offerFor` offers the round when the
   implementer said something, and a judge declared at `nothing-produced` is shown
   the ticket and the message; one declared at `fixer-disagrees` is shown the

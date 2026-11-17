@@ -12,7 +12,7 @@ import { dirname, join, resolve } from 'node:path'
  * It answers from the log when a `BaseChecked` for this commit, this
  * command and this boundary is already on `int-<project>-<base>`, and otherwise cuts a throwaway
  * worktree *detached at the sha*, runs `prepared`'s `run:` commands and then
- * the command once, and appends what it said. `provisionWorktree`'s `at` is not
+ * the command, and appends what it said. `provisionWorktree`'s `at` is not
  * used: it refuses a sha that is not on the ticket's own branch, and a base
  * commit never is.
  *
@@ -20,6 +20,10 @@ import { dirname, join, resolve } from 'node:path'
  *   abort, a failed cut, a failed install or a failed read is `unknown` and is
  *   never appended: a cached `red` holds every later ticket on that commit, so
  *   a flake recorded as `red` would hold them all until the base moves.
+ * - **A non-zero exit is run once more, at once, in the same tree** (0108 §17, #1207); `prepared` is not.
+ *   The rerun can only turn a red into a green, never produce a red: red twice records the second run's
+ *   evidence, red then green records green with the first run's failing tests as `flaky`, and a second run
+ *   with no exit code is `unknown`, never the first run's red.
  * - **One run per `(stream, baseSha, command, fingerprint)` in flight.** Two passes in one
  *   conductor (0102) share the promise. It runs on the *first* asker's `signal`
  *   and `runId`: if that pass is aborted the second asker also gets `unknown`,
@@ -48,7 +52,7 @@ import {
   wrapRefusal,
 } from '@lingtai/actions'
 import { extensionEnv, productionPatterns, renderEnvFile, runnableEnv, type AgentEnv } from '@lingtai/agent-env'
-import { integrationStream, parsePayload } from '@lingtai/domain'
+import { failingTestsOf, integrationStream, parsePayload } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { parseDuration, submodulesOf, type ResolvedRecipe } from '@lingtai/recipe'
 import { mirrorPathFor, mirrorWrite, type TokenSource } from '@lingtai/repo'
@@ -269,8 +273,15 @@ export function createBaseCheck(deps: BaseCheckDeps): {
             return { answer: unknownWith(`\`${prep.run}\` did not succeed: ${prepared.evidence}`) } as const
           }
         }
-        const outcome = yield* runIn(commands[commands.length - 1] as BaseCheckCommand, commands.length - 1)
-        return { outcome, boundary } as const
+        const last = commands[commands.length - 1] as BaseCheckCommand
+        let outcome = yield* runIn(last, commands.length - 1)
+        let first: CommandOutcome | undefined
+        // 0108 §17: a non-zero exit is run once more, at once, in this tree. `prepared` is not run again.
+        if (!q.signal.aborted && !outcome.timedOut && outcome.exitCode !== null && outcome.exitCode !== 0) {
+          first = outcome
+          outcome = yield* runIn(last, commands.length - 1)
+        }
+        return { outcome, first, boundary } as const
       }).pipe(
         Effect.ensuring(
           attempt(() => q.tree.remove(path)).pipe(
@@ -286,6 +297,7 @@ export function createBaseCheck(deps: BaseCheckDeps): {
       )
       if (ran.outcome === undefined) return ran.answer
       const outcome = ran.outcome
+      const first = ran.first
 
       if (q.signal.aborted) return unknownWith('the check was aborted')
       if (outcome.timedOut || outcome.exitCode === null) {
@@ -293,6 +305,10 @@ export function createBaseCheck(deps: BaseCheckDeps): {
       }
       const ok = outcome.exitCode === 0
       const evidence = ok ? '' : boundedEvidence(outcome.evidence)
+      const names = first !== undefined && ok ? failingTestsOf(first.evidence) : null
+      if (first !== undefined && ok) {
+        deps.note(`base check: \`${q.command}\` failed once on ${q.baseSha.slice(0, 7)} and passed on the rerun`)
+      }
       const data = {
         base: q.base,
         baseSha: q.baseSha,
@@ -300,8 +316,9 @@ export function createBaseCheck(deps: BaseCheckDeps): {
         boundary: ran.boundary,
         ok,
         exitCode: outcome.exitCode,
-        durationMs: Math.max(0, Math.round(outcome.durationMs)),
+        durationMs: Math.max(0, Math.round(outcome.durationMs + (first?.durationMs ?? 0))),
         evidence,
+        ...(names === null ? {} : { flaky: names }),
         runId: q.runId,
       }
       const recorded = yield* Effect.result(record(stream, data).pipe(Effect.catchDefect((d) => Effect.fail(d))))
