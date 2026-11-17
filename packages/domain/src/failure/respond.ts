@@ -632,10 +632,14 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       restart(hasCriterion)
       break
     }
-    case 'NothingProduced':
-      round('fix-lines', 'implement', false)
+    case 'NothingProduced': {
+      // 0108 §18: the implementer's own last message is the criterion, as for
+      // `FixerDisagrees`. Said nothing, and no judge is paid to read nothing.
+      const hasCriterion = proposal.said !== null && proposal.said.trim() !== ''
+      round('fix-lines', 'implement', hasCriterion)
       restart(false)
       break
+    }
     case 'FixerDisagrees': {
       const hasCriterion = proposal.said !== null && proposal.said.trim() !== ''
       round('fix-lines', 'implement', hasCriterion)

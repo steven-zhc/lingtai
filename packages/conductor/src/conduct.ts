@@ -3307,7 +3307,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const judge = (on: Judging): Effect.Effect<Judged> => {
         const declared = judgeDeclaredAt(recipe.steps.proposed, on.when)
         if (declared === null) return Effect.succeed({ noJudge: true })
-        return 'built' in declared ? Effect.succeed(declared) : askTheAgent(declared, on)
+        if ('built' in declared) return Effect.succeed(declared)
+        // The ticket is shown for `nothing-produced` alone (#1198): *is it unclear* cannot be
+        // judged without it, and every other reason's prompt must not grow by a body.
+        const shown: Judging =
+          on.when === 'nothing-produced'
+            ? { ...on, ticket: took === null ? null : { title: took.ticket.title, body: took.ticket.body } }
+            : on
+        return askTheAgent(declared, shown)
       }
 
       /** `end` — the work item's own stream, read this late on purpose. */
@@ -4669,7 +4676,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // `StepDidNotFinish` at `implement`, named for itself (`#468`): the
             // ticket's own second case, and the one `#237` was.
             stoppedBy = 'no-commits'
-            return { stopped: 'the agent produced no commits', committedNothing: true }
+            // The agent's own last message is the evidence (#1198): it is what a judge
+            // declared at `nothing-produced` reads. A silent agent leaves it empty, so
+            // `said` is null and no judge is paid to read nothing.
+            return { stopped: (outcome.text ?? '').trim().slice(0, 8_000), committedNothing: true }
           }
           // A receipt, so `interrupted` stands for nothing any more.
           stoppedBy = null
@@ -4746,7 +4756,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               } as const)
             : findings.length > 0
               ? ({ on: 'findings', findings } as const)
-              : ({ on: 'output', output: said } as const)
+              : again.said != null
+                ? ({ on: 'unfinished', said: again.said, why: again.why } as const)
+                : ({ on: 'output', output: said } as const)
 
           // Keyed on where the fix came from and not on `refusal`: a conflict round
           // keeps its own session id whichever brief it was given.
@@ -4790,7 +4802,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               refusal,
               round,
               of: ceiling.rounds,
-              action: from,
+              action: refusal.on === 'unfinished' ? 'implement' : from,
               diff: underReview.text,
               ...(underReview.from === null || underReview.to === null
                 ? {}
