@@ -526,6 +526,11 @@ export interface ActionContext {
    * id is derived from the dispatch id and a reused one is refused.
    */
   rerun?: number
+  /**
+   * On a rerun, the names of the actions the cut-off visit had already reached: only a `file-brief:` among
+   * them is not read again, because one the crash stopped before it ran has never been read (#1201).
+   */
+  ranBefore?: readonly string[]
   /** The worktree. Actions run where the agent worked, never anywhere else. */
   cwd: string
   /**
@@ -956,7 +961,7 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
       }
       // **A rerun in place is not a second read** (#1201): a `file-brief:` reads a file the cut-off run may
       // have edited, and the rerun is owed the brief the first run had. `context.design` is that brief.
-      if (context.rerun !== undefined && action.kind === 'file-brief') {
+      if (context.rerun !== undefined && action.kind === 'file-brief' && context.ranBefore?.includes(action.name)) {
         const briefed = context.design
         context.log?.note(
           `${step}:${action.name}`,

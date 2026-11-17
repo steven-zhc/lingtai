@@ -3275,3 +3275,60 @@ describe('a rerun in place keeps the brief a file-brief read (#1201)', () => {
     expect(reads).toBe(1)
   })
 })
+
+describe('a file-brief the crash stopped before it ran still runs on the rerun (#1201)', () => {
+  it('reads once and holds for the missing file, as it does without the crash', async () => {
+    const { bodies } = watching()
+    const { actionsAt: base } = watchingActions()
+    const make = (crashFirst: boolean) => {
+      let reads = 0
+      let lap = 0
+      const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+        step === 'implement'
+          ? [
+              {
+                name: 'write the change',
+                kind: 'agent',
+                yields: 'commit',
+                run: async () =>
+                  crashFirst && lap++ === 0
+                    ? { ...crashed('API Error: 503'), runtime: 'claude-code' }
+                    : { ...PASSED, head: 'feedface00' },
+              },
+              {
+                name: 'read the design',
+                kind: 'file-brief',
+                yields: 'nothing',
+                run: async () => {
+                  reads += 1
+                  return { verdict: 'failed', evidence: 'doc/missing.md is not there', findings: [] }
+                },
+              },
+            ]
+          : base(step, actions)
+      return { actionsAt, reads: () => reads }
+    }
+
+    const plain = make(false)
+    const withCrash = make(true)
+    const a = await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit: events().emit,
+      bodies,
+      actionsAt: plain.actionsAt,
+    })
+    const b = await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit: events().emit,
+      bodies,
+      actionsAt: withCrash.actionsAt,
+    })
+
+    expect(plain.reads()).toBe(1)
+    expect(withCrash.reads()).toBe(1)
+    expect(b.steps.some((s) => s.step === 'build')).toBe(a.steps.some((s) => s.step === 'build'))
+    expect(b.end).toEqual(a.end)
+  })
+})

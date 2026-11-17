@@ -2025,8 +2025,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             const briefedWith = reached.results.filter((each) => each.document !== undefined).at(-1)
             rerun = {
               reached: visitedBefore,
-              context:
-                briefedWith?.document === undefined
+              context: {
+                ...(briefedWith?.document === undefined
                   ? visitContext
                   : {
                       ...visitContext,
@@ -2034,7 +2034,9 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                         document: briefedWith.document,
                         ...(briefedWith.locator === undefined ? {} : { locator: briefedWith.locator }),
                       },
-                    },
+                    }),
+                ranBefore: reached.results.map((each) => each.action),
+              },
             }
             yield* options.emit({
               type: 'StepRerunInPlace',
