@@ -18,13 +18,17 @@ export function failingTestsOf(output: string): string[] | null {
     const m = /^\s*FAIL\s+(.*)$/.exec(line)
     if (m === null) continue
     let rest = (m[1] as string).trim()
-    // With projects vitest prints a label between FAIL and the file: `|any label|` (any characters but `|`),
-    // or, in the older form, one bare token with no `/` and no `.`.
-    const label = /^(?:\|[^|]*\||[^\s/.|]+)\s+(\S.*)$/.exec(rest)
-    if (label !== null) rest = (label[1] as string).trim()
-    // A suite that failed to load is printed `<file> [ <file> ]`: the file alone is the entry.
-    const suite = /^(.+) \[ \1 \]$/.exec(rest)
-    if (suite !== null) rest = suite[1] as string
+    // A suite that failed to load is printed `<label?> <file> [ <file> ]`: the bracketed file alone is the entry.
+    // It is read before any label is stripped, so a bare label cannot eat the start of a path with spaces.
+    const suite = /^(.*?)\s*\[ (.+) \]$/.exec(rest)
+    if (suite !== null && (suite[1] as string).endsWith(suite[2] as string)) {
+      rest = suite[2] as string
+    } else {
+      // With projects vitest prints a label between FAIL and the file: `|any label|` (any characters but `|`),
+      // or, in the older form, one bare token with no `/` and no `.`.
+      const label = /^(?:\|[^|]*\||[^\s/.|]+)\s+(\S.*)$/.exec(rest)
+      if (label !== null) rest = (label[1] as string).trim()
+    }
     if (rest !== '' && !entries.includes(rest)) entries.push(rest)
   }
   const files = new Set(entries.map((e) => e.split(' > ')[0]))
