@@ -1292,6 +1292,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     let releasedDeclined: string | null = null
     /** Why the saved head of a released attempt could not be cut again, once the cut found out (#1205). */
     let headGone: string | null = null
+    /** Set when the saved work was not restored onto the re-cut: nothing this pass publishes may replace what is saved (#1205). */
+    let savedWorkNotRestored = false
     /** The words a recorded prompt was handed with, expanded; null where a ref no longer resolves (#1205). */
     const recordedPromptOf = (record: PayloadOf<'RunPrompted'>) =>
       Effect.gen(function* () {
@@ -2562,7 +2564,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // the approved head on a continuation, so a lane refusal with no new
           // commit read as "nothing committed" over a head already published.
           // See `baseShaOr`.
-          if (worktree === null) return null
+          if (worktree === null || savedWorkNotRestored) return null
           const tree = worktree
           const cutBase = continuation?.diffBaseSha ?? tree.baseSha
           // Hoisted out of the `try`, so the `catch` below can still name the
@@ -3236,6 +3238,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // failed or took only part is a head that cannot be continued, never a brief with a clean tree.
               if (releasedHead !== undefined && (carried.unapplied !== null || carried.leftOut.length > 0)) {
                 headGone = `the kept work could not be restored: ${carried.unapplied ?? `${carried.leftOut.join(', ')} did not apply`}`
+                savedWorkNotRestored = true
                 return { notCut: headGone }
               }
             }
