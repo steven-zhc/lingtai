@@ -248,7 +248,12 @@ which kind a wait was got inferred again in each place that needed it, from
      `Approve`, `Requeue` and `Close` keep the names of the CLI commands and
      the board's buttons. `GrantFixRound` is a person's separately logged grant
      under [0108](0108-a-refusal-buys-a-round.md) §8, and it is how a conflict is
-     answered; `Split`
+     answered; `RerunStep` runs the step that stopped again, in the same
+     attempt on its saved head, and is offered on a crash at `design`,
+     `implement` or `review`, a `BuildRed` and a check that refused at
+     `proposed` — not on a `VerifyRed` (that reruns `merge`), a standing crash
+     (its offer is the stood wait's own) or unpushed work, and triage may not
+     advise it; `Split`
      approves concrete child tickets and their dependency chain. The child and
      dependency values here describe the person's approved plan, not a claim
      that these contracts are implemented.
@@ -284,7 +289,18 @@ which kind a wait was got inferred again in each place that needed it, from
        sides with the reviewer.
      - `NothingProduced` has no `Approve`: there is nothing on the branch to
        merge.
-     - **Unpushed work drops `Approve` and `GrantFixRound`**
+     - **`RerunStep` is a column of its own, offered by `rerunStepOf(reason)`**
+       (#1218): the step it names is the step it runs again, so the offer and
+       the continuation cannot disagree. It is added to `AgentCrashed` at
+       `design`, `implement` and `review`, to `ProposedEscalated` over
+       `BuildRed` (`build`), and to a `CheckRefused` — direct or inside a
+       proposal — that refused at `proposed`. It is **not** offered on
+       `VerifyRed`, `MergeConflict`, `MergeRefused` or a check that refused at
+       `merge` (they rerun the merge), on `SetupRefused`, or on a crash that
+       stands in for a wait. Like `GrantFixRound` it drops with unpushed work.
+       The saved head must be one `rerunHeadOf` accepts, and the remote ref
+       must still carry it.
+     - **Unpushed work drops `Approve`, `GrantFixRound` and `RerunStep`**
        for every variant that has a `run`: when `run.unpushed` is set the branch
        never reached origin and the worktree that held it is gone, so an
        `Approve{onSha}` would name a sha that exists nowhere and there is

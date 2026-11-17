@@ -179,7 +179,14 @@ fixes the bounds and the endings that router works inside.
     no round, reaches no judge, is not retried, and does not pause the conductor,
     because a crash is local — except a crash whose detail is the runtime's account-limit
     sentence, which locks the account as §11 says and releases the ticket to be continued after the lift. Any other crash blocks the item for a person; the card offers no
-    approval, because no step judged the diff, and the move left is requeue.
+    approval, because no step judged the diff, and the moves left are **rerun the
+    step** (`RerunStep`, `lingtai rerun`: the same attempt runs the step that
+    stopped again on its saved head, with the cut-off run's recorded prompt — no
+    fixer, nothing cut from the base, and no round, restart or transient retry
+    spent) and requeue. Rerun is a person's decision, outside the automatic
+    ceiling like `GrantFixRound`, and is offered on a crash at `design`,
+    `implement` or `review`, on a red `build` and on a declared check that
+    refused at `proposed` — never at `merge`.
     **A run that a transient error cut off is run again in place, not held.**
     When the runtime's own detail is an API error a retry can clear — a 5xx, a
     429, or an edge's refusal page (Cloudflare's *Attention Required*, a 403
