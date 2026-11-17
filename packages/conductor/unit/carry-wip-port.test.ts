@@ -36,7 +36,7 @@ describe('carryKeptWork', () => {
   it('applies the WIP’s own diff, from a file, with pinned flags, and unstages it', () => {
     const { result, calls } = carry({ 'apply --numstat': '1\t0\ta.ts\0 2\t1\tb.ts\0'.replace(' ', '') })
     expect(result).toEqual({ applied: ['a.ts', 'b.ts'], leftOut: [], unapplied: null })
-    const diff = calls.find((c) => c.startsWith('diff --no-color'))!
+    const diff = calls.find((c) => c.startsWith('diff --ignore-submodules=all --no-color'))!
     expect(diff).toContain(
       '--no-ext-diff --no-textconv --binary --find-renames --src-prefix=a/ --dst-prefix=b/ --output=/wt/.git/lingtai-wip.patch',
     )
@@ -134,7 +134,9 @@ describe('carryKeptWork', () => {
       'diff --raw': ':100644 100644 a b M\0a.ts\0:160000 160000 c d M\0sub\0',
     })
     expect(result).toEqual({ applied: ['a.ts'], leftOut: ['sub'], unapplied: null })
-    expect(calls.find((c) => c.startsWith('diff --no-color'))).toContain('--ignore-submodules=all')
+    expect(calls.find((c) => c.startsWith('diff --ignore-submodules=all --no-color'))).toContain(
+      '--ignore-submodules=all',
+    )
   })
 
   it('carries nothing when the patch omits a path the diff names', () => {
