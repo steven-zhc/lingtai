@@ -29,6 +29,8 @@ export type Seen =
     }
   /** A runtime's own words. Which runtime wrote them is the answer, not the question. */
   | { readonly platform: 'runtime'; readonly text: string }
+  /** A package registry's own words, as an install printed them (#1224). */
+  | { readonly platform: 'registry'; readonly text: string }
 
 export type Classified =
   | {
@@ -37,6 +39,7 @@ export type Classified =
     }
   | { readonly platform: 'github'; readonly kind: 'rate-limited' }
   | { readonly platform: 'runtime'; readonly kind: 'account-limit' | 'transient'; readonly runtime: RuntimeId }
+  | { readonly platform: 'registry'; readonly kind: 'transient' }
 
 /** The waits between tries: three tries in all, so the count is never written apart from the list. */
 export const UNREACHABLE_WAITS: readonly `${number} seconds`[] = ['10 seconds', '30 seconds']
@@ -74,7 +77,13 @@ interface RuntimeRow extends RowBase {
   readonly pattern: RegExp
 }
 
-export type FailureRow = GitRow | GitHubRow | RuntimeRow
+interface RegistryRow extends RowBase {
+  readonly platform: 'registry'
+  readonly kind: 'transient'
+  readonly pattern: RegExp
+}
+
+export type FailureRow = GitRow | GitHubRow | RuntimeRow | RegistryRow
 
 /**
  * The rows, in the order they are tried within a platform.
@@ -224,6 +233,26 @@ export const FAILURE_ROWS: readonly FailureRow[] = [
     pattern: /Attention Required! \| Cloudflare/i,
     says: "Cloudflare's `Attention Required! | Cloudflare` page, matched on its title and never on a bare `403`.",
   },
+  {
+    // pnpm's own error codes, never the bare status: a 404 is a package that does not exist.
+    platform: 'registry',
+    kind: 'transient',
+    pattern: /\bERR_PNPM_FETCH_50[0234]\b/,
+    says: "pnpm's `ERR_PNPM_FETCH_500`, `_502`, `_503` and `_504`: the registry answered a fetch with a 5xx.",
+  },
+  {
+    platform: 'registry',
+    kind: 'transient',
+    pattern: /\bERR_PNPM_META_FETCH_FAIL\b/,
+    says: "pnpm's `ERR_PNPM_META_FETCH_FAIL`: the package's metadata could not be fetched.",
+  },
+  {
+    // Anchored on npm's `code` line, so a `E503` in a test's name is not read.
+    platform: 'registry',
+    kind: 'transient',
+    pattern: /\bnpm (?:ERR!|error) code E50[0234]\b/,
+    says: "npm's `code E500`, `E502`, `E503` and `E504` line: the registry answered with a 5xx.",
+  },
 ]
 
 /**
@@ -241,6 +270,7 @@ export function classify(seen: Seen): Classified | null {
     }
     if (seen.text === '' || !row.pattern.test(seen.text)) continue
     if (row.platform === 'git') return { platform: 'git', kind: row.kind }
+    if (row.platform === 'registry') return { platform: 'registry', kind: row.kind }
     return { platform: 'runtime', kind: row.kind, runtime: row.runtime }
   }
   return null

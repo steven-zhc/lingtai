@@ -99,6 +99,19 @@ export const LandAgain = z.object({
 })
 export type LandAgain = z.infer<typeof LandAgain>
 
+/**
+ * A step run again in place, chosen by a rule (#1224; 0108 §18): `rerun-setup` for a `prepared` an
+ * install's registry refused, `ask-again` for an agent whose answer could not be read. `retry` is
+ * the count this makes, against `TRANSIENT_RETRIES_LIMIT`; it spends no round and no restart, and
+ * is never offered to a chooser.
+ */
+export const RerunStep = z.object({
+  _tag: z.literal('RerunStep'),
+  step: z.enum(['prepared', 'design', 'review', 'proposed', 'merge']),
+  retry: z.number().int(),
+})
+export type RerunStep = z.infer<typeof RerunStep>
+
 /** 0120 §4's next move, with what it spends. */
 export const AttemptNext = z.discriminatedUnion('_tag', [
   Advance,
@@ -106,6 +119,7 @@ export const AttemptNext = z.discriminatedUnion('_tag', [
   FixRound,
   MergeBase,
   LandAgain,
+  RerunStep,
   Requeued,
   WaitOnPerson,
   Landed,
@@ -484,6 +498,7 @@ export function spentAfter(spent: Spent, next: AttemptNext): Spent {
     case 'MergeBase':
       return { ...spent, baseMerges: next.merge }
     case 'LandAgain':
+    case 'RerunStep':
       return { ...spent, transientRetries: next.retry }
     case 'Requeued':
       return next.cause._tag === 'Restart' ? { ...spent, rounds: 0, restarts: next.cause.restart } : spent

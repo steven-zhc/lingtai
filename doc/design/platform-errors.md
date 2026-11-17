@@ -121,6 +121,10 @@ possible `error.type` [O1].
   - `transient`: `Server is temporarily limiting requests`.
   - `transient`: `Request rejected (429)`.
   - `transient`: Cloudflare's `Attention Required! | Cloudflare` page, matched on its title and never on a bare `403`.
+- **Package registry.** A `prepared` step whose output is on one of these rows is run again in place (`rerunSetup`, 0108 §18), after the wait its count names, up to `TRANSIENT_RETRIES_LIMIT` times in an attempt. Output on no row, a 404 included, is a person's. yarn, bun and a proxy's own page have no row.
+  - `transient`: pnpm's `ERR_PNPM_FETCH_500`, `_502`, `_503` and `_504`: the registry answered a fetch with a 5xx.
+  - `transient`: pnpm's `ERR_PNPM_META_FETCH_FAIL`: the package's metadata could not be fetched.
+  - `transient`: npm's `code E500`, `E502`, `E503` and `E504` line: the registry answered with a 5xx.
 - **Codex.** `codexClose` makes a `turn.failed` with no agent message `never-started`. The row is tried before Claude Code's, whose looser pattern would claim the first form. Nothing reads `insufficient_quota`, `server_is_overloaded` or a status code.
   - `account-limit`: `You've hit your usage limit` and `You have hit your usage limit`.
 

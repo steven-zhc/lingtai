@@ -606,7 +606,7 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
         state.sandbox?.some((i) => !i.ended) === true
           ? { sandbox: state.sandbox.map((i) => (i.ended ? i : { ...i, ended: true })) }
           : {}
-      if (next._tag === 'LandAgain') {
+      if (next._tag === 'LandAgain' || next._tag === 'RerunStep') {
         return {
           ...state,
           ...settled,

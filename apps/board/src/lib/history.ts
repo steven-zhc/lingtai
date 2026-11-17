@@ -744,6 +744,10 @@ function routedLine(d: Payload, { branch, endedAt }: Reading): string {
   if (move._tag === 'LandAgain') {
     return `${from} → merge — ${clip(data.reply._tag === 'Selected' ? data.reply.why : 'landing again from the same head')}`
   }
+  // A rule's rerun in place (#1224): the step it runs again, and why.
+  if (move._tag === 'RerunStep') {
+    return `${from} → ${move.step} — ${clip(data.reply._tag === 'Selected' ? data.reply.why : 'run again in place')}`
+  }
   if (move._tag !== 'WaitOnPerson') {
     // `boardFactOf` already answers `RoundOpened`/`Restarted` for these —
     // reaching here with one is that mapping disagreeing with this one.

@@ -9,7 +9,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { Spent } from '../src/attempt-next.ts'
-import { offerFor } from '../src/failure/respond.ts'
+import { offerFor, TRANSIENT_RETRIES_LIMIT } from '../src/failure/respond.ts'
 import type { Proposal } from '../src/proposal.ts'
 import type { ExcludedCandidate } from '../src/route.ts'
 import {
@@ -293,6 +293,7 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(offerFor(answerUnreadableAtDesign, policy, zero)).toEqual({
       proposal: answerUnreadableAtDesign,
       available: [
+        { id: 'ask-again', next: { _tag: 'RerunStep', step: 'design', retry: 1 } },
         { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
@@ -304,12 +305,49 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(offerFor(answerUnreadableAtReview, policy, zero)).toEqual({
       proposal: answerUnreadableAtReview,
       available: [
+        { id: 'ask-again', next: { _tag: 'RerunStep', step: 'review', retry: 1 } },
         { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
         { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
     })
+  })
+
+  it('ask-again is once per arrival, offered at proposed and merge too, and absent once the transient retries are spent (#1224)', () => {
+    const base = offerFor(answerUnreadableAtReview, policy, zero).available.map((c) => c.id)
+    expect(base).toContain('ask-again')
+    expect(offerFor(answerUnreadableAtReview, policy, zero, true).available.map((c) => c.id)).toEqual(
+      base.filter((id) => id !== 'ask-again'),
+    )
+    const spent = { ...zero, transientRetries: TRANSIENT_RETRIES_LIMIT }
+    const out = offerFor(answerUnreadableAtReview, policy, spent)
+    expect(out.available.map((c) => c.id)).not.toContain('ask-again')
+    expect(out.unavailable.map((c) => c.id)).not.toContain('ask-again')
+    for (const from of ['proposed', 'merge'] as const) {
+      const p: Proposal = { _tag: 'AnswerUnreadable', from, raw: 'not JSON' }
+      expect(offerFor(p, policy, zero).available).toContainEqual({
+        id: 'ask-again',
+        next: { _tag: 'RerunStep', step: from, retry: 1 },
+      })
+    }
+  })
+
+  it('SetupRefused offers rerun-setup only for a registry row with retries left (#1224)', () => {
+    const refused = (output: string): Proposal => ({ _tag: 'SetupRefused', from: 'prepared', output })
+    const registry = refused('ERR_PNPM_FETCH_503  GET https://registry.npmjs.org/x: Service Unavailable')
+    expect(offerFor(registry, policy, zero).available[0]).toEqual({
+      id: 'rerun-setup',
+      next: { _tag: 'RerunStep', step: 'prepared', retry: 1 },
+    })
+    expect(offerFor(registry, policy, { ...zero, transientRetries: 2 }).available[0]).toMatchObject({
+      next: { retry: 3 },
+    })
+    const spent = offerFor(registry, policy, { ...zero, transientRetries: TRANSIENT_RETRIES_LIMIT })
+    expect(spent.available.map((c) => c.id)).not.toContain('rerun-setup')
+    expect(spent.unavailable.map((c) => c.id)).not.toContain('rerun-setup')
+    const other = offerFor(refused('ERR_PNPM_FETCH_404'), policy, zero)
+    expect(other.available.map((c) => c.id)).not.toContain('rerun-setup')
   })
 
   it('AnswerUnreadable{review} with empty raw: fix-lines and restart are both unavailable{NoCriterion}', () => {
@@ -499,7 +537,8 @@ describe('offerFor: at both ceilings', () => {
 
 describe('offerFor: policy{0,0} is the floor every proposal keeps', () => {
   const floor: RoutingPolicy = { rounds: 0, restarts: 0, conflictRounds: 0 }
-  const zero: Spent = { rounds: 0, restarts: 0 }
+  // The transient retries spent, so the free rule candidates (`land-again`, `ask-again`) are absent too.
+  const zero: Spent = { rounds: 0, restarts: 0, transientRetries: TRANSIENT_RETRIES_LIMIT }
 
   // A merge conflict's round is not `rounds`' to withhold (#653), so a zero ceiling leaves it on offer.
   it.each(
