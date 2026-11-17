@@ -356,6 +356,14 @@ export interface Judging {
   readonly findings: readonly ActionFinding[]
   /** What the step printed when it did not pass; the question, for `needs-input`. */
   readonly evidence: string
+  /**
+   * The ticket the attempt read, for `nothing-produced` alone (#1198): *is the
+   * ticket unclear* cannot be judged without it. Absent for every other reason,
+   * so their prompts do not grow by a body. `null` where the attempt had none.
+   */
+  readonly ticket?: { readonly title: string; readonly body: string } | null
+  /** The implementer's last message, for `nothing-produced` alone (#1198). */
+  readonly said?: string | null
 }
 
 /**

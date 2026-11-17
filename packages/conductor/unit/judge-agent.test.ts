@@ -176,3 +176,64 @@ describe('judgePromptParts (#928)', () => {
     expect(long.find((part) => typeof part !== 'string')).toMatchObject({ text: 'x'.repeat(8_000) })
   })
 })
+
+/**
+ * A `findings` judge runs on every refusal; its prompt is fixed here as a literal so
+ * that a per-reason prompt (#1198) cannot change it by a byte.
+ */
+describe('the findings prompt is fixed', () => {
+  it('is byte-identical to what it was before the prompt had a row per reason', () => {
+    expect(judgePrompt(ARRIVED)).toBe(`# Which step is next
+
+A pass over one ticket did not pass. You decide where it goes.
+
+## What refused, and why
+
+The reason the step gave is **\`findings\`**.
+
+The cold reviewer's findings, verbatim:
+
+- **blocker** packages/conductor/src/conduct.ts:1761 — the judge is asked before the worktree exists
+  _a refusal at \`admit\` reaches the router and \`cutTree()\` throws_
+
+What the step printed:
+
+\`\`\`
+1 blocker, 0 major, 2 minor
+\`\`\`
+
+## The choices
+
+These are the only destinations on offer. The list is the workflow's: it has
+already counted what this pass may spend, so anything not on it is not a thing
+you can ask for.
+
+- \`waiting\` — stop the attempt and put this to a person, with your reasoning on the card
+- \`claim\` — release the ticket and start over from the base, in a fresh worktree — for when the approach itself is wrong and patching these lines would be patching the wrong thing
+- \`implement\` — another round in the worktree that is already cut, with what refused — for when the diff is the right approach and some of its lines are wrong
+
+## What to weigh
+
+The question is **whether the lines are wrong or the approach is**. Findings that
+name specific lines, with failure scenarios an edit would answer, are the lines.
+Findings that say the shape of the change is wrong — the wrong seam, the wrong
+data structure, a rule in the wrong module — are the approach, and another round
+patching those lines spends money to arrive back here.
+
+Read only what is above. You have no worktree and nothing to run; this is a
+judgement about what has already been said, not a fresh investigation.
+
+## Answer
+
+One JSON object, and nothing else that could be read as one:
+
+\`\`\`json
+{"next": "<one of the destinations above, spelled exactly>", "why": "<one or two sentences>"}
+\`\`\`
+
+\`next\` must be one of \`waiting\`, \`claim\`, \`implement\`. An answer
+naming anything else is refused and the pass is held for a person — you will not
+be asked again, so a destination you are unsure of is worth less than
+\`waiting\` with your reason on it.`)
+  })
+})

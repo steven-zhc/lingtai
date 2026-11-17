@@ -31,7 +31,7 @@ import type { ActionFinding } from '@lingtai/actions'
  * count, so there is no number here for a prompt to leak and no arithmetic for
  * one to argue with. A judge cannot widen what it cannot see.
  */
-import { STEPS } from '@lingtai/domain'
+import { type JudgeWhen, STEPS } from '@lingtai/domain'
 
 import type { Judging } from './attempt-steps.ts'
 import type { RecordPart } from './record-prompt.ts'
@@ -106,8 +106,84 @@ export function judgePromptParts(on: Judging): RecordPart[] {
   return [pieces[0]!, { text: evidence, onStep: { field: 'evidence', trimmed: false } }, pieces[1]!]
 }
 
+/** What each reason is asked, in its own words: what arrived, what a destination means, what to weigh. */
+interface WhenRow {
+  /** The body of `## What refused, and why`, after the sentence naming the reason. */
+  readonly arrived: (on: Judging, evidence: string) => string
+  /** Meanings that replace `MEANS` for this reason. */
+  readonly means?: Partial<Record<Destination, string>>
+  /** The body of `## What to weigh`. */
+  readonly weigh: string
+}
+
+/** Every reason but `nothing-produced`: a step refused, and said what it did. */
+const REFUSED_ROW: WhenRow = {
+  arrived: (on, evidence) => `${
+    on.findings.length > 0
+      ? `The cold reviewer's findings, verbatim:\n\n${on.findings.map(said).join('\n')}`
+      : 'The cold reviewer raised no findings.'
+  }
+
+${
+  on.evidence.trim() === ''
+    ? 'The step printed nothing beyond that.'
+    : `What the step printed:\n\n\`\`\`\n${evidence}\n\`\`\``
+}`,
+  weigh: `The question is **whether the lines are wrong or the approach is**. Findings that
+name specific lines, with failure scenarios an edit would answer, are the lines.
+Findings that say the shape of the change is wrong — the wrong seam, the wrong
+data structure, a rule in the wrong module — are the approach, and another round
+patching those lines spends money to arrive back here.`,
+}
+
+/** 0108 §18: the implementer committed nothing — the ticket is unclear, or the work is unfinished. */
+const NOTHING_PRODUCED_ROW: WhenRow = {
+  arrived: (on) => `The implementer committed nothing. The ticket it was given:
+
+${
+  on.ticket === null || on.ticket === undefined
+    ? 'The ticket could not be read.'
+    : `**${on.ticket.title}**\n\n${on.ticket.body}`
+}
+
+Its last message:
+
+${on.said === null || on.said === undefined || on.said.trim() === '' ? '(it said nothing)' : on.said.slice(0, 8_000)}`,
+  means: {
+    implement:
+      'one more round in the same worktree, told what the implementer said — for when the work ' +
+      'is unfinished and the ticket is clear',
+  },
+  weigh: `The question is **whether the ticket is unclear or the work is unfinished**. If the
+ticket does not say what is wanted, contradicts itself, or asks for something the
+code cannot support, a person has to say what is missing: choose \`waiting\` and
+say what. If the ticket is clear and the message names what is left, or where the
+work stopped, another round can finish it: choose \`implement\`.`,
+}
+
+/** Total on purpose: a fifteenth reason does not compile until somebody writes what it is asked. #1199 replaces `fixer-disagrees`. */
+const WHEN_ROWS: Record<JudgeWhen, WhenRow> = {
+  red: REFUSED_ROW,
+  'verify-failed': REFUSED_ROW,
+  conflict: REFUSED_ROW,
+  'needs-input': REFUSED_ROW,
+  findings: REFUSED_ROW,
+  'setup-refused': REFUSED_ROW,
+  'check-refused': REFUSED_ROW,
+  'answer-unreadable': REFUSED_ROW,
+  'nothing-produced': NOTHING_PRODUCED_ROW,
+  'fixer-disagrees': REFUSED_ROW,
+  'merge-refused': REFUSED_ROW,
+  'budget-exhausted': REFUSED_ROW,
+  'base-moved': REFUSED_ROW,
+  'sandbox-refused': REFUSED_ROW,
+}
+
 function judgeText(on: Judging, evidence: string): string {
-  const offered = on.offering.map((to) => `- \`${to}\` — ${MEANS[to] ?? `run the \`${to}\` step again`}`).join('\n')
+  const row = WHEN_ROWS[on.when]
+  const offered = on.offering
+    .map((to) => `- \`${to}\` — ${row.means?.[to] ?? MEANS[to] ?? `run the \`${to}\` step again`}`)
+    .join('\n')
   return `# Which step is next
 
 A pass over one ticket did not pass. You decide where it goes.
@@ -116,17 +192,7 @@ A pass over one ticket did not pass. You decide where it goes.
 
 The reason the step gave is **\`${on.when}\`**.
 
-${
-  on.findings.length > 0
-    ? `The cold reviewer's findings, verbatim:\n\n${on.findings.map(said).join('\n')}`
-    : 'The cold reviewer raised no findings.'
-}
-
-${
-  on.evidence.trim() === ''
-    ? 'The step printed nothing beyond that.'
-    : `What the step printed:\n\n\`\`\`\n${evidence}\n\`\`\``
-}
+${row.arrived(on, evidence)}
 
 ## The choices
 
@@ -138,11 +204,7 @@ ${offered}
 
 ## What to weigh
 
-The question is **whether the lines are wrong or the approach is**. Findings that
-name specific lines, with failure scenarios an edit would answer, are the lines.
-Findings that say the shape of the change is wrong — the wrong seam, the wrong
-data structure, a rule in the wrong module — are the approach, and another round
-patching those lines spends money to arrive back here.
+${row.weigh}
 
 Read only what is above. You have no worktree and nothing to run; this is a
 judgement about what has already been said, not a fresh investigation.

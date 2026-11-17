@@ -441,7 +441,7 @@ function requeuedNeverStarted(scope: 'conductor' | 'work-item'): NextOfResult {
  * Skipping it is what keeps a kept run's
  * `"nothing to commit"` from overwriting what the fixer actually said.
  */
-function lastCommitEvidence(outcome: StepOutcome): string | null {
+export function lastCommitEvidence(outcome: StepOutcome): string | null {
   let evidence: string | undefined
   for (const action of outcome.actions) {
     if (action.yields === 'commit' && action.plugin === 'agent') evidence = action.evidence

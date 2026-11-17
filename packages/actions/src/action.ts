@@ -491,6 +491,12 @@ export interface SentBack {
   readonly asked: string | null
   /** What the refusing step printed, where the round was not bought on a question. */
   readonly printed: { readonly step: Step; readonly detail: string; readonly because?: string } | null
+  /**
+   * The implementer's last message, where the round is bought on an `implement`
+   * that committed nothing (#1198) — the only account the round's agent gets of
+   * where the work stopped. `null` on every other route.
+   */
+  readonly said?: string | null
 }
 
 export interface ActionContext {

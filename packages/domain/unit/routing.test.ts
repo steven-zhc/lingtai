@@ -323,17 +323,26 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     })
   })
 
-  it('NothingProduced: fix-lines and restart are both unavailable{NoCriterion}, whatever `said` carries — the ticket says so', () => {
-    for (const proposal of [nothingProduced, nothingProducedNull]) {
-      expect(offerFor(proposal, policy, zero)).toEqual({
-        proposal,
-        available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
-        unavailable: [
-          { id: 'fix-lines', because: { _tag: 'NoCriterion' } },
-          { id: 'restart', because: { _tag: 'NoCriterion' } },
-        ],
-      })
-    }
+  it('NothingProduced with something said: fix-lines{round 1} and hand-to-person, and no restart (0108 §18)', () => {
+    expect(offerFor(nothingProduced, policy, zero)).toEqual({
+      proposal: nothingProduced,
+      available: [
+        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+      ],
+      unavailable: [{ id: 'restart', because: { _tag: 'NoCriterion' } }],
+    })
+  })
+
+  it('NothingProduced with `said` null: hand-to-person alone, fix-lines and restart unavailable{NoCriterion}', () => {
+    expect(offerFor(nothingProducedNull, policy, zero)).toEqual({
+      proposal: nothingProducedNull,
+      available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
+      unavailable: [
+        { id: 'fix-lines', because: { _tag: 'NoCriterion' } },
+        { id: 'restart', because: { _tag: 'NoCriterion' } },
+      ],
+    })
   })
 
   it('FixerDisagrees with a non-blank `said`: fix-lines{round 1}, restart{restart 1} and hand-to-person', () => {

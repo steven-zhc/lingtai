@@ -103,6 +103,7 @@ import { FAILED } from '@lingtai/actions/spans'
 import {
   decidingAction,
   decideRoute,
+  lastCommitEvidence,
   nextOf,
   offerFor,
   routeNext,
@@ -2154,7 +2155,16 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
             : {}),
         }
       : null
-  return { why: route.why, asked, printed }
+  // A round bought on an `implement` that committed nothing: the agent's own last message.
+  const said =
+    arrived !== undefined &&
+    arrived.step === 'implement' &&
+    step === 'implement' &&
+    asked === null &&
+    arrived.outcome !== undefined
+      ? lastCommitEvidence(arrived.outcome)
+      : null
+  return { why: route.why, asked, printed, ...(said === null ? {} : { said }) }
 }
 
 /**
