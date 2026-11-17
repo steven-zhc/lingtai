@@ -719,7 +719,9 @@ export function releasedHeadOf(runEvents: readonly Envelope[]): ReleasedHead {
         : { at: carry.parentSha, atRef: null, carry }
     }
     case 'BranchDiverged':
-      return { cannot: `${head.branch} was not published: ${head.arm} holds the work, and the branch is somebody else's` }
+      return {
+        cannot: `${head.branch} was not published: ${head.arm} holds the work, and the branch is somebody else's`,
+      }
     case 'NoSavedHead': {
       // Nothing committed is a fact the publish records; its absence is not one.
       if (published?.outcome !== 'nothing-committed') return { cannot: 'the run recorded no saved head' }

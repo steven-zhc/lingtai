@@ -723,6 +723,19 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
 }
 
 /**
+ * The prompt of the paid call a run's last prompt was recorded for — the call an account limit cut off, since
+ * nothing prompts after the crash that ended the pass (#1205). Absent where the run recorded none for an action.
+ */
+export function cutOffPromptOf(runEvents: readonly Envelope[]): PayloadOf<'RunPrompted'> | null {
+  for (const event of [...runEvents].reverse()) {
+    if (event.type !== 'RunPrompted') continue
+    const d = event.data as PayloadOf<'RunPrompted'>
+    if (d.for?._tag === 'Action') return d
+  }
+  return null
+}
+
+/**
  * Whether a held run left a clean pushed head a fix round can continue from, and
  * if not, why. The conductor's grant, `lingtai status` and the board all ask
  * this; each words the answer itself.

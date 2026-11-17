@@ -852,22 +852,31 @@ export const CONTINUABLE_CAUSES: readonly ReleaseCause['_tag'][] = ['AccountLimi
  * The release the ticket's newest claim ended in, when its cause is one the next claim continues — else null.
  * Pure, so the claim's own read and the owner's continue transition ask the same question.
  */
-export function continuableRelease(
-  state: Pick<TicketState, 'claims'>,
-): { runId: string; cause: ReleaseCause } | null {
+export function continuableRelease(state: Pick<TicketState, 'claims'>): { runId: string; cause: ReleaseCause } | null {
   const last = state.claims.at(-1)
   const ended = last?.ended
   if (last === undefined || ended == null || ended.kind !== 'released' || ended.cause === null) return null
   return CONTINUABLE_CAUSES.includes(ended.cause._tag) ? { runId: last.runId, cause: ended.cause } : null
 }
 
+/**
+ * How many times the ticket was released `AccountLimit` on `runId`: this rerun's number among the attempt's
+ * reruns, which is what keeps each rerun's dispatch id its own (#1205). Counted off the stream the owner holds
+ * rather than a new event.
+ */
+export function accountLimitReleases(ticketEvents: readonly Envelope[], runId: string): number {
+  return ticketEvents.filter((event) => {
+    if (event.type !== 'TicketReleased') return false
+    const d = event.data as PayloadOf<'TicketReleased'>
+    return d.runId === runId && d.cause?._tag === 'AccountLimit'
+  }).length
+}
+
 export type ContinueDecline =
-  /** Not `approved` — a requeue, a second approval, a close, all land between the approval and this claim. */
+  /** Neither `approved` nor queued on a release the next claim continues (#1205) — a requeue, a second approval, a close, all land between the approval and this claim. */
   | { reason: 'not-approved'; status: string }
-  /** Approved onto a different run than the one this call means to continue. */
+  /** Approved, or released, onto a different run than the one this call means to continue. */
   | { reason: 'wrong-run'; runId: string }
-  /** Queued, but not on a release the next claim continues, or on one of another run (#1205). */
-  | { reason: 'not-continuable'; status: string }
 
 /** The continuation: `TicketContinued` for the run approved, or why not. */
 export function continueTransition(
@@ -877,9 +886,9 @@ export function continueTransition(
   const life = state.lifecycle
   if (life.status === 'backlog') {
     // A queued ticket whose last release names this run (#1205): the same attempt, taken again.
-    if (continuableRelease(state)?.runId !== input.runId) {
-      return { ok: false, refusal: { reason: 'not-continuable', status: life.status } }
-    }
+    const released = continuableRelease(state)
+    if (released === null) return { ok: false, refusal: { reason: 'not-approved', status: life.status } }
+    if (released.runId !== input.runId) return { ok: false, refusal: { reason: 'wrong-run', runId: released.runId } }
   } else {
     if (life.status !== 'approved') return { ok: false, refusal: { reason: 'not-approved', status: life.status } }
     if (life.runId !== input.runId) return { ok: false, refusal: { reason: 'wrong-run', runId: life.runId } }

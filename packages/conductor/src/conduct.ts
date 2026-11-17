@@ -44,7 +44,9 @@ import {
   type SpentFor,
   type WaitId,
   WIP_COMMIT_PREFIX,
+  accountLimitReleases,
   continuableRelease,
+  cutOffPromptOf,
   expandPrompt,
   integrationStream,
   parsePayload,
@@ -235,7 +237,6 @@ import { standInExcludes, type SandboxApi } from '@lingtai/sandbox'
 import { Cause, type Duration, Effect, Exit, Result } from 'effect'
 
 import { reachAccountLimit, readAccount } from './account.ts'
-import { resolvePromptRefs } from './prompt-refs.ts'
 import { armsOnOriginEffect } from './arms.ts'
 import {
   type Brief,
@@ -271,6 +272,7 @@ import { type LandingLane, landingLane } from './landing-lane.ts'
 import { AgentHost, Repo } from './ports.ts'
 import { currentRecipeEffect } from './projects.ts'
 import { signedInHere } from './projects.ts'
+import { resolvePromptRefs } from './prompt-refs.ts'
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
 import { buildCommands, nextPrompt, renderPromptParts } from './prompt.ts'
@@ -1345,22 +1347,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const releasedState = reduceAttempt(releasedEvents)
         const head = releasedHeadOf(releasedEvents)
         const spent = continuationSpent(releasedState)
-        const ticketEvents = yield* Effect.promise(() => store.read(ticketId))
         // Each lift is one release naming this run, so this rerun's number among them is their count.
-        const accountReruns = ticketEvents.filter(
-          (e) =>
-            e.type === 'TicketReleased' &&
-            (e.data as PayloadOf<'TicketReleased'>).cause?._tag === 'AccountLimit' &&
-            (e.data as PayloadOf<'TicketReleased'>).runId === releasedFrom.runId,
-        ).length
-        const cutOff = [...releasedEvents]
-          .reverse()
-          .find((e) => e.type === 'RunPrompted' && (e.data as PayloadOf<'RunPrompted'>).for?._tag === 'Action')
-        const cutOffFor = cutOff === undefined ? null : (cutOff.data as PayloadOf<'RunPrompted'>).for
+        const accountReruns = accountLimitReleases(
+          yield* Effect.promise(() => store.read(ticketId)),
+          releasedFrom.runId,
+        )
+        const cutOff = cutOffPromptOf(releasedEvents)
+        const cutOffFor = cutOff?.for ?? null
         const recordedPrompt =
-          cutOff === undefined || reduced.pendingPrompt !== null
-            ? null
-            : yield* recordedPromptOf(cutOff.data as PayloadOf<'RunPrompted'>)
+          cutOff === null || reduced.pendingPrompt !== null ? null : yield* recordedPromptOf(cutOff)
         return {
           step: cause.step,
           waive: [],
@@ -3180,7 +3175,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // a `design` agent runs in this worktree too, so `implement` is not early enough. A
           // continuation has no `lastRun`; a failure to carry is the brief's to say, except a wedged tree (a rollback that failed), which is a `notCut`.
           const keptWip =
-            releasedHead !== undefined ? (releasedHead.carry ?? undefined) : continuation === null ? lastRun?.kept.at(-1) : undefined
+            releasedHead !== undefined
+              ? (releasedHead.carry ?? undefined)
+              : continuation === null
+                ? lastRun?.kept.at(-1)
+                : undefined
           const keptFrom = continuation?.released?.runId ?? previous?.runId
           if (keptWip && keptFrom !== undefined && (continuation === null ? previous : true)) {
             const carried = yield* carryKeptWork({
@@ -4773,30 +4772,30 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   recordedBrief !== null
                     ? [recordedBrief]
                     : [
-                  ...renderPromptParts(
-                    options.prompt,
-                    { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
-                    buildCommands(recipe.steps),
-                    claimedBrief().failure,
-                    // **What `design` produced, and this is the one reader of
-                    // it** (`#265`). `agentPlugin` serves the step: a recipe
-                    // declaring an `agent:` there buys a document, and a document
-                    // nothing hands on is an agent run whose answer no reader ever
-                    // sees. `""` renders as it always did.
-                    //
-                    // **The document and not the locator** (`#297`). The built-in
-                    // dispatch fetches nothing, so it renders the copy the pass is
-                    // already holding and never learns what kind of string
-                    // `TheDesign.locator` is (0066 §4). A plugin at `implement`
-                    // that wants the location reads it off `context.design` itself.
-                    brief.design.document,
-                    took?.claimVersion === undefined || took.ticket !== brief.ticket
-                      ? {}
-                      : { bodyAt: { stream: took.ticketId, version: took.claimVersion } },
-                  ),
-                  // The recipe's own words at `implement`, appended (`#266`).
-                  ...(spec.prompt === '' ? [] : [alsoText(spec.prompt)]),
-                ]
+                        ...renderPromptParts(
+                          options.prompt,
+                          { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
+                          buildCommands(recipe.steps),
+                          claimedBrief().failure,
+                          // **What `design` produced, and this is the one reader of
+                          // it** (`#265`). `agentPlugin` serves the step: a recipe
+                          // declaring an `agent:` there buys a document, and a document
+                          // nothing hands on is an agent run whose answer no reader ever
+                          // sees. `""` renders as it always did.
+                          //
+                          // **The document and not the locator** (`#297`). The built-in
+                          // dispatch fetches nothing, so it renders the copy the pass is
+                          // already holding and never learns what kind of string
+                          // `TheDesign.locator` is (0066 §4). A plugin at `implement`
+                          // that wants the location reads it off `context.design` itself.
+                          brief.design.document,
+                          took?.claimVersion === undefined || took.ticket !== brief.ticket
+                            ? {}
+                            : { bodyAt: { stream: took.ticketId, version: took.claimVersion } },
+                        ),
+                        // The recipe's own words at `implement`, appended (`#266`).
+                        ...(spec.prompt === '' ? [] : [alsoText(spec.prompt)]),
+                      ]
                 const implementerFor = {
                   _tag: 'Action' as const,
                   step: 'implement' as const,
@@ -5084,35 +5083,35 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             recordedFix !== null
               ? [recordedFix]
               : [
-            ...fixBriefParts({
-              refusal,
-              round,
-              of: ceiling.rounds,
-              action: refusal.on === 'unfinished' ? 'implement' : from,
-              diff: underReview.text,
-              ...(underReview.from === null || underReview.to === null
-                ? {}
-                : { diffAt: { from: underReview.from, to: underReview.to } }),
-              diffBytes: recipe.runtime.budget.diff,
-              checks: buildCommands(recipe.steps),
-              ticket: {
-                title: brief.ticket.title,
-                body: brief.ticket.body,
-                ...(took?.claimVersion === undefined || took.ticket !== brief.ticket
-                  ? {}
-                  : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
-              },
-              ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
-              ...(again.objection != null
-                ? { overruled: { objection: again.objection, ruling: again.why } }
-                : continuation?.declined === undefined
-                  ? {}
-                  : { declined: continuation.declined }),
-            }),
-            // Appended as a part, never to the finished string, so no recorded offset
-            // depends on where the text before it happened to end.
-            ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
-          ]
+                  ...fixBriefParts({
+                    refusal,
+                    round,
+                    of: ceiling.rounds,
+                    action: refusal.on === 'unfinished' ? 'implement' : from,
+                    diff: underReview.text,
+                    ...(underReview.from === null || underReview.to === null
+                      ? {}
+                      : { diffAt: { from: underReview.from, to: underReview.to } }),
+                    diffBytes: recipe.runtime.budget.diff,
+                    checks: buildCommands(recipe.steps),
+                    ticket: {
+                      title: brief.ticket.title,
+                      body: brief.ticket.body,
+                      ...(took?.claimVersion === undefined || took.ticket !== brief.ticket
+                        ? {}
+                        : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
+                    },
+                    ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
+                    ...(again.objection != null
+                      ? { overruled: { objection: again.objection, ruling: again.why } }
+                      : continuation?.declined === undefined
+                        ? {}
+                        : { declined: continuation.declined }),
+                  }),
+                  // Appended as a part, never to the finished string, so no recorded offset
+                  // depends on where the text before it happened to end.
+                  ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
+                ]
           const fixPrompt = fixParts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
           const fixFor: SpentFor = {
             _tag: 'Action',
@@ -5882,7 +5881,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           log(why)
           runLog.note('restart', why)
           yield* release(why, { _tag: 'Restart', restart })
-          return { ok: false, ticketId, runId, stage: 'restart', detail: why, summary: summaryOf() } satisfies RunOnceResult
+          return {
+            ok: false,
+            ticketId,
+            runId,
+            stage: 'restart',
+            detail: why,
+            summary: summaryOf(),
+          } satisfies RunOnceResult
         }
         /**
          * **A run an account limit cut off is the ticket's to take again, not a person's** (0108 §11, #1205).

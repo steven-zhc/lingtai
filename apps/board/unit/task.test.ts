@@ -56,7 +56,7 @@ describe('the claims an item made', () => {
     ]).claims
 
     expect(claims.map((c) => c.runId)).toEqual([RUN_1, RUN_2])
-    expect(claims[0]?.ended).toEqual({ kind: 'released', reason: 'timeout' })
+    expect(claims[0]?.ended).toEqual({ kind: 'released', reason: 'timeout', cause: null })
     expect(claims[1]?.ended).toBeNull()
   })
 
@@ -174,7 +174,7 @@ describe('one attempt', () => {
   })
 
   it('says a run was released rather than leaving it reading as still running', () => {
-    const run = presentAttemptEvents({ ...CLAIM, ended: { kind: 'released', reason: 'shutdown' } }, 1, [
+    const run = presentAttemptEvents({ ...CLAIM, ended: { kind: 'released', reason: 'shutdown', cause: null } }, 1, [
       e(RUN_1, 'RunStarted', { baseSha: 'a'.repeat(40) }),
     ])
 
