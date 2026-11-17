@@ -36,6 +36,7 @@ import {
   type RunOnceResult,
   type ScheduleResult,
   type Slots,
+  githubLimitPort,
 } from '@lingtai/conductor'
 import { readControlEffect } from '@lingtai/daemon'
 import { type ControlState, type ProjectState, turnTransition } from '@lingtai/domain'
@@ -284,7 +285,12 @@ export function conductWork(
       } else {
         const owner = project.owner
         const client = yield* Effect.promise(() =>
-          world.createGitHubClient({ auth: githubClientAuth(), owner, repo: name }),
+          world.createGitHubClient({
+            auth: githubClientAuth(),
+            owner,
+            repo: name,
+            onRateLimited: githubLimitPort(store, options.log),
+          }),
         )
         where.ref = project.base ?? (yield* Effect.promise(() => client.defaultBranch()))
         const ref = where.ref
@@ -739,7 +745,12 @@ function anyWantsMany(
         }
         const owner = project.owner
         const client = yield* Effect.promise(() =>
-          world.createGitHubClient({ auth: githubClientAuth(), owner, repo: name }),
+          world.createGitHubClient({
+            auth: githubClientAuth(),
+            owner,
+            repo: name,
+            onRateLimited: githubLimitPort(eventStore, () => {}),
+          }),
         )
         const base = project.base ?? (yield* Effect.promise(() => client.defaultBranch()))
         const { recipe } = yield* Effect.promise(() => world.currentRecipe(project, client, base))

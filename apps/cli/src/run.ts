@@ -15,6 +15,7 @@ import {
   ticketsForEffect,
   type TurnClient,
   type RunOnceResult,
+  githubLimitPort,
 } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { lockedEffect, makeGuard, readControlEffect } from '@lingtai/daemon'
@@ -380,7 +381,13 @@ export function run(
       // Bound now: a property narrowing does not survive into the closure below.
       const owner = project.owner
       client = yield* Effect.tryPromise({
-        try: () => world.createGitHubClient({ auth: githubClientAuth(), owner, repo: options.project }),
+        try: () =>
+          world.createGitHubClient({
+            auth: githubClientAuth(),
+            owner,
+            repo: options.project,
+            onRateLimited: githubLimitPort(options.store ?? eventStore, () => {}),
+          }),
         // `NotInstalledError` says what to do about it, and every other failure
         // here is the App or the network. Either way a person reads one line.
         catch: (err) => refuse((err as Error).message),

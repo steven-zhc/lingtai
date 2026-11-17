@@ -121,6 +121,12 @@ export function untilFromWords(from: PayloadOf<'AccountLimitReached'>['untilFrom
       return "its message named no time; the recipe's backoff"
     case 'backoff-unreadable':
       return "its message named a time this build could not read; the recipe's backoff"
+    case 'retry-after':
+      return 'GitHub said how many seconds to wait (retry-after)'
+    case 'ratelimit-reset':
+      return 'GitHub said when its window resets (x-ratelimit-reset)'
+    case 'doubling':
+      return 'GitHub named no time; one minute, doubling for each limit met since a header or a person'
     default: {
       const never: never = from
       return never
