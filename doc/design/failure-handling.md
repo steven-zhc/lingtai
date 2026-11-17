@@ -26,19 +26,19 @@
 
 | 词 | 中文 | 出发点 |
 |---|---|---|
-| `redo` | 重做这一步 | ↻ 当前 attempt 里重做 |
+| `redo` | 重做这一步 | ↻ 同一步再做一遍 |
 | `fix` | 修复 | ➡ 接着往下做 |
 | `conflictFix` | 解冲突 | ➡ 接着往下做 |
 | `startOver` | 从头重来 | ⟲ 从 base 重来 |
 | `split` | 拆票 | ⟲ 从 base 重来 |
 | `toPerson` | 交给人 | — |
-| `checkRerun` | 检查红了立刻再跑（规则） | ↻ 当前 attempt 里重做 |
+| `checkRerun` | 检查红了立刻再跑（规则） | ↻ 同一步再做一遍 |
 | `baseMerge` | base 动了合并进来（规则） | ➡ 接着往下做 |
 | `landRetry` | 重新落地（规则） | ➡ 接着往下做 |
 
 **出发点**：
 - **➡ 接着往下做**：同一个 attempt，从当前 head 往前走，已有的 commit 都保留，再加新的。
-- **↻ 当前 attempt 里重做**：同一个 attempt，把同一件事（一步或一次检查）原样再做一遍，起点还是当前 head。
+- **↻ 同一步再做一遍**：只把刚才出问题的那一步（或那一次检查）原样再做一遍，起点是当前 head。不往前推进，不回到 attempt 的开头，也不开新的 attempt。
 - **⟲ 从 base 重来**：开新的 attempt，从 base 开始，旧的改动不带。
 
 **上限**（第九节）：每个动作有自己的上限，名字是动作的复数：`redos`、`fixes`、`conflictFixes`、`startOvers`、`splitDepth`、`checkReruns`、`baseMerges`、`landRetries`。
@@ -153,6 +153,19 @@ questions: 最多 5 个
 `fix` 和 `conflictFix` 做法一样（回 implement 在 head 上改），但起因和证据不同，所以是两个动作、两个上限。
 
 另外三个**由规则直接执行**，不经过 triage：`checkRerun`（`checkReruns`）、`baseMerge`（`baseMerges`）、`landRetry`（`landRetries`）。
+
+**`redo` 和 `checkRerun` 都是"同一步再做一遍"，但不合并**（2026-11-17）：
+
+| | `redo` | `checkRerun` |
+|---|---|---|
+| 什么时候 | 这一步**没做完**：agent 崩溃、超时、没有回执 | 这一步**做完了，结论是红**：`pnpm test` 跑完失败 |
+| 再做什么 | 整个 step，包括再跑一次 agent | 只把那条检查命令再跑一次，不跑 agent |
+| 花不花钱 | 花（一次 agent run） | 不花（只花检查的时间） |
+| 等多久 | 1、5、15 分钟 | 立刻 |
+| 第二次的结果怎么用 | 当成这一步的结果，照常往下走 | 和第一次比：红了又绿 → 按 flaky 规则放行，记一条 backlog；两次都红 → 走 `fix` |
+| 上限 | `redos` 3 次 | `checkReruns` 1 次 |
+
+合并成一个会出两个问题：检查一红就要等 1 分钟、还占掉 agent 重做的次数；flaky 判断需要"同一个 commit 上两次结果对比"，`redo` 没有这层意思。如果检查命令本身没跑完（进程被杀、超时），那是"没做完"，走 `redo`。
 
 ### `redo` 的细节（已定）
 
@@ -288,9 +301,9 @@ summary: 给人读的一句话
 | **`conflictFixes`** | `conflictFix`：合并冲突，回 implement 在 head 上解 | ➡ 接着往下做 | 每个 attempt | **6** | recipe | 没有自己的名字，借用 `rounds` 的值 |
 | `baseMerges` | `baseMerge`：base 动了合并进来，再 build | ➡ 接着往下做 | 每个 attempt | 10 | 常量 | `BASE_MERGES_LIMIT` |
 | **`landRetries`** | `landRetry`：push 遇到瞬时错误后重新落地（#1221），不跑 agent | ➡ 接着往下做 | 每个 attempt | 3 | 常量 | 现在和 `redo` 共用 `TRANSIENT_RETRIES_LIMIT` 的计数 |
-| **`redos`** | `redo`：瞬时错误、崩溃、没有回执、回答读不懂、`run.turns`/`run.wall` 用完后的"接着做" | ↻ 当前 attempt 里重做 | 每个 attempt | 3 | 常量 | `TRANSIENT_RETRIES_LIMIT` |
+| **`redos`** | `redo`：瞬时错误、崩溃、没有回执、回答读不懂、`run.turns`/`run.wall` 用完后的"接着做" | ↻ 同一步再做一遍 | 每个 attempt | 3 | 常量 | `TRANSIENT_RETRIES_LIMIT` |
 | `redoWaits` | 每次 `redo` 之前等多久 | （跟随 `redos`） | — | 1、5、15 分钟 | 常量 | `TRANSIENT_WAITS` |
-| `checkReruns` | `checkRerun`：检查红了，在同一个 commit 上立刻再跑 | ↻ 当前 attempt 里重做 | 每次红 | 1 | 常量 | 0108 §17，没有名字 |
+| `checkReruns` | `checkRerun`：检查红了，在同一个 commit 上立刻再跑 | ↻ 同一步再做一遍 | 每次红 | 1 | 常量 | 0108 §17，没有名字 |
 | **`startOvers`** | `startOver`：从头重来 | ⟲ 从 base 重来 | 每张票 | 2 | recipe | `restarts` |
 | `splitDepth` | `split`：自动拆票的层数 | ⟲ 从 base 重来 | 每张票 | **1** | 常量 | 没有，新加 |
 | `run.turns` | 一次 run 的轮数 | ■ 封顶（用完 → triage 决定 `split` 还是 `redo`） | 每次 run | 350 | recipe | `runtime.limits.turns` |
