@@ -498,9 +498,9 @@ triage 回来时，世界可能已经变了：人关了票、改了正文、或�
 - 事件改名：旧事件留在日志里，含义不变（第十一节第 12 条）。
 - 这批票放在 0.15.0。
 
-【待定】冷评之后新加、还没和 operator 确认的两条：
-- `designAsks` 扩成 `personAsks`，把 implement 的 `Unclear` 和 triage 的提问也算进去（第九节）。
-- 母票回来的那个 attempt 不计入 `newAttempts`（第八节第 6 条）。
+- `designAsks` 扩成 `personAsks`（每张票 5 次，含 implement 的 `Unclear` 和 triage 的提问）；母票回来的那个 attempt 不计入 `newAttempts`。
+
+没有待定项。
 
 不在这份方案里：首页加一节可交互的"选一种失败，看系统怎么处理"（operator 2026-11-17 的想法），先在 `doc/design/` 做 mock，确认后单独开 site 的票，排在这批票之后。
 
