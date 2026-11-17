@@ -13,7 +13,7 @@
  * verdict about a commit", which is the part that is genuinely about actions.
  */
 import type { RunTrace, operatorCodexDenies } from '@lingtai/agent'
-import type { Step } from '@lingtai/domain'
+import type { Finding, Step } from '@lingtai/domain'
 import { parseDuration } from '@lingtai/recipe'
 import {
   type SandboxPolicyRefused,
@@ -78,6 +78,23 @@ export const wrapRefusal = (run: string, error: SandboxWrapError): string => {
   return `the sandbox would not wrap \`${run}\`: ${why}`
 }
 
+/**
+ * **What a red then green asks** (0108 §17, #1222): the same command ran twice, red then green. The answer is
+ * *passed, with these findings* or *red*, and either way the evidence. It has no failure of its own: a read the
+ * port could not make is a red that says so.
+ */
+export interface FlakyAsk {
+  readonly step: Step
+  readonly action: string
+  readonly command: string
+  readonly first: CommandOutcome
+  readonly second: CommandOutcome
+}
+export type FlakyAnswer =
+  | { readonly passed: true; readonly evidence: string; readonly findings: readonly Finding[] }
+  | { readonly passed: false; readonly evidence: string }
+export type FlakyPort = (ask: FlakyAsk) => Effect.Effect<FlakyAnswer>
+
 export interface ProcessActionSpec {
   name: string
   run: string
@@ -122,6 +139,11 @@ export interface ProcessActionSpec {
   refused?: string
   /** The runner, as the subscriber's `options.command ?? commandEffect`. */
   command?: CommandRunner
+  /**
+   * Present, a command that exits non-zero runs once more at once, and a red then green is the port's to judge
+   * (#1222). Absent, one run, as before. Only this action reruns: an agent's second run reuses its session id.
+   */
+  flaky?: FlakyPort
 }
 
 export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
@@ -169,11 +191,11 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
         let wrapFailed = false
         let unavailable: string | undefined
         if (spec.sandbox === undefined && spec.recordUnwrapped !== undefined) yield* spec.recordUnwrapped()
-        const outcome =
+        const runOnce = (): Effect.Effect<CommandOutcome> =>
           spec.sandbox === undefined
-            ? yield* spawn(base)
+            ? spawn(base)
             : // The scope encloses the command: closing it cleans srt up, which must not happen under a running child.
-              yield* Effect.scoped(
+              Effect.scoped(
                 spec.sandbox
                   .wrap(
                     ['/bin/sh', '-c', spec.run],
@@ -198,6 +220,41 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
                     }),
                   ),
               )
+        const outcome = yield* runOnce()
+        // The rerun is only for a command that exited non-zero: a timeout, an abort and a failed wrap stay as they were.
+        const reran =
+          spec.flaky !== undefined &&
+          !outcome.ok &&
+          !outcome.timedOut &&
+          !wrapFailed &&
+          outcome.exitCode !== null &&
+          outcome.exitCode !== 0
+        if (reran && spec.flaky !== undefined) {
+          if (context.signal?.aborted) {
+            return { verdict: 'failed' as const, evidence: outcome.evidence, findings: [] }
+          }
+          const second = yield* runOnce()
+          if (!second.ok) {
+            return {
+              verdict: 'failed' as const,
+              evidence: `the first run of \`${spec.run}\` failed too\n${second.evidence}`,
+              findings: [],
+              ...(wrapFailed ? { notWrapped: true as const } : {}),
+            }
+          }
+          const answer = yield* spec.flaky({
+            step: spec.step ?? 'build',
+            action: spec.name,
+            command: spec.run,
+            first: outcome,
+            second,
+          })
+          return {
+            verdict: answer.passed ? ('passed' as const) : ('failed' as const),
+            evidence: answer.evidence,
+            findings: answer.passed ? [...answer.findings] : [],
+          }
+        }
 
         // A process action finds nothing structured — that is what the agent action is
         // for (#18). Its evidence is the log, which is what someone acting on the

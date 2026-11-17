@@ -42,7 +42,7 @@ import {
   type KeptRunPortDeps,
 } from './kept-run-action.ts'
 import { makeMergeAction, mergePortDepsFrom, type MergeActionDeps, type MergePortDeps } from './merge-action.ts'
-import { type CommandRunner, type RunSandbox, makeProcessAction } from './process-action.ts'
+import { type CommandRunner, type FlakyPort, type RunSandbox, makeProcessAction } from './process-action.ts'
 import { makeQueueAction, queuePortDepsFrom, type QueueActionDeps, type QueuePortDeps } from './queue-action.ts'
 import { makeWatchAction, watchPortDepsFrom, type WatchActionDeps, type WatchPortDeps } from './watch-action.ts'
 import { type WorkActionDeps, type WorkPortDeps, makeWorkAction, workPortDepsFrom } from './work-action.ts'
@@ -187,6 +187,11 @@ export interface ActionDeps {
   recordUnwrapped?: (keys: { readonly step: Step; readonly action: string }) => Effect.Effect<void>
   /** The runner a `run:` spawns through. Absent, `commandEffect`, as the subscriber's. A test hands one that records. */
   command?: CommandRunner
+  /**
+   * Judges a `run:` that went red then green (0108 §17, #1222). Read only at `build`, `proposed` and `merge`;
+   * absent, or at any other step, a `run:` runs once. Built per pass in `conduct.ts`, which holds the reads.
+   */
+  flaky?: FlakyPort
 }
 
 /**
@@ -210,6 +215,7 @@ export interface ActionPortDeps {
   sandbox?: ActionDeps['sandbox']
   recordUnwrapped?: ActionDeps['recordUnwrapped']
   command?: ActionDeps['command']
+  flaky?: ActionDeps['flaky']
 }
 
 /**
@@ -234,6 +240,7 @@ export const actionPortDepsFrom = (deps: ActionDeps): ActionPortDeps => {
     sandbox: deps.sandbox,
     recordUnwrapped: deps.recordUnwrapped,
     command: deps.command,
+    flaky: deps.flaky,
   }
   return lifted
 }
@@ -393,6 +400,8 @@ export function actionPortsFromRecipe(
           ? { recordUnwrapped: () => deps.recordUnwrapped!({ step, action: action.name }) }
           : {}),
         ...(deps.command ? { command: deps.command } : {}),
+        // Where a `run:` may refuse, and nowhere else (#1222): `implement`'s kept run and `prepared` run once.
+        ...(deps.flaky && (step === 'build' || step === 'proposed' || step === 'merge') ? { flaky: deps.flaky } : {}),
       })
       // **`implement` wraps and the other four do not** (`#390`): a `run:`
       // there may not refuse (`REFUSING_STEPS`, `packages/conductor/src/run-attempt.ts`),

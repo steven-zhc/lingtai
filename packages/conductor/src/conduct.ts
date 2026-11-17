@@ -83,6 +83,7 @@ import {
 import { stateDir } from '@lingtai/env'
 import { type EventStore, eventStore, log as theLog, readThroughSnapshot, type Snapshot } from '@lingtai/event-store'
 import { observeSandbox } from '@lingtai/project'
+import { readBacklogEffect } from '@lingtai/projector'
 /**
  * One work item, claim through merge — **and since `#256` the sequence is not
  * here.**
@@ -248,6 +249,7 @@ import { runnableNowEffect, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
 import { fixBriefParts, grantedAdviceFromState } from './fix.ts'
+import { flakyPortOf } from './flaky-port.ts'
 import { chosenIn, judgePrompt, judgePromptParts } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
 import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
@@ -4096,6 +4098,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const stepDeps: ActionPortDeps = {
         env: envForExtension,
+        // 0108 §17 (#1222): a refusing `run:` that goes red then green asks these reads. The base is worked out when
+        // the check asks, not here: `worktree` is assigned after this object is built.
+        flaky: flakyPortOf({
+          store,
+          stream: integrationStream(project, base),
+          diffPaths: () => {
+            const baseSha = continuation?.diffBaseSha ?? worktree?.baseSha ?? null
+            return baseSha === null ? Effect.succeed(null) : pathsBetween(`${baseSha}...HEAD`)
+          },
+          backlog: () => readBacklogEffect({ project }),
+          head: () =>
+            Effect.map(gitAskedEffect(['rev-parse', 'HEAD']), (got) =>
+              Result.isSuccess(got) ? got.success.trim() : undefined,
+            ),
+        }),
         agent: {
           runtime: options.runtime,
           issue,
