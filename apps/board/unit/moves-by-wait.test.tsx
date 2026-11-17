@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Standing } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
+import { rerunStepFirstAmongSavedWork } from '../src/lib/saved-fix-work.ts'
 import { presentAttemptEvents, standingOf } from '../src/lib/task.ts'
 import { WAIT_FIXTURES, type WaitFixture } from '../test/waits.ts'
 
@@ -124,7 +125,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       const html = render(fx, null)
       const row = movesOf(html)
       const buttons = buttonsOf(row)
-      expect(cardsOf(row)).toEqual(allowed)
+      expect(cardsOf(row)).toEqual(rerunStepFirstAmongSavedWork(allowed))
 
       const approveBtn = allowed.includes('Approve') && standing.awaitingSha !== null
       const approveSentence = allowed.includes('Approve') && standing.awaitingSha === null
