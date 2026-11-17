@@ -784,7 +784,7 @@ export const NOT_BUILT_YET: StepBodies = {
 export interface Ceilings {
   /**
    * How many times this pass may go back into the spine — a fix round, and what
-   * `attemptCeiling` prices at *up to `rounds + 1` agent runs*
+   * `attemptCeiling` prices, with the conflict rounds and the reruns, at *up to `2 × rounds + 1 + TRANSIENT_RETRIES_LIMIT` agent runs* (0108 §8)
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
    *
    * **This is what makes the loop bounded**, and the bound is structural rather
@@ -991,6 +991,9 @@ export interface AttemptOptions {
      * this one visit's.
      */
     readonly roundsSpent?: number
+    /** The base merges and conflict rounds the attempt's stream already holds: per attempt, not per pass (0108 §8, #1200). */
+    readonly baseMergesSpent?: number
+    readonly conflictRoundsSpent?: number
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
     readonly landedOnBase?: {
       readonly paths: readonly string[]
@@ -1339,7 +1342,7 @@ export function outcomeOf(end: AttemptEnd): TerminalOutcome {
  * **It terminates**, and structurally rather than by a guard: the only edges
  * that re-enter the spine are the ones `offerFor` offers, it offers none once
  * `roundsSpent` reaches `ceilings.rounds`, and a destination it did not offer
- * is refused. So the walk is at most `rounds + 1` laps long.
+ * is refused. So the walk is at most `rounds + 1` laps long, conflict rounds and base merges (counted per attempt) apart.
  */
 export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<AttemptOver> {
   return Effect.gen(function* () {
@@ -1354,13 +1357,13 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     let landed: string | null = null
     let roundsSpent = options.from?.roundsSpent ?? 0
     /**
-     * The base merges the system made this pass (#593). **Not seeded from
-     * `options.from`**: the bound is per pass, and a continuation is a new pass —
-     * which is what makes `Approve` over a spent `base-moved` mean *keep merging*.
+     * The base merges the system made this attempt (#593). Seeded from `options.from`:
+     * the bound is per attempt (0108 §8), so an `Approve` over a spent `base-moved`
+     * reaches a person again at the next move, and `Requeue` starts over.
      */
-    let baseMergesSpent = 0
-    /** The merge-conflict fix rounds this pass (#653), per pass for the same reason. */
-    let conflictRoundsSpent = 0
+    let baseMergesSpent = options.from?.baseMergesSpent ?? 0
+    /** The merge-conflict fix rounds this attempt (#653), per attempt for the same reason. */
+    let conflictRoundsSpent = options.from?.conflictRoundsSpent ?? 0
     const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
     // A restart is automatic fix routing too, and a bigger kind than a round: the lap
     // that spends a human grant ends at a person rather than at a restart nobody
@@ -1524,7 +1527,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       Effect.gen(function* () {
         const offer = offerFor(
           proposal,
-          { rounds: roundLimit, restarts: restartLimit },
+          { rounds: roundLimit, restarts: restartLimit, conflictRounds: ceilings.rounds },
           {
             rounds: roundsSpent,
             restarts: ceilings.restartsSpent,

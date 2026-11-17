@@ -171,20 +171,33 @@ describe('a base that moved on the branch’s own files', () => {
     expect(reviewSaw[0]?.mergedOnto).toBe('base-1')
   })
 
-  it('reaches a person on the third arrival, the port having been called exactly twice', async () => {
+  it('reaches a person on the eleventh arrival, the port having been called exactly ten times', async () => {
     const asked: string[] = []
-    const { result } = await walk([moved('base-1'), moved('base-2'), moved('base-3')], async (toSha) => {
+    const arrivals = Array.from({ length: 11 }, (_, i) => moved(`base-${i + 1}`))
+    const { result } = await walk(arrivals, async (toSha) => {
       asked.push(toSha)
       return { head: `merged-${asked.length}` }
     })
 
-    expect(asked).toEqual(['base-1', 'base-2'])
+    expect(asked).toEqual(arrivals.slice(0, 10).map((_, i) => `base-${i + 1}`))
     expect(result.end).toMatchObject({
       _tag: 'WaitOnPerson',
-      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'BaseMoved', toSha: 'base-3' } },
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'BaseMoved', toSha: 'base-11' } },
     })
     // Nothing but a person was on offer, so no judge was asked and `chose` is
     // `waiting` (as for a spent round): the ceiling is read off the offer.
+    expect(result.routes.at(-1)?.offer.unavailable).toEqual([
+      { id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } },
+    ])
+  })
+
+  it('a continuation of an attempt that spent ten base merges is not offered another (#1200)', async () => {
+    const { result } = await walk([moved('base-1')], async () => ({ head: 'merged-1' }), [], {
+      step: 'build',
+      waive: [],
+      baseMergesSpent: 10,
+    })
+
     expect(result.routes.at(-1)?.offer.unavailable).toEqual([
       { id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } },
     ])

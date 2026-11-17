@@ -339,7 +339,11 @@ describe('a destination fails three ways, and a step has one way to say so', () 
      */
     it('arrives with somewhere to go, which a crash never does', () => {
       const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', question: 'which space?' }
-      const offer = offerFor(proposal, { rounds: SPARE.rounds, restarts: SPARE.restarts }, { rounds: 0, restarts: 0 })
+      const offer = offerFor(
+        proposal,
+        { rounds: SPARE.rounds, restarts: SPARE.restarts, conflictRounds: SPARE.rounds },
+        { rounds: 0, restarts: 0 },
+      )
 
       expect(offer.available.map((candidate) => destinationOf(candidate, proposal)).sort()).toEqual([
         'design',
@@ -363,7 +367,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', question: 'which space?' }
       const offer = offerFor(
         proposal,
-        { rounds: SPARE.rounds, restarts: SPARE.restarts },
+        { rounds: SPARE.rounds, restarts: SPARE.restarts, conflictRounds: SPARE.rounds },
         { rounds: SPARE.rounds, restarts: 0 },
       )
 

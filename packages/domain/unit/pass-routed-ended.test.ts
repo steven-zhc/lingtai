@@ -4,7 +4,7 @@ import { decideRoute, offerFor, parsePayload } from '../src/index.ts'
 
 const offer = offerFor(
   { _tag: 'BuildRed', output: '3 failing' },
-  { rounds: 2, restarts: 0 },
+  { rounds: 2, restarts: 0, conflictRounds: 2 },
   { rounds: 0, restarts: 0, baseMerges: 0, conflictRounds: 0 },
 )
 const reply = { _tag: 'NotAsked' } as const
