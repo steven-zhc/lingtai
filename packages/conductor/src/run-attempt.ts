@@ -1000,6 +1000,17 @@ export interface AttemptOptions {
     readonly conflictRoundsSpent?: number
     /** The reruns in place the attempt's stream already holds (0108 §8, #1201): per attempt, so a continuation keeps it. */
     readonly transientRetriesSpent?: number
+    /**
+     * **The first visit of `step` is a rerun of the call an account limit cut off** (0108 §11, #1205): the
+     * recorded prompt (null: a fresh brief) is handed again under a new dispatch id. `accountReruns` is this
+     * rerun's number among the attempt's; every rerun's suffix is `transientRetriesSpent + accountReruns`, so
+     * the two kinds never repeat an id.
+     */
+    readonly rerun?: {
+      readonly for: { readonly step: Step; readonly name: string; readonly round: number }
+      readonly prompt: string | null
+      readonly accountReruns: number
+    }
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
     readonly landedOnBase?: {
       readonly paths: readonly string[]
@@ -1909,8 +1920,23 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         }
         applyConflictMerge(asked.baseSha, got.conflicted)
       }
+      // The first visit of `from.step` after an account limit: the cut-off call's round, its dispatch suffix and
+      // its recorded brief (#1205).
+      const accountRerun = options.from?.rerun
+      const accountRerunsSpent = accountRerun?.accountReruns ?? 0
       const visitContext: ActionContext =
-        rerun === null ? contextFor() : { ...rerun.context, rerun: transientRetriesSpent }
+        rerun !== null
+          ? { ...rerun.context, rerun: transientRetriesSpent + accountRerunsSpent }
+          : accountRerun !== undefined && at === options.from?.step && !steps.some((visit) => visit.step === at)
+            ? {
+                ...contextFor(),
+                round: accountRerun.for.round,
+                rerun: transientRetriesSpent + accountRerun.accountReruns,
+                ...(accountRerun.prompt === null
+                  ? {}
+                  : { recorded: { name: accountRerun.for.name, prompt: accountRerun.prompt } }),
+              }
+            : contextFor()
       const visitedBefore: readonly StepReached[] = rerun === null ? [...steps] : rerun.reached
       rerun = null
       /**

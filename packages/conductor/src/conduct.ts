@@ -40,8 +40,12 @@ import {
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
 import {
+  type PayloadOf,
   type SpentFor,
+  type WaitId,
   WIP_COMMIT_PREFIX,
+  continuableRelease,
+  expandPrompt,
   integrationStream,
   parsePayload,
   stripEvidence,
@@ -230,7 +234,8 @@ import { ticketOfLandingSubject } from '@lingtai/repo/landing-subject'
 import { standInExcludes, type SandboxApi } from '@lingtai/sandbox'
 import { Cause, type Duration, Effect, Exit, Result } from 'effect'
 
-import { reachAccountLimit } from './account.ts'
+import { reachAccountLimit, readAccount } from './account.ts'
+import { resolvePromptRefs } from './prompt-refs.ts'
 import { armsOnOriginEffect } from './arms.ts'
 import {
   type Brief,
@@ -241,7 +246,14 @@ import {
   type Worked,
   bodiesFor,
 } from './attempt-steps.ts'
-import { armForState, conflictResolvedOf, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
+import {
+  armForState,
+  conflictResolvedOf,
+  diffBaseShaOf,
+  landedOnBaseOf,
+  priorAttemptsFromState,
+  releasedHeadOf,
+} from './attempts.ts'
 import { baseCheckQuestion, createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
 import { carryKeptWork, type CarriedWork } from './carry-wip-port.ts'
@@ -1274,8 +1286,112 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * below reports as an ordinary `notClaimed` rather than acting on a
      * stale copy.
      */
+    /** Set by the second source below: why a release-sourced continuation was declined rather than taken. */
+    let releasedDeclined: string | null = null
+    /** Why the saved head of a released attempt could not be cut again, once the cut found out (#1205). */
+    let headGone: string | null = null
+    /** The words a recorded prompt was handed with, expanded; null where a ref no longer resolves (#1205). */
+    const recordedPromptOf = (record: PayloadOf<'RunPrompted'>) =>
+      Effect.gen(function* () {
+        if (record.prompt === null) return null
+        if ((record.refs ?? []).length === 0) return record.prompt
+        const run = Effect.runPromiseWith(yield* Effect.context<never>())
+        const values = yield* Effect.tryPromise(() =>
+          resolvePromptRefs(record.refs ?? [], {
+            store,
+            git: (args, cwd) =>
+              run(
+                repo.git([...args], { token: options.token, env: options.gitEnv, cwd }).pipe(
+                  Effect.match({
+                    onSuccess: (out) => ({ ok: true as const, out }),
+                    onFailure: (e) => ({ ok: false as const, why: e.detail }),
+                  }),
+                ),
+              ),
+            mirrorPath: mirrorPathFor(project, home),
+          }),
+        )
+        const expanded = expandPrompt(record, values)
+        return expanded.unresolved.length === 0 ? expanded.text : null
+      }).pipe(Effect.orElseSucceed(() => null))
     const continuation = yield* Effect.gen(function* () {
-      if (options.continuing === undefined) return null
+      if (options.continuing === undefined) {
+        /**
+         * **The other source of a continuation: a queued ticket whose last release names a run to
+         * continue** (#1205, `continuableRelease`). Read here, at the version this claim will append at,
+         * so a ticket that moved since is `null` and an ordinary claim; the owner's continue
+         * transition checks the same question again. The cause decides which head and which `from`
+         * (`releasedHeadOf`, `released.cause`); #1211 adds `BaseRed` to it.
+         */
+        if (reduced.lifecycle.status !== 'backlog') return null
+        const releasedFrom = continuableRelease(reduced)
+        if (releasedFrom === null) return null
+        // #1211 adds `BaseRed` to the causes this takes; until then the owner's set holds only this one.
+        const cause = releasedFrom.cause
+        if (cause._tag !== 'AccountLimit') return null
+        {
+          // The first claim after the lock lifts. A lock that stands again is a race with a fresh one: this
+          // never becomes an ordinary claim from the base, which is the cost this continuation removes.
+          const locked = yield* readAccount(store, cause.runtime).pipe(
+            Effect.map((account) => account.limit !== null),
+            Effect.orElseSucceed(() => true),
+          )
+          if (locked) {
+            releasedDeclined = `the ${cause.runtime} account is still locked`
+            return null
+          }
+        }
+        const releasedEvents = yield* Effect.promise(() => store.read(releasedFrom.runId))
+        const releasedState = reduceAttempt(releasedEvents)
+        const head = releasedHeadOf(releasedEvents)
+        const spent = continuationSpent(releasedState)
+        const ticketEvents = yield* Effect.promise(() => store.read(ticketId))
+        // Each lift is one release naming this run, so this rerun's number among them is their count.
+        const accountReruns = ticketEvents.filter(
+          (e) =>
+            e.type === 'TicketReleased' &&
+            (e.data as PayloadOf<'TicketReleased'>).cause?._tag === 'AccountLimit' &&
+            (e.data as PayloadOf<'TicketReleased'>).runId === releasedFrom.runId,
+        ).length
+        const cutOff = [...releasedEvents]
+          .reverse()
+          .find((e) => e.type === 'RunPrompted' && (e.data as PayloadOf<'RunPrompted'>).for?._tag === 'Action')
+        const cutOffFor = cutOff === undefined ? null : (cutOff.data as PayloadOf<'RunPrompted'>).for
+        const recordedPrompt =
+          cutOff === undefined || reduced.pendingPrompt !== null
+            ? null
+            : yield* recordedPromptOf(cutOff.data as PayloadOf<'RunPrompted'>)
+        return {
+          step: cause.step,
+          waive: [],
+          // What only an approval's continuation carries; present as `undefined` so the two shapes are one.
+          grantRef: undefined,
+          advice: undefined,
+          declined: undefined,
+          grant: undefined,
+          findings: undefined,
+          conflict: undefined,
+          readClipped: undefined,
+          roundLimit: undefined,
+          onSha: 'at' in head ? head.at : '',
+          resumedWaitId: `account-limit:${accountReruns}` as WaitId,
+          roundsSpent: continuationRound(releasedState, false),
+          baseMergesSpent: spent.baseMerges,
+          conflictRoundsSpent: spent.conflictRounds,
+          transientRetriesSpent: spent.transientRetries,
+          diffBaseSha: diffBaseShaOf(releasedEvents),
+          landedOnBase: landedOnBaseOf(releasedEvents),
+          conflictResolved: conflictResolvedOf(releasedEvents),
+          released: {
+            runId: releasedFrom.runId,
+            head,
+            rerun:
+              cutOffFor?._tag === 'Action'
+                ? { for: cutOffFor, prompt: recordedPrompt, accountReruns }
+                : { for: null, prompt: null, accountReruns },
+          },
+        }
+      }
       if (reduced.lifecycle.status !== 'approved' || reduced.lifecycle.runId !== options.continuing.runId) return null
       const { waitId: approvedWaitId, onSha: approvedOnSha } = reduced.lifecycle
       const reason = waitsFromState(reduced).find((w) => w.waitId === approvedWaitId)?.reason
@@ -1411,9 +1527,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // brand-new pass onto the *approved* run's own stream, under `--no-merge`
     // or not depending on nothing this pass decided.
     const runId =
-      options.continuing !== undefined && continuation !== null
-        ? options.continuing.runId
-        : attemptStream(crypto.randomUUID())
+      continuation === null
+        ? attemptStream(crypto.randomUUID())
+        : (continuation.released?.runId ?? options.continuing!.runId)
     /**
      * **Where the pass works, known before it starts.**
      *
@@ -2826,6 +2942,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // `onStream` is set.
           const region = yield* Effect.uninterruptible(
             Effect.gen(function* () {
+              // A release-sourced continuation whose lock stands again is not a claim at all (#1205).
+              if (releasedDeclined !== null) {
+                return { kind: 'answer' as const, answer: { notClaimed: releasedDeclined } as TakeAnswer }
+              }
               // **A continuation reclaims the same run, never a fresh one**
               // (#465, 0120 §6) — `continueTicket` is `claimTicket`'s
               // sibling for the one state the latter refuses, `approved`, and
@@ -2836,7 +2956,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 | Effect.Success<ReturnType<typeof continueTicketEffect>>,
                 unknown
               > =
-                options.continuing !== undefined && continuation !== null
+                continuation !== null
                   ? continueTicketEffect(ticketId, runId, { store, ...ticketSnapshots, body: issue.body })
                   : // The claim carries what the task is, because it is now the
                     // only place a title enters the log at all.
@@ -3007,6 +3127,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
           reviewSettingsPath = settings.success
 
+          // **A continuation of a release re-cuts at the head its cause names** (#1205): a head that cannot be
+          // continued is not cut at all, and the ending restarts or holds for a person (`headGone`).
+          const releasedHead = continuation?.released?.head
+          if (releasedHead !== undefined && 'cannot' in releasedHead) {
+            headGone = releasedHead.cannot
+            return { notCut: `the saved head cannot be continued: ${releasedHead.cannot}` }
+          }
           const provisioned = yield* Effect.result(
             repo.provision({
               project,
@@ -3036,19 +3163,26 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // `at` check refuses rather than silently taking a branch that
               // has moved since.
               ...(continuation !== null
-                ? { at: continuation.onSha, ...(continuation.grantRef ? { atRef: continuation.grantRef } : {}) }
+                ? releasedHead !== undefined
+                  ? { at: releasedHead.at, atRef: releasedHead.atRef }
+                  : { at: continuation.onSha, ...(continuation.grantRef ? { atRef: continuation.grantRef } : {}) }
                 : {}),
             }),
           )
-          if (Result.isFailure(provisioned)) return { notCut: provisioned.failure.detail }
+          if (Result.isFailure(provisioned)) {
+            if (releasedHead !== undefined && provisioned.failure.stale === true) headGone = provisioned.failure.detail
+            return { notCut: provisioned.failure.detail }
+          }
           worktree = provisioned.success
           lease = provisioned.success.remoteHead
           log(`worktree ${provisioned.success.path} at ${provisioned.success.baseSha.slice(0, 7)}`)
           // **A stopped run's kept WIP is applied here, before any agent runs** (#1170, 0109 §8):
           // a `design` agent runs in this worktree too, so `implement` is not early enough. A
           // continuation has no `lastRun`; a failure to carry is the brief's to say, except a wedged tree (a rollback that failed), which is a `notCut`.
-          const keptWip = lastRun?.kept.at(-1)
-          if (continuation === null && previous && keptWip) {
+          const keptWip =
+            releasedHead !== undefined ? (releasedHead.carry ?? undefined) : continuation === null ? lastRun?.kept.at(-1) : undefined
+          const keptFrom = continuation?.released?.runId ?? previous?.runId
+          if (keptWip && keptFrom !== undefined && (continuation === null ? previous : true)) {
             const carried = yield* carryKeptWork({
               git: (args, raw) =>
                 Effect.result(
@@ -3082,7 +3216,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   type: 'RunAppliedKeptWork',
                   actor: 'conductor',
                   data: parsePayload('RunAppliedKeptWork', {
-                    fromRunId: previous.runId,
+                    fromRunId: keptFrom,
                     arm: keptWip.arm,
                     sha: keptWip.sha,
                     parentSha: keptWip.parentSha,
@@ -4633,7 +4767,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 // awaited first and never after: a `RunPrompted` appended later
                 // would make the hook's next append a `ConcurrencyError`. The hook
                 // appends no prompt of its own.
-                const implementerParts: RecordPart[] = [
+                // A run an account limit cut off is handed its recorded brief again (#1205).
+                const recordedBrief = brief.context.recorded?.name === spec.name ? brief.context.recorded.prompt : null
+                const implementerParts: RecordPart[] =
+                  recordedBrief !== null
+                    ? [recordedBrief]
+                    : [
                   ...renderPromptParts(
                     options.prompt,
                     { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
@@ -4940,7 +5079,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           stoppedBy = 'interrupted'
           // The brief and the `for`, built once: each is recorded before the dispatch
           // and then handed to it / to the `RunSpent` below (#923).
-          const fixParts: RecordPart[] = [
+          const recordedFix = brief.context.recorded?.name === spec.name ? brief.context.recorded.prompt : null
+          const fixParts: RecordPart[] =
+            recordedFix !== null
+              ? [recordedFix]
+              : [
             ...fixBriefParts({
               refusal,
               round,
@@ -5338,6 +5481,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   ? { conflict: continuation.conflict }
                   : {}),
                 ...(continuation.conflictResolved !== null ? { conflictResolved: continuation.conflictResolved } : {}),
+                ...(continuation.released?.rerun.for != null
+                  ? {
+                      rerun: {
+                        for: {
+                          step: continuation.released.rerun.for.step,
+                          name: continuation.released.rerun.for.name,
+                          round: continuation.released.rerun.for.round,
+                        },
+                        prompt: continuation.released.rerun.prompt,
+                        accountReruns: continuation.released.rerun.accountReruns,
+                      },
+                    }
+                  : {}),
               },
             }
           : {}),
@@ -5716,6 +5872,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       if (outcome === 'blocked') {
         const held = stopped?.ending.ending === 'held'
         const reason = waitReasonFor()
+        /**
+         * **A released attempt whose saved head is gone starts over if a restart is left** (#1205, 0108 §15);
+         * otherwise the wait below is the person's, and it names the head — the cut's own `notCut` detail.
+         */
+        if (headGone !== null && reduced.restarts.length < ceiling.restarts) {
+          const restart = reduced.restarts.length + 1
+          const why = `the saved head cannot be continued (${headGone}) — restart ${restart} of ${ceiling.restarts}`
+          log(why)
+          runLog.note('restart', why)
+          yield* release(why, { _tag: 'Restart', restart })
+          return { ok: false, ticketId, runId, stage: 'restart', detail: why, summary: summaryOf() } satisfies RunOnceResult
+        }
         /**
          * **A run an account limit cut off is the ticket's to take again, not a person's** (0108 §11, #1205).
          * The lock first and the release second: a look between the two would claim the ticket and walk

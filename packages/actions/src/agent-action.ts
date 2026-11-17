@@ -69,6 +69,7 @@ import { Cause, Effect, Exit } from 'effect'
 import {
   NEEDS_INPUT,
   liftPromise,
+  recordedOr,
   rerunId,
   type ActionPort,
   type ActionContext,
@@ -983,8 +984,12 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
             const dispatched = yield* Effect.exit(
               mask(
                 Effect.gen(function* () {
-                  const composed = composePrompt(
-                    reviewPromptParts(spec, issue, read, deps.limits.diffBytes, recheck, landedBlock, delta),
+                  const composed = recordedOr(
+                    context,
+                    spec.name,
+                    composePrompt(
+                      reviewPromptParts(spec, issue, read, deps.limits.diffBytes, recheck, landedBlock, delta),
+                    ),
                   )
                   const prompt = composed.handed
                   // Before the dispatch, so a reviewer that crashes still has its prompt on the log (#923).
@@ -1642,7 +1647,11 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
         // `context.again` is the pass's own reduce over its visits (`sentBackTo`),
         // and it is null on every way through — which is every pass but one a
         // judge sent back here.
-        const composed = composePrompt(designPromptParts(spec, issue, context.again ?? null, deps.designAsks ?? 0))
+        const composed = recordedOr(
+          context,
+          spec.name,
+          composePrompt(designPromptParts(spec, issue, context.again ?? null, deps.designAsks ?? 0)),
+        )
         const prompt = composed.handed
         // The body is a reference where the claim it came from is known (#928).
         if (context.prompted !== undefined) {
