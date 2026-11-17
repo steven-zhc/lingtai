@@ -259,20 +259,41 @@ summary: 给人读的一句话
 | `runtime.limits.turns` | 350 | 一次 agent 运行最多多少轮 | 每次运行 |
 | `runtime.limits.wall` | 75m | 一次 agent 运行最长多久 | 每次运行 |
 | `runtime.limits.usd` | 未设置 | 一次 agent 运行最多花多少钱 | 每次运行 |
-| `runtime.limits.rounds` | 4（方案定为 6） | 修复轮；冲突轮单独计数，但用同一个上限 | 每个 attempt |
+| `runtime.limits.rounds` | 4（方案定为 6） | 修复轮的上限。**冲突轮也用这个数值，但不是另一个参数**：同一个上限，两个计数器各算各的（`run-attempt.ts:1625` 把 `conflictRounds` 设成 `ceilings.rounds`），所以冲突用不掉修复轮的次数，反过来也一样 | 每个 attempt |
 | `runtime.limits.restarts` | 2 | 从 base 重来 | 每张票 |
 | `source.backoff` | 1h | 票放回队列后，最早多久能再被领 | 每次放回 |
 | `triage.limits` | turns 100、wall 15m、usd $10 | 一次 triage 调用 | 每次调用 |
 | `runtime.budget.diff` | 400000 字节 | diff 超过这个大小就不交给 review，直接交给人（0108 §14） | 每次 review |
 | `runtime.concurrency` | 2 | 同时跑几张票（不是出口） | — |
 
-### 代码里的常量（`packages/domain/src/failure/respond.ts`，0108 §8 规定不进 recipe）
+### 程序里写死的数值（recipe 改不了）
 
-| 常量 | 值 | 管什么 | 计数范围 |
+**循环的出口**
+
+| 位置 | 值 | 管什么 | 计数范围 |
 |---|---|---|---|
-| `TRANSIENT_RETRIES_LIMIT` | 3 | R：原地重做 | 每个 attempt |
-| `TRANSIENT_WAITS` | 1、5、15 分钟 | 每次 R 之前等多久 | — |
-| `BASE_MERGES_LIMIT` | 10 | base 动了以后自动合并 | 每个 attempt |
+| `TRANSIENT_RETRIES_LIMIT`（`domain/src/failure/respond.ts:586`） | 3 | R：原地重做（瞬时错误；按方案还包括崩溃和没有回执） | 每个 attempt |
+| `TRANSIENT_WAITS`（`respond.ts:589`） | 1、5、15 分钟 | 每次 R 之前等多久 | — |
+| `BASE_MERGES_LIMIT`（`respond.ts:579`） | 10 | base 动了之后自动合并 | 每个 attempt |
+| 红的检查再跑一次（0108 §17） | 1 次 | build、声明的检查或 base check 红了，立刻再跑一次；第二次结果为准 | 每次红 |
+| 回答读不懂再问（0108 §18） | 1 次 | agent 的回答读不懂时再问同一个 agent；按方案并进 R 的上限 | 每次调用 |
+| design 提问（`actions/src/agent-action.ts:150-154`，#649） | 第 2 次起不让问 | 同一张票在 design 阶段已经问过 2 次，design 的 brief 不再允许提问 | 每张票 |
+| 网络不通时重试（`repo/src/network.ts` 的 `retryUnreachable`，默认 `UNREACHABLE_WAITS`） | 等待次数 + 1 次 | mirror fetch / push 遇到连不上，原地重试 | 每次操作 |
+| GitHub 限流（`github/src/client.ts:577` `MIN_RATE_LIMIT_WAIT`） | 至少 1 分钟 | 被限流时锁住 acct-github，没有给出重置时间就等 1 分钟、再翻倍（#1213） | — |
+
+**triage 的边界**（`domain/src/triage.ts`）
+
+| 常量 | 值 | 管什么 |
+|---|---|---|
+| `READS_PER_TURN` | 6 | triage 或讨论一轮最多读几个文件 |
+| `MAX_READ_ROUNDS`（`conductor/src/read-step.ts:29`） | 4 | 最多读几轮再必须给出回答 |
+| `CONFLICT_ROUND_HUNKS` | 5 | 冲突块不超过 5 个，一律走冲突轮（F），不管 triage 怎么判断 |
+| `MERGE_HUNKS_ONE_BY_ONE` | 20 | 冲突块超过 20 个，就整体判断，不逐块判断 |
+| `TRIAGE_QUESTIONS_MAX` / `TRIAGE_ANSWERS_MAX` | 5 / 4 | 最多问 5 个问题，每个问题最多 4 个选项 |
+| `TRIAGE_FIXES_MAX` | 20 | `FixableLines` 最多列 20 处要改的地方 |
+| `TRIAGE_SPLIT_CHILDREN_MAX` | 8 | 拆票最多 8 张子票 |
+
+**recipe 没写时的默认值**（`recipe/src/recipe.ts`）：`turns` 300（`:3267`），`rounds` 2（`:3310`），`restarts` 0（`:3345`）。lingtai 自己的 recipe 都写了，所以不用默认值。
 
 ### 全局总闸
 
