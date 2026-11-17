@@ -30,9 +30,14 @@ export interface AccountState {
   limit: AccountLimit | null
   version: number
   lastSeq: bigint | null
+  /**
+   * GitHub's limits met with no time of their own since the last header or person (0126 §2).
+   * Reduced here and nowhere else.
+   */
+  doublings: number
 }
 
-export const emptyAccount: AccountState = { account: null, limit: null, version: 0, lastSeq: null }
+export const emptyAccount: AccountState = { account: null, limit: null, version: 0, lastSeq: null, doublings: 0 }
 
 export function reduceAccountEvent(state: AccountState, event: Envelope): AccountState {
   const at = { version: event.version, lastSeq: event.seq }
@@ -41,16 +46,24 @@ export function reduceAccountEvent(state: AccountState, event: Envelope): Accoun
       const d = event.data as PayloadOf<'AccountLimitReached'>
       // A second one while a limit stands changes nothing: the first `since` and `until` stand.
       if (state.limit !== null) return { ...state, ...at, account: d.account }
+      const doublings =
+        d.untilFrom === 'doubling'
+          ? state.doublings + 1
+          : d.untilFrom === 'retry-after' || d.untilFrom === 'ratelimit-reset'
+            ? 0
+            : state.doublings
       return {
         ...state,
         ...at,
         account: d.account,
+        doublings,
         limit: { until: new Date(d.until), untilFrom: d.untilFrom, said: d.said, since: event.at, seq: event.seq },
       }
     }
     case 'AccountLimitLifted': {
       const d = event.data as PayloadOf<'AccountLimitLifted'>
-      return { ...state, ...at, account: d.account, limit: null }
+      // A person's lift starts the doubling again; the guard's own leaves it, so it can grow.
+      return { ...state, ...at, account: d.account, limit: null, doublings: 'by' in d && d.by ? 0 : state.doublings }
     }
     default:
       return { ...state, ...at }

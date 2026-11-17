@@ -433,6 +433,12 @@ export interface CreateClientOptions {
   installation?: Installation
   /** Stops the installation lookup when it aborts; later requests take their own. */
   signal?: AbortSignal
+  /**
+   * Told when a call is answered with a rate limit, before it fails as it always did. Only the
+   * conductor passes one (0126 §2). It cannot fail: a lock that could not be written never
+   * changes the error the call fails with.
+   */
+  onRateLimited?: (failed: GitHubFailed) => Effect.Effect<void, never>
 }
 
 function isGh(auth: AppAuth | { kind: 'gh' }): auth is { kind: 'gh' } {
@@ -540,11 +546,25 @@ function toIssue(raw: {
  *
  * `signal` is not an option: interruption replaces it.
  */
+/** The one reading of *this answer is a rate limit*: `classify`'s, on what GitHub said (#1132, #1194). */
+const isRateLimited = (err: GitHubFailed): boolean =>
+  classify({
+    platform: 'github',
+    status: err.status,
+    text: err.detail,
+    ratelimitRemaining: err.ratelimitRemaining,
+    retryAfter: err.retryAfter,
+  })?.kind === 'rate-limited'
+
 export const makeGitHub = (
   options: Omit<CreateClientOptions, 'signal'>,
 ): Effect.Effect<GitHub, GitHubFailed | NotInstalledError> =>
   Effect.gen(function* () {
     const { auth, owner, repo } = options
+    const locking = <A, X, R>(eff: Effect.Effect<A, X, R>) =>
+      Effect.tapError(eff, (err) =>
+        err instanceof GitHubFailed && isRateLimited(err) ? (options.onRateLimited?.(err) ?? Effect.void) : Effect.void,
+      )
     let installation: Installation | null = null
     let token: E<string>
     if (isGh(auth)) {
@@ -552,12 +572,12 @@ export const makeGitHub = (
       const run = options.gh ?? liveGh
       token = Effect.suspend(() => ghTokenEffect(run))
     } else {
-      installation = options.installation ?? (yield* installationForRepoEffect(auth, owner, repo))
+      installation = options.installation ?? (yield* locking(installationForRepoEffect(auth, owner, repo)))
       token = yield* installationToken(auth, installation.id)
     }
 
     const send = <T>(method: string, path: string, body?: unknown): E<T> =>
-      Effect.flatMap(token, (t) => githubJson<T>(method, path, t, body))
+      locking(Effect.flatMap(token, (t) => githubJson<T>(method, path, t, body)))
 
     const repoPath = `/repos/${owner}/${repo}`
 
@@ -573,15 +593,7 @@ export const makeGitHub = (
     const asLinkCall = <A>(level: 'read' | 'write', call: E<A>): E<A> =>
       Effect.catchIf(
         call,
-        (err) =>
-          err.status === 403 &&
-          classify({
-            platform: 'github',
-            status: err.status,
-            text: err.detail,
-            ratelimitRemaining: err.ratelimitRemaining,
-            retryAfter: err.retryAfter,
-          })?.kind !== 'rate-limited',
+        (err) => err.status === 403 && !isRateLimited(err),
         (err) => Effect.fail(new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')),
       )
 
@@ -618,8 +630,9 @@ export const makeGitHub = (
       owner,
       repo,
       installation,
-      // The same source `send` uses, handed out so git can authenticate too.
-      token,
+      // The same source `send` uses, handed out so git can authenticate too — a mint refused for
+      // rate is the same account limit, so this entry point locks as `send` does.
+      token: locking(token),
       request: <T>(method: string, path: string, body?: unknown) =>
         Effect.withSpan(send<T>(method, path, body), 'github.request'),
 

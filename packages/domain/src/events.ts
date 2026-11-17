@@ -2392,7 +2392,8 @@ export const ProjectPaused = z.object({ project: z.string().min(1), by: z.string
  * An account (a runtime's, or `github`) met its limit. `until` is when the runtime said it
  * resets, or the configured backoff when it said nothing readable; `untilFrom`
  * says which, in the order `standDown` tries them. Only an attempt meeting the
- * wall appends it, and only when no limit stands (0126 §3).
+ * wall, or the conductor's GitHub call that met the limit, appends it, and only when no limit
+ * stands (0126 §3).
  *
  * @summary An account (a runtime's, or github) reached its limit; no project that uses it starts new work until it is lifted.
  */
@@ -2400,7 +2401,15 @@ export const AccountLimitReached = z.object({
   account: Account,
   /** ISO instant. */
   until: z.string().datetime({ offset: true }),
-  untilFrom: z.enum(['message', 'message-latest', 'backoff', 'backoff-unreadable']),
+  untilFrom: z.enum([
+    'message',
+    'message-latest',
+    'backoff',
+    'backoff-unreadable',
+    'retry-after',
+    'ratelimit-reset',
+    'doubling',
+  ]),
   /** The platform's own words, whitespace-collapsed, at most 200 characters. */
   said: z.string().max(200),
 })

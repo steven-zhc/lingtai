@@ -393,6 +393,53 @@ export function standDown(input: {
   }
 }
 
+/**
+ * When GitHub's rate limit lifts (0126 §2): `retry-after` (seconds from now), else
+ * `x-ratelimit-reset` (UTC epoch seconds), else one minute doubling up to an hour.
+ * Never sooner than a minute from now. A header that is absent, negative or not a
+ * number is absent.
+ */
+export function githubLimitUntil(input: {
+  failed: {
+    detail: string
+    retryAfter: number | null
+    ratelimitReset: number | null
+  }
+  now: Date
+  account: { doublings: number }
+}): { until: Date; untilFrom: UntilFrom; said: string; reason: string } {
+  const { failed, now } = input
+  const minimum = now.getTime() + 60_000
+  const usable = (n: number | null): n is number => n !== null && Number.isFinite(n) && n >= 0
+  let at: number
+  let untilFrom: UntilFrom
+  let from: string
+  if (usable(failed.retryAfter)) {
+    at = now.getTime() + failed.retryAfter * 1000
+    untilFrom = 'retry-after'
+    from = `GitHub said retry-after ${failed.retryAfter}s`
+  } else if (usable(failed.ratelimitReset)) {
+    at = failed.ratelimitReset * 1000
+    untilFrom = 'ratelimit-reset'
+    from = 'GitHub said x-ratelimit-reset'
+  } else {
+    const n = Math.max(0, Math.floor(input.account.doublings))
+    at = now.getTime() + Math.min(60_000 * 2 ** Math.min(n, 20), 3_600_000)
+    untilFrom = 'doubling'
+    from = `GitHub named no time, so one minute doubling (${n} before)`
+  }
+  const until = new Date(Math.max(at, minimum))
+  const said = failed.detail.trim().replace(/\s+/g, ' ').slice(0, 200)
+  return {
+    until,
+    untilFrom,
+    said,
+    reason:
+      `GitHub's rate limit was met. Every project with a GitHub owner takes no new work until ` +
+      `${until.toISOString()} (${from}). GitHub said: ${said || 'nothing at all'}`,
+  }
+}
+
 // ------------------------------------------------------------------ time ----
 
 /** A week out is the longest a reset can honestly be. See `parseResetAt`. */

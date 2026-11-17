@@ -8,6 +8,7 @@ import {
   type AccountState,
   accountCheck,
   accountStream,
+  githubLimitUntil,
   liftTransition,
   reachTransition,
   reduceAccount,
@@ -16,6 +17,7 @@ import {
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
+import type { GitHubFailed } from '@lingtai/github'
 import type { ResolvedRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
@@ -125,3 +127,34 @@ export const accountsFor = (
     )
     return new Map(entries)
   })
+
+/**
+ * The port a conducted GitHub client is built with (0126 §2): locks `acct-github` when a call it
+ * made met a rate limit. It cannot fail — a lock that could not be written is one line on the log
+ * and the call fails as it would have.
+ */
+export const githubLimitPort =
+  (store: EventStore, log: (line: string) => void, now: () => Date = () => new Date()) =>
+  (failed: GitHubFailed): Effect.Effect<void, never> =>
+    Effect.gen(function* () {
+      // The deadline is worked out from the very state the append is asserted against: a lost
+      // race re-reads and asks again, so `until` and `doublings` can never come from different reads.
+      let reason = ''
+      const answer = yield* transitionAccount<ReachAnswer>(
+        store,
+        'github',
+        (state) => {
+          if (state.limit !== null) return null
+          const at = githubLimitUntil({ failed, now: now(), account: state })
+          reason = at.reason
+          return reachTransition(state, 'github', {
+            until: at.until.toISOString(),
+            untilFrom: at.untilFrom,
+            said: at.said,
+          })
+        },
+        (state) => ({ kind: 'already', until: state.limit!.until }),
+        { kind: 'appended' },
+      )
+      if (answer.kind === 'appended') log(reason)
+    }).pipe(Effect.catch((e) => Effect.sync(() => log(`could not lock acct-github: ${String(e)}`))))

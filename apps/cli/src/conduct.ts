@@ -36,6 +36,7 @@ import {
   type RunOnceResult,
   type ScheduleResult,
   type Slots,
+  githubLimitPort,
 } from '@lingtai/conductor'
 import { readControlEffect } from '@lingtai/daemon'
 import { type ControlState, type ProjectState, turnTransition } from '@lingtai/domain'
@@ -284,7 +285,12 @@ export function conductWork(
       } else {
         const owner = project.owner
         const client = yield* Effect.promise(() =>
-          world.createGitHubClient({ auth: githubClientAuth(), owner, repo: name }),
+          world.createGitHubClient({
+            auth: githubClientAuth(),
+            owner,
+            repo: name,
+            onRateLimited: githubLimitPort(store, options.log),
+          }),
         )
         where.ref = project.base ?? (yield* Effect.promise(() => client.defaultBranch()))
         const ref = where.ref
@@ -649,7 +655,8 @@ export function conductorTurn(options: ConductOptions = {}): Effect.Effect<TurnO
     // Whether a look awaits its pass must not depend on which project is visited
     // first, so with a ceiling and several projects each recipe is asked once up front.
     const ceilingSet = machineDayCeiling() !== undefined
-    const anyMany = options.slots && ceilingSet && projects.length > 1 ? yield* anyWantsMany(projects) : false
+    const anyMany =
+      options.slots && ceilingSet && projects.length > 1 ? yield* anyWantsMany(projects, log, options.locked) : false
 
     return yield* conductProjects({
       projects,
@@ -724,6 +731,8 @@ export function endingLine(result: RunOnceResult, options: { project: string; pr
 /** Whether any project's recipe asks for more than one slot. A recipe that cannot be read asks for one. */
 function anyWantsMany(
   projects: readonly ProjectState[],
+  log: (line: string) => void,
+  locked?: (project: string) => Effect.Effect<string | null>,
   world: ConductWorld = liveConductWorld(),
 ): Effect.Effect<boolean> {
   return Effect.gen(function* () {
@@ -737,9 +746,17 @@ function anyWantsMany(
           )
           return concurrencyOf(recipe) > 1
         }
+        // A locked project takes no work, so what its recipe asks for is moot — and asking would
+        // make installation requests throughout a GitHub cooldown (0126 §5).
+        if (locked && (yield* locked(name)) !== null) return false
         const owner = project.owner
         const client = yield* Effect.promise(() =>
-          world.createGitHubClient({ auth: githubClientAuth(), owner, repo: name }),
+          world.createGitHubClient({
+            auth: githubClientAuth(),
+            owner,
+            repo: name,
+            onRateLimited: githubLimitPort(eventStore, log),
+          }),
         )
         const base = project.base ?? (yield* Effect.promise(() => client.defaultBranch()))
         const { recipe } = yield* Effect.promise(() => world.currentRecipe(project, client, base))
