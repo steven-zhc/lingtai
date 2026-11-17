@@ -784,7 +784,7 @@ export const NOT_BUILT_YET: StepBodies = {
 export interface Ceilings {
   /**
    * How many times this pass may go back into the spine — a fix round, and what
-   * `attemptCeiling` prices at *up to `rounds + 1` agent runs*
+   * `attemptCeiling` prices, with the conflict rounds and the reruns, at *up to `2 × rounds + 1 + TRANSIENT_RETRIES_LIMIT` agent runs* (0108 §8)
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
    *
    * **This is what makes the loop bounded**, and the bound is structural rather
@@ -1342,7 +1342,7 @@ export function outcomeOf(end: AttemptEnd): TerminalOutcome {
  * **It terminates**, and structurally rather than by a guard: the only edges
  * that re-enter the spine are the ones `offerFor` offers, it offers none once
  * `roundsSpent` reaches `ceilings.rounds`, and a destination it did not offer
- * is refused. So the walk is at most `rounds + 1` laps long.
+ * is refused. So the walk is at most `rounds + 1` laps long, conflict rounds and base merges (counted per attempt) apart.
  */
 export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<AttemptOver> {
   return Effect.gen(function* () {
