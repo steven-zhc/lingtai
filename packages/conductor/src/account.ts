@@ -137,12 +137,24 @@ export const githubLimitPort =
   (store: EventStore, log: (line: string) => void, now: () => Date = () => new Date()) =>
   (failed: GitHubFailed): Effect.Effect<void, never> =>
     Effect.gen(function* () {
-      const state = yield* readAccount(store, 'github')
-      const at = githubLimitUntil({ failed, now: now(), account: state })
-      const answer = yield* reachAccountLimit(store, 'github', {
-        until: at.until.toISOString(),
-        untilFrom: at.untilFrom,
-        said: at.said,
-      })
-      if (answer.kind === 'appended') log(at.reason)
+      // The deadline is worked out from the very state the append is asserted against: a lost
+      // race re-reads and asks again, so `until` and `doublings` can never come from different reads.
+      let reason = ''
+      const answer = yield* transitionAccount<ReachAnswer>(
+        store,
+        'github',
+        (state) => {
+          if (state.limit !== null) return null
+          const at = githubLimitUntil({ failed, now: now(), account: state })
+          reason = at.reason
+          return reachTransition(state, 'github', {
+            until: at.until.toISOString(),
+            untilFrom: at.untilFrom,
+            said: at.said,
+          })
+        },
+        (state) => ({ kind: 'already', until: state.limit!.until }),
+        { kind: 'appended' },
+      )
+      if (answer.kind === 'appended') log(reason)
     }).pipe(Effect.catch((e) => Effect.sync(() => log(`could not lock acct-github: ${String(e)}`))))

@@ -63,4 +63,15 @@ describe('a rate limit locks acct-github', () => {
     await expect(c.defaultBranch()).rejects.toMatchObject({ status: 429 })
     expect(lines.length).toBeGreaterThan(0)
   })
+  it('a token mint refused for rate locks through client.token() too', async () => {
+    const store = createMemoryEventStore()
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(JSON.stringify({ message: 'slow down' }), { status: 429, headers: { 'retry-after': '90' } }),
+    )
+    const c = await client(githubLimitPort(store, () => {}))
+    await expect(c.token()).rejects.toMatchObject({ status: 429 })
+    expect((await store.read(accountStream('github'))).filter((e) => e.type === 'AccountLimitReached')).toHaveLength(1)
+  })
 })

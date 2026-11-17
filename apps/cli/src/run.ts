@@ -16,10 +16,11 @@ import {
   type TurnClient,
   type RunOnceResult,
   githubLimitPort,
+  readAccount,
 } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { lockedEffect, makeGuard, readControlEffect } from '@lingtai/daemon'
-import type { ControlState, ProjectState } from '@lingtai/domain'
+import { accountWords, type ControlState, type ProjectState } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
 import { eventStore, log as theLog, type EventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
@@ -380,13 +381,24 @@ export function run(
       }
       // Bound now: a property narrowing does not survive into the closure below.
       const owner = project.owner
+      // A standing GitHub limit is heeded before the client's first request (0126 §5): building
+      // it looks up the installation, which is a call GitHub would answer with the same limit.
+      const github = yield* readAccount(options.store ?? eventStore, 'github').pipe(
+        Effect.catch(() => Effect.succeed(null)),
+      )
+      if (github?.limit != null && github.limit.until.getTime() > Date.now()) {
+        const { name, limit } = accountWords('github')
+        return yield* Effect.fail(
+          new ProjectLocked({ sentence: `${name}'s ${limit} stands until ${github.limit.until.toISOString()}` }),
+        )
+      }
       client = yield* Effect.tryPromise({
         try: () =>
           world.createGitHubClient({
             auth: githubClientAuth(),
             owner,
             repo: options.project,
-            onRateLimited: githubLimitPort(options.store ?? eventStore, () => {}),
+            onRateLimited: githubLimitPort(options.store ?? eventStore, log),
           }),
         // `NotInstalledError` says what to do about it, and every other failure
         // here is the App or the network. Either way a person reads one line.

@@ -630,8 +630,9 @@ export const makeGitHub = (
       owner,
       repo,
       installation,
-      // The same source `send` uses, handed out so git can authenticate too.
-      token,
+      // The same source `send` uses, handed out so git can authenticate too — a mint refused for
+      // rate is the same account limit, so this entry point locks as `send` does.
+      token: locking(token),
       request: <T>(method: string, path: string, body?: unknown) =>
         Effect.withSpan(send<T>(method, path, body), 'github.request'),
 
