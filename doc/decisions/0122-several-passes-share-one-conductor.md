@@ -85,14 +85,15 @@ and the dollar ceiling lands before any N > 1.
    `packages/repo/src/integrate.ts` does not change. Its statement that the lane
    holds no lock stays true of git, which is still the guarantee against a
    person's push or another machine. Serialising records an ordering, not a
-   safety: two lanes at once would both run `verify`, and the loser would run it
-   again.
+   safety: two lanes at once would both compute a merge against one base, and the
+   loser would be refused and rebuilt.
 
    **A later landing re-checks on the new base.** Each attempt in `integrate.ts`
-   fetches the base afresh and runs the `base-moved` overlap check, so a landing
-   that starts after the earlier push sees the new base and, when the changed files
-   overlap, goes back to `build` and `review` (#593). The lost-push retry already
-   re-runs all of it.
+   fetches the base afresh, so a landing that starts after the earlier push sees the
+   new base and, whatever moved, goes back to `build` (#1210). `review` runs again
+   only when the move touched files the branch changed (#593); a move on none of
+   them carries the earlier review. A lost push is one recompute that ends in
+   `base-moved`, never a second push of a merge nothing built.
 
 4. **A drain waits for every attempt in flight.** `stop()` and `busy` in
    `work-loop.ts` await every attempt's promise, not one retained promise, and the

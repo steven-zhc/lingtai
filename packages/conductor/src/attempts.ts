@@ -278,6 +278,8 @@ export function landedOnBaseOf(
   if (at < 0) return null
   if (outcomes.slice(at + 1).some((o) => o.step === 'review')) return null
   const moved = movedIn(outcomes[at]!)!
+  // A disjoint move has no landed section: its review was carried, not shown one (#1210).
+  if (moved.paths.length === 0) return null
   const route = routesOf(runEvents).findLast((r) => r.next._tag === 'MergeBase')
   if (route === undefined || route.next._tag !== 'MergeBase' || route.next.toSha !== moved.toSha) return null
   return moved

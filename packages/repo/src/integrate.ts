@@ -39,16 +39,16 @@ import { basename } from 'node:path'
  * judgement is owed: everything above the push is a pure recomputation against
  * a base that moved, it costs seconds and buys no agent, and the caller it
  * would otherwise return to blocks the item on a person who can do nothing but
- * click Requeue. `LOST_PUSHES` bounds it; a base that moves out from under
- * every one of those pushes is the `push-rejected` refusal, recorded exactly
- * as `lane-busy` was recorded before it.
+ * click Requeue. Since #1210 that is no longer a retry that lands: a lost push
+ * is one recompute against the base where it now is, and it ends in a
+ * `base-moved` refusal, because the merge it would push was built by nothing.
  *
  * That retry does not bend the rule above, and it does not weaken it either:
  * **the whole run of pushes is one `IntegrationAttempted` and one terminal**,
  * because the caller asked for one merge and is owed one answer. A lost push
  * that this lane goes on to win is the single thing in here that says nothing —
  * a refusal is what interrupts a person and wakes a queue pass, and a race
- * still being won is neither (`LostPush`).
+ * still being won is neither (`PushWasRefused`).
  *
  * So two integrations against one base **overlap by design**, and each one owns
  * a worktree of its own rather than one per base.
@@ -118,12 +118,6 @@ export interface IntegrateOptions {
    * a unit test passes zeros.
    */
   unreachableWaits?: readonly Duration.Input[]
-  /**
-   * Re-run after the branch is merged into the base, before the push. The gates already ran
-   * against the agent's head; this is the "does it still work with what landed
-   * in the meantime" question, which is a different one.
-   */
-  verify?: (cwd: string) => Promise<{ ok: boolean; evidence: string }>
 }
 
 export type IntegrateResult =
@@ -149,11 +143,12 @@ export interface BaseMoved {
  * The files both the branch and the base changed since they forked — sorted,
  * and empty where the base did not move or moved elsewhere (#593).
  *
- * This is the whole rule for when a base that moved on a clean trial merge is
- * worth another build and review: a base that touched none of the branch's
- * files cannot clash with its logic in a way review would see, and lands after
- * `verify` as it always did. Pure, because the git half cannot be checked
- * inside a pass (0060 §1) and this half can.
+ * It decides what a `base-moved` refusal carries, not whether the lane refuses
+ * (#1210): any move is refused, because nothing built the merged tree. Empty
+ * `paths` is the disjoint move, which the pass rebuilds but does not review
+ * again — a base that touched none of the branch's files cannot clash with its
+ * logic in a way review would see; `build` is what can. Pure, because the git
+ * half cannot be checked inside a pass (0060 §1) and this half can.
  */
 export function baseMovedOn(ours: readonly string[], theirs: readonly string[]): string[] {
   const base = new Set(theirs)
@@ -208,7 +203,7 @@ export function checkedOutAt(porcelain: string, base: string): { dir: string; bl
  * can see one, and the only way out of this function is still an
  * `IntegrateResult` that has already been appended.
  */
-interface LostPush {
+interface PushWasRefused {
   readonly lostThePush: true
   /** Git's own words, kept for the refusal that a run of these becomes. */
   readonly detail: string
@@ -216,25 +211,6 @@ interface LostPush {
 
 /** Files whose presence in a diff means a human applies the migration, not the agent. */
 const MIGRATION_GLOB = /(^|\/)(prisma\/)?migrations?\//i
-
-/**
- * How many times a base may move out from under this merge before a person is
- * told about it.
- *
- * Each retry is a fetch, a worktree, a merge and a push — seconds, no agent, no
- * money — against the base as it now stands, which is precisely what the move
- * on the refusal's card asks a person to do by hand. Three of them, so four
- * pushes in all — bounded rather than endless because a base that beats one
- * merge four times running is busy in a way a person should hear about, and
- * because a loop with no ceiling in the one place that writes to the base
- * branch is the wrong thing to leave running unattended.
- *
- * **Four pushes, one attempt.** The whole run of them is a single
- * `IntegrationAttempted` and a single terminal, because it is a single
- * integration: see `LostPush` for why the ones in the middle say nothing on the
- * log.
- */
-const LOST_PUSHES = 3
 
 /**
  * How long one of this lane's worktrees may sit untouched before it is a corpse.
@@ -416,349 +392,330 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
    *
    * It is not *the* attempt — `IntegrationAttempted` is appended once, by the
    * loop at the bottom, because the run of these is one integration. What comes
-   * back is either a terminal already on the log or a `LostPush`, which is not.
+   * back is either a terminal already on the log or a `PushWasRefused`, which is not.
    */
-  const attempt: Effect.Effect<IntegrateResult | LostPush> = Effect.scoped(
-    Effect.gen(function* () {
-      // The gates' verdict is the integrator's business only in that it refuses.
-      if (!options.stepsPassed) {
-        return yield* refuse('verify-failed', options.stepDetail ?? 'a step refused this diff')
-      }
-
-      const mirror = `${home}/repos/${options.project}.git`
-      // One id, shared by the worktree's directory and the lane's own refs
-      // below — the epoch is what lets the sweep judge a lane ref's age with
-      // no mtime to read.
-      const laneId = `${Date.now()}-${randomUUID().slice(0, 8)}`
-      // **One worktree per integration, not one per base.** A fixed
-      // `integrator-<base>` was safe only because the lock meant one
-      // integration on a base at a time. Nothing serialises them before the
-      // push now (#194), so two overlap by design and each needs a directory —
-      // and a HEAD — that the other cannot be standing in.
-      const cwd = worktreePath(home, options.project, `integrator-${options.base.replace(/\//g, '.')}-${laneId}`)
-
-      // Fetched into refs this lane alone owns, under `refs/lingtai/lane/`,
-      // rather than `refs/heads/<base>` and `refs/heads/<branch>` in the
-      // mirror. **No worktree of the mirror can hold a ref in that
-      // namespace**, so an agent that checked its own branch out — or `main`
-      // — in its worktree cannot make this fetch refuse (#438). Narrowing the
-      // old fetch to these two refs did not remove that class of collision,
-      // only avoided a wildcard one: one of the two was the branch itself.
-      const laneBase = `refs/lingtai/lane/${laneId}/base`
-      const laneBranch = `refs/lingtai/lane/${laneId}/branch`
-      yield* Effect.acquireRelease(Effect.succeed(laneId), () =>
-        Effect.all(
-          [
-            mirrorWrite(mirror, at(['update-ref', '-d', laneBase], mirror)).pipe(Effect.ignore),
-            mirrorWrite(mirror, at(['update-ref', '-d', laneBranch], mirror)).pipe(Effect.ignore),
-          ],
-          { discard: true },
-        ),
-      )
-      // Git refuses a push to the branch a non-bare repository has checked out,
-      // in a form the `push-rejected` row does not read — so a local remote is asked
-      // first, before anything is fetched or pushed (0104 §15). A failed read
-      // is a `RepoFailed` and lands as `unexpected`: never "nothing checked out".
-      if (options.remote !== undefined && isLocalRemote(options.remote)) {
-        const listed = yield* at(['worktree', 'list', '--porcelain'], options.remote)
-        const found = checkedOutAt(listed, options.base)
-        if (found === 'unreadable') {
-          return yield* refuse('unexpected', `could not read the worktrees of ${options.remote}:\n${listed}`)
+  const attempt = (push: boolean): Effect.Effect<IntegrateResult | PushWasRefused> =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        // The gates' verdict is the integrator's business only in that it refuses.
+        if (!options.stepsPassed) {
+          return yield* refuse('verify-failed', options.stepDetail ?? 'a step refused this diff')
         }
-        if (found !== null) {
-          return yield* refuse(
-            'base-checked-out',
-            `${options.base} is checked out in ${found.dir} — switch to another branch, then lingtai approve ${options.project} --issue ${options.issue ?? '<n>'}\n${found.block}`,
-          )
-        }
-      }
-      // The retry wraps the permit: each try takes its own and the wait holds none.
-      yield* retryUnreachable(
-        mirrorWrite(
-          mirror,
-          at(
+
+        const mirror = `${home}/repos/${options.project}.git`
+        // One id, shared by the worktree's directory and the lane's own refs
+        // below — the epoch is what lets the sweep judge a lane ref's age with
+        // no mtime to read.
+        const laneId = `${Date.now()}-${randomUUID().slice(0, 8)}`
+        // **One worktree per integration, not one per base.** A fixed
+        // `integrator-<base>` was safe only because the lock meant one
+        // integration on a base at a time. Nothing serialises them before the
+        // push now (#194), so two overlap by design and each needs a directory —
+        // and a HEAD — that the other cannot be standing in.
+        const cwd = worktreePath(home, options.project, `integrator-${options.base.replace(/\//g, '.')}-${laneId}`)
+
+        // Fetched into refs this lane alone owns, under `refs/lingtai/lane/`,
+        // rather than `refs/heads/<base>` and `refs/heads/<branch>` in the
+        // mirror. **No worktree of the mirror can hold a ref in that
+        // namespace**, so an agent that checked its own branch out — or `main`
+        // — in its worktree cannot make this fetch refuse (#438). Narrowing the
+        // old fetch to these two refs did not remove that class of collision,
+        // only avoided a wildcard one: one of the two was the branch itself.
+        const laneBase = `refs/lingtai/lane/${laneId}/base`
+        const laneBranch = `refs/lingtai/lane/${laneId}/branch`
+        yield* Effect.acquireRelease(Effect.succeed(laneId), () =>
+          Effect.all(
             [
-              'fetch',
-              'origin',
-              `+refs/heads/${options.base}:${laneBase}`,
-              `+refs/heads/${options.branch}:${laneBranch}`,
+              mirrorWrite(mirror, at(['update-ref', '-d', laneBase], mirror)).pipe(Effect.ignore),
+              mirrorWrite(mirror, at(['update-ref', '-d', laneBranch], mirror)).pipe(Effect.ignore),
             ],
-            mirror,
+            { discard: true },
           ),
-        ),
-        waits,
-      )
-
-      // The lane lands the commit the steps checked and nothing else: a branch on origin
-      // that is anything other than `headSha` is refused, never merged and never retried.
-      const fetchedHead = (yield* at(['rev-parse', laneBranch], mirror)).trim()
-      if (fetchedHead !== options.headSha) {
-        return yield* refuse('head-moved', `expected ${options.headSha} found ${fetchedHead}`)
-      }
-
-      // What an earlier integration was killed in the middle of, before this one
-      // adds a directory of its own: see `WORKTREE_IS_ABANDONED_AFTER`. A
-      // registration whose directory is already gone is git's own `prune` to
-      // clear, and one still standing is this sweep's — nothing else in the
-      // system looks at these.
-      yield* sweepAbandoned(mirror)
-
-      // The worktree is disposable; the mirror is the expensive part. Acquired
-      // and released as one thing, so no path below has to remember it — and it
-      // is the only thing this scope holds since the lock went (#194).
-      //
-      // **Detached**, for the reason the agent's worktree is (0039 §1): a
-      // checked-out `integrate/<base>` is a ref in the mirror, and a second
-      // integration against the same base would collide with the first on it.
-      // Nothing here needs the branch — the merge moves HEAD and the push has
-      // always been `HEAD:refs/heads/<base>`.
-      yield* Effect.acquireRelease(
-        mirrorWrite(mirror, at(['worktree', 'add', '--force', '--detach', cwd, laneBase], mirror)),
-        () => mirrorWrite(mirror, at(['worktree', 'remove', '--force', cwd], mirror)).pipe(Effect.ignore),
-      )
-
-      const dirty = yield* at(['status', '--porcelain'], cwd)
-      if (dirty.trim()) {
-        // Cannot happen with a worktree Lingtai just cut, which is the point
-        // — the check is here so that if it ever does, it is an event and not a
-        // mystery. The old loop merged in a checkout it did not own and this was
-        // the failure it could not report.
-        return yield* refuse('dirty-base', `the integrator's worktree is not clean:\n${dirty}`)
-      }
-
-      // Both sides read the ref this lane just fetched, so this has never
-      // compared the mirror against anything but itself (#438's design).
-      // Fixing that is a different ticket; this one only moves what the check
-      // reads, not what it means.
-      const localBase = yield* at(['rev-parse', laneBase], mirror)
-      const remoteBase = yield* at(['rev-parse', laneBase], mirror)
-      if (localBase !== remoteBase) {
-        return yield* refuse('unpushed-base', `${options.base} is ${localBase} locally and ${remoteBase} on origin`)
-      }
-
-      const ahead = yield* at(['rev-list', '--count', `${laneBase}..${laneBranch}`], mirror)
-      if (Number(ahead) === 0) {
-        return yield* refuse('no-commits', `${options.branch} has nothing ${options.base} does not`)
-      }
-
-      /**
-       * **The structural half of #468's guarantee** — the other half is that no
-       * step of the pass that makes one ever sees it (`conduct.ts`'s own
-       * `keepUncommittedWork` runs after `runAttempt` returns). This is what
-       * catches a *later* pass that committed on top of one instead of taking
-       * its contents and leaving it behind, as the brief asks.
-       */
-      const subjects = yield* at(['log', '--format=%s', `${laneBase}..${laneBranch}`], mirror)
-      if (subjects.split('\n').some((s) => s.startsWith(WIP_COMMIT_PREFIX))) {
-        return yield* refuse(
-          'wip-commit',
-          `${options.branch} carries a commit stopped by a ceiling (\`${WIP_COMMIT_PREFIX}…\`), ` +
-            `which must never land on ${options.base}`,
         )
-      }
+        // Git refuses a push to the branch a non-bare repository has checked out,
+        // in a form the `push-rejected` row does not read — so a local remote is asked
+        // first, before anything is fetched or pushed (0104 §15). A failed read
+        // is a `RepoFailed` and lands as `unexpected`: never "nothing checked out".
+        if (options.remote !== undefined && isLocalRemote(options.remote)) {
+          const listed = yield* at(['worktree', 'list', '--porcelain'], options.remote)
+          const found = checkedOutAt(listed, options.base)
+          if (found === 'unreadable') {
+            return yield* refuse('unexpected', `could not read the worktrees of ${options.remote}:\n${listed}`)
+          }
+          if (found !== null) {
+            return yield* refuse(
+              'base-checked-out',
+              `${options.base} is checked out in ${found.dir} — switch to another branch, then lingtai approve ${options.project} --issue ${options.issue ?? '<n>'}\n${found.block}`,
+            )
+          }
+        }
+        // The retry wraps the permit: each try takes its own and the wait holds none.
+        yield* retryUnreachable(
+          mirrorWrite(
+            mirror,
+            at(
+              [
+                'fetch',
+                'origin',
+                `+refs/heads/${options.base}:${laneBase}`,
+                `+refs/heads/${options.branch}:${laneBranch}`,
+              ],
+              mirror,
+            ),
+          ),
+          waits,
+        )
 
-      const changed = yield* at(['diff', '--name-only', `${laneBase}...${laneBranch}`], mirror)
-      const migrations = changed.split('\n').filter((f) => f && MIGRATION_GLOB.test(f))
-      if (migrations.length > 0) {
-        // The hold that caught #117, generalised. A migration is applied by a
-        // person who has looked at it, not by a merge.
-        return yield* refuse(
-          'pending-migration',
-          `the diff adds migration files, which need applying by hand first:\n${migrations.join('\n')}`,
-        )
-      }
+        // The lane lands the commit the steps checked and nothing else: a branch on origin
+        // that is anything other than `headSha` is refused, never merged and never retried.
+        const fetchedHead = (yield* at(['rev-parse', laneBranch], mirror)).trim()
+        if (fetchedHead !== options.headSha) {
+          return yield* refuse('head-moved', `expected ${options.headSha} found ${fetchedHead}`)
+        }
 
-      // Merge the branch into the base, inside this throwaway detached
-      // worktree, so a conflict is found here rather than halfway through
-      // writing to the base branch. `-m` names the branch rather than the
-      // lane ref it is fetched to, so `git log --merges` on the base still
-      // reads `Merge branch '<branch>' into HEAD` and never a lane id.
-      // `--no-ff` is why `git log --first-parent <base>` reads one line per
-      // landing, whether or not the base moved.
-      const mergedIn = yield* Effect.result(
-        at(['merge', '--no-ff', '-m', landingSubject(options.branch), laneBranch], cwd),
-      )
-      if (Result.isFailure(mergedIn)) {
-        // `-z`: git's own quoting of a path with a non-ASCII, backslash,
-        // quote or control character (`core.quotePath`, on by default) turns
-        // the name-only `\n`-joined form into a C-quoted string rather than
-        // the path. NUL-terminated records are never quoted.
-        const conflicts = yield* at(['diff', '--name-only', '--diff-filter=U', '-z'], cwd).pipe(
-          Effect.orElseSucceed(() => ''),
+        // What an earlier integration was killed in the middle of, before this one
+        // adds a directory of its own: see `WORKTREE_IS_ABANDONED_AFTER`. A
+        // registration whose directory is already gone is git's own `prune` to
+        // clear, and one still standing is this sweep's — nothing else in the
+        // system looks at these.
+        yield* sweepAbandoned(mirror)
+
+        // The worktree is disposable; the mirror is the expensive part. Acquired
+        // and released as one thing, so no path below has to remember it — and it
+        // is the only thing this scope holds since the lock went (#194).
+        //
+        // **Detached**, for the reason the agent's worktree is (0039 §1): a
+        // checked-out `integrate/<base>` is a ref in the mirror, and a second
+        // integration against the same base would collide with the first on it.
+        // Nothing here needs the branch — the merge moves HEAD and the push has
+        // always been `HEAD:refs/heads/<base>`.
+        yield* Effect.acquireRelease(
+          mirrorWrite(mirror, at(['worktree', 'add', '--force', '--detach', cwd, laneBase], mirror)),
+          () => mirrorWrite(mirror, at(['worktree', 'remove', '--force', cwd], mirror)).pipe(Effect.ignore),
         )
-        yield* at(['merge', '--abort'], cwd).pipe(
-          // Nothing to abort; the merge failed before it started one.
-          Effect.ignore,
-        )
-        const paths = conflicts.split('\0').filter((p) => p.length > 0)
-        // A failed merge with no unmerged path is git failing, not the branch
-        // conflicting — in a worktree this lane just cut, there is nothing for
-        // triage to read back, so it is `unexpected` rather than `conflict`.
-        if (paths.length === 0) {
+
+        const dirty = yield* at(['status', '--porcelain'], cwd)
+        if (dirty.trim()) {
+          // Cannot happen with a worktree Lingtai just cut, which is the point
+          // — the check is here so that if it ever does, it is an event and not a
+          // mystery. The old loop merged in a checkout it did not own and this was
+          // the failure it could not report.
+          return yield* refuse('dirty-base', `the integrator's worktree is not clean:\n${dirty}`)
+        }
+
+        // Both sides read the ref this lane just fetched, so this has never
+        // compared the mirror against anything but itself (#438's design).
+        // Fixing that is a different ticket; this one only moves what the check
+        // reads, not what it means.
+        const localBase = yield* at(['rev-parse', laneBase], mirror)
+        const remoteBase = yield* at(['rev-parse', laneBase], mirror)
+        if (localBase !== remoteBase) {
+          return yield* refuse('unpushed-base', `${options.base} is ${localBase} locally and ${remoteBase} on origin`)
+        }
+
+        const ahead = yield* at(['rev-list', '--count', `${laneBase}..${laneBranch}`], mirror)
+        if (Number(ahead) === 0) {
+          return yield* refuse('no-commits', `${options.branch} has nothing ${options.base} does not`)
+        }
+
+        /**
+         * **The structural half of #468's guarantee** — the other half is that no
+         * step of the pass that makes one ever sees it (`conduct.ts`'s own
+         * `keepUncommittedWork` runs after `runAttempt` returns). This is what
+         * catches a *later* pass that committed on top of one instead of taking
+         * its contents and leaving it behind, as the brief asks.
+         */
+        const subjects = yield* at(['log', '--format=%s', `${laneBase}..${laneBranch}`], mirror)
+        if (subjects.split('\n').some((s) => s.startsWith(WIP_COMMIT_PREFIX))) {
           return yield* refuse(
-            'unexpected',
-            `${options.branch} does not merge into ${options.base}:\n${mergedIn.failure.detail}`,
+            'wip-commit',
+            `${options.branch} carries a commit stopped by a ceiling (\`${WIP_COMMIT_PREFIX}…\`), ` +
+              `which must never land on ${options.base}`,
           )
         }
-        const headSha = fetchedHead
-        return yield* refuse(
-          'conflict',
-          `${options.branch} does not merge into ${options.base}:\n${paths.join('\n')}`,
-          { paths, baseSha: localBase, headSha },
-        )
-      }
 
-      // **A base that moved on the branch's own files is not landed on `verify`
-      // alone** (#593). A conflict has already won, above, by position. What is
-      // left is a textual clean merge, which says nothing about whether the
-      // base's new logic still agrees with what the branch assumed — so the lane
-      // refuses and the pass merges the base in itself and builds and reviews
-      // again. `fork` is the base the last review saw, by construction: after the
-      // pass's own merge it is that merge, so the next check compares only what
-      // landed after it, and no sha is stored anywhere. `-z` for the reason the
-      // conflict branch gives above.
-      const fork = yield* at(['merge-base', laneBase, laneBranch], mirror)
-      if (fork !== localBase) {
-        const names = (range: string) =>
-          at(['diff', '--name-only', '-z', range], mirror).pipe(
-            Effect.map((out) => out.split('\0').filter((p) => p.length > 0)),
+        const changed = yield* at(['diff', '--name-only', `${laneBase}...${laneBranch}`], mirror)
+        const migrations = changed.split('\n').filter((f) => f && MIGRATION_GLOB.test(f))
+        if (migrations.length > 0) {
+          // The hold that caught #117, generalised. A migration is applied by a
+          // person who has looked at it, not by a merge.
+          return yield* refuse(
+            'pending-migration',
+            `the diff adds migration files, which need applying by hand first:\n${migrations.join('\n')}`,
           )
-        const paths = baseMovedOn(yield* names(`${fork}..${laneBranch}`), yield* names(`${fork}..${laneBase}`))
-        if (paths.length > 0) {
+        }
+
+        // Merge the branch into the base, inside this throwaway detached
+        // worktree, so a conflict is found here rather than halfway through
+        // writing to the base branch. `-m` names the branch rather than the
+        // lane ref it is fetched to, so `git log --merges` on the base still
+        // reads `Merge branch '<branch>' into HEAD` and never a lane id.
+        // `--no-ff` is why `git log --first-parent <base>` reads one line per
+        // landing, whether or not the base moved.
+        const mergedIn = yield* Effect.result(
+          at(['merge', '--no-ff', '-m', landingSubject(options.branch), laneBranch], cwd),
+        )
+        if (Result.isFailure(mergedIn)) {
+          // `-z`: git's own quoting of a path with a non-ASCII, backslash,
+          // quote or control character (`core.quotePath`, on by default) turns
+          // the name-only `\n`-joined form into a C-quoted string rather than
+          // the path. NUL-terminated records are never quoted.
+          const conflicts = yield* at(['diff', '--name-only', '--diff-filter=U', '-z'], cwd).pipe(
+            Effect.orElseSucceed(() => ''),
+          )
+          yield* at(['merge', '--abort'], cwd).pipe(
+            // Nothing to abort; the merge failed before it started one.
+            Effect.ignore,
+          )
+          const paths = conflicts.split('\0').filter((p) => p.length > 0)
+          // A failed merge with no unmerged path is git failing, not the branch
+          // conflicting — in a worktree this lane just cut, there is nothing for
+          // triage to read back, so it is `unexpected` rather than `conflict`.
+          if (paths.length === 0) {
+            return yield* refuse(
+              'unexpected',
+              `${options.branch} does not merge into ${options.base}:\n${mergedIn.failure.detail}`,
+            )
+          }
+          const headSha = fetchedHead
+          return yield* refuse(
+            'conflict',
+            `${options.branch} does not merge into ${options.base}:\n${paths.join('\n')}`,
+            { paths, baseSha: localBase, headSha },
+          )
+        }
+
+        // **A base that moved at all is not landed** (#1210; #593 began it for the
+        // branch's own files). A conflict has already won, above, by position. What is
+        // left is a textual clean merge, which says nothing about whether the
+        // base's new logic still agrees with what the branch assumed — so the lane
+        // refuses and the pass merges the base in itself and builds and reviews
+        // again. `fork` is the base the last review saw, by construction: after the
+        // pass's own merge it is that merge, so the next check compares only what
+        // landed after it, and no sha is stored anywhere. `-z` for the reason the
+        // conflict branch gives above.
+        const fork = yield* at(['merge-base', laneBase, laneBranch], mirror)
+        if (fork !== localBase) {
+          const names = (range: string) =>
+            at(['diff', '--name-only', '-z', range], mirror).pipe(
+              Effect.map((out) => out.split('\0').filter((p) => p.length > 0)),
+            )
+          const paths = baseMovedOn(yield* names(`${fork}..${laneBranch}`), yield* names(`${fork}..${laneBase}`))
           return yield* refuse(
             'base-moved',
-            `${options.base} moved on files ${options.branch} also changed since they forked:\n${paths.join('\n')}`,
+            paths.length > 0
+              ? `${options.base} moved on files ${options.branch} also changed since they forked:\n${paths.join('\n')}`
+              : `${options.base} moved since ${options.branch} forked, on files it did not change; the merged tree has not been built`,
             undefined,
             { paths, fromSha: fork, toSha: localBase },
           )
         }
-      }
 
-      if (options.verify) {
-        const verify = options.verify
-        const verified = yield* Effect.tryPromise({
-          try: () => verify(cwd),
-          catch: (err) => new RepoFailed({ operation: 'verify', detail: (err as Error).message }),
-        })
-        if (!verified.ok) {
-          // The gates ran against the agent's head. This is the different
-          // question of whether it still works beside what landed since.
+        const mergeCommit = yield* at(['rev-parse', 'HEAD'], cwd)
+
+        // ---- the ref update, which is what serialises this lane ----------------
+        // Everything above was computed against the base as it stood when this
+        // integration fetched it. Another one may have landed in the meantime;
+        // git says so here, atomically, by refusing a push that is not a
+        // fast-forward. **That rejection is not a refusal**, and is the one thing
+        // out of this function that does not append: it is answered where it is
+        // made, by one recompute against the base where it now is, which refuses (#1210),
+        // because nothing is wrong with the branch and nobody's judgement is
+        // owed. Only a base that beats every one of those pushes becomes an
+        // `IntegrationRefused`, at the loop below — see `PushWasRefused`.
+        // **A failed try asks origin whether it took the push anyway** (#1125): a 5xx does
+        // not prove the push failed, and a retry after another lane landed on top would be
+        // a non-fast-forward for a merge that is already on the base, then `no-commits`.
+        // The merge is this lane's own `--no-ff` commit, so if it is an ancestor of origin's
+        // base only this push can have put it there. Inside each try, so a read that fails
+        // is another try and the push's own failure is what comes back — never the read's.
+        const landedAlready = at(['fetch', 'origin', `refs/heads/${options.base}`], cwd).pipe(
+          Effect.andThen(at(['merge-base', '--is-ancestor', mergeCommit, 'FETCH_HEAD'], cwd)),
+          Effect.as(true),
+          Effect.catchTag('RepoFailed', (e) => (e.exitCode === 1 ? Effect.succeed(false) : Effect.fail(e))),
+        )
+        if (!push) {
+          // The recompute after a lost push found the base where the branch forked
+          // and still no push to make: not a race this lane understands (#1210).
           return yield* refuse(
-            'verify-failed',
-            `verification after merging ${options.branch} into ${options.base} failed:\n${verified.evidence}`,
+            'unexpected',
+            `origin rejected the push, but ${options.base} has not moved since the fetch`,
           )
         }
-      }
-
-      const mergeCommit = yield* at(['rev-parse', 'HEAD'], cwd)
-
-      // ---- the ref update, which is what serialises this lane ----------------
-      // Everything above was computed against the base as it stood when this
-      // integration fetched it. Another one may have landed in the meantime;
-      // git says so here, atomically, by refusing a push that is not a
-      // fast-forward. **That rejection is not a refusal**, and is the one thing
-      // out of this function that does not append: it is answered where it is
-      // made, by recomputing against the base where it now is (`LOST_PUSHES`),
-      // because nothing is wrong with the branch and nobody's judgement is
-      // owed. Only a base that beats every one of those pushes becomes an
-      // `IntegrationRefused`, at the loop below — see `LostPush`.
-      // **A failed try asks origin whether it took the push anyway** (#1125): a 5xx does
-      // not prove the push failed, and a retry after another lane landed on top would be
-      // a non-fast-forward for a merge that is already on the base, then `no-commits`.
-      // The merge is this lane's own `--no-ff` commit, so if it is an ancestor of origin's
-      // base only this push can have put it there. Inside each try, so a read that fails
-      // is another try and the push's own failure is what comes back — never the read's.
-      const landedAlready = at(['fetch', 'origin', `refs/heads/${options.base}`], cwd).pipe(
-        Effect.andThen(at(['merge-base', '--is-ancestor', mergeCommit, 'FETCH_HEAD'], cwd)),
-        Effect.as(true),
-        Effect.catchTag('RepoFailed', (e) => (e.exitCode === 1 ? Effect.succeed(false) : Effect.fail(e))),
-      )
-      const pushTry = at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd).pipe(
-        Effect.catchTag('RepoFailed', (err) => {
-          const said = classify({ platform: 'git', text: err.stderr ?? err.detail })?.kind
-          return said === 'remote-error' || said === 'push-rejected'
-            ? landedAlready.pipe(
-                Effect.orElseSucceed(() => false),
-                Effect.flatMap((landed) => (landed ? Effect.succeed('') : Effect.fail(err))),
-              )
-            : Effect.fail(err)
-        }),
-      )
-      const pushed = yield* Effect.result(retryUnreachable(pushTry, waits))
-      if (Result.isFailure(pushed)) {
-        // A push that failed for some other reason is not this lane's business
-        // to read, and goes to the unexpected channel at the bottom.
-        const said = classify({ platform: 'git', text: pushed.failure.detail })?.kind
-        if (said === 'base-protected') {
-          return yield* refuse('base-protected', `${baseProtectedRemedies(options.base)}\n${pushed.failure.detail}`)
+        const pushTry = at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd).pipe(
+          Effect.catchTag('RepoFailed', (err) => {
+            const said = classify({ platform: 'git', text: err.stderr ?? err.detail })?.kind
+            return said === 'remote-error' || said === 'push-rejected'
+              ? landedAlready.pipe(
+                  Effect.orElseSucceed(() => false),
+                  Effect.flatMap((landed) => (landed ? Effect.succeed('') : Effect.fail(err))),
+                )
+              : Effect.fail(err)
+          }),
+        )
+        const pushed = yield* Effect.result(retryUnreachable(pushTry, waits))
+        if (Result.isFailure(pushed)) {
+          // A push that failed for some other reason is not this lane's business
+          // to read, and goes to the unexpected channel at the bottom.
+          const said = classify({ platform: 'git', text: pushed.failure.detail })?.kind
+          if (said === 'base-protected') {
+            return yield* refuse('base-protected', `${baseProtectedRemedies(options.base)}\n${pushed.failure.detail}`)
+          }
+          if (said !== 'push-rejected') return yield* Effect.fail(pushed.failure)
+          return { lostThePush: true, detail: pushed.failure.detail } satisfies PushWasRefused
         }
-        if (said !== 'push-rejected') return yield* Effect.fail(pushed.failure)
-        return { lostThePush: true, detail: pushed.failure.detail } satisfies LostPush
-      }
-      // The mirror's `refs/heads/<base>` is Lingtai's own copy of the truth;
-      // leaving it stale would make a reader of the mirror alone see a base
-      // older than what just landed. A `fetch` into it would refuse exactly
-      // like the one above was refusing (#438) — the branch just pushed to
-      // origin may still be checked out in some other worktree of this
-      // mirror — so this is a compare-and-swap instead: it moves the ref only
-      // if it still holds what this lane fetched, and does nothing otherwise.
-      // Either way a landed merge must never become a refusal here, so every
-      // outcome is ignored.
-      yield* mirrorWrite(mirror, at(['update-ref', `refs/heads/${options.base}`, mergeCommit, localBase], mirror)).pipe(
-        Effect.ignore,
-      )
+        // The mirror's `refs/heads/<base>` is Lingtai's own copy of the truth;
+        // leaving it stale would make a reader of the mirror alone see a base
+        // older than what just landed. A `fetch` into it would refuse exactly
+        // like the one above was refusing (#438) — the branch just pushed to
+        // origin may still be checked out in some other worktree of this
+        // mirror — so this is a compare-and-swap instead: it moves the ref only
+        // if it still holds what this lane fetched, and does nothing otherwise.
+        // Either way a landed merge must never become a refusal here, so every
+        // outcome is ignored.
+        yield* mirrorWrite(
+          mirror,
+          at(['update-ref', `refs/heads/${options.base}`, mergeCommit, localBase], mirror),
+        ).pipe(Effect.ignore)
 
-      return yield* succeed(mergeCommit)
-    }).pipe(
-      // The typed channel, where the catch-all used to be. A git command that
-      // refused anywhere above still leaves an event behind — which is the
-      // entire difference from six silent `return 1`s — and now the compiler
-      // knows that is the only thing it has to answer for.
-      Effect.catchTag('RepoFailed', (err) => {
-        // origin did not answer, after the tries: nothing was judged (#1029).
-        const text = err.stderr ?? err.detail
-        const said = classify({ platform: 'git', text })?.kind
-        // Only a push can be over the size limit; a fetch that hung up is an origin that did not answer.
-        const cause = err.operation === 'git push' ? unreachableCause(text) : 'origin'
-        return said === 'unreachable'
-          ? refuse('unreachable', `${UNREACHABLE_PHRASE[cause]}${err.detail}`)
-          : said === 'remote-error'
-            ? refuse('remote-error', `GitHub answered a server error on the push: ${err.detail}`)
-            : refuse('unexpected', `the integration failed unexpectedly: ${err.detail}`)
-      }),
-      // And the defect channel, for what is not a git failure at all. It is the
-      // remains of the catch-all rather than the catch-all: everything the type
-      // system can see has already been handled one line up.
-      Effect.catchDefect(unexpected),
-    ),
-  )
+        return yield* succeed(mergeCommit)
+      }).pipe(
+        // The typed channel, where the catch-all used to be. A git command that
+        // refused anywhere above still leaves an event behind — which is the
+        // entire difference from six silent `return 1`s — and now the compiler
+        // knows that is the only thing it has to answer for.
+        Effect.catchTag('RepoFailed', (err) => {
+          // origin did not answer, after the tries: nothing was judged (#1029).
+          const text = err.stderr ?? err.detail
+          const said = classify({ platform: 'git', text })?.kind
+          // Only a push can be over the size limit; a fetch that hung up is an origin that did not answer.
+          const cause = err.operation === 'git push' ? unreachableCause(text) : 'origin'
+          return said === 'unreachable'
+            ? refuse('unreachable', `${UNREACHABLE_PHRASE[cause]}${err.detail}`)
+            : said === 'remote-error'
+              ? refuse('remote-error', `GitHub answered a server error on the push: ${err.detail}`)
+              : refuse('unexpected', `the integration failed unexpectedly: ${err.detail}`)
+        }),
+        // And the defect channel, for what is not a git failure at all. It is the
+        // remains of the catch-all rather than the catch-all: everything the type
+        // system can see has already been handled one line up.
+        Effect.catchDefect(unexpected),
+      ),
+    )
 
   /**
-   * **A base that moved is answered here, and not by a person.**
+   * **A lost push is answered here, with one recompute that ends in a refusal.**
    *
-   * One integration, whatever it takes: a single `IntegrationAttempted` at the
-   * top, then as many merges as the base makes necessary, then a single
-   * terminal. Nothing is reused between two of them — the base is fetched
-   * afresh, the merge is recomputed in a worktree of its own, and `verify` is
-   * asked again about the tree that actually exists now — but none of that is a
-   * new *attempt*, because the caller asked for one merge and is owed one
-   * answer.
+   * One integration: a single `IntegrationAttempted` at the top, a single
+   * terminal at the end. When origin rejects the push the base is fetched
+   * afresh and the merge recomputed once, without the right to push: the base
+   * has moved, so it refuses `base-moved` (or `conflict`) against the base where
+   * it now is, and the pass builds that tree before anything lands (#1210).
    *
-   * **That is also why a lost push appends nothing** (`LostPush`). A refusal is
-   * the sentence a person reads: it reaches the `desktop` subscriber as *did
-   * not merge* and wakes a queue pass, and neither is true of a race this lane
-   * is still in the middle of winning. Writing one per lost push would have
-   * sent up to four interruptions per successful merge, none of them
-   * retractable — the exact cost the retry exists to avoid, moved from the
-   * board to the notification tray.
-   *
-   * The retry is here rather than at the caller because both callers do the
-   * same thing with a refusal — `conduct.ts` blocks the item on a human
-   * acknowledgement, `approve.ts` blocks it with the approval already spent —
-   * and neither has anything to decide. A rejected push says the branch is fine
-   * and the base moved, which is a recomputation, not a question: an item that
-   * waits for a person to click Requeue in a repository that merges unattended
-   * is a ticket stopped by a race it won nothing by losing.
+   * **That is also why a lost push appends nothing** (`PushWasRefused`): the
+   * first rejection is not the answer, the recompute is, and a refusal is the
+   * sentence a person reads — it reaches the `desktop` subscriber and wakes a
+   * queue pass, so one is appended only for the answer.
    */
   return Effect.gen(function* () {
     yield* append('IntegrationAttempted', {
@@ -767,20 +724,15 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
       headSha: options.headSha,
     })
 
-    let lastRejection = ''
-    for (let push = 0; push <= LOST_PUSHES; push++) {
-      const outcome = yield* attempt
-      if (!('lostThePush' in outcome)) return outcome
-      lastRejection = outcome.detail
-    }
-    // Every push lost. Now it is a person's, and the card's move — requeue —
-    // is the honest one: the branch is fine and the base is busy.
-    return yield* refuse(
-      'push-rejected',
-      `${options.base} moved while ${options.branch} was being merged into it, ` +
-        `every one of ${LOST_PUSHES + 1} times; origin rejected the last push:\n${lastRejection}`,
-    )
-    // The append at the top and the refusal just above are appends like any
+    const first = yield* attempt(true)
+    if (!('lostThePush' in first)) return first
+    // A lost push means origin's base is past the one this merge was built on.
+    // One recompute against it, which cannot push: it ends in `base-moved` (or
+    // `conflict`), and a merge nothing built is never pushed (#1210).
+    const second = yield* attempt(false)
+    if (!('lostThePush' in second)) return second
+    return yield* refuse('unexpected', `origin rejected the push:\n${first.detail}`)
+    // The append at the top and the refusals just above are appends like any
     // other, and `attempt`'s own handlers are inside it and never see them.
     // This is what covers both — and whatever gets past `attempt`'s.
   }).pipe(Effect.catchDefect(unexpected), Effect.withSpan('repo.integrate'))

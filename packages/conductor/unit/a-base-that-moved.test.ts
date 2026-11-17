@@ -43,12 +43,12 @@ const recipe = {
   }),
 }
 
-const moved = (toSha: string): ActionResult => ({
+const moved = (toSha: string, paths: string[] = ['src/recipe.ts']): ActionResult => ({
   verdict: 'failed',
   evidence: 'main moved on files the branch also changed',
   findings: [],
   because: 'base-moved',
-  baseMoved: { paths: ['src/recipe.ts'], fromSha: 'fork0001', toSha },
+  baseMoved: { paths, fromSha: 'fork0001', toSha },
 })
 
 /**
@@ -280,5 +280,36 @@ describe('what the next review is told it already read (#671)', () => {
     })
 
     expect(reviewSaw.every((c) => !('reviewedSha' in c))).toBe(true)
+  })
+})
+
+describe('a base that moved on none of the branch’s files (#1210)', () => {
+  const merge = async () => ({ head: 'merged-1' })
+
+  it('is built on the merge commit and carries the review: one merge-base route, no second review', async () => {
+    const { result, started, reviewSaw, events } = await walk([moved('base-1', [])], merge)
+
+    const steps = started.map((s) => s.step)
+    expect(steps.slice(steps.indexOf('merge'))).toEqual(['merge', 'build', 'proposed', 'merge'])
+    expect(steps.filter((s) => s === 'review')).toHaveLength(1)
+    expect(reviewSaw).toHaveLength(1)
+    // The skip is an absence: nothing started or ended for it after the merge.
+    expect(events.filter((e) => e.type === 'StepStarted' && e.data.step === 'review')).toHaveLength(1)
+    expect(result.routes.filter((r) => r.to === 'build')).toHaveLength(1)
+    expect(result.end).toMatchObject({ _tag: 'Landed' })
+  })
+
+  it('reviews again when the earlier review read the diff clipped', async () => {
+    const clipped = { ...PASSED, clipped: { shown: 1, total: 2 } } as unknown as ActionResult
+    const { reviewSaw } = await walk([moved('base-1', [])], merge, [], undefined, [clipped])
+    expect(reviewSaw).toHaveLength(2)
+  })
+
+  it('reviews the next head in full after a red build and a fix round', async () => {
+    const red: ActionResult = { verdict: 'failed', evidence: 'red', findings: [], because: 'red' }
+    const { reviewSaw, started } = await walk([moved('base-1', [])], merge, [PASSED, red])
+    expect(started.filter((s) => s.step === 'review')).toHaveLength(2)
+    expect(reviewSaw).toHaveLength(2)
+    expect(reviewSaw[1]?.reviewedSha).toBeUndefined()
   })
 })

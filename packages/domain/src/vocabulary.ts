@@ -62,9 +62,10 @@ export const RefusalReason = z.enum([
   // A commit a stopped run's own conductor made, found on the branch the lane
   // is about to merge — never a judgement about the branch itself (#468).
   'wip-commit',
-  // The base moved on files the branch also changed since it was reviewed, and
-  // the trial merge was clean: the lane does not land, the pass merges the base
-  // in itself and builds and reviews again (#593). Nothing is wrong with the branch.
+  // The base moved since the branch forked, and the trial merge was clean: the
+  // lane does not land a tree no step ran on. The pass merges the base in itself
+  // and builds again; review runs again only when the move touched files the
+  // branch changed (#593, #1210). Nothing is wrong with the branch.
   'base-moved',
   // The base branch refused the lane's direct push because it is protected —
   // a setting on the repository, which only a person can change (#662).
