@@ -497,6 +497,11 @@ export interface SentBack {
    * where the work stopped. `null` on every other route.
    */
   readonly said?: string | null
+  /**
+   * The fixer's message, where the round is bought on a later round the fixer
+   * declined (#1199) and a judge overruled it. Exclusive with `said`.
+   */
+  readonly objection?: string | null
 }
 
 export interface ActionContext {
