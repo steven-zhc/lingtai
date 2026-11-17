@@ -235,7 +235,7 @@ summary: 给人读的一句话
 
 ---
 
-## 八、上限的名字和数值（名字已定待确认 2026-11-17）
+## 八、上限的名字和数值（已定 2026-11-17）
 
 **规则：每个上限一个名字，名字说清它数的是什么、按什么范围计数。** 两个上限即使数值相同，意义不同就用两个名字，不共用一个参数。下文和以后的 ADR、代码、recipe、看板都只用这些名字。
 
@@ -256,12 +256,11 @@ summary: 给人读的一句话
 | `redoWaits` | 每次 R 之前等多久 | （跟随 `redos`） | — | 1、5、15 分钟 | 常量 | `TRANSIENT_WAITS` |
 | `checkReruns` | 检查红了立刻再跑 | ↻ 当前 attempt 里重做（同一个 commit 再跑一次检查） | 每次红 | 1 | 常量 | 0108 §17，没有名字 |
 | **`startOvers`** | **从头重来**（S） | ⟲ 从 base 重来 | 每张票 | 2 | recipe | `restarts` |
-| `splitDepth` | 自动拆票的层数（P） | ⟲ 从 base 重来（子票各自从 base 开始；母票等子票落地后从 base 验收和补完） | 每张票 | 1 | 常量 | 没有，新加 |
+| `splitDepth` | 自动拆票的层数（P） | ⟲ 从 base 重来（子票各自从 base 开始；母票等子票落地后从 base 验收和补完） | 每张票 | **1**（已定：自动拆出的子票不能再被自动拆） | 常量 | 没有，新加 |
 | `run.turns` | 一次 agent 运行的轮数 | ■ 只是封顶（用完 → triage 决定 P 还是 R） | 每次运行 | 350 | recipe | `runtime.limits.turns` |
 | `run.wall` | 一次 agent 运行的时长 | ■ 只是封顶（同上） | 每次运行 | 75m | recipe | `runtime.limits.wall` |
 | `run.usd` | 一次 agent 运行的花费 | ■ 只是封顶（同上） | 每次运行 | 未设置 | recipe | `runtime.limits.usd` |
-| **`ticket.usd`** | 一张票累计花费 | ■ 只是封顶（用完 → H，`limit`） | 每张票 | **【待定】$30** | recipe | 没有，新加 |
-| `designQuestions` | design 阶段提问的次数 | ■ 只是封顶（用完 → design 不能再提问，必须自己做决定） | 每张票 | 2 | 常量 | #649 的 `designAsks`，没有名字 |
+| `designQuestions` | design 阶段停下来提问的次数（每次最多 5 个问题） | ■ 只是封顶（用完 → design 不能再提问，必须自己做决定） | 每张票 | **5**（已定，现在是 2） | 常量 | #649 的 `designAsks`，没有名字 |
 | `triage.turns` / `triage.wall` / `triage.usd` | 一次 triage 调用 | ■ 只是封顶（用完 → triage 失败，第五节第 6 类） | 每次调用 | 100 / 15m / $10 | recipe | `triage.limits` |
 
 **几处改动说明：**
@@ -276,10 +275,11 @@ summary: 给人读的一句话
     limits:
       run:     { turns: 350, wall: 75m }      # 一次 agent 运行
       attempt: { fixRounds: 6, conflictRounds: 6 }   # 一个 attempt
-      ticket:  { startOvers: 2, usd: 30 }     # 一张票
+      ticket:  { startOvers: 2 }             # 一张票
   ```
 
-- **一张票最多自动跑多少次**：`(startOvers + 1) × (1 + fixRounds + conflictRounds + redos)` 次 agent 运行（`landRetries` 和 `baseMerges` 不跑 agent，不计入） = 3 × (1 + 6 + 6 + 3) = 48 次，同时受 `ticket.usd` 限制，先到哪个算哪个。
+- **一张票最多自动跑多少次**：`(startOvers + 1) × (1 + fixRounds + conflictRounds + redos)` 次 agent 运行（`landRetries` 和 `baseMerges` 不跑 agent，不计入） = 3 × (1 + 6 + 6 + 3) = 48 次。
+- **单张票的花费上限现在不加**（2026-11-17）：系统还没有按票统计花费的设计。以后需要时，名字叫 `ticket.usd`，放在 `ticket` 分组里。
 
 **调到 6 的依据**：最近 7 天 lingtai 落地 228 张票，0 到 1 轮修完的占 79%，5 轮以上的占 4%（只看 feature 票是 13%）。按"第几次 review 通过"统计：第 4 次 review 时 16 张过了 8 张，第 5 次时 8 张过了 1 张。人工额外给轮的票里，#1170、#1177 都是多给 1 轮就过了。调到 6，能覆盖"再给一两轮就能过"的那批票；受影响的约 4%，每张多花大约 $1–2。
 
@@ -343,7 +343,7 @@ summary: 给人读的一句话
 ### 和方案对不上的两处
 
 1. **wall/turns 用完后的"接着做"**：已改为记到 `redos`（第八节）。
-2. **【待定】没有单张票的花费上限**（第八节的 `ticket.usd`）。 现在只有一次运行的 `usd`（未设置）和全局当天的 $200。一张票在各项上限之内最多可以跑 48 次运行。建议加一个出口：**每张票累计花费超过 $X 就交给人（H，`limit`）**，例如 $30。依据：最近 7 天最贵的 #1152 上报约 $20、加估算约 $30；feature 票的中位数约 $7。
+2. **没有单张票的花费上限**：这次不加，以后需要时叫 `ticket.usd`（第八节）。 现在只有一次运行的 `usd`（未设置）和全局当天的 $200。一张票在各项上限之内最多可以跑 48 次运行。建议加一个出口：**每张票累计花费超过 $X 就交给人（H，`limit`）**，例如 $30。依据：最近 7 天最贵的 #1152 上报约 $20、加估算约 $30；feature 票的中位数约 $7。
 
 ## 九、和现在相比要改的地方
 
@@ -357,7 +357,7 @@ summary: 给人读的一句话
 | 6 | triage 的回答改成第六节的格式；系统按原因自动执行，记成 `by: triage` | 0108 §16，0118，`wait.ts`，triage 的 prompt |
 | 7 | wall/turns 用完时交给 triage，由它判断拆票还是接着做 | 0108 §12 |
 | 8 | 自动拆票，只拆一层，母票按方案处理 | 0118 §12 |
-| 9 | 按第八节改名、分组：`rounds` → `fixRounds`（6）和 `conflictRounds`（6），`restarts` → `startOvers`，`TRANSIENT_RETRIES_LIMIT` → `redos` 等；新加 `ticket.usd` | recipe 的 schema、`attemptCeiling`、`respond.ts`、看板和 CLI 的文案、本机 recipe |
+| 9 | 按第八节改名、分组：`rounds` → `fixRounds`（6）和 `conflictRounds`（6），`restarts` → `startOvers`，`TRANSIENT_RETRIES_LIMIT` → `redos` 等；`designQuestions` 从 2 改为 5 | recipe 的 schema、`attemptCeiling`、`respond.ts`、看板和 CLI 的文案、本机 recipe |
 | 10 | #1218、#1219（人在页面上点"重跑这一步"）改成走 R | 0.15.0 里已有的票，改正文 |
 | 12 | implement 的五种结果由 agent 声明并按 commit 核对；去掉 `nothing-produced`（并入 `AgentFailed`）；路由加原因 `already-done` 和去向 end；票加终态 `satisfied` | implement 的 prompt，`proposal.ts`，路由，ticket 的 reducer，看板 |
 | 13 | design 提问、implement 的 `Unclear`、triage 的 `UndecidedQuestion` 三处统一用 `TriageQuestion` 格式，答案用 `triageAnswersText` 写进正文 | `agent-action.ts`，`triage.ts`，Waiting 页面 |
@@ -369,9 +369,9 @@ summary: 给人读的一句话
 
 - 母票一律放回队列；子票全部落地后，母票做验收并补完剩下的部分。（已定）
 - `fixRounds` 定为 6。（已定）
-- 上限的名字（第八节）：每个上限一个名字，同值不同义也分开。【待定】名字待确认。
+- 上限的名字（第八节）：每个上限一个名字，数值相同但意义不同也分开；每个上限标明出发点。`splitDepth` = 1，`designQuestions` = 5，单张票花费上限这次不加。（已定）
 - **R 的触发范围**：只有"这一步本身没做完"（第 2 类：agent 崩溃、超时、turns 用完、没有回执、回答读不懂）才走 R。"这一步做完了但结论是不通过"（第 3 类：build 红、review 有 findings）走修复轮 F，不走 R。（已定）
 - 拆过票的母票零提交 = `AlreadyDone`，系统自动以 `satisfied` 关闭，不走 merge。（已定）
 - implement 的五种结果、统一的提问格式、implement 之后沿用现有路由（三点五节）。（已定）
 
-**待定：单张票的花费上限（八点五节）。** 下一步：把这份方案改写进 ADR 0108 和 0118，再按第九节切票。
+**目前没有待定项。** 下一步：把这份方案改写进 ADR 0108 和 0118，再按第九节切票。
