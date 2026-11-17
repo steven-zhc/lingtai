@@ -42,7 +42,6 @@ import { type TurnClient, type RunOnceOptions, type RunOnceResult, runOnce } fro
 import { runnableNowEffect } from './discover.ts'
 import type { AgentHost, Repo } from './ports.ts'
 import { selectRunnable } from './queue.ts'
-import { readFixFilesEffect, waitsFor } from './same-file.ts'
 import type { Slots } from './slots.ts'
 
 export interface ScheduleOptions {
@@ -170,7 +169,6 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
     const attempted = new Set<string>()
     /** Detached only: passes started, and tickets that must wait for one in flight. */
     let started = 0
-    const waiting = new Set<string>()
     let envRefused = false
     // The caller's whole context, run with `Effect.runPromiseWith`: a pass started
     // detached runs in a root fiber of its own, and it must carry the caller's
@@ -267,7 +265,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
         // The projection lags a claim, so what is in flight is subtracted first.
         const open = queue.filter((e) => !flying.some((f) => f.issue === e.issue))
         if (open.length === 0) return finish('empty')
-        const candidates = open.filter((e) => !attempted.has(e.taskId) && !waiting.has(e.taskId))
+        const candidates = open.filter((e) => !attempted.has(e.taskId))
         let launched = false
         for (const entry of candidates) {
           const issue = Number(entry.issue)
@@ -276,23 +274,14 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
             log(`skipping ${entry.taskId}: "${entry.issue}" is not an issue number`)
             continue
           }
-          // Read for the slot's own record, and to ask the collision question
-          // only where there is something to collide with.
-          const files = yield* readFixFilesEffect(options.client, issue)
-          const why = flying.length > 0 ? waitsFor(files, flying) : null
-          if (why !== null) {
-            waiting.add(entry.taskId)
-            log(`${entry.taskId}: ${why}`)
-            continue
-          }
-          // Asked again after the issue read, right before the start: a pause
-          // recorded while it was fetched must not be started over.
+          // Asked before every start in the loop, not once before it: a pause
+          // recorded while an earlier start was under way must stop this one.
           const stoppedThird = yield* stopIfPaused()
           if (stoppedThird) return stoppedThird
           attempted.add(entry.taskId)
           log(`taking ${entry.taskId} — ${entry.title}`)
           told(() => options.took?.(entry))
-          const leave = set.enter({ project: name, issue: entry.issue, files })
+          const leave = set.enter({ project: name, issue: entry.issue })
           started += 1
           const pass = Effect.runPromiseWith(runtime!)(
             runOnce({
