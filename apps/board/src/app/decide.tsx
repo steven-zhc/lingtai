@@ -227,6 +227,7 @@ export function ScheduleContinuation({
   onSha,
   waitId,
   grant = false,
+  rerun = false,
 }: {
   project: string
   issue: number
@@ -236,6 +237,8 @@ export function ScheduleContinuation({
   waitId: WaitId
   /** A recorded fix grant must be retried as that same resolution. */
   grant?: boolean
+  /** A recorded rerun must be retried as that same resolution, never as an `Approve`. */
+  rerun?: boolean
 }) {
   const [pending, setPending] = useState(false)
   const [done, setDone] = useState<string | null>(null)
@@ -254,9 +257,11 @@ export function ScheduleContinuation({
             setPending(true)
             setRefusal(null)
             startTransition(async () => {
-              const result = grant
-                ? await continueFixingCard({ project, issue, onSha, waitId })
-                : await approveCard({ project, issue, onSha, waitId, note: '' })
+              const result = rerun
+                ? await rerunStepCard({ project, issue, onSha, waitId })
+                : grant
+                  ? await continueFixingCard({ project, issue, onSha, waitId })
+                  : await approveCard({ project, issue, onSha, waitId, note: '' })
               setPending(false)
               if (result.ok) {
                 setDone(result.detail)
@@ -345,10 +350,16 @@ export function RerunStepButton({
             setPending(true)
             setDetail(null)
             startTransition(async () => {
-              const result = await rerunStepCard({ project, issue, waitId, onSha })
-              setPending(false)
-              setDone(result.ok)
-              setDetail(result.detail)
+              try {
+                const result = await rerunStepCard({ project, issue, waitId, onSha })
+                setDone(result.ok && !result.detail.includes('not scheduled'))
+                setDetail(result.detail)
+              } catch (err) {
+                setDone(false)
+                setDetail(`could not reach the server: ${(err as Error).message}`)
+              } finally {
+                setPending(false)
+              }
             })
           }}
         >

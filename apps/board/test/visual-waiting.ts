@@ -453,8 +453,8 @@ export async function preview(name: CaseName) {
     // This inert preview uses its recorded published ref/head as the remote
     // answer; loadTask checks that ref again before offering a live move.
     previewStanding.fixWork = savedFixWork(standing.runId, runs.get(standing.runId) ?? [])
-    // Staged for the #1219 comparison: no real wait offers both this card and the grant, so the preview carries
-    // both fields and the order function puts the rerun beside it. Drawn only where `allowedResolutions` offers it.
+    // #1219: a wait can offer both this card and the grant (`BuildRed` with output, `CheckRefused` at `proposed`),
+    // so the preview carries both fields. Drawn only where `allowedResolutions` offers it.
     const saved = previewStanding.fixWork
     previewStanding.rerunWork = 'head' in saved ? { head: saved.head, ref: saved.ref } : saved
   }

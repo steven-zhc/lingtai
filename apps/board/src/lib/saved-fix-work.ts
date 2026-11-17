@@ -60,13 +60,17 @@ export function rerunWorkFromState(runId: string, state: AttemptState, base: str
 }
 
 /**
- * The grid's order puts `RerunStep` right after *Continue fixing current work*, else first: the moves that keep the
- * saved work read before the ones that discard it. `allowedResolutions` ends with it, and its order is not the board's.
+ * The grid's order puts `RerunStep` right after the saved-work moves it sits beside — *Continue fixing current work*
+ * (`GrantFixRound`) — and always before *Start over from base* (`Requeue`) and *Add to the ticket and start over*
+ * (`EditBodyAndRequeue`), which discard the saved work. `allowedResolutions` ends with it, and its order is not the board's.
  */
 export function rerunStepFirstAmongSavedWork<T extends string>(tags: readonly T[]): T[] {
   const rerun = tags.find((tag) => tag === 'RerunStep')
   if (rerun === undefined) return [...tags]
   const rest = tags.filter((tag) => tag !== 'RerunStep')
-  const at = rest.findIndex((tag) => tag === 'GrantFixRound') + 1
-  return [...rest.slice(0, at), rerun, ...rest.slice(at)]
+  const grant = rest.findIndex((tag) => tag === 'GrantFixRound')
+  const discard = rest.findIndex((tag) => tag === 'Requeue' || tag === 'EditBodyAndRequeue')
+  const at = grant >= 0 ? grant + 1 : discard >= 0 ? discard : 0
+  const bounded = discard >= 0 && at > discard ? discard : at
+  return [...rest.slice(0, bounded), rerun, ...rest.slice(bounded)]
 }

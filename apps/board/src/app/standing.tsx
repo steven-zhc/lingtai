@@ -1681,6 +1681,7 @@ export function Standing({
                         onSha={standing.approvedSha}
                         waitId={standing.waitId}
                         grant={standing.afterMove?.resolution === 'GrantFixRound'}
+                        rerun={standing.afterMove?.resolution === 'RerunStep'}
                       />
                     </div>
                   ) : null}
