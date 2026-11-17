@@ -66,7 +66,7 @@ export type Ticket = TicketDetail & { url: string | null }
  * | null`, same as `GitHubClient`'s — `discover.ts`'s `runnableNow` reads
  * `null` as *GitHub said nothing about dependencies*, not *nothing blocks
  * it*. **`memoryTickets`, having no notion of blockers, answers the zero
- * rather than the unread case**, but that is a rule on that one
+ * rather than the unread case** (`dbTickets` counts its own links, #1226), but that is a rule on that one
  * implementation, not on every `Tickets`: a real `GitHubClient` can still
  * answer `null` here, and a caller must keep reading the null branch.
  */

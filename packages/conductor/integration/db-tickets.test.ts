@@ -38,6 +38,7 @@ import { Effect } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { type DbTickets, dbTickets, ensureTicketTablesEffect } from '../src/db-tickets.ts'
+import { describeTicketLinksContract } from '../test/ticket-links-contract.ts'
 import { describeTicketsContract } from '../test/tickets-contract.ts'
 
 interface PgColumn {
@@ -85,6 +86,7 @@ describe.skipIf(!postgresUnderTest())('ensureTicketTables on Postgres', () => {
     sql = createPostgresTicketSql({ url: postgresUrl() })
     expect(sql.dialect).toBe('postgres')
 
+    await sql.exec('DROP TABLE IF EXISTS ticket_links')
     await sql.exec('DROP TABLE IF EXISTS ticket_comments')
     await sql.exec('DROP TABLE IF EXISTS tickets')
 
@@ -115,6 +117,13 @@ describe.skipIf(!postgresUnderTest())('ensureTicketTables on Postgres', () => {
       { column_name: 'created_at', data_type: 'timestamp with time zone', is_nullable: 'NO', column_default: null },
     ])
     expect(await primaryKey(sql, 'ticket_comments')).toEqual(['id'])
+
+    expect(await columns(sql, 'ticket_links')).toEqual([
+      { column_name: 'project', data_type: 'text', is_nullable: 'NO', column_default: null },
+      { column_name: 'number', data_type: 'integer', is_nullable: 'NO', column_default: null },
+      { column_name: 'blocked_by', data_type: 'integer', is_nullable: 'NO', column_default: null },
+    ])
+    expect(await primaryKey(sql, 'ticket_links')).toEqual(['project', 'number', 'blocked_by'])
 
     const now = new Date()
     await sql.query(
@@ -147,6 +156,7 @@ describe.skipIf(!postgresUnderTest())('dbTickets on Postgres', () => {
   afterAll(async () => {
     const sql = createPostgresTicketSql({ url: postgresUrl() })
     for (const project of projects) {
+      await sql.exec(`DELETE FROM ticket_links WHERE project = '${project}'`)
       await sql.exec(`DELETE FROM ticket_comments WHERE project = '${project}'`)
       await sql.exec(`DELETE FROM tickets WHERE project = '${project}'`)
     }
@@ -163,6 +173,11 @@ describe.skipIf(!postgresUnderTest())('dbTickets on Postgres', () => {
     () => dbTickets(createPostgresTicketSql({ url: postgresUrl() }), freshProject()),
     { commentBodies: (t, issue) => t.commentBodies(issue) },
   )
+
+  describeTicketLinksContract('dbTickets on Postgres', () => {
+    const project = freshProject()
+    return { store: dbTickets(createPostgresTicketSql({ url: postgresUrl() }), project), project }
+  })
 
   it('eight concurrent createIssue calls on one project produce eight distinct numbers, 1..8', async () => {
     const project = freshProject()

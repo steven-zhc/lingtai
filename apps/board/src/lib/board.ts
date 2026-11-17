@@ -1,6 +1,7 @@
 import { passedOver, runnableNow } from '@lingtai/conductor/discover'
 import { attemptCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
+import type { TicketLink } from '@lingtai/conductor/filter'
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { readState } from '@lingtai/conductor/snapshot-state'
@@ -30,7 +31,6 @@ import {
   type TriageStatus,
 } from '@lingtai/domain/wait'
 import { eventStore, log } from '@lingtai/event-store'
-import type { LinkedIssue } from '@lingtai/github'
 import { loadAllProjects } from '@lingtai/project'
 import type { SpendRow } from '@lingtai/projector'
 /**
@@ -915,7 +915,7 @@ export type BlockedSkip = {
   title: string
   kind: string | null
   blockedBy: number | null
-  blockers: { ok: true; issues: LinkedIssue[] } | { ok: false; problem: string } | null
+  blockers: { ok: true; issues: readonly TicketLink[] } | { ok: false; problem: string } | null
   unread: boolean
 }
 
@@ -1338,7 +1338,7 @@ export async function githubQueue(
     runnable += answer.runnable.length
     const offered = answer.offered
     const links = filter.links ?? null
-    const own = links === null ? null : `${links.owner}/${links.repo}`.toLowerCase()
+    const own = links === null ? null : links.repository.toLowerCase()
     const adopt = (ref: string | number, parent: { repository: string; number: number } | null) => {
       if (parent === null || own === null || parent.repository.toLowerCase() !== own) return
       parents.set(`${filter.project}#${ref}`, parent.number)

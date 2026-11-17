@@ -35,6 +35,7 @@ import {
 import { Cause, Effect } from 'effect'
 
 import { attemptCeiling } from './ceiling.ts'
+import { hasTicketLinks, type TicketLink } from './db-tickets.ts'
 import type { TicketSource } from './discover.ts'
 import { asFailure } from './port-face.ts'
 import { currentRecipeEffect } from './projects.ts'
@@ -198,13 +199,31 @@ export type ProjectFilter =
        */
       tickets: TicketSource
       /**
-       * What reads a ticket's blockers (#954): the GitHub client, and only when
-       * it is also `tickets`. A `db` project gets null even with an owner —
-       * link verbs are kept off `Tickets` on purpose (doc/design/601.md).
+       * What reads a ticket's blockers (#954, #1226): the GitHub client when it
+       * is also `tickets`, or the `dbTickets` store for a `db` project, with or
+       * without an owner. Null only for a source with no link verbs (tests'
+       * `memoryTickets`) — link verbs stay off `Tickets` on purpose.
        */
-      links: Pick<GitHubClient, 'listBlockedBy' | 'owner' | 'repo'> | null
+      links: TicketLinks
     }
   | { project: string; ok: false; problem: string }
+
+/** What the board asks for a ticket's blockers: the repository its numbers belong to, and the read. */
+export type TicketLinks = {
+  repository: string
+  listBlockedBy(issue: number): Promise<readonly TicketLink[]>
+} | null
+
+export type { TicketLink }
+
+/** GitHub's client when it is the source, else the `db` store `ticketsFor` built (one store, one memo); else null. */
+function ticketLinksOf(project: string, tickets: TicketSource, gh: GitHubClient | null): TicketLinks {
+  if (gh !== null && (tickets as unknown) === gh) {
+    return { repository: `${gh.owner}/${gh.repo}`, listBlockedBy: (n) => gh.listBlockedBy(n) }
+  }
+  if (hasTicketLinks(tickets)) return { repository: project, listBlockedBy: (n) => tickets.listBlockedBy(n) }
+  return null
+}
 
 /** Builds a client for a project, or throws saying why it cannot. */
 export type ClientFor = (state: ProjectState) => Promise<GitHubClient>
@@ -386,7 +405,7 @@ export function projectFilterEffect(
     let resolved: ResolvedRecipe
     let client: TicketSource
     let tickets: TicketSource
-    let links: Pick<GitHubClient, 'listBlockedBy' | 'owner' | 'repo'> | null = null
+    let links: TicketLinks = null
     if (state.owner === null) {
       resolved = yield* recipeFor(state, undefined)
       const refusal = ownerlessRefusal(project, resolved.recipe)
@@ -397,12 +416,13 @@ export function projectFilterEffect(
       const dbTickets = yield* ticketsOf(state, resolved.recipe, undefined as unknown as Tickets)
       tickets = dbTickets
       client = dbTickets
+      links = ticketLinksOf(project, dbTickets, null)
     } else {
       const ghClient = yield* clientFor(state)
       resolved = yield* recipeFor(state, ghClient)
       tickets = yield* ticketsOf(state, resolved.recipe, ghClient)
       client = ghClient
-      links = tickets === ghClient ? ghClient : null
+      links = ticketLinksOf(project, tickets, ghClient)
     }
     const filter: ProjectFilter = {
       project,

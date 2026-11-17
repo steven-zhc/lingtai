@@ -32,16 +32,16 @@ describe('ensureReady', () => {
     await expect(t.listOpenIssues()).rejects.toBe(boom)
     expect(calls.exec).toBe(1)
     await expect(t.listOpenIssues()).resolves.toEqual([])
-    expect(calls.exec).toBe(3)
+    expect(calls.exec).toBe(4)
     await t.listOpenIssues()
-    expect(calls.exec).toBe(3)
+    expect(calls.exec).toBe(4)
   })
 
   it('joins concurrent first callers to one ensure', async () => {
     const { sql, calls } = fake(() => undefined)
     const t = dbTickets(sql, 'p')
     await Promise.all([t.listOpenIssues(), t.listOpenIssues()])
-    expect(calls.exec).toBe(2)
+    expect(calls.exec).toBe(3)
   })
 })
 
