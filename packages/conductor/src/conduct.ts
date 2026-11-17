@@ -574,6 +574,8 @@ export interface RunOnceOptions {
   gitEnv?: NodeJS.ProcessEnv
   /** The waits between tries of a landing's git network call (#1029); a test passes zeros. Default `UNREACHABLE_WAITS`. */
   unreachableWaits?: readonly Duration.Input[]
+  /** The waits before each `land-again` (#1221); absent is `TRANSIENT_WAITS`. */
+  transientWaits?: readonly Duration.Input[]
   /** Overrides the clone source. The tests point it at a local repository. */
   remote?: string
   /**
@@ -757,6 +759,7 @@ export function continuationRound(run: AttemptState, granted: boolean): number {
 export const continuationSpent = (run: AttemptState) => ({
   baseMerges: run.baseMerges ?? 0,
   conflictRounds: run.conflictRounds ?? 0,
+  transientRetries: run.transientRetries ?? 0,
 })
 
 /** srt's own explanation out of a `SandboxWrapFailed`'s `cause`. */
@@ -1354,6 +1357,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         roundsSpent: continuationRound(runState, granted),
         baseMergesSpent: continuationSpent(runState).baseMerges,
         conflictRoundsSpent: continuationSpent(runState).conflictRounds,
+        transientRetriesSpent: continuationSpent(runState).transientRetries,
         ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
         ...(criterion !== null
           ? {
@@ -5216,6 +5220,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ceilings,
         judge,
         mergeBase,
+        transientWaits: options.transientWaits,
         mergeForConflict,
         conflictEvidence,
         baseIsRed,
@@ -5232,6 +5237,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 roundsSpent: continuation.roundsSpent,
                 baseMergesSpent: continuation.baseMergesSpent,
                 conflictRoundsSpent: continuation.conflictRoundsSpent,
+                transientRetriesSpent: continuation.transientRetriesSpent,
                 ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                 ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                 ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),

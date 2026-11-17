@@ -180,11 +180,14 @@ export type Account = z.infer<typeof Account>
  *
  *   `unreachable`    git could not reach origin for the lane's fetch or push, or
  *                    for the branch push before it, after three tries (#1029).
- *                    Nothing was judged; approve re-runs only the land.
+ *                    Nothing was judged; a rule re-runs the land first, up to
+ *                    `TRANSIENT_RETRIES_LIMIT` times (#1221), and then approve
+ *                    re-runs only the land.
  *
  *   `remote-error`   GitHub answered the branch push, the base push or the
  *                    publish with a 5xx on every one of three tries (#1125).
- *                    Nothing was judged; approve re-runs only the land.
+ *                    Nothing was judged; a rule re-runs the land first (#1221),
+ *                    and then approve re-runs only the land.
  *
  *   `unexpected`     the merge failed in a way that is not a conflict — a
  *                    dropped store connection, a failed fetch, a failed push

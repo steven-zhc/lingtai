@@ -245,7 +245,7 @@ export interface AttemptState {
   baseMerges?: number
   /** The conflict rounds this attempt's routes bought (#1200). Absent until one is reduced, read as 0. */
   conflictRounds?: number
-  /** The reruns of a run an API error cut off. Nothing raises it yet (#1201, #1221); absent reads as 0. */
+  /** The transient retries this attempt's routes made: a `land-again` route raises it (#1221), and #1201's reruns will. Absent reads as 0. */
   transientRetries?: number
 
   version: number
@@ -599,6 +599,15 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
         state.sandbox?.some((i) => !i.ended) === true
           ? { sandbox: state.sandbox.map((i) => (i.ended ? i : { ...i, ended: true })) }
           : {}
+      if (next._tag === 'LandAgain') {
+        return {
+          ...state,
+          ...settled,
+          ...at,
+          transientRetries: Math.max(state.transientRetries ?? 0, next.retry),
+          route: d,
+        }
+      }
       if (next._tag === 'MergeBase') {
         return { ...state, ...settled, ...at, baseMerges: Math.max(state.baseMerges ?? 0, next.merge), route: d }
       }

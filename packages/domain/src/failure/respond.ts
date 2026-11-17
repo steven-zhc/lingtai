@@ -698,6 +698,17 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       break
     }
     case 'MergeRefused': {
+      // #1221, 0108 §15: origin not answering is a rule's to answer, by landing
+      // again from the same head. Free, and offered only while the attempt has
+      // retries left. When spent it is simply absent, never `unavailable`: a
+      // rule's candidate is never shown to a chooser, and the offer is then
+      // byte for byte what it was before this existed.
+      if (
+        (proposal.reason === 'unreachable' || proposal.reason === 'remote-error') &&
+        (spent.transientRetries ?? 0) < TRANSIENT_RETRIES_LIMIT
+      ) {
+        available.push({ id: 'land-again', next: { _tag: 'LandAgain', retry: (spent.transientRetries ?? 0) + 1 } })
+      }
       const hasCriterion = proposal.output.trim() !== ''
       round('fix-lines', 'implement', hasCriterion)
       restart(hasCriterion)

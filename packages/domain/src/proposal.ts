@@ -172,6 +172,13 @@ const MergeRefused = z.object({
   // `RefusalReason` gains tomorrow fails this at the type level.
   reason: RefusalReason.exclude(['conflict', 'verify-failed', 'base-moved']),
   output: z.string(),
+  /**
+   * How many times this pass landed again from the same head, and over how many
+   * minutes it waited, before the retries ran out (#1221). Absent means it did
+   * not, and the sentence is the one it always was. Not a copied field: it is
+   * stored with the route, so a replay says the same.
+   */
+  landedAgain: z.object({ times: z.number().int(), minutes: z.number() }).optional(),
 })
 type MergeRefused = z.infer<typeof MergeRefused>
 
