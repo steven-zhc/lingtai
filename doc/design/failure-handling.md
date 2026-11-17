@@ -33,15 +33,15 @@
 | `split` | 拆票 | ⟲ 从 base 重来 |
 | `toPerson` | 交给人 | — |
 | `rerunCommand` | 检查红了立刻再跑（规则） | ↻ 同一步再做一遍 |
-| `baseMerge` | base 动了合并进来（规则） | ➡ 接着往下做 |
-| `landRetry` | 重新落地（规则） | ↻ 同一步再做一遍 |
+| `mergeBaseBranch` | base 动了合并进来（规则） | ➡ 接着往下做 |
+| `retryLand` | 重新落地（规则） | ↻ 同一步再做一遍 |
 
 **出发点**：
 - **➡ 接着往下做**：同一个 attempt，从当前 head 往前走，已有的 commit 都保留，再加新的。
 - **↻ 同一步再做一遍**：只把刚才出问题的那一步（或那一次检查）原样再做一遍，起点是当前 head。不往前推进，不回到 attempt 的开头，也不开新的 attempt。
 - **⟲ 从 base 重来**：开新的 attempt，从 base 开始，旧的改动不带。
 
-**上限**（第九节）：每个动作有自己的上限，名字由动作名变成复数：`redoStep` → `stepRedos`、`rerunCommand` → `commandReruns`、`fix` → `fixes`、`conflictFix` → `conflictFixes`、`startOver` → `startOvers`、`baseMerge` → `baseMerges`、`landRetry` → `landRetries`；`split` 的上限是 `splitDepth`。
+**上限**（第九节）：每个动作有自己的上限，名字由动作名变成复数：`redoStep` → `stepRedos`、`rerunCommand` → `commandReruns`、`fix` → `fixes`、`conflictFix` → `conflictFixes`、`startOver` → `startOvers`、`mergeBaseBranch` → `baseBranchMerges`、`retryLand` → `landRetries`；`split` 的上限是 `splitDepth`。
 
 **implement 的结果**（第四节）：`Implemented`、`AgentFailed`、`Disputed`、`AlreadyDone`、`Unclear`。
 
@@ -152,7 +152,7 @@ questions: 最多 5 个
 
 `fix` 和 `conflictFix` 做法一样（回 implement 在 head 上改），但起因和证据不同，所以是两个动作、两个上限。
 
-另外三个**由规则直接执行**，不经过 triage：`rerunCommand`（`commandReruns`）、`baseMerge`（`baseMerges`）、`landRetry`（`landRetries`）。
+另外三个**由规则直接执行**，不经过 triage：`rerunCommand`（`commandReruns`）、`mergeBaseBranch`（`baseBranchMerges`）、`retryLand`（`landRetries`）。
 
 **`redoStep` 和 `rerunCommand` 都是"同一步再做一遍"，但不合并**（2026-11-17）：
 
@@ -227,8 +227,8 @@ questions: 最多 5 个
 
 | 情况 | 处理 |
 |---|---|
-| base 动了 | 规则：`baseMerge`，重新 build；只有 base 的改动碰到分支改过的文件，review 才重做（#1210） |
-| push 遇到瞬时错误 | 规则：`landRetry`，从保存的 head 重新落地（#1221） |
+| base 动了 | 规则：`mergeBaseBranch`，重新 build；只有 base 的改动碰到分支改过的文件，review 才重做（#1210） |
+| push 遇到瞬时错误 | 规则：`retryLand`，从保存的 head 重新落地（#1221） |
 | push 被拒且重试也没用 | `toPerson`（environment） |
 | 分支已经不在了 | `startOver` |
 
@@ -299,8 +299,8 @@ summary: 给人读的一句话
 |---|---|---|---|---|---|---|
 | **`fixes`** | `fix`：build 红、review 有 findings，回 implement 在 head 上修 | ➡ 接着往下做 | 每个 attempt | **6** | recipe | `rounds` |
 | **`conflictFixes`** | `conflictFix`：合并冲突，回 implement 在 head 上解 | ➡ 接着往下做 | 每个 attempt | **6** | recipe | 没有自己的名字，借用 `rounds` 的值 |
-| `baseMerges` | `baseMerge`：base 动了合并进来，再 build | ➡ 接着往下做 | 每个 attempt | 10 | 常量 | `BASE_MERGES_LIMIT` |
-| **`landRetries`** | `landRetry`：push 遇到瞬时错误后，同一个 head 再落地一次（#1221），不跑 agent | ↻ 同一步再做一遍 | 每个 attempt | 3 | 常量 | 现在和 `redoStep` 共用 `TRANSIENT_RETRIES_LIMIT` 的计数 |
+| `baseBranchMerges` | `mergeBaseBranch`：base 动了合并进来，再 build | ➡ 接着往下做 | 每个 attempt | 10 | 常量 | `BASE_MERGES_LIMIT` |
+| **`landRetries`** | `retryLand`：push 遇到瞬时错误后，同一个 head 再落地一次（#1221），不跑 agent | ↻ 同一步再做一遍 | 每个 attempt | 3 | 常量 | 现在和 `redoStep` 共用 `TRANSIENT_RETRIES_LIMIT` 的计数 |
 | **`stepRedos`** | `redoStep`：瞬时错误、崩溃、没有回执、回答读不懂、`run.turns`/`run.wall` 用完后的"接着做" | ↻ 同一步再做一遍 | 每个 attempt | 3 | 常量 | `TRANSIENT_RETRIES_LIMIT` |
 | `stepRedoWaits` | 每次 `redoStep` 之前等多久 | （跟随 `stepRedos`） | — | 1、5、15 分钟 | 常量 | `TRANSIENT_WAITS` |
 | `commandReruns` | `rerunCommand`：检查红了，在同一个 commit 上立刻再跑 | ↻ 同一步再做一遍 | 每次红 | 1 | 常量 | 0108 §17，没有名字 |
@@ -330,7 +330,7 @@ summary: 给人读的一句话
       ticket:  { startOvers: 2 }                    # 一张票
   ```
 
-- **一张票最多自动跑多少次 run**：`(startOvers + 1) × (1 + fixes + conflictFixes + stepRedos)` = 3 × (1 + 6 + 6 + 3) = 48 次。`landRetries`、`baseMerges`、`commandReruns` 不跑 agent，不计入。
+- **一张票最多自动跑多少次 run**：`(startOvers + 1) × (1 + fixes + conflictFixes + stepRedos)` = 3 × (1 + 6 + 6 + 3) = 48 次。`landRetries`、`baseBranchMerges`、`commandReruns` 不跑 agent，不计入。
 - **单张票的花费上限这次不加**：系统还没有按票统计花费的设计。以后需要时叫 `ticket.usd`，放在 `ticket` 分组里。
 
 **`fixes` 定为 6 的依据**：最近 7 天 lingtai 落地 228 张票，0 到 1 次修完的占 79%，5 次以上的占 4%（只看 feature 票是 13%）。按"第几次 review 通过"统计：第 4 次 review 时 16 张过了 8 张，第 5 次时 8 张过了 1 张。人工额外给修复的票里，#1170、#1177 都是多给 1 次就过了。
@@ -363,7 +363,7 @@ summary: 给人读的一句话
 |---|---|---|---|
 | `TRANSIENT_RETRIES_LIMIT`（`domain/src/failure/respond.ts:586`） | 3 | 原地重跑被瞬时错误打断的 run；落地重试也算在里面 | `stepRedos`、`landRetries` |
 | `TRANSIENT_WAITS`（`respond.ts:589`） | 1、5、15 分钟 | 每次重跑之前等多久 | `stepRedoWaits` |
-| `BASE_MERGES_LIMIT`（`respond.ts:579`） | 10 | base 动了之后自动合并 | `baseMerges` |
+| `BASE_MERGES_LIMIT`（`respond.ts:579`） | 10 | base 动了之后自动合并 | `baseBranchMerges` |
 | 检查红了再跑一次（0108 §17） | 1 次 | build、声明的检查或 base check 红了立刻再跑 | `commandReruns` |
 | 回答读不懂再问（0108 §18） | 1 次 | 再问同一个 agent | 并入 `stepRedos` |
 | design 提问（`actions/src/agent-action.ts:150-154`，#649） | 2 | 同一张票 design 问满 2 次后不让再问 | `designQuestions` |
@@ -420,7 +420,7 @@ summary: 给人读的一句话
 - 原则 1–6；处理分三层。
 - WIP：只来自 implement 的 agent 异常结束，由灵台提交到工作分支；删掉 #1170。
 - implement 的五种结果：`Implemented`、`AgentFailed`、`Disputed`、`AlreadyDone`、`Unclear`；提问统一用 `TriageQuestion` 格式；沿用现有路由，新加 `already-done` 和终态 `satisfied`。
-- 六个动作：`redoStep`、`fix`、`conflictFix`、`startOver`、`split`、`toPerson`；规则直接执行的三个：`rerunCommand`、`baseMerge`、`landRetry`。
+- 六个动作：`redoStep`、`fix`、`conflictFix`、`startOver`、`split`、`toPerson`；规则直接执行的三个：`rerunCommand`、`mergeBaseBranch`、`retryLand`。
 - `redoStep` 只用于"这一步本身没做完"；"做完了但不通过"走 `fix`。
 - `split`：全自动，只拆一层，母票放回队列，子票落地后验收并补完。
 - 上限名字和数值见第九节：`fixes` 6、`conflictFixes` 6、`stepRedos` 3、`landRetries` 3、`startOvers` 2、`splitDepth` 1、`designQuestions` 5；单张票的花费上限这次不加。
