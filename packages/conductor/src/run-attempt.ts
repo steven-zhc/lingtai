@@ -2035,7 +2035,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                         ...(briefedWith.locator === undefined ? {} : { locator: briefedWith.locator }),
                       },
                     }),
-                ranBefore: reached.results.map((each) => each.action),
+                // Everything before the action the crash stopped at, which is the last result.
+                resumedAfter: reached.results.slice(0, -1),
               },
             }
             yield* options.emit({

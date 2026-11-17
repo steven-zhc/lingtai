@@ -3332,3 +3332,49 @@ describe('a file-brief the crash stopped before it ran still runs on the rerun (
     expect(b.end).toEqual(a.end)
   })
 })
+
+describe('a rerun in place resumes at the cut-off action, whatever came before it (#1201)', () => {
+  it('does not run a preceding run action again, so its clean cannot delete the cut-off edits', async () => {
+    const { bodies } = watching()
+    const { actionsAt: base } = watchingActions()
+    const tree = new Set<string>()
+    let cleans = 0
+    let lap = 0
+    const editsSeenByAgent: boolean[] = []
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+      step === 'implement'
+        ? [
+            {
+              name: 'clean the tree',
+              kind: 'run',
+              yields: 'nothing',
+              run: async () => {
+                cleans += 1
+                tree.clear()
+                return { ...PASSED, evidence: 'cleaned' }
+              },
+            },
+            {
+              name: 'write the change',
+              kind: 'agent',
+              yields: 'commit',
+              run: async () => {
+                editsSeenByAgent.push(tree.has('uncommitted.ts'))
+                if (lap++ === 0) {
+                  tree.add('uncommitted.ts')
+                  return { ...crashed('API Error: 503'), runtime: 'claude-code' }
+                }
+                return { ...PASSED, head: 'feedface00' }
+              },
+            },
+          ]
+        : base(step, actions)
+    const { emit } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(cleans).toBe(1)
+    expect(editsSeenByAgent).toEqual([false, true])
+    expect(result.steps.some((s) => s.step === 'build')).toBe(true)
+  })
+})

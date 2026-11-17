@@ -527,10 +527,11 @@ export interface ActionContext {
    */
   rerun?: number
   /**
-   * On a rerun, the names of the actions the cut-off visit had already reached: only a `file-brief:` among
-   * them is not read again, because one the crash stopped before it ran has never been read (#1201).
+   * On a rerun, the results the cut-off visit recorded for the actions **before** the one that was cut
+   * off, by position (#1201). Those actions are not run again, whatever their kind — a `run:` whose clean
+   * step resets the tree would delete the edits the cut-off agent left — and each stands with its verdict.
    */
-  ranBefore?: readonly string[]
+  resumedAfter?: readonly PipelineResult['results'][number][]
   /** The worktree. Actions run where the agent worked, never anywhere else. */
   cwd: string
   /**
@@ -945,6 +946,26 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
     const keptSpent = new Set<string>()
 
     for (const [index, action] of actions.entries()) {
+      // **A rerun in place resumes at the action that was cut off** (#1201): every action before it, of any
+      // kind, keeps the verdict the cut-off visit gave it and is not executed again.
+      const resumedResult = context.rerun === undefined ? undefined : context.resumedAfter?.[index]
+      if (resumedResult !== undefined) {
+        context.log?.note(`${step}:${action.name}`, 'not run again — a rerun in place resumes at the cut-off action')
+        results.push({
+          ...resumedResult,
+          evidence: `not run again: this is a rerun in place; ${resumedResult.evidence}`,
+        })
+        if (resumedResult.document !== undefined) {
+          context = {
+            ...context,
+            design: {
+              document: resumedResult.document,
+              ...(resumedResult.locator === undefined ? {} : { locator: resumedResult.locator }),
+            },
+          }
+        }
+        continue
+      }
       const kept = options.kept?.find((k) => k.name === action.name && !keptSpent.has(k.name))
       if (kept !== undefined && !options.waived?.some((w) => w.name === action.name)) {
         keptSpent.add(kept.name)
@@ -956,25 +977,6 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
           findings: [...kept.findings],
           ...(kept.summary === undefined ? {} : { summary: kept.summary }),
           clipped: kept.clipped,
-        })
-        continue
-      }
-      // **A rerun in place is not a second read** (#1201): a `file-brief:` reads a file the cut-off run may
-      // have edited, and the rerun is owed the brief the first run had. `context.design` is that brief.
-      if (context.rerun !== undefined && action.kind === 'file-brief' && context.ranBefore?.includes(action.name)) {
-        const briefed = context.design
-        context.log?.note(
-          `${step}:${action.name}`,
-          'not read again — a rerun in place keeps the brief it was cut off with',
-        )
-        results.push({
-          action: action.name,
-          verdict: 'passed',
-          evidence: 'not read again: this is a rerun in place, briefed with the design the cut-off run was',
-          findings: [],
-          ...(briefed?.locator === undefined || briefed.document === undefined
-            ? {}
-            : { document: briefed.document, locator: briefed.locator }),
         })
         continue
       }
@@ -1017,11 +1019,14 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
        * A retry could only help where attempt 1 died *before* opening a session,
        * and 0057's own subject is an agent that started — which opened one.
        *
-       * So what a `did-not-finish` costs is 0057 §1–3 and nothing else, and
-       * that is the half that works: no round (§2), no stand-down (§3), and the
-       * pass reports it to a person. Whether to spend another agent on it is
+       * So this loop never retries. What a `did-not-finish` costs is 0057 §1–3: no
+       * round (§2), no stand-down (§3), and the pass reports it. Whether another
+       * agent is spent on it is decided above this loop, not by a constant in it: a
+       * crash a transient API error caused is run again automatically, in place and
+       * under a dispatch id of its own, within the attempt's `TRANSIENT_RETRIES_LIMIT`
+       * (0108 §12, #1201); any other is a person's, or
        * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
-       * §3c's judge, not a constant in a loop here.
+       * §3c's judge.
        */
       const started = Date.now()
       context.log?.note(tag, `started · ${action.kind} on ${context.onSha.slice(0, 7)}${round}`)
