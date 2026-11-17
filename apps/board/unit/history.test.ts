@@ -238,6 +238,7 @@ const SAMPLES = {
       decision: decideRoute(NOT_ASKED, { _tag: 'NotAsked' }),
     },
   ],
+  StepRerunInPlace: [{ runId: RUN, step: 'implement', rerun: 1, said: 'API Error: 503', waitMs: 60_000 }],
   ConductorPaused: [{ by: 'human:steven', reason: 'maintenance', until: null, holdsAcrossStarts: false }],
   ConductorResumed: [{ by: 'human:steven' }],
   DayCeilingReached: [{ day: '2026-11-11', reportedUsd: 20, estimatedUsd: 5, ceilingUsd: 25 }],

@@ -393,6 +393,7 @@ export const STREAMS = {
   BaseChecked: ['int-'],
   PassRouted: ['pass-'],
   ProposalRouted: ['pass-'],
+  StepRerunInPlace: ['pass-'],
   ConductorPaused: ['ctl-'],
   ConductorResumed: ['ctl-'],
   DayCeilingReached: ['ctl-'],

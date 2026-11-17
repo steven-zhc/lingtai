@@ -69,6 +69,7 @@ import { Cause, Effect, Exit } from 'effect'
 import {
   NEEDS_INPUT,
   liftPromise,
+  rerunId,
   type ActionPort,
   type ActionContext,
   type ActionFinding,
@@ -930,7 +931,7 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
         // bought for (`conduct.ts` only continues the loop when the fixer
         // committed), so the commit is what makes each round's review a
         // different reviewer.
-        const reviewId = `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`
+        const reviewId = rerunId(`${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`, context)
         const landedBlock =
           moved === undefined || deps.landed === undefined ? '' : landedOnBaseBlock(moved, yield* deps.landed(moved))
         // The fix's own delta (#671): only when a review of this pass has read an
@@ -1636,7 +1637,7 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
         // session id is derived from it, so reusing it would resume the
         // implementer's session — and here it would resume a session that has not
         // happened yet, which is the same mistake read backwards.
-        const draftId = `${context.runId}:design:${spec.name}`
+        const draftId = rerunId(`${context.runId}:design:${spec.name}`, context)
         context.log?.note('design', `${draftId} · drafting for #${issue.ref}`)
         // `context.again` is the pass's own reduce over its visits (`sentBackTo`),
         // and it is null on every way through — which is every pass but one a

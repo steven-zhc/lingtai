@@ -23,6 +23,7 @@ import {
   makeWorkAction,
   makeWorktreeAction,
   commandEffect,
+  rerunId,
 } from '@lingtai/actions'
 import type { LandedCommit, LandedPath, LandedTitle } from '@lingtai/actions'
 import { FAILED, markFailed } from '@lingtai/actions/spans'
@@ -756,6 +757,7 @@ export function continuationRound(run: AttemptState, granted: boolean): number {
 export const continuationSpent = (run: AttemptState) => ({
   baseMerges: run.baseMerges ?? 0,
   conflictRounds: run.conflictRounds ?? 0,
+  transientRetries: run.transientRetries ?? 0,
 })
 
 /** srt's own explanation out of a `SandboxWrapFailed`'s `cause`. */
@@ -1353,6 +1355,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         roundsSpent: continuationRound(runState, granted),
         baseMergesSpent: continuationSpent(runState).baseMerges,
         conflictRoundsSpent: continuationSpent(runState).conflictRounds,
+        transientRetriesSpent: continuationSpent(runState).transientRetries,
         ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
         ...(criterion !== null
           ? {
@@ -1824,6 +1827,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * there is nothing in the worktree it could have left dirty.
        */
       let stoppedBy: string | null = null
+      /** Where the first implementer dispatch found the tree: a rerun's receipt is measured from it too (#1201). */
+      let implementerStartedAt: string | null = null
       /**
        * Conflict fix rounds dispatched so far (#653). A conflict round leaves
        * `round` where `rounds` was, so `round` alone would hand Claude Code the
@@ -4420,7 +4425,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * true: prose in a prompt is not a guard, and the agent that ignores it is
            * exactly the one the guard is for.
            */
-          const startedAt = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+          const startedAt =
+            brief.context.rerun !== undefined && implementerStartedAt !== null
+              ? implementerStartedAt
+              : yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+          implementerStartedAt = startedAt
           const implementDecision = yield* decideSandbox
           const wired = yield* Effect.result(
             host.wire({
@@ -4446,8 +4455,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const spend = spendFor(spec.limits)
           const dispatched = runtimeNamed(spec.agent ?? options.runtime.capabilities.id)
           const agentEnv = runnableEnv({ ...env.values, ...wiring.env })
+          // The session id derives from this, never the stream's `runId` (#1201).
+          const dispatchId = rerunId(runId, brief.context)
           const spawned = dispatched.invocation?.({
-            runId,
+            runId: dispatchId,
             cwd: tree.path,
             settingsPath: wiring.settingsPath,
             env: agentEnv,
@@ -4567,7 +4578,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 // the socket's scope closes (#1043).
                 const outcome = yield* dispatched.run({
                   ...(brief.context.signal === undefined ? {} : { signal: brief.context.signal }),
-                  runId,
+                  runId: dispatchId,
                   cwd: tree.path,
                   prompt: implementerParts.map((part) => (typeof part === 'string' ? part : part.text)).join(''),
                   ...(spec.model === undefined ? {} : { model: spec.model }),
@@ -4770,10 +4781,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
           // Keyed on where the fix came from and not on `refusal`: a conflict round
           // keeps its own session id whichever brief it was given.
-          const fixId =
+          const fixId = rerunId(
             from === 'merge'
               ? `${runId}:fix:${round}:merge:${continuation?.resumedWaitId ?? 'start'}:${++conflictFixes}`
-              : `${runId}:fix:${round}`
+              : `${runId}:fix:${round}`,
+            brief.context,
+          )
 
           log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
           runLog.note('fix', `round ${round} for ${from}`)
@@ -5152,6 +5165,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 roundsSpent: continuation.roundsSpent,
                 baseMergesSpent: continuation.baseMergesSpent,
                 conflictRoundsSpent: continuation.conflictRoundsSpent,
+                transientRetriesSpent: continuation.transientRetriesSpent,
                 ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                 ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                 ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),

@@ -520,6 +520,12 @@ export interface ActionContext {
   prompted?: (promptVersion: string, prompt: string | ComposedPrompt, runtimeVersion: string | null) => Promise<void>
   /** The commit this verdict is about, and the only thing that makes it stale. */
   onSha: string
+  /**
+   * **This visit is the Nth rerun in place of one a transient API error cut off** (0108 §12, #1201);
+   * absent on any other. Every agent dispatch id carries it (`rerunId`), because Claude Code's session
+   * id is derived from the dispatch id and a reused one is refused.
+   */
+  rerun?: number
   /** The worktree. Actions run where the agent worked, never anywhere else. */
   cwd: string
   /**
@@ -1243,4 +1249,9 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
 function elapsed(ms: number): string {
   const s = Math.round(ms / 1000)
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
+}
+
+/** `id`, with `:rerun:<n>` when this visit is a rerun in place (#1201): a session id is never reused. */
+export function rerunId(id: string, context: Pick<ActionContext, 'rerun'>): string {
+  return context.rerun === undefined ? id : `${id}:rerun:${context.rerun}`
 }

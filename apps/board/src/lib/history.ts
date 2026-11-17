@@ -478,6 +478,8 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    */
   PassRouted: routedLine,
   ProposalRouted: routedLine,
+  StepRerunInPlace: (d) =>
+    `${need(d, 'step')} was cut off by an API error and runs again in place, after ${Math.round(Number(need(d, 'waitMs')) / 60_000)} min (rerun ${need(d, 'rerun')})`,
 
   // -------------------------------------------------------------- control --
   // The commit is the row, not a detail under it. A start is the only moment a
