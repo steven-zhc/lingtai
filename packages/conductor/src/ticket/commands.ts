@@ -34,6 +34,10 @@ import {
   type WaitId,
   askTransition,
   closeChecks,
+  finishTriageTransition,
+  startTriageTransition,
+  type FinishTriageDecline,
+  type StartTriageDecline,
   closeTransition,
   reduceTicket,
   resolvedEvents,
@@ -58,10 +62,11 @@ import {
   type SnapshotReadOptions,
 } from '@lingtai/event-store/store'
 import { type StepAction } from '@lingtai/recipe'
-import { Effect, Result } from 'effect'
+import { Cause, Effect, Exit, Result } from 'effect'
 
 import { editHash } from '../attempts.ts'
 import { resolveEndActions, type TerminalOutcome } from '../end-step.ts'
+import { recordPrompt } from '../record-prompt.ts'
 import type { Tickets } from '../ticket-store.ts'
 
 export type { SplitChildState }
@@ -310,7 +315,7 @@ function releaseWith(
 
 /** The append at an expected version: `true` when another writer got there first, any other failure the caller's. */
 function appendLost(
-  store: EventStore,
+  store: Pick<EventStore, 'append'>,
   ticketId: string,
   version: number,
   events: readonly ToAppend[],
@@ -433,6 +438,186 @@ export function askTicketEffect(
     if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
     const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
     return lost ? ({ ok: false, lost: true } as const) : ({ ok: true } as const)
+  })
+}
+
+/** What a triage command reads and appends through: the narrowest store the daemon's catch-up already holds. */
+export type TriageStore = Pick<EventStore, 'read' | 'readTypes' | 'append'>
+
+export type StartTriageResult = { ok: true } | { ok: false; refusal: StartTriageDecline } | { ok: false; lost: true }
+
+/**
+ * `TriageStarted` at the attempt the caller fixed. Refused when the wait is not current or the reduce already holds
+ * that attempt or a later one — a lost race is `already-started`, never retried here. A version conflict is `lost`: the
+ * caller reads again and asks again, each try a fresh transition.
+ */
+export function startTriage(
+  ticketId: string,
+  options: SnapshotReadOptions & {
+    store: TriageStore
+    waitId: WaitId
+    attempt: number
+    by: Parameters<typeof startTriageTransition>[1]['by']
+  },
+): Effect.Effect<StartTriageResult, unknown> {
+  return Effect.gen(function* () {
+    const state = yield* readThroughSnapshot(options.store, ticketReducer, ticketId, 'all', options)
+    // The reduce keeps `triage.started` only for a wait the ticket started; for any other the stream is the evidence.
+    let startedUnseen: number | undefined
+    if (!state.waits.some((w) => w.waitId === options.waitId)) {
+      const events = yield* Effect.tryPromise({ try: () => options.store.read(ticketId), catch: (e) => e })
+      for (const e of events) {
+        const d = e.data as { waitId?: unknown; attempt?: number }
+        if (e.type === 'TriageStarted' && d.waitId === options.waitId && typeof d.attempt === 'number') {
+          startedUnseen = Math.max(startedUnseen ?? 0, d.attempt)
+        }
+      }
+    }
+    const decided = startTriageTransition(state, {
+      waitId: options.waitId,
+      attempt: options.attempt,
+      by: options.by,
+      ...(startedUnseen === undefined ? {} : { startedUnseen }),
+    })
+    if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
+    const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
+    return lost ? ({ ok: false, lost: true } as const) : ({ ok: true } as const)
+  })
+}
+
+type FinishTriageInput = Parameters<typeof finishTriageTransition>[1]
+
+export type FinishTriageResult = { ok: true } | { ok: false; refusal: FinishTriageDecline } | { ok: false; lost: true }
+
+/**
+ * `WaitTriaged`, while the wait is current. `ifVersion` is the version a caller decided on: a stream that moved since
+ * is `lost` (a refusal `changed`, said the way a conflict is). The retry loop stays the caller's (0015).
+ */
+export function finishTriage(
+  ticketId: string,
+  options: SnapshotReadOptions & {
+    store: TriageStore
+    ifVersion?: number
+    /** A function is settled after the read, so what changed while it ran (a caller's abort) is seen. */
+    result: FinishTriageInput['result'] | (() => FinishTriageInput['result'])
+  } & Pick<FinishTriageInput, 'waitId' | 'attempt' | 'headSha' | 'by'>,
+): Effect.Effect<FinishTriageResult, unknown> {
+  return Effect.gen(function* () {
+    const state = yield* readThroughSnapshot(options.store, ticketReducer, ticketId, 'all', options)
+    const decided = finishTriageTransition(state, {
+      waitId: options.waitId,
+      attempt: options.attempt,
+      headSha: options.headSha,
+      result: typeof options.result === 'function' ? options.result() : options.result,
+      by: options.by,
+      ...(options.ifVersion === undefined ? {} : { ifVersion: options.ifVersion }),
+    })
+    if (!decided.ok) {
+      return decided.refusal.reason === 'changed'
+        ? ({ ok: false, lost: true } as const)
+        : ({ ok: false, refusal: decided.refusal } as const)
+    }
+    const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
+    return lost ? ({ ok: false, lost: true } as const) : ({ ok: true } as const)
+  })
+}
+
+export type TriageRunRecord =
+  | {
+      _tag: 'Prompted'
+      promptVersion: string
+      runtimeVersion: string | null
+      prompt: string
+    }
+  | {
+      _tag: 'Spent'
+      runtime: string
+      outcome: {
+        turns: number
+        durationMs: number
+        costUsd: number | null
+        usage?: PayloadOf<'RunSpent'>['usage']
+      }
+    }
+
+/**
+ * A fact about one triage run, kept on the ticket stream (where run facts belong is 0129's to decide). It has no
+ * transition: nothing about the stream refuses it. `Prompted` is `recordPrompt`, which never rejects and is not
+ * retried. `Spent` is tried five times, and **a retry is not "nothing was written"** — a dropped connection can reject
+ * after the transaction committed — so each try first looks for an identical `RunSpent` since the first read that
+ * succeeded. Answers `null` once it has landed, otherwise the last error's message.
+ */
+export function recordTriageRun(
+  ticketId: string,
+  options: { store: EventStore; waitId: WaitId; record: TriageRunRecord; log?: (line: string) => void },
+): Effect.Effect<string | null> {
+  const { store, waitId, record } = options
+  const log = options.log ?? (() => {})
+  const spentFor = { _tag: 'Triage', waitId } as const
+  if (record._tag === 'Prompted') {
+    return Effect.promise(() =>
+      recordPrompt(
+        store,
+        ticketId,
+        {
+          for: spentFor,
+          promptVersion: record.promptVersion,
+          runtimeVersion: record.runtimeVersion,
+          prompt: record.prompt,
+        },
+        log,
+      ),
+    ).pipe(Effect.as(null))
+  }
+  const { outcome } = record
+  return Effect.gen(function* () {
+    // Captured from the first read that succeeds, so a failure on that very first read still retries.
+    let since: number | null = null
+    let lastError: unknown = null
+    for (let i = 0; i < 5; i += 1) {
+      const tried = yield* Effect.exit(
+        Effect.gen(function* () {
+          const current = yield* Effect.tryPromise({ try: () => store.read(ticketId), catch: (e) => e })
+          if (since === null) since = current.length
+          const alreadyLanded = current.slice(since).some((e) => {
+            if (e.type !== 'RunSpent') return false
+            const data = e.data as PayloadOf<'RunSpent'>
+            return (
+              data.for._tag === 'Triage' &&
+              data.for.waitId === waitId &&
+              data.turns === outcome.turns &&
+              data.durationMs === outcome.durationMs &&
+              data.costUsd === outcome.costUsd
+            )
+          })
+          if (alreadyLanded) return
+          yield* Effect.tryPromise({
+            try: () =>
+              store.append(ticketId, current.length, [
+                {
+                  type: 'RunSpent',
+                  actor: 'conductor',
+                  data: parsePayload('RunSpent', {
+                    for: spentFor,
+                    runtime: record.runtime,
+                    turns: outcome.turns,
+                    durationMs: outcome.durationMs,
+                    usage: outcome.usage ?? [],
+                    costUsd: outcome.costUsd,
+                  }),
+                },
+              ]),
+            catch: (e) => e,
+          })
+        }),
+      )
+      if (Exit.isSuccess(tried)) return null
+      if (Cause.hasInterruptsOnly(tried.cause)) return yield* Effect.failCause(tried.cause as Cause.Cause<never>)
+      lastError = Cause.squash(tried.cause)
+    }
+    const message = lastError instanceof Error ? lastError.message : String(lastError)
+    log(`triage ${waitId}: RunSpent append failed — ${message}`)
+    return message
   })
 }
 

@@ -123,10 +123,11 @@ What recurs where there is no owner:
 ## Not built yet
 
 All of it except the aggregates already owned (Account, GitHub App, Discussion,
-Backlog finding, `ext-subscribers`) and Project's (0128, in progress): the
-Ticket, Attempt, Integration and Control owners, the transition functions for
-Ticket and Attempt, moving the requests off `ctl-conductor`, the reactions of
-§5, the reduce-backed queue and convergence of §6, and the test of §7.
+Backlog finding, `ext-subscribers`, Ticket) and Project's (0128, in progress):
+the Attempt, Integration and Control owners, the transition functions for
+Attempt, moving the requests off `ctl-conductor`, the reactions of §5, the
+reduce-backed queue and convergence of §6, and the test of §7 for the
+aggregates still without an owner.
 
 ## Not decided here
 

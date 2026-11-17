@@ -117,6 +117,18 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'TicketSplit'",
   },
   {
+    event: 'TriageStarted',
+    why: "`ticket.ts`'s transition returns the event and `conductor/src/ticket/commands.ts` appends the value, so the finder cannot attribute it",
+    file: 'packages/domain/src/ticket.ts',
+    anchor: "type: 'TriageStarted'",
+  },
+  {
+    event: 'WaitTriaged',
+    why: "`ticket.ts`'s transition returns the event and `conductor/src/ticket/commands.ts` appends the value, so the finder cannot attribute it",
+    file: 'packages/domain/src/ticket.ts',
+    anchor: "type: 'WaitTriaged'",
+  },
+  {
     event: 'WaitResolved',
     why: "`ticket.ts`'s transition returns the event and `conductor/src/ticket/commands.ts` appends the value, so the finder cannot attribute it",
     file: 'packages/domain/src/ticket.ts',

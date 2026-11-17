@@ -1062,6 +1062,86 @@ export function askTransition(
   }
 }
 
+/**
+ * A wait is current when it is the one the ticket is blocked on — or when the reduce has never seen it, which a stream
+ * triage was handed without its `WaitStarted` is (the leniency `triage.ts` has always had).
+ */
+export function waitIsCurrentOrUnknown(state: TicketState, waitId: WaitId): boolean {
+  if (!state.waits.some((w) => w.waitId === waitId)) return true
+  return state.lifecycle.status === 'blocked' && state.lifecycle.waitId === waitId
+}
+
+export type StartTriageDecline = { reason: 'wait-not-current' } | { reason: 'already-started'; attempt: number }
+
+/**
+ * A triage starts at the attempt the caller fixed, and is refused when the wait's reduce already holds that attempt or a
+ * later one: the race lost is read off `triage.started`, never worked out as "started + 1", which would make the loser
+ * the starter of the next attempt and buy a second agent.
+ */
+export function startTriageTransition(
+  state: TicketState,
+  input: {
+    waitId: WaitId
+    attempt: number
+    by: PayloadOf<'TriageStarted'>['by']
+    /** The highest attempt already started for a wait the reduce has never seen (it keeps none), read off the stream. */
+    startedUnseen?: number
+  },
+): { ok: true; events: ToAppend[] } | { ok: false; refusal: StartTriageDecline } {
+  if (!waitIsCurrentOrUnknown(state, input.waitId)) return { ok: false, refusal: { reason: 'wait-not-current' } }
+  const seen = state.waits.findLast((w) => w.waitId === input.waitId)?.triage.started?.attempt
+  const started = seen ?? input.startedUnseen ?? null
+  if (started !== null && started >= input.attempt) {
+    return { ok: false, refusal: { reason: 'already-started', attempt: started } }
+  }
+  return {
+    ok: true,
+    events: [
+      {
+        type: 'TriageStarted',
+        actor: 'conductor',
+        data: parsePayload('TriageStarted', { waitId: input.waitId, attempt: input.attempt, by: input.by }),
+      },
+    ],
+  }
+}
+
+export type FinishTriageDecline = { reason: 'wait-not-current' } | { reason: 'changed' }
+
+/** A triage's answer is recorded while its wait is current, and — when the caller decided on a version — only at it. */
+export function finishTriageTransition(
+  state: TicketState,
+  input: {
+    waitId: WaitId
+    attempt: number
+    headSha: string
+    result: PayloadOf<'WaitTriaged'>['result']
+    by: PayloadOf<'WaitTriaged'>['by']
+    ifVersion?: number
+  },
+): { ok: true; events: ToAppend[] } | { ok: false; refusal: FinishTriageDecline } {
+  if (!waitIsCurrentOrUnknown(state, input.waitId)) return { ok: false, refusal: { reason: 'wait-not-current' } }
+  if (input.ifVersion !== undefined && state.version !== input.ifVersion) {
+    return { ok: false, refusal: { reason: 'changed' } }
+  }
+  return {
+    ok: true,
+    events: [
+      {
+        type: 'WaitTriaged',
+        actor: 'conductor',
+        data: parsePayload('WaitTriaged', {
+          waitId: input.waitId,
+          attempt: input.attempt,
+          headSha: input.headSha,
+          result: input.result,
+          by: input.by,
+        }),
+      },
+    ],
+  }
+}
+
 export type CloseDecline = { reason: 'already-closed' } | { reason: 'landed' } | { reason: 'changed' }
 
 /** A close is refused from either terminal, and when the stream moved since the caller's decision (#604). */
