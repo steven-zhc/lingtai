@@ -240,6 +240,7 @@ export function makeProcessAction(spec: ProcessActionSpec): ActionPort {
               evidence: `the first run of \`${spec.run}\` failed too\n${second.evidence}`,
               findings: [],
               ...(wrapFailed ? { notWrapped: true as const } : {}),
+              ...(unavailable === undefined ? {} : { sandboxUnavailable: unavailable }),
             }
           }
           const answer = yield* spec.flaky({

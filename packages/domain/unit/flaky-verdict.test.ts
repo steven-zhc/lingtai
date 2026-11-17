@@ -42,6 +42,7 @@ describe('flakyVerdict', () => {
     expect(f.claim).toBe(flakyClaim(ENTRY, 'pnpm test'))
     expect(f.claim).not.toContain('f'.repeat(40))
     expect(f.failureScenario).toContain('f'.repeat(40))
+    expect(f.failureScenario).toContain('AssertionError: nope')
     expect(v.evidence).toContain('red then green')
     expect(v.evidence).toContain('abcdef1')
   })

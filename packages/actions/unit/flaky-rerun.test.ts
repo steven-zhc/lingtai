@@ -90,4 +90,27 @@ describe('a run: check reruns once', () => {
       expect(s.calls.length).toBe(2)
     }
   })
+
+  it('a sandbox that becomes unavailable on the rerun keeps its routing metadata', async () => {
+    let n = 0
+    const port = makeProcessAction({
+      name: 'check',
+      run: 'pnpm test',
+      env: {},
+      step: 'build',
+      command: () => Effect.succeed(outcome({})),
+      flaky: lets,
+      sandbox: {
+        profile: () => ({}) as never,
+        wrap: () =>
+          ++n === 1
+            ? Effect.succeed({ argv: ['x'], env: {} } as never)
+            : Effect.fail({ _tag: 'SandboxUnavailable', reason: 'cache gone', sentences: [] } as never),
+      } as never,
+    })
+    const r: any = await Effect.runPromise(port.run(context) as Effect.Effect<any>)
+    expect(r.verdict).toBe('failed')
+    expect(r.sandboxUnavailable).toContain('cache gone')
+    expect(r.notWrapped).toBe(true)
+  })
 })

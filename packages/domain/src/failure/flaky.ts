@@ -113,16 +113,26 @@ export function flakyVerdict(input: FlakyInput): FlakyVerdict {
     proofs.push(proof)
   }
 
-  const failLines = input.first.split('\n').filter((l) => /^\s*FAIL\s/.test(l))
+  const lines = input.first.split('\n')
+  const isFail = (l: string): boolean => /^\s*FAIL\s/.test(l)
+  const isSummary = (l: string): boolean => /^\s*(Test Files|Tests)\s/.test(l)
   const findings: Finding[] = names.map((entry) => {
-    const own = failLines.filter((l) => l.includes(entry)).map((l) => l.trim())
+    // From this test's FAIL line to the next one: the assertion, expected/actual and stack come with it.
+    const own: string[] = []
+    for (let i = 0; i < lines.length; i++) {
+      if (!isFail(lines[i] as string) || !(lines[i] as string).includes(entry)) continue
+      let j = i + 1
+      while (j < lines.length && !isFail(lines[j] as string) && !isSummary(lines[j] as string)) j++
+      own.push(...lines.slice(i, j))
+    }
     return {
       file: fileOf(entry),
       line: null,
       claim: flakyClaim(entry, input.command),
       failureScenario: [input.head === undefined ? null : `head ${input.head}`, ...(own.length === 0 ? [entry] : own)]
         .filter((l): l is string => l !== null)
-        .join('\n'),
+        .join('\n')
+        .slice(0, 4000),
       severity: 'minor',
     }
   })
