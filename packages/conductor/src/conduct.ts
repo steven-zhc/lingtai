@@ -3190,6 +3190,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 : undefined
           const keptFrom = continuation?.released?.runId ?? previous?.runId
           if (keptWip && keptFrom !== undefined && (continuation === null ? previous : true)) {
+            // Set before any IO that can fail or be interrupted: until the saved work is back on the cut,
+            // nothing this pass publishes may replace the arm that holds it. Cleared only on a full restore.
+            if (releasedHead !== undefined) savedWorkNotRestored = true
             const carried = yield* carryKeptWork({
               git: (args, raw) =>
                 Effect.result(
@@ -3210,6 +3213,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             })
             // A rollback that failed leaves conflict markers or staged edits: no agent starts on that.
             if (carried?.wedged !== undefined) return { notCut: carried.wedged }
+            // Null: the kept commit touched nothing, so there is nothing to restore.
+            if (carried === null) savedWorkNotRestored = false
             if (carried !== null) {
               carriedWork = carried
               log(
@@ -3238,9 +3243,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // failed or took only part is a head that cannot be continued, never a brief with a clean tree.
               if (releasedHead !== undefined && (carried.unapplied !== null || carried.leftOut.length > 0)) {
                 headGone = `the kept work could not be restored: ${carried.unapplied ?? `${carried.leftOut.join(', ')} did not apply`}`
-                savedWorkNotRestored = true
                 return { notCut: headGone }
               }
+              savedWorkNotRestored = false
             }
           }
           // `head` is the whole of what moves `onSha`, and the action puts it on
