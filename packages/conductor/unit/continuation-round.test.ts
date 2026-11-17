@@ -52,3 +52,22 @@ describe('continuation spent accounting (#1200)', () => {
     expect(continuationSpent(reduceAttempt([]))).toEqual({ baseMerges: 0, conflictRounds: 0, transientRetries: 0 })
   })
 })
+
+describe('a rerun in place clears the failure it recovers from (#1201)', () => {
+  it('reads a crash, a rerun and a proposed completion as not failed, and keeps the count', () => {
+    const event = makeStream('pass-1201')
+    const run = reduceAttempt([
+      event('RunFailed', { runId: 'pass-1201', kind: 'crash', detail: 'API Error: 503' }),
+      event('StepRerunInPlace', {
+        runId: 'pass-1201',
+        step: 'implement',
+        rerun: 1,
+        said: 'API Error: 503',
+        waitMs: 60_000,
+      }),
+      event('RunProposedCompletion', { runId: 'pass-1201', headSha: 'abc' }),
+    ])
+    expect(run.failure).toBeNull()
+    expect(run.transientRetries).toBe(1)
+  })
+})

@@ -309,6 +309,12 @@ function wallOf(detail: string): RuntimeId | null {
   return said?.kind === 'account-limit' ? said.runtime : null
 }
 
+/** Whether `detail` is a runtime sentence a rerun can clear (0108 §12, #1201). */
+function transientSaid(detail: string): boolean {
+  const said = classify({ platform: 'runtime', text: detail })
+  return said?.platform === 'runtime' && said.kind === 'transient'
+}
+
 const baseChecks = new WeakMap<EventStore, ReturnType<typeof createBaseCheck>>()
 function baseCheckFor(store: EventStore, log: (line: string) => void, home: string) {
   let check = baseChecks.get(store)
@@ -4937,7 +4943,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               neverStarted: { agent: dispatched.capabilities.id, detail: fixed.failure.detail },
             }
           }
-          if (!committed) {
+          // **A fixer that committed and was then cut off by a transient API error** is still cut off
+          // (#1201): the walk reruns it in place, so the commit is not the end of the round.
+          const cutOffTransient = fixed.failure?.kind === 'crash' && transientSaid(fixed.failure.detail)
+          if (!committed || cutOffTransient) {
             // A decline judged the findings or the refusal rather than being cut
             // off mid-run, so `interrupted` does not stand for it either; a
             // crash or a wall does, in the runtime's own word for it (`#468`).

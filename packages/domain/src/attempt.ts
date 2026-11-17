@@ -577,7 +577,8 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
     // A rerun in place raises the count by its own number, never by one: a replay cannot double it (#1201).
     case 'StepRerunInPlace': {
       const d = event.data as PayloadOf<'StepRerunInPlace'>
-      return { ...state, ...at, transientRetries: Math.max(state.transientRetries ?? 0, d.rerun) }
+      // The cut-off's failure is not the attempt's: the rerun is the run now, so a recovery reads as one.
+      return { ...state, ...at, failure: null, transientRetries: Math.max(state.transientRetries ?? 0, d.rerun) }
     }
 
     case 'StepStarted': {
