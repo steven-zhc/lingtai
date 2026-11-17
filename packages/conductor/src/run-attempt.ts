@@ -109,6 +109,8 @@ import {
   offerFor,
   routeNext,
   STEPS,
+  TRANSIENT_RETRIES_LIMIT,
+  TRANSIENT_WAITS,
   type JudgeReply,
   baseRedText,
   type AttemptNext,
@@ -123,7 +125,7 @@ import {
 import type { RuntimeId } from '@lingtai/domain'
 import type { AttemptRef } from '@lingtai/domain/wait'
 import { kindOfAction, type Recipe, type StepAction } from '@lingtai/recipe'
-import { Cause, type Context, Effect, Exit } from 'effect'
+import { Cause, type Context, Duration, Effect, Exit } from 'effect'
 
 // `whatArrived`, `Judging`, `Judged`: `attempt-steps.ts` still holds them, and
 // this closes an ESM cycle with the module that imports values from this one
@@ -994,6 +996,8 @@ export interface AttemptOptions {
     /** The base merges and conflict rounds the attempt's stream already holds: per attempt, not per pass (0108 §8, #1200). */
     readonly baseMergesSpent?: number
     readonly conflictRoundsSpent?: number
+    /** The transient retries the attempt's stream already holds (#1221). */
+    readonly transientRetriesSpent?: number
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
     readonly landedOnBase?: {
       readonly paths: readonly string[]
@@ -1068,6 +1072,10 @@ export interface AttemptPortOptions {
   readonly sandboxAt?: (step: Step) => StepOutcome['sandbox']
   readonly judge?: (on: Judging) => Effect.Effect<Judged>
   readonly mergeBase?: (toSha: string) => Effect.Effect<MergeBaseAnswer>
+  /** The waits before each `land-again`, indexed by the retries already made; absent is `TRANSIENT_WAITS` (#1221). */
+  readonly transientWaits?: readonly Duration.Input[]
+  /** Appends one route durably, answering false when the store refused; a `land-again` is taken only once it did (#1221). */
+  readonly appendRoute?: (route: RouteTaken) => Effect.Effect<boolean>
   /**
    * Starts the merge of the lane's `baseSha` in the attempt's own worktree, with `--no-commit`,
    * before a conflict round's agent does (#1120). Effect-only: it is not on `AttemptOptions`.
@@ -1179,6 +1187,8 @@ export interface RouteTaken {
    * walk — position cannot say which `StepEnded` it was.
    */
   readonly ended: { readonly version: number; readonly action: string } | null
+  /** Already appended before the walk returned (a `land-again`, #1221), so the batch skips it. */
+  readonly appended?: boolean
 }
 
 /** The limits that take a destination off the offer. `base-merges` is the free one (#593): it bounds a base that keeps moving, and costs no agent. */
@@ -1362,6 +1372,9 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      * reaches a person again at the next move, and `Requeue` starts over.
      */
     let baseMergesSpent = options.from?.baseMergesSpent ?? 0
+    let transientRetriesSpent = options.from?.transientRetriesSpent ?? 0
+    // What this pass's rule landed again, for the sentence a hold says once the retries are spent (#1221).
+    const landedAgainThisPass = { times: 0, minutes: 0 }
     /** The merge-conflict fix rounds this attempt (#653), per attempt for the same reason. */
     let conflictRoundsSpent = options.from?.conflictRoundsSpent ?? 0
     const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
@@ -1528,12 +1541,19 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      * carrying findings above the bar.
      */
     const routeProposal = (
-      proposal: Proposal,
+      proposalRaised: Proposal,
       reported: { step: Step; ending: StepReport } | null,
       arrived: { readonly findings: readonly ActionFinding[]; readonly evidence: string },
       ended: RouteTaken['ended'],
     ): Effect.Effect<boolean> =>
       Effect.gen(function* () {
+        // The retries spent, this pass's re-landings go on the proposal so the hold says how many (#1221).
+        // Stored with the route, so a replay says the same. Only once none is left on offer.
+        const spentRetries = transientRetriesSpent >= TRANSIENT_RETRIES_LIMIT
+        const proposal: Proposal =
+          proposalRaised._tag === 'MergeRefused' && spentRetries && landedAgainThisPass.times > 0
+            ? { ...proposalRaised, landedAgain: { ...landedAgainThisPass } }
+            : proposalRaised
         const offer = offerFor(
           proposal,
           { rounds: roundLimit, restarts: restartLimit, conflictRounds: ceilings.rounds },
@@ -1542,6 +1562,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             restarts: ceilings.restartsSpent,
             baseMerges: baseMergesSpent,
             conflictRounds: conflictRoundsSpent,
+            transientRetries: transientRetriesSpent,
           },
         )
         // **Before the judge** (#744): a declared judge at `red` would otherwise be paid first and
@@ -1589,7 +1610,22 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           offer.proposal._tag === 'FixerDisagrees'
             ? { findings: recheck, evidence: offer.proposal.said ?? '' }
             : arrived
-        const reply = yield* replyFor(offer, shown, options.judge)
+        // **Before the judge** (#1221, 0108 §15): origin not answering is a rule's, so a declared judge
+        // `when: merge-refused` is never paid while a `land-again` is on offer. A `Selected` reply, because
+        // `routeMove` replays this route and refuses a `Selected` decision paired with anything else.
+        const landAgain = offer.available.find((c) => c.id === 'land-again')
+        const landWait =
+          landAgain !== undefined && landAgain.next._tag === 'LandAgain'
+            ? ((options.transientWaits ?? TRANSIENT_WAITS)[landAgain.next.retry - 1] ?? '0 millis')
+            : null
+        const reply: JudgeReply | { readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string } } =
+          landAgain !== undefined && landAgain.next._tag === 'LandAgain'
+            ? {
+                _tag: 'Selected',
+                candidate: 'land-again',
+                why: `origin did not answer the land; landing again from ${onSha} after ${Duration.format(Duration.fromInputUnsafe(landWait ?? '0 millis'))}, retry ${landAgain.next.retry} of ${TRANSIENT_RETRIES_LIMIT}`,
+              }
+            : yield* replyFor(offer, shown, options.judge)
         if ('neverStarted' in reply) {
           // 0031 §3, at the third depth the same wall is met at: the judge
           // itself is an agent, and an account-wide wall is the conductor's to
@@ -1635,13 +1671,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // Read before `record` moves `onSha` to the merge commit (#671).
         const approvedHeadStands = approvedAt !== null && onSha === approvedAt
         const reviewedHeadStands = reviewedSha !== null && reviewedSha === onSha
-        record({
-          step: 'proposed',
-          ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
-          results: [],
-        })
         const chose = routed.chose ?? routed.to
-        routes.push({
+        const taken: RouteTaken = {
           from: reported?.step ?? 'proposed',
           chose,
           to: routed.to,
@@ -1651,7 +1682,36 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           reply,
           decision,
           ended,
+        }
+        // **A land-again spends a retry, so its route is durable before anything is spent** (#1221): the
+        // batch after the walk is best effort and a replay would count none. A store that refuses holds the
+        // attempt for a person exactly as it stood, with nothing recorded and nothing waited.
+        let appended = false
+        if (next._tag === 'LandAgain') {
+          appended = options.appendRoute === undefined ? false : yield* options.appendRoute(taken)
+          if (options.appendRoute !== undefined && !appended) {
+            stopped = reported
+            end = {
+              _tag: 'WaitOnPerson',
+              reason: {
+                _tag: 'ProposedEscalated',
+                run: { runId: options.context.runId },
+                proposal: offer.proposal,
+                because: {
+                  _tag: 'JudgeHandedOver',
+                  why: 'the route to land again could not be recorded, so no retry was spent',
+                },
+              },
+            }
+            return false
+          }
+        }
+        record({
+          step: 'proposed',
+          ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
+          results: [],
         })
+        routes.push(appended ? { ...taken, appended: true } : taken)
 
         switch (next._tag) {
           case 'MergeBase':
@@ -1705,6 +1765,16 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             lapStart = steps.length
             at = 'build'
             return true
+          case 'LandAgain': {
+            // The route is recorded, so the log says what is being waited for; then the wait. Nothing
+            // moves: not `onSha`, not the reviewed head, not the lap, and nothing is built or reviewed again.
+            transientRetriesSpent = next.retry
+            landedAgainThisPass.times += 1
+            landedAgainThisPass.minutes += Duration.toMillis(Duration.fromInputUnsafe(landWait ?? '0 millis')) / 60_000
+            yield* Effect.sleep(landWait ?? '0 millis')
+            at = 'merge'
+            return true
+          }
           case 'FixRound':
             // The same bookkeeping `take` always did: the lap's own findings
             // become the next lap's `recheck` (0038 §2), and a round is spent.

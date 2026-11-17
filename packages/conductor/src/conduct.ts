@@ -274,6 +274,7 @@ import {
   claimStepEffect,
   outcomeOf,
   runAttemptEffect,
+  type RouteTaken,
 } from './run-attempt.ts'
 import { RUN_LOG_END, claudeConfigDirFor, runLogEnd, runLogPath } from './run-log.ts'
 import { runtimesOf } from './runtimes-of.ts'
@@ -576,6 +577,8 @@ export interface RunOnceOptions {
   gitEnv?: NodeJS.ProcessEnv
   /** The waits between tries of a landing's git network call (#1029); a test passes zeros. Default `UNREACHABLE_WAITS`. */
   unreachableWaits?: readonly Duration.Input[]
+  /** The waits before each `land-again` (#1221); absent is `TRANSIENT_WAITS`. */
+  transientWaits?: readonly Duration.Input[]
   /** Overrides the clone source. The tests point it at a local repository. */
   remote?: string
   /**
@@ -759,6 +762,7 @@ export function continuationRound(run: AttemptState, granted: boolean): number {
 export const continuationSpent = (run: AttemptState) => ({
   baseMerges: run.baseMerges ?? 0,
   conflictRounds: run.conflictRounds ?? 0,
+  transientRetries: run.transientRetries ?? 0,
 })
 
 /** srt's own explanation out of a `SandboxWrapFailed`'s `cause`. */
@@ -1356,6 +1360,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         roundsSpent: continuationRound(runState, granted),
         baseMergesSpent: continuationSpent(runState).baseMerges,
         conflictRoundsSpent: continuationSpent(runState).conflictRounds,
+        transientRetriesSpent: continuationSpent(runState).transientRetries,
         ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
         ...(criterion !== null
           ? {
@@ -5222,9 +5227,48 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         } satisfies RunOnceResult
       }
 
+      // One `ProposalRouted` for one route: what the batch after the walk appends, and what a
+      // `land-again` appends itself before it waits (#1221).
+      const routeEvent = (route: RouteTaken) => ({
+        type: 'ProposalRouted' as const,
+        actor: 'conductor',
+        // `{runId, offer, reply, decision}` (0120 §3, §5; `events.ts`'s
+        // own doc on `ProposalRouted`) — the five derived fields
+        // (`from`/`chose`/`to`/`why`/`ceiling`) stay on `RouteTaken`
+        // for this file's own reading (the run-log line above,
+        // `restartReason`, `nextPrompt`'s brief) but are not stored a
+        // second time; a reader of the event replays `routeNext`.
+        data: parsePayload('ProposalRouted', {
+          runId,
+          // `ended` is the `StepEnded` the proposal was taken from, recorded
+          // when it was emitted: this batch comes after every lap (#931). The
+          // findings and output are on it, so a route that names it does not
+          // repeat them (0100 §14, #932); one that cannot name it keeps them.
+          offer: {
+            ...route.offer,
+            proposal: route.ended === null ? route.offer.proposal : stripEvidence(route.offer.proposal),
+            ended: route.ended,
+          },
+          reply: route.reply,
+          decision: route.decision,
+        }),
+      })
+
       const pass = yield* runAttemptEffect({
         recipe,
         context: passContext,
+        // A `land-again` spends the attempt's budget, so its route is durable before the wait: a store that
+        // refuses answers false and the attempt holds for a person instead of spending a retry nobody can replay.
+        appendRoute: (route) =>
+          appendAt(runId, [routeEvent(route)]).pipe(
+            Effect.as(true),
+            Effect.catchDefect((defect: unknown) =>
+              Effect.sync(() => {
+                log(`ProposalRouted was refused by the store: ${whyOf(defect)}`)
+                return false
+              }),
+            ),
+          ),
         emit,
         recordPrompt: (call) => recordPrompt(store, runId, call, log),
         actionsAt,
@@ -5233,6 +5277,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ceilings,
         judge,
         mergeBase,
+        transientWaits: options.transientWaits,
         mergeForConflict,
         conflictEvidence,
         baseIsRed,
@@ -5249,6 +5294,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 roundsSpent: continuation.roundsSpent,
                 baseMergesSpent: continuation.baseMergesSpent,
                 conflictRoundsSpent: continuation.conflictRoundsSpent,
+                transientRetriesSpent: continuation.transientRetriesSpent,
                 ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                 ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                 ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
@@ -5334,34 +5380,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       for (const route of pass.routes) {
         runLog.note('route', `${route.from} → ${route.to}: ${route.why}`)
       }
-      if (pass.routes.length > 0) {
-        yield* appendAt(
-          runId,
-          pass.routes.map((route) => ({
-            type: 'ProposalRouted' as const,
-            actor: 'conductor',
-            // `{runId, offer, reply, decision}` (0120 §3, §5; `events.ts`'s
-            // own doc on `ProposalRouted`) — the five derived fields
-            // (`from`/`chose`/`to`/`why`/`ceiling`) stay on `RouteTaken`
-            // for this file's own reading (the run-log line above,
-            // `restartReason`, `nextPrompt`'s brief) but are not stored a
-            // second time; a reader of the event replays `routeNext`.
-            data: parsePayload('ProposalRouted', {
-              runId,
-              // `ended` is the `StepEnded` the proposal was taken from, recorded
-              // when it was emitted: this batch comes after every lap (#931). The
-              // findings and output are on it, so a route that names it does not
-              // repeat them (0100 §14, #932); one that cannot name it keeps them.
-              offer: {
-                ...route.offer,
-                proposal: route.ended === null ? route.offer.proposal : stripEvidence(route.offer.proposal),
-                ended: route.ended,
-              },
-              reply: route.reply,
-              decision: route.decision,
-            }),
-          })),
-        ).pipe(
+      // A route already appended before its wait (`land-again`, #1221) is not appended a second time.
+      const unwritten = pass.routes.filter((route) => route.appended !== true)
+      if (unwritten.length > 0) {
+        yield* appendAt(runId, unwritten.map(routeEvent)).pipe(
           // A defect and not an interrupt: the pass is still interruptible here.
           Effect.catchDefect((defect: unknown) =>
             Effect.sync(() => {
