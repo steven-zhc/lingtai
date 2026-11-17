@@ -45,6 +45,7 @@ import {
   type WaitId,
   WIP_COMMIT_PREFIX,
   accountLimitReleases,
+  askedAgainOn,
   continuableRelease,
   cutOffPromptOf,
   expandPrompt,
@@ -1355,9 +1356,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           releasedFrom.runId,
         )
         const cutOff = cutOffPromptOf(releasedEvents)
-        const cutOffFor = cutOff?.for ?? null
+        // The call the wall cut off is the release's own step: another step's last call is not it.
+        const cutOffFor = cutOff !== null && cutOff.for.step === cause.step ? cutOff.for : null
         const recordedPrompt =
-          cutOff === null || reduced.pendingPrompt !== null ? null : yield* recordedPromptOf(cutOff)
+          cutOff?.prompt == null || cutOffFor === null || reduced.pendingPrompt !== null
+            ? null
+            : yield* recordedPromptOf(cutOff.prompt)
         return {
           step: cause.step,
           waive: [],
@@ -1384,7 +1388,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             head,
             rerun:
               cutOffFor?._tag === 'Action'
-                ? { for: cutOffFor, prompt: recordedPrompt, accountReruns }
+                ? {
+                    for: cutOffFor,
+                    prompt: recordedPrompt,
+                    accountReruns,
+                    askedAgain: askedAgainOn(releasedEvents, cutOffFor.step),
+                  }
                 : { for: null, prompt: null, accountReruns },
           },
         }
@@ -5226,7 +5235,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // **A fixer that committed and was then cut off by a transient API error** is still cut off
           // (#1201): the walk reruns it in place, so the commit is not the end of the round.
           const cutOffTransient = fixed.failure?.kind === 'crash' && transientSaid(fixed.failure.detail)
-          if (!committed || cutOffTransient) {
+          // **Nor a fixer that committed and then met the account's wall** (#1205): it is released `AccountLimit`
+          // at the ending like any run the wall cut off, never walked on to a review.
+          const cutOffByWall = fixed.failure?.kind === 'crash' && wallOf(fixed.failure.detail) !== null
+          if (!committed || cutOffTransient || cutOffByWall) {
             // A decline judged the findings or the refusal rather than being cut
             // off mid-run, so `interrupted` does not stand for it either; a
             // crash or a wall does, in the runtime's own word for it (`#468`).
@@ -5256,12 +5268,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // tells `keepUncommittedWork` to look — null only where the dispatch
           // itself reports none.
           stoppedBy = fixed.failure ? fixed.failure.kind : null
-          // #655: `committed` below drops the failure, so the blocked branch never sees
-          // the account's wall a fixer met after it had committed. Lock the account here instead.
-          const walled = fixed.failure?.kind === 'crash' ? wallOf(fixed.failure.detail) : null
-          if (fixed.failure && walled !== null) {
-            yield* standDownAccount({ of: 'mid-run', step: 'implement' }, walled, fixed.failure.detail)
-          }
           // **A conflict round must have committed the merge** (#1120): `baseSha` has to be in
           // the head's history, or `build` and `review` would be spent on a resolution that is
           // not one. A failed read is *not an ancestor*.
@@ -5512,6 +5518,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                         },
                         prompt: continuation.released.rerun.prompt,
                         accountReruns: continuation.released.rerun.accountReruns,
+                        askedAgain: continuation.released.rerun.askedAgain,
                       },
                     }
                   : {}),

@@ -1662,6 +1662,8 @@ export const StepRerunInPlace = z.object({
   /** The words that said the rerun was in order: a runtime's, a registry's, or the unreadable answer. */
   said: z.string(),
   waitMs: z.number().int().nonnegative(),
+  /** True where the rerun is a rule's *ask again* of an unreadable answer (#1224): a continuation must not grant a second (#1205). */
+  askedAgain: z.boolean().optional(),
 })
 
 // --------------------------------------------------------------- control ----

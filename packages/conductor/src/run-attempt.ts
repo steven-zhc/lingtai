@@ -1010,6 +1010,8 @@ export interface AttemptOptions {
       readonly for: { readonly step: Step; readonly name: string; readonly round: number }
       readonly prompt: string | null
       readonly accountReruns: number
+      /** The cut-off call was itself an *ask again* of an unreadable answer: it is not granted a second (#1205). */
+      readonly askedAgain?: boolean
     }
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
     readonly landedOnBase?: {
@@ -1407,7 +1409,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     /** This visit is itself an `ask-again`'s (#1224). Cleared when the visit starts, so a later arrival is asked once more. */
     let arrivedAskedAgain = false
     /** The one place `StepRerunInPlace` is appended: a crash's rerun and a rule's both spend the count before the wait. */
-    const emitRerunInPlace = (step: Step, retry: number, said: string, wait: Duration.Input) =>
+    const emitRerunInPlace = (step: Step, retry: number, said: string, wait: Duration.Input, askedAgain = false) =>
       options.emit({
         type: 'StepRerunInPlace',
         data: {
@@ -1416,6 +1418,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           rerun: retry,
           said,
           waitMs: Duration.toMillis(Duration.fromInputUnsafe(wait)),
+          ...(askedAgain ? { askedAgain: true } : {}),
         },
       })
     /** The rerun an agent step is handed: the design it was briefed with, and every action before the one cut off or unread. */
@@ -1804,6 +1807,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                 ? offer.proposal.raw
                 : '',
             rerunWait,
+            offer.proposal._tag === 'AnswerUnreadable',
           )
         }
         record({
@@ -2021,6 +2025,9 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       // its recorded brief (#1205).
       const accountRerun = options.from?.rerun
       const accountRerunsSpent = accountRerun?.accountReruns ?? 0
+      const firstAccountVisit =
+        accountRerun !== undefined && rerun === null && at === options.from?.step && !steps.some((v) => v.step === at)
+      if (firstAccountVisit && accountRerun.askedAgain === true) askingAgain = at
       const visitContext: ActionContext =
         rerun !== null
           ? { ...rerun.context, rerun: transientRetriesSpent + accountRerunsSpent }
