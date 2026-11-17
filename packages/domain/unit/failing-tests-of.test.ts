@@ -26,4 +26,14 @@ describe('failingTestsOf', () => {
   it('answers null for tsc output', () => {
     expect(failingTestsOf('src/a.ts(1,2): error TS2322: nope\n')).toBeNull()
   })
+  it('strips a |project| label of any shape', () => {
+    expect(failingTestsOf(' FAIL  |@app/unit| a.test.ts > example\n Test Files  1 failed (1)\n')).toEqual([
+      'a.test.ts > example',
+    ])
+  })
+  it('names a suite that failed to load as the file alone', () => {
+    expect(failingTestsOf(' FAIL  |unit| load.test.ts [ load.test.ts ]\n Test Files  1 failed (1)\n')).toEqual([
+      'load.test.ts',
+    ])
+  })
 })
