@@ -104,6 +104,8 @@ export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal
         return 'build'
       case 'LandAgain':
         return 'merge'
+      case 'RerunStep':
+        return candidate.next.step
       case 'Requeued':
         return 'claim'
       case 'HandToPerson':
@@ -117,6 +119,10 @@ export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal
       return 'build'
     case 'land-again':
       return 'merge'
+    case 'rerun-setup':
+      return 'prepared'
+    case 'ask-again':
+      return proposal._tag === 'AnswerUnreadable' ? proposal.from : 'review'
     case 'restart':
       return 'claim'
     case 'hand-to-person':

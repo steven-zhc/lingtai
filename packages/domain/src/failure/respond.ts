@@ -568,6 +568,19 @@ export function rerunInPlace(
 }
 
 /**
+ * **Whether a setup a registry refused is run again in place, and after how long** (0108 §18,
+ * #1224): null when the output is on no registry row, or when `spent` has used the attempt's
+ * `TRANSIENT_RETRIES_LIMIT`. The wait is the one a crash's count would get.
+ */
+export function rerunSetup(output: string, spent: number): { readonly wait: (typeof TRANSIENT_WAITS)[number] } | null {
+  if (spent >= TRANSIENT_RETRIES_LIMIT) return null
+  const seen = classify({ platform: 'registry', text: output })
+  if (seen?.platform !== 'registry' || seen.kind !== 'transient') return null
+  const wait = TRANSIENT_WAITS[spent]
+  return wait === undefined ? null : { wait }
+}
+
+/**
  * Whether a proposal born at `step` got far enough for `implement` to have
  * something to fix — `judge.ts`'s own `anAgentHasRun`, read off `STEPS`
  * rather than a second list of the steps that qualify.
@@ -594,7 +607,13 @@ function bornAtOrAfterImplement(step: Step): boolean {
  * `merge-base` is the one candidate that does, and it is a `MergeBase` and not a
  * `FixRound` for that reason: it spends no round (#593).
  */
-export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent): RouteOffer {
+export function offerFor(
+  proposal: Proposal,
+  policy: RoutingPolicy,
+  spent: Spent,
+  /** This visit is itself the step's second asking (#1224): `ask-again` is once per arrival. */
+  askedAgain = false,
+): RouteOffer {
   const available: Candidate[] = []
   const unavailable: ExcludedCandidate[] = []
 
@@ -683,6 +702,14 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       restart(false)
       break
     case 'SetupRefused': {
+      // #1224, 0108 §18: a registry's 5xx is a rule's. Free, and absent (never `unavailable`) when
+      // the output is on no row or the retries are spent, as `land-again` is.
+      if (rerunSetup(proposal.output, spent.transientRetries ?? 0) !== null) {
+        available.push({
+          id: 'rerun-setup',
+          next: { _tag: 'RerunStep', step: 'prepared', retry: (spent.transientRetries ?? 0) + 1 },
+        })
+      }
       const hasCriterion = proposal.output.trim() !== ''
       if (bornAtOrAfterImplement(proposal.from)) round('fix-lines', 'implement', hasCriterion)
       restart(hasCriterion)
@@ -695,6 +722,18 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       break
     }
     case 'AnswerUnreadable': {
+      // #1224, 0108 §18: the same agent is asked again, once per arrival. Only where an agent was
+      // dispatched to be asked: `proposed` and `merge` have none to re-dispatch.
+      if (
+        (proposal.from === 'design' || proposal.from === 'review') &&
+        !askedAgain &&
+        (spent.transientRetries ?? 0) < TRANSIENT_RETRIES_LIMIT
+      ) {
+        available.push({
+          id: 'ask-again',
+          next: { _tag: 'RerunStep', step: proposal.from, retry: (spent.transientRetries ?? 0) + 1 },
+        })
+      }
       const hasCriterion = proposal.raw.trim() !== ''
       if (bornAtOrAfterImplement(proposal.from)) round('fix-lines', 'implement', hasCriterion)
       restart(hasCriterion)

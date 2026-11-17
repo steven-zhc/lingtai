@@ -1385,6 +1385,38 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      * cut-off visit is on `steps` by now — so the rerun is given the list as the first one saw it.
      */
     let rerun: { readonly reached: readonly StepReached[]; readonly context: ActionContext } | null = null
+    /** What the visit being routed was handed and answered, for an `ask-again` to build its rerun from (#1224). */
+    let lastVisit: {
+      readonly context: ActionContext
+      readonly reached: readonly StepReached[]
+      readonly results: readonly ActionOutcome[]
+    } | null = null
+    /** The step a rule just asked again (#1224): the next visit to it is the second asking, and is asked no third time. */
+    let askingAgain: Step | null = null
+    /** This visit is itself an `ask-again`'s (#1224). Cleared when the visit starts, so a later arrival is asked once more. */
+    let arrivedAskedAgain = false
+    /** The rerun an agent step is handed: the design it was briefed with, and every action before the one cut off or unread. */
+    const rerunOf = (visit: NonNullable<typeof lastVisit>): NonNullable<typeof rerun> => {
+      // The design this visit's agent was briefed with, after any `file-brief:` read it back: the
+      // rerun is handed that, never a second read of a file the cut-off run may have edited.
+      const briefedWith = visit.results.filter((each) => each.document !== undefined).at(-1)
+      return {
+        reached: visit.reached,
+        context: {
+          ...(briefedWith?.document === undefined
+            ? visit.context
+            : {
+                ...visit.context,
+                design: {
+                  document: briefedWith.document,
+                  ...(briefedWith.locator === undefined ? {} : { locator: briefedWith.locator }),
+                },
+              }),
+          // Everything before the action the crash stopped at, which is the last result.
+          resumedAfter: visit.results.slice(0, -1),
+        },
+      }
+    }
     const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
     // A restart is automatic fix routing too, and a bigger kind than a round: the lap
     // that spends a human grant ends at a person rather than at a restart nobody
@@ -1572,6 +1604,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             conflictRounds: conflictRoundsSpent,
             transientRetries: transientRetriesSpent,
           },
+          arrivedAskedAgain,
         )
         // **Before the judge** (#744): a declared judge at `red` would otherwise be paid first and
         // then overruled. Only when a round is on offer — without one the pass goes to a person anyway.
@@ -1622,6 +1655,17 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // `when: merge-refused` is never paid while a `land-again` is on offer. A `Selected` reply, because
         // `routeMove` replays this route and refuses a `Selected` decision paired with anything else.
         const landAgain = offer.available.find((c) => c.id === 'land-again')
+        // **And a rerun in place** (#1224, 0108 §18): a setup a registry's 5xx refused, or an answer the
+        // machine could not read, is answered by the rule before `replyFor` or any judge. An `ask-again`
+        // needs the visit it came from; one that has none is left to today's offer.
+        const rerunCandidate = offer.available.find(
+          (c) => (c.id === 'rerun-setup' || c.id === 'ask-again') && c.next._tag === 'RerunStep',
+        )
+        const rerunNext = rerunCandidate?.next._tag === 'RerunStep' ? rerunCandidate.next : null
+        const rerunWait =
+          rerunNext !== null && rerunNext.step === 'prepared'
+            ? ((options.transientWaits ?? TRANSIENT_WAITS)[rerunNext.retry - 1] ?? '0 millis')
+            : '0 millis'
         const landWait =
           landAgain !== undefined && landAgain.next._tag === 'LandAgain'
             ? ((options.transientWaits ?? TRANSIENT_WAITS)[landAgain.next.retry - 1] ?? '0 millis')
@@ -1633,7 +1677,18 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                 candidate: 'land-again',
                 why: `origin did not answer the land; landing again from ${onSha} after ${Duration.format(Duration.fromInputUnsafe(landWait ?? '0 millis'))}, retry ${landAgain.next.retry} of ${TRANSIENT_RETRIES_LIMIT}`,
               }
-            : yield* replyFor(offer, shown, options.judge)
+            : rerunNext !== null &&
+                rerunCandidate !== undefined &&
+                (rerunNext.step === 'prepared' || lastVisit !== null)
+              ? {
+                  _tag: 'Selected',
+                  candidate: rerunCandidate.id,
+                  why:
+                    rerunNext.step === 'prepared'
+                      ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${TRANSIENT_RETRIES_LIMIT}`
+                      : `the ${rerunNext.step} answer could not be read; asking the same agent again, retry ${rerunNext.retry} of ${TRANSIENT_RETRIES_LIMIT}`,
+                }
+              : yield* replyFor(offer, shown, options.judge)
         if ('neverStarted' in reply) {
           // 0031 §3, at the third depth the same wall is met at: the judge
           // itself is an agent, and an account-wide wall is the conductor's to
@@ -1714,6 +1769,27 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             return false
           }
         }
+        // **A rerun in place spends a retry too, and is durable first** (#1224), as a crash's is: a
+        // daemon that dies during the wait has spent it. The route itself goes in the end-of-walk batch.
+        if (next._tag === 'RerunStep') {
+          yield* options.emit({
+            type: 'StepRerunInPlace',
+            data: {
+              runId: options.context.runId,
+              step: next.step,
+              rerun: next.retry,
+              said:
+                next.step === 'prepared'
+                  ? offer.proposal._tag === 'SetupRefused'
+                    ? offer.proposal.output
+                    : ''
+                  : offer.proposal._tag === 'AnswerUnreadable'
+                    ? offer.proposal.raw
+                    : '',
+              waitMs: Duration.toMillis(Duration.fromInputUnsafe(rerunWait)),
+            },
+          })
+        }
         record({
           step: 'proposed',
           ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
@@ -1781,6 +1857,22 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             landedAgainThisPass.minutes += Duration.toMillis(Duration.fromInputUnsafe(landWait ?? '0 millis')) / 60_000
             yield* Effect.sleep(landWait ?? '0 millis')
             at = 'merge'
+            return true
+          }
+          case 'RerunStep': {
+            // Nothing moves but the count and the step: not `onSha`, the lap, the rounds or the review's head.
+            transientRetriesSpent = next.retry
+            if (next.step === 'prepared') {
+              // The whole step again, from its first action: no `resumedAfter`, so an install that
+              // passed is run again and a step that is not idempotent is the recipe's to fix.
+              rerun = null
+            } else {
+              // The same agent, under `:rerun:<n>`'s dispatch id, so a reviewer is never a warm session.
+              rerun = rerunOf(lastVisit as NonNullable<typeof lastVisit>)
+              askingAgain = next.step
+            }
+            if (rerunWait !== '0 millis') yield* Effect.sleep(rerunWait)
+            at = next.step
             return true
           }
           case 'FixRound':
@@ -1913,6 +2005,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         rerun === null ? contextFor() : { ...rerun.context, rerun: transientRetriesSpent }
       const visitedBefore: readonly StepReached[] = rerun === null ? [...steps] : rerun.reached
       rerun = null
+      arrivedAskedAgain = askingAgain === at
+      askingAgain = null
       /**
        * **Once per spine visit, before the pipeline runs** (0120 §1,
        * `events.ts`'s own `StepStarted` doc). `claim` and `end` run outside this
@@ -1962,6 +2056,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           }),
         ),
       )
+      lastVisit = { context: visitContext, reached: visitedBefore, results: reached.results }
       // Only a review that was actually read: an unreadable answer, a reviewer
       // that never ran or did not finish, or an action skipped before the agent
       // reached the head read nothing (#671). One reader is enough: a pipeline
@@ -2086,25 +2181,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           const again = rerunInPlace(reason.cause, reason.detail, transientRetriesSpent)
           if (again !== null) {
             transientRetriesSpent += 1
-            // The design this visit's agent was briefed with, after any `file-brief:` read it back: the
-            // rerun is handed that, never a second read of a file the cut-off run may have edited.
-            const briefedWith = reached.results.filter((each) => each.document !== undefined).at(-1)
-            rerun = {
-              reached: visitedBefore,
-              context: {
-                ...(briefedWith?.document === undefined
-                  ? visitContext
-                  : {
-                      ...visitContext,
-                      design: {
-                        document: briefedWith.document,
-                        ...(briefedWith.locator === undefined ? {} : { locator: briefedWith.locator }),
-                      },
-                    }),
-                // Everything before the action the crash stopped at, which is the last result.
-                resumedAfter: reached.results.slice(0, -1),
-              },
-            }
+            rerun = rerunOf({ context: visitContext, reached: visitedBefore, results: reached.results })
             yield* options.emit({
               type: 'StepRerunInPlace',
               data: {
