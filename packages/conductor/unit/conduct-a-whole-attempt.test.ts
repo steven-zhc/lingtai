@@ -1578,6 +1578,71 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(run.map((e) => e.type)).toContain('RunProposedCompletion')
   })
 
+  it('does not hand a later implementer the cut-off agent’s start: it holds as produced no commits', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const ids: string[] = []
+    const two = `
+version: 2
+repo: { base: main, submodules: false }
+source: { kinds: [bug], exclude: [] }
+env: { required: [], plantAt: .env.local }
+steps:
+  implement:
+    - name: agent A
+      agent: claude-code
+      prompt: do the first half
+    - name: agent B
+      agent: claude-code
+      prompt: do the second half
+runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+`
+    const flaky: Runtime = {
+      ...runtime,
+      run: (request) => {
+        if (['review', 'fix', 'design'].some((k) => request.runId.includes(`:${k}:`))) return runtime.run(request)
+        ids.push(request.runId)
+        // A commits (the fake tree moves at its `wire`), is cut off, and its rerun commits nothing more.
+        return ids.length === 1
+          ? Effect.succeed({
+              exitCode: 1,
+              turns: 1,
+              durationMs: 500,
+              costUsd: 0.1,
+              failure: { kind: 'crash' as const, detail: 'API Error: 503 {"type":"error"}' },
+              text: null,
+              sessionId: 'sess-cut',
+            })
+          : runtime.run(request)
+      },
+    }
+
+    const result = await onceOnTestClock(
+      {
+        project,
+        client: fakeGitHub([], two),
+        runtime: flaky,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store, true),
+    )
+
+    // A, A's rerun, then B: B is dispatched once, fresh, and is not a rerun.
+    expect(ids).toHaveLength(3)
+    expect(ids[1]).toBe(`${ids[0]}:rerun:1`)
+    expect(ids[2]).not.toContain(':rerun:')
+    // B committed nothing, so the step holds; A's commit is not recorded as B's.
+    expect(result.ok).toBe('held')
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
+    expect(run.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(1)
+    expect(run.filter((e) => e.type === 'RunProposedCompletion')).toHaveLength(1)
+  })
+
   it('reruns a cut-off fix round with the very prompt it was cut off with', async () => {
     const store = memoryStore()
     const did: string[] = []

@@ -1043,6 +1043,13 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
               prompted: (promptVersion, prompt, runtimeVersion) =>
                 recordPrompt({ for: spentFor, promptVersion, runtimeVersion, prompt }),
             }
+      // **Only the action that was cut off is a rerun** (#1201): this is it (every one before it was
+      // skipped above), so every action after it in the step's list runs as on any visit — a fresh
+      // dispatch id, a fresh `startedAt`, its own diff.
+      if (context.rerun !== undefined) {
+        const { rerun: _rerun, resumedAfter: _resumedAfter, ...rest } = context
+        context = rest
+      }
 
       // Named by kind, never by `action.name` (#791): a recipe author writes the
       // name and it can be the command itself.
