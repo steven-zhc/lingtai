@@ -6,7 +6,7 @@
  * repository is never looked up in the columns: only GitHub's word on it
  * (`closed` or `open`) is known.
  */
-import type { LinkedIssue } from '@lingtai/github'
+import type { TicketLink } from '@lingtai/conductor/filter'
 
 import type { BlockedTicket } from './board.ts'
 
@@ -42,7 +42,7 @@ const WORDS: Record<BlockerState, { cls: string; word: string }> = {
 }
 
 export function blockerChip(
-  blocker: LinkedIssue,
+  blocker: TicketLink,
   project: string,
   board: BoardHalf,
   github: {

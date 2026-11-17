@@ -62,6 +62,9 @@ const effectsOf = (t: DbTickets): DbTicketsEffects => ({
   closeIssue: (n, reason) => typed(() => t.closeIssue(n, reason)),
   updateBody: (n, body, opts) => typed(() => t.updateBody(n, body, opts)),
   updateFields: (n, expected, next) => typed(() => t.updateFields(n, expected, next)),
+  addBlockedBy: (n, b) => typed(() => t.addBlockedBy(n, b)),
+  removeBlockedBy: (n, b) => typed(() => t.removeBlockedBy(n, b)),
+  listBlockedBy: (n) => typed(() => t.listBlockedBy(n)),
 })
 
 const adapt = (r: TicketReading): TicketReadingEffect => ({

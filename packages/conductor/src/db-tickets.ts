@@ -3,7 +3,7 @@ import { BodyChanged } from '@lingtai/github'
 import { Deferred, Effect } from 'effect'
 
 /**
- * `tickets` and `ticket_comments` — Lingtai's own ticket store, created on
+ * `tickets`, `ticket_comments` and `ticket_links` — Lingtai's own ticket store, created on
  * whichever database the log itself is (#379), and `dbTickets` (#380), the
  * `Tickets` implementation over those two tables for a project with no GitHub
  * App.
@@ -26,12 +26,10 @@ import { Deferred, Effect } from 'effect'
  * caches comments or reads only new rows must not assume a row is final. Neither table has a column for `url`, a label's `color`, or
  * `assignees`: `dbTickets` answers those `null`, `null` and `[]`, because
  * there is no web page, no colour, and this store tracks no assignee.
- * `dependencies` is always `{ blockedBy: 0 }`, never `null` — `discover.ts`'s
- * `TicketListing` (`:46-53`) says `null` means *the source said nothing about
- * dependencies*, and `ticket-store.ts`'s note on `Tickets.dependencies` says
- * answering the zero rather than the unread case is a rule on an
- * implementation with no notion of a blocker, not on every `Tickets` — this
- * one has none, the same as `memoryTickets`. `closeIssue`'s `reason` is
+ * `dependencies.blockedBy` is the count of *open* blockers in `ticket_links`
+ * (#1226), never `null` — this source always reads its links, so it never
+ * says nothing about them. The link verbs live here and not on `Tickets`.
+ * `closeIssue`'s `reason` is
  * accepted and not stored: nothing here reads it back.
  */
 import type { TicketListing } from './discover.ts'
@@ -62,6 +60,15 @@ const SQLITE_TICKET_COMMENTS = `
   )
 `
 
+const LINKS_TABLE = `
+  CREATE TABLE IF NOT EXISTS ticket_links (
+    project     TEXT    NOT NULL,
+    number      INTEGER NOT NULL,
+    blocked_by  INTEGER NOT NULL,
+    PRIMARY KEY (project, number, blocked_by)
+  )
+`
+
 const POSTGRES_TICKETS = `
   CREATE TABLE IF NOT EXISTS tickets (
     project     TEXT        NOT NULL,
@@ -87,7 +94,7 @@ const POSTGRES_TICKET_COMMENTS = `
 `
 
 /**
- * Creates `tickets` and `ticket_comments` on `sql`'s store if they are not
+ * Creates `tickets`, `ticket_comments` and `ticket_links` on `sql`'s store if they are not
  * already there. Safe to call every time something is about to use them,
  * including concurrently: a second run finds both tables present and changes
  * nothing.
@@ -105,6 +112,7 @@ export function ensureTicketTablesEffect(sql: TicketSql): Effect.Effect<void> {
   return Effect.gen(function* () {
     yield* execIdempotentlyEffect(port, tickets)
     yield* execIdempotentlyEffect(port, comments)
+    yield* execIdempotentlyEffect(port, LINKS_TABLE)
   })
 }
 
@@ -118,7 +126,20 @@ export function ensureTicketTablesEffect(sql: TicketSql): Effect.Effect<void> {
  * either shape (`test/tickets-contract.ts`), and `await`ing `memoryTickets()`'s
  * array still answers the array.
  */
+export interface TicketLink {
+  repository: string
+  number: number
+  title: string
+  state: 'open' | 'closed'
+}
+
 export interface DbTickets extends Tickets {
+  /** `issue` is blocked by `blocker`. Refuses a self-block, an unknown number and a cycle; an existing link is a no-op. */
+  addBlockedBy(issue: number, blocker: number): Promise<void>
+  /** Removing an absent link succeeds. */
+  removeBlockedBy(issue: number, blocker: number): Promise<void>
+  /** Every blocker, open and closed, ascending by number. */
+  listBlockedBy(issue: number): Promise<readonly TicketLink[]>
   commentBodies(issue: number): Promise<readonly string[]>
   /**
    * Writes title, labels and body together, and only if the row still holds
@@ -140,7 +161,18 @@ interface TicketRow {
   body: string
   labels: string
   state: 'open' | 'closed'
+  blocked_by: number | string
 }
+
+/** Whether `t` is a store that also reads links (a `DbTickets`). */
+export function hasTicketLinks(t: unknown): t is Tickets & Pick<DbTickets, 'listBlockedBy'> {
+  return typeof t === 'object' && t !== null && typeof (t as { listBlockedBy?: unknown }).listBlockedBy === 'function'
+}
+
+/** The open-blocker count, for a row aliased `t`; `$1` is the project. */
+const BLOCKED_BY_COUNT = `(SELECT COUNT(*) FROM ticket_links l
+     JOIN tickets b ON b.project = l.project AND b.number = l.blocked_by
+    WHERE l.project = t.project AND l.number = t.number AND b.state = 'open') AS blocked_by`
 
 /**
  * Postgres reports a duplicate `(project, number)` as SQLSTATE 23505, straight
@@ -172,16 +204,16 @@ function parseLabels(labels: string): { name: string; color: null }[] {
   return (JSON.parse(labels) as string[]).map((name) => ({ name, color: null }))
 }
 
-function toListing(row: Pick<TicketRow, 'number' | 'title' | 'labels' | 'state'>): TicketListing {
+function toListing(row: Pick<TicketRow, 'number' | 'title' | 'labels' | 'state' | 'blocked_by'>): TicketListing {
   return {
     number: row.number,
     title: row.title,
     state: row.state,
     labels: parseLabels(row.labels),
     assignees: [],
-    // Never null: this implementation has no notion of an unread dependency,
-    // only of one that is clear (CLAUDE.md, "Null is not zero").
-    dependencies: { blockedBy: 0 },
+    // Never null: this source always reads its links (CLAUDE.md, "Null is not
+    // zero"). Postgres answers COUNT(*) as a string, hence Number().
+    dependencies: { blockedBy: Number(row.blocked_by) },
     parent: null,
     subIssues: null,
   }
@@ -217,6 +249,9 @@ export interface DbTicketsEffects {
     expected: { title: string; labels: readonly string[]; body: string },
     next: { title: string; labels: readonly string[]; body: string },
   ): Effect.Effect<void, Error>
+  addBlockedBy(issue: number, blocker: number): Effect.Effect<void, Error>
+  removeBlockedBy(issue: number, blocker: number): Effect.Effect<void, Error>
+  listBlockedBy(issue: number): Effect.Effect<readonly TicketLink[], Error>
 }
 
 /**
@@ -284,7 +319,7 @@ export function makeDbTickets(sql: TicketSql, project: string, options: DbTicket
         sql.query<TicketRow>(
           `INSERT INTO tickets (project, number, title, body, labels, state, created_at, updated_at)
              VALUES ($1, (SELECT COALESCE(MAX(number), 0) + 1 FROM tickets WHERE project = $1), $2, $3, $4, 'open', $5, $5)
-             RETURNING number, title, body, labels, state`,
+             RETURNING number, title, body, labels, state, 0 AS blocked_by`,
           [project, input.title, input.body, labels, now().toISOString()],
         ),
       catch: (err) => err,
@@ -301,8 +336,8 @@ export function makeDbTickets(sql: TicketSql, project: string, options: DbTicket
     listOpenIssues: () =>
       Effect.gen(function* () {
         yield* ensureReady
-        const rows = yield* query<Pick<TicketRow, 'number' | 'title' | 'labels' | 'state'>>(
-          `SELECT number, title, labels, state FROM tickets WHERE project = $1 AND state = 'open' ORDER BY number`,
+        const rows = yield* query<Pick<TicketRow, 'number' | 'title' | 'labels' | 'state' | 'blocked_by'>>(
+          `SELECT t.number, t.title, t.labels, t.state, ${BLOCKED_BY_COUNT} FROM tickets t WHERE t.project = $1 AND t.state = 'open' ORDER BY t.number`,
           [project],
         )
         return rows.map(toListing)
@@ -312,9 +347,9 @@ export function makeDbTickets(sql: TicketSql, project: string, options: DbTicket
       Effect.gen(function* () {
         yield* ensureReady
         const rows = yield* query<TicketRow>(
-          `SELECT number, title, body, labels, state FROM tickets
-         WHERE project = $1 AND created_at >= $2
-         ORDER BY created_at, number`,
+          `SELECT t.number, t.title, t.body, t.labels, t.state, ${BLOCKED_BY_COUNT} FROM tickets t
+         WHERE t.project = $1 AND t.created_at >= $2
+         ORDER BY t.created_at, t.number`,
           [project, since.toISOString()],
         )
         return rows.map(toTicket)
@@ -324,7 +359,7 @@ export function makeDbTickets(sql: TicketSql, project: string, options: DbTicket
       Effect.gen(function* () {
         yield* ensureReady
         const rows = yield* query<TicketRow>(
-          `SELECT number, title, body, labels, state FROM tickets WHERE project = $1 AND number = $2`,
+          `SELECT t.number, t.title, t.body, t.labels, t.state, ${BLOCKED_BY_COUNT} FROM tickets t WHERE t.project = $1 AND t.number = $2`,
           [project, number],
         )
         const row = rows[0]
@@ -441,6 +476,83 @@ export function makeDbTickets(sql: TicketSql, project: string, options: DbTicket
         )
         if (rows.length === 0) return yield* Effect.fail(new Error(`#${number} changed since this form was opened`))
       }),
+
+    addBlockedBy: (issue, blocker) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        if (issue === blocker) return yield* Effect.fail(new Error(`#${issue} cannot block itself`))
+        const present = yield* query<{ number: number }>(
+          `SELECT number FROM tickets WHERE project = $1 AND number IN ($2, $3)`,
+          [project, issue, blocker],
+        )
+        const have = new Set(present.map((r) => Number(r.number)))
+        for (const n of [issue, blocker]) {
+          if (!have.has(n)) return yield* Effect.fail(noSuchTicket(project, n))
+        }
+        const links = yield* query<{ number: number; blocked_by: number }>(
+          `SELECT number, blocked_by FROM ticket_links WHERE project = $1`,
+          [project],
+        )
+        const next = new Map<number, number[]>()
+        for (const l of links) {
+          const from = Number(l.number)
+          next.set(from, [...(next.get(from) ?? []), Number(l.blocked_by)])
+        }
+        // A path blocker → … → issue means issue → blocker closes a cycle.
+        const seen = new Set<number>()
+        const walk = (at: number, path: number[]): number[] | null => {
+          if (at === issue) return path
+          if (seen.has(at)) return null
+          seen.add(at)
+          for (const to of next.get(at) ?? []) {
+            const found = walk(to, [...path, to])
+            if (found) return found
+          }
+          return null
+        }
+        const path = walk(blocker, [blocker])
+        if (path) {
+          const chain = [issue, ...path].map((n) => `#${n}`).join(' → ')
+          return yield* Effect.fail(new Error(`#${issue} blocked by #${blocker} would close a cycle: ${chain}`))
+        }
+        yield* query(
+          `INSERT INTO ticket_links (project, number, blocked_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          [project, issue, blocker],
+        )
+      }),
+
+    removeBlockedBy: (issue, blocker) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        const exists = yield* query<{ number: number }>(
+          `SELECT number FROM tickets WHERE project = $1 AND number = $2`,
+          [project, issue],
+        )
+        if (exists.length === 0) return yield* Effect.fail(noSuchTicket(project, issue))
+        yield* query(`DELETE FROM ticket_links WHERE project = $1 AND number = $2 AND blocked_by = $3`, [
+          project,
+          issue,
+          blocker,
+        ])
+      }),
+
+    listBlockedBy: (issue) =>
+      Effect.gen(function* () {
+        yield* ensureReady
+        const exists = yield* query<{ number: number }>(
+          `SELECT number FROM tickets WHERE project = $1 AND number = $2`,
+          [project, issue],
+        )
+        if (exists.length === 0) return yield* Effect.fail(noSuchTicket(project, issue))
+        const rows = yield* query<{ number: number; title: string; state: 'open' | 'closed' }>(
+          `SELECT b.number, b.title, b.state FROM ticket_links l
+             JOIN tickets b ON b.project = l.project AND b.number = l.blocked_by
+            WHERE l.project = $1 AND l.number = $2
+            ORDER BY b.number`,
+          [project, issue],
+        )
+        return rows.map((r) => ({ repository: project, number: Number(r.number), title: r.title, state: r.state }))
+      }),
   }
 }
 
@@ -458,6 +570,9 @@ export function promiseDbTickets(t: DbTicketsEffects): DbTickets {
     closeIssue: (number, reason) => runPort(t.closeIssue(number, reason)),
     updateBody: (number, body, opts) => runPort(t.updateBody(number, body, opts)),
     updateFields: (number, expected, next) => runPort(t.updateFields(number, expected, next)),
+    addBlockedBy: (issue, blocker) => runPort(t.addBlockedBy(issue, blocker)),
+    removeBlockedBy: (issue, blocker) => runPort(t.removeBlockedBy(issue, blocker)),
+    listBlockedBy: (issue) => runPort(t.listBlockedBy(issue)),
   }
 }
 
