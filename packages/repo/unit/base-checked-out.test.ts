@@ -28,7 +28,7 @@ function fakeGit(listing: () => Effect.Effect<string, RepoFailed>) {
       remoteReads.push(args)
       return listing()
     }
-    if (args[0] === 'rev-parse') return Effect.succeed(sha)
+    if (args[0] === 'rev-parse' || args[0] === 'merge-base') return Effect.succeed(sha)
     if (args[0] === 'rev-list') return Effect.succeed('1')
     return Effect.succeed('')
   }

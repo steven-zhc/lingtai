@@ -1416,6 +1416,14 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      */
     let reviewedSha: string | null = null
     /**
+     * The merge commit a disjoint base move (#1210) carried the last review to: a
+     * review that read the head whole stands for a tree the base's unrelated
+     * commits were merged into, so the walk goes past `review` without visiting
+     * it. Not a visit and not an outcome — the absence is the record. Never
+     * shared between passes.
+     */
+    let reviewCarriedTo: string | null = null
+    /**
      * The head a person approved in this continuation, until the first base merge
      * has used it (#671): that merge's review is of what came after the approval.
      * A grant continuation is a fix round, and a wait before `proposed` was never
@@ -1488,6 +1496,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       }
       mergedOnto = baseSha
       reviewedSha = null
+      reviewCarriedTo = null
       approvedAt = null
       conflictMerge = {
         baseSha,
@@ -1625,6 +1634,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         }
         // Read before `record` moves `onSha` to the merge commit (#671).
         const approvedHeadStands = approvedAt !== null && onSha === approvedAt
+        const reviewedHeadStands = reviewedSha !== null && reviewedSha === onSha
         record({
           step: 'proposed',
           ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
@@ -1673,12 +1683,25 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             conflictMerge = null
             // Only a person's approval of the head the merge started from keeps the
             // earlier read; any other base move is a full review.
-            reviewedSha = approvedHeadStands ? approvedAt : null
+            // **A move on none of the branch's files carries the review** (#1210): `build`
+            // runs on the merge commit and `review` is not visited. `null` paths are an
+            // unknown overlap, which is a full review. Never a delta: after a merge
+            // `reviewedSha...HEAD` is the base's commits.
+            reviewCarriedTo = null
+            const disjoint =
+              offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.paths.length === 0
+            if (disjoint && (reviewedHeadStands || approvedHeadStands)) {
+              reviewCarriedTo = merged.head
+              reviewedSha = null
+              landedOnBase = null
+            } else {
+              reviewedSha = approvedHeadStands ? approvedAt : null
+              landedOnBase =
+                offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
+                  ? { paths: offer.proposal.paths, fromSha: offer.proposal.fromSha, toSha: next.toSha }
+                  : null
+            }
             approvedAt = null
-            landedOnBase =
-              offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
-                ? { paths: offer.proposal.paths, fromSha: offer.proposal.fromSha, toSha: next.toSha }
-                : null
             lapStart = steps.length
             at = 'build'
             return true
@@ -1695,6 +1718,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             lapStart = steps.length
             // The merge standing for the last round is not this round's (#1120).
             conflictMerge = null
+            reviewCarriedTo = null
             if (conflictAnswer !== null) {
               if ('failed' in conflictAnswer) {
                 stopped = reported
@@ -1734,6 +1758,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     let grantedConflictMerged = false
     let conflictEvidenceRead = false
     while (at !== null && at !== 'end') {
+      // A review carried across a disjoint merge (#1210) is neither visited nor recorded.
+      if (at === 'review' && reviewCarriedTo !== null && reviewCarriedTo === onSha) {
+        reviewCarriedTo = null
+        at = nextStep('review')
+        continue
+      }
       const spec = SPEC[at]
       // **A resumed review is owed the conflict evidence** (#1120), rebuilt from the committed
       // merge. Read on the first visit past `admit` and `prepared`: until `admit`'s cut has
