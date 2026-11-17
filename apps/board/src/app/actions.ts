@@ -554,13 +554,13 @@ export async function resumeProjectNow(input: { project: string }): Promise<Acti
 }
 
 /**
- * A person lifts a runtime's usage limit (#1010). The core, and the refusal of a
- * value that is no runtime, are `liftAccountWith`'s. Revalidates on either `ok`
+ * A person lifts an account's limit (#1010). The core, and the refusal of a
+ * value that is no account, are `liftAccountWith`'s. Revalidates on either `ok`
  * answer; a refusal leaves the row standing so its sentence is not unmounted.
  */
-export async function liftAccountNow(input: { runtime: string }): Promise<ActionResult> {
+export async function liftAccountNow(input: { account: string }): Promise<ActionResult> {
   try {
-    const result = await Effect.runPromise(liftAccountWith(eventStore, input.runtime, actor()))
+    const result = await Effect.runPromise(liftAccountWith(eventStore, input.account, actor()))
     if (result.ok) revalidatePath('/', 'layout')
     return result
   } catch (err) {

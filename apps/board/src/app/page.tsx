@@ -2,7 +2,7 @@ import { inWords } from '@lingtai/conductor/queue'
 // The subpath, not the barrel: the board reads the control stream and hosts
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
 // behind it — the same reason the actions import `@lingtai/conductor/decide`.
-import type { Lock, RuntimeId } from '@lingtai/domain'
+import type { Account, Lock } from '@lingtai/domain'
 // Whether there is an App at all, which is where the bar's add-a-repository
 // lands: the picker once it exists, step 0 before. Read here and handed down
 // so `projects.tsx` stays a reducer over its arguments (#216).
@@ -710,7 +710,7 @@ function lockShape(lockRead: LockRead, only: string | undefined, registered: Reg
   const uses =
     lockRead.ok && lockRead.uses && lockRead.controlProblem === undefined
       ? lockRead.uses
-      : new Map<string, readonly RuntimeId[]>()
+      : new Map<string, readonly Account[]>()
   const registeredNames = registered.map((p) => p.project).filter((p): p is string => p !== null)
   const locksInScope: LockMap = new Map([...projectLocks].filter(([p]) => only === undefined || p === only))
   const allPaused = only === undefined && everyPaused(projectLocks, registeredNames)

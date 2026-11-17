@@ -229,7 +229,7 @@ describe('what an empty Running says about a usage limit (#1010)', () => {
   const now = new Date(2026, 10, 11, 18, 0)
   const account: Lock = {
     kind: 'account',
-    runtime: 'claude-code',
+    account: 'claude-code',
     by: 'lingtai',
     since: new Date(2026, 10, 11, 17, 0),
     until: new Date(2026, 10, 11, 23, 0),

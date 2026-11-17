@@ -59,8 +59,8 @@ export function ResumeButton({ project }: { project: string }) {
   )
 }
 
-/** On an account row: lift one runtime's usage limit, with the server's sentence beside it if it fails. */
-export function LiftButton({ runtime }: { runtime: string }) {
+/** On an account row: lift one account's limit, with the server's sentence beside it if it fails. */
+export function LiftButton({ account }: { account: string }) {
   const [pending, startTransition] = useTransition()
   const [refusal, setRefusal] = useState<string | null>(null)
   return (
@@ -68,11 +68,11 @@ export function LiftButton({ runtime }: { runtime: string }) {
       <button
         type="button"
         disabled={pending}
-        title={`lift ${runtime}'s usage limit now; every project using it may start work again`}
+        title={`lift ${account}'s limit now; every project using it may start work again`}
         onClick={() => {
           setRefusal(null)
           startTransition(async () => {
-            const result = await liftAccountNow({ runtime })
+            const result = await liftAccountNow({ account })
             if (!result.ok) setRefusal(result.detail)
           })
         }}
