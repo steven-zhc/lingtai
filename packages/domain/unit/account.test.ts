@@ -46,6 +46,7 @@ describe('the Account aggregate', () => {
       until: new Date('2026-01-01T05:00:00Z'),
       untilFrom: 'message',
       said: 'limit',
+      named: null,
       since: new Date('2026-01-01T01:00:00Z'),
       seq: 7n,
     })

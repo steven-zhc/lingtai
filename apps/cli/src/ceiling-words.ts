@@ -70,6 +70,7 @@ export function lockJson(lock: Lock): Record<string, unknown> {
         until: lock.until.toISOString(),
         untilFrom: lock.untilFrom,
         said: lock.said,
+        limit: lock.named ? { kind: lock.named.kind, resetsAt: lock.named.resetsAt?.toISOString() ?? null } : null,
       }
     default: {
       const never: never = lock

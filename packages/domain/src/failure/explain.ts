@@ -48,6 +48,50 @@ import type { BlockDiagnosis, BlockRecommendation } from '../events.ts'
 import type { RefusalReason, RunFailureKind } from '../vocabulary.ts'
 import { UNREACHABLE_PHRASE } from './classify.ts'
 
+const pad = (n: number): string => String(n).padStart(2, '0')
+const clock = (d: Date): string => `${pad(d.getHours())}:${pad(d.getMinutes())}`
+
+/** `HH:MM` when `at` is today, otherwise the date and the time. */
+export function whenLabel(at: Date, now: Date): string {
+  if (Number.isNaN(at.getTime())) return 'an unreadable time'
+  const sameDay =
+    at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth() && at.getDate() === now.getDate()
+  return sameDay ? clock(at) : `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${clock(at)}`
+}
+
+const ACCOUNT_NAMES: Readonly<Record<string, string>> = {
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  github: 'GitHub',
+}
+
+const KIND_WORDS = {
+  '5-hour': '5-hour limit',
+  weekly: 'weekly limit',
+  'monthly-spend': 'monthly spend limit',
+  rate: 'rate limit',
+  usage: 'usage limit',
+} as const
+
+/**
+ * The one wording of a limit (#1214): the account, the kind, the reset, and whether it has passed.
+ * `now` is handed in and is the only clock; a `why` stored on an event passes the instant it was
+ * written at and so never says *passed*.
+ */
+export function limitSentence(
+  account: string,
+  limit: { kind: keyof typeof KIND_WORDS; resetsAt: Date | string | null },
+  now: Date,
+): string {
+  const name = ACCOUNT_NAMES[account] ?? account
+  const head = `${name}'s ${KIND_WORDS[limit.kind]}`
+  if (limit.resetsAt === null) return `${head} — no reset named`
+  const at = new Date(limit.resetsAt)
+  return at.getTime() <= now.getTime()
+    ? `${head}, reset ${whenLabel(at, now)} — passed`
+    : `${head}, resets ${whenLabel(at, now)}`
+}
+
 /**
  * Who owns a failure — and so what a card can honestly say about it.
  *

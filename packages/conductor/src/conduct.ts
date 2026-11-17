@@ -60,6 +60,8 @@ import {
   classify,
   standDown,
   type StandDownWhat,
+  type NamedLimit,
+  limitSentence,
   type ReleaseCause,
   type AttemptState,
   type RuntimeId,
@@ -1832,7 +1834,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * now** (`true` on `appended` and on `already`), so a release that waits on the lock (#1205) is made
      * only behind one that stands.
      */
-    const standDownAccount = (what: StandDownWhat, runtime: RuntimeId, detail: string): Effect.Effect<boolean> =>
+    const standDownAccount = (
+      what: StandDownWhat,
+      runtime: RuntimeId,
+      detail: string,
+    ): Effect.Effect<{ locked: boolean; limit: NamedLimit | null; now: Date }> =>
       Effect.gen(function* () {
         const it =
           what.of === 'run'
@@ -1840,16 +1846,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             : what.of === 'step' || what.of === 'draft' || what.of === 'mid-run'
               ? `the ${what.step} step's agent`
               : `the fixing agent for ${what.action}`
-        const { until, untilFrom, said, reason } = standDown({
+        const now = new Date()
+        const { until, untilFrom, said, reason, limit } = standDown({
           detail,
           what,
           runtime,
+          now,
           backoffMs: parseDuration(backoffOf(recipe)),
         })
         const answer = yield* reachAccountLimit(store, runtime, {
           until: until.toISOString(),
           untilFrom,
           said,
+          limit,
         })
         const met = what.of === 'mid-run' ? 'met the account limit' : 'never started'
         if (answer.kind === 'appended') {
@@ -1858,12 +1867,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           log(`${it} ${met}; ${runtime} is already locked until ${answer.until.toISOString()}`)
         }
         // Locked now, by this append or an earlier one: what a release that waits on the lock may rely on (#1205).
-        return true
+        return { locked: true, limit, now }
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
             log(`could not lock the ${runtime} account: ${error.message}`)
-            return false
+            return { locked: false, limit: null, now: new Date() }
           }),
         ),
       )
@@ -3511,7 +3520,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // #655: the judge's crash is the ticket's wait, and the account's wall locks the runtime that said it.
             const walled = outcome.failure.kind === 'crash' ? wallOf(outcome.failure.detail) : null
             if (walled !== null) {
-              yield* standDownAccount({ of: 'mid-run', step: 'proposed' }, walled, outcome.failure.detail)
+              const stood = yield* standDownAccount({ of: 'mid-run', step: 'proposed' }, walled, outcome.failure.detail)
+              if (stood.limit !== null) {
+                return held(
+                  `the "${named}" judge did not answer: ${limitSentence(walled, stood.limit, stood.now)} — ` +
+                    `${outcome.failure.detail} — so the attempt is held for a person (${spent})`,
+                )
+              }
             }
             return held(
               `the "${named}" judge did not answer (${outcome.failure.kind}): ` +
@@ -5931,7 +5946,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           (reason.step === 'design' || reason.step === 'implement' || reason.step === 'review')
         ) {
           const wall = wallOf(reason.detail)
-          if (wall !== null && (yield* standDownAccount({ of: 'mid-run', step: reason.step }, wall, reason.detail))) {
+          if (
+            wall !== null &&
+            (yield* standDownAccount({ of: 'mid-run', step: reason.step }, wall, reason.detail)).locked
+          ) {
             const why = `the ${reason.step} step's agent met the ${wall} account limit; taken again once it lifts`
             runLog.note('account-limit', why)
             yield* release(why, { _tag: 'AccountLimit', runId, step: reason.step, runtime: wall })

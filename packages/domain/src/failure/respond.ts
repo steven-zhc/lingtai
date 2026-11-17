@@ -157,6 +157,39 @@ const RESET_MARKER = /\bresets?\b|\bresets_at\b|\btry again at\b|\btry again in\
 /** English month names and their abbreviations, as the runtime writes them. */
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'] as const
 
+/** The kinds of limit an account can be at (#1214). */
+export type NamedLimit = { kind: LimitKind; resetsAt: string | null }
+
+export type LimitKind = '5-hour' | 'weekly' | 'monthly-spend' | 'rate' | 'usage'
+
+const KIND_CLAUSE = /\b(5-hour|five-hour|session|weekly|monthly(?: spend)?|usage|rate)\s+limit\b/gi
+
+const kindOfWord = (word: string): LimitKind => {
+  const w = word.toLowerCase()
+  if (w === '5-hour' || w === 'five-hour' || w === 'session') return '5-hour'
+  if (w === 'weekly') return 'weekly'
+  if (w.startsWith('monthly')) return 'monthly-spend'
+  if (w === 'rate') return 'rate'
+  return 'usage'
+}
+
+/**
+ * Which limit a runtime's message is about. The limit whose clause sits just before the reset marker
+ * is the one that holds (`…monthly spend limit · … · your 5-hour limit resets 11:20pm` is the 5-hour);
+ * a message with no reset falls back to the first limit it names. Pure, and reads no clock: the reset
+ * itself is `standDown`'s one reading.
+ */
+export function limitOf(detail: string): LimitKind {
+  const marker = RESET_MARKER.exec(detail)
+  if (marker) {
+    const before = [...detail.slice(0, marker.index).matchAll(KIND_CLAUSE)]
+    const last = before[before.length - 1]
+    if (last) return kindOfWord(last[1]!)
+  }
+  const first = [...detail.matchAll(KIND_CLAUSE)][0]
+  return first ? kindOfWord(first[1]!) : 'usage'
+}
+
 function readReset(detail: string, now: Date, zone: string | undefined): Reset {
   const iso = /\b(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}))/.exec(detail)
   const clock = iso ? toReset(within(new Date(iso[1]!.replace(' ', 'T')), now)) : clockReset(detail, now, zone)
@@ -355,7 +388,7 @@ export function standDown(input: {
   now?: Date
   /** The zone a wall clock with no zone of its own is read in. Tests only — production leaves it to `hostZone()`. */
   zone?: string
-}): { until: Date; untilFrom: UntilFrom; said: string; reason: string } {
+}): { until: Date; untilFrom: UntilFrom; said: string; reason: string; limit: NamedLimit } {
   const now = input.now ?? new Date()
   const reset = readReset(input.detail, now, input.zone)
   const until = reset !== null && 'at' in reset ? reset.at : new Date(now.getTime() + input.backoffMs)
@@ -387,6 +420,10 @@ export function standDown(input: {
     until,
     untilFrom,
     said,
+    limit: {
+      kind: limitOf(input.detail),
+      resetsAt: untilFrom === 'message' || untilFrom === 'message-latest' ? until.toISOString() : null,
+    },
     reason:
       `${opening}. ` +
       `Every queued item would meet the same thing, so every project whose recipe uses ${input.runtime} ` +
@@ -408,7 +445,7 @@ export function githubLimitUntil(input: {
   }
   now: Date
   account: { doublings: number }
-}): { until: Date; untilFrom: UntilFrom; said: string; reason: string } {
+}): { until: Date; untilFrom: UntilFrom; said: string; reason: string; limit: NamedLimit } {
   const { failed, now } = input
   const minimum = now.getTime() + 60_000
   const usable = (n: number | null): n is number => n !== null && Number.isFinite(n) && n >= 0
@@ -435,6 +472,7 @@ export function githubLimitUntil(input: {
     until,
     untilFrom,
     said,
+    limit: { kind: 'rate', resetsAt: untilFrom === 'doubling' ? null : until.toISOString() },
     reason:
       `GitHub's rate limit was met. Every project with a GitHub owner takes no new work until ` +
       `${until.toISOString()} (${from}). GitHub said: ${said || 'nothing at all'}`,
