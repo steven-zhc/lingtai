@@ -48,8 +48,8 @@ export function RecipeForm({
   const [said, setSaid] = useState<{ host: string; kind: 'added' | 'listed' } | null>(
     allow !== undefined && first !== null ? { host: allow.host, kind: first.kind } : null,
   )
-  const [mark, setMark] = useState<{ rev: number; lines: readonly number[] } | null>(
-    allow !== undefined && first !== null ? { rev: allow.nonce, lines: first.lines } : null,
+  const [mark, setMark] = useState<{ rev: number; lines: readonly number[]; replace: boolean } | null>(
+    allow !== undefined && first !== null ? { rev: allow.nonce, lines: first.lines, replace: false } : null,
   )
   const applied = useRef(allow?.nonce)
   useEffect(() => {
@@ -63,14 +63,15 @@ export function RecipeForm({
       setPush({ rev: allow.nonce, text: next.text })
     }
     setSaid({ host: allow.host, kind: next.kind })
-    setMark({ rev: allow.nonce, lines: next.lines })
+    setMark({ rev: allow.nonce, lines: next.lines, replace: false })
   }, [allow])
   // A saved draft is no longer *not saved*, and its marks are done.
   useEffect(() => {
+    // Keyed on the state object, not on `ok`: that stays true across saves, and each save is its own completion.
     if (!state.ok) return
     setSaid(null)
-    setMark((m) => (m === null ? null : { rev: m.rev + 0.5, lines: [] }))
-  }, [state.ok])
+    setMark((m) => (m === null ? null : { rev: m.rev + 0.5, lines: [], replace: true }))
+  }, [state])
   // The textarea is the loading state and the fallback; the editor takes over once it is up.
   const [editorReady, setEditorReady] = useState(false)
   const fallback = useRef<HTMLTextAreaElement>(null)

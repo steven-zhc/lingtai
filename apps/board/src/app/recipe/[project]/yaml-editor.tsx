@@ -47,7 +47,8 @@ export function marksFor(doc: Text, lines: readonly number[]): { from: number }[
   return [...seen].sort((a, b) => a - b).map((n) => ({ from: doc.line(n).from }))
 }
 
-const setMarks = StateEffect.define<readonly number[]>()
+/** `replace` false adds to the marks already there; true starts over (and `lines: []` clears). */
+const setMarks = StateEffect.define<{ lines: readonly number[]; replace: boolean }>()
 const addedLine = Decoration.line({ class: 'cm-added' })
 
 /** The marked lines: set by `setMarks`, moved with the text, gone with a deleted line. */
@@ -56,7 +57,9 @@ const markField = StateField.define<DecorationSet>({
   update(marks, tr) {
     let next = marks.map(tr.changes)
     for (const e of tr.effects) {
-      if (e.is(setMarks)) next = Decoration.set(marksFor(tr.state.doc, e.value).map((m) => addedLine.range(m.from)))
+      if (!e.is(setMarks)) continue
+      const added = marksFor(tr.state.doc, e.value.lines).map((m) => addedLine.range(m.from))
+      next = e.value.replace ? Decoration.set(added) : next.update({ add: added, sort: true })
     }
     return next
   },
@@ -70,10 +73,13 @@ const theme = EditorView.theme({
   '&.cm-focused': { outline: '1px solid var(--accent)', outlineOffset: '-1px' },
 })
 
-function applyMark(view: EditorView, lines: readonly number[]) {
+function applyMark(view: EditorView, lines: readonly number[], replace: boolean) {
   const first = marksFor(view.state.doc, lines)[0]
   view.dispatch({
-    effects: [setMarks.of(lines), ...(first ? [EditorView.scrollIntoView(first.from, { y: 'center' })] : [])],
+    effects: [
+      setMarks.of({ lines, replace }),
+      ...(first ? [EditorView.scrollIntoView(first.from, { y: 'center' })] : []),
+    ],
   })
 }
 
@@ -92,8 +98,8 @@ export default function YamlEditor({
   initial: string
   /** Text to put in the live editor, replacing what is there; a new `rev` is a new push. */
   push: { rev: number; text: string } | null
-  /** Lines (1-based) to highlight and scroll to; a new `rev` is a new mark. Cleared with `lines: []`. */
-  mark: { rev: number; lines: readonly number[] } | null
+  /** Lines (1-based) to highlight and scroll to; a new `rev` is a new mark, added to the earlier ones unless `replace`; `replace` with `lines: []` clears. */
+  mark: { rev: number; lines: readonly number[]; replace: boolean } | null
   /** Read once, before the fallback textarea goes: whether it had focus, and its selection. */
   handoff: () => { focused: boolean; anchor: number; head: number } | null
   onChange: (text: string) => void
@@ -130,7 +136,7 @@ export default function YamlEditor({
     })
     viewRef.current = view
     if (markedAtMount.current !== null && markedAtMount.current.lines.length > 0)
-      applyMark(view, markedAtMount.current.lines)
+      applyMark(view, markedAtMount.current.lines, markedAtMount.current.replace)
     if (carried?.focused) {
       view.focus()
       view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head) })
@@ -151,7 +157,17 @@ export default function YamlEditor({
     if (push === null || view === null || push.rev === pushed.current) return
     pushed.current = push.rev
     if (view.state.doc.toString() === push.text) return
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: push.text } })
+    // Only the middle that differs, so marks on the lines either side of it keep their place.
+    const old = view.state.doc.toString()
+    let from = 0
+    while (from < old.length && from < push.text.length && old[from] === push.text[from]) from++
+    let end = old.length
+    let tail = push.text.length
+    while (end > from && tail > from && old[end - 1] === push.text[tail - 1]) {
+      end--
+      tail--
+    }
+    view.dispatch({ changes: { from, to: end, insert: push.text.slice(from, tail) } })
   }, [push])
   // After the push effect above, so the lines refer to the pushed text.
   const marked = useRef(mark?.rev)
@@ -159,7 +175,7 @@ export default function YamlEditor({
     const view = viewRef.current
     if (mark === null || view === null || mark.rev === marked.current) return
     marked.current = mark.rev
-    applyMark(view, mark.lines)
+    applyMark(view, mark.lines, mark.replace)
   }, [mark])
   return <div ref={host} className="rfile-fill" />
 }

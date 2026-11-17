@@ -224,11 +224,11 @@ export function SandboxSection({
         )}
       </Row>
       {legend.length === 0 ? null : (
-        <div className="sblegend">
+        <div className="rsblegend">
           {legend.map((l) => (
-            <div key={l.token} className="sblegend-r">
-              <span className="sblegend-n">{l.token}</span>
-              <span className="sblegend-m" title={l.meaning}>
+            <div key={l.token} className="rsblegend-r">
+              <span className="rsblegend-n">{l.token}</span>
+              <span className="rsblegend-m" title={l.meaning}>
                 {l.meaning}
               </span>
             </div>
