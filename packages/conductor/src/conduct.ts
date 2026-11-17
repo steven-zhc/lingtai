@@ -242,6 +242,7 @@ import {
 import { armForState, conflictResolvedOf, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
 import { baseCheckQuestion, createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
+import { carryKeptWork, type CarriedWork } from './carry-wip-port.ts'
 import { closeHoldingEffect } from './close.ts'
 import { runnableNowEffect, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
@@ -1447,7 +1448,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       lastRun,
       arms,
     })
-    const promptVersion = next.version
+    // What the cut carried of the previous attempt's kept WIP (#1170). Set by `cut`
+    // before any agent runs; `claimedBrief` is `next` rebuilt to say what was done.
+    let carriedWork: CarriedWork | null = null
+    const claimedBrief = () =>
+      carriedWork === null
+        ? next
+        : nextPrompt({
+            base: basePromptVersion,
+            budget: recipe.runtime.budget,
+            item: { state: reduced, streamId: ticketId },
+            lastRun,
+            arms,
+            carried: carriedWork,
+          })
     if (previous) {
       log(`attempt ${next.attempt}: ${previous.runId} ended — ${previous.ended ?? 'no ending recorded'}`)
     }
@@ -3003,6 +3017,57 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           worktree = provisioned.success
           lease = provisioned.success.remoteHead
           log(`worktree ${provisioned.success.path} at ${provisioned.success.baseSha.slice(0, 7)}`)
+          // **A stopped run's kept WIP is applied here, before any agent runs** (#1170, 0109 §8):
+          // a `design` agent runs in this worktree too, so `implement` is not early enough. A
+          // continuation has no `lastRun`; a failure to carry is the brief's to say, except a wedged tree (a rollback that failed), which is a `notCut`.
+          const keptWip = lastRun?.kept.at(-1)
+          if (continuation === null && previous && keptWip) {
+            const carried = yield* carryKeptWork({
+              git: (args, raw) =>
+                Effect.result(
+                  repo.git(args, {
+                    token: options.token,
+                    env: options.gitEnv,
+                    cwd,
+                    ...(raw?.trim === false ? { trimOutput: false } : {}),
+                  }),
+                ),
+              fetchArm: (armName) =>
+                gitAskedEffect(
+                  ['fetch', 'origin', `refs/heads/${armName}`],
+                  options.unreachableWaits ?? UNREACHABLE_WAITS,
+                ),
+              plantAt: recipe.env.plantAt,
+              kept: keptWip,
+            })
+            // A rollback that failed leaves conflict markers or staged edits: no agent starts on that.
+            if (carried?.wedged !== undefined) return { notCut: carried.wedged }
+            if (carried !== null) {
+              carriedWork = carried
+              log(
+                carried.unapplied === null
+                  ? `carried ${carried.applied.length} file(s) of ${keptWip.sha.slice(0, 7)} from ${keptWip.arm}` +
+                      (carried.leftOut.length > 0 ? `, left out ${carried.leftOut.join(', ')}` : '')
+                  : `kept work ${keptWip.sha.slice(0, 7)} not carried — ${carried.unapplied}`,
+              )
+              const failed = yield* appendTo([
+                {
+                  type: 'RunAppliedKeptWork',
+                  actor: 'conductor',
+                  data: parsePayload('RunAppliedKeptWork', {
+                    fromRunId: previous.runId,
+                    arm: keptWip.arm,
+                    sha: keptWip.sha,
+                    parentSha: keptWip.parentSha,
+                    applied: carried.applied,
+                    leftOut: carried.leftOut,
+                    unapplied: carried.unapplied,
+                  }),
+                },
+              ])
+              if (failed !== null) log(`RunAppliedKeptWork was refused by the store: ${whyOf(failed.refused)}`)
+            }
+          }
           // `head` is the whole of what moves `onSha`, and the action puts it on
           // its result for the pass to read (`ActionResult.head`). The `Worktree`
           // itself stays here, where the finalizer that removes it already is.
@@ -4121,7 +4186,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // what failed or passed — see `clean` and `keepRun` above for why
         // neither reads the tree before acting on it. No `defaultsAt` row,
         // because an unconfigured `implement` runs no command at all.
-        keptRun: { clean, keep: keepRun },
+        keptRun: {
+          // `clean` resets the tree to `HEAD`, which discards what the cut carried (#1170): the
+          // brief must stop saying the worktree holds those edits.
+          clean: () =>
+            Effect.map(clean(), (answer) => {
+              if (carriedWork !== null && carriedWork.unapplied === null && 'ok' in answer) {
+                carriedWork = {
+                  applied: [],
+                  leftOut: [],
+                  unapplied: 'a `run:` action cleaned the worktree back to the base before you started',
+                }
+              }
+              return answer
+            }),
+          keep: keepRun,
+        },
         // The twelfth: the pass's one decision, and the wrap only a sandboxed one gets (#1152). Absent
         // `sandbox` under a *sandboxed* decision is refused by name in `actionPortsFromRecipe`.
         sandboxDecision,
@@ -4483,7 +4563,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                       // runtime's own default where it did not (0063 §2) —
                       // which is what the empty string has always meant here.
                       model: spec.model ?? '',
-                      promptVersion,
+                      promptVersion: claimedBrief().version,
                       baseSha: tree.baseSha,
                       configHash: resolved.configHash,
                       worktree: tree.path,
@@ -4510,7 +4590,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     options.prompt,
                     { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
                     buildCommands(recipe.steps),
-                    next.failure,
+                    claimedBrief().failure,
                     // **What `design` produced, and this is the one reader of
                     // it** (`#265`). `agentPlugin` serves the step: a recipe
                     // declaring an `agent:` there buys a document, and a document
@@ -4543,7 +4623,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     runId,
                     {
                       for: implementerFor,
-                      promptVersion,
+                      promptVersion: claimedBrief().version,
                       runtimeVersion: implementerVersion,
                       prompt: implementerParts,
                     },

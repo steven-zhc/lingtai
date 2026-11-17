@@ -239,7 +239,6 @@ run.
 
 ## Not built yet
 
-- **§8's application of a kept WIP.** Today `attemptBrief` offers it and the agent applies it, and an agent that committed on top of the WIP instead is refused only at the lane (#1161, 2026-11-14).
 - **`source` is still a closed enum.** `TicketDiscovered.source` in
   `packages/domain/src/events.ts` is `github-issue | manual | agent-followup`.
   It is meant to be an open string, so that adding a store does not change the

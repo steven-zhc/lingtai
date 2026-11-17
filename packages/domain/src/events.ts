@@ -909,6 +909,28 @@ export const RunKeptUncommitted = z.object({
 })
 
 /**
+ * **The conductor applied the previous attempt's kept WIP to this attempt's
+ * fresh worktree, uncommitted, before any agent ran** (#1170, 0109 §8). Its
+ * own type rather than a field on `RunKeptUncommitted`, which belongs to the
+ * run that stopped. `unapplied` is why nothing was applied (the arm could not
+ * be fetched, the diff could not be read), and null when something was.
+ *
+ * @summary The conductor carried a stopped run's uncommitted edits into the new worktree before the agent started.
+ */
+export const RunAppliedKeptWork = z.object({
+  /** The run whose `RunKeptUncommitted` this carries. */
+  fromRunId: z.string(),
+  arm: z.string(),
+  sha: z.string(),
+  parentSha: z.string(),
+  /** Paths now in the worktree, uncommitted. */
+  applied: z.array(z.string()),
+  /** Paths left at the base's version because the patch did not apply to them. */
+  leftOut: z.array(z.string()),
+  unapplied: z.string().nullable(),
+})
+
+/**
  * The moment the gate pipeline fires.
  *
  * @summary An agent finished and offered its work, so the checks began.
@@ -2604,6 +2626,7 @@ export const EVENTS = {
   RunProducedDiff,
   RunRefsPublished,
   RunKeptUncommitted,
+  RunAppliedKeptWork,
   RunProposedCompletion,
   RunFinished,
   SandboxBoundaryRecorded,
@@ -2710,6 +2733,7 @@ export const EVENT_AT = {
   RunProducedDiff: ['implement', 'end'],
   RunRefsPublished: ['implement', 'end'],
   RunKeptUncommitted: ['implement', 'end'],
+  RunAppliedKeptWork: ['admit'],
   RunProposedCompletion: ['implement', 'end'],
   RunFinished: [...AGENT_STEPS, 'end'],
   SandboxBoundaryRecorded: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge'],
