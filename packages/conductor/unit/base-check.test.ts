@@ -85,7 +85,7 @@ describe('baseCheck', () => {
     )
     const answer = await Effect.runPromise(port.ask(question()))
     expect(answer).toEqual({ verdict: 'red', exitCode: 1, evidence: '58 errors', boundary: 'unsandboxed', from: 'ran' })
-    expect(calls).toEqual(['pnpm install', 'pnpm typecheck'])
+    expect(calls).toEqual(['pnpm install', 'pnpm typecheck', 'pnpm typecheck'])
     expect(tree.cut).toHaveBeenCalledWith(`/wt/proj/base-aaaaaaa-pass-1`, SHA)
     expect(tree.remove).toHaveBeenCalledTimes(1)
     const events = await recorded(store)
@@ -355,5 +355,50 @@ describe('baseCheck under a boundary (#1153)', () => {
     await Effect.runPromise(port.ask(question({ sandbox: fakeSandbox().sandbox as never })))
     expect(runner).not.toHaveBeenCalled()
     expect(tree.remove).toHaveBeenCalledTimes(1)
+  })
+
+  describe('the rerun (0108 §17)', () => {
+    const red = outcome({
+      ok: false,
+      exitCode: 1,
+      evidence: 'x exited 1\n\n FAIL   unit  a/b.test.ts > s > t\n Test Files  1 failed | 2 passed (3)',
+    })
+    const sequence = (...outs: CommandOutcome[]) => {
+      let i = 0
+      return async () => outs[Math.min(i++, outs.length - 1)] as CommandOutcome
+    }
+    const checks = ['pnpm install', 'pnpm typecheck', 'pnpm typecheck']
+
+    it('red then green is green and names the failing test', async () => {
+      const next = sequence(red, outcome())
+      const ctl = setup(async (o) => (o.run === 'pnpm install' ? outcome() : next()))
+      const answer = await Effect.runPromise(ctl.port.ask(question()))
+      expect(answer).toMatchObject({ verdict: 'green' })
+      expect(ctl.calls).toEqual(checks)
+      const events = await recorded(ctl.store)
+      expect(events).toHaveLength(1)
+      expect(events[0]!.data).toMatchObject({ ok: true, exitCode: 0, evidence: '', flaky: ['a/b.test.ts > s > t'] })
+    })
+
+    it('red twice records the second run', async () => {
+      const second = outcome({ ok: false, exitCode: 2, evidence: 'second' })
+      const next = sequence(red, second)
+      const ctl = setup(async (o) => (o.run === 'pnpm install' ? outcome() : next()))
+      const answer = await Effect.runPromise(ctl.port.ask(question()))
+      expect(answer).toMatchObject({ verdict: 'red', exitCode: 2, evidence: 'second' })
+      const events = await recorded(ctl.store)
+      expect(events[0]!.data).toMatchObject({ ok: false, exitCode: 2, evidence: 'second' })
+      expect(events[0]!.data).not.toHaveProperty('flaky')
+    })
+
+    it('red then a timeout is unknown and records nothing', async () => {
+      const timeout = outcome({ ok: false, exitCode: null, timedOut: true, evidence: 'slow' })
+      const next = sequence(red, timeout)
+      const ctl = setup(async (o) => (o.run === 'pnpm install' ? outcome() : next()))
+      const answer = await Effect.runPromise(ctl.port.ask(question()))
+      expect(answer.verdict).toBe('unknown')
+      expect(ctl.calls).toEqual(checks)
+      expect(await recorded(ctl.store)).toHaveLength(0)
+    })
   })
 })

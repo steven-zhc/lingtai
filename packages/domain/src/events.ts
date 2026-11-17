@@ -1509,6 +1509,11 @@ export const BaseChecked = z.object({
   durationMs: z.number().int().nonnegative(),
   /** `boundedEvidence` of the output; `''` when `ok`. */
   evidence: z.string(),
+  /**
+   * On a red-then-green (0108 §17, #1207): the failing tests the first run printed, when they could be named.
+   * Absent otherwise, and on an event written before it existed.
+   */
+  flaky: z.array(z.string()).optional(),
   /** The pass that ran it, for "who ran this". */
   runId: z.string(),
 })

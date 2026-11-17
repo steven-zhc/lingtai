@@ -327,7 +327,7 @@ fixes the bounds and the endings that router works inside.
   sentences, rerunning the cut-off run in place; §13's release with
   `base-red` in the queue and the check rerun per base commit (today the
   attempt still holds for a person, `base is red: <check>`); §15's landing
-  continued from the saved head after the lane's retries; §17's second run, §18's
+  continued from the saved head after the lane's retries; §17's second run (the base check's half is built, #1207; the rerun of `build` and declared checks is #1222's), §18's
   answer (built, #1198 and #1199: `offerFor` offers the round when the
   implementer said something, and a judge declared at `nothing-produced` is shown
   the ticket and the message; one declared at `fixer-disagrees` is shown the
