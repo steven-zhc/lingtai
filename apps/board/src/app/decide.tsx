@@ -26,6 +26,7 @@ import {
   approveCard,
   closeCard,
   continueFixingCard,
+  rerunStepCard,
   editBodyAndRequeueCard,
   requeueCard,
   runNow,
@@ -226,6 +227,7 @@ export function ScheduleContinuation({
   onSha,
   waitId,
   grant = false,
+  rerun = false,
 }: {
   project: string
   issue: number
@@ -235,6 +237,8 @@ export function ScheduleContinuation({
   waitId: WaitId
   /** A recorded fix grant must be retried as that same resolution. */
   grant?: boolean
+  /** A recorded rerun must be retried as that same resolution, never as an `Approve`. */
+  rerun?: boolean
 }) {
   const [pending, setPending] = useState(false)
   const [done, setDone] = useState<string | null>(null)
@@ -253,9 +257,11 @@ export function ScheduleContinuation({
             setPending(true)
             setRefusal(null)
             startTransition(async () => {
-              const result = grant
-                ? await continueFixingCard({ project, issue, onSha, waitId })
-                : await approveCard({ project, issue, onSha, waitId, note: '' })
+              const result = rerun
+                ? await rerunStepCard({ project, issue, onSha, waitId })
+                : grant
+                  ? await continueFixingCard({ project, issue, onSha, waitId })
+                  : await approveCard({ project, issue, onSha, waitId, note: '' })
               setPending(false)
               if (result.ok) {
                 setDone(result.detail)
@@ -311,6 +317,53 @@ export function ContinueFixing({
           }}
         >
           {pending ? 'granting…' : 'Continue fixing current work'}
+        </button>
+      )}
+      {detail ? <p className={done ? 'decided' : 'refusal'}>{detail}</p> : null}
+    </div>
+  )
+}
+
+/** `ContinueFixing`'s sibling: rerun the stopped step on the saved head shown, never primary (#1219). */
+export function RerunStepButton({
+  project,
+  issue,
+  waitId,
+  onSha,
+}: {
+  project: string
+  issue: number
+  waitId: WaitId
+  onSha: string
+}) {
+  const [pending, setPending] = useState(false)
+  const [detail, setDetail] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+  const [, startTransition] = useTransition()
+  return (
+    <div className="decide">
+      {done ? null : (
+        <button
+          className="btn"
+          disabled={pending}
+          onClick={() => {
+            setPending(true)
+            setDetail(null)
+            startTransition(async () => {
+              try {
+                const result = await rerunStepCard({ project, issue, waitId, onSha })
+                setDone(result.ok && !result.detail.includes('not scheduled'))
+                setDetail(result.detail)
+              } catch (err) {
+                setDone(false)
+                setDetail(`could not reach the server: ${(err as Error).message}`)
+              } finally {
+                setPending(false)
+              }
+            })
+          }}
+        >
+          {pending ? 'rerunning…' : `Rerun this step on ${onSha.slice(0, 7)}`}
         </button>
       )}
       {detail ? <p className={done ? 'decided' : 'refusal'}>{detail}</p> : null}

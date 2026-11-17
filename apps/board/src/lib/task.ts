@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 
-import { ceilingReached, daySpend, startOfLocalDay } from '@lingtai/conductor'
+import { ceilingReached, daySpend, diffBaseShaOf, startOfLocalDay } from '@lingtai/conductor'
 import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe } from '@lingtai/conductor/projects'
@@ -117,7 +117,7 @@ import { inFlightOf, queuedFor, refused as refusedQueued, type InFlight, type Qu
 import { recipeOfAttempt, type AttemptRecipe } from './recipe.ts'
 import { runningPanelOf, type RunningPanelView } from './running.ts'
 import { sandboxViewOf, type PathRoots, type SandboxView } from './sandbox-view.ts'
-import { savedFixWork } from './saved-fix-work.ts'
+import { savedFixWork, rerunWorkFromState } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
 import {
   addBill,
@@ -480,6 +480,8 @@ export interface StandingView {
   } | null
   /** Render-time check only; resolveWait checks the remote again under the decision lock. */
   fixWork?: { head: string; ref: string } | { refusal: string } | null
+  /** The saved head a `RerunStep` continues from (#1219); its own field, since a crash wait offers no `GrantFixRound`. */
+  rerunWork?: { head: string; ref: string | null } | { refusal: string } | null
   /** A body I/O fact on this stream; these events do not identify a wait. */
   bodyOutcome?: { result: 'updated' | 'failed'; detail: string } | null
   /** Derived for this wait alone, after matching the projection row. */
@@ -877,7 +879,11 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
     (m.resolution._tag === 'Requeue' ||
       m.resolution._tag === 'EditBodyAndRequeue' ||
       m.resolution._tag === 'AnswerQuestion')
-  const continued = live && m.then === null && life.status === 'approved' && m.resolution._tag === 'GrantFixRound'
+  const continued =
+    live &&
+    m.then === null &&
+    life.status === 'approved' &&
+    (m.resolution._tag === 'GrantFixRound' || m.resolution._tag === 'RerunStep')
   const body = item.github.last.body
 
   return {
@@ -890,7 +896,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
             note: m.note,
             result: closed ? 'closed' : continued ? 'continued' : 'requeued',
             reason: continued
-              ? 'Continued saved work for one additional fix round; build and review run again.'
+              ? m.resolution._tag === 'RerunStep'
+                ? 'The stopped step runs again on its saved work; no round or restart is spent.'
+                : 'Continued saved work for one additional fix round; build and review run again.'
               : requeued
                 ? 'A new attempt starts from base.'
                 : released
@@ -898,7 +906,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
                   : (m.then?.reason ?? ''),
             ...(continued && m.resolution._tag === 'GrantFixRound'
               ? { ref: m.resolution.ref, head: m.resolution.onSha }
-              : {}),
+              : continued && m.resolution._tag === 'RerunStep'
+                ? { head: m.resolution.onSha }
+                : {}),
           }
         : null,
     bodyOutcome:
@@ -2002,6 +2012,39 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
               }
       } catch (err) {
         standing.fixWork = { refusal: `The saved ref could not be checked: ${(err as Error).message}` }
+      }
+    }
+  }
+  if (
+    standing.state === 'blocked' &&
+    standing.reason !== null &&
+    allowedResolutions(standing.reason).includes('RerunStep') &&
+    standing.runId !== null
+  ) {
+    const runIndex = claims.findIndex((claim) => claim.runId === standing.runId)
+    const runEvents = streams[runIndex] ?? []
+    const rerun = rerunWorkFromState(standing.runId, reduceAttempt(runEvents), diffBaseShaOf(runEvents))
+    if ('refusal' in rerun || rerun.ref === null) standing.rerunWork = rerun
+    else {
+      try {
+        const state = await readProject(ticket.project)
+        if (!state) throw new Error(`no project named "${ticket.project}" — run lingtai add first`)
+        const client =
+          state.owner === null
+            ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
+            : hasGitHubAuth()
+              ? (await projectClient(state)).client
+              : null
+        if (client === null) throw new Error('no GitHub App configured')
+        const remote = await timed('github.ref', () => client.refSha(`heads/${rerun.ref}`))
+        standing.rerunWork =
+          remote === rerun.head
+            ? rerun
+            : {
+                refusal: `${rerun.ref} is ${remote ?? 'missing'}, not the saved ${rerun.head}. Restore that ref to the saved head or requeue for a fresh attempt.`,
+              }
+      } catch (err) {
+        standing.rerunWork = { refusal: `The saved ref could not be checked: ${(err as Error).message}` }
       }
     }
   }

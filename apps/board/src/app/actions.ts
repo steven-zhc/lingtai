@@ -228,6 +228,49 @@ export async function continueFixingCard(input: {
   }
 }
 
+/** Run the step a stop outside the diff ended again, on the saved head this wait showed (#1219). */
+export async function rerunStepCard(input: {
+  project: string
+  issue: number
+  waitId: WaitId
+  onSha: string
+}): Promise<ActionResult> {
+  try {
+    if (!input.waitId || !input.onSha) return { ok: false, detail: 'stale: reload this page before rerunning' }
+    const state = await readProject(input.project)
+    if (!state) return { ok: false, detail: `no project named "${input.project}" — run lingtai add first` }
+    const client =
+      state.owner === null
+        ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
+        : hasGitHubAuth()
+          ? (await projectClient(state)).client
+          : null
+    if (client === null) return { ok: false, detail: 'no GitHub App configured' }
+    const result = await resolveWait({
+      writer: await boardWriterOrNone(),
+      ticketId: ticketStream(input.project, input.issue),
+      issue: input.issue,
+      waitId: input.waitId,
+      resolution: { _tag: 'RerunStep', onSha: input.onSha, ref: null },
+      by: actor(),
+      client,
+      github: client,
+    })
+    revalidatePath(`/task/${result.ticketId}`)
+    revalidatePath('/')
+    return result.ok
+      ? {
+          ok: true,
+          detail: result.unscheduled
+            ? `step rerun on saved work — continuation was not scheduled (${result.unscheduled}); click again to schedule it`
+            : 'step rerun on saved work',
+        }
+      : { ok: false, detail: result.detail }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
 /**
  * An answer to a question asked before any run (#147) — `lingtai answer`, from
  * the card.

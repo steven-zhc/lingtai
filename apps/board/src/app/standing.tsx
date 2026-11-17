@@ -33,6 +33,7 @@ import {
 } from '@/lib/queued'
 import { estimateLine, type StartEstimate } from '@/lib/queued-estimate'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY, moveTitle, resolutionCopyFor } from '@/lib/resolution-copy'
+import { rerunStepFirstAmongSavedWork } from '@/lib/saved-fix-work'
 import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
 import { attemptTabPath, ticketTabPath } from '@/lib/tabs'
 import { stateWord, type DiscussionView, type StandingView, type TaskAnswer } from '@/lib/task'
@@ -402,6 +403,7 @@ import {
   Close,
   ContinueFixing,
   Decide,
+  RerunStepButton,
   EditBodyAndRequeue,
   Requeue,
   RunNow,
@@ -999,7 +1001,7 @@ export function Standing({
   const closePrefill = triageAdvised?.summary ?? null
   // `Split` has no card until its editor exists (#563): a card with no action
   // under it is worse than none. The triage band still carries the advice.
-  const drawable = allowed.filter((tag) => tag !== 'Split')
+  const drawable = rerunStepFirstAmongSavedWork(allowed.filter((tag) => tag !== 'Split'))
   // Whatever `recommendedResolution` returned is drawn first; with no saved
   // head it does not return `GrantFixRound`, so nothing is swapped in (#572).
   const recommended = drawable.find((tag) => tag === advice) ?? null
@@ -1266,7 +1268,9 @@ export function Standing({
                   {standing.afterMove.result === 'closed'
                     ? 'The ticket was closed.'
                     : standing.afterMove.result === 'continued'
-                      ? `Continued ${standing.afterMove.ref} at ${standing.afterMove.head}.`
+                      ? standing.afterMove.ref
+                        ? `Continued ${standing.afterMove.ref} at ${standing.afterMove.head}.`
+                        : `Reran the step on ${standing.afterMove.head}.`
                       : 'The ticket returned to the queue for a new attempt from base.'}
                 </span>
               </p>
@@ -1476,12 +1480,16 @@ export function Standing({
                         const copy = resolutionCopyFor(tag, standing.reason)
                         const fixUnavailable =
                           tag === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
+                        const rerunUnavailable =
+                          tag === 'RerunStep' && !(standing.rerunWork && 'head' in standing.rerunWork)
                         const consequenceOf = (sendable: number | null) =>
-                          fixUnavailable
-                            ? 'The saved branch and head must be available before a fix round can be granted.'
-                            : tag === 'Requeue' && sendable !== null
-                              ? `Send the composed prompt for attempt ${sendable}; the new attempt starts from base with the recipe’s rounds. ${NO_RESTART_EFFECT}`
-                              : copy.consequence
+                          rerunUnavailable
+                            ? 'The saved head must be available before this step can be rerun.'
+                            : fixUnavailable
+                              ? 'The saved branch and head must be available before a fix round can be granted.'
+                              : tag === 'Requeue' && sendable !== null
+                                ? `Send the composed prompt for attempt ${sendable}; the new attempt starts from base with the recipe’s rounds. ${NO_RESTART_EFFECT}`
+                                : copy.consequence
                         return (
                           <ResolutionCard
                             key={tag}
@@ -1491,7 +1499,15 @@ export function Standing({
                             id={visible ? `resolution-${tag}` : undefined}
                             hidden={!visible && tag !== 'EditBodyAndRequeue'}
                             head={
-                              visible ? <h3>{fixUnavailable ? 'Cannot continue saved work' : copy.title}</h3> : null
+                              visible ? (
+                                <h3>
+                                  {rerunUnavailable
+                                    ? 'Cannot rerun on saved work'
+                                    : fixUnavailable
+                                      ? 'Cannot continue saved work'
+                                      : copy.title}
+                                </h3>
+                              ) : null
                             }
                           >
                             {visible ? (
@@ -1536,6 +1552,27 @@ export function Standing({
                                 <p className="refusal">
                                   {standing.fixWork && 'refusal' in standing.fixWork
                                     ? standing.fixWork.refusal
+                                    : 'Saved work could not be verified; reload this page before continuing.'}
+                                </p>
+                              ) : null}
+                              {visible &&
+                              tag === 'RerunStep' &&
+                              standing.rerunWork &&
+                              'head' in standing.rerunWork &&
+                              waitId !== null ? (
+                                <RerunStepButton
+                                  project={project}
+                                  issue={issue}
+                                  waitId={waitId}
+                                  onSha={standing.rerunWork.head}
+                                />
+                              ) : null}
+                              {visible &&
+                              tag === 'RerunStep' &&
+                              (!standing.rerunWork || 'refusal' in standing.rerunWork) ? (
+                                <p className="refusal">
+                                  {standing.rerunWork && 'refusal' in standing.rerunWork
+                                    ? standing.rerunWork.refusal
                                     : 'Saved work could not be verified; reload this page before continuing.'}
                                 </p>
                               ) : null}
@@ -1646,6 +1683,7 @@ export function Standing({
                         onSha={standing.approvedSha}
                         waitId={standing.waitId}
                         grant={standing.afterMove?.resolution === 'GrantFixRound'}
+                        rerun={standing.afterMove?.resolution === 'RerunStep'}
                       />
                     </div>
                   ) : null}
