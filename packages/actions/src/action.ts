@@ -529,9 +529,11 @@ export interface ActionContext {
   /**
    * **The prompt the cut-off run of `name` was handed, to be handed again** (0108 §11, #1205): a run an account
    * limit cut off is run again with its recorded brief, never one built afresh. Keyed by the action's name, so
-   * an action before it in the step's list is not handed another's brief; stripped with `rerun`.
+   * an action before it in the step's list is not handed another's brief; stripped with `rerun`. `prompt` is null
+   * where the recorded brief could not be put back: the action's identity as the rerun's target stands, and its
+   * brief is built afresh.
    */
-  recorded?: { readonly name: string; readonly prompt: string }
+  recorded?: { readonly name: string; readonly prompt: string | null }
   /**
    * On a rerun, the results the cut-off visit recorded for the actions **before** the one that was cut
    * off, by position (#1201). Those actions are not run again, whatever their kind — a `run:` whose clean
@@ -1303,7 +1305,7 @@ export function recordedOr(
   name: string,
   composed: ComposedPrompt,
 ): ComposedPrompt {
-  return context.recorded?.name === name
+  return context.recorded?.name === name && context.recorded.prompt !== null
     ? { handed: context.recorded.prompt, recorded: context.recorded.prompt, refs: [], values: [] }
     : composed
 }

@@ -217,7 +217,7 @@ export type ContinueResult = { ok: true; claim: Claim } | { ok: false; refusal: 
 export function continueTicketEffect(
   ticketId: string,
   runId: string,
-  options: { worker?: string; body?: string; store: EventStore } & SnapshotReadOptions,
+  options: { worker?: string; body?: string; store: EventStore; expectVersion?: number } & SnapshotReadOptions,
 ): Effect.Effect<ContinueResult, unknown> {
   return Effect.gen(function* () {
     const store = options.store
@@ -225,6 +225,10 @@ export function continueTicketEffect(
 
     const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options)
 
+    // A continuation decided on a read of the ticket is taken only on that read (#1205).
+    if (options.expectVersion !== undefined && state.version !== options.expectVersion) {
+      return { ok: false, refusal: { reason: 'lost-race' } } as const
+    }
     const decided = continueTransition(state, {
       runId,
       worker,

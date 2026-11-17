@@ -1932,9 +1932,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                 ...contextFor(),
                 round: accountRerun.for.round,
                 rerun: transientRetriesSpent + accountRerun.accountReruns,
-                ...(accountRerun.prompt === null
-                  ? {}
-                  : { recorded: { name: accountRerun.for.name, prompt: accountRerun.prompt } }),
+                recorded: { name: accountRerun.for.name, prompt: accountRerun.prompt },
               }
             : contextFor()
       const visitedBefore: readonly StepReached[] = rerun === null ? [...steps] : rerun.reached
@@ -2545,7 +2543,14 @@ function runVisit(
             !reached.some((visit) => visit.step === 'implement') &&
             options.from.grant
               ? options.from.grant
-              : sentBackTo(spec.step, reached),
+              : // An account-resumed fixer is a fix round, not a first implementation (#1205): its dispatch
+                // id and its spend are the round's.
+                spec.step === 'implement' &&
+                  firstVisitOfFrom &&
+                  options.from?.rerun !== undefined &&
+                  options.from.rerun.for.round > 0
+                ? { why: 'a fixing run an account limit cut off, run again', asked: null, printed: null }
+                : sentBackTo(spec.step, reached),
         },
         emit: emitAsPromise,
         ...(options.recordPrompt === undefined ? {} : { recordPrompt: options.recordPrompt }),

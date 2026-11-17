@@ -2952,7 +2952,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 unknown
               > =
                 continuation !== null
-                  ? continueTicketEffect(ticketId, runId, { store, ...ticketSnapshots, body: issue.body })
+                  ? continueTicketEffect(ticketId, runId, {
+                      store,
+                      ...ticketSnapshots,
+                      body: issue.body,
+                      // The head, prompt and lock check were read at this version: a newer release is another look's.
+                      ...(continuation.released !== undefined ? { expectVersion: reduced.version } : {}),
+                    })
                   : // The claim carries what the task is, because it is now the
                     // only place a title enters the log at all.
                     claimTicketEffect(ticketId, {
@@ -3226,6 +3232,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 },
               ])
               if (failed !== null) log(`RunAppliedKeptWork was refused by the store: ${whyOf(failed.refused)}`)
+              // A continuation of a release runs on the saved work or not at all (#1205): a restoration that
+              // failed or took only part is a head that cannot be continued, never a brief with a clean tree.
+              if (releasedHead !== undefined && (carried.unapplied !== null || carried.leftOut.length > 0)) {
+                headGone = `the kept work could not be restored: ${carried.unapplied ?? `${carried.leftOut.join(', ')} did not apply`}`
+                return { notCut: headGone }
+              }
             }
           }
           // `head` is the whole of what moves `onSha`, and the action puts it on
@@ -4767,7 +4779,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 // would make the hook's next append a `ConcurrencyError`. The hook
                 // appends no prompt of its own.
                 // A run an account limit cut off is handed its recorded brief again (#1205).
-                const recordedBrief = brief.context.recorded?.name === spec.name ? brief.context.recorded.prompt : null
+                const recordedBrief =
+                  brief.context.recorded?.name === spec.name ? (brief.context.recorded.prompt ?? null) : null
                 const implementerParts: RecordPart[] =
                   recordedBrief !== null
                     ? [recordedBrief]
@@ -5078,7 +5091,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           stoppedBy = 'interrupted'
           // The brief and the `for`, built once: each is recorded before the dispatch
           // and then handed to it / to the `RunSpent` below (#923).
-          const recordedFix = brief.context.recorded?.name === spec.name ? brief.context.recorded.prompt : null
+          const recordedFix =
+            brief.context.recorded?.name === spec.name ? (brief.context.recorded.prompt ?? null) : null
           const fixParts: RecordPart[] =
             recordedFix !== null
               ? [recordedFix]
