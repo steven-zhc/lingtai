@@ -162,6 +162,17 @@ export function carryKeptWork(options: {
           return yield* giveUp(`${path} could not be restored to the base (${done.failure.detail})`)
       }
     }
+    // A submodule is never carried, so a path the patch's file half touched (a file replaced by a submodule,
+    // or the reverse) goes back to the base in the tree too, not only in the report. Before `reset`, while
+    // the index still holds it, so a path the base lacks can be removed.
+    for (const path of gitlinks.filter((p) => touched.includes(p))) {
+      const known = yield* git(['cat-file', '-e', `HEAD:${path}`])
+      const done = Result.isSuccess(known)
+        ? yield* git(['--literal-pathspecs', 'checkout', 'HEAD', '--', path])
+        : yield* git(['--literal-pathspecs', 'rm', '-f', '-q', '--', path])
+      if (Result.isFailure(done))
+        return yield* giveUp(`${path} could not be restored to the base (${done.failure.detail})`)
+    }
     // `--3way` implies `--index`; the worktree should look like a stopped run's dirty tree.
     const unstaged = yield* git(['reset', '-q'])
     if (Result.isFailure(unstaged))

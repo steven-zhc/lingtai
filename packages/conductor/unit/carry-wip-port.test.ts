@@ -140,11 +140,15 @@ describe('carryKeptWork', () => {
   })
 
   it('names a path that is a submodule on either side as left out, even when the patch holds its file half', () => {
-    const { result } = carry({
+    const { result, calls } = carry({
       'apply --numstat': '0\t1\tsub\0' + '1\t0\tsub\0',
       'diff --raw': ':160000 000000 a b D\0sub\0:000000 100644 c d A\0sub\0',
     })
     expect(result).toEqual({ applied: [], leftOut: ['sub'], unapplied: null })
+    // the worktree is restored too, before the unstaging reset, not only the report
+    const restore = calls.indexOf('--literal-pathspecs checkout HEAD -- sub')
+    expect(restore).toBeGreaterThan(-1)
+    expect(restore).toBeLessThan(calls.indexOf('reset -q'))
   })
 
   it('carries nothing when the patch omits a path the diff names', () => {
