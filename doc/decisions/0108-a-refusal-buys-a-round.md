@@ -323,8 +323,9 @@ fixes the bounds and the endings that router works inside.
 
 ## Not built yet
 
-- **The 2026-11-13 amendment.** §12's transient requeue and its list of
-  sentences, rerunning the cut-off run in place; §13's release with
+- **The 2026-11-13 amendment.** §12's transient rerun is built (#1201: the
+  rows are in `classify`'s table and `StepRerunInPlace` is the count; a
+  landing's retry is #1221's); §13's release with
   `base-red` in the queue and the check rerun per base commit (today the
   attempt still holds for a person, `base is red: <check>`); §15's landing
   continued from the saved head after the lane's retries; §17's second run (the base check's half is built, #1207; the rerun of `build` and declared checks is #1222's), §18's
