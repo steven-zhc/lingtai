@@ -77,7 +77,7 @@ agent 在最终回答里**明确声明**属于哪一种，系统再核对一次�
 
 **票的终态因此有三种**：`landed`（合进 main）、`satisfied`（已实现，这次没有合入代码）、被人 `Close`。
 
-### 需求不明确时的输出格式【待定】
+### 需求不明确时的输出格式（已定）
 
 design 阶段提问（`agent-action.ts:1407-1440`）、implement 声明 `Unclear`、triage 判定 `UndecidedQuestion`，这三处统一用同一个格式，也就是现在 triage 的 `TriageQuestion`（`packages/domain/src/triage.ts`）：
 
@@ -91,7 +91,7 @@ questions: 最多 5 个
 
 页面把问题按 1、2、3 列出来，每个问题下列选项，推荐项排第一、带标记，人也可以不选选项、自己写答案。回答完，系统把"问题 → 答案"写进正文的一个固定小节，然后重做这一步。这些现有的 triage 已经在做（`triageAnswersText`，#921），三处只是共用它。
 
-### implement 之后怎么走：不需要新加一步【待定】
+### implement 之后怎么走：不需要新加一步（已定）
 
 现在的流程是：
 - **成功**：implement 之后直接进 build → review → proposed。
