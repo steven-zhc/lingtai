@@ -57,7 +57,7 @@ describe('a rerun in place clears the failure it recovers from (#1201)', () => {
   it('reads a crash, a rerun and a proposed completion as not failed, and keeps the count', () => {
     const event = makeStream('pass-1201')
     const run = reduceAttempt([
-      event('RunFailed', { runId: 'pass-1201', kind: 'crash', detail: 'API Error: 503' }),
+      event('RunFailed', { kind: 'crash', detail: 'API Error: 503' }),
       event('StepRerunInPlace', {
         runId: 'pass-1201',
         step: 'implement',
@@ -65,7 +65,7 @@ describe('a rerun in place clears the failure it recovers from (#1201)', () => {
         said: 'API Error: 503',
         waitMs: 60_000,
       }),
-      event('RunProposedCompletion', { runId: 'pass-1201', headSha: 'abc' }),
+      event('RunProposedCompletion', { headSha: 'abc' }),
     ])
     expect(run.failure).toBeNull()
     expect(run.transientRetries).toBe(1)
