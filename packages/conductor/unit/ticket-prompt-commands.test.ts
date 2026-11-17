@@ -21,7 +21,7 @@ describe('the ticket owner: prompt edits and conclusions', () => {
       return base.append(s, v, e)
     })
     await Effect.runPromise(
-      concludeDiscussionOnTicketEffect(store, T, { chatId: 'c1', by: 'a', outcome: 'prompt', prompt: 'do x' }),
+      concludeDiscussionOnTicketEffect(store, T, { chatId: 'c1', by: 'human:a', outcome: 'prompt', prompt: 'do x' }),
     )
     expect(calls).toEqual([['PromptEdited', 'DiscussionHeld']])
   })
@@ -31,7 +31,7 @@ describe('the ticket owner: prompt edits and conclusions', () => {
     const store = wrap(base, () => Promise.reject(new Error('refused')))
     await expect(
       Effect.runPromise(
-        concludeDiscussionOnTicketEffect(store, T, { chatId: 'c1', by: 'a', outcome: 'prompt', prompt: 'do x' }),
+        concludeDiscussionOnTicketEffect(store, T, { chatId: 'c1', by: 'human:a', outcome: 'prompt', prompt: 'do x' }),
       ),
     ).rejects.toThrow('refused')
     expect(await base.read(T)).toHaveLength(0)
@@ -44,13 +44,13 @@ describe('the ticket owner: prompt edits and conclusions', () => {
       if (first) {
         first = false
         await base.append(s, v, [
-          { type: 'DiscussionHeld', actor: 'x', data: { chatId: 'z', outcome: 'none', by: 'x' } },
+          { type: 'DiscussionHeld', actor: 'conductor', data: { chatId: 'z', outcome: 'none', by: 'conductor' } },
         ])
         throw new ConcurrencyError(s, v, [v + 1])
       }
       return base.append(s, v, e)
     })
-    await Effect.runPromise(editPromptEffect(store, T, { text: 'hi', basedOn: null, by: 'a' }))
+    await Effect.runPromise(editPromptEffect(store, T, { text: 'hi', basedOn: null, by: 'human:a' }))
     const events = await base.read(T)
     expect(events.filter((e) => e.type === 'PromptEdited')).toHaveLength(1)
     expect(events).toHaveLength(2)
@@ -60,15 +60,15 @@ describe('the ticket owner: prompt edits and conclusions', () => {
     const base = createMemoryEventStore()
     const store = wrap(base, (s, v) => Promise.reject(new ConcurrencyError(s, v, [v + 1])))
     await expect(
-      Effect.runPromise(editPromptEffect(store, T, { text: 'hi', basedOn: null, by: 'a' })),
+      Effect.runPromise(editPromptEffect(store, T, { text: 'hi', basedOn: null, by: 'human:a' })),
     ).rejects.toThrow()
     expect(await base.read(T)).toHaveLength(0)
   })
 
   it('hashes raw text, and nothing for a blank one', async () => {
     const store = createMemoryEventStore()
-    await Effect.runPromise(editPromptEffect(store, T, { text: '  ', basedOn: null, by: 'a' }))
-    await Effect.runPromise(editPromptEffect(store, T, { text: 'x ', basedOn: 'v1', by: 'a' }))
+    await Effect.runPromise(editPromptEffect(store, T, { text: '  ', basedOn: null, by: 'human:a' }))
+    await Effect.runPromise(editPromptEffect(store, T, { text: 'x ', basedOn: 'v1', by: 'human:a' }))
     const [blank, raw] = (await store.read(T)).map((e) => e.data as { hash: string | null; text: string })
     expect(blank!.hash).toBeNull()
     expect(raw).toMatchObject({ text: 'x ', hash: editHash('x ') })
