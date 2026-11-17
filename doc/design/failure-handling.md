@@ -34,7 +34,7 @@
 | `toPerson` | 交给人 | — |
 | `rerunCommand` | 检查红了立刻再跑（规则） | ↻ 同一步再做一遍 |
 | `baseMerge` | base 动了合并进来（规则） | ➡ 接着往下做 |
-| `landRetry` | 重新落地（规则） | ➡ 接着往下做 |
+| `landRetry` | 重新落地（规则） | ↻ 同一步再做一遍 |
 
 **出发点**：
 - **➡ 接着往下做**：同一个 attempt，从当前 head 往前走，已有的 commit 都保留，再加新的。
@@ -300,7 +300,7 @@ summary: 给人读的一句话
 | **`fixes`** | `fix`：build 红、review 有 findings，回 implement 在 head 上修 | ➡ 接着往下做 | 每个 attempt | **6** | recipe | `rounds` |
 | **`conflictFixes`** | `conflictFix`：合并冲突，回 implement 在 head 上解 | ➡ 接着往下做 | 每个 attempt | **6** | recipe | 没有自己的名字，借用 `rounds` 的值 |
 | `baseMerges` | `baseMerge`：base 动了合并进来，再 build | ➡ 接着往下做 | 每个 attempt | 10 | 常量 | `BASE_MERGES_LIMIT` |
-| **`landRetries`** | `landRetry`：push 遇到瞬时错误后重新落地（#1221），不跑 agent | ➡ 接着往下做 | 每个 attempt | 3 | 常量 | 现在和 `redoStep` 共用 `TRANSIENT_RETRIES_LIMIT` 的计数 |
+| **`landRetries`** | `landRetry`：push 遇到瞬时错误后，同一个 head 再落地一次（#1221），不跑 agent | ↻ 同一步再做一遍 | 每个 attempt | 3 | 常量 | 现在和 `redoStep` 共用 `TRANSIENT_RETRIES_LIMIT` 的计数 |
 | **`stepRedos`** | `redoStep`：瞬时错误、崩溃、没有回执、回答读不懂、`run.turns`/`run.wall` 用完后的"接着做" | ↻ 同一步再做一遍 | 每个 attempt | 3 | 常量 | `TRANSIENT_RETRIES_LIMIT` |
 | `stepRedoWaits` | 每次 `redoStep` 之前等多久 | （跟随 `stepRedos`） | — | 1、5、15 分钟 | 常量 | `TRANSIENT_WAITS` |
 | `commandReruns` | `rerunCommand`：检查红了，在同一个 commit 上立刻再跑 | ↻ 同一步再做一遍 | 每次红 | 1 | 常量 | 0108 §17，没有名字 |
