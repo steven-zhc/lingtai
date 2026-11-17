@@ -28,16 +28,9 @@
  * `WaitResolved`; it appends `TicketSplit` ahead of it in the same
  * transaction, so a retry after a lost race re-reads and lands only that.
  */
-import {
-  reduceTicket,
-  splitProgressOf,
-  ticketStream,
-  type EventType,
-  type PayloadOf,
-  type WaitId,
-} from '@lingtai/domain'
+import { reduceTicket, splitProgressOf, ticketStream, type PayloadOf, type WaitId } from '@lingtai/domain'
 import { allowedResolutions, splitPlanProblems, describeSplitProblem } from '@lingtai/domain/wait'
-import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
+import { type EventStore, eventStore } from '@lingtai/event-store'
 import type { GitHubClient, LinkedIssue } from '@lingtai/github'
 import { Cause, Effect } from 'effect'
 
@@ -46,6 +39,7 @@ import { asFailure } from './port-face.ts'
 import { describeReason, resolveWaitHoldingEffect } from './resolve-wait.ts'
 import { splitDoneWhen } from './split-body.ts'
 import { BodyChanged } from './ticket-store.ts'
+import { recordSplitProgress } from './ticket/commands.ts'
 
 /** What the writer needs of GitHub — narrower than `GitHubClient`, and not `Tickets` (#599 kept links off it). */
 export type SplitClient = Pick<
@@ -234,19 +228,12 @@ export function splitTicketHoldingEffect(
     const known = new Map(prior.state === 'idle' ? [] : prior.children.map((c) => [c.key, c.number] as const))
     const linked = new Set(prior.state === 'idle' ? [] : prior.links.map((l) => `${l.ticket}\u0000${l.blockedBy}`))
 
-    /** Facts about GitHub, not decisions about the stream: append at its current version, once more if it moved. */
-    const note = <T extends EventType>(type: T, data: PayloadOf<T>): Effect.Effect<void, Error> => {
-      const attempt = Effect.gen(function* () {
-        const current = yield* lift(() => store.read(ticketId))
-        yield* lift(() => store.append(ticketId, current.at(-1)?.version ?? 0, [{ type, data, actor: options.by }]))
-      })
-      return attempt.pipe(
-        Effect.catchIf(
-          (e): e is ConcurrencyError => e instanceof ConcurrencyError,
-          () => attempt,
-        ),
-      )
-    }
+    /** Facts about GitHub, not decisions about the stream; the owner appends them. */
+    const note = <T extends 'SplitStarted' | 'SplitFailed' | 'SplitChildWritten' | 'SplitLinkWritten'>(
+      type: T,
+      data: PayloadOf<T>,
+    ): Effect.Effect<void, Error> =>
+      recordSplitProgress(store, ticketId, type, data, options.by).pipe(Effect.mapError(asFailure))
     yield* note('SplitStarted', {
       waitId,
       plan: { children: [...plan.children], blockedBy: [...plan.blockedBy] },

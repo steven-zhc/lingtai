@@ -1,8 +1,5 @@
 {
   "ticket-": {
-    "apps/cli/src/triage.ts": 3,
-    "packages/conductor/src/split-ticket.ts": 1,
-    "packages/conductor/src/tell.ts": 1,
-    "packages/daemon/src/converge.ts": 1
+    "apps/cli/src/triage.ts": 3
   }
 }

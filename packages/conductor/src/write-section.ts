@@ -8,8 +8,9 @@ import { Effect } from 'effect'
 
 import { upsertSection } from './body-section.ts'
 import { asFailure } from './port-face.ts'
-import { recordEffect, split, tellGitHubEffect, type IssueChannel } from './tell.ts'
+import { quietly, split, tellGitHubEffect, type IssueChannel } from './tell.ts'
 import { BodyChanged } from './ticket-store.ts'
+import { recordIssueUpdate } from './ticket/commands.ts'
 
 /** `writeSection` tried twice and the section is still not there. */
 export type WriteSectionResult = { written: true } | { written: false; detail: string }
@@ -118,12 +119,14 @@ export function writeSectionEffect(options: WriteSectionOptions): Effect.Effect<
       if (landed) {
         if (told.recorded === 'IssueUpdateFailed') {
           yield* Effect.uninterruptible(
-            recordEffect(store, ticketId, 'IssueUpdated', {
-              project: target.project,
-              issue: String(issue),
-              change: 'body',
-              detail: `found on read-back after: ${errorMessage(told.error)}`,
-            }),
+            quietly(
+              recordIssueUpdate(store, ticketId, 'IssueUpdated', {
+                project: target.project,
+                issue: String(issue),
+                change: 'body',
+                detail: `found on read-back after: ${errorMessage(told.error)}`,
+              }),
+            ),
           )
         }
         return { written: true }
