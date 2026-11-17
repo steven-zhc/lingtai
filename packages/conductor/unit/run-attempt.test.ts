@@ -21,7 +21,8 @@ import { StepMap, type StepAction } from '@lingtai/recipe'
  * process is spawned, no agent is paid and no person is asked. That is why this
  * is in `unit/` and why the `build` point runs it (0060 §1).
  */
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
+import { TestClock } from 'effect/testing'
 import { describe, expect, it } from 'vitest'
 
 import type { TerminalOutcome } from '../src/end-step.ts'
@@ -39,6 +40,8 @@ import {
   type StepEnding,
   type StepReached,
   type StepWork,
+  attemptPortsFrom,
+  runAttemptEffect,
 } from '../src/run-attempt.ts'
 import { runAttempt } from '../test/promise-faces.ts'
 
@@ -3037,5 +3040,124 @@ describe('a route names the StepEnded it was taken from', () => {
     const result = await runAttempt({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(result.routes.map((r) => r.ended)).toEqual([null])
+  })
+})
+
+// ------------------------------------------------- a transient cut-off (#1201) ----
+
+/** Walk to the end on a `TestClock`, so a wait of minutes costs nothing. */
+const walkOnTestClock = (options: AttemptOptions) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(runAttemptEffect(attemptPortsFrom(options)))
+      for (let i = 0; i < 8; i++) yield* TestClock.adjust('20 minutes')
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.provide(TestClock.layer())),
+  )
+
+const crashed = (detail: string, interrupted: 'crash' | 'timeout' = 'crash'): ActionResult => ({
+  verdict: 'did-not-finish',
+  evidence: detail,
+  findings: [],
+  interrupted,
+})
+
+describe('a run a transient API error cut off is run again in place (#1201)', () => {
+  /** An `implement` that crashes with each detail in turn, then commits. */
+  const implementing = (details: readonly string[], interrupted: 'crash' | 'timeout' = 'crash') => {
+    const contexts: ActionContext[] = []
+    const { actionsAt: base } = watchingActions()
+    let lap = 0
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+      step === 'implement'
+        ? [
+            {
+              name: 'write the change',
+              kind: 'agent',
+              yields: 'commit',
+              run: async (seenWith) => {
+                contexts.push(seenWith)
+                const detail = details[lap++]
+                return detail === undefined
+                  ? { ...PASSED, head: 'feedface00' }
+                  : { ...crashed(detail, interrupted), runtime: 'claude-code' }
+              },
+            },
+          ]
+        : base(step, actions)
+    return { actionsAt, contexts }
+  }
+
+  it('reruns twice with waits of 1 and 5 minutes, and reaches build', async () => {
+    const { bodies } = watching()
+    const { actionsAt, contexts } = implementing(['crash: API Error: 503 upstream', 'crash: API Error: 502 gateway'])
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    const reruns = seen.filter((e) => e.type === 'StepRerunInPlace').map((e) => e.data)
+    expect(reruns).toMatchObject([
+      { step: 'implement', rerun: 1, waitMs: 60_000 },
+      { step: 'implement', rerun: 2, waitMs: 300_000 },
+    ])
+    expect(result.end).not.toMatchObject({ _tag: 'WaitOnPerson' })
+    expect(result.steps.some((s) => s.step === 'build')).toBe(true)
+    // the cut-off visits are history and the rerun is told it is one
+    expect(contexts.map((c) => c.rerun)).toEqual([undefined, 1, 2])
+  })
+
+  it('holds the fourth transient crash of an attempt, counted over the attempt and not the step', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = implementing(Array.from({ length: 4 }, () => 'API Error: 503'))
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(seen.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(3)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed', cause: 'crash' } })
+  })
+
+  it('spends what a continuation already spent', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = implementing(['API Error: 503'])
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      from: { step: 'implement', waive: undefined, transientRetriesSpent: 3 },
+    } as AttemptOptions)
+
+    expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed' } })
+  })
+
+  it.each([
+    ['the account wall', "You've hit your monthly spend limit · API Error: 503"],
+    ['a sentence on no row', 'the model wandered off'],
+    ['a bare 403', 'API Error: 403 Forbidden'],
+  ])('holds for %s as it did', async (_name, detail) => {
+    const { bodies } = watching()
+    const { actionsAt } = implementing([detail])
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed' } })
+  })
+
+  it('never reruns a timeout, whatever its detail says', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = implementing(['API Error: 503'], 'timeout')
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed', cause: 'timeout' } })
   })
 })

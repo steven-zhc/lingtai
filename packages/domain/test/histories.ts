@@ -1410,6 +1410,7 @@ export const COVERS = {
     'MergeLaneWaited',
     'PassRouted',
     'ProposalRouted',
+    'StepRerunInPlace',
     'RunRefsPublished',
     'RunKeptUncommitted',
     'SandboxBoundaryRecorded',
