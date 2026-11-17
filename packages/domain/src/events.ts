@@ -1602,6 +1602,25 @@ export const ProposalRouted = z
     }
   })
 
+/**
+ * **A run an API error cut off is run again in place** (0108 §12, #1201): the same role, the same
+ * brief, the same worktree, after `waitMs`. On the attempt's stream, appended before the wait so a
+ * daemon that dies during it has already spent the count.
+ *
+ * `rerun` is this one's number among the attempt's — the reducer takes the larger, so a replay
+ * cannot count it twice. Not a `ProposalRouted`: a crash has no `proposed` visit to route.
+ *
+ * @summary A run a transient API error cut off is run again in place, after a wait that grows.
+ */
+export const StepRerunInPlace = z.object({
+  runId: z.string(),
+  step: z.string(),
+  rerun: z.number().int().positive(),
+  /** The runtime's own words that said the error was transient. */
+  said: z.string(),
+  waitMs: z.number().int().nonnegative(),
+})
+
 // --------------------------------------------------------------- control ----
 
 /** Whose pause a `ConductorPaused` is. */
@@ -2618,6 +2637,7 @@ export const EVENTS = {
   BaseChecked,
   PassRouted,
   ProposalRouted,
+  StepRerunInPlace,
   ConductorPaused,
   ConductorResumed,
   DayCeilingReached,
@@ -2724,6 +2744,7 @@ export const EVENT_AT = {
   BaseChecked: ['proposed', 'end'],
   PassRouted: [],
   ProposalRouted: ['review', 'proposed', 'end'],
+  StepRerunInPlace: [...AGENT_STEPS],
   ConductorPaused: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   ConductorResumed: ['outside'],
   DayCeilingReached: ['outside'],

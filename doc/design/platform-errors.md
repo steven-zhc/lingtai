@@ -111,9 +111,16 @@ possible `error.type` [O1].
   - `push-rejected`: `[rejected]`, `non-fast-forward`, `fetch first` and `updates were rejected`: somebody else got there first.
   - `remote-error`: a `[remote rejected] … (Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)` line: the server answered a push with a 5xx. Retried after 10 s and 30 s, then refused as `remote-error`.
   - `unreachable`: git could not reach origin — `unable to access '`, `Could not resolve host`, `Connection timed out`, `early EOF`, `RPC failed`, `remote end hung up unexpectedly`, `The requested URL returned error: 5\d\d` and the other wordings listed in the table. Retried after 10 s and 30 s, then refused as `unreachable`.
-- **Claude Code.** A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. Nothing matches a 5xx, a 529, a 429 or an *Attention Required* page: today every one of them is a crash and holds for a person.
+- **Claude Code.** A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. A crash whose detail is on a `transient` row is run again in place (`rerunInPlace`, 0108 §12), up to `TRANSIENT_RETRIES_LIMIT` times in an attempt; a sentence on no row is a crash and holds for a person.
   - `account-limit`: `You've hit your … limit`, other than the usage limit Codex says.
   - `account-limit`: `your session limit resets`.
+  - `transient`: `API Error: 500`, `502`, `503` and `504`: a server error a rerun can clear.
+  - `transient`: `Repeated 529 Overloaded errors`.
+  - `transient`: `Request timed out`.
+  - `transient`: `No response from API`.
+  - `transient`: `Server is temporarily limiting requests`.
+  - `transient`: `Request rejected (429)`.
+  - `transient`: Cloudflare's `Attention Required! | Cloudflare` page, matched on its title and never on a bare `403`.
 - **Codex.** `codexClose` makes a `turn.failed` with no agent message `never-started`. The row is tried before Claude Code's, whose looser pattern would claim the first form. Nothing reads `insufficient_quota`, `server_is_overloaded` or a status code.
   - `account-limit`: `You've hit your usage limit` and `You have hit your usage limit`.
 

@@ -55,6 +55,7 @@
  * lock is written, and it is one call.
  */
 import type { Spent } from '../attempt-next.ts'
+import { classify } from './classify.ts'
 import type { PayloadOf, RuntimeId } from '../events.ts'
 import type { BuiltInJudge } from '../judges.ts'
 import type { JudgeWhen, Proposal } from '../proposal.ts'
@@ -501,6 +502,23 @@ export const TRANSIENT_RETRIES_LIMIT = 3
 
 /** The growing waits before each transient rerun (0108 §8): the first, second and third. */
 export const TRANSIENT_WAITS = ['1 minute', '5 minutes', '15 minutes'] as const
+
+/**
+ * **Whether a crash is run again in place, and after how long** (0108 §12, #1201): null when
+ * the cause is not `crash` (a wall is the recipe's bound), when the runtime's words are not on a
+ * transient row, or when `spent` has used the attempt's `TRANSIENT_RETRIES_LIMIT`.
+ */
+export function rerunInPlace(
+  cause: 'crash' | 'timeout' | 'aborted',
+  detail: string,
+  spent: number,
+): { readonly wait: (typeof TRANSIENT_WAITS)[number] } | null {
+  if (cause !== 'crash' || spent >= TRANSIENT_RETRIES_LIMIT) return null
+  const seen = classify({ platform: 'runtime', text: detail })
+  if (seen?.platform !== 'runtime' || seen.kind !== 'transient') return null
+  const wait = TRANSIENT_WAITS[spent]
+  return wait === undefined ? null : { wait }
+}
 
 /**
  * Whether a proposal born at `step` got far enough for `implement` to have

@@ -36,7 +36,7 @@ export type Classified =
       readonly kind: 'base-protected' | 'push-rejected' | 'remote-error' | 'unreachable'
     }
   | { readonly platform: 'github'; readonly kind: 'rate-limited' }
-  | { readonly platform: 'runtime'; readonly kind: 'account-limit'; readonly runtime: RuntimeId }
+  | { readonly platform: 'runtime'; readonly kind: 'account-limit' | 'transient'; readonly runtime: RuntimeId }
 
 /** The waits between tries: three tries in all, so the count is never written apart from the list. */
 export const UNREACHABLE_WAITS: readonly `${number} seconds`[] = ['10 seconds', '30 seconds']
@@ -69,7 +69,7 @@ interface GitHubRow extends RowBase {
 
 interface RuntimeRow extends RowBase {
   readonly platform: 'runtime'
-  readonly kind: 'account-limit'
+  readonly kind: 'account-limit' | 'transient'
   readonly runtime: RuntimeId
   readonly pattern: RegExp
 }
@@ -173,6 +173,56 @@ export const FAILURE_ROWS: readonly FailureRow[] = [
     runtime: 'claude-code',
     pattern: /\byour session limit resets\b/i,
     says: '`your session limit resets`.',
+  },
+  {
+    platform: 'runtime',
+    kind: 'transient',
+    runtime: 'claude-code',
+    pattern: /\bAPI Error: 50[0234]\b/,
+    says: '`API Error: 500`, `502`, `503` and `504`: a server error a rerun can clear.',
+  },
+  {
+    platform: 'runtime',
+    kind: 'transient',
+    runtime: 'claude-code',
+    pattern: /\bRepeated 529 Overloaded errors\b/i,
+    says: '`Repeated 529 Overloaded errors`.',
+  },
+  {
+    platform: 'runtime',
+    kind: 'transient',
+    runtime: 'claude-code',
+    pattern: /\bRequest timed out\b/i,
+    says: '`Request timed out`.',
+  },
+  {
+    platform: 'runtime',
+    kind: 'transient',
+    runtime: 'claude-code',
+    pattern: /\bNo response from API\b/i,
+    says: '`No response from API`.',
+  },
+  {
+    platform: 'runtime',
+    kind: 'transient',
+    runtime: 'claude-code',
+    pattern: /\bServer is temporarily limiting requests\b/i,
+    says: '`Server is temporarily limiting requests`.',
+  },
+  {
+    platform: 'runtime',
+    kind: 'transient',
+    runtime: 'claude-code',
+    pattern: /\bRequest rejected \(429\)/i,
+    says: '`Request rejected (429)`.',
+  },
+  {
+    // The page's title, never `403`: every documented 403 from both APIs is repeatable.
+    platform: 'runtime',
+    kind: 'transient',
+    runtime: 'claude-code',
+    pattern: /Attention Required! \| Cloudflare/i,
+    says: "Cloudflare's `Attention Required! | Cloudflare` page, matched on its title and never on a bare `403`.",
   },
 ]
 

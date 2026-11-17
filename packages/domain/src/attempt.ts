@@ -245,7 +245,7 @@ export interface AttemptState {
   baseMerges?: number
   /** The conflict rounds this attempt's routes bought (#1200). Absent until one is reduced, read as 0. */
   conflictRounds?: number
-  /** The reruns of a run an API error cut off. Nothing raises it yet (#1201, #1221); absent reads as 0. */
+  /** The reruns of a run an API error cut off (`StepRerunInPlace`, #1201; #1221 spends it too); absent reads as 0. */
   transientRetries?: number
 
   version: number
@@ -574,6 +574,12 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
     // `StepStarted` sets `step` and raises `implementRound` when it is an
     // `implement` start; `lingtai attach`'s run log is where a running step's
     // current action is now.
+    // A rerun in place raises the count by its own number, never by one: a replay cannot double it (#1201).
+    case 'StepRerunInPlace': {
+      const d = event.data as PayloadOf<'StepRerunInPlace'>
+      return { ...state, ...at, transientRetries: Math.max(state.transientRetries ?? 0, d.rerun) }
+    }
+
     case 'StepStarted': {
       const d = event.data as PayloadOf<'StepStarted'>
       return {

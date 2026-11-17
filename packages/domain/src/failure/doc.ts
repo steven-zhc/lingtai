@@ -36,7 +36,7 @@ const SECTIONS: readonly Section[] = [
     title: 'Claude Code',
     of: (r) => r.platform === 'runtime' && r.runtime === 'claude-code',
     unmatched:
-      'A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. Nothing matches a 5xx, a 529, a 429 or an *Attention Required* page: today every one of them is a crash and holds for a person.',
+      'A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. A crash whose detail is on a `transient` row is run again in place (`rerunInPlace`, 0108 §12), up to `TRANSIENT_RETRIES_LIMIT` times in an attempt; a sentence on no row is a crash and holds for a person.',
   },
   {
     title: 'Codex',
