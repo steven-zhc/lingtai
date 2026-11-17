@@ -812,8 +812,9 @@ which kind a wait was got inferred again in each place that needed it, from
     2. **Once per root ticket.** `ticketSplits` is 1 over a root ticket and
        every child split from it: a child is never split, and a parent that is
        `TicketTooBig` again after its split is `askPerson(limit)`. The count is
-       read from `TicketSplit` on the ticket's stream, so no restart, release
-       or wait for the children resets it.
+       read from `SplitStarted` on the ticket's stream — the decision, not the
+       finished write — so a split interrupted midway cannot let a second plan
+       start, and no restart, release or wait for the children resets it.
     3. **The plan freezes when the split starts.** `SplitStarted` records it,
        and every retry writes that plan and no other.
     4. **A child is known by its marker and by nothing else.** Every child's
