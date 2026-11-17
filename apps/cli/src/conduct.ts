@@ -250,6 +250,7 @@ export function conductWork(
       if (options.max === 0) return 'looked-away' as const
 
       let common: CommonPassOptions
+      let discovery: CommonPassOptions['client']
       let resolved: ResolvedRecipe
 
       if (project.owner === null) {
@@ -282,6 +283,7 @@ export function conductWork(
           ...(options.snapshotWriter ? { snapshotWriter: options.snapshotWriter } : {}),
           log: options.log,
         }
+        discovery = common.client
       } else {
         const owner = project.owner
         const client = yield* Effect.promise(() =>
@@ -307,6 +309,9 @@ export function conductWork(
         // here would send `comment`, `setLabels` and `closeIssue` back to the one that fails.
         const passClient = client.withRateLimited(githubLimitPort(store, options.log, { wait: true }))
         const tickets = yield* world.ticketsFor(project, recipe, passClient).pipe(Effect.orDie)
+        // Discovery is a look: the listing before an attempt goes through the client that fails.
+        const lookTickets = yield* world.ticketsFor(project, recipe, client).pipe(Effect.orDie)
+        discovery = ticketedClientOf(client, lookTickets)
         // Looked at, now — not when the run below returns, which can be an hour
         // away, all of it with a refusal on record for a project being worked.
         yield* where.looked
@@ -516,7 +521,7 @@ export function conductWork(
       // pending — because the only thing that consumes one is the item ceasing
       // to be queued.
       // `orDie`: a listing that failed ends the look as it always did (a rejection, now a defect), never as an empty queue.
-      const offered = yield* runnableNowEffect({ client: common.client, queue: queueOf(resolved.recipe) }).pipe(
+      const offered = yield* runnableNowEffect({ client: discovery, queue: queueOf(resolved.recipe) }).pipe(
         Effect.orDie,
       )
       const selected = yield* Effect.promise(() =>
@@ -568,6 +573,7 @@ export function conductWork(
         const ran: ScheduleResult = yield* world
           .runQueue({
             ...common,
+            discovery,
             ...(options.tell
               ? {
                   took: (entry: { issue: string; title: string }) => tellTaking(entry.issue, entry.title),
