@@ -21,7 +21,7 @@ export function failingTestsOf(output: string): string[] | null {
     // A suite that failed to load is printed `<label?> <file> [ <file> ]`: the bracketed file alone is the entry.
     // It is read before any label is stripped, so a bare label cannot eat the start of a path with spaces.
     const suite = /^(.*?)\s*\[ (.+) \]$/.exec(rest)
-    if (suite !== null && (suite[1] as string).endsWith(suite[2] as string)) {
+    if (suite !== null && isLabelOnlyBefore(suite[1] as string, suite[2] as string)) {
       rest = suite[2] as string
     } else {
       // With projects vitest prints a label between FAIL and the file: `|any label|` (any characters but `|`),
@@ -34,4 +34,12 @@ export function failingTestsOf(output: string): string[] | null {
   const files = new Set(entries.map((e) => e.split(' > ')[0]))
   if (entries.length === 0 || files.size < failedFiles) return null
   return entries
+}
+
+/** The text before `[ <file> ]` is the file itself, or the file after one project label and nothing else (a test title ending in the same words is not). */
+function isLabelOnlyBefore(prefix: string, file: string): boolean {
+  if (prefix === file) return true
+  if (!prefix.endsWith(file)) return false
+  const head = prefix.slice(0, prefix.length - file.length)
+  return /^(?:\|[^|]*\||[^\s/.|]+)\s+$/.test(head)
 }

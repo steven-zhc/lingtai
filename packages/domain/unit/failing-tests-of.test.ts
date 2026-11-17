@@ -46,4 +46,9 @@ describe('failingTestsOf', () => {
       'load file.test.ts',
     ])
   })
+  it('does not take bracketed test-title text for a repeated filename', () => {
+    expect(
+      failingTestsOf(' FAIL  |unit| parser.test.ts > parser > preserves value [ value ]\n Test Files  1 failed (1)\n'),
+    ).toEqual(['parser.test.ts > parser > preserves value [ value ]'])
+  })
 })
