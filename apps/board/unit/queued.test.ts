@@ -391,7 +391,7 @@ describe('queuedStanding: a runtime at its usage limit (#1010)', () => {
   const card = { column: 'queued', runnableAt: null, project: 'lingtai' } as const
   const limit = (until: Date): Lock => ({
     kind: 'account',
-    runtime: 'claude-code',
+    account: 'claude-code',
     by: 'lingtai',
     since: new Date(2026, 10, 11, 17, 0),
     until,

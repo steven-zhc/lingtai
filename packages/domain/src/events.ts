@@ -141,6 +141,13 @@ export const RuntimeId = z.enum(['claude-code', 'codex'])
 export type RuntimeId = z.infer<typeof RuntimeId>
 
 /**
+ * A platform whose account a limit can stand on (0126 §2): a runtime, or a code
+ * host. Where a value names an account it is this, never `RuntimeId`.
+ */
+export const Account = z.enum([...RuntimeId.options, 'github'])
+export type Account = z.infer<typeof Account>
+
+/**
  * Why an integration did not happen. Moved to `vocabulary.ts` by #445, for the
  * same reason `Step` was; re-exported above under the same name.
  *
@@ -2368,7 +2375,7 @@ export const ProjectPaused = z.object({ project: z.string().min(1), by: z.string
  * @summary A runtime's account reached its usage limit; no project whose recipe uses it starts new work until it is lifted.
  */
 export const AccountLimitReached = z.object({
-  runtime: RuntimeId,
+  account: Account,
   /** ISO instant. */
   until: z.string().datetime({ offset: true }),
   untilFrom: z.enum(['message', 'message-latest', 'backoff', 'backoff-unreadable']),
@@ -2384,8 +2391,8 @@ export const AccountLimitReached = z.object({
  */
 export const AccountLimitLifted = z.union([
   // `by` first: a union takes the first member that parses, and the bare shape would strip it.
-  z.object({ runtime: RuntimeId, by: z.string() }),
-  z.object({ runtime: RuntimeId }),
+  z.object({ account: Account, by: z.string() }),
+  z.object({ account: Account }),
 ])
 
 /**
@@ -2783,6 +2790,9 @@ const BUMPED: Partial<Record<EventType, number>> = {
   Reconciled: 2,
   // 2: a retired advice is rewritten on read (#591). See the upcaster.
   WaitTriaged: 2,
+  // 2: `runtime` became `account`, which names a platform (0126 §2, #1212).
+  AccountLimitReached: 2,
+  AccountLimitLifted: 2,
 }
 
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(

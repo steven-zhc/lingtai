@@ -1159,12 +1159,12 @@ const ceilingCommand = Command.make('ceiling', {}, () =>
 ).pipe(Command.withDescription(definitionOf('ceiling').task), Command.withSubcommands([ceilingRaiseCommand]))
 const accountLift = Command.make(
   'lift',
-  { runtime: Argument.String('runtime').pipe(Argument.optional), noColor },
+  { account: Argument.String('account').pipe(Argument.optional), noColor },
   (args) =>
     daemonHandler(args, () =>
       Effect.gen(function* () {
         const { liftAccount } = yield* lift(() => import('./account-lift.ts'))
-        return yield* liftAccount(given(args.runtime), `human:${process.env['USER'] ?? 'operator'}`)
+        return yield* liftAccount(given(args.account), `human:${process.env['USER'] ?? 'operator'}`)
       }).pipe(
         // Its own sentence: the message alone, never `wizardFailed`'s stack under LINGTAI_DEBUG.
         printedBy((err) => {

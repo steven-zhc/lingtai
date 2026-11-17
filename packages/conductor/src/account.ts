@@ -1,9 +1,10 @@
 /**
- * The writers of `acct-{runtime}`: each reads the stream, asks the pure
+ * The writers of `acct-{account}`: each reads the stream, asks the pure
  * transition (`@lingtai/domain`'s `account.ts`) and appends on the transition
  * only (0126 §3). `standDownAccount` in `conduct.ts` calls `reachAccountLimit` (#1011).
  */
 import {
+  type Account,
   type AccountState,
   accountCheck,
   accountStream,
@@ -11,7 +12,6 @@ import {
   reachTransition,
   reduceAccount,
   type PayloadOf,
-  type RuntimeId,
   type ToAppend,
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
@@ -26,8 +26,8 @@ export type ReachAnswer = { kind: 'appended' } | { kind: 'already'; until: Date 
 export type LiftAnswer = { kind: 'appended' } | { kind: 'not-limited' }
 
 /** The whole stream, reduced. An absent stream is `emptyAccount`. */
-export const readAccount = (store: EventStore, runtime: RuntimeId) =>
-  Effect.tryPromise({ try: () => store.read(accountStream(runtime)), catch: (e) => e }).pipe(
+export const readAccount = (store: EventStore, account: Account) =>
+  Effect.tryPromise({ try: () => store.read(accountStream(account)), catch: (e) => e }).pipe(
     Effect.map(reduceAccount),
     Effect.mapError((e) => (e instanceof Error ? e : new Error(String(e)))),
   )
@@ -38,17 +38,17 @@ export const readAccount = (store: EventStore, runtime: RuntimeId) =>
  */
 const transitionAccount = <A>(
   store: EventStore,
-  runtime: RuntimeId,
+  account: Account,
   transition: (state: AccountState) => ToAppend | null,
   answer: (state: AccountState) => A,
   appended: A,
 ) => {
   const attempt = Effect.gen(function* () {
-    const state = yield* readAccount(store, runtime)
+    const state = yield* readAccount(store, account)
     const next = transition(state)
     if (next === null) return answer(state)
     yield* Effect.tryPromise({
-      try: () => store.append(accountStream(runtime), state.version, [next]),
+      try: () => store.append(accountStream(account), state.version, [next]),
       catch: (e) => e,
     })
     return appended
@@ -65,23 +65,23 @@ const transitionAccount = <A>(
 /** An attempt met the wall. Idempotent: a standing limit answers `already`, with the first `until`. */
 export const reachAccountLimit = (
   store: EventStore,
-  runtime: RuntimeId,
-  fields: Omit<PayloadOf<'AccountLimitReached'>, 'runtime'>,
+  account: Account,
+  fields: Omit<PayloadOf<'AccountLimitReached'>, 'account'>,
 ) =>
   transitionAccount<ReachAnswer>(
     store,
-    runtime,
-    (state) => reachTransition(state, runtime, fields),
+    account,
+    (state) => reachTransition(state, account, fields),
     (state) => ({ kind: 'already', until: state.limit!.until }),
     { kind: 'appended' },
   )
 
 /** A person says the limit is over. Idempotent: no standing limit answers `not-limited`. */
-export const liftAccountLimit = (store: EventStore, runtime: RuntimeId, by: string) =>
+export const liftAccountLimit = (store: EventStore, account: Account, by: string) =>
   transitionAccount<LiftAnswer>(
     store,
-    runtime,
-    (state) => liftTransition(state, runtime, by),
+    account,
+    (state) => liftTransition(state, account, by),
     () => ({ kind: 'not-limited' }),
     { kind: 'appended' },
   )
@@ -91,17 +91,17 @@ export const liftAccountLimit = (store: EventStore, runtime: RuntimeId, by: stri
  * passed, and nothing otherwise. Idempotent under a race: the loser re-reads,
  * finds no limit, and appends nothing.
  */
-export const liftPassedAccountLimit = (store: EventStore, runtime: RuntimeId, now: Date) =>
+export const liftPassedAccountLimit = (store: EventStore, account: Account, now: Date) =>
   transitionAccount<void>(
     store,
-    runtime,
-    (state) => accountCheck({ state, runtime, now })[0] ?? null,
+    account,
+    (state) => accountCheck({ state, account, now })[0] ?? null,
     () => undefined,
     undefined,
   )
 
 /**
- * The state of each `acct-{runtime}` the project's recipe uses, and no other
+ * The state of each `acct-{account}` the project uses — its recipe's runtimes, and `github` when it has an owner — and no other
  * (0126 §5). **A recipe that does not resolve gives the empty map and not a
  * failure**: the project is held by its refused recipe, which every start
  * already meets, and a failure here would skip it before that refusal is
@@ -111,14 +111,17 @@ export const accountsFor = (
   store: EventStore,
   state: ProjectState,
   recipeFor: (state: ProjectState) => Promise<ResolvedRecipe> = currentRecipe,
-): Effect.Effect<ReadonlyMap<RuntimeId, AccountState>, Error> =>
+): Effect.Effect<ReadonlyMap<Account, AccountState>, Error> =>
   Effect.gen(function* () {
+    // The owner is the project's own state and not the recipe's, so a recipe
+    // that fails to resolve still leaves `github` (#1212).
     const runtimes = yield* Effect.tryPromise({ try: () => recipeFor(state), catch: (e) => e }).pipe(
-      Effect.map((resolved) => runtimesOf(resolved.recipe)),
-      Effect.catch(() => Effect.succeed<readonly RuntimeId[]>([])),
+      Effect.map((resolved): readonly Account[] => runtimesOf(resolved.recipe)),
+      Effect.catch(() => Effect.succeed<readonly Account[]>([])),
     )
-    const entries = yield* Effect.forEach(runtimes, (runtime) =>
-      readAccount(store, runtime).pipe(Effect.map((account) => [runtime, account] as const)),
+    const accounts: readonly Account[] = state.owner !== null ? [...runtimes, 'github'] : runtimes
+    const entries = yield* Effect.forEach(accounts, (account) =>
+      readAccount(store, account).pipe(Effect.map((reduced) => [account, reduced] as const)),
     )
     return new Map(entries)
   })

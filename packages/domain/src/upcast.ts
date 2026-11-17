@@ -54,7 +54,19 @@ export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>
  * Add a step here in the same commit that bumps that type's `SCHEMA_VER`, never
  * separately.
  */
+/**
+ * `runtime` became `account`, which names a platform (0126 §2, #1212). The value
+ * is unchanged: every runtime is an account. Serves both `AccountLimitLifted`
+ * shapes, with `by` and without.
+ */
+const runtimeBecameAccount: Upcaster = (data) => {
+  const { runtime, ...rest } = data as { runtime: unknown }
+  return { ...rest, account: runtime }
+}
+
 export const UPCASTERS: UpcastRegistry = {
+  AccountLimitReached: { 1: runtimeBecameAccount },
+  AccountLimitLifted: { 1: runtimeBecameAccount },
   ProjectConfigured: {
     /**
      * 1 → 2: `owner` was added because the repository name alone was not enough

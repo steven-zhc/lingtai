@@ -11,7 +11,14 @@ import { describe, expect, it } from 'vitest'
 
 import { Bar } from '../src/app/bar.tsx'
 import { LockRows } from '../src/app/lock-banner.tsx'
-import { inScope, liftAccountWith, setProjectPaused, sinceLabel, type HeldProject } from '../src/lib/locks.ts'
+import {
+  bannerRows,
+  inScope,
+  liftAccountWith,
+  setProjectPaused,
+  sinceLabel,
+  type HeldProject,
+} from '../src/lib/locks.ts'
 
 const now = new Date(2026, 10, 11, 18, 0)
 const lock = (by: string, since: Date) => ({ kind: 'paused' as const, by, since })
@@ -131,9 +138,9 @@ describe('the banner row layout', () => {
 })
 
 describe('the account row (#1010)', () => {
-  const account = (runtime: 'claude-code' | 'codex', until: Date) => ({
+  const account = (named: 'claude-code' | 'codex' | 'github', until: Date) => ({
     kind: 'account' as const,
-    runtime,
+    account: named,
     by: 'lingtai' as const,
     since: new Date(2026, 10, 11, 17, 0),
     until,
@@ -167,6 +174,18 @@ describe('the account row (#1010)', () => {
       'lingtai&#x27;s recipe uses claude-code, so it waits',
     )
     expect(renderToStaticMarkup(<LockRows locks={read(held)} scope="chapter-garden" now={now} />)).toBe('')
+  })
+
+  it('shows a row for a github lock, which no recipe uses', () => {
+    const held = [{ project: 'lingtai', locks: [account('github', tonight)] }]
+    const rows = bannerRows({ held, ceiling: undefined }, undefined, now)
+    expect(rows).toMatchObject([{ kind: 'account', account: 'github', waiting: ['lingtai'] }])
+    const html = renderToStaticMarkup(<LockRows locks={read(held)} now={now} />)
+    expect(html).toContain('GitHub limit')
+    expect(html).toContain('>lift</button>')
+    expect(renderToStaticMarkup(<LockRows locks={read(held)} scope="lingtai" now={now} />)).toContain(
+      'lingtai is on GitHub, so it waits',
+    )
   })
 
   it('greys a passed limit and keeps lift', () => {
@@ -206,13 +225,13 @@ describe('liftAccountWith', () => {
     const events = await store.read('acct-claude-code')
     expect(events.filter((e) => e.type === 'AccountLimitLifted')).toHaveLength(1)
     expect(events.find((e) => e.type === 'AccountLimitLifted')?.data).toMatchObject({
-      runtime: 'claude-code',
+      account: 'claude-code',
       by: 'human:steven',
     })
     const again = await Effect.runPromise(liftAccountWith(store, 'claude-code', 'human:steven'))
     expect(again.detail).toContain('not at its usage limit')
     expect((await store.read('acct-claude-code')).filter((e) => e.type === 'AccountLimitLifted')).toHaveLength(1)
     const refused = await Effect.runPromise(liftAccountWith(store, 'claude', 'human:steven'))
-    expect(refused).toEqual({ ok: false, detail: 'unknown runtime "claude" — runtimes: claude-code, codex' })
+    expect(refused).toEqual({ ok: false, detail: 'unknown account "claude" — accounts: claude-code, codex, github' })
   })
 })

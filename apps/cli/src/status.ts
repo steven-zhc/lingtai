@@ -31,7 +31,7 @@ import {
   waitWords,
   type AccountState,
   type CeilingFacts,
-  type RuntimeId,
+  type Account,
   type ControlState,
   type Lock,
   type ProjectState,
@@ -209,8 +209,8 @@ export interface StatusReading {
   spendLine?: (
     control: ControlState | null,
   ) => Effect.Effect<{ text: string; unknownWhy: { reason: string; runs: number }[] | null }, unknown>
-  /** The runtimes the project's recipe uses and their `acct-` state. Replaceable so a test need not own a log. */
-  accounts?: (project: ProjectState) => Effect.Effect<ReadonlyMap<RuntimeId, AccountState>, unknown>
+  /** The accounts the project uses (its recipe's runtimes, and github with an owner) and their `acct-` state. Replaceable so a test need not own a log. */
+  accounts?: (project: ProjectState) => Effect.Effect<ReadonlyMap<Account, AccountState>, unknown>
   /** The control stream, whole. Replaceable so a test need not own a log. */
   control?: () => Effect.Effect<ControlState, unknown>
   /** The configured daily ceiling; throws where `limits.day_usd` does not parse. */
