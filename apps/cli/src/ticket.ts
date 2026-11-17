@@ -134,7 +134,13 @@ const defaultEdit = (command: string, initial: string, name: string): Effect.Eff
 
 /** Why a ticket verb could not start: a stable `code` for `--json`, and the sentence a person reads. */
 export interface TicketRefusal {
-  code: 'no-project' | 'no-projects' | 'ambiguous-project' | 'recipe-unreadable' | 'tickets-on-github'
+  code:
+    | 'no-project'
+    | 'store-unreadable'
+    | 'no-projects'
+    | 'ambiguous-project'
+    | 'recipe-unreadable'
+    | 'tickets-on-github'
   message: string
 }
 
@@ -252,6 +258,8 @@ export interface ListedTicket {
   title: string
   state: 'open' | 'closed'
   labels: string[]
+  /** The open blockers, ascending — the rule the queue uses. */
+  blockedBy: number[]
 }
 
 export interface TicketListing {
@@ -285,24 +293,31 @@ export const readTicketListing = (
       ? [...(yield* tickets.listIssuesSince(new Date(0)))].sort((a, b) => a.number - b.number)
       : yield* tickets.listOpenIssues()
 
-    return {
-      ok: true,
-      listing: {
-        project: name,
-        all: options.all === true,
-        tickets: issues.map((t) => {
+    // Only a ticket the store counts as blocked is asked for its links, so a
+    // list with none makes no extra query. A failed read fails the listing
+    // rather than showing `[]` (a null is not a zero).
+    const listed = yield* attempt(
+      Effect.forEach(issues, (t) =>
+        Effect.gen(function* () {
+          const open =
+            (t.dependencies?.blockedBy ?? 0) > 0
+              ? (yield* tickets.listBlockedBy(t.number)).filter((l) => l.state === 'open').map((l) => l.number)
+              : []
           const matched = kindLabelOf(t, kinds)
           return {
             number: t.number,
             kind: kindOf(t, kinds) ?? null,
             kindLabel: matched?.label.name ?? null,
             title: t.title,
-            state: t.state === 'closed' ? 'closed' : 'open',
+            state: t.state === 'closed' ? ('closed' as const) : ('open' as const),
             labels: t.labels.map((l) => l.name),
+            blockedBy: open.sort((a, b) => a - b),
           }
         }),
-      },
-    }
+      ),
+    )
+    if (!listed.ok) return { ok: false, code: 'store-unreadable', message: listed.why }
+    return { ok: true, listing: { project: name, all: options.all === true, tickets: listed.value } }
   })
 
 /** The heading and a table; the empty case stays one line (0121 §1). */
@@ -314,7 +329,8 @@ export function renderTicketList(listing: TicketListing, options: { columns?: nu
     // own rule, so a label differing only in case or whitespace is not shown
     // twice (`discover.ts:102-105`).
     const others = t.labels.filter((n) => n !== t.kindLabel)
-    const tags = [...(t.state === 'closed' ? ['closed'] : []), ...others].map((s) => `[${s}]`).join(' ')
+    const blocked = t.blockedBy.length > 0 ? [`blocked by ${t.blockedBy.map((n) => `#${n}`).join(', ')}`] : []
+    const tags = [...(t.state === 'closed' ? ['closed'] : []), ...blocked, ...others].map((s) => `[${s}]`).join(' ')
     return [`#${t.number}`, t.kind ?? '—', oneLine(t.title) + (tags ? `  ${tags}` : '')]
   })
   return [heading(project), ...table(['ID', 'KIND', 'TITLE'], rows, options)]
@@ -331,6 +347,7 @@ export function ticketListJson(listing: TicketListing): Record<string, unknown> 
       title: t.title,
       state: t.state,
       labels: t.labels,
+      blockedBy: t.blockedBy,
     })),
   }
 }
@@ -393,10 +410,12 @@ export const ticketClose = (
     return 0
   })
 
-/** The three fields a person can change through the form — never the number or the state, which the store owns. */
+/** The fields a person can change through the form — never the number or the state, which the store owns. */
 export interface TicketFormFields {
   title: string
   labels: readonly string[]
+  /** Ascending and unique. */
+  blockedBy: readonly number[]
   body: string
 }
 
@@ -406,7 +425,8 @@ export type ParsedTicketForm = { ok: true; form: TicketFormFields } | { ok: fals
  * `renderTicketForm` and `parseTicketForm` must round-trip:
  * `parseTicketForm(renderTicketForm(t))` equals `{ ok: true, form: t }` for a
  * `t` whose title has no surrounding whitespace and does not start `#!` or
- * `labels:`, whose labels contain no comma, and whose body has no trailing
+ * `labels:` or `blocked by:`, whose labels contain no comma, whose `blockedBy` is
+ * ascending and unique, and whose body has no trailing
  * whitespace (`unit/ticket.test.ts` holds this). Breaking it means every
  * `edit` rewrites the ticket even when the person touched nothing.
  *
@@ -418,7 +438,8 @@ export type ParsedTicketForm = { ok: true; form: TicketFormFields } | { ok: fals
  */
 export function renderTicketForm(form: TicketFormFields, instructions: readonly string[] = []): string {
   const labelsLine = `labels: ${form.labels.join(', ')}`
-  return [form.title, labelsLine, ...instructions, '', form.body].join('\n')
+  const blockedLine = `blocked by: ${form.blockedBy.join(', ')}`
+  return [form.title, labelsLine, blockedLine, ...instructions, '', form.body].join('\n')
 }
 
 /**
@@ -458,7 +479,11 @@ export function parseTicketForm(text: string): ParsedTicketForm {
   // Keep the blank title slot when the next line is a form field or an
   // instruction; otherwise discard blank lines pasted before a real title.
   const lines =
-    firstContent > 0 && firstLine !== undefined && !firstLine.startsWith('labels:') && !firstLine.startsWith('#!')
+    firstContent > 0 &&
+    firstLine !== undefined &&
+    !firstLine.startsWith('labels:') &&
+    !firstLine.startsWith('blocked by:') &&
+    !firstLine.startsWith('#!')
       ? rawLines.slice(firstContent)
       : rawLines
   // Search after the title slot, so an intentionally blank title does not
@@ -474,6 +499,12 @@ export function parseTicketForm(text: string): ParsedTicketForm {
   if (titleLine.startsWith('labels:')) {
     return { ok: false, why: `the first line is the title, and a title starting labels: reads as the labels line` }
   }
+  if (titleLine.startsWith('blocked by:')) {
+    return {
+      ok: false,
+      why: `the first line is the title, and a title starting blocked by: reads as the blocked by line`,
+    }
+  }
   const title = titleLine.trim()
   const rest = headerLines.slice(1).filter((l) => !l.startsWith('#!'))
 
@@ -483,14 +514,22 @@ export function parseTicketForm(text: string): ParsedTicketForm {
     labels = splitLabels(rest[0].slice('labels:'.length))
     afterLabels = rest.slice(1)
   }
-  if (afterLabels.length > 0) {
+  let blockedBy: readonly number[] = []
+  let afterBlocked = afterLabels
+  if (afterLabels[0]?.startsWith('blocked by:')) {
+    const split = splitBlockers(afterLabels[0].slice('blocked by:'.length))
+    if (!split.ok) return { ok: false, why: split.why }
+    blockedBy = split.numbers
+    afterBlocked = afterLabels.slice(1)
+  }
+  if (afterBlocked.length > 0) {
     return {
       ok: false,
-      why: `a line in the header is neither the title nor labels: — ${JSON.stringify(afterLabels[0])}`,
+      why: `a line in the header is neither the title, labels: nor blocked by: — ${JSON.stringify(afterBlocked[0])}`,
     }
   }
 
-  return { ok: true, form: { title, labels, body: bodyLines.join('\n').trimEnd() } }
+  return { ok: true, form: { title, labels, blockedBy, body: bodyLines.join('\n').trimEnd() } }
 }
 
 /** A comma-separated labels value as the form reads it; `--label` uses the same rule. */
@@ -501,12 +540,37 @@ export function splitLabels(value: string): string[] {
     .filter((s) => s !== '')
 }
 
+/**
+ * A comma-separated ticket-number list as the form and `--blocked-by` read it:
+ * an optional `#` before each, positive integers only, ascending and unique.
+ */
+export function splitBlockers(value: string): { ok: true; numbers: number[] } | { ok: false; why: string } {
+  const numbers = new Set<number>()
+  for (const item of value
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '')) {
+    const digits = item.startsWith('#') ? item.slice(1) : item
+    if (!/^[1-9][0-9]*$/.test(digits) || !Number.isSafeInteger(Number(digits))) {
+      return { ok: false, why: `blocked by: ${JSON.stringify(item)} is not a ticket number` }
+    }
+    numbers.add(Number(digits))
+  }
+  return { ok: true, numbers: [...numbers].sort((a, b) => a - b) }
+}
+
+function sameNumbers(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((n, i) => n === b[i])
+}
+
 function sameLabels(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((l, i) => l === b[i])
 }
 
 function formsEqual(a: TicketFormFields, b: TicketFormFields): boolean {
-  return a.title === b.title && a.body === b.body && sameLabels(a.labels, b.labels)
+  return (
+    a.title === b.title && a.body === b.body && sameLabels(a.labels, b.labels) && sameNumbers(a.blockedBy, b.blockedBy)
+  )
 }
 
 /**
@@ -515,12 +579,20 @@ function formsEqual(a: TicketFormFields, b: TicketFormFields): boolean {
  * comparing against what the editor hands back never reads a stored row's
  * trailing whitespace as a change nobody made.
  */
-function formFromTicket(ticket: {
-  title: string
-  labels: readonly { name: string }[]
-  body: string
-}): TicketFormFields {
-  const raw: TicketFormFields = { title: ticket.title, labels: ticket.labels.map((l) => l.name), body: ticket.body }
+function formFromTicket(
+  ticket: {
+    title: string
+    labels: readonly { name: string }[]
+    body: string
+  },
+  blockedBy: readonly number[],
+): TicketFormFields {
+  const raw: TicketFormFields = {
+    title: ticket.title,
+    labels: ticket.labels.map((l) => l.name),
+    blockedBy,
+    body: ticket.body,
+  }
   const parsed = parseTicketForm(renderTicketForm(raw))
   return parsed.ok ? parsed.form : raw
 }
@@ -540,7 +612,12 @@ function formFromTicket(ticket: {
  * rather than let that save land.
  */
 function titleAndLabelsRoundTrip(ticket: { title: string; labels: readonly { name: string }[] }): string | null {
-  const raw: TicketFormFields = { title: ticket.title, labels: ticket.labels.map((l) => l.name), body: '' }
+  const raw: TicketFormFields = {
+    title: ticket.title,
+    labels: ticket.labels.map((l) => l.name),
+    blockedBy: [],
+    body: '',
+  }
   const parsed = parseTicketForm(renderTicketForm(raw))
   if (!parsed.ok) return parsed.why
   if (parsed.form.title !== raw.title) return `its title would not come back unchanged from this form`
@@ -548,11 +625,33 @@ function titleAndLabelsRoundTrip(ticket: { title: string; labels: readonly { nam
   return null
 }
 
+/** The first number in `numbers` that is no ticket here, as the sentence a refusal says; `null` when all exist. */
+const firstMissing = (tickets: DbTicketsEffects, numbers: readonly number[]): Effect.Effect<string | null> =>
+  Effect.gen(function* () {
+    for (const n of numbers) {
+      const got = yield* attempt(tickets.getIssue(n))
+      if (!got.ok) return got.why
+    }
+    return null
+  })
+
+/** Links `issue` to each blocker in turn; stops at the first refusal and returns it, `null` when all landed. */
+const linkAll = (tickets: DbTicketsEffects, issue: number, blockers: readonly number[]): Effect.Effect<string | null> =>
+  Effect.gen(function* () {
+    for (const b of blockers) {
+      const added = yield* attempt(tickets.addBlockedBy(issue, b))
+      if (!added.ok) return added.why
+    }
+    return null
+  })
+
 export interface TicketNewOptions {
   project?: string
   title?: string
   /** Raw, comma-separated. */
   label?: string
+  /** Raw, comma-separated ticket numbers. */
+  blockedBy?: string
   /** The body, or `-` for stdin. */
   body?: string
 }
@@ -570,7 +669,8 @@ const newFromFlags = (
     const stdin = reading.stdin ?? process.stdin
 
     if (options.title === undefined) {
-      const stray = options.label !== undefined ? '--label' : '--body'
+      const stray =
+        options.label !== undefined ? '--label' : options.blockedBy !== undefined ? '--blocked-by' : '--body'
       log(`${stray} needs --title; without it the editor opens and these flags would be dropped`)
       return 1
     }
@@ -583,6 +683,12 @@ const newFromFlags = (
     const unreadable = titleAndLabelsRoundTrip({ title, labels: labels.map((name) => ({ name })) })
     if (unreadable !== null) {
       log(`${unreadable} — ticket edit could not read it back`)
+      return 1
+    }
+
+    const blockers = splitBlockers(options.blockedBy ?? '')
+    if (!blockers.ok) {
+      log(blockers.why)
       return 1
     }
 
@@ -610,15 +716,29 @@ const newFromFlags = (
       body = read.t
     }
 
-    const made = yield* attempt(
-      Effect.flatMap(ticketsFor(name), (tickets) => tickets.createIssue({ title, body: body.trimEnd(), labels })),
-    )
+    const opened = yield* attempt(ticketsFor(name))
+    if (!opened.ok) {
+      log(opened.why)
+      return 1
+    }
+    const tickets = opened.value
+    const missing = yield* firstMissing(tickets, blockers.numbers)
+    if (missing !== null) {
+      log(missing)
+      return 1
+    }
+    const made = yield* attempt(tickets.createIssue({ title, body: body.trimEnd(), labels }))
     if (!made.ok) {
       log(made.why)
       return 1
     }
     const created = made.value
     log(`${symbol.pass()} created #${created.number}  ${created.title}`)
+    const linked = yield* linkAll(tickets, created.number, blockers.numbers)
+    if (linked !== null) {
+      log(`${linked} — #${created.number} exists without its blocked by links`)
+      return 1
+    }
     if (kindOf(created, kinds) === null) {
       log(`#${created.number} carries no kind label — the queue will not take it`)
     }
@@ -630,7 +750,10 @@ export const ticketNew = (
   log: (line: string) => void = console.log,
   reading: TicketReading = {},
 ): Effect.Effect<number> =>
-  options.title !== undefined || options.label !== undefined || options.body !== undefined
+  options.title !== undefined ||
+  options.label !== undefined ||
+  options.blockedBy !== undefined ||
+  options.body !== undefined
     ? newFromFlags(options, log, reading)
     : newFromEditor(options, log, reading)
 
@@ -661,8 +784,11 @@ const newFromEditor = (
     if (!recipe) return 1
 
     const kinds = queueOf(recipe).kinds
-    const empty: TicketFormFields = { title: '', labels: [], body: '' }
-    const instructions = [`#! kinds: ${kinds.join(', ')} — one belongs in labels:, or the queue never sees this ticket`]
+    const empty: TicketFormFields = { title: '', labels: [], blockedBy: [], body: '' }
+    const instructions = [
+      `#! kinds: ${kinds.join(', ')} — one belongs in labels:, or the queue never sees this ticket`,
+      '#! blocked by: takes ticket numbers, e.g. 3, 5 — this ticket waits until they close',
+    ]
     const rendered = renderTicketForm(empty, instructions)
 
     const opened = yield* attempt(edit(command, rendered, `${name}-new`))
@@ -690,18 +816,32 @@ const newFromEditor = (
       return 1
     }
 
+    const store = yield* attempt(ticketsFor(name))
+    if (!store.ok) {
+      log(`${store.why} — your text is kept at ${edited.path}`)
+      return 1
+    }
+    const tickets = store.value
+    const missing = yield* firstMissing(tickets, after.form.blockedBy)
+    if (missing !== null) {
+      log(`${missing} — your text is kept at ${edited.path}`)
+      return 1
+    }
     const made = yield* attempt(
-      Effect.flatMap(ticketsFor(name), (tickets) =>
-        tickets.createIssue({ title: after.form.title, body: after.form.body, labels: after.form.labels }),
-      ),
+      tickets.createIssue({ title: after.form.title, body: after.form.body, labels: after.form.labels }),
     )
     if (!made.ok) {
       log(`${made.why} — your text is kept at ${edited.path}`)
       return 1
     }
     const created = made.value
-    yield* edited.discard()
     log(`${symbol.pass()} created #${created.number}  ${created.title}`)
+    const linked = yield* linkAll(tickets, created.number, after.form.blockedBy)
+    if (linked !== null) {
+      log(`${linked} — #${created.number} exists without its blocked by links; your text is kept at ${edited.path}`)
+      return 1
+    }
+    yield* edited.discard()
     if (kindOf(created, kinds) === null) {
       log(`#${created.number} carries no kind label — the queue will not take it`)
     }
@@ -752,7 +892,15 @@ export const ticketEdit = (
       return 1
     }
 
-    const original = formFromTicket(ticket)
+    const links = yield* attempt(tickets.listBlockedBy(options.issue))
+    if (!links.ok) {
+      log(links.why)
+      return 1
+    }
+    const original = formFromTicket(
+      ticket,
+      links.value.map((l) => l.number),
+    )
     const rendered = renderTicketForm(original)
 
     const opened = yield* attempt(edit(command, rendered, `${name}-${ticket.number}`))
@@ -777,33 +925,76 @@ export const ticketEdit = (
       return 1
     }
 
+    // What the CLI can predict is refused before the first write, so the
+    // common mistake leaves nothing half done.
+    const wanted = new Set(after.form.blockedBy)
+    const had = new Set(original.blockedBy)
+    const toAdd = after.form.blockedBy.filter((n) => !had.has(n))
+    const toRemove = original.blockedBy.filter((n) => !wanted.has(n))
+    if (toAdd.includes(ticket.number)) {
+      log(`#${ticket.number} cannot block itself — your text is kept at ${edited.path}`)
+      return 1
+    }
+    const missing = yield* firstMissing(tickets, toAdd)
+    if (missing !== null) {
+      log(`${missing} — your text is kept at ${edited.path}`)
+      return 1
+    }
+
     const changed: string[] = []
     if (after.form.title !== original.title) changed.push('title')
     if (!sameLabels(original.labels, after.form.labels)) changed.push('labels')
     if (after.form.body !== original.body) changed.push('body')
+    const fieldsChanged = changed.length > 0
 
     // The row this form was opened against may have moved while the editor had
     // it open — a second `edit` on the same ticket, saved first. `updateFields`
     // writes only if the row still holds exactly what `ticket` read, so the
     // check and the write are one statement and nothing can land in between.
     const expected = { title: ticket.title, labels: ticket.labels.map((l) => l.name), body: ticket.body }
-    const written = yield* attempt(
-      tickets.updateFields(options.issue, expected, {
-        title: after.form.title,
-        labels: after.form.labels,
-        // `original.body` is `ticket.body` run through `formFromTicket`'s
-        // trim, so a save that did not touch the body must write the row's own
-        // bytes back rather than that trimmed form — otherwise an untouched
-        // body's trailing whitespace is silently stripped on every edit, while
-        // the success line below names only the field the person changed.
-        body: changed.includes('body') ? after.form.body : ticket.body,
-      }),
-    )
-    if (!written.ok) {
-      log(`${written.why} — your text is kept at ${edited.path}`)
+    if (fieldsChanged) {
+      const written = yield* attempt(
+        tickets.updateFields(options.issue, expected, {
+          title: after.form.title,
+          labels: after.form.labels,
+          // `original.body` is `ticket.body` run through `formFromTicket`'s
+          // trim, so a save that did not touch the body must write the row's own
+          // bytes back rather than that trimmed form — otherwise an untouched
+          // body's trailing whitespace is silently stripped on every edit, while
+          // the success line below names only the field the person changed.
+          body: changed.includes('body') ? after.form.body : ticket.body,
+        }),
+      )
+      if (!written.ok) {
+        log(`${written.why} — your text is kept at ${edited.path}`)
+        return 1
+      }
+    }
+    // The links have no guard of their own: removes, then adds, stopping at
+    // the first refusal and saying exactly what landed.
+    const moved: string[] = []
+    const refused = yield* Effect.gen(function* () {
+      for (const n of toRemove) {
+        const done = yield* attempt(tickets.removeBlockedBy(options.issue, n))
+        if (!done.ok) return { why: done.why, verb: '-', n }
+        moved.push(`-#${n}`)
+      }
+      for (const n of toAdd) {
+        const done = yield* attempt(tickets.addBlockedBy(options.issue, n))
+        if (!done.ok) return { why: done.why, verb: '+', n }
+        moved.push(`+#${n}`)
+      }
+      return null
+    })
+    const landed = [...changed, ...(moved.length > 0 ? [`blocked by ${moved.join(' ')}`] : [])]
+    if (refused !== null) {
+      const said = landed.length > 0 ? `updated #${ticket.number} — ${landed.join(', ')}` : 'nothing written'
+      log(
+        `${said}; refused blocked by ${refused.verb}#${refused.n}: ${refused.why} — your text is kept at ${edited.path}`,
+      )
       return 1
     }
     yield* edited.discard()
-    log(`${symbol.pass()} updated #${ticket.number} — ${changed.join(', ')}`)
+    log(`${symbol.pass()} updated #${ticket.number} — ${landed.join(', ')}`)
     return 0
   })

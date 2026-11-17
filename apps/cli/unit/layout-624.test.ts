@@ -21,8 +21,24 @@ const listing: TicketListing = {
   project: 'p',
   all: true,
   tickets: [
-    { number: 3, kind: 'bug', kindLabel: 'bug', title: LONG, state: 'open', labels: ['bug', 'agent:hold'] },
-    { number: 10, kind: null, kindLabel: null, title: 'unclassified', state: 'closed', labels: ['triage'] },
+    {
+      number: 3,
+      kind: 'bug',
+      kindLabel: 'bug',
+      title: LONG,
+      state: 'open',
+      labels: ['bug', 'agent:hold'],
+      blockedBy: [],
+    },
+    {
+      number: 10,
+      kind: null,
+      kindLabel: null,
+      title: 'unclassified',
+      state: 'closed',
+      labels: ['triage'],
+      blockedBy: [],
+    },
   ],
 }
 
@@ -57,8 +73,8 @@ describe('ticket list', () => {
       project: 'p',
       all: true,
       tickets: [
-        { number: 3, kind: 'bug', title: LONG, state: 'open', labels: ['bug', 'agent:hold'] },
-        { number: 10, kind: null, title: 'unclassified', state: 'closed', labels: ['triage'] },
+        { number: 3, kind: 'bug', title: LONG, state: 'open', labels: ['bug', 'agent:hold'], blockedBy: [] },
+        { number: 10, kind: null, title: 'unclassified', state: 'closed', labels: ['triage'], blockedBy: [] },
       ],
     })
   })
