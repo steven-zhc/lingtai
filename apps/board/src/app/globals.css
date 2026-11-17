@@ -3083,6 +3083,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .ld-notes { font-size: 13px; color: var(--ink-2); display: flex; flex-direction: column; gap: 4px; }
 .ld-notes p { margin: 0; }
 .ld-decision { color: var(--ink); }
+.ld-by { color: var(--muted); }
 .ld-notes ul { margin: 4px 0 0; padding-left: 18px; }
 .ld-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin: 4px 0 0; padding-top: 12px; border-top: 1px solid var(--rule); font-size: 12.5px; color: var(--muted); }
 .ld-links { margin-left: auto; display: inline-flex; gap: 12px; }

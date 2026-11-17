@@ -114,6 +114,7 @@ function run(over: Partial<AttemptView> = {}): AttemptView {
     at: '2026-09-08T03:00:00.000Z',
     baseSha: null,
     headSha: null,
+    landing: null,
     configHash: null,
     turns: 73,
     costUsd: emptyBill(),

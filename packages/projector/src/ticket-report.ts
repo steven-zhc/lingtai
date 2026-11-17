@@ -91,6 +91,10 @@ export interface ReportWait {
   reason: string
   triage: { attempt: number; result: string; cause: string | null } | null
   resolution: string | null
+  /** Who resolved it; null while open, and on rows stored before this field. */
+  by: string | null
+  /** The commit the resolution names: only `Approve` and `GrantFixRound` carry one. */
+  onSha: string | null
 }
 
 interface OpenInterval {
@@ -221,7 +225,7 @@ export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow
     unknownClaims: Number(row.unknown_claims),
     passTimes: json(row.pass_times, []),
     reviews: json(row.reviews, []),
-    waits: json(row.waits, []),
+    waits: json<ReportWait[]>(row.waits, []).map((w) => ({ ...w, by: w.by ?? null, onSha: w.onSha ?? null })),
     cost: json(row.cost, {}),
     title: state.title,
     mergeCommit: state.lifecycle.status === 'landed' ? state.lifecycle.mergeCommit : null,
@@ -277,7 +281,7 @@ function load(ctx: ProjectionContextPort, ticket: string): Effect.Effect<{ s: St
 }
 
 /** A wait as the report shows it, off the reduce's. */
-function reportWaitOf(w: TicketWait): ReportWait {
+export function reportWaitOf(w: TicketWait): ReportWait {
   const { started, result } = w.triage
   if (result !== null && started === null) throw new Error(`${w.waitId} holds a triage result with no attempt`)
   return {
@@ -293,6 +297,11 @@ function reportWaitOf(w: TicketWait): ReportWait {
             cause: result._tag === 'TriageAdvised' ? result.cause._tag : null,
           },
     resolution: w.resolution?.resolution._tag ?? null,
+    by: w.resolution?.by ?? null,
+    onSha:
+      w.resolution?.resolution._tag === 'Approve' || w.resolution?.resolution._tag === 'GrantFixRound'
+        ? w.resolution.resolution.onSha
+        : null,
   }
 }
 
