@@ -4679,7 +4679,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // The agent's own last message is the evidence (#1198): it is what a judge
             // declared at `nothing-produced` reads. A silent agent leaves it empty, so
             // `said` is null and no judge is paid to read nothing.
-            return { stopped: (outcome.text ?? '').trim().slice(0, 500), committedNothing: true }
+            return { stopped: (outcome.text ?? '').trim().slice(0, 8_000), committedNothing: true }
           }
           // A receipt, so `interrupted` stands for nothing any more.
           stoppedBy = null
