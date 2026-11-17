@@ -49,8 +49,10 @@ export function RecipeForm({
     allow !== undefined && first !== null ? { host: allow.host, kind: first.kind } : null,
   )
   const [mark, setMark] = useState<{ rev: number; lines: readonly number[]; replace: boolean } | null>(
-    allow !== undefined && first !== null ? { rev: allow.nonce, lines: first.lines, replace: false } : null,
+    allow !== undefined && first !== null ? { rev: 0, lines: first.lines, replace: false } : null,
   )
+  // The marks have a counter of their own: the allow nonce and a save's clearing are different events, so they never share a number.
+  const markSeq = useRef(0)
   const applied = useRef(allow?.nonce)
   useEffect(() => {
     if (allow === undefined || allow.nonce === applied.current) return
@@ -63,14 +65,14 @@ export function RecipeForm({
       setPush({ rev: allow.nonce, text: next.text })
     }
     setSaid({ host: allow.host, kind: next.kind })
-    setMark({ rev: allow.nonce, lines: next.lines, replace: false })
+    setMark({ rev: ++markSeq.current, lines: next.lines, replace: false })
   }, [allow])
   // A saved draft is no longer *not saved*, and its marks are done.
   useEffect(() => {
     // Keyed on the state object, not on `ok`: that stays true across saves, and each save is its own completion.
     if (!state.ok) return
     setSaid(null)
-    setMark((m) => (m === null ? null : { rev: m.rev + 0.5, lines: [], replace: true }))
+    setMark({ rev: ++markSeq.current, lines: [], replace: true })
   }, [state])
   // The textarea is the loading state and the fallback; the editor takes over once it is up.
   const [editorReady, setEditorReady] = useState(false)
