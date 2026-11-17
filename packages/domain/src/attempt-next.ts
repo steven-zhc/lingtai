@@ -107,7 +107,7 @@ export type LandAgain = z.infer<typeof LandAgain>
  */
 export const RerunStep = z.object({
   _tag: z.literal('RerunStep'),
-  step: z.enum(['prepared', 'design', 'review']),
+  step: z.enum(['prepared', 'design', 'review', 'proposed', 'merge']),
   retry: z.number().int(),
 })
 export type RerunStep = z.infer<typeof RerunStep>

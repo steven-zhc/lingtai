@@ -314,7 +314,7 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     })
   })
 
-  it('ask-again is once per arrival, absent at proposed and merge, and absent once the transient retries are spent (#1224)', () => {
+  it('ask-again is once per arrival, offered at proposed and merge too, and absent once the transient retries are spent (#1224)', () => {
     const base = offerFor(answerUnreadableAtReview, policy, zero).available.map((c) => c.id)
     expect(base).toContain('ask-again')
     expect(offerFor(answerUnreadableAtReview, policy, zero, true).available.map((c) => c.id)).toEqual(
@@ -326,7 +326,10 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(out.unavailable.map((c) => c.id)).not.toContain('ask-again')
     for (const from of ['proposed', 'merge'] as const) {
       const p: Proposal = { _tag: 'AnswerUnreadable', from, raw: 'not JSON' }
-      expect(offerFor(p, policy, zero).available.map((c) => c.id)).not.toContain('ask-again')
+      expect(offerFor(p, policy, zero).available).toContainEqual({
+        id: 'ask-again',
+        next: { _tag: 'RerunStep', step: from, retry: 1 },
+      })
     }
   })
 

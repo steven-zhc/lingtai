@@ -3546,6 +3546,21 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
       })
     })
 
+    it('is not asked a second time when its ask-again crashes transiently and the rerun is unreadable again', async () => {
+      const { bodies } = watching()
+      const { actionsAt, contexts } = reviewing([unreadable, crashed('crash: API Error: 503 upstream'), unreadable])
+      const { emit, seen } = events()
+
+      const result = await walkOnTestClock({ recipe: recipe(), context, emit, bodies, actionsAt })
+
+      expect(contexts).toHaveLength(3)
+      expect(seen.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(2)
+      expect(result.end).toMatchObject({
+        _tag: 'WaitOnPerson',
+        reason: { proposal: { _tag: 'AnswerUnreadable', from: 'review' } },
+      })
+    })
+
     it('gives today’s offer once the transient retries are spent', async () => {
       const { bodies } = watching()
       const { actionsAt: reviewer, contexts } = reviewing([unreadable])

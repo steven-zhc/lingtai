@@ -2788,7 +2788,7 @@ export const EVENT_AT = {
   BaseChecked: ['proposed', 'end'],
   PassRouted: [],
   ProposalRouted: ['review', 'proposed', 'end'],
-  StepRerunInPlace: ['prepared', ...AGENT_STEPS],
+  StepRerunInPlace: ['prepared', ...AGENT_STEPS, 'proposed', 'merge'],
   ConductorPaused: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   ConductorResumed: ['outside'],
   DayCeilingReached: ['outside'],

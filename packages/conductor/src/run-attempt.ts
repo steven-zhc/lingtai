@@ -2187,6 +2187,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           if (again !== null) {
             transientRetriesSpent += 1
             rerun = rerunOf({ context: visitContext, reached: visitedBefore, results: reached.results })
+            // The crash's rerun is the same arrival: an ask-again already spent on it is not given back.
+            askingAgain = arrivedAskedAgain ? at : null
             yield* emitRerunInPlace(at, transientRetriesSpent, reason.detail, again.wait)
             yield* Effect.sleep(again.wait)
             continue

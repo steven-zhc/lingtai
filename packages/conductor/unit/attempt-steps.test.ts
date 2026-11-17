@@ -1962,9 +1962,13 @@ describe('proposed is the only step that routes, and one judge answers each when
     // `proposed`'s own way-through visit still happens on the spine between
     // `review` and `merge`, and now a second, routing visit is recorded once
     // `merge`'s own `AnswerUnreadable` reaches `routeProposal`.
-    expect(result.steps.filter((visit) => visit.step === 'proposed')).toHaveLength(2)
-    expect(result.routes).toEqual([expect.objectContaining({ from: 'merge', to: 'waiting', ceiling: null })])
-    expect(result.routes[0]?.why).toContain('no `judge:` is declared for a "answer-unreadable"')
+    // The first unreadable answer is asked again by rule (#1224); the second is the one that waits.
+    expect(result.steps.filter((visit) => visit.step === 'proposed')).toHaveLength(3)
+    expect(result.routes).toEqual([
+      expect.objectContaining({ reply: { _tag: 'Selected', candidate: 'ask-again', why: expect.any(String) } }),
+      expect.objectContaining({ from: 'merge', to: 'waiting', ceiling: null }),
+    ])
+    expect(result.routes[1]?.why).toContain('no `judge:` is declared for a "answer-unreadable"')
     expect(result.end).toMatchObject({
       _tag: 'WaitOnPerson',
       reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'AnswerUnreadable', from: 'merge' } },

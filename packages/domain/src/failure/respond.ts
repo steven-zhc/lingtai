@@ -723,13 +723,8 @@ export function offerFor(
     }
     case 'AnswerUnreadable': {
       // #1224, 0108 §18: the same agent is asked again, once per arrival. Only where an agent was
-      // dispatched to be asked: `proposed` and `merge` have none to re-dispatch.
-      if (
-        (proposal.from === 'design' || proposal.from === 'review') &&
-        proposal.raw.trim() !== '' &&
-        !askedAgain &&
-        (spent.transientRetries ?? 0) < TRANSIENT_RETRIES_LIMIT
-      ) {
+      // dispatched to be asked: any step an agent can be declared at.
+      if (proposal.raw.trim() !== '' && !askedAgain && (spent.transientRetries ?? 0) < TRANSIENT_RETRIES_LIMIT) {
         available.push({
           id: 'ask-again',
           next: { _tag: 'RerunStep', step: proposal.from, retry: (spent.transientRetries ?? 0) + 1 },
