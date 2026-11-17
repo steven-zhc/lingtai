@@ -216,15 +216,19 @@ lingtai ticket close <n> [--project <p>]
   Closes that row — not lingtai close, which ends a work item on
   the log. The daemon drops it on its next sweep, not at once.
 lingtai ticket new [--project <p>]
-  Opens $VISUAL or $EDITOR on a form: a title, a labels: line, then
-  the body. Quitting with the form unchanged does nothing. No kind
+  Opens $VISUAL or $EDITOR on a form: a title, a labels: line, a
+  blocked by: line (ticket numbers, e.g. 3, 5), then the body.
+  Quitting with the form unchanged does nothing. No kind
   label and the ticket is created with a warning the queue will
   not take it.
-lingtai ticket new --title <t> [--label <a,b>] [--body <t> | -]
+lingtai ticket new --title <t> [--label <a,b>] [--blocked-by <n,n>]
+    [--body <t> | -]
   No editor: creates the ticket from the flags. --body - reads the
-  body from stdin. --label and --body need --title.
+  body from stdin. --label, --blocked-by and --body need --title.
+  --blocked-by names tickets this one waits for; each must exist.
 lingtai ticket edit <n> [--project <p>]
-  The same form, started from the ticket; writes what changed.
+  The same form, started from the ticket; writes what changed,
+  including its blocked by: line.
 --project <p> is required with more than one project registered.
 ```
 

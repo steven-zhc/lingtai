@@ -445,6 +445,8 @@ export interface TicketRequest {
   /** `new`: the flag form — no editor. `labels` is the raw comma-separated value, and `body` may be `-` for stdin. */
   title?: string
   labels?: string
+  /** `new`: raw, comma-separated ticket numbers. */
+  blockedBy?: string
   body?: string
 }
 export type BacklogRequest =
@@ -524,6 +526,7 @@ const liveRunners: Runners = {
             ...project,
             ...(request.title === undefined ? {} : { title: request.title }),
             ...(request.labels === undefined ? {} : { label: request.labels }),
+            ...(request.blockedBy === undefined ? {} : { blockedBy: request.blockedBy }),
             ...(request.body === undefined ? {} : { body: request.body }),
           })
         case 'edit':
@@ -753,6 +756,7 @@ const ticketNew = Command.make(
     project: projectOption,
     title: optionalText('title'),
     label: optionalText('label'),
+    blockedBy: optionalText('blocked-by'),
     body: optionalText('body'),
     noColor,
   },
@@ -762,6 +766,7 @@ const ticketNew = Command.make(
       const project = given(args.project)
       const title = given(args.title)
       const labels = given(args.label)
+      const blockedBy = given(args.blockedBy)
       const body = given(args.body)
       yield* ranWith(
         runners.ticket({
@@ -769,6 +774,7 @@ const ticketNew = Command.make(
           ...(project === undefined ? {} : { project }),
           ...(title === undefined ? {} : { title }),
           ...(labels === undefined ? {} : { labels }),
+          ...(blockedBy === undefined ? {} : { blockedBy }),
           ...(body === undefined ? {} : { body }),
         }),
       )
