@@ -332,7 +332,10 @@ fixes the bounds and the endings that router works inside.
   implementer said something, and a judge declared at `nothing-produced` is shown
   the ticket and the message; one declared at `fixer-disagrees` is shown the
   findings and the fixer's message, and the round it buys keeps them as
-  `recheck`), and §19's *respond* half — `packages/domain/src/failure/` holds
+  `recheck`; and the `setup-refused` and `answer-unreadable` rows, #1224: a
+  registry's 5xx at `prepared` reruns it in place, and an unreadable answer at
+  `design` or `review` is asked once more, both counted as transient reruns and
+  both chosen by rule before any judge), and §19's *respond* half — `packages/domain/src/failure/` holds
   *classify* (`classify.ts`), *explain* (`explain.ts`) and, in `respond.ts`, the
   account-limit wait, `offerFor`, its two bounds and `BUILT_IN_FOR`; and
   `platform-errors.md`'s *What Lingtai recognises today* is generated from the
