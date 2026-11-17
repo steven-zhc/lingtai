@@ -3,13 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Home page · "Pick a failure" section · mock v1</title>
+<title>Home page · "Pick a failure" section · mock</title>
 <!--
   Mock for a new section on the public home page (apps/site/src/app/page.tsx).
-  Source of truth for every path: doc/design/failure-handling.md, sections 零, 二, 五, 六, 八, 九.
+  Source of truth for every path: doc/design/failure-handling.md, sections 六, 八, 九.
   Self-contained: inline CSS and JS, no external requests, no framework.
   The palette is copied from apps/board/src/app/globals.css; the section rules
   from apps/site/src/app/site.css and home.css.
+
+  The drawing is one SVG laid out from the shape of each path (PATHS in the
+  script): a loop where a step is redone, a double tap where a check is rerun,
+  a fork into three branches where a ticket is split, a side line merging in
+  where main moved, a lock and a dashed wait where an account limit ran out.
+  Wide: time runs left to right across three lanes. Narrow: time runs down
+  three columns, and the labels sit in a column beside the path.
 -->
 <style>
 /* ---- palette: apps/board/src/app/globals.css, light and dark ---------------- */
@@ -21,7 +28,6 @@
   --signal: #9c5a08; --signal-soft: #f7ead6;
   --pass: #2c7a4c; --pass-soft: #dfeee4;
   --fail: #a33029; --fail-soft: #f6e1de;
-  --held: #63549e; --held-soft: #e8e4f4;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --measure: 68ch;
@@ -36,7 +42,6 @@
     --signal: #e0a55c; --signal-soft: #33260f;
     --pass: #61be86; --pass-soft: #122c1e;
     --fail: #e2776e; --fail-soft: #331816;
-    --held: #a797da; --held-soft: #221d36;
     color-scheme: dark;
   }
 }
@@ -44,34 +49,32 @@
 body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* ---- reviewer chrome (not part of the page), as in why-nothing-runs.html ----- */
+/* ---- reviewer chrome (not part of the page) --------------------------------- */
 .rv { position: sticky; top: 0; z-index: 30; background: #1f1f1f; color: #ddd; font: 13px -apple-system, system-ui, sans-serif; }
 .rv-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 12px; align-items: center; }
 .rv-tabs h1 { font-size: 13px; color: #ddd; margin: 0 12px 0 0; font-weight: 600; letter-spacing: 0; }
 .rv-tabs button { font: inherit; font-size: 12px; padding: 5px 10px; border: 1px solid #444; background: #2b2b2b; color: #ccc; border-radius: 4px; cursor: pointer; }
 .rv-tabs button.on { background: #f4f1ea; color: #111; border-color: #f4f1ea; }
+.rv-tabs .sep { flex: 1; }
+.rv-tabs .tog.on { background: #f0d9a8; border-color: #f0d9a8; color: #111; }
 .rv-note { margin: 0; padding: 6px 14px 8px; background: #2b2b2b; color: #ddd; font-size: 12px; line-height: 1.5; display: none; max-width: none; }
 .rv-note.on { display: block; }
-.rv-note code { font: 11.5px ui-monospace, Menlo, monospace; color: #f0d9a8; }
-.rv-map { display: none; background: #262626; color: #ddd; padding: 10px 14px 14px; font-size: 12px; overflow-x: auto; }
+.rv-note code, .rv-map code { font: 11.5px ui-monospace, Menlo, monospace; color: #f0d9a8; }
+.rv-map { display: none; background: #262626; color: #ddd; padding: 10px 14px 14px; font-size: 12px; overflow-x: auto; max-height: 55vh; }
 .rv-map.on { display: block; }
 .rv-map table { border-collapse: collapse; min-width: 900px; }
 .rv-map th, .rv-map td { text-align: left; vertical-align: top; border-bottom: 1px solid #3a3a3a; padding: 5px 10px 5px 0; }
 .rv-map th { color: #aaa; font-weight: 600; }
-.rv-map code { font: 11.5px ui-monospace, Menlo, monospace; color: #f0d9a8; }
-.rv-flag { color: #f0a080; }
-/* A note pinned to the page for the reviewer: mono, dashed, never visitor copy. */
 .rv-pin { display: block; margin: 0 0 10px; font: 600 10.5px/1.4 var(--mono); letter-spacing: .04em; color: var(--muted); border: 1px dashed var(--rule-2); border-radius: 3px; padding: 4px 8px; max-width: none; }
 
 /* ---- the page frame --------------------------------------------------------- */
 .page { max-width: 80rem; margin: 0 auto; padding: 0 24px; }
-.mock.phone .page { max-width: 375px; padding: 0 16px; border-inline: 1px dashed var(--rule-2); background: var(--ground); }
-.mock { overflow-x: clip; }
-.mock.phone { background: var(--surface-2); }
+body.phone { background: var(--surface-2); }
+body.phone .page { max-width: 375px; padding: 0 16px; border-inline: 1px dashed var(--rule-2); background: var(--ground); }
+body.phone h2 { font-size: 30px; }
 p { max-width: var(--measure); }
 h2, h3 { margin: 0 0 14px; line-height: 1.2; font-weight: 600; }
 h2 { font-size: clamp(30px, 3.2vw, 44px); line-height: 1.12; letter-spacing: -0.045em; max-width: 19ch; }
-.mock.phone h2 { font-size: 30px; }
 .kicker { font: 600 11px var(--mono); letter-spacing: .11em; text-transform: uppercase; color: var(--accent-ink); margin: 0 0 16px; }
 .tag { display: inline-block; font: 600 9.5px/1 var(--mono); letter-spacing: .06em; padding: 3px 6px; border-radius: 3px; vertical-align: 2px; white-space: nowrap; }
 .tag.ill { color: var(--muted); border: 1px dashed var(--rule-2); }
@@ -79,79 +82,109 @@ h2 { font-size: clamp(30px, 3.2vw, 44px); line-height: 1.12; letter-spacing: -0.
 .btn { font: 600 13px var(--sans); border: 1px solid var(--rule-2); background: var(--surface); color: var(--ink); border-radius: 5px; padding: 7px 13px; display: inline-block; }
 .btn.pri { background: var(--signal); border-color: var(--signal); color: var(--surface); }
 
-/* ---- the neighbours, shown faded so the placement reads -------------------- */
-.nb { position: relative; padding: 40px 0 28px; border-top: 1px solid var(--rule); opacity: .55; }
+/* ---- the neighbours, faded so the placement reads ----------------------------- */
+.nb { padding: 40px 0 28px; border-top: 1px solid var(--rule); opacity: .5; }
 .nb .sub { color: var(--ink-2); font-size: 17px; margin: 0; }
-.nb-fade { height: 56px; margin-top: 10px; border-radius: 9px; background: linear-gradient(var(--surface-2), transparent); }
-.nb-dark { margin-inline: calc(50% - 50vw); background: #0c1316; color: #dde6e8; padding: 40px 0 28px; opacity: .55; border-block: 1px solid #2e434b; }
-.mock.phone .nb-dark { margin-inline: -16px; }
+.nb-dark { margin-inline: calc(50% - 50vw); background: #0c1316; color: #dde6e8; padding: 40px 0 28px; opacity: .55; }
+body.phone .nb-dark { margin-inline: -16px; }
 .nb-dark .inner { max-width: 80rem; margin: 0 auto; padding: 0 24px; }
 .nb-dark .kicker { color: #7fdade; }
 .nb-dark h2 span { display: block; color: #7fdade; }
-.nb-centre { text-align: center; }
-.nb-centre h2, .nb-centre p { margin-left: auto; margin-right: auto; }
+.page { overflow-x: clip; }
 
 /* ---- the section ------------------------------------------------------------ */
 .fp { padding: 88px 0; border-top: 1px solid var(--rule); container-type: inline-size; }
-.fp-head { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 36px; align-items: end; margin-bottom: 28px; }
+.fp-head { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 36px; align-items: end; margin-bottom: 26px; }
 .fp-head .sub { margin: 0 0 5px; color: var(--ink-2); font-size: 16px; line-height: 1.55; }
 .fp-head h2 { margin: 0; }
 
-/* The chips: each one a failure in the visitor's own words, with its count. */
-.fp-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; padding: 0; list-style: none; }
-.fp-chip { font: 600 14px/1.3 var(--sans); text-align: left; cursor: pointer; border: 1px solid var(--rule-2); background: var(--surface); color: var(--ink); border-radius: 10px; padding: 9px 14px 8px; display: grid; gap: 3px; }
-.fp-chip small { font: 500 11px var(--mono); color: var(--muted); letter-spacing: 0; }
+.fp-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+.fp-chip { font: 600 14px/1.3 var(--sans); text-align: left; cursor: pointer; border: 1px solid var(--rule-2); background: var(--surface); color: var(--ink); border-radius: 10px; padding: 8px 13px 7px; display: grid; gap: 2px; }
+.fp-chip small { font: 500 10.5px var(--mono); color: var(--muted); }
 .fp-chip:hover { border-color: var(--accent); }
 .fp-chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--ground); }
 .fp-chip[aria-pressed="true"] small { color: var(--rule-2); }
-.fp-counts { font: 11px var(--mono); color: var(--muted); margin: 0 0 22px; }
+.fp-counts { font: 11px var(--mono); color: var(--muted); margin: 0 0 18px; }
 
-/* The lanes. One row per layer; the dot travels across and down. */
-.fp-stage { position: relative; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
-.fp-lane { display: grid; grid-template-columns: 11.5rem minmax(0, 1fr); border-top: 1px dashed var(--rule-2); }
-.fp-lane:first-of-type { border-top: 0; }
-.fp-lab { padding: 16px 16px 14px 18px; border-right: 1px solid var(--rule); box-shadow: inset 3px 0 0 var(--lane); }
-.fp-lab b { display: block; font-size: 16px; letter-spacing: -.02em; color: var(--lane-ink); }
-.fp-lab small { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.4; margin-top: 2px; }
-.fp-lane[data-lane="rule"]   { --lane: var(--accent); --lane-ink: var(--accent-ink); --lane-soft: var(--accent-soft); }
-.fp-lane[data-lane="triage"] { --lane: var(--ink-2);  --lane-ink: var(--ink);        --lane-soft: var(--surface-2); }
-.fp-lane[data-lane="you"]    { --lane: var(--signal); --lane-ink: var(--signal);     --lane-soft: var(--signal-soft); }
-.fp-track { position: relative; height: 92px; }
-.fp-track::before { content: ""; position: absolute; left: 14px; right: 14px; top: 34px; border-top: 1px solid var(--rule); }
-.fp-lane.hit .fp-track { background: color-mix(in srgb, var(--lane-soft) 55%, transparent); }
-.fp-mark { position: absolute; top: 34px; width: 0; height: 0; z-index: 2; }
-.fp-mark i { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--rule-2); }
-.fp-mark.stop i { left: -9px; top: -9px; width: 18px; height: 18px; border: 2px solid var(--lane); background: var(--surface); }
-.fp-mark.stop.on i { background: var(--lane); box-shadow: 0 0 0 5px color-mix(in srgb, var(--lane) 22%, transparent); }
-.fp-mark span { position: absolute; top: 14px; transform: translateX(-50%); width: max-content; max-width: 13rem; font-size: 12.5px; line-height: 1.3; color: var(--muted); text-align: center; }
-.fp-mark.stop span { color: var(--lane-ink); font-weight: 600; }
-.fp-mark.l span { transform: none; left: -6px; text-align: left; }
-.fp-mark.r span { transform: translateX(-100%); left: 6px; text-align: right; }
-/* A corner (the path turns down here): its label sits above the line, on the side the path is not. */
-.fp-mark.corner span { top: auto; bottom: 7px; transform: none; left: 8px; text-align: left; white-space: nowrap; max-width: none; font-size: 12px; }
-.fp-mark.corner.r span { transform: translateX(-100%); left: -8px; text-align: right; }
-.fp-trail { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: visible; }
-.fp-trail polyline { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
-.fp-trail .base { stroke: var(--accent); }
-.fp-trail .ext { stroke: var(--signal); }
-.fp-dot { position: absolute; left: 0; top: 0; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); z-index: 3; opacity: 0; }
-.fp-dot.on { opacity: 1; }
-.fp-dot.you { background: var(--signal); box-shadow: 0 0 0 4px color-mix(in srgb, var(--signal) 25%, transparent); }
+/* ---- the drawing ------------------------------------------------------------ */
+.fp-stage { position: relative; background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; }
+.fp-svg { display: block; width: 100%; }
+.fp-svg text { font-family: var(--sans); }
+.ln-rule { --c: var(--ink-2); } .ln-look { --c: var(--accent); } .ln-you { --c: var(--signal); }
+.band-rule { fill: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+.band-look { fill: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+.band-you  { fill: color-mix(in srgb, var(--signal-soft) 60%, transparent); }
+.band-sep { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 3 4; }
+.lane-name { font-weight: 600; font-size: 14px; letter-spacing: -.01em; }
+.lane-sub { font-size: 11.5px; fill: var(--muted); }
+.lane-name.rule { fill: var(--ink-2); } .lane-name.look { fill: var(--accent-ink); } .lane-name.you { fill: var(--signal); }
+.lane-head-sm { font: 600 10px var(--mono); letter-spacing: .04em; text-anchor: middle; }
+.guide { stroke: var(--rule); stroke-width: 1; }
+
+.seg { fill: none; stroke: var(--c, var(--ink-2)); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.seg.dash { stroke-dasharray: 2 5; stroke-width: 2; }
+.seg.side { stroke: var(--muted); stroke-width: 2; }
+.seg.fix { stroke: var(--accent); stroke-width: 2.5; }
+.seg.thin { stroke: var(--muted); stroke-width: 1.25; stroke-dasharray: 2 3; }
+.seg.loop { stroke: var(--ink-2); stroke-width: 2; }
+.fade { opacity: 0; transition: opacity .35s ease-out; }
+.fade.on { opacity: 1; }
+
+.dot { fill: var(--ink); stroke: var(--surface); stroke-width: 2.5; }
+.dot.you { fill: var(--signal); }
+.dot.look { fill: var(--accent); }
+.dot.sm { stroke-width: 2; }
+
+.mk { opacity: 0; transform-box: fill-box; transform-origin: center; }
+.mk.on { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  html:not(.rm) .mk { transition: opacity .25s ease-out, transform .35s cubic-bezier(.3, 1.6, .5, 1); transform: scale(.4); }
+  html:not(.rm) .mk.on { transform: scale(1); }
+  html:not(.rm) .mk.pulse .ring { animation: pulse 1.1s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes pulse { 0% { opacity: .55; transform: scale(1); } 100% { opacity: 0; transform: scale(2.1); } }
+}
+.mk .bg { fill: var(--surface); }
+.mk .ring { fill: none; stroke: var(--signal); stroke-width: 2; opacity: 0; }
+.mk-fail .bg { fill: var(--fail-soft); stroke: var(--fail); stroke-width: 1.5; }
+.mk-fail text { fill: var(--fail); }
+.mk-ok .bg { fill: var(--pass-soft); stroke: var(--pass); stroke-width: 1.5; }
+.mk-ok text { fill: var(--pass); }
+.mk-land .bg { fill: var(--pass); }
+.mk-land text { fill: var(--surface); }
+.mk-rule .bg { fill: var(--surface); stroke: var(--ink-2); stroke-width: 1.5; }
+.mk-rule text, .mk-rule path { fill: none; stroke: var(--ink-2); }
+.mk-rule text { fill: var(--ink-2); stroke: none; }
+.mk-look .bg { fill: var(--accent); }
+.mk-look text { fill: var(--surface); }
+.mk-you .bg { fill: var(--signal); }
+.mk-you text { fill: var(--surface); }
+.mk-commit .bg { fill: var(--surface); stroke: var(--ink-2); stroke-width: 2; }
+.mk text { font: 700 10px var(--sans); text-anchor: middle; dominant-baseline: central; }
+.mk .num { font: 600 10px var(--mono); fill: var(--ink-2); }
+
+.lbl { font-size: 12px; font-weight: 500; fill: var(--ink-2); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; opacity: 0; transition: opacity .3s ease-out; }
+.lbl.on { opacity: 1; }
+.lbl.k-fail { fill: var(--fail); } .lbl.k-ok, .lbl.k-land { fill: var(--pass); font-weight: 600; }
+.lbl.k-look { fill: var(--accent-ink); } .lbl.k-you { fill: var(--signal); font-weight: 600; }
+.lbl.k-tick { font: 600 10.5px var(--mono); fill: var(--muted); }
+.leader { stroke: var(--rule-2); stroke-width: 1; fill: none; stroke-dasharray: 2 3; opacity: 0; transition: opacity .3s; }
+.leader.on { opacity: 1; }
+html.rm .fade, html.rm .lbl, html.rm .leader { transition: none; }
 
 /* What happened, in one line; then the limit; then "and if it keeps happening". */
 .fp-out { margin-top: 18px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 24rem); gap: 22px 28px; align-items: start; }
 .fp-out.no-ask { grid-template-columns: minmax(0, 1fr); }
 .fp-where { font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 6px; color: var(--muted); }
-.fp-where b { color: var(--accent-ink); }
+.fp-where b { color: var(--ink-2); }
+.fp-where b.look { color: var(--accent-ink); }
 .fp-where b.you { color: var(--signal); }
-.fp-where b.triage { color: var(--ink); }
 .fp-what { font-size: 19px; line-height: 1.45; letter-spacing: -.01em; margin: 0 0 10px; color: var(--ink); }
 .fp-bound { margin: 0; color: var(--ink-2); font-size: 15px; padding-left: 12px; border-left: 2px solid var(--rule-2); }
 .fp-bound::before { content: "Limit "; font: 600 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
 .fp-more { margin-top: 14px; font: 600 14px var(--sans); background: none; border: 0; padding: 0; color: var(--accent-ink); cursor: pointer; border-bottom: 1px solid var(--rule-2); }
 .fp-more:hover { border-bottom-color: var(--accent); }
 .fp-ext { margin: 12px 0 0; color: var(--ink-2); font-size: 15px; padding-left: 12px; border-left: 2px solid var(--signal); }
-.fp-idle { color: var(--muted); font-size: 15px; margin: 0; }
+.fp-nomore { margin: 14px 0 0; color: var(--muted); font-size: 14px; }
 
 /* What the person sees when the ticket is unclear: the Waiting card. */
 .fp-ask { margin: 0; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 12px; overflow: hidden; font-size: 13.5px; }
@@ -179,8 +212,8 @@ h2 { font-size: clamp(30px, 3.2vw, 44px); line-height: 1.12; letter-spacing: -0.
 .fp-say { font-weight: 600; font-size: 15.5px; }
 .fp-item .fp-count { grid-column: 1; font: 11px var(--mono); color: var(--muted); }
 .fp-lanetag { grid-column: 2; grid-row: 1 / span 2; align-self: center; font: 600 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
-.fp-lanetag.rule { background: var(--accent-soft); color: var(--accent-ink); }
-.fp-lanetag.triage { background: var(--surface-2); color: var(--ink); }
+.fp-lanetag.rule { background: var(--surface-2); color: var(--ink-2); }
+.fp-lanetag.look { background: var(--accent-soft); color: var(--accent-ink); }
 .fp-lanetag.you { background: var(--signal-soft); color: var(--signal); }
 .fp-item .fp-what { font-size: 15px; }
 .fp-item .fp-bound, .fp-item .fp-ext { font-size: 14px; margin-bottom: 10px; }
@@ -188,26 +221,15 @@ h2 { font-size: clamp(30px, 3.2vw, 44px); line-height: 1.12; letter-spacing: -0.
 .fp-item > :last-child { margin-bottom: 14px; }
 .fp-edge { color: var(--muted); font-size: 13px; margin: 14px 0 0; }
 
-/* Script decides which of the two shows. Without it, the list is the section. */
 .no-js .fp-live { display: none; }
 .no-js .fp-all > summary { display: none; }
-.js .fp-noscript-note { display: none; }
 
 @container (max-width: 760px) {
   .fp-head, .fp-out { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .fp-list { grid-template-columns: 1fr; }
-  .fp-lane { grid-template-columns: minmax(0, 1fr); }
-  .fp-lab { border-right: 0; display: flex; gap: 10px; align-items: baseline; padding: 10px 14px 0; box-shadow: none; }
-  .fp-lab b { font-size: 14px; }
-  .fp-lab b::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--lane); margin-right: 7px; vertical-align: 1px; }
-  .fp-lab small { margin: 0; font-size: 12px; }
-  .fp-track { height: 84px; }
-  .fp-track::before { left: 8px; right: 8px; top: 26px; }
-  .fp-mark { top: 26px; }
-  .fp-mark span { max-width: 8.5rem; font-size: 11.5px; }
-  /* On a phone only the stops and the turns keep their words; the in-between ones would collide. */
-  .fp-mark:not(.stop):not(.corner) span { display: none; }
-  .fp-chip { font-size: 13.5px; padding: 8px 12px 7px; }
+  .fp-chips { gap: 6px; }
+  .fp-chip { font-size: 13px; padding: 6px 11px 5px; }
+  .fp-chip small { display: none; }
   .fp-what { font-size: 17px; }
 }
 @media (max-width: 800px) { .fp { padding: 64px 0; } }
@@ -217,47 +239,44 @@ h2 { font-size: clamp(30px, 3.2vw, 44px); line-height: 1.12; letter-spacing: -0.
 
 <div class="rv" id="rv">
   <div class="rv-tabs">
-    <h1>首页 · 选一种失败 · mock v1</h1>
-    <button class="on" data-tab="live" title="The section as a visitor with script sees it.">交互</button>
-    <button data-tab="nojs" title="Script off: the paths are a list of details.">无 JS</button>
-    <button data-tab="phone" title="375px wide.">手机 375px</button>
-    <button data-tab="map" title="Each chip against section 六 and section 九.">对照表</button>
+    <h1>首页 · 选一种失败 · mock</h1>
+    <button class="on" data-tab="live">交互</button>
+    <button data-tab="nojs">无 JS</button>
+    <button data-tab="map">对照表</button>
+    <span class="sep"></span>
+    <button class="tog" id="t-phone" aria-pressed="false">375px</button>
+    <button class="tog" id="t-rm" aria-pressed="false">减少动效</button>
   </div>
-  <p class="rv-note on" data-tab="live">Pick a chip. The dot runs Rule → (Triage) → stop; the lane it stops in lights up. "And if it keeps happening?" plays the path past the limit, which is the only way most chips reach <b>You</b>. Counts on the chips are placeholders (HTML comment marks them). Reduced motion: the dot and trail appear at the end, no travel.</p>
-  <p class="rv-note" data-tab="nojs">Script off. The drawing is hidden and the same seven paths are a list of <code>&lt;details&gt;</code>; the drawing reads its labels and text from this list, so the two cannot disagree. Reload this tab with JS really off to see the same thing.</p>
-  <p class="rv-note" data-tab="phone">375px. The section uses container queries, so this frame behaves like a phone: lane names move above their track, the result and the question card stack. The lanes stay horizontal; seven waypoints fit at this width.</p>
-  <p class="rv-note" data-tab="map">Every chip against <code>failure-handling.md</code> 六 (the row) and 九 (the limit). Visitor copy never uses these names. Rows marked in orange are the ones I could not map cleanly.</p>
+  <p class="rv-note on" data-tab="live">The path's shape is what happened: a <b>loop</b> where a step is redone, a <b>double tap</b> where a check is rerun, a <b>second layer</b> where a fix goes on top of the work, a <b>pause with a bubble</b> where you are asked, a <b>fork into three</b> and back where a ticket is split, a <b>side line merging in</b> where main moved, a <b>lock and a dashed wait</b> where an account limit ran out. The trail stays, so the end state is a diagram. Labels appear as the dot passes. "And if it keeps happening?" repeats the shape with a counter until the limit, then climbs to You. 375px: time runs down, labels sit in a column beside the path. 减少动效 simulates <code>prefers-reduced-motion</code>: the final diagram is drawn at once. Chip counts and the $ are placeholders.</p>
+  <p class="rv-note" data-tab="nojs">Script off: the drawing is hidden and each failure is a <code>&lt;details&gt;</code> with what happened, the limit, and what happens past it.</p>
+  <p class="rv-note" data-tab="map">Each chip against <code>failure-handling.md</code>. Visitor copy says "one quick look" for both judge and triage.</p>
   <div class="rv-map" data-tab="map">
     <table>
-      <thead><tr><th>Chip</th><th>六 row</th><th>Lane</th><th>Action</th><th>Limit (九)</th><th>Past the limit</th></tr></thead>
+      <thead><tr><th>Chip</th><th>六 row</th><th>Shape</th><th>Limit (九)</th><th>Past the limit (the "keeps happening" shape)</th></tr></thead>
       <tbody>
-        <tr><td>The API went down at 3am</td><td>第 2 类 · 瞬时 API 错误 (5xx/529/429)</td><td>Rule</td><td><code>redoStep</code> from head</td><td><code>stepRedos</code> 3, waits 1/5/15 min</td><td><code>askPerson(limit)</code></td></tr>
-        <tr><td>A test is flaky</td><td>第 3 类 · build 红</td><td>Rule</td><td><code>rerunCommand</code>; red→green + the three flaky conditions → pass, backlog minor</td><td><code>commandReruns</code> 1</td><td>red twice → <code>fixRefusal</code> (<code>refusalFixes</code> 6) → triage <code>WrongApproach</code> → <code>startNewAttempt</code> (<code>newAttempts</code> 2) else <code>askPerson(limit)</code></td></tr>
-        <tr><td>The reviewer found a bug</td><td>第 3 类 · review 有 findings</td><td>Triage</td><td><code>FixableLines</code> → <code>fixRefusal</code></td><td><code>refusalFixes</code> 6</td><td>第 3 类 last row: <code>WrongApproach</code> → <code>startNewAttempt</code> (2), else <code>askPerson(limit)</code></td></tr>
-        <tr><td>The ticket is too big</td><td>第 2 类 · <code>run.turns</code>/<code>run.wall</code> 用完</td><td>Triage</td><td><code>TicketTooBig</code> + plan → <code>splitTicket</code> (≤8 children, parent re-checks its own Done when)</td><td><code>ticketSplits</code> 1</td><td><code>askPerson(limit)</code> (八 §5)</td></tr>
-        <tr><td>The ticket is unclear</td><td>第 4 类 · design 阶段提问</td><td>You</td><td><code>askPerson(unclear)</code>, <code>TriageQuestion</code> format (≤5 Qs, 2–4 options, recommended first)</td><td><code>personAsks</code> 5 <span class="rv-flag">(still 【待定】 in 十二)</span></td><td><code>askPerson(limit)</code></td></tr>
-        <tr><td>Someone else changed main</td><td>第 5 类 · base 动了</td><td>Rule</td><td><code>mergeBaseBranch</code>, rebuild; review again only if files overlap (#1210)</td><td><code>baseBranchMerges</code> 10; conflict → <code>resolveConflict</code>, <code>conflictResolutions</code> 6</td><td class="rv-flag">方案第六节第 5 类：<code>baseBranchMerges</code> 用完 → <code>askPerson(limit)</code></td></tr>
-        <tr><td>My Claude limit ran out</td><td>第 1 类 · agent 根本没启动（账户额度用完）</td><td>Rule</td><td>lock the account, unlock at reset, redo the step from the saved head (#1205)</td><td class="rv-flag">none: it waits, nothing is counted</td><td>— (no "keeps happening" button)</td></tr>
+        <tr><td>The API went down at 3am</td><td>第 2 类 瞬时 API 错误</td><td>✕ → commit marker (WIP, 三) → loop with clock (<code>redoStep</code> after 1 min) → checks → landed</td><td><code>stepRedos</code> 3, waits 1/5/15</td><td>loops 1·2·3 with 1/5/15 min → ✕ → climbs to You (<code>askPerson(limit)</code>)</td></tr>
+        <tr><td>A test is flaky</td><td>第 3 类 build 红</td><td>✕ → double tap ↻ on the same point (<code>rerunCommand</code>) → ✓ → pin dropped to the side (backlog minor) → review → landed</td><td><code>commandReruns</code> 1</td><td>tap stays red → fix layers 1–6 on top of the line (<code>fixRefusal</code>, <code>refusalFixes</code> 6) → one closer look (triage) → You</td></tr>
+        <tr><td>The reviewer found a bug</td><td>第 3 类 review 有 findings</td><td>✕ → up to One look (judge <code>FixableLines</code>) → back down onto the same line → a second layer runs on top (<code>fixRefusal</code>) → checks → landed</td><td><code>refusalFixes</code> 6</td><td>excursion + layer, 6 times with a counter → one closer look (triage; <code>WrongApproach</code> would start over) → You</td></tr>
+        <tr><td>The ticket is unclear</td><td>第 4 类 design 提问</td><td>? → down to You → bubble pulses (pause, no motion) → "you answered" on the same point → back up, carries on → landed</td><td><code>personAsks</code> 5</td><td>bubbles 1–5 along You → "stops asking" (<code>askPerson(limit)</code>)</td></tr>
+        <tr><td>The ticket is too big</td><td>第 2 类 <code>run.wall</code> 用完 → triage <code>TicketTooBig</code></td><td>✕ → One look → splits → fork into #1 #2 #3, each its own dot, run in order (dashed = waiting its turn) → back together → parent checks its own list (八 §4, <code>satisfied</code>) → landed</td><td><code>ticketSplits</code> 1</td><td>#2 runs out of time too → not split again → You (八 §5)</td></tr>
+        <tr><td>Someone else changed main</td><td>第 5 类 base 动了</td><td>a side line (main) merges into the path (<code>mergeBaseBranch</code>) → checks again → landed</td><td><code>baseBranchMerges</code> 10</td><td>merges 1–10 → You (第 5 类 用完)</td></tr>
+        <tr><td>My Claude limit ran out</td><td>第 1 类 agent 没启动</td><td>lock → dashed "waits for reset" → unlock on the same line → landed (#1205)</td><td>none (不计次数)</td><td>no button; one line says why</td></tr>
       </tbody>
     </table>
-    <p style="margin:10px 0 0;max-width:none">Not given a chip: 第 1 类 prepared <code>SetupBroken</code> → <code>askPerson(environment)</code>; 第 2 类 unknown crash / unreadable answer (same path as the API chip); 第 3 类 diff too big, implement not <code>Implemented</code>; 第 5 类 push transient (<code>retryLanding</code> 3), push refused, branch gone; 第 6 类 triage fails (<code>triageRetries</code> 1 → <code>askPerson</code>). The list's footnote covers 第 6 类 in one line.</p>
   </div>
 </div>
 
-<div class="mock no-js" id="mock">
 <div class="page">
 
-  <!-- neighbour above: unchanged, shown faded -->
   <div class="nb" aria-hidden="true">
     <span class="rv-pin">ABOVE · the replay section, unchanged</span>
     <p class="kicker">Replay <span class="tag ill">ILLUSTRATION</span></p>
     <h2>The agent got it wrong. Twice.</h2>
     <p class="sub">Scroll down. The receipt beside it fills in one step at a time.</p>
-    <div class="nb-fade"></div>
   </div>
 
   <!-- ===================== the new section ===================== -->
-  <section class="fp" id="when-it-fails" aria-labelledby="fp-title">
+  <section class="fp no-js" id="when-it-fails" aria-labelledby="fp-title">
     <span class="rv-pin">NEW · sits right after the replay</span>
     <div class="fp-head">
       <div>
@@ -269,138 +288,99 @@ h2 { font-size: clamp(30px, 3.2vw, 44px); line-height: 1.12; letter-spacing: -0.
 
     <div class="fp-live">
       <div class="fp-chips" role="group" aria-label="Pick a failure" id="fp-chips"></div>
+      <!-- PLACEHOLDER counts: will be computed from Lingtai's own event log, this month (as the books section is). -->
       <p class="fp-counts">Counts: Lingtai's own log, this month <span class="tag ph">PLACEHOLDER</span></p>
 
       <div class="fp-stage" id="fp-stage">
-        <svg class="fp-trail" id="fp-trail" aria-hidden="true"><polyline class="base"/><polyline class="ext"/></svg>
-        <div class="fp-lane" data-lane="rule">
-          <div class="fp-lab"><b>Rule</b><small>Free. No agent runs.</small></div>
-          <div class="fp-track"></div>
-        </div>
-        <div class="fp-lane" data-lane="triage">
-          <div class="fp-lab"><b>One look</b><small>One quick look names the cause.</small></div>
-          <div class="fp-track"></div>
-        </div>
-        <div class="fp-lane" data-lane="you">
-          <div class="fp-lab"><b>You</b><small>Only what needs a person.</small></div>
-          <div class="fp-track"></div>
-        </div>
-        <div class="fp-dot" id="fp-dot" aria-hidden="true"></div>
+        <svg class="fp-svg" id="fp-svg" role="img" aria-labelledby="fp-svg-title"><title id="fp-svg-title">The path this failure takes</title></svg>
       </div>
 
       <div class="fp-out no-ask" id="fp-out" aria-live="polite">
-        <div id="fp-result"><p class="fp-idle">Pick a failure above. A rule tries first; if no rule fits, triage takes one look; you only hear about what needs you.</p></div>
+        <div id="fp-result"></div>
         <div id="fp-askslot"></div>
       </div>
     </div>
 
     <!--
-      The list below is the source of truth for the drawing: the script reads
-      each item's words, path, and text from it.
-        data-path / data-ext: "lane x label | lane x label ...", x in % of the track.
-      PLACEHOLDER COUNTS: every .fp-count number is invented. They will be
-      computed from Lingtai's own event log for the current month, the way the
-      books section is (apps/site/src/lib/books).
+      The list below is what the page says without script, and the script reads
+      each item's words from it (what happened, the limit, past the limit), so
+      the drawing and the list cannot disagree.
+      PLACEHOLDER COUNTS: every .fp-count number is invented.
     -->
     <details class="fp-all" open>
       <summary>Every path, as a list</summary>
       <ul class="fp-list">
 
-        <li><details class="fp-item" data-key="api" data-lane="rule"
-              data-path="rule 26 Recognised: a temporary error | rule 60 Waits, then redoes the step"
-              data-ext="rule 84 | you 84 Stops and tells you">
+        <li><details class="fp-item" data-key="api">
           <summary><span class="fp-say">The API went down at 3am</span><span class="fp-count">handled 41× this month · asked a person 0×</span><span class="fp-lanetag rule">Rule</span></summary>
-          <p class="fp-what">Redone from the last commit after 1 minute. You never heard about it.</p>
-          <p class="fp-bound">At most 3 times, after 1, 5, then 15 minutes. Then it asks you.</p>
-          <p class="fp-ext">Still down after the third wait? It stops, says which limit ran out and how many times it tried, and waits for you. Every saved commit is still there.</p>
+          <p class="fp-what">It saved the half-done work, waited a minute, and redid the step from there. You never heard about it.</p>
+          <p class="fp-bound">At most 3 tries, after 1, 5, then 15 minutes. Then it asks you.</p>
+          <p class="fp-ext">Still down after the third wait? It stops, says which limit ran out and how many times it tried, and waits for you. The saved work is still there.</p>
         </details></li>
 
-        <li><details class="fp-item" data-key="flaky" data-lane="rule"
-              data-path="rule 26 Your checks went red | rule 60 Runs them again, at once"
-              data-ext="rule 84 Red twice: the agent fixes it | triage 84 Still red: a fresh start | you 84 Then asks you">
+        <li><details class="fp-item" data-key="flaky">
           <summary><span class="fp-say">A test is flaky</span><span class="fp-count">handled 23× this month · asked a person 0×</span><span class="fp-lanetag rule">Rule</span></summary>
-          <p class="fp-what">Your checks ran again on the same commit, straight away. Red, then green: it carries on, and lists the flaky test for you to look at later.</p>
-          <p class="fp-bound">One rerun only. Red twice means the code is wrong, so the agent fixes it.</p>
-          <p class="fp-ext">Red twice: the agent gets the real output and fixes the code, up to 6 times. If the approach looks wrong, it starts over from main with a note on why, at most twice. Then it asks you.</p>
+          <p class="fp-what">Your checks went red. It ran them again on the same code, at once: green. It carried on, and noted the flaky test for you to look at later.</p>
+          <p class="fp-bound">One rerun only. Red twice means it is real, so the agent fixes it.</p>
+          <p class="fp-ext">Red twice: the agent fixes the code on top of its own work, up to 6 times. Still red: one closer look, then it asks you. If the approach looks wrong, it starts over from main instead, at most twice.</p>
         </details></li>
 
-        <li><details class="fp-item" data-key="review" data-lane="triage"
-              data-path="rule 26 No rule fits a review | triage 26 | triage 60 Names the lines to fix"
-              data-ext="triage 84 Wrong approach: a fresh start | you 84 Then asks you">
-          <summary><span class="fp-say">The reviewer found a bug</span><span class="fp-count">handled 58× this month · asked a person 1×</span><span class="fp-lanetag triage">One look</span></summary>
-          <p class="fp-what">One quick look at the findings named the lines to change. The agent fixed them on top of its own work, and your checks and the review ran again.</p>
-          <p class="fp-bound">Up to 6 fixes. Then a fresh start, at most twice. Then it asks you.</p>
-          <p class="fp-ext">Six fixes and still refused? If the approach looks wrong, it starts over from main with a note on what went wrong, at most twice. Otherwise it stops and asks you.</p>
+        <li><details class="fp-item" data-key="review">
+          <summary><span class="fp-say">The reviewer found a bug</span><span class="fp-count">handled 58× this month · asked a person 1×</span><span class="fp-lanetag look">One look</span></summary>
+          <p class="fp-what">One quick look named the lines to change. The agent fixed them on top of its own work, and your checks and the review ran again.</p>
+          <p class="fp-bound">Up to 6 fixes. Then a fresh start, at most twice, or it asks you.</p>
+          <p class="fp-ext">Six fixes and still refused? One closer look. If the approach looks wrong, it starts over from main with a note on why, at most twice. Otherwise it stops and asks you.</p>
         </details></li>
 
-        <li><details class="fp-item" data-key="big" data-lane="triage"
-              data-path="rule 26 The agent ran out of time | triage 26 | triage 60 Splits the ticket"
-              data-ext="triage 78 | you 78 Asks you">
-          <summary><span class="fp-say">The ticket is too big</span><span class="fp-count">handled 4× this month · asked a person 1×</span><span class="fp-lanetag triage">One look</span></summary>
-          <p class="fp-what">The agent ran out of time. Lingtai split the ticket into smaller ones, in order. Yours waits for them, then checks its own list was really done.</p>
-          <p class="fp-bound">Split once per ticket, into at most 8. Too big again? It asks you.</p>
-          <p class="fp-ext">A ticket is split only once. If a part is still too big, or your ticket comes back with work left that is too big, it stops and asks you.</p>
-        </details></li>
-
-        <li><details class="fp-item" data-key="unclear" data-lane="you"
-              data-path="rule 26 A question only you can answer | you 26 | you 60 Asks you"
-              data-ext="you 84 Stops asking">
+        <li><details class="fp-item" data-key="unclear">
           <summary><span class="fp-say">The ticket is unclear</span><span class="fp-count">handled 9× this month · asked a person 9×</span><span class="fp-lanetag you">You</span></summary>
-          <p class="fp-what">The agent stopped before guessing and asked you. Your answers went into the ticket, and it carried on from where it stopped.</p>
+          <p class="fp-what">It stopped before guessing and asked you. Your answer went into the ticket, and it carried on from where it paused.</p>
           <p class="fp-bound">Up to 5 stops per ticket. Then it waits for you to decide.</p>
           <p class="fp-ext">After 5 stops on one ticket it stops asking. You edit the ticket, close it, or give it another go. The agent never answers for you.</p>
           <figure class="fp-ask">
             <div class="fp-ask-top">
-              <span><b>#1 · Add a reading-time badge</b><small>WAITING ON YOU · 3 QUESTIONS</small></span>
+              <span><b>#1 · Add a reading-time badge</b><small>WAITING ON YOU · 1 QUESTION</small></span>
               <span class="tag ill">ILLUSTRATION</span>
             </div>
             <ol>
-              <li><p>Which text counts toward reading time?</p>
-                <ul>
-                  <li class="rec">Body text only; code blocks are skipped<small>SUGGESTED</small></li>
-                  <li>Body text and code blocks</li>
-                </ul></li>
               <li><p>How are part minutes shown?</p>
                 <ul>
                   <li class="rec">Round up: 4.2 minutes shows "5 min read"<small>SUGGESTED</small></li>
                   <li>Round to the nearest: "4 min read"</li>
                   <li>Under one minute shows "&lt; 1 min read"</li>
                 </ul></li>
-              <li><p>Where does the badge go?</p>
-                <ul>
-                  <li class="rec">Under the chapter title<small>SUGGESTED</small></li>
-                  <li>Under the title and in the contents list</li>
-                  <li>In the contents list only</li>
-                </ul></li>
             </ol>
-            <p class="fp-ask-own">Or write your own answer to any of them.</p>
-            <div class="moves"><span class="btn pri">Send answers</span></div>
-            <figcaption>Up to 5 questions, 2 to 4 choices each, the suggested one first. Each choice says what the agent will do.</figcaption>
+            <p class="fp-ask-own">Or write your own answer.</p>
+            <div class="moves"><span class="btn pri">Send answer</span></div>
+            <figcaption>Up to 5 questions at a time, 2 to 4 choices each, the suggested one first. Each choice says what the agent will do.</figcaption>
           </figure>
         </details></li>
 
-        <li><details class="fp-item" data-key="main" data-lane="rule"
-              data-path="rule 26 Main moved | rule 60 Merges it in, checks again"
-              data-ext="rule 84 | you 84 Then asks you">
-          <summary><span class="fp-say">Someone else changed main</span><span class="fp-count">handled 112× this month · asked a person 0×</span><span class="fp-lanetag rule">Rule</span></summary>
-          <p class="fp-what">It merged the new main into its work and ran your checks again. Had the new main touched the same files, the review would have run again too.</p>
-          <p class="fp-bound">Up to 10 merges per try. A real conflict goes back to the agent, up to 6 times.</p>
-          <p class="fp-ext">Main moving 10 times under one ticket is rare. If it does, or a conflict needs a decision only you can make, it asks you.</p>
+        <li><details class="fp-item" data-key="big">
+          <summary><span class="fp-say">The ticket is too big</span><span class="fp-count">handled 4× this month · asked a person 1×</span><span class="fp-lanetag look">One look</span></summary>
+          <p class="fp-what">It ran out of time. One quick look split it into 3 tickets that run in order. When all three landed, your ticket checked its own list, line by line, and closed.</p>
+          <p class="fp-bound">Split once per ticket, into at most 8. A part that is still too big comes to you.</p>
+          <p class="fp-ext">A part ran out of time too. It is not split again: it stops and asks you how to cut it. The parts already landed stay landed.</p>
         </details></li>
 
-        <li><details class="fp-item" data-key="limit" data-lane="rule"
-              data-path="rule 26 The agent never started | rule 60 Pauses until it resets">
+        <li><details class="fp-item" data-key="main">
+          <summary><span class="fp-say">Someone else changed main</span><span class="fp-count">handled 112× this month · asked a person 0×</span><span class="fp-lanetag rule">Rule</span></summary>
+          <p class="fp-what">Someone merged into main. It merged the new main into its work and ran your checks again, then landed.</p>
+          <p class="fp-bound">Up to 10 merges per try. Then it asks you.</p>
+          <p class="fp-ext">Main moved 10 times under one ticket. That is rare; it stops and asks you whether to try again.</p>
+        </details></li>
+
+        <li><details class="fp-item" data-key="limit">
           <summary><span class="fp-say">My Claude limit ran out</span><span class="fp-count">handled 6× this month · asked a person 0×</span><span class="fp-lanetag rule">Rule</span></summary>
-          <p class="fp-what">Nothing started, so nothing was spent. It paused that account until your limit reset, then picked up from the last saved commit.</p>
-          <p class="fp-bound">Nothing to retry, so nothing to count. It waits, and the board shows when it resumes.</p>
+          <p class="fp-what">Nothing could start, so nothing was spent. It waited for your limit to reset, then carried on from the same point.</p>
+          <p class="fp-bound">Nothing to count: waiting is free. A limit with no reset, like a monthly cap, waits for you.</p>
         </details></li>
 
       </ul>
-      <p class="fp-edge">If triage itself fails, it asks once more, then hands it to you and says so.</p>
+      <p class="fp-edge">If the quick look itself fails, it asks once more, then hands it to you and says so.</p>
     </details>
   </section>
 
-  <!-- neighbours below: unchanged, shown faded -->
   <div class="nb-dark" aria-hidden="true">
     <div class="inner">
       <span class="rv-pin" style="color:#87999f;border-color:#2e434b">BELOW · the sandbox band, unchanged</span>
@@ -408,216 +388,658 @@ h2 { font-size: clamp(30px, 3.2vw, 44px); line-height: 1.12; letter-spacing: -0.
       <h2>Every run is sandboxed. <span>Your keys stay yours.</span></h2>
     </div>
   </div>
-  <div class="nb nb-centre" aria-hidden="true">
+  <div class="nb" aria-hidden="true" style="text-align:center">
     <span class="rv-pin">THEN · "Why not just give the agent the issue?", unchanged (its FAQ has "Will it loop forever?")</span>
     <p class="kicker">The first question</p>
-    <h2>Why not just give the agent the issue?</h2>
-    <p class="sub">You can. Then the only proof it worked is the agent saying so.</p>
+    <h2 style="margin:0 auto">Why not just give the agent the issue?</h2>
   </div>
 
-</div>
 </div>
 
 <script>
 (() => {
-  const mock = document.getElementById('mock')
-  mock.classList.replace('no-js', 'js')
-  const all = mock.querySelector('.fp-all')
-  all.open = false
+  // ---------------------------------------------------------------------------
+  // The paths. Lanes: R = Rule, L = One look, Y = You. A point is [lane, u, o]:
+  // u is progress 0–100 along time, o is a pixel offset across it (negative =
+  // above on a wide screen, left on a narrow one).
+  // ---------------------------------------------------------------------------
+  const R = 0, L = 1, Y = 2
+  const P = {}
 
+  // The API went down at 3am: a loop where the step is redone.
+  P.api = {
+    base: [
+      { mark: [R, 2], kind: 'start', label: 'working' },
+      { line: [[R, 2], [R, 15]] },
+      { mark: [R, 15], kind: 'fail', label: 'API down' },
+      { line: [[R, 15], [R, 27]] },
+      { mark: [R, 27], kind: 'commit', label: 'work saved' },
+      { line: [[R, 27], [R, 40]] },
+      { loop: [R, 40], clock: true, label: 'wait 1 min', n: 1 },
+      { mark: [R, 40], kind: 'none', label: 'redo from save' },
+      { line: [[R, 40], [R, 66]] },
+      { mark: [R, 66], kind: 'ok', label: 'checks ✓ review ✓' },
+      { line: [[R, 66], [R, 94]] },
+      { mark: [R, 94], kind: 'land', label: 'landed' },
+    ],
+    keep: 7,
+    ext: [
+      { line: [[R, 40], [R, 52]] },
+      { loop: [R, 52], clock: true, label: 'wait 5 min', n: 2 },
+      { line: [[R, 52], [R, 64]] },
+      { loop: [R, 64], clock: true, label: 'wait 15 min', n: 3 },
+      { line: [[R, 64], [R, 74]] },
+      { mark: [R, 74], kind: 'fail', label: 'down again' },
+      { line: [[R, 74], [Y, 84]] },
+      { mark: [Y, 90], kind: 'you', glyph: '!', label: 'asks you · 3 of 3 used', pre: [[Y, 84], [Y, 90]] },
+    ],
+  }
+
+  // A test is flaky: a double tap on the same point, then a pin to the side.
+  P.flaky = {
+    base: [
+      { mark: [R, 2], kind: 'start', label: 'working' },
+      { line: [[R, 2], [R, 18]] },
+      { mark: [R, 18], kind: 'fail', label: 'checks red' },
+      { mark: [R, 18], kind: 'rerun', label: 'rerun at once', side: 'above' },
+      { mark: [R, 18], kind: 'ok', label: '' },
+      { line: [[R, 18], [R, 30, 34]], cls: 'thin', who: null },
+      { mark: [R, 30, 34], kind: 'pin', label: 'flaky test noted', side: 'right' },
+      { line: [[R, 18], [R, 62]] },
+      { mark: [R, 62], kind: 'ok', label: 'review ✓' },
+      { line: [[R, 62], [R, 94]] },
+      { mark: [R, 94], kind: 'land', label: 'landed' },
+    ],
+    keep: 4,
+    ext: (() => {
+      const o = [{ mark: [R, 18], kind: 'fail', label: 'red again', side: 'above', alt: true }]
+      let u = 26
+      o.push({ line: [[R, 18], [R, u]] })
+      for (let k = 1; k <= 6; k++) {
+        o.push({ line: [[R, u], [R, u + 7]], twin: -7 })
+        o.push({ mark: [R, u + 3.5, -7], kind: 'tick', label: String(k), side: 'above' })
+        if (k === 3) o.push({ mark: [R, u + 3.5], kind: 'none', label: 'agent fixes on top · 1–6' })
+        u += 7
+      }
+      o.push({ mark: [R, u], kind: 'fail', label: 'still red' })
+      o.push({ line: [[R, u], [L, u + 6]] })
+      o.push({ mark: [L, u + 6], kind: 'look', label: 'closer look' })
+      o.push({ line: [[L, u + 6], [Y, u + 12]] })
+      o.push({ mark: [Y, u + 16], kind: 'you', glyph: '!', label: 'asks you', pre: [[Y, u + 12], [Y, u + 16]] })
+      return o
+    })(),
+  }
+
+  // The reviewer found a bug: up to One look, back onto the same line, a second layer on top.
+  P.review = {
+    base: [
+      { mark: [R, 2], kind: 'start', label: 'working' },
+      { line: [[R, 2], [R, 14]] },
+      { mark: [R, 14], kind: 'fail', label: 'review: a bug' },
+      { line: [[R, 14], [R, 32]], cls: 'thin', who: null },
+      { line: [[R, 14], [L, 22]] },
+      { mark: [L, 24], kind: 'look', label: 'names the lines', pre: [[L, 22], [L, 24]] },
+      { line: [[L, 24], [R, 32]] },
+      { line: [[R, 32], [R, 48]], twin: -7, label: 'fix on top', labelAt: [R, 40, -7] },
+      { line: [[R, 48], [R, 64]] },
+      { mark: [R, 64], kind: 'ok', label: 'checks ✓ review ✓' },
+      { line: [[R, 64], [R, 94]] },
+      { mark: [R, 94], kind: 'land', label: 'landed' },
+    ],
+    keep: 8,
+    ext: (() => {
+      const o = []
+      let u = 48
+      for (let k = 2; k <= 6; k++) {
+        o.push({ line: [[R, u], [R, u + 1.5]] })
+        o.push({ line: [[R, u + 1.5], [L, u + 3.5]], who: 'main' })
+        o.push({ line: [[L, u + 3.5], [R, u + 5.5]] })
+        o.push({ line: [[R, u + 5.5], [R, u + 7.5]], twin: -7 })
+        o.push({ mark: [R, u + 6.5, -7], kind: 'tick', label: String(k), side: 'above' })
+        u += 7.5
+      }
+      o.push({ mark: [R, u + 1], kind: 'fail', label: 'still refused', pre: [[R, u], [R, u + 1]] })
+      o.push({ line: [[R, u + 1], [L, u + 5]] })
+      o.push({ mark: [L, u + 5], kind: 'look', label: 'closer look' })
+      o.push({ line: [[L, u + 5], [Y, u + 9]] })
+      o.push({ mark: [Y, u + 12], kind: 'you', glyph: '!', label: 'asks you', pre: [[Y, u + 9], [Y, u + 12]] })
+      return o
+    })(),
+  }
+
+  // The ticket is unclear: down to You, a pulsing bubble, a pause, then on from the same point.
+  P.unclear = {
+    base: [
+      { mark: [R, 2], kind: 'start', label: 'planning' },
+      { line: [[R, 2], [R, 14]] },
+      { mark: [R, 14], kind: 'fail', glyph: '?', label: 'ticket unclear' },
+      { line: [[R, 14], [R, 40]], cls: 'thin', who: null },
+      { line: [[R, 14], [Y, 24]] },
+      { mark: [Y, 28], kind: 'ask', label: 'asks you 1 question', pre: [[Y, 24], [Y, 28]] },
+      { pause: 1500 },
+      { mark: [Y, 28], kind: 'answered', label: 'you answered', side: 'above' },
+      { line: [[Y, 28], [R, 40]] },
+      { mark: [R, 40], kind: 'none', label: 'carries on' },
+      { line: [[R, 40], [R, 64]] },
+      { mark: [R, 64], kind: 'ok', label: 'checks ✓ review ✓' },
+      { line: [[R, 64], [R, 94]] },
+      { mark: [R, 94], kind: 'land', label: 'landed' },
+    ],
+    keep: 8,
+    ext: (() => {
+      const o = []
+      let u = 28
+      for (let k = 2; k <= 5; k++) {
+        o.push({ line: [[Y, u], [Y, u + 12]] })
+        o.push({ mark: [Y, u + 12], kind: 'ask', n: k, label: k === 2 ? 'asks again' : '' })
+        o.push({ pause: 500 })
+        o.push({ mark: [Y, u + 12], kind: 'answered', label: '' })
+        u += 12
+      }
+      o.push({ line: [[Y, u], [Y, u + 12]] })
+      o.push({ mark: [Y, u + 12], kind: 'you', glyph: '!', label: 'stops asking · 5 of 5' })
+      return o
+    })(),
+  }
+
+  // The ticket is too big: a fork into three that run in order, then back together.
+  const BR = [-16, -32, -48]
+  const RUN = [[38, 52], [52, 66], [66, 78]]
+  P.big = {
+    base: [
+      { mark: [R, 2], kind: 'start', label: 'working' },
+      { line: [[R, 2], [R, 12]] },
+      { mark: [R, 12], kind: 'fail', label: 'out of time' },
+      { line: [[R, 12], [L, 20]] },
+      { mark: [L, 23], kind: 'look', label: 'split into 3', pre: [[L, 20], [L, 23]] },
+      { line: [[L, 23], [R, 32]] },
+      // the fork: three branches appear at once, dashed until their turn; the ticket's own line waits
+      { lines: [
+        { pts: [[R, 32], [R, 36, BR[0]], [R, RUN[0][0], BR[0]]], cls: 'dash' },
+        { pts: [[R, 32], [R, 36, BR[1]], [R, RUN[1][0], BR[1]]], cls: 'dash' },
+        { pts: [[R, 32], [R, 36, BR[2]], [R, RUN[2][0], BR[2]]], cls: 'dash' },
+        { pts: [[R, 32], [R, 84]], cls: 'dash' },
+      ] },
+      { mark: [R, RUN[0][0], BR[0]], kind: 'none', label: '#1', side: 'left' },
+      { mark: [R, RUN[1][0], BR[1]], kind: 'none', label: '#2', side: 'left' },
+      { mark: [R, RUN[2][0], BR[2]], kind: 'none', label: '#3', side: 'left' },
+      { mark: [R, 58], kind: 'none', label: 'your ticket waits' },
+      { line: [[R, RUN[0][0], BR[0]], [R, RUN[0][1], BR[0]]], who: 'b0', dotLabel: '#1' },
+      { mark: [R, RUN[0][1], BR[0]], kind: 'okSm', label: '' },
+      { line: [[R, RUN[1][0], BR[1]], [R, RUN[1][1], BR[1]]], who: 'b1' },
+      { mark: [R, RUN[1][1], BR[1]], kind: 'okSm', label: '' },
+      { line: [[R, RUN[2][0], BR[2]], [R, RUN[2][1], BR[2]]], who: 'b2' },
+      { mark: [R, RUN[2][1], BR[2]], kind: 'okSm', label: '' },
+      // back together: the three join the ticket's own line
+      { lines: [
+        { pts: [[R, RUN[0][1], BR[0]], [R, 80, BR[0]], [R, 84, 0]] },
+        { pts: [[R, RUN[1][1], BR[1]], [R, 80, BR[1]], [R, 84, 0]] },
+        { pts: [[R, RUN[2][1], BR[2]], [R, 80, BR[2]], [R, 84, 0]] },
+      ], hide: ['b0', 'b1', 'b2'] },
+      { mark: [R, 84], kind: 'none', label: 'back together' },
+      { jump: [R, 84] },
+      { line: [[R, 84], [R, 90]] },
+      { mark: [R, 90], kind: 'ok', label: 'checks its own list', side: 'above' },
+      { line: [[R, 90], [R, 96]] },
+      { mark: [R, 96], kind: 'land', label: 'landed' },
+    ],
+    keep: 13,
+    ext: [
+      { line: [[R, RUN[1][0], BR[1]], [R, 59, BR[1]]], who: 'b1' },
+      { mark: [R, 59, BR[1]], kind: 'failSm', label: '#2 too big too', side: 'right' },
+      { line: [[R, 59, BR[1]], [Y, 70]], who: 'b1' },
+      { mark: [Y, 76], kind: 'you', glyph: '!', label: 'asks you · split once', pre: [[Y, 70], [Y, 76]], who: 'b1' },
+    ],
+  }
+
+  // Someone else changed main: a side line merges into the path.
+  P.main = {
+    base: [
+      { mark: [R, 2], kind: 'start', label: 'working' },
+      { line: [[R, 2], [R, 22]] },
+      { mark: [R, 12, -46], kind: 'none', label: 'someone merged to main', side: 'above' },
+      { line: [[R, 6, -46], [R, 22, -46], [R, 30, 0]], cls: 'side', who: 'm' },
+      { line: [[R, 22], [R, 30]] },
+      { mark: [R, 30], kind: 'merge', label: 'merged in', hide: ['m'] },
+      { line: [[R, 30], [R, 46]] },
+      { mark: [R, 46], kind: 'ok', label: 'checks again ✓' },
+      { line: [[R, 46], [R, 94]] },
+      { mark: [R, 94], kind: 'land', label: 'landed' },
+    ],
+    keep: 6,
+    ext: (() => {
+      const o = []
+      let u = 30
+      for (let k = 2; k <= 10; k++) {
+        o.push({ line: [[R, u + 1, -26], [R, u + 5, 0]], cls: 'side', who: null, fadeOnly: true })
+        o.push({ line: [[R, u], [R, u + 5]] })
+        o.push({ mark: [R, u + 1, -26], kind: 'tick', label: String(k), side: 'above' })
+        u += 5
+      }
+      o.push({ mark: [R, u + 3], kind: 'fail', label: 'still moving', pre: [[R, u], [R, u + 3]] })
+      o.push({ line: [[R, u + 3], [Y, u + 10]] })
+      o.push({ mark: [Y, u + 14], kind: 'you', glyph: '!', label: 'asks you', pre: [[Y, u + 10], [Y, u + 14]] })
+      return o
+    })(),
+  }
+
+  // My Claude limit ran out: a lock, a dashed wait, the lock opens on the same line.
+  P.limit = {
+    base: [
+      { mark: [R, 2], kind: 'start', label: 'queued' },
+      { line: [[R, 2], [R, 14]] },
+      { mark: [R, 14], kind: 'lock', label: 'limit reached' },
+      { line: [[R, 14], [R, 50]], cls: 'dash', slow: true },
+      { mark: [R, 32], kind: 'none', label: 'waits for reset · $0' },
+      { mark: [R, 50], kind: 'unlock', label: 'resumes here' },
+      { line: [[R, 50], [R, 68]] },
+      { mark: [R, 68], kind: 'ok', label: 'checks ✓ review ✓' },
+      { line: [[R, 68], [R, 94]] },
+      { mark: [R, 94], kind: 'land', label: 'landed' },
+    ],
+  }
+
+  // ---------------------------------------------------------------------------
+  const root = document.documentElement
+  const fp = document.getElementById('when-it-fails')
+  fp.classList.replace('no-js', 'js')
+  const all = fp.querySelector('.fp-all'); all.open = false
+  const svg = document.getElementById('fp-svg')
   const stage = document.getElementById('fp-stage')
-  const dot = document.getElementById('fp-dot')
-  const [baseLine, extLine] = document.querySelectorAll('#fp-trail polyline')
-  const chipsBox = document.getElementById('fp-chips')
-  const result = document.getElementById('fp-result')
-  const askSlot = document.getElementById('fp-askslot')
-  const out = document.getElementById('fp-out')
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)')
-  const LANES = { rule: 'Rule', triage: 'One look', you: 'You' }
+  const NS = 'http://www.w3.org/2000/svg'
+  const mq = matchMedia('(prefers-reduced-motion: reduce)')
+  let forceRM = false
+  const reduce = () => forceRM || mq.matches
+  const LANE = ['rule', 'look', 'you']
+  const LANE_NAME = ['Rule', 'One look', 'You']
+  const LANE_SUB = [['Free.', 'No AI decides.'], ['One quick look,', 'cents.'], ['Only when', 'it must.']]
 
-  const parse = (s) => (s || '').split('|').map((w) => w.trim()).filter(Boolean).map((w) => {
-    const m = w.match(/^(\w+)\s+([\d.]+)\s*(.*)$/)
-    return { lane: m[1], x: +m[2], label: m[3] }
-  })
-
-  const paths = [...mock.querySelectorAll('.fp-item')].map((el) => ({
+  const items = [...fp.querySelectorAll('.fp-item')].map((el) => ({
     key: el.dataset.key,
-    lane: el.dataset.lane,
     say: el.querySelector('.fp-say').textContent,
     count: el.querySelector('.fp-count').textContent,
-    path: [{ lane: 'rule', x: 3, label: 'Something fails' }, ...parse(el.dataset.path)],
-    ext: parse(el.dataset.ext),
     what: el.querySelector('.fp-what').textContent,
     bound: el.querySelector('.fp-bound').textContent,
     extText: el.querySelector('.fp-ext')?.textContent,
     ask: el.querySelector('.fp-ask'),
   }))
 
-  // Chips, from the list.
-  for (const p of paths) {
+  // ---- geometry: one model, two orientations -------------------------------
+  let G
+  function layout() {
+    const W = stage.clientWidth
+    const wide = W >= 640
+    if (wide) {
+      const head = 150, padR = 30
+      const lanes = [{ top: 0, h: 140, line: 96 }, { top: 140, h: 96, line: 44 }, { top: 236, h: 96, line: 44 }]
+      G = { wide, W, H: 332, head, lanes,
+        T: (u) => head + 24 + (W - head - 24 - padR) * u / 100,
+        Pl: (lane) => lanes[lane].top + lanes[lane].line }
+    } else {
+      const cols = [62, 116, 160], top = 40, step = 6.4
+      G = { wide, W, H: top + 100 * step + 30, cols, top, LX: 196,
+        T: (u) => top + step * u,
+        Pl: (lane) => cols[lane] }
+    }
+  }
+  const tp = ([lane, u, o = 0]) => ({ T: G.T(u), P: G.Pl(lane) + o })
+  const xy = ({ T, P }) => (G.wide ? { x: T, y: P } : { x: P, y: T })
+  const pt = (p) => xy(tp(p))
+  const f = (n) => Math.round(n * 10) / 10
+
+  function pathD(pts) {
+    const q = pts.map(tp)
+    let d = ''
+    q.forEach((c, i) => {
+      const a = xy(c)
+      if (i === 0) { d += `M${f(a.x)} ${f(a.y)}`; return }
+      const p = q[i - 1]
+      if (Math.abs(c.P - p.P) < .5) { d += ` L${f(a.x)} ${f(a.y)}`; return }
+      const m = (p.T + c.T) / 2
+      const c1 = xy({ T: m, P: p.P }), c2 = xy({ T: m, P: c.P })
+      d += ` C${f(c1.x)} ${f(c1.y)} ${f(c2.x)} ${f(c2.y)} ${f(a.x)} ${f(a.y)}`
+    })
+    return d
+  }
+  const RAD = 14
+  function loopD(p) {
+    const c = tp(p)
+    const a = xy(c), b = xy({ T: c.T, P: c.P - 2 * RAD })
+    return `M${f(a.x)} ${f(a.y)} A${RAD} ${RAD} 0 1 ${G.wide ? 0 : 1} ${f(b.x)} ${f(b.y)} A${RAD} ${RAD} 0 1 ${G.wide ? 0 : 1} ${f(a.x)} ${f(a.y)}`
+  }
+
+  const el = (tag, attrs = {}, parent) => {
+    const e = document.createElementNS(NS, tag)
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v)
+    if (parent) parent.append(e)
+    return e
+  }
+
+  // ---- the frame: lanes ----------------------------------------------------
+  function frame() {
+    svg.innerHTML = ''
+    svg.setAttribute('viewBox', `0 0 ${G.W} ${G.H}`)
+    svg.setAttribute('height', G.H)
+    const g = el('g', {}, svg)
+    if (G.wide) {
+      G.lanes.forEach((ln, i) => {
+        el('rect', { x: 0, y: ln.top, width: G.W, height: ln.h, class: 'band-' + LANE[i] }, g)
+        if (i) el('line', { x1: 0, x2: G.W, y1: ln.top, y2: ln.top, class: 'band-sep' }, g)
+        el('line', { x1: G.head + 10, x2: G.W - 16, y1: ln.top + ln.line, y2: ln.top + ln.line, class: 'guide' }, g)
+        const t = el('text', { x: 20, y: ln.top + ln.line - 6, class: 'lane-name ' + LANE[i] }, g); t.textContent = LANE_NAME[i]
+        LANE_SUB[i].forEach((s, j) => { const st = el('text', { x: 20, y: ln.top + ln.line + 12 + j * 14, class: 'lane-sub' }, g); st.textContent = s })
+      })
+      el('line', { x1: G.head, x2: G.head, y1: 0, y2: G.H, class: 'band-sep' }, g)
+    } else {
+      G.cols.forEach((x, i) => {
+        const w = i === 0 ? 92 : 44
+        const x0 = i === 0 ? x - 66 : x - 22
+        el('rect', { x: x0, y: 0, width: w, height: G.H, class: 'band-' + LANE[i] }, g)
+        el('line', { x1: x, x2: x, y1: G.top - 6, y2: G.H - 14, class: 'guide' }, g)
+        const t = el('text', { x, y: 18, class: 'lane-head-sm lane-name ' + LANE[i] }, g); t.textContent = LANE_NAME[i]
+      })
+    }
+    G.trail = el('g', {}, svg)
+    G.dots = el('g', {}, svg)
+    G.marks = el('g', {}, svg)
+    G.labels = el('g', {}, svg)
+    G.boxes = []
+    G.dotEls = {}
+    G.lastLabelY = -Infinity
+  }
+
+  // ---- marks -----------------------------------------------------------------
+  function mark(op) {
+    const a = pt(op.mark)
+    const outer = el('g', { transform: `translate(${f(a.x)} ${f(a.y)})` }, G.marks)
+    const g = el('g', { class: 'mk' }, outer)
+    const inner = el('g', {}, g)
+    const circ = (r, cls = 'bg') => el('circle', { r, class: cls }, inner)
+    const glyph = (s) => { const t = el('text', {}, inner); t.textContent = s }
+    switch (op.kind) {
+      case 'start': g.classList.add('mk-commit'); circ(4.5); break
+      case 'none': return { g: null, a }
+      case 'fail': g.classList.add('mk-fail'); circ(9); glyph(op.glyph || '✕'); break
+      case 'failSm': g.classList.add('mk-fail'); circ(7); glyph('✕'); break
+      case 'ok': g.classList.add('mk-ok'); circ(9); glyph('✓'); break
+      case 'okSm': g.classList.add('mk-ok'); circ(7); glyph('✓'); break
+      case 'land': g.classList.add('mk-land'); circ(11); glyph('✓'); break
+      case 'commit': g.classList.add('mk-commit'); circ(6.5); break
+      case 'rerun': {
+        g.classList.add('mk-rule')
+        el('circle', { r: 13, class: 'bg', style: 'fill:none' }, inner)
+        el('circle', { r: 17, class: 'bg', style: 'fill:none;opacity:.5' }, inner)
+        break
+      }
+      case 'look': g.classList.add('mk-look'); circ(9); glyph('◆'); break
+      case 'you': g.classList.add('mk-you'); circ(10); glyph(op.glyph || '!'); break
+      case 'ask': {
+        g.classList.add('mk-you')
+        el('circle', { r: 11, class: 'ring' }, inner)
+        el('path', { d: 'M-11 -9 h22 a3 3 0 0 1 3 3 v10 a3 3 0 0 1 -3 3 h-13 l-5 5 v-5 h-4 a3 3 0 0 1 -3 -3 v-10 a3 3 0 0 1 3 -3z', class: 'bg', transform: 'translate(0 -1)' }, inner)
+        const t = el('text', { y: 0 }, inner); t.textContent = op.n ? String(op.n) : '?'
+        break
+      }
+      case 'answered': {
+        g.classList.add('mk-ok')
+        el('circle', { r: 6.5, class: 'bg', transform: G.wide ? 'translate(11 9)' : 'translate(11 9)' }, inner)
+        const t = el('text', { x: 11, y: 9, style: 'font-size:8px' }, inner); t.textContent = '✓'
+        break
+      }
+      case 'pin': {
+        g.classList.add('mk-rule')
+        el('circle', { r: 6, class: 'bg' }, inner)
+        el('circle', { r: 2, style: 'fill:var(--ink-2)' }, inner)
+        break
+      }
+      case 'merge': g.classList.add('mk-commit'); circ(6); break
+      case 'lock': case 'unlock': {
+        g.classList.add('mk-rule')
+        el('rect', { x: -8, y: -4, width: 16, height: 12, rx: 2.5, class: 'bg' }, inner)
+        const sh = op.kind === 'lock' ? 'M-4.5 -4 v-3 a4.5 4.5 0 0 1 9 0 v3' : 'M-4.5 -4 v-3 a4.5 4.5 0 0 1 9 0'
+        el('path', { d: sh, style: 'fill:none;stroke:var(--ink-2);stroke-width:1.75', transform: op.kind === 'unlock' ? 'translate(0 -2)' : '' }, inner)
+        break
+      }
+      case 'tick': g.classList.add('mk-commit'); circ(2.5); break
+    }
+    return { g, a }
+  }
+
+  // ---- labels: never overlap -----------------------------------------------
+  function label(text, a, side, kind, extraUp = 0) {
+    if (!text) return null
+    const t = el('text', { class: 'lbl k-' + kind }, G.labels)
+    t.textContent = text
+    if (G.wide) {
+      const w = t.getComputedTextLength(), h = 14
+      const tries = side === 'left' ? ['left'] : side === 'right' ? ['right', 'above', 'below'] : side === 'above' ? ['above', 'below'] : ['below', 'above']
+      const boxAt = (s, dx = 0) => {
+        let x = a.x + dx, y, anchor = 'middle'
+        if (s === 'below') y = a.y + 24
+        else if (s === 'above') y = a.y - 16 - extraUp
+        else if (s === 'left') { x = a.x - 10 - w; y = a.y + 4; anchor = 'start' }
+        else { x = a.x + 12 + dx; y = a.y + 4; anchor = 'start' }
+        let x0 = anchor === 'middle' ? x - w / 2 : x
+        if (x0 < G.head + 6) { x0 = G.head + 6 }
+        if (x0 + w > G.W - 6) { x0 = G.W - 6 - w }
+        return { x0, y, w, h }
+      }
+      const hit = (b) => G.boxes.some((o) => b.x0 < o.x0 + o.w + 8 && o.x0 < b.x0 + b.w + 8 && b.y - h < o.y && o.y - o.h < b.y)
+      let b = null
+      for (const s of tries) { const c = boxAt(s); if (!hit(c)) { b = c; break } }
+      if (!b) { for (let dx = 12; dx < 240 && !b; dx += 12) { const c = boxAt(tries[0], dx); if (!hit(c)) b = c } }
+      b = b || boxAt(tries[0])
+      G.boxes.push(b)
+      t.setAttribute('x', f(b.x0)); t.setAttribute('y', f(b.y))
+      return [t]
+    }
+    // narrow: a column beside the path, with a leader from the point
+    let y = Math.max(a.y + 4, G.lastLabelY + 16)
+    G.lastLabelY = y
+    t.setAttribute('x', G.LX); t.setAttribute('y', f(y))
+    const ld = el('path', { class: 'leader', d: `M${f(a.x + 8)} ${f(a.y)} L${G.LX - 14} ${f(a.y)} L${G.LX - 5} ${f(y - 4)}` }, G.labels)
+    if (y + 10 > G.H) { G.H = y + 18; svg.setAttribute('viewBox', `0 0 ${G.W} ${G.H}`); svg.setAttribute('height', G.H) }
+    return [t, ld]
+  }
+
+  // ---- dots --------------------------------------------------------------------
+  function dot(who) {
+    if (!G.dotEls[who]) {
+      const small = who !== 'main'
+      const c = el('circle', { r: small ? 5.5 : 7, class: 'dot' + (small ? ' sm' : '') }, G.dots)
+      G.dotEls[who] = c
+    }
+    return G.dotEls[who]
+  }
+  function place(who, x, y, lane) {
+    const d = dot(who)
+    d.setAttribute('cx', f(x)); d.setAttribute('cy', f(y))
+    d.classList.toggle('you', lane === Y); d.classList.toggle('look', lane === L)
+  }
+
+  // ---- running the ops -------------------------------------------------------
+  let token = 0
+  const ease = (t) => (t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+  const wait = (ms, tk) => new Promise((res) => setTimeout(() => res(tk === token), ms))
+  function draw(paths, who, lane, ms, tk) {
+    const lens = paths.map((p) => p.getTotalLength())
+    paths.forEach((p, i) => { p.style.strokeDasharray = `${lens[i]} ${lens[i]}`; p.style.strokeDashoffset = lens[i] })
+    if (ms === 0) {
+      paths.forEach((p) => { p.style.strokeDasharray = ''; p.style.strokeDashoffset = '' })
+      if (who) { const e = paths[0].getPointAtLength(lens[0]); place(who, e.x, e.y, lane) }
+      return Promise.resolve(true)
+    }
+    return new Promise((res) => {
+      const t0 = performance.now()
+      const step = (now) => {
+        if (tk !== token) return res(false)
+        const t = Math.min(1, (now - t0) / ms), e = ease(t)
+        paths.forEach((p, i) => { p.style.strokeDashoffset = lens[i] * (1 - e) })
+        if (who) { const q = paths[0].getPointAtLength(lens[0] * e); place(who, q.x, q.y, lane) }
+        if (t < 1) requestAnimationFrame(step)
+        else { paths.forEach((p) => { p.style.strokeDasharray = ''; p.style.strokeDashoffset = '' }); res(true) }
+      }
+      requestAnimationFrame(step)
+    })
+  }
+  const laneCls = (pts) => 'ln-' + LANE[pts[pts.length - 1][0]]
+  const show = (els) => els && els.forEach((e) => e && e.classList.add('on'))
+
+  async function run(ops, instantUpTo, tk) {
+    for (let i = 0; i < ops.length; i++) {
+      if (tk !== token) return
+      const op = ops[i]
+      const fast = reduce() || i < instantUpTo
+      if (op.line) {
+        const who = op.who === undefined ? 'main' : op.who
+        const p = el('path', { d: pathD(op.line), class: `seg ${op.cls || ''} ${op.cls === 'side' ? '' : laneCls(op.line)}` }, G.trail)
+        const paths = [p]
+        if (op.twin) {
+          const tw = op.line.map(([l, u, o = 0]) => [l, u, o + op.twin])
+          paths.push(el('path', { d: pathD(tw), class: 'seg fix' }, G.trail))
+        }
+        if (op.fadeOnly) { p.classList.add('fade'); requestAnimationFrame(() => p.classList.add('on')); continue }
+        const len = p.getTotalLength()
+        const ms = fast ? 0 : Math.max(380, Math.min(op.slow ? 2200 : 1100, len * (op.slow ? 6 : 2.6)))
+        if (who) dot(who)
+        const ok = await draw(paths, who, op.line[op.line.length - 1][0], ms, tk)
+        if (!ok) return
+        if (op.label) show(label(op.label, pt(op.labelAt || op.line[0]), 'above', 'fix'))
+      } else if (op.lines) {
+        const ps = op.lines.map((l) => el('path', { d: pathD(l.pts), class: `seg ${l.cls || ''} ln-rule` }, G.trail))
+        if (op.hide) op.hide.forEach((w) => G.dotEls[w]?.remove())
+        const ok = await draw(ps, null, R, fast ? 0 : 650, tk)
+        if (!ok) return
+      } else if (op.loop) {
+        const p = el('path', { d: loopD(op.loop), class: 'seg loop' }, G.trail)
+        const c = tp(op.loop)
+        const far = xy({ T: c.T, P: c.P - 2 * RAD })
+        const ctr = xy({ T: c.T, P: c.P - RAD })
+        let clock
+        if (op.clock) {
+          const co = el('g', { transform: `translate(${f(far.x)} ${f(far.y)})` }, G.marks)
+          clock = el('g', { class: 'mk mk-rule' }, co)
+          const ci = el('g', {}, clock)
+          el('circle', { r: 7, class: 'bg' }, ci)
+          el('path', { d: 'M0 -4 V0 L3 2', style: 'fill:none;stroke:var(--ink-2);stroke-width:1.5;stroke-linecap:round' }, ci)
+        }
+        let num
+        if (op.n) { num = el('text', { x: f(ctr.x), y: f(ctr.y), class: 'mk num', 'text-anchor': 'middle', 'dominant-baseline': 'central' }, G.marks); num.textContent = op.n }
+        const ok = await draw([p], 'main', op.loop[0], fast ? 0 : 900, tk)
+        if (!ok) return
+        show([clock, num])
+        show(label(op.label, far, 'above', 'rule', 4))
+      } else if (op.mark) {
+        if (op.pre) {
+          const p = el('path', { d: pathD(op.pre), class: 'seg ' + laneCls(op.pre) }, G.trail)
+          const ok = await draw([p], op.who || 'main', op.pre[op.pre.length - 1][0], fast ? 0 : 300, tk)
+          if (!ok) return
+        }
+        const { g, a } = mark(op)
+        if (op.hide) op.hide.forEach((w) => G.dotEls[w]?.remove())
+        if (g) { requestAnimationFrame(() => g.classList.add('on')); G.lastMark = g }
+        const kind = { fail: 'fail', failSm: 'fail', ok: 'ok', okSm: 'ok', land: 'land', look: 'look', you: 'you', ask: 'you', answered: 'ok', tick: 'tick' }[op.kind] || 'rule'
+        show(label(op.label, a, op.side || 'below', kind, op.kind === 'rerun' ? 8 : op.kind === 'ask' ? 2 : 0))
+        if (!fast && op.kind !== 'start' && op.kind !== 'none') { if (!(await wait(op.kind === 'rerun' ? 380 : 160, tk))) return }
+      } else if (op.pause) {
+        if (fast) continue
+        const m = G.lastMark
+        m?.classList.add('pulse')
+        if (!(await wait(op.pause, tk))) return
+        m?.classList.remove('pulse')
+      } else if (op.jump) {
+        const a = pt(op.jump); place('main', a.x, a.y, R)
+      }
+    }
+  }
+
+  // ---- choosing ------------------------------------------------------------------
+  const chipsBox = document.getElementById('fp-chips')
+  const result = document.getElementById('fp-result')
+  const askSlot = document.getElementById('fp-askslot')
+  const out = document.getElementById('fp-out')
+  let state = null
+  const chips = items.map((it) => {
     const b = document.createElement('button')
-    b.type = 'button'
-    b.className = 'fp-chip'
-    b.dataset.key = p.key
-    b.setAttribute('aria-pressed', 'false')
+    b.type = 'button'; b.className = 'fp-chip'; b.setAttribute('aria-pressed', 'false')
     b.innerHTML = '<span></span><small></small>'
-    b.firstChild.textContent = p.say
-    b.lastChild.textContent = p.count
-    b.addEventListener('click', () => select(p.key))
-    chipsBox.append(b)
+    b.firstChild.textContent = it.say; b.lastChild.textContent = it.count
+    b.addEventListener('click', () => choose(it.key, true))
+    chipsBox.append(b); return b
+  })
+
+  function opsFor(key, ext) {
+    const p = P[key]
+    if (!ext) return { ops: p.base, keep: 0 }
+    return { ops: [...p.base.slice(0, p.keep), ...p.ext], keep: p.keep }
   }
-
-  let state = null // { p, extShown }
-
-  const track = (lane) => stage.querySelector(`.fp-lane[data-lane="${lane}"] .fp-track`)
-  const pointOf = (w) => {
-    const t = track(w.lane)
-    const s = stage.getBoundingClientRect()
-    const r = t.getBoundingClientRect()
-    const line = parseFloat(getComputedStyle(t, '::before').top) || r.height / 2
-    const pad = 14
-    return { x: r.left - s.left + pad + (r.width - 2 * pad) * (w.x / 100), y: r.top - s.top + line }
-  }
-
-  function marks(p, withExt) {
-    stage.querySelectorAll('.fp-mark').forEach((m) => m.remove())
-    stage.querySelectorAll('.fp-lane').forEach((l) => l.classList.remove('hit'))
-    const list = withExt ? [...p.path, ...p.ext] : p.path
-    const end = list[list.length - 1]
-    list.forEach((w, i) => {
-      if (!w.label && i !== list.length - 1) return
-      const m = document.createElement('div')
-      const isStop = w === p.path[p.path.length - 1] || (withExt && w === end)
-      const next = list[i + 1]
-      const corner = !isStop && next && next.lane !== w.lane
-      m.className = 'fp-mark' + (isStop ? ' stop' : '') + (corner ? ' corner' : '') + (w === end ? ' on' : '') + (w.x < 10 ? ' l' : (corner ? w.x > 50 : w.x > 78) ? ' r' : '')
-      m.style.left = `calc(14px + (100% - 28px) * ${w.x / 100})`
-      m.innerHTML = '<i></i><span></span>'
-      m.lastChild.textContent = w.label
-      track(w.lane).append(m)
-    })
-    stage.querySelector(`.fp-lane[data-lane="${end.lane}"]`).classList.add('hit')
-    dot.classList.toggle('you', end.lane === 'you')
-  }
-
-  const len = (pts) => pts.slice(1).reduce((a, q, i) => a + Math.hypot(q.x - pts[i].x, q.y - pts[i].y), 0)
-  const setLine = (el, pts) => { el.setAttribute('points', pts.map((q) => `${q.x},${q.y}`).join(' ')) }
-
-  function sizeSvg() {
-    const s = stage.getBoundingClientRect()
-    const svg = baseLine.ownerSVGElement
-    svg.setAttribute('viewBox', `0 0 ${s.width} ${s.height}`)
-    svg.setAttribute('width', s.width)
-    svg.setAttribute('height', s.height)
-  }
-
-  function run(line, pts, done) {
-    const total = len(pts)
-    const last = pts[pts.length - 1]
-    setLine(line, pts)
-    dot.classList.add('on')
-    dot.getAnimations().forEach((a) => a.cancel())
-    line.getAnimations().forEach((a) => a.cancel())
-    if (reduce.matches || total === 0) {
-      line.style.strokeDasharray = 'none'
-      dot.style.transform = `translate(${last.x}px, ${last.y}px)`
-      done?.()
-      return
+  function endLane(ops) {
+    for (let i = ops.length - 1; i >= 0; i--) {
+      const o = ops[i]
+      if (o.mark) return o.mark[0]
+      if (o.line) return o.line[o.line.length - 1][0]
     }
-    let acc = 0
-    const kf = pts.map((q, i) => {
-      if (i) acc += Math.hypot(q.x - pts[i - 1].x, q.y - pts[i - 1].y)
-      return { transform: `translate(${q.x}px, ${q.y}px)`, offset: total ? acc / total : 1 }
-    })
-    const duration = Math.min(2400, Math.max(700, total / 0.42))
-    line.style.strokeDasharray = `${total}`
-    line.animate([{ strokeDashoffset: total }, { strokeDashoffset: 0 }], { duration, easing: 'linear', fill: 'forwards' })
-    const a = dot.animate(kf, { duration, easing: 'linear', fill: 'forwards' })
-    a.onfinish = () => {
-      dot.style.transform = `translate(${last.x}px, ${last.y}px)`
-      a.cancel()
-      done?.()
-    }
+    return R
   }
 
-  function render(p, extShown) {
-    const end = (extShown ? p.ext : p.path).slice(-1)[0]
+  function render(it, ext) {
+    const { ops } = opsFor(it.key, ext)
+    const lane = endLane(ops)
     result.innerHTML = ''
-    const where = document.createElement('p')
-    where.className = 'fp-where'
-    where.innerHTML = 'Stopped at <b></b>'
-    where.lastChild.textContent = LANES[end.lane]
-    where.lastChild.className = end.lane
-    const what = Object.assign(document.createElement('p'), { className: 'fp-what', textContent: p.what })
-    const bound = Object.assign(document.createElement('p'), { className: 'fp-bound', textContent: p.bound })
+    const where = document.createElement('p'); where.className = 'fp-where'
+    where.append(ext ? 'Past the limit, it stops at ' : 'It ends at ')
+    const b = document.createElement('b'); b.className = LANE[lane]; b.textContent = LANE_NAME[lane]; where.append(b)
+    const what = Object.assign(document.createElement('p'), { className: 'fp-what', textContent: ext ? it.extText : it.what })
+    const bound = Object.assign(document.createElement('p'), { className: 'fp-bound', textContent: it.bound })
     result.append(where, what, bound)
-    if (p.ext.length && !extShown) {
+    if (P[it.key].ext && !ext) {
       const more = Object.assign(document.createElement('button'), { type: 'button', className: 'fp-more', textContent: 'And if it keeps happening? →' })
-      more.addEventListener('click', () => extend())
+      more.addEventListener('click', () => { state.ext = true; go(true) })
       result.append(more)
-    }
-    if (extShown) {
-      where.firstChild.textContent = 'Past the limit, stopped at '
-      result.append(Object.assign(document.createElement('p'), { className: 'fp-ext', textContent: p.extText }))
+    } else if (!P[it.key].ext) {
+      result.append(Object.assign(document.createElement('p'), { className: 'fp-nomore', textContent: 'Nothing to repeat here: waiting costs nothing, and it resumes at the reset on its own.' }))
     }
     askSlot.innerHTML = ''
-    out.classList.toggle('no-ask', !p.ask)
-    if (p.ask) askSlot.append(p.ask.cloneNode(true))
+    const ask = it.key === 'unclear' && !ext
+    out.classList.toggle('no-ask', !ask)
+    if (ask) askSlot.append(it.ask.cloneNode(true))
   }
 
-  function select(key) {
-    const p = paths.find((q) => q.key === key)
-    state = { p, extShown: false }
-    chipsBox.querySelectorAll('.fp-chip').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.key === key)))
-    sizeSvg()
-    setLine(extLine, [])
-    marks(p, false)
-    render(p, false)
-    run(baseLine, p.path.map(pointOf))
+  function go(animate) {
+    const tk = ++token
+    const it = items.find((x) => x.key === state.key)
+    layout(); frame()
+    const { ops, keep } = opsFor(state.key, state.ext)
+    render(it, state.ext)
+    run(ops, animate ? keep : ops.length, tk)
   }
 
-  function extend() {
-    const p = state.p
-    state.extShown = true
-    const from = p.path[p.path.length - 1]
-    marks(p, true)
-    render(p, true)
-    run(extLine, [from, ...p.ext].map(pointOf))
-    result.querySelector('.fp-ext')?.focus?.()
+  function choose(key, animate) {
+    state = { key, ext: false }
+    chips.forEach((c, i) => c.setAttribute('aria-pressed', String(items[i].key === key)))
+    go(animate)
   }
 
-  // Resizing redraws the finished path with no travel.
-  function relayout() {
-    if (!state) return
-    sizeSvg()
-    const { p, extShown } = state
-    const base = p.path.map(pointOf)
-    setLine(baseLine, base); baseLine.style.strokeDasharray = 'none'
-    baseLine.getAnimations().forEach((a) => a.finish())
-    let last = base[base.length - 1]
-    if (extShown) {
-      const ext = [p.path[p.path.length - 1], ...p.ext].map(pointOf)
-      setLine(extLine, ext); extLine.style.strokeDasharray = 'none'
-      extLine.getAnimations().forEach((a) => a.finish())
-      last = ext[ext.length - 1]
-    }
-    dot.getAnimations().forEach((a) => a.cancel())
-    dot.style.transform = `translate(${last.x}px, ${last.y}px)`
-  }
-  new ResizeObserver(relayout).observe(stage)
+  let lastW = 0
+  new ResizeObserver(() => {
+    const w = stage.clientWidth
+    if (state && Math.abs(w - lastW) > 2) { lastW = w; go(false) }
+  }).observe(stage)
 
-  // ---- reviewer tabs (not part of the page) ----
+  choose('api', false)
+
+  // ---- reviewer chrome (not part of the page) ----
   const rv = document.getElementById('rv')
-  rv.querySelectorAll('.rv-tabs button').forEach((b) => b.addEventListener('click', () => {
+  rv.querySelectorAll('.rv-tabs button[data-tab]').forEach((b) => b.addEventListener('click', () => {
     const t = b.dataset.tab
-    rv.querySelectorAll('.rv-tabs button').forEach((x) => x.classList.toggle('on', x === b))
+    rv.querySelectorAll('.rv-tabs button[data-tab]').forEach((x) => x.classList.toggle('on', x === b))
     rv.querySelectorAll('[data-tab]:not(button)').forEach((x) => x.classList.toggle('on', x.dataset.tab === t))
-    mock.classList.toggle('phone', t === 'phone')
-    mock.classList.toggle('no-js', t === 'nojs')
-    mock.classList.toggle('js', t !== 'nojs')
+    fp.classList.toggle('no-js', t === 'nojs'); fp.classList.toggle('js', t !== 'nojs')
     all.open = t === 'nojs'
-    requestAnimationFrame(relayout)
   }))
+  const tog = (id, fn) => { const b = document.getElementById(id); b.addEventListener('click', () => { const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', String(on)); b.classList.toggle('on', on); fn(on) }) }
+  tog('t-phone', (on) => document.body.classList.toggle('phone', on))
+  tog('t-rm', (on) => { forceRM = on; root.classList.toggle('rm', on); if (state) go(false) })
 })()
 </script>
 </body>
