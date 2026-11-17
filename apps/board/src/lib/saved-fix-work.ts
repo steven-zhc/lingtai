@@ -67,10 +67,11 @@ export function rerunWorkFromState(runId: string, state: AttemptState, base: str
 export function rerunStepFirstAmongSavedWork<T extends string>(tags: readonly T[]): T[] {
   const rerun = tags.find((tag) => tag === 'RerunStep')
   if (rerun === undefined) return [...tags]
-  const rest = tags.filter((tag) => tag !== 'RerunStep')
-  const grant = rest.findIndex((tag) => tag === 'GrantFixRound')
+  const grant = tags.find((tag) => tag === 'GrantFixRound')
+  const rest = tags.filter((tag) => tag !== 'RerunStep' && tag !== 'GrantFixRound')
   const discard = rest.findIndex((tag) => tag === 'Requeue' || tag === 'EditBodyAndRequeue')
-  const at = grant >= 0 ? grant + 1 : discard >= 0 ? discard : 0
-  const bounded = discard >= 0 && at > discard ? discard : at
-  return [...rest.slice(0, bounded), rerun, ...rest.slice(bounded)]
+  // The saved-work cards travel together, grant first, and sit before whatever discards the saved work.
+  const at = discard >= 0 ? discard : rest.length
+  const saved = grant === undefined ? [rerun] : [grant, rerun]
+  return [...rest.slice(0, at), ...saved, ...rest.slice(at)]
 }

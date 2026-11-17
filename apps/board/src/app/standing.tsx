@@ -1268,7 +1268,9 @@ export function Standing({
                   {standing.afterMove.result === 'closed'
                     ? 'The ticket was closed.'
                     : standing.afterMove.result === 'continued'
-                      ? `Continued ${standing.afterMove.ref} at ${standing.afterMove.head}.`
+                      ? standing.afterMove.ref
+                        ? `Continued ${standing.afterMove.ref} at ${standing.afterMove.head}.`
+                        : `Reran the step on ${standing.afterMove.head}.`
                       : 'The ticket returned to the queue for a new attempt from base.'}
                 </span>
               </p>

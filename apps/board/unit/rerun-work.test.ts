@@ -47,5 +47,5 @@ it('puts the rerun after the grant, else first', () => {
   // `allowedResolutions` puts the grant after Requeue and the rerun last; the rerun must still precede starting over.
   expect(
     rerunStepFirstAmongSavedWork(['Requeue', 'EditBodyAndRequeue', 'Split', 'Close', 'GrantFixRound', 'RerunStep']),
-  ).toEqual(['RerunStep', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close', 'GrantFixRound'])
+  ).toEqual(['GrantFixRound', 'RerunStep', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'])
 })

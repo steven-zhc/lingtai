@@ -879,7 +879,11 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
     (m.resolution._tag === 'Requeue' ||
       m.resolution._tag === 'EditBodyAndRequeue' ||
       m.resolution._tag === 'AnswerQuestion')
-  const continued = live && m.then === null && life.status === 'approved' && m.resolution._tag === 'GrantFixRound'
+  const continued =
+    live &&
+    m.then === null &&
+    life.status === 'approved' &&
+    (m.resolution._tag === 'GrantFixRound' || m.resolution._tag === 'RerunStep')
   const body = item.github.last.body
 
   return {
@@ -892,7 +896,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
             note: m.note,
             result: closed ? 'closed' : continued ? 'continued' : 'requeued',
             reason: continued
-              ? 'Continued saved work for one additional fix round; build and review run again.'
+              ? m.resolution._tag === 'RerunStep'
+                ? 'The stopped step runs again on its saved work; no round or restart is spent.'
+                : 'Continued saved work for one additional fix round; build and review run again.'
               : requeued
                 ? 'A new attempt starts from base.'
                 : released
@@ -900,7 +906,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
                   : (m.then?.reason ?? ''),
             ...(continued && m.resolution._tag === 'GrantFixRound'
               ? { ref: m.resolution.ref, head: m.resolution.onSha }
-              : {}),
+              : continued && m.resolution._tag === 'RerunStep'
+                ? { head: m.resolution.onSha }
+                : {}),
           }
         : null,
     bodyOutcome:
