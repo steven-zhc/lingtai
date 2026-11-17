@@ -181,7 +181,7 @@ describe('the account row (#1010)', () => {
     const rows = bannerRows({ held, ceiling: undefined }, undefined, now)
     expect(rows).toMatchObject([{ kind: 'account', account: 'github', waiting: ['lingtai'] }])
     const html = renderToStaticMarkup(<LockRows locks={read(held)} now={now} />)
-    expect(html).toContain('GitHub limit')
+    expect(html).toContain('GitHub rate limit')
     expect(html).toContain('>lift</button>')
     expect(renderToStaticMarkup(<LockRows locks={read(held)} scope="lingtai" now={now} />)).toContain(
       'lingtai is on GitHub, so it waits',
