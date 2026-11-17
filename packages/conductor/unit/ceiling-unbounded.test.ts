@@ -14,6 +14,6 @@ describe('passCeiling', () => {
     const text = attemptCeiling({ ...base, turns: 'unbounded' })
     expect(text).toContain('2h and no turn limit each')
     expect(text).not.toContain('300')
-    expect(attemptCeiling({ ...base, rounds: 0, turns: 'unbounded' })).toContain('2h, no turn limit')
+    expect(attemptCeiling({ ...base, rounds: 0, turns: 'unbounded' })).toContain('2h and no turn limit each')
   })
 })

@@ -138,6 +138,10 @@ const StoredRun = z.strictObject({
   // Last, where the reduce first writes it: a key the state gains later goes after the ones it always had.
   /** #1161; absent until a sandbox event is reduced. */
   sandbox: z.array(SandboxInvocation).optional(),
+  /** #1200; each absent until its route is reduced, read as 0. */
+  baseMerges: z.number().int().optional(),
+  conflictRounds: z.number().int().optional(),
+  transientRetries: z.number().int().optional(),
 })
 
 /** Thrown for a stored state that is not a `AttemptState` of today's shape. */
@@ -194,7 +198,8 @@ export const attemptReducer: Reducer<AttemptState> = {
   // 4: a `StepState` keeps the review's `summary` and `clipped` (#893); a snapshot
   // cut before this lacks them.
   // 5: the sandbox events fold into `sandbox` (#1161); a version-4 snapshot was cut by a reducer that ignored them.
-  version: 5,
+  // 6: route moves fold into `baseMerges` and `conflictRounds` (#1200); a version-5 snapshot was cut by a reducer that ignored them.
+  version: 6,
   initial: emptyAttempt,
   reduceEvent: reduceAttemptEvent,
   encode: encodeRun,

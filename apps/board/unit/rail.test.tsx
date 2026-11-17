@@ -210,7 +210,7 @@ const fixRound = (): Envelope[] => [...refused(), at('2026-09-15T17:34:01Z', 'St
  */
 const fixSpent = (): Envelope[] => {
   const proposal: Proposal = { _tag: 'BuildRed', output: '2 tests failed' }
-  const offer = offerFor(proposal, { rounds: 3, restarts: 1 }, { rounds: 0, restarts: 0 })
+  const offer = offerFor(proposal, { rounds: 3, restarts: 1, conflictRounds: 3 }, { rounds: 0, restarts: 0 })
   const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'same-worktree judge' }
   const decision = decideRoute(offer, reply)
   return [

@@ -1,11 +1,13 @@
 /**
- * `attemptCeiling`, alone in a file with nothing to import but arithmetic.
+ * `attemptCeiling`, alone in a file with nothing to import but arithmetic and
+ * `TRANSIENT_RETRIES_LIMIT`.
  *
- * It was in `filter.ts`, beside a GitHub client and the environment, and the
- * onboarding wizard (#164) recomputes it in the browser as the `limits` dials
- * move — the same sentence `lingtai status` and `lingtai add` print, called
- * rather than rewritten.
+ * It was in `filter.ts`, beside a GitHub client and the environment — the same
+ * sentence `lingtai status` and `lingtai add` print, called rather than
+ * rewritten. It imports `@lingtai/domain` since #1200, so it is for server code
+ * only: no `"use client"` file may import it.
  */
+import { TRANSIENT_RETRIES_LIMIT } from '@lingtai/domain'
 import { formatDuration, formatTurns, type TurnLimit } from '@lingtai/recipe/duration'
 
 /**
@@ -14,8 +16,9 @@ import { formatDuration, formatTurns, type TurnLimit } from '@lingtai/recipe/dur
  * [0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
  *
  * **The product is the fact, and nothing was computing it.** `wall` bounds one
- * agent run; a pass buys up to `rounds + 1` of them; a ticket buys up to
- * `restarts + 1` passes. On 2026-09-10 the drain told an operator it would wait
+ * agent run; an attempt buys up to `2 × rounds + 1 + TRANSIENT_RETRIES_LIMIT`
+ * of them (the work, `rounds` fix rounds, as many conflict rounds, and the
+ * reruns — 0108 §8, #1200); a ticket buys up to `restarts + 1` attempts. On 2026-09-10 the drain told an operator it would wait
  * at most one `wall` — true when that sentence was written, false by the time
  * the fix loop shipped, and false in a way no reader could catch, because the
  * sentence was in one file and the number in another. Everything that says what
@@ -73,18 +76,22 @@ export function attemptCeiling(limits: {
   // Byte-identical to the pre-#370 text when `usd` is absent (0070 §8's rule,
   // carried to the new field): the join between `wall` and `turns` only
   // changes from "and" to a comma when there is a third figure to join in.
-  const eachUsd = limits.usd === undefined ? '' : ` and $${limits.usd}`
   const wallAndTurns =
     limits.usd === undefined
       ? `${limits.wall} and ${formatTurns(limits.turns)}`
       : `${limits.wall}, ${formatTurns(limits.turns)} and $${limits.usd}`
+  // 0108 §8: the work, a round back for each `rounds`, as many again for merge conflicts, and the reruns.
+  const perAttempt = 2 * limits.rounds + 1 + TRANSIENT_RETRIES_LIMIT
+  const reruns = `up to ${TRANSIENT_RETRIES_LIMIT} reruns of a run an API error cut off`
   const pass =
-    limits.rounds === 0
-      ? `one agent run — ${limits.wall}, ${formatTurns(limits.turns)}${eachUsd}${at}${elsewhere}`
-      : `up to ${limits.rounds + 1} agent runs — the work, then ${limits.rounds} round(s) ` +
-        `back to the agent carrying what refused it. ${wallAndTurns} each${at}${elsewhere}, ` +
-        `so at most ${formatDuration(limits.wallMs * (limits.rounds + 1))}` +
-        (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, limits.rounds + 1)}`)
+    `up to ${perAttempt} agent runs — the work, ` +
+    (limits.rounds === 0
+      ? `and ${reruns}. `
+      : `then ${limits.rounds} round(s) back to the agent carrying what refused it, ` +
+        `up to ${limits.rounds} more for merge conflicts, and ${reruns}. `) +
+    `${wallAndTurns} each${at}${elsewhere}, ` +
+    `so at most ${formatDuration(limits.wallMs * perAttempt)}` +
+    (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, perAttempt)}`)
 
   // **Said whether it buys anything or not**, like a `skipped` gate point and
   // like `rounds: 0` below it: a default that spends money has to be auditable
@@ -98,7 +105,7 @@ export function attemptCeiling(limits: {
     )
   }
   const attempts = limits.restarts + 1
-  const runs = attempts * (limits.rounds + 1)
+  const runs = attempts * perAttempt
   return (
     `${pass}. Then up to ${limits.restarts} restart(s) — the ticket started over ` +
     `from the base carrying what refused it — so at most ${attempts} attempts, ` +

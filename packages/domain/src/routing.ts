@@ -33,7 +33,12 @@ import { AttemptRef } from './wait.ts'
  * `conduct.ts` from `runtime.limits.rounds`/`runtime.limits.restarts` at the
  * call site (#462) and handed in.
  */
-export type RoutingPolicy = { rounds: number; restarts: number }
+export type RoutingPolicy = {
+  rounds: number
+  restarts: number
+  /** The conflict rounds an attempt may buy: the recipe's `rounds`, never a grant-capped number (#1200). */
+  conflictRounds: number
+}
 
 /** `CandidateNext`'s own variant for ending at a person — one `_tag` alone, never the list of ids `CandidateId` names (`route.ts:22`). */
 const HandToPerson = z.object({ _tag: z.literal('HandToPerson') })

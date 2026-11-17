@@ -12,7 +12,7 @@ import { fixBrief } from '../src/fix.ts'
 import { judgePrompt, judgePromptParts } from '../src/judge-agent.ts'
 import { replyFor } from '../src/proposed-route.ts'
 
-const policy = { rounds: 2, restarts: 1 }
+const policy = { rounds: 2, restarts: 1, conflictRounds: 2 }
 const zero = { rounds: 0, restarts: 0 }
 const SAID = 'the finding is wrong: the guard two lines above already returns'
 const proposal: Proposal = { _tag: 'FixerDisagrees', said: SAID }

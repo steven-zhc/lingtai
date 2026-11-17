@@ -752,6 +752,12 @@ export function continuationRound(run: AttemptState, granted: boolean): number {
   return granted ? run.implementRound + 1 : run.implementRound
 }
 
+/** What a held attempt's stream says it has spent of the mechanical bounds, absent read as 0 (0108 §8, #1200). */
+export const continuationSpent = (run: AttemptState) => ({
+  baseMerges: run.baseMerges ?? 0,
+  conflictRounds: run.conflictRounds ?? 0,
+})
+
 /** srt's own explanation out of a `SandboxWrapFailed`'s `cause`. */
 const causeText = (cause: unknown): string =>
   cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : 'no explanation was given'
@@ -1345,6 +1351,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           ? { advice: grantedAdviceFromState(reduced, adviceWaitId)! }
           : {}),
         roundsSpent: continuationRound(runState, granted),
+        baseMergesSpent: continuationSpent(runState).baseMerges,
+        conflictRoundsSpent: continuationSpent(runState).conflictRounds,
         ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
         ...(criterion !== null
           ? {
@@ -5142,6 +5150,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 waive: continuation.waive,
                 ...(continuation.readClipped === undefined ? {} : { readClipped: continuation.readClipped }),
                 roundsSpent: continuation.roundsSpent,
+                baseMergesSpent: continuation.baseMergesSpent,
+                conflictRoundsSpent: continuation.conflictRoundsSpent,
                 ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                 ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                 ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
