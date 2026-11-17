@@ -46,7 +46,7 @@ describe('carryKeptWork', () => {
   })
 
   it('carries nothing when the conflict list cannot be read, rather than reporting no conflicts', () => {
-    const { result, calls } = carry({
+    const { result } = carry({
       'apply --numstat': '1\t0\ta.ts\0',
       'apply --3way': { fail: 'conflicts' },
       'diff --name-only': { fail: 'index locked' },
@@ -111,6 +111,7 @@ describe('carryKeptWork', () => {
       'status --porcelain': ' M a.ts\0',
     })
     expect(result).toEqual({ applied: [], leftOut: [], unapplied: expect.stringContaining('did not apply') })
+    expect(calls).toContain('reset --hard HEAD')
   })
 
   it('carries the paths that apply when another is refused without a conflict', () => {
