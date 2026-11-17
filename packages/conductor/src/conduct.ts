@@ -4596,7 +4596,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   limits: spend,
                   ...(yield* sandboxOf(
                     implementDecision,
-                    { runId, worktree: tree.path },
+                    { runId: dispatchId, worktree: tree.path },
                     { stream: runId, step: 'implement', action: spec.name, runtime: dispatched.capabilities.id },
                   )),
                 })

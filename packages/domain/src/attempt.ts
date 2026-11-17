@@ -216,7 +216,7 @@ export interface AttemptState {
    */
   roundsOpened: readonly number[]
 
-  /** The last `RunFailed`. Never cleared: a later `RunFinished` does not undo it (D3). */
+  /** The last `RunFailed`. A later `RunFinished` does not undo it (D3); only a `StepRerunInPlace` clears it, because the rerun is the run now (#1201). */
   failure: { readonly kind: RunFailureKind; readonly detail: string } | null
   /** The last refused verdict, by `step:action` key. Not cleared by a later pass or a new head. */
   refusal: {
