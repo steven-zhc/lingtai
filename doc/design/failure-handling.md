@@ -239,23 +239,30 @@ summary: 给人读的一句话
 
 **规则：每个上限一个名字，名字说清它数的是什么、按什么范围计数。** 两个上限即使数值相同，意义不同就用两个名字，不共用一个参数。下文和以后的 ADR、代码、recipe、看板都只用这些名字。
 
-| 名字 | 数的是什么 | 计数范围 | 值 | 放在哪 | 旧名字 |
-|---|---|---|---|---|---|
-| `run.turns` | 一次 agent 运行的轮数 | 每次运行 | 350 | recipe | `runtime.limits.turns` |
-| `run.wall` | 一次 agent 运行的时长 | 每次运行 | 75m | recipe | `runtime.limits.wall` |
-| `run.usd` | 一次 agent 运行的花费 | 每次运行 | 未设置 | recipe | `runtime.limits.usd` |
-| **`fixRounds`** | **修复轮**（F）：build 红、review 有 findings，回 implement 修 | 每个 attempt | **6** | recipe | `rounds` |
-| **`conflictRounds`** | **冲突轮**（F）：合并冲突，回 implement 解 | 每个 attempt | **6** | recipe | 没有自己的名字，借用 `rounds` 的值 |
-| **`redos`** | **重做这一步**（R）：瞬时错误、崩溃、没有回执、回答读不懂，以及 wall/turns 用完后的"接着做" | 每个 attempt | 3 | 常量 | `TRANSIENT_RETRIES_LIMIT` |
-| `redoWaits` | 每次 R 之前等多久 | — | 1、5、15 分钟 | 常量 | `TRANSIENT_WAITS` |
-| **`landRetries`** | push 遇到瞬时错误后，从保存的 head 重新落地（#1221） | 每个 attempt | 3 | 常量 | 现在和 R 共用 `TRANSIENT_RETRIES_LIMIT` 的计数，要分开 |
-| `baseMerges` | base 动了之后自动合并 | 每个 attempt | 10 | 常量 | `BASE_MERGES_LIMIT` |
-| `checkReruns` | 检查红了立刻再跑 | 每次红 | 1 | 常量 | 0108 §17，没有名字 |
-| **`startOvers`** | **从头重来**（S） | 每张票 | 2 | recipe | `restarts` |
-| **`ticket.usd`** | 一张票累计花费 | 每张票 | **【待定】$30** | recipe | 没有，新加 |
-| `splitDepth` | 自动拆票的层数（P） | 每张票 | 1 | 常量 | 没有，新加 |
-| `designQuestions` | design 阶段提问的次数 | 每张票 | 2 | 常量 | #649 的 `designAsks`，没有名字 |
-| `triage.turns` / `triage.wall` / `triage.usd` | 一次 triage 调用 | 每次调用 | 100 / 15m / $10 | recipe | `triage.limits` |
+**出发点**一栏标的是用完这次机会之后从哪里接着跑：
+
+- **➡ 接着往下做**：同一个 attempt，从当前 head 往前走，已有的 commit 都保留，再加新的。
+- **↻ 当前 attempt 里重做**：同一个 attempt，把同一件事（一步或一次检查）原样再做一遍，起点还是当前 head。
+- **⟲ 从 base 重来**：开新的 attempt，从 base 开始，旧的改动不带。
+- **■ 只是封顶**：本身不重跑任何东西，用完时触发别的动作（括号里写着触发什么）。
+
+| 名字 | 数的是什么 | 出发点 | 计数范围 | 值 | 放在哪 | 旧名字 |
+|---|---|---|---|---|---|---|
+| **`fixRounds`** | **修复轮**（F）：build 红、review 有 findings，回 implement 修 | ➡ 接着往下做 | 每个 attempt | **6** | recipe | `rounds` |
+| **`conflictRounds`** | **冲突轮**（F）：合并冲突，回 implement 解 | ➡ 接着往下做 | 每个 attempt | **6** | recipe | 没有自己的名字，借用 `rounds` 的值 |
+| `baseMerges` | base 动了之后自动合并进来，再 build | ➡ 接着往下做 | 每个 attempt | 10 | 常量 | `BASE_MERGES_LIMIT` |
+| **`landRetries`** | push 遇到瞬时错误后，从保存的 head 重新落地（#1221） | ➡ 接着往下做（不跑 agent，只重新 push） | 每个 attempt | 3 | 常量 | 现在和 R 共用 `TRANSIENT_RETRIES_LIMIT` 的计数，要分开 |
+| **`redos`** | **重做这一步**（R）：瞬时错误、崩溃、没有回执、回答读不懂，以及 wall/turns 用完后的"接着做" | ↻ 当前 attempt 里重做（这一步从第一个动作重跑，WIP 已经提交在 head 里） | 每个 attempt | 3 | 常量 | `TRANSIENT_RETRIES_LIMIT` |
+| `redoWaits` | 每次 R 之前等多久 | （跟随 `redos`） | — | 1、5、15 分钟 | 常量 | `TRANSIENT_WAITS` |
+| `checkReruns` | 检查红了立刻再跑 | ↻ 当前 attempt 里重做（同一个 commit 再跑一次检查） | 每次红 | 1 | 常量 | 0108 §17，没有名字 |
+| **`startOvers`** | **从头重来**（S） | ⟲ 从 base 重来 | 每张票 | 2 | recipe | `restarts` |
+| `splitDepth` | 自动拆票的层数（P） | ⟲ 从 base 重来（子票各自从 base 开始；母票等子票落地后从 base 验收和补完） | 每张票 | 1 | 常量 | 没有，新加 |
+| `run.turns` | 一次 agent 运行的轮数 | ■ 只是封顶（用完 → triage 决定 P 还是 R） | 每次运行 | 350 | recipe | `runtime.limits.turns` |
+| `run.wall` | 一次 agent 运行的时长 | ■ 只是封顶（同上） | 每次运行 | 75m | recipe | `runtime.limits.wall` |
+| `run.usd` | 一次 agent 运行的花费 | ■ 只是封顶（同上） | 每次运行 | 未设置 | recipe | `runtime.limits.usd` |
+| **`ticket.usd`** | 一张票累计花费 | ■ 只是封顶（用完 → H，`limit`） | 每张票 | **【待定】$30** | recipe | 没有，新加 |
+| `designQuestions` | design 阶段提问的次数 | ■ 只是封顶（用完 → design 不能再提问，必须自己做决定） | 每张票 | 2 | 常量 | #649 的 `designAsks`，没有名字 |
+| `triage.turns` / `triage.wall` / `triage.usd` | 一次 triage 调用 | ■ 只是封顶（用完 → triage 失败，第五节第 6 类） | 每次调用 | 100 / 15m / $10 | recipe | `triage.limits` |
 
 **几处改动说明：**
 - **`restarts` 改名为 `startOvers`**：`restart` 已经是 `lingtai restart`（重启 daemon）的名字，一个词指两件事，容易混。
