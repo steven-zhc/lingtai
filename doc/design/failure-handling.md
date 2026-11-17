@@ -46,7 +46,7 @@
 
 **implement 的结果**（第四节）：`Implemented`、`AgentFailed`、`Disputed`、`AlreadyDone`、`Unclear`。
 
-**triage 的原因**（第七节）：`FixableLines`、`WrongApproach`、`ConflictingHunks`、`TicketTooBig`、`SetupBroken`、`UndecidedQuestion`，新加 `Unfinished`。
+**judge 和 triage 的原因**（第七节，两者回答同一种）：`FixableLines`、`WrongApproach`、`ConflictingHunks`、`TicketTooBig`、`SetupBroken`、`UndecidedQuestion`，新加 `Unfinished`。
 
 **`askPerson` 的三种**：`unclear`（需求不清楚）、`environment`（环境坏了）、`limit`（某个上限用完了）。
 
@@ -59,7 +59,7 @@
 1. **机器处理是默认，人是兜底。**（已定）机器能处理的都交给机器。人只在两种情况介入：
    - **防止死循环**：程序必须有出口、会终止，并且留下结束标识。出口就是第 5 条的上限。
    - **需求本身不清楚**：只有人能回答。上限用完也不能让 agent 替人做业务决定。
-2. **triage 只判断原因，不动手；系统按原因决定动作并执行。**（已定）以前 triage 的建议写给人看，人照着去点按钮；现在 triage 只回答 `cause`（加上这个原因需要的附带内容），动作由系统按第七节的表决定，执行前核对状态有没有变。人读 `summary`，页面直接显示这个回答。
+2. **judge 和 triage 只判断原因，不动手；系统按原因决定动作并执行。**（已定）两者分两层、回答同一种 `cause`：judge 在上限之内判断，只读这一步的证据，便宜、常用；triage 在本来要开 wait 时判断，读票、diff 和代码。以前 triage 的建议写给人看，人照着去点按钮；现在它们只回答 `cause`（加上这个原因需要的附带内容），动作由系统按第七节的表决定，执行前核对状态有没有变。人读 `summary`，页面直接显示这个回答。
 3. **从已经提交的东西接着做。**（已定）失败不扔掉已有的 commit。只有判定方向错了，才从 base 重来。
 4. **没提交的丢了很正常。**（已定）不为保住没提交的东西写复杂逻辑；丢了顶多多 `redoStep` 一次，花不了多少 token。唯一的例外是 implement 的 agent 异常结束时留下的代码，由灵台替它提交（第三节）。
 5. **每条自动路径都有上限**，用完才交给人。（已定）这是第 1 条"程序必须有出口"的落实：每条路径都有计数和上限，计数记在事件里，重启、重新领取都不会清零；用完时留下结束标识，写明是哪个上限、用了几次（`askPerson` 的 `limit`）。
@@ -79,8 +79,9 @@
  ├─ 第一层：规则（不花钱，不跑 agent）
  │    认得出是什么错，就按规则直接处理：瞬时错误、flaky、base 红、base 动了、push 失败……
  │
- ├─ 第二层：triage（判断一次，花少量钱）
- │    规则答不了的，交给 triage 判断原因；系统按原因自动执行对应的动作（第七节）
+ ├─ 第二层：判断（一个 agent 判断一次原因，系统按原因执行，第七节）
+ │    judge：上限之内、在 proposed 的路由上，只读这一步自己的证据（findings、fixer 的异议），便宜
+ │    triage：本来要开 wait 的时候（turns/wall 用完、diff 太大、setup 坏了、上限用完、冲突块多），读票、diff 和代码
  │
  └─ 第三层：人（askPerson）
       只在上限用完（limit）、需求不清楚（unclear）、环境坏了（environment）的时候
@@ -238,7 +239,7 @@ questions: 最多 5 个
 | 情况 | 处理 |
 |---|---|
 | build 红 | 规则：`rerunCommand`（0108 §17）；红了又绿且满足 flaky 的三个条件 → 放行，在 backlog 记一条 minor。base 上也红 → 放回队列，保留 head（0108 §13）。否则 → `fixRefusal` |
-| review 有 findings | triage：`FixableLines` → `fixRefusal`；`WrongApproach` → `startNewAttempt` |
+| review 有 findings | judge（recipe 在 `proposed` 的 `findings` 上声明）：`FixableLines` → `fixRefusal`；`WrongApproach` → `startNewAttempt`。没声明 judge 时交给 triage |
 | review 的 diff 太大，读不完 | triage：`TicketTooBig` 并附方案 → `splitTicket`；否则 → `askPerson`（limit） |
 | implement 没有声明 `Implemented` | 按 agent 声明的结果处理（第四节）：`Disputed`、`AlreadyDone`、`Unclear`，或按 `AgentFailed` 处理 |
 | 合并冲突 | 冲突块不超过 5 个 → `resolveConflict`，不经过 triage；块数只决定用哪种解法，不代表不需要人判断：agent 遇到只能由人判断的块，声明 `Unclear`（第四节）。更多时 triage `ConflictingHunks`：两边逻辑矛盾 → `startNewAttempt`；有只能由人判断的冲突块 → `askPerson`（unclear）；否则 → `resolveConflict` |
@@ -273,7 +274,9 @@ questions: 最多 5 个
 
 ---
 
-## 七、triage 的回答 → 系统执行的动作（已定）
+## 七、judge 和 triage 的回答 → 系统执行的动作（已定）
+
+judge 和 triage 回答同一种格式、查同一张表（2026-11-17 定）。下面写 triage 的地方，judge 同样适用；区别只在什么时候问谁（第二节）。judge 没有 wait，它的回答记在路由事件上，执行协议的第 2–4 条照样适用。
 
 ### 回答的格式
 
