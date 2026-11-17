@@ -305,7 +305,7 @@ describe('where a run has got to', () => {
 describe('rounds spent against the ceiling', () => {
   const roundOpened = (step: 'proposed' | 'merge', output: string) => {
     const proposal: Proposal = { _tag: 'CheckRefused', from: step, output }
-    const offer = offerFor(proposal, { rounds: 3, restarts: 1 }, { rounds: 0, restarts: 0 })
+    const offer = offerFor(proposal, { rounds: 3, restarts: 1, conflictRounds: 3 }, { rounds: 0, restarts: 0 })
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'the lines, not the approach' }
     return { runId: 'pass-59', offer, reply, decision: decideRoute(offer, reply) }
   }
@@ -322,7 +322,7 @@ describe('rounds spent against the ceiling', () => {
 
   it('stays at the round already spent when a later escalation buys no further round', () => {
     const escalated: Proposal = { _tag: 'FixerDisagrees', said: 'two agents disagreed' }
-    const offer = offerFor(escalated, { rounds: 3, restarts: 1 }, { rounds: 1, restarts: 0 })
+    const offer = offerFor(escalated, { rounds: 3, restarts: 1, conflictRounds: 3 }, { rounds: 1, restarts: 0 })
     const declined = [
       ...timeline(),
       at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [verdictAction('build', 'refused', '2 tests failed')])),
@@ -391,7 +391,11 @@ describe('describeHeld', () => {
 describe('human-granted rounds', () => {
   const opened = (spentRounds: number) => {
     const proposal: Proposal = { _tag: 'CheckRefused', from: 'proposed', output: 'red' }
-    const offer = offerFor(proposal, { rounds: 5, restarts: 1 }, { rounds: spentRounds, restarts: 0 })
+    const offer = offerFor(
+      proposal,
+      { rounds: 5, restarts: 1, conflictRounds: 5 },
+      { rounds: spentRounds, restarts: 0 },
+    )
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'the lines' }
     return { runId: 'pass-59', offer, reply, decision: decideRoute(offer, reply) }
   }

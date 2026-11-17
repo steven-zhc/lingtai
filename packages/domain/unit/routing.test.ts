@@ -26,7 +26,7 @@ import { Finding } from '../src/vocabulary.ts'
 import type { EscalationBecause, AttemptRef } from '../src/wait.ts'
 
 const run: AttemptRef = { runId: 'pass-1' }
-const policy: RoutingPolicy = { rounds: 2, restarts: 1 }
+const policy: RoutingPolicy = { rounds: 2, restarts: 1, conflictRounds: 2 }
 
 function finding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -499,7 +499,7 @@ describe('offerFor: at both ceilings', () => {
 })
 
 describe('offerFor: policy{0,0} is the floor every proposal keeps', () => {
-  const floor: RoutingPolicy = { rounds: 0, restarts: 0 }
+  const floor: RoutingPolicy = { rounds: 0, restarts: 0, conflictRounds: 0 }
   const zero: Spent = { rounds: 0, restarts: 0 }
 
   // A merge conflict's round is not `rounds`' to withhold (#653), so a zero ceiling leaves it on offer.
@@ -715,8 +715,8 @@ describe('offerFor: a base that moved on the branch’s own files (#593)', () =>
     expect(offerFor(baseMoved, policy, { rounds: 0, restarts: 0 }).available).toEqual([mergeBase(1), person])
   })
 
-  it('with 2 merges spent, merge-base is excluded by the base-merges ceiling and only a person is left', () => {
-    expect(offerFor(baseMoved, policy, { rounds: 0, restarts: 0, baseMerges: 2 })).toEqual({
+  it('with 10 merges spent, merge-base is excluded by the base-merges ceiling and only a person is left', () => {
+    expect(offerFor(baseMoved, policy, { rounds: 0, restarts: 0, baseMerges: 10 })).toEqual({
       proposal: baseMoved,
       available: [person],
       unavailable: [{ id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } }],
@@ -724,7 +724,11 @@ describe('offerFor: a base that moved on the branch’s own files (#593)', () =>
   })
 
   it('spends no round: a spent rounds ceiling does not take it off', () => {
-    const offer = offerFor(baseMoved, { rounds: 0, restarts: 0 }, { rounds: 5, restarts: 5, baseMerges: 0 })
+    const offer = offerFor(
+      baseMoved,
+      { rounds: 0, restarts: 0, conflictRounds: 0 },
+      { rounds: 5, restarts: 5, baseMerges: 0 },
+    )
     expect(offer.available.map((c) => c.id)).toEqual(['merge-base', 'hand-to-person'])
   })
 
@@ -749,7 +753,7 @@ describe('offerFor: a base that moved on the branch’s own files (#593)', () =>
 
 describe('offerFor: a merge conflict buys its own round (#653)', () => {
   it('is offered as a FixRound to implement though rounds are spent, leaving round where it was', () => {
-    const offer = offerFor(mergeConflict, { rounds: 4, restarts: 2 }, { rounds: 4, restarts: 0 })
+    const offer = offerFor(mergeConflict, { rounds: 4, restarts: 2, conflictRounds: 4 }, { rounds: 4, restarts: 0 })
     expect(offer.available.find((c) => c.id === 'fix-lines')?.next).toEqual({
       _tag: 'FixRound',
       to: 'implement',
@@ -759,12 +763,20 @@ describe('offerFor: a merge conflict buys its own round (#653)', () => {
   })
 
   it('counts on from the conflict rounds already spent', () => {
-    const offer = offerFor(mergeConflict, { rounds: 4, restarts: 2 }, { rounds: 4, restarts: 0, conflictRounds: 1 })
+    const offer = offerFor(
+      mergeConflict,
+      { rounds: 4, restarts: 2, conflictRounds: 4 },
+      { rounds: 4, restarts: 0, conflictRounds: 1 },
+    )
     expect(offer.available.find((c) => c.id === 'fix-lines')?.next).toMatchObject({ conflict: 2 })
   })
 
   it('is unavailable at the conflict-rounds ceiling', () => {
-    const offer = offerFor(mergeConflict, { rounds: 4, restarts: 2 }, { rounds: 0, restarts: 0, conflictRounds: 2 })
+    const offer = offerFor(
+      mergeConflict,
+      { rounds: 4, restarts: 2, conflictRounds: 2 },
+      { rounds: 0, restarts: 0, conflictRounds: 2 },
+    )
     expect(offer.available.some((c) => c.id === 'fix-lines')).toBe(false)
     expect(offer.unavailable).toContainEqual({
       id: 'fix-lines',
@@ -772,8 +784,33 @@ describe('offerFor: a merge conflict buys its own round (#653)', () => {
     })
   })
 
+  it('offers none under rounds: 0, and a third under rounds: 3 (#1200)', () => {
+    const at = (rounds: number, spent: number) =>
+      offerFor(
+        mergeConflict,
+        { rounds, restarts: 0, conflictRounds: rounds },
+        { rounds: 0, restarts: 0, conflictRounds: spent },
+      )
+    expect(at(0, 0).available.some((c) => c.id === 'fix-lines')).toBe(false)
+    expect(at(3, 2).available.find((c) => c.id === 'fix-lines')?.next).toMatchObject({ conflict: 3 })
+    expect(at(3, 3).available.some((c) => c.id === 'fix-lines')).toBe(false)
+  })
+
+  it('is still offered after a grant capped the round limit, up to the recipe’s rounds (#1200)', () => {
+    const offer = offerFor(
+      mergeConflict,
+      { rounds: 1, restarts: 0, conflictRounds: 2 },
+      { rounds: 1, restarts: 0, conflictRounds: 1 },
+    )
+    expect(offer.available.find((c) => c.id === 'fix-lines')?.next).toMatchObject({ conflict: 2 })
+  })
+
   it('does not lend review findings a round once rounds are spent', () => {
-    const offer = offerFor(reviewFindings, { rounds: 4, restarts: 2 }, { rounds: 4, restarts: 0, conflictRounds: 0 })
+    const offer = offerFor(
+      reviewFindings,
+      { rounds: 4, restarts: 2, conflictRounds: 4 },
+      { rounds: 4, restarts: 0, conflictRounds: 0 },
+    )
     expect(offer.available.some((c) => c.id === 'fix-lines')).toBe(false)
     expect(offer.unavailable).toContainEqual({
       id: 'fix-lines',

@@ -241,6 +241,12 @@ export interface AttemptState {
    * reduced, so a state stored before it is still today's shape.
    */
   sandbox?: readonly SandboxInvocation[]
+  /** The base merges this attempt's routes made (#1200; 0108 §8). Absent until one is reduced, read as 0. */
+  baseMerges?: number
+  /** The conflict rounds this attempt's routes bought (#1200). Absent until one is reduced, read as 0. */
+  conflictRounds?: number
+  /** The reruns of a run an API error cut off. Nothing raises it yet (#1201, #1221); absent reads as 0. */
+  transientRetries?: number
 
   version: number
   lastSeq: bigint | null
@@ -593,6 +599,9 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
         state.sandbox?.some((i) => !i.ended) === true
           ? { sandbox: state.sandbox.map((i) => (i.ended ? i : { ...i, ended: true })) }
           : {}
+      if (next._tag === 'MergeBase') {
+        return { ...state, ...settled, ...at, baseMerges: Math.max(state.baseMerges ?? 0, next.merge), route: d }
+      }
       return next._tag === 'FixRound'
         ? {
             ...state,
@@ -600,6 +609,9 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
             ...at,
             implementRound: Math.max(state.implementRound, next.round),
             roundsOpened: [...state.roundsOpened, next.round],
+            ...(next.conflict !== undefined
+              ? { conflictRounds: Math.max(state.conflictRounds ?? 0, next.conflict) }
+              : {}),
             route: d,
           }
         : { ...state, ...settled, ...at, route: d }
