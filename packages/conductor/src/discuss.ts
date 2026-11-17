@@ -11,7 +11,6 @@ import type { TriageResult } from '@lingtai/domain/wait'
 import type { EventStore } from '@lingtai/event-store'
 import { Cause, Effect } from 'effect'
 
-import { editHash } from './attempts.ts'
 import type { IssueChannel } from './edit-body.ts'
 import {
   jsonCandidates,
@@ -23,6 +22,7 @@ import {
   renderServed,
   type ReadableRef,
 } from './read-step.ts'
+import { recordPrompt } from './record-prompt.ts'
 /**
  * The discussion assistant: a third kind of agent, which reads and cannot run.
  *
@@ -91,7 +91,7 @@ import {
  * no dollar figure of its own any more, and `held.costUsd` below is the
  * caller's own in-memory receipt, not a second write of the same fact.
  */
-import { recordPrompt } from './record-prompt.ts'
+import { concludeDiscussionOnTicketEffect } from './ticket/commands.ts'
 import { writeSectionEffect } from './write-section.ts'
 
 export type { IssueChannel } from './tell.ts'
@@ -744,26 +744,6 @@ export function concludeDiscussionEffect(options: ConcludeOptions): Effect.Effec
 
     if (options.outcome === 'prompt') {
       if (text === '') return { ok: false, detail: "there is nothing to add to the next run's prompt" }
-      const at = (yield* lift(() => store.read(ticketId))).length
-      yield* lift(() =>
-        store.append(ticketId, at, [
-          {
-            type: 'PromptEdited',
-            actor: by,
-            // `basedOn` is null and that is the honest value: the assistant
-            // proposes a sentence, not a change to a document, so nobody was
-            // looking at a composed prompt when this was adopted. The board's own
-            // box is the one that records what it was written against (#104).
-            data: parsePayload('PromptEdited', {
-              text,
-              hash: editHash(text),
-              by,
-              basedOn: null,
-              chatId,
-            }),
-          },
-        ]),
-      )
       detail = "the next attempt's prompt carries it"
     }
 
@@ -786,19 +766,12 @@ export function concludeDiscussionEffect(options: ConcludeOptions): Effect.Effec
       detail = written.written ? 'the ticket carries it' : written.detail
     }
 
-    const at = (yield* lift(() => store.read(ticketId))).length
-    yield* lift(() =>
-      store.append(ticketId, at, [
-        {
-          type: 'DiscussionHeld',
-          actor: by,
-          data: parsePayload('DiscussionHeld', {
-            chatId,
-            outcome: options.outcome,
-            by,
-          }),
-        },
-      ]),
+    yield* concludeDiscussionOnTicketEffect(
+      store,
+      ticketId,
+      options.outcome === 'prompt'
+        ? { chatId, by, outcome: 'prompt', prompt: text }
+        : { chatId, by, outcome: options.outcome },
     )
 
     return { ok, detail }
