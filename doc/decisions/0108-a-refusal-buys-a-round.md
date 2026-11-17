@@ -331,7 +331,9 @@ fixes the bounds and the endings that router works inside.
   raised from 2 to 10 and `TRANSIENT_RETRIES_LIMIT` added; the conflict budget
   drawn from `rounds` rather than `CONFLICT_ROUNDS_LIMIT = 2`; and
   `attemptCeiling` saying the one total of §8. §17's second run, §18's
-  answers, and §19's *respond* half — `packages/domain/src/failure/` holds
+  answer for `fixer-disagrees` (#1199; the `nothing-produced` row is built, #1198:
+  `offerFor` offers the round when the implementer said something, and a judge
+  declared there is shown the ticket and the message), and §19's *respond* half — `packages/domain/src/failure/` holds
   *classify* (`classify.ts`), *explain* (`explain.ts`) and, in `respond.ts`, the
   account-limit wait, `offerFor`, its two bounds and `BUILT_IN_FOR`; and
   `platform-errors.md`'s *What Lingtai recognises today* is generated from the
