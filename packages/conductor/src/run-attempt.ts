@@ -1379,8 +1379,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     const landedAgainThisPass = { times: 0, minutes: 0 }
     /** The merge-conflict fix rounds this attempt (#653), per attempt for the same reason. */
     let conflictRoundsSpent = options.from?.conflictRoundsSpent ?? 0
-    /** The reruns in place this attempt (#1201), per attempt like the two above. */
-    let transientRetriesSpent = options.from?.transientRetriesSpent ?? 0
     /**
      * **What the cut-off visit was handed** (#1201), to hand back: its context and the visits before it.
      * The brief is derived from the visit list (`designOn`, `sentBackTo`), not from the context alone, and the
