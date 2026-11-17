@@ -71,7 +71,11 @@ describe('reduceTicket over a continuation', () => {
 describe('the attempts a ticket holds (#829)', () => {
   it('D13: an attempt that asked and was then released ended released', () => {
     const [c] = reduceTicket(lateHistories.ticket.askedThenReleasedByPerson).claims
-    expect(c?.ended).toEqual({ kind: 'released', reason: 'Requeued by steven.' })
+    expect(c?.ended).toEqual({
+      kind: 'released',
+      reason: 'Requeued by steven.',
+      cause: { _tag: 'ByPerson', waitId: expect.any(String) },
+    })
   })
 
   it('D13: an attempt answered without a release ended asking', () => {
@@ -92,7 +96,7 @@ describe('the attempts a ticket holds (#829)', () => {
 
   it('D13: an empty release reason stays empty', () => {
     const [c] = reduceTicket(lateHistories.ticket.releasedWithoutReason).claims
-    expect(c?.ended).toEqual({ kind: 'released', reason: '' })
+    expect(c?.ended).toEqual({ kind: 'released', reason: '', cause: null })
   })
 
   it('D6: a claim after a close is not an attempt and moves nothing', () => {

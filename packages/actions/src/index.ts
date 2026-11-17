@@ -17,6 +17,7 @@ export {
   type PipelineResult,
   type SentBack,
   type TheDesign,
+  recordedOr,
   rerunId,
 } from './action.ts'
 export {

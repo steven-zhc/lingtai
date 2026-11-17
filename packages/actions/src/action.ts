@@ -527,6 +527,14 @@ export interface ActionContext {
    */
   rerun?: number
   /**
+   * **The prompt the cut-off run of `name` was handed, to be handed again** (0108 §11, #1205): a run an account
+   * limit cut off is run again with its recorded brief, never one built afresh. Keyed by the action's name, so
+   * an action before it in the step's list is not handed another's brief; stripped with `rerun`. `prompt` is null
+   * where the recorded brief could not be put back: the action's identity as the rerun's target stands, and its
+   * brief is built afresh.
+   */
+  recorded?: { readonly name: string; readonly prompt: string | null }
+  /**
    * On a rerun, the results the cut-off visit recorded for the actions **before** the one that was cut
    * off, by position (#1201). Those actions are not run again, whatever their kind — a `run:` whose clean
    * step resets the tree would delete the edits the cut-off agent left — and each stands with its verdict.
@@ -1048,8 +1056,10 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
       // **Only the action that was cut off is a rerun** (#1201): this is it (every one before it was
       // skipped above), so every action after it in the step's list runs as on any visit — a fresh
       // dispatch id, a fresh `startedAt`, its own diff.
-      if (context.rerun !== undefined) {
-        const { rerun: _rerun, resumedAfter: _resumedAfter, ...rest } = context
+      // A rerun after an account limit names the action it re-runs (`recorded`): it is not spent on an action
+      // before that one, whose own dispatch id must not be the cut-off one's.
+      if (context.rerun !== undefined && (context.recorded === undefined || context.recorded.name === action.name)) {
+        const { rerun: _rerun, resumedAfter: _resumedAfter, recorded: _recorded, ...rest } = context
         context = rest
       }
 
@@ -1287,6 +1297,17 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
 function elapsed(ms: number): string {
   const s = Math.round(ms / 1000)
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
+}
+
+/** The prompt of a run an account limit cut off, in place of the one composed, when this is the action it was (#1205). */
+export function recordedOr(
+  context: Pick<ActionContext, 'recorded'>,
+  name: string,
+  composed: ComposedPrompt,
+): ComposedPrompt {
+  return context.recorded?.name === name && context.recorded.prompt !== null
+    ? { handed: context.recorded.prompt, recorded: context.recorded.prompt, refs: [], values: [] }
+    : composed
 }
 
 /** `id`, with `:rerun:<n>` when this visit is a rerun in place (#1201): a session id is never reused. */

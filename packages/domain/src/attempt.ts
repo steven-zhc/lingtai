@@ -17,7 +17,7 @@
  */
 import { isReached, reviewSummaryOf, type Reached, type StepOutcome } from './action.ts'
 import type { Envelope } from './envelope.ts'
-import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity } from './events.ts'
+import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity, SpentFor } from './events.ts'
 import { routeMove, type StoredRoute } from './routing.ts'
 import type { Finding, Step } from './vocabulary.ts'
 
@@ -720,6 +720,42 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
       // See the note in ticket.ts: ignored, not rejected.
       return { ...state, ...at }
   }
+}
+
+/**
+ * The paid call an account limit cut off, and the prompt it was handed if that was recorded (#1205): the `for` of
+ * the last event that names an action's call, a `RunSpent` (a crashed call bills too) or a `RunPrompted`. The
+ * call is named by that and never by the last *prompt*, which a failed prompt append leaves on an earlier call;
+ * its prompt is the last one recorded for the same `for`, or null where none was.
+ */
+export function cutOffPromptOf(
+  runEvents: readonly Envelope[],
+): { readonly for: Extract<SpentFor, { _tag: 'Action' }>; readonly prompt: PayloadOf<'RunPrompted'> | null } | null {
+  const same = (a: Extract<SpentFor, { _tag: 'Action' }>, b: SpentFor | undefined) =>
+    b?._tag === 'Action' && a.step === b.step && a.name === b.name && a.round === b.round && a.grant === b.grant
+  for (let i = runEvents.length - 1; i >= 0; i--) {
+    const event = runEvents[i]!
+    if (event.type !== 'RunSpent' && event.type !== 'RunPrompted') continue
+    const named = (event.data as { for?: SpentFor }).for
+    if (named?._tag !== 'Action') continue
+    for (let j = runEvents.length - 1; j >= 0; j--) {
+      const candidate = runEvents[j]!
+      if (candidate.type !== 'RunPrompted') continue
+      const d = candidate.data as PayloadOf<'RunPrompted'>
+      if (same(named, d.for)) return { for: named, prompt: d }
+    }
+    return { for: named, prompt: null }
+  }
+  return null
+}
+
+/** Whether a rule's *ask again* was already spent on `step` in this run: a continuation of it is not granted another (#1205). */
+export function askedAgainOn(runEvents: readonly Envelope[], step: string): boolean {
+  return runEvents.some((event) => {
+    if (event.type !== 'StepRerunInPlace') return false
+    const d = event.data as PayloadOf<'StepRerunInPlace'>
+    return d.step === step && d.askedAgain === true
+  })
 }
 
 /**

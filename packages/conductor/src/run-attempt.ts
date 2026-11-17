@@ -1000,6 +1000,19 @@ export interface AttemptOptions {
     readonly conflictRoundsSpent?: number
     /** The reruns in place the attempt's stream already holds (0108 §8, #1201): per attempt, so a continuation keeps it. */
     readonly transientRetriesSpent?: number
+    /**
+     * **The first visit of `step` is a rerun of the call an account limit cut off** (0108 §11, #1205): the
+     * recorded prompt (null: a fresh brief) is handed again under a new dispatch id. `accountReruns` is this
+     * rerun's number among the attempt's; every rerun's suffix is `transientRetriesSpent + accountReruns`, so
+     * the two kinds never repeat an id.
+     */
+    readonly rerun?: {
+      readonly for: { readonly step: Step; readonly name: string; readonly round: number }
+      readonly prompt: string | null
+      readonly accountReruns: number
+      /** The cut-off call was itself an *ask again* of an unreadable answer: it is not granted a second (#1205). */
+      readonly askedAgain?: boolean
+    }
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
     readonly landedOnBase?: {
       readonly paths: readonly string[]
@@ -1396,7 +1409,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     /** This visit is itself an `ask-again`'s (#1224). Cleared when the visit starts, so a later arrival is asked once more. */
     let arrivedAskedAgain = false
     /** The one place `StepRerunInPlace` is appended: a crash's rerun and a rule's both spend the count before the wait. */
-    const emitRerunInPlace = (step: Step, retry: number, said: string, wait: Duration.Input) =>
+    const emitRerunInPlace = (step: Step, retry: number, said: string, wait: Duration.Input, askedAgain = false) =>
       options.emit({
         type: 'StepRerunInPlace',
         data: {
@@ -1405,6 +1418,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           rerun: retry,
           said,
           waitMs: Duration.toMillis(Duration.fromInputUnsafe(wait)),
+          ...(askedAgain ? { askedAgain: true } : {}),
         },
       })
     /** The rerun an agent step is handed: the design it was briefed with, and every action before the one cut off or unread. */
@@ -1793,6 +1807,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                 ? offer.proposal.raw
                 : '',
             rerunWait,
+            offer.proposal._tag === 'AnswerUnreadable',
           )
         }
         record({
@@ -2006,8 +2021,24 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         }
         applyConflictMerge(asked.baseSha, got.conflicted)
       }
+      // The first visit of `from.step` after an account limit: the cut-off call's round, its dispatch suffix and
+      // its recorded brief (#1205).
+      const accountRerun = options.from?.rerun
+      const accountRerunsSpent = accountRerun?.accountReruns ?? 0
+      const firstAccountVisit =
+        accountRerun !== undefined && rerun === null && at === options.from?.step && !steps.some((v) => v.step === at)
+      if (firstAccountVisit && accountRerun.askedAgain === true) askingAgain = at
       const visitContext: ActionContext =
-        rerun === null ? contextFor() : { ...rerun.context, rerun: transientRetriesSpent }
+        rerun !== null
+          ? { ...rerun.context, rerun: transientRetriesSpent + accountRerunsSpent }
+          : accountRerun !== undefined && at === options.from?.step && !steps.some((visit) => visit.step === at)
+            ? {
+                ...contextFor(),
+                round: accountRerun.for.round,
+                rerun: transientRetriesSpent + accountRerun.accountReruns,
+                recorded: { name: accountRerun.for.name, prompt: accountRerun.prompt },
+              }
+            : contextFor()
       const visitedBefore: readonly StepReached[] = rerun === null ? [...steps] : rerun.reached
       rerun = null
       arrivedAskedAgain = askingAgain === at
@@ -2594,7 +2625,14 @@ function runVisit(
             !reached.some((visit) => visit.step === 'implement') &&
             options.from.grant
               ? options.from.grant
-              : sentBackTo(spec.step, reached),
+              : // An account-resumed fixer is a fix round, not a first implementation (#1205): its dispatch
+                // id and its spend are the round's.
+                spec.step === 'implement' &&
+                  firstVisitOfFrom &&
+                  options.from?.rerun !== undefined &&
+                  options.from.rerun.for.round > 0
+                ? { why: 'a fixing run an account limit cut off, run again', asked: null, printed: null }
+                : sentBackTo(spec.step, reached),
         },
         emit: emitAsPromise,
         ...(options.recordPrompt === undefined ? {} : { recordPrompt: options.recordPrompt }),

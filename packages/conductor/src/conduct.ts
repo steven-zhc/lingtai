@@ -40,8 +40,15 @@ import {
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
 import {
+  type PayloadOf,
   type SpentFor,
+  type WaitId,
   WIP_COMMIT_PREFIX,
+  accountLimitReleases,
+  askedAgainOn,
+  continuableRelease,
+  cutOffPromptOf,
+  expandPrompt,
   integrationStream,
   parsePayload,
   stripEvidence,
@@ -230,7 +237,7 @@ import { ticketOfLandingSubject } from '@lingtai/repo/landing-subject'
 import { standInExcludes, type SandboxApi } from '@lingtai/sandbox'
 import { Cause, type Duration, Effect, Exit, Result } from 'effect'
 
-import { reachAccountLimit } from './account.ts'
+import { reachAccountLimit, readAccount } from './account.ts'
 import { armsOnOriginEffect } from './arms.ts'
 import {
   type Brief,
@@ -241,7 +248,14 @@ import {
   type Worked,
   bodiesFor,
 } from './attempt-steps.ts'
-import { armForState, conflictResolvedOf, diffBaseShaOf, landedOnBaseOf, priorAttemptsFromState } from './attempts.ts'
+import {
+  armForState,
+  conflictResolvedOf,
+  diffBaseShaOf,
+  landedOnBaseOf,
+  priorAttemptsFromState,
+  releasedHeadOf,
+} from './attempts.ts'
 import { baseCheckQuestion, createBaseCheck } from './base-check.ts'
 import { agentBranch } from './branches.ts'
 import { carryKeptWork, type CarriedWork } from './carry-wip-port.ts'
@@ -259,6 +273,7 @@ import { type LandingLane, landingLane } from './landing-lane.ts'
 import { AgentHost, Repo } from './ports.ts'
 import { currentRecipeEffect } from './projects.ts'
 import { signedInHere } from './projects.ts'
+import { resolvePromptRefs } from './prompt-refs.ts'
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
 import { buildCommands, nextPrompt, renderPromptParts } from './prompt.ts'
@@ -1274,8 +1289,115 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * below reports as an ordinary `notClaimed` rather than acting on a
      * stale copy.
      */
+    /** Set by the second source below: why a release-sourced continuation was declined rather than taken. */
+    let releasedDeclined: string | null = null
+    /** Why the saved head of a released attempt could not be cut again, once the cut found out (#1205). */
+    let headGone: string | null = null
+    /** Set when the saved work was not restored onto the re-cut: nothing this pass publishes may replace what is saved (#1205). */
+    let savedWorkNotRestored = false
+    /** The words a recorded prompt was handed with, expanded; null where a ref no longer resolves (#1205). */
+    const recordedPromptOf = (record: PayloadOf<'RunPrompted'>) =>
+      Effect.gen(function* () {
+        if (record.prompt === null) return null
+        if ((record.refs ?? []).length === 0) return record.prompt
+        const run = Effect.runPromiseWith(yield* Effect.context<never>())
+        const values = yield* Effect.tryPromise(() =>
+          resolvePromptRefs(record.refs ?? [], {
+            store,
+            git: (args, cwd) =>
+              run(
+                repo.git([...args], { token: options.token, env: options.gitEnv, cwd }).pipe(
+                  Effect.match({
+                    onSuccess: (out) => ({ ok: true as const, out }),
+                    onFailure: (e) => ({ ok: false as const, why: e.detail }),
+                  }),
+                ),
+              ),
+            mirrorPath: mirrorPathFor(project, home),
+          }),
+        )
+        const expanded = expandPrompt(record, values)
+        return expanded.unresolved.length === 0 ? expanded.text : null
+      }).pipe(Effect.orElseSucceed(() => null))
     const continuation = yield* Effect.gen(function* () {
-      if (options.continuing === undefined) return null
+      if (options.continuing === undefined) {
+        /**
+         * **The other source of a continuation: a queued ticket whose last release names a run to
+         * continue** (#1205, `continuableRelease`). Read here, at the version this claim will append at,
+         * so a ticket that moved since is `null` and an ordinary claim; the owner's continue
+         * transition checks the same question again. The cause decides which head and which `from`
+         * (`releasedHeadOf`, `released.cause`); #1211 adds `BaseRed` to it.
+         */
+        if (reduced.lifecycle.status !== 'backlog') return null
+        const releasedFrom = continuableRelease(reduced)
+        if (releasedFrom === null) return null
+        // #1211 adds `BaseRed` to the causes this takes; until then the owner's set holds only this one.
+        const cause = releasedFrom.cause
+        if (cause._tag !== 'AccountLimit') return null
+        {
+          // The first claim after the lock lifts. A lock that stands again is a race with a fresh one: this
+          // never becomes an ordinary claim from the base, which is the cost this continuation removes.
+          const locked = yield* readAccount(store, cause.runtime).pipe(
+            Effect.map((account) => account.limit !== null),
+            Effect.orElseSucceed(() => true),
+          )
+          if (locked) {
+            releasedDeclined = `the ${cause.runtime} account is still locked`
+            return null
+          }
+        }
+        const releasedEvents = yield* Effect.promise(() => store.read(releasedFrom.runId))
+        const releasedState = reduceAttempt(releasedEvents)
+        const head = releasedHeadOf(releasedEvents)
+        const spent = continuationSpent(releasedState)
+        // Each lift is one release naming this run, so this rerun's number among them is their count.
+        const accountReruns = accountLimitReleases(
+          yield* Effect.promise(() => store.read(ticketId)),
+          releasedFrom.runId,
+        )
+        const cutOff = cutOffPromptOf(releasedEvents)
+        // The call the wall cut off is the release's own step: another step's last call is not it.
+        const cutOffFor = cutOff !== null && cutOff.for.step === cause.step ? cutOff.for : null
+        const recordedPrompt =
+          cutOff?.prompt == null || cutOffFor === null || reduced.pendingPrompt !== null
+            ? null
+            : yield* recordedPromptOf(cutOff.prompt)
+        return {
+          step: cause.step,
+          waive: [],
+          // What only an approval's continuation carries; present as `undefined` so the two shapes are one.
+          grantRef: undefined,
+          advice: undefined,
+          declined: undefined,
+          grant: undefined,
+          findings: undefined,
+          conflict: undefined,
+          readClipped: undefined,
+          roundLimit: undefined,
+          onSha: 'at' in head ? head.at : '',
+          resumedWaitId: `account-limit:${accountReruns}` as WaitId,
+          roundsSpent: continuationRound(releasedState, false),
+          baseMergesSpent: spent.baseMerges,
+          conflictRoundsSpent: spent.conflictRounds,
+          transientRetriesSpent: spent.transientRetries,
+          diffBaseSha: diffBaseShaOf(releasedEvents),
+          landedOnBase: landedOnBaseOf(releasedEvents),
+          conflictResolved: conflictResolvedOf(releasedEvents),
+          released: {
+            runId: releasedFrom.runId,
+            head,
+            rerun:
+              cutOffFor?._tag === 'Action'
+                ? {
+                    for: cutOffFor,
+                    prompt: recordedPrompt,
+                    accountReruns,
+                    askedAgain: askedAgainOn(releasedEvents, cutOffFor.step),
+                  }
+                : { for: null, prompt: null, accountReruns },
+          },
+        }
+      }
       if (reduced.lifecycle.status !== 'approved' || reduced.lifecycle.runId !== options.continuing.runId) return null
       const { waitId: approvedWaitId, onSha: approvedOnSha } = reduced.lifecycle
       const reason = waitsFromState(reduced).find((w) => w.waitId === approvedWaitId)?.reason
@@ -1411,9 +1533,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // brand-new pass onto the *approved* run's own stream, under `--no-merge`
     // or not depending on nothing this pass decided.
     const runId =
-      options.continuing !== undefined && continuation !== null
-        ? options.continuing.runId
-        : attemptStream(crypto.randomUUID())
+      continuation === null
+        ? attemptStream(crypto.randomUUID())
+        : (continuation.released?.runId ?? options.continuing!.runId)
     /**
      * **Where the pass works, known before it starts.**
      *
@@ -1706,9 +1828,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      *
      * **Once, not once per item.** A limit already standing answers `already` and
      * appends nothing, so the first `until` stands. A failed append is logged and
-     * swallowed: it must not replace the reason the run ended.
+     * swallowed: it must not replace the reason the run ended. **It answers whether the account is locked
+     * now** (`true` on `appended` and on `already`), so a release that waits on the lock (#1205) is made
+     * only behind one that stands.
      */
-    const standDownAccount = (what: StandDownWhat, runtime: RuntimeId, detail: string): Effect.Effect<void> =>
+    const standDownAccount = (what: StandDownWhat, runtime: RuntimeId, detail: string): Effect.Effect<boolean> =>
       Effect.gen(function* () {
         const it =
           what.of === 'run'
@@ -1733,8 +1857,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         } else {
           log(`${it} ${met}; ${runtime} is already locked until ${answer.until.toISOString()}`)
         }
+        // Locked now, by this append or an earlier one: what a release that waits on the lock may rely on (#1205).
+        return true
       }).pipe(
-        Effect.catch((error) => Effect.sync(() => log(`could not lock the ${runtime} account: ${error.message}`))),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            log(`could not lock the ${runtime} account: ${error.message}`)
+            return false
+          }),
+        ),
       )
 
     /**
@@ -2442,7 +2573,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // the approved head on a continuation, so a lane refusal with no new
           // commit read as "nothing committed" over a head already published.
           // See `baseShaOr`.
-          if (worktree === null) return null
+          if (worktree === null || savedWorkNotRestored) return null
           const tree = worktree
           const cutBase = continuation?.diffBaseSha ?? tree.baseSha
           // Hoisted out of the `try`, so the `catch` below can still name the
@@ -2817,6 +2948,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // `onStream` is set.
           const region = yield* Effect.uninterruptible(
             Effect.gen(function* () {
+              // A release-sourced continuation whose lock stands again is not a claim at all (#1205).
+              if (releasedDeclined !== null) {
+                return { kind: 'answer' as const, answer: { notClaimed: releasedDeclined } as TakeAnswer }
+              }
               // **A continuation reclaims the same run, never a fresh one**
               // (#465, 0120 §6) — `continueTicket` is `claimTicket`'s
               // sibling for the one state the latter refuses, `approved`, and
@@ -2827,8 +2962,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 | Effect.Success<ReturnType<typeof continueTicketEffect>>,
                 unknown
               > =
-                options.continuing !== undefined && continuation !== null
-                  ? continueTicketEffect(ticketId, runId, { store, ...ticketSnapshots, body: issue.body })
+                continuation !== null
+                  ? continueTicketEffect(ticketId, runId, {
+                      store,
+                      ...ticketSnapshots,
+                      body: issue.body,
+                      // The head, prompt and lock check were read at this version: a newer release is another look's.
+                      ...(continuation.released !== undefined ? { expectVersion: reduced.version } : {}),
+                    })
                   : // The claim carries what the task is, because it is now the
                     // only place a title enters the log at all.
                     claimTicketEffect(ticketId, {
@@ -2998,6 +3139,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           }
           reviewSettingsPath = settings.success
 
+          // **A continuation of a release re-cuts at the head its cause names** (#1205): a head that cannot be
+          // continued is not cut at all, and the ending restarts or holds for a person (`headGone`).
+          const releasedHead = continuation?.released?.head
+          if (releasedHead !== undefined && 'cannot' in releasedHead) {
+            headGone = releasedHead.cannot
+            return { notCut: `the saved head cannot be continued: ${releasedHead.cannot}` }
+          }
           const provisioned = yield* Effect.result(
             repo.provision({
               project,
@@ -3027,19 +3175,33 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // `at` check refuses rather than silently taking a branch that
               // has moved since.
               ...(continuation !== null
-                ? { at: continuation.onSha, ...(continuation.grantRef ? { atRef: continuation.grantRef } : {}) }
+                ? releasedHead !== undefined
+                  ? { at: releasedHead.at, atRef: releasedHead.atRef }
+                  : { at: continuation.onSha, ...(continuation.grantRef ? { atRef: continuation.grantRef } : {}) }
                 : {}),
             }),
           )
-          if (Result.isFailure(provisioned)) return { notCut: provisioned.failure.detail }
+          if (Result.isFailure(provisioned)) {
+            if (releasedHead !== undefined && provisioned.failure.stale === true) headGone = provisioned.failure.detail
+            return { notCut: provisioned.failure.detail }
+          }
           worktree = provisioned.success
           lease = provisioned.success.remoteHead
           log(`worktree ${provisioned.success.path} at ${provisioned.success.baseSha.slice(0, 7)}`)
           // **A stopped run's kept WIP is applied here, before any agent runs** (#1170, 0109 §8):
           // a `design` agent runs in this worktree too, so `implement` is not early enough. A
           // continuation has no `lastRun`; a failure to carry is the brief's to say, except a wedged tree (a rollback that failed), which is a `notCut`.
-          const keptWip = lastRun?.kept.at(-1)
-          if (continuation === null && previous && keptWip) {
+          const keptWip =
+            releasedHead !== undefined
+              ? (releasedHead.carry ?? undefined)
+              : continuation === null
+                ? lastRun?.kept.at(-1)
+                : undefined
+          const keptFrom = continuation?.released?.runId ?? previous?.runId
+          if (keptWip && keptFrom !== undefined && (continuation === null ? previous : true)) {
+            // Set before any IO that can fail or be interrupted: until the saved work is back on the cut,
+            // nothing this pass publishes may replace the arm that holds it. Cleared only on a full restore.
+            if (releasedHead !== undefined) savedWorkNotRestored = true
             const carried = yield* carryKeptWork({
               git: (args, raw) =>
                 Effect.result(
@@ -3060,6 +3222,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             })
             // A rollback that failed leaves conflict markers or staged edits: no agent starts on that.
             if (carried?.wedged !== undefined) return { notCut: carried.wedged }
+            // Null: the kept commit touched nothing, so there is nothing to restore.
+            if (carried === null) savedWorkNotRestored = false
             if (carried !== null) {
               carriedWork = carried
               log(
@@ -3073,7 +3237,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   type: 'RunAppliedKeptWork',
                   actor: 'conductor',
                   data: parsePayload('RunAppliedKeptWork', {
-                    fromRunId: previous.runId,
+                    fromRunId: keptFrom,
                     arm: keptWip.arm,
                     sha: keptWip.sha,
                     parentSha: keptWip.parentSha,
@@ -3084,6 +3248,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 },
               ])
               if (failed !== null) log(`RunAppliedKeptWork was refused by the store: ${whyOf(failed.refused)}`)
+              // A continuation of a release runs on the saved work or not at all (#1205): a restoration that
+              // failed or took only part is a head that cannot be continued, never a brief with a clean tree.
+              if (releasedHead !== undefined && (carried.unapplied !== null || carried.leftOut.length > 0)) {
+                headGone = `the kept work could not be restored: ${carried.unapplied ?? `${carried.leftOut.join(', ')} did not apply`}`
+                return { notCut: headGone }
+              }
+              savedWorkNotRestored = false
             }
           }
           // `head` is the whole of what moves `onSha`, and the action puts it on
@@ -4624,31 +4795,37 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 // awaited first and never after: a `RunPrompted` appended later
                 // would make the hook's next append a `ConcurrencyError`. The hook
                 // appends no prompt of its own.
-                const implementerParts: RecordPart[] = [
-                  ...renderPromptParts(
-                    options.prompt,
-                    { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
-                    buildCommands(recipe.steps),
-                    claimedBrief().failure,
-                    // **What `design` produced, and this is the one reader of
-                    // it** (`#265`). `agentPlugin` serves the step: a recipe
-                    // declaring an `agent:` there buys a document, and a document
-                    // nothing hands on is an agent run whose answer no reader ever
-                    // sees. `""` renders as it always did.
-                    //
-                    // **The document and not the locator** (`#297`). The built-in
-                    // dispatch fetches nothing, so it renders the copy the pass is
-                    // already holding and never learns what kind of string
-                    // `TheDesign.locator` is (0066 §4). A plugin at `implement`
-                    // that wants the location reads it off `context.design` itself.
-                    brief.design.document,
-                    took?.claimVersion === undefined || took.ticket !== brief.ticket
-                      ? {}
-                      : { bodyAt: { stream: took.ticketId, version: took.claimVersion } },
-                  ),
-                  // The recipe's own words at `implement`, appended (`#266`).
-                  ...(spec.prompt === '' ? [] : [alsoText(spec.prompt)]),
-                ]
+                // A run an account limit cut off is handed its recorded brief again (#1205).
+                const recordedBrief =
+                  brief.context.recorded?.name === spec.name ? (brief.context.recorded.prompt ?? null) : null
+                const implementerParts: RecordPart[] =
+                  recordedBrief !== null
+                    ? [recordedBrief]
+                    : [
+                        ...renderPromptParts(
+                          options.prompt,
+                          { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
+                          buildCommands(recipe.steps),
+                          claimedBrief().failure,
+                          // **What `design` produced, and this is the one reader of
+                          // it** (`#265`). `agentPlugin` serves the step: a recipe
+                          // declaring an `agent:` there buys a document, and a document
+                          // nothing hands on is an agent run whose answer no reader ever
+                          // sees. `""` renders as it always did.
+                          //
+                          // **The document and not the locator** (`#297`). The built-in
+                          // dispatch fetches nothing, so it renders the copy the pass is
+                          // already holding and never learns what kind of string
+                          // `TheDesign.locator` is (0066 §4). A plugin at `implement`
+                          // that wants the location reads it off `context.design` itself.
+                          brief.design.document,
+                          took?.claimVersion === undefined || took.ticket !== brief.ticket
+                            ? {}
+                            : { bodyAt: { stream: took.ticketId, version: took.claimVersion } },
+                        ),
+                        // The recipe's own words at `implement`, appended (`#266`).
+                        ...(spec.prompt === '' ? [] : [alsoText(spec.prompt)]),
+                      ]
                 const implementerFor = {
                   _tag: 'Action' as const,
                   step: 'implement' as const,
@@ -4931,36 +5108,41 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           stoppedBy = 'interrupted'
           // The brief and the `for`, built once: each is recorded before the dispatch
           // and then handed to it / to the `RunSpent` below (#923).
-          const fixParts: RecordPart[] = [
-            ...fixBriefParts({
-              refusal,
-              round,
-              of: ceiling.rounds,
-              action: refusal.on === 'unfinished' ? 'implement' : from,
-              diff: underReview.text,
-              ...(underReview.from === null || underReview.to === null
-                ? {}
-                : { diffAt: { from: underReview.from, to: underReview.to } }),
-              diffBytes: recipe.runtime.budget.diff,
-              checks: buildCommands(recipe.steps),
-              ticket: {
-                title: brief.ticket.title,
-                body: brief.ticket.body,
-                ...(took?.claimVersion === undefined || took.ticket !== brief.ticket
-                  ? {}
-                  : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
-              },
-              ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
-              ...(again.objection != null
-                ? { overruled: { objection: again.objection, ruling: again.why } }
-                : continuation?.declined === undefined
-                  ? {}
-                  : { declined: continuation.declined }),
-            }),
-            // Appended as a part, never to the finished string, so no recorded offset
-            // depends on where the text before it happened to end.
-            ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
-          ]
+          const recordedFix =
+            brief.context.recorded?.name === spec.name ? (brief.context.recorded.prompt ?? null) : null
+          const fixParts: RecordPart[] =
+            recordedFix !== null
+              ? [recordedFix]
+              : [
+                  ...fixBriefParts({
+                    refusal,
+                    round,
+                    of: ceiling.rounds,
+                    action: refusal.on === 'unfinished' ? 'implement' : from,
+                    diff: underReview.text,
+                    ...(underReview.from === null || underReview.to === null
+                      ? {}
+                      : { diffAt: { from: underReview.from, to: underReview.to } }),
+                    diffBytes: recipe.runtime.budget.diff,
+                    checks: buildCommands(recipe.steps),
+                    ticket: {
+                      title: brief.ticket.title,
+                      body: brief.ticket.body,
+                      ...(took?.claimVersion === undefined || took.ticket !== brief.ticket
+                        ? {}
+                        : { bodyAt: { stream: took.ticketId, version: took.claimVersion } }),
+                    },
+                    ...(continuation?.advice === undefined ? {} : { advice: continuation.advice }),
+                    ...(again.objection != null
+                      ? { overruled: { objection: again.objection, ruling: again.why } }
+                      : continuation?.declined === undefined
+                        ? {}
+                        : { declined: continuation.declined }),
+                  }),
+                  // Appended as a part, never to the finished string, so no recorded offset
+                  // depends on where the text before it happened to end.
+                  ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
+                ]
           const fixPrompt = fixParts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
           const fixFor: SpentFor = {
             _tag: 'Action',
@@ -5053,7 +5235,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // **A fixer that committed and was then cut off by a transient API error** is still cut off
           // (#1201): the walk reruns it in place, so the commit is not the end of the round.
           const cutOffTransient = fixed.failure?.kind === 'crash' && transientSaid(fixed.failure.detail)
-          if (!committed || cutOffTransient) {
+          // **Nor a fixer that committed and then met the account's wall** (#1205): it is released `AccountLimit`
+          // at the ending like any run the wall cut off, never walked on to a review.
+          const cutOffByWall = fixed.failure?.kind === 'crash' && wallOf(fixed.failure.detail) !== null
+          if (!committed || cutOffTransient || cutOffByWall) {
             // A decline judged the findings or the refusal rather than being cut
             // off mid-run, so `interrupted` does not stand for it either; a
             // crash or a wall does, in the runtime's own word for it (`#468`).
@@ -5083,12 +5268,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // tells `keepUncommittedWork` to look — null only where the dispatch
           // itself reports none.
           stoppedBy = fixed.failure ? fixed.failure.kind : null
-          // #655: `committed` below drops the failure, so the blocked branch never sees
-          // the account's wall a fixer met after it had committed. Lock the account here instead.
-          const walled = fixed.failure?.kind === 'crash' ? wallOf(fixed.failure.detail) : null
-          if (fixed.failure && walled !== null) {
-            yield* standDownAccount({ of: 'mid-run', step: 'implement' }, walled, fixed.failure.detail)
-          }
           // **A conflict round must have committed the merge** (#1120): `baseSha` has to be in
           // the head's history, or `build` and `review` would be spent on a resolution that is
           // not one. A failed read is *not an ancestor*.
@@ -5329,6 +5508,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   ? { conflict: continuation.conflict }
                   : {}),
                 ...(continuation.conflictResolved !== null ? { conflictResolved: continuation.conflictResolved } : {}),
+                ...(continuation.released?.rerun.for != null
+                  ? {
+                      rerun: {
+                        for: {
+                          step: continuation.released.rerun.for.step,
+                          name: continuation.released.rerun.for.name,
+                          round: continuation.released.rerun.for.round,
+                        },
+                        prompt: continuation.released.rerun.prompt,
+                        accountReruns: continuation.released.rerun.accountReruns,
+                        askedAgain: continuation.released.rerun.askedAgain,
+                      },
+                    }
+                  : {}),
               },
             }
           : {}),
@@ -5707,6 +5900,51 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       if (outcome === 'blocked') {
         const held = stopped?.ending.ending === 'held'
         const reason = waitReasonFor()
+        /**
+         * **A released attempt whose saved head is gone starts over if a restart is left** (#1205, 0108 §15);
+         * otherwise the wait below is the person's, and it names the head — the cut's own `notCut` detail.
+         */
+        if (headGone !== null && reduced.restarts.length < ceiling.restarts) {
+          const restart = reduced.restarts.length + 1
+          const why = `the saved head cannot be continued (${headGone}) — restart ${restart} of ${ceiling.restarts}`
+          log(why)
+          runLog.note('restart', why)
+          yield* release(why, { _tag: 'Restart', restart })
+          return {
+            ok: false,
+            ticketId,
+            runId,
+            stage: 'restart',
+            detail: why,
+            summary: summaryOf(),
+          } satisfies RunOnceResult
+        }
+        /**
+         * **A run an account limit cut off is the ticket's to take again, not a person's** (0108 §11, #1205).
+         * The lock first and the release second: a look between the two would claim the ticket and walk
+         * straight back into the wall. Where the lock did not append (a read or an append failed) the ticket
+         * keeps today's crash wait, since a release nothing holds back is a loop of walls.
+         */
+        if (
+          reason._tag === 'AgentCrashed' &&
+          reason.cause === 'crash' &&
+          (reason.step === 'design' || reason.step === 'implement' || reason.step === 'review')
+        ) {
+          const wall = wallOf(reason.detail)
+          if (wall !== null && (yield* standDownAccount({ of: 'mid-run', step: reason.step }, wall, reason.detail))) {
+            const why = `the ${reason.step} step's agent met the ${wall} account limit; taken again once it lifts`
+            runLog.note('account-limit', why)
+            yield* release(why, { _tag: 'AccountLimit', runId, step: reason.step, runtime: wall })
+            return {
+              ok: false,
+              ticketId,
+              runId,
+              stage: reason.step,
+              detail: why,
+              summary: summaryOf(),
+            } satisfies RunOnceResult
+          }
+        }
         const said_ = waitWords(reason, { branch, base, findings })
         /**
          * **Something judged this diff and said no** — the second half of when a

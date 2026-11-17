@@ -43,8 +43,11 @@ export interface ProvisionOptions {
    * origin since.
    */
   at?: string
-  /** The recorded remote ref carrying `at`, when it is an arm rather than the issue branch. */
-  atRef?: string
+  /**
+   * The recorded remote ref carrying `at`, when it is an arm rather than the issue branch. `null` is *a
+   * commit, nothing to have moved*: `at` is the attempt's base, which no ref carries (#1205).
+   */
+  atRef?: string | null
   home?: string
   /**
    * The environment every `git` child gets.
@@ -221,13 +224,16 @@ export const provisionWorktreeEffect = Effect.fn('repo.provision')(function* (
     const checkedHead =
       options.atRef === undefined
         ? remoteHead
-        : yield* gitEffect(['rev-parse', '--verify', `refs/heads/${checkedRef}`], { ...run, cwd: mirror }).pipe(
-            Effect.orElseSucceed(() => null),
-          )
+        : options.atRef === null
+          ? options.at
+          : yield* gitEffect(['rev-parse', '--verify', `refs/heads/${checkedRef}`], { ...run, cwd: mirror }).pipe(
+              Effect.orElseSucceed(() => null),
+            )
     if (options.at !== undefined && checkedHead !== options.at) {
       return yield* new RepoFailed({
         operation: 'provision',
         detail: `${checkedRef} is now ${checkedHead ?? 'gone'}, not ${options.at} — the continuation is stale`,
+        stale: true,
       })
     }
     /**
