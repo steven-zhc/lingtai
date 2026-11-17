@@ -359,6 +359,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   RunKeptUncommitted: (d) =>
     `kept ${need(d, 'files')} file(s) +${need(d, 'insertions')} −${need(d, 'deletions')} as ${sha(d, 'sha')} ` +
     `on ${need(d, 'arm')} — stopped by ${need(d, 'stoppedBy')}`,
+  RunAppliedKeptWork: (d) =>
+    d['unapplied'] === null
+      ? `carried ${(d['applied'] as unknown[]).length} file(s) of ${sha(d, 'sha')} from ${need(d, 'arm')}` +
+        ((d['leftOut'] as unknown[]).length > 0 ? `, ${(d['leftOut'] as unknown[]).length} left out` : '')
+      : `did not carry ${sha(d, 'sha')} from ${need(d, 'arm')} — ${need(d, 'unapplied')}`,
   RunProposedCompletion: (d) => `head ${sha(d, 'headSha')}`,
   SandboxBoundaryRecorded: (d) => `${need(d, 'action')} ran ${need(d['boundary'] as Payload, 'kind')}`,
   SandboxConnectionsRefused: (d) => {

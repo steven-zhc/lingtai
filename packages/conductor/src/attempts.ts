@@ -385,10 +385,54 @@ function findingsAppended(output: string, findings: readonly Finding[], max: num
  * what ended them is the fact that matters, and their output is not worth what
  * it costs.
  */
+/**
+ * What the conductor did with a kept WIP before the agent started (#1170): the
+ * paths it applied, the ones it left at the base, or why it applied nothing.
+ * `undefined` to `attemptBrief` is *no worktree yet* (the board's preview), which
+ * says the conductor will apply it; null is *there was nothing to carry*.
+ */
+export type CarriedBrief = { applied: readonly string[]; leftOut: readonly string[]; unapplied: string | null }
+
+function keptWorkLines(
+  kept: { arm: string; sha: string; parentSha: string },
+  carried: CarriedBrief | null | undefined,
+  alongside: boolean,
+): string[] {
+  const short = kept.sha.slice(0, 7)
+  if (carried === undefined || carried === null) {
+    return [
+      '',
+      'The conductor applies those edits to this worktree before you start, uncommitted,',
+      'and says below what it did. Whether any of it is worth keeping is yours to judge.',
+    ]
+  }
+  if (carried.unapplied !== null) {
+    return [
+      '',
+      `The conductor could not carry those edits into this worktree: ${carried.unapplied}. They are`,
+      `still on \`${kept.arm}\` at \`${short}\`, to read with \`git show ${short}:<path>\` once it is fetched.`,
+    ]
+  }
+  return [
+    '',
+    `**The worktree already holds ${carried.applied.length} file(s) of ${alongside ? 'those' : "the stopped run's"} edits**, applied`,
+    `uncommitted from \`${kept.arm}\` at \`${short}\`. They were never built or reviewed: commit them as`,
+    'the work stands, or change them first.',
+    ...(carried.leftOut.length === 0
+      ? []
+      : [
+          '',
+          `These paths did not apply, because the base changed them too, and were left at the base's version:`,
+          ...carried.leftOut.map((path) => `- \`${path}\` — read it with \`git show ${short}:${path}\``),
+        ]),
+  ]
+}
+
 export function attemptBrief(
   attempts: readonly PriorAttempt[],
   budget: PromptBudget,
   arms: ArmsOnOrigin | null = null,
+  carried: CarriedBrief | null | undefined = undefined,
 ): string {
   if (attempts.length === 0) return ''
 
@@ -441,24 +485,15 @@ export function attemptBrief(
         'attempt starts where the first one did.',
       )
     } else {
-      // **#468.** No commit of its own, but it stopped mid-run with edits
+      // **#468, #1170.** No commit of its own, but it stopped mid-run with edits
       // still in the worktree, and those were kept rather than lost with it.
-      // The verb is a diff applied from the WIP's own parent, never
-      // `checkout` or `reset --hard`: this worktree's base has likely moved
-      // since the WIP was made, and `checkout <sha> -- .` would overwrite
-      // every path the WIP commit's tree holds — including whatever landed
-      // on the base in between — with that commit's stale content, rather
-      // than applying only the edits the WIP itself carries.
       lines.push(
         `Nothing of its own, but it stopped (${kept.stoppedBy}) with ${kept.files} file(s) of`,
         `uncommitted edits, +${kept.insertions} −${kept.deletions}, kept as \`${kept.sha.slice(0, 7)}\` on`,
         `\`${kept.arm}\`. **That commit was never built or reviewed** — it is this file's own`,
         'safety net, not a verdict about the code.',
         '',
-        `To use it: \`git fetch origin ${kept.arm}\`, then \`git diff ${kept.parentSha.slice(0, 7)} ${kept.sha.slice(0, 7)} | git apply\``,
-        'from this worktree to take only the edits it carries, without taking the commit',
-        "itself or overwriting anything this worktree's base has gained since. Whether any",
-        'of it is worth keeping is yours to judge.',
+        ...keptWorkLines(kept, carried, false),
       )
     }
   } else if (produced !== undefined) {
@@ -474,9 +509,8 @@ export function attemptBrief(
       lines.push(
         '',
         `It then stopped (${kept.stoppedBy}) with ${kept.files} more file(s) of uncommitted edits, kept`,
-        `as \`${kept.sha.slice(0, 7)}\` on \`${kept.arm}\` — also never built or reviewed. \`git fetch origin`,
-        `${kept.arm}\` and \`git diff ${kept.parentSha.slice(0, 7)} ${kept.sha.slice(0, 7)} | git apply\` to take`,
-        'those edits too, without overwriting anything built on top of the commit above.',
+        `as \`${kept.sha.slice(0, 7)}\` on \`${kept.arm}\` — also never built or reviewed.`,
+        ...keptWorkLines(kept, carried, true),
       )
     }
   }
