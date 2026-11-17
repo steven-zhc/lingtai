@@ -5,7 +5,7 @@
  */
 import { readControl, readControlEffect, requestShutdownUnlessStandingEffect } from '@lingtai/daemon/control'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { Effect } from 'effect'
+import { Deferred, Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { lift } from '../src/exit.ts'
@@ -167,6 +167,7 @@ describe("lingtai upgrade's drain", () => {
     const store = createMemoryEventStore()
     let reads = 0
     let asks = 0
+    const askedAgain = await Effect.runPromise(Deferred.make<void>())
     const drained = await drainForUpgrade(
       how(store, {
         holder: Effect.succeed('steven@host pid 777'),
@@ -177,10 +178,14 @@ describe("lingtai upgrade's drain", () => {
         ),
         request: (by, reason) =>
           Effect.suspend(() => {
-            asks++
+            if (++asks > 1) Deferred.doneUnsafe(askedAgain, Effect.void)
             return requestShutdownUnlessStandingEffect(by, reason, null, store)
           }),
-        wait: Effect.sleep(80).pipe(Effect.as('free' as const)),
+        // Ends on the second ask, however loaded the machine; the timeout only lets a drain that never asks fail.
+        wait: Deferred.await(askedAgain).pipe(
+          Effect.timeoutOrElse({ duration: 5000, orElse: () => Effect.void }),
+          Effect.as('free' as const),
+        ),
       }),
     )
     expect(drained.ok).toBe(true)
