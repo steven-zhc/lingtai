@@ -6,7 +6,7 @@
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1.
  */
 import type { Runtime } from '@lingtai/agent'
-import { ticketStream, waitsOf, type PayloadOf } from '@lingtai/domain'
+import { reduceAttempt, ticketStream, waitsOf, type PayloadOf } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -106,6 +106,26 @@ describe('a step a person asked to run again', () => {
     )
     expect(resolved).toMatchObject({ ok: true })
 
+    // Asked again — as when the continuation was never scheduled — it is accepted and appends nothing to the ticket.
+    const afterResolved = (await store.read(ticketId)).length
+    const again = await Effect.runPromise(
+      resolveWaitHoldingEffect(
+        {
+          ticketId,
+          issue: 7,
+          waitId: wait.waitId,
+          resolution: { _tag: 'RerunStep', onSha: '', ref: null },
+          by: 'human:steven',
+          client: { refSha: async () => head },
+          store,
+        },
+        ticketId,
+      ),
+    )
+    expect(again).toMatchObject({ ok: true })
+    expect((await store.read(ticketId)).length).toBe(afterResolved)
+    const spentBefore = reduceAttempt(await store.read(runId))
+
     const second = await once(
       { ...base, continuing: { runId } },
       fakePorts([], store, true, { at: head, implementerCommits: false }),
@@ -114,5 +134,12 @@ describe('a step a person asked to run again', () => {
     expect(seen).toHaveLength(2)
     expect(seen[1]!.id).toBe(`${seen[0]!.id}:rerun:1`)
     expect(seen[1]!.prompt).toBe(seen[0]!.prompt)
+
+    // No round, base merge, conflict round or transient retry was spent on the rerun.
+    const spentAfter = reduceAttempt(await store.read(runId))
+    expect(spentAfter.implementRound).toBe(spentBefore.implementRound)
+    expect(spentAfter.baseMerges ?? 0).toBe(spentBefore.baseMerges ?? 0)
+    expect(spentAfter.conflictRounds ?? 0).toBe(spentBefore.conflictRounds ?? 0)
+    expect(spentAfter.transientRetries ?? 0).toBe(spentBefore.transientRetries ?? 0)
   })
 })

@@ -1009,6 +1009,16 @@ export function resolveWaitTransition(
   ) {
     return { ok: true, kind: 'repeat', runId: life.runId }
   }
+  // A rerun whose continuation was never scheduled is asked for again the same way (#1218).
+  if (
+    resolution._tag === 'RerunStep' &&
+    life.status === 'approved' &&
+    life.waitId === input.waitId &&
+    state.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution._tag === 'RerunStep' &&
+    (!resolution.onSha || matchHead(resolution.onSha, life.onSha ?? '') === 'match')
+  ) {
+    return { ok: true, kind: 'repeat', runId: life.runId }
+  }
   if (life.status !== 'blocked' || life.waitId !== input.waitId)
     return { ok: false, refusal: { reason: 'not-blocked', waitId: input.waitId } }
   if (!allowedResolutions(life.reason).includes(resolution._tag)) {

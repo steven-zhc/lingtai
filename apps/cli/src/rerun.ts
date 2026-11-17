@@ -37,13 +37,21 @@ export function rerunVerdict(
     const append = Effect.gen(function* () {
       const ticketId = ticketStream(options.project, options.issue)
       const item = yield* readThroughSnapshot(eventStore, ticketReducer, ticketId, 'all', { snapshots: log.snapshots })
-      if (item.lifecycle.status !== 'blocked') {
+      const life = item.lifecycle
+      // An approved rerun is retried: its continuation may never have been scheduled.
+      const rerunApproved =
+        life.status === 'approved' &&
+        item.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution._tag === 'RerunStep'
+      if (life.status !== 'blocked' && !rerunApproved) {
+        return refusal(1, 'not-waiting', `${ticketId} is not waiting on a step to rerun`, { ticketId })
+      }
+      if (life.status !== 'blocked' && life.status !== 'approved') {
         return refusal(1, 'not-waiting', `${ticketId} is not waiting on a step to rerun`, { ticketId })
       }
       const result = yield* resolveWaitEffect({
         ticketId,
         issue: options.issue,
-        waitId: item.lifecycle.waitId,
+        waitId: life.waitId,
         resolution: { _tag: 'RerunStep', onSha: options.ifHead ?? '', ref: null },
         by: `human:${userInfo().username}`,
         client,
