@@ -1,17 +1,21 @@
 # 0118 — Waiting on you: every wait says what kind it is, what is asked, and what each answer does
 
-**Status** accepted · 2026-10-07 · types settled 2026-10-12 with [0120](0120-a-reason-is-a-type.md) · §3 amended 2026-10-24 with tool-enabled Codex triage (#569) · §12 amended 2026-10-26 (#605)
+**Status** accepted · 2026-10-07 · types settled 2026-10-12 with [0120](0120-a-reason-is-a-type.md) · §3 amended 2026-10-24 with tool-enabled Codex triage (#569) · §12 amended 2026-10-26 (#605) · 2026-11-17 with [0108](0108-a-refusal-buys-a-round.md)'s rewrite: triage answers a cause and the system acts on it, a wait stays open only for a spent bound, a question or a broken environment, the resolutions take 0108's action names, and a split is the system's
 
 An item in the Waiting lane is waiting on a person, so the page for it is the
-person's. It opens with the ticket itself (its title, triage's reading of
-what it wants, and the opening of the body, §2), then where the attempt stopped and what is left to spend (taken
-from the log, which costs nothing), then a triage band, then the resolutions, then
-the record. Triage is an agent the daemon runs when a wait is recorded. It
-names the cause of the wait, asks the questions only a person can answer, and
-recommends one resolution, and what it advised is recorded as an event. What the
-person then does is the decision, and it is recorded by the resolution they choose. An
-answer is written into the ticket's body, because that is the only text every
-later attempt is sure to read. Triage advises; it never moves the item.
+person's, and an item reaches it only for three things: a bound that is spent,
+a question only a person can answer, and an environment only a person can
+repair ([0108](0108-a-refusal-buys-a-round.md) §6). The page opens with the
+ticket itself (its title, triage's reading of what it wants, and the opening of
+the body, §2), then where the attempt stopped and what is left to spend (taken
+from the log, which costs nothing), then a triage band, then the resolutions,
+then the record. Triage is an agent the daemon runs when a wait is recorded. It
+names the cause, never an action; the system chooses the action from the cause
+by 0108 §6's table and, unless that action is to ask a person, carries it out
+and resolves the wait itself, leaving one line on the card saying what it did.
+What a person does on a wait that stays open is the decision, recorded by the
+resolution they choose. An answer is written into the ticket's body, because
+that is the only text every later attempt is sure to read.
 
 ## Context
 
@@ -185,17 +189,17 @@ which kind a wait was got inferred again in each place that needed it, from
    - **Triage is two more unions, a fact and a view of it.**
 
      ```ts
-     type RootCause =
+     type Cause = // a judge's and triage's one answer type (0108 §6)
        | { _tag: 'UndecidedQuestion'; questions: Question[] }
        | { _tag: 'FixableLines'; fixes: LineFix[] }
-       | { _tag: 'WrongApproach' }
+       | { _tag: 'WrongApproach'; why: string }
        | { _tag: 'ConflictingHunks'; hunks: Hunk[]; total: number }
-       | { _tag: 'TicketTooBig' }
-       | { _tag: 'SetupBroken' }
+       | { _tag: 'TicketTooBig'; plan: SplitPlan | null; spentOn: string | null }
+       | { _tag: 'SetupBroken'; what: string; repair: string }
+       | { _tag: 'Unfinished'; addToBody: string | null }
      type TriageResult =
        | { _tag: 'TriageFailed'; why: string }
-       | { _tag: 'TriageAdvised'; cause: RootCause; resolution: TriageAdvice; summary: string; want: string | null }
-     type TriageAdvice = 'Approve' | 'Requeue' | 'EditBodyAndRequeue' | 'Close' | 'GrantFixRound' | 'Split' // a Resolution's tag, never AnswerQuestion
+       | { _tag: 'TriageAnswered'; cause: Cause; summary: string; want: string | null }
      type TriageStatus =
        // derived on read, never stored
        | { _tag: 'NotNeeded' }
@@ -206,35 +210,47 @@ which kind a wait was got inferred again in each place that needed it, from
        | { _tag: 'Done'; result: TriageResult }
      ```
 
-     Triage advises a resolution by its kind alone: it never supplies an
-     `onSha`, because a person confirms the exact branch state shown. It never advises `AnswerQuestion`, which belongs to `OwnQuestion`, a wait it
-     does not read. `TriageResult` is what `WaitTriaged` records. `TriageStatus` is what the
-     page and `recommendedResolution` match on, and what the daemon starts
-     triage on: it starts one for `Queued`, and on its own start retries an
-     `Interrupted` one (§3). It is derived from the wait
+     **Triage answers a cause and never an action.** What follows a cause is
+     [0108](0108-a-refusal-buys-a-round.md) §6's table, the system's, so an
+     answer and an action can never disagree. `TriageResult` is what
+     `WaitTriaged` records. `TriageStatus` is what the page matches on, and
+     what the daemon starts triage on: it starts one for `Queued`, and on its
+     own start retries an `Interrupted` one (§3). It is derived from the wait
      first and then from the strongest fact: a wait triage does not read is
      `NotNeeded` (§3), whatever the recipe or the log says; otherwise a result
-     for the current wait's latest attempt is `Done`, whatever
-     the recipe says now; an attempt started with no result is `Running`, or
-     `Interrupted` if it started before the running daemon did; a wait with
-     neither is `Queued` while `triage:` is declared, and `NotDeclared`
-     otherwise. A recipe that stops declaring triage does not hide a result
-     already paid for. What Lingtai knows about a wait and what an agent
-     concluded about it are never one field.
+     for the current wait's latest attempt is `Done`, whatever the recipe says
+     now; an attempt started with no result is `Running`, or `Interrupted` if
+     it started before the running daemon did; a wait with neither is `Queued`
+     while `triage:` is declared, and `NotDeclared` otherwise. A recipe that
+     stops declaring triage does not hide a result already paid for. What
+     Lingtai knows about a wait and what an agent concluded about it are never
+     one field. A `WaitTriaged` recorded with the earlier `TriageAdvised` shape
+     still reads, and is drawn as the advice it was.
 
    - **A card in the Waiting lane is `Waiting`, and `Waiting` carries a
      `WaitReason`.** _Waiting with no block_ therefore has no value to be.
-   - **What a person does about a wait is a `Resolution`**, how the wait ends:
+   - **A wait stays open for a person only where 0108 §6's table ends in
+     `askPerson`**: `unclear` (a question only a person can answer), `environment`
+     (a repair only a person can make) or `limit` (a bound is spent, named with
+     how many times it was used). Everywhere else the system carries out the
+     action, records the wait resolved `by: triage` (0108 §6's protocol), and the
+     card shows one line: what was done and why. The variants that only ever
+     reach a person now with a bound spent — `BudgetExhausted`, `AgentCrashed`,
+     `AnswerUnreadable`, `BuildRed`, `VerifyRed`, `MergeConflict`, `BaseMoved` —
+     keep their shapes, and the wait says which bound. `NothingProduced` is
+     retired: a run that committed nothing and said nothing is redone (0108
+     §21); a `WaitStarted` carrying it still parses and reads.
+   - **What a person does about a wait is a `Resolution`**, how the wait ends.
+     The names are 0108 §8's actions:
 
      ```ts
-     type ChildTicket = { key: string; title: string; body: string }
-     type Dependency = { ticket: string; blockedBy: string } // child keys in the approved plan
      type Resolution =
        | { _tag: 'Approve'; onSha: string } // continue the run (§11); refused if the branch moved
-       | { _tag: 'Requeue' } // a new attempt from the base
-       | { _tag: 'EditBodyAndRequeue' } // write into the body, then requeue
-       | { _tag: 'GrantFixRound'; onSha: string; ref: string } // one human-granted round on a recorded remote ref
-       | { _tag: 'Split'; children: ChildTicket[]; blockedBy: Dependency[] } // approved tickets and chain
+       | { _tag: 'StartNewAttempt' } // a new attempt from the base
+       | { _tag: 'EditBodyAndStartNewAttempt' } // write into the body, then a new attempt
+       | { _tag: 'FixRefusal'; onSha: string; ref: string } // one person-granted fix on a recorded remote ref
+       | { _tag: 'RedoStep'; onSha: string; ref: string | null } // the stopped step again, on the saved head
+       | { _tag: 'AnswerQuestions'; answers: Answer[] } // §6: written into the body, then the step continues
        | { _tag: 'AnswerQuestion'; choice: string } // an OwnQuestion only
        | { _tag: 'Close' }
 
@@ -244,117 +260,86 @@ which kind a wait was got inferred again in each place that needed it, from
 
      Which of these continue the saved branch and which cut a new one from the
      base is the [glossary's _What happens next_](../glossary.md#what-happens-next).
-
-     `Approve`, `Requeue` and `Close` keep the names of the CLI commands and
-     the board's buttons. `GrantFixRound` is a person's separately logged grant
-     under [0108](0108-a-refusal-buys-a-round.md) §8, and it is how a conflict is
-     answered; `RerunStep` runs the step that stopped again, in the same
-     attempt on its saved head, and is offered on a crash at `design`,
-     `implement` or `review`, a `BuildRed` and a check that refused at
-     `proposed` — not on a `VerifyRed` (that reruns `merge`), a standing crash
-     (its offer is the stood wait's own) or unpushed work, and triage may not
-     advise it; `Split`
-     approves concrete child tickets and their dependency chain. The child and
-     dependency values here describe the person's approved plan, not a claim
-     that these contracts are implemented.
+     There is no `Split` resolution: a split is the system's, from triage's
+     `TicketTooBig` with a plan (§12), and a ticket whose `ticketSplits` is
+     spent waits as `limit`, where a person edits the body or closes it.
 
    - **One pure function, `allowedResolutions(reason)`, decides the
      resolutions**, from the wait alone. The board, the CLI and the daemon all
-     ask it; none keeps a rule of its own. **Triage is not an input**: it
-     advises and never moves the item. The whole table, with where an approval
-     continues (§11):
+     ask it; none keeps a rule of its own. The whole table, with where an
+     approval continues (§11):
 
-     | `WaitReason`                                                             | Allowed (`GrantFixRound` only on its criterion, below)                        | `Approve` continues at         |
-     | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | ------------------------------ |
-     | `OwnQuestion`                                                            | `AnswerQuestion`, `Requeue`, `Close`                                          | —                              |
-     | `AgentQuestion`                                                          | `EditBodyAndRequeue`, `Requeue`, `Close`                                      | —                              |
-     | `SignoffRequired`                                                        | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                           | its step, the signoff `Waived` |
-     | `CheckRefused`                                                           | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Close`          | its step, the check `Waived`   |
-     | `FixerDisagrees`                                                         | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Close`          | `proposed`                     |
-     | `ProposedEscalated` over `ReviewFindings`                                | `Approve`, `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close` | `proposed`                     |
-     | `ProposedEscalated` over `ReviewEmpty`                                   | `Approve`, `Requeue`, `EditBodyAndRequeue`, `Close`                           | `proposed`                     |
-     | `ProposedEscalated` over `BuildRed` or `VerifyRed`                       | `GrantFixRound`, `Requeue`, `EditBodyAndRequeue`, `Split`, `Close`            | —                              |
-     | `ProposedEscalated` over `MergeConflict`                                 | `GrantFixRound`, `Requeue`, `Close`                                           | —                              |
-     | `ProposedEscalated` over `InputNeeded`                                   | `EditBodyAndRequeue`, `Requeue`, `Close`                                      | —                              |
-     | `MergeRefused`                                                           | `Approve` (once the base is fixed), `Requeue`, `Close`                        | `merge`                        |
-     | `ProposedEscalated` over `BaseMoved`                                     | `Approve` (keep merging the base in), `Requeue`, `Close`                      | `merge`                        |
-     | `NothingProduced`, `BudgetExhausted`, `AgentCrashed`, `AnswerUnreadable` | `EditBodyAndRequeue`, `Split`, `Requeue`, `Close`                             | —                              |
-     | `SetupRefused`                                                           | `Requeue`, `Close`                                                            | —                              |
-     | `AgentCrashed` with a standing wait (#654)                               | that wait's resolutions on the unmoved head, plus `Requeue`, `Close`          | that wait's                    |
-     - `BaseMoved` is held only after the system's own two merges of the base
-       are spent (0120 §3, #593); `Approve` continues the same attempt at `merge`
-       with the count at zero, so it reads as _keep merging the base in_, and no
-       fix round is granted — there is nothing wrong with the lines.
-     - `FixerDisagrees`' `Approve` sides with the fixer; `EditBodyAndRequeue`
-       sides with the reviewer.
-     - `NothingProduced` has no `Approve`: there is nothing on the branch to
-       merge.
-     - **`RerunStep` is a column of its own, offered by `rerunStepOf(reason)`**
-       (#1218): the step it names is the step it runs again, so the offer and
-       the continuation cannot disagree. It is added to `AgentCrashed` at
-       `design`, `implement` and `review`, to `ProposedEscalated` over
-       `BuildRed` (`build`), and to a `CheckRefused` — direct or inside a
-       proposal — that refused at `proposed`. It is **not** offered on
+     | `WaitReason` | Allowed (`FixRefusal` only on its criterion, below) | `Approve` continues at |
+     | --- | --- | --- |
+     | `OwnQuestion` | `AnswerQuestion`, `StartNewAttempt`, `Close` | — |
+     | `AgentQuestion`, `ProposedEscalated` over `InputNeeded`, triage's `UndecidedQuestion` | `AnswerQuestions`, `EditBodyAndStartNewAttempt`, `StartNewAttempt`, `Close` | — |
+     | `SignoffRequired` | `Approve`, `StartNewAttempt`, `EditBodyAndStartNewAttempt`, `Close` | its step, the signoff `Waived` |
+     | `CheckRefused` | `Approve`, `FixRefusal`, `RedoStep`, `StartNewAttempt`, `EditBodyAndStartNewAttempt`, `Close` | its step, the check `Waived` |
+     | `FixerDisagrees` | `Approve`, `FixRefusal`, `StartNewAttempt`, `EditBodyAndStartNewAttempt`, `Close` | `proposed` |
+     | `ProposedEscalated` over `ReviewFindings` | `Approve`, `FixRefusal`, `StartNewAttempt`, `EditBodyAndStartNewAttempt`, `Close` | `proposed` |
+     | `ProposedEscalated` over `ReviewEmpty` | `Approve`, `StartNewAttempt`, `EditBodyAndStartNewAttempt`, `Close` | `proposed` |
+     | `ProposedEscalated` over `BuildRed` or `VerifyRed` | `FixRefusal`, `RedoStep` (`BuildRed` only), `StartNewAttempt`, `EditBodyAndStartNewAttempt`, `Close` | — |
+     | `ProposedEscalated` over `MergeConflict` | `FixRefusal` (as `resolveConflict`), `StartNewAttempt`, `Close` | — |
+     | `MergeRefused` | `Approve` (once the base or the remote is fixed), `StartNewAttempt`, `Close` | `merge` |
+     | `ProposedEscalated` over `BaseMoved` | `Approve` (keep merging the base in), `StartNewAttempt`, `Close` | `merge` |
+     | `BudgetExhausted`, `AgentCrashed`, `AnswerUnreadable` | `RedoStep`, `EditBodyAndStartNewAttempt`, `StartNewAttempt`, `Close` | — |
+     | `SetupRefused` | `RedoStep`, `StartNewAttempt`, `Close` | — |
+     | `AgentCrashed` with a standing wait (#654) | that wait's resolutions on the unmoved head, plus `StartNewAttempt`, `Close` | that wait's |
+     - `BaseMoved` is held only after `baseBranchMerges` is spent (0108 §13);
+       `Approve` continues the same attempt at `merge` with the count at zero,
+       so it reads as _keep merging the base in_, and no fix is granted —
+       there is nothing wrong with the lines.
+     - `FixerDisagrees`' `Approve` sides with the fixer;
+       `EditBodyAndStartNewAttempt` sides with the reviewer.
+     - **`RedoStep` is offered by `redoStepOf(reason)`**: the step it names is
+       the step it redoes, so the offer and the continuation cannot disagree.
+       It is offered at `prepared`, `design`, `implement` and `review` (0108
+       §12) and on a red `build` or a check that refused at `proposed`; not on
        `VerifyRed`, `MergeConflict`, `MergeRefused` or a check that refused at
-       `merge` (they rerun the merge), on `SetupRefused`, or on a crash that
-       stands in for a wait. Like `GrantFixRound` it drops with unpushed work.
-       The saved head must be one `rerunHeadOf` accepts, and the remote ref
-       must still carry it.
-     - **Unpushed work drops `Approve`, `GrantFixRound` and `RerunStep`**
-       for every variant that has a `run`: when `run.unpushed` is set the branch
+       `merge` (they redo the landing), nor on a crash that stands in for a
+       wait. It is a person's decision, outside `stepRedos`. The saved head
+       must be one `redoHeadOf` accepts, and the remote ref must still carry
+       it.
+     - **Unpushed work drops `Approve`, `FixRefusal` and `RedoStep`** for
+       every variant that has a `run`: when `run.unpushed` is set the branch
        never reached origin and the worktree that held it is gone, so an
        `Approve{onSha}` would name a sha that exists nowhere and there is
        nothing to continue.
      - `ProposedEscalated` carries the proposal the work fell short with
        (0120): over `CheckRefused`, `FixerDisagrees` or `MergeRefused` it is
-       allowed what that variant's own row allows; over `NothingProduced`,
-       `BudgetExhausted`, `AnswerUnreadable` or `SetupRefused`, likewise. Only
-       its own `ReviewFindings`, `ReviewEmpty`, `BuildRed`, `VerifyRed`,
-       `MergeConflict` and `InputNeeded` follow their rows above.
-     - `GrantFixRound` is offered for fixable review findings (including a fixer
+       allowed what that variant's own row allows; over `BudgetExhausted`,
+       `AnswerUnreadable` or `SetupRefused`, likewise.
+     - `FixRefusal` is offered for fixable review findings (including a fixer
        that disagreed), a red build or verification, a check refusal with
-       evidence, or a merge conflict, with work preserved on a recorded remote ref. It authorizes
-       exactly one additional `implement` round on that saved head under
-       [0108](0108-a-refusal-buys-a-round.md) §8, subject to that run's `turns`,
-       `wall` and declared `usd` limits. It changes no recipe limit and waives no
+       evidence, or a merge conflict, with work preserved on a recorded remote
+       ref. It authorizes exactly one more `implement` run on that saved head,
+       subject to that run's `run.turns`, `run.wall` and declared `run.usd`.
+       It changes no recipe limit, spends no `refusalFixes`, and waives no
        refusal. The ref must still exist at the recorded head sha when the
-       grant is used; a missing or moved ref refuses it. No branch to fix or no
-       criterion for a fixer means no grant. **The criterion is one function**,
-       `grantCriterion`, "for both the offer (`allowedResolutions`) and the
-       brief (`conduct.ts`), so they cannot drift apart": `CheckRefused` needs
-       non-empty `evidence` or a finding with a non-empty `failureScenario`;
-       `FixerDisagrees` a non-empty `said`; `ReviewFindings` some finding with a
-       non-empty `failureScenario`; `BuildRed` and `VerifyRed` non-empty
-       `output`; `MergeConflict` always has one (its brief is the merge step
-       with the paths as detail). A reason with no criterion is never offered it. The grant and the round's spend
-       are logged separately; another round needs another decision. The result
-       visits `build`, `review` and `proposed` again before merge (§11).
-     - `Split` is offered on waits where an oversized ticket may be the cause.
-       Its child plan still needs the person's concrete approval (§12); triage
-       may recommend it at the first wait, without waiting for the round budget
-       to run out.
-     - `ProposedEscalated` over `BuildRed`, `VerifyRed`, `MergeConflict` or
-       `InputNeeded` has no `Approve`. Merging a red build would break _every
-       path into `end` has been through `build`_; a conflict needs resolving
-       and then another build and review; a question wants an answer.
-       Today a red build can be approved with a reason; that goes.
-     - An approval over a refusal needs a note (`lingtai.ts:169` already asks
-       for one), kept as `WaitResolved.note`.
+       grant is used; a missing or moved ref refuses it. **The criterion is one
+       function**, `grantCriterion`, for both the offer and the brief, so they
+       cannot drift apart: `CheckRefused` needs non-empty `evidence` or a
+       finding with a non-empty `failureScenario`; `FixerDisagrees` a
+       non-empty `said`; `ReviewFindings` some finding with a non-empty
+       `failureScenario`; `BuildRed` and `VerifyRed` non-empty `output`;
+       `MergeConflict` always has one. The result visits `build`, `review` and
+       `proposed` again before merge (§11).
+     - `ProposedEscalated` over `BuildRed`, `VerifyRed` or `MergeConflict` has
+       no `Approve`: merging a red build would break _every path into `end` has
+       been through `build`_, and a conflict needs resolving and then another
+       build and review.
+     - An approval over a refusal needs a note, kept as `WaitResolved.note`.
 
    - **A second pure function, `recommendedResolution(reason, status)`, picks
-     at most one of those** to draw first and prefill. An advised resolution is
-     recommended when `allowedResolutions` offers it, and otherwise is not, its
-     words still shown. With no advice (not needed, not declared, queued,
-     running, interrupted or failed) the wait's own default stands: `Approve` for `SignoffRequired`, `Requeue` for
-     `BudgetExhausted` and `AgentCrashed`, nothing elsewhere. `TicketTooBig`
-     may advise `Split` at the first wait; `ConflictingHunks` shows its hunks
-     and advises nothing past `GrantFixRound` while the conflict is at most 5
-     hunks (`CONFLICT_ROUND_HUNKS`): there `GrantFixRound` is recommended
-     whatever resolution triage chose, shown beside triage's own words, and the
-     answers picked for its divergent hunks reach the round through the body
-     (§6). Above 5,
-     triage's resolution stands. The person chooses before either
-     action runs.
+     at most one of those** to draw first and prefill, from triage's cause by
+     the same table the system acts on: `FixableLines` → `FixRefusal`,
+     `WrongApproach` → `StartNewAttempt`, `Unfinished` → `RedoStep`,
+     `UndecidedQuestion` → `AnswerQuestions`, `ConflictingHunks` →
+     `FixRefusal`, `SetupBroken` → `RedoStep` once the person has repaired it.
+     A recommendation is drawn only where `allowedResolutions` offers it. With
+     no answer (not needed, not declared, queued, running, interrupted or
+     failed) the wait's own default stands: `Approve` for `SignoffRequired`,
+     `RedoStep` for `BudgetExhausted` and `AgentCrashed`, nothing elsewhere.
 
 2. **The page is in this order:** the ticket, where it is, triage, the resolutions,
    the record.
@@ -370,7 +355,7 @@ which kind a wait was got inferred again in each place that needed it, from
    - **Where it is** is the ten-step rail the board already draws, and one line
      under it: what refused, the automatic rounds spent, any human-granted
      rounds and their spend, and the restarts left. It is put together from the
-     log every time it is drawn, and never generated. Once triage has advised,
+     log every time it is drawn, and never generated. Once triage has answered,
      the stopping step's own sentence is not repeated above it — triage's panel
      says what stopped and why — and the rail and its line are the whole of
      where it is. Evidence a person needs and triage does not carry, such as a
@@ -462,14 +447,14 @@ which kind a wait was got inferred again in each place that needed it, from
    - **The card** on the board carries the number, the title, the rail and its
      line (a card held for a person's approval carries the rail with no line
      under it, and one line of its own: a `WAITING ON YOU` badge, `waitWords`'
-     `short` and its age), triage's cause with one sentence, and, once triage has advised, one
-     button: the resolution `recommendedResolution` names. `GrantFixRound`,
-     `Requeue` and `Approve` resolve the wait in one click, through the same
+     `short` and its age), triage's cause with one sentence, and, once triage has answered, one
+     button: the resolution `recommendedResolution` names. `FixRefusal`,
+     `RedoStep`, `StartNewAttempt` and `Approve` resolve the wait in one click, through the same
      actions the page uses and refused the same way when the card is stale. An
      `Approve` over a step that still refuses records the note
      `accepted triage's recommendation: <triage's sentence>`, so the waiver
-     names whose reading it took. `EditBodyAndRequeue`, `Split`,
-     `AnswerQuestion` and `Close` open the page at that resolution and write
+     names whose reading it took. `EditBodyAndStartNewAttempt`,
+     `AnswerQuestions`, `AnswerQuestion` and `Close` open the page at that resolution and write
      nothing. Every other resolution is on the page the card links to.
 
 3. **Triage is its own step, run by the daemon after a wait is recorded.**
@@ -514,13 +499,13 @@ which kind a wait was got inferred again in each place that needed it, from
      added without saying whether triage reads it. There is no separate
      predicate beside it: whether triage runs and how its state reads are
      one answer, and two functions could disagree.
-   - **What it advised is one event, `WaitTriaged`, on the ticket's stream.**
+   - **What it answered is one event, `WaitTriaged`, on the ticket's stream.**
      It names the wait it explains and the head it read, and who answered: `Agent`, with its runtime and model, or `Mechanical`, when Lingtai answered without calling an agent (§8). **It carries no spend.** What an agent's triage cost is one `RunSpent { for: Triage { waitId } }`, appended where the runtime reported it, as every paid call is ([0110](0110-tokens-on-the-event-money-at-display.md) §10); a mechanical answer called nothing and appends none. Its result is
-     a `TriageResult`, `TriageFailed` or `TriageAdvised`, the same type and not a copy of it,
-     so an advised triage with a failure, or a failed one with advice, cannot
-     be written. `Advised` carries the cause, the recommended resolution, one
-     sentence for the card (`summary`), and one sentence of what the ticket
-     wants (`want`, `null` where the body does not say). **The parts belong to the cause**:
+     a `TriageResult`, `TriageFailed` or `TriageAnswered`, the same type and not a copy of it,
+     so an answered triage with a failure, or a failed one with an answer, cannot
+     be written. `Answered` carries the cause, one sentence for the card
+     (`summary`), and one sentence of what the ticket wants (`want`, `null`
+     where the body does not say); it carries no action, which is 0108 §6's. **The parts belong to the cause**:
      the questions, with their answers and the recommended one, exist only in
      _a decision for you_, or inside the conflict hunk they are about; the
      fixes only in _lines to fix_; the conflict hunks only in _merge by hand_.
@@ -556,13 +541,21 @@ which kind a wait was got inferred again in each place that needed it, from
      before this daemon did and never finished was interrupted, and is tried
      again, at most twice in all. A second interruption appends a failed
      `WaitTriaged` and is left to the person.
-   - **A failed triage is final.** Any failure of the triage call, whether a
-     crash, a timeout, an abort or a usage limit, running out of turns, spend
-     that cannot be recorded, or an answer past the schema's bounds, appends a
-     failed `WaitTriaged` and stops. Nothing triages that wait again: catch-up
-     re-runs only an attempt that was interrupted, and a finished attempt is
-     final whatever it answered. A person who wants another reading opens
-     Discussion.
+   - **A failed triage is asked once more, then the wait is a person's.** Any
+     failure of the triage call, whether a crash, a timeout, an abort or a usage
+     limit, running out of turns, spend that cannot be recorded, or an answer
+     past the schema's bounds, appends a failed `WaitTriaged`; so does an answer
+     that came back after the wait, the ticket's version or the head it read
+     had changed (0108 §6's protocol). The daemon then triages the wait once
+     more (`triageRetries`, 1). A second failure is final: the wait stays open
+     for a person, and the page says triage gave no answer it could act on. A
+     person who wants another reading opens Discussion.
+   - **An answer the system can act on resolves the wait itself.** Where 0108
+     §6's table gives an action other than `askPerson`, the same append that
+     records `WaitTriaged` records `WaitResolved{ by: triage }` with that
+     action, at the version triage started from; the conductor carries it out
+     from the log, as it carries out a person's resolution. The card and the
+     page show one line: what the system did, and the cause it acted on.
    - Below triage, the page offers Discussion for follow-ups, opened with
      triage's analysis as its context. Discussion stays what it is: a place to
      think, not a record.
@@ -573,10 +566,11 @@ which kind a wait was got inferred again in each place that needed it, from
      - _lines to fix_ (`FixableLines`): specific edits, and the approach is sound;
      - _the approach is wrong_ (`WrongApproach`): patching will not converge;
      - _merge by hand_ (`ConflictingHunks`): a conflict;
-     - _try it again, narrower_ (`TicketTooBig`): the run did not finish, and
-       either the body can save the next one what it spent its turns on, or
-       the ticket asks for more than one attempt should do and is split into
-       smaller tickets;
+     - _too big for one attempt_ (`TicketTooBig`): with a plan, it is split
+       (§12); without one, the body is told what the run spent its turns on
+       and the step is redone;
+     - _only unfinished_ (`Unfinished`): the step ran out of turns or time and
+       is redone from its head, with an optional sentence for the body;
      - _fix the setup_ (`SetupBroken`): the repository or the machine refused
        before or around any agent's work, so no edit to the ticket can help,
        and other tickets are refused the same way. A condition that lifts by
@@ -586,14 +580,18 @@ which kind a wait was got inferred again in each place that needed it, from
      anywhere the budget is drawn. A restart ceiling of 0 with none taken is
      not shown: a ceiling nothing configured and nothing spent is no fact to a
      reader. A
-     spent budget changes which resolutions are offered, never the cause.
+     spent budget changes what the system does with a cause — `askPerson(limit)`
+     instead of the action — never the cause.
    - Advice that will not parse into a cause and its parts is recorded as a
      failed triage, never shown as advice.
 
-5. **When the judge and triage disagree, triage's advice stands.** The page
-   shows triage's reading and recommends what triage recommends; the judge's
-   routing is not drawn as a second reading, and the person is not asked to
-   pick between them.
+5. **A judge answers within the bounds and triage where a wait would open, in
+   one type, and the later answer stands.** Both name a cause (0108 §6). A
+   judge reads only the step's own evidence and is asked first, on the route;
+   triage is asked when a wait would open, and reads more. Where both have
+   answered about one stop, the page shows triage's reading and recommends
+   from it; the judge's routing is not drawn as a second reading, and the
+   person is not asked to pick between them.
    - The judge's decision has already happened: it is why the attempt stopped and
      the person is on this page. Shown again, it only competes for attention
      with the advice the person came to act on.
@@ -604,8 +602,13 @@ which kind a wait was got inferred again in each place that needed it, from
      `WaitTriaged`. The judge's words remain in the record.
 
 6. **An answer is written into the body.**
-   - _Write it into the body & requeue_ is one resolution. It writes a section to
-     the ticket's body through the existing `ticket` outcome, then requeues.
+   - **Answering continues the step that asked.** `AnswerQuestions` writes a
+     section to the ticket's body through the existing `ticket` outcome, then
+     continues the step that asked, on the saved head, as 0108 §12 redoes a
+     step — spending one `personAsks`, never `stepRedos` (0108 §22). _Write it
+     into the body & start a new attempt_ (`EditBodyAndStartNewAttempt`) is
+     the other resolution that writes, for a person who wants the next attempt
+     to begin again from the base.
    - **Each wait's answer is one section, found by a marker** naming the
      ticket and the wait's `waitId`. Writing it again replaces that section or
      leaves it, and never adds a second, so a retry is safe. When a write's
@@ -615,10 +618,10 @@ which kind a wait was got inferred again in each place that needed it, from
      the write is read back after it lands and the section restored if
      another write removed it, and an edit made in the moment between the
      read and the write can still be lost.
-   - **The body is written first.** If the write fails, nothing is requeued
+   - **The body is written first.** If the write fails, nothing continues
      and the page keeps the text, so no attempt ever starts without the answer.
-     If the requeue is refused after the write, the page says what the item's
-     state is now. The usual reason is that someone else already requeued it,
+     If the resolution is refused after the write, the page says what the item's
+     state is now. The usual reason is that someone else already resolved the wait,
      and then the next attempt reads the body anyway.
    - The appended text is composed from the answers the person picked. It is
      editable, and it stops following the answers once it is edited.
@@ -626,21 +629,21 @@ which kind a wait was got inferred again in each place that needed it, from
      it.** Triage's questions (an `UndecidedQuestion`'s, or a conflict's
      divergent hunks') are drawn with triage's recommended answer already
      chosen, and a resolution made without changing one accepts it. So
-     _Continue fixing_ and _Requeue_ write the same section as _Write it into
-     the body_ before they resolve, composed from the answers chosen, or the
+     `FixRefusal`, `RedoStep` and `StartNewAttempt` write the same section as
+     `AnswerQuestions` before they resolve, composed from the answers chosen, or the
      recommended ones where the resolution was made without the questions in
      front of the person (the home card, the CLI). An answer to one of
      triage's questions reaches an agent only this way, as the body, never as a
      second section of its brief; a `FixableLines` round's lines, which offer
      no choice, are still the brief's own section.
-     _Approve_, _Split_ and _Close_ send no agent and write nothing.
+     _Approve_ and _Close_ send no agent and write nothing.
    - **What was written is on the log as well as on GitHub.** The resolution
      that wrote the section carries it: the answer chosen for each question,
      by its place in the list, and the text written into the body, so what a
      person decided survives a later edit of the issue, and whether they
      changed triage's recommendation is read off the log. _Write it into the
      body_'s own text is carried the same way.
-   - The requeue's reason is written for the person from those answers. They
+   - The resolution's reason is written for the person from those answers. They
      are not asked for one.
    - **Which advice a resolution answered is derived, never written.** A
      resolution is one event, `WaitResolved { waitId, by, resolution, note, answers? }`
@@ -652,12 +655,12 @@ which kind a wait was got inferred again in each place that needed it, from
    - A discussion answer can be added to whatever the recommended resolution will
      write: the body, the list of fixes, a split, or the person's own answer
      box.
-   - **A requeue's note is optional, and the CLI's `--note` is no longer
+   - **A `StartNewAttempt`'s note is optional, and the CLI's `--note` is no longer
      required** (#424) — `say why, so the log can`
      (`apps/board/src/app/actions.ts:154`) and the CLI's refusal
      (`apps/cli/src/requeue.ts`) are gone, and a blank note is stored as
      empty, never invented.
-   - **A close keeps its required reason.** Unlike a requeue, nothing lifts a
+   - **A close keeps its required reason.** Unlike a new attempt, nothing lifts a
      close: it is "the only decision that cannot be revisited, so the sentence
      explaining it is the last thing anybody will have"
      (`packages/conductor/src/close.ts:71-73`), and `a close needs a reason`
@@ -670,13 +673,15 @@ which kind a wait was got inferred again in each place that needed it, from
      what makes the close box start filled — still a box the person can
      clear, which still refuses.
 
-7. **A requeue keeps its meaning.** A person's `Requeue` is a new attempt cut from
-   the base, with the recipe's rounds again. It leaves the saved work behind;
-   `GrantFixRound` instead continues that work for one paid `implement` round
-   under §1 and 0108 §8. A requeue does not spend or refund an automatic
-   restart: restarts are counted from
-   `TicketReleased{cause: Restart}` (0120 §5), and a person's requeue
-   releases with `cause: ByPerson`. Every cost line on the page says so.
+7. **`StartNewAttempt` keeps its meaning.** A person's `StartNewAttempt` is a
+   new attempt cut from the base, with the recipe's bounds again. It leaves the
+   saved work behind (pushed to its arm first, 0108 §7); `FixRefusal` instead
+   continues that work for one paid `implement` run, and `RedoStep` redoes the
+   stopped step on it. A person's `StartNewAttempt` does not spend or refund
+   `newAttempts`: those are counted from `TicketReleased{cause: NewAttempt}`
+   (0120 §5), and a person's releases with `cause: ByPerson`. Every cost line
+   on the page says so. The CLI command and the board's button that do it keep
+   one name with the resolution.
 
 8. **A merge conflict is triaged, and a moved base is answered by its overlap.**
    - The wait records only the conflicting paths and the two shas
@@ -691,10 +696,14 @@ which kind a wait was got inferred again in each place that needed it, from
      are written into the body when the round is granted (§6), so the fixer
      reads them as the ticket. The page also shows the wait's paths and
      GitHub's compare view, or the two shas when no compare URL is known.
-   - **A conflict is answered by `GrantFixRound` with the conflict brief.**
+   - **A conflict is answered by `resolveConflict` (0108 §8), with the
+     conflict brief, and by the system.** Up to `CONFLICT_ROUND_HUNKS` hunks a
+     rule chooses it without triage; past that, triage's `ConflictingHunks`
+     decides between `resolveConflict`, `startNewAttempt` and a question
+     (0108 §6). A person's `FixRefusal` on a conflict wait does the same, once.
      The agent merges the latest base into the preserved branch, resolves the
-     hunks and commits, with an instruction to stop and ask when the two sides'
-     behaviours contradict and the ticket does not settle which wins. What
+     hunks and commits, and declares `Unclear` when the two sides' behaviours
+     contradict and the ticket does not settle which wins (0108 §21). What
      catches a wrong choice is `build`, `review` and that question, not a
      confirmation form; the page links to GitHub's compare view for a person
      who wants to read the hunks first. The changed branch runs through `build`
@@ -703,14 +712,15 @@ which kind a wait was got inferred again in each place that needed it, from
      produces another conflict, a new wait is held for it.
    - Past 20 hunks it does not resolve them one by one. The hunks are counted
      from the mirror before any agent is called, and past 20 none is: the
-     triage is _merge by hand_ with no hunks and their total, recommending starting over from the new base, answered by `Mechanical` (§3), and it costs nothing. The answer is the same `GrantFixRound`.
+     triage is _merge by hand_ with no hunks and their total, answered by `Mechanical` (§3) at no cost; with no hunk read there is nothing to resolve one by one, so the system starts over from the new base (`startNewAttempt`) while `newAttempts` is left, and otherwise asks a person.
    - **A moved base has three answers, checked in this order.** A conflict
      comes first and is the rest of this section. A clean trial merge where
      the base moved on files the branch also changed (`base-moved`) is merged
      into the branch by the system, with no agent and no round spent; `build`
      and `review` then run again, and that review is shown what landed on those
-     paths (capped at 400 lines). That happens at most twice an attempt
-     (`BASE_MERGES_LIMIT`); the third is a wait (§1's `BaseMoved` row). A base
+     paths (capped at 400 lines). That is `mergeBaseBranch`, at most
+     `baseBranchMerges` (10) times an attempt; the next is a wait (§1's
+     `BaseMoved` row). A base
      that moved only elsewhere lands after the lane's `verify` on the merged
      tree, and a red `verify` there is `VerifyRed` and goes back to
      `implement` (0108).
@@ -718,7 +728,7 @@ which kind a wait was got inferred again in each place that needed it, from
 9. **Triage belongs to the wait it explains.** `WaitTriaged` names the
    wait it answers (its `waitId`) and the head it read. The page and the card
    show it only while that wait is the current one, so an approve or a
-   requeue retires it. A new head arrives only with a new wait, so it
+   new attempt retires it. A new head arrives only with a new wait, so it
    retires it too. A branch moved by hand while the wait stands makes no new
    wait and no new triage; the page shows the triage with the head it read
    and the head the branch is at now. A triage that finishes after the person has acted
@@ -738,16 +748,18 @@ which kind a wait was got inferred again in each place that needed it, from
     }) => Effect<ResolveResult>
     ```
 
-    - **By the wait, not the ticket.** A ticket may have been requeued into a
+    - **By the wait, not the ticket.** A ticket may have been released into a
       new wait by the time an old page's approval arrives, so `resolveWait`
       checks atomically that `waitId` is the item's current wait and refuses,
       doing nothing, if not. `Approve` also refuses when the branch is no
       longer at its `onSha`. `approve.ts` makes both checks today, by run
       (`:216`) and by sha (`:228`), and neither is lost.
-    - It checks the resolution against `allowedResolutions` and acts: a requeue
+    - It checks the resolution against `allowedResolutions` and acts: a new attempt
       releases the item, a close closes it, an answer is written into the body
-      (§6), `GrantFixRound` continues the preserved branch for one round
-      (0108 §8), conflict continuation follows §8, and a split follows §12.
+      (§6), `FixRefusal` continues the preserved branch for one `implement` run,
+      `RedoStep` redoes the stopped step on it (0108 §12), and conflict
+      continuation follows §8. A wait the system resolves `by: triage` passes
+      the same checks.
       `WaitResolved` records
       the completed choice; a partial split cannot resolve the wait.
     - **An approval continues the same run** with
@@ -776,94 +788,92 @@ which kind a wait was got inferred again in each place that needed it, from
     - **What a resolution makes of the ticket is one reduce's answer**, the
       ticket's, in `@lingtai/domain` ([0101](0101-typescript-packages-effect-unbuilt.md) §4),
       and the card, the page, `task_view` and the queue read that one answer:
-      - after `GrantFixRound` the ticket is **`approved`** — a person has let a
-        round run on the preserved branch — not back in the queue;
+      - after `FixRefusal` or `RedoStep` the ticket is **`approved`** — a
+        person, or the system on triage's cause, has let a run go on the
+        preserved branch — not back in the queue;
       - after `WaitResolved{Close}` it is still **`waiting`** until
         `TicketClosed` lands: the choice is recorded, the close is a separate
         fact ([0109](0109-the-core-takes-a-ticket.md) §11);
       - the answer recorded for a wait is worded from the resolution's own
         `reason` (§6), never from a note another event may have overwritten
-        while the wait stood; `Close` and `GrantFixRound` record no answer.
+        while the wait stood; `Close` and `FixRefusal` record no answer.
       The queue takes only what this reduce calls `queued`, so a ticket approved
       for a round, or chosen to close, is not taken again.
 
-12. **A split is written from the page, and its parent closes with its
-    children.** The mockup is [`0118/Split.dc.html`](0118/Split.dc.html).
-    1. **The plan is advice until a person approves it on the page.** Triage
-       can recommend `Split` as soon as it sees `TicketTooBig`, including the
-       first wait, with at most 8 children. The waiting page draws the plan;
-       the person edits titles, bodies, kinds, which children are included
-       and the chain, then presses **Create all**. Nothing is created before
-       that. A project whose tickets are in `db` sees the plan with splitting
-       marked unavailable.
-    2. **The plan freezes at the first Create all.** From then on the plan is
-       the one `SplitStarted` recorded, and a retry sends none: the writer
-       reads the frozen one from the log. Nothing on the page can change it,
-       not after a failure either, where the split's one move is **Retry what
-       is missing**. A person who wants a different split takes one of the
-       wait's other resolutions, which stay available once nothing is
-       writing; the children already created are named on the page and left
-       for the person to close.
-    3. **A child is known by its marker and by nothing else.** Every child's
-       body carries an invisible marker naming the parent, the wait and the
-       child's key. The writer finds what exists by listing the issues its
-       own App created since the split started and reading their markers,
-       never by title, and never through GitHub's search index, which lags a
-       create by seconds. An issue without its marker is never adopted,
-       edited or linked. A lookup that fails fails the write; an empty answer
-       is never read as _not created_. A child found by its marker keeps
-       GitHub's title and body.
-    4. **GitHub has no transaction, so every run reconciles against GitHub,
-       never against the log.** Running the write twice is the same as
-       running it once, running it again after a failure converges on the
-       whole plan, and it never touches an issue it did not create. A run
-       creates each child no marker answers for, attaches each missing
-       sub-issue, adds each missing blocked-by, and records `TicketSplit`
-       only once every child and link has been read back; `TicketSplit`
-       records what GitHub returned, not the plan. A retry never trusts the
-       progress events of rule 5 to skip a write.
-    5. **Progress is recorded as it goes.** `SplitStarted` carries the wait,
-       the frozen plan and the board process's `instance`; then one
-       `SplitChildWritten` per child and one `SplitLinkWritten` per
-       child-to-child link, each after its read-back; the run ends with
-       `TicketSplit` or `SplitFailed{step, detail}`. Every one carries the
-       `waitId`, because a parent can wait again. The page draws progress
-       from the log (`splitProgressOf`) and shows which children and links
-       exist and which are still owed.
-    6. **One child at a time:** create it, attach it, record it, then the
-       next.
-    7. **Writing or interrupted, and the lock.** A `SplitStarted` with
-       nothing terminal after it is _writing_ only if its `instance` is this
-       board process's own and this process says a writer for that wait is
-       running. Otherwise it is _interrupted_, which is derived and never
-       written. The page is locked exactly while the split is _writing_, and
-       offers **Retry what is missing** on `failed` and on _interrupted_. An
-       unfinished split from an earlier board process therefore reads as
-       _interrupted_.
-    8. **A partial split resolves nothing; a complete one resolves the
-       wait.** Whatever progress events were written stay, and nothing else
-       is appended: no `TicketSplit` and no `WaitResolved`. The wait stays
-       open and the retry reconciles from what GitHub has. A complete split
-       appends `TicketSplit` and then `WaitResolved{Split}` in one
-       transaction, which also releases the claim, _after a split_.
-    9. **The parent waits on its children and is closed at claim when they
-       are all closed.** The writer marks the parent blocked by each child
-       and rewrites its `## Done when` as one checkbox per child, so the
-       queue passes the parent over as `blocked-by` while any child is open.
-       At claim, `claimTicket` reads exactly `TicketSplit.children`, not the
-       body and not GitHub's sub-issue list. All closed: the parent is
-       closed with no run, a comment saying why posted first. Any open:
-       `split-open`. One that cannot be read: `split-unreadable`, and
-       nothing is closed.
+12. **A split is the system's, written whole before any child can run, and its
+    parent is accepted against its own `Done when`.** `splitTicket` is 0108 §8's
+    action for triage's `TicketTooBig` with a plan.
+    1. **The plan is triage's, and the system carries it out.** At most 8
+       children, each with a title, a body written to write-ticket's rules, a
+       kind, the parent's `## Done when` items it covers, and the chain between
+       them; the plan also names the parent's items no child covers. Nothing
+       waits for a person's approval. A project whose tickets are in `db` is
+       answered `askPerson(limit)` instead, with the plan shown.
+    2. **Once per root ticket.** `ticketSplits` is 1 over a root ticket and
+       every child split from it: a child is never split, and a parent that is
+       `TicketTooBig` again after its split is `askPerson(limit)`. The count is
+       read from `TicketSplit` on the ticket's stream, so no restart, release
+       or wait for the children resets it.
+    3. **The plan freezes when the split starts.** `SplitStarted` records it,
+       and every retry writes that plan and no other.
+    4. **A child is known by its marker and by nothing else.** Every child's
+       body carries an invisible marker naming the parent, the split and the
+       child's key. The writer finds what exists by listing the issues its own
+       App created since the split started and reading their markers, never by
+       title, and never through GitHub's search index, which lags a create by
+       seconds. An issue without its marker is never adopted, edited or
+       linked. A lookup that fails fails the write; an empty answer is never
+       read as _not created_. A child found by its marker keeps GitHub's title
+       and body.
+    5. **GitHub has no transaction, so every run reconciles against GitHub,
+       never against the log.** Running the write twice is the same as running
+       it once, running it again after a failure converges on the whole plan,
+       and it never touches an issue it did not create. A run creates each
+       child no marker answers for, attaches each missing sub-issue, adds each
+       missing blocked-by, and records `TicketSplit` only once every child and
+       link has been read back; `TicketSplit` records what GitHub returned, not
+       the plan. Progress is recorded as it goes — one `SplitChildWritten` per
+       child, one `SplitLinkWritten` per link, each after its read-back, and
+       `TicketSplit` or `SplitFailed{step, detail}` at the end — and a retry
+       never trusts it to skip a write.
+    6. **No child can be claimed before the whole plan is written.** Each
+       child is created carrying the system's own `lingtai:publishing` label,
+       which the queue passes over. Only after every child, every link and the
+       parent's blocked-by have been read back is the label removed from each
+       child. It is the system's own label rather than `agent:hold`, so a hold
+       a person put on a child is never lifted by it. A split interrupted
+       midway leaves its children labelled, and the next run reconciles and
+       finishes it.
+    7. **The parent keeps its `## Done when` word for word.** The children
+       and which of its items each covers go in a section of their own,
+       `## Split into`; nothing rewrites the parent's acceptance criteria. The
+       parent is marked blocked by each child and released back to the queue
+       (`WaitResolved{ by: triage }` and `TicketSplit` in one append), where it
+       is passed over as `blocked-by` while any child is open.
+    8. **A closed child unblocks the parent; it does not accept it.** GitHub's
+       *closed* is all the queue reads, whether a child landed, was a
+       duplicate or was dropped. When the last child closes, the parent is
+       taken as a new attempt from the base, which now holds the children's
+       work. It is not counted in `newAttempts`, and happens once, because the
+       split does. That attempt checks the parent's own `## Done when` item by
+       item and does what is still missing, landing it like any change. If
+       nothing is missing, its `implement` declares `AlreadyDone` with each
+       item's evidence, `review` checks it at the base's sha, and the parent
+       ends `satisfied` (0108 §21) — the one `satisfied` the system closes
+       without asking.
 
 ## Consequences
 
 - **Every wait that is a judgement or a machine failure costs one triage
-  run**, whether or not anybody opens it. Its cost is a `RunSpent { for: Triage }`,
+  run**, and two when the first gave no answer the system could act on,
+  whether or not anybody opens it. Its cost is a `RunSpent { for: Triage }`,
   so it shows in the report, and a recipe that does not want it does not declare it.
-- **Triage is billed at least once, and at most twice, per wait.** The only
-  second payment is a daemon that stopped during the call, whose attempt is
-  tried again on the next start.
+- **Triage is billed at least once per wait, and a bounded number of times**:
+  `triageRetries` once more after an unusable answer, and an interrupted call
+  tried again on the next daemon start.
+- **Most waits close themselves.** A wait whose cause has an action the system
+  can take is resolved `by: triage` and leaves one line on the card; a person
+  sees a wait only for a spent bound, a question or a broken environment.
 - **The log can answer how often the advice is taken, and that is not how good
   it is.** Adoption is one query over `WaitTriaged` and the resolution after it. How
   good the advice was is a different query, over what followed the resolution: did
@@ -904,9 +914,20 @@ the merge conflict, the questions, and what follows a resolution. They open dire
 in a browser. `dc-lite.js` beside them is all they run. They illustrate the
 decision and do not extend it: where a mockup and this text differ, this text
 is the decision. In particular, _Outcomes_' "the judge and triage disagree"
-draws the side-by-side and the pick that §5 no longer has, and _Split_'s partial
-stage says the missing child can still be edited or left out before Retry,
-where §12 rule 2 freezes the plan.
+draws the side-by-side and the pick that §5 no longer has, and _Split_ draws
+a person approving the plan on the page, where §12 makes the split the
+system's.
+
+## Not built yet
+
+All of the 2026-11-17 amendment, with [0108](0108-a-refusal-buys-a-round.md)'s
+rewrite: `Cause` with `Unfinished` and `TriageAnswered` in place of
+`TriageAdvice`; the wait resolved `by: triage`; `triageRetries`; the renamed
+resolutions; `AnswerQuestions` continuing the step; and §12's split by the
+system, with the publishing label, `## Split into` in place of the rewritten
+`## Done when` (`splitDoneWhen`, `packages/conductor/src/split-body.ts:16`),
+`ticketSplits`, and the parent accepted against its own criteria rather than
+closed at claim when its children are (`packages/domain/src/ticket.ts:817`).
 
 ---
 
