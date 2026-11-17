@@ -367,6 +367,13 @@ describe('startTriageTransition and finishTriageTransition', () => {
     })
   })
 
+  it('refuses on a started attempt the caller read off the stream for a wait the reduce never saw', () => {
+    expect(startTriageTransition(backlog(), { waitId: W, attempt: 1, by, startedUnseen: 1 })).toEqual({
+      ok: false,
+      refusal: { reason: 'already-started', attempt: 1 },
+    })
+  })
+
   it('starts the next attempt after an earlier one', () => {
     const state = blocked(...aTriageStart(item(), W, 1))
     expect(startTriageTransition(state, { waitId: W, attempt: 2, by })).toMatchObject({ ok: true })

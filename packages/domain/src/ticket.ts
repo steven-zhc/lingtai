@@ -1080,12 +1080,19 @@ export type StartTriageDecline = { reason: 'wait-not-current' } | { reason: 'alr
  */
 export function startTriageTransition(
   state: TicketState,
-  input: { waitId: WaitId; attempt: number; by: PayloadOf<'TriageStarted'>['by'] },
+  input: {
+    waitId: WaitId
+    attempt: number
+    by: PayloadOf<'TriageStarted'>['by']
+    /** The highest attempt already started for a wait the reduce has never seen (it keeps none), read off the stream. */
+    startedUnseen?: number
+  },
 ): { ok: true; events: ToAppend[] } | { ok: false; refusal: StartTriageDecline } {
   if (!waitIsCurrentOrUnknown(state, input.waitId)) return { ok: false, refusal: { reason: 'wait-not-current' } }
-  const started = state.waits.findLast((w) => w.waitId === input.waitId)?.triage.started ?? null
-  if (started !== null && started.attempt >= input.attempt) {
-    return { ok: false, refusal: { reason: 'already-started', attempt: started.attempt } }
+  const seen = state.waits.findLast((w) => w.waitId === input.waitId)?.triage.started?.attempt
+  const started = seen ?? input.startedUnseen ?? null
+  if (started !== null && started >= input.attempt) {
+    return { ok: false, refusal: { reason: 'already-started', attempt: started } }
   }
   return {
     ok: true,

@@ -462,12 +462,30 @@ export function startTriage(
 ): Effect.Effect<StartTriageResult, unknown> {
   return Effect.gen(function* () {
     const state = yield* readThroughSnapshot(options.store, ticketReducer, ticketId, 'all', options)
-    const decided = startTriageTransition(state, { waitId: options.waitId, attempt: options.attempt, by: options.by })
+    // The reduce keeps `triage.started` only for a wait the ticket started; for any other the stream is the evidence.
+    let startedUnseen: number | undefined
+    if (!state.waits.some((w) => w.waitId === options.waitId)) {
+      const events = yield* Effect.tryPromise({ try: () => options.store.read(ticketId), catch: (e) => e })
+      for (const e of events) {
+        const d = e.data as { waitId?: unknown; attempt?: number }
+        if (e.type === 'TriageStarted' && d.waitId === options.waitId && typeof d.attempt === 'number') {
+          startedUnseen = Math.max(startedUnseen ?? 0, d.attempt)
+        }
+      }
+    }
+    const decided = startTriageTransition(state, {
+      waitId: options.waitId,
+      attempt: options.attempt,
+      by: options.by,
+      ...(startedUnseen === undefined ? {} : { startedUnseen }),
+    })
     if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
     const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
     return lost ? ({ ok: false, lost: true } as const) : ({ ok: true } as const)
   })
 }
+
+type FinishTriageInput = Parameters<typeof finishTriageTransition>[1]
 
 export type FinishTriageResult = { ok: true } | { ok: false; refusal: FinishTriageDecline } | { ok: false; lost: true }
 
@@ -480,7 +498,9 @@ export function finishTriage(
   options: SnapshotReadOptions & {
     store: TriageStore
     ifVersion?: number
-  } & Pick<Parameters<typeof finishTriageTransition>[1], 'waitId' | 'attempt' | 'headSha' | 'result' | 'by'>,
+    /** A function is settled after the read, so what changed while it ran (a caller's abort) is seen. */
+    result: FinishTriageInput['result'] | (() => FinishTriageInput['result'])
+  } & Pick<FinishTriageInput, 'waitId' | 'attempt' | 'headSha' | 'by'>,
 ): Effect.Effect<FinishTriageResult, unknown> {
   return Effect.gen(function* () {
     const state = yield* readThroughSnapshot(options.store, ticketReducer, ticketId, 'all', options)
@@ -488,7 +508,7 @@ export function finishTriage(
       waitId: options.waitId,
       attempt: options.attempt,
       headSha: options.headSha,
-      result: options.result,
+      result: typeof options.result === 'function' ? options.result() : options.result,
       by: options.by,
       ...(options.ifVersion === undefined ? {} : { ifVersion: options.ifVersion }),
     })

@@ -1200,7 +1200,6 @@ const waitTriageWithin = (
     for (let i = 0; i < 5; i += 1) {
       const landed = yield* settle(
         Effect.gen(function* () {
-          if (callerSignal?.aborted) final = { _tag: 'TriageFailed', why: 'aborted' }
           const finished = yield* finishTriage(stream, {
             ...deps,
             store: deps.store,
@@ -1210,7 +1209,10 @@ const waitTriageWithin = (
             // with no base either, where `reading` already says no file can be
             // read.
             headSha: headSha ?? baseSha ?? '',
-            result: final,
+            result: () => {
+              if (callerSignal?.aborted) final = { _tag: 'TriageFailed', why: 'aborted' }
+              return final
+            },
             by,
           })
           if (!finished.ok && 'refusal' in finished) {
