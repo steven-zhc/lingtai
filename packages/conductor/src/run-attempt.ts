@@ -1572,7 +1572,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             return false
           }
         }
-        const reply = yield* replyFor(offer, arrived, options.judge)
+        // #1199: what a fixer declined is the round's own findings and its own message.
+        const shown =
+          offer.proposal._tag === 'FixerDisagrees'
+            ? { findings: recheck, evidence: offer.proposal.said ?? '' }
+            : arrived
+        const reply = yield* replyFor(offer, shown, options.judge)
         if ('neverStarted' in reply) {
           // 0031 §3, at the third depth the same wall is met at: the judge
           // itself is an agent, and an account-wide wall is the conductor's to
@@ -1677,7 +1682,10 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           case 'FixRound':
             // The same bookkeeping `take` always did: the lap's own findings
             // become the next lap's `recheck` (0038 §2), and a round is spent.
-            recheck = findingsIn(steps.slice(lapStart))
+            // Not for a fixer that declined (#1199): its lap is the `implement`
+            // visit alone, which raises nothing, and the round a judge buys must
+            // still hold the re-review to the findings it disputed.
+            if (offer.proposal._tag !== 'FixerDisagrees') recheck = findingsIn(steps.slice(lapStart))
             // Dropped once a review has had it; a build that failed first never
             // reached the review, which is still owed the section.
             if (steps.slice(lapStart).some((v) => v.step === 'review')) landedOnBase = null
@@ -2167,7 +2175,24 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
     changedNothing(arrived.outcome)
       ? lastCommitEvidence(arrived.outcome)
       : null
-  return { why: route.why, asked, printed, ...(said === null ? {} : { said }) }
+  // #1199: a later round the fixer declined, which a judge overruled.
+  const objection =
+    arrived !== undefined &&
+    arrived.step === 'implement' &&
+    step === 'implement' &&
+    asked === null &&
+    arrived.outcome !== undefined &&
+    arrived.outcome.round > 0 &&
+    changedNothing(arrived.outcome)
+      ? lastCommitEvidence(arrived.outcome)
+      : null
+  return {
+    why: route.why,
+    asked,
+    printed,
+    ...(said === null ? {} : { said }),
+    ...(objection === null ? {} : { objection }),
+  }
 }
 
 /**
