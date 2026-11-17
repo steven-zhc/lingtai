@@ -31,7 +31,16 @@
  * GitHub, and what a row *says* is testable without either.
  */
 import type { BoardFact, Envelope, EventType, PayloadOf, StepOutcome } from '@lingtai/domain'
-import { boardFactOf, fromOf, resolveOffer, routeMove, routeNext, waitWords } from '@lingtai/domain'
+import {
+  Account,
+  accountWords,
+  boardFactOf,
+  fromOf,
+  resolveOffer,
+  routeMove,
+  routeNext,
+  waitWords,
+} from '@lingtai/domain'
 import type { ClaimShape } from '@lingtai/domain'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
@@ -196,6 +205,11 @@ function need(d: Payload, key: string): string {
   const v = d[key]
   if (v === null || v === undefined || v === '') throw new Error(`no ${key}`)
   return String(v)
+}
+
+/** The words for the account a limit event names; throws, like `need`, on a value that is none. */
+function accountOf(d: Payload): { name: string; limit: string } {
+  return accountWords(Account.parse(need(d, 'account')))
 }
 
 /** A sha, at the length everything else in this app shows one. */
@@ -456,11 +470,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   ProjectRecovered: (d) => `${need(d, 'project')} recovered`,
   ProjectPaused: (d) => `${personName(need(d, 'by'))} paused ${need(d, 'project')}`,
   ProjectResumed: (d) => `${personName(need(d, 'by'))} resumed ${need(d, 'project')}`,
-  AccountLimitReached: (d) => `${need(d, 'runtime')} reached its usage limit until ${need(d, 'until')}`,
+  AccountLimitReached: (d) => `${accountOf(d).name} reached its ${accountOf(d).limit} until ${need(d, 'until')}`,
   AccountLimitLifted: (d) =>
     typeof d['by'] === 'string'
-      ? `${personName(d['by'])} lifted ${need(d, 'runtime')}'s usage limit`
-      : `${need(d, 'runtime')}'s usage limit ended`,
+      ? `${personName(d['by'])} lifted ${accountOf(d).name}'s ${accountOf(d).limit}`
+      : `${accountOf(d).name}'s ${accountOf(d).limit} ended`,
   GitHubAppCreated: (d) => `GitHub App ${need(d, 'slug')} created`,
   PluginFailed: (d) => `Plugin ${need(d, 'name')} failed on ${need(d, 'eventType')}: ${clip(d['reason'])}`,
 

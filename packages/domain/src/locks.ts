@@ -10,7 +10,7 @@
 import type { AccountState } from './account.ts'
 import type { ControlState } from './control.ts'
 import type { ToAppend } from './envelope.ts'
-import type { PayloadOf, RuntimeId } from './events.ts'
+import { type Account, type PayloadOf, RuntimeId } from './events.ts'
 import type { ProjectState } from './project.ts'
 
 export type Lock =
@@ -27,7 +27,7 @@ export type Lock =
     }
   | {
       kind: 'account'
-      runtime: RuntimeId
+      account: Account
       by: 'lingtai'
       since: Date
       until: Date
@@ -46,11 +46,11 @@ export function locksOn(input: {
   project?: ProjectState
   control?: ControlState
   /**
-   * The state of each runtime the project's recipe uses, and no other. Required,
+   * The state of each account the project uses — its recipe's runtimes, and `github` when it has an owner — and no other. Required,
    * so a reader that forgets it fails `tsc` rather than showing no account lock.
    * A limit whose `until` has passed is still a lock: lifting it is the guard's.
    */
-  accounts: ReadonlyMap<RuntimeId, AccountState>
+  accounts: ReadonlyMap<Account, AccountState>
 }): readonly Lock[] {
   const locks: Lock[] = []
   const reached = input.control?.dayCeiling.reached ?? null
@@ -66,12 +66,12 @@ export function locksOn(input: {
       until: new Date(y, m - 1, d + 1),
     })
   }
-  for (const runtime of [...input.accounts.keys()].sort()) {
-    const limit = input.accounts.get(runtime)?.limit ?? null
+  for (const account of [...input.accounts.keys()].sort()) {
+    const limit = input.accounts.get(account)?.limit ?? null
     if (limit === null) continue
     locks.push({
       kind: 'account',
-      runtime,
+      account,
       by: 'lingtai',
       since: limit.since,
       until: limit.until,
@@ -85,7 +85,7 @@ export function locksOn(input: {
 }
 
 /** For a read that is not about accounts. Grep for it to find every reader that opted out. */
-export const NO_ACCOUNTS: ReadonlyMap<RuntimeId, AccountState> = new Map()
+export const NO_ACCOUNTS: ReadonlyMap<Account, AccountState> = new Map()
 
 const money = (n: number): string => n.toFixed(2)
 
@@ -98,6 +98,16 @@ export function whenLabel(at: Date, now: Date): string {
   const sameDay =
     at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth() && at.getDate() === now.getDate()
   return sameDay ? clock(at) : `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${clock(at)}`
+}
+
+/** How an account is named in a sentence, and what its limit is called. The one place these words are written. */
+export function accountWords(account: Account): { name: string; limit: string } {
+  return account === 'github' ? { name: 'GitHub', limit: 'rate limit' } : { name: account, limit: 'usage limit' }
+}
+
+/** The runtimes among some accounts: what a project *runs on*, which `github` is not. */
+export function runtimeAccounts(accounts: readonly Account[]): RuntimeId[] {
+  return accounts.filter((a): a is RuntimeId => RuntimeId.safeParse(a).success)
 }
 
 /** What `untilFrom` says about where the time came from. */
@@ -125,7 +135,7 @@ function oneSentence(project: string, lock: Lock, now: Date): string {
     case 'ceiling':
       return `daily ceiling reached — today $${money(lock.reportedUsd)} reported + ~$${money(lock.estimatedUsd)} est. of a $${money(lock.ceilingUsd)} ceiling; lingtai ceiling raise <usd> goes on today`
     case 'account':
-      return `lingtai waits for ${lock.runtime}'s usage limit until ${whenLabel(lock.until, now)} (${untilFromWords(lock.untilFrom)}) — lingtai account lift ${lock.runtime} once it is over`
+      return `lingtai waits for ${accountWords(lock.account).name}'s ${accountWords(lock.account).limit} until ${whenLabel(lock.until, now)} (${untilFromWords(lock.untilFrom)}) — lingtai account lift ${lock.account} once it is over`
     default: {
       const never: never = lock
       return never

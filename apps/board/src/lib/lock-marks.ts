@@ -6,7 +6,7 @@
  * component, and `locks.ts` reaches the store. Only `paused` is drawn here; the
  * ceiling and account kinds add a case beside `isPaused`, never a new parameter.
  */
-import { type Lock, localDay, whenLabel } from '@lingtai/domain'
+import { type Lock, accountWords, localDay, whenLabel } from '@lingtai/domain'
 
 import type { ProjectLocks } from './locks.ts'
 
@@ -72,7 +72,7 @@ export function everyPaused(map: LockMap, registered: readonly string[]): boolea
 /** A project's standing under the first lock that holds it: the card's words and the panel's. */
 export interface LockStanding {
   /** The short word the panel's chip uses. */
-  kind: 'ceiling' | 'usage limit' | 'paused'
+  kind: 'ceiling' | 'usage limit' | 'rate limit' | 'paused'
   text: string
   title: string
   /** What the request waits for, as a clause after *until*. */
@@ -97,11 +97,15 @@ export function lockStanding(project: string, locks: readonly Lock[] | undefined
   const limit = accountsHolding(locks, now)[0]
   if (limit !== undefined) {
     const until = whenLabel(limit.until, now)
+    const words = accountWords(limit.account)
     return {
-      kind: 'usage limit',
-      text: `${limit.runtime} is at its usage limit until ${until} — nothing will start`,
-      title: `${project}'s recipe uses ${limit.runtime}; this card keeps its place`,
-      waitsFor: `${limit.runtime}'s limit passes (${until})`,
+      kind: words.limit === 'rate limit' ? 'rate limit' : 'usage limit',
+      text: `${words.name} is at its ${words.limit} until ${until} — nothing will start`,
+      title:
+        limit.account === 'github'
+          ? `${project} is on GitHub; this card keeps its place`
+          : `${project}'s recipe uses ${limit.account}; this card keeps its place`,
+      waitsFor: `${words.name}'s limit passes (${until})`,
     }
   }
   if (isPaused(locks)) {

@@ -802,7 +802,7 @@ runtime:
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({
       _tag: 'ProposedEscalated',
-      proposal: { _tag: 'NothingProduced', said: 'the agent produced no commits' },
+      proposal: { _tag: 'NothingProduced', said: 'done' },
     })
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })

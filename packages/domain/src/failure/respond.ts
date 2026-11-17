@@ -484,20 +484,23 @@ function nextWallClock(now: Date, zone: string, hour: number, minute: number): D
 // ─── What a failure buys (0108 §19) ───
 
 /**
- * **At most this many base merges per pass, then a person** (#593). A constant
- * and not a recipe knob: the number is the ticket's, and a knob is a value
- * somebody can set to a loop. The merges cost no agent, so it bounds nothing
- * `rounds` or `restarts` do — it bounds a base that keeps moving.
+ * **At most this many base merges per attempt, then a person** (#593, #1200;
+ * 0108 §8). A constant and not a recipe knob: the number is the ticket's, and a
+ * knob is a value somebody can set to a loop. The merges cost no agent, so it
+ * bounds nothing `rounds` or `restarts` do — it bounds a base that keeps moving.
+ * Counted on the attempt's own stream, so a continuation does not reset it.
  */
-export const BASE_MERGES_LIMIT = 2
+export const BASE_MERGES_LIMIT = 10
 
 /**
- * **At most this many merge-conflict fix rounds per pass, then a person** (#653).
- * A constant and not a recipe knob, for `BASE_MERGES_LIMIT`'s reason. Unlike it,
- * a conflict round runs an agent — it is a round `rounds` does not count, so a
- * review that spent them all does not leave a conflict at merge with nothing.
+ * **At most this many reruns of a run an API error cut off, per attempt** (0108
+ * §8, #1200). Declared here so `attemptCeiling` says the one total; what spends
+ * it is #1201 and #1221.
  */
-export const CONFLICT_ROUNDS_LIMIT = 2
+export const TRANSIENT_RETRIES_LIMIT = 3
+
+/** The growing waits before each transient rerun (0108 §8): the first, second and third. */
+export const TRANSIENT_WAITS = ['1 minute', '5 minutes', '15 minutes'] as const
 
 /**
  * Whether a proposal born at `step` got far enough for `implement` to have
@@ -578,7 +581,7 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       // Its own budget, never `rounds`: `round` stays what `rounds` is so the
       // review's counter is not reset by the lap this buys.
       const conflict = (spent.conflictRounds ?? 0) + 1
-      if (conflict > CONFLICT_ROUNDS_LIMIT) {
+      if (conflict > policy.conflictRounds) {
         unavailable.push({ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'conflict-rounds' } })
       } else {
         available.push({ id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: spent.rounds, conflict } })
@@ -632,14 +635,19 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       restart(hasCriterion)
       break
     }
-    case 'NothingProduced':
-      round('fix-lines', 'implement', false)
+    case 'NothingProduced': {
+      // 0108 §18: the implementer's own last message is the criterion, as for
+      // `FixerDisagrees`. Said nothing, and no judge is paid to read nothing.
+      const hasCriterion = proposal.said !== null && proposal.said.trim() !== ''
+      round('fix-lines', 'implement', hasCriterion)
       restart(false)
       break
+    }
     case 'FixerDisagrees': {
       const hasCriterion = proposal.said !== null && proposal.said.trim() !== ''
       round('fix-lines', 'implement', hasCriterion)
-      restart(hasCriterion)
+      // 0108 §7: a restart is offered only for `findings`.
+      restart(false)
       break
     }
     case 'MergeRefused': {

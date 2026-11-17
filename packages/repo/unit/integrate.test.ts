@@ -50,9 +50,16 @@ function fakeGit(
      * exit 0, `no` is exit 1 and `error` is a failed read. Past the end it answers `no`.
      */
     ancestry?: Array<'yes' | 'no' | 'error'>
+    /** The fork point `merge-base` answers; the lane's own base sha (nothing moved) when absent. */
+    fork?: string
+    /** What `diff --name-only -z` answers for `<fork>..<branch>` then `<fork>..<base>` (#1210). */
+    changed?: [string[], string[]]
+    /** After a push attempt the base has moved: `merge-base` answers a different fork point (#1210). */
+    movedAfterPush?: boolean
   } = {},
 ) {
   let pushes = 0
+  let pushed = 0
   let fetches = 0
   let asked = 0
   const calls: Call[] = []
@@ -75,6 +82,12 @@ function fakeGit(
         }),
       )
     }
+    if (cmd === 'merge-base')
+      return Effect.succeed(opts.movedAfterPush === true && pushed > 0 ? 'f'.repeat(40) : (opts.fork ?? sha))
+    if (cmd === 'diff' && args[1] === '--name-only' && opts.changed !== undefined) {
+      const ours = (args[3] ?? '').endsWith('/branch')
+      return Effect.succeed((ours ? opts.changed[0] : opts.changed[1]).join('\0'))
+    }
     if (cmd === 'rev-parse') return Effect.succeed(sha)
     if (cmd === 'rev-list') return Effect.succeed('1')
     if (cmd === 'log') return Effect.succeed((opts.subjects ?? []).join('\n'))
@@ -85,6 +98,7 @@ function fakeGit(
     if (cmd === 'fetch' && opts.failFetch !== undefined && fetches++ < (opts.failFetchTimes ?? Infinity)) {
       return Effect.fail(new RepoFailed({ operation: 'git fetch', detail: opts.failFetch }))
     }
+    if (cmd === 'push') pushed++
     if (cmd === 'push' && opts.pushScript !== undefined) {
       const detail = opts.pushScript[pushes++]
       if (detail !== undefined) return Effect.fail(new RepoFailed({ operation: 'git push', detail }))
@@ -260,12 +274,28 @@ describe('a push the base refuses (#662)', () => {
     expect(result.detail).toContain('repo.base')
   })
 
-  it('leaves an ordinary non-fast-forward a lost push, retried', async () => {
+  it('answers an ordinary non-fast-forward with one recompute that refuses base-moved, never a second push (#1210)', async () => {
+    const fake = fakeGit({ failPush: '! [rejected] HEAD -> main (non-fast-forward)', movedAfterPush: true })
+    const result = await integrate(options(fake.git))
+    if (result.ok) throw new Error('unreachable')
+    expect(result.reason).toBe('base-moved')
+    expect(pushes(fake.calls)).toHaveLength(1)
+  })
+
+  it('refuses unexpected, pushing once, when a rejection finds the base where the branch forked (#1210)', async () => {
     const fake = fakeGit({ failPush: '! [rejected] HEAD -> main (non-fast-forward)' })
     const result = await integrate(options(fake.git))
     if (result.ok) throw new Error('unreachable')
-    expect(result.reason).toBe('push-rejected')
-    expect(pushes(fake.calls)).toHaveLength(4)
+    expect(result.reason).toBe('unexpected')
+    expect(pushes(fake.calls)).toHaveLength(1)
+  })
+
+  it('refuses base-moved with no paths for a move on files the branch did not touch, and never pushes (#1210)', async () => {
+    const fake = fakeGit({ fork: 'f'.repeat(40), changed: [['src/a.ts'], ['src/b.ts']] })
+    const result = await integrate(options(fake.git))
+    if (result.ok) throw new Error('unreachable')
+    expect(result).toMatchObject({ reason: 'base-moved', baseMoved: { paths: [], fromSha: 'f'.repeat(40) } })
+    expect(pushes(fake.calls)).toHaveLength(0)
   })
 })
 
@@ -403,12 +433,12 @@ describe('a fetch or push that cannot reach origin is retried in place (#1029)',
     expect(count(fake.calls, 'fetch')).toBe(3)
   })
 
-  it('leaves a non-fast-forward on the LostPush path, four pushes', async () => {
-    const fake = fakeGit({ failPush: '! [rejected] HEAD -> main (non-fast-forward)' })
+  it('answers a non-fast-forward with one push and one recompute that refuses base-moved (#1210)', async () => {
+    const fake = fakeGit({ failPush: '! [rejected] HEAD -> main (non-fast-forward)', movedAfterPush: true })
     const { result } = await run(fake)
     if (result.ok) throw new Error('unreachable')
-    expect(result.reason).toBe('push-rejected')
-    expect(count(fake.calls, 'push')).toBe(4)
+    expect(result.reason).toBe('base-moved')
+    expect(count(fake.calls, 'push')).toBe(1)
   })
 
   it('does not retry a fetch that failed for another reason', async () => {

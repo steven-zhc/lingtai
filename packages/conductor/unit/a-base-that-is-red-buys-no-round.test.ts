@@ -152,6 +152,6 @@ describe('a build refusal the base shares', () => {
     for (const result of [first, second]) {
       expect(result.end).toMatchObject({ reason: { because: { _tag: 'BaseRed' } } })
     }
-    expect(exits).toHaveBeenCalledTimes(1)
+    expect(exits).toHaveBeenCalledTimes(2)
   })
 })

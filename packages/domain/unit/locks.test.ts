@@ -61,7 +61,7 @@ describe('the day ceiling as a lock', () => {
   describe('an account limit', () => {
     const limited = (untilFrom: 'message' | 'message-latest' | 'backoff' | 'backoff-unreadable'): AccountState => ({
       ...emptyAccount,
-      runtime: 'claude-code',
+      account: 'claude-code',
       limit: {
         until: new Date(2026, 10, 11, 23, 0),
         untilFrom,
@@ -99,6 +99,15 @@ describe('the day ceiling as a lock', () => {
           `lingtai waits for claude-code's usage limit until 23:00 (${text}) — lingtai account lift claude-code once it is over`,
         )
       }
+    })
+
+    it('says rate limit for github, and lifts by the raw id', () => {
+      const state: AccountState = { ...limited('message'), account: 'github' }
+      const locks = locksOn({ accounts: new Map([['github', state]]) })
+      expect(locks).toMatchObject([{ kind: 'account', account: 'github' }])
+      expect(lockSentence('p', locks, now)).toBe(
+        "lingtai waits for GitHub's rate limit until 23:00 (read from its message) — lingtai account lift github once it is over",
+      )
     })
 
     it('gives the date when until is not today', () => {

@@ -431,7 +431,7 @@ lingtai close lingtai --issue <n> "superseded"
 | stop one project, or every project, taking new tickets | [lingtai pause](#lingtai-pause) |
 | take tickets again, for one project or every project | [lingtai resume](#lingtai-resume) |
 | raise today's spending ceiling | [lingtai ceiling](#lingtai-ceiling) |
-| lift a runtime's usage limit | [lingtai account](#lingtai-account) |
+| lift an account's limit | [lingtai account](#lingtai-account) |
 
 ### lingtai start
 
@@ -599,19 +599,20 @@ lingtai ceiling raise 40
 
 ### lingtai account
 
-Lift a runtime's usage limit.
+Lift an account's limit.
 
 Changes state.
 
 ```text
-lingtai account lift <runtime> [--no-color]
-  Says a runtime's account is no longer at its usage limit. Projects that
-  use it take work again at the next look. Appends nothing when no limit
-  stands. Runtimes: claude-code, codex
+lingtai account lift <account> [--no-color]
+  Says an account — a runtime, or github — is no longer at its limit. Projects
+  that use it take work again at the next look. Appends nothing when no limit
+  stands. Accounts: claude-code, codex, github
 ```
 
 ```sh
 lingtai account lift claude-code
+lingtai account lift github
 ```
 
 ## Install and upkeep

@@ -150,7 +150,7 @@ are not — one per work item, attempt, lane and project, forever.
 | `ext-` | extension, `ext-subscribers` (the only one so far) | none | [PluginFailed](events.json#PluginFailed) |
 | `bkl-` | finding, `bkl-{project}-{key}` | [Finding state](glossary.md#the-log-and-its-states) | [FindingAccepted](events.json#FindingAccepted), [FindingProposed](events.json#FindingProposed), [FindingDeclined](events.json#FindingDeclined) |
 | `rcp-` | recipe, `rcp-{configHash}` | none | [RecipeRecorded](events.json#RecipeRecorded) *(retired)* |
-| `acct-` | runtime account on this machine, `acct-{runtime}` | [AccountState](glossary.md#the-log-and-its-states) | [AccountLimitReached](events.json#AccountLimitReached), [AccountLimitLifted](events.json#AccountLimitLifted) |
+| `acct-` | platform account on this machine (a runtime, or `github`), `acct-{account}` | [AccountState](glossary.md#the-log-and-its-states) | [AccountLimitReached](events.json#AccountLimitReached), [AccountLimitLifted](events.json#AccountLimitLifted) |
 
 - [RunSpent](events.json#RunSpent) is on `pass-`, `chat-`, `ticket-` — spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`) or a ticket-level agent such as triage (`ticket-`).
 
@@ -162,7 +162,7 @@ On no stream: [OutboxDelivered](events.json#OutboxDelivered) *(retired)*, [Outbo
 appends to that stream while it runs, and a board recording an App would race a
 turn for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 7 chains, 9 steps
+## upcaster — 9 chains, 11 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -177,10 +177,12 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `RunStarted` | 1 → 2 | `invocation` — the command, the tier and the limits as applied, where there had been only the runtime's name (`#88`) |
 | `RunPrompted` | 1 → 2 | the prompt text and not only its length (`#88`) |
 | `WaitTriaged` | 1 → 2 | `ContinueConflict` left the advice (#591); a stored one reads as `GrantFixRound`, which is what a conflict is answered by now |
+| `AccountLimitReached` | 1 → 2 | `runtime` became `account`, which names a platform (a runtime, or `github`) — [0126](decisions/0126-a-stop-is-a-lock-and-an-unlock.md) §2, #1212. The value is unchanged: every runtime is an account |
+| `AccountLimitLifted` | 1 → 2 | the same rename, on both shapes (with `by` and without) |
 | `PromptEdited` | 1 → 2 | `hash` and `basedOn` (`#104`). Both null: the digest could be recomputed from `text`, but recomputing it and recording it are different claims |
 
 **The counts in this heading are counted off the table, never computed.** Each
-of the **seven** chains below is its own row — a heading that is arithmetic on a
+of the **nine** chains below is its own row — a heading that is arithmetic on a
 number nobody re-derived is how a reader comes to believe a row is stale and
 deletable.
 

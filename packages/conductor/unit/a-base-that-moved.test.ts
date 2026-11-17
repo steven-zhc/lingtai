@@ -43,12 +43,12 @@ const recipe = {
   }),
 }
 
-const moved = (toSha: string): ActionResult => ({
+const moved = (toSha: string, paths: string[] = ['src/recipe.ts']): ActionResult => ({
   verdict: 'failed',
   evidence: 'main moved on files the branch also changed',
   findings: [],
   because: 'base-moved',
-  baseMoved: { paths: ['src/recipe.ts'], fromSha: 'fork0001', toSha },
+  baseMoved: { paths, fromSha: 'fork0001', toSha },
 })
 
 /**
@@ -171,20 +171,33 @@ describe('a base that moved on the branch’s own files', () => {
     expect(reviewSaw[0]?.mergedOnto).toBe('base-1')
   })
 
-  it('reaches a person on the third arrival, the port having been called exactly twice', async () => {
+  it('reaches a person on the eleventh arrival, the port having been called exactly ten times', async () => {
     const asked: string[] = []
-    const { result } = await walk([moved('base-1'), moved('base-2'), moved('base-3')], async (toSha) => {
+    const arrivals = Array.from({ length: 11 }, (_, i) => moved(`base-${i + 1}`))
+    const { result } = await walk(arrivals, async (toSha) => {
       asked.push(toSha)
       return { head: `merged-${asked.length}` }
     })
 
-    expect(asked).toEqual(['base-1', 'base-2'])
+    expect(asked).toEqual(arrivals.slice(0, 10).map((_, i) => `base-${i + 1}`))
     expect(result.end).toMatchObject({
       _tag: 'WaitOnPerson',
-      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'BaseMoved', toSha: 'base-3' } },
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'BaseMoved', toSha: 'base-11' } },
     })
     // Nothing but a person was on offer, so no judge was asked and `chose` is
     // `waiting` (as for a spent round): the ceiling is read off the offer.
+    expect(result.routes.at(-1)?.offer.unavailable).toEqual([
+      { id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } },
+    ])
+  })
+
+  it('a continuation of an attempt that spent ten base merges is not offered another (#1200)', async () => {
+    const { result } = await walk([moved('base-1')], async () => ({ head: 'merged-1' }), [], {
+      step: 'build',
+      waive: [],
+      baseMergesSpent: 10,
+    })
+
     expect(result.routes.at(-1)?.offer.unavailable).toEqual([
       { id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } },
     ])
@@ -267,5 +280,36 @@ describe('what the next review is told it already read (#671)', () => {
     })
 
     expect(reviewSaw.every((c) => !('reviewedSha' in c))).toBe(true)
+  })
+})
+
+describe('a base that moved on none of the branch’s files (#1210)', () => {
+  const merge = async () => ({ head: 'merged-1' })
+
+  it('is built on the merge commit and carries the review: one merge-base route, no second review', async () => {
+    const { result, started, reviewSaw, events } = await walk([moved('base-1', [])], merge)
+
+    const steps = started.map((s) => s.step)
+    expect(steps.slice(steps.indexOf('merge'))).toEqual(['merge', 'build', 'proposed', 'merge'])
+    expect(steps.filter((s) => s === 'review')).toHaveLength(1)
+    expect(reviewSaw).toHaveLength(1)
+    // The skip is an absence: nothing started or ended for it after the merge.
+    expect(events.filter((e) => e.type === 'StepStarted' && e.data.step === 'review')).toHaveLength(1)
+    expect(result.routes.filter((r) => r.to === 'build')).toHaveLength(1)
+    expect(result.end).toMatchObject({ _tag: 'Landed' })
+  })
+
+  it('reviews again when the earlier review read the diff clipped', async () => {
+    const clipped = { ...PASSED, clipped: { shown: 1, total: 2 } } as unknown as ActionResult
+    const { reviewSaw } = await walk([moved('base-1', [])], merge, [], undefined, [clipped])
+    expect(reviewSaw).toHaveLength(2)
+  })
+
+  it('reviews the next head in full after a red build and a fix round', async () => {
+    const red: ActionResult = { verdict: 'failed', evidence: 'red', findings: [], because: 'red' }
+    const { reviewSaw, started } = await walk([moved('base-1', [])], merge, [PASSED, red])
+    expect(started.filter((s) => s.step === 'review')).toHaveLength(2)
+    expect(reviewSaw).toHaveLength(2)
+    expect(reviewSaw[1]?.reviewedSha).toBeUndefined()
   })
 })

@@ -1,11 +1,11 @@
 import { reachAccountLimit } from '@lingtai/conductor'
-import { RuntimeId, accountStream } from '@lingtai/domain'
+import { Account, accountStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { liftAccount } from '../src/account-lift.ts'
-import { RUNTIME_NAMES } from '../src/commands.ts'
+import { ACCOUNT_NAMES } from '../src/commands.ts'
 
 const lines = () => {
   const out: string[] = []
@@ -13,8 +13,8 @@ const lines = () => {
 }
 
 describe('lingtai account lift', () => {
-  it('names the same runtimes as RuntimeId', () => {
-    expect([...RUNTIME_NAMES]).toEqual(RuntimeId.options)
+  it('names the same accounts as Account', () => {
+    expect([...ACCOUNT_NAMES]).toEqual(Account.options)
   })
 
   it('exits 2 and names the runtimes with no runtime, or an unknown one', async () => {
@@ -22,7 +22,7 @@ describe('lingtai account lift', () => {
       const store = createMemoryEventStore()
       const { out, log } = lines()
       expect(await Effect.runPromise(liftAccount(given, 'human:a', { store, log }))).toBe(2)
-      expect(out.join('\n')).toContain('claude-code, codex')
+      expect(out.join('\n')).toContain('claude-code, codex, github')
     }
   })
 
@@ -32,6 +32,20 @@ describe('lingtai account lift', () => {
     expect(await Effect.runPromise(liftAccount('claude-code', 'human:a', { store, log }))).toBe(0)
     expect(out).toEqual(['claude-code is not at its usage limit — nothing to lift'])
     expect(await store.read(accountStream('claude-code'))).toHaveLength(0)
+  })
+
+  it('lifts a standing github limit, and refuses gitlab by name', async () => {
+    const store = createMemoryEventStore()
+    await Effect.runPromise(
+      reachAccountLimit(store, 'github', { until: '2026-01-01T05:00:00.000Z', untilFrom: 'backoff', said: '' }),
+    )
+    const { out, log } = lines()
+    expect(await Effect.runPromise(liftAccount('github', 'human:a', { store, log }))).toBe(0)
+    expect(out[0]).toContain("github's rate limit lifted by human:a")
+    expect(await store.read(accountStream('github'))).toHaveLength(2)
+    const refused = lines()
+    expect(await Effect.runPromise(liftAccount('gitlab', 'human:a', { store, log: refused.log }))).toBe(2)
+    expect(refused.out.join('\n')).toContain('unknown account "gitlab"')
   })
 
   it('lifts a standing limit', async () => {

@@ -11,7 +11,8 @@ import {
   type BlockDiagnosis,
   type Lock,
   type ProjectState,
-  type RuntimeId,
+  type Account,
+  runtimeAccounts,
   type WaitId,
   whenLabel,
   agentBranchOf,
@@ -539,7 +540,7 @@ export function emptyNote(
   locksInScope: LockMap = new Map(),
   everyProjectPaused = false,
   now: Date = new Date(),
-  uses: ReadonlyMap<string, readonly RuntimeId[]> = new Map(),
+  uses: ReadonlyMap<string, readonly Account[]> = new Map(),
 ): string {
   if (column === 'running' && paused) return 'Paused until the setup is fixed — nothing will start.'
   const ceiling = column === 'running' ? anyCeilingToday(locksInScope, now) : null
@@ -565,17 +566,17 @@ export function emptyNote(
   return project === undefined ? 'Nothing here yet.' : `Nothing here for ${project}.`
 }
 
-/** Each runtime whose limit still holds a project in scope → the names it holds, alphabetical (#1010). */
-function accountWaits(locks: LockMap, now: Date): Map<RuntimeId, string[]> {
-  const waits = new Map<RuntimeId, string[]>()
+/** Each account whose limit still holds a project in scope → the names it holds, alphabetical (#1010). */
+function accountWaits(locks: LockMap, now: Date): Map<Account, string[]> {
+  const waits = new Map<Account, string[]>()
   for (const [name, ls] of [...locks].sort(([a], [b]) => (a < b ? -1 : 1))) {
-    for (const l of accountsHolding(ls, now)) waits.set(l.runtime, [...(waits.get(l.runtime) ?? []), name])
+    for (const l of accountsHolding(ls, now)) waits.set(l.account, [...(waits.get(l.account) ?? []), name])
   }
   return new Map([...waits].sort(([a], [b]) => (a < b ? -1 : 1)))
 }
 
 /** The projects that use some runtime and are held by nothing at `now`. */
-function takingWork(locks: LockMap, uses: ReadonlyMap<string, readonly RuntimeId[]>, now: Date): string[] {
+function takingWork(locks: LockMap, uses: ReadonlyMap<string, readonly Account[]>, now: Date): string[] {
   return [...uses.keys()]
     .filter((n) => !isPaused(locks.get(n)) && ceilingToday(locks.get(n), now) === null)
     .filter((n) => accountsHolding(locks.get(n), now).length === 0)
@@ -583,20 +584,20 @@ function takingWork(locks: LockMap, uses: ReadonlyMap<string, readonly RuntimeId
 }
 
 function accountNote(
-  waits: Map<RuntimeId, string[]>,
+  waits: Map<Account, string[]>,
   pausedInScope: readonly string[],
   project: string | undefined,
-  uses: ReadonlyMap<string, readonly RuntimeId[]>,
+  uses: ReadonlyMap<string, readonly Account[]>,
   locks: LockMap,
   now: Date,
 ): string {
-  const until = (runtime: RuntimeId): string => {
-    const l = [...locks.values()].flatMap((ls) => accountsHolding(ls, now)).find((x) => x.runtime === runtime)
+  const until = (account: Account): string => {
+    const l = [...locks.values()].flatMap((ls) => accountsHolding(ls, now)).find((x) => x.account === account)
     return l === undefined ? '' : whenLabel(l.until, now)
   }
   const clauses = [...waits].map(
-    ([runtime, names]) =>
-      `${joinNames(names)} ${names.length === 1 ? 'waits' : 'wait'} for ${runtime} (limit until ${until(runtime)})`,
+    ([account, names]) =>
+      `${joinNames(names)} ${names.length === 1 ? 'waits' : 'wait'} for ${account} (limit until ${until(account)})`,
   )
   if (pausedInScope.length > 0) {
     clauses.push(`${joinNames(pausedInScope)} ${pausedInScope.length === 1 ? 'is' : 'are'} paused`)
@@ -605,9 +606,10 @@ function accountNote(
     const working = takingWork(locks, uses, now).filter((n) => uses.has(n))
     const full = [...uses].filter(([n]) => working.includes(n))
     if (full.length > 0) {
-      const runtimes = [...new Set(full.flatMap(([, r]) => r))]
+      const runtimes = runtimeAccounts([...new Set(full.flatMap(([, r]) => r))])
+      const on = runtimes.length === 0 ? '' : ` on ${joinNames(runtimes)}`
       clauses.push(
-        `${joinNames(working)} ${working.length === 1 ? 'runs' : 'run'} on ${joinNames(runtimes)} and ${working.length === 1 ? 'is' : 'are'} taking work`,
+        `${joinNames(working)} ${working.length === 1 ? 'runs' : 'run'}${on} and ${working.length === 1 ? 'is' : 'are'} taking work`,
       )
     }
   }
@@ -622,7 +624,7 @@ export function emptyHeld(
   locksInScope: LockMap,
   everyProjectPaused: boolean,
   now: Date = new Date(),
-  uses: ReadonlyMap<string, readonly RuntimeId[]> = new Map(),
+  uses: ReadonlyMap<string, readonly Account[]> = new Map(),
 ): boolean {
   if (column !== 'running') return false
   if (paused) return true

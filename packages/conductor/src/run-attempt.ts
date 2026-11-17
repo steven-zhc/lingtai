@@ -102,7 +102,9 @@ import { FAILED } from '@lingtai/actions/spans'
  */
 import {
   decidingAction,
+  changedNothing,
   decideRoute,
+  lastCommitEvidence,
   nextOf,
   offerFor,
   routeNext,
@@ -782,7 +784,7 @@ export const NOT_BUILT_YET: StepBodies = {
 export interface Ceilings {
   /**
    * How many times this pass may go back into the spine — a fix round, and what
-   * `attemptCeiling` prices at *up to `rounds + 1` agent runs*
+   * `attemptCeiling` prices, with the conflict rounds and the reruns, at *up to `2 × rounds + 1 + TRANSIENT_RETRIES_LIMIT` agent runs* (0108 §8)
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
    *
    * **This is what makes the loop bounded**, and the bound is structural rather
@@ -989,6 +991,9 @@ export interface AttemptOptions {
      * this one visit's.
      */
     readonly roundsSpent?: number
+    /** The base merges and conflict rounds the attempt's stream already holds: per attempt, not per pass (0108 §8, #1200). */
+    readonly baseMergesSpent?: number
+    readonly conflictRoundsSpent?: number
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
     readonly landedOnBase?: {
       readonly paths: readonly string[]
@@ -1337,7 +1342,7 @@ export function outcomeOf(end: AttemptEnd): TerminalOutcome {
  * **It terminates**, and structurally rather than by a guard: the only edges
  * that re-enter the spine are the ones `offerFor` offers, it offers none once
  * `roundsSpent` reaches `ceilings.rounds`, and a destination it did not offer
- * is refused. So the walk is at most `rounds + 1` laps long.
+ * is refused. So the walk is at most `rounds + 1` laps long, conflict rounds and base merges (counted per attempt) apart.
  */
 export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<AttemptOver> {
   return Effect.gen(function* () {
@@ -1352,13 +1357,13 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     let landed: string | null = null
     let roundsSpent = options.from?.roundsSpent ?? 0
     /**
-     * The base merges the system made this pass (#593). **Not seeded from
-     * `options.from`**: the bound is per pass, and a continuation is a new pass —
-     * which is what makes `Approve` over a spent `base-moved` mean *keep merging*.
+     * The base merges the system made this attempt (#593). Seeded from `options.from`:
+     * the bound is per attempt (0108 §8), so an `Approve` over a spent `base-moved`
+     * reaches a person again at the next move, and `Requeue` starts over.
      */
-    let baseMergesSpent = 0
-    /** The merge-conflict fix rounds this pass (#653), per pass for the same reason. */
-    let conflictRoundsSpent = 0
+    let baseMergesSpent = options.from?.baseMergesSpent ?? 0
+    /** The merge-conflict fix rounds this attempt (#653), per attempt for the same reason. */
+    let conflictRoundsSpent = options.from?.conflictRoundsSpent ?? 0
     const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
     // A restart is automatic fix routing too, and a bigger kind than a round: the lap
     // that spends a human grant ends at a person rather than at a restart nobody
@@ -1410,6 +1415,14 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      * since. Never shared between passes.
      */
     let reviewedSha: string | null = null
+    /**
+     * The merge commit a disjoint base move (#1210) carried the last review to: a
+     * review that read the head whole stands for a tree the base's unrelated
+     * commits were merged into, so the walk goes past `review` without visiting
+     * it. Not a visit and not an outcome — the absence is the record. Never
+     * shared between passes.
+     */
+    let reviewCarriedTo: string | null = null
     /**
      * The head a person approved in this continuation, until the first base merge
      * has used it (#671): that merge's review is of what came after the approval.
@@ -1483,6 +1496,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       }
       mergedOnto = baseSha
       reviewedSha = null
+      reviewCarriedTo = null
       approvedAt = null
       conflictMerge = {
         baseSha,
@@ -1522,7 +1536,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       Effect.gen(function* () {
         const offer = offerFor(
           proposal,
-          { rounds: roundLimit, restarts: restartLimit },
+          { rounds: roundLimit, restarts: restartLimit, conflictRounds: ceilings.rounds },
           {
             rounds: roundsSpent,
             restarts: ceilings.restartsSpent,
@@ -1570,7 +1584,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             return false
           }
         }
-        const reply = yield* replyFor(offer, arrived, options.judge)
+        // #1199: what a fixer declined is the round's own findings and its own message.
+        const shown =
+          offer.proposal._tag === 'FixerDisagrees'
+            ? { findings: recheck, evidence: offer.proposal.said ?? '' }
+            : arrived
+        const reply = yield* replyFor(offer, shown, options.judge)
         if ('neverStarted' in reply) {
           // 0031 §3, at the third depth the same wall is met at: the judge
           // itself is an agent, and an account-wide wall is the conductor's to
@@ -1615,6 +1634,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         }
         // Read before `record` moves `onSha` to the merge commit (#671).
         const approvedHeadStands = approvedAt !== null && onSha === approvedAt
+        const reviewedHeadStands = reviewedSha !== null && reviewedSha === onSha
         record({
           step: 'proposed',
           ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
@@ -1663,25 +1683,42 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             conflictMerge = null
             // Only a person's approval of the head the merge started from keeps the
             // earlier read; any other base move is a full review.
-            reviewedSha = approvedHeadStands ? approvedAt : null
+            // **A move on none of the branch's files carries the review** (#1210): `build`
+            // runs on the merge commit and `review` is not visited. `null` paths are an
+            // unknown overlap, which is a full review. Never a delta: after a merge
+            // `reviewedSha...HEAD` is the base's commits.
+            reviewCarriedTo = null
+            const disjoint =
+              offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.paths.length === 0
+            if (disjoint && (reviewedHeadStands || approvedHeadStands)) {
+              reviewCarriedTo = merged.head
+              reviewedSha = null
+              landedOnBase = null
+            } else {
+              reviewedSha = approvedHeadStands ? approvedAt : null
+              landedOnBase =
+                offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
+                  ? { paths: offer.proposal.paths, fromSha: offer.proposal.fromSha, toSha: next.toSha }
+                  : null
+            }
             approvedAt = null
-            landedOnBase =
-              offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
-                ? { paths: offer.proposal.paths, fromSha: offer.proposal.fromSha, toSha: next.toSha }
-                : null
             lapStart = steps.length
             at = 'build'
             return true
           case 'FixRound':
             // The same bookkeeping `take` always did: the lap's own findings
             // become the next lap's `recheck` (0038 §2), and a round is spent.
-            recheck = findingsIn(steps.slice(lapStart))
+            // Not for a fixer that declined (#1199): its lap is the `implement`
+            // visit alone, which raises nothing, and the round a judge buys must
+            // still hold the re-review to the findings it disputed.
+            if (offer.proposal._tag !== 'FixerDisagrees') recheck = findingsIn(steps.slice(lapStart))
             // Dropped once a review has had it; a build that failed first never
             // reached the review, which is still owed the section.
             if (steps.slice(lapStart).some((v) => v.step === 'review')) landedOnBase = null
             lapStart = steps.length
             // The merge standing for the last round is not this round's (#1120).
             conflictMerge = null
+            reviewCarriedTo = null
             if (conflictAnswer !== null) {
               if ('failed' in conflictAnswer) {
                 stopped = reported
@@ -1721,6 +1758,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     let grantedConflictMerged = false
     let conflictEvidenceRead = false
     while (at !== null && at !== 'end') {
+      // A review carried across a disjoint merge (#1210) is neither visited nor recorded.
+      if (at === 'review' && reviewCarriedTo !== null && reviewCarriedTo === onSha) {
+        reviewCarriedTo = null
+        at = nextStep('review')
+        continue
+      }
       const spec = SPEC[at]
       // **A resumed review is owed the conflict evidence** (#1120), rebuilt from the committed
       // merge. Read on the first visit past `admit` and `prepared`: until `admit`'s cut has
@@ -2154,7 +2197,35 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
             : {}),
         }
       : null
-  return { why: route.why, asked, printed }
+  // A round bought on an `implement` that committed nothing: the agent's own last message.
+  const said =
+    arrived !== undefined &&
+    arrived.step === 'implement' &&
+    step === 'implement' &&
+    asked === null &&
+    arrived.outcome !== undefined &&
+    arrived.outcome.round === 0 &&
+    changedNothing(arrived.outcome)
+      ? lastCommitEvidence(arrived.outcome)
+      : null
+  // #1199: a later round the fixer declined, which a judge overruled.
+  const objection =
+    arrived !== undefined &&
+    arrived.step === 'implement' &&
+    step === 'implement' &&
+    asked === null &&
+    arrived.outcome !== undefined &&
+    arrived.outcome.round > 0 &&
+    changedNothing(arrived.outcome)
+      ? lastCommitEvidence(arrived.outcome)
+      : null
+  return {
+    why: route.why,
+    asked,
+    printed,
+    ...(said === null ? {} : { said }),
+    ...(objection === null ? {} : { objection }),
+  }
 }
 
 /**

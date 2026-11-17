@@ -106,7 +106,7 @@ describe('a pass with one project locked', () => {
         type: 'AccountLimitReached',
         actor: 'conductor',
         data: {
-          runtime: 'claude-code',
+          account: 'claude-code',
           until: new Date(Date.now() + 3_600_000).toISOString(),
           untilFrom: 'message',
           said: 'limit',

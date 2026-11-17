@@ -98,7 +98,7 @@ describe('SandboxRefused offers only a person', () => {
       said: null,
       output: '',
     })
-    const offer = offerFor(proposal, { rounds: 3, restarts: 1 }, { rounds: 0, restarts: 0 })
+    const offer = offerFor(proposal, { rounds: 3, restarts: 1, conflictRounds: 3 }, { rounds: 0, restarts: 0 })
     expect(offer.available.map((c) => c.id)).toEqual(['hand-to-person'])
     expect(offer.unavailable).toEqual([])
     expect(fromOf(StoredProposal.parse(proposal))).toBe('build')

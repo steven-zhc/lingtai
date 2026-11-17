@@ -157,7 +157,13 @@ export function replyFor(
 
     const when = whenOf(offer.proposal)
     const offering = offer.available.map((c) => destinationOf(c, offer.proposal))
-    const on: Judging = { when, offering, findings: arrived.findings, evidence: arrived.evidence }
+    const on: Judging = {
+      when,
+      offering,
+      findings: arrived.findings,
+      evidence: arrived.evidence,
+      ...(offer.proposal._tag === 'NothingProduced' ? { said: offer.proposal.said } : {}),
+    }
     const answer = judge === undefined ? { noJudge: true as const } : yield* judge(on)
 
     if ('neverStarted' in answer) return { neverStarted: answer.neverStarted }
