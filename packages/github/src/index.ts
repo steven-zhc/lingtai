@@ -42,6 +42,8 @@ export {
   type GitHubClient,
   type Issue,
   type Label,
+  type RateLimitAnswer,
+  type RateLimitedPort,
   type LinkedIssue,
   PermissionDenied,
 } from './client.ts'

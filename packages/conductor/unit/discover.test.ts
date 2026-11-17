@@ -410,6 +410,9 @@ function fakeClient(issues: Issue[], project = 'esctest'): GitHubClient {
     listBlockedBy: async () => {
       throw new Error('not used')
     },
+    withRateLimited: () => {
+      throw new Error('not used')
+    },
     comment: async () => {
       throw new Error('no writes in this test')
     },

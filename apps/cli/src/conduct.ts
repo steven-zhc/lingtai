@@ -289,7 +289,7 @@ export function conductWork(
             auth: githubClientAuth(),
             owner,
             repo: name,
-            onRateLimited: githubLimitPort(store, options.log),
+            onRateLimited: githubLimitPort(store, options.log, { wait: false }),
           }),
         )
         where.ref = project.base ?? (yield* Effect.promise(() => client.defaultBranch()))
@@ -301,19 +301,24 @@ export function conductWork(
         // log already has GitHub-numbered work items) is durable: a throw after
         // `looked()` is not recorded as a `ProjectRefused` (see below).
         const recipe = resolved.recipe
-        const tickets = yield* world.ticketsFor(project, recipe, client).pipe(Effect.orDie)
+        // **The pass's client, not the look's** (0126 §2): its calls wait out the lock and are made
+        // again. `ticketsFor` returns this very object for a `github` source and `ticketedClientOf`
+        // overwrites the ticket verbs unless `tickets === client`, so handing the look's `client`
+        // here would send `comment`, `setLabels` and `closeIssue` back to the one that fails.
+        const passClient = client.withRateLimited(githubLimitPort(store, options.log, { wait: true }))
+        const tickets = yield* world.ticketsFor(project, recipe, passClient).pipe(Effect.orDie)
         // Looked at, now — not when the run below returns, which can be an hour
         // away, all of it with a refusal on record for a project being worked.
         yield* where.looked
 
         common = {
           project,
-          client: ticketedClientOf(client, tickets),
+          client: ticketedClientOf(passClient, tickets),
           // **The runtime the recipe named** (`#313`).
           runtime: createRuntime(resolved.recipe.runtime.agent),
           // A function, not a snapshot: an installation token lasts an hour and a
           // run's wall limit is two.
-          token: () => client.token(),
+          token: () => passClient.token(),
           hookBinary: options.hookBinary,
           sandbox: processSandbox,
           prompt: options.prompt,
@@ -755,7 +760,7 @@ function anyWantsMany(
             auth: githubClientAuth(),
             owner,
             repo: name,
-            onRateLimited: githubLimitPort(eventStore, log),
+            onRateLimited: githubLimitPort(eventStore, log, { wait: false }),
           }),
         )
         const base = project.base ?? (yield* Effect.promise(() => client.defaultBranch()))

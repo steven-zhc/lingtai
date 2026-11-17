@@ -399,7 +399,7 @@ export function run(
             auth: githubClientAuth(),
             owner,
             repo: options.project,
-            onRateLimited: githubLimitPort(options.store ?? eventStore, log),
+            onRateLimited: githubLimitPort(options.store ?? eventStore, log, { wait: false }),
           }),
         // `NotInstalledError` says what to do about it, and every other failure
         // here is the App or the network. Either way a person reads one line.
@@ -520,7 +520,10 @@ export function run(
       } else {
         // Bound here, not read off the outer `let`: a closure below must not
         // rely on a narrowing a `let` does not carry into it.
-        const owned = client
+        // The pass's client (0126 §2): it waits out the lock. Passed to `ticketsFor` too —
+        // `ticketedClientOf` overwrites the ticket verbs unless `tickets === client` — and the
+        // recipe read above keeps the look's `client`, which fails on the first rate limit.
+        const owned = client.withRateLimited(githubLimitPort(options.store ?? eventStore, log, { wait: true }))
 
         for (const line of statedBeforeDispatch(resolved.recipe)) log(line)
 
