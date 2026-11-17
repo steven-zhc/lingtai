@@ -23,7 +23,7 @@ export function failingTestsOf(output: string): string[] | null {
     const label = /^(?:\|[^|]*\||[^\s/.|]+)\s+(\S.*)$/.exec(rest)
     if (label !== null) rest = (label[1] as string).trim()
     // A suite that failed to load is printed `<file> [ <file> ]`: the file alone is the entry.
-    const suite = /^(\S+) \[ .* \]$/.exec(rest)
+    const suite = /^(.+) \[ \1 \]$/.exec(rest)
     if (suite !== null) rest = suite[1] as string
     if (rest !== '' && !entries.includes(rest)) entries.push(rest)
   }

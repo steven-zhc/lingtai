@@ -36,4 +36,9 @@ describe('failingTestsOf', () => {
       'load.test.ts',
     ])
   })
+  it('names a suite whose path has spaces as the file alone', () => {
+    expect(
+      failingTestsOf(' FAIL  |unit| load file.test.ts [ load file.test.ts ]\n Test Files  1 failed (1)\n'),
+    ).toEqual(['load file.test.ts'])
+  })
 })
