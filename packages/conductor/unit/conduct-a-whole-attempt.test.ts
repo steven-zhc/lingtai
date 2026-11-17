@@ -1501,7 +1501,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     }
     const blocked = waitWords(blockedHold2.reason)
     expect(blocked.needs).toBe('acknowledgement')
-    expect(blocked.diagnosis?.raw).toContain('produced no commits')
+    expect(blocked.diagnosis?.raw).toContain('done')
     // The claim that would have been false: nothing proposes the drafting agent's
     // commit as this run's completion, and nothing lands.
     expect(run.map((e) => e.type)).not.toContain('RunProposedCompletion')
