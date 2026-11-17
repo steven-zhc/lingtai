@@ -693,16 +693,17 @@
     {
       "name": "account",
       "group": "daemon",
-      "task": "lift a runtime's usage limit",
+      "task": "lift an account's limit",
       "effect": "changes",
       "usage": [
-        "lingtai account lift <runtime> [--no-color]",
-        "  Says a runtime's account is no longer at its usage limit. Projects that",
-        "  use it take work again at the next look. Appends nothing when no limit",
-        "  stands. Runtimes: claude-code, codex"
+        "lingtai account lift <account> [--no-color]",
+        "  Says an account — a runtime, or github — is no longer at its limit. Projects",
+        "  that use it take work again at the next look. Appends nothing when no limit",
+        "  stands. Accounts: claude-code, codex, github"
       ],
       "examples": [
-        "lingtai account lift claude-code"
+        "lingtai account lift claude-code",
+        "lingtai account lift github"
       ],
       "flags": [
         "--no-color"

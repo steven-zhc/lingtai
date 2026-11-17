@@ -33,7 +33,7 @@ async function setup(options: { recipe?: () => Promise<never>; holder?: boolean;
     {
       type: 'AccountLimitReached',
       actor: 'conductor',
-      data: { runtime: 'claude-code', until: until.toISOString(), untilFrom: 'message', said: 'limit' },
+      data: { account: 'claude-code', until: until.toISOString(), untilFrom: 'message', said: 'limit' },
     },
   ])
   const clock = { now: before }
@@ -52,13 +52,13 @@ const run = <A>(e: Effect.Effect<A, Error>) => Effect.runPromise(e)
 describe('the account check in the guard', () => {
   it('answers an account lock before until, lifts at until, and appends nothing the second time', async () => {
     const g = await setup()
-    expect(await run(g.guard.locksFor('p'))).toMatchObject([{ kind: 'account', runtime: 'claude-code' }])
+    expect(await run(g.guard.locksFor('p'))).toMatchObject([{ kind: 'account', account: 'claude-code' }])
     expect(await g.types()).toEqual(['AccountLimitReached'])
 
     g.clock.now = until
     expect(await run(g.guard.locksFor('p'))).toEqual([])
     expect(await g.types()).toEqual(['AccountLimitReached', 'AccountLimitLifted'])
-    expect((await g.store.read(accountStream('claude-code')))[1]!.data).toEqual({ runtime: 'claude-code' })
+    expect((await g.store.read(accountStream('claude-code')))[1]!.data).toEqual({ account: 'claude-code' })
 
     expect(await run(g.guard.locksFor('p'))).toEqual([])
     expect(await g.types()).toEqual(['AccountLimitReached', 'AccountLimitLifted'])
@@ -91,7 +91,7 @@ describe('the account check in the guard', () => {
   it('a guard that is not the holder appends nothing and still answers the lock after until', async () => {
     const g = await setup({ holder: false })
     g.clock.now = until
-    expect(await run(g.guard.locksFor('p'))).toMatchObject([{ kind: 'account', runtime: 'claude-code' }])
+    expect(await run(g.guard.locksFor('p'))).toMatchObject([{ kind: 'account', account: 'claude-code' }])
     expect(await g.types()).toEqual(['AccountLimitReached'])
   })
 })
