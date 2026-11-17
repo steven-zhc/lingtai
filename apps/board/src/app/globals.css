@@ -3220,6 +3220,26 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .sbnotes { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 12px; }
 .sbnotes .sbbox { background: var(--ground); border: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); font-size: 12.5px; color: var(--ink-2); }
 
+/* The recipe page's sandbox card (#1197). */
+.also .src { font: 11px var(--mono); white-space: nowrap; }
+.sbsub { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 1px 0; }
+.sbsub-l { font: 11.5px var(--sans); color: var(--muted); font-style: normal; }
+.sbsub .chip-code { display: inline-block; max-width: 100%; margin: 0 4px 5px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.sbc-own { background: var(--accent-soft); color: var(--accent-ink); }
+.sbc-short { border-style: dashed; }
+.sbnone { font-size: 12.5px; color: var(--muted); }
+.sbnone a { margin-left: 6px; }
+.sbsub-note { margin: 0; font-size: 12.5px; }
+.sbpill { font: 600 12px var(--sans); padding: 1px 9px; border-radius: 9px; }
+.sbpill.on { color: var(--pass); background: var(--pass-soft); }
+.sbpill.on::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--pass); vertical-align: middle; }
+.sbpill.off { color: var(--muted); background: var(--ground); }
+.sbsent { font-size: 13px; color: var(--ink-2); }
+.sblegend { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 16px; margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--ground); font: 11.5px var(--mono); }
+.sblegend-r { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; min-width: 0; }
+.sblegend-n { color: var(--accent-ink); }
+.sblegend-m { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* /report (#689). Everything is prefixed `rp-`; series wear --s1..--s4 and
    --muted, never the board's state hues. */
 .rp { gap: 1rem; }
@@ -3445,7 +3465,7 @@ dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
 .step-mono { font: 13px var(--mono); }
 .step-q { color: var(--muted); }
 .say { margin: 0; padding: 8px 0 6px; border-top: 1px solid var(--rule); font-size: 12px; line-height: 1.55; color: var(--ink-2); }
-.also { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--rule); }
+.also { display: grid; grid-template-columns: 118px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--rule); }
 .ak { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .src { font: 10.5px var(--mono); color: var(--muted); }
 @media (max-width: 900px) { .s2 { grid-template-columns: 1fr; } .s2.s2-even { grid-template-columns: 1fr; } }

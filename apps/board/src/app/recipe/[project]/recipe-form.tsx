@@ -39,14 +39,18 @@ export function RecipeForm({
   } satisfies SaveRecipeState)
   // Controlled: React resets an uncontrolled field when an action completes, which would drop
   // edits typed while Save was pending and the draft a refusal should keep.
-  const [body, setBody] = useState(() =>
-    allow === undefined ? initial : (withAllowedHost(initial, allow.host) ?? initial),
-  )
+  const first = allow === undefined ? null : withAllowedHost(initial, allow.host)
+  const [body, setBody] = useState(() => (first?.kind === 'added' ? first.text : initial))
   const bodyNow = useRef(body)
   bodyNow.current = body
   // What was pushed into a live editor, and whether a host was added that is not saved yet.
   const [push, setPush] = useState<{ rev: number; text: string } | null>(null)
-  const [added, setAdded] = useState(allow !== undefined && body !== initial)
+  const [said, setSaid] = useState<{ host: string; kind: 'added' | 'listed' } | null>(
+    allow !== undefined && first !== null ? { host: allow.host, kind: first.kind } : null,
+  )
+  const [mark, setMark] = useState<{ rev: number; lines: readonly number[] } | null>(
+    allow !== undefined && first !== null ? { rev: allow.nonce, lines: first.lines } : null,
+  )
   const applied = useRef(allow?.nonce)
   useEffect(() => {
     if (allow === undefined || allow.nonce === applied.current) return
@@ -54,10 +58,19 @@ export function RecipeForm({
     // On what is typed now, never on the disk text: earlier unsaved edits and earlier hosts stay.
     const next = withAllowedHost(bodyNow.current, allow.host)
     if (next === null) return
-    setBody(next)
-    setPush({ rev: allow.nonce, text: next })
-    setAdded(true)
+    if (next.kind === 'added') {
+      setBody(next.text)
+      setPush({ rev: allow.nonce, text: next.text })
+    }
+    setSaid({ host: allow.host, kind: next.kind })
+    setMark({ rev: allow.nonce, lines: next.lines })
   }, [allow])
+  // A saved draft is no longer *not saved*, and its marks are done.
+  useEffect(() => {
+    if (!state.ok) return
+    setSaid(null)
+    setMark((m) => (m === null ? null : { rev: m.rev + 0.5, lines: [] }))
+  }, [state.ok])
   // The textarea is the loading state and the fallback; the editor takes over once it is up.
   const [editorReady, setEditorReady] = useState(false)
   const fallback = useRef<HTMLTextAreaElement>(null)
@@ -78,8 +91,10 @@ export function RecipeForm({
       <input type="hidden" name="loaded" value={JSON.stringify(state.loaded)} />
       <input type="hidden" name="text" value={body} />
       <FileBar path={path}>
-        {added && state.message === '' ? (
-          <span className="rfile-said">a host was added for you — not saved</span>
+        {said !== null && state.message === '' ? (
+          <span className="rfile-said">
+            {said.kind === 'added' ? `${said.host} was added for you — not saved` : `${said.host} is already allowed`}
+          </span>
         ) : null}
         <button type="submit" className="rfile-edit" disabled={pending}>
           Validate and save
@@ -113,6 +128,7 @@ export function RecipeForm({
       <YamlEditor
         initial={body}
         push={push}
+        mark={mark}
         handoff={handoff}
         onChange={setBody}
         onReady={() => setEditorReady(true)}

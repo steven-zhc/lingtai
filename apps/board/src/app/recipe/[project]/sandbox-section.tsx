@@ -1,8 +1,9 @@
 import type { BuiltInSandbox } from '@lingtai/project'
+import { WORKTREE_PLACEHOLDER } from '@lingtai/sandbox/policy'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
-import { RECENT_DAYS } from '@/lib/sandbox-view'
+import { chipsOf, legendOf, vendorGroupsOf, type Chip, type PathRoots } from '@/lib/sandbox-view'
 
 /** What the recipe says in its `sandbox:` block, as the resolved recipe holds it; undefined where it has none. */
 export interface OwnSandbox {
@@ -13,92 +14,227 @@ export interface OwnSandbox {
   readonly deny: readonly string[]
 }
 
-function Entries({ title, own, builtIn }: { title: string; own: readonly string[]; builtIn: readonly string[] }) {
+/** A row's source column: the recipe's file where it has entries for the row, else the built-ins. */
+export function sourceOfRow(own: readonly string[]): '← recipe.yml' | '← built in' {
+  return own.length > 0 ? '← recipe.yml' : '← built in'
+}
+
+const WORKTREE_MEANING = "each attempt's own, under <lingtai home>/worktrees/<project>/"
+
+/** The recipe's own entries, drawn as written: they are the YAML's own spelling. */
+function OwnChips({ entries }: { entries: readonly string[] }) {
   return (
     <>
-      <p className="sbhead">{title}</p>
-      <ul className="mono">
-        {own.map((e) => (
-          <li key={`own:${e}`}>
-            {e} <span className="empty">this recipe</span>
-          </li>
-        ))}
-        {builtIn.map((e) => (
-          <li key={`built:${e}`} className="empty">
-            {e} <span>built in</span>
-          </li>
-        ))}
-        {own.length + builtIn.length === 0 ? <li className="empty">none</li> : null}
-      </ul>
+      {entries.map((e) => (
+        <span key={e} className="chip-code sbc-own" title={e}>
+          {e}
+        </span>
+      ))}
     </>
   )
 }
 
+function BuiltInChip({ chip }: { chip: Chip }) {
+  const short = chip.token !== null || chip.label === WORKTREE_PLACEHOLDER
+  return (
+    <span className={short ? 'chip-code sbc-short' : 'chip-code'} title={chip.fulls.join('\n')}>
+      {chip.label}
+    </span>
+  )
+}
+
+function Sub({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="sbsub">
+      <span className="sbsub-l">{label}</span>
+      <span>{children}</span>
+    </div>
+  )
+}
+
+function None({ href }: { href: string }) {
+  return (
+    <span className="sbnone">
+      none <Link href={href}>Add one</Link>
+    </span>
+  )
+}
+
+function Row({ name, source, children }: { name: string; source: string; children: ReactNode }) {
+  return (
+    <div className="also">
+      <span className="ak">{name}</span>
+      <div>{children}</div>
+      <small className="src">{source}</small>
+    </div>
+  )
+}
+
+/** A row of paths: this recipe's entries first, then the built-ins as chips. */
+function PathsRow({
+  name,
+  own,
+  chips,
+  unknown,
+  editHref,
+  showOwn,
+}: {
+  name: string
+  own: readonly string[]
+  chips: readonly Chip[] | null
+  unknown: string | null
+  editHref: string
+  showOwn: boolean
+}) {
+  return (
+    <Row name={name} source={sourceOfRow(own)}>
+      {showOwn ? (
+        <Sub label="this recipe">{own.length === 0 ? <None href={editHref} /> : <OwnChips entries={own} />}</Sub>
+      ) : null}
+      {chips === null ? (
+        <p className="fail sbsub-note">{unknown}</p>
+      ) : (
+        <Sub label="built in">
+          {chips.map((c) => (
+            <BuiltInChip key={c.label} chip={c} />
+          ))}
+        </Sub>
+      )}
+    </Row>
+  )
+}
+
 /**
- * The recipe page's sandbox section (#1162): *configured now* — the recipe's own `network.allow`, `write` and `deny`
- * beside the built-ins, which are greyed and carry no remove, since they are not in the YAML — and *recently blocked*
- * from every task of the project. The task page's Sandbox tab says what a run *ran under*; this says what the recipe
- * says today. `blocked` is a slot so this stays pure: the page hands it the loaded, Suspense-wrapped part.
+ * The recipe page's sandbox card (#1197): what the recipe configures, as rows beside *Also set*, and nothing a run met.
+ * The task page's Sandbox tab says what a run ran under; a refused connection is acted on from there.
  */
 export function SandboxSection({
   project,
   stamp,
+  at,
+  roots,
   own,
   recipeError,
   builtIn,
-  blocked,
 }: {
   project: string
   /** The render's stamp for the editor link (`?r=`): what makes a second click a new command. Absent: no stamp. */
   stamp?: number
+  /** The recipe's path, as the steps card names it. */
+  at: string
+  roots: PathRoots
   /** Undefined: no `sandbox:` block (off by choice), or the recipe could not be read (`recipeError`). */
   own: OwnSandbox | undefined
   recipeError: boolean
   builtIn: BuiltInSandbox
-  blocked: ReactNode
 }) {
   const editHref = `/recipe/${encodeURIComponent(project)}?edit=1${stamp === undefined ? '' : `&r=${stamp}`}#sandbox`
-  const state = recipeError
-    ? 'the recipe could not be read, so what it configures is unknown'
-    : own === undefined
-      ? 'off — no sandbox block'
-      : own.enabled
-        ? `on${own.required ? ', required' : ''}`
-        : 'off — enabled: false'
   const paths = builtIn.paths
+  const unknown = `the built-in paths could not be read${builtIn.pathsWhy === null ? '' : ` (${builtIn.pathsWhy})`}`
+  const writable = paths === null ? null : chipsOf(paths.writable, roots)
+  const denyRead = paths === null ? null : chipsOf(paths.denyRead, roots)
+  const denyWrite = paths === null ? null : chipsOf(paths.denyWrite, roots)
+  const hosts = vendorGroupsOf(builtIn.domains.map((host) => ({ host, source: 'built in' as const })))
+  const legend = [
+    ...legendOf([...(writable ?? []), ...(denyRead ?? []), ...(denyWrite ?? [])]).map((l) => ({
+      token: l.token,
+      meaning: l.paths.join(', '),
+    })),
+    ...(writable?.some((c) => c.label === WORKTREE_PLACEHOLDER)
+      ? [{ token: WORKTREE_PLACEHOLDER, meaning: WORKTREE_MEANING }]
+      : []),
+  ]
+  const reach = own?.network.allow ?? []
   return (
     <section className="rcard" id="sandbox">
       <h3 className="rcard-h">
         <span>Sandbox</span>
-        <small className="src">configured now</small>
+        <small className="src">← {at}</small>
       </h3>
       <p className="rcard-lede">
-        What this recipe says today: {state}. The task page&apos;s Sandbox tab says what a run ran under.
+        What every run of an attempt may reach — the agents and the install and build commands alike. The merge is
+        Lingtai&apos;s own and runs outside it.
       </p>
-      {own === undefined && !recipeError ? (
-        <p>
-          A recipe with no <span className="mono">sandbox:</span> block runs unsandboxed. The built-ins below are what
-          turning it on would give. <Link href={editHref}>Add the block in the editor</Link>.
-        </p>
-      ) : null}
-      <Entries title="Reachable" own={own?.network.allow ?? []} builtIn={builtIn.domains} />
-      {paths === null ? (
-        <p className="fail">
-          The built-in paths could not be read{builtIn.pathsWhy === null ? '' : ` (${builtIn.pathsWhy})`}, so they are
-          not listed.
-        </p>
-      ) : (
-        <>
-          <Entries title="Writable" own={own?.write ?? []} builtIn={paths.writable} />
-          <Entries title="Cannot be read" own={own?.deny ?? []} builtIn={paths.denyRead} />
-          <Entries title="Cannot be written" own={[]} builtIn={paths.denyWrite} />
-        </>
+      <Row name="state" source="← recipe.yml">
+        {recipeError ? (
+          <span className="sbsent">the recipe could not be read, so what it configures is unknown</span>
+        ) : own === undefined ? (
+          <>
+            <span className="sbpill off">off</span>
+            <span className="sbsent">
+              {' '}
+              off — no sandbox block. <Link href={editHref}>Add the block in the editor</Link>
+            </span>
+          </>
+        ) : !own.enabled ? (
+          <>
+            <span className="sbpill off">off</span>
+            <span className="sbsent"> off — enabled: false</span>
+          </>
+        ) : (
+          <>
+            <span className="sbpill on">on</span>
+            <span className="sbsent">
+              {own.required
+                ? ' required — this project is refused on a host that cannot sandbox'
+                : ' not required — on a host that cannot sandbox, runs go ahead unsandboxed and are marked'}
+            </span>
+          </>
+        )}
+      </Row>
+      <Row name="reachable" source={sourceOfRow(reach)}>
+        {recipeError ? null : (
+          <Sub label="this recipe">{reach.length === 0 ? <None href={editHref} /> : <OwnChips entries={reach} />}</Sub>
+        )}
+        {hosts.vendors.map((v) => (
+          <Sub key={v.vendor} label={v.vendor}>
+            {v.hosts.map((h) => (
+              <span key={h} className="chip-code" title={h}>
+                {h}
+              </span>
+            ))}
+          </Sub>
+        ))}
+      </Row>
+      <PathsRow
+        name="writable"
+        own={own?.write ?? []}
+        chips={writable}
+        unknown={unknown}
+        editHref={editHref}
+        showOwn={!recipeError}
+      />
+      <PathsRow
+        name="cannot be read"
+        own={own?.deny ?? []}
+        chips={denyRead}
+        unknown={unknown}
+        editHref={editHref}
+        showOwn={!recipeError}
+      />
+      <Row name="cannot be written" source="← built in">
+        {denyWrite === null ? (
+          <p className="fail sbsub-note">{unknown}</p>
+        ) : (
+          <Sub label="built in">
+            {denyWrite.map((c) => (
+              <BuiltInChip key={c.label} chip={c} />
+            ))}
+          </Sub>
+        )}
+      </Row>
+      {legend.length === 0 ? null : (
+        <div className="sblegend">
+          {legend.map((l) => (
+            <div key={l.token} className="sblegend-r">
+              <span className="sblegend-n">{l.token}</span>
+              <span className="sblegend-m" title={l.meaning}>
+                {l.meaning}
+              </span>
+            </div>
+          ))}
+        </div>
       )}
-      <h3 className="rcard-h">
-        <span>Recently blocked</span>
-        <small className="src">every task of this project, the last {RECENT_DAYS} days</small>
-      </h3>
-      {blocked}
     </section>
   )
 }

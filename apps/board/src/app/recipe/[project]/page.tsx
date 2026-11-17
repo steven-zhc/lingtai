@@ -1,17 +1,16 @@
-import { hasGitHubAuth } from '@lingtai/env'
+import { homedir } from 'node:os'
+
+import { hasGitHubAuth, stateDir } from '@lingtai/env'
 import { builtInSandboxEffect } from '@lingtai/project'
 import { Effect } from 'effect'
 import { notFound } from 'next/navigation'
-import { Suspense, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
-import { BlockedList } from '@/app/sandbox-panel.tsx'
-import { Skeleton } from '@/app/skeleton.tsx'
 import { filterOptions, onBoardProjects } from '@/lib/board'
 import { lockMap } from '@/lib/lock-marks.ts'
 import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
-import { loadProjectBlocked } from '@/lib/project-sandbox'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
 import { recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
@@ -333,18 +332,6 @@ export function Recipe({
   )
 }
 
-/** *Recently blocked*, read on render. A read that fails says so; it is never drawn as an empty list. */
-async function RecentlyBlocked({ project, stamp }: { project: string; stamp: number }) {
-  const read = await loadProjectBlocked(project)
-  return read.kind === 'failed' ? (
-    <p className="fail">
-      The refused connections could not be read, so what the project&apos;s runs were refused is unknown.
-    </p>
-  ) : (
-    <BlockedList blocked={read.blocked} stamp={stamp} empty="No refused connection was recorded in this window." />
-  )
-}
-
 export default async function RecipePage({
   params,
   searchParams,
@@ -407,11 +394,8 @@ export default async function RecipePage({
           own={view.ok ? view.recipe.sandbox : undefined}
           recipeError={!view.ok}
           builtIn={builtIn}
-          blocked={
-            <Suspense fallback={<Skeleton shape="lines" count={4} />}>
-              <RecentlyBlocked project={name} stamp={stamp} />
-            </Suspense>
-          }
+          at={underHome(view.at)}
+          roots={{ home: homedir(), lingtaiHome: stateDir(), project: name }}
         />
       }
       bar={bar}

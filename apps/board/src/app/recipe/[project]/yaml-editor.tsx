@@ -3,8 +3,8 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { yaml } from '@codemirror/lang-yaml'
 import { HighlightStyle, indentUnit, syntaxHighlighting } from '@codemirror/language'
-import { EditorState } from '@codemirror/state'
-import { EditorView, keymap, lineNumbers } from '@codemirror/view'
+import { EditorState, StateEffect, StateField, type Text } from '@codemirror/state'
+import { Decoration, type DecorationSet, EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { useEffect, useRef } from 'react'
 
@@ -40,11 +40,42 @@ export const yamlExtensions = [
   baseTheme,
 ]
 
+/** The line ranges to mark for these 1-based line numbers, clamped to the document so a shifted text never throws. */
+export function marksFor(doc: Text, lines: readonly number[]): { from: number }[] {
+  const seen = new Set<number>()
+  for (const n of lines) seen.add(Math.min(Math.max(n, 1), doc.lines))
+  return [...seen].sort((a, b) => a - b).map((n) => ({ from: doc.line(n).from }))
+}
+
+const setMarks = StateEffect.define<readonly number[]>()
+const addedLine = Decoration.line({ class: 'cm-added' })
+
+/** The marked lines: set by `setMarks`, moved with the text, gone with a deleted line. */
+const markField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(marks, tr) {
+    let next = marks.map(tr.changes)
+    for (const e of tr.effects) {
+      if (e.is(setMarks)) next = Decoration.set(marksFor(tr.state.doc, e.value).map((m) => addedLine.range(m.from)))
+    }
+    return next
+  },
+  provide: (f) => EditorView.decorations.from(f),
+})
+
 const theme = EditorView.theme({
+  '.cm-added': { background: 'var(--accent-soft)', borderLeft: '2px solid var(--accent)' },
   '.cm-content': { caretColor: 'var(--ink)' },
   '.cm-cursor': { borderLeftColor: 'var(--ink)' },
   '&.cm-focused': { outline: '1px solid var(--accent)', outlineOffset: '-1px' },
 })
+
+function applyMark(view: EditorView, lines: readonly number[]) {
+  const first = marksFor(view.state.doc, lines)[0]
+  view.dispatch({
+    effects: [setMarks.of(lines), ...(first ? [EditorView.scrollIntoView(first.from, { y: 'center' })] : [])],
+  })
+}
 
 /**
  * The recipe's YAML in CodeMirror. Seeded once from `initial`; after that fed only by `push` (a host added on request) and never fed
@@ -53,6 +84,7 @@ const theme = EditorView.theme({
 export default function YamlEditor({
   initial,
   push,
+  mark,
   handoff,
   onChange,
   onReady,
@@ -60,6 +92,8 @@ export default function YamlEditor({
   initial: string
   /** Text to put in the live editor, replacing what is there; a new `rev` is a new push. */
   push: { rev: number; text: string } | null
+  /** Lines (1-based) to highlight and scroll to; a new `rev` is a new mark. Cleared with `lines: []`. */
+  mark: { rev: number; lines: readonly number[] } | null
   /** Read once, before the fallback textarea goes: whether it had focus, and its selection. */
   handoff: () => { focused: boolean; anchor: number; head: number } | null
   onChange: (text: string) => void
@@ -71,6 +105,7 @@ export default function YamlEditor({
   latest.current = { onChange, onReady }
   // Read once for the component's life: Strict Mode replays this effect after the first run
   // has focused and destroyed an editor, and by then the textarea no longer has focus.
+  const markedAtMount = useRef(mark)
   const taken = useRef<ReturnType<typeof handoff> | undefined>(undefined)
   useEffect(() => {
     if (taken.current === undefined) taken.current = handoff()
@@ -86,6 +121,7 @@ export default function YamlEditor({
           history(),
           keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
           theme,
+          markField,
           EditorView.updateListener.of((u) => {
             if (u.docChanged) latest.current.onChange(u.state.doc.toString())
           }),
@@ -93,6 +129,8 @@ export default function YamlEditor({
       }),
     })
     viewRef.current = view
+    if (markedAtMount.current !== null && markedAtMount.current.lines.length > 0)
+      applyMark(view, markedAtMount.current.lines)
     if (carried?.focused) {
       view.focus()
       view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head) })
@@ -115,5 +153,13 @@ export default function YamlEditor({
     if (view.state.doc.toString() === push.text) return
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: push.text } })
   }, [push])
+  // After the push effect above, so the lines refer to the pushed text.
+  const marked = useRef(mark?.rev)
+  useEffect(() => {
+    const view = viewRef.current
+    if (mark === null || view === null || mark.rev === marked.current) return
+    marked.current = mark.rev
+    applyMark(view, mark.lines)
+  }, [mark])
   return <div ref={host} className="rfile-fill" />
 }
