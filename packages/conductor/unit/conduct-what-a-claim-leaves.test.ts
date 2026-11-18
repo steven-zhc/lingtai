@@ -532,6 +532,7 @@ describe('when the agent meets the wall', () => {
    */
   describe('and the worktree is left dirty', () => {
     const WIP_SHA = 'c'.repeat(40)
+    const WIP_SHAS = [WIP_SHA, 'd'.repeat(40)] // a second commit in one claim reads the second
 
     /**
      * `committed` carries `hitTheWall`'s own meaning — whether `wire` left a
@@ -545,7 +546,7 @@ describe('when the agent meets the wall', () => {
      */
     const hitTheWallDirty = async (
       committed: boolean,
-      breaks: { leasedBranch?: string; failKeptOnce?: boolean; push?: string } = {},
+      breaks: { leasedBranch?: string; failKeptOnce?: boolean; push?: string; ends?: Runtime['run'] } = {},
     ) => {
       const store = memoryStore()
       const did: string[] = []
@@ -564,6 +565,18 @@ describe('when the agent meets the wall', () => {
 
       let dirty = true
       let head = committed ? 'b'.repeat(40) : 'a'.repeat(40)
+      const ends = breaks.ends
+      // Each run of the agent leaves the tree dirty again, so a rerun that stops makes its own WIP.
+      const runtimeHere: Runtime =
+        ends === undefined
+          ? atTheWall
+          : {
+              ...runtime,
+              run: (...args) => {
+                dirty = true
+                return ends(...args)
+              },
+            }
       let inner = ports.repo.git
       if (breaks.leasedBranch !== undefined) {
         const beforeRefusal = inner
@@ -608,7 +621,7 @@ describe('when the agent meets the wall', () => {
           return Effect.sync(() => {
             did.push('git commit --no-verify')
             dirty = false
-            head = WIP_SHA
+            head = WIP_SHAS[Math.min(did.filter((d) => d === 'git commit --no-verify').length - 1, 1)]!
             return ''
           })
         }
@@ -619,7 +632,7 @@ describe('when the agent meets the wall', () => {
         {
           project,
           client: fakeGitHub(said),
-          runtime: atTheWall,
+          runtime: runtimeHere,
           issue: 7,
           hookBinary: '/tmp/fake/lingtai-hook',
           prompt: 'fix {{issue}}',
@@ -662,6 +675,52 @@ describe('when the agent meets the wall', () => {
       expect(refs!.data).toMatchObject({ outcome: 'published', headSha: WIP_SHA })
       expect((refs!.data as { armSha?: string }).armSha).toBeUndefined()
       expect((refs!.data as { branchCarries?: boolean }).branchCarries).not.toBe(false)
+    })
+
+    const stopsWith = (kind: string, detail = 'boom'): Runtime['run'] =>
+      (() =>
+        Effect.succeed({
+          exitCode: 1,
+          turns: 9,
+          durationMs: 1000,
+          costUsd: 1,
+          failure: { kind, detail },
+          text: null,
+          sessionId: 'sess',
+        })) as Runtime['run']
+
+    it.each(['crash', 'timeout', 'out-of-turns', 'out-of-usd', 'aborted'])(
+      'commits the dirty tree on HEAD when the agent ends %s, and records that sha',
+      async (kind) => {
+        const { did, run } = await hitTheWallDirty(true, { ends: stopsWith(kind) })
+        const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
+        expect(kept).toHaveLength(1)
+        expect(kept[0]!.data).toMatchObject({ ref: 'agent/7', sha: WIP_SHA, stoppedBy: kind })
+        expect(did.indexOf('git commit --no-verify')).toBeLessThan(did.indexOf('append RunKeptUncommitted'))
+        const refs = run.find((e) => e.type === 'RunRefsPublished')
+        expect(refs!.data).toMatchObject({ headSha: WIP_SHA })
+      },
+    )
+
+    it('makes no WIP on a normal end with no commit, however dirty the tree', async () => {
+      const normal = (() =>
+        Effect.succeed({
+          exitCode: 0,
+          turns: 3,
+          durationMs: 1000,
+          costUsd: 1,
+          text: 'done',
+          sessionId: 'sess',
+        })) as unknown as Runtime['run']
+      const { did, run } = await hitTheWallDirty(false, { ends: normal })
+      expect(did).not.toContain('git commit --no-verify')
+      expect(run.some((e) => e.type === 'RunKeptUncommitted')).toBe(false)
+    })
+
+    it('makes no WIP for a run that never started', async () => {
+      const { did, run } = await hitTheWallDirty(false, { ends: stopsWith('never-started', 'no key') })
+      expect(did).not.toContain('git commit --no-verify')
+      expect(run.some((e) => e.type === 'RunKeptUncommitted')).toBe(false)
     })
 
     it('keeps it on agent/<n> when the agent itself committed nothing', async () => {

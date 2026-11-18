@@ -3778,11 +3778,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         })
 
       /**
-       * **Set when `mergeForConflict` left a merge standing** (#1120), so `keepUncommittedWork`
-       * asks about `MERGE_HEAD` only in a pass that started one.
-       */
-      let conflictMergeStood = false
-      /**
        * Whether a merge stands. `rev-parse -q --verify` exits 1 for a ref that is not there and
        * says nothing; any other failure (a killed git, a locked index, a spawn that failed) is
        * **unknown, never absent** (#1120).
@@ -3943,7 +3938,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               return { failed: `a merge already stands and could not be aborted: ${aborted.failure.detail}` }
             }
           }
-          conflictMergeStood = false
           // `-z` and every untracked file by name, as `kept-run-port` reads it: an untracked
           // directory is not collapsed to `?? private/`, and no name is quoted. The configured
           // path is normalised (`./.env.local` is how git names `.env.local`).
@@ -4000,7 +3994,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               failed: `what the base and the branch each changed since ${fromSha.slice(0, 7)} could not be read`,
             }
           }
-          conflictMergeStood = true
           return { conflicted: { paths, fromSha, branchSha, overlap: theirs.filter((p) => mine.includes(p)) } }
         })
 
@@ -5043,7 +5036,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const counted = conflict ? (brief.context.conflictRound ?? 1) : round
           // A conflict round of any kind, including a granted one from an old wait whose brief
           // tells the agent to merge: it may leave a merge standing, so the keep checks (#1120).
-          if (conflict) conflictMergeStood = true
           inConflictRound = conflict
           // The merge the conductor stood up before this agent started (#1120); read from the
           // context the round was dispatched with, which the route may clear for the next lap.
