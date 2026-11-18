@@ -90,6 +90,19 @@ export type DivergentHunk = z.infer<typeof DivergentHunk>
 export const Hunk = z.discriminatedUnion('_tag', [MechanicalHunk, DivergentHunk])
 export type Hunk = z.infer<typeof Hunk>
 
+/** A hunk whose two sides contradict each other, so neither can be kept and nothing can be asked (0118 §1). */
+export const ContradictingHunk = z.strictObject({
+  _tag: z.literal('Contradicting'),
+  path: z.string().max(TRIAGE_TEXT_MAX),
+  line: z.number().nullable(),
+  why: z.string().max(TRIAGE_TEXT_MAX),
+})
+export type ContradictingHunk = z.infer<typeof ContradictingHunk>
+
+/** A `ConflictingHunks` cause's hunk: `Hunk` and the contradiction. `Hunk` itself is frozen for recorded advice. */
+export const CauseHunk = z.discriminatedUnion('_tag', [MechanicalHunk, ContradictingHunk, DivergentHunk])
+export type CauseHunk = z.infer<typeof CauseHunk>
+
 /** A question a person must answer, with where it sits when it came from a hunk. */
 export type TriageAsk = {
   readonly question: TriageQuestion
@@ -105,7 +118,7 @@ export type TriageAsk = {
 export function triageQuestionsOf(cause: {
   readonly _tag: string
   readonly questions?: readonly TriageQuestion[]
-  readonly hunks?: readonly Hunk[]
+  readonly hunks?: readonly CauseHunk[]
 }): TriageAsk[] {
   if (cause._tag === 'UndecidedQuestion') return (cause.questions ?? []).map((question) => ({ question }))
   if (cause._tag === 'ConflictingHunks') {

@@ -147,8 +147,8 @@ export interface DiscussionEvidence {
   ticket: DiscussionTicket | null
   /** Why the ticket is absent, when it is. Never merely missing (#76). */
   ticketProblem: string | null
-  /** Advice for the current blocked wait, if its latest triage succeeded. */
-  triage: Extract<TriageResult, { _tag: 'TriageAdvised' }> | null
+  /** What triage found for the current blocked wait, if its latest triage succeeded. */
+  triage: Exclude<TriageResult, { _tag: 'TriageFailed' }> | null
   /** The log, oldest first, one line per event. */
   log: readonly string[]
   /**

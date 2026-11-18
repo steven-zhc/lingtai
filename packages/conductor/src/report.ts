@@ -1,4 +1,4 @@
-import type { Resolution, RootCause, WaitReason } from '@lingtai/domain/wait'
+import type { Cause, Resolution, WaitReason } from '@lingtai/domain/wait'
 /**
  * The report's one computation (0123 §6, #688): `ticket_report` rows and
  * `spend` rows in, every figure of §3 and §4 out. The page and `lingtai report`
@@ -380,13 +380,14 @@ export const RESOLUTION_WORDS: Record<Resolution['_tag'], string> = {
 }
 
 /** The triage cause, the board's labels lower-cased (`triage-cause.ts`; a test holds the two to agree). */
-export const CAUSE_WORDS: Record<RootCause['_tag'], string> = {
+export const CAUSE_WORDS: Record<Cause['_tag'], string> = {
   UndecidedQuestion: 'a decision for you',
   FixableLines: 'lines to fix',
   WrongApproach: 'the approach is wrong',
   ConflictingHunks: 'merge by hand',
   TicketTooBig: 'ticket too big',
   SetupBroken: 'fix the setup',
+  Unfinished: 'did not finish',
 }
 
 const wordsFrom = (table: Record<string, string>, tag: string): string => table[tag] ?? tag

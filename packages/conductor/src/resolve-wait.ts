@@ -41,7 +41,13 @@ import {
   type ToAppend,
   type WaitId,
 } from '@lingtai/domain'
-import { describeSplitProblem, splitPlanProblems, type Resolution, type WaitReason } from '@lingtai/domain/wait'
+import {
+  describeSplitProblem,
+  splitPlanProblems,
+  triageCauseOf,
+  type Resolution,
+  type WaitReason,
+} from '@lingtai/domain/wait'
 import { type EventStore, eventStore, log, readThroughSnapshot, type SnapshotReadOptions } from '@lingtai/event-store'
 import { Effect } from 'effect'
 
@@ -430,7 +436,8 @@ function prepare(
       recorded = { picks: [], section: options.writtenSection }
     if (resolution._tag === 'FixRefusal' || resolution._tag === 'StartNewAttempt') {
       const triage = triageFactsFromState(item, options.waitId).result
-      const answers = triage?._tag === 'TriageAdvised' ? triageAnswersText(triage.cause, options.picks) : null
+      const triaged = triageCauseOf(triage)
+      const answers = triaged !== null ? triageAnswersText(triaged, options.picks) : null
       if (answers !== null && !answers.ok)
         return refuse({
           ok: false,
