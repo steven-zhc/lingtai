@@ -133,7 +133,7 @@ import { Cause, type Context, Duration, Effect, Exit } from 'effect'
 // module-evaluation time, only inside a function called later.
 import { whatArrived, type Judged, type Judging } from './attempt-steps.ts'
 import type { TerminalOutcome } from './end-step.ts'
-import { ceilingOf, routedVisit, replyFor } from './proposed-route.ts'
+import { causeBoundsFor, ceilingOf, routedVisit, replyFor } from './proposed-route.ts'
 // Aliased: this file exports its own `outcomeOf`, over a `AttemptEnd` rather
 // than over a step's actions — two functions with one name would be exactly
 // the collision #466's own header warns against (`step-outcome.ts`'s own doc
@@ -818,10 +818,18 @@ export interface Ceilings {
   readonly newAttempts: number
   /** How many new attempts this item has already spent — its history, not this pass's. */
   readonly newAttemptsSpent: number
+  /** How many times this ticket has stopped to ask a person — `BOUNDS.personAsks` bounds it (0108 §6). */
+  readonly personAsksSpent?: number
 }
 
 /** Nothing on the back edges, which is what a caller that says nothing gets. */
-const NOTHING_SPARE: Ceilings = { refusalFixes: 0, conflictResolutions: 0, newAttempts: 0, newAttemptsSpent: 0 }
+const NOTHING_SPARE: Ceilings = {
+  refusalFixes: 0,
+  conflictResolutions: 0,
+  newAttempts: 0,
+  newAttemptsSpent: 0,
+  personAsksSpent: 0,
+}
 
 // ------------------------------------------------------------- the loop ----
 
@@ -1730,23 +1738,21 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           proposalRaised._tag === 'MergeRefused' && spentRetries && landedAgainThisPass.times > 0
             ? { ...proposalRaised, landedAgain: { ...landedAgainThisPass } }
             : proposalRaised
-        const offer = offerFor(
-          proposal,
+        const policy = {
           // `refusalFixes` is spent as `rounds`, `conflictResolutions` as `conflictRounds` and
-          {
-            refusalFixes: roundLimit,
-            newAttempts: restartLimit,
-            conflictResolutions: ceilings.conflictResolutions,
-          },
-          {
-            rounds: roundsSpent,
-            newAttempts: ceilings.newAttemptsSpent,
-            baseMerges: baseMergesSpent,
-            conflictRounds: conflictRoundsSpent,
-            stepRedos: stepRedosSpent,
-            landingRetries: landingRetriesSpent,
-          },
-        )
+          refusalFixes: roundLimit,
+          newAttempts: restartLimit,
+          conflictResolutions: ceilings.conflictResolutions,
+        }
+        const spentNow = {
+          rounds: roundsSpent,
+          newAttempts: ceilings.newAttemptsSpent,
+          baseMerges: baseMergesSpent,
+          conflictRounds: conflictRoundsSpent,
+          stepRedos: stepRedosSpent,
+          landingRetries: landingRetriesSpent,
+        }
+        const offer = offerFor(proposal, policy, spentNow)
         // **Before the judge** (#744): a declared judge at `red` would otherwise be paid first and
         // then overruled. Only when a round is on offer — without one the pass goes to a person anyway.
         if (
@@ -1835,7 +1841,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                       ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`
                       : `the ${rerunNext.step} answer could not be read; asking the same agent again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`,
                 }
-              : yield* replyFor(offer, shown, options.judge)
+              : yield* replyFor(
+                  offer,
+                  shown,
+                  options.judge,
+                  causeBoundsFor(policy, spentNow, ceilings.personAsksSpent ?? 0),
+                )
         if ('neverStarted' in reply) {
           // 0031 §3, at the third depth the same wall is met at: the judge
           // itself is an agent, and an account-wide wall is the conductor's to

@@ -24,7 +24,7 @@ import type { StepOutcome } from './action.ts'
 import { FixRound, LandAgain, MergeBase, RequeueCause, RerunStep, type AttemptNext } from './attempt-next.ts'
 import { copiedFieldsOf, Proposal, StoredProposal } from './proposal.ts'
 import { CandidateId, ExcludedCandidate, RouteEscalation } from './route.ts'
-import { AttemptRef } from './wait.ts'
+import { AttemptRef, RecordedCause } from './wait.ts'
 
 /**
  * The three bounds a recipe resolves to, as totals rather than what is left
@@ -92,7 +92,13 @@ export const StoredRoute = z.object({
 })
 export type StoredRoute = z.infer<typeof StoredRoute>
 
-const Selected = z.object({ _tag: z.literal('Selected'), candidate: CandidateId, why: z.string() })
+const Selected = z.object({
+  _tag: z.literal('Selected'),
+  candidate: CandidateId,
+  why: z.string(),
+  /** The cause a runtime judge at `findings` answered (0108 §6); absent on a built-in's pick and on a route written before it. */
+  cause: RecordedCause.optional(),
+})
 const NotAsked = z.object({ _tag: z.literal('NotAsked') })
 const Unreadable = z.object({ _tag: z.literal('Unreadable'), raw: z.string() })
 

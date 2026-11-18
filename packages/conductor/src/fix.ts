@@ -70,6 +70,7 @@ import {
   triageFactsOf,
 } from '@lingtai/domain'
 import type { BlockDiagnosis, RunFailureKind } from '@lingtai/domain'
+import { triageCauseOf } from '@lingtai/domain/wait'
 
 import { checksBrief } from './prompt.ts'
 import type { RecordPart } from './record-prompt.ts'
@@ -673,8 +674,8 @@ export function grantedAdviceFromState(state: TicketState, waitId: WaitId): Gran
 }
 
 function adviceFrom(result: ReturnType<typeof triageFactsOf>['result']): GrantedAdvice | undefined {
-  if (result?._tag !== 'TriageAdvised') return undefined
-  const { cause } = result
+  const cause = triageCauseOf(result)
+  if (cause === null) return undefined
   if (cause._tag === 'FixableLines') return cause.fixes.length > 0 ? { on: 'lines', fixes: cause.fixes } : undefined
   return undefined
 }

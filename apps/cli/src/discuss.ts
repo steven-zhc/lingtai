@@ -250,12 +250,12 @@ export const gatherEvidence = (request: DiscussionRequest): Effect.Effect<Discus
     }
   })
 
-/** A completed, advised triage belongs in a brief only while its wait is current. */
+/** A completed triage belongs in a brief only while its wait is current. */
 export function currentWaitTriage(own: readonly Envelope[]): DiscussionEvidence['triage'] {
   const lifecycle = reduceTicket(own).lifecycle
   if (lifecycle.status !== 'blocked') return null
   const result = triageFactsOf(own, lifecycle.waitId).result
-  return result?._tag === 'TriageAdvised' ? result : null
+  return result === null || result === undefined || result._tag === 'TriageFailed' ? null : result
 }
 
 function bySeq(a: Envelope, b: Envelope): number {

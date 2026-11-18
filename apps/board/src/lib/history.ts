@@ -609,6 +609,14 @@ type FactFormatter<Tag extends BoardFact['_tag']> = (fact: Extract<BoardFact, { 
 const atVersion = (u: { version: number | null }): string =>
   u.version === null ? '' : ` (StepEnded version ${u.version})`
 
+/** The judge's own sentence on a route it answered with a cause (0108 §6): where `reply.cause` is present, and nothing where it is not. */
+const judgedWhy = (d: Payload): string => {
+  const reply = (d as { reply?: { _tag?: string; why?: unknown; cause?: unknown } }).reply
+  return reply?._tag === 'Selected' && reply.cause !== undefined && typeof reply.why === 'string'
+    ? ` — ${clip(reply.why)}`
+    : ''
+}
+
 const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   StepEnded: (f) => {
     const head = stepAt({ step: f.step, action: f.action })
@@ -675,10 +683,11 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   // empty. The next row is already `StepStarted … step=implement round=1`,
   // so the destination a `for ${action}` clause used to name is still on the
   // page.
-  RoundOpened: (f) => {
-    if (f.findingsUnknown !== undefined) return `round ${f.round} — findings not found${atVersion(f.findingsUnknown)}`
+  RoundOpened: (f, d) => {
+    if (f.findingsUnknown !== undefined)
+      return `round ${f.round} — findings not found${atVersion(f.findingsUnknown)}${judgedWhy(d)}`
     const n = f.findings.length
-    return `round ${f.round} — ${n} finding${n === 1 ? '' : 's'}`
+    return `round ${f.round} — ${n} finding${n === 1 ? '' : 's'}${judgedWhy(d)}`
   },
 
   // **Just the ordinal since #502.** `PassRouted{decision: Selected{restart}}`
@@ -687,10 +696,10 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   // own stream, which `attempts.ts`'s `lastRun` already reads (`TicketReleased`
   // is what used to repeat them here, and `#502`'s header says there is
   // nothing left for the release to repeat).
-  Restarted: (f) =>
+  Restarted: (f, d) =>
     f.evidenceUnknown === undefined
-      ? `restart ${f.restart}`
-      : `restart ${f.restart} — evidence not found${atVersion(f.evidenceUnknown)}`,
+      ? `restart ${f.restart}${judgedWhy(d)}`
+      : `restart ${f.restart} — evidence not found${atVersion(f.evidenceUnknown)}${judgedWhy(d)}`,
 
   /**
    * Which kind of hold, then the question, then the move that was
@@ -725,6 +734,9 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
     const name = triageName(by !== null && typeof by === 'object' ? (by as { _tag?: string }) : {}, f.attempt)
     const result = f.result
     if (result._tag === 'TriageFailed') return `${name} failed: ${clip(result.why)}`
+    // An old row advised a move and says so; a cause is read, and what follows it is not the triage's to say.
+    if (result._tag === 'TriageAnswered')
+      return `${name} read the cause: ${presentCause(result.cause).label}: ${clip(result.summary)}`
     return `${name} advised: ${RESOLUTION_COPY[adviceResolution(result.resolution)].title} — ${presentCause(result.cause).label}: ${clip(result.summary)}`
   },
 

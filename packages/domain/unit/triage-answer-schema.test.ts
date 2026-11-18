@@ -20,10 +20,22 @@ describe('TRIAGE_ANSWER_JSON_SCHEMA', () => {
     expect(schema.properties.read.anyOf[0].maxItems).toBe(READS_PER_TURN)
   })
 
-  it('carries the six causes as a oneOf of _tag consts', () => {
+  it('carries the seven causes as a oneOf of _tag consts', () => {
     expect(causes.map((c) => c.properties._tag.const).sort()).toEqual(
-      ['ConflictingHunks', 'FixableLines', 'SetupBroken', 'TicketTooBig', 'UndecidedQuestion', 'WrongApproach'].sort(),
+      [
+        'ConflictingHunks',
+        'FixableLines',
+        'SetupBroken',
+        'TicketTooBig',
+        'UndecidedQuestion',
+        'Unfinished',
+        'WrongApproach',
+      ].sort(),
     )
+  })
+
+  it('has no resolution key: triage answers a cause and never an action', () => {
+    expect(Object.keys(answer.properties).sort()).toEqual(['cause', 'summary', 'want'])
   })
 
   it('bounds fixes[].what at TRIAGE_TEXT_MAX', () => {

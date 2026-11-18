@@ -1696,7 +1696,7 @@ export function currentWaitWant(own: readonly Envelope[], standing: StandingView
     declared: false,
     daemonStartedAt: null,
   })
-  return status._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null
+  return status._tag === 'Done' && status.result._tag !== 'TriageFailed' ? status.result.want : null
 }
 
 /** A projected triage belongs on the page only while it names the reduced current wait. */
@@ -2068,7 +2068,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       tickets,
     }
   }
-  const want = status?._tag === 'Done' && status.result._tag === 'TriageAdvised' ? status.result.want : null
+  const want = status?._tag === 'Done' && status.result._tag !== 'TriageFailed' ? status.result.want : null
   // The run the state names, reduced with the recipe's bounds above — the same
   // one `Standing`'s own `progress` prop reads (`#415`). Null wherever there
   // is nothing to spend yet, or the run that is running will not say.

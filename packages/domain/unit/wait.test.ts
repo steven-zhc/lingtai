@@ -13,7 +13,6 @@ import {
   adviceResolution,
   allowedResolutions,
   Resolution as ResolutionSchema,
-  TriageAdvice,
   rerunStepOf,
   continuationOf,
   grantCriterion,
@@ -29,7 +28,7 @@ import {
   type TriageStatus,
   type WaitReason,
 } from '../src/wait.ts'
-import { WaitReason as WaitReasonSchema, type RootCause } from '../src/wait.ts'
+import { WaitReason as WaitReasonSchema, type AdvisedCause } from '../src/wait.ts'
 
 const run: AttemptRef = { runId: 'pass-1' }
 const unpushedRun: AttemptRef = { runId: 'pass-1', unpushed: { branch: 'agent/run-1', said: 'nothing to push' } }
@@ -763,12 +762,12 @@ describe('recommendedResolution', () => {
 
   describe('an advice its own cause contradicts (#572)', () => {
     const reason = parseReason({ _tag: 'FixerDisagrees', run, said: 'nothing here answers the finding' })
-    const advise = (cause: RootCause, resolution: 'Approve' | 'GrantFixRound' | 'Requeue'): TriageStatus => ({
+    const advise = (cause: AdvisedCause, resolution: 'Approve' | 'GrantFixRound' | 'Requeue'): TriageStatus => ({
       _tag: 'Done',
       result: { _tag: 'TriageAdvised', cause, resolution, summary: 's', want: null } as TriageResult,
     })
-    const wrong: RootCause = { _tag: 'WrongApproach' }
-    const fixable: RootCause = { _tag: 'FixableLines', fixes: [] }
+    const wrong: AdvisedCause = { _tag: 'WrongApproach' }
+    const fixable: AdvisedCause = { _tag: 'FixableLines', fixes: [] }
 
     it('WrongApproach advising Approve or FixRefusal is null, not a substitute', () => {
       expect(allowedResolutions(reason)).toContain('Approve')
@@ -1447,9 +1446,12 @@ describe('grantCriterion on a declined refusal fix (#935)', () => {
 describe('adviceResolution', () => {
   const tags = ResolutionSchema.options.map((o) => o.shape._tag.value as string)
 
-  it.each(TriageAdvice.options)('maps %s to a member of Resolution', (advice) => {
-    expect(tags).toContain(adviceResolution(advice))
-  })
+  it.each(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'] as const)(
+    'maps %s to a member of Resolution',
+    (advice) => {
+      expect(tags).toContain(adviceResolution(advice))
+    },
+  )
 
   it('names the three advices whose resolution is spelled differently', () => {
     expect(adviceResolution('GrantFixRound')).toBe('FixRefusal')

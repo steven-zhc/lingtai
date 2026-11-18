@@ -1,4 +1,4 @@
-import type { RootCause, TriageStatus, WaitReason } from '@lingtai/domain/wait'
+import type { AdvisedCause, Cause, TriageStatus, WaitReason } from '@lingtai/domain/wait'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
@@ -10,12 +10,48 @@ function draw(status: TriageStatus, headLine?: string): string {
   return renderToStaticMarkup(<TriageBand reason={reason} status={status} headLine={headLine} />)
 }
 
-function advised(cause: RootCause): TriageStatus {
+function advised(cause: AdvisedCause): TriageStatus {
   return {
     _tag: 'Done',
     result: { _tag: 'TriageAdvised', cause, resolution: 'Close', summary: '<plain summary>', want: null },
   }
 }
+
+function answered(cause: Cause): TriageStatus {
+  return { _tag: 'Done', result: { _tag: 'TriageAnswered', cause, summary: '<plain summary>', want: null } }
+}
+
+describe('a TriageAnswered band', () => {
+  it('names the cause and its parts, and says no action was advised', () => {
+    const html = draw(answered({ _tag: 'WrongApproach', why: 'the cache is the wrong layer' }))
+    expect(html).toContain('The approach is wrong')
+    expect(html).toContain('the cache is the wrong layer')
+    expect(html).not.toContain('Triage advised')
+  })
+
+  it('draws a contradicting hunk with its reason', () => {
+    const html = draw(
+      answered({
+        _tag: 'ConflictingHunks',
+        hunks: [{ _tag: 'Contradicting', path: 'a.ts', line: 4, why: 'both sides delete it differently' }],
+        total: 1,
+      }),
+    )
+    expect(html).toContain('Contradicting · 1')
+    expect(html).toContain('a.ts:4')
+    expect(html).toContain('both sides delete it differently')
+  })
+
+  it('draws Unfinished, SetupBroken and a plan-less TicketTooBig', () => {
+    expect(draw(answered({ _tag: 'Unfinished', addToBody: 'name the file' }))).toContain(
+      'Add to the ticket: name the file',
+    )
+    expect(draw(answered({ _tag: 'SetupBroken', what: 'no token', repair: 'export it' }))).toContain(
+      'no token — export it',
+    )
+    expect(draw(answered({ _tag: 'TicketTooBig', plan: null, spentOn: 'the parser' }))).toContain('the parser')
+  })
+})
 
 describe('current wait triage band', () => {
   it.each(['NotNeeded', 'NotDeclared'] as const)('%s draws no band', (_tag) => {

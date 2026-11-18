@@ -52,7 +52,7 @@ import {
   type SavedHead,
 } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
-import { adviceResolution, recommendedResolution, waitMoves } from '@lingtai/domain/wait'
+import { adviceResolution, recommendedResolution, triageCauseOf, waitMoves } from '@lingtai/domain/wait'
 import { machineDayCeiling } from '@lingtai/env'
 import { paint, stateInk } from '@lingtai/env/colour'
 import { eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
@@ -68,14 +68,14 @@ import { lift, recovering } from './exit.ts'
 import { heading, keyValues, section, symbol, table } from './output.ts'
 import { waitCommand } from './wait-command.ts'
 
-/** The resolution `recommendedResolution` names for an advised `ConflictingHunks`; null for anything else (#656). */
+/** The resolution `recommendedResolution` names for a triaged `ConflictingHunks`; null for anything else (#656). */
 export function conflictRecommendation(
   reason: WaitReason,
   triage: TaskCard['triage'] | undefined,
   savedHead?: SavedHeadReading,
 ): string | null {
   const result = triage?.result
-  if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
+  if (triageCauseOf(result)?._tag !== 'ConflictingHunks' || result === null || result === undefined) return null
   return recommendedResolution(
     reason,
     { _tag: 'Done', result },
@@ -96,9 +96,23 @@ export function conflictLines(
   savedHead?: SavedHeadReading,
 ): { rec: string | null; advised: string | null } | null {
   const result = triage?.result
-  if (result?._tag !== 'TriageAdvised' || result.cause._tag !== 'ConflictingHunks') return null
+  if (result === null || result === undefined || result._tag === 'TriageFailed') return null
+  if (result.cause._tag !== 'ConflictingHunks') return null
   const unreadable = typeof savedHead === 'object' ? savedHead.unreadable : null
   const rec = conflictRecommendation(reason, triage, savedHead)
+  if (result._tag === 'TriageAnswered') {
+    if (unreadable !== null)
+      return {
+        rec: `triage read a conflict — ${result.summary}`,
+        advised: `the saved head could not be checked (${unreadable}), so a refusal fix is not recommended; check again to see whether saved work can be continued`,
+      }
+    if (rec === null)
+      return {
+        rec: null,
+        advised: `triage read a conflict: ${result.summary} — this wait does not offer a move for it, so no resolution is recommended`,
+      }
+    return { rec: `recommends ${rec} — ${result.summary}`, advised: null }
+  }
   if (unreadable !== null) {
     return {
       rec:
@@ -641,9 +655,11 @@ export const readStatus = (
               const conflict =
                 t.wait != null &&
                 t.runId &&
-                t.triage?.result?._tag === 'TriageAdvised' &&
-                (t.triage.result.cause._tag === 'ConflictingHunks' ||
-                  adviceResolution(t.triage.result.resolution) === 'FixRefusal')
+                (t.triage?.result?._tag === 'TriageAnswered'
+                  ? t.triage.result.cause._tag === 'ConflictingHunks' || t.triage.result.cause._tag === 'FixableLines'
+                  : t.triage?.result?._tag === 'TriageAdvised' &&
+                    (t.triage.result.cause._tag === 'ConflictingHunks' ||
+                      adviceResolution(t.triage.result.resolution) === 'FixRefusal'))
               const savedHead = conflict
                 ? yield* Effect.suspend(() =>
                     (reading.savedHeadOf ?? ((id, p) => hasSavedHead(id, p, reading.clientFor)))(

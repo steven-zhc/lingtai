@@ -1929,7 +1929,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
           // `implement` is *the lines*, which is the round the arrival can pay for.
           return {
             ...(yield* refusingRuntime.run(request)),
-            text: '```json\n{"next": "implement", "why": "the seam is right, two of its lines are wrong"}\n```',
+            text: '```json\n{"cause": {"_tag": "FixableLines", "fixes": []}, "summary": "the seam is right, two of its lines are wrong"}\n```',
           }
         }),
     }
@@ -2031,7 +2031,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
           if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
           return {
             ...(yield* refusingRuntime.run(request)),
-            text: '```json\n{"next": "claim", "why": "restart it instead"}\n```',
+            text: '```json\n{"cause": {"_tag": "WrongApproach", "why": "restart it instead"}, "summary": "restart it instead"}\n```',
           }
         }),
     }
@@ -2319,7 +2319,7 @@ runtime:
    * `UnknownCandidate`, and `PassRouted.chose` still names what the judge
    * said, for the card.
    */
-  it('refuses a judge that answers a destination no candidate maps to, as UnknownCandidate', async () => {
+  it('refuses a judge that answers a cause it may not, as UnreadableReply naming the cause', async () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
@@ -2330,7 +2330,7 @@ runtime:
           if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
           return {
             ...(yield* refusingRuntime.run(request)),
-            text: '```json\n{"next": "build", "why": "go fix it where it actually broke"}\n```',
+            text: '```json\n{"cause": {"_tag": "SetupBroken", "what": "x", "repair": "y"}, "summary": "go fix it where it actually broke"}\n```',
           }
         }),
     }
@@ -2354,7 +2354,7 @@ runtime:
     const routed = run
       .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
-    expect(routed[0]).toMatchObject({ chose: 'build', to: 'waiting' })
+    expect(routed[0]).toMatchObject({ chose: 'waiting', to: 'waiting' })
 
     // `Hold.Routed{when:'findings'}` is gone with `Hold` itself (#502) — the
     // same fact is `WaitStarted.reason` landing on `ProposedEscalated`, with
@@ -2364,7 +2364,7 @@ runtime:
     expect((blocked.data as { reason: WaitReason }).reason).toMatchObject({
       _tag: 'ProposedEscalated',
       proposal: { _tag: 'ReviewFindings' },
-      because: { _tag: 'UnknownCandidate', candidate: 'build' },
+      because: { _tag: 'UnreadableReply', raw: expect.stringContaining('SetupBroken') },
     })
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
@@ -2378,7 +2378,7 @@ runtime:
    * `chose` still names the destination (`claim`), and `ceiling` names what
    * took it off the offer.
    */
-  it('refuses a judge that answers `claim` with restarts spent, as CandidateUnavailable', async () => {
+  it('hands a WrongApproach to a person naming newAttempts when restarts are spent', async () => {
     const store = memoryStore()
     const did: string[] = []
     const said: string[] = []
@@ -2389,7 +2389,7 @@ runtime:
           if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
           return {
             ...(yield* refusingRuntime.run(request)),
-            text: '```json\n{"next": "claim", "why": "start over from a clean worktree"}\n```',
+            text: '```json\n{"cause": {"_tag": "WrongApproach", "why": "start over from a clean worktree"}, "summary": "start over from a clean worktree"}\n```',
           }
         }),
     }
@@ -2413,8 +2413,14 @@ runtime:
     const routed = run
       .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
-    expect(routed[0]).toMatchObject({ chose: 'claim', to: 'waiting', ceiling: 'newAttempts' })
-    expect(routed[0]!.why).toContain('the judge chose `restart`, and `newAttempts` is spent')
+    expect(routed[0]).toMatchObject({ chose: 'waiting', to: 'waiting' })
+    expect(routed[0]!.why).toContain('`newAttempts` is spent')
+    const stored = run.find((e) => e.type === 'ProposalRouted')!.data as { reply: JudgeReply }
+    expect(stored.reply).toMatchObject({
+      _tag: 'Selected',
+      candidate: 'hand-to-person',
+      cause: { _tag: 'WrongApproach' },
+    })
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
   })

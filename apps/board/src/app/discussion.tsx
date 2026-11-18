@@ -425,6 +425,9 @@ export function discussionContext(
     }
   if (status.result._tag === 'TriageFailed')
     return { state: 'failed', label: 'No analysis to start from', detail: status.result.why }
+  // `advised` is the chat's style name for a triage that has something to say; only an old row advised a move.
+  if (status.result._tag === 'TriageAnswered')
+    return { state: 'advised', label: 'Triage read the cause', detail: status.result.summary }
   return { state: 'advised', label: 'Triage advised a move', detail: status.result.summary }
 }
 
