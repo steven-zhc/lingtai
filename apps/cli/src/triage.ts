@@ -1018,6 +1018,7 @@ const waitTriageWithin = (
 
     let baseSha: string | null = null
     let headSha: string | null = mechanical === null || proposal?._tag !== 'MergeConflict' ? null : proposal.headSha
+    let headUnread = false
     let final: TriageResult = { _tag: 'TriageFailed', why: 'triage did not run' }
 
     if (mechanical !== null) {
@@ -1037,6 +1038,8 @@ const waitTriageWithin = (
         evidence.conflicts = conflictPaths
         baseSha = gathered.baseSha
         headSha = gathered.headSha
+        // The log names a head the mirror could not resolve: the head is unread, not absent.
+        headUnread = gathered.recordedHead !== null && gathered.headSha === null
         splitKind = gathered.splitKind
 
         const chatId = containmentId(request.waitId)
@@ -1350,8 +1353,11 @@ const waitTriageWithin = (
     ): Readonly<Record<CauseBound, CauseCounter>> => {
       // What the attempt's own counters do not yet hold: a resolution after the last event that raised the counter.
       const spent = triageSpentOn(state, waitRunId, run)
+      // `refusalFixes` is what triage itself bought: an implement round is not it (a conflict continuation or a
+      // person's grant starts one too), so only `WaitResolved{by: 'triage'}` counts, and it counts for good.
+      const fixesBought = triageSpentOn(state, waitRunId).refusalFixes
       return {
-        refusalFixes: { used: (run?.implementRound ?? 0) + spent.refusalFixes, allowed: allowed.refusalFixes },
+        refusalFixes: { used: fixesBought, allowed: allowed.refusalFixes },
         newAttempts: { used: state.newAttempts.length + spent.newAttempts, allowed: allowed.newAttempts },
         conflictResolutions: {
           used: (run?.conflictRounds ?? 0) + spent.conflictResolutions,
@@ -1362,6 +1368,9 @@ const waitTriageWithin = (
         personAsks: { used: 0, allowed: BOUNDS.personAsks },
       }
     }
+    // A failed read of the head is not "unchanged" nor "no head": an answer given over it acts on nothing.
+    if (final._tag === 'TriageAnswered' && headUnread)
+      final = { _tag: 'TriageFailed', why: 'the attempt head could not be read' }
     if (callerSignal?.aborted) final = { _tag: 'TriageFailed', why: 'aborted' }
 
     // `WaitTriaged` bound at the fresh version of a stream that may have moved: a failure is recorded whenever the
