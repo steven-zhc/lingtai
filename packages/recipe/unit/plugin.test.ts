@@ -1591,6 +1591,18 @@ describe('a dispatch is one shape', () => {
     }
   })
 
+  /** #1250: a run that committed nothing is `AgentFailed` and redone by rule, so no judge is asked at it. */
+  it('refuses a `judge:` at `when: nothing-produced` by name, saying why it is gone', () => {
+    const refused = Recipe.safeParse({
+      ...BASE,
+      steps: { proposed: [{ name: 'a silent agent', judge: 'claude-code', when: 'nothing-produced' }] },
+    })
+    expect(refused.success).toBe(false)
+    const why = refused.error!.issues.map((issue) => issue.message).join('\n')
+    expect(why).toContain('"nothing-produced" is a retired reason')
+    expect(why).toContain('AgentFailed')
+  })
+
   /**
    * **A built-in judge spends nothing, which is the whole of what its name
    * promises** (0070 §3).

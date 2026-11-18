@@ -46,7 +46,27 @@ Make the change and commit it on the branch you are already on.
    passing the gates anyway. `git add` and `git commit` on the current branch;
    do not push.
 
-If the issue cannot be closed as written — it is ambiguous, or it asks for
-something the code cannot support — say so plainly in your final message rather
-than guessing. A run that stops with a clear question is worth more than one that
-merges the wrong thing.
+**End your final message with a fenced `outcome` block of JSON, and nothing after it.**
+It is the only thing that says what you produced; the conductor reads it and acts
+on it. Exactly one of these:
+
+```outcome
+{"outcome": "Implemented"}
+```
+
+You made the change and committed it. If the head did not move this is not
+believed, and the step is redone.
+
+```outcome
+{"outcome": "Unclear", "questions": [{"id": "q1", "text": "<the question>", "answers": [{"id": "a", "text": "<option>"}, {"id": "b", "text": "<option>"}], "recommended": "a"}]}
+```
+
+The issue cannot be closed as written — it is ambiguous, or it asks for something
+the code cannot support. One to five questions, each with two to four answers and
+the one you recommend. Keep what you committed; a person answers and the work
+continues from it. A run that stops with a clear question is worth more than one
+that merges the wrong thing. **This is also what to declare when the work is
+already on the base branch** — say so in the question.
+
+A final message with no block, or one that cannot be read, is a run that did not
+finish, and it is redone.

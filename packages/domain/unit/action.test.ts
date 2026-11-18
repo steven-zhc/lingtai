@@ -474,3 +474,38 @@ describe('reviewSummaryOf', () => {
     expect(reviewSummaryOf(outcome('build', [withSummary('x')]))).toBeNull()
   })
 })
+
+describe('wellFormed', () => {
+  it('empty: well-formed', () => {
+    expect(wellFormed(outcome('build', []))).toBe(true)
+  })
+
+  it('all cleared: well-formed', () => {
+    expect(wellFormed(outcome('build', [verdictAction('accepted'), verdictAction('accepted')]))).toBe(true)
+  })
+
+  it('cleared, then fails, then NotReached: well-formed', () => {
+    const result = outcome('build', [verdictAction('accepted'), verdictAction('refused'), notReached('verdict')])
+    expect(wellFormed(result)).toBe(true)
+  })
+
+  it('two uncleared actions, neither NotReached: not well-formed', () => {
+    const result = outcome('build', [verdictAction('refused'), verdictAction('refused')])
+    expect(wellFormed(result)).toBe(false)
+  })
+
+  it('NotReached after a cleared deciding action: not well-formed', () => {
+    const result = outcome('build', [verdictAction('accepted'), notReached('verdict')])
+    expect(wellFormed(result)).toBe(false)
+  })
+
+  it('NotReached first, a real action after it: not well-formed', () => {
+    const result = outcome('build', [notReached('verdict'), verdictAction('accepted')])
+    expect(wellFormed(result)).toBe(false)
+  })
+
+  it('all NotReached, not empty: not well-formed', () => {
+    const result = outcome('build', [notReached('verdict'), notReached('verdict')])
+    expect(wellFormed(result)).toBe(false)
+  })
+})
