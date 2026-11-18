@@ -1081,9 +1081,18 @@ export function lastKindColor(project: string, kind: string): string | null {
  */
 const lastOffered = new Map<string, number>()
 
+/** Which projects had a *why nothing runs* line at their last answer (#1216), so its skeleton is as many. */
+const lastWhy = new Set<string>()
+
+/** How many lines the fallback draws for the projects in view. */
+export function whySkeletonCount(projects: readonly string[]): number {
+  return projects.filter((p) => lastWhy.has(p)).length
+}
+
 /** Forgets every count, so a test can start from *no answer seen*. */
 export function forgetSkeletonCounts(): void {
   lastOffered.clear()
+  lastWhy.clear()
   lastColumnCounts.clear()
   lastScopeOffered.clear()
 }
@@ -1337,6 +1346,8 @@ export async function githubQueue(
     // The base-red count is the line's own when the line says it (#1216); otherwise it is still the note's.
     const sayingBase = answer.why?.roots.some((r) => r.root === 'base-red' || r.root === 'base-unreadable') ?? false
     if (answer.why != null) why.push({ project: filter.project, why: answer.why })
+    if (answer.why != null) lastWhy.add(filter.project)
+    else lastWhy.delete(filter.project)
     const passed = passedOver(
       offered.skipped.filter((s) => !DRAWN_SKIPS.has(s.reason) && !(sayingBase && s.reason === 'base-red')),
     )

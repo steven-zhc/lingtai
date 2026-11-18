@@ -27,6 +27,7 @@ import {
   queuedSkeletonCount,
   recordQueuedOffered,
   skeletonCount,
+  whySkeletonCount,
   type BoardCard,
   type GithubQueue,
   LANDED_OPEN,
@@ -944,6 +945,7 @@ async function CardsPart({
             logCards={queuedColumn.cards}
             onBoard={onBoard}
             count={skeletonCount(askable.map((f) => f.project))}
+            whyLines={whySkeletonCount(askable.map((f) => f.project))}
             order={queueOrder}
             list={list}
           />

@@ -28,6 +28,10 @@ import {
 } from '@/lib/board'
 import { kindDot } from '@/lib/kind-colour'
 
+import { omittedTickets as omittedCount } from '@lingtai/conductor/why-nothing-runs'
+
+import { whyLine } from '@/lib/why-line'
+
 import { Skeleton } from './skeleton'
 
 /**
@@ -294,6 +298,7 @@ export function QueuedFallback({
   list,
   order,
   count,
+  whyLines = 0,
 }: {
   unreadable: readonly QueueProblem[]
   logCards: BoardCard[]
@@ -303,11 +308,14 @@ export function QueuedFallback({
   order: readonly string[]
   /** How many card skeletons to draw: what GitHub offered last time, from `skeletonCount`. */
   count: number
+  /** How many *why nothing runs* lines the last answer had: the line's skeleton, in its place and size (#1216). */
+  whyLines?: number
 }) {
   // Log cards only: no groups, and no mark, since GitHub has not answered.
   const { entries } = groupQueue(logCards, [], order, new Map(), [], false)
   return (
     <>
+      {whyLines > 0 ? <Skeleton shape="whynot" count={whyLines} /> : null}
       <Problems recipe problems={unreadable} />
       {logCards.length > 0 ? (
         <QueuedList
@@ -322,6 +330,50 @@ export function QueuedFallback({
         />
       ) : null}
       <Skeleton shape="card" count={count} />
+    </>
+  )
+}
+
+/**
+ * *Why nothing runs* (#1216, 0122 §8): the column's first line, one per project that has queued work and
+ * nothing in flight, from the one function `lingtai status` reads. Absent when every queued ticket is held.
+ * A lock root points up at the banner; it never names the reset, which is the banner's alone.
+ */
+export function WhyNothingRuns({
+  why,
+  showProject,
+}: {
+  why: readonly { project: string; why: NonNullable<GithubQueue['why']>[number]['why'] }[]
+  showProject: boolean
+}) {
+  return (
+    <>
+      {why.map(({ project, why: w }) => {
+        const [first] = w.roots
+        if (first === undefined) return null
+        const line = whyLine(project, first)
+        const more = omittedCount(w)
+        return (
+          <p key={project} className={line.tone === '' ? 'whynot' : `whynot ${line.tone}`}>
+            <span className="wk">why nothing runs</span>
+            <span>
+              {showProject ? <strong>{project}: </strong> : null}
+              {line.segments.map((seg, i) =>
+                seg.kind === 'code' ? (
+                  <code key={i}>{seg.text}</code>
+                ) : seg.kind === 'ticket' ? (
+                  <a key={i} href="#waiting">
+                    {seg.text}
+                  </a>
+                ) : (
+                  <Fragment key={i}>{seg.text}</Fragment>
+                ),
+              )}
+              {more > 0 ? <span className="more"> · and {more} more for other reasons</span> : null}
+            </span>
+          </p>
+        )
+      })}
     </>
   )
 }
@@ -394,6 +446,7 @@ export function QueuedAnswered({
     )
   return (
     <>
+      <WhyNothingRuns why={github.why ?? []} showProject={projects.size > 1} />
       {summary}
       <Problems recipe problems={unreadable} />
       <Problems recipe={false} problems={github.problems} />
