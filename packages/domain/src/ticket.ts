@@ -30,6 +30,7 @@ import {
   type Tier,
   type TriageStartedBy,
 } from './events.ts'
+import { actionFor, type CauseAction, type CauseBound, type CauseCounter, type CauseOrigin } from './failure/respond.ts'
 import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
 import { waitWords } from './wait-words.ts'
 import { allowedResolutions, type Resolution, type TriageResult, type WaitReason } from './wait.ts'
@@ -1180,7 +1181,37 @@ export function startTriageTransition(
 
 export type FinishTriageDecline = { reason: 'wait-not-current' } | { reason: 'changed' }
 
-/** A triage's answer is recorded while its wait is current, and — when the caller decided on a version — only at it. */
+/** The part of an event the "unchanged since" rule reads. */
+export type SinceEvent = { readonly type: string; readonly data: unknown }
+
+/**
+ * Whether every event after the version a triage started at is that triage's own run fact (`RunPrompted` or `RunSpent`
+ * for `Triage{waitId}`, which `recordTriageRun` appends to the ticket stream between `TriageStarted` and the answer).
+ * Anything else — a person's resolution, an edit, a close, a requeue — is a change. A body edited on GitHub directly is
+ * not on the log, so it is not caught here (0118, *Consequences*).
+ */
+export function unchangedSince(since: readonly SinceEvent[], waitId: WaitId): boolean {
+  return since.every((e) => {
+    if (e.type !== 'RunPrompted' && e.type !== 'RunSpent') return false
+    const f = (e.data as { for?: { _tag?: string; waitId?: string } } | null)?.for
+    return f?._tag === 'Triage' && f.waitId === waitId
+  })
+}
+
+/**
+ * The version rule, one place. `ifVersion` is the version the caller bound to; `since` is the stream's events after it
+ * (none for a caller that decided on the very read it appends at). The stream is unchanged when it holds exactly those
+ * events past `ifVersion` and they are all this triage's own run facts.
+ */
+function triageStreamChanged(
+  state: TicketState,
+  input: { waitId: WaitId; ifVersion: number; since?: readonly SinceEvent[] },
+): boolean {
+  const since = input.since ?? []
+  return state.version !== input.ifVersion + since.length || !unchangedSince(since, input.waitId)
+}
+
+/** A triage's answer is recorded while its wait is current and the ticket is unchanged since the version it read. */
 export function finishTriageTransition(
   state: TicketState,
   input: {
@@ -1189,29 +1220,137 @@ export function finishTriageTransition(
     headSha: string
     result: PayloadOf<'WaitTriaged'>['result']
     by: PayloadOf<'WaitTriaged'>['by']
-    ifVersion?: number
+    ifVersion: number
+    since?: readonly SinceEvent[]
   },
 ): { ok: true; events: ToAppend[] } | { ok: false; refusal: FinishTriageDecline } {
   if (!waitIsCurrentOrUnknown(state, input.waitId)) return { ok: false, refusal: { reason: 'wait-not-current' } }
-  if (input.ifVersion !== undefined && state.version !== input.ifVersion) {
-    return { ok: false, refusal: { reason: 'changed' } }
-  }
+  if (triageStreamChanged(state, input)) return { ok: false, refusal: { reason: 'changed' } }
+  return { ok: true, events: [triagedEvent(input)] }
+}
+
+function triagedEvent(input: {
+  waitId: WaitId
+  attempt: number
+  headSha: string
+  result: PayloadOf<'WaitTriaged'>['result']
+  by: PayloadOf<'WaitTriaged'>['by']
+}): ToAppend {
   return {
-    ok: true,
-    events: [
-      {
-        type: 'WaitTriaged',
-        actor: 'conductor',
-        data: parsePayload('WaitTriaged', {
-          waitId: input.waitId,
-          attempt: input.attempt,
-          headSha: input.headSha,
-          result: input.result,
-          by: input.by,
-        }),
-      },
-    ],
+    type: 'WaitTriaged',
+    actor: 'conductor',
+    data: parsePayload('WaitTriaged', {
+      waitId: input.waitId,
+      attempt: input.attempt,
+      headSha: input.headSha,
+      result: input.result,
+      by: input.by,
+    }),
   }
+}
+
+export type ActOnTriageRefusal = 'wait-not-current' | 'changed' | 'head-moved' | 'not-offered'
+
+/** What `actOnTriageTransition` decided: the events, and the action the system took (null: a person is asked). */
+export type ActOnTriageDecision = {
+  ok: true
+  events: ToAppend[]
+  action: CauseAction | null
+  resolution: Resolution | null
+}
+
+/**
+ * **A triage answer the system can act on resolves its own wait** (0108 §6, 0118 §3), pure. The answer is bound to the
+ * wait, the head and the version triage read (`ifVersion` with `since`, the events after it). When `actionFor` gives
+ * anything but `askPerson`, `WaitTriaged` and `WaitResolved{by: 'triage'}` come back for one append; that
+ * `WaitResolved` is what spends the action's bound (see `triageSpentOn`). `writeSpentOnThenRedoStep` (#1260) and
+ * `splitTicket` (#1262) are not built: they return only `WaitTriaged`, the wait stays.
+ */
+export function actOnTriageTransition(
+  state: TicketState,
+  input: {
+    waitId: WaitId
+    attempt: number
+    /** The head recorded on `WaitTriaged` (what triage read through the mirror). */
+    headSha: string
+    /** The head the answer is bound to — the log's own claim for the attempt when triage started; `''` when it had none. */
+    boundSha: string
+    by: PayloadOf<'WaitTriaged'>['by']
+    answer: Extract<TriageResult, { _tag: 'TriageAnswered' }>
+    origin: CauseOrigin
+    counters: Readonly<Record<CauseBound, CauseCounter>>
+    ifVersion: number
+    since?: readonly SinceEvent[]
+    /** The head the log says the attempt is at now; `null` when the wait holds no run. */
+    headNow: string | null
+  },
+): ActOnTriageDecision | { ok: false; refusal: ActOnTriageRefusal } {
+  const life = state.lifecycle
+  if (!waitIsCurrentOrUnknown(state, input.waitId)) return { ok: false, refusal: 'wait-not-current' }
+  if (triageStreamChanged(state, input)) return { ok: false, refusal: 'changed' }
+  const triaged = triagedEvent({
+    waitId: input.waitId,
+    attempt: input.attempt,
+    headSha: input.headSha,
+    result: input.answer,
+    by: input.by,
+  })
+  const none: ActOnTriageDecision = { ok: true, events: [triaged], action: null, resolution: null }
+  const action = actionFor(input.answer.cause, input.origin, input.counters)
+  if (action._tag === 'askPerson') return { ...none, action }
+  // Not yet built: the person is asked as before.
+  if (action._tag === 'writeSpentOnThenRedoStep' || action._tag === 'splitTicket') return { ...none, action }
+  // A wait the reduce has never seen cannot be resolved (nothing to find its reason in): advice only.
+  if (life.status !== 'blocked' || life.waitId !== input.waitId) return { ...none, action }
+  const needsHead = action._tag !== 'startNewAttempt'
+  if (needsHead && (input.boundSha === '' || input.headNow === null || input.headNow !== input.boundSha)) {
+    return { ok: false, refusal: 'head-moved' }
+  }
+  const ref = agentBranchOf(state.externalRef ?? '')
+  const resolution: Resolution =
+    action._tag === 'startNewAttempt'
+      ? { _tag: 'StartNewAttempt' }
+      : action._tag === 'redoStep'
+        ? { _tag: 'RedoStep', onSha: input.boundSha, ref }
+        : { _tag: 'FixRefusal', onSha: input.boundSha, ref }
+  const decided = resolveWaitTransition(state, { waitId: input.waitId, resolution })
+  if (!decided.ok || decided.kind !== 'proceed') return { ok: false, refusal: 'not-offered' }
+  const resolved = resolvedEvents(state, decided.block, {
+    waitId: input.waitId,
+    by: 'triage',
+    resolution,
+    note: input.answer.summary,
+  })
+  if (!resolved.ok) return { ok: false, refusal: 'not-offered' }
+  return { ok: true, events: [triaged, ...resolved.events], action, resolution }
+}
+
+/**
+ * **What triage's own resolutions have spent**, per bound, read off the ticket's waits: a `WaitResolved{by: 'triage'}`
+ * is the count, in the one append before any effect (0108 §6 (3)), so a restart between it and the effect spends once.
+ * A person's resolution adds nothing here. `FixRefusal` is a count of its own (`refusalFixes`), and the continuation
+ * that takes it up raises the implement round, which is where it is counted afterwards: a caller that adds this
+ * summand to a bound reads the round only while that continuation has not been taken up.
+ */
+export function triageSpentOn(
+  state: TicketState,
+  /** The attempt a per-attempt bound (`stepRedos`) is counted for; absent counts every wait's. */
+  runId?: string | null,
+): {
+  refusalFixes: number
+  newAttempts: number
+  stepRedos: number
+} {
+  const out = { refusalFixes: 0, newAttempts: 0, stepRedos: 0 }
+  for (const w of state.waits) {
+    if (w.resolution?.by !== 'triage') continue
+    const tag = w.resolution.resolution._tag
+    if (tag === 'FixRefusal') out.refusalFixes += 1
+    else if (tag === 'StartNewAttempt') out.newAttempts += 1
+    else if (tag === 'RedoStep' && (runId === undefined || ('run' in w.reason && w.reason.run.runId === runId)))
+      out.stepRedos += 1
+  }
+  return out
 }
 
 export type CloseDecline = { reason: 'already-closed' } | { reason: 'landed' } | { reason: 'changed' }

@@ -35,6 +35,12 @@ import {
   askTransition,
   closeChecks,
   finishTriageTransition,
+  actOnTriageTransition,
+  type ActOnTriageRefusal,
+  type CauseAction,
+  type CauseBound,
+  type CauseCounter,
+  type CauseOrigin,
   startTriageTransition,
   type FinishTriageDecline,
   type StartTriageDecline,
@@ -54,7 +60,7 @@ import {
   ticketReducer,
   type ToAppend,
 } from '@lingtai/domain'
-import { allowedResolutions, type Resolution, type WaitReason } from '@lingtai/domain/wait'
+import { allowedResolutions, type Resolution, type TriageResult, type WaitReason } from '@lingtai/domain/wait'
 import {
   ConcurrencyError,
   type EventStore,
@@ -448,7 +454,10 @@ export function askTicketEffect(
 /** What a triage command reads and appends through: the narrowest store the daemon's catch-up already holds. */
 export type TriageStore = Pick<EventStore, 'read' | 'readTypes' | 'append'>
 
-export type StartTriageResult = { ok: true } | { ok: false; refusal: StartTriageDecline } | { ok: false; lost: true }
+export type StartTriageResult =
+  | { ok: true; version: number }
+  | { ok: false; refusal: StartTriageDecline }
+  | { ok: false; lost: true }
 
 /**
  * `TriageStarted` at the attempt the caller fixed. Refused when the wait is not current or the reduce already holds
@@ -485,7 +494,9 @@ export function startTriage(
     })
     if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
     const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
-    return lost ? ({ ok: false, lost: true } as const) : ({ ok: true } as const)
+    return lost
+      ? ({ ok: false, lost: true } as const)
+      : ({ ok: true, version: state.version + decided.events.length } as const)
   })
 }
 
@@ -494,35 +505,91 @@ type FinishTriageInput = Parameters<typeof finishTriageTransition>[1]
 export type FinishTriageResult = { ok: true } | { ok: false; refusal: FinishTriageDecline } | { ok: false; lost: true }
 
 /**
- * `WaitTriaged`, while the wait is current. `ifVersion` is the version a caller decided on: a stream that moved since
- * is `lost` (a refusal `changed`, said the way a conflict is). The retry loop stays the caller's (0015).
+ * Read the stream's events after `version` — the evidence `unchangedSince` reads. Version is the event count on this
+ * store (`recordTriageRun` appends at `current.length`), so the tail is `events.slice(version)`.
+ */
+const readSince = (store: TriageStore, ticketId: string, version: number) =>
+  Effect.tryPromise({ try: () => store.read(ticketId), catch: (e) => e }).pipe(
+    Effect.map((events) => events.slice(version)),
+  )
+
+/**
+ * `WaitTriaged`, while the wait is current and the ticket unchanged since `ifVersion` — the version triage read at
+ * `TriageStarted`. Its own `RunPrompted` and `RunSpent` land after that and are not a change; anything else is
+ * `changed`, a refusal and not a lost race (`lost` is only an append that lost the version, which the caller reads again
+ * for). The retry loop stays the caller's (0015).
  */
 export function finishTriage(
   ticketId: string,
   options: SnapshotReadOptions & {
     store: TriageStore
-    ifVersion?: number
+    ifVersion: number
     /** A function is settled after the read, so what changed while it ran (a caller's abort) is seen. */
     result: FinishTriageInput['result'] | (() => FinishTriageInput['result'])
   } & Pick<FinishTriageInput, 'waitId' | 'attempt' | 'headSha' | 'by'>,
 ): Effect.Effect<FinishTriageResult, unknown> {
   return Effect.gen(function* () {
     const state = yield* readThroughSnapshot(options.store, ticketReducer, ticketId, 'all', options)
+    const since = yield* readSince(options.store, ticketId, options.ifVersion)
     const decided = finishTriageTransition(state, {
       waitId: options.waitId,
       attempt: options.attempt,
       headSha: options.headSha,
       result: typeof options.result === 'function' ? options.result() : options.result,
       by: options.by,
-      ...(options.ifVersion === undefined ? {} : { ifVersion: options.ifVersion }),
+      ifVersion: options.ifVersion,
+      since,
     })
-    if (!decided.ok) {
-      return decided.refusal.reason === 'changed'
-        ? ({ ok: false, lost: true } as const)
-        : ({ ok: false, refusal: decided.refusal } as const)
-    }
+    if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
     const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
     return lost ? ({ ok: false, lost: true } as const) : ({ ok: true } as const)
+  })
+}
+
+export type ActOnTriageResult =
+  | { ok: true; action: CauseAction | null; resolution: Resolution | null }
+  | { ok: false; refusal: ActOnTriageRefusal }
+  | { ok: false; lost: true }
+
+/**
+ * **A triage answer, acted on** (#1258): `actOnTriageTransition`'s events in one append, at the version just read. The
+ * binding is the version `TriageStarted` landed at (`ifVersion`) and the head triage read; `headNow` is what the log
+ * says the attempt is at now. A refusal appends nothing: the caller records `TriageFailed{why}` through `finishTriage`.
+ */
+export function actOnTriage(
+  ticketId: string,
+  options: SnapshotReadOptions & {
+    store: TriageStore
+    ifVersion: number
+    boundSha: string
+    headNow: string | null
+    answer: Extract<TriageResult, { _tag: 'TriageAnswered' }>
+    origin: CauseOrigin
+    /** Computed from the state read here, so a bound spent by a resolution between is seen. */
+    counters: (state: TicketState) => Readonly<Record<CauseBound, CauseCounter>>
+  } & Pick<FinishTriageInput, 'waitId' | 'attempt' | 'headSha' | 'by'>,
+): Effect.Effect<ActOnTriageResult, unknown> {
+  return Effect.gen(function* () {
+    const state = yield* readThroughSnapshot(options.store, ticketReducer, ticketId, 'all', options)
+    const since = yield* readSince(options.store, ticketId, options.ifVersion)
+    const decided = actOnTriageTransition(state, {
+      waitId: options.waitId,
+      attempt: options.attempt,
+      headSha: options.headSha,
+      boundSha: options.boundSha,
+      by: options.by,
+      answer: options.answer,
+      origin: options.origin,
+      counters: options.counters(state),
+      ifVersion: options.ifVersion,
+      since,
+      headNow: options.headNow,
+    })
+    if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
+    const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
+    return lost
+      ? ({ ok: false, lost: true } as const)
+      : ({ ok: true, action: decided.action, resolution: decided.resolution } as const)
   })
 }
 

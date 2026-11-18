@@ -1,7 +1,7 @@
 /**
  * Ending a wait — the single entry point 0118 §11 asks for (#465).
  *
- * **The only writer of `WaitResolved`.** Before this there were three:
+ * **One of two writers of `WaitResolved` (triage's own is `actOnTriage`; both enforce `allowedResolutions`).** Before this there were three:
  * `approve.ts` wrote it twice (granting an approval, and absorbing a
  * requeue) and `ask.ts` wrote it once (answering a question asked before any
  * run). All three now call `resolveWait`, which does the one thing every one
@@ -556,7 +556,7 @@ function savedHead(
  * and must not report that as a failed approval (see the call sites' own
  * comments). `null` once it lands; otherwise the last error's message.
  */
-function requestContinuation(
+export function requestContinuation(
   store: EventStore,
   by: string,
   project: string,

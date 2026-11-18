@@ -18,7 +18,8 @@ import type { TicketListing } from '@lingtai/conductor/discover'
 import { readingFor } from '@lingtai/conductor/discuss'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
-import { finishTriage, recordTriageRun, startTriage } from '@lingtai/conductor/ticket'
+import { requestContinuation } from '@lingtai/conductor/resolve-wait'
+import { actOnTriage, finishTriage, recordTriageRun, startTriage } from '@lingtai/conductor/ticket'
 import {
   MAX_READ_ROUNDS,
   parseTriage,
@@ -29,8 +30,13 @@ import {
 } from '@lingtai/conductor/triage'
 import { TRIAGE_EVENTS } from '@lingtai/daemon'
 import {
+  BOUNDS,
   parseTicketStream,
   attemptReducer,
+  triageSpentOn,
+  type CauseBound,
+  type CauseCounter,
+  type TicketState,
   reduceTicket,
   ticketStream,
   triageFactsOf,
@@ -47,6 +53,8 @@ import {
   TRIAGE_ANSWER_JSON_SCHEMA,
   triageStatus,
   unwrapTriageEnvelope,
+  type TriageFacts,
+  type TriageStatus,
   type TriageResult,
   type WaitReason,
 } from '@lingtai/domain/wait'
@@ -60,7 +68,7 @@ import {
 import { loadProjectsEffect, readProjectEffect } from '@lingtai/project'
 import { readTasksEffect, type TaskCard } from '@lingtai/projector'
 import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
-import { kindsOf } from '@lingtai/recipe/settings'
+import { ceilingOf, kindsOf } from '@lingtai/recipe/settings'
 import {
   conflictedPathsAtEffect,
   diffStatAtEffect,
@@ -189,6 +197,18 @@ export const catchUpTriage = (project: string, triage: Triage | null, deps: Catc
     }
   })
 
+/**
+ * Whether triage may be asked for this wait now: it never was, or its attempt was interrupted or failed and the
+ * attempts started are still within the one more ask a failure buys (`BOUNDS.triageRetries`, 0118 §3). Counted in
+ * attempts *started*, so an interruption and a failure share the one retry.
+ */
+const askable = (status: TriageStatus, facts: TriageFacts): boolean => {
+  const started = facts.started?.attempt ?? 0
+  if (status._tag === 'Queued') return true
+  if (status._tag === 'Interrupted') return started < 1 + BOUNDS.triageRetries
+  return status._tag === 'Done' && status.result._tag === 'TriageFailed' && started < 1 + BOUNDS.triageRetries
+}
+
 const catchUpWait = (ticketId: string, triage: Triage, deps: CatchUpTriagePorts, startedAt: Date) =>
   Effect.gen(function* () {
     const state = yield* readThroughSnapshot(deps.store, ticketReducer, ticketId, 'all', deps)
@@ -199,36 +219,36 @@ const catchUpWait = (ticketId: string, triage: Triage, deps: CatchUpTriagePorts,
       declared: true,
       daemonStartedAt: startedAt,
     })
-    if (status._tag !== 'Queued' && status._tag !== 'Interrupted') return
-    const start = () =>
-      enqueueTriage(
-        { ticketId, waitId },
-        Effect.gen(function* () {
-          // A person or the live subscriber may have answered this while it waited in the queue.
-          const latest = yield* readThroughSnapshot(deps.store, ticketReducer, ticketId, 'all', deps)
-          const current = latest.lifecycle
-          if (current.status !== 'blocked' || current.waitId !== waitId) return
-          const facts = triageFactsFromState(latest, waitId)
-          const next = triageStatus(current.reason, facts, { declared: true, daemonStartedAt: startedAt })
-          if (next._tag === 'Queued' || (next._tag === 'Interrupted' && (facts.started?.attempt ?? 0) < 2)) {
-            // Held back means nothing is appended: the wait stays `Queued` (or
-            // `Interrupted`) until a resume scan or a restart finds it again.
-            const why = yield* (deps.locked ?? notLocked)(parseTicketStream(ticketId)?.project ?? '').pipe(
-              recoverWith((err) => Effect.succeed(messageOf(err))),
-            )
-            if (why !== null) {
-              deps.log?.(`triage ${waitId} on ${ticketId}: not started — ${why}`)
-              return HELD
-            }
-            const outcome = yield* deps.run({ ticketId, waitId, reason: current.reason, triage })
-            if (outcome && outcome.started === false)
-              return yield* Effect.fail(new Error(`could not start triage ${waitId}`))
-          } else if (next._tag === 'Interrupted') {
-            yield* finishInterrupted(ticketId, waitId, deps, startedAt)
+    if (!askable(status, triageFactsFromState(state, waitId))) return
+    const start = () => enqueueTriage({ ticketId, waitId }, asked(), deps.log ?? console.error)
+    const asked = (): Effect.Effect<typeof HELD | void, unknown> =>
+      Effect.gen(function* () {
+        // A person or the live subscriber may have answered this while it waited in the queue.
+        const latest = yield* readThroughSnapshot(deps.store, ticketReducer, ticketId, 'all', deps)
+        const current = latest.lifecycle
+        if (current.status !== 'blocked' || current.waitId !== waitId) return
+        const facts = triageFactsFromState(latest, waitId)
+        const next = triageStatus(current.reason, facts, { declared: true, daemonStartedAt: startedAt })
+        if (askable(next, facts)) {
+          // Held back means nothing is appended: the wait stays `Queued` (or
+          // `Interrupted`) until a resume scan or a restart finds it again.
+          const why = yield* (deps.locked ?? notLocked)(parseTicketStream(ticketId)?.project ?? '').pipe(
+            recoverWith((err) => Effect.succeed(messageOf(err))),
+          )
+          if (why !== null) {
+            deps.log?.(`triage ${waitId} on ${ticketId}: not started — ${why}`)
+            return HELD
           }
-        }),
-        deps.log ?? console.error,
-      )
+          const outcome = yield* deps.run({ ticketId, waitId, reason: current.reason, triage })
+          if (outcome && outcome.started === false)
+            return yield* Effect.fail(new Error(`could not start triage ${waitId}`))
+          // A failure is asked once more (0118 §3): the same predicate decides, so the second failure stops here.
+          const result = (outcome as { result?: { _tag: string; why?: string } } | void | undefined)?.result
+          if (result?._tag === 'TriageFailed' && result.why !== 'wait no longer current') return yield* asked()
+        } else if (next._tag === 'Interrupted') {
+          yield* finishInterrupted(ticketId, waitId, deps, startedAt)
+        }
+      })
     const first = yield* start()
     const result = yield* Deferred.await(first.done)
     // This scan joined a worker whose lock read may predate a resume: once that
@@ -506,6 +526,18 @@ export function daemonTriagePorts(
               if (state === null) return yield* Effect.fail(new Error(`${ticketId} has no registered project`))
               return kindsOf((yield* currentRecipeEffect(state)).recipe)
             }),
+          limits: (ticketId) =>
+            Effect.gen(function* () {
+              const parsed = parseTicketStream(ticketId)
+              const state = parsed === null ? null : yield* readProjectEffect(parsed.project)
+              if (state === null) return null
+              const ceiling = ceilingOf((yield* currentRecipeEffect(state)).recipe)
+              return {
+                refusalFixes: ceiling.attempt.refusalFixes,
+                newAttempts: ceiling.ticket.newAttempts,
+                conflictResolutions: ceiling.attempt.conflictResolutions,
+              }
+            }),
           base: baseOf,
           prepare,
           prepareCheckout: (project, sha, signal) => prepareTriageCheckout(project, sha, undefined, signal),
@@ -528,6 +560,8 @@ function containmentId(waitId: WaitId): string {
 function clip(text: string): string {
   return text.length > TRIAGE_TEXT_MAX ? text.slice(0, TRIAGE_TEXT_MAX) : text
 }
+
+export type TriageLimits = { refusalFixes: number; newAttempts: number; conflictResolutions: number }
 
 export interface TriagePorts extends SnapshotReadOptions {
   store: EventStore
@@ -564,6 +598,11 @@ export interface TriagePorts extends SnapshotReadOptions {
     ticketId: string,
     signal?: AbortSignal,
   ): Effect.Effect<{ ref: string; title: string; body: string; labels: TicketListing['labels'] }, unknown>
+  /**
+   * What the recipe allows of each bound a cause is answered with (`refusalFixes`, `newAttempts`,
+   * `conflictResolutions`). Absent, or `null`, means a cause is advice only: nothing is resolved by the system.
+   */
+  limits?(ticketId: string): Effect.Effect<TriageLimits | null, unknown>
   /** The recipe's `source.kinds`, which a split's children take one from (#1271). */
   kinds(ticketId: string): Effect.Effect<readonly string[], unknown>
   /** The project's base branch. */
@@ -857,6 +896,8 @@ const waitTriageWithin = (
     // A version conflict can be a person's WaitResolved or another triage.
     // Re-read the lifecycle before retrying the paid attempt's append.
     let started = false
+    // The ticket's version after the `TriageStarted` that landed: what the answer is bound to (#1258).
+    let startedVersion = 0
     let startedErr: unknown = null
     for (let i = 0; i < 5 && !started; i += 1) {
       const appended = yield* settle(
@@ -866,6 +907,7 @@ const waitTriageWithin = (
         const decided = appended.value
         if (decided.ok) {
           started = true
+          startedVersion = decided.version
           break
         }
         if ('refusal' in decided) {
@@ -1231,31 +1273,133 @@ const waitTriageWithin = (
     // let `triageStatus` read `Interrupted` and buy a second triage of a wait
     // this one already answered. The caller is a daemon subscriber, which logs
     // and drops a failure (0015) rather than acting on a false success.
+    const waitRunId = 'run' in request.reason ? request.reason.run.runId : null
+    const recordedSha = (): string => headSha ?? baseSha ?? ''
+    // The log's claim of the attempt's head, read when triage began: what an action is bound to (#1258).
+    const readHead = (): Effect.Effect<string | null, unknown> =>
+      waitRunId === null
+        ? Effect.succeed(null)
+        : Effect.map(readThroughSnapshot(deps.store, attemptReducer, waitRunId, 'all', deps), (run) => run.headSha)
+    const limits = deps.limits === undefined ? null : yield* settle(deps.limits(stream))
+    const countersOf = (
+      allowed: TriageLimits,
+      state: TicketState,
+      run: { implementRound: number; conflictRounds?: number; stepRedos?: number } | null,
+    ): Readonly<Record<CauseBound, CauseCounter>> => {
+      const spent = triageSpentOn(state, waitRunId)
+      return {
+        // The implement round is the record once a fix is taken up; a triage's own is added only while it is not.
+        refusalFixes: { used: run?.implementRound ?? 0, allowed: allowed.refusalFixes },
+        newAttempts: { used: state.newAttempts.length + spent.newAttempts, allowed: allowed.newAttempts },
+        conflictResolutions: { used: run?.conflictRounds ?? 0, allowed: allowed.conflictResolutions },
+        stepRedos: { used: (run?.stepRedos ?? 0) + spent.stepRedos, allowed: BOUNDS.stepRedos },
+        ticketSplits: { used: 0, allowed: 1 },
+        personAsks: { used: 0, allowed: BOUNDS.personAsks },
+      }
+    }
+    const bound = yield* settle(readHead())
+    // A read that fails is not "unchanged": nothing is acted on, the answer is a failure to be asked again.
+    const boundSha = bound.ok ? (bound.value ?? '') : null
+    if (callerSignal?.aborted) final = { _tag: 'TriageFailed', why: 'aborted' }
+
+    // `WaitTriaged` bound at the fresh version of a stream that may have moved: a failure is recorded whenever the
+    // wait is still current, never gated on the version triage started at — a person's resolution makes the wait
+    // not current, and that is what stops a stale failure after it.
+    const recordFailure = (result: TriageResult) =>
+      Effect.gen(function* () {
+        const fresh = yield* readThroughSnapshot(deps.store, ticketReducer, stream, 'all', deps)
+        return yield* finishTriage(stream, {
+          ...deps,
+          store: deps.store,
+          waitId: request.waitId,
+          attempt,
+          headSha: recordedSha(),
+          result,
+          by,
+          ifVersion: fresh.version,
+        })
+      })
+
     let lastError: unknown = null
     for (let i = 0; i < 5; i += 1) {
       const landed = yield* settle(
         Effect.gen(function* () {
-          const finished = yield* finishTriage(stream, {
-            ...deps,
-            store: deps.store,
-            waitId: request.waitId,
-            attempt,
-            // `AttemptState.headSha ?? baseSha ?? ''` — the empty string is for a mirror
-            // with no base either, where `reading` already says no file can be
-            // read.
-            headSha: headSha ?? baseSha ?? '',
-            result: () => {
-              if (callerSignal?.aborted) final = { _tag: 'TriageFailed', why: 'aborted' }
-              return final
-            },
-            by,
-          })
+          let toRecord: TriageResult = final
+          let against: 'started' | 'fresh' = 'started'
+          if (final._tag === 'TriageAnswered' && limits !== null && limits.ok && limits.value !== null) {
+            const allowed = limits.value
+            const answered = final
+            const acted = yield* Effect.gen(function* () {
+              if (boundSha === null) return { ok: false, refusal: 'changed' } as const
+              const headNow = yield* readHead()
+              const run =
+                waitRunId === null
+                  ? null
+                  : yield* readThroughSnapshot(deps.store, attemptReducer, waitRunId, 'all', deps)
+              return yield* actOnTriage(stream, {
+                ...deps,
+                store: deps.store,
+                waitId: request.waitId,
+                attempt,
+                headSha: recordedSha(),
+                boundSha,
+                by,
+                answer: answered,
+                // Where a wait came from (`run.turns`/`run.wall`, a diff too large) is not on the wait: `other`.
+                origin: 'other',
+                ifVersion: startedVersion,
+                headNow,
+                counters: (state) => countersOf(allowed, state, run),
+              })
+            }).pipe(recoverWith(() => Effect.succeed({ ok: false, refusal: 'changed' } as const)))
+            if (acted.ok) {
+              // The effect is the continuation, which a restart takes up from `WaitResolved` by its `waitId`.
+              const tag = acted.resolution?._tag
+              if ((tag === 'FixRefusal' || tag === 'RedoStep') && waitRunId !== null) {
+                const parsed = parseTicketStream(stream)
+                if (parsed !== null)
+                  yield* requestContinuation(deps.store, 'triage', parsed.project, parsed.issue, waitRunId)
+              }
+              return { attempt, result: final } satisfies Waited
+            }
+            // Lost the version: the next try reads again, as a failed append always did.
+            if ('lost' in acted) return yield* Effect.fail(new Error(`version conflict on ${stream}`))
+            if (acted.refusal === 'wait-not-current') {
+              return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' } } satisfies Waited
+            }
+            toRecord = { _tag: 'TriageFailed', why: acted.refusal }
+            against = 'fresh'
+          } else if (final._tag === 'TriageAnswered') {
+            // No recipe limits to answer with: advice only, still bound to the version triage read.
+            against = 'started'
+          } else {
+            against = 'fresh'
+          }
+          let finished
+          if (against === 'fresh') {
+            finished = yield* recordFailure(toRecord)
+          } else {
+            finished = yield* finishTriage(stream, {
+              ...deps,
+              store: deps.store,
+              waitId: request.waitId,
+              attempt,
+              headSha: recordedSha(),
+              result: toRecord,
+              by,
+              ifVersion: startedVersion,
+            })
+            if (!finished.ok && 'refusal' in finished && finished.refusal.reason === 'changed') {
+              toRecord = { _tag: 'TriageFailed', why: 'changed' }
+              finished = yield* recordFailure(toRecord)
+            }
+          }
           if (!finished.ok && 'refusal' in finished) {
             return { attempt, result: { _tag: 'TriageFailed', why: 'wait no longer current' } } satisfies Waited
           }
           // Lost the version: the next try reads again, as a failed append always did.
           if (!finished.ok) return yield* Effect.fail(new Error(`version conflict on ${stream}`))
-          return { attempt, result: final } satisfies Waited
+          return { attempt, result: toRecord } satisfies Waited
         }),
       )
       if (landed.ok) return landed.value
