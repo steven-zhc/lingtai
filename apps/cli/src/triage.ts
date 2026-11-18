@@ -14,6 +14,7 @@
  */
 import { createRuntime, runtimeVersionOfEffect, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
+import type { TicketListing } from '@lingtai/conductor/discover'
 import { readingFor } from '@lingtai/conductor/discuss'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
@@ -21,6 +22,7 @@ import { finishTriage, recordTriageRun, startTriage } from '@lingtai/conductor/t
 import {
   MAX_READ_ROUNDS,
   parseTriage,
+  splitChildKind,
   triageBrief,
   type ReadableRef,
   type TriageEvidence,
@@ -58,6 +60,7 @@ import {
 import { loadProjectsEffect, readProjectEffect } from '@lingtai/project'
 import { readTasksEffect, type TaskCard } from '@lingtai/projector'
 import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
+import { kindsOf } from '@lingtai/recipe/settings'
 import {
   conflictedPathsAtEffect,
   diffStatAtEffect,
@@ -423,7 +426,10 @@ export function memoDaemonStartedAt(
 export function triageIssue(
   read: typeof readProjectTicketEffect = readProjectTicketEffect,
   load: typeof readProjectEffect = readProjectEffect,
-): (ticketId: string, signal?: AbortSignal) => Effect.Effect<{ ref: string; title: string; body: string }, Error> {
+): (
+  ticketId: string,
+  signal?: AbortSignal,
+) => Effect.Effect<{ ref: string; title: string; body: string; labels: TicketListing['labels'] }, Error> {
   return (ticketId, signal) =>
     Effect.gen(function* () {
       const parsed = parseTicketStream(ticketId)
@@ -432,7 +438,12 @@ export function triageIssue(
       if (state === null) return yield* Effect.fail(new Error(`${parsed.project} is not registered`))
       const answer = yield* read(state, Number(parsed.issue), { signal })
       if (!answer.ok) return yield* Effect.fail(answer.error as Error)
-      return { ref: String(answer.ticket.number), title: answer.ticket.title, body: answer.ticket.body }
+      return {
+        ref: String(answer.ticket.number),
+        title: answer.ticket.title,
+        body: answer.ticket.body,
+        labels: answer.ticket.labels,
+      }
     })
 }
 
@@ -488,6 +499,13 @@ export function daemonTriagePorts(
             conflictedPathsAt: conflictedPathsAtEffect,
           },
           issue: triageIssue(),
+          kinds: (ticketId) =>
+            Effect.gen(function* () {
+              const parsed = parseTicketStream(ticketId)
+              const state = parsed === null ? null : yield* readProjectEffect(parsed.project)
+              if (state === null) return yield* Effect.fail(new Error(`${ticketId} has no registered project`))
+              return kindsOf((yield* currentRecipeEffect(state)).recipe)
+            }),
           base: baseOf,
           prepare,
           prepareCheckout: (project, sha, signal) => prepareTriageCheckout(project, sha, undefined, signal),
@@ -542,7 +560,12 @@ export interface TriagePorts extends SnapshotReadOptions {
     }): Effect.Effect<ConflictedPath[], unknown>
   }
   /** The ticket, as GitHub has it now. Fails to say why it could not be read. */
-  issue(ticketId: string, signal?: AbortSignal): Effect.Effect<{ ref: string; title: string; body: string }, unknown>
+  issue(
+    ticketId: string,
+    signal?: AbortSignal,
+  ): Effect.Effect<{ ref: string; title: string; body: string; labels: TicketListing['labels'] }, unknown>
+  /** The recipe's `source.kinds`, which a split's children take one from (#1271). */
+  kinds(ticketId: string): Effect.Effect<readonly string[], unknown>
   /** The project's base branch. */
   base(ticketId: string): Effect.Effect<string, unknown>
   /** `apps/cli/src/discuss.ts`'s `prepare` in production — an empty directory and a settings file that denies every tool. */
@@ -620,7 +643,13 @@ const gatherEvidence = (
   guard: Guard,
   signal: AbortSignal,
 ): Effect.Effect<
-  { evidence: TriageEvidence; baseSha: string | null; headSha: string | null; recordedHead: string | null },
+  {
+    evidence: TriageEvidence
+    baseSha: string | null
+    headSha: string | null
+    recordedHead: string | null
+    splitKind: string | null
+  },
   unknown
 > =>
   Effect.gen(function* () {
@@ -630,8 +659,11 @@ const gatherEvidence = (
     let ticket: TriageEvidence['ticket'] = null
     let ticketProblem: string | null = null
     const issued = yield* settle(guard(deps.issue(request.ticketId, signal)))
-    if (issued.ok) ticket = issued.value
+    if (issued.ok) ticket = { ref: issued.value.ref, title: issued.value.title, body: issued.value.body }
     else ticketProblem = (issued.error as Error).message
+
+    const kindsRead = yield* settle(guard(deps.kinds(request.ticketId)))
+    const splitKind = kindsRead.ok ? splitChildKind(issued.ok ? issued.value.labels : null, kindsRead.value) : null
 
     const base = yield* guard(deps.base(request.ticketId)).pipe(orElse('main'))
 
@@ -708,6 +740,7 @@ const gatherEvidence = (
       baseSha,
       headSha,
       recordedHead: head,
+      splitKind,
     }
   })
 
@@ -886,6 +919,7 @@ const waitTriageWithin = (
       let toolsMayRemain = false
       // Set by the checkout's release when the cleanup fails, and read once the scope has closed.
       let cleanupFailed: TriageResult | null = null
+      let splitKind: string | null = null
 
       const attemptWithin = Effect.gen(function* () {
         const gathered = yield* gatherEvidence(deps, request, before, guard, signal)
@@ -894,6 +928,7 @@ const waitTriageWithin = (
         evidence.conflicts = conflictPaths
         baseSha = gathered.baseSha
         headSha = gathered.headSha
+        splitKind = gathered.splitKind
 
         const chatId = containmentId(request.waitId)
         const full = request.triage.agent === 'codex' && request.triage.tools === 'full'
@@ -1081,6 +1116,7 @@ const waitTriageWithin = (
                 outcome.structured === undefined
                   ? outcome.text
                   : JSON.stringify(unwrapTriageEnvelope(outcome.structured)),
+                { kind: splitKind },
               )
 
               if (reply.kind === 'read' && !full && round < MAX_READ_ROUNDS) {

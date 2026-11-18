@@ -46,6 +46,7 @@ describe('triageIssue', () => {
       ref: '2',
       title: 'water',
       body: 'the body',
+      labels: [],
     })
   })
   it('throws the reader’s error unchanged', async () => {

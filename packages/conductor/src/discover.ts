@@ -116,7 +116,7 @@ export type TicketSource = Pick<Tickets, 'listOpenIssues' | 'getIssue'>
  * guessing the first kind would put unclassified issues at the front of the
  * queue.
  */
-export function kindOf(issue: TicketListing, kinds: readonly string[]): string | null {
+export function kindOf(issue: Pick<TicketListing, 'labels'>, kinds: readonly string[]): string | null {
   return kindLabelOf(issue, kinds)?.kind ?? null
 }
 
@@ -129,7 +129,7 @@ export function kindOf(issue: TicketListing, kinds: readonly string[]): string |
  * label the queue did not prioritise it by.
  */
 export function kindLabelOf(
-  issue: TicketListing,
+  issue: Pick<TicketListing, 'labels'>,
   kinds: readonly string[],
 ): { kind: string; label: TicketListing['labels'][number] } | null {
   const carried = new Map(issue.labels.map((l) => [normaliseLabel(l.name), l]))

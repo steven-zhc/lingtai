@@ -21,7 +21,10 @@ import {
 import type { WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
-import { parseTriage, triageBrief, type TriageEvidence } from '../src/triage.ts'
+import { parseTriage as parseWith, splitChildKind, triageBrief, type TriageEvidence } from '../src/triage.ts'
+
+const parseTriage = (text: string | null, options: { kind: string | null } = { kind: 'feature' }) =>
+  parseWith(text, options)
 
 const REASON: WaitReason = {
   _tag: 'MergeRefused',
@@ -604,5 +607,79 @@ describe('the fence: triage.ts and read-step.ts stay pure', () => {
       expect(text).not.toMatch(/from ['"]@lingtai\/agent/)
       expect(text).not.toMatch(/from ['"]@lingtai\/repo/)
     }
+  })
+})
+
+describe("a split's children take the parent's kind (#1271)", () => {
+  const reply = (kindOf: (key: string) => Record<string, unknown>) =>
+    JSON.stringify({
+      cause: {
+        _tag: 'TicketTooBig',
+        split: {
+          children: ['a', 'b'].map((key) => ({ key, title: key, body: key, ...kindOf(key) })),
+          blockedBy: [],
+        },
+      },
+      resolution: 'Split',
+      summary: 's',
+      want: null,
+    })
+  const kinds = (r: ReturnType<typeof parseTriage>) => {
+    if (r.kind !== 'advised' || r.result.cause._tag !== 'TicketTooBig') throw new Error('not advised')
+    return r.result.cause.split?.children.map((c) => c.kind)
+  }
+
+  it('overwrites a kind the model sent, whatever it was', () => {
+    const r = parseTriage(
+      reply(() => ({ kind: 'refactor' })),
+      { kind: 'tech-debt' },
+    )
+    expect(kinds(r)).toEqual(['tech-debt', 'tech-debt'])
+    expect(
+      kinds(
+        parseTriage(
+          reply(() => ({ kind: 'x'.repeat(5000) })),
+          { kind: 'bug' },
+        ),
+      ),
+    ).toEqual(['bug', 'bug'])
+  })
+
+  it('parses children that carry none', () => {
+    expect(
+      kinds(
+        parseTriage(
+          reply(() => ({})),
+          { kind: 'tech-debt' },
+        ),
+      ),
+    ).toEqual(['tech-debt', 'tech-debt'])
+  })
+
+  it('refuses a split when the kind could not be settled, and nothing else', () => {
+    const r = parseTriage(
+      reply(() => ({})),
+      { kind: null },
+    )
+    expect(r.kind).toBe('refused')
+    expect(
+      parseTriage(JSON.stringify({ cause: { _tag: 'SetupBroken' }, resolution: 'Requeue', summary: 's', want: null }), {
+        kind: null,
+      }).kind,
+    ).toBe('advised')
+  })
+
+  it('names no kind in the brief for a split', () => {
+    const brief = triageBrief({ evidence: EVIDENCE, served: [], roundsLeft: 4 })
+    const line = brief.slice(brief.indexOf('`TicketTooBig`'), brief.indexOf('`SetupBroken`'))
+    expect(line).not.toContain('"kind"')
+  })
+
+  it('splitChildKind: the parent’s, else the recipe’s first', () => {
+    const kindList = ['bug', 'tech-debt']
+    expect(splitChildKind([{ name: 'Tech Debt', color: null }], kindList)).toBe('tech-debt')
+    expect(splitChildKind([{ name: 'other', color: null }], kindList)).toBe('bug')
+    expect(splitChildKind(null, kindList)).toBe('bug')
+    expect(splitChildKind(null, [])).toBeNull()
   })
 })
