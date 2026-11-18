@@ -422,21 +422,23 @@ export function QueuedAnswered({
   const waiting = github.blocked.length
   const drawn = github.blocked.filter((b) => !b.unread)
   const unread = waiting - drawn.length
-  const { entries, next, headed } = groupQueue(cards, drawn, order, github.parents, github.epics, true)
+  const heldByBase = github.baseHeld ?? new Set<string>()
+  const { entries, next, headed } = groupQueue(cards, drawn, order, github.parents, github.epics, true, heldByBase)
+  const runnableCount = cards.filter((c) => !heldByBase.has(c.taskId)).length
   const summary =
     waiting === 0 ? (
-      cards.length === 0 ? null : (
+      runnableCount === 0 ? null : (
         <p className="qsum">
-          <b>{cards.length}</b> runnable
+          <b>{runnableCount}</b> runnable
         </p>
       )
     ) : (
       <p className="qsum">
-        {cards.length === 0 ? (
+        {runnableCount === 0 ? (
           'nothing runnable'
         ) : (
           <>
-            <b>{cards.length}</b> runnable
+            <b>{runnableCount}</b> runnable
           </>
         )}{' '}
         · <b>{waiting}</b> waiting on a blocker

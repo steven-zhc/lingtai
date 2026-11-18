@@ -68,7 +68,11 @@ export const readWhy: Explain = {
           draining: control._tag === 'Some' && control.value.shutdown !== null,
           locks,
           base: look,
-          offered: (offered?.runnable ?? []).map((o) => Number(o.ref)),
+          // GitHub did not answer: the log's own queued rows are what is waiting, and the roots that need no GitHub still stand.
+          offered:
+            offered === null
+              ? tasks.filter((t) => t.state === 'queued').map((t) => Number(t.issue))
+              : offered.runnable.map((o) => Number(o.ref)),
           runnable: runnable.map((r) => Number(r.issue)),
           skipped: (seen?.skipped ?? []).map((s) => ({ ref: s.ref, reason: s.reason })),
           rows: whyRows(tasks, filter.backoffMs, now),

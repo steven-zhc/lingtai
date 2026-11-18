@@ -1249,6 +1249,8 @@ export interface GithubQueue {
   parents: Map<string, number>
   /** Why nothing of a project runs, one per project that has queued work and no pass in flight (#1216). */
   why?: { project: string; why: WhyNothingRuns }[]
+  /** Task ids of cards a red base holds: queued and drawn, but never counted runnable or *taken first* (#1216). */
+  baseHeld?: Set<string>
   /** How many projects were asked, and how many of them answered. */
   asked: number
   answered: number
@@ -1289,6 +1291,7 @@ export async function githubQueue(
   const epics: EpicTicket[] = []
   const parents = new Map<string, number>()
   const why: { project: string; why: WhyNothingRuns }[] = []
+  const baseHeldIds = new Set<string>()
   let answered = 0
   let runnable = 0
 
@@ -1384,6 +1387,7 @@ export async function githubQueue(
     }
     for (const r of [...answer.runnable, ...(answer.baseHeld ?? [])]) {
       if (known.has(r.taskId)) continue
+      if (!answer.runnable.includes(r)) baseHeldIds.add(r.taskId)
       cards.push({
         taskId: r.taskId,
         project: filter.project,
@@ -1447,6 +1451,7 @@ export async function githubQueue(
     epics,
     parents,
     why,
+    baseHeld: baseHeldIds,
     asked: askable.length,
     answered,
     runnable: answered < askable.length && runnable === 0 ? null : runnable,
@@ -1968,6 +1973,8 @@ export function groupQueue(
   parents: ReadonlyMap<string, number>,
   epics: readonly EpicTicket[],
   markNext = true,
+  /** Cards drawn but never *taken first*: a red base holds them (#1216). */
+  notNext: ReadonlySet<string> = new Set(),
 ): QueueLayout {
   const epicOf = new Map(epics.map((e) => [`${e.project}#${e.ref}`, e]))
   const rank = new Map<string, number>()
@@ -2026,7 +2033,9 @@ export function groupQueue(
   }
 
   const first = markNext
-    ? pool.find((m): m is { card: BoardCard } => 'card' in m && m.card.runnableAt === null)
+    ? pool.find(
+        (m): m is { card: BoardCard } => 'card' in m && m.card.runnableAt === null && !notNext.has(m.card.taskId),
+      )
     : undefined
   return { entries, next: first === undefined ? null : first.card.taskId, headed }
 }
