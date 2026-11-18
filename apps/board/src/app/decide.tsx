@@ -25,10 +25,10 @@ import {
   answerCard,
   approveCard,
   closeCard,
-  continueFixingCard,
-  rerunStepCard,
-  editBodyAndRequeueCard,
-  requeueCard,
+  fixRefusalCard,
+  redoStepCard,
+  editBodyAndStartNewAttemptCard,
+  startNewAttemptCard,
   runNow,
   sendAttempt,
 } from './actions.ts'
@@ -258,9 +258,9 @@ export function ScheduleContinuation({
             setRefusal(null)
             startTransition(async () => {
               const result = rerun
-                ? await rerunStepCard({ project, issue, onSha, waitId })
+                ? await redoStepCard({ project, issue, onSha, waitId })
                 : grant
-                  ? await continueFixingCard({ project, issue, onSha, waitId })
+                  ? await fixRefusalCard({ project, issue, onSha, waitId })
                   : await approveCard({ project, issue, onSha, waitId, note: '' })
               setPending(false)
               if (result.ok) {
@@ -309,7 +309,7 @@ export function ContinueFixing({
             setPending(true)
             setDetail(null)
             startTransition(async () => {
-              const result = await continueFixingCard({ project, issue, waitId, onSha, picks })
+              const result = await fixRefusalCard({ project, issue, waitId, onSha, picks })
               setPending(false)
               setDone(result.ok)
               setDetail(result.detail)
@@ -351,7 +351,7 @@ export function RedoStepButton({
             setDetail(null)
             startTransition(async () => {
               try {
-                const result = await rerunStepCard({ project, issue, waitId, onSha })
+                const result = await redoStepCard({ project, issue, waitId, onSha })
                 setDone(result.ok && !result.detail.includes('not scheduled'))
                 setDetail(result.detail)
               } catch (err) {
@@ -429,7 +429,7 @@ export function EditBodyAndStartNewAttempt({
             setPending(true)
             setDetail(null)
             startTransition(async () => {
-              const result = await editBodyAndRequeueCard({
+              const result = await editBodyAndStartNewAttemptCard({
                 project,
                 issue,
                 waitId,
@@ -476,7 +476,7 @@ export function EditBodyAndStartNewAttempt({
  * *is there an approval open*, so it was missing exactly where a person reading
  * the findings agrees with the reviewer and wants the ticket run again.
  */
-export function Requeue({
+export function StartNewAttempt({
   project,
   issue,
   waitId,
@@ -595,7 +595,7 @@ export function Requeue({
                       question: question ?? '',
                       waitId,
                     })
-                  : await requeueCard({
+                  : await startNewAttemptCard({
                       project,
                       issue,
                       note,
@@ -955,11 +955,11 @@ export function TriageMove({
   let click: (() => void) | null = null
   if (move.resolution === 'FixRefusal' && move.onSha !== null) {
     const onSha = move.onSha
-    click = () => run(() => continueFixingCard({ project, issue, waitId, onSha }))
+    click = () => run(() => fixRefusalCard({ project, issue, waitId, onSha }))
   } else if (move.resolution === 'StartNewAttempt') {
     // An empty note on purpose: the requeue note is what every later attempt is
     // told, and triage's sentence is not the person's.
-    click = () => run(() => requeueCard({ project, issue, note: '', waitId }))
+    click = () => run(() => startNewAttemptCard({ project, issue, note: '', waitId }))
   } else if (move.resolution === 'Approve' && move.onSha !== null) {
     const onSha = move.onSha
     click = () => run(() => approveCard({ project, issue, onSha, note: move.note ?? '', waitId }))

@@ -406,7 +406,7 @@ import {
   Decide,
   RedoStepButton,
   EditBodyAndStartNewAttempt,
-  Requeue,
+  StartNewAttempt,
   RunNow,
   ScheduleContinuation,
   Send,
@@ -1166,10 +1166,10 @@ export function Standing({
       quiet={standing.state === 'running' || standing.state === 'queued'}
     />
   )
-  const requeueForm = (
+  const startNewAttemptForm = (
     ids: { project: string; issue: number; waitId: NonNullable<typeof standing.waitId> },
     recommendedAs: 'requeue' | null,
-  ) => <Requeue {...ids} asked={false} question={standing.askedQuestion} recommended={recommendedAs} />
+  ) => <StartNewAttempt {...ids} asked={false} question={standing.askedQuestion} recommended={recommendedAs} />
   const advisedSurface = standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised'
   // Once triage has advised a wait, its panel says what stopped and why, in the
   // judge's words and triage's. Saying it a second time above that panel, as a
@@ -1605,7 +1605,7 @@ export function Standing({
                                 </p>
                               ) : null}
                               {visible && tag === 'AnswerQuestion' && waitId !== null ? (
-                                <Requeue
+                                <StartNewAttempt
                                   project={project}
                                   issue={issue}
                                   waitId={waitId}
@@ -1617,7 +1617,7 @@ export function Standing({
                               {visible && tag === 'StartNewAttempt' && waitId !== null ? (
                                 allowed.includes('AnswerQuestion') ? (
                                   // Never sendable (#147): the form needs nothing of GitHub's.
-                                  requeueForm({ project, issue, waitId }, recommended === 'StartNewAttempt' ? 'requeue' : null)
+                                  startNewAttemptForm({ project, issue, waitId }, recommended === 'StartNewAttempt' ? 'requeue' : null)
                                 ) : (
                                   // Send needs the body, and the body is GitHub's: drawn disabled,
                                   // and said why, until the answer is in.
@@ -1635,7 +1635,7 @@ export function Standing({
                                       return sendable !== null ? (
                                         <Send taskId={taskId} attempt={sendable} primary={recommended === 'StartNewAttempt'} />
                                       ) : (
-                                        requeueForm(
+                                        startNewAttemptForm(
                                           { project, issue, waitId },
                                           recommended === 'StartNewAttempt' ? 'requeue' : null,
                                         )

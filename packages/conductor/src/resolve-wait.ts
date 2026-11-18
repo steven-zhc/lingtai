@@ -369,7 +369,7 @@ function prepare(
           ok: false,
           ticketId,
           reason: 'no-rerun-head',
-          detail: `Run ${block.runId} has no saved head a rerun can continue: ${head.cannot}. Requeue for a fresh attempt.`,
+          detail: `Run ${block.runId} has no saved head a rerun can continue: ${head.cannot}. Start a new attempt instead.`,
         })
       let at: string
       let atRef: string | null = null
@@ -380,7 +380,7 @@ function prepare(
             ok: false,
             ticketId,
             reason: 'no-rerun-head',
-            detail: `Run ${block.runId} recorded no base commit to rerun on. Requeue for a fresh attempt.`,
+            detail: `Run ${block.runId} recorded no base commit to rerun on. Start a new attempt instead.`,
           })
         at = base
       } else {

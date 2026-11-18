@@ -182,7 +182,7 @@ export async function approveCard(input: {
 }
 
 /** Grant one implement round on the published head shown by this wait. */
-export async function continueFixingCard(input: {
+export async function fixRefusalCard(input: {
   project: string
   issue: number
   waitId: WaitId
@@ -229,7 +229,7 @@ export async function continueFixingCard(input: {
 }
 
 /** Run the step a stop outside the diff ended again, on the saved head this wait showed (#1219). */
-export async function rerunStepCard(input: {
+export async function redoStepCard(input: {
   project: string
   issue: number
   waitId: WaitId
@@ -275,7 +275,7 @@ export async function rerunStepCard(input: {
  * An answer to a question asked before any run (#147) — `lingtai answer`, from
  * the card.
  *
- * Not `requeueCard` with a different label, though it appends the same event.
+ * Not `startNewAttemptCard` with a different label, though it appends the same event.
  * `answer()` refuses a block a run is holding, so a sentence typed into this
  * box can only ever be a decision about the ticket — which is what every later
  * attempt's prompt is going to be told it is.
@@ -326,7 +326,7 @@ export async function answerCard(input: {
  * about the *ticket*. A stale sha is the reason to do it, not a reason to
  * refuse.
  */
-export async function requeueCard(input: {
+export async function startNewAttemptCard(input: {
   project: string
   issue: number
   note: string
@@ -361,7 +361,7 @@ export async function requeueCard(input: {
 }
 
 /** Write the answer to the issue before resolving the wait shown on this page. */
-export async function editBodyAndRequeueCard(input: {
+export async function editBodyAndStartNewAttemptCard(input: {
   project: string
   issue: number
   waitId: WaitId

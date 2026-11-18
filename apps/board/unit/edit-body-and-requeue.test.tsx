@@ -37,14 +37,14 @@ vi.mock('react', async (importOriginal) => {
 })
 
 vi.mock('../src/app/actions.ts', () => ({
-  editBodyAndRequeueCard: harness.submit,
+  editBodyAndStartNewAttemptCard: harness.submit,
   answerCard: harness.answer,
   concludeChat: harness.conclude,
-  continueFixingCard: harness.continueFixing,
-  requeueCard: harness.requeue,
+  fixRefusalCard: harness.continueFixing,
+  startNewAttemptCard: harness.requeue,
 }))
 
-import { ContinueFixing, EditBodyAndStartNewAttempt, Requeue } from '../src/app/decide.tsx'
+import { ContinueFixing, EditBodyAndStartNewAttempt, StartNewAttempt } from '../src/app/decide.tsx'
 import { TriagePicks, appendTo, draftTarget } from '../src/app/triage-picks.tsx'
 
 type Tag = string | null
@@ -249,7 +249,7 @@ it('adds a discussion answer to the answer box, opening it, and the person still
   resetAdd()
   const waitId = aWaitId()
   const render = () =>
-    mount(waitId, () => Requeue({ project: 'lingtai', issue: 112, waitId, asked: true, question: 'Which helper?' }), {
+    mount(waitId, () => StartNewAttempt({ project: 'lingtai', issue: 112, waitId, asked: true, question: 'Which helper?' }), {
       by: asked,
     })
   expect(findControl(render(), 'textarea')).toBeNull()
@@ -369,7 +369,7 @@ it("sends the picks the person made, and the current wait's alone, from Continue
   const pick = (answerId: string) =>
     (harness.triage as { pick: (index: number, answerId: string) => void }).pick(0, answerId)
   const grant = () => ContinueFixing({ project: 'lingtai', issue: 112, waitId, onSha: 'abc', primary: true })
-  const requeue = () => Requeue({ project: 'lingtai', issue: 112, waitId, asked: false })
+  const requeue = () => StartNewAttempt({ project: 'lingtai', issue: 112, waitId, asked: false })
 
   control(render(grant), 'button').props.onClick?.()
   await vi.waitFor(() =>

@@ -64,7 +64,7 @@ describe('the row of moves', () => {
     expect(standing).toContain('<Close')
     const page = read('../src/app/page.tsx')
     expect(page).not.toContain('<Decide')
-    expect(page).not.toContain('<Requeue')
+    expect(page).not.toContain('<StartNewAttempt')
   })
 
   it('offers it on a queued card, which is where the ones that sat were', () => {
