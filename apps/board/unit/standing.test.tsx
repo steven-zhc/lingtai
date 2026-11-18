@@ -732,7 +732,7 @@ describe('the block, rendered', () => {
     )
     expect(html).toContain('conflict: agent/112 does not merge into develop')
     // The move that is left when there is no diff to approve (#84).
-    expect(html).toContain('Start over from base')
+    expect(html).toContain('Start a new attempt from base')
     // Nothing pretends to a diagnosis nobody wrote.
     expect(html).not.toContain('class="diag"')
     expect(html).not.toContain('class="rec"')
@@ -1193,7 +1193,7 @@ describe('the block, rendered', () => {
     expect(off).not.toContain('onyou')
     expect(off).not.toContain('an agent is working')
     // Nothing is being asked, so nothing offers to answer it.
-    expect(off).not.toContain('Start over from base')
+    expect(off).not.toContain('Start a new attempt from base')
   })
 
   it('draws a running ticket as a panel that holds Discussion, and not twice', () => {
@@ -1297,7 +1297,7 @@ describe('the block, rendered', () => {
       />,
     )
     expect(html).toContain('waiting on you')
-    expect(html).not.toContain('Start over from base')
+    expect(html).not.toContain('Start a new attempt from base')
   })
 
   /**
@@ -1442,10 +1442,10 @@ const FIXABLE: StandingView = {
 it('offers distinct saved-head and base-starting actions without triage', () => {
   const html = render(FIXABLE, OUTGOING)
   expect(html).toContain('data-resolution="FixRefusal"')
-  expect(html).toContain('Continue fixing current work')
+  expect(html).toContain('Fix the refusal on the saved work')
   expect(html).toContain('saved branch and head')
   expect(html).toContain('Build and review run again')
-  expect(html).toContain('Start over from base')
+  expect(html).toContain('Start a new attempt from base')
   expect(html).toContain('Send Attempt 3 from base')
   expect(html).not.toContain('Approve and continue')
 })
@@ -1454,7 +1454,7 @@ it('does not offer a continuation button for missing or moved saved work', () =>
   for (const refusal of ['no published head', 'agent/112 is missing, not the saved head']) {
     const html = render({ ...FIXABLE, fixWork: { refusal } }, OUTGOING)
     expect(html).toContain(refusal)
-    expect(html).not.toContain('>Continue fixing current work</button>')
+    expect(html).not.toContain('>Fix the refusal on the saved work</button>')
     expect(html).toContain('Send Attempt 3 from base')
   }
   expect(savedFixWork(RUN_2, [])).toHaveProperty('refusal')
@@ -1492,10 +1492,10 @@ it('uses triage advice to recommend a choice without granting it', () => {
   expect(fixable.indexOf('data-resolution="FixRefusal"')).toBeLessThan(
     fixable.indexOf('data-resolution="StartNewAttempt"'),
   )
-  expect(fixable).toContain('Continue fixing current work')
+  expect(fixable).toContain('Fix the refusal on the saved work')
   const wrong = moves(render({ ...FIXABLE, triageStatus: advice({ _tag: 'WrongApproach' }, 'Requeue') }, OUTGOING))
   expect(wrong.indexOf('data-resolution="StartNewAttempt"')).toBeLessThan(wrong.indexOf('data-resolution="FixRefusal"'))
-  expect(wrong).toContain('Start over from base')
+  expect(wrong).toContain('Start a new attempt from base')
   // The board draws what `recommendedResolution` returns and nothing else
   // (#572): a diagnosis-contradicted advice is dropped, not swapped for Requeue.
   const contradicted = advice({ _tag: 'WrongApproach' }, 'GrantFixRound')
@@ -1573,7 +1573,7 @@ function closeOn(standing: StandingView): { key: string | null; prefill: string 
   return close
 }
 
-it('says why a small conflict draws a fix round over what triage advised (#652)', () => {
+it('says why a small conflict draws a refusal fix over what triage advised (#652)', () => {
   const triageStatus = {
     _tag: 'Done' as const,
     result: {
@@ -1588,7 +1588,7 @@ it('says why a small conflict draws a fix round over what triage advised (#652)'
   const html = render({ ...saved, triageStatus }, OUTGOING)
   expect(html).toContain('Start from main again')
   expect(html).toContain(
-    'Triage advised Start over from base. With 2 hunks to resolve, a fix round is drawn first instead',
+    'Triage advised Start a new attempt from base. With 2 hunks to resolve, a refusal fix is drawn first instead',
   )
   expect(html).not.toContain('which this decision does not offer')
   expect(html).not.toContain('recommended answer goes to the fixer')
@@ -1628,7 +1628,7 @@ it('says why a small conflict draws a fix round over what triage advised (#652)'
     OUTGOING,
   )
   expect(large).toContain('Recommends ')
-  expect(large).not.toContain('a fix round is drawn first instead')
+  expect(large).not.toContain('a refusal fix is drawn first instead')
 })
 
 it('keeps the body editor at the same mount when a written wait moves out of blocked', () => {
@@ -1765,10 +1765,10 @@ it('draws triage’s advice as the recommendation where the judge handed the wai
 
   expect(grid.indexOf('data-resolution="FixRefusal"')).toBeLessThan(grid.indexOf('data-resolution="StartNewAttempt"'))
   expect(grid).toMatch(/sresolution--recommended" data-resolution="FixRefusal"/)
-  expect(grid).toContain('Continue fixing current work')
+  expect(grid).toContain('Fix the refusal on the saved work')
   expect(grid).toContain('Triage recommended')
   expect(html).toContain('class="triage-cause cause-chip cause-chip--lines">Lines to fix</p>')
-  expect(html).toContain('Recommends Continue fixing current work')
+  expect(html).toContain('Recommends Fix the refusal on the saved work')
   expect(html).not.toContain('Which reading is right?')
   expect(html).not.toContain('Chose hand-to-person')
   expect(html).not.toContain('needs a person')
@@ -1785,8 +1785,8 @@ describe('the moves the column ends in', () => {
     // number, said twice, because that is how long the edit lasts (0032 §5).
     expect(html).toContain('Attempt 3 only')
     // The base-starting move is named in the card; Send remains the button.
-    expect(html).toContain('<h3>Start over from base</h3>')
-    expect(html).not.toContain('>Start over from base</button>')
+    expect(html).toContain('<h3>Start a new attempt from base</h3>')
+    expect(html).not.toContain('>Start a new attempt from base</button>')
   })
 
   /**
@@ -1818,7 +1818,7 @@ describe('the moves the column ends in', () => {
     )
 
     expect(html).toContain('Approve')
-    expect(html).toContain('Start over from base')
+    expect(html).toContain('Start a new attempt from base')
     expect(moves(html).match(/btn pri/g)).toHaveLength(1)
   })
 
@@ -1924,7 +1924,7 @@ describe('the moves the column ends in', () => {
   it('keeps Back to the queue for the item whose prompt could not be composed', () => {
     const html = render(HELD, { ...OUTGOING, problem: 'lingtai is not a registered project' })
 
-    expect(html).toContain('Start over from base')
+    expect(html).toContain('Start a new attempt from base')
     expect(html).not.toContain('Send Attempt')
   })
 
@@ -2445,14 +2445,14 @@ const CRASHED: StandingView = {
 it('offers the rerun on a crash with a saved head, after the grant would sit and before starting over', () => {
   const html = render({ ...CRASHED, rerunWork: { head: SHA, ref: null } }, OUTGOING)
   expect(html).toContain('data-resolution="RedoStep"')
-  expect(html).toContain(`Rerun this step on ${SHA.slice(0, 7)}</button>`)
-  expect(html).not.toContain('Cannot rerun on saved work')
+  expect(html).toContain(`Redo this step on ${SHA.slice(0, 7)}</button>`)
+  expect(html).not.toContain('Cannot redo on saved work')
   expect(html.indexOf('data-resolution="RedoStep"')).toBeLessThan(html.indexOf('data-resolution="StartNewAttempt"'))
 })
 
 it('shows the refusal and no button where the rerun has no usable head', () => {
   const html = render({ ...CRASHED, rerunWork: { refusal: 'no head here' } }, OUTGOING)
-  expect(html).toContain('Cannot rerun on saved work')
+  expect(html).toContain('Cannot redo on saved work')
   expect(html).toContain('no head here')
-  expect(html).not.toContain('Rerun this step on')
+  expect(html).not.toContain('Redo this step on')
 })

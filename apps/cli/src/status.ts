@@ -85,7 +85,7 @@ export function conflictRecommendation(
 
 /**
  * A conflict's triage, worded for the listing: the recommendation the board
- * draws (a fix round up to `CONFLICT_ROUND_HUNKS` hunks, triage's own resolution
+ * draws (a refusal fix up to `CONFLICT_ROUND_HUNKS` hunks, triage's own resolution
  * above) and triage's resolution and summary beside it, so the override is
  * never hidden (#652). `null` for anything but an advised `ConflictingHunks`; when the recommendation is
  * unavailable, `rec` is null and triage's own words still come back (#656).
@@ -105,7 +105,7 @@ export function conflictLines(
         rec === null
           ? `triage advised ${result.resolution} — ${result.summary}`
           : `recommends ${rec} — ${result.summary}`,
-      advised: `the saved head could not be checked (${unreadable}), so a fix round is not recommended; rerun to see whether saved work can be continued`,
+      advised: `the saved head could not be checked (${unreadable}), so a refusal fix is not recommended; check again to see whether saved work can be continued`,
     }
   }
   if (rec === null) {
@@ -117,7 +117,7 @@ export function conflictLines(
   if (rec === 'FixRefusal' && adviceResolution(result.resolution) !== 'FixRefusal') {
     return {
       rec:
-        'recommends a fix round — a small conflict is resolved in place rather than started over' +
+        'recommends a refusal fix — a small conflict is resolved in place rather than started over' +
         (result.cause.hunks.some((h) => h._tag === 'Divergent')
           ? ', and triage’s recommended answer for each divergent hunk goes to the fixer'
           : ''),
@@ -237,7 +237,7 @@ export interface StatusReading {
   now?: () => Date
   /** The step a run is at, from its stream — the last `StepStarted`. Replaceable so a test need not own a log. */
   stepOf?: (runId: string) => Effect.Effect<StatusAttempt['step'], unknown>
-  /** Whether a run published a clean head a fix round can continue from. Replaceable so a test need not own a log. */
+  /** Whether a run published a clean head a refusal fix can continue from. Replaceable so a test need not own a log. */
   savedHeadOf?: (runId: string, project: ProjectState) => Effect.Effect<SavedHeadReading, unknown>
 }
 

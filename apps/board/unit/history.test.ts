@@ -345,7 +345,7 @@ describe('a line of history', () => {
       }),
     )
     expect(said).toContain('Lines to fix')
-    expect(said).toContain('Start over from base')
+    expect(said).toContain('Start a new attempt from base')
     expect(said).not.toContain('FixableLines')
     expect(said).not.toContain('StartNewAttempt')
   })
@@ -471,7 +471,7 @@ describe('a line of history', () => {
           },
         }),
       )
-      expect(advised.summary).toContain('Triage run 1 advised: Add to the ticket and start over')
+      expect(advised.summary).toContain('Triage run 1 advised: Add to the ticket and start a new attempt')
       expect(advised.summary).not.toContain('EditBodyAndStartNewAttempt')
       expect(advised.summary).not.toContain('Attempt')
     })

@@ -74,7 +74,7 @@ export interface Answered {
 export const VERBS = {
   approve: { accepted: 'approved', refused: 'not approved' },
   'start-new-attempt': { accepted: 'new attempt queued', refused: 'new attempt not queued' },
-  'fix-refusal': { accepted: 'fix round granted', refused: 'fix round refused' },
+  'fix-refusal': { accepted: 'refusal fix granted', refused: 'refusal fix refused' },
   'redo-step': { accepted: 'step queued to run again', refused: 'step not queued' },
   close: { accepted: 'closed', refused: 'not closed' },
   ask: { accepted: 'asked', refused: 'not asked' },

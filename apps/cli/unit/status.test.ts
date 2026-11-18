@@ -126,7 +126,7 @@ const fixture: StatusReport = {
           ref: '612',
           held: 'backing off — runnable in 32m',
           newAttempts: 1,
-          arm: 'restart 1 of 3',
+          arm: 'new attempt 1 of 3',
         }),
         row({ taskId: 't613', ref: '613', kind: 'tech-debt', unoffered: true }),
       ],
@@ -136,7 +136,7 @@ const fixture: StatusReport = {
           ref: '612',
           held: 'backing off — runnable in 32m',
           newAttempts: 1,
-          arm: 'restart 1 of 3',
+          arm: 'new attempt 1 of 3',
         }),
         row({ taskId: 't609', ref: '609', state: 'waiting', wait: asked }),
         row({
@@ -233,12 +233,12 @@ describe('statusJson', () => {
           whyNothingRuns: null,
           dependenciesUnread: 'GitHub reported no issue dependencies for this repository',
           runnable: [
-            { ...r('612'), newAttempts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
+            { ...r('612'), newAttempts: 1, held: 'backing off — runnable in 32m', arm: 'new attempt 1 of 3' },
             { ...r('613', 'tech-debt'), newAttempts: 0, held: null, arm: null },
           ],
           byState: {
             queued: [
-              { ...r('612'), ...off, newAttempts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
+              { ...r('612'), ...off, newAttempts: 1, held: 'backing off — runnable in 32m', arm: 'new attempt 1 of 3' },
             ],
             waiting: [
               { ...r('609'), ...off },
@@ -341,7 +341,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
     'Queue  2 runnable — 1 running, 1 landed', // `runnable` and `elsewhere`, the waits not counted twice
     '#612',
     'backing off — runnable in 32m',
-    'restart 1 of 3', // the clock and the arm
+    'new attempt 1 of 3', // the clock and the arm
     '[not offered]',
     'Waiting on you',
     '#609',
@@ -607,9 +607,9 @@ describe('conflictLines (#652)', () => {
       },
     }) as never
 
-  it('recommends a fix round at 5 hunks or fewer and shows triage’s own resolution and summary', () => {
+  it('recommends a refusal fix at 5 hunks or fewer and shows triage’s own resolution and summary', () => {
     const c = conflictLines(reason, triage(2))
-    expect(c?.rec).toContain('recommends a fix round')
+    expect(c?.rec).toContain('recommends a refusal fix')
     expect(c?.advised).toBe('triage advised Requeue: why')
   })
 
@@ -619,10 +619,10 @@ describe('conflictLines (#652)', () => {
 
   it('recommends triage’s resolution when the saved head is gone, as the task page does', () => {
     expect(conflictLines(reason, triage(2), false)).toEqual({ rec: 'recommends StartNewAttempt — why', advised: null })
-    expect(conflictLines(reason, triage(2), true)?.rec).toContain('recommends a fix round')
+    expect(conflictLines(reason, triage(2), true)?.rec).toContain('recommends a refusal fix')
   })
 
-  it('says the saved head could not be checked, and recommends no fix round, when the read failed', () => {
+  it('says the saved head could not be checked, and recommends no refusal fix, when the read failed', () => {
     const c = conflictLines(reason, triage(2), { unreadable: 'rate limited' })
     expect(c?.rec).toBe('recommends StartNewAttempt — why')
     expect(c?.advised).toContain('saved head could not be checked (rate limited)')
@@ -668,7 +668,7 @@ describe('waitDetail (#656)', () => {
 
   it('prints the recommendation and triage’s own words for a reason with no recommendation line', () => {
     const lines = detail(disagrees, triage())
-    expect(lines.some((l) => l.includes('recommends a fix round'))).toBe(true)
+    expect(lines.some((l) => l.includes('recommends a refusal fix'))).toBe(true)
     expect(lines).toContain('triage advised Requeue: why')
   })
 

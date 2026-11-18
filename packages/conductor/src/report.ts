@@ -102,7 +102,7 @@ export interface KindCount {
   count: number
 }
 
-/** Landed tickets by fix rounds: 0, 1, 2, 3, 4, then 5 or more, each stacked by kind. */
+/** Landed tickets by refusal fixes: 0, 1, 2, 3, 4, then 5 or more, each stacked by kind. */
 export interface RoundBucket {
   bucket: '0' | '1' | '2' | '3' | '4' | '5+'
   total: number
@@ -358,7 +358,7 @@ export const REASON_WORDS: Record<WaitReason['_tag'], string> = {
   AgentQuestion: "an answer to the agent's question",
   FixerDisagrees: 'a call between the fixer and the reviewer',
   NothingProduced: 'a decision after the agent produced nothing',
-  ProposedEscalated: 'a decision after its fix rounds ran out',
+  ProposedEscalated: 'a decision after its refusal fixes ran out',
   CheckRefused: 'a decision on a refused check',
   MergeRefused: 'a decision on a refused merge',
   BudgetExhausted: 'a decision after it ran out of budget',
@@ -370,7 +370,7 @@ export const REASON_WORDS: Record<WaitReason['_tag'], string> = {
 /** How a wait ended. */
 export const RESOLUTION_WORDS: Record<Resolution['_tag'], string> = {
   Approve: 'approved',
-  FixRefusal: 'a fix round granted',
+  FixRefusal: 'a refusal fix granted',
   RedoStep: 'the step run again',
   AnswerQuestion: 'answered',
   StartNewAttempt: 'started over',
@@ -412,7 +412,7 @@ function sentenceOf(t: {
     : t.cost.unknown > 0
       ? 'cost unknown'
       : 'no cost'
-  const parts = [`${head} over ${plural(t.fixRounds, 'fix round')}`, plural(t.passes, 'attempt')]
+  const parts = [`${head} over ${plural(t.fixRounds, 'refusal fix', 'refusal fixes')}`, plural(t.passes, 'attempt')]
   if (t.waits.length > 0) {
     const counts = new Map<string, number>()
     for (const w of t.waits) counts.set(w.reason, (counts.get(w.reason) ?? 0) + 1)

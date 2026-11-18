@@ -897,8 +897,8 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
             result: closed ? 'closed' : continued ? 'continued' : 'requeued',
             reason: continued
               ? m.resolution._tag === 'RedoStep'
-                ? 'The stopped step runs again on its saved work; no round or restart is spent.'
-                : 'Continued saved work for one additional fix round; build and review run again.'
+                ? 'The stopped step runs again on its saved work; no refusal fix or new attempt is spent.'
+                : 'Continued saved work for one additional refusal fix; build and review run again.'
               : requeued
                 ? 'A new attempt starts from base.'
                 : released
@@ -2044,7 +2044,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
           remote === rerun.head
             ? rerun
             : {
-                refusal: `${rerun.ref} is ${remote ?? 'missing'}, not the saved ${rerun.head}. Restore that ref to the saved head or requeue for a fresh attempt.`,
+                refusal: `${rerun.ref} is ${remote ?? 'missing'}, not the saved ${rerun.head}. Restore that ref to the saved head or start a new attempt instead.`,
               }
       } catch (err) {
         standing.rerunWork = { refusal: `The saved ref could not be checked: ${(err as Error).message}` }

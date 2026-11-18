@@ -336,7 +336,7 @@ describe('reduceTicket', () => {
     expect(after.lifecycle.status).toBe('claimed')
 
     const twice = reduceTicket([
-      e('TicketReleased', { runId: 'pass-a', reason: 'restart 1', cause: { _tag: 'NewAttempt', newAttempt: 1 } }),
+      e('TicketReleased', { runId: 'pass-a', reason: 'new attempt 1', cause: { _tag: 'NewAttempt', newAttempt: 1 } }),
       e('TicketReleased', { runId: 'pass-b', reason: 'restart 2', cause: { _tag: 'NewAttempt', newAttempt: 2 } }),
     ])
     expect(twice.newAttempts.map((r) => r.newAttempt)).toEqual([1, 2])

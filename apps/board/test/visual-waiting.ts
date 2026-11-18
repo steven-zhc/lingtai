@@ -59,7 +59,7 @@ const FINDINGS: Finding[] = [
   {
     file: 'apps/board/src/lib/task.ts',
     line: 892,
-    claim: 'A saved head is required before a fix round',
+    claim: 'A saved head is required before a refusal fix',
     failureScenario: 'A missing branch makes continuation impossible',
     severity: 'major',
   },
@@ -98,7 +98,7 @@ const FIXABLE_RESULT: TriageResult = {
   cause: { _tag: 'FixableLines', fixes: FINDINGS.map((f) => ({ path: f.file, line: f.line, what: f.claim })) },
   resolution: 'GrantFixRound',
   summary: 'Address the recorded findings on the saved branch, then run build and review again.',
-  want: 'A fix round that keeps the current branch and checks the five findings.',
+  want: 'A refusal fix that keeps the current branch and checks the five findings.',
 }
 
 const FIXABLE_BODY = `| | |
@@ -106,7 +106,7 @@ const FIXABLE_BODY = `| | |
 | **Problem** | A waiting pass hides its review findings and saved branch state. |
 | **Want** | The reader can compare the evidence and choose a possible next move. |
 | **Fix** | Show the ten-step run, five findings, discussion, and available resolutions. |
-| **Watch out** | A fix round requires a published head; missing spend must stay unknown. |
+| **Watch out** | A refusal fix requires a published head; missing spend must stay unknown. |
 
 ---
 

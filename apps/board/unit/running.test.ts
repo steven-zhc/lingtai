@@ -44,7 +44,7 @@ describe('runningPanelOf', () => {
     expect(p.then).toEqual(['build', 'review', 'merge'])
   })
 
-  it('a fix round with two findings puts the worst in the line and both beneath, worst first', () => {
+  it('a refusal fix with two findings puts the worst in the line and both beneath, worst first', () => {
     const p = panelOf(
       run({
         stepNow: at('implement', 1),
@@ -60,14 +60,14 @@ describe('runningPanelOf', () => {
     expect(p.line.kind === 'fixing' && p.line.findings.map((f) => f.claim)).toEqual(['big', 'small'])
   })
 
-  it('a fix round whose refusal has no findings carries the evidence', () => {
+  it('a refusal fix whose refusal has no findings carries the evidence', () => {
     const p = panelOf(
       run({ stepNow: at('implement', 2), refusal: { key: 'build:run', evidence: 'tsc failed', findings: [] } }),
     )
     expect(p.line).toEqual({ kind: 'refused', text: 'Fixing what build refused', findings: [], evidence: 'tsc failed' })
   })
 
-  it('a fix round with no refusal says it was sent back', () => {
+  it('a refusal fix with no refusal says it was sent back', () => {
     const p = panelOf(run({ stepNow: at('implement', 1) }))
     expect(p.line).toMatchObject({ kind: 'refused', text: 'Fixing what was sent back', evidence: null })
   })
@@ -159,7 +159,7 @@ describe('runningPanelOf meters', () => {
     expect(panelOf(withNow(60_000)).meters).toBeNull()
   })
 
-  it('a fix round reads round N of the recipe ceiling', () => {
+  it('a refusal fix reads round N of the recipe ceiling', () => {
     const m = runningPanelOf(withNow(900_000, { stepNow: at('implement', 1) }), ctx())!.meters!
     expect(m.round).toEqual({ since: SINCE, budget: '15m', of: 'round 1 of 4' })
   })

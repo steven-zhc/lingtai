@@ -28,7 +28,7 @@ export interface RunningMeters {
 
 /** A running ticket's panel, as the page draws it (0118 §2). Pure: events in, words out. */
 export interface RunningPanelView {
-  /** `Running`, the step, and `fix round N` — in that order. */
+  /** `Running`, the step, and `refusal fix N` — in that order. */
   head: { label: string; step: Step | null; round: number | null }
   /** What this step is doing. */
   line:
@@ -135,7 +135,7 @@ export function runningPanelOf(
   // After the step in flight. With none in flight, after the leading run of
   // steps that are done in spine order: `findLast` would name the furthest step
   // that ever ran, and a refused review from an earlier round sits beyond the
-  // implement a fix round just finished.
+  // implement a refusal fix just finished.
   let anchor: Step | undefined = now?.step
   if (anchor === undefined) {
     // A verdict made against a head that has since moved is the last round's:

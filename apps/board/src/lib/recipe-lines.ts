@@ -116,12 +116,12 @@ export function recipeLines(recipe: Recipe, ref: string): RecipeLines {
             budget.attempts === 1 ? 'the last attempt' : `the last ${budget.attempts.toLocaleString('en-US')} attempts`,
         },
       )
-      // A fix round is briefed with the diff under the same ceiling the review
+      // A refusal fix is briefed with the diff under the same ceiling the review
       // reads (`fixBriefParts`, `packages/conductor/src/fix.ts`), whether or not the
       // recipe declares a review agent; with no rounds there is no such brief.
       if (limits.attempt.refusalFixes > 0) {
         after.push({
-          label: 'a fix round reads at most',
+          label: 'a refusal fix reads at most',
           value: `${count(budget.diff, 'character', 'characters')} of the diff`,
         })
       }

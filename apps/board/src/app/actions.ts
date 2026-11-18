@@ -192,7 +192,7 @@ export async function continueFixingCard(input: {
 }): Promise<ActionResult> {
   try {
     if (!input.waitId || !input.onSha)
-      return { ok: false, detail: 'stale: reload this page before granting a fix round' }
+      return { ok: false, detail: 'stale: reload this page before granting a refusal fix' }
     const state = await readProject(input.project)
     if (!state) return { ok: false, detail: `no project named "${input.project}" — run lingtai add first` }
     const client =
@@ -219,8 +219,8 @@ export async function continueFixingCard(input: {
       ? {
           ok: true,
           detail: result.unscheduled
-            ? `fix round granted on saved work — continuation was not scheduled (${result.unscheduled}); click again to schedule it`
-            : 'fix round granted on saved work',
+            ? `refusal fix recorded on saved work — continuation was not scheduled (${result.unscheduled}); click again to schedule it`
+            : 'refusal fix recorded on saved work; it runs when the daemon picks it up',
         }
       : { ok: false, detail: result.detail }
   } catch (err) {
@@ -236,7 +236,7 @@ export async function rerunStepCard(input: {
   onSha: string
 }): Promise<ActionResult> {
   try {
-    if (!input.waitId || !input.onSha) return { ok: false, detail: 'stale: reload this page before rerunning' }
+    if (!input.waitId || !input.onSha) return { ok: false, detail: 'stale: reload this page before redoing the step' }
     const state = await readProject(input.project)
     if (!state) return { ok: false, detail: `no project named "${input.project}" — run lingtai add first` }
     const client =
@@ -262,8 +262,8 @@ export async function rerunStepCard(input: {
       ? {
           ok: true,
           detail: result.unscheduled
-            ? `step rerun on saved work — continuation was not scheduled (${result.unscheduled}); click again to schedule it`
-            : 'step rerun on saved work',
+            ? `redo recorded on saved work — continuation was not scheduled (${result.unscheduled}); click again to schedule it`
+            : 'redo recorded on saved work; the step runs when the daemon picks it up',
         }
       : { ok: false, detail: result.detail }
   } catch (err) {

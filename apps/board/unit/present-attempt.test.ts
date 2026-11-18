@@ -50,7 +50,7 @@ describe('presentAttempt', () => {
     expect(presentAttempt(state, claim, 1, null).prompt).toEqual({ version: 'ticket@3', bytes: 12, text: 'hello' })
   })
 
-  it('exposes the step in flight with an ISO since, and the refusal a fix round is answering', () => {
+  it('exposes the step in flight with an ISO since, and the refusal a refusal fix is answering', () => {
     const v = view(lateHistories.attempt.refusedThenFailed)
     expect(v.stepNow).toMatchObject({ step: 'implement', round: 1 })
     expect(v.stepNow?.since).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/)

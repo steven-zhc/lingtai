@@ -57,7 +57,7 @@ describe('billOf sorts every row into exactly one of five purposes', () => {
   })
 
   /**
-   * `#506`'s own failure scenario: a pass that buys no fix round at all still
+   * `#506`'s own failure scenario: a pass that buys no refusal fix at all still
    * writes an `implement` and a `review` `RunSpent` at round 0, and both must
    * sum into Work rather than the second overwriting the first — the bug a
    * `task_view.repair_costs` column (keyed `run#fix0`) had, and `spend` never

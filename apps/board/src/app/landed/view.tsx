@@ -77,7 +77,7 @@ function Facts({ row, env, money }: { row: TicketReportRow; env: LandedEnv; mone
           Attempt {row.landingAttempt}
           {row.landingFixRounds === null || row.landingFixRounds === 0
             ? ''
-            : ` · ${row.landingFixRounds} fix round${row.landingFixRounds === 1 ? '' : 's'}`}
+            : ` · ${row.landingFixRounds} ${row.landingFixRounds === 1 ? 'refusal fix' : 'refusal fixes'}`}
         </span>
       )}
       {diff === null ? null : (
