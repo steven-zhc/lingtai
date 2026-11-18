@@ -221,7 +221,7 @@ steps:
       prompt: look at it coldly
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 0, restarts: ${restarts} }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 0, conflictResolutions: 0 }, ticket: { newAttempts: ${restarts} } }
 `
 
 /**
@@ -245,7 +245,7 @@ steps:
       prompt: look at it coldly
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 0, restarts: ${restarts} }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 0, conflictResolutions: 0 }, ticket: { newAttempts: ${restarts} } }
 `
 
 /**

@@ -63,7 +63,7 @@ describe('whether a spent pass buys another approach', () => {
     const none = decideRestart({ refusal: refused, restarts: 0, item: item(), alsoAsked: null })
 
     expect(none.restart).toBe(false)
-    expect(none.restart === false && none.why).toMatch(/runtime\.limits\.restarts: 0/)
+    expect(none.restart === false && none.why).toMatch(/runtime\.limits\.ticket\.newAttempts: 0/)
     expect(none.restart === false && none.why).toMatch(/to a person/)
   })
 
@@ -151,7 +151,7 @@ describe('whether a spent pass buys another approach', () => {
       alsoAsked: 'a repair',
     })
 
-    expect(no.restart === false && no.why).toMatch(/runtime\.limits\.restarts: 0/)
+    expect(no.restart === false && no.why).toMatch(/runtime\.limits\.ticket\.newAttempts: 0/)
   })
 })
 

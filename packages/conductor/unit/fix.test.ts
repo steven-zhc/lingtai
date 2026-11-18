@@ -123,7 +123,7 @@ describe('whether a refusal buys an agent', () => {
       const decision = decideFix({ refusal: r, rounds: 0, roundsSpent: 0 })
 
       expect(decision.fix).toBe(false)
-      expect(decision.fix === false && decision.why).toMatch(/runtime\.limits\.rounds: 0/)
+      expect(decision.fix === false && decision.why).toMatch(/runtime\.limits\.attempt\.refusalFixes: 0/)
       // **And it says what it refuses, not where the refusal goes.** It used to
       // say "sends every refusal straight to a person", which was true while
       // this was the only ceiling and is false beside a non-zero `restarts`

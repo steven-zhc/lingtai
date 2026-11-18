@@ -537,7 +537,7 @@ describe('askLimits', () => {
   })
 
   it('--budget none removes usd', async () => {
-    const files = mapFiles({ [PATH]: FIXTURE.replace('wall: 2h}', 'wall: 2h, usd: 7}') })
+    const files = mapFiles({ [PATH]: FIXTURE.replace('wall: 2m}', 'wall: 2m, usd: 7}') })
     const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLimits(
       world().world,
@@ -560,7 +560,7 @@ describe('askLimits', () => {
   })
 
   it('the budget prompt shows an existing ceiling in money, formatted by show', async () => {
-    const files = mapFiles({ [PATH]: FIXTURE.replace('wall: 2h}', 'wall: 2h, usd: 7}') })
+    const files = mapFiles({ [PATH]: FIXTURE.replace('wall: 2m}', 'wall: 2m, usd: 7}') })
     const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w, asked } = world(['', '', '', ''])
     await askLimits(w, PROJECT, {}, { home: HOME, draft })

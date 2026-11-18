@@ -820,7 +820,7 @@ describe('a runtime that cannot hold a turn count (#547)', () => {
   })
 
   it('writes nothing where the file already declares turns', async () => {
-    expect(await ask(`${FIXTURE}runtime:\n  limits:\n    turns: 150\n`, 'codex')).toEqual([])
+    expect(await ask(`${FIXTURE}runtime:\n  limits:\n    run:\n      turns: 150\n`, 'codex')).toEqual([])
   })
 
   it('writes nothing for a runtime that enforces turns', async () => {
