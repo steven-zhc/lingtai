@@ -3,7 +3,8 @@
 import { triageAnswersText, type TriageQuestion, type WaitId } from '@lingtai/domain'
 import { createContext, useContext, useState, type ReactNode } from 'react'
 
-type Picks = { waitId: WaitId | null; answers: Record<number, string> }
+/** Triage's picks and the agent's own are kept apart (#1253): one state, two maps. */
+type Picks = { waitId: WaitId | null; answers: Record<number, string>; asked: Record<number, string> }
 /** A text the person has made their own, with the wait it was written under. */
 type Draft = { waitId: WaitId | null; text: string }
 type AnswerDraft = Draft & { open: boolean }
@@ -80,14 +81,13 @@ export function TriagePicks({
   recommended?: string | null
   children: ReactNode
 }) {
-  const [picks, setPicks] = useState<Picks>({ waitId, answers: {} })
+  const [picks, setPicks] = useState<Picks>({ waitId, answers: {}, asked: {} })
   const answers = picks.waitId === waitId ? picks.answers : {}
+  const askedAnswers = picks.waitId === waitId ? picks.asked : {}
   const [drafts, setDrafts] = useState<{ body: Draft | null; answer: AnswerDraft | null }>({
     body: null,
     answer: null,
   })
-  const [askedPicks, setAskedPicks] = useState<Picks>({ waitId, answers: {} })
-  const askedAnswers = askedPicks.waitId === waitId ? askedPicks.answers : {}
   const askedList = asked ?? []
   const selected = (index: number, question: TriageQuestion, source: AnswerSource = 'triage') =>
     (source === 'asked' ? askedAnswers : answers)[index] ?? question.recommended
@@ -98,10 +98,14 @@ export function TriagePicks({
     askedList.length === 0 ? null : triageAnswersText({ _tag: 'UndecidedQuestion', questions: askedList }, askedAnswers)
   const text = composedAsked?.ok ? composedAsked.text : composed?.ok ? composed.text : ''
   const pick = (index: number, answerId: string, source: AnswerSource = 'triage') =>
-    (source === 'asked' ? setAskedPicks : setPicks)((current) => ({
-      waitId,
-      answers: { ...(current.waitId === waitId ? current.answers : {}), [index]: answerId },
-    }))
+    setPicks((current) => {
+      const same = current.waitId === waitId
+      const answers = same ? current.answers : {}
+      const asked = same ? current.asked : {}
+      return source === 'asked'
+        ? { waitId, answers, asked: { ...asked, [index]: answerId } }
+        : { waitId, answers: { ...answers, [index]: answerId }, asked }
+    })
 
   // A draft belongs to the wait it was written under, and is never cleared when
   // that wait ends: the person is told to copy it before leaving.

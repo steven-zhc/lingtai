@@ -57,7 +57,7 @@
  * process, no socket, no network.
  */
 import { AgentHostFailed, type Runtime } from '@lingtai/agent'
-import { expandPrompt, type Envelope, type PayloadOf } from '@lingtai/domain'
+import { askedText, expandPrompt, type Envelope, type PayloadOf } from '@lingtai/domain'
 import {
   integrationStream,
   waitWords,
@@ -1233,7 +1233,18 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
 `
     const store = memoryStore()
     const did: string[] = []
-    const asked = 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?'
+    const questions = [
+      {
+        id: 'q1',
+        text: 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
+        answers: [
+          { id: 'a', text: 'the hold goes at `proposed:`' },
+          { id: 'b', text: 'nothing holds' },
+        ],
+        recommended: 'a',
+      },
+    ]
+    const asked = askedText({ questions })
     const asking: Runtime = {
       ...runtime,
       run: (request) =>
@@ -1245,7 +1256,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
                 durationMs: 1234,
                 costUsd: 0.21,
                 failure: null,
-                text: `\`\`\`question\n${asked}\n\`\`\``,
+                text: '```question\n' + JSON.stringify(questions) + '\n```',
                 sessionId: 'sess-design',
               }
             : {
@@ -1298,7 +1309,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'AgentQuestion', step: 'design', questions: [], said: asked })
+    expect(hold).toMatchObject({ _tag: 'AgentQuestion', step: 'design', questions })
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 

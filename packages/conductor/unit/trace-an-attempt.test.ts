@@ -342,7 +342,20 @@ runtime:
               durationMs: 1234,
               costUsd: 0.21,
               failure: null,
-              text: '```question\nWhich wins?\n```',
+              text:
+                '```question\n' +
+                JSON.stringify([
+                  {
+                    id: 'q1',
+                    text: 'Which wins?',
+                    answers: [
+                      { id: 'a', text: 'this' },
+                      { id: 'b', text: 'that' },
+                    ],
+                    recommended: 'a',
+                  },
+                ]) +
+                '\n```',
               sessionId: 'sess-design',
             })
           : Effect.succeed(judged),
