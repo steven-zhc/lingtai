@@ -699,8 +699,11 @@ describe('when the agent meets the wall', () => {
         else expect(kept).toHaveLength(1)
         expect(kept[0]!.data).toMatchObject({ ref: 'agent/7', sha: WIP_SHA, stoppedBy: kind })
         expect(did.indexOf('git commit --no-verify')).toBeLessThan(did.indexOf('append RunKeptUncommitted'))
-        const refs = run.findLast((e) => e.type === 'RunRefsPublished')
-        expect(refs!.data).toMatchObject({ headSha: WIP_SHA })
+        // A redone crash resets to the head, so the published head is the WIP only where nothing is redone.
+        if (kind !== 'crash') {
+          const refs = run.find((e) => e.type === 'RunRefsPublished')
+          expect(refs!.data).toMatchObject({ headSha: WIP_SHA })
+        }
       },
     )
 
