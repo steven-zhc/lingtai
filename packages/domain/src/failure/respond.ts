@@ -61,6 +61,7 @@ import type { JudgeWhen, Proposal } from '../proposal.ts'
 import type { CandidateId, ExcludedCandidate } from '../route.ts'
 import { ImpossibleRouteError, type Candidate, type RouteOffer, type RoutingPolicy } from '../routing.ts'
 import { STEPS, type Step } from '../vocabulary.ts'
+import type { Cause } from '../wait.ts'
 import { classify } from './classify.ts'
 
 /** Which of `standDown`'s four sources the `until` came from; `AccountLimitReached`'s own field. */
@@ -870,4 +871,79 @@ export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
   // Free and mechanical: the base moved on the branch's own files, so merge it in
   // and build and review again (#593). Bounded by `BOUNDS.baseBranchMerges`, not by a judge.
   'base-moved': 'merge-the-base',
+}
+
+// ─── What follows a cause (0108 §6) ───
+
+/** Every bound a cause's action can spend, by the name 0108 §8 gives it. */
+export type CauseBound =
+  | 'refusalFixes'
+  | 'newAttempts'
+  | 'ticketSplits'
+  | 'stepRedos'
+  | 'conflictResolutions'
+  | 'personAsks'
+
+/** Where the wait a triage answered came from: a run that met `run.turns`/`run.wall`, a diff too large to review (0108 §14), or anything else. */
+export type CauseOrigin = 'run-limit' | 'diff-too-large' | 'other'
+
+/** What the log says of one bound: how many times it has been spent, and how many it allows. */
+export type CauseCounter = { readonly used: number; readonly allowed: number }
+
+/** Why a person is asked rather than anything done: the question is theirs, the environment is, or a bound is spent. */
+export type AskPersonWhy =
+  | { readonly _tag: 'unclear' }
+  | { readonly _tag: 'environment' }
+  | { readonly _tag: 'limit'; readonly bound: CauseBound; readonly used: number }
+
+/** What the system does about a cause. `Approve` and `Close` are never one: they are a person's (0118 §11). */
+export type CauseAction =
+  | { readonly _tag: 'fixRefusal' }
+  | { readonly _tag: 'startNewAttempt' }
+  | { readonly _tag: 'splitTicket' }
+  | { readonly _tag: 'writeSpentOnThenRedoStep'; readonly spentOn: string | null }
+  | { readonly _tag: 'redoStep' }
+  | { readonly _tag: 'resolveConflict' }
+  | { readonly _tag: 'askPerson'; readonly why: AskPersonWhy }
+
+/**
+ * **The one table from a cause to what the system does** (0108 §6), pure. `bounds` is what the log says of each
+ * bound; nothing here reads it from anywhere, and nothing calls this yet — acting on a cause is #1258's. Exhaustive
+ * over `Cause`, no `default`: a later cause is a compile error here.
+ *
+ * A `ConflictingHunks` is read in order: a hunk only a person can answer, then two sides that contradict, then the
+ * rest — a conflict with more hunks than are listed (`hunks: []`) is the rest. A `TicketTooBig` with a plan or
+ * `spentOn` null alike is *without a plan* when `plan` is null; from `diff-too-large` redoing does not make a diff
+ * smaller, so it asks a person, and from any other origin it is read as `run-limit` is.
+ */
+export function actionFor(
+  cause: Cause,
+  origin: CauseOrigin,
+  bounds: Readonly<Record<CauseBound, CauseCounter>>,
+): CauseAction {
+  const within = (bound: CauseBound, action: CauseAction): CauseAction => {
+    const { used, allowed } = bounds[bound]
+    return used < allowed ? action : { _tag: 'askPerson', why: { _tag: 'limit', bound, used } }
+  }
+  switch (cause._tag) {
+    case 'FixableLines':
+      return within('refusalFixes', { _tag: 'fixRefusal' })
+    case 'WrongApproach':
+      return within('newAttempts', { _tag: 'startNewAttempt' })
+    case 'TicketTooBig':
+      if (cause.plan !== null) return within('ticketSplits', { _tag: 'splitTicket' })
+      if (origin === 'diff-too-large') return { _tag: 'askPerson', why: { _tag: 'unclear' } }
+      return within('stepRedos', { _tag: 'writeSpentOnThenRedoStep', spentOn: cause.spentOn })
+    case 'Unfinished':
+      return within('stepRedos', { _tag: 'redoStep' })
+    case 'ConflictingHunks':
+      if (cause.hunks.some((h) => h._tag === 'Divergent'))
+        return within('personAsks', { _tag: 'askPerson', why: { _tag: 'unclear' } })
+      if (cause.hunks.some((h) => h._tag === 'Contradicting')) return within('newAttempts', { _tag: 'startNewAttempt' })
+      return within('conflictResolutions', { _tag: 'resolveConflict' })
+    case 'SetupBroken':
+      return { _tag: 'askPerson', why: { _tag: 'environment' } }
+    case 'UndecidedQuestion':
+      return within('personAsks', { _tag: 'askPerson', why: { _tag: 'unclear' } })
+  }
 }

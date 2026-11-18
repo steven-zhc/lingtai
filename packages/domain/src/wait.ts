@@ -1,6 +1,6 @@
 /**
  * 0118 §1's model of a wait: `WaitReason`, `Resolution`, `allowedResolutions`
- * and `recommendedResolution`, and 0118 §1/§10's triage types, `RootCause`,
+ * and `recommendedResolution`, and 0118 §1/§10's triage types, `Cause`,
  * `TriageResult` and `TriageStatus`. On the log directly since #502 (0120
  * phase 2) — `WaitStarted.reason` and `WaitResolved.resolution` are this
  * file's `WaitReason` and `Resolution`, verbatim, with no translation layer
@@ -25,8 +25,9 @@ import { z } from 'zod'
 import { decidingAction, WaitId, type StepOutcome } from './action.ts'
 import { fromOf, Proposal } from './proposal.ts'
 import { RouteEscalation } from './route.ts'
-import { SplitProposal, SplitProposalAnswer, SplitResolution } from './split.ts'
+import { SplitProposal, SplitResolution, TriagePlan, TriagePlanAnswer } from './split.ts'
 import {
+  CauseHunk,
   CONFLICT_ROUND_HUNKS,
   Hunk,
   MERGE_HUNKS_ONE_BY_ONE,
@@ -287,15 +288,15 @@ export const Resolution = z.discriminatedUnion('_tag', [
 export type Resolution = z.infer<typeof Resolution>
 
 /**
- * The resolutions triage may advise — `Resolution`'s tags less
+ * The resolutions an old triage advised, frozen for the rows that carry one (0118 §1; triage answers a cause now) — `Resolution`'s tags less
  * `AnswerQuestion`: that choice is a person's own, on an `OwnQuestion` only,
  * and triage cannot make it for them. A bare tag, not a `Resolution`: the
  * fields a resolution carries beyond its tag (`Approve`'s `onSha`, a
  * conflict's base and head) belong to the person at the
  * moment they act, not to anything triage knows ahead of them (0118 §1).
  */
-export const TriageAdvice = z.enum(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'])
-export type TriageAdvice = z.infer<typeof TriageAdvice>
+const TriageAdvice = z.enum(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'])
+type TriageAdvice = z.infer<typeof TriageAdvice>
 
 /**
  * The resolution each advice recommends. `TriageAdvice` keeps the names it was logged with (the cause ticket replaces
@@ -314,15 +315,6 @@ const ADVICE_RESOLUTION = {
 export function adviceResolution(advice: TriageAdvice): Resolution['_tag'] {
   return ADVICE_RESOLUTION[advice]
 }
-
-type AssertEqual<T, U> = [T] extends [U] ? ([U] extends [T] ? true : never) : never
-// a Resolution tag added later must be added to the table above or excluded here on purpose.
-// `RedoStep` is excluded on purpose (#1218): triage cannot tell a flaky red from a real one, and a follow-up
-// adds it once people have used the move.
-const _triageAdviceCoversResolution: AssertEqual<
-  (typeof ADVICE_RESOLUTION)[TriageAdvice],
-  Exclude<Resolution['_tag'], 'AnswerQuestion' | 'RedoStep'>
-> = true as const
 
 /**
  * The resolutions a wait allows, from the wait alone — 0118 §1's table,
@@ -762,14 +754,38 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
 }
 
 /**
- * At most one resolution to draw first and prefill. An advised resolution
- * (`status` is `Done` with `TriageAdvised`) is recommended exactly when
- * `allowedResolutions` offers it — a disallowed advice returns `null`, not
- * the default, because there was advice and it is simply not drawn. The same
- * goes for an advice its own cause contradicts: `Approve` or `FixRefusal`
- * on a `WrongApproach`, and `Approve` on `FixableLines`. The one swap is a
- * `ConflictingHunks` of at most `CONFLICT_ROUND_HUNKS` hunks, which recommends
- * `FixRefusal` whatever triage chose when that is offered (#652). With no
+ * The resolution a cause recommends to a person (0118 §1). Not `actionFor`
+ * (`failure/respond.ts`): that table reads counters and where the wait came
+ * from and names what the system does, and importing it here would close a
+ * load-time cycle (`respond.ts` → `routing.ts` → `attempt-next.ts` → this file).
+ * No `default`: a later cause is a compile error here.
+ */
+function causeResolution(cause: Cause): Resolution['_tag'] {
+  switch (cause._tag) {
+    case 'FixableLines':
+    case 'ConflictingHunks':
+      return 'FixRefusal'
+    case 'WrongApproach':
+      return 'StartNewAttempt'
+    case 'Unfinished':
+    case 'SetupBroken':
+      return 'RedoStep'
+    case 'UndecidedQuestion':
+      return 'EditBodyAndStartNewAttempt'
+    // the person's own split stays until #1262 removes it
+    case 'TicketTooBig':
+      return cause.plan !== null ? 'Split' : 'RedoStep'
+  }
+}
+
+/**
+ * At most one resolution to draw first and prefill. A `TriageAnswered`'s
+ * cause names it through {@link causeResolution}; an old `TriageAdvised`'s
+ * advice is recommended as it was (below). Either is recommended exactly when
+ * `allowedResolutions` offers it — a disallowed one returns `null`, not the
+ * default, because there was a reading and it is simply not drawn. Old advice
+ * its own cause contradicts is dropped, and a `ConflictingHunks` of at most
+ * `CONFLICT_ROUND_HUNKS` hunks recommends `FixRefusal` (#652). With no
  * advice (`NotNeeded`, `NotDeclared`, `Queued`, `Running`, `Interrupted`, or
  * `Done` with `TriageFailed`) the wait's own default stands, itself run back
  * through `allowedResolutions` so a default an `unpushed` run disallows is
@@ -793,12 +809,17 @@ export function recommendedResolution(
   }
   switch (status._tag) {
     case 'Done':
+      if (status.result._tag === 'TriageAnswered') {
+        const recommended = causeResolution(status.result.cause)
+        return allowed.includes(recommended) ? recommended : null
+      }
       if (status.result._tag === 'TriageAdvised') {
         const advised = adviceResolution(status.result.resolution)
         const cause = status.result.cause._tag
-        // The one swap: a small conflict's hunks carry their own recommended
-        // answers, which are triage's reading of it, so they outrank the
-        // top-level resolution that may say start over (#652).
+        // Advice is a recorded reading of two fields that could disagree, so
+        // the rules that reconcile them stay for these rows alone: a small
+        // conflict's hunks outrank the top-level resolution (#652), and
+        // advice that contradicts its own diagnosis is dropped (#529, #551).
         if (
           status.result.cause._tag === 'ConflictingHunks' &&
           status.result.cause.total <= CONFLICT_ROUND_HUNKS &&
@@ -807,9 +828,6 @@ export function recommendedResolution(
           return 'FixRefusal'
         }
         if (!allowed.includes(advised)) return null
-        // Any other advice that contradicts its own diagnosis is dropped, not
-        // swapped for another: a wrong approach is not continued or waived, and
-        // a fixable line is repaired rather than waived (#529, #551).
         if (cause === 'WrongApproach' && (advised === 'Approve' || advised === 'FixRefusal')) return null
         if (cause === 'FixableLines' && advised === 'Approve') return null
         return advised
@@ -871,7 +889,7 @@ export function acceptedTriageNote(summary: string): string {
 
 /**
  * One line to fix. `triage.ts`'s `Lines` cause inlines this shape rather than
- * naming it (`triage.ts:96-108`); named here because `RootCause.FixableLines`
+ * naming it (`triage.ts:96-108`); named here because `Cause.FixableLines`
  * needs to say it once.
  */
 const LineFix = z.strictObject({
@@ -889,68 +907,108 @@ const UndecidedQuestion = z.strictObject({
 /** Specific edits, and the approach is sound. */
 const FixableLines = z.strictObject({ _tag: z.literal('FixableLines'), fixes: z.array(LineFix).max(TRIAGE_FIXES_MAX) })
 
-/** Patching will not converge. */
-const WrongApproach = z.strictObject({ _tag: z.literal('WrongApproach') })
+/** Patching will not converge — and why, in one sentence. */
+const WrongApproach = z.strictObject({ _tag: z.literal('WrongApproach'), why: z.string().max(TRIAGE_SENTENCE_MAX) })
+
+const conflictingHunks = <H extends z.ZodType<{ _tag: string }>>(hunk: H) =>
+  z
+    .strictObject({
+      _tag: z.literal('ConflictingHunks'),
+      hunks: z.array(hunk).max(MERGE_HUNKS_ONE_BY_ONE),
+      total: z.number().int().nonnegative(),
+    })
+    .refine((m) => (m.total <= MERGE_HUNKS_ONE_BY_ONE ? m.hunks.length === m.total : m.hunks.length === 0), {
+      message: `hunks must list every one of total at or below ${MERGE_HUNKS_ONE_BY_ONE}, and none past it`,
+      path: ['hunks'],
+    })
 
 /**
- * A conflict, mirroring `triage.ts`'s `Merge` and its `.refine`
- * (`triage.ts:78-88`): past `MERGE_HUNKS_ONE_BY_ONE` hunks `hunks` is empty
- * and `total` alone says how many there were, so an answer past that bound is
- * refused and that refusal is itself a failed triage (0118 §8).
+ * A conflict, mirroring `triage.ts`'s `Merge` and its `.refine`: past
+ * `MERGE_HUNKS_ONE_BY_ONE` hunks `hunks` is empty and `total` alone says how
+ * many there were, so an answer past that bound is refused and that refusal is
+ * itself a failed triage (0118 §8).
  */
-const ConflictingHunks = z
-  .strictObject({
-    _tag: z.literal('ConflictingHunks'),
-    hunks: z.array(Hunk).max(MERGE_HUNKS_ONE_BY_ONE),
-    total: z.number().int().nonnegative(),
-  })
-  .refine((m) => (m.total <= MERGE_HUNKS_ONE_BY_ONE ? m.hunks.length === m.total : m.hunks.length === 0), {
-    message: `hunks must list every one of total at or below ${MERGE_HUNKS_ONE_BY_ONE}, and none past it`,
-    path: ['hunks'],
-  })
+const ConflictingHunks = conflictingHunks(CauseHunk)
 
 /** The run did not finish, and either the body can save the next one what it spent its turns on, or the ticket is split. */
-const ticketTooBig = <S extends z.ZodType>(split: S) =>
-  z.strictObject({ _tag: z.literal('TicketTooBig'), split: split.optional() })
+const ticketTooBig = <S extends z.ZodType>(plan: S) =>
+  z.strictObject({
+    _tag: z.literal('TicketTooBig'),
+    plan: plan.nullable(),
+    spentOn: z.string().max(TRIAGE_TEXT_MAX).nullable(),
+  })
 
 /** The repository or the machine refused before or around any agent's work — no edit to the ticket can help. */
-const SetupBroken = z.strictObject({ _tag: z.literal('SetupBroken') })
+const SetupBroken = z.strictObject({
+  _tag: z.literal('SetupBroken'),
+  what: z.string().max(TRIAGE_TEXT_MAX),
+  repair: z.string().max(TRIAGE_TEXT_MAX),
+})
 
-/** Why triage recommends what it does — 0118 §4's six causes. */
-const causesWith = <S extends z.ZodType>(split: S) =>
+/** The step stopped short of finishing what the ticket says; `addToBody` is what would let the next run finish it. */
+const Unfinished = z.strictObject({
+  _tag: z.literal('Unfinished'),
+  addToBody: z.string().max(TRIAGE_TEXT_MAX).nullable(),
+})
+
+/** Why triage says the step stopped — 0118 §1's seven causes. */
+const causesWith = <S extends z.ZodType>(plan: S) =>
   z.discriminatedUnion('_tag', [
     UndecidedQuestion,
     FixableLines,
     WrongApproach,
     ConflictingHunks,
-    ticketTooBig(split),
+    ticketTooBig(plan),
     SetupBroken,
+    Unfinished,
   ])
 
-/** The recorded cause: a split's children carry the `kind` the runner set (#1271). */
-export const RootCause = causesWith(SplitProposal)
-export type RootCause = z.infer<typeof RootCause>
-
-/** Triage ran and found nothing to advise. */
-const TriageFailed = z.strictObject({ _tag: z.literal('TriageFailed'), why: z.string().max(TRIAGE_TEXT_MAX) })
+/** The recorded cause: a plan's children carry the `kind` the runner set (#1271). */
+const RecordedCause = causesWith(TriagePlan)
+export type Cause = z.infer<typeof RecordedCause>
 
 /**
- * Triage's advice: the cause, the recommended resolution, one sentence for
- * the card, and one more of what the ticket wants — `null` where the body
- * does not say (0118 §1).
+ * The six causes a `TriageAdvised` recorded, frozen: the old shapes, built from the old sub-schemas so a row on the
+ * log keeps parsing whatever the current `Cause` grows. Nothing writes one.
  */
+const AdvisedCause = z.discriminatedUnion('_tag', [
+  UndecidedQuestion,
+  FixableLines,
+  z.strictObject({ _tag: z.literal('WrongApproach') }),
+  conflictingHunks(Hunk),
+  z.strictObject({ _tag: z.literal('TicketTooBig'), split: SplitProposal.optional() }),
+  z.strictObject({ _tag: z.literal('SetupBroken') }),
+])
+export type AdvisedCause = z.infer<typeof AdvisedCause>
+
+/** Triage ran and found nothing to say. */
+const TriageFailed = z.strictObject({ _tag: z.literal('TriageFailed'), why: z.string().max(TRIAGE_TEXT_MAX) })
+
+/** What the card shows of a cause: one sentence, and one more of what the ticket wants — `null` where the body does not say. */
 const answerParts = {
-  resolution: TriageAdvice,
   summary: z.string().max(TRIAGE_SENTENCE_MAX),
   want: z.string().max(TRIAGE_SENTENCE_MAX).nullable(),
 }
 
-/** What the model answers: the same, but a split's children name no `kind` (#1271). */
-export const TriageAnswer = z.strictObject({ cause: causesWith(SplitProposalAnswer), ...answerParts })
+/** What the model answers: a cause and no action (0118 §1); a plan's children name no `kind` (#1271). */
+export const TriageAnswer = z.strictObject({ cause: causesWith(TriagePlanAnswer), ...answerParts })
 export type TriageAnswer = z.infer<typeof TriageAnswer>
 
+/** Triage's reading: the cause, one sentence for the card, and what the ticket wants. What follows is the system's (0108 §6). */
+const TriageAnswered = z.strictObject({ _tag: z.literal('TriageAnswered'), cause: RecordedCause, ...answerParts })
+
+/**
+ * What triage answered before it answered a cause (0118 §1): the cause beside a resolution, which could disagree.
+ * **Read-only.** It is on the log and must keep parsing and drawing as the advice it was; nothing constructs one, and
+ * it is not upcast into a `TriageAnswered` because an advice and a cause do not map one to one.
+ */
 const TriageAdvised = z
-  .strictObject({ cause: RootCause, ...answerParts, _tag: z.literal('TriageAdvised') })
+  .strictObject({
+    _tag: z.literal('TriageAdvised'),
+    cause: AdvisedCause,
+    resolution: TriageAdvice,
+    ...answerParts,
+  })
   .superRefine((advice, ctx) => {
     if (advice.resolution === 'Split' && !(advice.cause._tag === 'TicketTooBig' && advice.cause.split !== undefined))
       ctx.addIssue({
@@ -999,8 +1057,18 @@ export function unwrapTriageEnvelope(structured: unknown): unknown {
 }
 
 /** What `WaitTriaged` records: triage either failed or has advice, never both. */
-export const TriageResult = z.discriminatedUnion('_tag', [TriageFailed, TriageAdvised])
+export const TriageResult = z.discriminatedUnion('_tag', [TriageFailed, TriageAnswered, TriageAdvised])
 export type TriageResult = z.infer<typeof TriageResult>
+
+/** The cause a result carries, from either shape — a reader that only draws the cause goes through here. */
+export function triageCauseOf(result: TriageResult | null | undefined): Cause | AdvisedCause | null {
+  return result === null || result === undefined || result._tag === 'TriageFailed' ? null : result.cause
+}
+
+/** The resolution a result *advised*, which only an old `TriageAdvised` did; never a recommendation. */
+export function triageAdviceOf(result: TriageResult | null | undefined): Resolution['_tag'] | null {
+  return result?._tag === 'TriageAdvised' ? adviceResolution(result.resolution) : null
+}
 
 /**
  * Derived on read and never stored (0118 §1, §10): four of these six —

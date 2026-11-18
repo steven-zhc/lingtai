@@ -9,12 +9,10 @@
  * the same guarantee `@lingtai/conductor/discuss` makes (`discuss.ts`'s own
  * header).
  *
- * **No `headSha` parameter, and no `Resolution` object.** `TriageAdvised.resolution`
- * is a bare `TriageAdvice` tag (`wait.ts:218-227`): the only field any
- * `Resolution` ever carries beyond its tag is `Approve`'s `onSha`, which is the
- * head a person was shown at the moment they approved — not something triage
- * knows ahead of them. Triage never advises `AnswerQuestion` either: that
- * belongs to an `OwnQuestion`, a wait triage does not read (0118 §1).
+ * **No `headSha` parameter, and no action.** Triage answers a cause and the parts
+ * that cause carries (0118 §1); what follows a cause is the system's, from one
+ * table (`actionFor`, 0108 §6), so an answer that names a `resolution` is
+ * refused by name rather than read.
  *
  * **The machine's words are a claim, not a fact.** The text inside a
  * `WaitReason` and a judge's `why` are the stopping step's own account of what
@@ -90,20 +88,20 @@ export interface TriageEvidence {
 // ----------------------------------------------------------------- brief ----
 
 const ANSWER_SHAPE = `{"cause": {"_tag": "UndecidedQuestion", "questions": [...]},
- "resolution": "EditBodyAndRequeue",
  "summary": "one sentence for the card",
  "want": "one sentence of what the ticket wants, or null"}
 
-Exactly these four keys — \`cause\`, \`resolution\`, \`summary\`, \`want\` — and no
-others. An extra key, for example \`"confidence"\`, is refused by name rather
-than ignored.
+Exactly these three keys — \`cause\`, \`summary\`, \`want\` — and no others. You
+name a cause and never an action: what follows it is not yours to choose, so a
+\`resolution\` key is refused, and so is any other extra key, for example
+\`"confidence"\`, each by name rather than ignored.
 
 \`summary\` and \`want\` are each at most ${TRIAGE_SENTENCE_MAX} characters — one
 sentence, not a paragraph. Every other free-text field below — every \`id\`,
-\`path\`, \`what\`, \`text\` and \`recommended\` — is at most ${TRIAGE_TEXT_MAX}
+\`path\`, \`what\`, \`why\`, \`text\` and \`recommended\` — is at most ${TRIAGE_TEXT_MAX}
 characters.
 
-\`cause\` is exactly one of these six (0118 §4), and its parts belong to it —
+\`cause\` is exactly one of these seven (0118 §4), and its parts belong to it —
 never repeated beside it:
 
 - \`UndecidedQuestion\` — *a decision for you*: \`questions\`, at most
@@ -117,29 +115,36 @@ never repeated beside it:
   approach is sound. Each fix is an object, never a one-line string:
   \`{"path": "a.ts", "line": 10, "what": "fix the thing"}\` — \`line\` may be
   \`null\` where no one line applies.
-- \`WrongApproach\` — *the approach is wrong*: patching will not converge
+- \`WrongApproach\` — *the approach is wrong*: patching will not converge.
+  \`why\` is one sentence of what was wrong, at most ${TRIAGE_SENTENCE_MAX} characters;
+  the next attempt's brief quotes it.
 - \`ConflictingHunks\` — *merge by hand*: \`hunks\` and \`total\`, a conflict. Each
   hunk carries its own \`_tag\`: \`{"_tag": "Mechanical", "path": "a.ts",
-  "line": 10}\` where git merged it without trouble, or
+  "line": 10}\` where git merged it without trouble,
+  \`{"_tag": "Contradicting", "path": "a.ts", "line": 10, "why": "…"}\` where the
+  two sides contradict each other and neither can be kept, or
   \`{"_tag": "Divergent", "path": "a.ts", "line": 10, "question": <a question,
   shaped as in \`UndecidedQuestion\` above>}\` where the two sides behave
-  differently. List every hunk in \`hunks\` when \`total\` is at most
-  ${MERGE_HUNKS_ONE_BY_ONE} — one entry per hunk, and \`hunks.length\` must
-  equal \`total\`. Past that bound, send \`"hunks": []\` with \`total\` the real
-  count; listing more than ${MERGE_HUNKS_ONE_BY_ONE} hunks, or a count that
-  does not match \`total\` at or below it, is refused.
-- \`TicketTooBig\` — *try it again, narrower*: the run did not finish. When
-  smaller tickets would serve better, add \`split\`: \`{"children": [{"key": "parser",
-  "title": "…", "body": "…"}], "blockedBy": [{"ticket": "wire",
-  "blockedBy": "parser"}]}\` — at least two children, at most ${TRIAGE_SPLIT_CHILDREN_MAX}, each
+  differently and only a person can say which is meant. List every hunk in
+  \`hunks\` when \`total\` is at most ${MERGE_HUNKS_ONE_BY_ONE} — one entry per
+  hunk, and \`hunks.length\` must equal \`total\`. Past that bound, send
+  \`"hunks": []\` with \`total\` the real count; listing more than
+  ${MERGE_HUNKS_ONE_BY_ONE} hunks, or a count that does not match \`total\` at or
+  below it, is refused.
+- \`TicketTooBig\` — *the run did not finish*: \`plan\` and \`spentOn\`, each
+  \`null\` where you have nothing to say. When smaller tickets would serve better,
+  give \`plan\`: \`{"children": [{"key": "parser", "title": "…", "body": "…",
+  "covers": ["a \`## Done when\` item, as written"]}], "blockedBy":
+  [{"ticket": "wire", "blockedBy": "parser"}], "uncovered": ["an item no child
+  covers"]}\` — at least two children, at most ${TRIAGE_SPLIT_CHILDREN_MAX}, each
   \`key\` unique (lower case letters, digits, hyphens), every \`blockedBy\` entry naming two
   keys, and no cycle. Each child is opened with this ticket's own kind, so the plan
-  names none.
-- \`SetupBroken\` — *fix the setup*: the repository or the machine refused, before or around any agent's work
-
-\`resolution\` is one of \`"Approve"\`, \`"GrantFixRound"\`, \`"Requeue"\`, \`"EditBodyAndRequeue"\`,
-\`"Split"\`, \`"Close"\`; the tag alone, never an object, and never \`"AnswerQuestion"\`: that
-choice belongs to a person's own question, a wait you are not reading.`
+  names none. Otherwise give \`spentOn\`: one sentence of where the run spent its turns,
+  which the next run is told.
+- \`SetupBroken\` — *fix the setup*: the repository or the machine refused, before or
+  around any agent's work. \`what\` is what is broken and \`repair\` how to repair it.
+- \`Unfinished\` — *the step only did not finish*: nothing was wrong with the work.
+  \`addToBody\` is a sentence to add to the ticket so the next run finishes, or \`null\`.`
 
 const RULES = `## The rules
 
@@ -147,20 +152,25 @@ const RULES = `## The rules
 - **The parts belong to the cause** (0118 §3): questions only inside
   \`UndecidedQuestion\` or a \`Divergent\` hunk's own \`question\`, fixes only
   inside \`FixableLines\`, hunks only inside \`ConflictingHunks\`.
-- **With \`ConflictingHunks\`, the resolution agrees with the hunks' recommended
-  answers.** Recommend \`Requeue\` only when every \`Divergent\` hunk's recommended
-  answer is to redo the work.
+- **A cause, never an action.** Do not say what should be done about it; the
+  system decides that from the cause.
 - **The budget is never a cause** (0118 §4). A turn or dollar ceiling is a fact
   about the pass, not a reason the approach is wrong or the lines need fixing —
   name the actual cause underneath it, if there is one, or say the run did not
-  finish (\`TicketTooBig\`).
-- **\`Split\` only with \`TicketTooBig\`, and only with its \`split\` plan.** The plan is
-  advice a person edits; nothing is opened until they approve it.
+  finish (\`Unfinished\`, or \`TicketTooBig\` when the ticket is too much for one run).
+- **\`why\`** is one sentence, the reason and not a restatement of the cause's name.
+  **\`what\`** and **\`repair\`** are two different sentences. **\`spentOn\`** names
+  where the turns went, not that they ran out. **\`addToBody\`** is text the next
+  run can act on, or \`null\`.
+- **\`covers\` and \`uncovered\`** quote the parent's \`## Done when\` items as
+  written, so that every item is in exactly one child's \`covers\` or in \`uncovered\`.
+- **A \`Contradicting\` hunk** is one whose two sides cannot both be kept; a hunk
+  that only needs a decision is \`Divergent\`, with its question.
 - **A \`DiffTooLarge\` wait is evidence for \`TicketTooBig\`** (0108 §14): the
   reviewer was never run because the change was longer than it reads whole.
-  Advise \`Split\`, with its plan, only when the ticket really holds separable
-  work; a change that is large for one reason, such as a scripted rename across
-  many files, does not split, and is \`Requeue\` or \`EditBodyAndRequeue\`.
+  Give a \`plan\` only when the ticket really holds separable work; a change that
+  is large for one reason, such as a scripted rename across many files, does not
+  split, so give \`plan: null\` and say in \`spentOn\` what made it large.
 - **Where the body does not say what the ticket wants**, answer \`"want": null\`
   and ask for it as an \`UndecidedQuestion\` (0118 §2, §3) — do not guess.`
 
@@ -273,7 +283,7 @@ ${JSON.stringify({ reply: evidence.routed.reply, decision: evidence.routed.decis
   const conflicts =
     evidence.conflicts === null || evidence.conflicts === undefined
       ? ''
-      : `\n## Merge conflict from the mirror\n\n${JSON.stringify(evidence.conflicts, null, 2)}\n\nList every counted hunk as Mechanical or Divergent, using its exact hunkLines entry as the line. Give each Divergent hunk its own question. Propose a resolution; apply nothing.\n`
+      : `\n## Merge conflict from the mirror\n\n${JSON.stringify(evidence.conflicts, null, 2)}\n\nList every counted hunk as Mechanical, Contradicting or Divergent, using its exact hunkLines entry as the line. Give each Divergent hunk its own question. Apply nothing.\n`
 
   const budget =
     input.roundsLeft > 0
@@ -281,9 +291,7 @@ ${JSON.stringify({ reply: evidence.routed.reply, decision: evidence.routed.decis
       : 'You have no reading left. Answer with the JSON answer shape, using what you have.'
 
   return `You are triaging one held ticket. An attempt at it stopped, and nobody has
-looked at it yet. Name why it stopped, in one of six shapes, and recommend one
-resolution. You are not fixing anything and you are not deciding anything — a
-person reads what you say and decides.
+looked at it yet. Name why it stopped, as one of seven causes. You are not fixing anything and you are not deciding anything — you name the cause, and a person or the system decides what follows.
 
 ## The ticket
 
@@ -328,11 +336,11 @@ ${input.prompt === undefined || input.prompt.trim() === '' ? '' : `\n${input.pro
 /** What one turn of triage comes back with. */
 export type TriageReply =
   | { kind: 'read'; paths: string[] }
-  | { kind: 'advised'; result: Extract<TriageResult, { _tag: 'TriageAdvised' }> }
+  | { kind: 'answered'; result: Extract<TriageResult, { _tag: 'TriageAnswered' }> }
   /** The reply could not be read as either shape, or failed the bounds. */
   | { kind: 'refused'; why: string; raw: string }
 
-/** A cause or resolution naming a budget, never a legitimate one (0118 §4). */
+/** A cause naming a budget, never a legitimate one (0118 §4). */
 const BUDGET_NAMED = /out[- ]of[- ](turns|usd|rounds|budget)|budget/i
 
 function clip(text: string): string {
@@ -347,15 +355,14 @@ function clip(text: string): string {
  *
  * **No repair.** An answer that misses the schema is never coerced into one
  * that fits — `parseReply`'s own rule: *"An unreadable reply is not repaired
- * into an answer."* **No check against `allowedResolutions`.** An advised kind
- * the wait does not offer still parses; `recommendedResolution` already
- * returns `null` for it.
+ * into an answer."* **No action, ever:** a `resolution` key is refused by name,
+ * because triage answers a cause and what follows it is the system's (0118 §1).
  *
- * **A split's `kind` is the runner's, not the model's** (#1271): it is not part
+ * **A plan's `kind` is the runner's, not the model's** (#1271): it is not part
  * of what triage answers, so whatever the reply carries there is overwritten
  * with `options.kind`, the parent's — rewriting a field nobody asked the model
  * for is not repairing an answer. `kind: null` means it could not be settled,
- * and a reply with a split is then refused.
+ * and a reply with a plan is then refused.
  */
 export function parseTriage(text: string | null, options: { kind: string | null }): TriageReply {
   if (text === null || text.trim() === '') {
@@ -384,7 +391,7 @@ export function parseTriage(text: string | null, options: { kind: string | null 
     // shape — an echoed example, say — and the next candidate gets the
     // chance, the same way `parseReply` moves on from an object with no
     // `answer` string rather than adopting it.
-    if (!('cause' in v) && !('resolution' in v)) continue
+    if (!('cause' in v)) continue
 
     found = v
     break
@@ -406,44 +413,41 @@ export function parseTriage(text: string | null, options: { kind: string | null 
     return { kind: 'refused', why: clip(`the budget is not a cause (0118 §4): "${causeTag}"`), raw: text }
   }
 
-  if (found['resolution'] === 'AnswerQuestion') {
+  if ('resolution' in found) {
     return {
       kind: 'refused',
-      why: "AnswerQuestion is an OwnQuestion's own resolution and triage never makes it (0118 §1)",
+      why: "resolution: triage answers a cause and never an action; what follows a cause is the system's (0118 §1)",
       raw: text,
     }
-  }
-  if (typeof found['resolution'] === 'object' && found['resolution'] !== null) {
-    return { kind: 'refused', why: 'resolution is a tag, not an object', raw: text }
   }
 
   const cause = found['cause']
   if (typeof cause === 'object' && cause !== null && (cause as Record<string, unknown>)['_tag'] === 'TicketTooBig') {
-    const split = (cause as Record<string, unknown>)['split']
-    if (typeof split === 'object' && split !== null && Array.isArray((split as Record<string, unknown>)['children'])) {
+    const plan = (cause as Record<string, unknown>)['plan']
+    if (typeof plan === 'object' && plan !== null && Array.isArray((plan as Record<string, unknown>)['children'])) {
       if (options.kind === null)
-        return { kind: 'refused', why: "the recipe's kinds could not be read, so a split has no kind", raw: text }
+        return { kind: 'refused', why: "the recipe's kinds could not be read, so a plan has no kind", raw: text }
       const { kind } = options
-      ;(split as { children: unknown[] }).children = (split as { children: unknown[] }).children.map((child) =>
+      ;(plan as { children: unknown[] }).children = (plan as { children: unknown[] }).children.map((child) =>
         typeof child === 'object' && child !== null && !Array.isArray(child) ? { ...child, kind } : child,
       )
     }
   }
 
-  const parsed = TriageResult.safeParse({ ...found, _tag: 'TriageAdvised' })
+  const parsed = TriageResult.safeParse({ ...found, _tag: 'TriageAnswered' })
   if (!parsed.success) {
     const why = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
     return { kind: 'refused', why: clip(why), raw: text }
   }
-  if (parsed.data._tag !== 'TriageAdvised') {
-    return { kind: 'refused', why: 'did not parse as advice', raw: text }
+  if (parsed.data._tag !== 'TriageAnswered') {
+    return { kind: 'refused', why: 'did not parse as an answer', raw: text }
   }
 
   // The bar on what an agent may ask is on the writer's side (#1253): two to four answers.
   const asks = triageQuestionsOf(parsed.data.cause).filter(({ question }) => question.answers.length < 2)
   if (asks.length > 0) return { kind: 'refused', why: 'a question needs two to four answers', raw: text }
 
-  return { kind: 'advised', result: parsed.data }
+  return { kind: 'answered', result: parsed.data }
 }
 
 /**

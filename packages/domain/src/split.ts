@@ -208,3 +208,35 @@ export const SplitProposalAnswer = z
   })
   .superRefine(refuseProblems)
 export type SplitProposalAnswer = z.infer<typeof SplitProposalAnswer>
+
+const planChild = {
+  key: z.string().max(KEY_MAX),
+  title: z.string().max(TRIAGE_TEXT_MAX),
+  body: z.string().max(TRIAGE_SPLIT_BODY_MAX),
+  /** The parent's `## Done when` items this child covers, as their text (0118 §1). */
+  covers: z.array(z.string().max(TRIAGE_TEXT_MAX)).max(TRIAGE_SPLIT_CHILDREN_MAX * TRIAGE_SPLIT_CHILDREN_MAX),
+}
+const planRest = {
+  blockedBy: z.array(Dependency).max(TRIAGE_SPLIT_CHILDREN_MAX * TRIAGE_SPLIT_CHILDREN_MAX),
+  /** The parent's `## Done when` items no child covers. */
+  uncovered: z.array(z.string().max(TRIAGE_TEXT_MAX)).max(TRIAGE_SPLIT_CHILDREN_MAX * TRIAGE_SPLIT_CHILDREN_MAX),
+}
+
+/**
+ * The plan a `TicketTooBig` cause records (0118 §1): `SplitProposal` plus what each child covers of the parent's
+ * `## Done when` and what no child does. `SplitProposal` itself stays as it was, because a recorded `TriageAdvised`
+ * is parsed through it and an old row has no `covers`.
+ */
+export const TriagePlan = z
+  .object({
+    children: z.array(z.object({ ...planChild, kind: z.string().max(TRIAGE_TEXT_MAX) })).max(TRIAGE_SPLIT_CHILDREN_MAX),
+    ...planRest,
+  })
+  .superRefine(refuseProblems)
+export type TriagePlan = z.infer<typeof TriagePlan>
+
+/** What triage may *answer*: `TriagePlan` without a `kind` (#1271). */
+export const TriagePlanAnswer = z
+  .object({ children: z.array(z.object(planChild)).max(TRIAGE_SPLIT_CHILDREN_MAX), ...planRest })
+  .superRefine(refuseProblems)
+export type TriagePlanAnswer = z.infer<typeof TriagePlanAnswer>

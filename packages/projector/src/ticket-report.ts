@@ -294,7 +294,7 @@ export function reportWaitOf(w: TicketWait): ReportWait {
         : {
             attempt: started.attempt,
             result: result._tag,
-            cause: result._tag === 'TriageAdvised' ? result.cause._tag : null,
+            cause: result._tag === 'TriageFailed' ? null : result.cause._tag,
           },
     resolution: w.resolution?.resolution._tag ?? null,
     by: w.resolution?.by ?? null,

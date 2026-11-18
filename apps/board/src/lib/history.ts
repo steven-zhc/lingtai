@@ -725,6 +725,9 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
     const name = triageName(by !== null && typeof by === 'object' ? (by as { _tag?: string }) : {}, f.attempt)
     const result = f.result
     if (result._tag === 'TriageFailed') return `${name} failed: ${clip(result.why)}`
+    // An old row advised a move and says so; a cause is read, and what follows it is not the triage's to say.
+    if (result._tag === 'TriageAnswered')
+      return `${name} read the cause: ${presentCause(result.cause).label}: ${clip(result.summary)}`
     return `${name} advised: ${RESOLUTION_COPY[adviceResolution(result.resolution)].title} — ${presentCause(result.cause).label}: ${clip(result.summary)}`
   },
 

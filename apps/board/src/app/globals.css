@@ -474,6 +474,7 @@ body {
 .cause-chip--merge { background: #63549e; color: #fff; border-color: #63549e; }
 .cause-chip--oversized { background: #7a3e6e; color: #fff; border-color: #7a3e6e; }
 .cause-chip--setup { background: #3a4a50; color: #fff; border-color: #3a4a50; }
+.cause-chip--unfinished { background: #5b6b3a; color: #fff; border-color: #5b6b3a; }
 /* A place in line is no triage cause, so it takes no cause's hue. */
 .cause-chip--queue { background: var(--surface-2); color: var(--ink-2); border-color: var(--rule); }
 .waiting-cause-summary,
