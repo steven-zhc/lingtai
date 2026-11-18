@@ -371,7 +371,7 @@ export const WaitStarted = z.strictObject({
 
 /**
  * A person answered the wait. `note` **is** the answer — `lingtai answer`'s
- * choice, or `lingtai requeue`'s why — and the reducer keeps it (#147): a record
+ * choice, or `lingtai start-new-attempt`'s why — and the reducer keeps it (#147): a record
  * that can say what was asked and never what was decided is not a record.
  *
  * `resolution` is 0118 §1's own `Resolution`, so which move a person

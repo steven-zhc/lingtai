@@ -12,38 +12,38 @@ describe('waitCommand', () => {
       at({ _tag: 'SignoffRequired' }),
     )
     expect(line).toBe(
-      'lingtai approve p --issue 3   (or lingtai requeue p --issue 3 [--into-body "<text>"], or the board)',
+      'lingtai approve p --issue 3   (or lingtai start-new-attempt p --issue 3 [--into-body "<text>"], or the board)',
     )
   })
 
   it('asks for a note on every other approve, and starts an unranked line with one of', () => {
     const line = waitCommand({ first: null, rest: ['Approve', 'StartNewAttempt'] }, at({ _tag: 'MergeRefused' }))
     expect(line).toBe(
-      'one of: lingtai approve p --issue 3 --note "<why>", or lingtai requeue p --issue 3   (or the board)',
+      'one of: lingtai approve p --issue 3 --note "<why>", or lingtai start-new-attempt p --issue 3   (or the board)',
     )
   })
 
   it('writes the answer unbracketed for a question', () => {
     const line = waitCommand({ first: null, rest: ['EditBodyAndStartNewAttempt', 'StartNewAttempt'] }, at({ _tag: 'AgentQuestion' }))
-    expect(line).toContain('lingtai requeue p --issue 3 --into-body "<answer>"')
+    expect(line).toContain('lingtai start-new-attempt p --issue 3 --into-body "<answer>"')
     expect(line).not.toContain('[')
   })
 
   it('names the answer command first for an own question, with a bare requeue', () => {
     const line = waitCommand({ first: 'AnswerQuestion', rest: ['StartNewAttempt'] }, at({ _tag: 'OwnQuestion' }))
     expect(line.startsWith('lingtai answer p --issue 3 "<choice>"')).toBe(true)
-    expect(line).toContain('lingtai requeue p --issue 3,')
+    expect(line).toContain('lingtai start-new-attempt p --issue 3,')
     expect(line).not.toContain('--into-body')
   })
 
   it('keeps the bare requeue visible when a body edit is recommended', () => {
     const line = waitCommand({ first: 'EditBodyAndStartNewAttempt', rest: ['StartNewAttempt'] }, at({ _tag: 'BudgetExhausted' }))
-    expect(line).toBe('lingtai requeue p --issue 3 [--into-body "<text>"]   (or the board)')
+    expect(line).toBe('lingtai start-new-attempt p --issue 3 [--into-body "<text>"]   (or the board)')
   })
 
   it('makes the body mandatory only when no bare requeue is allowed', () => {
     const line = waitCommand({ first: 'EditBodyAndStartNewAttempt', rest: [] }, at({ _tag: 'BudgetExhausted' }))
-    expect(line).toBe('lingtai requeue p --issue 3 --into-body "<text>"   (or the board)')
+    expect(line).toBe('lingtai start-new-attempt p --issue 3 --into-body "<text>"   (or the board)')
   })
 
   it('falls back to the board when nothing is left', () => {

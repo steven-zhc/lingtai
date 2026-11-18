@@ -71,7 +71,7 @@ const row = (over: Partial<StatusRow> & Pick<StatusRow, 'taskId' | 'ref'>): Stat
   kind: 'bug',
   title: `title of ${over.ref}`,
   state: 'queued',
-  restarts: 0,
+  newAttempts: 0,
   arm: null,
   held: null,
   unoffered: false,
@@ -121,11 +121,11 @@ const fixture: StatusReport = {
       passedOverLine: '1 passed over — agent:hold 1',
       dependenciesUnread: 'GitHub reported no issue dependencies for this repository',
       runnable: [
-        row({ taskId: 't612', ref: '612', held: 'backing off — runnable in 32m', restarts: 1, arm: 'restart 1 of 3' }),
+        row({ taskId: 't612', ref: '612', held: 'backing off — runnable in 32m', newAttempts: 1, arm: 'restart 1 of 3' }),
         row({ taskId: 't613', ref: '613', kind: 'tech-debt', unoffered: true }),
       ],
       known: [
-        row({ taskId: 't612', ref: '612', held: 'backing off — runnable in 32m', restarts: 1, arm: 'restart 1 of 3' }),
+        row({ taskId: 't612', ref: '612', held: 'backing off — runnable in 32m', newAttempts: 1, arm: 'restart 1 of 3' }),
         row({ taskId: 't609', ref: '609', state: 'waiting', wait: asked }),
         row({
           taskId: 't610',
@@ -139,7 +139,7 @@ const fixture: StatusReport = {
             words: null,
             detail: [],
             recommendation: null,
-            command: 'one of: lingtai requeue lingtai --issue 610   (or the board)',
+            command: 'one of: lingtai start-new-attempt lingtai --issue 610   (or the board)',
             raw: false,
           },
         }),
@@ -191,7 +191,7 @@ function fixture0Ok(): Extract<StatusFilter, { ok: true }> {
 
 describe('statusJson', () => {
   it('pins the whole shape', () => {
-    const off = { restarts: 0, held: null, arm: null, unoffered: false }
+    const off = { newAttempts: 0, held: null, arm: null, unoffered: false }
     const r = (ref: string, kind = 'bug') => ({ taskId: `t${ref}`, ref, kind, title: `title of ${ref}` })
     expect(statusJson(fixture)).toEqual({
       projects: [
@@ -220,12 +220,12 @@ describe('statusJson', () => {
           passedOver: [{ ref: 9, reason: 'agent:hold' }],
           dependenciesUnread: 'GitHub reported no issue dependencies for this repository',
           runnable: [
-            { ...r('612'), restarts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
-            { ...r('613', 'tech-debt'), restarts: 0, held: null, arm: null },
+            { ...r('612'), newAttempts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
+            { ...r('613', 'tech-debt'), newAttempts: 0, held: null, arm: null },
           ],
           byState: {
             queued: [
-              { ...r('612'), ...off, restarts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
+              { ...r('612'), ...off, newAttempts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
             ],
             waiting: [
               { ...r('609'), ...off },
@@ -364,7 +364,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
       detail: ['ready to land — the recipe asks you to approve each attempt'],
       recommendation: null,
       command:
-        'lingtai approve lingtai --issue 1   (or lingtai requeue lingtai --issue 1 [--into-body "<text>"], or the board)',
+        'lingtai approve lingtai --issue 1   (or lingtai start-new-attempt lingtai --issue 1 [--into-body "<text>"], or the board)',
       raw: true,
     }
     const report: StatusReport = {
@@ -393,7 +393,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
       const lines = out.split('\n').map((l) => l.trim())
       expect(lines.filter((l) => l === 'ready to land — the recipe asks you to approve each attempt')).toHaveLength(1)
       expect(out).toContain('#1  Add the chapter')
-      expect(out).toContain(`lingtai approve ${report.projects[0]!.project} --issue 1   (or lingtai requeue`)
+      expect(out).toContain(`lingtai approve ${report.projects[0]!.project} --issue 1   (or lingtai start-new-attempt`)
       expect(out).not.toContain('failure')
       expect(out).not.toContain('your judgement is needed')
       expect(out).not.toContain('a failure needs acknowledging')
@@ -595,7 +595,7 @@ describe('conflictLines (#652)', () => {
   it('recommends a fix round at 5 hunks or fewer and shows triage’s own resolution and summary', () => {
     const c = conflictLines(reason, triage(2))
     expect(c?.rec).toContain('recommends a fix round')
-    expect(c?.advised).toBe('triage advised Requeue: why')
+    expect(c?.advised).toBe('triage advised StartNewAttempt: why')
   })
 
   it('recommends triage’s resolution above 5 hunks', () => {
@@ -603,13 +603,13 @@ describe('conflictLines (#652)', () => {
   })
 
   it('recommends triage’s resolution when the saved head is gone, as the task page does', () => {
-    expect(conflictLines(reason, triage(2), false)).toEqual({ rec: 'recommends Requeue — why', advised: null })
+    expect(conflictLines(reason, triage(2), false)).toEqual({ rec: 'recommends StartNewAttempt — why', advised: null })
     expect(conflictLines(reason, triage(2), true)?.rec).toContain('recommends a fix round')
   })
 
   it('says the saved head could not be checked, and recommends no fix round, when the read failed', () => {
     const c = conflictLines(reason, triage(2), { unreadable: 'rate limited' })
-    expect(c?.rec).toBe('recommends Requeue — why')
+    expect(c?.rec).toBe('recommends StartNewAttempt — why')
     expect(c?.advised).toContain('saved head could not be checked (rate limited)')
   })
 
@@ -654,7 +654,7 @@ describe('waitDetail (#656)', () => {
   it('prints the recommendation and triage’s own words for a reason with no recommendation line', () => {
     const lines = detail(disagrees, triage())
     expect(lines.some((l) => l.includes('recommends a fix round'))).toBe(true)
-    expect(lines).toContain('triage advised Requeue: why')
+    expect(lines).toContain('triage advised StartNewAttempt: why')
   })
 
   it('names the recommended resolution as a field, for --json, without parsing the prose', () => {

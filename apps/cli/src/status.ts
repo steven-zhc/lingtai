@@ -298,7 +298,7 @@ export interface StatusRow {
   title: string
   /** The projection's own state value — `verifying` stays `verifying`. */
   state: string
-  restarts: number
+  newAttempts: number
   /** `describeArm`'s sentence, or null. */
   arm: string | null
   /** `backingOff`'s sentence while the retry window holds it. */
@@ -495,7 +495,7 @@ export const readStatus = (
           kind: t.kind,
           title: t.title,
           state: t.state,
-          restarts,
+          newAttempts: restarts,
           arm: armLine({ restarts }, restartsOf),
           held: until ? backingOff(until, now) : null,
           // Said only when the source actually answered: with no answer every row looks unoffered.
@@ -750,7 +750,7 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
       for (const t of p.known)
         (byState[t.state] ??= []).push({
           ...rowJson(t),
-          restarts: t.restarts,
+          newAttempts: t.newAttempts,
           held: t.held,
           arm: t.arm,
           unoffered: t.unoffered,
@@ -784,7 +784,7 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
         dependenciesUnread: p.dependenciesUnread,
         runnable: p.runnable.map((r) => ({
           ...rowJson(r),
-          restarts: r.restarts,
+          newAttempts: r.newAttempts,
           held: r.held,
           arm: r.arm,
         })),

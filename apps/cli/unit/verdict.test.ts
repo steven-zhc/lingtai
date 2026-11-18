@@ -53,23 +53,23 @@ describe('renderVerdict, plain', () => {
     ])
   })
 
-  it('grant-fix-round: granted, and granted but not scheduled', () => {
+  it('fix-refusal: granted, and granted but not scheduled', () => {
     expect(
-      renderVerdict(VERBS['grant-fix-round'].accepted, { outcome: 'accepted', ticketId: TICKET, detail: 'x' })[0],
-    ).toBe(`✓ fix round granted ${TICKET}`)
-    const failed = renderVerdict(VERBS['grant-fix-round'].accepted, {
+      renderVerdict(VERBS['fix-refusal'].accepted, { outcome: 'accepted', ticketId: TICKET, detail: 'x' })[0],
+    ).toBe(`✓ refusal fix started ${TICKET}`)
+    const failed = renderVerdict(VERBS['fix-refusal'].accepted, {
       outcome: 'accepted',
       ticketId: TICKET,
       detail: 'scheduling failed: boom',
     })
     expect(failed.join('\n')).toContain('scheduling failed: boom')
-    expect(renderVerdict(VERBS['grant-fix-round'].refused, refusal(1, 'not-waiting', 'x').verdict)[0]).toBe(
-      '✗ fix round refused (not-waiting)',
+    expect(renderVerdict(VERBS['fix-refusal'].refused, refusal(1, 'not-waiting', 'x').verdict)[0]).toBe(
+      '✗ refusal fix not started (not-waiting)',
     )
   })
 
   it('requeue, close, ask and answer print the conductor’s sentence word for word', () => {
-    for (const verb of ['requeue', 'close', 'ask', 'answer'] as const) {
+    for (const verb of ['start-new-attempt', 'close', 'ask', 'answer'] as const) {
       const ok = fromOutcome({ ok: true, ticketId: TICKET, detail: `${verb} said so` })
       expect(renderVerdict(VERBS[verb].accepted, ok.verdict)).toEqual([
         `✓ ${VERBS[verb].accepted} ${TICKET}`,
@@ -99,14 +99,14 @@ describe('renderVerdict, plain', () => {
       'removed-flag',
       '--reject is gone: it asked the same question again and ended nothing.',
       {
-        next: 'lingtai requeue lingtai --issue 617',
+        next: 'lingtai start-new-attempt lingtai --issue 617',
       },
     )
     expect(answered.code).toBe(2)
     expect(renderVerdict(VERBS.approve.refused, answered.verdict)).toEqual([
       '✗ not approved (removed-flag)',
       '  --reject is gone: it asked the same question again and ended nothing.',
-      '  next: lingtai requeue lingtai --issue 617',
+      '  next: lingtai start-new-attempt lingtai --issue 617',
     ])
   })
 
@@ -212,7 +212,7 @@ describe('verdictJson', () => {
     })
   })
 
-  it('grant-fix-round unscheduled', () => {
+  it('fix-refusal unscheduled', () => {
     expect(
       verdictJson({ outcome: 'accepted', ticketId: TICKET, detail: 'd', extra: { unscheduled: 'boom' } }),
     ).toMatchObject({

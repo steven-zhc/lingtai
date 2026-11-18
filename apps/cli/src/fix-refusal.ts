@@ -15,7 +15,7 @@ import { noteConductor } from './conductor-note.ts'
 import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
 
 /** The SHA and ref are selected under the decision lock from the held run's log. */
-export function grantFixRoundVerdict(
+export function fixRefusalVerdict(
   options: { project: string; issue: number; ifHead?: string },
   progress: (line: string) => void,
 ): Effect.Effect<Answered, unknown> {
@@ -73,11 +73,11 @@ export function grantFixRoundVerdict(
   })
 }
 
-export function grantFixRoundCommand(
+export function fixRefusalCommand(
   options: { project: string; issue: number; ifHead?: string },
   log = console.log,
 ): Effect.Effect<number, unknown> {
-  return Effect.map(grantFixRoundVerdict(options, log), (answered) =>
-    logVerdict(VERBS['grant-fix-round'], answered, log),
+  return Effect.map(fixRefusalVerdict(options, log), (answered) =>
+    logVerdict(VERBS['fix-refusal'], answered, log),
   )
 }

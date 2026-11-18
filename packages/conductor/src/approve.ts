@@ -344,7 +344,7 @@ type RequeueOptions = {
   note: string
   /**
    * What to do with a question asked before any run: withdraw it (the default,
-   * `lingtai requeue` and the board's Withdraw), or refuse. The board's Send
+   * `lingtai start-new-attempt` and the board's Withdraw), or refuse. The board's Send
    * refuses — it checks first, but a `lingtai ask` landing between that check
    * and this read would otherwise be withdrawn under a note about a document.
    */

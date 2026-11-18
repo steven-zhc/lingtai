@@ -23,7 +23,7 @@ export function waitCommand(
       if (requeued) continue
       requeued = true
       // Only what the wait allows is spelled: the body edit when `EditBodyAndStartNewAttempt` is offered,
-      // and the bare restart (brackets) when `Requeue` is offered beside it.
+      // and the bare restart (brackets) when `StartNewAttempt` is offered beside it.
       const editsBody = ordered.includes('EditBodyAndStartNewAttempt')
       const bare = ordered.includes('StartNewAttempt')
       const body = !editsBody
@@ -33,13 +33,13 @@ export function waitCommand(
           : bare
             ? ' [--into-body "<text>"]'
             : ' --into-body "<text>"'
-      entries.push(`${base('requeue')}${body}`)
+      entries.push(`${base('start-new-attempt')}${body}`)
     } else if (tag === 'Approve') {
       entries.push(reason._tag === 'SignoffRequired' ? base('approve') : `${base('approve')} --note "<why>"`)
     } else if (tag === 'FixRefusal') {
-      entries.push(base('grant-fix-round'))
+      entries.push(base('fix-refusal'))
     } else if (tag === 'RedoStep') {
-      entries.push(base('rerun'))
+      entries.push(base('redo-step'))
     } else if (tag === 'AnswerQuestion') {
       entries.push(`${base('answer')} "<choice>"`)
     }

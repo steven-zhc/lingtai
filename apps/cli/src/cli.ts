@@ -174,9 +174,9 @@ const projectArg = Argument.String('project')
  */
 export const INTEGER_FLAGS = {
   approve: ['issue'],
-  requeue: ['issue'],
-  'grant-fix-round': ['issue'],
-  rerun: ['issue'],
+  'start-new-attempt': ['issue'],
+  'fix-refusal': ['issue'],
+  'redo-step': ['issue'],
   ask: ['issue'],
   answer: ['issue'],
   close: ['issue'],
@@ -215,7 +215,7 @@ const approve = Command.make(
           // Gone (#150): it revoked the approval and put the run straight back
           // into `awaiting-approval`, so the wait it seemed to end went on.
           return refusal(2, 'removed-flag', '--reject is gone: it asked the same question again and ended nothing.', {
-            next: `lingtai requeue ${args.project} --issue ${args.issue}`,
+            next: `lingtai start-new-attempt ${args.project} --issue ${args.issue}`,
           })
         }
         const { approveVerdict } = yield* lift(() => import('./approve.ts'))
@@ -224,21 +224,21 @@ const approve = Command.make(
     ),
 ).pipe(Command.withDescription(definitionOf('approve').task))
 
-const requeue = Command.make(
-  'requeue',
+const startNewAttempt = Command.make(
+  'start-new-attempt',
   {
     project: projectArg,
-    issue: integerOption('requeue', 'issue'),
+    issue: integerOption('start-new-attempt', 'issue'),
     note: optionalText('note'),
     intoBody: optionalText('into-body'),
     json,
     noColor,
   },
   (args) =>
-    answerWith('requeue', args, (progress) =>
+    answerWith('start-new-attempt', args, (progress) =>
       Effect.gen(function* () {
-        const { requeueVerdict } = yield* lift(() => import('./requeue.ts'))
-        return yield* requeueVerdict(
+        const { startNewAttemptVerdict } = yield* lift(() => import('./start-new-attempt.ts'))
+        return yield* startNewAttemptVerdict(
           {
             project: args.project,
             issue: args.issue,
@@ -250,46 +250,46 @@ const requeue = Command.make(
         )
       }),
     ),
-).pipe(Command.withDescription(definitionOf('requeue').task))
+).pipe(Command.withDescription(definitionOf('start-new-attempt').task))
 
-const grantFixRound = Command.make(
-  'grant-fix-round',
+const fixRefusal = Command.make(
+  'fix-refusal',
   {
     project: projectArg,
-    issue: integerOption('grant-fix-round', 'issue'),
+    issue: integerOption('fix-refusal', 'issue'),
     ifHead: optionalText('if-head'),
     json,
     noColor,
   },
   (args) =>
-    answerWith('grant-fix-round', args, (progress) =>
+    answerWith('fix-refusal', args, (progress) =>
       Effect.gen(function* () {
-        const { grantFixRoundVerdict } = yield* lift(() => import('./grant-fix-round.ts'))
-        return yield* grantFixRoundVerdict(
+        const { fixRefusalVerdict } = yield* lift(() => import('./fix-refusal.ts'))
+        return yield* fixRefusalVerdict(
           { project: args.project, issue: args.issue, ifHead: given(args.ifHead) },
           progress,
         )
       }),
     ),
-).pipe(Command.withDescription(definitionOf('grant-fix-round').task))
+).pipe(Command.withDescription(definitionOf('fix-refusal').task))
 
-const rerun = Command.make(
-  'rerun',
+const redoStep = Command.make(
+  'redo-step',
   {
     project: projectArg,
-    issue: integerOption('rerun', 'issue'),
+    issue: integerOption('redo-step', 'issue'),
     ifHead: optionalText('if-head'),
     json,
     noColor,
   },
   (args) =>
-    answerWith('rerun', args, (progress) =>
+    answerWith('redo-step', args, (progress) =>
       Effect.gen(function* () {
-        const { rerunVerdict } = yield* lift(() => import('./rerun.ts'))
-        return yield* rerunVerdict({ project: args.project, issue: args.issue, ifHead: given(args.ifHead) }, progress)
+        const { redoStepVerdict } = yield* lift(() => import('./redo-step.ts'))
+        return yield* redoStepVerdict({ project: args.project, issue: args.issue, ifHead: given(args.ifHead) }, progress)
       }),
     ),
-).pipe(Command.withDescription(definitionOf('rerun').task))
+).pipe(Command.withDescription(definitionOf('redo-step').task))
 
 const close = Command.make(
   'close',
@@ -1352,9 +1352,9 @@ export const root = Command.make('lingtai').pipe(
     init,
     add,
     approve,
-    requeue,
-    grantFixRound,
-    rerun,
+    startNewAttempt,
+    fixRefusal,
+    redoStep,
     close,
     ask,
     answer,
@@ -1444,11 +1444,11 @@ function flagValue(args: readonly string[], name: string): string | null | undef
 
 /** The sentences a flag with no value has always been refused with, and exit 2 (#621). */
 const TAKES: Record<string, { flag: string; sentence: string; trimmed: boolean }[]> = {
-  requeue: [{ flag: 'into-body', sentence: '--into-body takes text', trimmed: true }],
-  rerun: [
+  'start-new-attempt': [{ flag: 'into-body', sentence: '--into-body takes text', trimmed: true }],
+  'redo-step': [
     { flag: 'if-head', sentence: '--if-head takes the commit SHA, full or at least 7 characters', trimmed: false },
   ],
-  'grant-fix-round': [
+  'fix-refusal': [
     { flag: 'if-head', sentence: '--if-head takes the commit SHA, full or at least 7 characters', trimmed: false },
   ],
 }
@@ -1500,6 +1500,16 @@ function withReasonFolded(args: readonly string[]): string[] {
   return out
 }
 
+/**
+ * The verbs that named a person's moves before 0108 named them, and the verb each is now (#1242). Answered by name, before
+ * the parser and before anything is read or appended, so a script that still calls one is told what to call.
+ */
+export const RETIRED_VERBS = {
+  'grant-fix-round': 'fix-refusal',
+  rerun: 'redo-step',
+  requeue: 'start-new-attempt',
+} as const
+
 /** `backlog [<project>] [--all]` is `backlog list …`, so the verbs and the listing do not share a first position. */
 function withBacklogVerb(args: readonly string[]): string[] {
   return ['accept', 'decline', 'help'].includes(args[1] ?? '') ? [...args] : ['backlog', 'list', ...args.slice(1)]
@@ -1524,6 +1534,14 @@ export const cli = (
       }
       args = withBacklogVerb(args[1] === 'decline' ? ['backlog', ...withReasonFolded(args.slice(1))] : args)
       argv = [...argv.slice(0, 2), ...args]
+    }
+    const retired = (RETIRED_VERBS as Record<string, string | undefined>)[args[0] ?? '']
+    if (retired !== undefined) {
+      if (args.includes('--no-color')) applyNoColor()
+      const sentence = `${args[0]} is now lingtai ${retired} — it takes the same arguments, and nothing was done.`
+      if (args.some(jsonOn)) printJsonError(args[0]!, 'usage', sentence)
+      else console.error(`${symbol.fail()} ${sentence}`)
+      return 2
     }
     if (args[0] === 'board' && args[1] === 'shutdown') {
       const sentence =
@@ -1558,7 +1576,7 @@ export const cli = (
       else console.error(refusal)
       return 2
     }
-    if (args[0] === 'approve' || args[0] === 'requeue') {
+    if (args[0] === 'approve' || args[0] === 'start-new-attempt') {
       argv = [...argv.slice(0, 2), ...withoutBareNote(args)]
     }
     if (args[0] === 'service' && args[1] === 'stop') {

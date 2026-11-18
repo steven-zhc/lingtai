@@ -18,7 +18,7 @@ import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { answerCommand, askCommand } from '../src/ask.ts'
-import { requeueCommand } from '../src/requeue.ts'
+import { startNewAttemptCommand } from '../src/start-new-attempt.ts'
 import { status } from '../src/status.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
@@ -122,7 +122,7 @@ describe('lingtai ask / answer', () => {
 
     const said: string[] = []
     const code = await Effect.runPromise(
-      requeueCommand({ project: PROJECT, issue: WITHDRAWN, note: 'asked by mistake, ignore' }, (l) => said.push(l)),
+      startNewAttemptCommand({ project: PROJECT, issue: WITHDRAWN, note: 'asked by mistake, ignore' }, (l) => said.push(l)),
     )
     expect(code).toBe(0)
     expect(said.join('\n')).toContain('withdrawn')

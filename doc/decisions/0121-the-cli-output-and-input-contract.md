@@ -294,8 +294,8 @@ are `accent`. Redirected, it is the same text with no escape codes. With
       "passedOver": [{ "ref": "#615", "reason": "agent:hold" }],
       "dependenciesUnread": false,
       "runnable": [
-        { "taskId": "t1", "ref": "#612", "kind": "bug", "restarts": 0 },
-        { "taskId": "t2", "ref": "#613", "kind": "feature", "restarts": 0 }
+        { "taskId": "t1", "ref": "#612", "kind": "bug", "newAttempts": 0 },
+        { "taskId": "t2", "ref": "#613", "kind": "feature", "newAttempts": 0 }
       ],
       "byState": { "waiting": [{ "taskId": "t3", "ref": "#609" }] }
     }

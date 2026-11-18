@@ -15,7 +15,7 @@ import { noteConductor } from './conductor-note.ts'
 import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
 
 /** The head is selected under the decision lock from the held run's log, and the step reruns on it (#1218). */
-export function rerunVerdict(
+export function redoStepVerdict(
   options: { project: string; issue: number; ifHead?: string },
   progress: (line: string) => void,
 ): Effect.Effect<Answered, unknown> {
@@ -78,9 +78,9 @@ export function rerunVerdict(
   })
 }
 
-export function rerunCommand(
+export function redoStepCommand(
   options: { project: string; issue: number; ifHead?: string },
   log = console.log,
 ): Effect.Effect<number, unknown> {
-  return Effect.map(rerunVerdict(options, log), (answered) => logVerdict(VERBS['rerun'], answered, log))
+  return Effect.map(redoStepVerdict(options, log), (answered) => logVerdict(VERBS['redo-step'], answered, log))
 }
