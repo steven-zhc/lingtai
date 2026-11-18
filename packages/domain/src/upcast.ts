@@ -143,6 +143,14 @@ export const UPCASTERS: UpcastRegistry = {
     /** 1 → 2: `cause: Restart{restart}` is `NewAttempt{newAttempt}` (#1241). A release with no cause stays without one. */
     1: (data) => (isObj(data) && data.cause !== undefined ? { ...data, cause: renameCause(data.cause) } : data),
   },
+  RunKeptUncommitted: {
+    /** 1 → 2: `arm` became `ref` (#1243). The value is unchanged: an old row's WIP is on the arm it named. */
+    1: (data) => {
+      if (!isObj(data) || data.arm === undefined) return data
+      const { arm, ...rest } = data
+      return { ...rest, ref: arm }
+    },
+  },
   ProposalRouted: { 1: routeRenamed },
   PassRouted: { 1: routeRenamed },
   WaitStarted: {
