@@ -51,7 +51,7 @@ describe('waiting visual previews', () => {
     // The gate's own words are the attempt's, in the tab of the attempt the page is deciding on.
     const tab = renderToStaticMarkup(<Attempt run={task.runs[0]!} standing={task.standing} blocked now={PREVIEW_NOW} />)
     expect(tab).toContain('A missing branch makes continuation impossible')
-    expect(html).toContain('data-resolution="GrantFixRound"')
+    expect(html).toContain('data-resolution="FixRefusal"')
     if (available) {
       expect(task.standing.fixWork).toEqual({ head: 'b'.repeat(40), ref: 'agent/393' })
       expect(html).toContain('Continue fixing current work')

@@ -54,7 +54,7 @@ import {
   type SavedHead,
 } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
-import { recommendedResolution, waitMoves } from '@lingtai/domain/wait'
+import { adviceResolution, recommendedResolution, waitMoves } from '@lingtai/domain/wait'
 import { machineDayCeiling } from '@lingtai/env'
 import { paint, stateInk } from '@lingtai/env/colour'
 import { eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
@@ -116,7 +116,7 @@ export function conflictLines(
       advised: `triage advised ${result.resolution}: ${result.summary} — this wait does not offer it, so no resolution is recommended`,
     }
   }
-  if (rec === 'GrantFixRound' && result.resolution !== 'GrantFixRound') {
+  if (rec === 'FixRefusal' && adviceResolution(result.resolution) !== 'FixRefusal') {
     return {
       rec:
         'recommends a fix round — a small conflict is resolved in place rather than started over' +
@@ -249,7 +249,7 @@ const attemptOf = (runId: string) =>
 
 /**
  * Whether the run's last `RunRefsPublished` left a clean head to continue, and
- * the remote ref still points at it — the precondition `GrantFixRound` is
+ * the remote ref still points at it — the precondition `FixRefusal` is
  * offered on, which the recommendation must not outrun (#652). The task page
  * makes the same remote comparison, so a deleted or moved branch is no saved
  * head here either. A stream or a remote that will not read is neither: it is reported as unreadable, so the recommendation is not drawn from a guess.
@@ -662,7 +662,8 @@ export const readStatus = (
                 t.wait != null &&
                 t.runId &&
                 t.triage?.result?._tag === 'TriageAdvised' &&
-                (t.triage.result.cause._tag === 'ConflictingHunks' || t.triage.result.resolution === 'GrantFixRound')
+                (t.triage.result.cause._tag === 'ConflictingHunks' ||
+                  adviceResolution(t.triage.result.resolution) === 'FixRefusal')
               const savedHead = conflict
                 ? yield* Effect.suspend(() =>
                     (reading.savedHeadOf ?? ((id, p) => hasSavedHead(id, p, reading.clientFor)))(

@@ -47,7 +47,7 @@ export function grantFixRoundVerdict(
         ticketId,
         issue: options.issue,
         waitId: item.lifecycle.waitId,
-        resolution: { _tag: 'GrantFixRound', onSha: options.ifHead ?? '', ref: '' },
+        resolution: { _tag: 'FixRefusal', onSha: options.ifHead ?? '', ref: '' },
         by: `human:${userInfo().username}`,
         client,
         github: client,

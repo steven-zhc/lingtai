@@ -41,7 +41,7 @@ export function savedFixWorkFromState(
 export type RerunWork = { head: string; ref: string | null } | { refusal: string }
 
 /**
- * The saved head a `RerunStep` continues from — `rerunHeadOf`'s own table, the one the server asks (#1218), so the
+ * The saved head a `RedoStep` continues from — `rerunHeadOf`'s own table, the one the server asks (#1218), so the
  * `onSha` the button sends is the `at` the server computes. Not `savedFixWork`: that refuses a kept WIP and a
  * nothing-committed stop, both of which a rerun accepts. The caller still checks the remote where `ref` is set.
  * `base` is `diffBaseShaOf(runEvents)`, read only for a nothing-committed stop.
@@ -60,16 +60,16 @@ export function rerunWorkFromState(runId: string, state: AttemptState, base: str
 }
 
 /**
- * The grid's order puts `RerunStep` right after the saved-work moves it sits beside — *Continue fixing current work*
- * (`GrantFixRound`) — and always before *Start over from base* (`Requeue`) and *Add to the ticket and start over*
- * (`EditBodyAndRequeue`), which discard the saved work. `allowedResolutions` ends with it, and its order is not the board's.
+ * The grid's order puts `RedoStep` right after the saved-work moves it sits beside — *Continue fixing current work*
+ * (`FixRefusal`) — and always before *Start over from base* (`StartNewAttempt`) and *Add to the ticket and start over*
+ * (`EditBodyAndStartNewAttempt`), which discard the saved work. `allowedResolutions` ends with it, and its order is not the board's.
  */
 export function rerunStepFirstAmongSavedWork<T extends string>(tags: readonly T[]): T[] {
-  const rerun = tags.find((tag) => tag === 'RerunStep')
+  const rerun = tags.find((tag) => tag === 'RedoStep')
   if (rerun === undefined) return [...tags]
-  const grant = tags.find((tag) => tag === 'GrantFixRound')
-  const rest = tags.filter((tag) => tag !== 'RerunStep' && tag !== 'GrantFixRound')
-  const discard = rest.findIndex((tag) => tag === 'Requeue' || tag === 'EditBodyAndRequeue')
+  const grant = tags.find((tag) => tag === 'FixRefusal')
+  const rest = tags.filter((tag) => tag !== 'RedoStep' && tag !== 'FixRefusal')
+  const discard = rest.findIndex((tag) => tag === 'StartNewAttempt' || tag === 'EditBodyAndStartNewAttempt')
   // The saved-work cards travel together, grant first, and sit before whatever discards the saved work.
   const at = discard >= 0 ? discard : rest.length
   const saved = grant === undefined ? [rerun] : [grant, rerun]

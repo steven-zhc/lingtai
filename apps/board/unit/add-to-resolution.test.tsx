@@ -39,7 +39,7 @@ const render = (discussion: DiscussionView, tag: string | null, waitId = aWaitId
   )
 
 describe('add to this resolution', () => {
-  it.each(['EditBodyAndRequeue', 'AnswerQuestion'])(
+  it.each(['EditBodyAndStartNewAttempt', 'AnswerQuestion'])(
     'replaces Add to the ticket under a wait recommending %s',
     (tag) => {
       const html = render(turn({ kind: 'ticket', text: 'Note the lock.' }), tag)
@@ -50,11 +50,11 @@ describe('add to this resolution', () => {
   )
 
   it('offers it on an answer that proposed nothing', () => {
-    expect(render(turn(null), 'EditBodyAndRequeue')).toContain('Add to this decision')
+    expect(render(turn(null), 'EditBodyAndStartNewAttempt')).toContain('Add to this decision')
   })
 
   it('still offers it on a proposal after the discussion is concluded for the next run', () => {
-    const html = render(turn({ kind: 'ticket', text: 'Note the lock.' }, 'prompt'), 'EditBodyAndRequeue')
+    const html = render(turn({ kind: 'ticket', text: 'Note the lock.' }, 'prompt'), 'EditBodyAndStartNewAttempt')
     expect(html).toContain('Add to this decision')
     expect(html).not.toContain('Add to the ticket')
   })
@@ -68,7 +68,7 @@ describe('add to this resolution', () => {
 
   it('keeps both buttons outside a wait', () => {
     const html = renderToStaticMarkup(
-      <TriagePicks waitId={null} cause={null} recommended="EditBodyAndRequeue">
+      <TriagePicks waitId={null} cause={null} recommended="EditBodyAndStartNewAttempt">
         <Discussion
           taskId="ticket-lingtai-89"
           state="blocked"

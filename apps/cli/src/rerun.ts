@@ -41,7 +41,7 @@ export function rerunVerdict(
       // An approved rerun is retried: its continuation may never have been scheduled.
       const rerunApproved =
         life.status === 'approved' &&
-        item.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution._tag === 'RerunStep'
+        item.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution._tag === 'RedoStep'
       if (life.status !== 'blocked' && !rerunApproved) {
         return refusal(1, 'not-waiting', `${ticketId} is not waiting on a step to rerun`, { ticketId })
       }
@@ -52,7 +52,7 @@ export function rerunVerdict(
         ticketId,
         issue: options.issue,
         waitId: life.waitId,
-        resolution: { _tag: 'RerunStep', onSha: options.ifHead ?? '', ref: null },
+        resolution: { _tag: 'RedoStep', onSha: options.ifHead ?? '', ref: null },
         by: `human:${userInfo().username}`,
         client,
         github: client,

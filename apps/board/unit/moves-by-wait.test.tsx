@@ -85,7 +85,10 @@ const cardsOf = (html: string) =>
       ({ attrs, body }) =>
         !attrs.includes('hidden=""') &&
         !attrs.includes('sresolution--draft') &&
-        !(attrs.includes('data-resolution="EditBodyAndRequeue"') && body.includes('class="sresolutionaction"></div>')),
+        !(
+          attrs.includes('data-resolution="EditBodyAndStartNewAttempt"') &&
+          body.includes('class="sresolutionaction"></div>')
+        ),
     )
     .map(({ attrs }) => attrs.match(/data-resolution="([^"]+)"/)?.[1])
 
@@ -106,7 +109,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
     ] as const) {
       const fixture = WAIT_FIXTURES.find((f) => f.name === name)!
       const reason = standingFor(fixture).reason!
-      expect(allowedResolutions(reason).includes('EditBodyAndRequeue')).toBe(offered)
+      expect(allowedResolutions(reason).includes('EditBodyAndStartNewAttempt')).toBe(offered)
     }
   })
 
@@ -130,9 +133,9 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       const approveBtn = allowed.includes('Approve') && standing.awaitingSha !== null
       const approveSentence = allowed.includes('Approve') && standing.awaitingSha === null
       const answering = allowed.includes('AnswerQuestion')
-      const requeuing = allowed.includes('Requeue')
+      const requeuing = allowed.includes('StartNewAttempt')
       const closing = allowed.includes('Close')
-      const editingBody = allowed.includes('EditBodyAndRequeue')
+      const editingBody = allowed.includes('EditBodyAndStartNewAttempt')
       const stepQuestion =
         standing.reason?._tag === 'AgentQuestion' ||
         (standing.reason?._tag === 'ProposedEscalated' && standing.reason.proposal._tag === 'InputNeeded')
@@ -165,7 +168,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
   })
 
   /**
-   * A fixture whose wait allows `Requeue` and not `AnswerQuestion`, rendered
+   * A fixture whose wait allows `StartNewAttempt` and not `AnswerQuestion`, rendered
    * with a document to send: `Send`, not `Back to the queue`.
    */
   it('draws Send rather than Back to the queue wherever there is a prompt to send', () => {

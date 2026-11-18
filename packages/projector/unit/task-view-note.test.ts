@@ -115,7 +115,7 @@ describe('ticketNoteOf: the transitions', () => {
     const notes = ticketNotes([
       ...aClaim(t, run.runId),
       ...aWait(t, question, ask),
-      ...aResolution(t, ask, { _tag: 'Requeue' }),
+      ...aResolution(t, ask, { _tag: 'StartNewAttempt' }),
       ...aRelease(t, run.runId, 'Requeued by steven.', { _tag: 'ByPerson', waitId: ask }),
     ])
     expect(notes[2]).toEqual({ value: null })

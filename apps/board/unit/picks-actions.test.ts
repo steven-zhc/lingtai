@@ -39,11 +39,11 @@ it('passes the picks of continueFixingCard to the conductor unchanged', async ()
   expect(conductor.resolveWait).toHaveBeenCalledWith(expect.objectContaining({ picks: { 1: 'b' } }))
 })
 
-it('sends rerunStepCard’s shown head as a RerunStep, and never an empty one', async () => {
+it('sends rerunStepCard’s shown head as a RedoStep, and never an empty one', async () => {
   const waitId = aWaitId()
   await rerunStepCard({ project: 'p', issue: 1, waitId, onSha: 'abc' })
   expect(conductor.resolveWait).toHaveBeenCalledWith(
-    expect.objectContaining({ resolution: { _tag: 'RerunStep', onSha: 'abc', ref: null } }),
+    expect.objectContaining({ resolution: { _tag: 'RedoStep', onSha: 'abc', ref: null } }),
   )
   conductor.resolveWait.mockClear()
   expect(await rerunStepCard({ project: 'p', issue: 1, waitId, onSha: '' })).toMatchObject({ ok: false })

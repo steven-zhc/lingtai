@@ -38,17 +38,28 @@ it('refuses with the server’s sentence where nothing can be continued', () => 
 })
 
 it('puts the rerun after the grant, else first', () => {
-  expect(rerunStepFirstAmongSavedWork(['Approve', 'GrantFixRound', 'Requeue', 'Close', 'RerunStep'])).toEqual([
+  expect(rerunStepFirstAmongSavedWork(['Approve', 'FixRefusal', 'StartNewAttempt', 'Close', 'RedoStep'])).toEqual([
     'Approve',
-    'GrantFixRound',
-    'RerunStep',
-    'Requeue',
+    'FixRefusal',
+    'RedoStep',
+    'StartNewAttempt',
     'Close',
   ])
-  expect(rerunStepFirstAmongSavedWork(['Requeue', 'Close', 'RerunStep'])).toEqual(['RerunStep', 'Requeue', 'Close'])
-  expect(rerunStepFirstAmongSavedWork(['Requeue', 'Close'])).toEqual(['Requeue', 'Close'])
+  expect(rerunStepFirstAmongSavedWork(['StartNewAttempt', 'Close', 'RedoStep'])).toEqual([
+    'RedoStep',
+    'StartNewAttempt',
+    'Close',
+  ])
+  expect(rerunStepFirstAmongSavedWork(['StartNewAttempt', 'Close'])).toEqual(['StartNewAttempt', 'Close'])
   // `allowedResolutions` puts the grant after Requeue and the rerun last; the rerun must still precede starting over.
   expect(
-    rerunStepFirstAmongSavedWork(['Requeue', 'EditBodyAndRequeue', 'Split', 'Close', 'GrantFixRound', 'RerunStep']),
-  ).toEqual(['GrantFixRound', 'RerunStep', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'])
+    rerunStepFirstAmongSavedWork([
+      'StartNewAttempt',
+      'EditBodyAndStartNewAttempt',
+      'Split',
+      'Close',
+      'FixRefusal',
+      'RedoStep',
+    ]),
+  ).toEqual(['FixRefusal', 'RedoStep', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Split', 'Close'])
 })

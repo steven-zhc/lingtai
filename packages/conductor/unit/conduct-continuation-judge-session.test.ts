@@ -48,10 +48,10 @@ const judging = (ran: string[]): Runtime => ({
 })
 
 describe('a judge asked in a continuation has a session of its own', () => {
-  // `GrantFixRound` continued twice, which is what #567 did. An `Approve` continuation
+  // `FixRefusal` continued twice, which is what #567 did. An `Approve` continuation
   // is not covered: an approved `ReviewFindings` goes on to `merge`, and no fixture
   // reaches a judge from an approval (#580 names a conflict after one).
-  const cases = [{ kind: 'GrantFixRound', recipe: MANY_ROUNDS, laps: 2, firstJudges: true }] as const
+  const cases = [{ kind: 'FixRefusal', recipe: MANY_ROUNDS, laps: 2, firstJudges: true }] as const
   for (const { kind, recipe, laps, firstJudges } of cases) {
     it(`asks no judge after ${kind}, and no id repeats`, async () => {
       const store = memoryStore()
@@ -147,7 +147,7 @@ describe('a granted round names the grant it spent (#573)', () => {
       aResolution(
         makeStream(ticketId),
         wait.waitId,
-        { _tag: 'GrantFixRound', onSha: 'd'.repeat(40), ref: 'agent/7' },
+        { _tag: 'FixRefusal', onSha: 'd'.repeat(40), ref: 'agent/7' },
         'human:steven',
       ),
     )
@@ -209,7 +209,7 @@ describe('a granted round is briefed with the ticket as it reads at the round (#
       aResolution(
         makeStream(ticketId),
         wait.waitId,
-        { _tag: 'GrantFixRound', onSha: 'd'.repeat(40), ref: 'agent/7' },
+        { _tag: 'FixRefusal', onSha: 'd'.repeat(40), ref: 'agent/7' },
         'human:steven',
       ),
     )

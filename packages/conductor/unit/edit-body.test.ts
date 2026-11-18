@@ -27,7 +27,7 @@ async function seed(store: EventStore, streamId: string, events: readonly Envelo
   await store.append(streamId, (await store.read(streamId)).length, events)
 }
 
-/** A ticket `blocked` on a fresh `waitId` — an `AgentQuestion`, which offers `EditBodyAndRequeue`. */
+/** A ticket `blocked` on a fresh `waitId` — an `AgentQuestion`, which offers `EditBodyAndStartNewAttempt`. */
 async function aBlockedTicket(store: EventStore): Promise<{ ticketId: string; waitId: WaitId }> {
   const ticketId = ticketStream(PROJECT, ISSUE)
   const item = makeStream(ticketId)
@@ -93,7 +93,7 @@ function readBackThrowsAfterLanding(tickets: MemoryTickets, message: string): Is
   }
 }
 
-/** A second decision — a `Requeue` on the same wait — lands while this caller is still writing the section. */
+/** A second decision — a `StartNewAttempt` on the same wait — lands while this caller is still writing the section. */
 function requeuedDuringTheWrite(
   tickets: MemoryTickets,
   store: EventStore,
@@ -114,7 +114,7 @@ function requeuedDuringTheWrite(
             data: parsePayload('WaitResolved', {
               waitId,
               by: 'human:other',
-              resolution: { _tag: 'Requeue' },
+              resolution: { _tag: 'StartNewAttempt' },
               note: '',
             }),
           },
@@ -151,7 +151,7 @@ describe('editBodyAndRequeueHolding', () => {
     expect(result).toMatchObject({ ok: true, written: true })
     const events = await store.read(ticketId)
     expect(events.some((e) => e.type === 'WaitResolved')).toBe(true)
-    expect(waitsOf(events).at(-1)?.resolution).toEqual({ _tag: 'EditBodyAndRequeue' })
+    expect(waitsOf(events).at(-1)?.resolution).toEqual({ _tag: 'EditBodyAndStartNewAttempt' })
     // The reason is composed from the text written, not asked for (0118 §6).
     expect(events.findLast((e) => e.type === 'WaitResolved')?.data).toMatchObject({
       note: requeueNote('use the helper in foo.ts'),

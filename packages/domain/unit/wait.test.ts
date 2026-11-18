@@ -46,12 +46,12 @@ function parseReason(input: unknown): WaitReason {
 describe('allowedResolutions', () => {
   it('OwnQuestion: AnswerQuestion, Requeue, Close', () => {
     const reason = parseReason({ _tag: 'OwnQuestion', question: 'which design?', by: 'steven' })
-    expect(allowedResolutions(reason)).toEqual(['AnswerQuestion', 'Requeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['AnswerQuestion', 'StartNewAttempt', 'Close'])
   })
 
   it('AgentQuestion: EditBodyAndRequeue, Requeue, Close', () => {
     const reason = parseReason({ _tag: 'AgentQuestion', run, step: 'implement', question: 'rename to X or Y?' })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close'])
   })
 
   it('SignoffRequired: Approve, Requeue, EditBodyAndRequeue, Close', () => {
@@ -62,10 +62,10 @@ describe('allowedResolutions', () => {
       action: 'human:ship',
       question: 'ship it?',
     })
-    expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
   })
 
-  it('CheckRefused with evidence: also GrantFixRound', () => {
+  it('CheckRefused with evidence: also FixRefusal', () => {
     const reason = parseReason({
       _tag: 'CheckRefused',
       run,
@@ -76,15 +76,15 @@ describe('allowedResolutions', () => {
     })
     expect(allowedResolutions(reason)).toEqual([
       'Approve',
-      'Requeue',
-      'EditBodyAndRequeue',
+      'StartNewAttempt',
+      'EditBodyAndStartNewAttempt',
       'Close',
-      'GrantFixRound',
-      'RerunStep',
+      'FixRefusal',
+      'RedoStep',
     ])
   })
 
-  it('CheckRefused with no evidence and no finding: no GrantFixRound', () => {
+  it('CheckRefused with no evidence and no finding: no FixRefusal', () => {
     const reason = parseReason({
       _tag: 'CheckRefused',
       run,
@@ -93,10 +93,16 @@ describe('allowedResolutions', () => {
       evidence: '  ',
       findings: [],
     })
-    expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close', 'RerunStep'])
+    expect(allowedResolutions(reason)).toEqual([
+      'Approve',
+      'StartNewAttempt',
+      'EditBodyAndStartNewAttempt',
+      'Close',
+      'RedoStep',
+    ])
   })
 
-  it('CheckRefused unpushed: neither Approve nor GrantFixRound', () => {
+  it('CheckRefused unpushed: neither Approve nor FixRefusal', () => {
     const reason = parseReason({
       _tag: 'CheckRefused',
       run: unpushedRun,
@@ -105,24 +111,30 @@ describe('allowedResolutions', () => {
       evidence: 'the check failed',
       findings: [],
     })
-    expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
   })
 
-  it('FixerDisagrees with a last word: also GrantFixRound', () => {
+  it('FixerDisagrees with a last word: also FixRefusal', () => {
     const reason = parseReason({ _tag: 'FixerDisagrees', run, said: 'nothing here answers the finding' })
-    expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close', 'GrantFixRound'])
+    expect(allowedResolutions(reason)).toEqual([
+      'Approve',
+      'StartNewAttempt',
+      'EditBodyAndStartNewAttempt',
+      'Close',
+      'FixRefusal',
+    ])
   })
 
-  it('FixerDisagrees with nothing said, or unpushed: no GrantFixRound', () => {
+  it('FixerDisagrees with nothing said, or unpushed: no FixRefusal', () => {
     expect(allowedResolutions(parseReason({ _tag: 'FixerDisagrees', run, said: null }))).toEqual([
       'Approve',
-      'Requeue',
-      'EditBodyAndRequeue',
+      'StartNewAttempt',
+      'EditBodyAndStartNewAttempt',
       'Close',
     ])
     expect(allowedResolutions(parseReason({ _tag: 'FixerDisagrees', run: unpushedRun, said: 'no' }))).toEqual([
-      'Requeue',
-      'EditBodyAndRequeue',
+      'StartNewAttempt',
+      'EditBodyAndStartNewAttempt',
       'Close',
     ])
   })
@@ -168,12 +180,12 @@ describe('allowedResolutions', () => {
     it('BuildRed: Requeue, EditBodyAndRequeue, Close — no Approve, a red build cannot be merged', () => {
       const reason = parseProposed({ _tag: 'BuildRed', output: 'FAIL ...' })
       expect(allowedResolutions(reason)).toEqual([
-        'Requeue',
-        'EditBodyAndRequeue',
+        'StartNewAttempt',
+        'EditBodyAndStartNewAttempt',
         'Split',
         'Close',
-        'GrantFixRound',
-        'RerunStep',
+        'FixRefusal',
+        'RedoStep',
       ])
     })
 
@@ -192,17 +204,17 @@ describe('allowedResolutions', () => {
       })
       expect(allowedResolutions(reason)).toEqual([
         'Approve',
-        'Requeue',
-        'EditBodyAndRequeue',
+        'StartNewAttempt',
+        'EditBodyAndStartNewAttempt',
         'Split',
         'Close',
-        'GrantFixRound',
+        'FixRefusal',
       ])
     })
 
     it('does not offer a grant without a recorded failure criterion', () => {
-      expect(allowedResolutions(parseProposed({ _tag: 'ReviewFindings', findings: [] }))).not.toContain('GrantFixRound')
-      expect(allowedResolutions(parseProposed({ _tag: 'BuildRed', output: '  ' }))).not.toContain('GrantFixRound')
+      expect(allowedResolutions(parseProposed({ _tag: 'ReviewFindings', findings: [] }))).not.toContain('FixRefusal')
+      expect(allowedResolutions(parseProposed({ _tag: 'BuildRed', output: '  ' }))).not.toContain('FixRefusal')
     })
 
     it('does not offer a grant when the issue branch push failed, even if the arm was published', () => {
@@ -213,7 +225,7 @@ describe('allowedResolutions', () => {
           ...base,
           run: { runId: 'pass-1', unpushed: { branch: 'agent/1', said: 'push failed' } },
         }),
-      ).not.toContain('GrantFixRound')
+      ).not.toContain('FixRefusal')
       expect(
         allowedResolutions({
           ...base,
@@ -226,17 +238,23 @@ describe('allowedResolutions', () => {
             },
           },
         }),
-      ).not.toContain('GrantFixRound')
+      ).not.toContain('FixRefusal')
     })
 
     it('ReviewEmpty: Approve, Requeue, EditBodyAndRequeue, Close', () => {
       const reason = parseProposed({ _tag: 'ReviewEmpty', said: 'refused, no failure scenario', findings: [] })
-      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
     })
 
-    it('DiffTooLarge: Approve, Requeue, EditBodyAndRequeue, Split, Close — and no GrantFixRound', () => {
+    it('DiffTooLarge: Approve, Requeue, EditBodyAndRequeue, Split, Close — and no FixRefusal', () => {
       const reason = parseProposed({ _tag: 'DiffTooLarge', from: 'review', size: 938_000, limit: 400_000 })
-      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'])
+      expect(allowedResolutions(reason)).toEqual([
+        'Approve',
+        'StartNewAttempt',
+        'EditBodyAndStartNewAttempt',
+        'Split',
+        'Close',
+      ])
     })
 
     it('DiffTooLarge: Approve continues at review, waives nothing, and reads the diff clipped (#892)', () => {
@@ -246,10 +264,10 @@ describe('allowedResolutions', () => {
 
     it('InputNeeded: Requeue, EditBodyAndRequeue, Close — a question wants an answer', () => {
       const reason = parseProposed({ _tag: 'InputNeeded', from: 'implement', question: 'rename to X or Y?' })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
     })
 
-    it('MergeConflict with both shas: GrantFixRound — a conflict is a fix round', () => {
+    it('MergeConflict with both shas: FixRefusal — a conflict is a fix round', () => {
       const reason = parseProposed({
         _tag: 'MergeConflict',
         output: 'conflict',
@@ -257,10 +275,10 @@ describe('allowedResolutions', () => {
         baseSha: 'abc',
         headSha: 'def',
       })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close', 'GrantFixRound'])
+      expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'Close', 'FixRefusal'])
     })
 
-    it('MergeConflict with null shas: GrantFixRound too', () => {
+    it('MergeConflict with null shas: FixRefusal too', () => {
       const reason = parseProposed({
         _tag: 'MergeConflict',
         output: 'conflict',
@@ -268,10 +286,10 @@ describe('allowedResolutions', () => {
         baseSha: null,
         headSha: null,
       })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close', 'GrantFixRound'])
+      expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'Close', 'FixRefusal'])
     })
 
-    it('MergeConflict unpushed: no GrantFixRound', () => {
+    it('MergeConflict unpushed: no FixRefusal', () => {
       const proposal = { _tag: 'MergeConflict', output: 'conflict', paths: ['a.ts'], baseSha: 'abc', headSha: 'def' }
       const reason = parseReason({
         _tag: 'ProposedEscalated',
@@ -279,7 +297,7 @@ describe('allowedResolutions', () => {
         proposal,
         because: { _tag: 'NotAsked' },
       })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'Close'])
     })
 
     it('grantCriterion: a MergeConflict briefs step merge with its paths', () => {
@@ -297,62 +315,68 @@ describe('allowedResolutions', () => {
 
     it('VerifyRed: Requeue, EditBodyAndRequeue, Close', () => {
       const reason = parseProposed({ _tag: 'VerifyRed', output: 'FAIL ...' })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Split', 'Close', 'GrantFixRound'])
+      expect(allowedResolutions(reason)).toEqual([
+        'StartNewAttempt',
+        'EditBodyAndStartNewAttempt',
+        'Split',
+        'Close',
+        'FixRefusal',
+      ])
     })
 
     it('CheckRefused: Approve, Requeue, EditBodyAndRequeue, Close, and a grant when it has output', () => {
       const proposal = { _tag: 'CheckRefused', from: 'proposed', output: 'lint failed', action: 'run:lint' } as const
       expect(allowedResolutions(parseProposed(proposal))).toEqual([
         'Approve',
-        'Requeue',
-        'EditBodyAndRequeue',
+        'StartNewAttempt',
+        'EditBodyAndStartNewAttempt',
         'Close',
-        'GrantFixRound',
-        'RerunStep',
+        'FixRefusal',
+        'RedoStep',
       ])
       expect(allowedResolutions(parseProposed({ ...proposal, output: ' ' }))).toEqual([
         'Approve',
-        'Requeue',
-        'EditBodyAndRequeue',
+        'StartNewAttempt',
+        'EditBodyAndStartNewAttempt',
         'Close',
-        'RerunStep',
+        'RedoStep',
       ])
       const unpushed = parseReason({ _tag: 'ProposedEscalated', run: unpushedRun, proposal, because })
-      expect(allowedResolutions(unpushed)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+      expect(allowedResolutions(unpushed)).toEqual(['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
     })
 
     it('FixerDisagrees: Approve, Requeue, EditBodyAndRequeue, Close, and a grant when it said something', () => {
       const proposal = { _tag: 'FixerDisagrees', said: 'the finding is wrong' } as const
       expect(allowedResolutions(parseProposed(proposal))).toEqual([
         'Approve',
-        'Requeue',
-        'EditBodyAndRequeue',
+        'StartNewAttempt',
+        'EditBodyAndStartNewAttempt',
         'Close',
-        'GrantFixRound',
+        'FixRefusal',
       ])
       expect(allowedResolutions(parseProposed({ _tag: 'FixerDisagrees', said: null }))).toEqual([
         'Approve',
-        'Requeue',
-        'EditBodyAndRequeue',
+        'StartNewAttempt',
+        'EditBodyAndStartNewAttempt',
         'Close',
       ])
       const unpushed = parseReason({ _tag: 'ProposedEscalated', run: unpushedRun, proposal, because })
-      expect(allowedResolutions(unpushed)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+      expect(allowedResolutions(unpushed)).toEqual(['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
     })
 
     it('MergeRefused: Approve, Requeue, Close', () => {
       const reason = parseProposed({ _tag: 'MergeRefused', reason: 'dirty-base', output: 'refused' })
-      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['Approve', 'StartNewAttempt', 'Close'])
     })
 
     it('BaseMoved: Approve, Requeue, Close — and approving continues at merge', () => {
       const reason = parseProposed({ _tag: 'BaseMoved', paths: ['a.ts'], fromSha: 'fork-1', toSha: 'base-1' })
-      expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['Approve', 'StartNewAttempt', 'Close'])
       expect(continuationOf(reason, [])).toEqual({ step: 'merge', waive: null })
     })
 
     it('NothingProduced, BudgetExhausted, AnswerUnreadable: EditBodyAndRequeue, Requeue, Split, Close', () => {
-      const expected = ['EditBodyAndRequeue', 'Requeue', 'Split', 'Close']
+      const expected = ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close']
       expect(allowedResolutions(parseProposed({ _tag: 'NothingProduced', said: null }))).toEqual(expected)
       expect(
         allowedResolutions(
@@ -380,12 +404,12 @@ describe('allowedResolutions', () => {
         said: null,
         output: 'red',
       })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'Close'])
     })
 
     it('SetupRefused: Requeue, Close', () => {
       const reason = parseProposed({ _tag: 'SetupRefused', from: 'prepared', output: 'no network' })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'Close'])
     })
 
     it('every Proposal tag is covered above', () => {
@@ -396,12 +420,12 @@ describe('allowedResolutions', () => {
 
   it('MergeRefused: Approve, Requeue, Close', () => {
     const reason = parseReason({ _tag: 'MergeRefused', run, reason: 'dirty-base', raw: 'refused: dirty base' })
-    expect(allowedResolutions(reason)).toEqual(['Approve', 'Requeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['Approve', 'StartNewAttempt', 'Close'])
   })
 
   it('NothingProduced: EditBodyAndRequeue, Requeue, Close — no Approve, there is nothing on the branch', () => {
     const reason = parseReason({ _tag: 'NothingProduced', run, said: null })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close'])
   })
 
   it('BudgetExhausted: EditBodyAndRequeue, Requeue, Close', () => {
@@ -411,7 +435,7 @@ describe('allowedResolutions', () => {
       cause: 'out-of-turns',
       detail: 'ran out of turns',
     })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close'])
   })
 
   it('AgentCrashed: EditBodyAndRequeue, Requeue, Close', () => {
@@ -422,10 +446,16 @@ describe('allowedResolutions', () => {
       cause: 'crash',
       detail: 'the agent crashed',
     })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close', 'RerunStep'])
+    expect(allowedResolutions(reason)).toEqual([
+      'EditBodyAndStartNewAttempt',
+      'StartNewAttempt',
+      'Split',
+      'Close',
+      'RedoStep',
+    ])
   })
 
-  describe('RerunStep (#1218)', () => {
+  describe('RedoStep (#1218)', () => {
     const crashAt = (step: string, extra: object = {}) =>
       parseReason({ _tag: 'AgentCrashed', run, step, cause: 'crash', detail: 'x', ...extra })
     const proposed = (proposal: unknown, r: unknown = run) =>
@@ -433,43 +463,43 @@ describe('allowedResolutions', () => {
 
     it('a crash at design, implement or review reruns that step; at no other', () => {
       for (const step of ['design', 'implement', 'review'] as const) {
-        expect(allowedResolutions(crashAt(step))).toContain('RerunStep')
+        expect(allowedResolutions(crashAt(step))).toContain('RedoStep')
         expect(rerunStepOf(crashAt(step))).toBe(step)
       }
       for (const step of ['admit', 'prepared', 'build', 'proposed', 'merge']) {
-        expect(allowedResolutions(crashAt(step))).not.toContain('RerunStep')
+        expect(allowedResolutions(crashAt(step))).not.toContain('RedoStep')
       }
     })
 
     it('a red build reruns build', () => {
       const reason = proposed({ _tag: 'BuildRed', output: 'FAIL' })
-      expect(allowedResolutions(reason)).toContain('RerunStep')
+      expect(allowedResolutions(reason)).toContain('RedoStep')
       expect(rerunStepOf(reason)).toBe('build')
     })
 
     it('a check that refused at proposed reruns proposed; one that refused at merge does not', () => {
       const direct = { _tag: 'CheckRefused', run, action: 'watch:ci', evidence: 'x', findings: [] }
       expect(rerunStepOf(parseReason({ ...direct, step: 'proposed' }))).toBe('proposed')
-      expect(allowedResolutions(parseReason({ ...direct, step: 'merge' }))).not.toContain('RerunStep')
+      expect(allowedResolutions(parseReason({ ...direct, step: 'merge' }))).not.toContain('RedoStep')
       const inner = { _tag: 'CheckRefused', output: 'x', action: 'run:lint' }
-      expect(allowedResolutions(proposed({ ...inner, from: 'proposed' }))).toContain('RerunStep')
-      expect(allowedResolutions(proposed({ ...inner, from: 'merge' }))).not.toContain('RerunStep')
+      expect(allowedResolutions(proposed({ ...inner, from: 'proposed' }))).toContain('RedoStep')
+      expect(allowedResolutions(proposed({ ...inner, from: 'merge' }))).not.toContain('RedoStep')
     })
 
     it('not a red verify, a merge conflict, a refused setup, or an unpushed run', () => {
-      expect(allowedResolutions(proposed({ _tag: 'VerifyRed', output: 'x' }))).not.toContain('RerunStep')
+      expect(allowedResolutions(proposed({ _tag: 'VerifyRed', output: 'x' }))).not.toContain('RedoStep')
       expect(
         allowedResolutions(
           proposed({ _tag: 'MergeConflict', output: 'x', paths: ['a.ts'], baseSha: 'a', headSha: null }),
         ),
-      ).not.toContain('RerunStep')
+      ).not.toContain('RedoStep')
       expect(
         allowedResolutions(
           parseReason({ _tag: 'SetupRefused', run, step: 'prepared', action: 'run:install', why: 'x' }),
         ),
-      ).not.toContain('RerunStep')
+      ).not.toContain('RedoStep')
       const unpushed = { runId: 'pass-1', unpushed: { branch: 'agent/1', said: 'push failed' } }
-      expect(allowedResolutions(proposed({ _tag: 'BuildRed', output: 'FAIL' }, unpushed))).not.toContain('RerunStep')
+      expect(allowedResolutions(proposed({ _tag: 'BuildRed', output: 'FAIL' }, unpushed))).not.toContain('RedoStep')
     })
 
     it('a standing crash offers what the stood wait offered, not a rerun', () => {
@@ -482,7 +512,7 @@ describe('allowedResolutions', () => {
           because: { _tag: 'NotAsked' },
         },
       }
-      expect(allowedResolutions(crashAt('implement', { standing }))).not.toContain('RerunStep')
+      expect(allowedResolutions(crashAt('implement', { standing }))).not.toContain('RedoStep')
     })
   })
 
@@ -494,7 +524,7 @@ describe('allowedResolutions', () => {
       action: 'agent:review',
       raw: 'garbled',
     })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close'])
   })
 
   it('SetupRefused: Requeue, Close', () => {
@@ -505,7 +535,7 @@ describe('allowedResolutions', () => {
       action: 'run:pnpm install',
       why: 'no network',
     })
-    expect(allowedResolutions(reason)).toEqual(['Requeue', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'Close'])
   })
 
   it('every WaitReason tag is covered above', () => {
@@ -522,12 +552,12 @@ describe('allowedResolutions', () => {
         action: 'human:ship',
         question: 'ship it?',
       })
-      expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
     })
 
     it('NothingProduced: unchanged — Approve was never there to drop', () => {
       const reason = parseReason({ _tag: 'NothingProduced', run: unpushedRun, said: null })
-      expect(allowedResolutions(reason)).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close'])
     })
 
     /**
@@ -553,7 +583,7 @@ describe('allowedResolutions', () => {
           action: 'human:ship',
           question: 'ship it?',
         })
-        expect(allowedResolutions(reason)).toEqual(['Requeue', 'EditBodyAndRequeue', 'Close'])
+        expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
       }
     })
   })
@@ -606,17 +636,17 @@ describe('recommendedResolution', () => {
     })
 
     it('recommends a fix round at 5 hunks or fewer whatever triage chose', () => {
-      expect(recommendedResolution(conflict, advising(2, 'Requeue'))).toBe('GrantFixRound')
-      expect(recommendedResolution(conflict, advising(5, 'Close'))).toBe('GrantFixRound')
+      expect(recommendedResolution(conflict, advising(2, 'Requeue'))).toBe('FixRefusal')
+      expect(recommendedResolution(conflict, advising(5, 'Close'))).toBe('FixRefusal')
     })
 
     it('leaves triage’s resolution above 5 hunks', () => {
-      expect(recommendedResolution(conflict, advising(6, 'Requeue'))).toBe('Requeue')
-      expect(recommendedResolution(conflict, advising(10, 'Requeue'))).toBe('Requeue')
+      expect(recommendedResolution(conflict, advising(6, 'Requeue'))).toBe('StartNewAttempt')
+      expect(recommendedResolution(conflict, advising(10, 'Requeue'))).toBe('StartNewAttempt')
     })
 
     it('never recommends a fix round the wait does not offer', () => {
-      expect(recommendedResolution(conflict, advising(2, 'Requeue'), { savedHead: false })).toBe('Requeue')
+      expect(recommendedResolution(conflict, advising(2, 'Requeue'), { savedHead: false })).toBe('StartNewAttempt')
     })
   })
 
@@ -679,7 +709,7 @@ describe('recommendedResolution', () => {
       cause: 'out-of-turns',
       detail: 'ran out of turns',
     })
-    expect(recommendedResolution(reason, queued)).toBe('Requeue')
+    expect(recommendedResolution(reason, queued)).toBe('StartNewAttempt')
   })
 
   it('AgentCrashed, no advice: the default, Requeue', () => {
@@ -690,7 +720,7 @@ describe('recommendedResolution', () => {
       cause: 'crash',
       detail: 'the agent crashed',
     })
-    expect(recommendedResolution(reason, running)).toBe('Requeue')
+    expect(recommendedResolution(reason, running)).toBe('StartNewAttempt')
   })
 
   it('OwnQuestion, no advice: no default, null', () => {
@@ -724,28 +754,28 @@ describe('recommendedResolution', () => {
 
   describe('an advice its own cause contradicts (#572)', () => {
     const reason = parseReason({ _tag: 'FixerDisagrees', run, said: 'nothing here answers the finding' })
-    const advise = (cause: RootCause, resolution: 'Approve' | 'GrantFixRound' | 'Requeue'): TriageStatus => ({
+    const advise = (cause: RootCause, resolution: 'Approve' | 'FixRefusal' | 'StartNewAttempt'): TriageStatus => ({
       _tag: 'Done',
       result: { _tag: 'TriageAdvised', cause, resolution, summary: 's', want: null } as TriageResult,
     })
     const wrong: RootCause = { _tag: 'WrongApproach' }
     const fixable: RootCause = { _tag: 'FixableLines', fixes: [] }
 
-    it('WrongApproach advising Approve or GrantFixRound is null, not a substitute', () => {
+    it('WrongApproach advising Approve or FixRefusal is null, not a substitute', () => {
       expect(allowedResolutions(reason)).toContain('Approve')
       expect(recommendedResolution(reason, advise(wrong, 'Approve'))).toBeNull()
       expect(recommendedResolution(reason, advise(wrong, 'GrantFixRound'))).toBeNull()
     })
 
     it('WrongApproach advising Requeue is kept', () => {
-      expect(recommendedResolution(reason, advise(wrong, 'Requeue'))).toBe('Requeue')
+      expect(recommendedResolution(reason, advise(wrong, 'Requeue'))).toBe('StartNewAttempt')
     })
 
     it('FixableLines advising Approve is null', () => {
       expect(recommendedResolution(reason, advise(fixable, 'Approve'))).toBeNull()
     })
 
-    it('GrantFixRound with no saved head is null whatever the cause', () => {
+    it('FixRefusal with no saved head is null whatever the cause', () => {
       const check = parseReason({
         _tag: 'CheckRefused',
         run,
@@ -757,7 +787,7 @@ describe('recommendedResolution', () => {
       expect(recommendedResolution(check, advise(fixable, 'GrantFixRound'), { savedHead: false })).toBeNull()
     })
 
-    it('FixableLines advising GrantFixRound is kept where it is allowed', () => {
+    it('FixableLines advising FixRefusal is kept where it is allowed', () => {
       const check = parseReason({
         _tag: 'CheckRefused',
         run,
@@ -766,16 +796,16 @@ describe('recommendedResolution', () => {
         evidence: 'the check failed',
         findings: [],
       })
-      expect(allowedResolutions(check)).toContain('GrantFixRound')
-      expect(recommendedResolution(check, advise(fixable, 'GrantFixRound'))).toBe('GrantFixRound')
+      expect(allowedResolutions(check)).toContain('FixRefusal')
+      expect(recommendedResolution(check, advise(fixable, 'GrantFixRound'))).toBe('FixRefusal')
     })
   })
 
   /**
    * **The case that tells "null" apart from "fell through to the default".**
-   * `BudgetExhausted`'s own default is `Requeue`, not `Approve`, and `Approve`
+   * `BudgetExhausted`'s own default is `StartNewAttempt`, not `Approve`, and `Approve`
    * is not in its allowed list (0118 §1's table) either — so a bug that fell
-   * back to the default on a disallowed advice would read `Requeue` here,
+   * back to the default on a disallowed advice would read `StartNewAttempt` here,
    * not `null`, and this test would catch it.
    */
   it('a disallowed advice is null, not the default', () => {
@@ -1238,7 +1268,7 @@ describe('waivedActionsAt', () => {
 
   it('excludes a wait resolved some other way than Approve', () => {
     const reason = parseReason({ _tag: 'SignoffRequired', run, step: 'merge', action: 'human:land', question: '?' })
-    const waits = [{ waitId: 'wait-1' as WaitId, reason, resolution: { _tag: 'Requeue' } as Resolution }]
+    const waits = [{ waitId: 'wait-1' as WaitId, reason, resolution: { _tag: 'StartNewAttempt' } as Resolution }]
     expect(waivedActionsAt(waits, [], 'pass-1', 'merge')).toEqual([])
   })
 
@@ -1285,7 +1315,7 @@ describe('AgentCrashed{standing} (#654)', () => {
   it('offers the standing wait’s resolutions, with Requeue and Close once', () => {
     expect(allowedResolutions(crash(standing))).toEqual(allowedResolutions(standingReason))
     expect(allowedResolutions(crash(standing))).toContain('Approve')
-    expect(allowedResolutions(crash(standing))).toContain('GrantFixRound')
+    expect(allowedResolutions(crash(standing))).toContain('FixRefusal')
   })
 
   it('continues and waives exactly what the standing wait does', () => {
@@ -1299,7 +1329,13 @@ describe('AgentCrashed{standing} (#654)', () => {
   })
 
   it('without standing, today’s row', () => {
-    expect(allowedResolutions(crash())).toEqual(['EditBodyAndRequeue', 'Requeue', 'Split', 'Close', 'RerunStep'])
+    expect(allowedResolutions(crash())).toEqual([
+      'EditBodyAndStartNewAttempt',
+      'StartNewAttempt',
+      'Split',
+      'Close',
+      'RedoStep',
+    ])
     expect(continuationOf(crash(), [])).toBeNull()
   })
 
@@ -1392,8 +1428,8 @@ describe('grantCriterion on a declined fix round (#935)', () => {
         expect(grantCriterion(make(null))).toBeNull()
       })
       it('the offer is unchanged', () => {
-        expect(allowedResolutions(make(said))).toContain('GrantFixRound')
-        expect(allowedResolutions(make(null))).not.toContain('GrantFixRound')
+        expect(allowedResolutions(make(said))).toContain('FixRefusal')
+        expect(allowedResolutions(make(null))).not.toContain('FixRefusal')
       })
     })
   }

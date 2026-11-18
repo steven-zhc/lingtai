@@ -85,7 +85,7 @@ const SAMPLES = {
     { runId: RUN, reason: 'restart', cause: { _tag: 'NewAttempt', newAttempt: 1 } },
   ],
   WaitStarted: [{ waitId: WAIT, reason: { _tag: 'OwnQuestion', question: 'which one?', by: 'human:steven' } }],
-  WaitResolved: [{ waitId: WAIT, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: '' }],
+  WaitResolved: [{ waitId: WAIT, by: 'human:steven', resolution: { _tag: 'StartNewAttempt' }, note: '' }],
   TicketSplit: [
     {
       waitId: WAIT,
@@ -347,7 +347,7 @@ describe('a line of history', () => {
     expect(said).toContain('Lines to fix')
     expect(said).toContain('Start over from base')
     expect(said).not.toContain('FixableLines')
-    expect(said).not.toContain('Requeue')
+    expect(said).not.toContain('StartNewAttempt')
   })
 
   /**
@@ -472,7 +472,7 @@ describe('a line of history', () => {
         }),
       )
       expect(advised.summary).toContain('Triage run 1 advised: Add to the ticket and start over')
-      expect(advised.summary).not.toContain('EditBodyAndRequeue')
+      expect(advised.summary).not.toContain('EditBodyAndStartNewAttempt')
       expect(advised.summary).not.toContain('Attempt')
     })
 
@@ -507,11 +507,11 @@ describe('a line of history', () => {
    */
   it('renders a note-free unblock as just who, with no trailing colon', () => {
     const itemStream = makeStream('ticket-lingtai-59')
-    const said = summarise(aResolution(itemStream, aWaitId(), { _tag: 'Requeue' }, 'human:steven', '')[0]!)
+    const said = summarise(aResolution(itemStream, aWaitId(), { _tag: 'StartNewAttempt' }, 'human:steven', '')[0]!)
     expect(said).toBe('human:steven')
 
     const withNote = summarise(
-      aResolution(itemStream, aWaitId(), { _tag: 'Requeue' }, 'human:steven', 'main has moved')[0]!,
+      aResolution(itemStream, aWaitId(), { _tag: 'StartNewAttempt' }, 'human:steven', 'main has moved')[0]!,
     )
     expect(withNote).toBe('human:steven: main has moved')
   })

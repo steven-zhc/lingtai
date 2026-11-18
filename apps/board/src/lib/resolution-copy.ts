@@ -8,12 +8,12 @@ export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; conseq
     title: 'Approve and continue',
     consequence: 'Continue this attempt from its recorded commit. Every refusal that stopped it is waived.',
   },
-  GrantFixRound: {
+  FixRefusal: {
     title: 'Continue fixing current work',
     consequence:
       'Start from the saved branch and head for one additional paid fix round. Build and review run again; this does not waive either refusal.',
   },
-  RerunStep: {
+  RedoStep: {
     title: 'Rerun this step on the saved work',
     consequence:
       'Run the step that stopped again, in this attempt, on its saved head. No fixer is dispatched and nothing is cut from base; no round or restart is spent.',
@@ -22,12 +22,12 @@ export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; conseq
     title: 'Answer the question',
     consequence: 'Give the answer to the next attempt, or withdraw the question and return the ticket to the queue.',
   },
-  Requeue: {
+  StartNewAttempt: {
     title: 'Start over from base',
     consequence:
       'Start a new attempt from base with the recipe’s rounds. The saved branch is not continued. ' + NO_RESTART_EFFECT,
   },
-  EditBodyAndRequeue: {
+  EditBodyAndStartNewAttempt: {
     title: 'Add to the ticket and start over',
     consequence:
       'Append your text to the ticket body, then queue a new attempt from main with that text. ' + NO_RESTART_EFFECT,

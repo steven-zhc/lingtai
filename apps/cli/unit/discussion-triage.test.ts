@@ -21,13 +21,13 @@ it('takes advice only from the current blocked wait', () => {
     ...aWait(event, reason, old),
     ...aTriageStart(event, old, 1),
     ...aTriaged(event, old, 1, advice),
-    ...aResolution(event, old, { _tag: 'Requeue' }),
+    ...aResolution(event, old, { _tag: 'StartNewAttempt' }),
     ...aWait(event, reason, current),
   ]
   expect(currentWaitTriage(events)).toBeNull()
   events.push(...aTriageStart(event, current, 1), ...aTriaged(event, current, 1, advice))
   expect(currentWaitTriage(events)).toEqual(advice)
-  events.push(...aResolution(event, current, { _tag: 'Requeue' }))
+  events.push(...aResolution(event, current, { _tag: 'StartNewAttempt' }))
   expect(currentWaitTriage(events)).toBeNull()
 })
 

@@ -214,7 +214,7 @@ function commitResultOf(outcome: ActionOutcomeEntry): ResultOf<'commit'> {
       // `#472` regardless of cause, and this cell is squarely that: the hook never
       // ran at all, which is not one of the five words `Interrupted` names
       // (`#466` fix round — the prior `Interrupted{cause: 'crash'}` here read
-      // a broken hook as a crashed agent and offered `Requeue`).
+      // a broken hook as a crashed agent and offered `StartNewAttempt`).
       return { _tag: 'NotDone' }
     case 'failed':
     case 'needs-approval':

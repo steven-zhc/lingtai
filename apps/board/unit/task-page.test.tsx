@@ -238,7 +238,7 @@ const NOTHING = task([], []).github
 const page = (t: Page, answered: Partial<TicketAnswer> = {}) =>
   renderToStaticMarkup(<TaskBody task={t} github={{ ...t.github, ticket: { ...t.github.ticket, ...answered } }} />)
 
-function moved(resolution: 'Close' | 'Requeue' | 'EditBodyAndRequeue', extra: Envelope[] = []): Page {
+function moved(resolution: 'Close' | 'StartNewAttempt' | 'EditBodyAndStartNewAttempt', extra: Envelope[] = []): Page {
   const own = [
     e(ITEM, 'TicketClaimed', { runId: RUN }),
     e(ITEM, 'WaitStarted', { waitId: 'wait-147', reason: blocked().standing.reason }),
@@ -292,7 +292,7 @@ describe('after the move', () => {
   })
 
   it('states a recorded requeue without claiming a body write', () => {
-    const html = page(moved('Requeue'))
+    const html = page(moved('StartNewAttempt'))
     expect(html).toContain('detail--resolved')
     expect(html).toContain('After the move')
     expect(html).toContain('The ticket returned to the queue for a new attempt from base.')
@@ -326,7 +326,7 @@ describe('after the move', () => {
 
   it('shows the recorded body update separately from a completed body edit and requeue', () => {
     const html = page(
-      moved('EditBodyAndRequeue', [
+      moved('EditBodyAndStartNewAttempt', [
         e(ITEM, 'IssueUpdated', { project: 'lingtai', issue: '147', change: 'body', detail: '42 bytes' }),
       ]),
     )
@@ -363,7 +363,7 @@ describe('after the move', () => {
       e(ITEM, 'WaitStarted', { waitId: 'wait-147', reason: blocked().standing.reason }),
       e(ITEM, 'WaitResolved', {
         waitId: 'wait-147',
-        resolution: { _tag: 'GrantFixRound', onSha: HEAD, ref: 'agent/147' },
+        resolution: { _tag: 'FixRefusal', onSha: HEAD, ref: 'agent/147' },
         by: 'steven',
         note: '',
       }),
@@ -394,7 +394,12 @@ describe('after the move', () => {
 
   it('does not present a past requeue as the move behind a later close', () => {
     const own = [
-      e(ITEM, 'WaitResolved', { waitId: 'wait-old', resolution: { _tag: 'Requeue' }, by: 'steven', note: 'old move' }),
+      e(ITEM, 'WaitResolved', {
+        waitId: 'wait-old',
+        resolution: { _tag: 'StartNewAttempt' },
+        by: 'steven',
+        note: 'old move',
+      }),
       e(ITEM, 'TicketClosed', { by: 'steven', reason: 'later close' }),
     ]
     const html = page(task(own, []))
@@ -408,7 +413,7 @@ describe('after the move', () => {
       e(ITEM, 'WaitStarted', { waitId: 'wait-147', reason: blocked().standing.reason }),
       e(ITEM, 'WaitResolved', {
         waitId: 'wait-147',
-        resolution: { _tag: 'Requeue' },
+        resolution: { _tag: 'StartNewAttempt' },
         by: 'steven',
         note: 'the review cannot run',
       }),
@@ -556,8 +561,8 @@ describe('a blocked task', () => {
     }
     const html = page({ ...t, standing })
     const resolutions = html.slice(html.indexOf('data-rank="resolutions"'), html.indexOf('data-rank="pair"'))
-    expect(resolutions.indexOf('data-resolution="EditBodyAndRequeue"')).toBeLessThan(
-      resolutions.indexOf('data-resolution="Requeue"'),
+    expect(resolutions.indexOf('data-resolution="EditBodyAndStartNewAttempt"')).toBeLessThan(
+      resolutions.indexOf('data-resolution="StartNewAttempt"'),
     )
     expect(resolutions.indexOf('Text to add to the ticket body')).toBeLessThan(resolutions.indexOf('Send Attempt 2'))
     expect(resolutions).toContain('Triage recommended')
