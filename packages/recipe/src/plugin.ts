@@ -156,6 +156,12 @@ export type PluginFields = Readonly<Record<string, z.ZodType>>
 export const ANY_STEP = '*'
 export type AnyStep = typeof ANY_STEP
 
+/** Whether an action can run twice (0108 §23): `external` writes beyond the attempt's own worktree and branch. */
+export type Replay = 'safe' | 'external'
+
+/** The steps a whole-step redo (0108 §12) may repeat; an `external` action cannot be served at any of them. */
+export const REDO_STEPS = ['prepared', 'design', 'implement', 'review'] as const satisfies readonly Step[]
+
 /**
  * **What a plugin's `at` carries until the bodies move** (0064 §3, `#261`).
  *
@@ -273,6 +279,8 @@ export interface Plugin extends PluginSecrets {
   readonly at: PluginSteps
   /** Those keys, as written, for a refusal that has to say where it does live. */
   readonly serves: readonly string[]
+  /** Whether it can run twice (0108 §23); an `external` one is refused at a redo step. */
+  readonly replay: Replay
 }
 
 /**
@@ -349,12 +357,16 @@ function isSchema(value: object): value is z.ZodType {
  * shorter than its author wrote or whose `at` names a step nothing will ever
  * ask about. A declaration is code, so the throw is at import: there is no
  * recipe, no worktree and nothing claimed to be halfway through.
+ *
+ * **It also throws on a `replay` that is neither `safe` nor `external`, and on an `external` plugin
+ * serving `prepared`, `design`, `implement` or `review` (or `"*"`)** — a step redone whole must be
+ * able to run every action in it twice (0108 §23).
  */
 export function definePlugin<Key extends string, Fields extends PluginFields>(
   key: Key,
-  declaration: { readonly fields: Fields; readonly at: PluginSteps },
+  declaration: { readonly fields: Fields; readonly at: PluginSteps; readonly replay: Replay },
 ) {
-  const { fields, at } = declaration
+  const { fields, at, replay } = declaration
   const shape = { name: z.string(), ...fields }
   const serves = Object.keys(at)
   for (const step of serves) {
@@ -365,6 +377,16 @@ export function definePlugin<Key extends string, Fields extends PluginFields>(
         '`at` is what makes it legal at a step (0064 §4), so a key nothing matches is a plugin no ' +
         'recipe can ever declare and no refusal can ever explain',
     )
+  }
+  if (replay !== 'safe' && replay !== 'external')
+    throw new Error(`"${key}" declares replay "${String(replay)}", which is neither "safe" nor "external" (0108 §23)`)
+  if (replay === 'external') {
+    const redone = REDO_STEPS.find((s) => servesStep({ at }, s))
+    if (redone !== undefined)
+      throw new Error(
+        `"${key}" is external — it writes outside the attempt's worktree and branch — and serves "${redone}", ` +
+          'a step that is redone whole, so it cannot be redone (0108 §23). Serve `end` instead, or declare it safe',
+      )
   }
   const secrets: string[] = []
   for (const [field, schema] of Object.entries(fields)) {
@@ -381,7 +403,7 @@ export function definePlugin<Key extends string, Fields extends PluginFields>(
     if (why !== null) throw markRefused(key, field, why)
     secrets.push(field)
   }
-  return { key, schema: z.strictObject(shape), declares: Object.keys(shape), secrets, at, serves }
+  return { key, schema: z.strictObject(shape), declares: Object.keys(shape), secrets, at, serves, replay }
 }
 
 /**

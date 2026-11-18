@@ -38,6 +38,8 @@ import {
   filePlugin,
   fileBriefPlugin,
   definePlugin,
+  REDO_STEPS,
+  type Plugin,
   disclose,
   notBuiltYet,
   discloseSteps,
@@ -79,6 +81,7 @@ const BASE: Recipe = Recipe.parse({
  * action *does*, and `definePlugin` refuses that — the case for it is below.
  */
 const spendPlugin = definePlugin('spend', {
+  replay: 'safe',
   fields: { spend: z.string(), token: noLog(z.string()) },
   at: { proposed: notBuiltYet },
 })
@@ -99,7 +102,7 @@ describe('the contract', () => {
 
   it("reads a field's `no_log` off the schema, not off a list", () => {
     expect(spendPlugin.secrets).toEqual(['token'])
-    expect(definePlugin('loud', { fields: { loud: z.string() }, at: {} }).secrets).toEqual([])
+    expect(definePlugin('loud', { replay: 'safe', fields: { loud: z.string() }, at: {} }).secrets).toEqual([])
   })
 
   /**
@@ -343,20 +346,25 @@ describe('a `no_log` field never leaves its plugin', () => {
    */
   it('refuses a mark written below the field, however deep', () => {
     expect(() =>
-      definePlugin('notify', { fields: { notify: z.object({ token: noLog(z.string()) }) }, at: {} }),
+      definePlugin('notify', { replay: 'safe', fields: { notify: z.object({ token: noLog(z.string()) }) }, at: {} }),
     ).toThrow(/marks no_log below its "notify" field/)
-    expect(() => definePlugin('late', { fields: { late: noLog(z.string()).optional() }, at: {} })).toThrow(
-      /marks no_log below its "late" field/,
-    )
+    expect(() =>
+      definePlugin('late', { replay: 'safe', fields: { late: noLog(z.string()).optional() }, at: {} }),
+    ).toThrow(/marks no_log below its "late" field/)
     expect(() =>
       definePlugin('deep', {
+        replay: 'safe',
         fields: { deep: z.array(z.object({ token: noLog(z.string()) })).default([]) },
         at: {},
       }),
     ).toThrow(/marks no_log below its "deep" field/)
     // And the way round that does work is the way round the wording asks for.
     expect(
-      definePlugin('fine', { fields: { fine: z.string(), token: noLog(z.string().optional()) }, at: {} }).secrets,
+      definePlugin('fine', {
+        replay: 'safe',
+        fields: { fine: z.string(), token: noLog(z.string().optional()) },
+        at: {},
+      }).secrets,
     ).toEqual(['token'])
   })
 
@@ -369,12 +377,12 @@ describe('a `no_log` field never leaves its plugin', () => {
    * way.
    */
   it('refuses a mark on the key, and on `name`', () => {
-    expect(() => definePlugin('spend', { fields: { spend: noLog(z.string()) }, at: {} })).toThrow(
+    expect(() => definePlugin('spend', { replay: 'safe', fields: { spend: noLog(z.string()) }, at: {} })).toThrow(
       /"spend" marks its own "spend" field no_log/,
     )
-    expect(() => definePlugin('spend', { fields: { spend: z.string(), name: noLog(z.string()) }, at: {} })).toThrow(
-      /"spend" marks its own "name" field no_log/,
-    )
+    expect(() =>
+      definePlugin('spend', { replay: 'safe', fields: { spend: z.string(), name: noLog(z.string()) }, at: {} }),
+    ).toThrow(/"spend" marks its own "name" field no_log/)
     // The same rule at the strip, because a `PluginSecrets` is written by hand
     // where there is no schema to have refused it — and answering an action
     // naming no plugin would be the quiet failure one layer further down.
@@ -468,11 +476,16 @@ describe('the six behind the contract', () => {
 describe('a plugin declares the steps it serves', () => {
   /** The page's own example: one plugin, at one step, and nowhere else. */
   const slack = definePlugin('slack', {
+    replay: 'safe',
     fields: { slack: z.strictObject({ channel: z.string() }) },
     at: { proposed: notBuiltYet },
   })
   /** And the second true thing: one body, every step. */
-  const everywhere = definePlugin('everywhere', { fields: { everywhere: z.string() }, at: { '*': notBuiltYet } })
+  const everywhere = definePlugin('everywhere', {
+    replay: 'safe',
+    fields: { everywhere: z.string() },
+    at: { '*': notBuiltYet },
+  })
 
   it('is legal where its `at` has a key, and refused by name where it does not', () => {
     // Two, so `claim` *is* implemented — by the other one. A set where nobody
@@ -517,9 +530,9 @@ describe('a plugin declares the steps it serves', () => {
 
   /** A key that is not a step is refused at import, where the author is. */
   it('refuses an `at` key that is not a step', () => {
-    expect(() => definePlugin('typo', { fields: { typo: z.string() }, at: { propsed: notBuiltYet } as never })).toThrow(
-      /declares itself at "propsed", which is not a step/,
-    )
+    expect(() =>
+      definePlugin('typo', { replay: 'safe', fields: { typo: z.string() }, at: { propsed: notBuiltYet } as never }),
+    ).toThrow(/declares itself at "propsed", which is not a step/)
   })
 })
 
@@ -1618,5 +1631,51 @@ describe('a dispatch is one shape', () => {
         }).success,
       ).toBe(true)
     }
+  })
+})
+
+describe('replay (0108 §23)', () => {
+  it('declares each plugin as the ticket lists it', () => {
+    const external = ['close', 'human', 'labels', 'merge', 'queue', 'refs']
+    expect(
+      PLUGINS.filter((p) => p.replay === 'external')
+        .map((p) => p.key)
+        .sort(),
+    ).toEqual(external)
+    expect(
+      PLUGINS.filter((p) => p.replay === 'safe')
+        .map((p) => p.key)
+        .sort(),
+    ).toEqual(['agent', 'backlog', 'file', 'file-brief', 'judge', 'run', 'watch', 'worktree'])
+  })
+
+  it('refuses an external plugin at a redo step or "*" at import, and accepts one at end', () => {
+    for (const step of REDO_STEPS)
+      expect(() => definePlugin('x', { fields: {}, at: { [step]: notBuiltYet }, replay: 'external' })).toThrow(
+        /cannot be redone \(0108 §23\)/,
+      )
+    expect(() => definePlugin('x', { fields: {}, at: { '*': notBuiltYet }, replay: 'external' })).toThrow(
+      /cannot be redone/,
+    )
+    expect(definePlugin('x', { fields: {}, at: { end: notBuiltYet }, replay: 'external' }).replay).toBe('external')
+    expect(() => definePlugin('x', { fields: {}, at: {}, replay: 'maybe' as never })).toThrow(/neither/)
+  })
+
+  it('refuses an external action at a redo step when it resolves, naming 0108 §23 and end', () => {
+    // A literal, not definePlugin: that throws on exactly this plugin, and this is the second guard.
+    const external: Plugin = {
+      key: 'merge',
+      schema: z.strictObject({ name: z.string(), merge: z.string() }),
+      declares: ['name', 'merge'],
+      secrets: [],
+      at: { implement: notBuiltYet },
+      serves: ['implement'],
+      replay: 'external',
+    }
+    const why = whyNoKindAt('implement', 'merge', [external])
+    expect(why).toContain('0108 §23')
+    expect(why).toContain('cannot be redone')
+    expect(why).toContain('`end`')
+    expect(whyNoKindAt('implement', 'merge', [{ ...external, replay: 'safe' }])).toBeNull()
   })
 })

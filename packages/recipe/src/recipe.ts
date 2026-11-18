@@ -29,6 +29,7 @@ import {
   notBuiltYet,
   pluginNaming,
   pluginsNamed,
+  REDO_STEPS,
   readFields,
   servesStep,
 } from './plugin.ts'
@@ -119,8 +120,12 @@ const WHEN = z.enum(['landed', 'blocked', 'failed', 'closed', 'any'])
  * core's own and run in the core's own process, so a recipe writing `env:`
  * under one of them is refused by name (0061 §9) rather than having it accepted
  * and ignored.
+ *
+ * **`replay: 'safe'` because Lingtai cannot see into a person's command**: a `run:` written at
+ * `prepared`, `implement` or another redo step must be safe to run twice (0108 §23). Nothing checks that.
  */
 export const runPlugin = definePlugin('run', {
+  replay: 'safe',
   fields: {
     run: z.string(),
     timeout: z.string().default('15m'),
@@ -345,6 +350,7 @@ const DISPATCH = {
  * what makes the name one this machine can run.
  */
 export const agentPlugin = definePlugin('agent', {
+  replay: 'safe',
   /**
    * **`agent:` is the *which*, and the other three are `DISPATCH`'s** (0070 §3).
    *
@@ -625,6 +631,7 @@ export function thePathForThisTicket(written: string, ref: string): ThePathForTh
  * `thePathForThisTicket` refuses what the ticket made of it, when it runs.
  */
 export const filePlugin = definePlugin('file', {
+  replay: 'safe',
   fields: {
     /**
      * Where the document goes, relative to the worktree. `whyThePathEscapes` is
@@ -717,6 +724,7 @@ export const filePlugin = definePlugin('file', {
  * one that disagreed with the locator would win silently.
  */
 export const fileBriefPlugin = definePlugin('file-brief', {
+  replay: 'safe',
   fields: {
     /** `true` and nothing else: the locator says where, and the recipe does not. */
     'file-brief': z.literal(true),
@@ -733,6 +741,7 @@ export const fileBriefPlugin = definePlugin('file-brief', {
 
 /** Globs against the diff's file list; a match holds or fails. */
 export const watchPlugin = definePlugin('watch', {
+  replay: 'safe',
   fields: {
     watch: z.array(z.string()).min(1),
     then: z.enum(['request-approval', 'fail']).default('request-approval'),
@@ -752,6 +761,7 @@ export const watchPlugin = definePlugin('watch', {
 
 /** Waits for a person. The string is the question they are asked. */
 export const humanPlugin = definePlugin('human', {
+  replay: 'external',
   fields: { human: z.string() },
   /**
    * Not `prepared`: a hold there is a release, so the question re-asks itself
@@ -793,6 +803,7 @@ export const humanPlugin = definePlugin('human', {
  * to run `gh issue close` by hand afterwards.
  */
 export const closePlugin = definePlugin('close', {
+  replay: 'external',
   fields: {
     close: z.literal(true),
     when: WHEN.default('landed'),
@@ -803,6 +814,7 @@ export const closePlugin = definePlugin('close', {
 
 /** Sets labels. Lingtai's own are replaced; everybody else's are kept. */
 export const labelsPlugin = definePlugin('labels', {
+  replay: 'external',
   fields: {
     labels: z.array(z.string()),
     when: WHEN.default('any'),
@@ -848,6 +860,7 @@ export const labelsPlugin = definePlugin('labels', {
  * might read. `branch: true` takes it too.
  */
 export const refsPlugin = definePlugin('refs', {
+  replay: 'external',
   fields: {
     /** `true` and nothing else: what it deletes is decided by `branch:`, not by a value here. */
     refs: z.literal(true),
@@ -888,6 +901,7 @@ export const refsPlugin = definePlugin('refs', {
  * blocks up. A recipe that does not say is refused by name instead (`#268`).
  */
 export const worktreePlugin = definePlugin('worktree', {
+  replay: 'safe',
   fields: {
     worktree: z.strictObject({
       /** The branch the agent's work is cut from and lands on. `origin/<base>`, never local state. */
@@ -929,6 +943,7 @@ export const worktreePlugin = definePlugin('worktree', {
  * the code does and grows when the code does.
  */
 export const mergePlugin = definePlugin('merge', {
+  replay: 'external',
   fields: {
     merge: z.strictObject({
       strategy: z.enum(['merge-commit']).default('merge-commit'),
@@ -1244,6 +1259,7 @@ export type QueueSettings = z.infer<typeof QueueSettings>
  *   (0061 §9) rather than having it accepted and ignored.
  */
 export const queuePlugin = definePlugin('queue', {
+  replay: 'external',
   fields: { queue: QueueSettings },
   /**
    * **`claim`, and it is the last of 0061 §3's five names to become a key**
@@ -1378,6 +1394,7 @@ export type JudgeName = z.infer<typeof JudgeName>
  * *which of these*, never *what is legal*.
  */
 export const judgePlugin = definePlugin('judge', {
+  replay: 'safe',
   /**
    * **Two of `DISPATCH`'s three, and leaving `prompt:` out is a decision** (0070 §3).
    *
@@ -1481,6 +1498,7 @@ export type BacklogBar = z.infer<typeof BacklogBar>
  * already holds is a knob whose only reachable value is the one it has.
  */
 export const backlogPlugin = definePlugin('backlog', {
+  replay: 'safe',
   fields: {
     /** At or below this, a finding is filed and buys no round. `minor` today. */
     backlog: BacklogBar.default('minor'),
@@ -2007,7 +2025,15 @@ function servedBy(plugin: Plugin): string {
  */
 export function whyNoKindAt(step: Step, kind: ActionKind, plugins: readonly Plugin[] = PLUGINS): string | null {
   const plugin = plugins.find((each) => each.key === kind) ?? null
-  if (plugin !== null && servesStep(plugin, step)) return null
+  if (plugin !== null && servesStep(plugin, step)) {
+    if (plugin.replay === 'external' && (REDO_STEPS as readonly string[]).includes(step))
+      return (
+        `\`${kind}:\` writes outside the attempt's worktree and branch, and a redo of \`${step}\` ` +
+        '([0108](doc/decisions/0108-a-step-is-redone-whole.md) §12) would make it happen twice, so it cannot be ' +
+        'redone (0108 §23). It belongs at `end`, which resolves once per outcome'
+      )
+    return null
+  }
 
   const calledDirectly = CALLED_DIRECTLY[kind]
   if (calledDirectly !== undefined) {
