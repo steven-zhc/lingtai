@@ -996,7 +996,13 @@ describe('design runs the `agent:` plugin, and nothing is an answer', () => {
       answers: { draft: { failure: { kind: 'crash', detail: 'the runtime exited 1' } } },
     })
 
-    expect(walk(result)).toEqual(['admit:passed', 'prepared:passed', 'design:did-not-finish', 'end:passed'])
+    // A crash of any wording is redone by rule (#1249) — three times — and then it is a person's.
+    expect(walk(result)).toEqual([
+      'admit:passed',
+      'prepared:passed',
+      ...Array(4).fill('design:did-not-finish'),
+      'end:passed',
+    ])
     expect(result.stopped?.ending).toMatchObject({
       ending: 'did-not-finish',
       because: 'did-not-finish',
@@ -1922,14 +1928,17 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 3, newAttemptsSpent: 0 },
     })
 
-    expect(asked.judge).toEqual([expect.objectContaining({ when: 'answer-unreadable' })])
-    expect(asked.judge[0]?.offering).toContain('implement')
+    // An unreadable answer is a rule's (#1249, 0108 §12): asked again while `stepRedos` is left, no judge
+    // is asked and no round is bought; then only a person is on offer.
+    expect(asked.judge).toEqual([])
     expect(result.steps.some((visit) => visit.step === 'proposed')).toBe(true)
-    // The first unreadable answer is asked again by rule (#1224); the second goes to the judge's floor.
-    expect(result.routes[0]).toMatchObject({ reply: { _tag: 'Selected', candidate: 'ask-again' } })
-    expect(result.routes[1]).toMatchObject({ from: 'proposed', to: 'waiting', ceiling: null })
-    expect(result.routes[1]?.why).toContain('no `judge:` is declared for a "answer-unreadable"')
-    expect(result.routes[1]?.why).not.toContain('nothing an agent could be held to')
+    expect(result.routes.slice(0, 3)).toEqual(
+      Array(3).fill(
+        expect.objectContaining({ reply: { _tag: 'Selected', candidate: 'ask-again', why: expect.any(String) } }),
+      ),
+    )
+    expect(result.routes[3]).toMatchObject({ from: 'proposed', to: 'waiting', ceiling: null })
+    expect(result.routes[3]?.why).not.toContain('nothing an agent could be held to')
     expect(result.end).toMatchObject({
       _tag: 'WaitOnPerson',
       reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'AnswerUnreadable', from: 'review' } },
@@ -1966,17 +1975,17 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 3, newAttemptsSpent: 0 },
     })
 
-    expect(asked.judge).toEqual([expect.objectContaining({ when: 'answer-unreadable' })])
+    expect(asked.judge).toEqual([])
     // `proposed`'s own way-through visit still happens on the spine between
     // `review` and `merge`, and now a second, routing visit is recorded once
     // `merge`'s own `AnswerUnreadable` reaches `routeProposal`.
-    // The first unreadable answer is asked again by rule (#1224); the second is the one that waits.
-    expect(result.steps.filter((visit) => visit.step === 'proposed')).toHaveLength(3)
+    // Three unreadable answers are asked again by rule (#1224, #1249); the fourth is the one that waits.
     expect(result.routes).toEqual([
-      expect.objectContaining({ reply: { _tag: 'Selected', candidate: 'ask-again', why: expect.any(String) } }),
+      ...Array(3).fill(
+        expect.objectContaining({ reply: { _tag: 'Selected', candidate: 'ask-again', why: expect.any(String) } }),
+      ),
       expect.objectContaining({ from: 'merge', to: 'waiting', ceiling: null }),
     ])
-    expect(result.routes[1]?.why).toContain('no `judge:` is declared for a "answer-unreadable"')
     expect(result.end).toMatchObject({
       _tag: 'WaitOnPerson',
       reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'AnswerUnreadable', from: 'merge' } },

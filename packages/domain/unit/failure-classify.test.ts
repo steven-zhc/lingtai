@@ -150,9 +150,18 @@ describe('rerunInPlace', () => {
     expect(waits).toEqual(['1 minute', '5 minutes', '15 minutes', null])
   })
 
-  it('is never for a timeout, an abort, or words no transient row reads', () => {
+  it('is never for a timeout or an abort, and expects a redo to work only on a transient row (#1249)', () => {
     expect(rerunInPlace('timeout', 'API Error: 503', 0)).toBeNull()
     expect(rerunInPlace('aborted', 'API Error: 503', 0)).toBeNull()
-    expect(rerunInPlace('crash', 'something else', 0)).toBeNull()
+    expect(rerunInPlace('crash', 'API Error: 503', 0)).toMatchObject({ expected: true })
+    expect(rerunInPlace('crash', 'something else', 0)).toMatchObject({ expected: false })
+    expect(rerunInPlace('crash', '', 0)).toMatchObject({ expected: false })
+    expect(rerunInPlace('crash', 'something else', 3)).toBeNull()
+  })
+
+  it("is not for the account's limit, whichever runtime says it (§11 locks and releases)", () => {
+    for (const text of ["You've hit your monthly spend limit", "You've hit your usage limit"]) {
+      expect(rerunInPlace('crash', text, 0)).toBeNull()
+    }
   })
 })

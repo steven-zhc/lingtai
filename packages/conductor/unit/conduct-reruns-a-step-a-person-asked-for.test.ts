@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 import { resolveWaitHoldingEffect } from '../src/resolve-wait.ts'
 import { fakeGitHub, fakePorts, JUDGED, memoryStore, once, project, PROJECT, runtime } from '../test/one-attempt.ts'
 
-/** A reviewer that crashes on its first dispatch and answers on the next. */
+/** A reviewer that crashes on its first dispatch and on each of the three redos by rule (#1249), and answers on the next. */
 function reviewerCrashesOnce(seen: { id: string; prompt: string }[]): Runtime {
   return {
     ...runtime,
@@ -35,8 +35,8 @@ function reviewerCrashesOnce(seen: { id: string; prompt: string }[]): Runtime {
         turns: 2,
         durationMs: 1_000,
         costUsd: 0.1,
-        failure: seen.length === 1 ? { kind: 'crash' as const, detail: 'the process was killed' } : null,
-        text: seen.length === 1 ? null : '{"verdict":"accepted","findings":[]}',
+        failure: seen.length <= 4 ? { kind: 'crash' as const, detail: 'the process was killed' } : null,
+        text: seen.length <= 4 ? null : '{"verdict":"accepted","findings":[]}',
         sessionId: `sess-review-${seen.length}`,
       })
     },
@@ -44,7 +44,7 @@ function reviewerCrashesOnce(seen: { id: string; prompt: string }[]): Runtime {
 }
 
 describe('a step a person asked to run again', () => {
-  it('continues the same run at review with the recorded prompt under :rerun:1, spending no round', async () => {
+  it('continues the same run at review with the recorded prompt under the next :rerun:, spending no round', async () => {
     const store = memoryStore()
     const seen: { id: string; prompt: string }[] = []
     const base = {
@@ -60,7 +60,7 @@ describe('a step a person asked to run again', () => {
       log: () => {},
     }
     const first = await once(base, fakePorts([], store, true))
-    expect(seen).toHaveLength(1)
+    expect(seen).toHaveLength(4)
 
     const ticketId = ticketStream(PROJECT, 7)
     const wait = waitsOf(await store.read(ticketId)).at(-1)!
@@ -131,9 +131,9 @@ describe('a step a person asked to run again', () => {
       fakePorts([], store, true, { at: head, implementerCommits: false }),
     )
     expect(second.runId).toBe(runId)
-    expect(seen).toHaveLength(2)
-    expect(seen[1]!.id).toBe(`${seen[0]!.id}:rerun:1`)
-    expect(seen[1]!.prompt).toBe(seen[0]!.prompt)
+    expect(seen).toHaveLength(5)
+    expect(seen[4]!.id).toBe(`${seen[0]!.id}:rerun:4`)
+    expect(seen[4]!.prompt).toBe(seen[0]!.prompt)
 
     // No round, base merge, conflict round or transient retry was spent on the rerun.
     const spentAfter = reduceAttempt(await store.read(runId))

@@ -694,11 +694,16 @@ describe('when the agent meets the wall', () => {
       async (kind) => {
         const { did, run } = await hitTheWallDirty(true, { ends: stopsWith(kind) })
         const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
-        expect(kept).toHaveLength(1)
+        // A crash is redone by rule (#1249), and each run that stopped leaves its own WIP.
+        if (kind === 'crash') expect(kept.length).toBeGreaterThanOrEqual(1)
+        else expect(kept).toHaveLength(1)
         expect(kept[0]!.data).toMatchObject({ ref: 'agent/7', sha: WIP_SHA, stoppedBy: kind })
         expect(did.indexOf('git commit --no-verify')).toBeLessThan(did.indexOf('append RunKeptUncommitted'))
-        const refs = run.find((e) => e.type === 'RunRefsPublished')
-        expect(refs!.data).toMatchObject({ headSha: WIP_SHA })
+        // A redone crash resets to the head, so the published head is the WIP only where nothing is redone.
+        if (kind !== 'crash') {
+          const refs = run.find((e) => e.type === 'RunRefsPublished')
+          expect(refs!.data).toMatchObject({ headSha: WIP_SHA })
+        }
       },
     )
 

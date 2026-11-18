@@ -1455,12 +1455,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       /** The sha the visit's `StepStarted` recorded (#1246): what a redo of it carries forward, not the logical head. */
       readonly startedAt?: string
     } | null = null
-    /** The step a rule just asked again (#1224): the next visit to it is the second asking, and is asked no third time. */
-    let askingAgain: Step | null = null
-    /** This visit is itself an `ask-again`'s (#1224). Cleared when the visit starts, so a later arrival is asked once more. */
-    let arrivedAskedAgain = false
     /** The one place `StepRedone` is appended: a crash's rerun and a rule's both spend the count before the wait. */
-    const emitStepRedone = (step: Step, retry: number, said: string, wait: Duration.Input, askedAgain = false) =>
+    const emitStepRedone = (step: Step, retry: number, said: string, wait: Duration.Input) =>
       options.emit({
         type: 'StepRedone',
         data: {
@@ -1469,7 +1465,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           rerun: retry,
           said,
           waitMs: Duration.toMillis(Duration.fromInputUnsafe(wait)),
-          ...(askedAgain ? { askedAgain: true } : {}),
         },
       })
     const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.refusalFixes)
@@ -1649,11 +1644,10 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       readonly said: string
       readonly why: string
       readonly wait: Duration.Input
-      readonly askedAgain?: boolean
     }): Effect.Effect<boolean> =>
       Effect.gen(function* () {
         stepRedosSpent = redo.retry
-        yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait, redo.askedAgain)
+        yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait)
         if (Duration.toMillis(Duration.fromInputUnsafe(redo.wait)) > 0) yield* Effect.sleep(redo.wait)
         const cannot = (detail: string): boolean => {
           const ending: StepDidNotFinish = {
@@ -1750,7 +1744,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             stepRedos: stepRedosSpent,
             landingRetries: landingRetriesSpent,
           },
-          arrivedAskedAgain,
         )
         // **Before the judge** (#744): a declared judge at `red` would otherwise be paid first and
         // then overruled. Only when a round is on offer — without one the pass goes to a person anyway.
@@ -1994,7 +1987,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             // **A rerun spends a retry too, and is durable first** (#1224), as a crash's is: the count goes on
             // the log before the wait. Nothing moves but the count and the step: not `onSha`, the lap, the
             // rounds or the review's head. The route itself goes in the end-of-walk batch.
-            if (next.step !== 'prepared') askingAgain = next.step
             // `prepared`'s own visit, or this one's context when nothing recorded it: the step is run whole.
             const visit = (lastVisit as typeof lastVisit) ?? { context: contextFor(), reached: [...steps] }
             return yield* redoStep({
@@ -2012,7 +2004,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                   ? 'the registry answered with a 5xx'
                   : `the ${next.step} answer could not be read`,
               wait: rerunWait,
-              askedAgain: offer.proposal._tag === 'AnswerUnreadable',
             })
           }
           case 'FixRefusal':
@@ -2223,8 +2214,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             : contextFor()
       const visitedBefore: readonly StepReached[] = rerun === null ? [...steps] : rerun.reached
       rerun = null
-      arrivedAskedAgain = askingAgain === at
-      askingAgain = null
       /**
        * **Once per spine visit, before the pipeline runs** (0120 §1,
        * `events.ts`'s own `StepStarted` doc). `claim` and `end` run outside this
@@ -2399,22 +2388,22 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // branch above. No router visit for either — `conduct.ts` (`#466`) reads
         // `next.reason` directly.
         //
-        // **Except a crash a transient API error caused** (0108 §12, #1201): that run is run again
+        // **Except a crash** (0108 §12, #1201, #1249): any crash but the account's limit is redone
         // in place, with what it was handed. The count is on the stream before the wait, so a daemon
         // that dies during it has spent the retry.
         const reason = next.reason
         if (reason._tag === 'AgentCrashed' && (at === 'design' || at === 'implement' || at === 'review')) {
           const again = rerunInPlace(reason.cause, reason.detail, stepRedosSpent)
           if (again !== null) {
-            // The crash's rerun is the same arrival: an ask-again already spent on it is not given back.
-            askingAgain = arrivedAskedAgain ? at : null
             const retry = stepRedosSpent + 1
             const redone = yield* redoStep({
               step: at,
               visit: { context: visitContext, reached: visitedBefore, startedAt: recordedStartedAt },
               retry,
               said: reason.detail,
-              why: reason.detail,
+              why: again.expected
+                ? `a transient API error: ${reason.detail}`
+                : `a crash no rule recognises: ${reason.detail}`,
               wait: waitFor(retry),
             })
             if (redone) continue

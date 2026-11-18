@@ -2208,7 +2208,8 @@ runtime:
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
     expect(typesOf(theRun(store))).toContain('RunFailed')
     const spent = theRun(store)!.filter((e) => e.type === 'RunSpent')
-    expect(spent).toHaveLength(1)
+    // The crash is redone by rule (#1249): the dispatch and its three redos each end in a `RunSpent`.
+    expect(spent).toHaveLength(4)
     expect(spent[0]!.data).toEqual({
       for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 0 },
       runtime: 'claude-code',

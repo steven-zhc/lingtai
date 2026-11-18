@@ -775,15 +775,6 @@ export function isStepRedo(type: string): boolean {
   return type === 'StepRedone' || type === 'StepRerunInPlace'
 }
 
-/** Whether a rule's *ask again* was already spent on `step` in this run: a continuation of it is not granted another (#1205). */
-export function askedAgainOn(runEvents: readonly Envelope[], step: string): boolean {
-  return runEvents.some((event) => {
-    if (!isStepRedo(event.type)) return false
-    const d = event.data as PayloadOf<'StepRedone'>
-    return d.step === step && d.askedAgain === true
-  })
-}
-
 /**
  * Whether a held run left a clean pushed head a fix round can continue from, and
  * if not, why. The conductor's grant, `lingtai status` and the board all ask

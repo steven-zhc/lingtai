@@ -589,20 +589,22 @@ export const BOUNDS = {
 } as const
 
 /**
- * **Whether a crash is run again in place, and after how long** (0108 §12, #1201): null when
- * the cause is not `crash` (a wall is the recipe's bound), when the runtime's words are not on a
- * transient row, or when `spent` has used the attempt's `BOUNDS.stepRedos`.
+ * **Whether a crash is redone in place, and after how long** (0108 §12, #1249): null when the
+ * cause is not `crash` (a wall is the recipe's bound), when the words are the account's limit
+ * (§11's, which locks and releases — checked first), or when `spent` has used the attempt's
+ * `BOUNDS.stepRedos`. Any other crash is redone; `expected` says only whether the runtime's words
+ * are on a transient row, i.e. whether the redo is expected to clear it.
  */
 export function rerunInPlace(
   cause: 'crash' | 'timeout' | 'aborted',
   detail: string,
   spent: number,
-): { readonly wait: (typeof BOUNDS.stepRedoWaits)[number] } | null {
+): { readonly wait: (typeof BOUNDS.stepRedoWaits)[number]; readonly expected: boolean } | null {
   if (cause !== 'crash' || spent >= BOUNDS.stepRedos) return null
   const seen = classify({ platform: 'runtime', text: detail })
-  if (seen?.platform !== 'runtime' || seen.kind !== 'transient') return null
+  if (seen?.platform === 'runtime' && seen.kind === 'account-limit') return null
   const wait = BOUNDS.stepRedoWaits[spent]
-  return wait === undefined ? null : { wait }
+  return wait === undefined ? null : { wait, expected: seen?.platform === 'runtime' && seen.kind === 'transient' }
 }
 
 /**
@@ -648,13 +650,7 @@ function bornAtOrAfterImplement(step: Step): boolean {
  * `merge-base` is the one candidate that does, and it is a `MergeBase` and not a
  * `FixRound` for that reason: it spends no round (#593).
  */
-export function offerFor(
-  proposal: Proposal,
-  policy: RoutingPolicy,
-  spent: Spent,
-  /** This visit is itself the step's second asking (#1224): `ask-again` is once per arrival. */
-  askedAgain = false,
-): RouteOffer {
+export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent): RouteOffer {
   const available: Candidate[] = []
   const unavailable: ExcludedCandidate[] = []
 
@@ -766,17 +762,17 @@ export function offerFor(
       break
     }
     case 'AnswerUnreadable': {
-      // #1224, 0108 §18: the same agent is asked again, once per arrival. Only where an agent was
-      // dispatched to be asked: any step an agent can be declared at.
-      if (proposal.raw.trim() !== '' && !askedAgain && (spent.stepRedos ?? 0) < BOUNDS.stepRedos) {
+      // 0108 §12, §18, #1249: an answer that could not be read, empty or not, is a rule's: the
+      // same agent is asked again while `stepRedos` is left, then only a person. It judged
+      // nothing, so it buys no fix round and no restart.
+      if ((spent.stepRedos ?? 0) < BOUNDS.stepRedos) {
         available.push({
           id: 'ask-again',
           next: { _tag: 'RerunStep', step: proposal.from, retry: (spent.stepRedos ?? 0) + 1 },
         })
       }
-      const hasCriterion = proposal.raw.trim() !== ''
-      if (bornAtOrAfterImplement(proposal.from)) round('fix-lines', 'implement', hasCriterion)
-      restart(hasCriterion)
+      round('fix-lines', 'implement', false)
+      restart(false)
       break
     }
     case 'NothingProduced': {
