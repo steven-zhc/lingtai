@@ -424,3 +424,33 @@ describe("doc/reference.md's upcaster counts", () => {
     ).toBe(chains)
   })
 })
+
+/** #1243: `RunKeptUncommitted.arm` became `ref`, and an old row reads back with the same value there. */
+describe('a RunKeptUncommitted written before it named its ref', () => {
+  it('reads back with its arm in `ref`, unchanged', () => {
+    const old = {
+      arm: 'agent/9-attempt-1',
+      sha: 'a'.repeat(40),
+      parentSha: 'b'.repeat(40),
+      stoppedBy: 'out-of-turns',
+      files: 1,
+      insertions: 2,
+      deletions: 0,
+    }
+    const { arm, ...rest } = old
+    expect(parseStoredPayload('RunKeptUncommitted', 1, old)).toEqual({ ...rest, ref: arm })
+  })
+
+  it('leaves a current row alone', () => {
+    const now = {
+      ref: 'agent/9',
+      sha: 'a'.repeat(40),
+      parentSha: 'b'.repeat(40),
+      stoppedBy: 'timeout',
+      files: 1,
+      insertions: 2,
+      deletions: 0,
+    }
+    expect(parseStoredPayload('RunKeptUncommitted', SCHEMA_VER.RunKeptUncommitted, now)).toEqual(now)
+  })
+})

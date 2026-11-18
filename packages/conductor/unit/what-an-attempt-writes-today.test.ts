@@ -2112,11 +2112,12 @@ runtime:
     const reviewSpent16 = spent16.filter((e) => (e.data as { for: { step: string } }).for.step === 'review')
     expect(reviewSpent16).toHaveLength(2)
 
-    // The durable row must never offer the WIP sha as something origin judged.
+    // The WIP is on `HEAD` before `build` and `review` run (#1243), so the head
+    // they judged and the head the refs name are the same commit.
     const refs = run.filter((e) => e.type === 'RunRefsPublished')
     expect(refs.length).toBeGreaterThan(0)
     for (const row of refs) {
-      expect((row.data as { headSha: string | null }).headSha).not.toBe(fixture.WIP_SHA)
+      expect((row.data as { headSha: string | null }).headSha).toBe(fixture.WIP_SHA)
     }
 
     const item = await theItem(store)
@@ -2127,12 +2128,12 @@ runtime:
     const released = item.find((e) => e.type === 'TicketReleased')!
     expect(released.data).toMatchObject({ cause: { _tag: 'NewAttempt', newAttempt: 1 } })
     expect(releaseCauseOf(await allEvents(store))).toEqual([{ _tag: 'NewAttempt', newAttempt: 1 }])
-    // **The restart is bound to the commit `review` judged, never the WIP.**
+    // **The restart is bound to the commit `review` judged, which carries the WIP (#1243).**
     // This is the ceiling actually being spent — the bug this test is against
     // left the fix round's own head unrecorded on this exact ending.
     const all16 = await allEvents(store)
     const implementRound1 = stepOutcomesOf(all16).find((o) => o.step === 'implement' && o.round === 1)
-    expect(implementRound1?.actions[0]?.result).toMatchObject({ head: fixture.FIX_SHA })
+    expect(implementRound1?.actions[0]?.result).toMatchObject({ head: fixture.WIP_SHA })
 
     // The same pass, run again on the same store with fresh ports:
     // `reduced.restarts` already carries the first, and a second WIP on a

@@ -62,7 +62,6 @@ import { basename } from 'node:path'
 import { integrationStream } from '@lingtai/domain'
 import {
   UNREACHABLE_WAITS,
-  WIP_COMMIT_PREFIX,
   type RefusalReason,
   UNREACHABLE_PHRASE,
   classify,
@@ -516,22 +515,6 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         const ahead = yield* at(['rev-list', '--count', `${laneBase}..${laneBranch}`], mirror)
         if (Number(ahead) === 0) {
           return yield* refuse('no-commits', `${options.branch} has nothing ${options.base} does not`)
-        }
-
-        /**
-         * **The structural half of #468's guarantee** — the other half is that no
-         * step of the pass that makes one ever sees it (`conduct.ts`'s own
-         * `keepUncommittedWork` runs after `runAttempt` returns). This is what
-         * catches a *later* pass that committed on top of one instead of taking
-         * its contents and leaving it behind, as the brief asks.
-         */
-        const subjects = yield* at(['log', '--format=%s', `${laneBase}..${laneBranch}`], mirror)
-        if (subjects.split('\n').some((s) => s.startsWith(WIP_COMMIT_PREFIX))) {
-          return yield* refuse(
-            'wip-commit',
-            `${options.branch} carries a commit stopped by a ceiling (\`${WIP_COMMIT_PREFIX}…\`), ` +
-              `which must never land on ${options.base}`,
-          )
         }
 
         const changed = yield* at(['diff', '--name-only', `${laneBase}...${laneBranch}`], mirror)

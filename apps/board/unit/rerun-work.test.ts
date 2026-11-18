@@ -16,7 +16,7 @@ it('names the published head and the ref that must still carry it', () => {
 it('names the WIP carry’s parent with no ref to check', () => {
   const state = stateOf({
     published: published({ outcome: 'arm-wip', armSha: 'w'.repeat(40), headSha: null, branch: null }),
-    kept: [{ sha: 'w'.repeat(40), arm: 'arm/1', parentSha: 'p'.repeat(40) } as never],
+    kept: [{ sha: 'w'.repeat(40), ref: 'arm/1', parentSha: 'p'.repeat(40) } as never],
   })
   expect(rerunWorkFromState('r1', state, null)).toEqual({ head: 'p'.repeat(40), ref: null })
 })

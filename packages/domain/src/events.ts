@@ -894,22 +894,26 @@ export const RunRefsPublished = z.object({
 
 /**
  * **A stopped run's dirty tree, kept as its own commit rather than lost with
- * the worktree** (`#468`).
+ * the worktree** (`#468`, `#1243`).
  *
- * `conduct.ts`'s `keepUncommittedWork` appends this after the push that put
- * `sha` on `arm` succeeds, never before — a sha named here must be fetchable.
- * It is deliberately its own type rather than a field on `RunProducedDiff`:
- * `RunProducedDiff.headSha` is what `approve()` merges and what `waive()`
- * binds a waiver to, and this commit must never be offered to either. `arm`
- * (`agent/<n>-attempt-<k>`) is the only ref it is ever on; `agent/<n>` itself
- * carries `parentSha` at most, through `RunProducedDiff` exactly as it always
- * has.
+ * `conduct.ts`'s `keepUncommittedWork` commits it on the worktree's `HEAD` the
+ * moment the `implement` agent ends abnormally, and appends this after the push
+ * that put `sha` on `ref` succeeds, never before — a sha named here must be
+ * fetchable. It is its own type rather than a field on `RunProducedDiff`, which
+ * is what `approve()` merges and `waive()` binds a waiver to; the sha here is how
+ * code tells a WIP commit from the agent's own (0108 §20), and the lane lands a
+ * branch that carries one. **One row per abnormal end**, so a claim whose rerun
+ * stops a second time has two.
+ *
+ * `ref` is `agent/<n>` for a row written since `#1243`. A row written before it
+ * named the attempt's arm there — the only ref such a WIP was ever on — and
+ * `RunRefsPublished.armSha` is how those are told apart.
  *
  * @summary The conductor saved a stopped agent's uncommitted work as a commit of its own, so it was not lost.
  */
 export const RunKeptUncommitted = z.object({
-  /** `agent/<n>-attempt-<k>` — the one ref this commit is ever pushed to. */
-  arm: z.string(),
+  /** `agent/<n>` for a new row; the `agent/<n>-attempt-<k>` arm on a row written before `#1243`. */
+  ref: z.string(),
   /** The WIP commit itself. */
   sha: z.string(),
   /** What it is a WIP on top of: the agent's own last commit, or the base. */
@@ -2890,6 +2894,8 @@ const BUMPED: Partial<Record<EventType, number>> = {
   PassRouted: 2,
   // 2: a `ProposedEscalated` reason's excluded ceiling is named for its bound (0108, #1241). See the upcaster.
   WaitStarted: 2,
+  // 2: `arm` became `ref`, which names `agent/<n>` for a new row (0108 §20, #1243). See the upcaster.
+  RunKeptUncommitted: 2,
 }
 
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(

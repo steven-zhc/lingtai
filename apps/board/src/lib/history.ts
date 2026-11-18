@@ -367,12 +367,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   },
   /**
    * **A stopped run's dirty tree, kept rather than lost with the worktree**
-   * (`#468`). `arm` is the only ref it is ever on — never `branch`, and never
-   * `main`.
+   * (`#468`). `ref` is `agent/<n>` since #1243, and the attempt's arm on an older row.
    */
   RunKeptUncommitted: (d) =>
     `kept ${need(d, 'files')} file(s) +${need(d, 'insertions')} −${need(d, 'deletions')} as ${sha(d, 'sha')} ` +
-    `on ${need(d, 'arm')} — stopped by ${need(d, 'stoppedBy')}`,
+    `on ${need(d, 'ref')} — stopped by ${need(d, 'stoppedBy')}`,
   RunAppliedKeptWork: (d) =>
     d['unapplied'] === null
       ? `carried ${(d['applied'] as unknown[]).length} file(s) of ${sha(d, 'sha')} from ${need(d, 'arm')}` +

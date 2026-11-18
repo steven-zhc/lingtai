@@ -135,7 +135,7 @@ const SAMPLES = {
   ],
   RunKeptUncommitted: [
     {
-      arm: 'agent/59-attempt-1',
+      ref: 'agent/59-attempt-1',
       sha: SHA,
       parentSha: SHA,
       stoppedBy: 'timeout',
