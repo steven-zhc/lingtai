@@ -2,7 +2,6 @@
 
 import { Graph, layout } from '@dagrejs/dagre'
 import type { SplitProgress, WaitId } from '@lingtai/domain'
-import type { RootCause } from '@lingtai/domain/wait'
 
 import '@xyflow/react/dist/style.css'
 import {
@@ -29,7 +28,11 @@ const RANK_SEP = 64
 /** Room above the cards for the wave headings, and at the sides for the bands' padding. */
 const MARGIN_X = 20
 const MARGIN_Y = 48
-type SplitProposal = NonNullable<Extract<RootCause, { _tag: 'TicketTooBig' }>['split']>
+/** Either recorded plan: an old advice's split, or a cause's plan, which also says what each child covers. */
+type SplitProposal = {
+  children: readonly Child[]
+  blockedBy: readonly Link[]
+}
 
 const PARENT = 'parent'
 /** Child nodes are prefixed so no child key can collide with the parent or a band. */
@@ -105,7 +108,7 @@ export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: 
   const progress: SplitProgress = controls?.progress ?? { state: 'idle' }
   const mode = splitModeOf(progress, controls?.tickets ?? 'github')
   const frozen = progress.state === 'idle' ? null : progress.plan
-  const [localChildren, setChildren] = useState<Child[]>(() => plan.children.map((child) => ({ ...child })))
+  const [localChildren, setChildren] = useState<Child[]>(() => plan.children.map(({ key, title, body, kind }) => ({ key, title, body, kind })))
   const [localLinks, setLinks] = useState<Link[]>(() => plan.blockedBy.map((link) => ({ ...link })))
   const children: Child[] = frozen === null ? localChildren : frozen.children.map((child) => ({ ...child }))
   const links: Link[] = frozen === null ? localLinks : frozen.blockedBy.map((link) => ({ ...link }))

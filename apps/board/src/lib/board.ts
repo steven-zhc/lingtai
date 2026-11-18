@@ -28,9 +28,11 @@ import {
 import {
   acceptedTriageNote,
   adviceResolution,
+  triageAdviceOf,
   recommendedResolution,
   triageStatus,
   type Resolution,
+  type TriageResult,
   type TriageStatus,
 } from '@lingtai/domain/wait'
 import { eventStore, log } from '@lingtai/event-store'
@@ -187,7 +189,7 @@ export interface BoardCard {
   /**
    * The one button this waiting card carries (#647): the resolution triage
    * *advised*, in `recommendedResolution`'s terms, or null. Null for every
-   * triage status but `Done` with `TriageAdvised` — a wait's own default orders
+   * triage status but `Done` with an answer or an old advice — a wait's own default orders
    * the task page's cards but is not triage's recommendation — and null when
    * the advice is contradicted or the wait does not allow it.
    *
@@ -749,6 +751,20 @@ function triageContextFor(
   return v === null ? recipeUnreadContext(daemon) : triageContextOf(v, daemon)
 }
 
+/**
+ * Whether a result may recommend `FixRefusal`, which is the one move that needs the attempt's saved head read:
+ * a cause that calls for it, an old advice that named it, or an old small conflict that swaps it in (#652).
+ */
+function mayRecommendFixRefusal(result: TriageResult | null): boolean {
+  if (result === null || result === undefined || result._tag === 'TriageFailed') return false
+  if (result._tag === 'TriageAnswered')
+    return result.cause._tag === 'FixableLines' || result.cause._tag === 'ConflictingHunks'
+  return (
+    adviceResolution(result.resolution) === 'FixRefusal' ||
+    (result.cause._tag === 'ConflictingHunks' && result.cause.total <= CONFLICT_ROUND_HUNKS)
+  )
+}
+
 /** What the card's one button does, decided from the same `status` as its cause line (#647). */
 function moveOf(
   t: Pick<TaskCard, 'wait' | 'awaitingSha'>,
@@ -759,10 +775,10 @@ function moveOf(
   // The card holds the crash wait's own triage; the standing wait's advice is the
   // person's to read on the task page (#654).
   if (t.wait.reason._tag === 'AgentCrashed' && t.wait.reason.standing !== undefined) return null
-  if (status._tag !== 'Done' || status.result._tag !== 'TriageAdvised') return null
+  if (status._tag !== 'Done' || status.result._tag === 'TriageFailed') return null
   const resolution = recommendedResolution(t.wait.reason, status, { savedHead: fixHead !== null })
   if (resolution === null) return null
-  const advice = adviceResolution(status.result.resolution)
+  const advice = triageAdviceOf(status.result)
   switch (resolution) {
     case 'FixRefusal':
       return fixHead === null
@@ -771,7 +787,7 @@ function moveOf(
             resolution,
             onSha: fixHead,
             note: null,
-            ...(advice === resolution ? {} : { advised: advice }),
+            ...(advice === null || advice === resolution ? {} : { advised: advice }),
           }
     case 'Approve':
       return t.awaitingSha === null
@@ -856,7 +872,7 @@ export function toCard(
     short: words?.short ?? null,
     split: t.split === null ? null : splitLine(t.split),
     cause:
-      status !== 'Unknown' && status?._tag === 'Done' && status.result._tag === 'TriageAdvised'
+      status !== 'Unknown' && status?._tag === 'Done' && status.result._tag !== 'TriageFailed'
         ? { ...presentCause(status.result.cause), summary: status.result.summary }
         : null,
     move: moveOf(t, status, fixHead),
@@ -1503,9 +1519,7 @@ async function laneProgress(
       t.runId !== null &&
       t.wait !== null &&
       !railedIds.has(t.taskId) &&
-      t.triage.result?._tag === 'TriageAdvised' &&
-      (adviceResolution(t.triage.result.resolution) === 'FixRefusal' ||
-        (t.triage.result.cause._tag === 'ConflictingHunks' && t.triage.result.cause.total <= CONFLICT_ROUND_HUNKS)),
+      mayRecommendFixRefusal(t.triage.result),
   )
   const headOf = (task: TaskCard, state: AttemptState) => {
     const saved = task.wait === null ? null : savedFixWorkFromState(task.runId as string, state)

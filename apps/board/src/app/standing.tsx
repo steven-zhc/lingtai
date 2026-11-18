@@ -1,5 +1,5 @@
 import { inWords } from '@lingtai/conductor/queue'
-import { MERGE_HUNKS_ONE_BY_ONE, STEPS } from '@lingtai/domain'
+import { MERGE_HUNKS_ONE_BY_ONE, STEPS, type CauseHunk } from '@lingtai/domain'
 // The same subpath `actions.ts`'s `sendAttempt` already reads `allowedResolutions`
 // off (#483) — so the page and the server action can never disagree about
 // which resolutions a wait allows.
@@ -7,7 +7,9 @@ import {
   adviceResolution,
   allowedResolutions,
   recommendedResolution,
+  triageCauseOf,
   type Resolution,
+  type TriageResult,
   type TriageStatus,
   type WaitReason,
 } from '@lingtai/domain/wait'
@@ -426,6 +428,30 @@ import { ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
 
 const MAX_TICKET_CELL = 600
 
+/**
+ * The line under the summary. A `TriageAnswered` recommends what its cause calls for where the decision offers it;
+ * an old `TriageAdvised` says what it advised, as advice that was given and never as a recommendation of today.
+ */
+function recommendationLine(
+  result: Exclude<TriageResult, { _tag: 'TriageFailed' }>,
+  cause: NonNullable<ReturnType<typeof triageCauseOf>>,
+  recommended: Resolution['_tag'] | null,
+): string {
+  const paid = recommended === 'FixRefusal' ? ' — only your click grants the paid round.' : ''
+  if (result._tag === 'TriageAnswered')
+    return recommended === null
+      ? 'This decision does not offer the move this cause calls for.'
+      : `Recommends ${RESOLUTION_COPY[recommended].title}${paid}`
+  const advised = adviceResolution(result.resolution)
+  if (recommended === advised) return `Recommends ${RESOLUTION_COPY[advised].title}${paid}`
+  if (cause._tag === 'WrongApproach') return 'The approach is wrong; start over from base instead of continuing saved work.'
+  if (cause._tag === 'FixableLines' && advised === 'Approve')
+    return 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
+  if (cause._tag === 'ConflictingHunks' && recommended === 'FixRefusal')
+    return `Triage advised ${RESOLUTION_COPY[advised].title}. With ${cause.total} hunk${cause.total === 1 ? '' : 's'} to resolve, a refusal fix is drawn first instead${cause.hunks.some((h) => h._tag === 'Divergent') ? ': each divergent hunk’s recommended answer goes to the fixer' : ''}.`
+  return `Triage advised ${RESOLUTION_COPY[advised].title}, which this decision does not offer.`
+}
+
 /** Agent-written fields stay React text; there is no markdown path in this band. */
 export function TriageBand({
   reason,
@@ -504,8 +530,10 @@ export function TriageBand({
             ) : null
           break
         case 'ConflictingHunks':
-          const mechanical = cause.hunks.filter((hunk) => hunk._tag === 'Mechanical')
-          const divergent = cause.hunks.filter((hunk) => hunk._tag === 'Divergent')
+          const allHunks: readonly CauseHunk[] = cause.hunks
+          const mechanical = allHunks.filter((hunk) => hunk._tag === 'Mechanical')
+          const contradicting = allHunks.filter((hunk) => hunk._tag === 'Contradicting')
+          const divergent = allHunks.filter((hunk) => hunk._tag === 'Divergent')
           parts = (
             <>
               <p className="triage-hunk-count">
@@ -522,6 +550,22 @@ export function TriageBand({
                           {hunk.line === null ? '' : `:${hunk.line}`}
                         </span>
                         <span>Mechanical</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {contradicting.length > 0 ? (
+                <div className="triage-hunk-group">
+                  <h3>Contradicting · {contradicting.length}</h3>
+                  <ul>
+                    {contradicting.map((hunk, index) => (
+                      <li key={index} className="triage-hunk triage-hunk--contradicting">
+                        <span className="triage-location">
+                          {hunk.path}
+                          {hunk.line === null ? '' : `:${hunk.line}`}
+                        </span>
+                        <span>{hunk.why}</span>
                       </li>
                     ))}
                   </ul>
@@ -552,16 +596,38 @@ export function TriageBand({
           )
           break
         case 'TicketTooBig':
-          parts = cause.split === undefined ? null : <SplitPlan plan={cause.split} controls={split} />
+          parts = (
+            <>
+              {'spentOn' in cause && cause.spentOn !== null ? <p>The run spent its turns on: {cause.spentOn}</p> : null}
+              {('plan' in cause ? cause.plan : cause.split) == null ? null : (
+                <SplitPlan plan={('plan' in cause ? cause.plan : cause.split)!} controls={split} />
+              )}
+              {'plan' in cause && cause.plan !== null && cause.plan.uncovered.length > 0 ? (
+                <p>No child covers: {cause.plan.uncovered.join('; ')}</p>
+              ) : null}
+            </>
+          )
           break
         case 'WrongApproach':
+          parts = 'why' in cause ? <p>{cause.why}</p> : null
+          break
         case 'SetupBroken':
+          parts =
+            'what' in cause ? (
+              <p>
+                {cause.what} — {cause.repair}
+              </p>
+            ) : null
+          break
+        case 'Unfinished':
+          parts = cause.addToBody === null ? null : <p>Add to the ticket: {cause.addToBody}</p>
           break
       }
       // Triage's advice is the recommendation, whatever route the judge took:
       // its routing is why this wait exists, and is not drawn as a competing
       // reading (decided 2026-10-25).
-      const kept = recommendedResolution(reason, status, { savedHead }) === adviceResolution(result.resolution)
+      const recommended = recommendedResolution(reason, status, { savedHead })
+      const recommendation = recommendationLine(result, cause, recommended)
       return (
         <section id="triage" className="triage-band triage-band--advised" data-rank="triage">
           <div className="triage-head">
@@ -570,21 +636,7 @@ export function TriageBand({
           </div>
           {headLine ? <p>{headLine}</p> : null}
           <p className="triage-summary">{result.summary}</p>
-          <p className="triage-recommendation">
-            {kept
-              ? `Recommends ${RESOLUTION_COPY[adviceResolution(result.resolution)].title}`
-              : cause._tag === 'WrongApproach'
-                ? 'The approach is wrong; start over from base instead of continuing saved work.'
-                : cause._tag === 'FixableLines' && result.resolution === 'Approve'
-                  ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
-                  : cause._tag === 'ConflictingHunks' &&
-                      recommendedResolution(reason, status, { savedHead }) === 'FixRefusal'
-                    ? `Triage advised ${RESOLUTION_COPY[adviceResolution(result.resolution)].title}. With ${cause.total} hunk${cause.total === 1 ? '' : 's'} to resolve, a refusal fix is drawn first instead${cause.hunks.some((h) => h._tag === 'Divergent') ? ': each divergent hunk’s recommended answer goes to the fixer' : ''}.`
-                    : `Triage advised ${RESOLUTION_COPY[adviceResolution(result.resolution)].title}, which this decision does not offer.`}
-            {kept && adviceResolution(result.resolution) === 'FixRefusal'
-              ? ' — only your click grants the paid round.'
-              : null}
-          </p>
+          <p className="triage-recommendation">{recommendation}</p>
           {parts ? (
             <div className="triage-evidence" role="group" aria-label="Triage’s evidence">
               {parts}
@@ -994,7 +1046,7 @@ export function Standing({
   // that is not drawn cannot be the one drawn first.
   const savedHead = Boolean(standing.fixWork && 'head' in standing.fixWork)
   const triageAdvised =
-    standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised'
+    standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag !== 'TriageFailed'
       ? standing.triageStatus.result
       : null
   const advice =
@@ -1073,7 +1125,7 @@ export function Standing({
    */
   const question = standing.diagnosis === null ? standing.question : null
   const cause =
-    standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised'
+    standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag !== 'TriageFailed'
       ? standing.triageStatus.result.cause
       : null
   const waiting = standing.state === 'blocked'
@@ -1172,7 +1224,7 @@ export function Standing({
     ids: { project: string; issue: number; waitId: NonNullable<typeof standing.waitId> },
     recommendedAs: 'requeue' | null,
   ) => <Requeue {...ids} asked={false} question={standing.askedQuestion} recommended={recommendedAs} />
-  const advisedSurface = standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag === 'TriageAdvised'
+  const advisedSurface = standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag !== 'TriageFailed'
   // Once triage has advised a wait, its panel says what stopped and why, in the
   // judge's words and triage's. Saying it a second time above that panel, as a
   // section of its own, was the heaviest thing on the page and the least read

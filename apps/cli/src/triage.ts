@@ -836,9 +836,8 @@ const waitTriageWithin = (
         const total = conflictPaths.reduce((sum, path) => sum + path.hunks, 0)
         if (total > MERGE_HUNKS_ONE_BY_ONE) {
           mechanical = {
-            _tag: 'TriageAdvised',
+            _tag: 'TriageAnswered',
             cause: { _tag: 'ConflictingHunks', hunks: [], total },
-            resolution: 'Requeue',
             summary: `${total} merge hunks need a fresh attempt from the new base`,
             want: null,
           }
@@ -1130,7 +1129,7 @@ const waitTriageWithin = (
                 continue
               }
 
-              if (reply.kind === 'advised') {
+              if (reply.kind === 'answered') {
                 if (conflictPaths !== null) {
                   const cause = reply.result.cause
                   const counted = new Set(
