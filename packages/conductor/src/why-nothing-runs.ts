@@ -65,6 +65,7 @@ export type RootKind =
   | 'blockers-unlistable'
   | 'blockers-closed'
   | 'backoff'
+  | 'publishing'
   | 'unknown'
 
 export interface Root {
@@ -88,7 +89,7 @@ export const CHAIN_HOPS_MOST = 10
 /** *One look*: a row left `running` this recently means something is in flight. */
 export const IN_FLIGHT_WITHIN_MS = 5 * 60_000
 
-const HELD_REASONS = new Set(['blocked-by', 'base-red'])
+const HELD_REASONS = new Set(['blocked-by', 'publishing', 'base-red'])
 
 /** Offered tickets `selectRunnable` can still take or is holding for a retry: a waiting or finished row is not queued. */
 function queuedOffered(facts: Pick<WhyFacts, 'offered' | 'rows'>): number[] {
@@ -352,6 +353,16 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
       add(v.key, v.kind, v.describe, ref, v.on)
     }
   }
+
+  // A split's children are passed over until the split is read back; it comes back on its own.
+  for (const s of facts.skipped.filter((s) => s.reason === 'publishing'))
+    add(
+      'publishing',
+      'publishing',
+      (n) =>
+        `${plural(n, 'ticket is', 'tickets are')} a split's ${n === 1 ? 'child' : 'children'} still being published`,
+      s.ref,
+    )
 
   // Everything runnable waiting out its retry.
   const wasRunnable = queuedOffered(facts)

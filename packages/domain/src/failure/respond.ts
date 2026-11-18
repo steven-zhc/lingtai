@@ -587,6 +587,8 @@ export const BOUNDS = {
   baseBranchMerges: 10,
   /** At most this many times a ticket stops to ask a person, then the agent assumes and proceeds (#649). */
   personAsks: 5,
+  /** A ticket is split at most once per root (#1261): spent by its first `SplitStarted` for any wait. */
+  ticketSplits: 1,
 } as const
 
 /**

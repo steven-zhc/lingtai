@@ -28,16 +28,23 @@
  * `WaitResolved`; it appends `TicketSplit` ahead of it in the same
  * transaction, so a retry after a lost race re-reads and lands only that.
  */
-import { reduceTicket, splitProgressOf, ticketStream, type PayloadOf, type WaitId } from '@lingtai/domain'
+import {
+  PUBLISHING_LABEL,
+  reduceTicket,
+  splitProgressOf,
+  ticketStream,
+  type PayloadOf,
+  type WaitId,
+} from '@lingtai/domain'
 import { allowedResolutions, splitPlanProblems, describeSplitProblem } from '@lingtai/domain/wait'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import type { GitHubClient, LinkedIssue } from '@lingtai/github'
 import { Cause, Effect } from 'effect'
 
+import { upsertSection } from './body-section.ts'
 import { decidingEffect } from './deciding.ts'
 import { asFailure } from './port-face.ts'
 import { describeReason, resolveWaitHoldingEffect } from './resolve-wait.ts'
-import { splitDoneWhen } from './split-body.ts'
 import { BodyChanged } from './ticket-store.ts'
 import { recordSplitProgress } from './ticket/commands.ts'
 
@@ -52,11 +59,47 @@ export type SplitClient = Pick<
   | 'addBlockedBy'
   | 'listBlockedBy'
   | 'listIssuesSince'
+  | 'addLabels'
+  | 'removeLabel'
+  | 'createLabel'
 >
 
 export interface SplitPlanInput {
-  children: readonly { key: string; title: string; body: string; kind: string }[]
+  /** `covers` is the parent's `## Done when` items a child takes, where the plan names them. */
+  children: readonly { key: string; title: string; body: string; kind: string; covers?: readonly string[] }[]
   blockedBy: readonly { ticket: string; blockedBy: string }[]
+  /** The parent's items no child covers. */
+  uncovered?: readonly string[]
+}
+
+/** The key of the parent's `## Split into` section (`upsertSection`). */
+const SPLIT_INTO_KEY = 'split-into'
+
+/** A child's marker, matched whatever its wait and key: a body carrying one is a child and is never split (#1261). */
+const ANY_SPLIT_MARKER = /<!-- lingtai:split \S+ \S+ -->/
+
+/** Done-when items are a person's text; one that quotes a section marker would make `upsertSection` refuse. */
+const defuse = (text: string) => text.replaceAll('lingtai:answer', 'lingtai:\u200banswer')
+
+/**
+ * The parent's body with a `## Split into` section of its own: each child, and under it the
+ * items it covers. `## Done when` is never touched (#1261). Applying it twice is a no-op.
+ */
+export function splitIntoSection(
+  body: string,
+  children: readonly { number: number; title: string; covers?: readonly string[] }[],
+  uncovered: readonly string[] = [],
+): string {
+  const lines = ['## Split into', '']
+  for (const c of children) {
+    lines.push(`- #${c.number} — ${defuse(c.title.trim())}`)
+    for (const item of c.covers ?? []) lines.push(`  - ${defuse(item.trim())}`)
+  }
+  if (uncovered.length > 0) {
+    lines.push('', 'Not covered by any child:', '')
+    for (const item of uncovered) lines.push(`- ${defuse(item.trim())}`)
+  }
+  return upsertSection(body, SPLIT_INTO_KEY, lines.join('\n'))
 }
 
 /** How a child says which wait and plan entry made it. Invisible when rendered. */
@@ -168,8 +211,9 @@ function stepNames(plan: SplitPlanInput | undefined): string[] {
     ...plan.children.map((c) => `write ${c.key}`),
     ...plan.blockedBy.map((d) => `chain ${d.ticket}←${d.blockedBy}`),
     ...plan.children.map((c) => `hold parent ← ${c.key}`),
-    'done when',
+    'split into',
     'record the split',
+    ...plan.children.map((c) => `publish ${c.key}`),
     'end the wait',
   ]
 }
@@ -221,6 +265,19 @@ export function splitTicketHoldingEffect(
           `the split plan is refused — nothing was written: ${problems.map(describeSplitProblem).join('; ')}.`,
         )
     }
+    // **Once per root** (#1261): a `SplitStarted` for another wait has spent the split; one for this wait is this split resuming.
+    const spent = events.some((e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId !== waitId)
+    if (spent) return stop(`${ticketId} was already split once — nothing was written.`)
+    if (first === undefined) {
+      // A read, so nothing is written: a child is known by its marker, and a child is never split.
+      const parent = yield* settled(lift(() => github.getIssue(options.issue)))
+      if (!parent.ok)
+        return stop(`the ticket's body could not be read — nothing was written: ${errorMessage(parent.error)}`)
+      if (ANY_SPLIT_MARKER.test(parent.value.body))
+        return stop(
+          `${ticketId} carries a split marker, so it is a split's child and is not split — nothing was written.`,
+        )
+    }
     // Before this attempt's own `SplitStarted`: a read that threw after it would leave a start with nothing terminal after it.
     const since = new Date((first?.at ?? new Date()).getTime() - SKEW_MS)
 
@@ -236,7 +293,11 @@ export function splitTicketHoldingEffect(
       recordSplitProgress(store, ticketId, type, data, options.by).pipe(Effect.mapError(asFailure))
     yield* note('SplitStarted', {
       waitId,
-      plan: { children: [...plan.children], blockedBy: [...plan.blockedBy] },
+      plan: {
+        children: plan.children.map((c) => ({ ...c, covers: c.covers === undefined ? undefined : [...c.covers] })),
+        blockedBy: [...plan.blockedBy],
+        ...(plan.uncovered === undefined ? {} : { uncovered: [...plan.uncovered] }),
+      },
       instance: options.instance,
     })
     options.onStarted?.()
@@ -303,6 +364,24 @@ export function splitTicketHoldingEffect(
     const expectedBody = (child: SplitPlanInput['children'][number]) =>
       `${child.body.trimEnd()}\n\n${splitMarker(waitId, child.key)}\n`
 
+    /** Whether the whole split is already on GitHub, so a child without the label was published rather than half-written. Read once. */
+    let publishedRead: boolean | undefined
+    const alreadyPublished: Effect.Effect<boolean, Error> = Effect.gen(function* () {
+      if (publishedRead !== undefined) return publishedRead
+      let all = plan.children.every((c) => found.has(c.key) && known.has(c.key))
+      if (all) {
+        const parentHolds = yield* lift(() => github.listBlockedBy(options.issue))
+        const subs = yield* lift(() => github.listSubIssues(options.issue))
+        all = plan.children.every((c) => links(parentHolds, numberOf(c.key)) && links(subs, numberOf(c.key)))
+        for (const d of plan.blockedBy) {
+          if (!all) break
+          all = links(yield* lift(() => github.listBlockedBy(numberOf(d.ticket))), numberOf(d.blockedBy))
+        }
+      }
+      publishedRead = all
+      return all
+    })
+
     /** Create (unless a marker answers), attach, record — and only then is the next child started. */
     // Uninterruptible: a create already sent cannot be taken back, so an interruption
     // must not release the decide lock before the child is found and recorded.
@@ -311,13 +390,14 @@ export function splitTicketHoldingEffect(
         Effect.gen(function* () {
           let status: StepStatus = 'skipped'
           if (!found.has(child.key)) {
-            yield* lift(() =>
+            const create = lift(() =>
               github.createIssue({
                 title: child.title.trim(),
                 body: expectedBody(child),
-                labels: [child.kind],
+                labels: [child.kind, PUBLISHING_LABEL],
               }),
-            ).pipe(
+            )
+            yield* create.pipe(
               Effect.map((opened) => {
                 found.set(child.key, opened.number)
               }),
@@ -330,13 +410,36 @@ export function splitTicketHoldingEffect(
                       () => true,
                       () => Effect.fail(err),
                     ),
-                    Effect.flatMap(() => (found.has(child.key) ? Effect.void : Effect.fail(err))),
+                    Effect.flatMap(() => {
+                      if (found.has(child.key)) return Effect.void
+                      // A repository without the label may refuse a create that names it, and GitHub says only
+                      // `Validation Failed` with the detail in `errors`, which the client drops: so the message is not
+                      // read. Make the label (idempotent) and create once more; if that fails too, the first error stands.
+                      return lift(() => github.createLabel(PUBLISHING_LABEL)).pipe(
+                        Effect.flatMap(() => create),
+                        Effect.map((opened) => {
+                          found.set(child.key, opened.number)
+                        }),
+                        Effect.catchIf(
+                          () => true,
+                          () => Effect.fail(err),
+                        ),
+                      )
+                    }),
                   ),
               ),
             )
             status = 'done'
           }
           const number = numberOf(child.key)
+          // Recorded means attached, not published. Only a split whose every child, link and parent blocker is
+          // already on GitHub can have had its labels lifted; any other split's child lacking the label gets it back.
+          if (!(yield* alreadyPublished)) {
+            const labelled = (yield* lift(() => github.getIssue(number))).labels.some(
+              (l) => l.name === PUBLISHING_LABEL,
+            )
+            if (!labelled) yield* lift(() => github.addLabels(number, [PUBLISHING_LABEL]))
+          }
           const attached = yield* ensure(
             () => github.listSubIssues(options.issue),
             () => github.addSubIssue(options.issue, number),
@@ -359,11 +462,11 @@ export function splitTicketHoldingEffect(
         }),
       )
 
-    const writeDoneWhen: Effect.Effect<StepStatus, Error> = Effect.gen(function* () {
-      const numbers = plan.children.map((c) => numberOf(c.key))
+    const writeSplitInto: Effect.Effect<StepStatus, Error> = Effect.gen(function* () {
+      const listed = plan.children.map((c) => ({ number: numberOf(c.key), title: c.title, covers: c.covers }))
       for (let attempt = 0; ; attempt++) {
         const body = (yield* lift(() => github.getIssue(options.issue))).body
-        const next = splitDoneWhen(body, numbers)
+        const next = splitIntoSection(body, listed, plan.uncovered)
         if (next === body) return attempt === 0 ? ('skipped' as const) : ('done' as const)
         const retry = yield* lift(() => github.updateBody(options.issue, next, { ifUnchanged: body })).pipe(
           Effect.as(false),
@@ -374,8 +477,8 @@ export function splitTicketHoldingEffect(
         )
         if (retry) continue
         const after = (yield* lift(() => github.getIssue(options.issue))).body
-        if (splitDoneWhen(after, numbers) !== after)
-          return yield* Effect.fail(new Error('the Done when section did not land on read-back'))
+        if (splitIntoSection(after, listed, plan.uncovered) !== after)
+          return yield* Effect.fail(new Error('the Split into section did not land on read-back'))
         return 'done' as const
       }
     })
@@ -412,7 +515,7 @@ export function splitTicketHoldingEffect(
           ),
         ) as Effect.Effect<StepOutcome, unknown>,
       })),
-      { name: 'done when', run: writeDoneWhen },
+      { name: 'split into', run: writeSplitInto },
       {
         // Every read here is GitHub's answer, not the plan's: the sub-issue
         // listing is where the `id` comes from (no create call returns one), and
@@ -421,6 +524,10 @@ export function splitTicketHoldingEffect(
         run: Effect.gen(function* () {
           const subs = (yield* lift(() => github.listSubIssues(options.issue))).filter(here)
           const keyOf = new Map(plan.children.map((c) => [numberOf(c.key), c.key] as const))
+          const parentHolds = yield* lift(() => github.listBlockedBy(options.issue))
+          for (const c of plan.children)
+            if (!links(parentHolds, numberOf(c.key)))
+              return yield* Effect.fail(new Error(`the parent is not blocked by #${numberOf(c.key)} on read-back`))
           const children: { key: string; number: number; id: number }[] = []
           const blockedBy: { ticket: string; blockedBy: string }[] = []
           for (const c of plan.children) {
@@ -441,6 +548,21 @@ export function splitTicketHoldingEffect(
           return 'not-reached' as const
         }) as Effect.Effect<StepOutcome, unknown>,
       },
+      // Only now, with every child, link and blocked-by read back, is the label lifted: one DELETE per
+      // child, never `setLabels`, so an `agent:hold` a person added survives. Idempotent on a retry.
+      ...plan.children.map((child) => ({
+        name: `publish ${child.key}`,
+        run: Effect.gen(function* () {
+          const number = numberOf(child.key)
+          const before = yield* lift(() => github.getIssue(number))
+          const had = before.labels.some((l) => l.name === PUBLISHING_LABEL)
+          if (had) yield* lift(() => github.removeLabel(number, PUBLISHING_LABEL))
+          const after = yield* lift(() => github.getIssue(number))
+          if (after.labels.some((l) => l.name === PUBLISHING_LABEL))
+            return yield* Effect.fail(new Error(`#${number} still carries ${PUBLISHING_LABEL} on read-back`))
+          return (had ? 'done' : 'skipped') as StepOutcome
+        }),
+      })),
       {
         name: 'end the wait',
         run: Effect.suspend(() =>
@@ -448,7 +570,11 @@ export function splitTicketHoldingEffect(
             {
               ticketId,
               waitId,
-              resolution: { _tag: 'Split', children: [...plan.children], blockedBy: [...plan.blockedBy] },
+              resolution: {
+                _tag: 'Split',
+                children: plan.children.map(({ covers: _covers, ...c }) => c),
+                blockedBy: [...plan.blockedBy],
+              },
               by: options.by,
               note: options.note,
               kinds: options.kinds,
@@ -465,6 +591,7 @@ export function splitTicketHoldingEffect(
     const knownChildren = () =>
       plan.children.filter((c) => found.has(c.key)).map((c) => ({ key: c.key, number: numberOf(c.key) }))
     steps[0]!.status = 'done'
+    const recordAt = actions.findIndex((a) => a.name === 'record the split')
 
     let failedStep = ''
     for (const [i, action] of actions.entries()) {
@@ -474,12 +601,14 @@ export function splitTicketHoldingEffect(
         const outcome = run.value
         if (typeof outcome === 'string') {
           steps[i]!.status = outcome
-          if (action.name === 'end the wait') steps[i - 1]!.status = 'done'
+          if (action.name === 'end the wait') steps[recordAt]!.status = 'done'
         } else {
           steps[i]!.status = 'failed'
           steps[i]!.detail = outcome.detail
-          steps[i - 1]!.status = 'failed'
-          steps[i - 1]!.detail = outcome.detail
+          if (action.name === 'end the wait') {
+            steps[recordAt]!.status = 'failed'
+            steps[recordAt]!.detail = outcome.detail
+          }
           result = {
             ok: false,
             ticketId,
@@ -495,8 +624,8 @@ export function splitTicketHoldingEffect(
         steps[i]!.status = 'failed'
         steps[i]!.detail = message
         if (action.name === 'end the wait') {
-          steps[i - 1]!.status = 'failed'
-          steps[i - 1]!.detail = message
+          steps[recordAt]!.status = 'failed'
+          steps[recordAt]!.detail = message
         }
         failedStep = action.name
         result = {
