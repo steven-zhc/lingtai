@@ -1,7 +1,7 @@
 /** The call an account limit cut off is named by its spend, not by the last prompt that happened to be recorded (#1205). */
 import { describe, expect, it } from 'vitest'
 
-import { askedAgainOn, cutOffPromptOf } from '../src/index.ts'
+import { askedAgainOn, cutOffPromptOf, stepStartedAtOf } from '../src/index.ts'
 import { makeStream } from '../test/support.ts'
 
 const forOf = (name: string) => ({ _tag: 'Action' as const, step: 'review' as const, name, round: 0 })
@@ -38,5 +38,22 @@ describe('askedAgainOn', () => {
     const rerun = { runId: 'r', step: 'review', rerun: 1, said: 'x', waitMs: 0 }
     expect(askedAgainOn([e('StepRedone', rerun)], 'review')).toBe(false)
     expect(askedAgainOn([e('StepRedone', { ...rerun, askedAgain: true })], 'review')).toBe(true)
+  })
+})
+
+describe('stepStartedAtOf (#1246)', () => {
+  it('reads the latest arrival at the step that names a sha, and an old row without one is skipped', () => {
+    const e = makeStream('pass-1')
+    const started = (step: 'implement' | 'build', startedAt?: string) =>
+      e('StepStarted', { runId: 'r', step, round: 0, ...(startedAt === undefined ? {} : { startedAt }) })
+    const events = [
+      started('implement', 'aaa'),
+      started('build', 'bbb'),
+      started('implement', 'ccc'),
+      started('implement'),
+    ]
+    expect(stepStartedAtOf(events, 'implement')).toBe('ccc')
+    expect(stepStartedAtOf(events, 'review')).toBeNull()
+    expect(stepStartedAtOf([started('implement')], 'implement')).toBeNull()
   })
 })

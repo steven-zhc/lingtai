@@ -1290,6 +1290,12 @@ export const StepStarted = z.object({
   step: Step,
   /** This pass's own count of the rounds it has bought, 0 on the first lap. */
   round: z.number().int(),
+  /**
+   * The sha the step began at on this arrival (0108 §12, #1246): the head it was first handed, carried unchanged
+   * onto every redo of it, so a continuation in a new process measures what the step added from the log rather
+   * than from memory. Absent on a row written before it existed — and a reader falls back to the head it re-cut at.
+   */
+  startedAt: z.string().optional(),
 })
 
 /**
