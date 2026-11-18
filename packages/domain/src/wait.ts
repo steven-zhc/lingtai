@@ -25,7 +25,7 @@ import { z } from 'zod'
 import { decidingAction, WaitId, type StepOutcome } from './action.ts'
 import { fromOf, Proposal } from './proposal.ts'
 import { RouteEscalation } from './route.ts'
-import { SplitProposal, SplitResolution } from './split.ts'
+import { SplitProposal, SplitProposalAnswer, SplitResolution } from './split.ts'
 import {
   CONFLICT_ROUND_HUNKS,
   Hunk,
@@ -903,20 +903,25 @@ const ConflictingHunks = z
   })
 
 /** The run did not finish, and either the body can save the next one what it spent its turns on, or the ticket is split. */
-const TicketTooBig = z.strictObject({ _tag: z.literal('TicketTooBig'), split: SplitProposal.optional() })
+const ticketTooBig = <S extends z.ZodType>(split: S) =>
+  z.strictObject({ _tag: z.literal('TicketTooBig'), split: split.optional() })
 
 /** The repository or the machine refused before or around any agent's work — no edit to the ticket can help. */
 const SetupBroken = z.strictObject({ _tag: z.literal('SetupBroken') })
 
 /** Why triage recommends what it does — 0118 §4's six causes. */
-export const RootCause = z.discriminatedUnion('_tag', [
-  UndecidedQuestion,
-  FixableLines,
-  WrongApproach,
-  ConflictingHunks,
-  TicketTooBig,
-  SetupBroken,
-])
+const causesWith = <S extends z.ZodType>(split: S) =>
+  z.discriminatedUnion('_tag', [
+    UndecidedQuestion,
+    FixableLines,
+    WrongApproach,
+    ConflictingHunks,
+    ticketTooBig(split),
+    SetupBroken,
+  ])
+
+/** The recorded cause: a split's children carry the `kind` the runner set (#1271). */
+export const RootCause = causesWith(SplitProposal)
 export type RootCause = z.infer<typeof RootCause>
 
 /** Triage ran and found nothing to advise. */
@@ -927,22 +932,26 @@ const TriageFailed = z.strictObject({ _tag: z.literal('TriageFailed'), why: z.st
  * the card, and one more of what the ticket wants — `null` where the body
  * does not say (0118 §1).
  */
-export const TriageAnswer = z.strictObject({
-  cause: RootCause,
+const answerParts = {
   resolution: TriageAdvice,
   summary: z.string().max(TRIAGE_SENTENCE_MAX),
   want: z.string().max(TRIAGE_SENTENCE_MAX).nullable(),
-})
+}
+
+/** What the model answers: the same, but a split's children name no `kind` (#1271). */
+export const TriageAnswer = z.strictObject({ cause: causesWith(SplitProposalAnswer), ...answerParts })
 export type TriageAnswer = z.infer<typeof TriageAnswer>
 
-const TriageAdvised = TriageAnswer.extend({ _tag: z.literal('TriageAdvised') }).superRefine((advice, ctx) => {
-  if (advice.resolution === 'Split' && !(advice.cause._tag === 'TicketTooBig' && advice.cause.split !== undefined))
-    ctx.addIssue({
-      code: 'custom',
-      message: 'Split is advised only with TicketTooBig carrying its split plan',
-      path: ['resolution'],
-    })
-})
+const TriageAdvised = z
+  .strictObject({ cause: RootCause, ...answerParts, _tag: z.literal('TriageAdvised') })
+  .superRefine((advice, ctx) => {
+    if (advice.resolution === 'Split' && !(advice.cause._tag === 'TicketTooBig' && advice.cause.split !== undefined))
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Split is advised only with TicketTooBig carrying its split plan',
+        path: ['resolution'],
+      })
+  })
 
 /**
  * **What one triage round may answer, as the schema a runtime enforces** (#582).

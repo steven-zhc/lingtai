@@ -174,8 +174,12 @@ type CheckoutFake = {
   cleanup: (() => Promise<void>) | Effect.Effect<void, Error>
 }
 
-type DepsOverrides = Omit<Partial<TriagePorts>, 'issue' | 'base' | 'prepare' | 'prepareCheckout'> & {
-  issue?: (ticketId: string, signal?: AbortSignal) => Promise<{ ref: string; title: string; body: string }>
+type DepsOverrides = Omit<Partial<TriagePorts>, 'issue' | 'kinds' | 'base' | 'prepare' | 'prepareCheckout'> & {
+  issue?: (
+    ticketId: string,
+    signal?: AbortSignal,
+  ) => Promise<{ ref: string; title: string; body: string; labels?: { name: string; color: string | null }[] }>
+  kinds?: readonly string[]
   base?: (ticketId: string) => Promise<string>
   prepare?: (id: string) => Promise<{ cwd: string; settingsPath: string }>
   prepareCheckout?: (
@@ -186,15 +190,30 @@ type DepsOverrides = Omit<Partial<TriagePorts>, 'issue' | 'base' | 'prepare' | '
 }
 
 function fakeDeps(store: EventStore, runtime: Runtime, overrides: DepsOverrides = {}): TriagePorts {
-  const { issue, base, prepare, prepareCheckout, ...rest } = overrides
+  const { issue, kinds, base, prepare, prepareCheckout, ...rest } = overrides
   return {
     store,
     runtime: vi.fn(() => runtime),
     mirror: fakeMirror(),
     issue: (ticketId, signal) =>
       Effect.suspend(() =>
-        asEffect((issue ?? (async () => ({ ref: '1', title: 'the ticket', body: 'the body' })))(ticketId, signal)),
+        asEffect(
+          (
+            issue ??
+            (async (): Promise<{
+              ref: string
+              title: string
+              body: string
+              labels?: { name: string; color: string | null }[]
+            }> => ({
+              ref: '1',
+              title: 'the ticket',
+              body: 'the body',
+            }))
+          )(ticketId, signal),
+        ).pipe(Effect.map((t) => ({ ...t, labels: t.labels ?? [] }))),
       ),
+    kinds: () => Effect.succeed(kinds ?? ['bug', 'tech-debt', 'feature']),
     base: (ticketId) => Effect.suspend(() => asEffect((base ?? (async () => 'main'))(ticketId))),
     prepare: (id) =>
       Effect.suspend(() =>
@@ -342,6 +361,31 @@ function flakyReadAtCall(store: EventStore, failAtCall: number): EventStore {
 }
 
 describe('waitTriage', () => {
+  it("records a split whose children carry the parent's kind, whatever the model sent (#1271)", async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 568)
+    const child = (key: string) => ({ key, title: key, body: key, kind: 'refactor' })
+    const { runtime } = stubRuntime(() =>
+      outcomeOf({
+        text: JSON.stringify({
+          cause: { _tag: 'TicketTooBig', split: { children: [child('a'), child('b')], blockedBy: [] } },
+          resolution: 'Split',
+          summary: 'too big',
+          want: null,
+        }),
+      }),
+    )
+    const deps = fakeDeps(store, runtime, {
+      issue: async () => ({ ref: '568', title: 't', body: 'b', labels: [{ name: 'tech-debt', color: null }] }),
+    })
+
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { reason: reasonOn('pass-568') }))
+
+    if (held.result._tag !== 'TriageAdvised' || held.result.cause._tag !== 'TicketTooBig')
+      throw new Error(`not a split: ${JSON.stringify(held.result)}`)
+    expect(held.result.cause.split?.children.map((c) => c.kind)).toEqual(['tech-debt', 'tech-debt'])
+  })
+
   it('uses one full-tools Codex call at the saved head and cleans its checkout', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 567)
