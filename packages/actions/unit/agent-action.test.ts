@@ -19,7 +19,14 @@ import {
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { NEEDS_INPUT, type Action, type ActionContext, type ActionEvent, type ActionFinding } from '../src/action.ts'
+import {
+  NEEDS_INPUT,
+  redoParagraph,
+  type Action,
+  type ActionContext,
+  type ActionEvent,
+  type ActionFinding,
+} from '../src/action.ts'
 import {
   type AgentActionDeps,
   buildDesignPrompt,
@@ -2679,5 +2686,52 @@ describe('designPromptParts (#928)', () => {
   it('writes the body out as plain text when nothing says where it was read from', () => {
     const parts = designPromptParts({ name: 'draft', prompt: '' }, ISSUE)
     expect(parts.every((part) => typeof part === 'string')).toBe(true)
+  })
+})
+
+describe('the paragraph a step redone whole ends its brief with (#1245)', () => {
+  const REDO = { why: 'API Error: 503', startedAt: 'a'.repeat(40), head: 'b'.repeat(40) }
+  const deps = (runtime: Runtime) => ({
+    runtime,
+    issue: async () => ISSUE,
+    diff: async () => HUNK_DIFF,
+    restore: async () => ({ untouched: true as const }),
+    settingsPath: '/tmp/s.json',
+    limits: { turns: 40, wallMs: 1000, diffBytes: DIFF_BYTES },
+  })
+
+  it('names why, where the step began, the head, and the WIP saved, and says not to redo what is committed', () => {
+    const text = redoParagraph(REDO, ['c'.repeat(40)])
+    expect(text).toContain('This step was interrupted (API Error: 503)')
+    expect(text).toContain(`it began at ${'a'.repeat(40)}`)
+    expect(text).toContain(`is committed to ${'b'.repeat(40)}`)
+    expect(text).toContain(`including any unfinished work Lingtai saved for you (${'c'.repeat(40)})`)
+    expect(text).toContain('do not redo what is committed')
+  })
+
+  it('drops the whole clause about saved work when none was kept', () => {
+    expect(redoParagraph(REDO, [])).not.toContain('saved for you')
+    expect(redoParagraph(REDO)).not.toContain('including')
+  })
+
+  it('ends the design brief with it, and leaves a first arrival’s brief as it was', async () => {
+    const plain = reviewer(outcome({ text: '## Shape\n\n1. one' }))
+    await createDraftAction({ name: 'draft', prompt: '' }, deps(plain)).run(context)
+    const redone = reviewer(outcome({ text: '## Shape\n\n1. one' }))
+    await createDraftAction({ name: 'draft', prompt: '' }, deps(redone)).run({ ...context, rerun: 1, redo: REDO })
+
+    expect(plain.seen[0]!.prompt).not.toContain('This step was interrupted')
+    expect(redone.seen[0]!.prompt.startsWith(plain.seen[0]!.prompt)).toBe(true)
+    expect(redone.seen[0]!.prompt.endsWith(redoParagraph(REDO))).toBe(true)
+  })
+
+  it('never writes it into the reviewer’s brief', async () => {
+    const plain = reviewer(outcome({ text: '{"findings":[]}' }))
+    await createAgentAction({ name: 'review', prompt: '' }, deps(plain)).run(context)
+    const redone = reviewer(outcome({ text: '{"findings":[]}' }))
+    await createAgentAction({ name: 'review', prompt: '' }, deps(redone)).run({ ...context, rerun: 1, redo: REDO })
+
+    expect(redone.seen[0]!.prompt).not.toContain('This step was interrupted')
+    expect(redone.seen[0]!.prompt).toBe(plain.seen[0]!.prompt)
   })
 })

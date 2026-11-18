@@ -1567,6 +1567,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     // The same brief, and one paragraph more at its end: the step was redone whole from the head (#1245).
     expect(prompts[1]!.startsWith(prompts[0]!)).toBe(true)
     expect(prompts[1]!.slice(prompts[0]!.length)).toContain('This step was interrupted')
+    expect(prompts[1]!.slice(prompts[0]!.length)).toMatch(
+      /\([^)]*API Error: 503[^)]*\); it began at \S+ and is committed to \S+/,
+    )
     expect(prompts[2]!.startsWith(prompts[0]!)).toBe(true)
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
