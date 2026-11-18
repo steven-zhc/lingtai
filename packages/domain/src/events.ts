@@ -30,6 +30,9 @@ import { StoredProposal, copiedFieldsOf } from './proposal.ts'
 import { RouteOffer, JudgeReply, RouteDecision } from './routing.ts'
 import { Usage } from './spend.ts'
 import { ChildTicket, Dependency } from './split.ts'
+
+/** A frozen split plan's child: `covers` names the parent's Done-when items it takes (#1261). Optional, so older rows parse. */
+const PlannedChild = ChildTicket.extend({ covers: z.array(z.string()).optional() })
 import {
   Finding,
   RefusalReason,
@@ -460,7 +463,11 @@ export const TicketSplit = z
  */
 export const SplitStarted = z.strictObject({
   waitId: WaitId,
-  plan: z.strictObject({ children: z.array(ChildTicket), blockedBy: z.array(Dependency) }),
+  plan: z.strictObject({
+    children: z.array(PlannedChild),
+    blockedBy: z.array(Dependency),
+    uncovered: z.array(z.string()).optional(),
+  }),
   instance: z.string().min(1),
 })
 

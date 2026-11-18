@@ -296,6 +296,13 @@ export interface GitHub {
    */
   addLabels(issue: number, labels: readonly string[]): E<void>
 
+  /**
+   * Removes one label and nothing else (`DELETE …/labels/{name}`). A label the issue
+   * does not carry is success: removal is idempotent. Never `setLabels` from a snapshot,
+   * which would drop an `agent:hold` a person added meanwhile (#1261).
+   */
+  removeLabel(issue: number, name: string): E<void>
+
   /** Replaces one comment's whole body (#750). The response is read for its status only. */
   editComment(issue: number, commentId: number, body: string): E<void>
 
@@ -411,6 +418,7 @@ export interface GitHubClient {
   comment(issue: number, body: string): Promise<{ id: number }>
   setLabels(issue: number, labels: readonly string[]): Promise<void>
   addLabels(issue: number, labels: readonly string[]): Promise<void>
+  removeLabel(issue: number, name: string): Promise<void>
   editComment(issue: number, commentId: number, body: string): Promise<void>
   closeIssue(issue: number, reason?: 'completed' | 'not_planned'): Promise<void>
   updateBody(issue: number, body: string, opts?: { ifUnchanged?: string }): Promise<void>
@@ -710,6 +718,15 @@ export const makeGitHub = (
           yield* send<unknown>('POST', `${repoPath}/issues/${issue}/labels`, { labels: [...labels] })
         }),
 
+        removeLabel: Effect.fn('github.removeLabel')(function* (issue: number, name: string) {
+          yield* send<unknown>('DELETE', `${repoPath}/issues/${issue}/labels/${encodeURIComponent(name)}`).pipe(
+            Effect.catchIf(
+              (err) => err.status === 404,
+              () => Effect.void,
+            ),
+          )
+        }),
+
         defaultBranch: Effect.fn('github.defaultBranch')(function* () {
           const raw = yield* send<{ default_branch: string }>('GET', repoPath)
           return raw.default_branch
@@ -863,6 +880,7 @@ const toClient = (github: GitHub): GitHubClient => ({
   comment: (issue, body) => runGitHub(github.comment(issue, body)),
   setLabels: (issue, labels) => runGitHub(github.setLabels(issue, labels)),
   addLabels: (issue, labels) => runGitHub(github.addLabels(issue, labels)),
+  removeLabel: (issue, name) => runGitHub(github.removeLabel(issue, name)),
   editComment: (issue, commentId, body) => runGitHub(github.editComment(issue, commentId, body)),
   closeIssue: (issue, reason) => runGitHub(github.closeIssue(issue, reason)),
   updateBody: (issue, body, opts) => runGitHub(github.updateBody(issue, body, opts)),

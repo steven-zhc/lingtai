@@ -13,8 +13,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Issue, LinkedIssue } from '@lingtai/github'
 import { describe, expect, it } from 'vitest'
 
-import { splitDoneWhen } from '../src/split-body.ts'
-import { splitTicketHolding, type SplitClient, type SplitPlanInput } from '../src/split-ticket.ts'
+import { splitIntoSection, splitTicketHolding, type SplitClient, type SplitPlanInput } from '../src/split-ticket.ts'
 import { BodyChanged } from '../src/ticket-store.ts'
 
 const PROJECT = 'lingtai'
@@ -87,6 +86,17 @@ class FakeGitHub {
         const issue = this.issues.get(n)!
         if (opts?.ifUnchanged !== undefined && opts.ifUnchanged !== issue.body) throw new BodyChanged(n)
         issue.body = body
+      }),
+    addLabels: async (n, names) =>
+      this.hit(`addLabels ${n} ${names.join(',')}`, () => {
+        const issue = this.issues.get(n)!
+        for (const name of names)
+          if (!issue.labels.some((l) => l.name === name)) issue.labels.push({ name, color: null })
+      }),
+    removeLabel: async (n, name) =>
+      this.hit(`removeLabel ${n} ${name}`, () => {
+        const issue = this.issues.get(n)!
+        issue.labels = issue.labels.filter((l) => l.name !== name)
       }),
     addSubIssue: async (p, c) =>
       this.hit(`addSubIssue ${p} ${c}`, () => {
@@ -224,14 +234,139 @@ describe('splitTicketHolding', () => {
     expect(gh.issues.get(700)!.labels.map((l) => l.name)).toEqual(['feature'])
   })
 
-  it('keeps the parent body above Done when byte for byte, and what follows it', async () => {
+  it('leaves the parent Done when untouched and lists every child under Split into', async () => {
     const { gh, go } = await setup()
     await go()
     const body = gh.issues.get(PARENT)!.body
-    expect(body.startsWith('The problem.\r\n\r\n')).toBe(true)
-    expect(body).toContain('- [ ] #700 is closed')
-    expect(body).not.toContain('it works')
-    expect(body.endsWith('## Related\r\n\r\n- #1\r\n')).toBe(true)
+    expect(body.startsWith(PARENT_BODY.trimEnd())).toBe(true)
+    expect(body).toContain('## Done when\r\n\r\n- [ ] it works\r\n\r\n## Related\r\n\r\n- #1')
+    expect(body).toContain('## Split into')
+    for (const n of [700, 701, 702]) expect(body).toContain(`- #${n} — part `)
+  })
+
+  it('creates every child with the publishing label and lifts it only after every read-back', async () => {
+    const { gh, go } = await setup()
+    await go()
+    const creates = gh.calls.filter((c) => c.startsWith('createIssue'))
+    expect(creates).toHaveLength(3)
+    const removes = gh.calls.map((c, i) => [c, i] as const).filter(([c]) => c.startsWith('removeLabel'))
+    expect(removes.map(([c]) => c)).toEqual([
+      'removeLabel 700 lingtai:publishing',
+      'removeLabel 701 lingtai:publishing',
+      'removeLabel 702 lingtai:publishing',
+    ])
+    const lastRead = Math.max(
+      gh.calls.lastIndexOf('listBlockedBy 601'),
+      gh.calls.lastIndexOf('listBlockedBy 702'),
+      gh.calls.lastIndexOf('listSubIssues 601'),
+    )
+    expect(Math.min(...removes.map(([, i]) => i))).toBeGreaterThan(lastRead)
+    expect(gh.calls.some((c) => c.startsWith('setLabels'))).toBe(false)
+  })
+
+  it('a split interrupted after its second child leaves both labelled, and a second run lifts them and appends one TicketSplit', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    gh.fail = { call: 'createIssue part c', mode: 'before', times: 1 }
+    expect((await go()).ok).toBe(false)
+    expect(gh.issues.get(700)!.labels.map((l) => l.name)).toContain('lingtai:publishing')
+    expect(gh.issues.get(701)!.labels.map((l) => l.name)).toContain('lingtai:publishing')
+    gh.fail = null
+    expect((await go(undefined)).ok).toBe(true)
+    for (const n of [700, 701, 702])
+      expect(gh.issues.get(n)!.labels.map((l) => l.name)).not.toContain('lingtai:publishing')
+    expect((await store.read(ticketId)).filter((e) => e.type === 'TicketSplit')).toHaveLength(1)
+  })
+
+  it("keeps a person's agent:hold on a child", async () => {
+    const { gh, go } = await setup()
+    const getIssue = gh.client.getIssue
+    // A person holds the child while the split is still being read back.
+    gh.client.addBlockedBy = ((add) => async (i: number, b: number) => {
+      if (i === PARENT && b === 700) gh.issues.get(700)!.labels.push({ name: 'agent:hold', color: null })
+      return add(i, b)
+    })(gh.client.addBlockedBy)
+    void getIssue
+    await go()
+    expect(
+      gh.issues
+        .get(700)!
+        .labels.map((l) => l.name)
+        .sort(),
+    ).toEqual(['agent:hold', 'feature'])
+  })
+
+  it('a crash after the removals appends TicketSplit without putting the label back', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    gh.fail = { call: 'removeLabel 702', mode: 'before', times: 1 }
+    expect((await go()).ok).toBe(false)
+    gh.fail = null
+    const adds = gh.calls.filter((c) => c.startsWith('addLabels')).length
+    expect((await go(undefined)).ok).toBe(true)
+    expect(gh.calls.filter((c) => c.startsWith('addLabels')).length).toBe(adds)
+    expect((await store.read(ticketId)).filter((e) => e.type === 'TicketSplit')).toHaveLength(1)
+  })
+
+  it('adds the label to a new child whose create dropped it', async () => {
+    const { gh, go } = await setup()
+    const create = gh.client.createIssue
+    gh.client.createIssue = async (input) =>
+      create({ ...input, labels: input.labels.filter((l) => l !== 'lingtai:publishing') })
+    expect((await go()).ok).toBe(true)
+    expect(gh.calls.filter((c) => c.startsWith('addLabels'))).toHaveLength(3)
+  })
+
+  it('refuses a second split of a ticket that already has a SplitStarted for another wait', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    expect((await go()).ok).toBe(true)
+    // Wait again on the same ticket, as a later split would.
+    const item = makeStream(ticketId)
+    const run = anAttempt('pass-602')
+    const waitId2 = aWaitId()
+    await store.append(ticketId, (await store.read(ticketId)).length, [
+      ...aClaim(item, run.runId),
+      ...aWait(item, { _tag: 'NothingProduced', run: anAttemptRef(run.runId), said: null }, waitId2),
+    ])
+    const calls = gh.calls.length
+    const before = (await store.read(ticketId)).length
+    const again = await splitTicketHolding(
+      {
+        project: PROJECT,
+        issue: PARENT,
+        waitId: waitId2,
+        plan,
+        kinds: ['bug', 'feature'],
+        repository: REPO,
+        by: 'human:steven',
+        instance: 'board-1',
+        github: gh.client,
+        store,
+      },
+      store,
+      ticketId,
+    )
+    expect(again.ok).toBe(false)
+    expect(again.detail).toContain('already split once')
+    expect(gh.calls.length).toBe(calls)
+    expect((await store.read(ticketId)).length).toBe(before)
+  })
+
+  it('refuses a body carrying a split marker, writing nothing', async () => {
+    const { store, ticketId, gh, go } = await setup(`${PARENT_BODY}\n<!-- lingtai:split w-1 a -->\n`)
+    const before = (await store.read(ticketId)).length
+    const result = await go()
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('split marker')
+    expect(gh.calls.filter((c) => !c.startsWith('getIssue'))).toEqual([])
+    expect((await store.read(ticketId)).length).toBe(before)
+  })
+
+  it('is not refused by its own Split into section on a retry', async () => {
+    const { gh, go } = await setup()
+    gh.fail = { call: 'removeLabel 700', mode: 'before', times: 1 }
+    expect((await go()).ok).toBe(false)
+    gh.fail = null
+    expect(gh.issues.get(PARENT)!.body).toContain('## Split into')
+    expect((await go(undefined)).ok).toBe(true)
   })
 
   it('has appended SplitStarted and fired onStarted before its first GitHub call', async () => {
@@ -255,7 +390,8 @@ describe('splitTicketHolding', () => {
       'addBlockedBy 601',
       'updateBody',
       'listSubIssues',
-      'getIssue',
+      'getIssue 70',
+      'removeLabel',
     ]) {
       it(`a failure ${mode} ${call} leaves no TicketSplit, and a retry converges on the whole plan`, async () => {
         const { store, ticketId, gh, go } = await setup()
@@ -482,18 +618,23 @@ describe('splitTicketHolding', () => {
   })
 })
 
-describe('splitDoneWhen', () => {
-  it('keeps text above the heading and the sections after it, and is idempotent', () => {
+describe('splitIntoSection', () => {
+  const children = [
+    { number: 5, title: 'a', covers: ['x', 'y'] },
+    { number: 6, title: 'b' },
+  ]
+  it('writes its own section, leaves Done when alone, lists covers and what no child covers, and is idempotent', () => {
     const body = 'intro\n\n## Done when\n\n- [ ] x\n\n## Related\n\n- #2\n'
-    const once = splitDoneWhen(body, [5, 6])
-    expect(once.startsWith('intro\n\n## Done when\n\n- [ ] #5 is closed\n- [ ] #6 is closed')).toBe(true)
-    expect(once.endsWith('## Related\n\n- #2\n')).toBe(true)
-    expect(splitDoneWhen(once, [5, 6])).toBe(once)
+    const once = splitIntoSection(body, children, ['z'])
+    expect(once.startsWith(body.trimEnd())).toBe(true)
+    expect(once).toContain('- #5 — a\n  - x\n  - y\n- #6 — b\n')
+    expect(once).toContain('Not covered by any child:\n\n- z')
+    expect(splitIntoSection(once, children, ['z'])).toBe(once)
   })
 
-  it('appends the section when there is no heading', () => {
-    const once = splitDoneWhen('just text', [5])
-    expect(once.startsWith('just text\n\n## Done when')).toBe(true)
-    expect(splitDoneWhen(once, [5])).toBe(once)
+  it('defuses a marker quoted in an item', () => {
+    expect(() =>
+      splitIntoSection('t', [{ number: 1, title: 'a', covers: ['<!-- lingtai:answer k -->'] }]),
+    ).not.toThrow()
   })
 })

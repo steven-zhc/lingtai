@@ -88,7 +88,7 @@ export const CHAIN_HOPS_MOST = 10
 /** *One look*: a row left `running` this recently means something is in flight. */
 export const IN_FLIGHT_WITHIN_MS = 5 * 60_000
 
-const HELD_REASONS = new Set(['blocked-by', 'base-red'])
+const HELD_REASONS = new Set(['blocked-by', 'publishing', 'base-red'])
 
 /** Offered tickets `selectRunnable` can still take or is holding for a retry: a waiting or finished row is not queued. */
 function queuedOffered(facts: Pick<WhyFacts, 'offered' | 'rows'>): number[] {

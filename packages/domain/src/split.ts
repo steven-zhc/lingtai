@@ -15,6 +15,9 @@ import { z } from 'zod'
 
 import { TRIAGE_SPLIT_BODY_MAX, TRIAGE_SPLIT_CHILDREN_MAX, TRIAGE_TEXT_MAX } from './triage.ts'
 
+/** The system's label on a split's child until the whole split is read back; the queue passes over it (#1261). */
+export const PUBLISHING_LABEL = 'lingtai:publishing'
+
 /** A child's stable name inside the plan, which a dependency refers to. */
 const KEY_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 const KEY_MAX = 40
