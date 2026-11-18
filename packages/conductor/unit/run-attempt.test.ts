@@ -3881,4 +3881,41 @@ describe('a step redone whole is reset to the head first, then run from its firs
 
     expect(order).toEqual(['merge true', 'reset', 'merge true'])
   })
+
+  it('does not merge the base in again when the fixer had already committed the merge', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = runThenAgent('implement', ['API Error: 503'])
+    const { emit } = events()
+    const order: string[] = []
+    const baseSha = 'b'.repeat(40)
+    const ports = {
+      ...attemptPortsFrom({
+        recipe: recipeWith({}),
+        context,
+        emit,
+        bodies,
+        actionsAt,
+        from: { step: 'implement', waive: undefined, conflict: { baseSha, paths: ['a.ts'] } },
+        resetToHead: async () => {
+          order.push('reset')
+          return { head: 'reset-head' }
+        },
+      } as unknown as AttemptOptions),
+      mergeForConflict: () =>
+        Effect.sync(() => {
+          order.push('merge')
+          return { conflicted: { paths: ['a.ts'], fromSha: 'f'.repeat(40) } }
+        }),
+      mergeAlreadyIn: (sha: string) => Effect.sync(() => order.push(`in ${sha === baseSha}`) > 0 && true),
+    }
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(runAttemptEffect(ports))
+        for (let i = 0; i < 8; i++) yield* TestClock.adjust('20 minutes')
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(TestClock.layer())),
+    )
+
+    expect(order).toEqual(['merge', 'reset', 'in true'])
+  })
 })

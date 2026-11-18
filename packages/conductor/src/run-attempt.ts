@@ -1109,6 +1109,8 @@ export interface AttemptPortOptions {
    * before a conflict round's agent does (#1120). Effect-only: it is not on `AttemptOptions`.
    */
   readonly mergeForConflict?: (baseSha: string) => Effect.Effect<ConflictMergeAnswer>
+  /** Whether the base is already in `HEAD`: a conflict merge a cut-off fixer committed is not made again (#1245). */
+  readonly mergeAlreadyIn?: (baseSha: string) => Effect.Effect<boolean>
   /**
    * Puts the worktree back to the attempt's head before a step is redone whole (0108 §12, #1245): tracked
    * changes dropped, untracked files removed, ignored files and the planted env file kept. It answers the
@@ -1644,7 +1646,11 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           return cannot(`the worktree could not be put back to the attempt's head — ${reset.failed}`)
         // A conflict round's fixer stands in a `--no-commit` merge, which the reset just aborted: stand it up again.
         const merging = redo.visit.context.conflictMerge
-        if (redo.step === 'implement' && merging !== undefined) {
+        const committed =
+          redo.step === 'implement' && merging !== undefined && options.mergeAlreadyIn !== undefined
+            ? yield* options.mergeAlreadyIn(merging.baseSha)
+            : false
+        if (redo.step === 'implement' && merging !== undefined && !committed) {
           const again: ConflictMergeAnswer =
             options.mergeForConflict === undefined
               ? { failed: 'this attempt was handed no way to merge the base in' }

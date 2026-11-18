@@ -216,4 +216,15 @@ describe('resetToHead, against a real git repository (#1245)', () => {
     await expect(access(join(dir, 'node_modules', 'left-pad', 'index.js'))).resolves.toBeUndefined()
     expect(await readFile(join(dir, PLANT), 'utf8')).toBe('secret\n')
   })
+
+  it('keeps a planted env file the agent staged with git add -A, though HEAD lacks it', async () => {
+    const dir = await makeRepo()
+    dirs.push(dir)
+    await writeFile(join(dir, PLANT), 'secret\n')
+    await exec('git', ['-C', dir, 'add', '-A'])
+
+    await Effect.runPromise(resetToHead({ git: gitHere(dir), plantAt: PLANT }))
+
+    expect(await readFile(join(dir, PLANT), 'utf8')).toBe('secret\n')
+  })
 })

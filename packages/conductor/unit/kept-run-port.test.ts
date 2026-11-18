@@ -309,7 +309,8 @@ describe('resetToHead (#1245)', () => {
     const { git, asked } = fakeGit({ 'rev-parse HEAD': Result.succeed('abc123\n') })
     expect(await Effect.runPromise(resetToHead({ git, plantAt: PLANT }))).toEqual({ head: 'abc123' })
     expect(asked).toEqual([
-      ['reset', '--hard', 'HEAD'],
+      ['reset', '--mixed', 'HEAD'],
+      ['checkout', '--', '.'],
       ['clean', '-ffd', '-e', `/${PLANT}`],
       ['rev-parse', 'HEAD'],
     ])
@@ -320,13 +321,14 @@ describe('resetToHead (#1245)', () => {
   it('escapes the planted path as a gitignore pattern', async () => {
     const { git, asked } = fakeGit()
     await Effect.runPromise(resetToHead({ git, plantAt: 'a b/[x]*.env' }))
-    expect(asked[1]).toEqual(['clean', '-ffd', '-e', '/a\\ b/\\[x\\]\\*.env'])
+    expect(asked[2]).toEqual(['clean', '-ffd', '-e', '/a\\ b/\\[x\\]\\*.env'])
   })
 
   it.each([
-    ['reset --hard HEAD', 'git reset refused it', 1],
-    ['clean -ffd -e /apps/web/.env.local', 'git clean refused it', 2],
-    ['rev-parse HEAD', 'git rev-parse refused it', 3],
+    ['reset --mixed HEAD', 'git reset refused it', 1],
+    ['checkout -- .', 'git checkout refused it', 2],
+    ['clean -ffd -e /apps/web/.env.local', 'git clean refused it', 3],
+    ['rev-parse HEAD', 'git rev-parse refused it', 4],
   ])('stops at a refused %s and makes no later call', async (call, words, made) => {
     const { git, asked } = fakeGit({ [call]: Result.fail({ detail: 'no' }) })
     expect(await Effect.runPromise(resetToHead({ git, plantAt: PLANT }))).toEqual({ failed: `${words}: no` })

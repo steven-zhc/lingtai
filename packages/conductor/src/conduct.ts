@@ -2360,24 +2360,29 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * Where `wips` stood when the step's agent was first dispatched (#1245): a step redone whole is told
        * the WIP made since, and only that. Set by every first dispatch, never by a redo of it.
        */
+      /** Where each implementer first found the tree, by arrival and action name (#1245). */
+      const agentStarts = new Map<string, string>()
       let stepFirst: { onSha: string; sha: string; wipFrom: number } | null = null
       /** Whether this arrival at the step (its `onSha`) already has its first start recorded (#1245). */
       const firstStartOf = (context: ActionContext): { onSha: string; sha: string; wipFrom: number } | null =>
         stepFirst !== null && stepFirst.onSha === context.onSha ? stepFirst : null
       /** The paragraph a redone step's agent ends its brief with, or null on a first dispatch (0108 §12). */
-      const redoNoteOf = (context: ActionContext, startedAt: string): string | null => {
-        const first = firstStartOf(context)
-        if (context.redo === undefined) {
-          // Only the step's first agent arrival records it: a later agent, at the same head, must not
-          // move where the step began nor which WIP is its own.
-          if (first === null) stepFirst = { onSha: context.onSha, sha: startedAt, wipFrom: wips.length }
-          return null
-        }
-        return redoParagraph(
-          { ...context.redo, startedAt: first?.sha ?? startedAt },
-          wips.slice(first?.wipFrom ?? 0).flatMap((entry) => (entry.sha === null ? [] : [entry.sha])),
-        )
-      }
+      const redoNoteOf = (context: ActionContext, startedAt: string): Effect.Effect<string | null> =>
+        Effect.gen(function* () {
+          const first = firstStartOf(context)
+          if (context.redo === undefined) {
+            // Only the step's first agent arrival records it: a later agent, at the same head, must not
+            // move where the step began nor which WIP is its own.
+            if (first === null) stepFirst = { onSha: context.onSha, sha: startedAt, wipFrom: wips.length }
+            return null
+          }
+          // A WIP whose own sha read failed is resolved before it is named: it was committed all the same.
+          yield* resolveWipShas()
+          return redoParagraph(
+            { ...context.redo, startedAt: first?.sha ?? startedAt },
+            wips.slice(first?.wipFrom ?? 0).flatMap((entry) => (entry.sha === null ? [] : [entry.sha])),
+          )
+        })
       /** The worktree's `HEAD` as `publishWhatIsCommitted` last read it — what `standingFor` compares to the granted sha (#654). */
       let headNow: string | null = null
       /** Whether the dispatch that ran last was a conflict round, which keeps nothing (0108 §20). */
@@ -4678,11 +4683,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * true: prose in a prompt is not a guard, and the agent that ignores it is
            * exactly the one the guard is for.
            */
-          // Only the agent a redo's paragraph is handed to is measured from the first start (#1245): a later
-          // agent in the same step, handed none, found the tree where the one before it left it.
-          const firstStart = brief.context.redo === undefined ? null : firstStartOf(brief.context)
-          const startedAt = firstStart !== null ? firstStart.sha : yield* gitOrDieEffect(['rev-parse', 'HEAD'])
-          const redoNote = redoNoteOf(brief.context, startedAt)
+          // **Each agent is measured from where it first found the tree** (#1245): a step redone whole runs every
+          // agent again, and one that finished before the cut-off must still find its own work counted. An agent
+          // that never ran before has no entry, and finds the tree as the one before it left it.
+          const startKey = `${brief.context.onSha}:${spec.name}`
+          const earlierStart = brief.context.rerun === undefined ? undefined : agentStarts.get(startKey)
+          const startedAt = earlierStart ?? (yield* gitOrDieEffect(['rev-parse', 'HEAD']))
+          if (!agentStarts.has(startKey)) agentStarts.set(startKey, startedAt)
+          const redoNote = yield* redoNoteOf(brief.context, startedAt)
           const implementDecision = yield* decideSandbox
           const wired = yield* Effect.result(
             host.wire({
@@ -5080,7 +5088,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const underReview = yield* changeStart(continuation?.diffBaseSha ?? tree.baseSha).pipe(
             Effect.flatMap((start) => diffBetween(start)),
           )
-          const redoNote = redoNoteOf(brief.context, brief.context.redo?.startedAt ?? brief.context.onSha)
+          const redoNote = yield* redoNoteOf(brief.context, brief.context.redo?.startedAt ?? brief.context.onSha)
           // The same flag `firstDispatch` sets before its own dispatch, and for
           // the same reason (`#468`): an agent is running, and nothing has
           // judged what it leaves in the worktree if it is interrupted here.
@@ -5480,6 +5488,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             return yield* resetToHead({ git: gitAskedEffect, plantAt: recipe.env.plantAt })
           }),
         mergeForConflict,
+        // A fixer that committed its merge before it was cut off leaves the base an ancestor of HEAD (#1245).
+        mergeAlreadyIn: (baseSha: string) =>
+          gitAskedEffect(['merge-base', '--is-ancestor', baseSha, 'HEAD']).pipe(Effect.map(Result.isSuccess)),
         conflictEvidence,
         baseIsRed,
         // **Where this walk jumps to, once `admit` and `prepared` have

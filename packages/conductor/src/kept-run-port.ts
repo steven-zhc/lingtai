@@ -269,8 +269,13 @@ export function resetToHead(options: {
   const { git } = options
   const plantAt = posix.normalize(options.plantAt)
   return Effect.gen(function* () {
-    const reset = yield* git(['reset', '--hard', 'HEAD'])
+    // `--mixed` and a checkout, not `--hard` (as `restoreAfterReview`): a design agent that ran `git add -A`
+    // staged the planted env file, which `HEAD` lacks, and `--hard` deletes a staged file. Mixed unstages it
+    // and leaves it on disk; the checkout puts every tracked file back, and the clean takes the rest.
+    const reset = yield* git(['reset', '--mixed', 'HEAD'])
     if (Result.isFailure(reset)) return { failed: `git reset refused it: ${reset.failure.detail}` }
+    const checkout = yield* git(['checkout', '--', '.'])
+    if (Result.isFailure(checkout)) return { failed: `git checkout refused it: ${checkout.failure.detail}` }
     // `-ff` and the escape are `restoreAfterReview`'s, for the same two reasons.
     const literal = plantAt.replace(/[\\*?[\] ]/g, '\\$&')
     const cleaned = yield* git(['clean', '-ffd', '-e', `/${literal}`])
