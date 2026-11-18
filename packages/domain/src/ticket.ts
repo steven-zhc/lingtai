@@ -854,8 +854,8 @@ export function claimTransition(
   }
 }
 
-/** The causes of a release whose attempt the next claim continues rather than restarts (#1205; #1211 adds `BaseRed`). */
-export const CONTINUABLE_CAUSES: readonly ReleaseCause['_tag'][] = ['AccountLimit']
+/** The causes of a release whose attempt the next claim continues rather than restarts (#1205, #1211). */
+export const CONTINUABLE_CAUSES: readonly ReleaseCause['_tag'][] = ['AccountLimit', 'BaseRed']
 
 /**
  * The release the ticket's newest claim ended in, when its cause is one the next claim continues — else null.
@@ -869,16 +869,25 @@ export function continuableRelease(state: Pick<TicketState, 'claims'>): { runId:
 }
 
 /**
- * How many times the ticket was released `AccountLimit` on `runId`: this rerun's number among the attempt's
- * reruns, which is what keeps each rerun's dispatch id its own (#1205). Counted off the stream the owner holds
+ * How many times the ticket was released with `cause` on `runId`: this continuation's number among the attempt's,
+ * which is what keeps each one's dispatch id its own (#1205, #1211). Counted off the stream the owner holds
  * rather than a new event.
  */
-export function accountLimitReleases(ticketEvents: readonly Envelope[], runId: string): number {
+export function releasesOf(
+  ticketEvents: readonly Envelope[],
+  runId: string,
+  cause: 'AccountLimit' | 'BaseRed',
+): number {
   return ticketEvents.filter((event) => {
     if (event.type !== 'TicketReleased') return false
     const d = event.data as PayloadOf<'TicketReleased'>
-    return d.runId === runId && d.cause?._tag === 'AccountLimit'
+    return d.runId === runId && d.cause?._tag === cause
   }).length
+}
+
+/** `releasesOf` for an account limit: this rerun's number among the attempt's reruns (#1205). */
+export function accountLimitReleases(ticketEvents: readonly Envelope[], runId: string): number {
+  return releasesOf(ticketEvents, runId, 'AccountLimit')
 }
 
 export type ContinueDecline =

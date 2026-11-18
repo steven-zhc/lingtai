@@ -46,6 +46,7 @@ import {
   type WaitId,
   WIP_COMMIT_PREFIX,
   accountLimitReleases,
+  releasesOf,
   askedAgainOn,
   continuableRelease,
   cutOffPromptOf,
@@ -259,9 +260,10 @@ import {
   landedOnBaseOf,
   priorAttemptsFromState,
   releasedHeadOf,
+  type ReleasedHead,
 } from './attempts.ts'
 import { baseCheckQuestion, createBaseCheck } from './base-check.ts'
-import { baseStateEffect } from './base-red.ts'
+import { baseStateEffect, buildRunsOf } from './base-red.ts'
 import { agentBranch } from './branches.ts'
 import { closeHoldingEffect } from './close.ts'
 import { runnableNowEffect, type TicketSource } from './discover.ts'
@@ -1346,8 +1348,96 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (reduced.lifecycle.status !== 'backlog') return null
         const releasedFrom = continuableRelease(reduced)
         if (releasedFrom === null) return null
-        // #1211 adds `BaseRed` to the causes this takes; until then the owner's set holds only this one.
         const cause = releasedFrom.cause
+        if (cause._tag === 'BaseRed') {
+          /**
+           * **A ticket released for a red base is the same attempt, taken again** (#1211, 0108 §13, §15): its
+           * worktree is cut at the release's `headSha`, the green base is merged in as a base merge, and the
+           * walk goes on at `build`. Every read before the claim that fails leaves the ticket queued for the
+           * next look — a failed read is never *head gone*. The claim that follows appends `TicketContinued`
+           * at the version read above, so a race between two looks is a `notClaimed` exactly as for #1205.
+           */
+          const baseRead = yield* repo.baseHead({
+            project,
+            owner: options.client.owner ?? '',
+            repo: options.client.repo,
+            base,
+            ...(options.token === undefined ? {} : { token: options.token }),
+            ...(options.remote === undefined ? {} : { remote: options.remote }),
+            home,
+            ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
+          })
+          if ('unreadable' in baseRead) {
+            releasedDeclined = `the base's head could not be read: ${baseRead.unreadable}`
+            return null
+          }
+          if (baseRead.at === cause.baseSha) {
+            releasedDeclined = `the base is still at the red commit ${cause.baseSha.slice(0, 7)}`
+            return null
+          }
+          const listed = yield* repo
+            .git(['ls-remote', 'origin', `refs/heads/${branch}`], {
+              token: options.token,
+              env: options.gitEnv,
+              cwd: mirrorPathFor(project, home),
+            })
+            .pipe(Effect.result)
+          if (Result.isFailure(listed)) {
+            releasedDeclined = `origin could not be asked for ${branch}: ${listed.failure.detail}`
+            return null
+          }
+          const lines = listed.success.split('\n').filter((line) => line.trim() !== '')
+          const answered = lines.length === 1 ? /^([0-9a-f]{40})\t(\S+)$/.exec(lines[0]!.trim()) : null
+          if (lines.length > 0 && answered === null) {
+            releasedDeclined = `origin's answer for ${branch} was not a ref line`
+            return null
+          }
+          const head: ReleasedHead =
+            answered !== null && answered[1] === cause.headSha
+              ? { at: cause.headSha, atRef: branch }
+              : { cannot: `the saved head ${cause.headSha.slice(0, 7)} of ${branch} is no longer on origin` }
+          const releasedEvents = yield* Effect.promise(() => store.read(releasedFrom.runId))
+          const releasedState = reduceAttempt(releasedEvents)
+          const spent = continuationSpent(releasedState)
+          const ticketEvents = yield* Effect.promise(() => store.read(ticketId))
+          const releases = releasesOf(ticketEvents, releasedFrom.runId, 'BaseRed')
+          const accountReruns =
+            releasesOf(ticketEvents, releasedFrom.runId, 'AccountLimit') +
+            personRerunsOf(waitsFromState(reduced), releasedFrom.runId)
+          // The `build` action whose command the red record names: asked by name, not by command (`baseIsRed`).
+          const action = buildRunsOf(recipe).find((each) => each.run === cause.command)?.name ?? null
+          return {
+            step: 'build' as Step,
+            waive: [],
+            grantRef: undefined,
+            advice: undefined,
+            declined: undefined,
+            grant: undefined,
+            findings: undefined,
+            conflict: undefined,
+            readClipped: undefined,
+            roundLimit: undefined,
+            onSha: 'at' in head ? head.at : '',
+            // Its own dispatch ids: two continuations of one run for a red base must not share them.
+            resumedWaitId: `base-red:${releases}` as WaitId,
+            roundsSpent: continuationRound(releasedState, false),
+            baseMergesSpent: spent.baseMerges,
+            conflictRoundsSpent: spent.conflictRounds,
+            stepRedosSpent: spent.stepRedos,
+            landingRetriesSpent: spent.landingRetries,
+            diffBaseSha: diffBaseShaOf(releasedEvents),
+            landedOnBase: landedOnBaseOf(releasedEvents),
+            conflictResolved: conflictResolvedOf(releasedEvents),
+            baseRed: { toSha: baseRead.at, fromSha: cause.baseSha, action },
+            released: {
+              by: 'release' as const,
+              runId: releasedFrom.runId,
+              head,
+              // No cut-off call is replayed: nothing was cut off.
+              rerun: { for: null, prompt: null, accountReruns },
+            },
+          }
+        }
         if (cause._tag !== 'AccountLimit') return null
         {
           // The first claim after the lock lifts. A lock that stands again is a race with a fresh one: this
@@ -5518,6 +5608,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 conflictRoundsSpent: continuation.conflictRoundsSpent,
                 stepRedosSpent: continuation.stepRedosSpent,
                 landingRetriesSpent: continuation.landingRetriesSpent,
+                ...(continuation.baseRed !== undefined ? { baseRed: continuation.baseRed } : {}),
                 ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                 ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                 ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
