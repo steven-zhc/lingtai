@@ -173,7 +173,7 @@ describe('the walk of a continuation for a red base', () => {
         : step === 'build'
           ? [{ name: 'tests', kind: 'run', yields: 'verdict', run: async () => PASSED }]
           : []
-  const walk = (over: Partial<AttemptOptions>) =>
+  const walk = (over: Partial<AttemptOptions> & { conflictEvidence?: (baseSha: string) => Promise<any> }) =>
     Effect.runPromise(
       runAttemptEffect(
         attemptPortsFrom({
@@ -261,6 +261,22 @@ describe('the walk of a continuation for a red base', () => {
     const baseIsRed = vi.fn(green)
     const result = await walk({ from: { step: 'build', waive: [], baseRed: { ...baseRed, action: null } }, baseIsRed })
     expect(baseIsRed).not.toHaveBeenCalled()
+    expect(result.routes).toHaveLength(1)
+  })
+
+  it('merges onto the new base after conflict evidence is restored, not the old conflict base', async () => {
+    const OLD = 'e'.repeat(40)
+    const bases: string[] = []
+    const result = await walk({
+      from: { step: 'build', waive: [], baseRed, conflictResolved: { baseSha: OLD, paths: ['a.ts'] } },
+      baseIsRed: green,
+      conflictEvidence: async () => ({ overlap: ['a.ts'], fromSha: RED_BASE }),
+      mergeBase: async (toSha) => {
+        bases.push(toSha)
+        return { head: 'm' }
+      },
+    })
+    expect(bases).toEqual([GREEN_BASE])
     expect(result.routes).toHaveLength(1)
   })
 

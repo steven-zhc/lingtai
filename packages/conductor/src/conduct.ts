@@ -1371,7 +1371,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             releasedDeclined = `the base's head could not be read: ${baseRead.unreadable}`
             return null
           }
-          if (baseRead.at === cause.baseSha) {
+          // The `build` action whose command the red record names: asked by name, not by command (`baseIsRed`).
+          const action = buildRunsOf(recipe).find((each) => each.run === cause.command)?.name ?? null
+          // Unchanged is only a reason to wait while something still runs the command that failed.
+          if (baseRead.at === cause.baseSha && action !== null) {
             releasedDeclined = `the base is still at the red commit ${cause.baseSha.slice(0, 7)}`
             return null
           }
@@ -1404,8 +1407,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const accountReruns =
             releasesOf(ticketEvents, releasedFrom.runId, 'AccountLimit') +
             personRerunsOf(waitsFromState(reduced), releasedFrom.runId)
-          // The `build` action whose command the red record names: asked by name, not by command (`baseIsRed`).
-          const action = buildRunsOf(recipe).find((each) => each.run === cause.command)?.name ?? null
           return {
             step: 'build' as Step,
             waive: [],

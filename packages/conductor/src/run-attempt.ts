@@ -2084,38 +2084,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           break
         }
       }
-      // **A base released for being red, merged in once it is not** (#1211): the first visit of `build` on the
-      // saved head. The check is on the base's head the look read, not on the head's own base, so `mergedOnto`
-      // is named. Red again releases the ticket again with the head kept; otherwise the route is the one every
-      // base move takes, with the paths unknown (a full review), and it answers `at = 'build'` on the merge.
-      if (at === 'build' && options.from?.baseRed !== undefined && !baseRedMerged) {
-        baseRedMerged = true
-        const { toSha, fromSha, action } = options.from.baseRed
-        if (action !== null && options.baseIsRed !== undefined) {
-          const asked = yield* options.baseIsRed({ action, mergedOnto: toSha })
-          if ('red' in asked) {
-            stopped = null
-            end = {
-              _tag: 'Requeued',
-              cause: {
-                _tag: 'BaseRed',
-                runId: options.context.runId,
-                headSha: onSha,
-                base: asked.red.base,
-                baseSha: asked.red.baseSha,
-                command: asked.red.command,
-                boundary: asked.red.boundary,
-              },
-            }
-            break
-          }
-        }
-        if (
-          yield* routing({ _tag: 'BaseMoved', paths: null, fromSha, toSha }, null, { findings: [], evidence: '' }, null)
-        )
-          continue
-        break
-      }
       const spec = SPEC[at]
       // **A resumed review is owed the conflict evidence** (#1120), rebuilt from the committed
       // merge. Read on the first visit past `admit` and `prepared`: until `admit`'s cut has
@@ -2156,6 +2124,39 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             mergedOnto = asked.baseSha
           }
         }
+      }
+      // (After the conflict evidence is restored, so the merge's `mergedOnto` is the last word.)
+      // **A base released for being red, merged in once it is not** (#1211): the first visit of `build` on the
+      // saved head. The check is on the base's head the look read, not on the head's own base, so `mergedOnto`
+      // is named. Red again releases the ticket again with the head kept; otherwise the route is the one every
+      // base move takes, with the paths unknown (a full review), and it answers `at = 'build'` on the merge.
+      if (at === 'build' && options.from?.baseRed !== undefined && !baseRedMerged) {
+        baseRedMerged = true
+        const { toSha, fromSha, action } = options.from.baseRed
+        if (action !== null && options.baseIsRed !== undefined) {
+          const asked = yield* options.baseIsRed({ action, mergedOnto: toSha })
+          if ('red' in asked) {
+            stopped = null
+            end = {
+              _tag: 'Requeued',
+              cause: {
+                _tag: 'BaseRed',
+                runId: options.context.runId,
+                headSha: onSha,
+                base: asked.red.base,
+                baseSha: asked.red.baseSha,
+                command: asked.red.command,
+                boundary: asked.red.boundary,
+              },
+            }
+            break
+          }
+        }
+        if (
+          yield* routing({ _tag: 'BaseMoved', paths: null, fromSha, toSha }, null, { findings: [], evidence: '' }, null)
+        )
+          continue
+        break
       }
       // **A granted conflict round gets the same pre-merge** (#1120), once, before the
       // continuation's first `implement`. An old wait without a base sha keeps the brief
