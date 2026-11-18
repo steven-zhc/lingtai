@@ -167,6 +167,22 @@ describe('actOnTriageTransition', () => {
     })
   })
 
+  it('a triage spend an attempt counter already holds is not counted again, and one it does not is', () => {
+    const { e, events } = waiting()
+    const resolved = reduceTicket([
+      ...events,
+      ...aResolution(e, W, { _tag: 'RedoStep', onSha: 'abc', ref: 'agent/7' }, 'triage'),
+    ])
+    const seq = resolved.waits[0]!.resolution!.seq!
+    // The attempt has raised nothing since: the spend is the triage's alone.
+    expect(triageSpentOn(resolved, 'run-1', {}).stepRedos).toBe(1)
+    expect(triageSpentOn(resolved, 'run-1', { stepRedosSeq: seq - 1 }).stepRedos).toBe(1)
+    // Its continuation, seeded with that spend, wrote a `StepRedone` after the resolution: the counter holds it.
+    expect(triageSpentOn(resolved, 'run-1', { stepRedosSeq: seq + 1 }).stepRedos).toBe(0)
+    // A conflict resolution is held by `conflictRounds` alone, a fix by `implementRound` alone.
+    expect(triageSpentOn(resolved, 'run-1', { conflictRoundsSeq: seq + 1 }).stepRedos).toBe(1)
+  })
+
   it("a person's RedoStep spends nothing", () => {
     const { e, events } = waiting()
     const resolved = reduceTicket([

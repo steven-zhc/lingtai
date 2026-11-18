@@ -36,6 +36,7 @@ import {
   triageSpentOn,
   type CauseBound,
   type CauseCounter,
+  type AttemptState,
   type TicketState,
   reduceTicket,
   ticketStream,
@@ -203,6 +204,15 @@ export const catchUpTriage = (project: string, triage: Triage | null, deps: Catc
     }
   })
 
+/** Ask again for every `approved` ticket a triage resolved whose continuation nobody requested (#1258). */
+export const reofferContinuations = (project: string, deps: CatchUpTriagePorts) =>
+  Effect.gen(function* () {
+    if (deps.continuation === undefined) return
+    for (const card of yield* deps.readTasks(project)) {
+      if (card.state === 'approved') yield* reofferContinuation(ticketStream(project, card.issue), deps)
+    }
+  })
+
 /**
  * A wait triage resolved to a fix or a redo is carried out by a continuation the control stream names, and that request
  * is a second append after the resolution (#1258). One a crash or a failed append lost leaves the ticket `approved` with
@@ -337,7 +347,8 @@ export const catchUpChangedTriage = (
 ) =>
   Effect.gen(function* () {
     const hash = JSON.stringify(triage)
-    if (hashes.get(project) === hash) return
+    // The pinned scan skips the waits, never the continuations a failed request left unasked (#1258).
+    if (hashes.get(project) === hash) return yield* reofferContinuations(project, deps)
     yield* catchUpTriage(project, triage, deps)
     hashes.set(project, hash)
   })
@@ -1323,16 +1334,15 @@ const waitTriageWithin = (
     const countersOf = (
       allowed: TriageLimits,
       state: TicketState,
-      run: { implementRound: number; conflictRounds?: number; stepRedos?: number } | null,
+      run: AttemptState | null,
     ): Readonly<Record<CauseBound, CauseCounter>> => {
-      const spent = triageSpentOn(state, waitRunId)
+      // What the attempt's own counters do not yet hold: a resolution after the last event that raised the counter.
+      const spent = triageSpentOn(state, waitRunId, run)
       return {
-        // The attempt's own round is the record once a fix is taken up; a triage's resolution not yet taken up is
-        // counted by its `WaitResolved`, and the larger of the two is used so a fix is never counted twice.
-        refusalFixes: { used: Math.max(run?.implementRound ?? 0, spent.refusalFixes), allowed: allowed.refusalFixes },
+        refusalFixes: { used: (run?.implementRound ?? 0) + spent.refusalFixes, allowed: allowed.refusalFixes },
         newAttempts: { used: state.newAttempts.length + spent.newAttempts, allowed: allowed.newAttempts },
         conflictResolutions: {
-          used: Math.max(run?.conflictRounds ?? 0, spent.conflictResolutions),
+          used: (run?.conflictRounds ?? 0) + spent.conflictResolutions,
           allowed: allowed.conflictResolutions,
         },
         stepRedos: { used: (run?.stepRedos ?? 0) + spent.stepRedos, allowed: BOUNDS.stepRedos },
@@ -1361,6 +1371,7 @@ const waitTriageWithin = (
       })
 
     let lastError: unknown = null
+    let unrequested: string | null = null
     for (let i = 0; i < 5; i += 1) {
       const landed = yield* settle(
         Effect.gen(function* () {
@@ -1407,7 +1418,9 @@ const waitTriageWithin = (
                     parsed.issue,
                     waitRunId,
                   )
-                  if (failed !== null) log(`triage ${request.waitId}: continuation not requested — ${failed}`)
+                  // Not a success: the wait is resolved and nobody was asked to continue it. Failed after the loop, so
+                  // the caller sees it; `reofferContinuation` asks again on every catch-up pass.
+                  if (failed !== null) unrequested = failed
                 }
               }
               return { attempt, result: final } satisfies Waited
@@ -1456,7 +1469,15 @@ const waitTriageWithin = (
           return { attempt, result: toRecord } satisfies Waited
         }),
       )
-      if (landed.ok) return landed.value
+      if (landed.ok) {
+        if (unrequested !== null)
+          return yield* Effect.fail(
+            new Error(
+              `triage ${request.waitId} resolved its wait but the continuation was not requested: ${unrequested}`,
+            ),
+          )
+        return landed.value
+      }
       lastError = landed.error
     }
     const message = lastError instanceof Error ? lastError.message : String(lastError)

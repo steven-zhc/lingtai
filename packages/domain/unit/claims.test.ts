@@ -46,7 +46,12 @@ describe('reduceTicket over a continuation', () => {
     expect(old.pendingPrompt).toBeNull()
     expect(old.version).toBe(5)
     // Seqs differ between the two builds, so compare all but the seq.
-    expect({ ...next, lastSeq: 0n }).toEqual({ ...old, lastSeq: 0n })
+    const bare = (t: typeof old) => ({
+      ...t,
+      lastSeq: 0n,
+      waits: t.waits.map((w) => ({ ...w, resolution: w.resolution && { ...w.resolution, seq: 0 } })),
+    })
+    expect(bare(next)).toEqual(bare(old))
   })
 
   it('leaves a closed ticket closed', () => {

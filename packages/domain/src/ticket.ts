@@ -56,7 +56,12 @@ export interface TicketWait {
   /** The `WaitStarted`'s own `at`. */
   readonly at: Date
   /** The first `WaitResolved` naming this wait. */
-  readonly resolution: { readonly resolution: Resolution; readonly by: string } | null
+  readonly resolution: {
+    readonly resolution: Resolution
+    readonly by: string
+    /** The `WaitResolved`'s global seq, so a spend can be told apart from one an attempt's counter already holds (#1258). */
+    readonly seq?: number
+  } | null
   readonly triage: {
     /** The latest `TriageStarted` by attempt. */
     readonly started: { readonly attempt: number; readonly at: Date; readonly by: TriageStartedBy } | null
@@ -96,7 +101,7 @@ export function reduceWaits(waits: readonly TicketWait[], event: Envelope): read
       const d = event.data as PayloadOf<'WaitResolved'>
       return waits.map((w) =>
         w.waitId === d.waitId && w.resolution === null
-          ? { ...w, resolution: { resolution: d.resolution, by: d.by } }
+          ? { ...w, resolution: { resolution: d.resolution, by: d.by, seq: Number(event.seq) } }
           : w,
       )
     }
@@ -1330,16 +1335,25 @@ export function actOnTriageTransition(
 }
 
 /**
- * **What triage's own resolutions have spent**, per bound, read off the ticket's waits: a `WaitResolved{by: 'triage'}`
- * is the count, in the one append before any effect (0108 §6 (3)), so a restart between it and the effect spends once.
- * A person's resolution adds nothing here. `FixRefusal` is a count of its own (`refusalFixes`), and the continuation
- * that takes it up raises the implement round, which is where it is counted afterwards: a caller that adds this
- * summand to a bound reads the round only while that continuation has not been taken up.
+ * **What triage's own resolutions have spent that no counter holds yet**, per bound, read off the ticket's waits: a
+ * `WaitResolved{by: 'triage'}` is the count, in the one append before any effect (0108 §6 (3)), so a restart between it
+ * and the effect spends once. A person's resolution adds nothing here.
+ *
+ * The attempt's own counters are cumulative and a continuation is seeded with `counter + this`, so the next event it
+ * writes holds the triage spend too. Adding the whole of it again would count it twice, so a resolution is counted only
+ * while it is *after* the last event that raised that counter (`attempt`'s `…Seq`). The total for a bound is the
+ * attempt's counter plus this, whichever side the spend is on. `attempt` absent counts every resolution of the ticket
+ * (`newAttempts`, which no attempt counter holds).
  */
 export function triageSpentOn(
   state: TicketState,
   /** The attempt a per-attempt bound is counted for; absent counts every wait's. `newAttempts` is the ticket's. */
   runId?: string | null,
+  attempt?: {
+    stepRedosSeq?: number
+    conflictRoundsSeq?: number
+    implementRoundSeq?: number
+  } | null,
 ): {
   refusalFixes: number
   conflictResolutions: number
@@ -1347,21 +1361,26 @@ export function triageSpentOn(
   stepRedos: number
 } {
   const out = { refusalFixes: 0, conflictResolutions: 0, newAttempts: 0, stepRedos: 0 }
+  // Seq absent on either side: nothing says the counter holds it, so it is counted.
+  const after = (seq: number | undefined, counterSeq: number | undefined): boolean =>
+    seq === undefined || counterSeq === undefined || seq > counterSeq
   for (const w of state.waits) {
     if (w.resolution?.by !== 'triage') continue
     const tag = w.resolution.resolution._tag
+    const seq = w.resolution.seq
     if (tag === 'StartNewAttempt') {
       out.newAttempts += 1
       continue
     }
     if (!(runId === undefined || ('run' in w.reason && w.reason.run.runId === runId))) continue
-    if (tag === 'RedoStep') out.stepRedos += 1
-    else if (tag === 'FixRefusal') {
+    if (tag === 'RedoStep') {
+      if (after(seq, attempt?.stepRedosSeq)) out.stepRedos += 1
+    } else if (tag === 'FixRefusal') {
       // Which bound a fix spent is the cause it answered: a conflict's resolution is `conflictResolutions`.
       const answered = w.triage.result
-      if (answered?._tag === 'TriageAnswered' && answered.cause._tag === 'ConflictingHunks')
-        out.conflictResolutions += 1
-      else out.refusalFixes += 1
+      if (answered?._tag === 'TriageAnswered' && answered.cause._tag === 'ConflictingHunks') {
+        if (after(seq, attempt?.conflictRoundsSeq)) out.conflictResolutions += 1
+      } else if (after(seq, attempt?.implementRoundSeq)) out.refusalFixes += 1
     }
   }
   return out

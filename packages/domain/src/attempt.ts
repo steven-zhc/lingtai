@@ -249,6 +249,13 @@ export interface AttemptState {
   stepRedos?: number
   /** The landings again after origin refused one (`LandAgain` routes, #1221); apart from `stepRedos`; absent reads as 0. */
   landingRetries?: number
+  /**
+   * The seq of the last event that raised `stepRedos`, `conflictRounds` and `implementRound`; absent until one does.
+   * A triage's resolution after it is a spend these counters do not yet hold, one before it is already in them (#1258).
+   */
+  stepRedosSeq?: number
+  conflictRoundsSeq?: number
+  implementRoundSeq?: number
 
   version: number
   lastSeq: bigint | null
@@ -581,7 +588,13 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
     case 'StepRerunInPlace': {
       const d = event.data as PayloadOf<'StepRedone'>
       // The cut-off's failure is not the attempt's: the rerun is the run now, so a recovery reads as one.
-      return { ...state, ...at, failure: null, stepRedos: Math.max(state.stepRedos ?? 0, d.rerun) }
+      return {
+        ...state,
+        ...at,
+        failure: null,
+        stepRedos: Math.max(state.stepRedos ?? 0, d.rerun),
+        stepRedosSeq: Number(event.seq),
+      }
     }
 
     case 'StepStarted': {
@@ -591,6 +604,7 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
         ...at,
         step: { step: d.step, round: d.round, since: event.at },
         implementRound: d.step === 'implement' ? Math.max(state.implementRound, d.round) : state.implementRound,
+        ...(d.step === 'implement' ? { implementRoundSeq: Number(event.seq) } : {}),
       }
     }
 
@@ -619,7 +633,14 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
         }
       }
       if (next._tag === 'RerunStep') {
-        return { ...state, ...settled, ...at, stepRedos: Math.max(state.stepRedos ?? 0, next.retry), route: d }
+        return {
+          ...state,
+          ...settled,
+          ...at,
+          stepRedos: Math.max(state.stepRedos ?? 0, next.retry),
+          stepRedosSeq: Number(event.seq),
+          route: d,
+        }
       }
       if (next._tag === 'MergeBaseBranch') {
         return { ...state, ...settled, ...at, baseMerges: Math.max(state.baseMerges ?? 0, next.merge), route: d }
@@ -632,7 +653,10 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
             implementRound: Math.max(state.implementRound, next.round),
             roundsOpened: [...state.roundsOpened, next.round],
             ...(next.conflict !== undefined
-              ? { conflictRounds: Math.max(state.conflictRounds ?? 0, next.conflict) }
+              ? {
+                  conflictRounds: Math.max(state.conflictRounds ?? 0, next.conflict),
+                  conflictRoundsSeq: Number(event.seq),
+                }
               : {}),
             route: d,
           }

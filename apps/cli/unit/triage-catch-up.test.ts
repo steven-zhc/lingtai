@@ -1,5 +1,5 @@
 import { ticketStream, type Envelope, type WaitId } from '@lingtai/domain'
-import { anAttemptRef } from '@lingtai/domain/test/events'
+import { aClaim, aResolution, anAttemptRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { ConcurrencyError } from '@lingtai/event-store'
@@ -453,6 +453,40 @@ describe('triage catch-up', () => {
     )
     await catchUpTriage('lingtai', triage, f.deps)
     expect(f.run).toHaveBeenCalledOnce()
+  })
+
+  it('asks again for the continuation of a wait triage resolved on every scan, though the recipe has not changed', async () => {
+    const f = fixture()
+    const stream = ticketStream('lingtai', 21)
+    const e = makeStream(stream)
+    const waitId = 'wait-21' as WaitId
+    const crashed = {
+      _tag: 'AgentCrashed',
+      run: anAttemptRef('run-21'),
+      step: 'implement',
+      cause: 'crash',
+      detail: 'x',
+    } as const
+    const events = [
+      ...aClaim(e, 'run-21'),
+      ...aWait(e, crashed, waitId),
+      ...aResolution(e, waitId, { _tag: 'RedoStep', onSha: 'abc', ref: 'agent/21' }, 'triage'),
+    ]
+    const continuation = vi
+      .fn<(project: string, issue: string, runId: string) => string | null>()
+      .mockReturnValueOnce('append failed')
+      .mockReturnValue(null)
+    const deps: CatchUpTriagePorts = {
+      ...f.deps,
+      store: { ...f.deps.store, read: async () => events },
+      readTasks: () => Effect.succeed([{ issue: '21', state: 'approved' }] as never),
+      continuation: (project, issue, runId) => Effect.sync(() => continuation(project, issue, runId)),
+    }
+    const hashes = new Map<string, string>()
+    await catchUpChangedTriage('lingtai', triage, hashes, deps)
+    await catchUpChangedTriage('lingtai', triage, hashes, deps)
+    expect(continuation).toHaveBeenCalledTimes(2)
+    expect(continuation).toHaveBeenLastCalledWith('lingtai', '21', 'run-21')
   })
 
   it('shares the queue with live delivery', async () => {

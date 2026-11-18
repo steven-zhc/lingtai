@@ -136,12 +136,17 @@ const StoredRun = z.strictObject({
   version: z.number(),
   lastSeq: Seq.transform((s) => BigInt(s)).nullable(),
   // Last, where the reduce first writes it: a key the state gains later goes after the ones it always had.
+  /** #1258; the seq of the last implement start — written at the first `StepStarted`, so ahead of the rest. */
+  implementRoundSeq: z.number().int().optional(),
   /** #1161; absent until a sandbox event is reduced. */
   sandbox: z.array(SandboxInvocation).optional(),
   /** #1200; each absent until its route is reduced, read as 0. */
   baseMerges: z.number().int().optional(),
   conflictRounds: z.number().int().optional(),
+  /** #1258; the seq of the last event raising `conflictRounds` and `stepRedos`, written beside each. */
+  conflictRoundsSeq: z.number().int().optional(),
   stepRedos: z.number().int().optional(),
+  stepRedosSeq: z.number().int().optional(),
   landingRetries: z.number().int().optional(),
 })
 
@@ -207,7 +212,8 @@ export const attemptReducer: Reducer<AttemptState> = {
   // 11: a route's `FixRefusal`/`MergeBaseBranch`/`NewAttempt` and a ceiling's bound name replace the old tags (#1241); a version-10 snapshot holds the old ones, and a `StepRedone` folds as a `StepRerunInPlace` did.
   // 12: a `RunKeptUncommitted` names its commit's ref as `ref`, not `arm` (#1243); a version-11 snapshot holds `arm`.
   // 13: an `InputNeeded` and an `Asked` carry `questions` (#1253); a version-12 snapshot holds `question` alone.
-  version: 13,
+  // 14: the seq of the last event raising `stepRedos`, `conflictRounds` and `implementRound` is kept (#1258); a version-13 snapshot lacks it.
+  version: 14,
   initial: emptyAttempt,
   reduceEvent: reduceAttemptEvent,
   encode: encodeRun,
