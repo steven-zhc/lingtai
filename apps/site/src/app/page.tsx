@@ -7,6 +7,7 @@ import { Bar, Foot, INSTALL_URL } from './chrome'
 import { CopyCommand } from './copy-command'
 import { Film } from './film'
 import { ReplayReceipt } from './replay-receipt'
+import { SandboxShield } from './sandbox-shield'
 import { Shots } from './shots'
 
 /** The agent alone against Lingtai: the left column says who decides, never that an agent fails. */
@@ -200,94 +201,7 @@ export function HomePage({ books }: { books: Books | null }) {
                 </a>
               </div>
               <div className="sandbox-side">
-                <figure className="home-sbx" aria-label="Illustration of a ticket's Sandbox tab on the board">
-                  <div className="home-sbx-top">
-                    <span>
-                      <b>#42 &middot; add reading time to chapters</b>
-                      <small>Attempt 1</small>
-                    </span>
-                    <span className="tag ill">ILLUSTRATION</span>
-                  </div>
-                  <div className="home-sbx-group">
-                    <h3>Blocked</h3>
-                    <ul>
-                      <li>
-                        <span className="no" aria-hidden="true">
-                          ✗
-                        </span>
-                        <code>pastebin.com:443</code> <small>1×</small>
-                      </li>
-                      <li>
-                        <span className="no" aria-hidden="true">
-                          ✗
-                        </span>
-                        <code>203.0.113.7:22</code> <small>3×</small>
-                      </li>
-                    </ul>
-                  </div>
-                  <div className="home-sbx-group">
-                    <h3>
-                      Allowed <small>Reachable</small>
-                    </h3>
-                    <ul>
-                      <li>
-                        <span className="yes" aria-hidden="true">
-                          ✓
-                        </span>
-                        <code>api.anthropic.com</code>
-                      </li>
-                      <li>
-                        <span className="yes" aria-hidden="true">
-                          ✓
-                        </span>
-                        <code>api.openai.com</code>
-                      </li>
-                      <li>
-                        <span className="yes" aria-hidden="true">
-                          ✓
-                        </span>
-                        <code>registry.npmjs.org</code>
-                      </li>
-                    </ul>
-                  </div>
-                  <div className="home-sbx-group">
-                    <h3>
-                      Limited <small>Cannot be read</small>
-                    </h3>
-                    <ul>
-                      <li>
-                        <span className="no" aria-hidden="true">
-                          ✗
-                        </span>
-                        <code>~/.ssh</code>
-                      </li>
-                      <li>
-                        <span className="no" aria-hidden="true">
-                          ✗
-                        </span>
-                        <code>~/.aws</code>
-                      </li>
-                      <li>
-                        <span className="no" aria-hidden="true">
-                          ✗
-                        </span>
-                        <code>~/.config/gh</code>
-                      </li>
-                      <li>
-                        <span className="no" aria-hidden="true">
-                          ✗
-                        </span>
-                        <code>~/.npmrc</code>
-                      </li>
-                      <li>
-                        <span className="no" aria-hidden="true">
-                          ✗
-                        </span>
-                        <code>~/.lingtai</code>
-                      </li>
-                    </ul>
-                  </div>
-                </figure>
+                <SandboxShield />
                 <p className="sandbox-small">
                   Telemetry hosts such as <code>sentry.io</code> are refused but not listed.
                 </p>

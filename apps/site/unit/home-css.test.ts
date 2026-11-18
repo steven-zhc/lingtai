@@ -32,7 +32,7 @@ describe('home.css sandbox block', () => {
     expect(end).toBeGreaterThan(start)
 
     const mine = classesOf(site.slice(start, end))
-    expect(mine.has('home-sbx')).toBe(true)
+    expect(mine.has('home-shield')).toBe(true)
 
     const board = classesOf(await readFile(BOARD, 'utf8'))
     expect([...mine].filter((name) => board.has(name))).toEqual([])

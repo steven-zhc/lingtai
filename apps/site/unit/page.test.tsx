@@ -31,6 +31,15 @@ const above = (text: string) => {
   return i < 0 ? text : text.slice(0, i)
 }
 
+const DRAWN_PATHS = [
+  '~/.ssh/id_ed25519',
+  '~/.aws/credentials',
+  '~/.npmrc',
+  '~/.lingtai',
+  '~/.config/gh/hosts.yml',
+  '~/Library/Keychains',
+]
+
 describe("the home page's argument", () => {
   it('uses the public home as the installer front door', async () => {
     const chrome = await readFile(path.resolve(import.meta.dirname, '../src/app/chrome.tsx'), 'utf8')
@@ -171,9 +180,19 @@ describe("the home page's argument", () => {
     expect(block).toMatch(/telemetry/i)
     expect(block).toContain('On for new projects')
     expect(block).toContain('ILLUSTRATION')
-    expect(block).toContain('class="home-sbx"')
-    for (const heading of ['Blocked', 'Allowed', 'Reachable', 'Limited', 'Cannot be read']) {
-      expect(block).toContain(heading)
+    expect(block).toContain('class="home-shield"')
+    expect(block).toContain(
+      'aria-label="A shield around the agent&#x27;s run; the keys and config on the machine stay outside it"',
+    )
+    expect(block).not.toContain('home-sbx')
+    for (const drawn of [...DRAWN_PATHS, 'api.anthropic.com', 'pastebin.com']) {
+      expect(block).toContain(drawn)
+    }
+    // Every path drawn is on the built-in deny list (packages/sandbox/src/policy.ts), by prefix. `~/.lingtai` is
+    // the state dir entry there, not a home join.
+    const DENY = ['~/.ssh', '~/.aws', '~/.npmrc', '~/.lingtai', '~/.config/gh', '~/Library/Keychains']
+    for (const drawn of DRAWN_PATHS) {
+      expect(DENY.some((d) => drawn === d || drawn.startsWith(`${d}/`))).toBe(true)
     }
     expect(block).not.toContain('sandbox.svg')
     expect(block).not.toContain('sandbox-facts')
