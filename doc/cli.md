@@ -316,9 +316,9 @@ lingtai end replay lingtai --issue <n>
 | merge what a held run produced | [lingtai approve](#lingtai-approve) |
 | answer a question a ticket was held on | [lingtai answer](#lingtai-answer) |
 | hold a ticket on a decision before any run | [lingtai ask](#lingtai-ask) |
-| one more implementation round on saved work | [lingtai grant-fix-round](#lingtai-grant-fix-round) |
-| run the step that stopped again, on the saved work | [lingtai rerun](#lingtai-rerun) |
-| end a wait with a new run | [lingtai requeue](#lingtai-requeue) |
+| one more implementation round on saved work | [lingtai fix-refusal](#lingtai-fix-refusal) |
+| run the step that stopped again, on the saved work | [lingtai redo-step](#lingtai-redo-step) |
+| end a wait with a new run | [lingtai start-new-attempt](#lingtai-start-new-attempt) |
 | end a ticket nobody is going to do | [lingtai close](#lingtai-close) |
 
 Except `close`, which also carries out the recipe's end actions on the ticket at once, these commands only append to the log. When a wait ends, the conductor's next action on that ticket (the landing, the next hold, the release or the claim) edits the ticket's "Lingtai is waiting on you" comment into its outcome and posts no second comment; the CLI and the board never edit it.
@@ -374,55 +374,55 @@ lingtai ask <project> --issue <n> "<question>" [--json]
 lingtai ask lingtai --issue <n> "which groups?"
 ```
 
-### lingtai grant-fix-round
+### lingtai fix-refusal
 
 One more implementation round on saved work.
 
 Changes state — `--json` on its verdict (version 1).
 
 ```text
-lingtai grant-fix-round <project> --issue <n> [--if-head <sha>] [--json]
+lingtai fix-refusal <project> --issue <n> [--if-head <sha>] [--json]
   Run one more implementation round on saved work, then repeat the
   checks without waiving a refusal.
 ```
 
 ```sh
-lingtai grant-fix-round lingtai --issue <n> --if-head <sha>
+lingtai fix-refusal lingtai --issue <n> --if-head <sha>
 ```
 
-### lingtai rerun
+### lingtai redo-step
 
 Run the step that stopped again, on the saved work.
 
 Changes state — `--json` on its verdict (version 1).
 
 ```text
-lingtai rerun <project> --issue <n> [--if-head <sha>] [--json]
+lingtai redo-step <project> --issue <n> [--if-head <sha>] [--json]
   The same attempt runs the step a crash or a red stopped again, on its
   saved head: no fixer, nothing cut from base, and no round or restart
   spent. --if-head refuses if the saved head is a different commit.
 ```
 
 ```sh
-lingtai rerun lingtai --issue <n> --if-head <sha>
+lingtai redo-step lingtai --issue <n> --if-head <sha>
 ```
 
-### lingtai requeue
+### lingtai start-new-attempt
 
 End a wait with a new run.
 
 Changes state — `--json` on its verdict (version 1).
 
 ```text
-lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]
-                [--json]
-  A blocked item goes back to the queue — held for approval or not —
-  and the next attempt cuts a fresh branch from a base that has since
+lingtai start-new-attempt <project> --issue <n> [--note <why>]
+                [--into-body <text>] [--json]
+  Queues a new attempt for a blocked item — held for approval or not —
+  and that attempt cuts a fresh branch from a base that has since
   moved. The actor is still recorded in by.
 ```
 
 ```sh
-lingtai requeue lingtai --issue <n> --note "base moved"
+lingtai start-new-attempt lingtai --issue <n> --note "base moved"
 ```
 
 ### lingtai close

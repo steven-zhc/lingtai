@@ -172,7 +172,7 @@ export function baseRedText(because: { command: string; base: string; baseSha: s
   return (
     `base is red: \`${because.command}\` fails on ${because.base} at ${because.baseSha.slice(0, 7)} before any ` +
     `change, so a fix round would not be about this diff — make ${because.base} pass it, or drop it from ` +
-    `build, then lingtai requeue`
+    `build, then lingtai start-new-attempt`
   )
 }
 

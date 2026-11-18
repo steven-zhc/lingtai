@@ -13,7 +13,7 @@ import {
   type ConductorNoteWorld,
   NO_CONDUCTOR,
 } from '../src/conductor-note.ts'
-import { requeueCommand } from '../src/requeue.ts'
+import { startNewAttemptCommand } from '../src/start-new-attempt.ts'
 
 const conductorNote = (world?: ConductorNoteWorld) => Effect.runPromise(conductorNoteEffect(world))
 
@@ -51,7 +51,7 @@ describe('requeue prints the note through its deps seam', () => {
   const run = async (holder: () => Promise<string | null>) => {
     const lines: string[] = []
     const code = await Effect.runPromise(
-      requeueCommand({ project: 'lingtai', issue: 9, note: 'again', by: 'human:test' }, (l) => lines.push(l), {
+      startNewAttemptCommand({ project: 'lingtai', issue: 9, note: 'again', by: 'human:test' }, (l) => lines.push(l), {
         store: createMemoryEventStore(),
         readProject: () => Effect.succeed({ owner: 'steven' } as never),
         conductorNote: () => conductorNoteEffect({ holder }),

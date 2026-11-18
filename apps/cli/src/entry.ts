@@ -13,44 +13,54 @@
 import { Effect } from 'effect'
 
 import { finishEffect } from './ending.ts'
-import { helpCommand, unknownCommand } from './help.ts'
+import { helpCommand, retiredCommand, unknownCommand } from './help.ts'
 import { routeOf, versionFlagAsCommand } from './migrated.ts'
 
 const argv = versionFlagAsCommand(process.argv.slice(2))
 
 const route = routeOf(argv)
 
-if (route === 'effect') {
-  void import('./cli.ts')
-    .then(({ cli, closeStores }) =>
-      // The program's one run (0101 §6). `runPromise` and not `runMain`: `runMain` interrupts the main fiber on
-      // SIGINT, and the daemon's first Ctrl+C is a drain that finishes the pass in flight.
-      Effect.runPromise(
-        finishEffect(cli([...process.argv.slice(0, 2), ...argv]), closeStores, (code) => {
-          // The close gave up with its socket still open, which would hold the process past the budget; leave
-          // once what is already written is out.
-          process.exitCode = code
-          process.stdout.write('', () => process.stderr.write('', () => process.exit(code)))
-        }),
-      ),
-    )
-    .then((code) => {
-      // `init` may have started the board in this process, and its listening
-      // socket holds the event loop open past `process.exitCode` (#394 finding
-      // 1): a refusal reached after that cannot rely on it. Every refusal of
-      // init's is safe to `process.exit` on, and it is never reached on
-      // success, which is what "the board keeps running in this terminal"
-      // promises. Not the rule for every command — `doctor --json` may still
-      // be writing to a pipe.
-      if (code !== 0 && argv[0] === 'init') process.exit(code)
-      process.exitCode = code
-    })
-    .catch(reportEnding)
-} else if (route === 'help') {
-  // From the definitions alone (0121 §8): no project, no log, no network.
-  process.exitCode = helpCommand(argv)
-} else {
-  process.exitCode = unknownCommand(argv[0]!)
+switch (route) {
+  case 'effect': {
+    void import('./cli.ts')
+      .then(({ cli, closeStores }) =>
+        // The program's one run (0101 §6). `runPromise` and not `runMain`: `runMain` interrupts the main fiber on
+        // SIGINT, and the daemon's first Ctrl+C is a drain that finishes the pass in flight.
+        Effect.runPromise(
+          finishEffect(cli([...process.argv.slice(0, 2), ...argv]), closeStores, (code) => {
+            // The close gave up with its socket still open, which would hold the process past the budget; leave
+            // once what is already written is out.
+            process.exitCode = code
+            process.stdout.write('', () => process.stderr.write('', () => process.exit(code)))
+          }),
+        ),
+      )
+      .then((code) => {
+        // `init` may have started the board in this process, and its listening
+        // socket holds the event loop open past `process.exitCode` (#394 finding
+        // 1): a refusal reached after that cannot rely on it. Every refusal of
+        // init's is safe to `process.exit` on, and it is never reached on
+        // success, which is what "the board keeps running in this terminal"
+        // promises. Not the rule for every command — `doctor --json` may still
+        // be writing to a pipe.
+        if (code !== 0 && argv[0] === 'init') process.exit(code)
+        process.exitCode = code
+      })
+      .catch(reportEnding)
+    break
+  }
+  case 'help':
+    // From the definitions alone (0121 §8): no project, no log, no network.
+    process.exitCode = helpCommand(argv)
+    break
+  case 'retired':
+    process.exitCode = retiredCommand(argv)
+    break
+  case 'unknown':
+    process.exitCode = unknownCommand(argv[0]!)
+    break
+  default:
+    route satisfies never
 }
 
 /**

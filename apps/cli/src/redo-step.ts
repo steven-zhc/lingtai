@@ -15,7 +15,7 @@ import { noteConductor } from './conductor-note.ts'
 import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
 
 /** The head is selected under the decision lock from the held run's log, and the step reruns on it (#1218). */
-export function rerunVerdict(
+export function redoStepVerdict(
   options: { project: string; issue: number; ifHead?: string },
   progress: (line: string) => void,
 ): Effect.Effect<Answered, unknown> {
@@ -38,15 +38,15 @@ export function rerunVerdict(
       const ticketId = ticketStream(options.project, options.issue)
       const item = yield* readThroughSnapshot(eventStore, ticketReducer, ticketId, 'all', { snapshots: log.snapshots })
       const life = item.lifecycle
-      // An approved rerun is retried: its continuation may never have been scheduled.
-      const rerunApproved =
+      // An approved redo is retried: its continuation may never have been scheduled.
+      const redoApproved =
         life.status === 'approved' &&
         item.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution._tag === 'RedoStep'
-      if (life.status !== 'blocked' && !rerunApproved) {
-        return refusal(1, 'not-waiting', `${ticketId} is not waiting on a step to rerun`, { ticketId })
+      if (life.status !== 'blocked' && !redoApproved) {
+        return refusal(1, 'not-waiting', `${ticketId} is not waiting on a step to redo`, { ticketId })
       }
       if (life.status !== 'blocked' && life.status !== 'approved') {
-        return refusal(1, 'not-waiting', `${ticketId} is not waiting on a step to rerun`, { ticketId })
+        return refusal(1, 'not-waiting', `${ticketId} is not waiting on a step to redo`, { ticketId })
       }
       const result = yield* resolveWaitEffect({
         ticketId,
@@ -60,16 +60,18 @@ export function rerunVerdict(
       if (!result.ok) {
         return refusal(1, result.reason, result.detail, { ticketId: result.ticketId })
       }
+      if (result.unscheduled !== undefined) {
+        // The wait is resolved but nothing was queued: not an acceptance.
+        return refusal(
+          1,
+          'unscheduled',
+          `the wait was resolved, but scheduling failed: ${result.unscheduled}; run it again to schedule it`,
+          { ticketId, extra: { unscheduled: result.unscheduled } },
+        )
+      }
       return {
         code: 0,
-        verdict: {
-          outcome: 'accepted',
-          ticketId,
-          detail: result.unscheduled
-            ? `scheduling failed: ${result.unscheduled}`
-            : 'the step runs again on the saved work',
-          ...(result.unscheduled ? { extra: { unscheduled: result.unscheduled } } : {}),
-        },
+        verdict: { outcome: 'accepted', ticketId, detail: 'the step runs again on the saved work' },
       } satisfies Answered
     })
     const answered: Answered = yield* append
@@ -78,9 +80,9 @@ export function rerunVerdict(
   })
 }
 
-export function rerunCommand(
+export function redoStepCommand(
   options: { project: string; issue: number; ifHead?: string },
   log = console.log,
 ): Effect.Effect<number, unknown> {
-  return Effect.map(rerunVerdict(options, log), (answered) => logVerdict(VERBS['rerun'], answered, log))
+  return Effect.map(redoStepVerdict(options, log), (answered) => logVerdict(VERBS['redo-step'], answered, log))
 }

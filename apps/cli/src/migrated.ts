@@ -8,7 +8,22 @@
  */
 import { isCommand } from './commands.ts'
 
-export type Route = 'effect' | 'help' | 'unknown'
+export type Route = 'effect' | 'help' | 'retired' | 'unknown'
+
+/**
+ * Verbs that were renamed (#1269). They are not commands — never in `commands.ts`, so never in the help,
+ * the generated docs or `@effect/cli` — and the router sends them to a refusal that names the new verb.
+ */
+export const RETIRED: Readonly<Record<string, string>> = {
+  'grant-fix-round': 'fix-refusal',
+  rerun: 'redo-step',
+  requeue: 'start-new-attempt',
+}
+
+/** The new verb for a retired one, or undefined for any other word. */
+export function retiredVerb(word: string): string | undefined {
+  return Object.hasOwn(RETIRED, word) ? RETIRED[word] : undefined
+}
 
 /**
  * `lingtai --version <more>` is `lingtai version <more>` (#740): the first word only, so the line is
@@ -20,6 +35,8 @@ export function versionFlagAsCommand(argv: readonly string[]): string[] {
 
 export function routeOf(argv: readonly string[]): Route {
   const first = argv[0] ?? ''
+  // Before `--help`: a retired verb has no help to give, only the name that replaced it.
+  if (retiredVerb(first) !== undefined) return 'retired'
   const helped = argv.some((a) => a === '--help' || a === '-h')
   // `version`'s help is `@effect/cli`'s (#617); every other command's is the definition's (0121 §6).
   if (first !== 'version' && helped) return 'help'

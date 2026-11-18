@@ -7,7 +7,8 @@
  * the one place that prints.
  */
 import { COMMANDS, GROUPS, definitionOf, isCommand } from './commands.ts'
-import { applyNoColor, heading, keyValues, section } from './output.ts'
+import { retiredVerb } from './migrated.ts'
+import { applyNoColor, heading, jsonErrorDocument, keyValues, section } from './output.ts'
 
 /** The root listing: four groups, one line per command. */
 export function rootHelp(): string {
@@ -43,6 +44,18 @@ export function unknownCommand(asked: string): number {
   return 2
 }
 
+/**
+ * A verb that was renamed (#1269): exit 2 and the new verb's name, nothing appended — this runs without `cli.ts`,
+ * so no store is opened. With `--json` the sentence is a JSON error document on stdout, as every command's is.
+ */
+export function retiredCommand(argv: readonly string[]): number {
+  const asked = argv[0] ?? ''
+  const sentence = `\`${asked}\` is now \`lingtai ${retiredVerb(asked) ?? ''}\``
+  if (argv.includes('--json')) process.stdout.write(`${jsonErrorDocument(asked, 'removed-command', sentence)}\n`)
+  else process.stderr.write(`${sentence}\n`)
+  return 2
+}
+
 /** The first argument that is not a flag, which is the command a question is about. */
 function commandAsked(argv: readonly string[]): string | undefined {
   const first = argv[0]
@@ -60,6 +73,7 @@ export function helpCommand(argv: readonly string[]): number {
     ;(none ? process.stderr : process.stdout).write(`${rootHelp()}\n`)
     return none ? 2 : 0
   }
+  if (retiredVerb(asked) !== undefined) return retiredCommand([asked, ...argv.filter((a) => a === '--json')])
   if (!isCommand(asked)) return unknownCommand(asked)
   process.stdout.write(`${commandHelp(asked)}\n`)
   return 0

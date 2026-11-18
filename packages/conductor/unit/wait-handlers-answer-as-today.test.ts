@@ -162,7 +162,7 @@ describe('answer', () => {
     const result = await answerUnlocked({ project: PROJECT, issue: 6, answer: 'yes', by: 'human:steven', store })
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('pass-6')
-    expect(result.detail).toContain('lingtai requeue <project> --issue <n> --into-body <text>')
+    expect(result.detail).toContain('lingtai start-new-attempt <project> --issue <n> --into-body <text>')
   })
 
   it('refuses when the question has moved on', async () => {

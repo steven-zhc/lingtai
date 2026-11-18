@@ -33,13 +33,13 @@ export function waitCommand(
           : bare
             ? ' [--into-body "<text>"]'
             : ' --into-body "<text>"'
-      entries.push(`${base('requeue')}${body}`)
+      entries.push(`${base('start-new-attempt')}${body}`)
     } else if (tag === 'Approve') {
       entries.push(reason._tag === 'SignoffRequired' ? base('approve') : `${base('approve')} --note "<why>"`)
     } else if (tag === 'FixRefusal') {
-      entries.push(base('grant-fix-round'))
+      entries.push(base('fix-refusal'))
     } else if (tag === 'RedoStep') {
-      entries.push(base('rerun'))
+      entries.push(base('redo-step'))
     } else if (tag === 'AnswerQuestion') {
       entries.push(`${base('answer')} "<choice>"`)
     }

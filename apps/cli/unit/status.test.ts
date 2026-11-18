@@ -151,7 +151,7 @@ const fixture: StatusReport = {
             words: null,
             detail: [],
             recommendation: null,
-            command: 'one of: lingtai requeue lingtai --issue 610   (or the board)',
+            command: 'one of: lingtai start-new-attempt lingtai --issue 610   (or the board)',
             raw: false,
           },
         }),
@@ -379,7 +379,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
       detail: ['ready to land — the recipe asks you to approve each attempt'],
       recommendation: null,
       command:
-        'lingtai approve lingtai --issue 1   (or lingtai requeue lingtai --issue 1 [--into-body "<text>"], or the board)',
+        'lingtai approve lingtai --issue 1   (or lingtai start-new-attempt lingtai --issue 1 [--into-body "<text>"], or the board)',
       raw: true,
     }
     const report: StatusReport = {
@@ -408,7 +408,7 @@ describe('renderStatus keeps every fact the old output printed', () => {
       const lines = out.split('\n').map((l) => l.trim())
       expect(lines.filter((l) => l === 'ready to land — the recipe asks you to approve each attempt')).toHaveLength(1)
       expect(out).toContain('#1  Add the chapter')
-      expect(out).toContain(`lingtai approve ${report.projects[0]!.project} --issue 1   (or lingtai requeue`)
+      expect(out).toContain(`lingtai approve ${report.projects[0]!.project} --issue 1   (or lingtai start-new-attempt`)
       expect(out).not.toContain('failure')
       expect(out).not.toContain('your judgement is needed')
       expect(out).not.toContain('a failure needs acknowledging')
@@ -688,7 +688,11 @@ describe('waitDetail (#656)', () => {
   it('drops the reason’s own recommendation line when the shared rule recommends nothing', () => {
     const words = {
       needs: 'judgement',
-      diagnosis: { what: 'it conflicted', done: null, recommendation: { action: 'requeue', why: 'try again' } },
+      diagnosis: {
+        what: 'it conflicted',
+        done: null,
+        recommendation: { action: 'start-new-attempt', why: 'try again' },
+      },
     } as never
     const lines = waitDetail(words, disagrees, triage('GrantFixRound'), false)
     expect(lines.some((l) => l.includes('recommends'))).toBe(false)
