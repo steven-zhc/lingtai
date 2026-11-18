@@ -7,7 +7,7 @@ import { approveHolding } from '@lingtai/conductor/decide'
 import { reduceTicket, ticketStream, waitsOf, type WaitId } from '@lingtai/domain'
 import { aClaim, anAttemptRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
-import { acceptedTriageNote, type Resolution, type WaitReason } from '@lingtai/domain/wait'
+import { acceptedTriageNote, type TriageAdvice, type WaitReason } from '@lingtai/domain/wait'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { TaskCard } from '@lingtai/projector/task-view'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -30,7 +30,7 @@ const checkRefused = {
   findings: [],
 } as unknown as WaitReason
 
-function result(resolution: Resolution['_tag'], cause = 'FixableLines'): TaskCard['triage'] {
+function result(resolution: TriageAdvice, cause = 'FixableLines'): TaskCard['triage'] {
   return {
     started: null,
     result: {

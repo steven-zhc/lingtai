@@ -57,3 +57,21 @@ it('shows the server’s stale refusal as the card’s detail', async () => {
     detail: 'stale: moved',
   })
 })
+
+/**
+ * #1267: no board action takes a resolution tag from the page — each builds its own on the server from `{waitId,
+ * onSha}` — so a page loaded before the rename has no old tag to post. What protects it is the stale check.
+ */
+it('refuses a continueFixingCard posted without the head the page showed, telling the person to reload', async () => {
+  const waitId = aWaitId()
+  const result = await continueFixingCard({ project: 'p', issue: 1, waitId, onSha: '' })
+  expect(result).toMatchObject({ ok: false, detail: expect.stringContaining('reload this page') })
+  expect(conductor.resolveWait).not.toHaveBeenCalled()
+})
+
+it('names the move continueFixingCard asks for by its own tag', async () => {
+  await continueFixingCard({ project: 'p', issue: 1, waitId: aWaitId(), onSha: 'abc' })
+  expect(conductor.resolveWait).toHaveBeenCalledWith(
+    expect.objectContaining({ resolution: { _tag: 'FixRefusal', onSha: 'abc', ref: '' } }),
+  )
+})

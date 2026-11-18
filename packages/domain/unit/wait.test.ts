@@ -10,7 +10,10 @@ import type { StepOutcome, WaitId } from '../src/action.ts'
 import { Proposal as ProposalSchema, type Proposal } from '../src/proposal.ts'
 import { TRIAGE_SENTENCE_MAX } from '../src/triage.ts'
 import {
+  adviceResolution,
   allowedResolutions,
+  Resolution as ResolutionSchema,
+  TriageAdvice,
   rerunStepOf,
   continuationOf,
   grantCriterion,
@@ -754,7 +757,7 @@ describe('recommendedResolution', () => {
 
   describe('an advice its own cause contradicts (#572)', () => {
     const reason = parseReason({ _tag: 'FixerDisagrees', run, said: 'nothing here answers the finding' })
-    const advise = (cause: RootCause, resolution: 'Approve' | 'FixRefusal' | 'StartNewAttempt'): TriageStatus => ({
+    const advise = (cause: RootCause, resolution: 'Approve' | 'GrantFixRound' | 'Requeue'): TriageStatus => ({
       _tag: 'Done',
       result: { _tag: 'TriageAdvised', cause, resolution, summary: 's', want: null } as TriageResult,
     })
@@ -1433,4 +1436,22 @@ describe('grantCriterion on a declined fix round (#935)', () => {
       })
     })
   }
+})
+
+describe('adviceResolution', () => {
+  const tags = ResolutionSchema.options.map((o) => o.shape._tag.value as string)
+
+  it.each(TriageAdvice.options)('maps %s to a member of Resolution', (advice) => {
+    expect(tags).toContain(adviceResolution(advice))
+  })
+
+  it('names the three advices whose resolution is spelled differently', () => {
+    expect(adviceResolution('GrantFixRound')).toBe('FixRefusal')
+    expect(adviceResolution('Requeue')).toBe('StartNewAttempt')
+    expect(adviceResolution('EditBodyAndRequeue')).toBe('EditBodyAndStartNewAttempt')
+  })
+
+  it('maps an advice with no differently named resolution to the one of the same name', () => {
+    for (const same of ['Approve', 'Split', 'Close'] as const) expect(adviceResolution(same)).toBe(same)
+  })
 })
