@@ -23,6 +23,7 @@ import {
   makeWorkAction,
   makeWorktreeAction,
   commandEffect,
+  redoParagraph,
   rerunId,
 } from '@lingtai/actions'
 import type { LandedCommit, LandedPath, LandedTitle } from '@lingtai/actions'
@@ -269,7 +270,13 @@ import { fixBriefParts, grantedAdviceFromState } from './fix.ts'
 import { flakyPortOf } from './flaky-port.ts'
 import { chosenIn, judgePrompt, judgePromptParts } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
-import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
+import {
+  commitWipExceptPlanted,
+  keptRunPort,
+  onlyThePlantedFileIsDirty,
+  resetToHead,
+  restoreAfterReview,
+} from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { AgentHost, Repo } from './ports.ts'
@@ -2045,10 +2052,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * there is nothing in the worktree it could have left dirty.
        */
       let stoppedBy: string | null = null
-      /** Where the first implementer dispatch found the tree: a rerun's receipt is measured from it too (#1201). */
-      let implementerStartedAt: string | null = null
-      /** The diff the first fix-round dispatch was briefed with: a rerun is briefed with the same one (#1201). */
-      let fixDiffSeen: { text: string; from: string | null; to: string | null } | null = null
       /**
        * Conflict fix rounds dispatched so far (#653). A conflict round leaves
        * `round` where `rounds` was, so `round` alone would hand Claude Code the
@@ -2353,6 +2356,33 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * read, since the read is a second git call that can fail on its own.
        */
       const wips: Array<{ parent: string; stoppedBy: string; sha: string | null }> = []
+      /**
+       * Where `wips` stood when the step's agent was first dispatched (#1245): a step redone whole is told
+       * the WIP made since, and only that. Set by every first dispatch, never by a redo of it.
+       */
+      /** Where each implementer first found the tree, by arrival and action name (#1245). */
+      const agentStarts = new Map<string, string>()
+      let stepFirst: { onSha: string; sha: string; wipFrom: number } | null = null
+      /** Whether this arrival at the step (its `onSha`) already has its first start recorded (#1245). */
+      const firstStartOf = (context: ActionContext): { onSha: string; sha: string; wipFrom: number } | null =>
+        stepFirst !== null && stepFirst.onSha === context.onSha ? stepFirst : null
+      /** The paragraph a redone step's agent ends its brief with, or null on a first dispatch (0108 §12). */
+      const redoNoteOf = (context: ActionContext, startedAt: string): Effect.Effect<string | null> =>
+        Effect.gen(function* () {
+          const first = firstStartOf(context)
+          if (context.redo === undefined) {
+            // Only the step's first agent arrival records it: a later agent, at the same head, must not
+            // move where the step began nor which WIP is its own.
+            if (first === null) stepFirst = { onSha: context.onSha, sha: startedAt, wipFrom: wips.length }
+            return null
+          }
+          // A WIP whose own sha read failed is resolved before it is named: it was committed all the same.
+          yield* resolveWipShas()
+          return redoParagraph(
+            { ...context.redo, startedAt: first?.sha ?? startedAt },
+            wips.slice(first?.wipFrom ?? 0).flatMap((entry) => (entry.sha === null ? [] : [entry.sha])),
+          )
+        })
       /** The worktree's `HEAD` as `publishWhatIsCommitted` last read it — what `standingFor` compares to the granted sha (#654). */
       let headNow: string | null = null
       /** Whether the dispatch that ran last was a conflict round, which keeps nothing (0108 §20). */
@@ -4653,11 +4683,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * true: prose in a prompt is not a guard, and the agent that ignores it is
            * exactly the one the guard is for.
            */
-          const startedAt =
-            brief.context.rerun !== undefined && implementerStartedAt !== null
-              ? implementerStartedAt
-              : yield* gitOrDieEffect(['rev-parse', 'HEAD'])
-          implementerStartedAt = startedAt
+          // **Each agent is measured from where it first found the tree** (#1245): a step redone whole runs every
+          // agent again, and one that finished before the cut-off must still find its own work counted. An agent
+          // that never ran before has no entry, and finds the tree as the one before it left it.
+          const startKey = `${brief.context.onSha}:${spec.name}`
+          const earlierStart = brief.context.rerun === undefined ? undefined : agentStarts.get(startKey)
+          const startedAt = earlierStart ?? (yield* gitOrDieEffect(['rev-parse', 'HEAD']))
+          if (!agentStarts.has(startKey)) agentStarts.set(startKey, startedAt)
+          const redoNote = yield* redoNoteOf(brief.context, startedAt)
           const implementDecision = yield* decideSandbox
           const wired = yield* Effect.result(
             host.wire({
@@ -4774,6 +4807,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                         ),
                         // The recipe's own words at `implement`, appended (`#266`).
                         ...(spec.prompt === '' ? [] : [alsoText(spec.prompt)]),
+                        ...(redoNote === null ? [] : [`\n\n${redoNote}`]),
                       ]
                 const implementerFor = {
                   _tag: 'Action' as const,
@@ -5050,14 +5084,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // there is a continuation — see `baseShaOr`'s own comment.
           // The reviewer's own spelling (`DIFF_FLAGS`), as `fixBrief`'s doc says the
           // two should be looking at the same change, and the two shas it ran between.
-          // A rerun in place (#1201) is handed the diff the cut-off round saw, not the partly fixed tree.
-          const underReview =
-            brief.context.rerun !== undefined && fixDiffSeen !== null
-              ? fixDiffSeen
-              : yield* changeStart(continuation?.diffBaseSha ?? tree.baseSha).pipe(
-                  Effect.flatMap((start) => diffBetween(start)),
-                )
-          fixDiffSeen = underReview
+          // A step redone whole (#1245) reads the diff as it stands at the head it was reset to.
+          const underReview = yield* changeStart(continuation?.diffBaseSha ?? tree.baseSha).pipe(
+            Effect.flatMap((start) => diffBetween(start)),
+          )
+          const redoNote = yield* redoNoteOf(brief.context, brief.context.redo?.startedAt ?? brief.context.onSha)
           // The same flag `firstDispatch` sets before its own dispatch, and for
           // the same reason (`#468`): an agent is running, and nothing has
           // judged what it leaves in the worktree if it is interrupted here.
@@ -5098,6 +5129,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   // Appended as a part, never to the finished string, so no recorded offset
                   // depends on where the text before it happened to end.
                   ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
+                  ...(redoNote === null ? [] : [`\n\n${redoNote}`]),
                 ]
           const fixPrompt = fixParts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
           const fixFor: SpentFor = {
@@ -5446,7 +5478,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         judge,
         mergeBase,
         stepRedoWaits: options.stepRedoWaits,
+        resetToHead: () =>
+          Effect.gen(function* () {
+            // **Never reset over work that was not saved** (0108 §20, #1245): a keep that failed left
+            // `stoppedBy` set, so it is asked once more, and a tree still unkept is not touched.
+            yield* keepUncommittedWork()
+            if (wipFailure !== null && stoppedBy !== null && !inConflictRound)
+              return { failed: `the cut-off run's unsaved work could not be kept first — ${wipFailure}` }
+            return yield* resetToHead({ git: gitAskedEffect, plantAt: recipe.env.plantAt })
+          }),
         mergeForConflict,
+        // A fixer that committed its merge before it was cut off leaves the base an ancestor of HEAD (#1245).
+        mergeAlreadyIn: (baseSha: string) =>
+          gitAskedEffect(['merge-base', '--is-ancestor', baseSha, 'HEAD']).pipe(Effect.map(Result.isSuccess)),
         conflictEvidence,
         baseIsRed,
         // **Where this walk jumps to, once `admit` and `prepared` have

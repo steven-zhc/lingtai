@@ -251,3 +251,37 @@ export function restoreAfterReview(options: {
       return { restored: `the reviewer changed the worktree — ${found.join('; ')} — restored to ${onSha.slice(0, 7)}` }
     })
 }
+
+/**
+ * **The worktree put back to the attempt's head for a step redone whole** (0108 §12, #1245): every
+ * tracked change dropped, everything untracked removed, and then `HEAD` read back for the brief. Ignored
+ * files stay — no `-x`, so a `node_modules` a `prepared` step installed into is still there — and the
+ * planted env file is named to `clean` as `restoreAfterReview` names it. Each call is judged by its exit
+ * code and nothing it prints is parsed, except the sha the last one answers.
+ *
+ * It runs after the step returned, and so after any WIP Lingtai committed for a cut-off `implement`
+ * (§20): what is committed is the head this resets to.
+ */
+export function resetToHead(options: {
+  git: GitHere
+  plantAt: string
+}): Effect.Effect<{ readonly head: string } | { readonly failed: string }> {
+  const { git } = options
+  const plantAt = posix.normalize(options.plantAt)
+  return Effect.gen(function* () {
+    // `--mixed` and a checkout, not `--hard` (as `restoreAfterReview`): a design agent that ran `git add -A`
+    // staged the planted env file, which `HEAD` lacks, and `--hard` deletes a staged file. Mixed unstages it
+    // and leaves it on disk; the checkout puts every tracked file back, and the clean takes the rest.
+    const reset = yield* git(['reset', '--mixed', 'HEAD'])
+    if (Result.isFailure(reset)) return { failed: `git reset refused it: ${reset.failure.detail}` }
+    const checkout = yield* git(['checkout', '--', '.'])
+    if (Result.isFailure(checkout)) return { failed: `git checkout refused it: ${checkout.failure.detail}` }
+    // `-ff` and the escape are `restoreAfterReview`'s, for the same two reasons.
+    const literal = plantAt.replace(/[\\*?[\] ]/g, '\\$&')
+    const cleaned = yield* git(['clean', '-ffd', '-e', `/${literal}`])
+    if (Result.isFailure(cleaned)) return { failed: `git clean refused it: ${cleaned.failure.detail}` }
+    const head = yield* git(['rev-parse', 'HEAD'])
+    if (Result.isFailure(head)) return { failed: `git rev-parse refused it: ${head.failure.detail}` }
+    return { head: head.success.trim() }
+  })
+}

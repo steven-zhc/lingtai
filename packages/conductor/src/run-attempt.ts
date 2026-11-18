@@ -927,6 +927,10 @@ export interface AttemptOptions {
    * this pass cannot make is not one it pretends to have made.
    */
   readonly mergeBase?: (toSha: string) => Promise<{ readonly head: string } | { readonly failed: string }>
+  /** `AttemptPortOptions.stepRedoWaits`: a test walking on the real clock hands none, and waits none. */
+  readonly stepRedoWaits?: readonly Duration.Input[]
+  /** `AttemptPortOptions.resetToHead`, as a promise (#1245). */
+  readonly resetToHead?: () => Promise<{ readonly head: string } | { readonly failed: string }>
   /**
    * **Whether the command a `build` action refused fails on the base too** (#744, 0108 §13) —
    * asked before a `BuildRed` buys a round, and only when a round is on offer. `mergedOnto` is
@@ -1105,6 +1109,15 @@ export interface AttemptPortOptions {
    * before a conflict round's agent does (#1120). Effect-only: it is not on `AttemptOptions`.
    */
   readonly mergeForConflict?: (baseSha: string) => Effect.Effect<ConflictMergeAnswer>
+  /** Whether the base is already in `HEAD`: a conflict merge a cut-off fixer committed is not made again (#1245). */
+  readonly mergeAlreadyIn?: (baseSha: string) => Effect.Effect<boolean>
+  /**
+   * Puts the worktree back to the attempt's head before a step is redone whole (0108 §12, #1245): tracked
+   * changes dropped, untracked files removed, ignored files and the planted env file kept. It answers the
+   * head it stands at, or why it could not be made to; a step is never redone on a tree nobody can vouch for,
+   * so an attempt handed none ends a redo at a person.
+   */
+  readonly resetToHead?: () => Effect.Effect<{ readonly head: string } | { readonly failed: string }>
   /** Rebuilds a committed conflict merge's fork point and overlap for a resumed review (#1120). */
   readonly conflictEvidence?: (baseSha: string) => Effect.Effect<{
     readonly fromSha: string
@@ -1131,7 +1144,7 @@ function emitAsPromiseWith(
  * by key (never spread: an `undefined` key would read as present).
  */
 export function attemptPortsFrom(options: AttemptOptions): AttemptPortOptions {
-  const { judge, mergeBase, baseIsRed } = options
+  const { judge, mergeBase, baseIsRed, resetToHead } = options
   return {
     recipe: options.recipe,
     context: options.context,
@@ -1145,6 +1158,8 @@ export function attemptPortsFrom(options: AttemptOptions): AttemptPortOptions {
     ...(options.sandboxAt === undefined ? {} : { sandboxAt: options.sandboxAt }),
     ...(judge === undefined ? {} : { judge: (on: Judging) => Effect.promise(() => judge(on)) }),
     ...(mergeBase === undefined ? {} : { mergeBase: (toSha: string) => Effect.promise(() => mergeBase(toSha)) }),
+    ...(options.stepRedoWaits === undefined ? {} : { stepRedoWaits: options.stepRedoWaits }),
+    ...(resetToHead === undefined ? {} : { resetToHead: () => Effect.promise(() => resetToHead()) }),
     ...(baseIsRed === undefined
       ? {}
       : { baseIsRed: (asked: BaseIsRedAsked) => Effect.promise(() => baseIsRed(asked)) }),
@@ -1403,17 +1418,13 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     /** The merge-conflict fix rounds this attempt (#653), per attempt for the same reason. */
     let conflictRoundsSpent = options.from?.conflictRoundsSpent ?? 0
     /**
-     * **What the cut-off visit was handed** (#1201), to hand back: its context and the visits before it.
-     * The brief is derived from the visit list (`designOn`, `sentBackTo`), not from the context alone, and the
-     * cut-off visit is on `steps` by now — so the rerun is given the list as the first one saw it.
+     * **What a step redone whole is handed** (#1245): the context the cut-off visit had and the visits before
+     * it. The brief is derived from the visit list (`designOn`, `sentBackTo`), not from the context alone, and
+     * the cut-off visit is on `steps` by now — so the redo is given the list as the first arrival saw it.
      */
-    let rerun: { readonly reached: readonly StepReached[]; readonly context: ActionContext } | null = null
-    /** What the visit being routed was handed and answered, for an `ask-again` to build its rerun from (#1224). */
-    let lastVisit: {
-      readonly context: ActionContext
-      readonly reached: readonly StepReached[]
-      readonly results: readonly ActionOutcome[]
-    } | null = null
+    let rerun = null as { readonly reached: readonly StepReached[]; readonly context: ActionContext } | null
+    /** What the visit being routed was handed, for an `ask-again` to redo it from (#1224). */
+    let lastVisit: { readonly context: ActionContext; readonly reached: readonly StepReached[] } | null = null
     /** The step a rule just asked again (#1224): the next visit to it is the second asking, and is asked no third time. */
     let askingAgain: Step | null = null
     /** This visit is itself an `ask-again`'s (#1224). Cleared when the visit starts, so a later arrival is asked once more. */
@@ -1431,28 +1442,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           ...(askedAgain ? { askedAgain: true } : {}),
         },
       })
-    /** The rerun an agent step is handed: the design it was briefed with, and every action before the one cut off or unread. */
-    const rerunOf = (visit: NonNullable<typeof lastVisit>): NonNullable<typeof rerun> => {
-      // The design this visit's agent was briefed with, after any `file-brief:` read it back: the
-      // rerun is handed that, never a second read of a file the cut-off run may have edited.
-      const briefedWith = visit.results.filter((each) => each.document !== undefined).at(-1)
-      return {
-        reached: visit.reached,
-        context: {
-          ...(briefedWith?.document === undefined
-            ? visit.context
-            : {
-                ...visit.context,
-                design: {
-                  document: briefedWith.document,
-                  ...(briefedWith.locator === undefined ? {} : { locator: briefedWith.locator }),
-                },
-              }),
-          // Everything before the action the crash stopped at, which is the last result.
-          resumedAfter: visit.results.slice(0, -1),
-        },
-      }
-    }
     const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.refusalFixes)
     // A restart is automatic fix routing too, and a bigger kind than a round: the lap
     // that spends a human grant ends at a person rather than at a restart nobody
@@ -1606,6 +1595,86 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       },
     })
 
+    /** The wait before redo number `retry`: the same for every entry, an `ask-again` included (0108 §12). */
+    const waitFor = (retry: number): Duration.Input =>
+      (options.stepRedoWaits ?? BOUNDS.stepRedoWaits)[retry - 1] ?? '0 millis'
+    /**
+     * **A step run again whole, from the attempt's head** (0108 §12, #1245) — the one place both entries
+     * come to: a crash a transient error caused, and a rule's `rerun-setup` or `ask-again`.
+     *
+     * In order: the count is on the log (`StepRedone`) before anything is waited for, so a daemon that dies
+     * during the wait has spent the redo; then the wait; then the worktree is reset to the head — after the
+     * WIP Lingtai committed for a cut-off `implement` (§20), which was made inside that dispatch, before the
+     * step returned here — and only then is the walk pointed back at the step, with a context built as on its
+     * first arrival: the cut-off visit's own `round`, `recheck` and the rest, a `rerun` for its dispatch ids,
+     * and `redo` for the agent's one paragraph. No action of the step is skipped, whatever its kind.
+     *
+     * `true` when the walk goes on at `step`; `false` when it ended at a person, because the tree could not
+     * be put back (the redo is spent either way, and the next `StepStarted` says whether a dispatch followed).
+     */
+    const redoStep = (redo: {
+      readonly step: Step
+      readonly visit: NonNullable<typeof lastVisit>
+      readonly retry: number
+      readonly said: string
+      readonly why: string
+      readonly wait: Duration.Input
+      readonly askedAgain?: boolean
+    }): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        stepRedosSpent = redo.retry
+        yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait, redo.askedAgain)
+        if (Duration.toMillis(Duration.fromInputUnsafe(redo.wait)) > 0) yield* Effect.sleep(redo.wait)
+        const cannot = (detail: string): boolean => {
+          const ending: StepDidNotFinish = {
+            ending: 'did-not-finish',
+            because: 'redo-not-started',
+            at: null,
+            detail: `the ${redo.step} step could not be redone: ${detail}`,
+          }
+          record({ step: redo.step, ending, results: [] })
+          stopped = { step: redo.step, ending }
+          unanswered = true
+          end = unansweredEnd(redo.step, { runId: options.context.runId }, ending)
+          return false
+        }
+        const reset =
+          options.resetToHead === undefined
+            ? { failed: 'this attempt was handed no way to reset the worktree' }
+            : yield* options.resetToHead()
+        if ('failed' in reset)
+          return cannot(`the worktree could not be put back to the attempt's head — ${reset.failed}`)
+        // A conflict round's fixer stands in a `--no-commit` merge, which the reset just aborted: stand it up again.
+        const merging = redo.visit.context.conflictMerge
+        const committed =
+          redo.step === 'implement' && merging !== undefined && options.mergeAlreadyIn !== undefined
+            ? yield* options.mergeAlreadyIn(merging.baseSha)
+            : false
+        if (redo.step === 'implement' && merging !== undefined && !committed) {
+          const again: ConflictMergeAnswer =
+            options.mergeForConflict === undefined
+              ? { failed: 'this attempt was handed no way to merge the base in' }
+              : yield* options.mergeForConflict(merging.baseSha)
+          if ('failed' in again) return cannot(`the conflict merge could not be started again — ${again.failed}`)
+        }
+        const {
+          design: _design,
+          recorded: _recorded,
+          redo: earlier,
+          ...handed
+        } = redo.visit.context as ActionContext & { redo?: ActionContext['redo'] }
+        rerun = {
+          reached: redo.visit.reached,
+          context: {
+            ...handed,
+            rerun: redo.retry,
+            redo: { why: redo.why, startedAt: earlier?.startedAt ?? redo.visit.context.onSha, head: reset.head },
+          },
+        }
+        at = redo.step
+        return true
+      })
+
     /**
      * **`proposed`'s route, built from a `Propose` — the one place `offerFor`,
      * `replyFor`, `decideRoute` and `routeNext` (`@lingtai/domain`, through
@@ -1706,10 +1775,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           (c) => (c.id === 'rerun-setup' || c.id === 'ask-again') && c.next._tag === 'RerunStep',
         )
         const rerunNext = rerunCandidate?.next._tag === 'RerunStep' ? rerunCandidate.next : null
-        const rerunWait =
-          rerunNext !== null && rerunNext.step === 'prepared'
-            ? ((options.stepRedoWaits ?? BOUNDS.stepRedoWaits)[rerunNext.retry - 1] ?? '0 millis')
-            : '0 millis'
+        const rerunWait = rerunNext === null ? '0 millis' : waitFor(rerunNext.retry)
         const landWait =
           landAgain !== undefined && landAgain.next._tag === 'LandAgain'
             ? ((options.stepRedoWaits ?? BOUNDS.stepRedoWaits)[landAgain.next.retry - 1] ?? '0 millis')
@@ -1730,7 +1796,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                   why:
                     rerunNext.step === 'prepared'
                       ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`
-                      : `the ${rerunNext.step} answer could not be read; asking the same agent again, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`,
+                      : `the ${rerunNext.step} answer could not be read; asking the same agent again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`,
                 }
               : yield* replyFor(offer, shown, options.judge)
         if ('neverStarted' in reply) {
@@ -1813,21 +1879,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             return false
           }
         }
-        // **A rerun in place spends a retry too, and is durable first** (#1224), as a crash's is: a
-        // daemon that dies during the wait has spent it. The route itself goes in the end-of-walk batch.
-        if (next._tag === 'RerunStep') {
-          yield* emitStepRedone(
-            next.step,
-            next.retry,
-            offer.proposal._tag === 'SetupRefused'
-              ? offer.proposal.output
-              : offer.proposal._tag === 'AnswerUnreadable'
-                ? offer.proposal.raw
-                : '',
-            rerunWait,
-            offer.proposal._tag === 'AnswerUnreadable',
-          )
-        }
         record({
           step: 'proposed',
           ending: merged !== null && 'head' in merged ? { ...routed, head: merged.head } : routed,
@@ -1898,20 +1949,29 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             return true
           }
           case 'RerunStep': {
-            // Nothing moves but the count and the step: not `onSha`, the lap, the rounds or the review's head.
-            stepRedosSpent = next.retry
-            if (next.step === 'prepared') {
-              // The whole step again, from its first action: no `resumedAfter`, so an install that
-              // passed is run again and a step that is not idempotent is the recipe's to fix.
-              rerun = null
-            } else {
-              // The same agent, under `:rerun:<n>`'s dispatch id, so a reviewer is never a warm session.
-              rerun = rerunOf(lastVisit as NonNullable<typeof lastVisit>)
-              askingAgain = next.step
-            }
-            if (rerunWait !== '0 millis') yield* Effect.sleep(rerunWait)
-            at = next.step
-            return true
+            // **A rerun spends a retry too, and is durable first** (#1224), as a crash's is: the count goes on
+            // the log before the wait. Nothing moves but the count and the step: not `onSha`, the lap, the
+            // rounds or the review's head. The route itself goes in the end-of-walk batch.
+            if (next.step !== 'prepared') askingAgain = next.step
+            // `prepared`'s own visit, or this one's context when nothing recorded it: the step is run whole.
+            const visit = (lastVisit as typeof lastVisit) ?? { context: contextFor(), reached: [...steps] }
+            return yield* redoStep({
+              step: next.step,
+              visit,
+              retry: next.retry,
+              said:
+                offer.proposal._tag === 'SetupRefused'
+                  ? offer.proposal.output
+                  : offer.proposal._tag === 'AnswerUnreadable'
+                    ? offer.proposal.raw
+                    : '',
+              why:
+                next.step === 'prepared'
+                  ? 'the registry answered with a 5xx'
+                  : `the ${next.step} answer could not be read`,
+              wait: rerunWait,
+              askedAgain: offer.proposal._tag === 'AnswerUnreadable',
+            })
           }
           case 'FixRefusal':
             // The same bookkeeping `take` always did: the lap's own findings
@@ -2110,7 +2170,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           }),
         ),
       )
-      lastVisit = { context: visitContext, reached: visitedBefore, results: reached.results }
+      lastVisit = { context: visitContext, reached: visitedBefore }
       // Only a review that was actually read: an unreadable answer, a reviewer
       // that never ran or did not finish, or an action skipped before the agent
       // reached the head read nothing (#671). One reader is enough: a pipeline
@@ -2234,13 +2294,19 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         if (reason._tag === 'AgentCrashed' && (at === 'design' || at === 'implement' || at === 'review')) {
           const again = rerunInPlace(reason.cause, reason.detail, stepRedosSpent)
           if (again !== null) {
-            stepRedosSpent += 1
-            rerun = rerunOf({ context: visitContext, reached: visitedBefore, results: reached.results })
             // The crash's rerun is the same arrival: an ask-again already spent on it is not given back.
             askingAgain = arrivedAskedAgain ? at : null
-            yield* emitStepRedone(at, stepRedosSpent, reason.detail, again.wait)
-            yield* Effect.sleep(again.wait)
-            continue
+            const retry = stepRedosSpent + 1
+            const redone = yield* redoStep({
+              step: at,
+              visit: { context: visitContext, reached: visitedBefore },
+              retry,
+              said: reason.detail,
+              why: reason.detail,
+              wait: waitFor(retry),
+            })
+            if (redone) continue
+            break
           }
         }
         stopped = { step: at, ending }
@@ -2632,11 +2698,7 @@ function runVisit(
         context: {
           ...reaching.context,
           ...(readClippedAt === undefined ? {} : { readClippedAt }),
-          // A rerun in place (#1201) carries the design the cut-off visit was briefed with.
-          design:
-            reaching.context.rerun !== undefined && reaching.context.design !== undefined
-              ? reaching.context.design
-              : designOn(reached),
+          design: designOn(reached),
           again:
             spec.step === 'implement' &&
             options.from?.step === 'implement' &&

@@ -503,6 +503,9 @@ async function pass(
     emit: () => {},
     bodies: bodiesFor(ports),
     ceilings: options.ceilings,
+    // A redo waits minutes (0108 §12) and this walk is on the real clock: it waits none.
+    stepRedoWaits: [],
+    resetToHead: async () => ({ head: 'reset-head' }),
     ...(options.from === undefined ? {} : { from: options.from }),
     judge,
     actionsAt: (step, actions) => {

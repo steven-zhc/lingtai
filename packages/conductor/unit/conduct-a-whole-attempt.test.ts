@@ -1564,8 +1564,13 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(new Set(ids).size).toBe(3)
     expect(ids[1]).toBe(`${ids[0]}:rerun:1`)
     expect(ids[2]).toBe(`${ids[0]}:rerun:2`)
-    expect(prompts[1]).toBe(prompts[0])
-    expect(prompts[2]).toBe(prompts[0])
+    // The same brief, and one paragraph more at its end: the step was redone whole from the head (#1245).
+    expect(prompts[1]!.startsWith(prompts[0]!)).toBe(true)
+    expect(prompts[1]!.slice(prompts[0]!.length)).toContain('This step was interrupted')
+    expect(prompts[1]!.slice(prompts[0]!.length)).toMatch(
+      /\([^)]*API Error: 503[^)]*\); it began at \S+ and is committed to \S+/,
+    )
+    expect(prompts[2]!.startsWith(prompts[0]!)).toBe(true)
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const reruns = run.filter((e) => e.type === 'StepRedone').map((e) => e.data as PayloadOf<'StepRedone'>)
@@ -1632,10 +1637,9 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
       fakePorts(did, store, true),
     )
 
-    // A, A's rerun, then B: B is dispatched once, fresh, and is not a rerun.
+    // A, A's rerun, then B: the step is redone whole, so B is dispatched under the redo's suffix too.
     expect(ids).toHaveLength(3)
     expect(ids[1]).toBe(`${ids[0]}:rerun:1`)
-    expect(ids[2]).not.toContain(':rerun:')
     // B committed nothing, so the step holds; A's commit is not recorded as B's.
     expect(result.ok).toBe('held')
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
@@ -1643,7 +1647,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
     expect(run.filter((e) => e.type === 'RunProposedCompletion')).toHaveLength(1)
   })
 
-  it('reruns a cut-off fix round with the very prompt it was cut off with', async () => {
+  it('reruns a cut-off fix round with the prompt it was cut off with, and the redo paragraph', async () => {
     const store = memoryStore()
     const did: string[] = []
     const fixes: { id: string; prompt: string }[] = []
@@ -1684,7 +1688,9 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
 
     expect(fixes.length).toBeGreaterThanOrEqual(2)
     expect(fixes[1]!.id).toBe(`${fixes[0]!.id}:rerun:1`)
-    expect(fixes[1]!.prompt).toBe(fixes[0]!.prompt)
+    // The same fix brief, and the paragraph a redone step ends with (#1245).
+    expect(fixes[1]!.prompt.startsWith(fixes[0]!.prompt)).toBe(true)
+    expect(fixes[1]!.prompt).toContain('This step was interrupted')
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     expect(run.filter((e) => e.type === 'StepRedone')).toHaveLength(1)
   })

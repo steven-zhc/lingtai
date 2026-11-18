@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -18,7 +18,13 @@ import { WIP_COMMIT_PREFIX } from '@lingtai/domain'
 import { Effect, Result } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { commitWipExceptPlanted, type GitHere, keptRunPort, restoreAfterReview } from '../src/kept-run-port.ts'
+import {
+  commitWipExceptPlanted,
+  type GitHere,
+  keptRunPort,
+  resetToHead,
+  restoreAfterReview,
+} from '../src/kept-run-port.ts'
 
 const exec = promisify(execFile)
 const PLANT = '.env.local'
@@ -183,5 +189,42 @@ describe('restoreAfterReview, against a real git repository (#587)', () => {
     expect(await Effect.runPromise(restoreAfterReview({ git: gitHere(dir), plantAt: PLANT })(onSha))).toEqual({
       untouched: true,
     })
+  })
+})
+
+describe('resetToHead, against a real git repository (#1245)', () => {
+  it('drops tracked edits and untracked files, and keeps an ignored file and the planted env file', async () => {
+    const dir = await makeRepo()
+    dirs.push(dir)
+    await writeFile(join(dir, '.gitignore'), 'node_modules/\n')
+    await exec('git', ['-C', dir, 'add', '.gitignore'])
+    await exec('git', ['-C', dir, 'commit', '-q', '-m', 'ignore the install'])
+    const head = (await exec('git', ['-C', dir, 'rev-parse', 'HEAD'])).stdout.trim()
+    await mkdir(join(dir, 'node_modules', 'left-pad'), { recursive: true })
+    await writeFile(join(dir, 'node_modules', 'left-pad', 'index.js'), 'installed\n')
+    await writeFile(join(dir, PLANT), 'secret\n')
+    await writeFile(join(dir, 'README.md'), 'edited by the cut-off run\n')
+    await writeFile(join(dir, 'scratch.md'), 'untracked\n')
+    await mkdir(join(dir, 'new-dir'))
+    await writeFile(join(dir, 'new-dir', 'a.ts'), 'untracked\n')
+
+    expect(await Effect.runPromise(resetToHead({ git: gitHere(dir), plantAt: PLANT }))).toEqual({ head })
+
+    expect(await readFile(join(dir, 'README.md'), 'utf8')).toBe('first\n')
+    await expect(access(join(dir, 'scratch.md'))).rejects.toThrow()
+    await expect(access(join(dir, 'new-dir'))).rejects.toThrow()
+    await expect(access(join(dir, 'node_modules', 'left-pad', 'index.js'))).resolves.toBeUndefined()
+    expect(await readFile(join(dir, PLANT), 'utf8')).toBe('secret\n')
+  })
+
+  it('keeps a planted env file the agent staged with git add -A, though HEAD lacks it', async () => {
+    const dir = await makeRepo()
+    dirs.push(dir)
+    await writeFile(join(dir, PLANT), 'secret\n')
+    await exec('git', ['-C', dir, 'add', '-A'])
+
+    await Effect.runPromise(resetToHead({ git: gitHere(dir), plantAt: PLANT }))
+
+    expect(await readFile(join(dir, PLANT), 'utf8')).toBe('secret\n')
   })
 })

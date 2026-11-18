@@ -71,6 +71,9 @@ export const once = async (
       // The recipe through the fake GitHub's `fileAt`, so each test keeps the
       // recipe it wrote. Where a real run reads it from is `local.test.ts`'s.
       recipe: () => resolveRecipe((p, r) => options.client.fileAt(p, r), options.project.base ?? 'main'),
+      // A redo waits minutes (0108 §12, #1245) and `ask-again` is one: this walk is on the real clock, so
+      // it waits none. `onceOnTestClock` keeps the real waits, on a clock that costs nothing.
+      stepRedoWaits: ['0 millis', '0 millis', '0 millis'],
       ...options,
     }).pipe(Effect.provide(Layer.merge(withPorts(ports), beside))),
   )

@@ -18,7 +18,9 @@ export {
   type SentBack,
   type TheDesign,
   recordedOr,
+  redoParagraph,
   rerunId,
+  type RedoNote,
 } from './action.ts'
 export {
   makeProcessAction,
