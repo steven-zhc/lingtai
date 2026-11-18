@@ -173,6 +173,11 @@ export interface Issue {
    */
   assignees: string[]
   /**
+   * The number of the milestone the issue is in, and null when it is in none.
+   * Read so a split's children can be opened in their parent's (#1272).
+   */
+  milestone: number | null
+  /**
    * The issue this one is a sub-issue of, off `parent_issue_url`, and null when
    * it has none or the URL is not one we can read. The repository is carried
    * because a parent may live elsewhere; readers decide what to do about that.
@@ -296,6 +301,16 @@ export interface GitHub {
    */
   addLabels(issue: number, labels: readonly string[]): E<void>
 
+  /**
+   * Removes one label and nothing else (`DELETE …/labels/{name}`). A label the issue
+   * does not carry is success: removal is idempotent. Never `setLabels` from a snapshot,
+   * which would drop an `agent:hold` a person added meanwhile (#1261).
+   */
+  removeLabel(issue: number, name: string): E<void>
+
+  /** Creates a repository label; one that already exists is success (#1261). */
+  createLabel(name: string): E<void>
+
   /** Replaces one comment's whole body (#750). The response is read for its status only. */
   editComment(issue: number, commentId: number, body: string): E<void>
 
@@ -346,7 +361,13 @@ export interface GitHub {
    * the conductor's `TicketStore`. Nothing decides on its own that an issue
    * should exist — Lingtai proposes, a person decides.
    */
-  createIssue(input: { title: string; body: string; labels: readonly string[] }): E<Issue>
+  createIssue(input: {
+    title: string
+    body: string
+    labels: readonly string[]
+    milestone?: number
+    assignees?: readonly string[]
+  }): E<Issue>
 
   /**
    * Attaches `child` to `parent` as a sub-issue. Both are issue **numbers** in
@@ -411,10 +432,18 @@ export interface GitHubClient {
   comment(issue: number, body: string): Promise<{ id: number }>
   setLabels(issue: number, labels: readonly string[]): Promise<void>
   addLabels(issue: number, labels: readonly string[]): Promise<void>
+  removeLabel(issue: number, name: string): Promise<void>
+  createLabel(name: string): Promise<void>
   editComment(issue: number, commentId: number, body: string): Promise<void>
   closeIssue(issue: number, reason?: 'completed' | 'not_planned'): Promise<void>
   updateBody(issue: number, body: string, opts?: { ifUnchanged?: string }): Promise<void>
-  createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Issue>
+  createIssue(input: {
+    title: string
+    body: string
+    labels: readonly string[]
+    milestone?: number
+    assignees?: readonly string[]
+  }): Promise<Issue>
   addSubIssue(parent: number, child: number): Promise<void>
   listSubIssues(parent: number): Promise<LinkedIssue[]>
   addBlockedBy(issue: number, blocker: number): Promise<void>
@@ -527,12 +556,19 @@ function toIssue(raw: {
   html_url: string
   issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null
   assignees?: ({ login?: string } | null)[] | null
+  milestone?: { number?: number } | null
   parent_issue_url?: string | null
   sub_issues_summary?: { total?: number; completed?: number } | null
 }): Issue {
   return {
     dependencies: dependenciesOf(raw),
     parent: parentOf(raw.parent_issue_url),
+    milestone:
+      typeof raw.milestone?.number === 'number' &&
+      Number.isSafeInteger(raw.milestone.number) &&
+      raw.milestone.number > 0
+        ? raw.milestone.number
+        : null,
     subIssues: subIssuesOf(raw.sub_issues_summary),
     // Off the listing, never `/issues/{n}/assignees`: a pass considers every
     // open issue, and one request each would be the cost `dependenciesOf`
@@ -710,6 +746,24 @@ export const makeGitHub = (
           yield* send<unknown>('POST', `${repoPath}/issues/${issue}/labels`, { labels: [...labels] })
         }),
 
+        removeLabel: Effect.fn('github.removeLabel')(function* (issue: number, name: string) {
+          yield* send<unknown>('DELETE', `${repoPath}/issues/${issue}/labels/${encodeURIComponent(name)}`).pipe(
+            Effect.catchIf(
+              (err) => err.status === 404,
+              () => Effect.void,
+            ),
+          )
+        }),
+
+        createLabel: Effect.fn('github.createLabel')(function* (name: string) {
+          yield* send<unknown>('POST', `${repoPath}/labels`, { name, color: 'ededed' }).pipe(
+            Effect.catchIf(
+              (err) => err.status === 422,
+              () => Effect.void,
+            ),
+          )
+        }),
+
         defaultBranch: Effect.fn('github.defaultBranch')(function* () {
           const raw = yield* send<{ default_branch: string }>('GET', repoPath)
           return raw.default_branch
@@ -770,12 +824,18 @@ export const makeGitHub = (
           title: string
           body: string
           labels: readonly string[]
+          milestone?: number
+          assignees?: readonly string[]
         }) {
           return toIssue(
             yield* send<Parameters<typeof toIssue>[0]>('POST', `${repoPath}/issues`, {
               title: input.title,
               body: input.body,
               labels: [...input.labels],
+              ...(input.milestone === undefined ? {} : { milestone: input.milestone }),
+              ...(input.assignees === undefined || input.assignees.length === 0
+                ? {}
+                : { assignees: [...input.assignees] }),
             }),
           )
         }),
@@ -863,6 +923,8 @@ const toClient = (github: GitHub): GitHubClient => ({
   comment: (issue, body) => runGitHub(github.comment(issue, body)),
   setLabels: (issue, labels) => runGitHub(github.setLabels(issue, labels)),
   addLabels: (issue, labels) => runGitHub(github.addLabels(issue, labels)),
+  removeLabel: (issue, name) => runGitHub(github.removeLabel(issue, name)),
+  createLabel: (name) => runGitHub(github.createLabel(name)),
   editComment: (issue, commentId, body) => runGitHub(github.editComment(issue, commentId, body)),
   closeIssue: (issue, reason) => runGitHub(github.closeIssue(issue, reason)),
   updateBody: (issue, body, opts) => runGitHub(github.updateBody(issue, body, opts)),

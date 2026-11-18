@@ -111,6 +111,7 @@ const NOT_OFFERED: Record<SkipReason, string> = {
   // Said as the thing that has to change, not as a state it is in: the ticket
   // moves the moment the last blocker closes, with nothing to clear here (#131).
   'blocked-by': 'an issue it is blocked by is still open',
+  publishing: 'it is a split child still being published, and comes back when the split is read back',
   // The board does not read the mirror, so it never draws this one; #1215 words it (#1208).
   'base-red': "the project's base is red and has not moved",
   // The assignee, as the recipe's `runtime.assignee` reads it (#181, #373).

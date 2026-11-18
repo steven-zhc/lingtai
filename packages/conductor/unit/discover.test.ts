@@ -58,6 +58,7 @@ const issue = (over: Omit<Partial<Issue>, 'labels'> & { number: number; labels?:
   url: `https://example.invalid/${over.number}`,
   dependencies: { blockedBy: 0, totalBlockedBy: 0 },
   assignees: [],
+  milestone: null,
   parent: null,
   subIssues: null,
   ...over,
@@ -417,6 +418,12 @@ function fakeClient(issues: Issue[], project = 'esctest'): GitHubClient {
       throw new Error('no writes in this test')
     },
     setLabels: async () => {
+      throw new Error('no writes in this test')
+    },
+    removeLabel: async () => {
+      throw new Error('no writes in this test')
+    },
+    createLabel: async () => {
       throw new Error('no writes in this test')
     },
     addLabels: async () => {

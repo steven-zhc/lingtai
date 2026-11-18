@@ -466,6 +466,7 @@ export const issue: Issue = {
   url: 'https://example.invalid/7',
   dependencies: { blockedBy: 0, totalBlockedBy: 0 },
   assignees: [],
+  milestone: null,
   parent: null,
   subIssues: null,
 }

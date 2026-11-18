@@ -1241,7 +1241,7 @@ export interface EpicTicket {
 }
 
 /** The skips the Queued column draws itself, so its note leaves them out. */
-const DRAWN_SKIPS: ReadonlySet<string> = new Set(['blocked-by', 'excluded-label', 'epic'])
+const DRAWN_SKIPS: ReadonlySet<string> = new Set(['blocked-by', 'publishing', 'excluded-label', 'epic'])
 
 export interface GithubQueue {
   /** What GitHub offers that the log has no card for. */

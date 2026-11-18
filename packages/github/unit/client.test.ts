@@ -171,6 +171,50 @@ describe('listOpenIssues', () => {
     expect(issues.map((i) => i.assignees)).toEqual([['alice', 'bob'], [], []])
     expect(asked.filter((url) => url.includes('/issues'))).toHaveLength(1)
   })
+
+  it('reads the milestone as its number, and null when there is none (#1272)', async () => {
+    stub([
+      raw({ number: 1, milestone: { number: 3, title: '0.15.0' } }),
+      raw({ number: 2 }),
+      raw({ number: 3, milestone: null }),
+    ])
+    const issues = await (await client()).listOpenIssues()
+    expect(issues.map((i) => i.milestone)).toEqual([3, null, null])
+  })
+})
+
+describe('createIssue', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  async function created(input: { milestone?: number; assignees?: readonly string[] }) {
+    let sent: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const json = { status: 200, headers: { 'content-type': 'application/json' } }
+      if (String(url).includes('/access_tokens'))
+        return new Response(
+          JSON.stringify({ token: 'ghs_x', expires_at: new Date(Date.now() + 3_600_000).toISOString() }),
+          { ...json, status: 201 },
+        )
+      sent = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return new Response(JSON.stringify(raw({ number: 9 })), { ...json, status: 201 })
+    })
+    const gh = await createGitHubClient({ auth, owner: 'steven-zhc', repo: 'lingtai', installation })
+    await gh.createIssue({ title: 't', body: 'b', labels: ['bug'], ...input })
+    return sent!
+  }
+
+  it('sends the milestone and assignees when given', async () => {
+    const body = await created({ milestone: 3, assignees: ['a', 'b'] })
+    expect(body).toMatchObject({ milestone: 3, assignees: ['a', 'b'], labels: ['bug'] })
+  })
+
+  it('leaves both keys out when they are not given, or no one is assigned', async () => {
+    for (const input of [{}, { assignees: [] }]) {
+      const body = await created(input)
+      expect('milestone' in body).toBe(false)
+      expect('assignees' in body).toBe(false)
+    }
+  })
 })
 
 /**

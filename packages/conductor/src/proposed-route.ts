@@ -217,7 +217,7 @@ export function causeBoundsFor(
     newAttempts: { used: spent.newAttempts, allowed: policy.newAttempts },
     conflictResolutions: { used: spent.conflictRounds ?? 0, allowed: policy.conflictResolutions },
     stepRedos: { used: spent.stepRedos ?? 0, allowed: BOUNDS.stepRedos },
-    ticketSplits: { used: 0, allowed: 1 },
+    ticketSplits: { used: 0, allowed: BOUNDS.ticketSplits },
     personAsks: { used: personAsks, allowed: BOUNDS.personAsks },
   }
 }

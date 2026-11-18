@@ -107,9 +107,9 @@
     "file": "packages/conductor/src/split-ticket.ts",
     "function": "splitTicketHoldingEffect",
     "type": "SplitStarted",
-    "count": 1,
+    "count": 2,
     "class": "select",
-    "reason": "The first SplitStarted for a wait, which differs from splitProgressOf's last on purpose (plan §1.5)."
+    "reason": "The first SplitStarted for a wait, which differs from splitProgressOf's last on purpose (plan §1.5); and whether another wait already spent the split (#1261)."
   },
   {
     "file": "packages/conductor/src/tell.ts",

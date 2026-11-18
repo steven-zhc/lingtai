@@ -26,6 +26,7 @@
  * any `agent:*` label is one the old loop has touched, so Lingtai does not
  * discover it at all.
  */
+import { PUBLISHING_LABEL } from '@lingtai/domain'
 import type { AssigneeRule, QueueSettings } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
@@ -174,6 +175,8 @@ export type SkipReason =
    * forever. `agent:hold` already works the way this does, one line above.
    */
   | 'blocked-by'
+  /** A split's child still carries `lingtai:publishing`: the split has not read everything back yet (#1261). Comes back on its own. */
+  | 'publishing'
   /**
    * The project's base is red and its head is still the commit that was recorded red (#1208, 0108 §13): a
    * fact about the project, so every offered ticket carries it. Never produced by `runnableNowEffect`, which
@@ -225,6 +228,9 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
   if (isEpic(issue)) return { issue, skip: 'epic', label: null }
 
   const labels = issue.labels.map((l) => l.name.toLowerCase())
+
+  // The system's own label, not the recipe's: checked before `exclude` so no recipe can lift it.
+  if (labels.includes(PUBLISHING_LABEL)) return { issue, skip: 'publishing', label: null }
 
   // Every reason an issue is not this agent's comes from the recipe. There used
   // to be one more, hardcoded here: any label starting `agent:` meant the issue
