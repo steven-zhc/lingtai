@@ -4150,6 +4150,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       yield* Effect.addFinalizer(() => Effect.sync(() => baseAbort.abort()))
       const baseIsRed = (asked: { action: string; mergedOnto: string | null }) =>
         Effect.gen(function* () {
+          // The ticket opened for this red asks nothing of it, however its first read of the log went (#1266):
+          // an unread state is not an answer that this is not the fix ticket.
+          const named = yield* baseStateEffect({ store, project, base, recipe })
+          if ('red' in named && named.red.fix?.externalRef === String(options.issue))
+            return { notRed: 'this ticket is the one opened to make the base green' }
           const baseSha = asked.mergedOnto ?? continuation?.diffBaseSha ?? worktree?.baseSha ?? null
           const built = yield* baseCheckQuestion({
             project,
@@ -5552,7 +5557,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // no agent run. Read off the log alone (the look already decided on the mirror), and never for a
       // continuation, whose base is not the one the red record is about. A log that cannot be read is no
       // reason to skip the question: the guard at `proposed` asks again.
-      const baseState = yield* baseStateEffect({ store, project, base, recipe })
+      let baseState = yield* baseStateEffect({ store, project, base, recipe })
+      if ('unread' in baseState) baseState = yield* baseStateEffect({ store, project, base, recipe })
       // **The ticket opened to make this base green asks nothing about it** (#1266, 0108 §13): named by the
       // log, never by a label. A red `build` there reaches the judge as on any ticket and buys `fixRefusal`.
       const isBaseFix =

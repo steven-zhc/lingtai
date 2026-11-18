@@ -83,6 +83,7 @@ export const proposeBaseFix = (options: {
   const read = Effect.tryPromise({ try: () => store.read(stream), catch: whyOf })
   const stateOf = (events: readonly Envelope[]) => baseStateOf(events, () => buildRunsOf(options.recipe))
 
+  let opened: ProposedRef | null = null
   return Effect.gen(function* () {
     const events = yield* read
     const state = stateOf(events)
@@ -105,6 +106,7 @@ export const proposeBaseFix = (options: {
       kind: kindsOf(options.recipe)[0] ?? 'bug',
       labels: [],
     })
+    opened = ref
 
     for (let attemptNo = 0; attemptNo < ATTEMPTS; attemptNo++) {
       const now = yield* read
@@ -153,8 +155,11 @@ export const proposeBaseFix = (options: {
     Effect.catchDefect((defect) => Effect.succeed(Result.fail(defect))),
     Effect.map((outcome) => {
       if (Result.isSuccess(outcome)) return
+      const made = opened as ProposedRef | null
       note(
-        `base: no ticket was opened to make ${base} green — ${whyOf(outcome.failure)}; asked again on the next red release`,
+        made === null
+          ? `base: no ticket was opened to make ${base} green — ${whyOf(outcome.failure)}; asked again on the next red release`
+          : `base: ${made.url ?? `#${made.externalRef}`} was opened to make ${base} green, but it was not fully settled — ${whyOf(outcome.failure)}; asked again on the next red release`,
       )
     }),
   )

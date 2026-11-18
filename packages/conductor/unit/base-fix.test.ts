@@ -235,3 +235,20 @@ describe('the look with a base-fix ticket', () => {
     expect(line).toContain('#212, opened to fix it, is not in the queue')
   })
 })
+
+describe('a failure after the ticket exists', () => {
+  it('names the ticket it opened when recording it fails', async () => {
+    const real = createMemoryEventStore()
+    await check(real, A, false)
+    const store = {
+      read: real.read.bind(real),
+      append: async () => {
+        throw new Error('disk full')
+      },
+    } as unknown as ReturnType<typeof createMemoryEventStore>
+    const notes: string[] = []
+    await propose(store, fakeTickets().tickets, notes)
+    expect(notes.join('\n')).toContain('https://x/212')
+    expect(notes.join('\n')).not.toContain('no ticket was opened')
+  })
+})
