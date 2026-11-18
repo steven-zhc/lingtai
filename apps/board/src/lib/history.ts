@@ -458,6 +458,7 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   },
   BaseChecked: (d) =>
     `Base ${need(d, 'base')} at ${sha(d, 'baseSha')} ${d['ok'] === true ? 'passed' : 'failed'} ${need(d, 'command')}`,
+  BaseFixProposed: (d) => `Ticket #${need(d, 'externalRef')} was opened to make ${need(d, 'base')} green`,
   ContinueRequested: (d, r) =>
     `${personName(need(d, 'by'))} asked to continue ${attemptName(r, need(d, 'runId'))} of #${need(d, 'issue')}`,
   ProjectOnboardingStarted: (d) =>

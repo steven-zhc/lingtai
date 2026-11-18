@@ -622,10 +622,6 @@ What changes:
   `Unfinished`; the cause→action table in `respond`; `ifVersion` required;
   the append-then-act protocol for `by: judge` and `by: triage`; a run that
   met `run.turns` or `run.wall` sent to triage.
-- **A red base (§13).** The one ticket Lingtai opens to make the base green, and
-  that ticket's exemption from `base-red`. (Built: the release and the pass-over
-  (#1208), and the continuation from the saved head with the green base merged in,
-  or the restart when that head is gone (#1211).)
 - **`backlog:` does not set the bar.** The plugin is declared in
   `packages/recipe/src/recipe.ts`, but the `minor` bar is still a literal in
   `verdictFor` and in the backlog reduce. Wiring it means handing one value to

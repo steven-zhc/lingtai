@@ -48,7 +48,15 @@ export type BaseRedLook =
   /** Not red: nothing is passed over. */
   | { clear: true }
   /** Red, and the base's head is still the commit the red was recorded on. */
-  | { held: { command: string; baseSha: string; base: string } }
+  | {
+      held: {
+        command: string
+        baseSha: string
+        base: string
+        /** The ticket opened to make it green (#1266), as the log names it: never passed over. */
+        fix: { externalRef: string; url: string | null } | null
+      }
+    }
   /** Red once, and the head has moved since: the next attempt claimed checks first. */
   | { moved: true }
   /** The log or the mirror could not be read: nothing is taken this look. */
@@ -80,7 +88,14 @@ export const lookAtBase = <R>(
     const found = yield* head
     if ('unreadable' in found) return { unreadable: found.unreadable }
     return found.at === state.red.baseSha
-      ? { held: { command: state.red.command, baseSha: state.red.baseSha, base: state.red.base } }
+      ? {
+          held: {
+            command: state.red.command,
+            baseSha: state.red.baseSha,
+            base: state.red.base,
+            fix: state.red.fix,
+          },
+        }
       : { moved: true }
   })
 
@@ -91,18 +106,28 @@ export const lookAtBase = <R>(
  */
 export function passOverBaseRed(look: BaseRedLook, offered: Offered): { offered: Offered; line: string | null } {
   if ('clear' in look || 'moved' in look) return { offered, line: null }
-  const n = offered.runnable.length
+  // The one ticket opened to make the base green is never passed over (#1266, 0108 §13): it is named by the
+  // log, not by a label a person may remove. `unreadable` has no fix to name, and passes everything over.
+  const fix = 'held' in look ? look.held.fix : null
+  const offeredFix = fix === null ? undefined : offered.runnable.find((entry) => String(entry.ref) === fix.externalRef)
+  const rest = offered.runnable.filter((entry) => entry !== offeredFix)
+  const n = rest.length
   const line =
     'held' in look
-      ? `base-red: \`${look.held.command}\` failed on ${look.held.baseSha.slice(0, 7)}; ${n} passed over until ${look.held.base} moves`
+      ? `base-red: \`${look.held.command}\` failed on ${look.held.baseSha.slice(0, 7)}; ${n} passed over until ${look.held.base} moves` +
+        (fix === null
+          ? ''
+          : offeredFix === undefined
+            ? `; #${fix.externalRef}, opened to fix it, is not in the queue`
+            : `; offering #${fix.externalRef} to fix it`)
       : `base-red: ${look.unreadable} — ${n} passed over this look`
   return {
     offered: {
       ...offered,
-      runnable: [],
+      runnable: offeredFix === undefined ? [] : [offeredFix],
       skipped: [
         ...offered.skipped,
-        ...offered.runnable.map((entry) => ({
+        ...rest.map((entry) => ({
           ref: Number(entry.ref),
           reason: BASE_RED,
           label: null,

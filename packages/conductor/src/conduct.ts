@@ -263,6 +263,7 @@ import {
   type ReleasedHead,
 } from './attempts.ts'
 import { baseCheckQuestion, createBaseCheck } from './base-check.ts'
+import { proposeBaseFix } from './base-fix.ts'
 import { baseStateEffect, buildRunsOf } from './base-red.ts'
 import { agentBranch } from './branches.ts'
 import { closeHoldingEffect } from './close.ts'
@@ -317,7 +318,7 @@ import {
 } from './sandbox-record.ts'
 import { stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, editEndedWaitsEffect, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
-import type { Tickets } from './ticket-store.ts'
+import { githubTicketStore, type Tickets } from './ticket-store.ts'
 import {
   claimTicketEffect,
   continueTicketEffect,
@@ -4149,6 +4150,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       yield* Effect.addFinalizer(() => Effect.sync(() => baseAbort.abort()))
       const baseIsRed = (asked: { action: string; mergedOnto: string | null }) =>
         Effect.gen(function* () {
+          // The ticket opened for this red asks nothing of it, however its first read of the log went (#1266):
+          // an unread state is not an answer that this is not the fix ticket.
+          let named = yield* baseStateEffect({ store, project, base, recipe })
+          for (let again = 0; again < 3 && 'unread' in named; again++)
+            named = yield* baseStateEffect({ store, project, base, recipe })
+          // Still unread: whether this is the fix ticket is unknown, and the cached red must not release it.
+          if ('unread' in named) return { notRed: `base state not read: ${named.unread}` }
+          if ('red' in named && named.red.fix?.externalRef === String(options.issue))
+            return { notRed: 'this ticket is the one opened to make the base green' }
           const baseSha = asked.mergedOnto ?? continuation?.diffBaseSha ?? worktree?.baseSha ?? null
           const built = yield* baseCheckQuestion({
             project,
@@ -5551,9 +5561,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // no agent run. Read off the log alone (the look already decided on the mirror), and never for a
       // continuation, whose base is not the one the red record is about. A log that cannot be read is no
       // reason to skip the question: the guard at `proposed` asks again.
-      const baseState = continuation === null ? yield* baseStateEffect({ store, project, base, recipe }) : null
-      const baseFirst = baseState !== null && 'red' in baseState ? { action: baseState.red.action } : undefined
-      if (baseState !== null && 'unread' in baseState) runLog.note('base', `base state not read: ${baseState.unread}`)
+      let baseState = yield* baseStateEffect({ store, project, base, recipe })
+      if ('unread' in baseState) baseState = yield* baseStateEffect({ store, project, base, recipe })
+      // **The ticket opened to make this base green asks nothing about it** (#1266, 0108 §13): named by the
+      // log, never by a label. A red `build` there reaches the judge as on any ticket and buys `fixRefusal`.
+      const isBaseFix =
+        'red' in baseState && baseState.red.fix !== null && baseState.red.fix.externalRef === String(options.issue)
+      const baseFirst =
+        continuation === null && !isBaseFix && 'red' in baseState ? { action: baseState.red.action } : undefined
+      if (continuation === null && 'unread' in baseState)
+        runLog.note('base', `base state not read: ${baseState.unread}`)
       const pass = yield* runAttemptEffect({
         recipe,
         context: passContext,
@@ -5592,7 +5609,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         mergeAlreadyIn: (baseSha: string) =>
           gitAskedEffect(['merge-base', '--is-ancestor', baseSha, 'HEAD']).pipe(Effect.map(Result.isSuccess)),
         conflictEvidence,
-        baseIsRed,
+        ...(isBaseFix ? {} : { baseIsRed }),
         ...(baseFirst === undefined ? {} : { baseFirst }),
         // **Where this walk jumps to, once `admit` and `prepared` have
         // rebuilt the tree a held pass left** (#465, 0120 §6) — absent for
@@ -5937,6 +5954,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         log(why)
         runLog.note('base', why)
         yield* release(why, cause)
+        // After the release, so it never waits on this (#1266): one ticket for the first red since the last green.
+        yield* proposeBaseFix({
+          store,
+          tickets: githubTicketStore(options.client),
+          project,
+          base,
+          recipe,
+          note: (message) => {
+            log(message)
+            runLog.note('base', message)
+          },
+        })
         return {
           ok: false,
           ticketId,
