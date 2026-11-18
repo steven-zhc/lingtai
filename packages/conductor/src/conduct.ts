@@ -5602,6 +5602,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         judge,
         mergeBase,
         stepRedoWaits: options.stepRedoWaits,
+        headNow: () =>
+          gitAskedEffect(['rev-parse', 'HEAD']).pipe(
+            Effect.map((r) => (Result.isSuccess(r) ? r.success.trim() : null)),
+          ),
         resetToHead: () =>
           Effect.gen(function* () {
             // **Never reset over work that was not saved** (0108 §20, #1245): a keep that failed left

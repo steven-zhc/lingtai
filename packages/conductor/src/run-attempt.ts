@@ -1118,6 +1118,12 @@ export interface AttemptPortOptions {
   readonly mergeBase?: (toSha: string) => Effect.Effect<MergeBaseAnswer>
   /** The waits before each step redo and each `land-again`, indexed by the count already made; absent is `BOUNDS.stepRedoWaits` (#1221). */
   readonly stepRedoWaits?: readonly Duration.Input[]
+  /**
+   * The sha the worktree stands at right now (#1246): what a fresh `StepStarted` records, because `onSha` is the
+   * pipeline's logical head and a drafting agent may have committed past it without reporting one. Absent, or
+   * failing, the step is recorded at `onSha`.
+   */
+  readonly headNow?: () => Effect.Effect<string | null>
   /** Appends one route durably, answering false when the store refused; a `land-again` is taken only once it did (#1221). */
   readonly appendRoute?: (route: RouteTaken) => Effect.Effect<boolean>
   /**
@@ -2253,17 +2259,18 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // Inside the span too: the visit begins at the `StepStarted` write, and a
         // store that is slow to take it or refuses it is the step's time and
         // the step's failure (#791).
-        Effect.asVoid(
-          options.emit({
+        Effect.gen(function* () {
+          const actual = visitContext.redo?.startedAt ?? (options.headNow ? yield* options.headNow() : null)
+          yield* options.emit({
             type: 'StepStarted',
             data: {
               runId: options.context.runId,
               step: visiting,
               round: visitContext.round ?? 0,
-              startedAt: visitContext.redo?.startedAt ?? visitContext.onSha,
+              startedAt: actual ?? visitContext.onSha,
             },
-          }),
-        ),
+          })
+        }),
       )
       lastVisit = { context: visitContext, reached: visitedBefore }
       // Only a review that was actually read: an unreadable answer, a reviewer

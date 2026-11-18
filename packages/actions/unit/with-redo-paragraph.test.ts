@@ -15,4 +15,9 @@ describe('withRedoParagraph', () => {
     const before = redoParagraph({ why: 'a crash', startedAt: 'x', head: 'y' })
     expect(withRedoParagraph(`the brief\n\n${before}`, now)).toBe(`the brief\n\n${now}`)
   })
+
+  it('keeps quoted text that merely starts alike, and the requirements after it', () => {
+    const brief = 'Do this.\n\nThis step was interrupted (quoted); more text.\n\nAlso do that.'
+    expect(withRedoParagraph(brief, now)).toBe(`${brief}\n\n${now}`)
+  })
 })
