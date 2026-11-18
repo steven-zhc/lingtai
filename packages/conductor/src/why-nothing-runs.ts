@@ -84,20 +84,40 @@ export const IN_FLIGHT_WITHIN_MS = 5 * 60_000
 
 const HELD_REASONS = new Set(['blocked-by', 'base-red'])
 
-/** The queued tickets nobody has put on hold: offered, or skipped for something that will clear on its own. */
-export function unheldQueued(facts: Pick<WhyFacts, 'offered' | 'skipped'>): number[] {
-  return [...new Set([...facts.offered, ...facts.skipped.filter((s) => HELD_REASONS.has(s.reason)).map((s) => s.ref)])]
+/** Offered tickets `selectRunnable` can still take or is holding for a retry: a waiting or finished row is not queued. */
+function queuedOffered(facts: Pick<WhyFacts, 'offered' | 'rows'>): number[] {
+  return facts.offered.filter((ref) => {
+    const row = facts.rows.find((r) => r.ref === ref)
+    return row === undefined || row.state === 'queued'
+  })
 }
 
-/** Whether the sentence shows at all: unheld work queued, and nothing in flight in the last five minutes. */
-export function applies(facts: WhyFacts): boolean {
+/** The queued tickets nobody has put on hold: offered and still queued, or skipped for something that will clear on its own. */
+export function unheldQueued(facts: Pick<WhyFacts, 'offered' | 'skipped' | 'rows'>): number[] {
+  return [
+    ...new Set([...queuedOffered(facts), ...facts.skipped.filter((s) => HELD_REASONS.has(s.reason)).map((s) => s.ref)]),
+  ]
+}
+
+const flying = (r: WhyRow): boolean => r.state === 'running' || r.state === 'verifying'
+
+/**
+ * Whether the sentence can show, before the beacon is known: unheld work queued and no row updated within
+ * the last five minutes while running. An older running row is settled by `applies`, which has the beacon.
+ */
+export function mayApply(facts: WhyFacts): boolean {
   if (unheldQueued(facts).length === 0) return false
   const at = facts.now.getTime()
   return !facts.rows.some(
-    (r) =>
-      (r.state === 'running' || r.state === 'verifying') &&
-      (r.updatedAt === null || at - r.updatedAt.getTime() < IN_FLIGHT_WITHIN_MS),
+    (r) => flying(r) && (r.updatedAt === null || at - r.updatedAt.getTime() < IN_FLIGHT_WITHIN_MS),
   )
+}
+
+/** `mayApply`, and a running row that has not changed lately is a live pass while the daemon is up: row age is not liveness. */
+export function applies(facts: WhyFacts): boolean {
+  if (!mayApply(facts)) return false
+  const b = facts.beacon
+  return !('up' in b && b.up && facts.rows.some(flying))
 }
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
@@ -134,7 +154,36 @@ export function rootBeforeChains(facts: WhyFacts): WhyNothingRuns | null {
       lock,
     })
   }
+  const baseRed = facts.skipped.filter((s) => s.reason === 'base-red').map((s) => s.ref)
+  if (baseRed.length > 0) {
+    const look = facts.base
+    const n = baseRed.length
+    if (look !== null && 'held' in look)
+      return only({
+        root: 'base-red',
+        sentence: `${look.held.base} is red at ${look.held.baseSha.slice(0, 7)} (\`${look.held.command}\`); ${plural(n, 'ticket waits', 'tickets wait')} for it`,
+        tickets: baseRed,
+      })
+    if (look !== null && 'unreadable' in look)
+      return only({
+        root: 'base-unreadable',
+        sentence: `the base could not be read — ${look.unreadable}; ${plural(n, 'ticket waits', 'tickets wait')} for it`,
+        tickets: baseRed,
+      })
+    return only({
+      root: 'base-red',
+      sentence: `${plural(n, 'ticket waits', 'tickets wait')} for a red base`,
+      tickets: baseRed,
+    })
+  }
   return null
+}
+
+/** Distinct tickets held by the roots after the first and not by the first. */
+export function omittedTickets(why: WhyNothingRuns): number {
+  const [first, ...rest] = why.roots
+  const shown = new Set(first?.tickets ?? [])
+  return new Set(rest.flatMap((r) => r.tickets).filter((t) => !shown.has(t))).size
 }
 
 /** What the root ticket itself is doing, as the words after *which*. */
@@ -164,141 +213,118 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
     else groups.set(key, { key, kind, describe, tickets: [ticket] })
   }
 
-  // A red base, from the look status already makes.
-  const baseRed = facts.skipped.filter((s) => s.reason === 'base-red').map((s) => s.ref)
-  const look = facts.base
-  for (const ref of baseRed) {
-    if (look !== null && 'held' in look)
-      add(
-        'base-red',
-        'base-red',
-        (n) =>
-          `${look.held.base} is red at ${look.held.baseSha.slice(0, 7)} (\`${look.held.command}\`); ${plural(n, 'ticket waits', 'tickets wait')} for it`,
-        ref,
-      )
-    else if (look !== null && 'unreadable' in look)
-      add(
-        'base-unreadable',
-        'base-unreadable',
-        (n) => `the base could not be read — ${look.unreadable}; ${plural(n, 'ticket waits', 'tickets wait')} for it`,
-        ref,
-      )
-    else add('base-red', 'base-red', (n) => `${plural(n, 'ticket waits', 'tickets wait')} for a red base`, ref)
-  }
-
   // A chain, followed over what the one read returned: no hop makes a read of its own.
   const blocked = facts.skipped.filter((s) => s.reason === 'blocked-by').map((s) => s.ref)
   const byRef = new Map((blockers ?? []).map((s) => [s.ref, s]))
-  const said = (n: number, one: string, many: string) => plural(n, one, many)
+  type Verdict = { key: string; kind: RootKind; describe: (n: number) => string }
+  const longThrough = (seen: number[]): Verdict => {
+    const through = seen.map((r) => `#${r}`).join(', ')
+    return {
+      key: `long:${through}`,
+      kind: 'chain-long',
+      describe: (n) =>
+        `${plural(n, 'ticket waits', 'tickets wait')} on a chain longer than this reads, through ${through}`,
+    }
+  }
+  // Every root a ticket reaches, through every open blocker; `seen` is the path so far.
+  const visit = (at: BlockedSkip, seen: number[]): Verdict[] => {
+    const path = [...seen, at.ref]
+    const start = seen.length === 0
+    if (at.unread)
+      return [
+        start
+          ? {
+              key: 'past-cap',
+              kind: 'blockers-unread',
+              describe: (n) =>
+                `${plural(n, 'ticket waits', 'tickets wait')} on a blocker past the cap of what this reads`,
+            }
+          : longThrough(path),
+      ]
+    const read = at.blockers
+    if (read === null)
+      return [
+        {
+          key: 'unlistable',
+          kind: 'blockers-unlistable',
+          describe: (n) => `${plural(n, 'ticket waits', 'tickets wait')} on blockers this project cannot list`,
+        },
+      ]
+    if (!read.ok) {
+      const problem = read.problem
+      return [
+        {
+          key: `unread:${problem}`,
+          kind: 'blockers-unread',
+          describe: (n) =>
+            `${plural(n, 'ticket waits', 'tickets wait')} on a blocker that could not be read — ${problem}`,
+        },
+      ]
+    }
+    const open = read.issues.filter((i) => i.state === 'open')
+    if (open.length === 0)
+      return [
+        start
+          ? {
+              key: 'closed',
+              kind: 'blockers-closed',
+              describe: (n) => `${plural(n, 'ticket was', 'tickets were')} held by blockers that have since closed`,
+            }
+          : rootVerdict(at.ref, facts),
+      ]
+    // The edge to the next ticket is hop number `path.length`; past the cap it is not taken, root or not.
+    if (path.length > CHAIN_HOPS_MOST) return [longThrough(path)]
+    const out: Verdict[] = []
+    for (const next of open) {
+      if (facts.repository !== null && next.repository !== facts.repository) {
+        out.push({
+          key: `foreign:${next.repository}#${next.number}`,
+          kind: 'chain',
+          describe: (n) =>
+            `${plural(n, 'ticket waits', 'tickets wait')} on ${next.repository}#${next.number}, a blocker that is not a ticket here`,
+        })
+        continue
+      }
+      const hop = byRef.get(next.number)
+      if (hop === undefined) {
+        out.push(rootVerdict(next.number, facts))
+        continue
+      }
+      if (path.includes(hop.ref)) {
+        const cycle = path.slice(path.indexOf(hop.ref))
+        const loop = [...cycle, hop.ref].map((r) => `#${r}`).join(' → ')
+        out.push({
+          key: `cycle:${[...cycle].sort((a, b) => a - b).join(',')}`,
+          kind: 'chain-cycle',
+          describe: (n) => `${plural(n, 'ticket waits', 'tickets wait')} on a cycle: ${loop}`,
+        })
+        continue
+      }
+      out.push(...visit(hop, path))
+    }
+    return out
+  }
   for (const ref of blocked) {
     const start = byRef.get(ref)
     if (!facts.canListBlockers || start === undefined) {
       add(
         'unlistable',
         'blockers-unlistable',
-        (n) => `${said(n, 'ticket waits', 'tickets wait')} on blockers this project cannot list`,
+        (n) => `${plural(n, 'ticket waits', 'tickets wait')} on blockers this project cannot list`,
         ref,
       )
       continue
     }
-    const seen: number[] = []
-    let at: BlockedSkip = start
-    let verdict: { key: string; kind: RootKind; describe: (n: number) => string } | null = null
-    for (let hops = 0; verdict === null; hops++) {
-      seen.push(at.ref)
-      if (at.unread) {
-        const through = seen.map((r) => `#${r}`).join(', ')
-        verdict =
-          at === start
-            ? {
-                key: 'past-cap',
-                kind: 'blockers-unread',
-                describe: (n) =>
-                  `${said(n, 'ticket waits', 'tickets wait')} on a blocker past the cap of what this reads`,
-              }
-            : {
-                key: `long:${through}`,
-                kind: 'chain-long',
-                describe: (n) =>
-                  `${said(n, 'ticket waits', 'tickets wait')} on a chain longer than this reads, through ${through}`,
-              }
-        break
-      }
-      const read = at.blockers
-      if (read === null) {
-        verdict = {
-          key: 'unlistable',
-          kind: 'blockers-unlistable',
-          describe: (n) => `${said(n, 'ticket waits', 'tickets wait')} on blockers this project cannot list`,
-        }
-        break
-      }
-      if (!read.ok) {
-        const problem = read.problem
-        verdict = {
-          key: `unread:${problem}`,
-          kind: 'blockers-unread',
-          describe: (n) =>
-            `${said(n, 'ticket waits', 'tickets wait')} on a blocker that could not be read — ${problem}`,
-        }
-        break
-      }
-      const open = read.issues.filter((i) => i.state === 'open')
-      const next = open[0]
-      if (next === undefined) {
-        verdict =
-          at === start
-            ? {
-                key: 'closed',
-                kind: 'blockers-closed',
-                describe: (n) => `${said(n, 'ticket was', 'tickets were')} held by blockers that have since closed`,
-              }
-            : rootVerdict(at.ref, facts)
-        break
-      }
-      if (facts.repository !== null && next.repository !== facts.repository) {
-        verdict = {
-          key: `foreign:${next.repository}#${next.number}`,
-          kind: 'chain',
-          describe: (n) =>
-            `${said(n, 'ticket waits', 'tickets wait')} on ${next.repository}#${next.number}, a blocker that is not a ticket here`,
-        }
-        break
-      }
-      const hop = byRef.get(next.number)
-      if (hop === undefined) {
-        verdict = rootVerdict(next.number, facts)
-        break
-      }
-      if (seen.includes(hop.ref)) {
-        const loop = [...seen.slice(seen.indexOf(hop.ref)), hop.ref].map((r) => `#${r}`).join(' → ')
-        verdict = {
-          key: `cycle:${seen
-            .slice(seen.indexOf(hop.ref))
-            .sort((a, b) => a - b)
-            .join(',')}`,
-          kind: 'chain-cycle',
-          describe: (n) => `${said(n, 'ticket waits', 'tickets wait')} on a cycle: ${loop}`,
-        }
-        break
-      }
-      if (hops + 1 > CHAIN_HOPS_MOST) {
-        const through = seen.map((r) => `#${r}`).join(', ')
-        verdict = {
-          key: `long:${through}`,
-          kind: 'chain-long',
-          describe: (n) =>
-            `${said(n, 'ticket waits', 'tickets wait')} on a chain longer than this reads, through ${through}`,
-        }
-        break
-      }
-      at = hop
+    const seenKeys = new Set<string>()
+    for (const v of visit(start, [])) {
+      if (seenKeys.has(v.key)) continue
+      seenKeys.add(v.key)
+      add(v.key, v.kind, v.describe, ref)
     }
-    add(verdict.key, verdict.kind, verdict.describe, ref)
   }
 
   // Everything runnable waiting out its retry.
-  const wasRunnable = facts.offered.filter((r) => !baseRed.includes(r))
+  const wasRunnable = queuedOffered(facts)
   if (wasRunnable.length > 0 && facts.runnable.length === 0) {
     const held = wasRunnable.map((r) => facts.rows.find((row) => row.ref === r)?.heldUntil ?? null)
     if (held.every((h) => h !== null)) {

@@ -864,16 +864,21 @@ describe('whyNothingRuns under Queue (#1215)', () => {
   it('prints one line and "and N more", and every root under --all', () => {
     const plain = renderStatus(withWhy(), {}).join('\n')
     expect(plain).toContain('3 tickets wait on #9, which waits on you')
-    expect(plain).toContain('and 1 more for other reasons')
+    expect(plain).toContain(', and 1 more ticket for other reasons')
     expect(plain).not.toContain('#8, which is on hold')
     const all = renderStatus(withWhy(), { all: true }).join('\n')
     expect(all).toContain('#8, which is on hold')
-    expect(all).not.toContain('and 1 more')
+    expect(all).not.toContain('for other reasons')
   })
 
   it('carries the first root in --json, the rest only under --all', () => {
     const one = (statusJson(withWhy()).projects as { whyNothingRuns: Record<string, unknown> }[])[0]!.whyNothingRuns
-    expect(one).toEqual({ root: 'chain', sentence: '3 tickets wait on #9, which waits on you', tickets: [1, 2, 3] })
+    expect(one).toEqual({
+      root: 'chain',
+      sentence: '3 tickets wait on #9, which waits on you',
+      tickets: [1, 2, 3],
+      moreTickets: 1,
+    })
     const all = (statusJson(withWhy(), true).projects as { whyNothingRuns: { others: unknown[] } }[])[0]!.whyNothingRuns
     expect(all.others).toHaveLength(1)
   })

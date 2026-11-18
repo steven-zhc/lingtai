@@ -26,7 +26,8 @@ import {
 import { readBlockersEffect } from '@lingtai/conductor/blockers'
 import { selectRunnableEffect } from '@lingtai/conductor/queue'
 import {
-  applies,
+  mayApply,
+  omittedTickets,
   rootBeforeChains,
   whyNothingRuns,
   type Beacon,
@@ -611,7 +612,7 @@ export const readStatus = (
           repository: filter.links?.repository ?? null,
           canListBlockers: filter.links !== null,
         }
-        if (applies(facts)) {
+        if (mayApply(facts)) {
           const beacon: Beacon = yield* Effect.suspend(
             reading.beacon ??
               (() =>
@@ -762,10 +763,16 @@ export function renderStatus(
 
     const queue: string[] = []
     if (p.whyNothingRuns != null) {
-      const [first, ...more] = p.whyNothingRuns.roots
-      const roots = options.all ? p.whyNothingRuns.roots : first === undefined ? [] : [first]
-      for (const r of roots) queue.push(r.sentence)
-      if (!options.all && more.length > 0) queue.push(`and ${more.length} more for other reasons`)
+      const [first] = p.whyNothingRuns.roots
+      if (options.all) for (const r of p.whyNothingRuns.roots) queue.push(r.sentence)
+      else if (first !== undefined) {
+        const n = omittedTickets(p.whyNothingRuns)
+        queue.push(
+          n > 0
+            ? `${first.sentence}, and ${n} more ${n === 1 ? 'ticket' : 'tickets'} for other reasons`
+            : first.sentence,
+        )
+      }
     }
     if (p.source !== null) {
       if (p.offerError !== null) queue.push(offerFailedLine(p.source, new Error(p.offerError)).trim())
@@ -830,7 +837,9 @@ function whyJson(why: WhyNothingRuns | null, all: boolean): Record<string, unkno
   const first = why?.roots[0]
   if (why === undefined || why === null || first === undefined) return null
   const one = (r: (typeof why.roots)[number]) => ({ root: r.root, sentence: r.sentence, tickets: r.tickets })
-  return all ? { ...one(first), others: why.roots.slice(1).map(one) } : one(first)
+  if (all) return { ...one(first), others: why.roots.slice(1).map(one) }
+  const more = omittedTickets(why)
+  return more > 0 ? { ...one(first), moreTickets: more } : one(first)
 }
 
 const rowJson = (r: StatusRow): Record<string, unknown> => ({

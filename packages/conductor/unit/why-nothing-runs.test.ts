@@ -143,17 +143,31 @@ describe('whyNothingRuns', () => {
     expect(r).toEqual(['2 tickets wait on a cycle: #2 → #3 → #2'])
   })
 
-  it('stops a chain of 11 hops at the cap and names the tickets it read', () => {
-    const refs = Array.from({ length: CHAIN_HOPS_MOST + 2 }, (_, i) => i + 1)
+  it('stops a chain whose root is 11 hops away at the cap and names the tickets it read', () => {
+    const refs = Array.from({ length: CHAIN_HOPS_MOST + 1 }, (_, i) => i + 1)
     const chain = refs.map((r) => blocked(r, r + 1))
     const out = whyNothingRuns(facts({ skipped: skipBlocked(...refs) }), chain)
     const long = out?.roots.find((r) => r.root === 'chain-long' && r.tickets.includes(1))
     expect(long?.sentence).toBe(
-      `1 ticket waits on a chain longer than this reads, through ${refs
-        .slice(0, CHAIN_HOPS_MOST + 1)
-        .map((r) => `#${r}`)
-        .join(', ')}`,
+      `1 ticket waits on a chain longer than this reads, through ${refs.map((r) => `#${r}`).join(', ')}`,
     )
+    expect(out?.roots.find((r) => r.root === 'chain')?.tickets).toContain(2)
+  })
+
+  it('follows every open blocker, so a shared second blocker is a root of its own', () => {
+    const f = facts({ skipped: skipBlocked(2, 3, 4), rows: [row({ ref: 1111, waiting: true })] })
+    const r = whyNothingRuns(f, [blocked(2, 21, 1111), blocked(3, 22, 1111), blocked(4, 23, 1111)])
+    expect(r?.roots[0]).toMatchObject({ tickets: [2, 3, 4], sentence: '3 tickets wait on #1111, which waits on you' })
+  })
+
+  it('puts a red base before chains, and does not count waiting rows as queued', () => {
+    const base = { held: { command: 'pnpm test', baseSha: 'a7148c1ffff', base: 'main' } }
+    const skipped = [{ ref: 9, reason: 'base-red' }, ...skipBlocked(2, 3, 4)]
+    const r = rootBeforeChains(facts({ base, skipped }))
+    expect(r?.roots).toHaveLength(1)
+    expect(r?.roots[0]?.root).toBe('base-red')
+    const waiting = facts({ offered: [9], rows: [row({ ref: 9, state: 'waiting' })] })
+    expect(says(waiting)).toBeUndefined()
   })
 
   it('says nothing for held tickets only, or while something is in flight', () => {
@@ -166,6 +180,7 @@ describe('whyNothingRuns', () => {
         rows: [row({ ref: 2, state: 'running', updatedAt: new Date(now.getTime() - ago * 60_000) })],
       })
     expect(says(run(2))).toBeUndefined()
+    expect(says({ ...run(10), beacon: { up: true } })).toBeUndefined()
     expect(says(run(10))?.[0]).toMatch(/daemon is not running/)
   })
 
