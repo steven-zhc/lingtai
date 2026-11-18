@@ -219,7 +219,7 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
 }
 .sandbox-inner { max-width: 80rem; margin: 0 auto; padding: 0 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 34rem); gap: 56px; align-items: center; }
 .sandbox-shield { display: block; color: var(--accent); margin: 0 0 14px; }
-.home .sandbox-pitch h2 { color: var(--ink); max-width: 14ch; margin: 0 0 16px; }
+.home .sandbox-pitch h2 { color: var(--ink); margin: 0 0 16px; text-wrap: balance; }
 .sandbox-pitch h2 .accent { display: block; color: var(--accent-ink); }
 .sandbox-sub { color: var(--ink-2); font-size: 18px; line-height: 1.55; margin: 0 0 22px; max-width: 34rem; }
 .sandbox-labels { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 0; font-weight: 600; color: var(--ink); }
@@ -228,29 +228,32 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
 .sandbox-side .sandbox-small { margin: 12px 0 0; }
 .home-shield { margin: 0; }
 .home-shield svg { width: 100%; height: auto; display: block; overflow: visible; }
-.home-shield-chip rect { fill: var(--surface); stroke: color-mix(in srgb, var(--fail) 22%, var(--rule-2)); }
-.home-shield-chip .home-shield-lock { fill: color-mix(in srgb, var(--fail) 16%, transparent); }
-.home-shield-chip.home-shield-allowed rect { stroke: color-mix(in srgb, var(--pass) 30%, var(--rule-2)); }
-.home-shield-chip.home-shield-allowed .home-shield-lock { fill: color-mix(in srgb, var(--pass) 16%, transparent); }
-.home-shield-okv { fill: none; stroke: var(--pass); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.home-shield-lockx { stroke: var(--fail); stroke-width: 1.5; stroke-linecap: round; }
-.home-shield-file { font: 12px var(--mono); fill: var(--ink-2); }
-.home-shield-ray { fill: none; stroke: var(--fail); stroke-width: 1.1; stroke-dasharray: 2 3.5; stroke-linecap: round; opacity: .7; }
+.home-shield-chip rect { fill: color-mix(in srgb, var(--fail) 15%, #18252b); stroke: color-mix(in srgb, var(--fail) 80%, var(--rule-2)); stroke-width: 1.3; }
+.home-shield-chip .home-shield-lock { fill: var(--fail); }
+.home-shield-chip.home-shield-allowed rect { fill: color-mix(in srgb, var(--pass) 16%, #18252b); stroke: color-mix(in srgb, var(--pass) 85%, var(--rule-2)); }
+.home-shield-chip.home-shield-allowed .home-shield-lock { fill: var(--pass); }
+.home-shield-chip rect.home-shield-under-1 { opacity: .7; }
+.home-shield-chip rect.home-shield-under-2 { opacity: .4; }
+.home-shield-okv { fill: none; stroke: #0c1316; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.home-shield-lockx { stroke: #0c1316; stroke-width: 1.8; stroke-linecap: round; }
+.home-shield-file { font: 500 12.5px var(--mono); fill: #f1f6f7; }
+.home-shield-ray { fill: none; stroke: var(--fail); stroke-width: 1.4; stroke-dasharray: 2 3.5; stroke-linecap: round; }
+.home-shield-ok { fill: none; stroke: var(--pass); stroke-width: 1.8; stroke-linecap: round; }
 .home-shield-cap { stroke: var(--fail); stroke-width: 2.2; stroke-linecap: round; }
-.home-shield-halo { fill: var(--fail); opacity: .16; }
-.home-shield-field { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 1 5; stroke-linecap: round; opacity: .45; }
-.home-shield-shield { fill: url(#home-shield-fill); stroke: var(--accent); stroke-width: 2; }
-.home-shield-glow { fill: none; stroke: var(--accent); stroke-width: 12; opacity: .1; }
-.home-shield-inner { fill: none; stroke: var(--accent); stroke-width: .8; opacity: .22; }
+.home-shield-halo { fill: var(--fail); opacity: .28; }
+.home-shield-cap.home-shield-open { stroke: var(--pass); }
+.home-shield-halo.home-shield-open { fill: var(--pass); }
+.home-shield-field { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 1 5; stroke-linecap: round; opacity: .7; }
+.home-shield-shield { fill: url(#home-shield-fill); stroke: var(--accent); stroke-width: 2.5; }
+.home-shield-glow { fill: none; stroke: var(--accent); stroke-width: 14; opacity: .2; }
+.home-shield-inner { fill: none; stroke: var(--accent); stroke-width: .8; opacity: .4; }
 .home-shield-aura-stop { stop-color: var(--accent); }
-.home-shield-arrowhead { fill: var(--pass); }
-.home-shield-title { font: 600 10.5px var(--mono); letter-spacing: .12em; fill: var(--muted); }
+.home-shield-title { font: 600 10.5px var(--mono); letter-spacing: .12em; fill: var(--accent-ink); }
 .home-shield-run { font: 500 12.5px var(--mono); fill: var(--ink); }
-.home-shield-role { font: 12px var(--mono); fill: var(--muted); }
-.home-shield-sep { stroke: var(--rule-2); stroke-width: 1; }
+.home-shield-role { font: 12px var(--mono); fill: var(--ink-2); }
+.home-shield-sep { stroke: color-mix(in srgb, var(--accent) 40%, transparent); stroke-width: 1; }
 .home-shield-dot { fill: var(--pass); }
-.home-shield-ok { fill: none; stroke: var(--pass); stroke-width: 1.4; stroke-linecap: round; }
-.home-shield-legend { display: flex; flex-wrap: wrap; gap: 6px 22px; justify-content: center; margin-top: 14px; font: 11.5px var(--mono); color: var(--muted); }
+.home-shield-legend { display: flex; flex-wrap: wrap; gap: 6px 22px; justify-content: center; margin-top: 14px; font: 12.5px var(--mono); color: var(--ink); }
 .home-shield-legend b { font-weight: 700; margin-right: 4px; }
 .home-shield-legend .home-shield-r { color: var(--fail); }
 .home-shield-legend .home-shield-g { color: var(--pass); }
