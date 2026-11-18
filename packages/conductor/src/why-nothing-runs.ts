@@ -100,19 +100,28 @@ export function unheldQueued(facts: Pick<WhyFacts, 'offered' | 'skipped' | 'rows
 }
 
 const flying = (r: WhyRow): boolean => r.state === 'running' || r.state === 'verifying'
+/** A flying row touched within the last five minutes (or of unknown age) is a pass in flight whatever the beacon says. */
+const freshlyFlying = (r: WhyRow, now: Date): boolean =>
+  flying(r) && (r.updatedAt === null || now.getTime() - r.updatedAt.getTime() < IN_FLIGHT_WITHIN_MS)
 
 /**
- * Whether the sentence can show: unheld work queued and no row `running` or `verifying` at all. A pass
- * that has not changed a column for ten minutes is still a pass, and a `lingtai run` writes no beacon,
- * so neither row age nor the daemon's beacon is evidence that nothing is in flight.
+ * Whether the sentence can still show before the beacon is read: unheld work queued and no row touched
+ * within five minutes that is `running` or `verifying`.
  */
 export function mayApply(facts: WhyFacts): boolean {
-  return unheldQueued(facts).length > 0 && !facts.rows.some(flying)
+  return unheldQueued(facts).length > 0 && !facts.rows.some((r) => freshlyFlying(r, facts.now))
 }
 
-/** The same question, once the beacon is known; the beacon does not change the answer. */
+/**
+ * The same question, once the beacon is known. A row left `running` longer ago than that is a pass in
+ * flight only while a daemon is up; with none, nothing is carrying it and it is an orphan, which must not
+ * silence the explanation.
+ */
 export function applies(facts: WhyFacts): boolean {
-  return mayApply(facts)
+  if (!mayApply(facts)) return false
+  const b = facts.beacon
+  const daemonUp = 'up' in b && b.up
+  return !(daemonUp && facts.rows.some(flying))
 }
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
@@ -153,10 +162,11 @@ export function rootBeforeChains(facts: WhyFacts): WhyNothingRuns | null {
 }
 
 /** A red or unreadable base, which holds only the tickets skipped for it, so other roots may stand beside it. */
-export function baseRoot(facts: WhyFacts): Root | null {
+export function baseRoot(facts: WhyFacts, reaching: readonly number[] = []): Root | null {
   const only = (root: Root): Root => root
-  const baseRed = facts.skipped.filter((s) => s.reason === 'base-red').map((s) => s.ref)
-  if (baseRed.length > 0) {
+  const own = facts.skipped.filter((s) => s.reason === 'base-red').map((s) => s.ref)
+  const baseRed = [...new Set([...own, ...reaching])]
+  if (own.length > 0) {
     const look = facts.base
     const n = baseRed.length
     if (look !== null && 'held' in look)
@@ -346,7 +356,9 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
         ref,
       )
 
-  const base = baseRoot(facts)
+  const reaching = groups.get('base')?.tickets ?? []
+  groups.delete('base')
+  const base = baseRoot(facts, reaching)
   const roots = [
     ...(base === null ? [] : [base]),
     ...[...groups.values()].map((g): Root => ({
@@ -359,6 +371,9 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
 }
 
 function rootVerdict(root: number, facts: WhyFacts) {
+  // A root held by the red base is not a ticket's own state: the chain goes on to the base itself.
+  if (facts.skipped.some((s) => s.ref === root && s.reason === 'base-red'))
+    return { key: 'base', kind: 'base-red' as RootKind, describe: (_n: number) => '' }
   const state = stateOf(root, facts)
   return {
     key: `root:${root}`,

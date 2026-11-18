@@ -185,8 +185,20 @@ describe('whyNothingRuns', () => {
       })
     expect(says(run(2))).toBeUndefined()
     expect(says({ ...run(10), beacon: { up: true } })).toBeUndefined()
-    // a `lingtai run` pass writes no beacon: an old running row is still a pass
-    expect(says(run(10))).toBeUndefined()
+    // nothing carries an old running row: it is an orphan, and the outage is said
+    expect(says(run(10))?.[0]).toMatch(/daemon is not running/)
+  })
+
+  it('traces a chain through a ticket the red base holds to the base', () => {
+    const base = { held: { command: 'pnpm test', baseSha: 'a7148c1ffff', base: 'main' } }
+    const skipped = [{ ref: 9, reason: 'base-red' }, ...skipBlocked(2, 3)]
+    const r = whyNothingRuns(facts({ base, skipped }), [blocked(2, 9), blocked(3, 9)])
+    expect(r?.roots).toHaveLength(1)
+    expect(r?.roots[0]).toMatchObject({
+      root: 'base-red',
+      sentence: 'main is red at a7148c1 (`pnpm test`); 3 tickets wait for it',
+    })
+    expect(r?.roots[0]?.tickets.sort()).toEqual([2, 3, 9])
   })
 
   it('says it found no reason, rather than nothing', () => {
