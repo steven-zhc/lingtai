@@ -1961,6 +1961,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * here that means it.
        */
       let didLand = false
+      /** Whether a WIP row is still owed after the last `noteAllKept`: a failed append, an unresolved sha or an unreadable ancestry. */
+      let keptOwed = false
       /**
        * The merge commit the lane produced, for the caller's `ok: true`.
        *
@@ -2177,8 +2179,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // The sentence, and the label a reader recognises it by: `#110`
           // follows this from another process and has nothing else to tell *the
           // writer has finished* from *the writer is thinking*.
-          runLog.note(RUN_LOG_END, runLogEnd(didLand))
-          return runLog.close(didLand ? 'delete' : 'keep')
+          const finished = didLand && !keptOwed
+          runLog.note(RUN_LOG_END, runLogEnd(finished))
+          return runLog.close(finished ? 'delete' : 'keep')
         }),
       )
 
@@ -2647,22 +2650,37 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /** `ref` is where the commits are: `branch`, or the arm alone when `agent/<n>` was refused. */
       const noteAllKept = (ref: string): Effect.Effect<void> =>
         Effect.gen(function* () {
+          keptOwed = false
           yield* resolveWipShas()
           for (const entry of wips) {
+            // An entry whose sha is unknown is still owed a row.
+            if (entry.sha === null) {
+              keptOwed = true
+              continue
+            }
+            if (notedKept.has(entry.sha)) continue
             // A row names a sha the remote holds: one the pushed history does not contain (a WIP a
             // rerun amended away) is never recorded, whatever local objects remain.
-            if (entry.sha === null || notedKept.has(entry.sha)) continue
             const inside = yield* gitAskedEffect(['merge-base', '--is-ancestor', entry.sha, 'HEAD'])
-            // Only git's own "not an ancestor" (exit 1) is absence; a read that failed is unknown, and
-            // unknown is not absent — the sha came from this worktree's own HEAD chain, so it is recorded.
-            if (Result.isFailure(inside) && inside.failure.exitCode === 1) {
-              runLog.note(
-                'push',
-                `${entry.sha.slice(0, 7)} is not in the history pushed to ${ref}, so it is not recorded`,
-              )
+            if (Result.isFailure(inside)) {
+              // Only git's own "not an ancestor" (exit 1) is absence. Any other failure is unknown, and
+              // unknown is not confirmation: nothing is recorded now, and the row stays owed for a later call.
+              if (inside.failure.exitCode === 1) {
+                runLog.note(
+                  'push',
+                  `${entry.sha.slice(0, 7)} is not in the history pushed to ${ref}, so it is not recorded`,
+                )
+              } else {
+                keptOwed = true
+                runLog.note(
+                  'push',
+                  `${entry.sha.slice(0, 7)} could not be confirmed in the history pushed to ${ref} — ${inside.failure.detail}`,
+                )
+              }
               continue
             }
             yield* noteKept(entry, ref)
+            if (!notedKept.has(entry.sha)) keptOwed = true
           }
         })
 
@@ -2865,7 +2883,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         }),
       )
 
-      yield* Effect.addFinalizer(() => (didLand ? Effect.void : publishWhatIsCommitted))
+      yield* Effect.addFinalizer(() => (didLand && !keptOwed ? Effect.void : publishWhatIsCommitted))
 
       /**
        * **A landing that finished is recorded even when the pass was interrupted
