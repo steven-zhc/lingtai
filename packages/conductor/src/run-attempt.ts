@@ -1449,7 +1449,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      */
     let rerun = null as { readonly reached: readonly StepReached[]; readonly context: ActionContext } | null
     /** What the visit being routed was handed, for an `ask-again` to redo it from (#1224). */
-    let lastVisit: { readonly context: ActionContext; readonly reached: readonly StepReached[] } | null = null
+    let lastVisit: {
+      readonly context: ActionContext
+      readonly reached: readonly StepReached[]
+      /** The sha the visit's `StepStarted` recorded (#1246): what a redo of it carries forward, not the logical head. */
+      readonly startedAt?: string
+    } | null = null
     /** The step a rule just asked again (#1224): the next visit to it is the second asking, and is asked no third time. */
     let askingAgain: Step | null = null
     /** This visit is itself an `ask-again`'s (#1224). Cleared when the visit starts, so a later arrival is asked once more. */
@@ -1693,7 +1698,11 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           context: {
             ...handed,
             rerun: redo.retry,
-            redo: { why: redo.why, startedAt: earlier?.startedAt ?? redo.visit.context.onSha, head: reset.head },
+            redo: {
+              why: redo.why,
+              startedAt: earlier?.startedAt ?? redo.visit.startedAt ?? redo.visit.context.onSha,
+              head: reset.head,
+            },
           },
         }
         at = redo.step
@@ -2225,6 +2234,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
        * calls rather than through `runStep` — so neither gets one either.
        */
       const visiting = at
+      let recordedStartedAt: string | undefined
       // The version this lap's `StepEnded` was appended at (#931), caught where it is emitted.
       const endedAt: { version: number | null } = { version: null }
       const reached = yield* runStep(
@@ -2261,6 +2271,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // the step's failure (#791).
         Effect.gen(function* () {
           const actual = visitContext.redo?.startedAt ?? (options.headNow ? yield* options.headNow() : null)
+          recordedStartedAt = actual ?? visitContext.onSha
           yield* options.emit({
             type: 'StepStarted',
             data: {
@@ -2272,7 +2283,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           })
         }),
       )
-      lastVisit = { context: visitContext, reached: visitedBefore }
+      lastVisit = { context: visitContext, reached: visitedBefore, startedAt: recordedStartedAt }
       // Only a review that was actually read: an unreadable answer, a reviewer
       // that never ran or did not finish, or an action skipped before the agent
       // reached the head read nothing (#671). One reader is enough: a pipeline
@@ -2401,7 +2412,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             const retry = stepRedosSpent + 1
             const redone = yield* redoStep({
               step: at,
-              visit: { context: visitContext, reached: visitedBefore },
+              visit: { context: visitContext, reached: visitedBefore, startedAt: recordedStartedAt },
               retry,
               said: reason.detail,
               why: reason.detail,
