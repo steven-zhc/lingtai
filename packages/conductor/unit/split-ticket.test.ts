@@ -80,8 +80,7 @@ class FakeGitHub {
     createIssue: async (input) =>
       this.hit(`createIssue ${input.title}`, () => {
         if (this.strictLabels)
-          for (const l of input.labels)
-            if (!this.labels.has(l)) throw new Error(`Validation Failed: label ${l} does not exist`)
+          for (const l of input.labels) if (!this.labels.has(l)) throw new Error('Validation Failed')
         const issue = this.make(this.next++, input.title, input.body)
         issue.labels = input.labels.map((name) => ({ name, color: null }))
         this.issues.set(issue.number, issue)
@@ -273,7 +272,7 @@ describe('splitTicketHolding', () => {
 
   it('a split interrupted after its second child leaves both labelled, and a second run lifts them and appends one TicketSplit', async () => {
     const { store, ticketId, gh, go } = await setup()
-    gh.fail = { call: 'createIssue part c', mode: 'before', times: 1 }
+    gh.fail = { call: 'createIssue part c', mode: 'before', times: 2 }
     expect((await go()).ok).toBe(false)
     expect(gh.issues.get(700)!.labels.map((l) => l.name)).toContain('lingtai:publishing')
     expect(gh.issues.get(701)!.labels.map((l) => l.name)).toContain('lingtai:publishing')

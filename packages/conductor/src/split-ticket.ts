@@ -412,13 +412,18 @@ export function splitTicketHoldingEffect(
                     ),
                     Effect.flatMap(() => {
                       if (found.has(child.key)) return Effect.void
-                      // A repository without the label may refuse a create that names it: make the label once, create again.
-                      if (!/label/i.test(errorMessage(err))) return Effect.fail(err)
+                      // A repository without the label may refuse a create that names it, and GitHub says only
+                      // `Validation Failed` with the detail in `errors`, which the client drops: so the message is not
+                      // read. Make the label (idempotent) and create once more; if that fails too, the first error stands.
                       return lift(() => github.createLabel(PUBLISHING_LABEL)).pipe(
                         Effect.flatMap(() => create),
                         Effect.map((opened) => {
                           found.set(child.key, opened.number)
                         }),
+                        Effect.catchIf(
+                          () => true,
+                          () => Effect.fail(err),
+                        ),
                       )
                     }),
                   ),
