@@ -251,7 +251,7 @@ function claimedReleasedClaimedLanded(): readonly Envelope[] {
       labels: ['bug'],
     }),
     ...aClaim(t, attemptStream('t9101-a')),
-    ...aRelease(t, attemptStream('t9101-a'), 'restart', { _tag: 'Restart', restart: 1 }),
+    ...aRelease(t, attemptStream('t9101-a'), 'restart', { _tag: 'NewAttempt', newAttempt: 1 }),
     ...aClaim(t, attemptStream('t9101-b')),
     ...aLanding(t, 'merge-9101', BASE),
   ])
@@ -593,7 +593,7 @@ function fixRoundRouted(): readonly Envelope[] {
   const offer = {
     proposal: { _tag: 'BuildRed' as const, output: 'review refused' },
     available: [
-      { id: 'fix-lines', next: { _tag: 'FixRound' as const, to: 'implement' as const, round: 1 } },
+      { id: 'fix-lines', next: { _tag: 'FixRefusal' as const, to: 'implement' as const, round: 1 } },
       { id: 'hand-to-person', next: { _tag: 'HandToPerson' as const } },
     ],
     unavailable: [],
@@ -1146,7 +1146,7 @@ function proposalRoutedByReference(): readonly Envelope[] {
   const offer = {
     proposal: { _tag: 'ReviewFindings' as const },
     available: [
-      { id: 'fix-lines', next: { _tag: 'FixRound' as const, to: 'implement' as const, round: 1 } },
+      { id: 'fix-lines', next: { _tag: 'FixRefusal' as const, to: 'implement' as const, round: 1 } },
       { id: 'hand-to-person', next: { _tag: 'HandToPerson' as const } },
     ],
     unavailable: [],
@@ -1282,7 +1282,7 @@ const late_fixRoundAfterCompletion = (() => {
   const offer = {
     proposal: { _tag: 'ReviewFindings' as const, findings: [] },
     available: [
-      { id: 'fix-lines', next: { _tag: 'FixRound' as const, to: 'implement' as const, round: 1 } },
+      { id: 'fix-lines', next: { _tag: 'FixRefusal' as const, to: 'implement' as const, round: 1 } },
       { id: 'hand-to-person', next: { _tag: 'HandToPerson' as const } },
     ],
     unavailable: [],
@@ -1414,7 +1414,7 @@ export const COVERS = {
     'MergeLaneWaited',
     'PassRouted',
     'ProposalRouted',
-    'StepRerunInPlace',
+    'StepRedone',
     'RunRefsPublished',
     'RunKeptUncommitted',
     'SandboxBoundaryRecorded',
@@ -1519,7 +1519,7 @@ const late_everyTicketTypeOnOneStream = stamp(
 function stepRerunInPlace(): readonly Envelope[] {
   const run = anAttempt(attemptStream('step-rerun-in-place'))
   const rerun = (n: number, waitMs: number) =>
-    run.event('StepRerunInPlace', { runId: run.runId, step: 'implement', rerun: n, said: 'API Error: 503', waitMs })
+    run.event('StepRedone', { runId: run.runId, step: 'implement', rerun: n, said: 'API Error: 503', waitMs })
   return [
     runStarted(run, runTicket),
     run.event('StepStarted', { runId: run.runId, step: 'implement', round: 0 }),
@@ -1550,10 +1550,10 @@ const late_everyAttemptType = stamp(
     return ordered.map((e, i) => ({ ...e, streamId, version: i + 1 }))
   })(),
 )
-// The two sandbox types (#1161) and `StepRerunInPlace` (#1201) are in the fixture and not in the count: the control fixture is stamped after this
+// The two sandbox types (#1161) and `StepRedone` (#1201) are in the fixture and not in the count: the control fixture is stamped after this
 // one, and its committed hash is over the `seq` it was given before they existed (0124 §3).
 nextSeq -= BigInt(
-  late_everyAttemptType.filter((e) => e.type.startsWith('Sandbox') || e.type === 'StepRerunInPlace').length,
+  late_everyAttemptType.filter((e) => e.type.startsWith('Sandbox') || e.type === 'StepRedone').length,
 )
 
 /**

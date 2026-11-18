@@ -122,7 +122,7 @@ import {
   type StepOutcome,
   type WaitId,
 } from '@lingtai/domain'
-import type { RuntimeId } from '@lingtai/domain'
+import type { CeilingReached, RuntimeId } from '@lingtai/domain'
 import type { AttemptRef } from '@lingtai/domain/wait'
 import { kindOfAction, type Recipe, type StepAction } from '@lingtai/recipe'
 import { Cause, type Context, Duration, Effect, Exit } from 'effect'
@@ -833,7 +833,7 @@ export type AttemptEvent =
   | ActionEvent
   | { type: 'StepStarted'; data: PayloadOf<'StepStarted'> }
   | { type: 'StepEnded'; data: PayloadOf<'StepEnded'> }
-  | { type: 'StepRerunInPlace'; data: PayloadOf<'StepRerunInPlace'> }
+  | { type: 'StepRedone'; data: PayloadOf<'StepRedone'> }
 
 export interface AttemptOptions {
   /**
@@ -1216,7 +1216,7 @@ export interface RouteTaken {
 }
 
 /** The limits that take a destination off the offer. `base-merges` is the free one (#593): it bounds a base that keeps moving, and costs no agent. */
-export type Ceiling = 'rounds' | 'restarts' | 'base-merges' | 'conflict-rounds'
+export type Ceiling = CeilingReached['ceiling']
 
 /**
  * **The pass's own terminal, 0120 §6's seam** — the three `AttemptNext` tags that
@@ -1418,10 +1418,10 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     let askingAgain: Step | null = null
     /** This visit is itself an `ask-again`'s (#1224). Cleared when the visit starts, so a later arrival is asked once more. */
     let arrivedAskedAgain = false
-    /** The one place `StepRerunInPlace` is appended: a crash's rerun and a rule's both spend the count before the wait. */
-    const emitRerunInPlace = (step: Step, retry: number, said: string, wait: Duration.Input, askedAgain = false) =>
+    /** The one place `StepRedone` is appended: a crash's rerun and a rule's both spend the count before the wait. */
+    const emitStepRedone = (step: Step, retry: number, said: string, wait: Duration.Input, askedAgain = false) =>
       options.emit({
-        type: 'StepRerunInPlace',
+        type: 'StepRedone',
         data: {
           runId: options.context.runId,
           step,
@@ -1757,7 +1757,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // records the route carries the merge commit as its `head` — `record` stays
         // the one place `onSha` is written.
         let merged: { readonly head: string } | { readonly failed: string } | null = null
-        if (next._tag === 'MergeBase') {
+        if (next._tag === 'MergeBaseBranch') {
           merged =
             options.mergeBase === undefined
               ? { failed: 'this attempt was handed no way to merge the base in' }
@@ -1767,7 +1767,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // in, `--no-commit`, so the fixer stands in the conflict the lane proved. Before
         // `record` as `merged` is, and applied in the `FixRound` case below.
         let conflictAnswer: ConflictMergeAnswer | null = null
-        if (next._tag === 'FixRound' && next.conflict !== undefined && offer.proposal._tag === 'MergeConflict') {
+        if (next._tag === 'FixRefusal' && next.conflict !== undefined && offer.proposal._tag === 'MergeConflict') {
           conflictAnswer =
             offer.proposal.baseSha === null
               ? { failed: 'the lane named no base sha to merge' }
@@ -1816,7 +1816,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // **A rerun in place spends a retry too, and is durable first** (#1224), as a crash's is: a
         // daemon that dies during the wait has spent it. The route itself goes in the end-of-walk batch.
         if (next._tag === 'RerunStep') {
-          yield* emitRerunInPlace(
+          yield* emitStepRedone(
             next.step,
             next.retry,
             offer.proposal._tag === 'SetupRefused'
@@ -1836,7 +1836,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         routes.push(appended ? { ...taken, appended: true } : taken)
 
         switch (next._tag) {
-          case 'MergeBase':
+          case 'MergeBaseBranch':
             if (merged === null || !('head' in merged)) {
               // A clean merge that fails in a tree the lane just proved clean is a
               // defect, and a person is the floor under it.
@@ -1913,7 +1913,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             at = next.step
             return true
           }
-          case 'FixRound':
+          case 'FixRefusal':
             // The same bookkeeping `take` always did: the lap's own findings
             // become the next lap's `recheck` (0038 §2), and a round is spent.
             // Not for a fixer that declined (#1199): its lap is the `implement`
@@ -2238,7 +2238,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             rerun = rerunOf({ context: visitContext, reached: visitedBefore, results: reached.results })
             // The crash's rerun is the same arrival: an ask-again already spent on it is not given back.
             askingAgain = arrivedAskedAgain ? at : null
-            yield* emitRerunInPlace(at, stepRedosSpent, reason.detail, again.wait)
+            yield* emitStepRedone(at, stepRedosSpent, reason.detail, again.wait)
             yield* Effect.sleep(again.wait)
             continue
           }

@@ -44,7 +44,7 @@ function streamOf(name: string, reclaim: Reclaim) {
   const afterSecond = [...prefix, ...approve(), ...reclaim(stream, run.runId)]
   const afterRestart = [
     ...afterSecond,
-    ...aRelease(stream, run.runId, 'restart 1 of 1', { _tag: 'Restart', restart: 1 }),
+    ...aRelease(stream, run.runId, 'restart 1 of 1', { _tag: 'NewAttempt', newAttempt: 1 }),
     ...aClaim(stream, restartRunId),
   ]
   return { afterSecond, afterRestart, runId: run.runId, restartRunId, taskId: `ticket-pin-${name}` }

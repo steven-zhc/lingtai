@@ -1568,7 +1568,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(prompts[2]).toBe(prompts[0])
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
-    const reruns = run.filter((e) => e.type === 'StepRerunInPlace').map((e) => e.data as PayloadOf<'StepRerunInPlace'>)
+    const reruns = run.filter((e) => e.type === 'StepRedone').map((e) => e.data as PayloadOf<'StepRedone'>)
     expect(reruns.map((r) => [r.step, r.rerun, r.waitMs])).toEqual([
       ['implement', 1, 60_000],
       ['implement', 2, 300_000],
@@ -1639,7 +1639,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
     // B committed nothing, so the step holds; A's commit is not recorded as B's.
     expect(result.ok).toBe('held')
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
-    expect(run.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(1)
+    expect(run.filter((e) => e.type === 'StepRedone')).toHaveLength(1)
     expect(run.filter((e) => e.type === 'RunProposedCompletion')).toHaveLength(1)
   })
 
@@ -1686,7 +1686,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
     expect(fixes[1]!.id).toBe(`${fixes[0]!.id}:rerun:1`)
     expect(fixes[1]!.prompt).toBe(fixes[0]!.prompt)
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
-    expect(run.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(1)
+    expect(run.filter((e) => e.type === 'StepRedone')).toHaveLength(1)
   })
 
   /**

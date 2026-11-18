@@ -664,10 +664,10 @@ export function offerFor(
       return
     }
     if (spent.rounds >= policy.refusalFixes) {
-      unavailable.push({ id, because: { _tag: 'CeilingReached', ceiling: 'rounds' } })
+      unavailable.push({ id, because: { _tag: 'CeilingReached', ceiling: 'refusalFixes' } })
       return
     }
-    available.push({ id, next: { _tag: 'FixRound', to, round: spent.rounds + 1 } })
+    available.push({ id, next: { _tag: 'FixRefusal', to, round: spent.rounds + 1 } })
   }
 
   function restart(hasCriterion: boolean): void {
@@ -676,12 +676,12 @@ export function offerFor(
       return
     }
     if (spent.restarts >= policy.newAttempts) {
-      unavailable.push({ id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } })
+      unavailable.push({ id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'newAttempts' } })
       return
     }
     available.push({
       id: 'restart',
-      next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: spent.restarts + 1 } },
+      next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: spent.restarts + 1 } },
     })
   }
 
@@ -707,9 +707,9 @@ export function offerFor(
       // review's counter is not reset by the lap this buys.
       const conflict = (spent.conflictRounds ?? 0) + 1
       if (conflict > policy.conflictResolutions) {
-        unavailable.push({ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'conflict-rounds' } })
+        unavailable.push({ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'conflictResolutions' } })
       } else {
-        available.push({ id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: spent.rounds, conflict } })
+        available.push({ id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: spent.rounds, conflict } })
       }
       break
     }
@@ -719,11 +719,11 @@ export function offerFor(
       if (proposal.toSha === null) {
         unavailable.push({ id: 'merge-base', because: { _tag: 'NoCriterion' } })
       } else if ((spent.baseMerges ?? 0) >= BOUNDS.baseBranchMerges) {
-        unavailable.push({ id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } })
+        unavailable.push({ id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'baseBranchMerges' } })
       } else {
         available.push({
           id: 'merge-base',
-          next: { _tag: 'MergeBase', toSha: proposal.toSha, merge: (spent.baseMerges ?? 0) + 1 },
+          next: { _tag: 'MergeBaseBranch', toSha: proposal.toSha, merge: (spent.baseMerges ?? 0) + 1 },
         })
       }
       break

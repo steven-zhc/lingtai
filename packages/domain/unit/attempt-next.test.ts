@@ -681,7 +681,7 @@ describe('nextOf: impossible cells throw ImpossibleOutcomeError', () => {
 
 describe('nextOf never returns FixRound', () => {
   it('no result recorded above was FixRound', () => {
-    expect(nextTags.has('FixRound')).toBe(false)
+    expect(nextTags.has('FixRefusal')).toBe(false)
     expect(nextTags.size).toBeGreaterThan(0)
   })
 
@@ -690,7 +690,7 @@ describe('nextOf never returns FixRound', () => {
     // extend the target — true of every union containing `Advance`, so it
     // cannot catch a later widening. `Extract` picks out the `FixRound`
     // member by its own `_tag`, which is `never` only while there is none.
-    expectTypeOf<Extract<ReturnType<typeof nextOf>, { _tag: 'FixRound' }>>().toEqualTypeOf<never>()
+    expectTypeOf<Extract<ReturnType<typeof nextOf>, { _tag: 'FixRefusal' }>>().toEqualTypeOf<never>()
   })
 })
 
@@ -709,18 +709,18 @@ describe('spentAfter', () => {
   })
 
   it('FixRound: sets rounds, leaves restarts', () => {
-    const next = AttemptNext.parse({ _tag: 'FixRound', to: 'implement', round: 5 })
+    const next = AttemptNext.parse({ _tag: 'FixRefusal', to: 'implement', round: 5 })
     expect(spentAfter(spent, next)).toEqual({ rounds: 5, restarts: 2 })
   })
 
   it('FixRound with conflict: counts the conflict round, leaving rounds alone (#653)', () => {
-    const next = AttemptNext.parse({ _tag: 'FixRound', to: 'implement', round: 1, conflict: 1 })
+    const next = AttemptNext.parse({ _tag: 'FixRefusal', to: 'implement', round: 1, conflict: 1 })
     expect(spentAfter(spent, next)).toEqual({ rounds: 1, restarts: 2, conflictRounds: 1 })
   })
 
   it('parses a FixRound written before conflict existed, and a CeilingReached of rounds', () => {
-    expect(AttemptNext.parse({ _tag: 'FixRound', to: 'implement', round: 2 })).toEqual({
-      _tag: 'FixRound',
+    expect(AttemptNext.parse({ _tag: 'FixRefusal', to: 'implement', round: 2 })).toEqual({
+      _tag: 'FixRefusal',
       to: 'implement',
       round: 2,
     })
@@ -728,12 +728,12 @@ describe('spentAfter', () => {
   })
 
   it('MergeBase: counts the merge, leaving rounds and restarts alone', () => {
-    const next = AttemptNext.parse({ _tag: 'MergeBase', toSha: 'base-1', merge: 2 })
+    const next = AttemptNext.parse({ _tag: 'MergeBaseBranch', toSha: 'base-1', merge: 2 })
     expect(spentAfter(spent, next)).toEqual({ rounds: 1, restarts: 2, baseMerges: 2 })
   })
 
   it('Requeued{Restart}: sets restarts and resets rounds to 0', () => {
-    const cause = RequeueCause.parse({ _tag: 'Restart', restart: 7 })
+    const cause = RequeueCause.parse({ _tag: 'NewAttempt', newAttempt: 7 })
     const next = AttemptNext.parse({ _tag: 'Requeued', cause })
     expect(spentAfter(spent, next)).toEqual({ rounds: 0, restarts: 7 })
   })

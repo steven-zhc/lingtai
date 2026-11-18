@@ -449,7 +449,7 @@ describe('what a pass writes today, one row per ending (#461)', () => {
         runId,
         from: 'review',
         decision: { _tag: 'Selected', candidate: 'fix-lines' },
-        next: { _tag: 'FixRound', to: 'implement', round: 1 },
+        next: { _tag: 'FixRefusal', to: 'implement', round: 1 },
       },
     ])
   })
@@ -562,7 +562,7 @@ runtime:
     // `lastRun` already reads.
     const released = item.find((e) => e.type === 'TicketReleased')!
     expect(released.data).toMatchObject({
-      cause: { _tag: 'Restart', restart: 1 },
+      cause: { _tag: 'NewAttempt', newAttempt: 1 },
       reason:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over — restart 1 of 1',
     })
@@ -581,10 +581,10 @@ runtime:
         runId,
         from: 'review',
         decision: { _tag: 'Selected', candidate: 'restart' },
-        next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } },
+        next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } },
       },
     ])
-    expect(releaseCauseOf(all)).toEqual([{ _tag: 'Restart', restart: 1 }])
+    expect(releaseCauseOf(all)).toEqual([{ _tag: 'NewAttempt', newAttempt: 1 }])
   })
 
   /**
@@ -2125,8 +2125,8 @@ runtime:
     // on the previous run's own stream (`attempts.ts`'s `lastRun` reads it),
     // not repeated on the release.
     const released = item.find((e) => e.type === 'TicketReleased')!
-    expect(released.data).toMatchObject({ cause: { _tag: 'Restart', restart: 1 } })
-    expect(releaseCauseOf(await allEvents(store))).toEqual([{ _tag: 'Restart', restart: 1 }])
+    expect(released.data).toMatchObject({ cause: { _tag: 'NewAttempt', newAttempt: 1 } })
+    expect(releaseCauseOf(await allEvents(store))).toEqual([{ _tag: 'NewAttempt', newAttempt: 1 }])
     // **The restart is bound to the commit `review` judged, never the WIP.**
     // This is the ceiling actually being spent — the bug this test is against
     // left the fix round's own head unrecorded on this exact ending.
@@ -2158,10 +2158,10 @@ runtime:
     const item2 = await theItem(store)
     const releases = item2.filter((e) => e.type === 'TicketReleased')
     expect(releases).toHaveLength(2)
-    expect(releases[1]!.data).toMatchObject({ cause: { _tag: 'Restart', restart: 2 } })
+    expect(releases[1]!.data).toMatchObject({ cause: { _tag: 'NewAttempt', newAttempt: 2 } })
     expect(releaseCauseOf(await allEvents(store))).toEqual([
-      { _tag: 'Restart', restart: 1 },
-      { _tag: 'Restart', restart: 2 },
+      { _tag: 'NewAttempt', newAttempt: 1 },
+      { _tag: 'NewAttempt', newAttempt: 2 },
     ])
   })
 

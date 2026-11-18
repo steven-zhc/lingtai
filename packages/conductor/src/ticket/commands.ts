@@ -259,7 +259,7 @@ export type ReleaseResult = { ok: true } | { ok: false; refusal: ReleaseDecline 
  *
  * `cause` is `null` for every caller here and the reconciler's own release of
  * a dead worker — neither has one of 0120's causes to name (#502, 464.md
- * choice 4) — and `{_tag: 'Restart', restart}` for `conduct.ts`'s own restart,
+ * choice 4) — and `{_tag: 'NewAttempt', restart}` for `conduct.ts`'s own restart,
  * which calls this directly rather than through a second function.
  */
 export function releaseTicketEffect(

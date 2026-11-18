@@ -60,7 +60,7 @@ describe('routesOf', () => {
     const offer = {
       proposal: { _tag: 'BuildRed' as const, output: 'tsc failed' },
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound' as const, to: 'implement' as const, round: 1 } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal' as const, to: 'implement' as const, round: 1 } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' as const } },
       ],
       unavailable: [],
@@ -75,7 +75,7 @@ describe('routesOf', () => {
       runId: 'pass-1',
       from: 'build',
       decision,
-      next: { _tag: 'FixRound', to: 'implement', round: 1 },
+      next: { _tag: 'FixRefusal', to: 'implement', round: 1 },
     })
   })
 
@@ -85,7 +85,7 @@ describe('routesOf', () => {
     const offer = {
       proposal: { _tag: 'ReviewFindings' as const, findings: [] },
       available: [
-        { id: 'restart', next: { _tag: 'Requeued' as const, cause: { _tag: 'Restart' as const, restart: 1 } } },
+        { id: 'restart', next: { _tag: 'Requeued' as const, cause: { _tag: 'NewAttempt' as const, newAttempt: 1 } } },
       ],
       unavailable: [],
     }
@@ -95,7 +95,7 @@ describe('routesOf', () => {
 
     const release = events.find((e) => e.type === 'TicketReleased')
     expect(release?.streamId).toBe('ticket-1')
-    expect((release!.data as { cause: unknown }).cause).toEqual({ _tag: 'Restart', restart: 1 })
+    expect((release!.data as { cause: unknown }).cause).toEqual({ _tag: 'NewAttempt', newAttempt: 1 })
   })
 })
 

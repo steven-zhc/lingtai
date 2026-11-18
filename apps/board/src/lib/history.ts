@@ -497,8 +497,8 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
    */
   PassRouted: routedLine,
   ProposalRouted: routedLine,
-  StepRerunInPlace: (d) =>
-    `${need(d, 'step')} was cut off by an API error and runs again in place, after ${Math.round(Number(need(d, 'waitMs')) / 60_000)} min (rerun ${need(d, 'rerun')})`,
+  StepRedone: stepRedoneLine,
+  StepRerunInPlace: stepRedoneLine,
 
   // -------------------------------------------------------------- control --
   // The commit is the row, not a detail under it. A start is the only moment a
@@ -736,6 +736,11 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
  * #932). A route whose `StepEnded` is not in the slice says so rather than
  * showing an empty list.
  */
+/** `StepRedone`'s line, and the same for the `StepRerunInPlace` rows written under its retired name (#1241). */
+function stepRedoneLine(d: Payload): string {
+  return `${need(d, 'step')} was cut off by an API error and runs again in place, after ${Math.round(Number(need(d, 'waitMs')) / 60_000)} min (rerun ${need(d, 'rerun')})`
+}
+
 function routedLine(d: Payload, { branch, endedAt }: Reading): string {
   const data = d as unknown as PayloadOf<'PassRouted'> | PayloadOf<'ProposalRouted'>
   const from = fromOf(data.offer.proposal)

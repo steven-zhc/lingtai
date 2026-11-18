@@ -198,7 +198,7 @@ describe('runNoteOf: the findings a round was bought on', () => {
   const offerOf = (proposal: object, ended?: { version: number; action: string } | null) =>
     ({
       proposal,
-      available: [{ id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 2 } }],
+      available: [{ id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 2 } }],
       unavailable: [],
       ...(ended === undefined ? {} : { ended }),
     }) as never

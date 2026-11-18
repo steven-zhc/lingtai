@@ -528,7 +528,7 @@ describe('when an agent inside the pass produces no verdict', () => {
     expect(routed[0]).toMatchObject({
       from: 'merge',
       decision: { _tag: 'Selected', candidate: 'fix-lines' },
-      next: { _tag: 'FixRound', to: 'implement', round: 1 },
+      next: { _tag: 'FixRefusal', to: 'implement', round: 1 },
     })
     const passRouted = run.find((e) => e.type === 'ProposalRouted')!.data as PayloadOf<'ProposalRouted'>
     expect((passRouted.reply as { why: string }).why).toContain('same-worktree')
@@ -697,7 +697,7 @@ describe('when an agent inside the pass produces no verdict', () => {
 
     // And no round was bought to answer a judgement nobody made.
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
-    expect(routesOf(run).some((r) => r.next._tag === 'FixRound')).toBe(false)
+    expect(routesOf(run).some((r) => r.next._tag === 'FixRefusal')).toBe(false)
     const ended = run.find(
       (e) => e.type === 'StepEnded' && (e.data as PayloadOf<'StepEnded'>).outcome.step === 'proposed',
     )!

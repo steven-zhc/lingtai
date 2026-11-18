@@ -133,7 +133,7 @@ export function aRoute(
 ): Envelope[] {
   const envelopes: Envelope[] = [run.event('PassRouted', { runId: run.runId, ...route })]
   const next = routeNext(route.offer, route.reply, route.decision, { runId: run.runId })
-  if (next._tag === 'Requeued' && next.cause._tag === 'Restart' && itemStream !== undefined) {
+  if (next._tag === 'Requeued' && next.cause._tag === 'NewAttempt' && itemStream !== undefined) {
     envelopes.push(itemStream('TicketReleased', { runId: run.runId, reason: 'restart', cause: next.cause }))
   }
   return envelopes

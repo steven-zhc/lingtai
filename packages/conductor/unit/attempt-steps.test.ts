@@ -874,7 +874,7 @@ describe('prepared refuses, and the refusal reports like any other', () => {
     })
 
     expect(asked.judge[0]?.when).toBe('setup-refused')
-    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
+    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'NewAttempt' } })
   })
 
   it('passes on a green install, and adds nothing of its own', async () => {
@@ -1810,7 +1810,7 @@ describe('proposed is the only step that routes, and one judge answers each when
         ceiling: null,
       },
     ])
-    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
+    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'NewAttempt' } })
     // Nothing refused, so nothing is named as having stopped it — and a requeue
     // releases the item, which is `failed` at `end`.
     expect(result.stopped).toBeNull()

@@ -63,7 +63,7 @@ describe('a rerun in place clears the failure it recovers from (#1201)', () => {
     const event = makeStream('pass-1201')
     const run = reduceAttempt([
       event('RunFailed', { kind: 'crash', detail: 'API Error: 503' }),
-      event('StepRerunInPlace', {
+      event('StepRedone', {
         runId: 'pass-1201',
         step: 'implement',
         rerun: 1,

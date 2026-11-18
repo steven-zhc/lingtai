@@ -18,7 +18,7 @@ import { makeStream } from '../test/support.ts'
 const claim = (runId: string) => ({ runId, worker: 'w', title: null, kind: null })
 const limit = { _tag: 'AccountLimit' as const, runId: 'r1', step: 'review' as const, runtime: 'codex' as const }
 
-const released = (cause: typeof limit | { _tag: 'Restart'; restart: number } | null) => {
+const released = (cause: typeof limit | { _tag: 'NewAttempt'; newAttempt: number } | null) => {
   const e = makeStream('ticket-p-1')
   return [e('TicketClaimed', claim('r1')), e('TicketReleased', { runId: 'r1', reason: 'walled', cause })]
 }
@@ -38,7 +38,7 @@ describe('a release with a cause', () => {
   it('names a continuable release only for an AccountLimit', () => {
     expect(continuableRelease(reduceTicket(released(limit)))).toMatchObject({ runId: 'r1' })
     expect(continuableRelease(reduceTicket(released(null)))).toBeNull()
-    expect(continuableRelease(reduceTicket(released({ _tag: 'Restart', restart: 1 })))).toBeNull()
+    expect(continuableRelease(reduceTicket(released({ _tag: 'NewAttempt', newAttempt: 1 })))).toBeNull()
   })
 
   it('counts the AccountLimit releases of one run', () => {

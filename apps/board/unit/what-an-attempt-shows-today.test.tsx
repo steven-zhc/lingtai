@@ -1302,7 +1302,7 @@ const RUN_2: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -1621,8 +1621,8 @@ const ITEM_4: EventSpec[] = [
       reason:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 1',
       cause: {
-        _tag: 'Restart',
-        restart: 1,
+        _tag: 'NewAttempt',
+        newAttempt: 1,
       },
     },
   },
@@ -2013,7 +2013,7 @@ const RUN_4: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -2023,8 +2023,8 @@ const RUN_4: EventSpec[] = [
             next: {
               _tag: 'Requeued',
               cause: {
-                _tag: 'Restart',
-                restart: 1,
+                _tag: 'NewAttempt',
+                newAttempt: 1,
               },
             },
           },
@@ -2261,8 +2261,8 @@ const ITEM_5: EventSpec[] = [
       reason:
         'the proposed reviewer still refused after 0 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 1',
       cause: {
-        _tag: 'Restart',
-        restart: 1,
+        _tag: 'NewAttempt',
+        newAttempt: 1,
       },
     },
   },
@@ -2723,7 +2723,7 @@ const RUN_5: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -4042,7 +4042,7 @@ const RUN_7: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -4832,7 +4832,7 @@ const RUN_9: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -5584,7 +5584,7 @@ const RUN_10a: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -6294,7 +6294,7 @@ const RUN_10b: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -6760,7 +6760,7 @@ const RUN_11: EventSpec[] = [
           {
             id: 'state-assumption',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'design',
               round: 1,
             },
@@ -7997,7 +7997,7 @@ const RUN_13: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -8715,7 +8715,7 @@ const RUN_13b: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -9311,7 +9311,7 @@ const RUN_14a: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -10510,7 +10510,7 @@ const RUN_14c: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -11253,7 +11253,7 @@ const RUN_14d: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -11601,8 +11601,8 @@ const ITEM_16: EventSpec[] = [
       reason:
         'the proposed reviewer still refused after 1 round(s), so this approach is abandoned and the ticket starts over \u2014 restart 1 of 2',
       cause: {
-        _tag: 'Restart',
-        restart: 1,
+        _tag: 'NewAttempt',
+        newAttempt: 1,
       },
     },
   },
@@ -12142,7 +12142,7 @@ const RUN_16: EventSpec[] = [
           {
             id: 'fix-lines',
             next: {
-              _tag: 'FixRound',
+              _tag: 'FixRefusal',
               to: 'implement',
               round: 1,
             },
@@ -12152,8 +12152,8 @@ const RUN_16: EventSpec[] = [
             next: {
               _tag: 'Requeued',
               cause: {
-                _tag: 'Restart',
-                restart: 1,
+                _tag: 'NewAttempt',
+                newAttempt: 1,
               },
             },
           },
@@ -12200,8 +12200,8 @@ const RUN_16: EventSpec[] = [
             next: {
               _tag: 'Requeued',
               cause: {
-                _tag: 'Restart',
-                restart: 1,
+                _tag: 'NewAttempt',
+                newAttempt: 1,
               },
             },
           },

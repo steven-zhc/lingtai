@@ -23,6 +23,7 @@
 import { z } from 'zod'
 
 import { StepOutcome, WaitId } from './action.ts'
+import { RequeueCause } from './attempt-next.ts'
 import { PromptRefEntry } from './prompt-ref.ts'
 import { JudgeWhen } from './proposal.ts'
 import { StoredProposal, copiedFieldsOf } from './proposal.ts'
@@ -276,13 +277,12 @@ export const TicketContinued = z.object({
  * reduced from the work item's own `TicketReleased.cause` rather than
  * re-derived from whatever else sits beside it on the stream.
  *
- * `Restart` and `NeverStarted` are `attempt-next.ts`'s own `RequeueCause`
+ * `NewAttempt` and `NeverStarted` are `attempt-next.ts`'s own `RequeueCause`
  * variants, spread in rather than redeclared, so the two schemas cannot say
  * two different things about one tag.
  */
 export const ReleaseCause = z.discriminatedUnion('_tag', [
-  z.object({ _tag: z.literal('Restart'), restart: z.number().int() }),
-  z.object({ _tag: z.literal('NeverStarted'), scope: z.enum(['conductor', 'work-item']) }),
+  ...RequeueCause.options,
   z.object({ _tag: z.literal('ByPerson'), waitId: WaitId }),
   z.object({ _tag: z.literal('ClaimUnconfirmed') }),
   /**
@@ -1655,7 +1655,7 @@ export const ProposalRouted = z
  *
  * @summary A run a transient API error cut off is run again in place, after a wait that grows.
  */
-export const StepRerunInPlace = z.object({
+export const StepRedone = z.object({
   runId: z.string(),
   step: z.string(),
   rerun: z.number().int().positive(),
@@ -1665,6 +1665,12 @@ export const StepRerunInPlace = z.object({
   /** True where the rerun is a rule's *ask again* of an unreadable answer (#1224): a continuation must not grant a second (#1205). */
   askedAgain: z.boolean().optional(),
 })
+
+/**
+ * `StepRedone`'s retired name (0108): the log holds rows written under it, the same payload, and a reducer reads
+ * both alike. Nothing appends it again — see `RETIRED`.
+ */
+export const StepRerunInPlace = StepRedone
 
 // --------------------------------------------------------------- control ----
 
@@ -2703,6 +2709,7 @@ export const EVENTS = {
   PassRouted,
   ProposalRouted,
   StepRerunInPlace,
+  StepRedone,
   ConductorPaused,
   ConductorResumed,
   DayCeilingReached,
@@ -2811,6 +2818,7 @@ export const EVENT_AT = {
   PassRouted: [],
   ProposalRouted: ['review', 'proposed', 'end'],
   StepRerunInPlace: ['prepared', ...AGENT_STEPS, 'proposed', 'merge'],
+  StepRedone: ['prepared', ...AGENT_STEPS, 'proposed', 'merge'],
   ConductorPaused: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   ConductorResumed: ['outside'],
   DayCeilingReached: ['outside'],
@@ -2873,6 +2881,13 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // 2: `runtime` became `account`, which names a platform (0126 §2, #1212).
   AccountLimitReached: 2,
   AccountLimitLifted: 2,
+  // 2: `cause: Restart{restart}` became `NewAttempt{newAttempt}` (0108, #1241). See the upcaster.
+  TicketReleased: 2,
+  // 2: a route's `FixRound`/`MergeBase`/`Restart` and a ceiling's name are the bound's own (0108, #1241). See the upcaster.
+  ProposalRouted: 2,
+  PassRouted: 2,
+  // 2: a `ProposedEscalated` reason's excluded ceiling is named for its bound (0108, #1241). See the upcaster.
+  WaitStarted: 2,
 }
 
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(
@@ -2892,6 +2907,7 @@ export const RETIRED: ReadonlySet<EventType> = new Set<EventType>([
   'OutboxFailed',
   'TicketLinked',
   'PassRouted',
+  'StepRerunInPlace',
   'ConductorShutdownWithdrawn',
   'ProjectOnboardingStarted',
   'RecipeRecorded',

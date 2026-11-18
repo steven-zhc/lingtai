@@ -571,8 +571,8 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
         since: event.at,
         claims: endClaim(state.claims, d.runId, { kind: 'released', reason: d.reason, cause: d.cause ?? null }),
         restarts:
-          d.cause?._tag === 'Restart'
-            ? [...state.restarts, { after: d.runId, restart: d.cause.restart }]
+          d.cause?._tag === 'NewAttempt'
+            ? [...state.restarts, { after: d.runId, restart: d.cause.newAttempt }]
             : state.restarts,
       }
     }

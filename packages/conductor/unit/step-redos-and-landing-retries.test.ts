@@ -75,10 +75,10 @@ describe('stepRedos and landingRetries are counted apart (#1239)', () => {
     })
   })
 
-  it('the reducer folds a RerunStep route and StepRerunInPlace into stepRedos, a LandAgain route into landingRetries', () => {
+  it('the reducer folds a RerunStep route and StepRedone into stepRedos, a LandAgain route into landingRetries', () => {
     const event = makeStream('pass-1239')
     const rerun = (n: number) =>
-      event('StepRerunInPlace', { runId: 'pass-1239', step: 'implement', rerun: n, said: 'API Error: 503', waitMs: 1 })
+      event('StepRedone', { runId: 'pass-1239', step: 'implement', rerun: n, said: 'API Error: 503', waitMs: 1 })
 
     const landed = reduceAttempt([routed(event, unreachable, none, 'land-again')])
     expect(landed.landingRetries).toBe(1)
