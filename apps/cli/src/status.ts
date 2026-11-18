@@ -12,6 +12,7 @@ import {
   githubClientFor,
   heldUntil,
   lookAtBase,
+  type BaseRedLook,
   passedOver,
   passOverBaseRed,
   type BaseHead,
@@ -22,8 +23,20 @@ import {
   accountsFor,
   currentRecipe,
 } from '@lingtai/conductor'
+import { readBlockersEffect } from '@lingtai/conductor/blockers'
 import { selectRunnableEffect } from '@lingtai/conductor/queue'
-import { readControlEffect } from '@lingtai/daemon'
+import {
+  applies,
+  mayApply,
+  omittedTickets,
+  rootBeforeChains,
+  whyNothingRuns,
+  type Beacon,
+  type WhyFacts,
+  type WhyNothingRuns,
+} from '@lingtai/conductor/why-nothing-runs'
+import { conductorLockHolder, lastBeat, readControlEffect } from '@lingtai/daemon'
+import { readStatusEffect } from '@lingtai/daemon/control'
 import {
   agentBranchOf,
   attemptReducer,
@@ -215,6 +228,10 @@ export interface StatusReading {
   ) => Effect.Effect<{ text: string; unknownWhy: { reason: string; runs: number }[] | null }, unknown>
   /** The accounts the project uses (its recipe's runtimes, and github with an owner) and their `acct-` state. Replaceable so a test need not own a log. */
   accounts?: (project: ProjectState) => Effect.Effect<ReadonlyMap<Account, AccountState>, unknown>
+  /** The daemon's beacon: how it stands, or why that could not be read. Replaceable so a test need not open a store. */
+  beacon?: () => Effect.Effect<Beacon, unknown>
+  /** The blockers of each `blocked-by` skip. Replaceable so a test need not ask GitHub. */
+  blockers?: typeof readBlockersEffect
   /** The control stream, whole. Replaceable so a test need not own a log. */
   control?: () => Effect.Effect<ControlState, unknown>
   /** The configured daily ceiling; throws where `limits.day_usd` does not parse. */
@@ -345,6 +362,8 @@ export interface ProjectStatus {
   runnable: StatusRow[]
   /** Every row the log has for this project. */
   known: StatusRow[]
+  /** Why nothing runs under the queue (0122 §8, #1215), or null where it does not apply. */
+  whyNothingRuns?: WhyNothingRuns | null
   /** What holds new work here (0126 §5), the ceiling included; unread as a whole where the control stream was not. */
   locks: readonly Lock[] | { unread: string }
 }
@@ -428,6 +447,8 @@ export const readStatus = (
       let eligible: number | null = null
       let offerError: string | null = null
       let skipped: { ref: number; reason: string }[] = []
+      let fullSkipped: Parameters<typeof readBlockersEffect>[1] = []
+      let lookedAt: BaseRedLook | null = null
       let passed: string | null = null
       let unread: string | null = null
       if (filter.ok) {
@@ -458,6 +479,8 @@ export const readStatus = (
             ),
           )
           const { offered: seen } = passOverBaseRed(looked, found)
+          fullSkipped = seen.skipped
+          lookedAt = looked
           skipped = seen.skipped.map((s) => ({ ref: s.ref, reason: s.reason }))
           passed = passedOver(seen.skipped)
           unread = found.dependenciesUnread
@@ -554,13 +577,73 @@ export const readStatus = (
         Effect.map((a) => ({ accounts: a })),
         recovering((err: unknown) => Effect.succeed({ unread: err instanceof Error ? err.message : String(err) })),
       )
+      const locks: readonly Lock[] | { unread: string } =
+        controlState === null
+          ? { unread: (control as { unread: string }).unread }
+          : 'unread' in accounts
+            ? { unread: accounts.unread }
+            : locksOn({ project, control: controlState, accounts: accounts.accounts })
+      let why: WhyNothingRuns | null = null
+      // Only where the Queue section can say anything: a refusal or an unreadable source already does.
+      if (filter.ok && asked && offerError === null) {
+        const facts: WhyFacts = {
+          now: new Date(now),
+          // Read last: nothing here is asked unless unheld work is queued and nothing is in flight.
+          beacon: { up: true },
+          draining: controlState !== null && controlState.shutdown !== null,
+          locks,
+          base: lookedAt,
+          offered: offered.map((o) => Number(o.ref)),
+          runnable: runnable.map((r) => Number(r.issue)),
+          skipped,
+          rows: tasks.map((t) => ({
+            ref: Number(t.issue),
+            state: t.state,
+            updatedAt: t.updatedAt ?? null,
+            heldUntil:
+              t.state === 'queued'
+                ? heldUntil(
+                    { lastAttemptAt: t.lastAttemptAt ?? null, repairPending: t.repairPending === true },
+                    backoffMs,
+                    now,
+                  )
+                : null,
+            waiting: t.wait != null,
+          })),
+          repository: filter.links?.repository ?? null,
+          canListBlockers: filter.links !== null,
+        }
+        if (mayApply(facts)) {
+          const beacon: Beacon = yield* Effect.suspend(
+            reading.beacon ??
+              (() =>
+                readStatusEffect().pipe(
+                  Effect.map((st): Beacon => (st === null ? { never: true } : { up: lastBeat(st, now).up })),
+                )),
+          ).pipe(
+            recovering((err: unknown) =>
+              Effect.succeed<Beacon>({ unread: err instanceof Error ? err.message : String(err) }),
+            ),
+          )
+          // A `lingtai run` conducts without a beacon: its lock is what says a pass may be live. A failed read counts as held.
+          const conductorHeld = yield* Effect.tryPromise(() => conductorLockHolder()).pipe(
+            Effect.map((holder) => holder !== null),
+            recovering(() => Effect.succeed(true)),
+          )
+          const withBeacon: WhyFacts = { ...facts, beacon, conductorHeld }
+          // A live conductor suppresses the sentence: read no blockers for one that cannot show.
+          why = rootBeforeChains(withBeacon)
+          if (why === null && applies(withBeacon)) {
+            const blockers = fullSkipped.some((s) => s.reason === 'blocked-by')
+              ? yield* (reading.blockers ?? readBlockersEffect)(filter, fullSkipped, () => now)
+              : null
+            why = whyNothingRuns(withBeacon, blockers)
+          }
+        }
+      }
       out.push({
-        locks:
-          controlState === null
-            ? { unread: (control as { unread: string }).unread }
-            : 'unread' in accounts
-              ? { unread: accounts.unread }
-              : locksOn({ project, control: controlState, accounts: accounts.accounts }),
+        whyNothingRuns: why,
+        locks,
         project: name,
         base: project.base ?? null,
         filter: view,
@@ -686,6 +769,18 @@ export function renderStatus(
     const elsewhereSays = [...elsewhere].map(([label, n]) => `${n} ${label}`).join(', ')
 
     const queue: string[] = []
+    if (p.whyNothingRuns != null) {
+      const [first] = p.whyNothingRuns.roots
+      if (options.all) for (const r of p.whyNothingRuns.roots) queue.push(r.sentence)
+      else if (first !== undefined) {
+        const n = omittedTickets(p.whyNothingRuns)
+        queue.push(
+          n > 0
+            ? `${first.sentence}, and ${n} more ${n === 1 ? 'ticket' : 'tickets'} for other reasons`
+            : first.sentence,
+        )
+      }
+    }
     if (p.source !== null) {
       if (p.offerError !== null) queue.push(offerFailedLine(p.source, new Error(p.offerError)).trim())
       else if (p.eligible !== null) queue.push(offerLine(p.source, p.eligible, p.passedOverLine).trim())
@@ -744,6 +839,16 @@ export function renderStatus(
   return blocks.join('\n\n').split('\n')
 }
 
+/** `whyNothingRuns` as `--json` carries it: the first root, and every other under `--all`. */
+function whyJson(why: WhyNothingRuns | null, all: boolean): Record<string, unknown> | null {
+  const first = why?.roots[0]
+  if (why === undefined || why === null || first === undefined) return null
+  const one = (r: (typeof why.roots)[number]) => ({ root: r.root, sentence: r.sentence, tickets: r.tickets })
+  if (all) return { ...one(first), others: why.roots.slice(1).map(one) }
+  const more = omittedTickets(why)
+  return more > 0 ? { ...one(first), moreTickets: more } : one(first)
+}
+
 const rowJson = (r: StatusRow): Record<string, unknown> => ({
   taskId: r.taskId,
   ref: r.ref,
@@ -752,7 +857,7 @@ const rowJson = (r: StatusRow): Record<string, unknown> => ({
 })
 
 /** The body `--json` wraps in `{ version, command }` (0121 §5). */
-export function statusJson(report: StatusReport): Record<string, unknown> {
+export function statusJson(report: StatusReport, all = false): Record<string, unknown> {
   return {
     ...(report.spend === undefined ? {} : { spend: report.spend }),
     ...(report.spendUnknown === undefined ? {} : { spendUnknown: report.spendUnknown }),
@@ -795,6 +900,7 @@ export function statusJson(report: StatusReport): Record<string, unknown> {
         eligible: p.eligible,
         offerError: p.offerError,
         passedOver: p.passedOver,
+        whyNothingRuns: whyJson(p.whyNothingRuns ?? null, all),
         dependenciesUnread: p.dependenciesUnread,
         runnable: p.runnable.map((r) => ({
           ...rowJson(r),
