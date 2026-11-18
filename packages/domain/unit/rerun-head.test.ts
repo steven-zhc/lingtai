@@ -20,7 +20,7 @@ const published = (over: object = {}) => ({
   headSha: HEAD,
   ...over,
 })
-const keptAt = (sha: string, parentSha: string) => ({ sha, arm, parentSha })
+const keptAt = (sha: string, parentSha: string) => ({ sha, ref: arm, parentSha })
 
 describe('rerunHeadOf', () => {
   it('Saved: the pushed head, on its ref, with nothing carried', () => {

@@ -205,7 +205,8 @@ export const attemptReducer: Reducer<AttemptState> = {
   // 9: a `rerun-setup` or `ask-again` route folds into `transientRetries` (#1224); a version-8 snapshot was cut by a reducer that ignored it.
   // 10: `transientRetries` is split into `stepRedos` (`StepRerunInPlace`, `RerunStep`) and `landingRetries` (`LandAgain`) (#1239); a version-9 snapshot holds the one counter.
   // 11: a route's `FixRefusal`/`MergeBaseBranch`/`NewAttempt` and a ceiling's bound name replace the old tags (#1241); a version-10 snapshot holds the old ones, and a `StepRedone` folds as a `StepRerunInPlace` did.
-  version: 11,
+  // 12: a `RunKeptUncommitted` names its commit's ref as `ref`, not `arm` (#1243); a version-11 snapshot holds `arm`.
+  version: 12,
   initial: emptyAttempt,
   reduceEvent: reduceAttemptEvent,
   encode: encodeRun,

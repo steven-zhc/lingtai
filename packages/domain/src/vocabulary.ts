@@ -61,6 +61,8 @@ export const RefusalReason = z.enum([
   'unexpected',
   // A commit a stopped run's own conductor made, found on the branch the lane
   // is about to merge — never a judgement about the branch itself (#468).
+  // Kept because rows on the log carry it; nothing writes it since #1243, which
+  // made the lane land a branch with WIP commits on it (0108 §20).
   'wip-commit',
   // The base moved since the branch forked, and the trial merge was clean: the
   // lane does not land a tree no step ran on. The pass merges the base in itself
@@ -88,21 +90,14 @@ export const RefusalReason = z.enum([
 export type RefusalReason = z.infer<typeof RefusalReason>
 
 /**
- * The subject line a WIP commit carries, and the one thing that marks it as
- * one — `conduct.ts`'s `keepUncommittedWork` writes it, and `integrate.ts`'s
- * lane guard refuses anything that starts with it (#468). One constant so the
- * two can never name it differently; `@lingtai/repo` cannot hold it because
- * `conduct.ts` imports *types* only from that package (`live.ts`).
+ * The subject line a WIP commit carries — `conduct.ts`'s `keepUncommittedWork`
+ * writes it (#468). It names the commit for a person reading `git log`; **code
+ * tells a WIP from the agent's own by the sha on `RunKeptUncommitted`, never by
+ * this message** (0108 §20), and the lane no longer reads it (#1243).
  *
- * **A fixed literal, not built from `ATTEMPT_STREAM_PREFIX`.** A human or an
- * agent setting aside its own work with `git commit -m "wip: partial
- * refactor"` must never be caught by this, so the prefix cannot be the bare
- * `wip: ` — and it cannot follow `runId`'s own prefix either, which moved from
- * `run-` to `pass-` at #464's reset. A branch an agent cut before that reset
- * can still carry a WIP commit spelled the old way, and `integrate.ts`'s lane
- * guard must keep refusing it after the reset as surely as before — so this
- * stays `'wip: run-'` forever, independent of what a current `runId` starts
- * with.
+ * **A fixed literal, not built from `ATTEMPT_STREAM_PREFIX`**, so a WIP made
+ * before #464's reset (when `runId`'s prefix moved from `run-` to `pass-`) is
+ * spelled the same as one made after — this stays `'wip: run-'` forever.
  */
 export const WIP_COMMIT_PREFIX = 'wip: run-'
 

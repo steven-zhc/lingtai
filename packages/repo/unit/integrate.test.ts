@@ -205,24 +205,15 @@ describe('the merge lane fetches into refs only it uses (#438)', () => {
 })
 
 /**
- * **A `wip:` commit must never land, however it got onto the branch** (`#468`).
- *
- * `conduct.ts`'s own `keepUncommittedWork` never pushes one to `agent/<n>` —
- * only to the arm — so the only way one of these reaches `laneBranch` is a
- * later agent resetting onto an arm the brief told it to take the *contents*
- * of instead. This is the lane's own backstop for that mistake.
+ * **A branch with a WIP commit on it lands** (`#1243`, 0108 §20). `build` and
+ * `review` checked the head that carries it (#1209), so the lane has nothing to
+ * refuse on its message.
  */
-describe('the merge lane refuses a WIP commit (#468)', () => {
-  it('refuses before the merge when a commit subject starts with the WIP prefix', async () => {
+describe('the merge lane and a WIP commit (#1243)', () => {
+  it('lands a branch that carries a `wip: run-` commit', async () => {
     const fake = fakeGit({ subjects: ['implement the fix', 'wip: run-abc stopped by out-of-turns'] })
     const result = await integrate(options(fake.git))
-    expect(result.ok, JSON.stringify(result)).toBe(false)
-    if (result.ok) throw new Error('unreachable')
-    expect(result.reason).toBe('wip-commit')
-
-    // Before the merge: a WIP commit must never be offered to it at all.
-    const merge = fake.calls.find((c) => c.args[0] === 'merge' && c.args[1] !== '--abort')
-    expect(merge).toBeUndefined()
+    expect(result.ok, JSON.stringify(result)).toBe(true)
   })
 
   it('merges normally when nothing on the branch carries the prefix', async () => {
