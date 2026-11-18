@@ -374,7 +374,12 @@ export function causeIn(
   text: string | null,
 ): { readonly cause: Cause; readonly summary: string } | { readonly refused: string } | null {
   if (!text) return null
-  for (const candidate of jsonCandidates(text)) {
+  const candidates = jsonCandidates(text)
+  // Every brace is a candidate too, as `chosenIn` tries them: the object is what the answer ends in.
+  for (let i = text.length - 1; i >= 0; i--) if (text[i] === '{') candidates.push(text.slice(i))
+  const found: { cause: Cause; summary: string }[] = []
+  let refused: string | null = null
+  for (const candidate of candidates) {
     let value: unknown
     try {
       value = JSON.parse(candidate.trim())
@@ -385,14 +390,22 @@ export function causeIn(
     if (cause === undefined || cause === null || typeof cause !== 'object') continue
     const tag = cause._tag
     if (typeof tag === 'string' && CAUSE_TAGS.includes(tag) && !(JUDGE_CAUSES as readonly string[]).includes(tag)) {
-      return { refused: tag }
+      found.push({ cause: cause as Cause, summary: '' })
+      refused ??= tag
+      continue
     }
     const parsed = JudgeAnswer.safeParse(value)
     if (!parsed.success) return null
     if (triageQuestionsOf(parsed.data.cause as Cause).some(({ question }) => question.answers.length < 2)) {
-      return { refused: 'a question with fewer than two answers' }
+      found.push({ cause: parsed.data.cause as Cause, summary: '' })
+      refused ??= 'a question with fewer than two answers'
+      continue
     }
-    return { cause: parsed.data.cause as Cause, summary: parsed.data.summary.trim() }
+    found.push({ cause: parsed.data.cause as Cause, summary: parsed.data.summary.trim() })
   }
-  return null
+  // The same answer seen through several candidates (a fence, then the text) is one answer; two different
+  // causes are an ambiguous one, and an ambiguous answer is not read.
+  if (new Set(found.map((f) => JSON.stringify(f.cause))).size !== 1) return null
+  if (refused !== null) return { refused }
+  return found[0]!
 }

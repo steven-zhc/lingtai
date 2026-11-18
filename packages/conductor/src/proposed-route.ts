@@ -246,7 +246,8 @@ function causeReply(
 ): JudgeReply {
   const action = actionFor(answer.cause, 'other', bounds)
   const says = judgeCauseWords(answer.cause)
-  const counted = (bound: CauseBound): string => `${bounds[bound].used} of ${bounds[bound].allowed} used`
+  const counted = (bound: CauseBound, after = 0): string =>
+    `${bounds[bound].used + after} of ${bounds[bound].allowed} used`
   const person = (why: string): JudgeReply => ({
     _tag: 'Selected',
     candidate: 'hand-to-person',
@@ -260,8 +261,8 @@ function causeReply(
       if (!offer.available.some((c) => c.id === id)) return person(`\`${id}\` is not on offer for this arrival`)
       const bought =
         action._tag === 'fixRefusal'
-          ? `a fix was bought, ${counted('refusalFixes')}`
-          : `a new attempt was bought, ${counted('newAttempts')}`
+          ? `a fix was bought, ${counted('refusalFixes', 1)}`
+          : `a new attempt was bought, ${counted('newAttempts', 1)}`
       return { _tag: 'Selected', candidate: id, why: `${says}; ${bought} — ${answer.why}`, cause: answer.cause }
     }
     case 'askPerson':

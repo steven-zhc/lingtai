@@ -278,6 +278,18 @@ describe('a judge at findings answers a cause (0108 §6)', () => {
       ),
     ).toMatchObject({ refused: expect.any(String) })
     expect(causeIn('{"next": "implement", "why": "lines"}')).toBeNull()
+    // two different causes are an ambiguous answer, not the first of them
+    expect(
+      causeIn(
+        '```json\n{"cause": {"_tag": "FixableLines", "fixes": []}, "summary": "a"}\n```\n```json\n{"cause": {"_tag": "WrongApproach", "why": "w"}, "summary": "b"}\n```',
+      ),
+    ).toBeNull()
+    // prose with braces before the answer does not hide it
+    expect(
+      causeIn(
+        'The shape is {cause, summary}. Mine: {"cause":{"_tag":"WrongApproach","why":"seam"},"summary":"restart"}',
+      ),
+    ).toMatchObject({ cause: { _tag: 'WrongApproach' } })
     expect(causeIn('nothing')).toBeNull()
     expect(causeIn(null)).toBeNull()
   })
