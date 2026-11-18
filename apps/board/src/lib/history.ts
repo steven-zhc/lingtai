@@ -684,7 +684,8 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   // so the destination a `for ${action}` clause used to name is still on the
   // page.
   RoundOpened: (f, d) => {
-    if (f.findingsUnknown !== undefined) return `round ${f.round} — findings not found${atVersion(f.findingsUnknown)}`
+    if (f.findingsUnknown !== undefined)
+      return `round ${f.round} — findings not found${atVersion(f.findingsUnknown)}${judgedWhy(d)}`
     const n = f.findings.length
     return `round ${f.round} — ${n} finding${n === 1 ? '' : 's'}${judgedWhy(d)}`
   },
@@ -698,7 +699,7 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
   Restarted: (f, d) =>
     f.evidenceUnknown === undefined
       ? `restart ${f.restart}${judgedWhy(d)}`
-      : `restart ${f.restart} — evidence not found${atVersion(f.evidenceUnknown)}`,
+      : `restart ${f.restart} — evidence not found${atVersion(f.evidenceUnknown)}${judgedWhy(d)}`,
 
   /**
    * Which kind of hold, then the question, then the move that was

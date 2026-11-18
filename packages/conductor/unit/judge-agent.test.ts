@@ -284,6 +284,12 @@ describe('a judge at findings answers a cause (0108 §6)', () => {
         '```json\n{"cause": {"_tag": "FixableLines", "fixes": []}, "summary": "a"}\n```\n```json\n{"cause": {"_tag": "WrongApproach", "why": "w"}, "summary": "b"}\n```',
       ),
     ).toBeNull()
+    // two unfenced answers are ambiguous too, not the last of them
+    expect(
+      causeIn(
+        '{"cause": {"_tag": "WrongApproach", "why": "w"}, "summary": "a"} then {"cause": {"_tag": "FixableLines", "fixes": []}, "summary": "b"}',
+      ),
+    ).toBeNull()
     // prose with braces before the answer does not hide it
     expect(
       causeIn(

@@ -375,8 +375,9 @@ export function causeIn(
 ): { readonly cause: Cause; readonly summary: string } | { readonly refused: string } | null {
   if (!text) return null
   const candidates = jsonCandidates(text)
-  // Every brace is a candidate too, as `chosenIn` tries them: the object is what the answer ends in.
-  for (let i = text.length - 1; i >= 0; i--) if (text[i] === '{') candidates.push(text.slice(i))
+  // Every balanced object in the text is a candidate too, so two unfenced answers are two candidates and
+  // not one suffix that fails to parse and hides the first.
+  candidates.push(...balancedObjects(text))
   const found: { cause: Cause; summary: string }[] = []
   let refused: string | null = null
   for (const candidate of candidates) {
@@ -408,4 +409,45 @@ export function causeIn(
   if (new Set(found.map((f) => JSON.stringify(f.cause))).size !== 1) return null
   if (refused !== null) return { refused }
   return found[0]!
+}
+
+/** Each outermost balanced `{…}` that parses as JSON, in order; a brace that opens no parseable object is skipped. */
+function balancedObjects(text: string): string[] {
+  const out: string[] = []
+  let i = 0
+  while (i < text.length) {
+    if (text[i] !== '{') {
+      i++
+      continue
+    }
+    let depth = 0
+    let inString = false
+    let end = -1
+    for (let j = i; j < text.length; j++) {
+      const c = text[j]!
+      if (inString) {
+        if (c === '\\') j++
+        else if (c === '"') inString = false
+      } else if (c === '"') inString = true
+      else if (c === '{') depth++
+      else if (c === '}' && --depth === 0) {
+        end = j
+        break
+      }
+    }
+    let slice: string | null = null
+    if (end >= 0) {
+      try {
+        JSON.parse(text.slice(i, end + 1))
+        slice = text.slice(i, end + 1)
+      } catch {
+        slice = null
+      }
+    }
+    if (slice !== null) {
+      out.push(slice)
+      i = end + 1
+    } else i++
+  }
+  return out
 }
