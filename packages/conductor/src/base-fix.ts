@@ -158,7 +158,7 @@ export const proposeBaseFix = (options: {
       const made = opened as ProposedRef | null
       note(
         made === null
-          ? `base: no ticket was opened to make ${base} green — ${whyOf(outcome.failure)}; asked again on the next red release`
+          ? `base: opening the ticket to make ${base} green failed — ${whyOf(outcome.failure)}; one may exist already (the key finds it), asked again on the next red release`
           : `base: ${made.url ?? `#${made.externalRef}`} was opened to make ${base} green, but it was not fully settled — ${whyOf(outcome.failure)}; asked again on the next red release`,
       )
     }),

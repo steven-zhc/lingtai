@@ -148,6 +148,7 @@ describe('proposing the base-fix ticket', () => {
     const notes: string[] = []
     await propose(store, fakeTickets({ fail: true }).tickets, notes)
     expect(notes.join('\n')).toContain('github is down')
+    expect(notes.join('\n')).not.toContain('no ticket was opened')
     expect((await store.read(stream)).filter((e) => e.type === 'BaseFixProposed')).toEqual([])
   })
 

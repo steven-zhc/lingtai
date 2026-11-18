@@ -4152,7 +4152,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         Effect.gen(function* () {
           // The ticket opened for this red asks nothing of it, however its first read of the log went (#1266):
           // an unread state is not an answer that this is not the fix ticket.
-          const named = yield* baseStateEffect({ store, project, base, recipe })
+          let named = yield* baseStateEffect({ store, project, base, recipe })
+          for (let again = 0; again < 3 && 'unread' in named; again++)
+            named = yield* baseStateEffect({ store, project, base, recipe })
+          // Still unread: whether this is the fix ticket is unknown, and the cached red must not release it.
+          if ('unread' in named) return { notRed: `base state not read: ${named.unread}` }
           if ('red' in named && named.red.fix?.externalRef === String(options.issue))
             return { notRed: 'this ticket is the one opened to make the base green' }
           const baseSha = asked.mergedOnto ?? continuation?.diffBaseSha ?? worktree?.baseSha ?? null
