@@ -215,7 +215,7 @@
         "lingtai report [--window today|7d] [--kind <k>] [--project <p>]",
         "                [--json] [--no-color]",
         "lingtai report --from <date> --to <date> [--kind <k>] [--project <p>]",
-        "  Tickets landed, closed and open, the fix rounds and cost of the",
+        "  Tickets landed, closed and open, the refusal fixes and cost of the",
         "  landed ones, spend by kind, and the tickets that went round most.",
         "  --window <w>    today, or 7d: the last seven days (the default)",
         "  --from <date>   first day of a range, as YYYY-MM-DD, local time",
@@ -436,17 +436,17 @@
       "json": 1
     },
     {
-      "name": "grant-fix-round",
+      "name": "fix-refusal",
       "group": "waiting on you",
       "task": "one more implementation round on saved work",
       "effect": "changes",
       "usage": [
-        "lingtai grant-fix-round <project> --issue <n> [--if-head <sha>] [--json]",
+        "lingtai fix-refusal <project> --issue <n> [--if-head <sha>] [--json]",
         "  Run one more implementation round on saved work, then repeat the",
         "  checks without waiving a refusal."
       ],
       "examples": [
-        "lingtai grant-fix-round lingtai --issue <n> --if-head <sha>"
+        "lingtai fix-refusal lingtai --issue <n> --if-head <sha>"
       ],
       "flags": [
         "--if-head",
@@ -457,18 +457,18 @@
       "json": 1
     },
     {
-      "name": "rerun",
+      "name": "redo-step",
       "group": "waiting on you",
       "task": "run the step that stopped again, on the saved work",
       "effect": "changes",
       "usage": [
-        "lingtai rerun <project> --issue <n> [--if-head <sha>] [--json]",
+        "lingtai redo-step <project> --issue <n> [--if-head <sha>] [--json]",
         "  The same attempt runs the step a crash or a red stopped again, on its",
         "  saved head: no fixer, nothing cut from base, and no round or restart",
         "  spent. --if-head refuses if the saved head is a different commit."
       ],
       "examples": [
-        "lingtai rerun lingtai --issue <n> --if-head <sha>"
+        "lingtai redo-step lingtai --issue <n> --if-head <sha>"
       ],
       "flags": [
         "--if-head",
@@ -479,19 +479,19 @@
       "json": 1
     },
     {
-      "name": "requeue",
+      "name": "start-new-attempt",
       "group": "waiting on you",
       "task": "end a wait with a new run",
       "effect": "changes",
       "usage": [
-        "lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]",
-        "                [--json]",
-        "  A blocked item goes back to the queue — held for approval or not —",
-        "  and the next attempt cuts a fresh branch from a base that has since",
+        "lingtai start-new-attempt <project> --issue <n> [--note <why>]",
+        "                [--into-body <text>] [--json]",
+        "  Queues a new attempt for a blocked item — held for approval or not —",
+        "  and that attempt cuts a fresh branch from a base that has since",
         "  moved. The actor is still recorded in by."
       ],
       "examples": [
-        "lingtai requeue lingtai --issue <n> --note \"base moved\""
+        "lingtai start-new-attempt lingtai --issue <n> --note \"base moved\""
       ],
       "flags": [
         "--into-body",

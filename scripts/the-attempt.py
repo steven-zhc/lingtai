@@ -260,7 +260,7 @@ EN = dict(
          "outcome like any other, and the step that tidies up runs on every "
          "outcome rather than only on the happy one.",
     choice_h="Two ways forward",
-    choice_p="<b>Continue fixing current work</b> is offered when there is a "
+    choice_p="<b>Fix the refusal on the saved work</b> is offered when there is a "
              "fixable refusal and the saved branch is still at its recorded "
              "commit. Your grant buys one paid fix round there; it waives no "
              "refusal, and the result runs through <code>build</code>, "
@@ -268,7 +268,7 @@ EN = dict(
              "A merge conflict is answered this way too: the round merges the new "
              "base in and resolves it, and the agent asks if the two sides "
              "contradict. A missing or moved saved branch cannot continue this way. "
-             "<b>Start over from base</b> requeues the ticket for a new attempt "
+             "<b>Start a new attempt from base</b> requeues the ticket for a new attempt "
              "with the recipe's rounds. It leaves the saved work behind and "
              "neither spends nor refunds an automatic restart. "
              "Every move, by who makes it and what it spends, is in the "

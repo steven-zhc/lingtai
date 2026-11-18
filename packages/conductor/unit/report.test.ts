@@ -370,15 +370,15 @@ describe('waits and the top eight', () => {
       waits: [wait('FixerDisagrees', null), wait('FixerDisagrees', null), wait('MergeRefused', null)],
     })
     expect(run([t]).top[0]!.sentence).toBe(
-      '72% answering refusals over 6 fix rounds · 3 attempts · waited 3 times (for a call between the fixer and the reviewer ×2, for a decision on a refused merge)',
+      '72% answering refusals over 6 refusal fixes · 3 attempts · waited 3 times (for a call between the fixer and the reviewer ×2, for a decision on a refused merge)',
     )
   })
 
   it('uses singulars, leaves out no waits, and says when cost is unknown', () => {
     const t = ticket({ fixRounds: 1, passes: 1, unknownClaims: 2 })
-    expect(run([t]).top[0]!.sentence).toBe('cost unknown over 1 fix round · 1 attempt · 2 runs unknown')
+    expect(run([t]).top[0]!.sentence).toBe('cost unknown over 1 refusal fix · 1 attempt · 2 runs unknown')
     const once = ticket({ waits: [wait('X', null)] })
-    expect(run([once]).top[0]!.sentence).toBe('no cost over 0 fix rounds · 1 attempt · waited once (for X)')
+    expect(run([once]).top[0]!.sentence).toBe('no cost over 0 refusal fixes · 1 attempt · waited once (for X)')
   })
 
   it('words a wait in English, never its tag', () => {
@@ -401,7 +401,7 @@ describe('the charts’ data', () => {
     expect(t.sentence).not.toContain('no cost')
   })
 
-  it('buckets landed tickets by fix rounds, stacked by kind, with 5+ together', () => {
+  it('buckets landed tickets by refusal fixes, stacked by kind, with 5+ together', () => {
     const r = run([
       ticket({ fixRounds: 0, kind: 'bug' }),
       ticket({ fixRounds: 0, kind: null }),

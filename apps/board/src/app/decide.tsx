@@ -272,7 +272,7 @@ export function ScheduleContinuation({
             })
           }}
         >
-          {pending ? 'asking…' : grant ? 'Schedule saved-work fix round' : 'Schedule it'}
+          {pending ? 'asking…' : grant ? 'Schedule saved-work refusal fix' : 'Schedule it'}
         </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
@@ -317,7 +317,7 @@ export function ContinueFixing({
             })
           }}
         >
-          {pending ? 'granting…' : 'Continue fixing current work'}
+          {pending ? 'fixing…' : 'Fix the refusal on the saved work'}
         </button>
       )}
       {detail ? <p className={done ? 'decided' : 'refusal'}>{detail}</p> : null}
@@ -364,7 +364,7 @@ export function RerunStepButton({
             })
           }}
         >
-          {pending ? 'rerunning…' : `Rerun this step on ${onSha.slice(0, 7)}`}
+          {pending ? 'redoing…' : `Redo this step on ${onSha.slice(0, 7)}`}
         </button>
       )}
       {detail ? <p className={done ? 'decided' : 'refusal'}>{detail}</p> : null}
@@ -449,7 +449,7 @@ export function EditBodyAndRequeue({
             })
           }}
         >
-          {pending ? '…' : question !== null ? 'Answer' : 'Write it into the body & requeue'}
+          {pending ? '…' : question !== null ? 'Answer' : 'Write it into the body & start a new attempt'}
         </button>
       ) : null}
       {detail ? <p className={doneWaitId !== null ? 'decided' : 'refusal'}>{detail}</p> : null}
@@ -549,7 +549,7 @@ export function Requeue({
             className={primaryMove(recommended) === (asked ? 'answer' : 'requeue') ? 'btn pri' : 'btn'}
             onClick={() => setAsking('primary')}
           >
-            {asked ? 'Answer' : 'Start over from base'}
+            {asked ? 'Answer' : 'Start a new attempt from base'}
           </button>
           {asked ? (
             <button className="btn" onClick={() => setAsking('withdraw')}>
@@ -622,7 +622,7 @@ export function Requeue({
             })
           }}
         >
-          {pending ? '…' : withdrawing ? 'Withdraw' : asked ? 'Answer' : 'Requeue'}
+          {pending ? '…' : withdrawing ? 'Withdraw' : asked ? 'Answer' : 'Start a new attempt'}
         </button>
         <button
           className="btn"

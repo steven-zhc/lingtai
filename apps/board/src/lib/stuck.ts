@@ -14,7 +14,7 @@ export interface RunningWatch {
 }
 
 /**
- * How long an implement step or a fix round may append nothing before the page
+ * How long an implement step or a refusal fix may append nothing before the page
  * says so. **A chosen default, not a measurement**: a later ticket sets it from
  * the gap between consecutive events on real attempts.
  */
@@ -28,7 +28,7 @@ export type Stuck =
   | { kind: 'unwritten' }
   /** The phase ran past its limit, which the conductor enforces. */
   | { kind: 'overdue'; overMs: number; budgetMs: number }
-  /** An implement step or fix round recorded nothing. */
+  /** An implement step or refusal fix recorded nothing. */
   | { kind: 'quiet'; quietMs: number }
 
 /**

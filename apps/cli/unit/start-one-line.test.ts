@@ -54,7 +54,7 @@ describe('endingLine', () => {
     expect(endingLine(held(question), { project: 'p' })).toContain('lingtai answer p --issue 1')
   })
 
-  it('names requeue and grant-fix-round for a wait that is not a signoff', () => {
+  it('names start-new-attempt and fix-refusal for a wait that is not a signoff', () => {
     const reason = {
       _tag: 'ProposedEscalated',
       run,
@@ -62,8 +62,8 @@ describe('endingLine', () => {
       because: { _tag: 'NotAsked' },
     } as unknown as WaitReason
     const line = endingLine(held(reason), { project: 'p' })!
-    expect(line).toContain('lingtai requeue p --issue 1')
-    expect(line).toContain('lingtai grant-fix-round p --issue 1')
+    expect(line).toContain('lingtai start-new-attempt p --issue 1')
+    expect(line).toContain('lingtai fix-refusal p --issue 1')
     expect(line).not.toContain('decide on the board')
   })
 

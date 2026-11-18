@@ -21,7 +21,7 @@ import { eventStore, type EventStore } from '@lingtai/event-store'
 import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { requeueCommand } from '../src/requeue.ts'
+import { startNewAttemptCommand } from '../src/start-new-attempt.ts'
 
 const PROJECT = `esctest${crypto.randomUUID().slice(0, 6)}`
 
@@ -99,7 +99,7 @@ describe('lingtai requeue', () => {
   it('puts a blocked item back in the queue, carrying the note', async () => {
     const said: string[] = []
     const code = await Effect.runPromise(
-      requeueCommand({ project: PROJECT, issue: FROM_CLI, note: NOTE }, (l) => said.push(l)),
+      startNewAttemptCommand({ project: PROJECT, issue: FROM_CLI, note: NOTE }, (l) => said.push(l)),
     )
 
     expect(code).toBe(0)
@@ -153,7 +153,7 @@ describe('lingtai requeue', () => {
   it('refuses by naming the state the item is actually in', async () => {
     const said: string[] = []
     const code = await Effect.runPromise(
-      requeueCommand({ project: PROJECT, issue: RUNNING, note: NOTE }, (l) => said.push(l)),
+      startNewAttemptCommand({ project: PROJECT, issue: RUNNING, note: NOTE }, (l) => said.push(l)),
     )
 
     expect(code).toBe(1)
@@ -172,7 +172,7 @@ describe('lingtai requeue', () => {
   it('records an empty note as "", rather than inventing one', async () => {
     const said: string[] = []
     const code = await Effect.runPromise(
-      requeueCommand({ project: PROJECT, issue: BLANK_NOTE, note: '  ' }, (l) => said.push(l)),
+      startNewAttemptCommand({ project: PROJECT, issue: BLANK_NOTE, note: '  ' }, (l) => said.push(l)),
     )
 
     expect(code).toBe(0)
@@ -188,7 +188,7 @@ describe('lingtai requeue', () => {
   it('says so when the project was never added', async () => {
     const said: string[] = []
     const code = await Effect.runPromise(
-      requeueCommand({ project: `${PROJECT}-typo`, issue: FROM_CLI, note: NOTE }, (l) => said.push(l)),
+      startNewAttemptCommand({ project: `${PROJECT}-typo`, issue: FROM_CLI, note: NOTE }, (l) => said.push(l)),
     )
 
     expect(code).toBe(1)

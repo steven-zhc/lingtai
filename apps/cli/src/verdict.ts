@@ -73,9 +73,9 @@ export interface Answered {
 /** The verdict line's verb for each command, in the old words. */
 export const VERBS = {
   approve: { accepted: 'approved', refused: 'not approved' },
-  requeue: { accepted: 'requeued', refused: 'not requeued' },
-  'grant-fix-round': { accepted: 'fix round granted', refused: 'fix round refused' },
-  rerun: { accepted: 'step rerun', refused: 'step not rerun' },
+  'start-new-attempt': { accepted: 'new attempt queued', refused: 'new attempt not queued' },
+  'fix-refusal': { accepted: 'refusal fix granted', refused: 'refusal fix refused' },
+  'redo-step': { accepted: 'step queued to run again', refused: 'step not queued' },
   close: { accepted: 'closed', refused: 'not closed' },
   ask: { accepted: 'asked', refused: 'not asked' },
   answer: { accepted: 'answered', refused: 'not answered' },

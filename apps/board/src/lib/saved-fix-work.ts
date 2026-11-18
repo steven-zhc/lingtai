@@ -50,18 +50,18 @@ export function rerunWorkFromState(runId: string, state: AttemptState, base: str
   const head = rerunHeadOf(state)
   if ('cannot' in head)
     return {
-      refusal: `Run ${runId} has no saved head a rerun can continue: ${head.cannot}. Requeue for a fresh attempt.`,
+      refusal: `Run ${runId} has no saved head a redo can continue: ${head.cannot}. Start a new attempt instead.`,
     }
   if ('atBase' in head)
     return base === null
-      ? { refusal: `Run ${runId} recorded no base commit to rerun on. Requeue for a fresh attempt.` }
+      ? { refusal: `Run ${runId} recorded no base commit to redo on. Start a new attempt instead.` }
       : { head: base, ref: null }
   return { head: head.at, ref: head.atRef }
 }
 
 /**
- * The grid's order puts `RedoStep` right after the saved-work moves it sits beside — *Continue fixing current work*
- * (`FixRefusal`) — and always before *Start over from base* (`StartNewAttempt`) and *Add to the ticket and start over*
+ * The grid's order puts `RedoStep` right after the saved-work moves it sits beside — *Fix the refusal on the saved work*
+ * (`FixRefusal`) — and always before *Start a new attempt from base* (`StartNewAttempt`) and *Add to the ticket and start a new attempt*
  * (`EditBodyAndStartNewAttempt`), which discard the saved work. `allowedResolutions` ends with it, and its order is not the board's.
  */
 export function rerunStepFirstAmongSavedWork<T extends string>(tags: readonly T[]): T[] {

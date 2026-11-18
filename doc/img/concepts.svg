@@ -31,11 +31,11 @@ text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:
 <text class="wrn" x="394" y="256">Waiting on you, at proposed. What you pick decides what is next.</text>
 <rect class="accent" x="18" y="300" width="400" height="76" rx="7"/>
 <text class="acct" x="32" y="322">Continue the saved work</text>
-<text class="note" x="32" y="342">Approve and continue · Continue fixing current work</text>
+<text class="note" x="32" y="342">Approve and continue · Fix the refusal on the saved work</text>
 <text class="note" x="32" y="360">Same branch. The attempt resumes there; it is not a fresh one.</text>
 <rect class="hold" x="446" y="300" width="400" height="76" rx="7"/>
 <text class="wrn" x="460" y="322">Start over from the base branch</text>
-<text class="note" x="460" y="342">You: Start over from base · Add to the ticket and start over</text>
+<text class="note" x="460" y="342">You: Start a new attempt from base · Add to the ticket and start a new attempt</text>
 <text class="note" style="font-size:11px" x="460" y="360">A new attempt back at claim, in a fresh worktree. Dashed: restart or requeue.</text>
 <path class="arrow" d="M620 272V298"/>
 <path class="arrow" d="M420 272H320V298"/>

@@ -1337,7 +1337,7 @@ const RUN_2: EventSpec[] = [
   },
 ]
 
-it('2. lands after one fix round (review lines, judge, implement, green)', () => {
+it('2. lands after one refusal fix (review lines, judge, implement, green)', () => {
   const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_2)
   const runEvents = envelopesFor('pass-616d382e-4955-46be-9aa8-147e8eaeb58a', RUN_2)
   const all = [...itemEvents, ...runEvents]
@@ -4145,7 +4145,7 @@ const RUN_7: EventSpec[] = [
   },
 ]
 
-it('7. `implement` changes nothing in a fix round (`FixDeclined`/`Declined`)', () => {
+it('7. `implement` changes nothing in a refusal fix (`FixDeclined`/`Declined`)', () => {
   const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_7)
   const runEvents = envelopesFor('pass-a8a50213-6f4b-422f-8858-157e890b1af6', RUN_7)
   const all = [...itemEvents, ...runEvents]
@@ -10620,7 +10620,7 @@ const RUN_14c: EventSpec[] = [
   },
 ]
 
-it("14c. a fix round's own agent hits the turn ceiling (`DidNotFinish`, not the ticket's scope)", () => {
+it("14c. a refusal fix's own agent hits the turn ceiling (`DidNotFinish`, not the ticket's scope)", () => {
   const itemEvents = envelopesFor('ticket-purecheck-7', ITEM_14c)
   const runEvents = envelopesFor('pass-35a5806a-46de-4937-ada4-a3c5b2de46ac', RUN_14c)
   const all = [...itemEvents, ...runEvents]

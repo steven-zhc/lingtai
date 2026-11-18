@@ -127,7 +127,10 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
             <>
               <Tiles report={report} day={await dayReading} query={query} />
               <section className="rp-grid">
-                <Panel title="fix rounds" sub="landed tickets, stacked by kind · convergence is the right-hand column">
+                <Panel
+                  title="refusal fixes"
+                  sub="landed tickets, stacked by kind · convergence is the right-hand column"
+                >
                   <RoundsPanel buckets={report.roundBuckets} kinds={kindsOfReport(report)} />
                 </Panel>
                 <Panel title="reviews to pass" sub="share still not passed after k reviews">

@@ -42,7 +42,7 @@ or cut a new one from the base branch?**
 |                | Continues the saved branch                                                                                                                                      | Starts over from the base branch                                                                                                                       |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Lingtai**    | A **fix round**: when `build` goes red or `review` refuses, the agent works again in the same worktree, shown what refused it. The recipe's `rounds` limit caps it. | A **restart**: the ticket is released and claimed again as a new attempt. The recipe's `restarts` limit caps it.                                          |
-| **You**        | At the wait you choose **Approve and continue** or **Continue fixing current work**. The saved branch carries on.                                               | At the wait you choose **Start over from base** or **Add to the ticket and start over**. This is a **requeue**, and a new attempt begins from the base.   |
+| **You**        | At the wait you choose **Approve and continue** or **Fix the refusal on the saved work**. The saved branch carries on.                                               | At the wait you choose **Start a new attempt from base** or **Add to the ticket and start a new attempt**. This is a **requeue**, and a new attempt begins from the base.   |
 
 Some details that are easy to get wrong:
 
@@ -81,12 +81,12 @@ is waiting for and offers the moves that make sense:
 
 - **Approve and continue** — carry on from the saved commit. Any refusal at
   this wait is waived.
-- **Continue fixing current work** — one more paid fix round on the saved
+- **Fix the refusal on the saved work** — one more paid fix round on the saved
   branch. `build` and `review` run again, and neither refusal is waived.
 - **Answer the question** — give the agent the answer it asked for.
-- **Start over from base** — a new attempt from the base branch; the saved branch
+- **Start a new attempt from base** — a new attempt from the base branch; the saved branch
   is not continued.
-- **Add to the ticket and start over** — append your text to the ticket, then
+- **Add to the ticket and start a new attempt** — append your text to the ticket, then
   start a new attempt from the base with it.
 - **Close the ticket** — end it with no further attempt. A reason is required.
 

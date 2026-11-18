@@ -102,7 +102,7 @@ function fakeClient(refSha: string | null): ApproveOptions['client'] {
   return { refSha: async () => refSha }
 }
 
-describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuestion", () => {
+describe("requeue — apps/cli/src/start-new-attempt.ts's shape: { by, note }, no onQuestion", () => {
   it('refuses an item nothing is holding', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream(PROJECT, 101)
@@ -117,7 +117,7 @@ describe("requeue — apps/cli/src/requeue.ts's shape: { by, note }, no onQuesti
    * **The behaviour the omitted field changes.** `requeueHolding` refuses an
    * `OwnQuestion` only when asked to (`onQuestion: 'refuse'`,
    * `packages/conductor/src/approve.ts:542`) — the board's Send button does
-   * that; `lingtai requeue` never can, because `requeue.ts:53-61` builds no
+   * that; `lingtai start-new-attempt` never can, because `requeue.ts:53-61` builds no
    * such field. So the CLI's own call always withdraws a bare question
    * rather than ever refusing one.
    */

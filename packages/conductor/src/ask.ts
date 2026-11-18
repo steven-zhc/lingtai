@@ -118,7 +118,7 @@ export interface AnswerOptions extends SnapshotReadOptions {
  *
  * **Refused on a block a run is holding.** That block is about an attempt: a
  * diff waiting at a gate is approved or rejected (`lingtai approve`), and a
- * failure is acknowledged by `lingtai requeue`. Answering one of those as though
+ * failure is acknowledged by `lingtai start-new-attempt`. Answering one of those as though
  * it were a question about the ticket would throw the diff away and put a
  * sentence about one attempt into every attempt after it.
  */
@@ -176,7 +176,7 @@ export function answerHoldingEffect(
         ok: false,
         ticketId,
         reason: 'not-a-question',
-        detail: `${ticketId} is held by ${runId}, not asking before a run — use lingtai requeue <project> --issue <n> --into-body <text> to answer its question`,
+        detail: `${ticketId} is held by ${runId}, not asking before a run — use lingtai start-new-attempt <project> --issue <n> --into-body <text> to answer its question`,
       }
     }
     if (reason._tag === 'OwnQuestion' && options.question !== undefined && options.question !== reason.question) {

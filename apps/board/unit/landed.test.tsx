@@ -90,8 +90,8 @@ describe('/landed page', () => {
     expect(out).toContain('ld-caption mono">third<')
     expect(out).toContain('The end point now runs on every outcome.')
     expect(out).toContain('It used to skip a close.')
-    // facts: attempt, fix rounds, diff, cost, commit and issue links
-    expect(out).toContain('Attempt 2 · 1 fix round')
+    // facts: attempt, refusal fixes, diff, cost, commit and issue links
+    expect(out).toContain('Attempt 2 · 1 refusal fix')
     expect(out).toContain('3 files')
     expect(out).toContain('$1.50')
     expect(out).toContain('https://github.com/steven-zhc/lingtai/commit/abcdef1234567')

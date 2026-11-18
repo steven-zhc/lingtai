@@ -244,7 +244,7 @@ describe('lingtai report’s text', () => {
     expect(r.out).toContain('mean $1.50 reported + $0.25 estimated')
     expect(r.out).toContain('1 unknown')
     expect(r.out).toContain('ticket-lingtai-1  bug  landed')
-    expect(r.out).toContain('over 3 fix rounds · 2 attempts · 1 run unknown')
+    expect(r.out).toContain('over 3 refusal fixes · 2 attempts · 1 run unknown')
   })
 
   it('prints — for a figure with nothing behind it, and unclassified as its own row', async () => {
@@ -264,7 +264,7 @@ describe('lingtai report’s text', () => {
       },
     )
     const line = r.out.split('\n').find((l) => /^\s*bug\s/.test(l))
-    expect(r.out).toContain('median fix rounds')
+    expect(r.out).toContain('median refusal fixes')
     expect(line).toMatch(/bug\s+3\s+0\s+67%\s+33%\s+mean \$1\.50 reported/)
   })
 
@@ -289,9 +289,9 @@ describe('lingtai report’s text', () => {
     expect(r.out).not.toMatch(/CheckRefused|ConflictingHunks|AnswerQuestion|censored|cause —/)
   })
 
-  it('lists "most fix rounds" only for tickets with a fix round, and not at all when none had one', async () => {
+  it('lists "most refusal fixes" only for tickets with a refusal fix, and not at all when none had one', async () => {
     const none = await run({}, { tickets: () => Effect.succeed([row({ fixRounds: 0 })]) })
-    expect(none.out).not.toContain('most fix rounds')
+    expect(none.out).not.toContain('most refusal fixes')
     const some = await run(
       {},
       {
@@ -302,7 +302,7 @@ describe('lingtai report’s text', () => {
           ]),
       },
     )
-    const top = some.out.slice(some.out.indexOf('most fix rounds'))
+    const top = some.out.slice(some.out.indexOf('most refusal fixes'))
     expect(top).toContain('ticket-lingtai-1')
     expect(top).not.toContain('ticket-lingtai-2')
   })

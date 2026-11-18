@@ -15,7 +15,7 @@ import { noteConductor } from './conductor-note.ts'
 import { VERBS, logVerdict, refusal, type Answered } from './verdict.ts'
 
 /** The SHA and ref are selected under the decision lock from the held run's log. */
-export function grantFixRoundVerdict(
+export function fixRefusalVerdict(
   options: { project: string; issue: number; ifHead?: string },
   progress: (line: string) => void,
 ): Effect.Effect<Answered, unknown> {
@@ -55,16 +55,18 @@ export function grantFixRoundVerdict(
       if (!result.ok) {
         return refusal(1, result.reason, result.detail, { ticketId: result.ticketId })
       }
+      if (result.unscheduled !== undefined) {
+        // The wait is resolved but nothing was queued: not an acceptance.
+        return refusal(
+          1,
+          'unscheduled',
+          `the wait was resolved, but scheduling failed: ${result.unscheduled}; run it again to schedule it`,
+          { ticketId, extra: { unscheduled: result.unscheduled } },
+        )
+      }
       return {
         code: 0,
-        verdict: {
-          outcome: 'accepted',
-          ticketId,
-          detail: result.unscheduled
-            ? `scheduling failed: ${result.unscheduled}`
-            : 'one more implementation round is granted',
-          ...(result.unscheduled ? { extra: { unscheduled: result.unscheduled } } : {}),
-        },
+        verdict: { outcome: 'accepted', ticketId, detail: 'one more implementation round is granted' },
       } satisfies Answered
     })
     const answered: Answered = yield* append
@@ -73,11 +75,9 @@ export function grantFixRoundVerdict(
   })
 }
 
-export function grantFixRoundCommand(
+export function fixRefusalCommand(
   options: { project: string; issue: number; ifHead?: string },
   log = console.log,
 ): Effect.Effect<number, unknown> {
-  return Effect.map(grantFixRoundVerdict(options, log), (answered) =>
-    logVerdict(VERBS['grant-fix-round'], answered, log),
-  )
+  return Effect.map(fixRefusalVerdict(options, log), (answered) => logVerdict(VERBS['fix-refusal'], answered, log))
 }

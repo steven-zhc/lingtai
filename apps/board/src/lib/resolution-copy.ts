@@ -1,7 +1,7 @@
 import type { Resolution, WaitReason } from '@lingtai/domain/wait'
 
-/** Every requeue's cost line says so (0118 §7): a restart is neither spent nor refunded. */
-export const NO_RESTART_EFFECT = 'This neither spends nor refunds an automatic restart.'
+/** Every start-new-attempt cost line says so (0118 §7): an automatic new attempt is neither spent nor refunded. */
+export const NO_RESTART_EFFECT = 'This neither spends nor refunds one of the ticket’s automatic new attempts.'
 
 export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; consequence: string }> = {
   Approve: {
@@ -9,26 +9,27 @@ export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; conseq
     consequence: 'Continue this attempt from its recorded commit. Every refusal that stopped it is waived.',
   },
   FixRefusal: {
-    title: 'Continue fixing current work',
+    title: 'Fix the refusal on the saved work',
     consequence:
-      'Start from the saved branch and head for one additional paid fix round. Build and review run again; this does not waive either refusal.',
+      'Start from the saved branch and head for one additional paid refusal fix. Build and review run again; this does not waive either refusal.',
   },
   RedoStep: {
-    title: 'Rerun this step on the saved work',
+    title: 'Redo this step on the saved work',
     consequence:
-      'Run the step that stopped again, in this attempt, on its saved head. No fixer is dispatched and nothing is cut from base; no round or restart is spent.',
+      'Run the step that stopped again, in this attempt, on its saved head. No fixer is dispatched and nothing is cut from base; no refusal fix or new attempt is spent.',
   },
   AnswerQuestion: {
     title: 'Answer the question',
     consequence: 'Give the answer to the next attempt, or withdraw the question and return the ticket to the queue.',
   },
   StartNewAttempt: {
-    title: 'Start over from base',
+    title: 'Start a new attempt from base',
     consequence:
-      'Start a new attempt from base with the recipe’s rounds. The saved branch is not continued. ' + NO_RESTART_EFFECT,
+      'Queue a new attempt from base with the recipe’s refusal fixes. The saved branch is not continued. ' +
+      NO_RESTART_EFFECT,
   },
   EditBodyAndStartNewAttempt: {
-    title: 'Add to the ticket and start over',
+    title: 'Add to the ticket and start a new attempt',
     consequence:
       'Append your text to the ticket body, then queue a new attempt from main with that text. ' + NO_RESTART_EFFECT,
   },
