@@ -400,18 +400,18 @@ describe('queuedStanding: a runtime at its usage limit (#1010)', () => {
     said: 'limit reached',
   })
 
-  it('marks a Queued card before until, and not after it', () => {
-    const s = queuedStanding(card, false, now.getTime(), [limit(new Date(2026, 10, 11, 23, 0))])
-    expect(s?.state).toBe('paused')
-    expect(s?.text).toBe('claude-code is at its usage limit until 23:00 — nothing will start')
+  it('marks no Queued card for an account limit, before until or after it (#1216): the banner names it', () => {
+    expect(queuedStanding(card, false, now.getTime(), [limit(new Date(2026, 10, 11, 23, 0))])).toBeNull()
     expect(queuedStanding(card, false, now.getTime(), [limit(new Date(2026, 10, 11, 17, 30))])).toBeNull()
+    const gh = { ...limit(new Date(2026, 10, 11, 23, 0)), account: 'github' } as Lock
+    expect(lockStanding('lingtai', [gh], now)).toBeNull()
   })
 
-  it('calls a github lock a rate limit, in the chip and the text', () => {
-    const gh = { ...limit(new Date(2026, 10, 11, 23, 0)), account: 'github' } as Lock
-    const s = lockStanding('lingtai', [gh], now)
-    expect(s?.kind).toBe('rate limit')
-    expect(s?.text).toBe('GitHub is at its rate limit until 23:00 — nothing will start')
+  it('still marks a pause beside an account limit, with its own text', () => {
+    const paused: Lock = { kind: 'paused', by: 'sam', since: new Date(2026, 10, 11, 17, 0) }
+    const s = lockStanding('lingtai', [limit(new Date(2026, 10, 11, 23, 0)), paused], now)
+    expect(s?.kind).toBe('paused')
+    expect(s?.text).toBe('lingtai is paused — nothing will start')
   })
 
   it('is outranked by the conductor-wide pause', () => {

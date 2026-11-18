@@ -1,7 +1,9 @@
 import { localDay, lockSentence, type Lock } from '@lingtai/domain'
+import { Effect } from 'effect'
 
 import type { BaseRedLook } from './base-red.ts'
 import type { BlockedSkip } from './blockers.ts'
+import { heldUntil } from './queue.ts'
 
 /**
  * Why a project with work queued has nothing running (0122 §8, #1215): one
@@ -72,6 +74,8 @@ export interface Root {
   tickets: number[]
   /** For `lock`, the lock, so a reader can draw it its own way. */
   lock?: Lock
+  /** For a `chain` root: the ticket at its end, and whether it waits on a person — so a reader can link it (#1216). */
+  on?: { ref: number; waits: boolean }
 }
 
 export interface WhyNothingRuns {
@@ -212,7 +216,13 @@ function stateOf(ref: number, facts: WhyFacts): string {
   return 'is open and not queued here'
 }
 
-type Held = { key: string; kind: RootKind; describe: (n: number) => string; tickets: number[] }
+type Held = {
+  key: string
+  kind: RootKind
+  describe: (n: number) => string
+  tickets: number[]
+  on?: { ref: number; waits: boolean }
+}
 
 /** Every queued ticket's reason, grouped, most held first. Reads no blockers when `blockers` is null. */
 export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[] | null): WhyNothingRuns | null {
@@ -221,16 +231,22 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
   if (before !== null) return before
 
   const groups = new Map<string, Held>()
-  const add = (key: string, kind: RootKind, describe: (n: number) => string, ticket: number): void => {
+  const add = (
+    key: string,
+    kind: RootKind,
+    describe: (n: number) => string,
+    ticket: number,
+    on?: { ref: number; waits: boolean },
+  ): void => {
     const g = groups.get(key)
     if (g) g.tickets.push(ticket)
-    else groups.set(key, { key, kind, describe, tickets: [ticket] })
+    else groups.set(key, { key, kind, describe, tickets: [ticket], ...(on === undefined ? {} : { on }) })
   }
 
   // A chain, followed over what the one read returned: no hop makes a read of its own.
   const blocked = facts.skipped.filter((s) => s.reason === 'blocked-by').map((s) => s.ref)
   const byRef = new Map((blockers ?? []).map((s) => [s.ref, s]))
-  type Verdict = { key: string; kind: RootKind; describe: (n: number) => string }
+  type Verdict = { key: string; kind: RootKind; describe: (n: number) => string; on?: { ref: number; waits: boolean } }
   const longThrough = (seen: number[]): Verdict => {
     const through = seen.map((r) => `#${r}`).join(', ')
     return {
@@ -333,7 +349,7 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
     for (const v of visit(start, [])) {
       if (seenKeys.has(v.key)) continue
       seenKeys.add(v.key)
-      add(v.key, v.kind, v.describe, ref)
+      add(v.key, v.kind, v.describe, ref, v.on)
     }
   }
 
@@ -368,6 +384,7 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
       root: g.kind,
       sentence: g.describe(g.tickets.length),
       tickets: g.tickets,
+      ...(g.on === undefined ? {} : { on: g.on }),
     })),
   ].sort((a, b) => b.tickets.length - a.tickets.length)
   return roots.length === 0 ? null : { roots }
@@ -382,5 +399,57 @@ function rootVerdict(root: number, facts: WhyFacts) {
     key: `root:${root}`,
     kind: 'chain' as RootKind,
     describe: (n: number) => `${plural(n, 'ticket waits', 'tickets wait')} on #${root}, which ${state}`,
+    on: { ref: root, waits: facts.rows.find((r) => r.ref === root)?.waiting === true },
   }
+}
+
+/** What `explainQueueEffect` reads, each only when the sentence can still show. */
+export interface WhyReads<E> {
+  beacon: Effect.Effect<Beacon, E>
+  /** Whether some conductor holds the lock; a failed read is the caller's to turn into `true`. */
+  conductorHeld: Effect.Effect<boolean>
+  /** The blockers a chain is followed through; null where none are needed or listable. */
+  blockers: Effect.Effect<readonly BlockedSkip[] | null, E>
+}
+
+/**
+ * The order the sentence is gathered in, written once for `lingtai status` and the board (#1216): it
+ * can show at all (`mayApply`), then the beacon and the conductor lock, then the roots that need no
+ * blockers (`rootBeforeChains`), and only then the blockers. A live conductor that suppresses the
+ * sentence reads no blockers for it.
+ */
+export const explainQueueEffect = <E>(facts: WhyFacts, reads: WhyReads<E>): Effect.Effect<WhyNothingRuns | null, E> =>
+  Effect.gen(function* () {
+    if (!mayApply(facts)) return null
+    const beacon = yield* reads.beacon
+    const conductorHeld = yield* reads.conductorHeld
+    const withBeacon: WhyFacts = { ...facts, beacon, conductorHeld }
+    const before = rootBeforeChains(withBeacon)
+    if (before !== null || !applies(withBeacon)) return before
+    return whyNothingRuns(withBeacon, yield* reads.blockers)
+  })
+
+/** One task row, as the reasons read it: the one place `task_view`'s rows are reduced for them. */
+export function whyRows(
+  tasks: readonly {
+    issue: string
+    state: string
+    updatedAt?: Date | null
+    lastAttemptAt?: Date | null
+    repairPending?: boolean
+    wait?: unknown
+  }[],
+  backoffMs: number,
+  now: number,
+): WhyRow[] {
+  return tasks.map((t) => ({
+    ref: Number(t.issue),
+    state: t.state,
+    updatedAt: t.updatedAt ?? null,
+    heldUntil:
+      t.state === 'queued'
+        ? heldUntil({ lastAttemptAt: t.lastAttemptAt ?? null, repairPending: t.repairPending === true }, backoffMs, now)
+        : null,
+    waiting: t.wait != null,
+  }))
 }

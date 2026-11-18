@@ -1,4 +1,4 @@
-import { runtimeAccounts } from '@lingtai/domain'
+import { accountDisplayName, limitSentence, runtimeAccounts } from '@lingtai/domain'
 /**
  * The rows under the bar: the day's ceiling, then each paused project in scope
  * (#994, #1006, 0126 §8).
@@ -92,7 +92,43 @@ function CeilingRow({ facts, now }: { facts: Extract<BannerRow, { kind: 'ceiling
   )
 }
 
-function AccountRow({ row, scope }: { row: Extract<BannerRow, { kind: 'account' }>; scope: string | undefined }) {
+function AccountRow({
+  row,
+  scope,
+  now,
+}: {
+  row: Extract<BannerRow, { kind: 'account' }>
+  scope: string | undefined
+  now: Date
+}) {
+  // A lock written with what the runtime said names which limit it is (#1214), and says it once, here (#1216).
+  if (row.named != null) {
+    const sentence = limitSentence(row.account, row.named, now, { untilFrom: row.untilFrom, said: row.said })
+    const then = row.passed
+      ? ' · lifts when the conductor next looks'
+      : row.named.resetsAt === null
+        ? '; raise it, then Lift'
+        : ' — nothing starts until then'
+    const others = row.others.map((o) => o.project)
+    return (
+      <div className={row.passed ? 'pbrow passed' : 'pbrow'}>
+        <b className="lab">{`${accountDisplayName(row.account)} limit`}</b>
+        <span className="what" title={row.title}>
+          {sentence}
+          {then}
+          {!row.passed && others.length > 0 ? (
+            <span className="sub">
+              {' '}
+              · {joinNames(others)} {others.length > 1 ? 'run' : 'runs'} elsewhere and still{' '}
+              {others.length > 1 ? 'take' : 'takes'} work
+            </span>
+          ) : null}
+        </span>
+        <span className="grow" />
+        <LiftButton account={row.account} />
+      </div>
+    )
+  }
   const plural = row.waiting.length > 1
   const waits = `${joinNames(row.waiting)} ${plural ? 'wait' : 'waits'}`
   let tail: string
@@ -150,7 +186,7 @@ export function LockRows({ locks, scope, now }: { locks: ProjectLocks; scope?: s
               </div>
             )
           case 'account':
-            return <AccountRow key={`account:${row.account}`} row={row} scope={scope} />
+            return <AccountRow key={`account:${row.account}`} row={row} scope={scope} now={now} />
           case 'paused':
             return (
               <div className="pbrow" key={`paused:${row.project}`}>

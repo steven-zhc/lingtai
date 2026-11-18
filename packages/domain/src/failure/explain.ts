@@ -65,6 +65,9 @@ const ACCOUNT_NAMES: Readonly<Record<string, string>> = {
   github: 'GitHub',
 }
 
+/** How an account is named in a sentence (`Claude Code`), or its own id when none is known. */
+export const accountDisplayName = (account: string): string => ACCOUNT_NAMES[account] ?? account
+
 const KIND_WORDS = {
   '5-hour': '5-hour limit',
   weekly: 'weekly limit',
@@ -72,6 +75,11 @@ const KIND_WORDS = {
   rate: 'rate limit',
   usage: 'usage limit',
 } as const
+
+/** The head of a limit's sentence: *Claude Code's 5-hour limit*. The banner and the Queued column's line say it alone. */
+export function limitName(account: string, kind: keyof typeof KIND_WORDS): string {
+  return `${accountDisplayName(account)}'s ${KIND_WORDS[kind]}`
+}
 
 /**
  * The one wording of a limit (#1214): the account, the kind, the reset, and whether it has passed.
@@ -85,8 +93,7 @@ export function limitSentence(
   /** How the lock's `until` was got: an unreadable reset is not an absent one, and a latest-bound is not the reset. */
   basis?: { untilFrom: string; said: string },
 ): string {
-  const name = ACCOUNT_NAMES[account] ?? account
-  const head = `${name}'s ${KIND_WORDS[limit.kind]}`
+  const head = limitName(account, limit.kind)
   if (limit.resetsAt === null) {
     return basis?.untilFrom === 'backoff-unreadable'
       ? `${head} — its message named a reset this build could not read ("${basis.said}")`

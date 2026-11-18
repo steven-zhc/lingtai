@@ -1,3 +1,4 @@
+import { passOverBaseRed } from '@lingtai/conductor'
 import { BLOCKERS_READ_MOST, forgetBlockers, readBlockersEffect, type BlockedSkip } from '@lingtai/conductor/blockers'
 import { passedOver, runnableNow } from '@lingtai/conductor/discover'
 import { attemptCeiling } from '@lingtai/conductor/filter'
@@ -5,6 +6,7 @@ import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/condu
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { readState } from '@lingtai/conductor/snapshot-state'
+import type { WhyNothingRuns } from '@lingtai/conductor/why-nothing-runs'
 import { readStatus } from '@lingtai/daemon/control'
 import {
   CONFLICT_ROUND_HUNKS,
@@ -96,6 +98,7 @@ import {
 } from './spend.ts'
 import { timed, traced } from './timing.ts'
 import { presentCause, type CausePresentation } from './triage-cause.ts'
+import type { Explain } from './why-read.ts'
 
 /**
  * Four, not five. `verifying` reduces into `running` (ADR 0016 §8).
@@ -910,7 +913,7 @@ export { BLOCKERS_READ_MOST, forgetBlockers }
 export type { BlockedSkip }
 
 export type ProjectQueue =
-  | { state: 'unanswered'; filter: AskableFilter; problem: string }
+  | { state: 'unanswered'; filter: AskableFilter; problem: string; why?: WhyNothingRuns | null }
   | {
       state: 'listed'
       filter: AskableFilter
@@ -918,6 +921,10 @@ export type ProjectQueue =
       runnable: Awaited<ReturnType<typeof selectRunnable>>
       /** The `blocked-by` skips with their blockers read (#954). Never cards. */
       blocked: BlockedSkip[]
+      /** What a red base passed over: still queued, so still drawn as cards, but not runnable (#1216). */
+      baseHeld?: Awaited<ReturnType<typeof selectRunnable>>
+      /** Why nothing of this project runs, when the page asked (#1216). */
+      why?: WhyNothingRuns | null
     }
 
 /**
@@ -937,19 +944,56 @@ export type ProjectQueue =
  */
 export async function askProject(
   filter: AskableFilter,
-  options: { select?: typeof selectRunnable; now?: () => number } = {},
+  options: { select?: typeof selectRunnable; now?: () => number; explain?: Explain } = {},
 ): Promise<ProjectQueue> {
   const select = options.select ?? selectRunnable
+  const explain = options.explain
   try {
-    const offered = await runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) })
-    const runnable = await select({
-      project: filter.project,
-      offered: offered.runnable,
-      kinds: filter.kinds,
-      backoffMs: filter.backoffMs,
-    })
-    const blocked = await Effect.runPromise(readBlockersEffect(filter, offered.skipped, options.now ?? Date.now))
-    return { state: 'listed', filter, offered, runnable, blocked }
+    // One run for every read, so the board's count of `Effect.run*` does not grow (#1216).
+    return await Effect.runPromise(
+      Effect.gen(function* () {
+        const listing = yield* Effect.tryPromise({
+          try: () => runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) }),
+          catch: (err) => err,
+        }).pipe(
+          Effect.map((found) => ({ ok: true as const, found })),
+          Effect.catch((err: unknown) => Effect.succeed({ ok: false as const, err })),
+        )
+        // **A red base passes the queue over here as it does at the conductor** (`schedule.ts`): without a
+        // look the board drew tickets runnable that no pass would take. No look is a project not explained.
+        const look = explain === undefined ? null : yield* explain.look(filter)
+        if (!listing.ok) {
+          // GitHub did not answer: the roots that need none of it (a lock, the daemon, a drain) still stand.
+          const why =
+            explain === undefined || look === null
+              ? null
+              : yield* explain.why({ filter, look, offered: null, seen: null, runnable: [], blocked: [] })
+          return {
+            state: 'unanswered',
+            filter,
+            problem: (listing.err as Error).message,
+            why,
+          } satisfies ProjectQueue
+        }
+        const found = listing.found
+        const offered = look === null ? found : passOverBaseRed(look, found).offered
+        const select_ = (refs: typeof found.runnable) =>
+          Effect.tryPromise(() =>
+            select({ project: filter.project, offered: refs, kinds: filter.kinds, backoffMs: filter.backoffMs }),
+          )
+        const runnable = yield* select_(offered.runnable)
+        const kept = new Set(offered.runnable.map((r) => String(r.ref)))
+        const passedBase = found.runnable.filter((r) => !kept.has(String(r.ref)))
+        // Still queued, so still on the column: the base holds them, and the line says so.
+        const baseHeld = passedBase.length === 0 ? [] : yield* select_(passedBase)
+        const blocked = yield* readBlockersEffect(filter, offered.skipped, options.now ?? Date.now)
+        const why =
+          explain === undefined || look === null
+            ? null
+            : yield* explain.why({ filter, look, offered: found, seen: offered, runnable, blocked })
+        return { state: 'listed', filter, offered, runnable, blocked, baseHeld, why } satisfies ProjectQueue
+      }),
+    )
   } catch (err) {
     // The recipe resolved and GitHub still would not answer — a rate limit, a
     // revoked installation. Named rather than dropped, for the same reason.
@@ -1060,9 +1104,18 @@ export function lastKindColor(project: string, kind: string): string | null {
  */
 const lastOffered = new Map<string, number>()
 
+/** Which projects had a *why nothing runs* line at their last answer (#1216), so its skeleton is as many. */
+const lastWhy = new Set<string>()
+
+/** How many lines the fallback draws for the projects in view. */
+export function whySkeletonCount(projects: readonly string[]): number {
+  return projects.filter((p) => lastWhy.has(p)).length
+}
+
 /** Forgets every count, so a test can start from *no answer seen*. */
 export function forgetSkeletonCounts(): void {
   lastOffered.clear()
+  lastWhy.clear()
   lastColumnCounts.clear()
   lastScopeOffered.clear()
 }
@@ -1194,6 +1247,10 @@ export interface GithubQueue {
    * repository's issue number means nothing here.
    */
   parents: Map<string, number>
+  /** Why nothing of a project runs, one per project that has queued work and no pass in flight (#1216). */
+  why?: { project: string; why: WhyNothingRuns }[]
+  /** Task ids of cards a red base holds: queued and drawn, but never counted runnable or *taken first* (#1216). */
+  baseHeld?: Set<string>
   /** How many projects were asked, and how many of them answered. */
   asked: number
   answered: number
@@ -1233,6 +1290,8 @@ export async function githubQueue(
   const held: HeldTicket[] = []
   const epics: EpicTicket[] = []
   const parents = new Map<string, number>()
+  const why: { project: string; why: WhyNothingRuns }[] = []
+  const baseHeldIds = new Set<string>()
   let answered = 0
   let runnable = 0
 
@@ -1260,6 +1319,10 @@ export async function githubQueue(
     const filter = answer.filter
     if (answer.state === 'unanswered') {
       problems.push({ project: filter.project, reason: answer.problem })
+      if (answer.why != null) {
+        why.push({ project: filter.project, why: answer.why })
+        lastWhy.add(filter.project)
+      } else lastWhy.delete(filter.project)
       continue
     }
     answered += 1
@@ -1310,12 +1373,20 @@ export async function githubQueue(
     // `lingtai status` prints every skip; the column draws the `blocked-by` ones
     // as cards (#960) and the held and epic ones as its fold (#955), so its note
     // counts only the skips it does not.
-    const passed = passedOver(offered.skipped.filter((s) => !DRAWN_SKIPS.has(s.reason)))
+    // The base-red count is the line's own when the line says it (#1216); otherwise it is still the note's.
+    const sayingBase = answer.why?.roots.some((r) => r.root === 'base-red' || r.root === 'base-unreadable') ?? false
+    if (answer.why != null) why.push({ project: filter.project, why: answer.why })
+    if (answer.why != null) lastWhy.add(filter.project)
+    else lastWhy.delete(filter.project)
+    const passed = passedOver(
+      offered.skipped.filter((s) => !DRAWN_SKIPS.has(s.reason) && !(sayingBase && s.reason === 'base-red')),
+    )
     if (passed !== null) notes.push({ project: filter.project, reason: passed })
     if (offered.dependenciesUnread !== null) {
       notes.push({ project: filter.project, reason: offered.dependenciesUnread })
     }
-    for (const r of answer.runnable) {
+    for (const r of [...answer.runnable, ...(answer.baseHeld ?? [])]) {
+      if (!answer.runnable.includes(r)) baseHeldIds.add(r.taskId)
       if (known.has(r.taskId)) continue
       cards.push({
         taskId: r.taskId,
@@ -1379,6 +1450,8 @@ export async function githubQueue(
     held,
     epics,
     parents,
+    why,
+    baseHeld: baseHeldIds,
     asked: askable.length,
     answered,
     runnable: answered < askable.length && runnable === 0 ? null : runnable,
@@ -1900,6 +1973,8 @@ export function groupQueue(
   parents: ReadonlyMap<string, number>,
   epics: readonly EpicTicket[],
   markNext = true,
+  /** Cards drawn but never *taken first*: a red base holds them (#1216). */
+  notNext: ReadonlySet<string> = new Set(),
 ): QueueLayout {
   const epicOf = new Map(epics.map((e) => [`${e.project}#${e.ref}`, e]))
   const rank = new Map<string, number>()
@@ -1958,7 +2033,9 @@ export function groupQueue(
   }
 
   const first = markNext
-    ? pool.find((m): m is { card: BoardCard } => 'card' in m && m.card.runnableAt === null)
+    ? pool.find(
+        (m): m is { card: BoardCard } => 'card' in m && m.card.runnableAt === null && !notNext.has(m.card.taskId),
+      )
     : undefined
   return { entries, next: first === undefined ? null : first.card.taskId, headed }
 }
