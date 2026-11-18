@@ -130,13 +130,15 @@ describe('personAsksOf', () => {
         _tag: 'AgentQuestion',
         run: { runId: 'r', attempt: 1 },
         step: 'design',
-        question: 'which?',
+        questions: [],
+        said: 'which?',
       } as never),
       ...aWait(item, {
         _tag: 'AgentQuestion',
         run: { runId: 'r', attempt: 1 },
         step: 'implement',
-        question: 'which?',
+        questions: [],
+        said: 'which?',
       } as never),
       ...aWait(item, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }),
     ]

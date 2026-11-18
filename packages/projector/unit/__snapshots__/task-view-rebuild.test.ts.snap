@@ -105,7 +105,7 @@ exports[`task_view rebuilds through the stored states exactly as it did through 
     "updated_seq": 3,
     "verdicts": "{}",
     "wait_id": "wait-2",
-    "wait_reason": "{"_tag":"AgentQuestion","run":{"runId":"pass-pin-asked"},"step":"implement","question":"which approach?"}",
+    "wait_reason": "{"_tag":"AgentQuestion","run":{"runId":"pass-pin-asked"},"step":"implement","questions":[],"said":"which approach?"}",
   },
   {
     "answer": null,

@@ -20,6 +20,7 @@ import type { BlockDiagnosis, BlockRecommendation } from './events.ts'
  */
 import { diagnoseRefusal } from './failure/explain.ts'
 import type { Proposal } from './proposal.ts'
+import { askedText } from './triage.ts'
 import type { Finding, RefusalReason } from './vocabulary.ts'
 import type { EscalationBecause, AttemptRef, WaitReason } from './wait.ts'
 
@@ -233,7 +234,8 @@ function escalatedColumns(
   pass: { branch: string; base: string; findings: readonly Finding[] },
 ): WaitWords {
   if (proposal._tag === 'InputNeeded') {
-    return judgement(stepLine(proposal.from, 'asked', proposal.question), run, proposal.question)
+    const asked = askedText(proposal)
+    return judgement(stepLine(proposal.from, 'asked', asked), run, asked)
   }
 
   const reasonText = reasonTextOf(because)
@@ -346,8 +348,10 @@ export function waitWords(
     case 'OwnQuestion':
       return { line: reason.question, short: null, needs: 'judgement', diagnosis: null }
 
-    case 'AgentQuestion':
-      return judgement(stepLine(reason.step, 'asked', reason.question), reason.run, reason.question)
+    case 'AgentQuestion': {
+      const asked = askedText(reason)
+      return judgement(stepLine(reason.step, 'asked', asked), reason.run, asked)
+    }
 
     case 'SignoffRequired': {
       const asked = reason.question === SETUP_HOLD_TEXT ? APPROVE_EVERY_ATTEMPT : reason.question.trim()

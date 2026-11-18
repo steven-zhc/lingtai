@@ -401,6 +401,7 @@ function QueuedPanel({
 import type { RunningPanelView } from '@/lib/running'
 import { presentCause } from '@/lib/triage-cause'
 
+import { askedOf } from './asked-of.ts'
 import { codeSpans } from './code-spans.tsx'
 import {
   Close,
@@ -1246,6 +1247,7 @@ export function Standing({
     <TriagePicks
       waitId={standing.state === 'blocked' ? standing.waitId : null}
       cause={cause}
+      asked={askedOf(standing.reason)}
       recommended={triageRecommended}
     >
       <FollowedLog

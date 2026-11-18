@@ -17,7 +17,11 @@ async function blockedStore() {
   const item = makeStream(ticketId)
   await store.append(ticketId, 0, [
     ...aClaim(item, 'pass-41'),
-    ...aWait(item, { _tag: 'AgentQuestion', run: anAttemptRef('pass-41'), step: 'implement', question: 'q' }, W),
+    ...aWait(
+      item,
+      { _tag: 'AgentQuestion', run: anAttemptRef('pass-41'), step: 'implement', questions: [], said: 'q' },
+      W,
+    ),
   ])
   return { store, item }
 }

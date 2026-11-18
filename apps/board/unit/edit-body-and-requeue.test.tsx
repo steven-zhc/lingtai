@@ -67,12 +67,18 @@ const question = (text: string, picked: string) => ({
 function mount<T>(
   waitId: WaitId | null,
   component: () => T,
-  { by = null as Tag, questions = [] as ReturnType<typeof question>[], cause = null as { _tag: string } | null } = {},
+  {
+    by = null as Tag,
+    questions = [] as ReturnType<typeof question>[],
+    cause = null as { _tag: string } | null,
+    asked = null as ReturnType<typeof question>[] | null,
+  } = {},
 ): T {
   harness.cursor = 0
   const provider = TriagePicks({
     waitId,
     cause: (cause ?? { _tag: 'UndecidedQuestion', questions }) as never,
+    asked,
     recommended: by,
     children: null,
   }) as ReactElement<{
@@ -301,7 +307,13 @@ it('appends under what is there, after a blank line, and names the target the re
 it.each([
   [
     'AgentQuestion',
-    { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'implement', question: 'which helper?' },
+    {
+      _tag: 'AgentQuestion',
+      run: { runId: 'pass-1' },
+      step: 'implement',
+      questions: [] as never[],
+      said: 'which helper?',
+    },
     'which helper?',
   ],
   [
@@ -309,7 +321,7 @@ it.each([
     {
       _tag: 'ProposedEscalated',
       run: { runId: 'pass-2' },
-      proposal: { _tag: 'InputNeeded', from: 'design', question: 'which design?' },
+      proposal: { _tag: 'InputNeeded', from: 'design', questions: [] as never[], said: 'which design?' },
       because: { _tag: 'NotAsked' },
     },
     'which design?',
@@ -432,4 +444,48 @@ it("composes the text with the domain function, naming a hunk's path:line", () =
     expect((harness.triage as { text: string }).text).toBe(expected.ok ? expected.text : null)
   }
   expect((harness.triage as { text: string }).text).toBe('- `d.ts:7` — Which? — B')
+})
+
+it("draws what the agent asked as choices, and keeps the agent's picks apart from triage's (#1253)", () => {
+  harness.values = []
+  const waitId = aWaitId()
+  const asked = [question('Which helper?', 'A')]
+  const reason = { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'design', questions: asked } as WaitReason
+  const render = () =>
+    mount(waitId, () => editor(waitId, reason), {
+      asked,
+      // Triage advised on the same wait, with a question of its own.
+      questions: [question('Which file?', 'B')],
+    })
+  const triage = () =>
+    harness.triage as {
+      picks: Record<number, string>
+      pick: (index: number, answerId: string, source?: 'triage' | 'asked') => void
+    }
+
+  const html = renderToStaticMarkup(render())
+  expect(html).toContain('Which helper?')
+  expect(html).toContain('Recommended')
+  expect(html).not.toContain('Which file?')
+  // The body box is prefilled with the agent's composition, which the person may still edit.
+  expect(control(render(), 'textarea').props.value).toBe('- Which helper? — A')
+
+  triage().pick(0, 'B', 'asked')
+  expect(control(render(), 'textarea').props.value).toBe('- Which helper? — B')
+  // Triage's picks are what `Start over` sends, and the agent's answer id is not one of its.
+  expect(triage().picks).toEqual({})
+})
+
+it('draws a question asked in prose as the paragraph it was', () => {
+  harness.values = []
+  const waitId = aWaitId()
+  const reason = {
+    _tag: 'AgentQuestion',
+    run: { runId: 'pass-1' },
+    step: 'design',
+    questions: [],
+    said: 'which of the two?',
+  } as WaitReason
+  const html = renderToStaticMarkup(mount(waitId, () => editor(waitId, reason)))
+  expect(html).toContain('<p>which of the two?</p>')
 })

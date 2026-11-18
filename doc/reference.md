@@ -162,7 +162,7 @@ On no stream: [OutboxDelivered](events.json#OutboxDelivered) *(retired)*, [Outbo
 appends to that stream while it runs, and a board recording an App would race a
 turn for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 15 chains, 17 steps
+## upcaster — 15 chains, 20 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.

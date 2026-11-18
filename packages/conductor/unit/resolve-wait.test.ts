@@ -408,7 +408,7 @@ describe('resolveWait', () => {
         ...aClaim(item, 'pass-2'),
         ...aWait(
           item,
-          { _tag: 'AgentQuestion', run: anAttemptRef('pass-2'), step: 'implement', question: 'which?' },
+          { _tag: 'AgentQuestion', run: anAttemptRef('pass-2'), step: 'implement', questions: [], said: 'which?' },
           waitId,
         ),
       ])
@@ -467,7 +467,8 @@ describe('resolveWait', () => {
         _tag: 'AgentQuestion',
         run: anAttemptRef('pass-1'),
         step: 'implement',
-        question: 'which helper?',
+        questions: [],
+        said: 'which helper?',
       }),
     ])
 
@@ -513,7 +514,7 @@ describe('resolveWait', () => {
         ...aClaim(item, 'pass-3'),
         ...aWait(
           item,
-          { _tag: 'AgentQuestion', run: anAttemptRef('pass-3'), step: 'implement', question: 'which?' },
+          { _tag: 'AgentQuestion', run: anAttemptRef('pass-3'), step: 'implement', questions: [], said: 'which?' },
           waitId,
         ),
       ])
@@ -1235,7 +1236,7 @@ describe('resolveWait', () => {
       ...aClaim(item, 'pass-11'),
       ...aWait(
         item,
-        { _tag: 'AgentQuestion', run: anAttemptRef('pass-11'), step: 'implement', question: 'which?' },
+        { _tag: 'AgentQuestion', run: anAttemptRef('pass-11'), step: 'implement', questions: [], said: 'which?' },
         waitId,
       ),
     ])

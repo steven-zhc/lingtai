@@ -2913,10 +2913,12 @@ const BUMPED: Partial<Record<EventType, number>> = {
   // 2: `cause: Restart{restart}` became `NewAttempt{newAttempt}` (0108, #1241). See the upcaster.
   TicketReleased: 2,
   // 2: a route's `FixRound`/`MergeBase`/`Restart` and a ceiling's name are the bound's own (0108, #1241). See the upcaster.
-  ProposalRouted: 2,
-  PassRouted: 2,
-  // 2: a `ProposedEscalated` reason's excluded ceiling is named for its bound (0108, #1241). See the upcaster.
-  WaitStarted: 2,
+  // 3: an `InputNeeded` carries `questions` in triage's shape, and a question written as a string is `said` (#1253).
+  ProposalRouted: 3,
+  PassRouted: 3,
+  // 2: a `ProposedEscalated` reason's excluded ceiling is named for its bound (0108, #1241).
+  // 3: an `AgentQuestion`, or an `InputNeeded`, carries `questions`; the old string is `said` (#1253). See the upcaster.
+  WaitStarted: 3,
   // 2: `arm` became `ref`, which names `agent/<n>` for a new row (0108 §20, #1243). See the upcaster.
   RunKeptUncommitted: 2,
   // 2: a resolution's four tags are named for the moves they ask for: `FixRefusal`, `RedoStep`, `StartNewAttempt` and

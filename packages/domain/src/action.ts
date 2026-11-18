@@ -17,6 +17,7 @@
  */
 import { z } from 'zod'
 
+import { TriageQuestion } from './triage.ts'
 import { Finding, RefusalReason, Step } from './vocabulary.ts'
 
 /**
@@ -185,7 +186,13 @@ const DesignAction = ActionBase.extend({
     // `head`: a `file:` destination's own commit, where keeping the design
     // moved the branch. Absent for the drafting agent, which never commits.
     z.object({ _tag: z.literal('Drafted'), design: Design, head: z.string().nullable().optional() }),
-    z.object({ _tag: z.literal('Asked'), question: z.string(), draft: z.string().nullable() }),
+    // `questions`: what was asked in triage's shape (#1253); `question` is its text. Absent on a row written before.
+    z.object({
+      _tag: z.literal('Asked'),
+      question: z.string(),
+      draft: z.string().nullable(),
+      questions: z.array(TriageQuestion).optional(),
+    }),
     AnswerUnreadable,
     Interrupted,
     NotDone,

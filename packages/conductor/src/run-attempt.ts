@@ -122,7 +122,7 @@ import {
   type StepOutcome,
   type WaitId,
 } from '@lingtai/domain'
-import type { CeilingReached, RuntimeId } from '@lingtai/domain'
+import type { CeilingReached, RuntimeId, TriageQuestion } from '@lingtai/domain'
 import type { AttemptRef } from '@lingtai/domain/wait'
 import { kindOfAction, type Recipe, type StepAction } from '@lingtai/recipe'
 import { Cause, type Context, Duration, Effect, Exit } from 'effect'
@@ -429,8 +429,10 @@ export interface StepAsked extends LeftTheTreeAt {
   readonly ending: 'asked'
   /** The action whose agent asked, or null where the step's own work did. */
   readonly at: string | null
-  /** The question. */
+  /** The question, as text (`askedText`). */
   readonly detail: string
+  /** The question in triage's shape, where the step asked that way (#1253). */
+  readonly questions?: readonly TriageQuestion[]
 }
 
 /**
@@ -2336,7 +2338,11 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       // 0058 §3c's *that step again, stating its assumption* is still
       // `proposed`'s to answer either way.
       if ((next === null || next._tag === 'Advance') && ending.ending === 'asked') {
-        const proposal: Proposal = { _tag: 'InputNeeded', from: at as 'design' | 'implement', question: ending.detail }
+        const from = at as 'design' | 'implement'
+        const proposal: Proposal =
+          ending.questions !== undefined && ending.questions.length > 0
+            ? { _tag: 'InputNeeded', from, questions: [...ending.questions] }
+            : { _tag: 'InputNeeded', from, questions: [], said: ending.detail }
         if (yield* routing(proposal, { step: at, ending }, whatArrived(reached), ended)) continue
         break
       }
@@ -2966,7 +2972,12 @@ function endingOf(spec: StepSpec, result: PipelineResult): StepReport {
   // arrives here is two fields that are never both set: *the agent asked
   // something* has a destination, and *the agent left no receipt* has none.
   if (result.askedAt !== null) {
-    return { ending: 'asked', at: result.askedAt.action, detail: result.askedAt.detail }
+    return {
+      ending: 'asked',
+      at: result.askedAt.action,
+      detail: result.askedAt.detail,
+      ...(result.askedAt.questions === undefined ? {} : { questions: result.askedAt.questions }),
+    }
   }
   if (result.didNotFinishAt !== null) {
     return {
