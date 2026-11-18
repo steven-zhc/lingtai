@@ -188,7 +188,7 @@ describe('the cause line', () => {
     expect(questionOf(html)).toBeNull()
     expect(html).not.toContain('class="held"')
     // The one button #647 adds: triage advised Requeue, so the card carries it.
-    expect(buttonsOf(html)).toEqual(['Start over from base'])
+    expect(buttonsOf(html)).toEqual(['Start a new attempt from base'])
   })
 
   it('uses the wait reason when the copied note is stale', async () => {
@@ -244,13 +244,13 @@ describe('a small conflict’s card (#652)', () => {
   it('offers the round and names triage’s Start over advice beside the summary', async () => {
     const html = await cardOf(2, 'abc123')
     expect(html).toContain('The daemon entry moved.')
-    expect(buttonsOf(html)).toEqual(['Continue fixing current work'])
-    expect(html).toContain('Triage advised Start over from base; a fix round is drawn first.')
+    expect(buttonsOf(html)).toEqual(['Fix the refusal on the saved work'])
+    expect(html).toContain('Triage advised Start a new attempt from base; a refusal fix is drawn first.')
   })
 
   it('says nothing extra above the threshold', async () => {
     const html = await cardOf(8, 'abc123')
-    expect(html).not.toContain('a fix round is drawn first')
-    expect(buttonsOf(html)).toEqual(['Start over from base'])
+    expect(html).not.toContain('a refusal fix is drawn first')
+    expect(buttonsOf(html)).toEqual(['Start a new attempt from base'])
   })
 })

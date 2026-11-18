@@ -268,7 +268,7 @@ function RunningPanel({
   serverNow: number
 }) {
   const { head, line } = view
-  const chip = [head.step ?? 'between steps', head.round === null ? null : `fix round ${head.round}`]
+  const chip = [head.step ?? 'between steps', head.round === null ? null : `refusal fix ${head.round}`]
     .filter((x) => x !== null)
     .join(' · ')
   return (
@@ -579,7 +579,7 @@ export function TriageBand({
                   ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
                   : cause._tag === 'ConflictingHunks' &&
                       recommendedResolution(reason, status, { savedHead }) === 'FixRefusal'
-                    ? `Triage advised ${RESOLUTION_COPY[adviceResolution(result.resolution)].title}. With ${cause.total} hunk${cause.total === 1 ? '' : 's'} to resolve, a fix round is drawn first instead${cause.hunks.some((h) => h._tag === 'Divergent') ? ': each divergent hunk’s recommended answer goes to the fixer' : ''}.`
+                    ? `Triage advised ${RESOLUTION_COPY[adviceResolution(result.resolution)].title}. With ${cause.total} hunk${cause.total === 1 ? '' : 's'} to resolve, a refusal fix is drawn first instead${cause.hunks.some((h) => h._tag === 'Divergent') ? ': each divergent hunk’s recommended answer goes to the fixer' : ''}.`
                     : `Triage advised ${RESOLUTION_COPY[adviceResolution(result.resolution)].title}, which this decision does not offer.`}
             {kept && adviceResolution(result.resolution) === 'FixRefusal'
               ? ' — only your click grants the paid round.'
@@ -1486,9 +1486,9 @@ export function Standing({
                           tag === 'RedoStep' && !(standing.rerunWork && 'head' in standing.rerunWork)
                         const consequenceOf = (sendable: number | null) =>
                           rerunUnavailable
-                            ? 'The saved head must be available before this step can be rerun.'
+                            ? 'The saved head must be available before this step can be redone.'
                             : fixUnavailable
-                              ? 'The saved branch and head must be available before a fix round can be granted.'
+                              ? 'The saved branch and head must be available before a refusal fix can be granted.'
                               : tag === 'StartNewAttempt' && sendable !== null
                                 ? `Send the composed prompt for attempt ${sendable}; the new attempt starts from base with the recipe’s rounds. ${NO_RESTART_EFFECT}`
                                 : copy.consequence
@@ -1504,7 +1504,7 @@ export function Standing({
                               visible ? (
                                 <h3>
                                   {rerunUnavailable
-                                    ? 'Cannot rerun on saved work'
+                                    ? 'Cannot redo on saved work'
                                     : fixUnavailable
                                       ? 'Cannot continue saved work'
                                       : copy.title}
@@ -1791,7 +1791,7 @@ export function Standing({
  *
  * **A string, so it cannot be a paragraph** (#152). What it replaces was
  * `describeWaitLines`'s lines printed one after another — *your judgement is
- * needed*, then the fix rounds and the decline (#142), then the recommendation
+ * needed*, then the refusal fixes and the decline (#142), then the recommendation
  * with the restart refusal (0040) inside its why — which were four tickets'
  * sentences and nobody's one. So: who is needed, and the move the diagnosis
  * recommends with the first clause of its reason, and it stops. What was done,

@@ -166,18 +166,18 @@ function KindStack({
   )
 }
 
-/** Landed tickets by fix rounds, stacked by kind: convergence is the right-hand column. */
+/** Landed tickets by refusal fixes, stacked by kind: convergence is the right-hand column. */
 export function RoundsPanel({ buckets, kinds }: { buckets: RoundBucket[]; kinds: readonly (string | null)[] }) {
   if (buckets.every((b) => b.total === 0)) return <Empty>no landed tickets in this window</Empty>
   return (
     <KindStack
-      label="landed tickets by fix rounds"
+      label="landed tickets by refusal fixes"
       kinds={kinds}
       rows={buckets.map((b) => ({
         label: b.bucket,
         total: b.total,
         kinds: b.kinds,
-        title: `${b.bucket} fix round${b.bucket === '1' ? '' : 's'}`,
+        title: `${b.bucket} ${b.bucket === '1' ? 'refusal fix' : 'refusal fixes'}`,
       }))}
     />
   )

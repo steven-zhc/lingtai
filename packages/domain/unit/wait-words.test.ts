@@ -234,7 +234,7 @@ describe('waitWords', () => {
     expect(cols.diagnosis?.what).toContain('scope alarm')
     expect(cols.diagnosis?.recommendation).toEqual({
       action: 'requeue',
-      why: 'narrow or split the ticket first; requeued as written, it buys another run to the same limit',
+      why: 'narrow or split the ticket first; started again as written, it buys another run to the same limit',
     })
   })
 

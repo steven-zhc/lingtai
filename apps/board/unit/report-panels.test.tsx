@@ -54,7 +54,7 @@ const byPurpose = [
 ]
 
 describe('the report page', () => {
-  it('draws the fix rounds by bucket, stacked by kind, with the figures in the hover', () => {
+  it('draws the refusal fixes by bucket, stacked by kind, with the figures in the hover', () => {
     const out = renderToStaticMarkup(
       <RoundsPanel
         kinds={[...kinds, null]}
@@ -75,7 +75,7 @@ describe('the report page', () => {
         ]}
       />,
     )
-    expect(out).toContain('<title>0 fix rounds\nbug: 2\nfeature: 1\ntotal: 3</title>')
+    expect(out).toContain('<title>0 refusal fixes\nbug: 2\nfeature: 1\ntotal: 3</title>')
     expect(out).toContain('unclassified: 1')
     expect(out).toContain('rp-legend')
     expect(out).toContain('fill="var(--s1)"')
@@ -230,12 +230,12 @@ describe('the report page', () => {
       cost: money,
       purposeShares: [],
       waits: [],
-      sentence: '60% work over 6 fix rounds · 3 passes',
+      sentence: '60% work over 6 refusal fixes · 3 passes',
     }
     const out = renderToStaticMarkup(<TopPanel top={[t]} query={query} />)
     expect(out).toContain('href="/task/ticket-lingtai-612"')
     expect(out).toContain('>#612<')
-    expect(out).toContain('60% work over 6 fix rounds · 3 passes')
+    expect(out).toContain('60% work over 6 refusal fixes · 3 passes')
     expect(out).toContain('href="/report?sort=cost"')
     expect(renderToStaticMarkup(<TopPanel top={[]} query={query} />)).toContain('no ticket in this window')
   })

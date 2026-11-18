@@ -95,10 +95,10 @@ describe('what the site publishes', () => {
 
 const RESOLUTION_LABELS = [
   'Approve and continue',
-  'Continue fixing current work',
+  'Fix the refusal on the saved work',
   'Answer the question',
-  'Start over from base',
-  'Add to the ticket and start over',
+  'Start a new attempt from base',
+  'Add to the ticket and start a new attempt',
   'Close the ticket',
 ]
 

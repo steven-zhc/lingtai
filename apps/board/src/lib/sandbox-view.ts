@@ -166,7 +166,7 @@ const labelOf = (i: Pick<SandboxInvocation, 'step' | 'action' | 'runtime'>) =>
 
 /**
  * What names one invocation to a reader: its label, numbered where several share it. A label is never identity: the
- * implement round and a fix round invoke the same action and runtime.
+ * implement round and a refusal fix invoke the same action and runtime.
  */
 function refsOf(recorded: readonly SandboxInvocation[]): {
   ref: (i: SandboxInvocation) => string

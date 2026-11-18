@@ -356,7 +356,7 @@ it('keeps the body-writing label for FixerDisagrees', () => {
     }),
   )
   expect(html).toContain('Text to add to the ticket body')
-  expect(html).toContain('Write it into the body &amp; requeue')
+  expect(html).toContain('Write it into the body &amp; start a new attempt')
   expect(html).not.toContain('Your answer')
 })
 

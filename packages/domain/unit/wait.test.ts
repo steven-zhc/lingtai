@@ -270,7 +270,7 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
     })
 
-    it('MergeConflict with both shas: FixRefusal — a conflict is a fix round', () => {
+    it('MergeConflict with both shas: FixRefusal — a conflict is a refusal fix', () => {
       const reason = parseProposed({
         _tag: 'MergeConflict',
         output: 'conflict',
@@ -638,7 +638,7 @@ describe('recommendedResolution', () => {
       },
     })
 
-    it('recommends a fix round at 5 hunks or fewer whatever triage chose', () => {
+    it('recommends a refusal fix at 5 hunks or fewer whatever triage chose', () => {
       expect(recommendedResolution(conflict, advising(2, 'Requeue'))).toBe('FixRefusal')
       expect(recommendedResolution(conflict, advising(5, 'Close'))).toBe('FixRefusal')
     })
@@ -648,7 +648,7 @@ describe('recommendedResolution', () => {
       expect(recommendedResolution(conflict, advising(10, 'Requeue'))).toBe('StartNewAttempt')
     })
 
-    it('never recommends a fix round the wait does not offer', () => {
+    it('never recommends a refusal fix the wait does not offer', () => {
       expect(recommendedResolution(conflict, advising(2, 'Requeue'), { savedHead: false })).toBe('StartNewAttempt')
     })
   })
@@ -992,7 +992,7 @@ describe('TriageResult refuses what 0118 §1 rules out', () => {
     )
   })
 
-  it('refuses ContinueConflict as advice — a conflict is answered by a granted fix round (#591)', () => {
+  it('refuses ContinueConflict as advice — a conflict is answered by a granted refusal fix (#591)', () => {
     expect(
       TriageResultSchema.safeParse({ _tag: 'TriageAdvised', ...base, resolution: 'ContinueConflict' }).success,
     ).toBe(false)
@@ -1382,7 +1382,7 @@ describe('AgentCrashed{standing} (#654)', () => {
   })
 })
 
-describe('grantCriterion on a declined fix round (#935)', () => {
+describe('grantCriterion on a declined refusal fix (#935)', () => {
   const said = 'I am declining this finding and changed nothing.'
   const finding = {
     file: 'a.ts',

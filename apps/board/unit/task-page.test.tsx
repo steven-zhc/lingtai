@@ -332,7 +332,7 @@ describe('after the move', () => {
     )
     expect(html).toContain('detail--resolved')
     expect(html).toContain('After the move')
-    expect(html).toContain('Decided: Add to the ticket and start over')
+    expect(html).toContain('Decided: Add to the ticket and start a new attempt')
     expect(html).toContain('A body update was recorded.')
     expect(html).toContain('The body update event does not identify a decision.')
     expect(html).not.toContain('The body write completed before the wait was resolved.')
@@ -371,8 +371,8 @@ describe('after the move', () => {
     const html = page(task(own, []))
     expect(html).toContain('Continued saved work')
     expect(html).toContain(`Continued agent/147 at ${HEAD}`)
-    expect(html).toContain('Result: Continued saved work for one additional fix round; build and review run again.')
-    expect(html).toContain('Schedule saved-work fix round')
+    expect(html).toContain('Result: Continued saved work for one additional refusal fix; build and review run again.')
+    expect(html).toContain('Schedule saved-work refusal fix')
   })
 
   it('does not call an unscoped write a completed body edit after another release', () => {
@@ -861,9 +861,9 @@ describe('the rail on the task page', () => {
    * leaves it at the `task()` helper's default of `null` (`#415`).
    */
   it("carries loadTask's held line down through Standing into the rail", () => {
-    const header = opening(page({ ...blocked(), held: '1 of 3 rounds · 0 restarts left' }))
+    const header = opening(page({ ...blocked(), held: '1 of 3 rounds · 0 new attempts left' }))
     expect(header).toContain('proposed:review refused')
-    expect(header).toContain('<span class="shold"> — 1 of 3 rounds · 0 restarts left</span>')
+    expect(header).toContain('<span class="shold"> — 1 of 3 rounds · 0 new attempts left</span>')
   })
 
   /**

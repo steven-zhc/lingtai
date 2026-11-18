@@ -110,7 +110,7 @@ export function Tiles({
     <section className="rp-tiles four" aria-label="figures">
       <Tile k="landed" v={String(counts.landed)} s={`closed ${counts.closed} · still open ${counts.open}`} />
       <Tile
-        k="median fix rounds"
+        k="median refusal fixes"
         v={fixed(landed.fixRounds.median)}
         s={`mean ${fixed(landed.fixRounds.mean, 2)}`}
         title={none}
@@ -385,7 +385,7 @@ export function TopPanel({ top, query }: { top: TopTicket[]; query: ReportQuery 
               <tr>
                 <th>ticket</th>
                 <th>kind</th>
-                <th className="num">fix rounds</th>
+                <th className="num">refusal fixes</th>
                 <th className="num">attempts</th>
                 <th className="num">cost</th>
                 <th>outcome</th>

@@ -54,12 +54,12 @@ describe('waiting visual previews', () => {
     expect(html).toContain('data-resolution="FixRefusal"')
     if (available) {
       expect(task.standing.fixWork).toEqual({ head: 'b'.repeat(40), ref: 'agent/393' })
-      expect(html).toContain('Continue fixing current work')
+      expect(html).toContain('Fix the refusal on the saved work')
       expect(html).not.toContain('no published head')
     } else {
       expect(task.standing.fixWork).toHaveProperty('refusal')
       expect(html).toContain('no published head')
-      expect(html).not.toContain('>Continue fixing current work</button>')
+      expect(html).not.toContain('>Fix the refusal on the saved work</button>')
     }
   })
 

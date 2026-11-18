@@ -9,15 +9,15 @@ disagree, the code is right and this is corrected.
 
 | | Continues the saved branch | Cuts a new branch from the base |
 |---|---|---|
-| **The machine** | **fix round** (修复轮) — another `design` or `implement` in the same worktree, carrying what refused it. Code: `FixRefusal` (`packages/domain/src/attempt-next.ts`). Bounded by `runtime.limits.attempt.refusalFixes` (merge conflicts have their own bound, `runtime.limits.attempt.conflictResolutions`). | **restart** (重来) — the ticket is released and claimed again. Code: `Requeued{cause: NewAttempt}` as a `AttemptNext`, `TicketReleased{cause: NewAttempt}` on the log (`packages/domain/src/events.ts`, `packages/conductor/src/conduct.ts`). Bounded by `runtime.limits.ticket.newAttempts`. |
-| **A person** | **FixRefusal** (批一轮) — one more `implement` on the saved head, then build → review → proposed; ends at a person. Board: *Continue fixing current work*; CLI: `lingtai grant-fix-round` (`apps/cli/src/grant-fix-round.ts`).<br>**Approve** (批准) — no new work; continue past the refusal. Board: *Approve and continue*; CLI: `lingtai approve` (`apps/cli/src/approve.ts`). | **StartNewAttempt** (重新排队) — `TicketReleased{cause: ByPerson}`; spends no restart, because only `cause: Restart` is counted. Board: *Start over from base*; CLI: `lingtai requeue` (`apps/cli/src/requeue.ts`).<br>**EditBodyAndStartNewAttempt** — write into the body, then start a new attempt. Board: *Add to the ticket and start over*; CLI: `lingtai requeue --into-body`. |
+| **The machine** | **refusal fix** (修复轮) — another `design` or `implement` in the same worktree, carrying what refused it. Code: `FixRefusal` (`packages/domain/src/attempt-next.ts`). Bounded by `runtime.limits.attempt.refusalFixes` (merge conflicts have their own bound, `runtime.limits.attempt.conflictResolutions`). | **new attempt** (重来) — the ticket is released and claimed again. Code: `Requeued{cause: NewAttempt}` as a `AttemptNext`, `TicketReleased{cause: NewAttempt}` on the log (`packages/domain/src/events.ts`, `packages/conductor/src/conduct.ts`). Bounded by `runtime.limits.ticket.newAttempts`. |
+| **A person** | **FixRefusal** (批一轮) — one more `implement` on the saved head, then build → review → proposed; ends at a person. Board: *Fix the refusal on the saved work*; CLI: `lingtai fix-refusal`.<br>**Approve** (批准) — no new work; continue past the refusal. Board: *Approve and continue*; CLI: `lingtai approve` (`apps/cli/src/approve.ts`). | **StartNewAttempt** (重新排队) — `TicketReleased{cause: ByPerson}`; spends none of the ticket's new attempts, because only `cause: NewAttempt` is counted. Board: *Start a new attempt from base*; CLI: `lingtai start-new-attempt`.<br>**EditBodyAndStartNewAttempt** — write into the body, then start a new attempt. Board: *Add to the ticket and start a new attempt*; CLI: `lingtai start-new-attempt --into-body`. |
 
 - **Continuation** (续跑) is the umbrella for every move a person makes in the
   left column: the conductor calls `runPass({ from: … })`, which still starts
   at `admit` and runs `prepared`, then jumps to the step the move resumes at
   rather than walking the steps between (`packages/conductor/src/run-attempt.ts`;
   scheduled by `requestContinuation` in
-  `packages/conductor/src/resolve-wait.ts`). The machine's fix round is not
+  `packages/conductor/src/resolve-wait.ts`). The machine's refusal fix is not
   one: it stays inside the same `runPass` loop. Neither move in the right
   column is one; each starts a new attempt.
 - A requeued attempt is still told about earlier attempts and where their commits
@@ -92,12 +92,12 @@ Lingtai is an event log. Everything else is what the log's events add up to.
   projection or a caller's join.
 - **Attempt** (尝试) — one try at changing a ticket: Lingtai claims it and works it
   through the steps once. One attempt is one `pass-…` stream. A continuation
-  (Approve, FixRefusal) stays in the same attempt; a StartNewAttempt or a restart starts
+  (Approve, FixRefusal) stays in the same attempt; a StartNewAttempt or a machine's new attempt starts
   a new one. Say *attempt*, never *pass* or *run*, for this. Names the log already
   holds stay as they are, because an event never changes: the `pass-` stream prefix,
   the `runId` field (the attempt's stream id) and the `Run…` event names.
 - **Agent run** — one invocation of an agent inside an attempt: the implement, each
-  fix round, a judge. *Run* on its own means this and nothing else.
+  refusal fix, a judge. *Run* on its own means this and nothing else.
 - **Turn** — one go round the conductor's loop: it looks at each project and
   starts the attempts there is room for. A *sweep* is the turn the five-minute
   fallback timer starts, as against one an event wakes.
