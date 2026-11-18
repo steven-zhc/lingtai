@@ -513,7 +513,7 @@ describe('attemptBrief', () => {
    * WIP's own parent is. The brief must name `parentSha`, not just `sha`, so
    * only the WIP's own edits are offered.
    */
-  const keptBrief = (carried?: Parameters<typeof attemptBrief>[3]) => {
+  const keptBrief = () => {
     const attempts = priorAttempts(history)
     const run = stream('pass-2')
     attempts[attempts.length - 1]!.outcome = attemptOutcome(
@@ -531,36 +531,16 @@ describe('attemptBrief', () => {
       ]),
       BUDGET,
     )
-    return attemptBrief(attempts, BUDGET, null, carried)
+    return attemptBrief(attempts, BUDGET, null)
   }
 
-  it('says the conductor applies a kept WIP, and never tells the agent to apply it or to check it out', () => {
+  it('says the worktree is cut fresh from the base, and never offers to apply or check out a kept WIP', () => {
     const brief = keptBrief()
-    expect(brief).toContain('The conductor applies those edits to this worktree before you start')
+    expect(brief).toContain('Your worktree is cut fresh from the base, so those edits are not in it.')
+    expect(brief).not.toContain('applies those edits')
     expect(brief).not.toContain('git apply')
     expect(brief).not.toContain('checkout')
     expect(brief).not.toContain('reset --hard')
-  })
-
-  it('says what the worktree already holds, and names a path left out with the arm and sha to read it from', () => {
-    const brief = keptBrief({ applied: ['a.ts', 'b.ts'], leftOut: ['c.ts'], unapplied: null })
-    expect(brief).toContain('The worktree already holds 2 file(s)')
-    expect(brief).toContain('`agent/59-attempt-2` at `ccccccc`')
-    expect(brief).toContain('the work stands')
-    expect(brief).toContain('`c.ts` — read it with `git show ccccccc:c.ts`')
-    expect(brief).not.toContain('git apply')
-  })
-
-  it('says why nothing was applied, and where the work still is', () => {
-    const brief = keptBrief({
-      applied: [],
-      leftOut: [],
-      unapplied: 'agent/59-attempt-2 could not be fetched: no route',
-    })
-    expect(brief).toContain('could not carry those edits')
-    expect(brief).toContain('no route')
-    expect(brief).toContain('`agent/59-attempt-2` at `ccccccc`')
-    expect(brief).not.toContain('already holds')
   })
 
   /**

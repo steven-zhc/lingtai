@@ -13,12 +13,15 @@ it('names the published head and the ref that must still carry it', () => {
   expect(rerunWorkFromState('r1', state, null)).toEqual({ head: 'a'.repeat(40), ref: 'agent/1' })
 })
 
-it('names the WIP carry’s parent with no ref to check', () => {
+it('refuses a WIP kept only on an arm, with the sentence', () => {
   const state = stateOf({
     published: published({ outcome: 'arm-wip', armSha: 'w'.repeat(40), headSha: null, branch: null }),
     kept: [{ sha: 'w'.repeat(40), ref: 'arm/1', parentSha: 'p'.repeat(40) } as never],
   })
-  expect(rerunWorkFromState('r1', state, null)).toEqual({ head: 'p'.repeat(40), ref: null })
+  expect(rerunWorkFromState('r1', state, null)).toHaveProperty(
+    'refusal',
+    expect.stringContaining('start a new attempt'),
+  )
 })
 
 it('names the attempt’s base when nothing was committed, and refuses without one', () => {

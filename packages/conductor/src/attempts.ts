@@ -37,7 +37,7 @@ import { createHash } from 'node:crypto'
  * exactly one home — the schema — and this file states the shape of the bound
  * without also deciding it.
  */
-import type { AnswerRecord, AttemptEnding, Envelope, Finding, AttemptState, PayloadOf } from '@lingtai/domain'
+import type { AnswerRecord, AttemptEnding, Envelope, Finding, AttemptState } from '@lingtai/domain'
 import {
   headOf,
   reduceAttempt,
@@ -390,54 +390,10 @@ function findingsAppended(output: string, findings: readonly Finding[], max: num
  * what ended them is the fact that matters, and their output is not worth what
  * it costs.
  */
-/**
- * What the conductor did with a kept WIP before the agent started (#1170): the
- * paths it applied, the ones it left at the base, or why it applied nothing.
- * `undefined` to `attemptBrief` is *no worktree yet* (the board's preview), which
- * says the conductor will apply it; null is *there was nothing to carry*.
- */
-export type CarriedBrief = { applied: readonly string[]; leftOut: readonly string[]; unapplied: string | null }
-
-function keptWorkLines(
-  kept: { ref: string; sha: string; parentSha: string },
-  carried: CarriedBrief | null | undefined,
-  alongside: boolean,
-): string[] {
-  const short = kept.sha.slice(0, 7)
-  if (carried === undefined || carried === null) {
-    return [
-      '',
-      'The conductor applies those edits to this worktree before you start, uncommitted,',
-      'and says below what it did. Whether any of it is worth keeping is yours to judge.',
-    ]
-  }
-  if (carried.unapplied !== null) {
-    return [
-      '',
-      `The conductor could not carry those edits into this worktree: ${carried.unapplied}. They are`,
-      `still on \`${kept.ref}\` at \`${short}\`, to read with \`git show ${short}:<path>\` once it is fetched.`,
-    ]
-  }
-  return [
-    '',
-    `**The worktree already holds ${carried.applied.length} file(s) of ${alongside ? 'those' : "the stopped run's"} edits**, applied`,
-    `uncommitted from \`${kept.ref}\` at \`${short}\`. They are the conductor's own safety net, not a verdict about the code: commit them as`,
-    'the work stands, or change them first.',
-    ...(carried.leftOut.length === 0
-      ? []
-      : [
-          '',
-          `These paths did not apply, because the base changed them too, and were left at the base's version:`,
-          ...carried.leftOut.map((path) => `- \`${path}\` — read it with \`git show ${short}:${path}\``),
-        ]),
-  ]
-}
-
 export function attemptBrief(
   attempts: readonly PriorAttempt[],
   budget: PromptBudget,
   arms: ArmsOnOrigin | null = null,
-  carried: CarriedBrief | null | undefined = undefined,
 ): string {
   if (attempts.length === 0) return ''
 
@@ -498,7 +454,7 @@ export function attemptBrief(
         `\`${kept.ref}\`. **That commit is the conductor's own safety net** — made when the`,
         'agent stopped, not a verdict about the code.',
         '',
-        ...keptWorkLines(kept, carried, false),
+        'Your worktree is cut fresh from the base, so those edits are not in it.',
       )
     }
   } else if (produced !== undefined) {
@@ -515,7 +471,8 @@ export function attemptBrief(
         '',
         `It then stopped (${kept.stoppedBy}) with ${kept.files} more file(s) of uncommitted edits, kept`,
         `as \`${kept.sha.slice(0, 7)}\` on \`${kept.ref}\` — the conductor's own safety net, made when it stopped.`,
-        ...keptWorkLines(kept, carried, true),
+        '',
+        'Your worktree is cut fresh from the base, so those edits are not in it.',
       )
     }
   }
@@ -694,17 +651,15 @@ export function answersBrief(answers: readonly AnswerRecord[]): string {
 }
 
 /**
- * Where a released attempt is re-cut, and what is carried onto the cut (#1205): `at` is the commit, `atRef` the ref
- * that must still carry it (`null`: none does, it is the attempt's base), `carry` the kept WIP put on it uncommitted.
- * `cannot` says why the head is not one to continue. #1211 adds the `BaseRed` cause to this, on the same rows.
+ * Where a released attempt is re-cut (#1205, #1244): `at` is the commit, `atRef` the ref that must still carry it
+ * (`null`: none does, it is the attempt's base). Nothing is carried onto the cut. `cannot` says why the head is not
+ * one to continue. #1211 adds the `BaseRed` cause to this, on the same rows.
  */
-export type ReleasedHead =
-  | { readonly at: string; readonly atRef: string | null; readonly carry: PayloadOf<'RunKeptUncommitted'> | null }
-  | { readonly cannot: string }
+export type ReleasedHead = { readonly at: string; readonly atRef: string | null } | { readonly cannot: string }
 
 export function releasedHeadOf(runEvents: readonly Envelope[]): ReleasedHead {
   const head = rerunHeadOf(reduceAttempt(runEvents))
   if (!('atBase' in head)) return head
   const base = diffBaseShaOf(runEvents)
-  return base === null ? { cannot: 'the attempt recorded no base commit' } : { at: base, atRef: null, carry: null }
+  return base === null ? { cannot: 'the attempt recorded no base commit' } : { at: base, atRef: null }
 }
