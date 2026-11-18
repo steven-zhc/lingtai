@@ -12249,7 +12249,7 @@ const RUN_16: EventSpec[] = [
   {
     type: 'RunKeptUncommitted',
     data: {
-      arm: 'agent/7-attempt-1',
+      ref: 'agent/7-attempt-1',
       sha: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
       parentSha: 'dddddddddddddddddddddddddddddddddddddddd',
       stoppedBy: 'out-of-turns',
