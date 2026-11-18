@@ -709,7 +709,10 @@ export function offerFor(
       if (conflict > policy.conflictResolutions) {
         unavailable.push({ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'conflictResolutions' } })
       } else {
-        available.push({ id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: spent.rounds, conflict } })
+        available.push({
+          id: 'fix-lines',
+          next: { _tag: 'FixRefusal', to: 'implement', round: spent.rounds, conflict },
+        })
       }
       break
     }

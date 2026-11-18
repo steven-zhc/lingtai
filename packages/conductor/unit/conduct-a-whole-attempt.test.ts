@@ -2024,7 +2024,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed).toHaveLength(1)
     expect(routed[0]!.to).toBe('waiting')
-    expect(routed[0]!.why).toContain('`restarts` is spent')
+    expect(routed[0]!.why).toContain('`newAttempts` is spent')
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
   })
@@ -2374,8 +2374,8 @@ runtime:
     const routed = run
       .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
-    expect(routed[0]).toMatchObject({ chose: 'claim', to: 'waiting', ceiling: 'restarts' })
-    expect(routed[0]!.why).toContain('the judge chose `restart`, and `restarts` is spent')
+    expect(routed[0]).toMatchObject({ chose: 'claim', to: 'waiting', ceiling: 'newAttempts' })
+    expect(routed[0]!.why).toContain('the judge chose `restart`, and `newAttempts` is spent')
 
     expect(result).toMatchObject({ ok: 'held', step: 'proposed' })
   })

@@ -1319,7 +1319,7 @@ const RUN_2: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -2320,7 +2320,7 @@ const ITEM_5: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         },
@@ -2740,7 +2740,7 @@ const RUN_5: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -2758,7 +2758,7 @@ const RUN_5: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         },
@@ -2789,13 +2789,13 @@ const RUN_5: EventSpec[] = [
             name: 'conductor:judge',
             onSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
             evidence:
-              'Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `restarts` is spent',
+              'Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `newAttempts` is spent',
             yields: 'signoff',
             result: {
               _tag: 'Completed',
               requested: {
                 question:
-                  'Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `restarts` is spent',
+                  'Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `newAttempts` is spent',
               },
             },
           },
@@ -2859,7 +2859,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
         {
           type: 'WaitStarted',
           actor: 'conductor',
-          summary: 'agent/7 is waiting on you. the judge chose `restart`, and `restarts` is spent',
+          summary: 'agent/7 is waiting on you. the judge chose `restart`, and `newAttempts` is spent',
         },
         {
           type: 'IssueUpdated',
@@ -2980,7 +2980,8 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
         {
           type: 'PassRouted',
           actor: 'conductor',
-          summary: 'review → waiting — agent/7 is waiting on you. the judge chose `restart`, and `restarts` is spent',
+          summary:
+            'review → waiting — agent/7 is waiting on you. the judge chose `restart`, and `newAttempts` is spent',
         },
         {
           type: 'RunRefsPublished',
@@ -2991,7 +2992,7 @@ it('5. restarts spent: the second arrival holds, not requeues', () => {
           type: 'StepEnded',
           actor: 'conductor',
           summary:
-            'proposed · conductor:judge — Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `restarts` is spent',
+            'proposed · conductor:judge — Merge agent/7 into main anyway? agent/7 into main is waiting on you. the judge chose `restart`, and `newAttempts` is spent',
         },
         {
           type: 'RunRefsPublished',
@@ -4059,7 +4060,7 @@ const RUN_7: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -4097,14 +4098,14 @@ const RUN_7: EventSpec[] = [
             id: 'fix-lines',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'rounds',
+              ceiling: 'refusalFixes',
             },
           },
           {
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -4849,7 +4850,7 @@ const RUN_9: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -6311,7 +6312,7 @@ const RUN_10b: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -8014,7 +8015,7 @@ const RUN_13: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -8732,7 +8733,7 @@ const RUN_13b: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -9328,7 +9329,7 @@ const RUN_14a: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -10527,7 +10528,7 @@ const RUN_14c: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -10570,14 +10571,14 @@ const RUN_14c: EventSpec[] = [
             id: 'fix-lines',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'rounds',
+              ceiling: 'refusalFixes',
             },
           },
           {
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -11270,7 +11271,7 @@ const RUN_14d: EventSpec[] = [
             id: 'restart',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'restarts',
+              ceiling: 'newAttempts',
             },
           },
         ],
@@ -12217,7 +12218,7 @@ const RUN_16: EventSpec[] = [
             id: 'fix-lines',
             because: {
               _tag: 'CeilingReached',
-              ceiling: 'rounds',
+              ceiling: 'refusalFixes',
             },
           },
         ],

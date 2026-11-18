@@ -50,7 +50,6 @@ export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>
  * in language that history never used.
  */
 
-
 type Json = Record<string, unknown>
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null
 

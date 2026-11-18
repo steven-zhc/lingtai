@@ -809,7 +809,7 @@ describe('every step that does not pass arrives at proposed', () => {
         from: 'build',
         chose: 'waiting',
         to: 'waiting',
-        why: 'nothing but a person was on offer (`fix-lines` — `rounds` is spent)',
+        why: 'nothing but a person was on offer (`fix-lines` — `refusalFixes` is spent)',
         ceiling: null,
       },
     ])

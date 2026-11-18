@@ -716,10 +716,10 @@ runtime:
       _tag: 'ProposedEscalated',
       because: {
         _tag: 'CandidateUnavailable',
-        excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
+        excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'newAttempts' } },
       },
     })
-    expect(waitWords(hold!).line).toContain('`restarts` is spent')
+    expect(waitWords(hold!).line).toContain('`newAttempts` is spent')
 
     const all = await allEvents(store)
     theWaitFoldsToTheStoredHold(all, hold!)
@@ -733,7 +733,7 @@ runtime:
           _tag: 'Escalated',
           because: {
             _tag: 'CandidateUnavailable',
-            excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
+            excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'newAttempts' } },
           },
         },
         // The move needs no proposal (#932): a person is waited on.

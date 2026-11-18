@@ -724,7 +724,7 @@ describe('spentAfter', () => {
       to: 'implement',
       round: 2,
     })
-    expect(CeilingReached.parse({ _tag: 'CeilingReached', ceiling: 'rounds' }).ceiling).toBe('rounds')
+    expect(CeilingReached.parse({ _tag: 'CeilingReached', ceiling: 'refusalFixes' }).ceiling).toBe('refusalFixes')
   })
 
   it('MergeBase: counts the merge, leaving rounds and restarts alone', () => {

@@ -1415,6 +1415,7 @@ export const COVERS = {
     'PassRouted',
     'ProposalRouted',
     'StepRedone',
+    'StepRerunInPlace',
     'RunRefsPublished',
     'RunKeptUncommitted',
     'SandboxBoundaryRecorded',
@@ -1518,8 +1519,15 @@ const late_everyTicketTypeOnOneStream = stamp(
 /** #1201: two reruns in place raise the attempt's count by their own number. */
 function stepRerunInPlace(): readonly Envelope[] {
   const run = anAttempt(attemptStream('step-rerun-in-place'))
+  // The first is written under the retired name (#1241): a log from before the rename reads the same.
   const rerun = (n: number, waitMs: number) =>
-    run.event('StepRedone', { runId: run.runId, step: 'implement', rerun: n, said: 'API Error: 503', waitMs })
+    run.event(n === 1 ? 'StepRerunInPlace' : 'StepRedone', {
+      runId: run.runId,
+      step: 'implement',
+      rerun: n,
+      said: 'API Error: 503',
+      waitMs,
+    })
   return [
     runStarted(run, runTicket),
     run.event('StepStarted', { runId: run.runId, step: 'implement', round: 0 }),
@@ -1553,7 +1561,9 @@ const late_everyAttemptType = stamp(
 // The two sandbox types (#1161) and `StepRedone` (#1201) are in the fixture and not in the count: the control fixture is stamped after this
 // one, and its committed hash is over the `seq` it was given before they existed (0124 §3).
 nextSeq -= BigInt(
-  late_everyAttemptType.filter((e) => e.type.startsWith('Sandbox') || e.type === 'StepRedone').length,
+  late_everyAttemptType.filter(
+    (e) => e.type.startsWith('Sandbox') || e.type === 'StepRedone' || e.type === 'StepRerunInPlace',
+  ).length,
 )
 
 /**
