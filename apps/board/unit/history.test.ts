@@ -215,6 +215,9 @@ const SAMPLES = {
   IntegrationAttempted: [{ ticketId: 'ticket-lingtai-59', branch: 'agent/59', headSha: SHA }],
   IntegrationRefused: [{ ticketId: 'ticket-lingtai-59', branch: 'agent/59', reason: 'conflict', detail: 'a.ts' }],
   IntegrationSucceeded: [{ ticketId: 'ticket-lingtai-59', branch: 'agent/59', base: 'main', mergeCommit: SHA }],
+  BaseFixProposed: [
+    { project: 'p', base: 'main', baseSha: SHA, key: `base-red:main:${SHA}`, externalRef: '212', url: null },
+  ],
   BaseChecked: [
     {
       base: 'main',
