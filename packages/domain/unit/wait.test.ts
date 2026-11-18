@@ -734,7 +734,7 @@ describe('recommendedResolution', () => {
     it('WrongApproach advising Approve or FixRefusal is null, not a substitute', () => {
       expect(allowedResolutions(reason)).toContain('Approve')
       expect(recommendedResolution(reason, advise(wrong, 'Approve'))).toBeNull()
-      expect(recommendedResolution(reason, advise(wrong, 'FixRefusal'))).toBeNull()
+      expect(recommendedResolution(reason, advise(wrong, 'GrantFixRound'))).toBeNull()
     })
 
     it('WrongApproach advising Requeue is kept', () => {
@@ -754,7 +754,7 @@ describe('recommendedResolution', () => {
         evidence: 'the check failed',
         findings: [],
       })
-      expect(recommendedResolution(check, advise(fixable, 'FixRefusal'), { savedHead: false })).toBeNull()
+      expect(recommendedResolution(check, advise(fixable, 'GrantFixRound'), { savedHead: false })).toBeNull()
     })
 
     it('FixableLines advising FixRefusal is kept where it is allowed', () => {
@@ -767,7 +767,7 @@ describe('recommendedResolution', () => {
         findings: [],
       })
       expect(allowedResolutions(check)).toContain('FixRefusal')
-      expect(recommendedResolution(check, advise(fixable, 'FixRefusal'))).toBe('FixRefusal')
+      expect(recommendedResolution(check, advise(fixable, 'GrantFixRound'))).toBe('FixRefusal')
     })
   })
 

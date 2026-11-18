@@ -116,7 +116,7 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "summary_clipped": null,
     "ticket": "ticket-lingtai-9104",
     "unknown_claims": 1,
-    "waits": "[{"waitId":"wait-9104-check","at":"2026-08-04T06:01:00.000Z","reason":"CheckRefused","triage":null,"resolution":"GrantFixRound","by":"steven","onSha":"sha-1"},{"waitId":"wait-9104-sign","at":"2026-08-04T06:04:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"Close","by":"steven","onSha":null}]",
+    "waits": "[{"waitId":"wait-9104-check","at":"2026-08-04T06:01:00.000Z","reason":"CheckRefused","triage":null,"resolution":"FixRefusal","by":"steven","onSha":"sha-1"},{"waitId":"wait-9104-sign","at":"2026-08-04T06:04:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"Close","by":"steven","onSha":null}]",
   },
   {
     "by_run": "{}",
@@ -232,7 +232,7 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "summary_clipped": null,
     "ticket": "ticket-lingtai-9108",
     "unknown_claims": 1,
-    "waits": "[{"waitId":"wait-9108-escalated","at":"2026-08-11T12:01:00.000Z","reason":"ProposedEscalated","triage":null,"resolution":"Requeue","by":"steven","onSha":null}]",
+    "waits": "[{"waitId":"wait-9108-escalated","at":"2026-08-11T12:01:00.000Z","reason":"ProposedEscalated","triage":null,"resolution":"StartNewAttempt","by":"steven","onSha":null}]",
   },
   {
     "by_run": "{}",
@@ -261,7 +261,7 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "summary_clipped": null,
     "ticket": "ticket-lingtai-9109",
     "unknown_claims": 1,
-    "waits": "[{"waitId":"wait-9109-check","at":"2026-08-14T00:01:00.000Z","reason":"CheckRefused","triage":null,"resolution":"Requeue","by":"steven","onSha":null}]",
+    "waits": "[{"waitId":"wait-9109-check","at":"2026-08-14T00:01:00.000Z","reason":"CheckRefused","triage":null,"resolution":"StartNewAttempt","by":"steven","onSha":null}]",
   },
   {
     "by_run": "{}",
@@ -406,7 +406,7 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "summary_clipped": null,
     "ticket": "ticket-lingtai-9114",
     "unknown_claims": 1,
-    "waits": "[{"waitId":"wait-9114-crash","at":"2026-08-15T06:01:00.000Z","reason":"AgentCrashed","triage":{"attempt":2,"result":"TriageFailed","cause":null},"resolution":"Requeue","by":"steven","onSha":null}]",
+    "waits": "[{"waitId":"wait-9114-crash","at":"2026-08-15T06:01:00.000Z","reason":"AgentCrashed","triage":{"attempt":2,"result":"TriageFailed","cause":null},"resolution":"StartNewAttempt","by":"steven","onSha":null}]",
   },
   {
     "by_run": "{}",
@@ -580,7 +580,7 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "summary_clipped": null,
     "ticket": "ticket-lingtai-9201",
     "unknown_claims": 1,
-    "waits": "[{"waitId":"wait-ledger-1","at":"2026-08-11T18:01:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"EditBodyAndRequeue","by":"steven","onSha":null}]",
+    "waits": "[{"waitId":"wait-ledger-1","at":"2026-08-11T18:01:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"EditBodyAndStartNewAttempt","by":"steven","onSha":null}]",
   },
   {
     "by_run": "{}",
@@ -609,7 +609,7 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "summary_clipped": null,
     "ticket": "ticket-lingtai-9202",
     "unknown_claims": 1,
-    "waits": "[{"waitId":"wait-body-1","at":"2026-08-12T00:01:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"EditBodyAndRequeue","by":"steven","onSha":null},{"waitId":"wait-body-2","at":"2026-08-12T00:05:00.000Z","reason":"SignoffRequired","triage":null,"resolution":null,"by":null,"onSha":null}]",
+    "waits": "[{"waitId":"wait-body-1","at":"2026-08-12T00:01:00.000Z","reason":"SignoffRequired","triage":null,"resolution":"EditBodyAndStartNewAttempt","by":"steven","onSha":null},{"waitId":"wait-body-2","at":"2026-08-12T00:05:00.000Z","reason":"SignoffRequired","triage":null,"resolution":null,"by":null,"onSha":null}]",
   },
   {
     "by_run": "{"pass-s9301-a":{"diff":{"files":1,"insertions":1,"deletions":0},"summary":null,"clipped":null}}",
@@ -667,7 +667,7 @@ exports[`ticket_report rebuilds to the rows it held before it read the ticket re
     "summary_clipped": null,
     "ticket": "ticket-lingtai-9302",
     "unknown_claims": 1,
-    "waits": "[{"waitId":"wait-9302-ask","at":"2026-08-07T12:02:00.000Z","reason":"AgentQuestion","triage":null,"resolution":"EditBodyAndRequeue","by":"steven","onSha":null}]",
+    "waits": "[{"waitId":"wait-9302-ask","at":"2026-08-07T12:02:00.000Z","reason":"AgentQuestion","triage":null,"resolution":"EditBodyAndStartNewAttempt","by":"steven","onSha":null}]",
   },
   {
     "by_run": "{"pass-s9303-a":{"diff":{"files":1,"insertions":1,"deletions":0},"summary":null,"clipped":null}}",
