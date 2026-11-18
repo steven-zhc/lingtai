@@ -111,7 +111,7 @@ function outcomeOf(overrides: Partial<RunOutcome> = {}): RunOutcome {
 
 const ADVICE_TEXT = JSON.stringify({
   cause: { _tag: 'WrongApproach' },
-  resolution: 'StartNewAttempt',
+  resolution: 'Requeue',
   summary: 'patching will not converge',
   want: null,
 })
@@ -625,7 +625,7 @@ describe('waitTriage', () => {
       return outcomeOf({
         text: JSON.stringify({
           cause: { _tag: 'ConflictingHunks', total: 1, hunks: [{ _tag: 'Mechanical', path: 'a.ts', line: 1 }] },
-          resolution: 'StartNewAttempt',
+          resolution: 'Requeue',
           summary: 'one mechanical conflict',
           want: null,
         }),
@@ -676,7 +676,7 @@ describe('waitTriage', () => {
       outcomeOf({
         text: JSON.stringify({
           cause: { _tag: 'ConflictingHunks', total: 2, hunks: [mechanical, mechanical] },
-          resolution: 'StartNewAttempt',
+          resolution: 'Requeue',
           summary: 'both mechanical',
           want: null,
         }),
@@ -711,7 +711,7 @@ describe('waitTriage', () => {
               { _tag: 'Mechanical', path: 'a.ts', line: 2 },
             ],
           },
-          resolution: 'StartNewAttempt',
+          resolution: 'Requeue',
           summary: 'both mechanical',
           want: null,
         }),
@@ -756,7 +756,7 @@ describe('waitTriage', () => {
           },
         ],
       },
-      resolution: 'StartNewAttempt',
+      resolution: 'Requeue',
       summary: 'one divergent hunk',
       want: null,
     }

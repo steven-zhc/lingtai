@@ -580,7 +580,7 @@ describe('conflictLines (#652)', () => {
     proposal: { _tag: 'MergeConflict', output: 'x', paths: ['a.ts'], baseSha: 'a', headSha: 'b' },
     because: { _tag: 'NotAsked' },
   } as never
-  const triage = (total: number, resolution = 'StartNewAttempt') =>
+  const triage = (total: number, resolution = 'Requeue') =>
     ({
       started: null,
       result: {
@@ -614,13 +614,13 @@ describe('conflictLines (#652)', () => {
   })
 
   it('names an unreadable saved head even when triage advised the round it cannot offer', () => {
-    const c = conflictLines(reason, triage(2, 'FixRefusal'), { unreadable: 'timeout' })
+    const c = conflictLines(reason, triage(2, 'GrantFixRound'), { unreadable: 'timeout' })
     expect(c?.rec).toBe('triage advised FixRefusal — why')
     expect(c?.advised).toContain('saved head could not be checked (timeout)')
   })
 
   it('names the read failure and triage’s advice above 5 hunks too', () => {
-    const c = conflictLines(reason, triage(10, 'FixRefusal'), { unreadable: 'timeout' })
+    const c = conflictLines(reason, triage(10, 'GrantFixRound'), { unreadable: 'timeout' })
     expect(c?.rec).toBe('triage advised FixRefusal — why')
     expect(c?.advised).toContain('saved head could not be checked (timeout)')
   })
@@ -636,7 +636,7 @@ describe('conflictLines (#652)', () => {
 
 describe('waitDetail (#656)', () => {
   const run = { runId: 'r', ref: 'agent/1', sha: 'abc' }
-  const triage = (resolution = 'StartNewAttempt') =>
+  const triage = (resolution = 'Requeue') =>
     ({
       started: null,
       result: {
@@ -664,8 +664,8 @@ describe('waitDetail (#656)', () => {
 
   it('still prints triage’s resolution and summary when the saved head is absent and no resolution is recommended', () => {
     const words = waitWords(disagrees, { branch: 'agent/1', base: '', findings: [] })
-    const lines = waitDetail(words, disagrees, triage('FixRefusal'), false)
-    expect(conflictRecommendation(disagrees, triage('FixRefusal'), false)).toBeNull()
+    const lines = waitDetail(words, disagrees, triage('GrantFixRound'), false)
+    expect(conflictRecommendation(disagrees, triage('GrantFixRound'), false)).toBeNull()
     expect(lines.some((l) => l.includes('triage advised FixRefusal: why'))).toBe(true)
     expect(lines.some((l) => l.includes('recommends'))).toBe(false)
   })
@@ -675,7 +675,7 @@ describe('waitDetail (#656)', () => {
       needs: 'judgement',
       diagnosis: { what: 'it conflicted', done: null, recommendation: { action: 'requeue', why: 'try again' } },
     } as never
-    const lines = waitDetail(words, disagrees, triage('FixRefusal'), false)
+    const lines = waitDetail(words, disagrees, triage('GrantFixRound'), false)
     expect(lines.some((l) => l.includes('recommends'))).toBe(false)
     expect(lines).toContain('it conflicted')
     expect(lines.some((l) => l.includes('triage advised FixRefusal: why'))).toBe(true)

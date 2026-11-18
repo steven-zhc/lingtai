@@ -86,7 +86,7 @@ function card(t: TaskCard, fixHead: string | null = HEAD, declared = true): Boar
 
 describe('a card’s move', () => {
   it('carries the saved head for an advised FixRefusal', () => {
-    expect(card(waiting(result('FixRefusal'))).move).toEqual({
+    expect(card(waiting(result('GrantFixRound'))).move).toEqual({
       resolution: 'FixRefusal',
       onSha: HEAD,
       note: null,
@@ -94,11 +94,11 @@ describe('a card’s move', () => {
   })
 
   it('has no FixRefusal where the log has no saved head, and swaps nothing in', () => {
-    expect(card(waiting(result('FixRefusal')), null).move).toBeNull()
+    expect(card(waiting(result('GrantFixRound')), null).move).toBeNull()
   })
 
   it('carries an advised Requeue with nothing to send', () => {
-    expect(card(waiting(result('StartNewAttempt'))).move).toEqual({ resolution: 'StartNewAttempt', onSha: null, note: null })
+    expect(card(waiting(result('Requeue'))).move).toEqual({ resolution: 'StartNewAttempt', onSha: null, note: null })
   })
 
   it('carries the awaited sha and the accepted-triage note for an advised Approve', () => {
@@ -125,7 +125,7 @@ describe('a card’s move', () => {
     expect(
       card(waiting({ started: null, result: { _tag: 'TriageFailed', why: 'x' } as TaskCard['triage']['result'] })).move,
     ).toBeNull()
-    expect(card(waiting(result('StartNewAttempt')), HEAD, false).move).not.toBeNull()
+    expect(card(waiting(result('Requeue')), HEAD, false).move).not.toBeNull()
     expect(card(waiting({ started: null, result: null }), HEAD, false).move).toBeNull()
   })
 

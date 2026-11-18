@@ -724,7 +724,7 @@ describe('recommendedResolution', () => {
 
   describe('an advice its own cause contradicts (#572)', () => {
     const reason = parseReason({ _tag: 'FixerDisagrees', run, said: 'nothing here answers the finding' })
-    const advise = (cause: RootCause, resolution: 'Approve' | 'FixRefusal' | 'StartNewAttempt'): TriageStatus => ({
+    const advise = (cause: RootCause, resolution: 'Approve' | 'GrantFixRound' | 'Requeue'): TriageStatus => ({
       _tag: 'Done',
       result: { _tag: 'TriageAdvised', cause, resolution, summary: 's', want: null } as TriageResult,
     })
@@ -738,7 +738,7 @@ describe('recommendedResolution', () => {
     })
 
     it('WrongApproach advising Requeue is kept', () => {
-      expect(recommendedResolution(reason, advise(wrong, 'StartNewAttempt'))).toBe('StartNewAttempt')
+      expect(recommendedResolution(reason, advise(wrong, 'Requeue'))).toBe('StartNewAttempt')
     })
 
     it('FixableLines advising Approve is null', () => {

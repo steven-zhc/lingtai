@@ -162,7 +162,7 @@ On no stream: [OutboxDelivered](events.json#OutboxDelivered) *(retired)*, [Outbo
 appends to that stream while it runs, and a board recording an App would race a
 turn for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 13 chains, 15 steps
+## upcaster — 14 chains, 16 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -183,10 +183,11 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `TicketReleased` | 1 → 2 | `cause: Restart{restart}` is `NewAttempt{newAttempt}` (0108, #1241). A release with no cause stays without one |
 | `ProposalRouted` | 1 → 2 | a candidate's `FixRound`, `MergeBase` and `Requeued{Restart}` are `FixRefusal`, `MergeBaseBranch` and `Requeued{NewAttempt}`, and an excluded candidate's `ceiling` is named for its bound (`rounds` → `refusalFixes`, `conflict-rounds` → `conflictResolutions`, `restarts` → `newAttempts`, `base-merges` → `baseBranchMerges`), in the offer and in an escalated decision (#1241) |
 | `PassRouted` | 1 → 2 | the same rewrite, on the retired type's rows |
+| `WaitResolved` | 1 → 2 | a person's moves are `FixRefusal`, `RedoStep`, `StartNewAttempt` and `EditBodyAndStartNewAttempt`, where they were `GrantFixRound`, `RerunStep`, `Requeue` and `EditBodyAndRequeue` (0108, #1242). Only `resolution._tag` is rewritten; the fields are unchanged |
 | `WaitStarted` | 1 → 2 | a `ProposedEscalated` whose excluded candidate hit a ceiling names the ceiling by its bound (#1241) |
 
 **The counts in this heading are counted off the table, never computed.** Each
-of the **thirteen** chains below is its own row — a heading that is arithmetic on a
+of the **fourteen** chains below is its own row — a heading that is arithmetic on a
 number nobody re-derived is how a reader comes to believe a row is stale and
 deletable.
 
