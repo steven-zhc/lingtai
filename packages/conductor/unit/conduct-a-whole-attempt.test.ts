@@ -2450,11 +2450,10 @@ runtime:
 
     // The implementer ran on the pass's own runtime at the ceiling's turns; the
     // reviewer ran on the one its line named, at its own.
-    // The reviewer's unreadable answer is asked again once by rule (#1224), on the same runtime.
+    // The reviewer's unreadable answer is asked again by rule while `stepRedos` is left (#1224, #1249), on the same runtime.
     expect(asked).toEqual([
       { id: 'claude-code', model: undefined, turns: 10 },
-      { id: 'codex', model: 'gpt-5-codex', turns: 4 },
-      { id: 'codex', model: 'gpt-5-codex', turns: 4 },
+      ...Array(4).fill({ id: 'codex', model: 'gpt-5-codex', turns: 4 }),
     ])
 
     // And the log says which runtime wrote the change, which is still the first.

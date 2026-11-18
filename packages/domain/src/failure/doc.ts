@@ -36,7 +36,7 @@ const SECTIONS: readonly Section[] = [
     title: 'Claude Code',
     of: (r) => r.platform === 'runtime' && r.runtime === 'claude-code',
     unmatched:
-      'A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. A crash whose detail is on a `transient` row is run again in place (`rerunInPlace`, 0108 §12), up to `stepRedos` times in an attempt; a sentence on no row is a crash and holds for a person.',
+      'A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. Any other crash is run again in place (`rerunInPlace`, 0108 §12), up to `stepRedos` times in an attempt; a crash on no row is redone too, and a `transient` row only says the redo is expected to clear it.',
   },
   {
     title: 'Package registry',

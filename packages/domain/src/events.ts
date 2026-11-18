@@ -1687,7 +1687,7 @@ export const StepRedone = z.object({
   /** The words that said the rerun was in order: a runtime's, a registry's, or the unreadable answer. */
   said: z.string(),
   waitMs: z.number().int().nonnegative(),
-  /** True where the rerun is a rule's *ask again* of an unreadable answer (#1224): a continuation must not grant a second (#1205). */
+  /** Written by #1224–#1249 rows only; nothing reads it since #1249 (`stepRedos` is the bound), kept so old rows parse. */
   askedAgain: z.boolean().optional(),
 })
 
