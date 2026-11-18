@@ -2069,8 +2069,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * there is nothing in the worktree it could have left dirty.
        */
       let stoppedBy: string | null = null
-      /** Where the first implementer dispatch found the tree: a rerun's receipt is measured from it too (#1201). */
-      let implementerStartedAt: string | null = null
       /**
        * Conflict fix rounds dispatched so far (#653). A conflict round leaves
        * `round` where `rounds` was, so `round` alone would hand Claude Code the
@@ -2379,16 +2377,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * Where `wips` stood when the step's agent was first dispatched (#1245): a step redone whole is told
        * the WIP made since, and only that. Set by every first dispatch, never by a redo of it.
        */
-      let stepWipFrom = 0
+      let stepFirst: { onSha: string; sha: string; wipFrom: number } | null = null
+      /** Whether this arrival at the step (its `onSha`) already has its first start recorded (#1245). */
+      const firstStartOf = (context: ActionContext): { onSha: string; sha: string; wipFrom: number } | null =>
+        stepFirst !== null && stepFirst.onSha === context.onSha ? stepFirst : null
       /** The paragraph a redone step's agent ends its brief with, or null on a first dispatch (0108 §12). */
       const redoNoteOf = (context: ActionContext, startedAt: string): string | null => {
+        const first = firstStartOf(context)
         if (context.redo === undefined) {
-          stepWipFrom = wips.length
+          // Only the step's first agent arrival records it: a later agent, at the same head, must not
+          // move where the step began nor which WIP is its own.
+          if (first === null) stepFirst = { onSha: context.onSha, sha: startedAt, wipFrom: wips.length }
           return null
         }
         return redoParagraph(
-          { ...context.redo, startedAt },
-          wips.slice(stepWipFrom).flatMap((entry) => (entry.sha === null ? [] : [entry.sha])),
+          { ...context.redo, startedAt: first?.sha ?? startedAt },
+          wips.slice(first?.wipFrom ?? 0).flatMap((entry) => (entry.sha === null ? [] : [entry.sha])),
         )
       }
       /** The worktree's `HEAD` as `publishWhatIsCommitted` last read it — what `standingFor` compares to the granted sha (#654). */
@@ -4774,11 +4778,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            */
           // Only the agent a redo's paragraph is handed to is measured from the first start (#1245): a later
           // agent in the same step, handed none, found the tree where the one before it left it.
-          const startedAt =
-            brief.context.redo !== undefined && implementerStartedAt !== null
-              ? implementerStartedAt
-              : yield* gitOrDieEffect(['rev-parse', 'HEAD'])
-          implementerStartedAt = startedAt
+          const firstStart = brief.context.redo === undefined ? null : firstStartOf(brief.context)
+          const startedAt = firstStart !== null ? firstStart.sha : yield* gitOrDieEffect(['rev-parse', 'HEAD'])
           const redoNote = redoNoteOf(brief.context, startedAt)
           const implementDecision = yield* decideSandbox
           const wired = yield* Effect.result(
@@ -5567,7 +5568,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         judge,
         mergeBase,
         stepRedoWaits: options.stepRedoWaits,
-        resetToHead: () => resetToHead({ git: gitAskedEffect, plantAt: recipe.env.plantAt }),
+        resetToHead: () =>
+          Effect.gen(function* () {
+            // **Never reset over work that was not saved** (0108 §20, #1245): a keep that failed left
+            // `stoppedBy` set, so it is asked once more, and a tree still unkept is not touched.
+            yield* keepUncommittedWork()
+            if (wipFailure !== null && stoppedBy !== null && !inConflictRound)
+              return { failed: `the cut-off run's unsaved work could not be kept first — ${wipFailure}` }
+            return yield* resetToHead({ git: gitAskedEffect, plantAt: recipe.env.plantAt })
+          }),
         mergeForConflict,
         conflictEvidence,
         baseIsRed,
