@@ -360,7 +360,7 @@ export function WhyNothingRuns({
                 seg.kind === 'code' ? (
                   <code key={i}>{seg.text}</code>
                 ) : seg.kind === 'ticket' ? (
-                  <a key={i} href="#waiting">
+                  <a key={i} href={`#ticket-${project}-${seg.ref}`}>
                     {seg.text}
                   </a>
                 ) : (

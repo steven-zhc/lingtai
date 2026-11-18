@@ -222,7 +222,7 @@ export function Card({
   if (card.column === 'waiting') {
     const fallback = card.note?.split(/\r?\n/, 1)[0]?.trim() ?? null
     return (
-      <article className={`card waiting-card ${accent(card)}`}>
+      <article id={`ticket-${card.project}-${card.ref}`} className={`card waiting-card ${accent(card)}`}>
         <span className="id">
           {showProject ? <span className="proj">{card.project}</span> : null}
           <IssueRef href={issue} issue={card.ref} />

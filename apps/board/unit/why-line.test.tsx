@@ -117,3 +117,22 @@ describe('WhyNothingRuns (#1216)', () => {
     expect(renderToStaticMarkup(<WhyNothingRuns why={[]} showProject={false} />)).toBe('')
   })
 })
+
+describe('WhyNothingRuns ticket link (#1216)', () => {
+  it('links a person-held root ticket to its own card, not the column', () => {
+    const w = {
+      project: 'lingtai',
+      why: {
+        roots: [
+          {
+            root: 'chain',
+            sentence: '3 tickets wait on #7, which waits on you',
+            tickets: [1, 2, 3],
+            on: { ref: 7, waits: true },
+          } as Root,
+        ],
+      },
+    }
+    expect(renderToStaticMarkup(<WhyNothingRuns why={[w]} showProject={false} />)).toContain('href="#ticket-lingtai-7"')
+  })
+})

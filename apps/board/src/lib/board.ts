@@ -913,7 +913,7 @@ export { BLOCKERS_READ_MOST, forgetBlockers }
 export type { BlockedSkip }
 
 export type ProjectQueue =
-  | { state: 'unanswered'; filter: AskableFilter; problem: string }
+  | { state: 'unanswered'; filter: AskableFilter; problem: string; why?: WhyNothingRuns | null }
   | {
       state: 'listed'
       filter: AskableFilter
@@ -921,6 +921,8 @@ export type ProjectQueue =
       runnable: Awaited<ReturnType<typeof selectRunnable>>
       /** The `blocked-by` skips with their blockers read (#954). Never cards. */
       blocked: BlockedSkip[]
+      /** What a red base passed over: still queued, so still drawn as cards, but not runnable (#1216). */
+      baseHeld?: Awaited<ReturnType<typeof selectRunnable>>
       /** Why nothing of this project runs, when the page asked (#1216). */
       why?: WhyNothingRuns | null
     }
@@ -947,28 +949,49 @@ export async function askProject(
   const select = options.select ?? selectRunnable
   const explain = options.explain
   try {
-    const found = await runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) })
-    // One run for every read after the offer, so the board's count of `Effect.run*` does not grow (#1216).
+    // One run for every read, so the board's count of `Effect.run*` does not grow (#1216).
     return await Effect.runPromise(
       Effect.gen(function* () {
+        const listing = yield* Effect.tryPromise({
+          try: () => runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) }),
+          catch: (err) => err,
+        }).pipe(
+          Effect.map((found) => ({ ok: true as const, found })),
+          Effect.catch((err: unknown) => Effect.succeed({ ok: false as const, err })),
+        )
         // **A red base passes the queue over here as it does at the conductor** (`schedule.ts`): without a
         // look the board drew tickets runnable that no pass would take. No look is a project not explained.
         const look = explain === undefined ? null : yield* explain.look(filter)
+        if (!listing.ok) {
+          // GitHub did not answer: the roots that need none of it (a lock, the daemon, a drain) still stand.
+          const why =
+            explain === undefined || look === null
+              ? null
+              : yield* explain.why({ filter, look, offered: null, seen: null, runnable: [], blocked: [] })
+          return {
+            state: 'unanswered',
+            filter,
+            problem: (listing.err as Error).message,
+            why,
+          } satisfies ProjectQueue
+        }
+        const found = listing.found
         const offered = look === null ? found : passOverBaseRed(look, found).offered
-        const runnable = yield* Effect.tryPromise(() =>
-          select({
-            project: filter.project,
-            offered: offered.runnable,
-            kinds: filter.kinds,
-            backoffMs: filter.backoffMs,
-          }),
-        )
+        const select_ = (refs: typeof found.runnable) =>
+          Effect.tryPromise(() =>
+            select({ project: filter.project, offered: refs, kinds: filter.kinds, backoffMs: filter.backoffMs }),
+          )
+        const runnable = yield* select_(offered.runnable)
+        const kept = new Set(offered.runnable.map((r) => String(r.ref)))
+        const passedBase = found.runnable.filter((r) => !kept.has(String(r.ref)))
+        // Still queued, so still on the column: the base holds them, and the line says so.
+        const baseHeld = passedBase.length === 0 ? [] : yield* select_(passedBase)
         const blocked = yield* readBlockersEffect(filter, offered.skipped, options.now ?? Date.now)
         const why =
           explain === undefined || look === null
             ? null
             : yield* explain.why({ filter, look, offered: found, seen: offered, runnable, blocked })
-        return { state: 'listed', filter, offered, runnable, blocked, why } satisfies ProjectQueue
+        return { state: 'listed', filter, offered, runnable, blocked, baseHeld, why } satisfies ProjectQueue
       }),
     )
   } catch (err) {
@@ -1293,6 +1316,10 @@ export async function githubQueue(
     const filter = answer.filter
     if (answer.state === 'unanswered') {
       problems.push({ project: filter.project, reason: answer.problem })
+      if (answer.why != null) {
+        why.push({ project: filter.project, why: answer.why })
+        lastWhy.add(filter.project)
+      } else lastWhy.delete(filter.project)
       continue
     }
     answered += 1
@@ -1355,7 +1382,7 @@ export async function githubQueue(
     if (offered.dependenciesUnread !== null) {
       notes.push({ project: filter.project, reason: offered.dependenciesUnread })
     }
-    for (const r of answer.runnable) {
+    for (const r of [...answer.runnable, ...(answer.baseHeld ?? [])]) {
       if (known.has(r.taskId)) continue
       cards.push({
         taskId: r.taskId,

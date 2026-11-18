@@ -29,9 +29,9 @@ export interface Explain {
     filter: AskableFilter
     look: BaseRedLook
     /** What the source offered, before the base: the facts' `offered`. */
-    offered: Offered
+    offered: Offered | null
     /** What the base left and the base's own skips. */
-    seen: Offered
+    seen: Offered | null
     runnable: readonly { issue: string }[]
     blocked: readonly BlockedSkip[]
   }) => Effect.Effect<WhyNothingRuns | null>
@@ -53,9 +53,12 @@ export const readWhy: Explain = {
     return Effect.gen(function* () {
       const tasks = yield* readTasksEffect({ project: filter.project })
       const read = yield* Effect.tryPromise(() => readProjectLocks())
-      const locks = read.ok
-        ? (read.held.find((h) => h.project === filter.project)?.locks ?? [])
-        : { unread: read.problem }
+      // A control stream that would not read cannot say a ceiling or a drain does not hold: unread, never none.
+      const locks = !read.ok
+        ? { unread: read.problem }
+        : read.controlProblem !== undefined
+          ? { unread: read.controlProblem }
+          : (read.held.find((h) => h.project === filter.project)?.locks ?? [])
       const control = yield* Effect.tryPromise(() => readControlOnce()).pipe(Effect.option)
       return yield* explainQueueEffect(
         {
@@ -65,9 +68,9 @@ export const readWhy: Explain = {
           draining: control._tag === 'Some' && control.value.shutdown !== null,
           locks,
           base: look,
-          offered: offered.runnable.map((o) => Number(o.ref)),
+          offered: (offered?.runnable ?? []).map((o) => Number(o.ref)),
           runnable: runnable.map((r) => Number(r.issue)),
-          skipped: seen.skipped.map((s) => ({ ref: s.ref, reason: s.reason })),
+          skipped: (seen?.skipped ?? []).map((s) => ({ ref: s.ref, reason: s.reason })),
           rows: whyRows(tasks, filter.backoffMs, now),
           repository: filter.links?.repository ?? null,
           canListBlockers: filter.links !== null,
