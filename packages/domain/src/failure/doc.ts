@@ -36,13 +36,13 @@ const SECTIONS: readonly Section[] = [
     title: 'Claude Code',
     of: (r) => r.platform === 'runtime' && r.runtime === 'claude-code',
     unmatched:
-      'A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. A crash whose detail is on a `transient` row is run again in place (`rerunInPlace`, 0108 §12), up to `TRANSIENT_RETRIES_LIMIT` times in an attempt; a sentence on no row is a crash and holds for a person.',
+      'A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. A crash whose detail is on a `transient` row is run again in place (`rerunInPlace`, 0108 §12), up to `stepRedos` times in an attempt; a sentence on no row is a crash and holds for a person.',
   },
   {
     title: 'Package registry',
     of: (r) => r.platform === 'registry',
     unmatched:
-      "A `prepared` step whose output is on one of these rows is run again in place (`rerunSetup`, 0108 §18), after the wait its count names, up to `TRANSIENT_RETRIES_LIMIT` times in an attempt. Output on no row, a 404 included, is a person's. yarn, bun and a proxy's own page have no row.",
+      "A `prepared` step whose output is on one of these rows is run again in place (`rerunSetup`, 0108 §18), after the wait its count names, up to `stepRedos` times in an attempt. Output on no row, a 404 included, is a person's. yarn, bun and a proxy's own page have no row.",
   },
   {
     title: 'Codex',

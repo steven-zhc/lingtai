@@ -46,7 +46,7 @@ export interface TicketDiscussion {
 }
 
 /**
- * One wait, reduced once (#842). `waitsOf`, `triageFactsOf`, `designAsksOf`, the
+ * One wait, reduced once (#842). `waitsOf`, `triageFactsOf`, `personAsksOf`, the
  * CLI's triage and `editEndedWaits` all read this rather than scanning the stream.
  */
 export interface TicketWait {

@@ -9,7 +9,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { Spent } from '../src/attempt-next.ts'
-import { offerFor, TRANSIENT_RETRIES_LIMIT } from '../src/failure/respond.ts'
+import { BOUNDS, offerFor } from '../src/failure/respond.ts'
 import type { Proposal } from '../src/proposal.ts'
 import type { ExcludedCandidate } from '../src/route.ts'
 import {
@@ -320,7 +320,7 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(offerFor(answerUnreadableAtReview, policy, zero, true).available.map((c) => c.id)).toEqual(
       base.filter((id) => id !== 'ask-again'),
     )
-    const spent = { ...zero, transientRetries: TRANSIENT_RETRIES_LIMIT }
+    const spent = { ...zero, stepRedos: BOUNDS.stepRedos }
     const out = offerFor(answerUnreadableAtReview, policy, spent)
     expect(out.available.map((c) => c.id)).not.toContain('ask-again')
     expect(out.unavailable.map((c) => c.id)).not.toContain('ask-again')
@@ -340,10 +340,10 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
       id: 'rerun-setup',
       next: { _tag: 'RerunStep', step: 'prepared', retry: 1 },
     })
-    expect(offerFor(registry, policy, { ...zero, transientRetries: 2 }).available[0]).toMatchObject({
+    expect(offerFor(registry, policy, { ...zero, stepRedos: 2 }).available[0]).toMatchObject({
       next: { retry: 3 },
     })
-    const spent = offerFor(registry, policy, { ...zero, transientRetries: TRANSIENT_RETRIES_LIMIT })
+    const spent = offerFor(registry, policy, { ...zero, stepRedos: BOUNDS.stepRedos })
     expect(spent.available.map((c) => c.id)).not.toContain('rerun-setup')
     expect(spent.unavailable.map((c) => c.id)).not.toContain('rerun-setup')
     const other = offerFor(refused('ERR_PNPM_FETCH_404'), policy, zero)
@@ -538,7 +538,7 @@ describe('offerFor: at both ceilings', () => {
 describe('offerFor: policy{0,0} is the floor every proposal keeps', () => {
   const floor: RoutingPolicy = { rounds: 0, restarts: 0, conflictRounds: 0 }
   // The transient retries spent, so the free rule candidates (`land-again`, `ask-again`) are absent too.
-  const zero: Spent = { rounds: 0, restarts: 0, transientRetries: TRANSIENT_RETRIES_LIMIT }
+  const zero: Spent = { rounds: 0, restarts: 0, stepRedos: BOUNDS.stepRedos, landingRetries: BOUNDS.landingRetries }
 
   // A merge conflict's round is not `rounds`' to withhold (#653), so a zero ceiling leaves it on offer.
   it.each(

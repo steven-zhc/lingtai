@@ -8,6 +8,7 @@
 import type { RunOutcome, RunRequest, Runtime } from '@lingtai/agent'
 import { sessionIdFor } from '@lingtai/agent'
 import {
+  BOUNDS,
   REFUSED_ABOUT,
   REVIEW_ANSWER_JSON_SCHEMA,
   SEVERITIES,
@@ -1522,8 +1523,8 @@ describe('the design step asks about undecided edges', () => {
     expect(prompt).not.toContain('## Assumptions')
   })
 
-  it('forbids the fence from the second ask and says where assumptions go', () => {
-    const prompt = buildDesignPrompt(SPEC, ISSUE, null, 2)
+  it('forbids the fence once the asks are spent and says where assumptions go', () => {
+    const prompt = buildDesignPrompt(SPEC, ISSUE, null, BOUNDS.personAsks)
 
     expect(prompt).not.toContain('```question')
     expect(prompt).not.toContain('`question` block')

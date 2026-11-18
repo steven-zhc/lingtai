@@ -110,8 +110,7 @@ import {
   rerunInPlace,
   routeNext,
   STEPS,
-  TRANSIENT_RETRIES_LIMIT,
-  TRANSIENT_WAITS,
+  BOUNDS,
   type JudgeReply,
   baseRedText,
   type AttemptNext,
@@ -787,7 +786,7 @@ export const NOT_BUILT_YET: StepBodies = {
 export interface Ceilings {
   /**
    * How many times this pass may go back into the spine — a fix round, and what
-   * `attemptCeiling` prices, with the conflict rounds and the reruns, at *up to `2 × rounds + 1 + TRANSIENT_RETRIES_LIMIT` agent runs* (0108 §8)
+   * `attemptCeiling` prices, with the conflict rounds and the reruns, at *up to `2 × rounds + 1 + stepRedos` agent runs* (0108 §8)
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
    *
    * **This is what makes the loop bounded**, and the bound is structural rather
@@ -999,11 +998,13 @@ export interface AttemptOptions {
     readonly baseMergesSpent?: number
     readonly conflictRoundsSpent?: number
     /** The reruns in place the attempt's stream already holds (0108 §8, #1201): per attempt, so a continuation keeps it. */
-    readonly transientRetriesSpent?: number
+    readonly stepRedosSpent?: number
+    /** The landings again the stream already holds (#1221, #1239): apart from `stepRedosSpent`, and never in a dispatch id. */
+    readonly landingRetriesSpent?: number
     /**
      * **The first visit of `step` is a rerun of the call an account limit cut off** (0108 §11, #1205): the
      * recorded prompt (null: a fresh brief) is handed again under a new dispatch id. `accountReruns` is this
-     * rerun's number among the attempt's; every rerun's suffix is `transientRetriesSpent + accountReruns`, so
+     * rerun's number among the attempt's; every rerun's suffix is `stepRedosSpent + landingRetriesSpent + accountReruns` (a landing retry dispatches nothing, but an attempt begun before #1239 counted it here), so
      * the two kinds never repeat an id.
      */
     readonly rerun?: {
@@ -1087,8 +1088,8 @@ export interface AttemptPortOptions {
   readonly sandboxAt?: (step: Step) => StepOutcome['sandbox']
   readonly judge?: (on: Judging) => Effect.Effect<Judged>
   readonly mergeBase?: (toSha: string) => Effect.Effect<MergeBaseAnswer>
-  /** The waits before each `land-again`, indexed by the retries already made; absent is `TRANSIENT_WAITS` (#1221). */
-  readonly transientWaits?: readonly Duration.Input[]
+  /** The waits before each step redo and each `land-again`, indexed by the count already made; absent is `BOUNDS.stepRedoWaits` (#1221). */
+  readonly stepRedoWaits?: readonly Duration.Input[]
   /** Appends one route durably, answering false when the store refused; a `land-again` is taken only once it did (#1221). */
   readonly appendRoute?: (route: RouteTaken) => Effect.Effect<boolean>
   /**
@@ -1387,7 +1388,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      * reaches a person again at the next move, and `Requeue` starts over.
      */
     let baseMergesSpent = options.from?.baseMergesSpent ?? 0
-    let transientRetriesSpent = options.from?.transientRetriesSpent ?? 0
+    let stepRedosSpent = options.from?.stepRedosSpent ?? 0
+    let landingRetriesSpent = options.from?.landingRetriesSpent ?? 0
     // What this pass's rule landed again, for the sentence a hold says once the retries are spent (#1221).
     const landedAgainThisPass = { times: 0, minutes: 0 }
     /** The merge-conflict fix rounds this attempt (#653), per attempt for the same reason. */
@@ -1615,7 +1617,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       Effect.gen(function* () {
         // The retries spent, this pass's re-landings go on the proposal so the hold says how many (#1221).
         // Stored with the route, so a replay says the same. Only once none is left on offer.
-        const spentRetries = transientRetriesSpent >= TRANSIENT_RETRIES_LIMIT
+        const spentRetries = landingRetriesSpent >= BOUNDS.landingRetries
         const proposal: Proposal =
           proposalRaised._tag === 'MergeRefused' && spentRetries && landedAgainThisPass.times > 0
             ? { ...proposalRaised, landedAgain: { ...landedAgainThisPass } }
@@ -1628,7 +1630,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             restarts: ceilings.restartsSpent,
             baseMerges: baseMergesSpent,
             conflictRounds: conflictRoundsSpent,
-            transientRetries: transientRetriesSpent,
+            stepRedos: stepRedosSpent,
+            landingRetries: landingRetriesSpent,
           },
           arrivedAskedAgain,
         )
@@ -1690,18 +1693,18 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         const rerunNext = rerunCandidate?.next._tag === 'RerunStep' ? rerunCandidate.next : null
         const rerunWait =
           rerunNext !== null && rerunNext.step === 'prepared'
-            ? ((options.transientWaits ?? TRANSIENT_WAITS)[rerunNext.retry - 1] ?? '0 millis')
+            ? ((options.stepRedoWaits ?? BOUNDS.stepRedoWaits)[rerunNext.retry - 1] ?? '0 millis')
             : '0 millis'
         const landWait =
           landAgain !== undefined && landAgain.next._tag === 'LandAgain'
-            ? ((options.transientWaits ?? TRANSIENT_WAITS)[landAgain.next.retry - 1] ?? '0 millis')
+            ? ((options.stepRedoWaits ?? BOUNDS.stepRedoWaits)[landAgain.next.retry - 1] ?? '0 millis')
             : null
         const reply: JudgeReply | { readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string } } =
           landAgain !== undefined && landAgain.next._tag === 'LandAgain'
             ? {
                 _tag: 'Selected',
                 candidate: 'land-again',
-                why: `origin did not answer the land; landing again from ${onSha} after ${Duration.format(Duration.fromInputUnsafe(landWait ?? '0 millis'))}, retry ${landAgain.next.retry} of ${TRANSIENT_RETRIES_LIMIT}`,
+                why: `origin did not answer the land; landing again from ${onSha} after ${Duration.format(Duration.fromInputUnsafe(landWait ?? '0 millis'))}, retry ${landAgain.next.retry} of ${BOUNDS.landingRetries}`,
               }
             : rerunNext !== null &&
                 rerunCandidate !== undefined &&
@@ -1711,8 +1714,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                   candidate: rerunCandidate.id,
                   why:
                     rerunNext.step === 'prepared'
-                      ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${TRANSIENT_RETRIES_LIMIT}`
-                      : `the ${rerunNext.step} answer could not be read; asking the same agent again, retry ${rerunNext.retry} of ${TRANSIENT_RETRIES_LIMIT}`,
+                      ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`
+                      : `the ${rerunNext.step} answer could not be read; asking the same agent again, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`,
                 }
               : yield* replyFor(offer, shown, options.judge)
         if ('neverStarted' in reply) {
@@ -1872,7 +1875,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           case 'LandAgain': {
             // The route is recorded, so the log says what is being waited for; then the wait. Nothing
             // moves: not `onSha`, not the reviewed head, not the lap, and nothing is built or reviewed again.
-            transientRetriesSpent = next.retry
+            landingRetriesSpent = next.retry
             landedAgainThisPass.times += 1
             landedAgainThisPass.minutes += Duration.toMillis(Duration.fromInputUnsafe(landWait ?? '0 millis')) / 60_000
             yield* Effect.sleep(landWait ?? '0 millis')
@@ -1881,7 +1884,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           }
           case 'RerunStep': {
             // Nothing moves but the count and the step: not `onSha`, the lap, the rounds or the review's head.
-            transientRetriesSpent = next.retry
+            stepRedosSpent = next.retry
             if (next.step === 'prepared') {
               // The whole step again, from its first action: no `resumedAfter`, so an install that
               // passed is run again and a step that is not idempotent is the recipe's to fix.
@@ -2030,12 +2033,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       if (firstAccountVisit && accountRerun.askedAgain === true) askingAgain = at
       const visitContext: ActionContext =
         rerun !== null
-          ? { ...rerun.context, rerun: transientRetriesSpent + accountRerunsSpent }
+          ? { ...rerun.context, rerun: stepRedosSpent + landingRetriesSpent + accountRerunsSpent }
           : accountRerun !== undefined && at === options.from?.step && !steps.some((visit) => visit.step === at)
             ? {
                 ...contextFor(),
                 round: accountRerun.for.round,
-                rerun: transientRetriesSpent + accountRerun.accountReruns,
+                rerun: stepRedosSpent + landingRetriesSpent + accountRerun.accountReruns,
                 recorded: { name: accountRerun.for.name, prompt: accountRerun.prompt },
               }
             : contextFor()
@@ -2214,13 +2217,13 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // that dies during it has spent the retry.
         const reason = next.reason
         if (reason._tag === 'AgentCrashed' && (at === 'design' || at === 'implement' || at === 'review')) {
-          const again = rerunInPlace(reason.cause, reason.detail, transientRetriesSpent)
+          const again = rerunInPlace(reason.cause, reason.detail, stepRedosSpent)
           if (again !== null) {
-            transientRetriesSpent += 1
+            stepRedosSpent += 1
             rerun = rerunOf({ context: visitContext, reached: visitedBefore, results: reached.results })
             // The crash's rerun is the same arrival: an ask-again already spent on it is not given back.
             askingAgain = arrivedAskedAgain ? at : null
-            yield* emitRerunInPlace(at, transientRetriesSpent, reason.detail, again.wait)
+            yield* emitRerunInPlace(at, stepRedosSpent, reason.detail, again.wait)
             yield* Effect.sleep(again.wait)
             continue
           }

@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Action, StepOutcome } from '../src/index.ts'
 import {
-  designAsksOf,
+  personAsksOf,
   boardFactOf,
   findingsRaisedOf,
   releaseCauseOf,
@@ -122,7 +122,7 @@ describe('waitsOf', () => {
   })
 })
 
-describe('designAsksOf', () => {
+describe('personAsksOf', () => {
   it('counts the design AgentQuestion waits, and not implement or any other', () => {
     const item = makeStream('ticket-1')
     const events = [
@@ -140,7 +140,7 @@ describe('designAsksOf', () => {
       } as never),
       ...aWait(item, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }),
     ]
-    expect(designAsksOf(events)).toBe(1)
+    expect(personAsksOf(events)).toBe(1)
   })
 })
 

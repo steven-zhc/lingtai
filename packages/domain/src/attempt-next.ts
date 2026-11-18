@@ -90,7 +90,7 @@ export type MergeBase = z.infer<typeof MergeBase>
 /**
  * The landing run again from the head the steps already passed, after the lane's
  * own tries ended `unreachable` or `remote-error` (#1221; 0108 §15). `retry` is
- * the count this makes, against `TRANSIENT_RETRIES_LIMIT`. It moves no `onSha`
+ * the count this makes, against `landingRetries`. It moves no `onSha`
  * and spends no round: a rule's move, never offered to a chooser.
  */
 export const LandAgain = z.object({
@@ -102,7 +102,7 @@ export type LandAgain = z.infer<typeof LandAgain>
 /**
  * A step run again in place, chosen by a rule (#1224; 0108 §18): `rerun-setup` for a `prepared` an
  * install's registry refused, `ask-again` for an agent whose answer could not be read. `retry` is
- * the count this makes, against `TRANSIENT_RETRIES_LIMIT`; it spends no round and no restart, and
+ * the count this makes, against `stepRedos`; it spends no round and no restart, and
  * is never offered to a chooser.
  */
 export const RerunStep = z.object({
@@ -136,7 +136,10 @@ export type Spent = {
   restarts: number
   baseMerges?: number
   conflictRounds?: number
-  transientRetries?: number
+  /** Redos of a step (`RerunStep` routes, `StepRerunInPlace`), against `stepRedos`. */
+  stepRedos?: number
+  /** Landings again (`LandAgain` routes), against `landingRetries`; never spends a step redo. */
+  landingRetries?: number
 }
 
 type NextOfResult = Extract<AttemptNext, { _tag: 'Advance' | 'Propose' | 'WaitOnPerson' | 'Requeued' | 'Landed' }>
@@ -498,8 +501,9 @@ export function spentAfter(spent: Spent, next: AttemptNext): Spent {
     case 'MergeBase':
       return { ...spent, baseMerges: next.merge }
     case 'LandAgain':
+      return { ...spent, landingRetries: next.retry }
     case 'RerunStep':
-      return { ...spent, transientRetries: next.retry }
+      return { ...spent, stepRedos: next.retry }
     case 'Requeued':
       return next.cause._tag === 'Restart' ? { ...spent, rounds: 0, restarts: next.cause.restart } : spent
     case 'Advance':

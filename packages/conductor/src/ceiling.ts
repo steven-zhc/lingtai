@@ -1,13 +1,13 @@
 /**
  * `attemptCeiling`, alone in a file with nothing to import but arithmetic and
- * `TRANSIENT_RETRIES_LIMIT`.
+ * `BOUNDS.stepRedos`.
  *
  * It was in `filter.ts`, beside a GitHub client and the environment — the same
  * sentence `lingtai status` and `lingtai add` print, called rather than
  * rewritten. It imports `@lingtai/domain` since #1200, so it is for server code
  * only: no `"use client"` file may import it.
  */
-import { TRANSIENT_RETRIES_LIMIT } from '@lingtai/domain'
+import { BOUNDS } from '@lingtai/domain'
 import { formatDuration, formatTurns, type TurnLimit } from '@lingtai/recipe/duration'
 
 /**
@@ -16,7 +16,7 @@ import { formatDuration, formatTurns, type TurnLimit } from '@lingtai/recipe/dur
  * [0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
  *
  * **The product is the fact, and nothing was computing it.** `wall` bounds one
- * agent run; an attempt buys up to `2 × rounds + 1 + TRANSIENT_RETRIES_LIMIT`
+ * agent run; an attempt buys up to `2 × rounds + 1 + stepRedos`
  * of them (the work, `rounds` fix rounds, as many conflict rounds, and the
  * reruns — 0108 §8, #1200); a ticket buys up to `restarts + 1` attempts. On 2026-09-10 the drain told an operator it would wait
  * at most one `wall` — true when that sentence was written, false by the time
@@ -81,8 +81,8 @@ export function attemptCeiling(limits: {
       ? `${limits.wall} and ${formatTurns(limits.turns)}`
       : `${limits.wall}, ${formatTurns(limits.turns)} and $${limits.usd}`
   // 0108 §8: the work, a round back for each `rounds`, as many again for merge conflicts, and the reruns.
-  const perAttempt = 2 * limits.rounds + 1 + TRANSIENT_RETRIES_LIMIT
-  const reruns = `up to ${TRANSIENT_RETRIES_LIMIT} reruns of a run an API error cut off`
+  const perAttempt = 2 * limits.rounds + 1 + BOUNDS.stepRedos
+  const reruns = `up to ${BOUNDS.stepRedos} reruns of a run an API error cut off`
   const pass =
     `up to ${perAttempt} agent runs — the work, ` +
     (limits.rounds === 0

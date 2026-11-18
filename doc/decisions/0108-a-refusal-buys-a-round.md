@@ -556,15 +556,15 @@ fixes the actions, their bounds and the endings that router works inside.
 
 Everything in this rewrite is decided and is to be built in 0.15.0. What is
 built today is the 2026-11-13 state: one `rounds` for fixes and conflicts,
-`restarts`, `TRANSIENT_RETRIES_LIMIT` shared by reruns and landings, a rerun
+`restarts`, `stepRedos` and `landingRetries` as two counts, a rerun
 that resumes at the cut-off action (#1201), WIP carried as a diff to the next
 attempt (#1170), triage that only advises, and a split a person approves.
 What changes:
 
 - **Names and bounds (§8).** The recipe's grouped `limits` and the refusal of
   the old names; `refusalFixes` and `conflictResolutions` apart;
-  `landingRetries` apart from `stepRedos`; `personAsks` replacing
-  `designAsks` (2); `ticketSplits` and `triageRetries`; `attemptCeiling`'s
+  `ticketSplits` and `triageRetries`; `personAsks` counting `implement`'s
+  `Unclear` and triage's questions too, not only `design`'s; `attemptCeiling`'s
   new product and its per-step list.
 - **The renames on the log.** `StepRerunInPlace` → `StepRedone`;
   `ReleaseCause.Restart` → `NewAttempt`; the route's `FixRound` and

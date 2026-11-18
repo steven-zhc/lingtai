@@ -75,11 +75,11 @@ export const RefusalReason = z.enum([
   'base-checked-out',
   // Git could not reach origin for the fetch or push, after the lane's own tries —
   // nothing about the branch was judged, and a rule re-runs the land first, up to
-  // `TRANSIENT_RETRIES_LIMIT` times (#1221), before approve re-runs only the land (#1029).
+  // `landingRetries` times (#1221), before approve re-runs only the land (#1029).
   'unreachable',
   // GitHub answered the push with a 5xx and kept answering it through the lane's own
   // tries — nothing about the branch or the base was judged, and a rule re-runs the land first, up to
-  // `TRANSIENT_RETRIES_LIMIT` times (#1221), before approve re-runs only the land (#1125).
+  // `landingRetries` times (#1221), before approve re-runs only the land (#1125).
   'remote-error',
   // The branch on origin is not the commit the steps passed on — the lane refuses before
   // merging anything, and never retries it: a person requeues from the base.

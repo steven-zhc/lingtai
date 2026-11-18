@@ -181,7 +181,7 @@ export type Account = z.infer<typeof Account>
  *   `unreachable`    git could not reach origin for the lane's fetch or push, or
  *                    for the branch push before it, after three tries (#1029).
  *                    Nothing was judged; a rule re-runs the land first, up to
- *                    `TRANSIENT_RETRIES_LIMIT` times (#1221), and then approve
+ *                    `landingRetries` times (#1221), and then approve
  *                    re-runs only the land.
  *
  *   `remote-error`   GitHub answered the branch push, the base push or the
