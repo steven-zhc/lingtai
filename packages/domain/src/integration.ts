@@ -153,7 +153,7 @@ export function laneIsBusy(state: IntegrationState): boolean {
  * What the project's base is, as the log of `int-{project}-{base}` says it (#1208, 0108 §13): the newest
  * `BaseChecked`, whatever its command or boundary. Red is a fact about a commit, so it carries `baseSha`.
  *
- * `builds` is the recipe's `build` list as plain data, because a record's `command` is the `run:` text and
+ * `builds` reads the recipe's `build` list as plain data (only when there is a red to match), because a record's `command` is the `run:` text and
  * `baseIsRed` is asked for an action's *name*. A red whose command no `run:` action builds any more is
  * `not-built`, which is not red: nothing could be asked about it.
  */
@@ -172,13 +172,13 @@ export type BaseState =
 
 export function baseStateOf(
   events: readonly Envelope[],
-  builds: readonly { readonly name: string; readonly run: string }[],
+  builds: () => readonly { readonly name: string; readonly run: string }[],
 ): BaseState {
   const newest = events.findLast((event) => event.type === 'BaseChecked')
   if (newest === undefined) return { notRed: 'none' }
   const d = newest.data as PayloadOf<'BaseChecked'>
   if (d.ok) return { notRed: 'green' }
-  const action = builds.find((build) => build.run === d.command)
+  const action = builds().find((build) => build.run === d.command)
   if (action === undefined) return { notRed: 'not-built' }
   return {
     red: {

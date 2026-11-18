@@ -73,16 +73,20 @@ const red = {
 }
 
 describe('a build refusal the base shares', () => {
-  it('holds for a person with the base evidence, buys no round, and visits implement once', async () => {
+  it('releases the ticket keeping its head, buys no round, waits on nobody, and visits implement once', async () => {
     const baseIsRed = vi.fn(async () => red)
     const result = await run({ rounds: 2 }, { baseIsRed })
     expect(baseIsRed).toHaveBeenCalledWith({ action: 'tests', mergedOnto: null })
-    expect(result.end).toMatchObject({
-      _tag: 'WaitOnPerson',
-      reason: {
-        _tag: 'ProposedEscalated',
-        proposal: { _tag: 'BuildRed' },
-        because: { _tag: 'BaseRed', evidence: 'base: 58 errors' },
+    expect(result.end).toEqual({
+      _tag: 'Requeued',
+      cause: {
+        _tag: 'BaseRed',
+        runId: 'pass-1',
+        headSha: 'c0ffee0',
+        base: 'main',
+        baseSha: SHA,
+        command: 'pnpm test',
+        boundary: 'unsandboxed',
       },
     })
     expect(result.steps.filter((s) => s.step === 'implement')).toHaveLength(1)
@@ -155,8 +159,27 @@ describe('a build refusal the base shares', () => {
     const first = await run({ rounds: 2 }, { baseIsRed })
     const second = await run({ rounds: 2 }, { baseIsRed })
     for (const result of [first, second]) {
-      expect(result.end).toMatchObject({ reason: { because: { _tag: 'BaseRed' } } })
+      expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'BaseRed' } })
     }
     expect(exits).toHaveBeenCalledTimes(2)
+  })
+
+  describe('asked first, when the project was red at claim (#1208)', () => {
+    it('releases BaseRed with no agent run and no step past admit', async () => {
+      const baseIsRed = vi.fn(async () => red)
+      const result = await run({ rounds: 2 }, { baseIsRed, baseFirst: { action: 'tests' } })
+      expect(baseIsRed).toHaveBeenCalledTimes(1)
+      expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'BaseRed', headSha: 'abc1234def' } })
+      expect(result.steps.map((s) => s.step)).not.toContain('implement')
+      expect(result.steps.map((s) => s.step)).not.toContain('prepared')
+    })
+
+    it.each([
+      ['green', { notRed: 'green' }],
+      ['unknown', { notRed: 'could not be checked' }],
+    ])('goes on to implement when the base is %s', async (_name, answer) => {
+      const result = await run({ rounds: 0 }, { baseIsRed: async () => answer, baseFirst: { action: 'tests' } })
+      expect(result.steps.map((s) => s.step)).toContain('implement')
+    })
   })
 })

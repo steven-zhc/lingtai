@@ -39,7 +39,7 @@ export const baseStateEffect = (options: {
       }),
     )
     if (Result.isFailure(read)) return { unread: read.failure }
-    return baseStateOf(read.success, buildRunsOf(options.recipe))
+    return baseStateOf(read.success, () => buildRunsOf(options.recipe))
   })
 
 /** What the look found about the project's base. */

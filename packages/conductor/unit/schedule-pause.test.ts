@@ -1,5 +1,6 @@
 import type { Runtime } from '@lingtai/agent'
 import type { ProjectState } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 /**
  * A pass that is asked whether it is paused, and is (#166).
  *
@@ -45,6 +46,7 @@ vi.mock('../src/conduct.ts', () => ({
   },
 }))
 vi.mock('@lingtai/recipe/settings', () => ({
+  baseOf: () => 'main',
   queueOf: () => ({ kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'both' } }),
   kindsOf: () => ['bug'],
   backoffOf: () => '1h',
@@ -60,6 +62,7 @@ describe('runQueue under a pause', () => {
         client: untouched<GitHubClient>('client'),
         runtime: untouched<Runtime>('runtime'),
         hookBinary: '/nonexistent',
+        store: createMemoryEventStore(),
         prompt: 'p',
         recipe: untouched<Recipe>('recipe'),
         paused: Effect.sync(() => {
@@ -104,6 +107,7 @@ describe('runQueue under a pause', () => {
         client: client as never,
         runtime: untouched<Runtime>('runtime'),
         hookBinary: '/nonexistent',
+        store: createMemoryEventStore(),
         prompt: 'p',
         recipe: {} as Recipe,
         paused: Effect.sync(() => {

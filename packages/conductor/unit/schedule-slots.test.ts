@@ -6,6 +6,7 @@
  */
 import type { Runtime } from '@lingtai/agent'
 import type { ProjectState } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect, Layer } from 'effect'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -47,6 +48,7 @@ vi.mock('../src/conduct.ts', () => ({
 }))
 
 vi.mock('@lingtai/recipe/settings', () => ({
+  baseOf: () => 'main',
   queueOf: () => ({ kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'both' } }),
   kindsOf: () => ['bug'],
   backoffOf: () => '1h',
@@ -82,6 +84,7 @@ async function look(slots: ReturnType<typeof createSlots>, limit: number, lines:
       client: client as never,
       runtime: {} as Runtime,
       hookBinary: '/nonexistent',
+      store: createMemoryEventStore(),
       prompt: 'p',
       recipe: {} as Recipe,
       slots: { set: slots, limit, started: (p) => handed.push(p) },
@@ -172,6 +175,7 @@ describe('runQueue with slots', () => {
         client: client as never,
         runtime: {} as Runtime,
         hookBinary: '/nonexistent',
+        store: createMemoryEventStore(),
         prompt: 'p',
         recipe: {} as Recipe,
         max: 2,
@@ -201,6 +205,7 @@ describe('runQueue with slots', () => {
         client: client as never,
         runtime: {} as Runtime,
         hookBinary: '/nonexistent',
+        store: createMemoryEventStore(),
         prompt: 'p',
         recipe: {} as Recipe,
         slots: { set: slots, limit: 2, started: (p) => handed.push(p) },
