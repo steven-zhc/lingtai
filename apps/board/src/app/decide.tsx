@@ -32,7 +32,8 @@ import {
   runNow,
   sendAttempt,
 } from './actions.ts'
-import { askedOf, TriageChoices, useTriageDraft } from './triage-picks.tsx'
+import { askedOf } from './asked-of.ts'
+import { TriageChoices, useTriageDraft } from './triage-picks.tsx'
 
 /**
  * The recommended move, as the diagnosis's own recommendation named it.

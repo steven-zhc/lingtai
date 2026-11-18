@@ -399,6 +399,7 @@ function QueuedPanel({
 import type { RunningPanelView } from '@/lib/running'
 import { presentCause } from '@/lib/triage-cause'
 
+import { askedOf } from './asked-of.ts'
 import { codeSpans } from './code-spans.tsx'
 import {
   Close,
@@ -422,7 +423,7 @@ import { FollowedLog, RawRunLog, SaidLast } from './run-log.tsx'
 import { Since } from './since'
 import { Skeleton } from './skeleton.tsx'
 import { SplitPlan, type SplitControls } from './split-plan.tsx'
-import { askedOf, ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
+import { ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
 
 const MAX_TICKET_CELL = 600
 
