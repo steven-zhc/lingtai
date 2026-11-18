@@ -1637,7 +1637,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   overflow-wrap: anywhere;
 }
 .sresolution[hidden] { display: none; }
-.sresolution[data-resolution='EditBodyAndRequeue']:has(.sresolutionaction:empty) { display: none; }
+.sresolution[data-resolution='EditBodyAndStartNewAttempt']:has(.sresolutionaction:empty) { display: none; }
 .sresolution--draft:has(.sresolutionaction:empty) { display: none; }
 .sresolution--recommended { grid-column: span 2; border: 2px solid var(--accent); }
 .sresolutiongrid:has(> .sresolution--recommended:not([hidden])) {
@@ -1685,13 +1685,13 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   white-space: normal;
 }
 .sresolutionaction .btn.pri,
-.sresolution--recommended[data-resolution='EditBodyAndRequeue'] .sresolutionaction .btn {
+.sresolution--recommended[data-resolution='EditBodyAndStartNewAttempt'] .sresolutionaction .btn {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--surface);
 }
 .sresolutionaction .btn.pri:hover:not(:disabled),
-.sresolution--recommended[data-resolution='EditBodyAndRequeue'] .sresolutionaction .btn:hover:not(:disabled) {
+.sresolution--recommended[data-resolution='EditBodyAndStartNewAttempt'] .sresolutionaction .btn:hover:not(:disabled) {
   background: var(--accent-ink);
   border-color: var(--accent-ink);
   color: var(--surface);

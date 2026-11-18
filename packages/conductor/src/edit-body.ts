@@ -46,7 +46,7 @@ export interface EditBodyAndRequeueOptions extends SnapshotReadOptions {
 
 /**
  * Writing a wait's answer into the body, then resolving the wait as
- * `EditBodyAndRequeue` (#422, 0118 §6/§11).
+ * `EditBodyAndStartNewAttempt` (#422, 0118 §6/§11).
  *
  * One decision at a time, the same lock `approve()` and `requeue()` take
  * (`decidingEffect`, `deciding.ts`) — see their own comments for why the log cannot
@@ -97,13 +97,13 @@ export function editBodyAndRequeueHoldingEffect(
       }
     }
     const reason = item.lifecycle.reason
-    if (!allowedResolutions(reason).includes('EditBodyAndRequeue')) {
+    if (!allowedResolutions(reason).includes('EditBodyAndStartNewAttempt')) {
       return {
         ok: false,
         ticketId,
         reason: 'not-offered',
         written: false,
-        detail: `EditBodyAndRequeue is not offered for ${describeReason(reason)} — nothing was resolved.`,
+        detail: `EditBodyAndStartNewAttempt is not offered for ${describeReason(reason)} — nothing was resolved.`,
       }
     }
 
@@ -117,7 +117,7 @@ export function editBodyAndRequeueHoldingEffect(
       {
         ticketId,
         waitId: options.waitId,
-        resolution: { _tag: 'EditBodyAndRequeue' },
+        resolution: { _tag: 'EditBodyAndStartNewAttempt' },
         writtenSection: options.text,
         by: options.by,
         // A note the person typed wins; otherwise it is composed from the text

@@ -173,7 +173,7 @@ describe('resolveWait', () => {
           ticketId,
           issue: 539,
           waitId,
-          resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+          resolution: { _tag: 'FixRefusal', onSha: '', ref: '' },
           by: 'human:steven',
           client: fakeClient(remote),
           store: selectedStore,
@@ -208,7 +208,7 @@ describe('resolveWait', () => {
           ticketId,
           issue: 539,
           waitId,
-          resolution: { _tag: 'GrantFixRound', onSha: SHA2, ref: '' },
+          resolution: { _tag: 'FixRefusal', onSha: SHA2, ref: '' },
           by: 'human:steven',
           client: fakeClient(SHA),
           store,
@@ -225,7 +225,7 @@ describe('resolveWait', () => {
     }
     expect(await grant(SHA, unschedulable)).toMatchObject({ ok: true, ticketId, unscheduled: expect.any(String) })
     expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toEqual({
-      _tag: 'GrantFixRound',
+      _tag: 'FixRefusal',
       onSha: SHA,
       ref: 'agent/539',
     })
@@ -241,7 +241,7 @@ describe('resolveWait', () => {
           ticketId,
           issue: 539,
           waitId,
-          resolution: { _tag: 'GrantFixRound', onSha: SHA2, ref: '' },
+          resolution: { _tag: 'FixRefusal', onSha: SHA2, ref: '' },
           by: 'human:steven',
           client: fakeClient(SHA),
           store,
@@ -291,7 +291,7 @@ describe('resolveWait', () => {
             ticketId,
             issue,
             waitId,
-            resolution: { _tag: 'GrantFixRound', onSha, ref: '' },
+            resolution: { _tag: 'FixRefusal', onSha, ref: '' },
             by: 'human:steven',
             client: fakeClient(HEAD),
             store: selectedStore,
@@ -306,7 +306,7 @@ describe('resolveWait', () => {
       const { store, ticketId, grant } = await waiting(668)
       expect(await grant(given)).toEqual({ ok: true, ticketId })
       expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toEqual({
-        _tag: 'GrantFixRound',
+        _tag: 'FixRefusal',
         onSha: HEAD,
         ref: 'agent/668',
       })
@@ -381,7 +381,7 @@ describe('resolveWait', () => {
         ticketId,
         issue: 540,
         waitId,
-        resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+        resolution: { _tag: 'FixRefusal', onSha: '', ref: '' },
         by: 'human:steven',
         client: fakeClient(SHA),
         store,
@@ -397,7 +397,7 @@ describe('resolveWait', () => {
   })
 
   describe("a person's requeue releases the held run ByPerson (0118 §7, #578)", () => {
-    async function blockedAfterOneRestart(resolution: 'Requeue' | 'EditBodyAndRequeue') {
+    async function blockedAfterOneRestart(resolution: 'StartNewAttempt' | 'EditBodyAndStartNewAttempt') {
       const store = createMemoryEventStore()
       const ticketId = ticketStream(PROJECT, 578)
       const item = makeStream(ticketId)
@@ -420,7 +420,7 @@ describe('resolveWait', () => {
       return { store, ticketId, waitId, before, result }
     }
 
-    it.each(['Requeue', 'EditBodyAndRequeue'] as const)(
+    it.each(['StartNewAttempt', 'EditBodyAndStartNewAttempt'] as const)(
       '%s appends the release and leaves restarts alone',
       async (tag) => {
         const { store, ticketId, waitId, before, result } = await blockedAfterOneRestart(tag)
@@ -448,7 +448,7 @@ describe('resolveWait', () => {
       ])
 
       const result = await resolveWaitHolding(
-        { ticketId, issue: 579, waitId, resolution: { _tag: 'Requeue' }, by: 'human:steven', store },
+        { ticketId, issue: 579, waitId, resolution: { _tag: 'StartNewAttempt' }, by: 'human:steven', store },
         ticketId,
       )
 
@@ -476,7 +476,7 @@ describe('resolveWait', () => {
         ticketId: ticketStream(PROJECT, 1),
         issue: 1,
         waitId: aWaitId(),
-        resolution: { _tag: 'Requeue' },
+        resolution: { _tag: 'StartNewAttempt' },
         by: 'human:steven',
         store,
       },
@@ -494,7 +494,7 @@ describe('resolveWait', () => {
         ticketId: ticketStream(PROJECT, 2),
         issue: 2,
         waitId: aWaitId(),
-        resolution: { _tag: 'Requeue' },
+        resolution: { _tag: 'StartNewAttempt' },
         by: 'human:steven',
         store,
       },
@@ -1245,7 +1245,7 @@ describe('resolveWait', () => {
       {
         type: 'WaitResolved',
         actor: 'human:someone-else',
-        data: { waitId, by: 'human:someone-else', resolution: { _tag: 'Requeue' }, note: '' },
+        data: { waitId, by: 'human:someone-else', resolution: { _tag: 'StartNewAttempt' }, note: '' },
       },
     ])
 
@@ -1254,7 +1254,7 @@ describe('resolveWait', () => {
         ticketId: ticketStream(PROJECT, 11),
         issue: 11,
         waitId,
-        resolution: { _tag: 'EditBodyAndRequeue' },
+        resolution: { _tag: 'EditBodyAndStartNewAttempt' },
         by: 'human:steven',
         store,
       },

@@ -1,5 +1,5 @@
 /**
- * #921: `GrantFixRound` and `Requeue` write the wait's triage answers into the
+ * #921: `FixRefusal` and `StartNewAttempt` write the wait's triage answers into the
  * ticket's body before they resolve it. `createMemoryEventStore()` and
  * `memoryTickets()` — no filesystem, no network (0060 §1).
  */
@@ -33,7 +33,7 @@ async function seed(store: EventStore, streamId: string, events: readonly Envelo
   await store.append(streamId, (await store.read(streamId)).length, events)
 }
 
-/** A ticket blocked on a proposed-escalated wait (offers GrantFixRound, Requeue, EditBodyAndRequeue) with a published head. */
+/** A ticket blocked on a proposed-escalated wait (offers FixRefusal, Requeue, EditBodyAndRequeue) with a published head. */
 async function blocked(cause: object | null) {
   const store = createMemoryEventStore()
   const tickets = memoryTickets()
@@ -84,7 +84,7 @@ async function blocked(cause: object | null) {
         ticketId,
         issue: ISSUE,
         waitId,
-        resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+        resolution: { _tag: 'FixRefusal', onSha: '', ref: '' },
         by: 'human:steven',
         client: { refSha: async () => SHA },
         store: s,
@@ -97,7 +97,7 @@ async function blocked(cause: object | null) {
 
 const types = async (store: EventStore, id: string) => (await store.read(id)).map((e) => e.type)
 
-describe('GrantFixRound writes the triage answers first (#921)', () => {
+describe('FixRefusal writes the triage answers first (#921)', () => {
   it('writes the section, then resolves — at the version the write left behind', async () => {
     const { store, tickets, ticketId, waitId, grant } = await blocked(undecided)
     expect(await grant({ github: tickets })).toMatchObject({ ok: true })
@@ -105,7 +105,7 @@ describe('GrantFixRound writes the triage answers first (#921)', () => {
     expect(body).toContain('which helper? — use ora')
     const seen = await types(store, ticketId)
     expect(seen.lastIndexOf('IssueUpdated')).toBeLessThan(seen.indexOf('WaitResolved'))
-    expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toMatchObject({ _tag: 'GrantFixRound' })
+    expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toMatchObject({ _tag: 'FixRefusal' })
     expect(waitId).toBeTruthy()
   })
 
@@ -255,7 +255,7 @@ describe('WaitResolved carries what was written (#924)', () => {
   const resolvedData = async (store: EventStore, id: string) =>
     (await store.read(id)).find((e) => e.type === 'WaitResolved')?.data as Record<string, unknown>
 
-  it('a GrantFixRound records the section and the picks it wrote', async () => {
+  it('a FixRefusal records the section and the picks it wrote', async () => {
     const { store, tickets, ticketId, grant } = await blocked(undecided)
     await grant({ github: tickets, picks: { 0: 'b' } })
     const data = await resolvedData(store, ticketId)

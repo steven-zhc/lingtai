@@ -606,13 +606,13 @@ describe('conflictLines (#652)', () => {
   })
 
   it('recommends triage’s resolution when the saved head is gone, as the task page does', () => {
-    expect(conflictLines(reason, triage(2), false)).toEqual({ rec: 'recommends Requeue — why', advised: null })
+    expect(conflictLines(reason, triage(2), false)).toEqual({ rec: 'recommends StartNewAttempt — why', advised: null })
     expect(conflictLines(reason, triage(2), true)?.rec).toContain('recommends a fix round')
   })
 
   it('says the saved head could not be checked, and recommends no fix round, when the read failed', () => {
     const c = conflictLines(reason, triage(2), { unreadable: 'rate limited' })
-    expect(c?.rec).toBe('recommends Requeue — why')
+    expect(c?.rec).toBe('recommends StartNewAttempt — why')
     expect(c?.advised).toContain('saved head could not be checked (rate limited)')
   })
 
@@ -661,7 +661,7 @@ describe('waitDetail (#656)', () => {
   })
 
   it('names the recommended resolution as a field, for --json, without parsing the prose', () => {
-    expect(conflictRecommendation(disagrees, triage(), true)).toBe('GrantFixRound')
+    expect(conflictRecommendation(disagrees, triage(), true)).toBe('FixRefusal')
     expect(conflictRecommendation(disagrees, undefined, true)).toBeNull()
   })
 

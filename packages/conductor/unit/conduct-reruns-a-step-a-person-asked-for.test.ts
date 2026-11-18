@@ -1,5 +1,5 @@
 /**
- * **A person's `RerunStep` continues the same attempt at the step that stopped** (#1218): a reviewer that
+ * **A person's `RedoStep` continues the same attempt at the step that stopped** (#1218): a reviewer that
  * crashed for a cause outside the diff is run again, in the same run, on the saved head, with the prompt it was
  * first given, under a dispatch id of its own — and no round, restart or fixer is spent on it.
  *
@@ -79,7 +79,7 @@ describe('a step a person asked to run again', () => {
           ticketId,
           issue: 7,
           waitId: wait.waitId,
-          resolution: { _tag: 'RerunStep', onSha: 'f'.repeat(40), ref: null },
+          resolution: { _tag: 'RedoStep', onSha: 'f'.repeat(40), ref: null },
           by: 'human:steven',
           client: { refSha: async () => head },
           store,
@@ -96,7 +96,7 @@ describe('a step a person asked to run again', () => {
           ticketId,
           issue: 7,
           waitId: wait.waitId,
-          resolution: { _tag: 'RerunStep', onSha: '', ref: null },
+          resolution: { _tag: 'RedoStep', onSha: '', ref: null },
           by: 'human:steven',
           client: { refSha: async () => head },
           store,
@@ -114,7 +114,7 @@ describe('a step a person asked to run again', () => {
           ticketId,
           issue: 7,
           waitId: wait.waitId,
-          resolution: { _tag: 'RerunStep', onSha: '', ref: null },
+          resolution: { _tag: 'RedoStep', onSha: '', ref: null },
           by: 'human:steven',
           client: { refSha: async () => head },
           store,

@@ -657,9 +657,9 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
         then: null,
       }
       // A question withdrawn was never answered (an `OwnQuestion` resolved by
-      // `Requeue` rather than `AnswerQuestion`), so there is nothing to keep:
+      // `StartNewAttempt` rather than `AnswerQuestion`), so there is nothing to keep:
       // the item is back in the backlog and no attempt is told anything.
-      if (d.resolution._tag === 'Requeue' && block?.reason._tag === 'OwnQuestion') {
+      if (d.resolution._tag === 'StartNewAttempt' && block?.reason._tag === 'OwnQuestion') {
         return { ...state, ...at, lastMove, lifecycle: { status: 'backlog' } }
       }
       // **`Approve` moves to `approved`** (#465) — a continuation is owed,
@@ -667,9 +667,7 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
       // `allowedResolutions` offers `Approve` for no `WaitReason` that lacks
       // a run.
       if (
-        (d.resolution._tag === 'Approve' ||
-          d.resolution._tag === 'GrantFixRound' ||
-          d.resolution._tag === 'RerunStep') &&
+        (d.resolution._tag === 'Approve' || d.resolution._tag === 'FixRefusal' || d.resolution._tag === 'RedoStep') &&
         block !== null
       ) {
         return {
@@ -681,7 +679,7 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
             runId: block.runId!,
             waitId: block.waitId,
             onSha: d.resolution.onSha,
-            ...(d.resolution._tag === 'GrantFixRound' ? { grantRef: d.resolution.ref } : {}),
+            ...(d.resolution._tag === 'FixRefusal' ? { grantRef: d.resolution.ref } : {}),
           },
         }
       }
@@ -690,8 +688,8 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
       // the resolutions that are themselves a requeue move the lifecycle
       // here.
       if (
-        d.resolution._tag !== 'Requeue' &&
-        d.resolution._tag !== 'EditBodyAndRequeue' &&
+        d.resolution._tag !== 'StartNewAttempt' &&
+        d.resolution._tag !== 'EditBodyAndStartNewAttempt' &&
         d.resolution._tag !== 'AnswerQuestion' &&
         d.resolution._tag !== 'Split'
       ) {
@@ -932,7 +930,13 @@ export type ReleaseInput =
   | { by: 'run'; runId: string; reason: string; cause: ReleaseCause | null }
   | { by: 'dead-worker'; mine: string; lock: string }
   /** A person's requeue, edit or split gives the held run's claim up (0118 §7): the actor is the person. */
-  | { by: 'person'; person: string; runId: string; waitId: WaitId; how: 'Requeue' | 'EditBodyAndRequeue' | 'Split' }
+  | {
+      by: 'person'
+      person: string
+      runId: string
+      waitId: WaitId
+      how: 'StartNewAttempt' | 'EditBodyAndStartNewAttempt' | 'Split'
+    }
 
 /** A release the ticket will not make: the claim moved on between the scan and the write. */
 export type ReleaseDecline = { reason: 'moved-on'; status: string; worker?: string }
@@ -946,7 +950,11 @@ export function releaseTransition(
     data = parsePayload('TicketReleased', { runId: input.runId, reason: input.reason, cause: input.cause })
   } else if (input.by === 'person') {
     const how =
-      input.how === 'EditBodyAndRequeue' ? ' with an edited body' : input.how === 'Split' ? ' after a split' : ''
+      input.how === 'EditBodyAndStartNewAttempt'
+        ? ' with an edited body'
+        : input.how === 'Split'
+          ? ' after a split'
+          : ''
     data = parsePayload('TicketReleased', {
       runId: input.runId,
       reason: `Requeued by ${input.person}${how}.`,
@@ -1013,10 +1021,10 @@ export function resolveWaitTransition(
   const life = state.lifecycle
   const { resolution } = input
   if (
-    (resolution._tag === 'Approve' || resolution._tag === 'GrantFixRound') &&
+    (resolution._tag === 'Approve' || resolution._tag === 'FixRefusal') &&
     life.status === 'approved' &&
     life.waitId === input.waitId &&
-    (resolution._tag === 'GrantFixRound'
+    (resolution._tag === 'FixRefusal'
       ? life.grantRef !== undefined && (!resolution.onSha || matchHead(resolution.onSha, life.onSha ?? '') === 'match')
       : life.onSha === resolution.onSha)
   ) {
@@ -1024,10 +1032,10 @@ export function resolveWaitTransition(
   }
   // A rerun whose continuation was never scheduled is asked for again the same way (#1218).
   if (
-    resolution._tag === 'RerunStep' &&
+    resolution._tag === 'RedoStep' &&
     life.status === 'approved' &&
     life.waitId === input.waitId &&
-    state.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution._tag === 'RerunStep' &&
+    state.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution._tag === 'RedoStep' &&
     (!resolution.onSha || matchHead(resolution.onSha, life.onSha ?? '') === 'match')
   ) {
     return { ok: true, kind: 'repeat', runId: life.runId }
@@ -1085,7 +1093,9 @@ export function resolvedEvents(
   })
   if (
     block.runId !== null &&
-    (resolution._tag === 'Requeue' || resolution._tag === 'EditBodyAndRequeue' || resolution._tag === 'Split')
+    (resolution._tag === 'StartNewAttempt' ||
+      resolution._tag === 'EditBodyAndStartNewAttempt' ||
+      resolution._tag === 'Split')
   ) {
     const released = releaseTransition(state, {
       by: 'person',

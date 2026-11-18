@@ -93,7 +93,7 @@ export interface ReportWait {
   resolution: string | null
   /** Who resolved it; null while open, and on rows stored before this field. */
   by: string | null
-  /** The commit the resolution names: only `Approve` and `GrantFixRound` carry one. */
+  /** The commit the resolution names: only `Approve` and `FixRefusal` carry one. */
   onSha: string | null
 }
 
@@ -299,7 +299,7 @@ export function reportWaitOf(w: TicketWait): ReportWait {
     resolution: w.resolution?.resolution._tag ?? null,
     by: w.resolution?.by ?? null,
     onSha:
-      w.resolution?.resolution._tag === 'Approve' || w.resolution?.resolution._tag === 'GrantFixRound'
+      w.resolution?.resolution._tag === 'Approve' || w.resolution?.resolution._tag === 'FixRefusal'
         ? w.resolution.resolution.onSha
         : null,
   }

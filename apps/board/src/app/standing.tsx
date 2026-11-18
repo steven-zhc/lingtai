@@ -4,6 +4,7 @@ import { MERGE_HUNKS_ONE_BY_ONE, STEPS } from '@lingtai/domain'
 // off (#483) — so the page and the server action can never disagree about
 // which resolutions a wait allows.
 import {
+  adviceResolution,
   allowedResolutions,
   recommendedResolution,
   type Resolution,
@@ -560,7 +561,7 @@ export function TriageBand({
       // Triage's advice is the recommendation, whatever route the judge took:
       // its routing is why this wait exists, and is not drawn as a competing
       // reading (decided 2026-10-25).
-      const kept = recommendedResolution(reason, status, { savedHead }) === result.resolution
+      const kept = recommendedResolution(reason, status, { savedHead }) === adviceResolution(result.resolution)
       return (
         <section id="triage" className="triage-band triage-band--advised" data-rank="triage">
           <div className="triage-head">
@@ -571,16 +572,18 @@ export function TriageBand({
           <p className="triage-summary">{result.summary}</p>
           <p className="triage-recommendation">
             {kept
-              ? `Recommends ${RESOLUTION_COPY[result.resolution].title}`
+              ? `Recommends ${RESOLUTION_COPY[adviceResolution(result.resolution)].title}`
               : cause._tag === 'WrongApproach'
                 ? 'The approach is wrong; start over from base instead of continuing saved work.'
                 : cause._tag === 'FixableLines' && result.resolution === 'Approve'
                   ? 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
                   : cause._tag === 'ConflictingHunks' &&
-                      recommendedResolution(reason, status, { savedHead }) === 'GrantFixRound'
-                    ? `Triage advised ${RESOLUTION_COPY[result.resolution].title}. With ${cause.total} hunk${cause.total === 1 ? '' : 's'} to resolve, a fix round is drawn first instead${cause.hunks.some((h) => h._tag === 'Divergent') ? ': each divergent hunk’s recommended answer goes to the fixer' : ''}.`
-                    : `Triage advised ${RESOLUTION_COPY[result.resolution].title}, which this decision does not offer.`}
-            {kept && result.resolution === 'GrantFixRound' ? ' — only your click grants the paid round.' : null}
+                      recommendedResolution(reason, status, { savedHead }) === 'FixRefusal'
+                    ? `Triage advised ${RESOLUTION_COPY[adviceResolution(result.resolution)].title}. With ${cause.total} hunk${cause.total === 1 ? '' : 's'} to resolve, a fix round is drawn first instead${cause.hunks.some((h) => h._tag === 'Divergent') ? ': each divergent hunk’s recommended answer goes to the fixer' : ''}.`
+                    : `Triage advised ${RESOLUTION_COPY[adviceResolution(result.resolution)].title}, which this decision does not offer.`}
+            {kept && adviceResolution(result.resolution) === 'FixRefusal'
+              ? ' — only your click grants the paid round.'
+              : null}
           </p>
           {parts ? (
             <div className="triage-evidence" role="group" aria-label="Triage’s evidence">
@@ -1003,7 +1006,7 @@ export function Standing({
   // under it is worse than none. The triage band still carries the advice.
   const drawable = rerunStepFirstAmongSavedWork(allowed.filter((tag) => tag !== 'Split'))
   // Whatever `recommendedResolution` returned is drawn first; with no saved
-  // head it does not return `GrantFixRound`, so nothing is swapped in (#572).
+  // head it does not return `FixRefusal`, so nothing is swapped in (#572).
   const recommended = drawable.find((tag) => tag === advice) ?? null
   // Badged only when triage advised it: a wait's own default orders the cards
   // but is not called a recommendation.
@@ -1016,10 +1019,10 @@ export function Standing({
   // draft remains available after somebody else resolves the wait.
   const resolutionCards: Resolution['_tag'][] = actable
     ? standing.state === 'blocked'
-      ? orderedResolutions.includes('EditBodyAndRequeue')
+      ? orderedResolutions.includes('EditBodyAndStartNewAttempt')
         ? orderedResolutions
-        : [...orderedResolutions, 'EditBodyAndRequeue']
-      : ['EditBodyAndRequeue']
+        : [...orderedResolutions, 'EditBodyAndStartNewAttempt']
+      : ['EditBodyAndStartNewAttempt']
     : []
 
   // **Amber wins over teal, and that ordering is the whole rule.** If somebody
@@ -1478,16 +1481,15 @@ export function Standing({
                         const visible = standing.state === 'blocked' && allowed.includes(tag)
                         const waitId = standing.waitId
                         const copy = resolutionCopyFor(tag, standing.reason)
-                        const fixUnavailable =
-                          tag === 'GrantFixRound' && !(standing.fixWork && 'head' in standing.fixWork)
+                        const fixUnavailable = tag === 'FixRefusal' && !(standing.fixWork && 'head' in standing.fixWork)
                         const rerunUnavailable =
-                          tag === 'RerunStep' && !(standing.rerunWork && 'head' in standing.rerunWork)
+                          tag === 'RedoStep' && !(standing.rerunWork && 'head' in standing.rerunWork)
                         const consequenceOf = (sendable: number | null) =>
                           rerunUnavailable
                             ? 'The saved head must be available before this step can be rerun.'
                             : fixUnavailable
                               ? 'The saved branch and head must be available before a fix round can be granted.'
-                              : tag === 'Requeue' && sendable !== null
+                              : tag === 'StartNewAttempt' && sendable !== null
                                 ? `Send the composed prompt for attempt ${sendable}; the new attempt starts from base with the recipe’s rounds. ${NO_RESTART_EFFECT}`
                                 : copy.consequence
                         return (
@@ -1497,7 +1499,7 @@ export function Standing({
                             className={`sresolution${!visible ? ' sresolution--draft' : ''}`}
                             data-resolution={visible ? tag : undefined}
                             id={visible ? `resolution-${tag}` : undefined}
-                            hidden={!visible && tag !== 'EditBodyAndRequeue'}
+                            hidden={!visible && tag !== 'EditBodyAndStartNewAttempt'}
                             head={
                               visible ? (
                                 <h3>
@@ -1513,7 +1515,7 @@ export function Standing({
                             {visible ? (
                               <>
                                 <p className="sresolutionconsequence">
-                                  {tag === 'Requeue' ? (
+                                  {tag === 'StartNewAttempt' ? (
                                     <Gh g={g} pending={pending} fallback={consequenceOf(null)}>
                                       {(a) => consequenceOf(sendableOf(a.outgoing))}
                                     </Gh>
@@ -1521,7 +1523,7 @@ export function Standing({
                                     consequenceOf(null)
                                   )}
                                 </p>
-                                {tag === 'AnswerQuestion' || tag === 'EditBodyAndRequeue' || tag === 'Close' ? (
+                                {tag === 'AnswerQuestion' || tag === 'EditBodyAndStartNewAttempt' || tag === 'Close' ? (
                                   <p className="sresolutioninput">
                                     {tag === 'AnswerQuestion'
                                       ? 'An answer is required to continue; withdrawing needs no answer.'
@@ -1534,7 +1536,7 @@ export function Standing({
                             ) : null}
                             <div className="sresolutionaction">
                               {visible &&
-                              tag === 'GrantFixRound' &&
+                              tag === 'FixRefusal' &&
                               standing.fixWork &&
                               'head' in standing.fixWork &&
                               waitId !== null ? (
@@ -1543,11 +1545,11 @@ export function Standing({
                                   issue={issue}
                                   waitId={waitId}
                                   onSha={standing.fixWork.head}
-                                  primary={recommended === 'GrantFixRound'}
+                                  primary={recommended === 'FixRefusal'}
                                 />
                               ) : null}
                               {visible &&
-                              tag === 'GrantFixRound' &&
+                              tag === 'FixRefusal' &&
                               (!standing.fixWork || 'refusal' in standing.fixWork) ? (
                                 <p className="refusal">
                                   {standing.fixWork && 'refusal' in standing.fixWork
@@ -1556,7 +1558,7 @@ export function Standing({
                                 </p>
                               ) : null}
                               {visible &&
-                              tag === 'RerunStep' &&
+                              tag === 'RedoStep' &&
                               standing.rerunWork &&
                               'head' in standing.rerunWork &&
                               waitId !== null ? (
@@ -1568,7 +1570,7 @@ export function Standing({
                                 />
                               ) : null}
                               {visible &&
-                              tag === 'RerunStep' &&
+                              tag === 'RedoStep' &&
                               (!standing.rerunWork || 'refusal' in standing.rerunWork) ? (
                                 <p className="refusal">
                                   {standing.rerunWork && 'refusal' in standing.rerunWork
@@ -1613,10 +1615,13 @@ export function Standing({
                                   recommended={recommended === 'AnswerQuestion' ? 'answer' : null}
                                 />
                               ) : null}
-                              {visible && tag === 'Requeue' && waitId !== null ? (
+                              {visible && tag === 'StartNewAttempt' && waitId !== null ? (
                                 allowed.includes('AnswerQuestion') ? (
                                   // Never sendable (#147): the form needs nothing of GitHub's.
-                                  requeueForm({ project, issue, waitId }, recommended === 'Requeue' ? 'requeue' : null)
+                                  requeueForm(
+                                    { project, issue, waitId },
+                                    recommended === 'StartNewAttempt' ? 'requeue' : null,
+                                  )
                                 ) : (
                                   // Send needs the body, and the body is GitHub's: drawn disabled,
                                   // and said why, until the answer is in.
@@ -1632,18 +1637,22 @@ export function Standing({
                                     {(a) => {
                                       const sendable = sendableOf(a.outgoing)
                                       return sendable !== null ? (
-                                        <Send taskId={taskId} attempt={sendable} primary={recommended === 'Requeue'} />
+                                        <Send
+                                          taskId={taskId}
+                                          attempt={sendable}
+                                          primary={recommended === 'StartNewAttempt'}
+                                        />
                                       ) : (
                                         requeueForm(
                                           { project, issue, waitId },
-                                          recommended === 'Requeue' ? 'requeue' : null,
+                                          recommended === 'StartNewAttempt' ? 'requeue' : null,
                                         )
                                       )
                                     }}
                                   </Gh>
                                 )
                               ) : null}
-                              {tag === 'EditBodyAndRequeue' ? (
+                              {tag === 'EditBodyAndStartNewAttempt' ? (
                                 <EditBodyAndRequeue
                                   project={project}
                                   issue={issue}
@@ -1682,8 +1691,8 @@ export function Standing({
                         issue={issue}
                         onSha={standing.approvedSha}
                         waitId={standing.waitId}
-                        grant={standing.afterMove?.resolution === 'GrantFixRound'}
-                        rerun={standing.afterMove?.resolution === 'RerunStep'}
+                        grant={standing.afterMove?.resolution === 'FixRefusal'}
+                        rerun={standing.afterMove?.resolution === 'RedoStep'}
                       />
                     </div>
                   ) : null}

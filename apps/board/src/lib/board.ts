@@ -27,6 +27,7 @@ import {
 } from '@lingtai/domain'
 import {
   acceptedTriageNote,
+  adviceResolution,
   recommendedResolution,
   triageStatus,
   type Resolution,
@@ -190,7 +191,7 @@ export interface BoardCard {
    * the task page's cards but is not triage's recommendation — and null when
    * the advice is contradicted or the wait does not allow it.
    *
-   * `onSha` is what the action wants: the saved fix head for `GrantFixRound`
+   * `onSha` is what the action wants: the saved fix head for `FixRefusal`
    * (null, so no button, where the log has none), the awaited sha for
    * `Approve`, and nothing for the rest. `note` is `Approve`'s, because a
    * one-click approve over a refusing step must say whose reading it took.
@@ -761,15 +762,16 @@ function moveOf(
   if (status._tag !== 'Done' || status.result._tag !== 'TriageAdvised') return null
   const resolution = recommendedResolution(t.wait.reason, status, { savedHead: fixHead !== null })
   if (resolution === null) return null
+  const advice = adviceResolution(status.result.resolution)
   switch (resolution) {
-    case 'GrantFixRound':
+    case 'FixRefusal':
       return fixHead === null
         ? null
         : {
             resolution,
             onSha: fixHead,
             note: null,
-            ...(status.result.resolution === resolution ? {} : { advised: status.result.resolution }),
+            ...(advice === resolution ? {} : { advised: advice }),
           }
     case 'Approve':
       return t.awaitingSha === null
@@ -819,7 +821,7 @@ export function toCard(
   triage: TriageContext = triageContextOf(false, null),
   /**
    * The saved fix head, from the run's own stream, for the waiting cards
-   * `laneProgress` reads. Null is "not known", which drops `GrantFixRound`
+   * `laneProgress` reads. Null is "not known", which drops `FixRefusal`
    * from `move` exactly as `savedHead: false` does on the task page.
    */
   fixHead: string | null = null,
@@ -1494,7 +1496,7 @@ async function laneProgress(
   const railed = railCandidates(tasks)
   const railedIds = new Set(railed.map((c) => c.task.taskId))
   // A waiting card past the rail cap still gets its one button (#647), so the
-  // saved head is read for it too — but only where `GrantFixRound` can be
+  // saved head is read for it too — but only where `FixRefusal` can be
   // recommended: triage advised it, or a small conflict swaps it in (#652). No rail is reduced.
   const headOnly = tasks.filter(
     (t) =>
@@ -1502,7 +1504,7 @@ async function laneProgress(
       t.wait !== null &&
       !railedIds.has(t.taskId) &&
       t.triage.result?._tag === 'TriageAdvised' &&
-      (t.triage.result.resolution === 'GrantFixRound' ||
+      (adviceResolution(t.triage.result.resolution) === 'FixRefusal' ||
         (t.triage.result.cause._tag === 'ConflictingHunks' && t.triage.result.cause.total <= CONFLICT_ROUND_HUNKS)),
   )
   const headOf = (task: TaskCard, state: AttemptState) => {

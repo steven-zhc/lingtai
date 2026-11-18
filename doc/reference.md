@@ -162,7 +162,7 @@ On no stream: [OutboxDelivered](events.json#OutboxDelivered) *(retired)*, [Outbo
 appends to that stream while it runs, and a board recording an App would race a
 turn for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 14 chains, 16 steps
+## upcaster — 15 chains, 17 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -185,9 +185,10 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `RunKeptUncommitted` | 1 → 2 | `arm` became `ref`, which names `agent/<n>` for a new row (0108 §20, #1243). The value is unchanged: an old row's WIP is on the arm it named |
 | `PassRouted` | 1 → 2 | the same rewrite, on the retired type's rows |
 | `WaitStarted` | 1 → 2 | a `ProposedEscalated` whose excluded candidate hit a ceiling names the ceiling by its bound (#1241) |
+| `WaitResolved` | 1 → 2 | a person's resolution is named for the move it asks for: `GrantFixRound` is `FixRefusal`, `RerunStep` is `RedoStep`, `Requeue` is `StartNewAttempt` and `EditBodyAndRequeue` is `EditBodyAndStartNewAttempt`; every other tag and every field is unchanged (0108, #1267) |
 
 **The counts in this heading are counted off the table, never computed.** Each
-of the **fourteen** chains below is its own row — a heading that is arithmetic on a
+of the **fifteen** chains below is its own row — a heading that is arithmetic on a
 number nobody re-derived is how a reader comes to believe a row is stale and
 deletable.
 

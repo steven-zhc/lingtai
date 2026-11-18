@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 /**
  * A requeue's note is optional; an answer's is not (#424).
  *
- * `Requeue` serves three moves off one submit button — Answer, Withdraw and
+ * `StartNewAttempt` serves three moves off one submit button — Answer, Withdraw and
  * Back to the queue — and only the first writes an `AnswerRecord` a later
  * attempt's prompt keeps (`attempts.ts:572`). Withdraw and Back to the queue
  * both go through `requeueCard` → `requeue()`, whose note the reducer either
@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-describe('Requeue', () => {
+describe('StartNewAttempt', () => {
   it('disables its button for a blank note only while answering', () => {
     const source = read('../src/app/decide.tsx')
     const requeue = source.slice(source.indexOf('export function Requeue'), source.indexOf('export function Close'))

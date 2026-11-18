@@ -223,7 +223,7 @@ describe('what wakes the loop', () => {
           ]
         })(),
       ],
-      ['requeued', aResolution(item, requeuedId, { _tag: 'Requeue' })],
+      ['requeued', aResolution(item, requeuedId, { _tag: 'StartNewAttempt' })],
       ['withdrawn', aWithdrawal(item, withdrawnId)],
       ['routed to implement', aRoute(run, { offer: reviewOffer, reply: reviewReply, decision: reviewDecision })],
       [
@@ -301,7 +301,7 @@ describe("findIssueDrift's own choice of candidate and divergence", () => {
       versions,
       aWait(requeued, { _tag: 'OwnQuestion', question: 'why?', by: 'steven' }, requeuedWaitId),
     )
-    await appendBuilt(store, versions, aResolution(requeued, requeuedWaitId, { _tag: 'Requeue' }))
+    await appendBuilt(store, versions, aResolution(requeued, requeuedWaitId, { _tag: 'StartNewAttempt' }))
 
     // Released after a claim, with the running label stale the same way.
     const released = makeStream(`ticket-${PROJECT}-604`)

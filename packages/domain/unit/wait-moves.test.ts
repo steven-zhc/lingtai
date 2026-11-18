@@ -29,8 +29,8 @@ describe('waitMoves', () => {
   })
 
   it('recommends requeue for a crash and a spent budget', () => {
-    expect(waitMoves(reasons.crash!, { triage: null }).first).toBe('Requeue')
-    expect(waitMoves(reasons.budget!, { triage: null }).first).toBe('Requeue')
+    expect(waitMoves(reasons.crash!, { triage: null }).first).toBe('StartNewAttempt')
+    expect(waitMoves(reasons.budget!, { triage: null }).first).toBe('StartNewAttempt')
   })
 
   it('only ever offers allowed moves, never Split or Close, and first is the board first', () => {

@@ -219,6 +219,31 @@ describe('parseStoredPayload', () => {
  * `ContinueConflict` left `TriageAdvice` (#591), and triage had been invited to
  * advise it, so a stored `WaitTriaged` may still carry it.
  */
+describe('WaitResolved', () => {
+  const resolved = (resolution: Record<string, unknown>) => ({ waitId: 'w1', by: 'steven', resolution, note: 'n' })
+
+  it.each([
+    [{ _tag: 'GrantFixRound', onSha: 'a'.repeat(40), ref: 'agent/1' }, 'FixRefusal'],
+    [{ _tag: 'RerunStep', onSha: '', ref: null }, 'RedoStep'],
+    [{ _tag: 'Requeue' }, 'StartNewAttempt'],
+    [{ _tag: 'EditBodyAndRequeue' }, 'EditBodyAndStartNewAttempt'],
+  ])('reads %j at version 1 as %s, fields unchanged', (old, tag) => {
+    expect(parseStoredPayload('WaitResolved', 1, resolved(old))).toEqual(resolved({ ...old, _tag: tag }))
+  })
+
+  it.each([{ _tag: 'Approve', onSha: 'a'.repeat(40) }, { _tag: 'AnswerQuestion', choice: 'x' }, { _tag: 'Close' }])(
+    'leaves %j unchanged',
+    (same) => {
+      expect(parseStoredPayload('WaitResolved', 1, resolved(same))).toEqual(resolved(same))
+    },
+  )
+
+  it('does not rewrite a row already at version 2', () => {
+    const now = resolved({ _tag: 'StartNewAttempt' })
+    expect(parseStoredPayload('WaitResolved', 2, now)).toEqual(now)
+  })
+})
+
 describe('WaitTriaged', () => {
   const WAITED = { waitId: 'w1', attempt: 1, headSha: 'a'.repeat(40), by: { _tag: 'Mechanical' } }
   const advised = (resolution: string) => ({

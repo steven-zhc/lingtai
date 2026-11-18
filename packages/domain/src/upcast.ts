@@ -53,6 +53,14 @@ export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>
 type Json = Record<string, unknown>
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null
 
+/** `#1267`: the four resolutions' old tags, which a `WaitResolved` at version 1 holds. Every other tag is unchanged. */
+const RESOLUTION_TAGS: Record<string, string> = {
+  GrantFixRound: 'FixRefusal',
+  RerunStep: 'RedoStep',
+  Requeue: 'StartNewAttempt',
+  EditBodyAndRequeue: 'EditBodyAndStartNewAttempt',
+}
+
 /** `#1241`: a candidate's or a route's `next`, in the tags 0108 retired. Anything else is returned as it came. */
 function renameNext(next: unknown): unknown {
   if (!isObj(next)) return next
@@ -160,13 +168,21 @@ export const UPCASTERS: UpcastRegistry = {
       return { ...data, reason: { ...data.reason, because: renameEscalation(data.reason.because) } }
     },
   },
+  WaitResolved: {
+    /** 1 → 2: a person's resolutions took the names of the moves they ask for (0108, #1267). */
+    1: (data) => {
+      if (!isObj(data) || !isObj(data.resolution)) return data
+      const to = RESOLUTION_TAGS[String(data.resolution._tag)]
+      return to === undefined ? data : { ...data, resolution: { ...data.resolution, _tag: to } }
+    },
+  },
   WaitTriaged: {
     /**
      * 1 → 2: `ContinueConflict` left `TriageAdvice` (#591), and triage had been
      * invited to advise it since #557, so the log may hold it. A conflict is
      * answered by a granted fix round now, so an old advice reads as that.
-     * `WaitResolved`'s `Resolution` needs no step: no caller could write the
-     * variant, so no row holds it.
+     * The advice keeps the old names (`TriageAdvice`), so this one is not
+     * `WaitResolved`'s rename below.
      */
     1: (data) => {
       const row = data as { result?: { resolution?: unknown } }

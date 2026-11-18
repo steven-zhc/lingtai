@@ -311,7 +311,7 @@ function racedByUnrelatedAppend(store: EventStore): EventStore {
             data: {
               waitId: aWaitId(),
               by: 'human:steven',
-              resolution: { _tag: 'Requeue' },
+              resolution: { _tag: 'StartNewAttempt' },
               note: 'resolved a different wait on this ticket',
             },
           },
@@ -454,7 +454,7 @@ describe('waitTriage', () => {
         {
           type: 'WaitResolved',
           actor: 'human:steven',
-          data: { waitId, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: 'answered' },
+          data: { waitId, by: 'human:steven', resolution: { _tag: 'StartNewAttempt' }, note: 'answered' },
         },
       ])
       return ADVISED
@@ -1000,7 +1000,7 @@ describe('waitTriage', () => {
             {
               type: 'WaitResolved',
               actor: 'human:steven',
-              data: { waitId, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: 'answered' },
+              data: { waitId, by: 'human:steven', resolution: { _tag: 'StartNewAttempt' }, note: 'answered' },
             },
           ])
           throw new ConcurrencyError(streamId, version, [version + 1])
