@@ -81,9 +81,9 @@ describe('statedBeforeDispatch', () => {
     expect(lines[0]).toContain('runtime: claude-code')
     expect(lines[0]).toContain('signed in to on this machine')
     // `attemptCeiling`'s own sentence, verbatim — `runtime.limits` defaults to
-    // `rounds: 2, restarts: 0`, so this is its "rounds are spent" form.
-    expect(lines[1]).toContain('up to 8 agent runs')
-    expect(lines[1]).toContain('An attempt whose rounds are spent goes to you')
+    // 6 refusal fixes, 6 conflict resolutions and 2 new attempts (0108 §8).
+    expect(lines[1]).toContain('up to 53 implement runs a ticket')
+    expect(lines[1]).toContain('a spent attempt starts the ticket over from the base up to 2 time(s)')
 
     // Nothing besides `implement` dispatches, so no further-runs line at all.
     expect(lines.some((l) => l.includes('not in that sentence'))).toBe(false)
@@ -114,9 +114,13 @@ describe('statedBeforeDispatch', () => {
     // `0070 §8`'s rule: empty is today's string, character for character.
     // What `lingtai add` prints for the same recipe, minus its leading label.
     expect(lines[1]).toBe(
-      'an attempt up to 8 agent runs — the work, then 2 round(s) back to the agent carrying what refused it, ' +
-        'up to 2 more for merge conflicts, and up to 3 reruns of a run an API error cut off. ' +
-        '2h and 300 turns each, so at most 16h. An attempt whose rounds are spent goes to you (runtime.limits.restarts: 0)',
+      'an attempt up to 53 implement runs a ticket — 3 attempt(s) of 16 runs (an attempt is the work, ' +
+        '6 refusal fix(es) back to the agent carrying what refused it, 6 conflict resolution(s), and up to 3 ' +
+        'reruns of a run an API error cut off) and up to 5 answers to a person — 2h and 300 turns each, so at ' +
+        'most 106h. a spent attempt starts the ticket over from the base up to 2 time(s) before it is yours. ' +
+        'design, review, a judge and triage are other agent steps, each within its own limits and not in this ' +
+        'figure: review runs once after each implement and once more after a base-branch merge that touched ' +
+        "the branch's files",
     )
   })
 })

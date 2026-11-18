@@ -79,7 +79,7 @@ describe('the accessors', () => {
     // By identity, and that is the cheap proof of *a recipe nobody edited
     // resolves to the same values*: nothing at `implement` narrows, so the
     // ceiling object itself comes back rather than a copy of its fields.
-    expect(limitsFor(RECIPE, 'implement')).toBe(RECIPE.runtime.limits)
+    expect(limitsFor(RECIPE, 'implement')).toBe(RECIPE.runtime.limits.run)
   })
 
   /**
@@ -438,7 +438,7 @@ describe('the accessors', () => {
         ],
       },
     })
-    expect(limitsFor(both, 'review')).toBe(ceilingOf(both))
+    expect(limitsFor(both, 'review')).toBe(ceilingOf(both).run)
   })
 
   /**

@@ -276,7 +276,7 @@ describe('what will happen', () => {
     // line rather than omitted — 0016 §4 — and none gets a row of its own.
     expect(html).toContain('nothing configured at: design, build, review')
     expect(html.match(/<li><b>/g)).toHaveLength(PLAN.steps.length - 3)
-    expect(html).toContain('150 turns · 1h · 2 round(s) back · then straight to you')
+    expect(html).toContain('150 turns · 1h · 2 refusal fix(es) · 2 conflict resolution(s) · then straight to you')
   })
 
   /**
@@ -311,7 +311,7 @@ describe('what will happen', () => {
     })
     const html = planPage(over)
 
-    expect(html).toContain('no rounds · 2 restart(s)')
+    expect(html).toContain('no refusal fixes · no conflict resolutions · 2 new attempt(s)')
     expect(html).not.toContain('straight to you')
   })
 

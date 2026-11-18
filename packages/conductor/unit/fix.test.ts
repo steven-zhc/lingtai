@@ -783,7 +783,7 @@ describe('the headline says what stopped the pass', () => {
     expect(once).toMatch(/no round answered it/i)
     // Where the money went, because that is what a person raises or does not.
     expect(once).toContain('3 fix round(s)')
-    expect(once).toContain('runtime.limits.rounds')
+    expect(once).toContain('runtime.limits.attempt.refusalFixes')
     // And the ordinary shape — the reviewer refused, a round answered, the
     // reviewer refused again — is the sentence it has always been.
     expect(after(3, 3)).toMatch(/two agents disagreed/i)
@@ -806,7 +806,7 @@ describe('the headline says what stopped the pass', () => {
     expect(none.what).toMatch(/one agent refused/i)
     expect(none.what).toMatch(/buys no round of fix-and-recheck/i)
     // And what changes it: money, not correctness.
-    expect(none.what).toContain('runtime.limits.rounds')
+    expect(none.what).toContain('runtime.limits.attempt.refusalFixes')
     expect(none.what).not.toBe(card({ ended: 'spent' }).what)
   })
 

@@ -405,7 +405,7 @@ describe('describeFilter', () => {
     // (0025 §2), and a line that only appears when it is on is not that.
     // The product and not the numbers: what an operator is deciding about is
     // what one pass of this project can cost (0039 §3).
-    expect(lines[3]).toContain('an attempt   up to 8 agent runs')
+    expect(lines[3]).toContain('an attempt   up to 53 implement runs')
     // And for the same reason again: the backoff decides when this project
     // spends money next, and it was in none of the four places that describe a
     // project (#95).

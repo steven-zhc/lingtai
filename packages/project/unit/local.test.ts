@@ -298,13 +298,16 @@ steps:
   describe('runtime.limits', () => {
     it('comes from the recipe, key by key, and each says where from', async () => {
       const read = files({
-        [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    rounds: 3\n`,
+        [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    attempt:\n      refusalFixes: 3\n`,
       })
       const resolved = await Effect.runPromise(
         resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
-      expect(resolved.recipe.runtime.limits).toEqual({ ...LIMIT_DEFAULTS, rounds: 3 })
-      expect(resolved.provenance?.['runtime.limits.rounds']).toBe(`3 ← ${recipePath('app', HOME)}`)
+      expect(resolved.recipe.runtime.limits).toEqual({
+        ...LIMIT_DEFAULTS,
+        attempt: { ...LIMIT_DEFAULTS.attempt, refusalFixes: 3 },
+      })
+      expect(resolved.provenance?.['runtime.limits.attempt.refusalFixes']).toBe(`3 ← ${recipePath('app', HOME)}`)
       expect(resolved.provenance?.['runtime.limits.run.turns']).toBe(`${LIMIT_DEFAULTS.run.turns} ← default`)
       expect(resolved.provenance?.['runtime.limits.run.usd']).toBe('(none) ← default')
     })
@@ -316,7 +319,7 @@ steps:
           home: HOME,
           ...skipSandboxHost,
           signedIn: signed('claude-code'),
-          read: files({ [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 10\n` }),
+          read: files({ [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    run:\n      turns: 10\n` }),
         }),
       )
       expect(a.configHash).not.toBe(b.configHash)
@@ -330,7 +333,7 @@ steps:
      */
     it('refuses a wall that is not a duration, by its key and in this file', async () => {
       const read = files({
-        [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits: { wall: "90" }\n`,
+        [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits: { run: { wall: "90" } }\n`,
       })
       const resolving = Effect.runPromise(
         resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
@@ -340,7 +343,7 @@ steps:
         Effect.runPromise(
           resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
         ),
-      ).rejects.toThrow(/runtime\.limits\.wall: must be a positive duration/)
+      ).rejects.toThrow(/runtime\.limits\.run\.wall: must be a positive duration/)
     })
 
     /** Strict, as `DISPATCH.limits` already is — a typo is refused, not silently defaulted (`#371`). */
@@ -524,7 +527,7 @@ steps:
     /** `runtime.limits` in the recipe is not refused — it is the recipe's own since `#375`. */
     it('runtime.limits in the recipe is not refused', async () => {
       const read = files({
-        [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    turns: 5\n`,
+        [recipePath('app', HOME)]: `${RECIPE}runtime:\n  limits:\n    run:\n      turns: 5\n`,
       })
       const resolved = await Effect.runPromise(
         resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),

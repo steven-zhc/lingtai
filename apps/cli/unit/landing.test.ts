@@ -509,11 +509,17 @@ describe('askLimits', () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w, lines } = world()
-    const result = await askLimits(w, PROJECT, { refusalFixes: '0', wall: '30m', budget: '4' }, { home: HOME, draft })
+    const result = await askLimits(
+      w,
+      PROJECT,
+      { refusalFixes: '0', conflictResolutions: '1', wall: '30m', budget: '4' },
+      { home: HOME, draft },
+    )
     expect(result).toEqual({ ok: true })
 
     const written = draft.text()!
     const limits = resolveSource(written, PATH, PATH).recipe.runtime.limits
+    expect(limits.attempt.conflictResolutions).toBe(1)
     expect(limits.attempt.refusalFixes).toBe(0)
     expect(limits.run.wall).toBe('30m')
     expect(limits.run.usd).toBe(4)
@@ -522,13 +528,21 @@ describe('askLimits', () => {
     expect(lines.some((l) => l.includes('an attempt'))).toBe(false)
   })
 
+  it('--rounds is refused naming both new flags', async () => {
+    const draft = await draftOver(PROJECT, { home: HOME, files: mapFiles({ [PATH]: FIXTURE }) })
+    const result = await askLimits(world().world, PROJECT, { rounds: '3' }, { home: HOME, draft })
+    expect(result).toMatchObject({ refused: expect.stringContaining('--refusal-fixes') })
+    expect(result).toMatchObject({ refused: expect.stringContaining('--conflict-resolutions') })
+    expect(draft.changes()).toHaveLength(0)
+  })
+
   it('--budget none removes usd', async () => {
     const files = mapFiles({ [PATH]: FIXTURE.replace('wall: 2h}', 'wall: 2h, usd: 7}') })
     const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLimits(
       world().world,
       PROJECT,
-      { refusalFixes: '2', wall: '2m', budget: 'none' },
+      { refusalFixes: '2', conflictResolutions: '2', wall: '2m', budget: 'none' },
       { home: HOME, draft },
     )
     expect(result).toEqual({ ok: true })
@@ -539,8 +553,8 @@ describe('askLimits', () => {
   it('pressing enter on an inherited default writes nothing', async () => {
     const files = mapFiles({ [PATH]: INHERITING })
     const draft = await draftOver(PROJECT, { home: HOME, files })
-    // Three questions, three empty answers — the terminal's "enter" (#392).
-    const result = await askLimits(world(['', '', '']).world, PROJECT, {}, { home: HOME, draft })
+    // Four questions, four empty answers — the terminal's "enter" (#392).
+    const result = await askLimits(world(['', '', '', '']).world, PROJECT, {}, { home: HOME, draft })
     expect(result).toEqual({ ok: true })
     expect(files.replaced).toEqual([])
   })
@@ -548,35 +562,35 @@ describe('askLimits', () => {
   it('the budget prompt shows an existing ceiling in money, formatted by show', async () => {
     const files = mapFiles({ [PATH]: FIXTURE.replace('wall: 2h}', 'wall: 2h, usd: 7}') })
     const draft = await draftOver(PROJECT, { home: HOME, files })
-    const { world: w, asked } = world(['', '', ''])
+    const { world: w, asked } = world(['', '', '', ''])
     await askLimits(w, PROJECT, {}, { home: HOME, draft })
     // `show`'s `$${Number(value).toFixed(2)}` is what turns `usd: 7` into this
     // bracket — the prompt's own literal ("like $5") would satisfy a bare
     // `.includes('$')`, so this pins the formatted current value instead.
-    expect(asked[2]).toContain('[$7.00]')
+    expect(asked[3]).toContain('[$7.00]')
   })
 
   it('the budget prompt shows "none" rather than money when no ceiling is set', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const draft = await draftOver(PROJECT, { home: HOME, files })
-    const { world: w, asked } = world(['', '', ''])
+    const { world: w, asked } = world(['', '', '', ''])
     await askLimits(w, PROJECT, {}, { home: HOME, draft })
-    expect(asked[2]).toContain('[none]')
+    expect(asked[3]).toContain('[none]')
   })
 
-  it('a Ctrl+C at the third question keeps the first two answers — each is its own setRecipe call', async () => {
+  it('a Ctrl+C at the fourth question keeps the first three answers — each is its own setRecipe call', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const draft = await draftOver(PROJECT, { home: HOME, files })
-    // Two typed answers, then the budget question's `ask` returns null — the
+    // Three typed answers, then the budget question's `ask` returns null — the
     // same shape a Ctrl+C leaves a readline-backed `ask` in.
-    const result = await askLimits(world(['0', '30m']).world, PROJECT, {}, { home: HOME, draft })
+    const result = await askLimits(world(['0', '0', '30m']).world, PROJECT, {}, { home: HOME, draft })
     expect(result).toMatchObject({ refused: expect.stringContaining('the spend ceiling') })
 
     const written = draft.text()!
     const limits = resolveSource(written, PATH, PATH).recipe.runtime.limits
     expect(limits.attempt.refusalFixes).toBe(0)
     expect(limits.run.wall).toBe('30m')
-    expect(draft.changes()).toHaveLength(2)
+    expect(draft.changes()).toHaveLength(3)
     expect(files.replaced).toEqual([])
   })
 
@@ -588,7 +602,12 @@ describe('askLimits', () => {
     // `resolveSource` call, which must surface as `{refused}` rather than an
     // uncaught `RecipeInvalidError` — the flags pass validation (`5m` is a
     // valid positive duration), so only the write itself catches this.
-    const result = await askLimits(world().world, PROJECT, { refusalFixes: '3', wall: '5m' }, { home: HOME, draft })
+    const result = await askLimits(
+      world().world,
+      PROJECT,
+      { refusalFixes: '3', conflictResolutions: '2', wall: '5m' },
+      { home: HOME, draft },
+    )
     expect(result).toMatchObject({ refused: expect.stringContaining('may only narrow') })
 
     // The rounds answer, asked and written first, stays on disk.

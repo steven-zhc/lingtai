@@ -919,8 +919,8 @@ describe('the one `proposed` will hold', () => {
         limits: { [ceiling]: 9 },
       }).problems!
       expect(inside).toHaveLength(1)
-      expect(inside[0]!.why).toContain('bounds the attempt and not one call (0040)')
-      expect(inside[0]!.why).toContain('Write it at `runtime.limits`')
+      expect(inside[0]!.why).toContain('bounds the attempt or the ticket and not one call (0040, 0108 §8)')
+      expect(inside[0]!.why).toContain('Write it at `runtime.limits.')
     }
   })
 
@@ -1465,14 +1465,14 @@ describe('a dispatch is one shape', () => {
     const at = (limits: unknown) =>
       Recipe.safeParse({
         ...BASE,
-        runtime: { limits: { turns: 150, wall: '1h' } },
+        runtime: { limits: { run: { turns: 150, wall: '1h' } } },
         steps: { implement: [{ name: 'write the change', agent: 'claude-code', prompt: '', limits }] },
       })
 
     const turns = at({ turns: 300 })
     expect(turns.success).toBe(false)
     expect(turns.error!.issues[0]!.message).toBe(
-      'steps.implement\'s "write the change" asks for 300 turns; runtime.limits.turns is 150, ' +
+      'steps.implement\'s "write the change" asks for 300 turns; runtime.limits.run.turns is 150, ' +
         'and a step may only narrow it (0070 §5)',
     )
     expect(turns.error!.issues[0]!.path).toEqual(['steps', 'implement'])
@@ -1480,7 +1480,7 @@ describe('a dispatch is one shape', () => {
     const wall = at({ wall: '3h' })
     expect(wall.success).toBe(false)
     expect(wall.error!.issues[0]!.message).toBe(
-      'steps.implement\'s "write the change" asks for 3h of wall clock; runtime.limits.wall is 1h, ' +
+      'steps.implement\'s "write the change" asks for 3h of wall clock; runtime.limits.run.wall is 1h, ' +
         'and a step may only narrow it (0070 §5)',
     )
 
@@ -1511,13 +1511,13 @@ describe('a dispatch is one shape', () => {
   it('refuses a malformed `wall` by name at either end, rather than throwing out of `safeParse`', () => {
     const ceiling = Recipe.safeParse({
       ...BASE,
-      runtime: { limits: { wall: '90' } },
+      runtime: { limits: { run: { wall: '90' } } },
       steps: { implement: [{ name: 'write the change', agent: 'claude-code', prompt: '' }] },
     })
     expect(ceiling.success).toBe(false)
     expect(ceiling.error!.issues).toEqual([
       expect.objectContaining({
-        path: ['runtime', 'limits', 'wall'],
+        path: ['runtime', 'limits', 'run', 'wall'],
         message: 'must be a positive duration, like 2h',
       }),
     ])
@@ -1527,7 +1527,7 @@ describe('a dispatch is one shape', () => {
     // that is not a duration is not a thing to compare.
     const own = Recipe.safeParse({
       ...BASE,
-      runtime: { limits: { wall: '1h' } },
+      runtime: { limits: { run: { wall: '1h' } } },
       steps: { implement: [{ name: 'write the change', agent: 'claude-code', prompt: '', limits: { wall: '90' } }] },
     })
     expect(own.success).toBe(false)
@@ -1544,10 +1544,13 @@ describe('a dispatch is one shape', () => {
    * alone answers *Unrecognized key: "rounds"*, which says the key is not
    * allowed and never says why — and why is the whole of 0040's split.
    */
-  it("refuses `rounds` and `restarts` inside a dispatch's `limits:`, in the recipe's own voice", () => {
-    for (const [field, counts] of [
-      ['rounds', 'how many times an attempt sends the agent back'],
-      ['restarts', 'how many times a ticket starts the work over'],
+  it("refuses every attempt and ticket bound inside a dispatch's `limits:`, in the recipe's own voice", () => {
+    for (const [field, where] of [
+      ['rounds', 'runtime.limits.attempt.refusalFixes` and `runtime.limits.attempt.conflictResolutions'],
+      ['restarts', 'runtime.limits.ticket.newAttempts'],
+      ['refusalFixes', 'runtime.limits.attempt.refusalFixes'],
+      ['conflictResolutions', 'runtime.limits.attempt.conflictResolutions'],
+      ['newAttempts', 'runtime.limits.ticket.newAttempts'],
     ] as const) {
       const refused = Recipe.safeParse({
         ...BASE,
@@ -1555,9 +1558,8 @@ describe('a dispatch is one shape', () => {
       })
       expect(refused.success).toBe(false)
       const why = refused.error!.issues.map((issue) => issue.message).join('\n')
-      expect(why).toContain(`\`${field}\` bounds the attempt and not one call (0040)`)
-      expect(why).toContain(counts)
-      expect(why).toContain('Write it at `runtime.limits`')
+      expect(why).toContain(`\`${field}\` bounds the attempt or the ticket and not one call (0040, 0108 §8)`)
+      expect(why).toContain(`Write it at \`${where}\``)
     }
   })
 

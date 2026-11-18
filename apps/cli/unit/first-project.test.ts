@@ -188,7 +188,7 @@ function harness(options: {
 /**
  * The local branch's recipe-flow answers, in the order `askRecipe` asks them
  * (#431) — writer, model, reviewer, reviewerModel, install, build, kinds,
- * landing, rounds, wall, budget. `''` takes each question's own default;
+ * landing, refusal fixes, conflict resolutions, wall, budget. `''` takes each question's own default;
  * `install` has none, so it must be answered `none` or the question refuses
  * and asks again.
  *
@@ -198,7 +198,7 @@ function harness(options: {
  * each one answers passes `--defaults` instead and drops this array
  * entirely (#433).
  */
-const RECIPE_FLOW_DEFAULTS = ['', '', '', '', 'none', '', '', '', '', '', ''] as const
+const RECIPE_FLOW_DEFAULTS = ['', '', '', '', 'none', '', '', '', '', '', '', ''] as const
 
 /** The App machine's list, run: the function lives in `@lingtai/setup` and is an Effect. */
 async function listRepositories(o: {
@@ -943,7 +943,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
     })
     const result = await chooseFirstProject(world, {
       project: 'github',
-      rounds: '3',
+      'refusal-fixes': '3',
       agent: 'claude-code',
       budget: '9',
     })

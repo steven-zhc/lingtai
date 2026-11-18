@@ -129,7 +129,7 @@ describe('recipeLines', () => {
       { label: 'a fix round reads at most', value: '400,000 characters of the diff' },
     ])
     expect(block(read, 'review').after).toEqual([])
-    const noRounds = await lines(BASE.replace('wall: 2m', 'wall: 2m, rounds: 0'))
+    const noRounds = await lines(BASE.replace('refusalFixes: 2', 'refusalFixes: 0'))
     expect(block(noRounds, 'implement').after.map((l) => l.label)).not.toContain('a fix round reads at most')
     const reviewed = await lines(
       BASE.replace('steps:\n', 'steps:\n  review:\n    - { name: cold, agent: claude-code, prompt: look }\n'),

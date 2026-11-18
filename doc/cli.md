@@ -63,7 +63,8 @@ lingtai add [<owner>/<repo>] [flags]
                                --defaults skips it unless yes
   --land <branch|hold>
       where an attempt lands, or hold every one for a person at proposed
-  --rounds <n>                 fix rounds an attempt may buy
+  --refusal-fixes <n>          fixes after a refusal an attempt may buy
+  --conflict-resolutions <n>   merge conflict resolutions an attempt may buy
   --wall <duration>            wall time per agent run, e.g. 1h
   --budget <usd>               a dollar ceiling per agent run
   --defaults, --yes
@@ -691,7 +692,8 @@ lingtai init [flags]
                                --defaults skips it unless yes
   --land <branch|hold>
       where an attempt lands, or hold every one for a person at proposed
-  --rounds <n>                 fix rounds an attempt may buy
+  --refusal-fixes <n>          fixes after a refusal an attempt may buy
+  --conflict-resolutions <n>   merge conflict resolutions an attempt may buy
   --wall <duration>            wall time per agent run, e.g. 1h
   --budget <usd>               a dollar ceiling per agent run
   --defaults, --yes

@@ -41,8 +41,8 @@ const refusal = async (block: string, host = fakeSandboxHost()): Promise<string>
 }
 
 describe('a recipe without `sandbox` is the recipe it was', () => {
-  // Recorded before #1147 was wired in (the schema without the key): an absent optional key must leave the hash as it is.
-  const BEFORE = '3e1f53e6ab1e70903558914d1dd6c4ee707d70aed99f9df870171b1e59d1d12a'
+  // Recorded with the schema without the key (re-recorded when #1240 grouped runtime.limits): an absent optional key must leave the hash as it is.
+  const BEFORE = '13fd66b1ee8bb62609390de0e882a98f0cc4910ff6cb848df2b6d65b9cdd2320'
 
   it('hashes as it did, and asks the host nothing', async () => {
     const host = fakeSandboxHost()

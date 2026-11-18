@@ -812,11 +812,11 @@ describe('a runtime that cannot hold a turn count (#547)', () => {
       draft: await draftOver('app', { home: HOME, files: mapFiles({ [PATH]: fixture }) }),
     })
     if ('refused' in result) throw new Error(result.refused)
-    return result.changes.filter((c) => c.path.join('.') === 'runtime.limits.turns')
+    return result.changes.filter((c) => c.path.join('.') === 'runtime.limits.run.turns')
   }
 
   it('writes turns: unbounded once for codex', async () => {
-    expect(await ask(FIXTURE, 'codex')).toEqual([{ path: ['runtime', 'limits', 'turns'], value: 'unbounded' }])
+    expect(await ask(FIXTURE, 'codex')).toEqual([{ path: ['runtime', 'limits', 'run', 'turns'], value: 'unbounded' }])
   })
 
   it('writes nothing where the file already declares turns', async () => {

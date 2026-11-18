@@ -106,7 +106,7 @@ describe('recipe: <project>', () => {
 
 describe('runtime: <project> limits', () => {
   it('titles a runtime that ignores a limit, with the lever in the detail and no fix', () => {
-    const recipe = { runtime: { limits: { turns: 5, wall: '1h' } }, steps: {} } as never
+    const recipe = { runtime: { limits: { run: { turns: 5, wall: '1h' } } }, steps: {} } as never
     const row = limitsRow('alpha', recipe, { id: 'codex', enforces: ['wall'] } as never)
     expect(row).toMatchObject({ name: 'runtime: alpha limits', status: 'fail' })
     PLAIN(row.title)
