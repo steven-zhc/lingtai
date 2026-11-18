@@ -29,6 +29,9 @@ class FakeGitHub {
   calls: string[] = []
   fail: { call: string; mode: Mode; times: number } | null = null
   next = 700
+  /** Labels the repository has; null means every label exists. A create naming another is refused. */
+  labels = new Set<string>(['bug', 'feature'])
+  strictLabels = false
 
   constructor(parentBody: string) {
     this.issues.set(PARENT, this.make(PARENT, 'big ticket', parentBody))
@@ -76,6 +79,9 @@ class FakeGitHub {
     listIssuesSince: async () => this.hit('listIssuesSince', () => [...this.issues.values()].map((i) => ({ ...i }))),
     createIssue: async (input) =>
       this.hit(`createIssue ${input.title}`, () => {
+        if (this.strictLabels)
+          for (const l of input.labels)
+            if (!this.labels.has(l)) throw new Error(`Validation Failed: label ${l} does not exist`)
         const issue = this.make(this.next++, input.title, input.body)
         issue.labels = input.labels.map((name) => ({ name, color: null }))
         this.issues.set(issue.number, issue)
@@ -98,6 +104,7 @@ class FakeGitHub {
         const issue = this.issues.get(n)!
         issue.labels = issue.labels.filter((l) => l.name !== name)
       }),
+    createLabel: async (name) => this.hit(`createLabel ${name}`, () => void this.labels.add(name)),
     addSubIssue: async (p, c) =>
       this.hit(`addSubIssue ${p} ${c}`, () => {
         if (this.subs.has(`${p}>${c}`)) throw new Error('422')
@@ -313,6 +320,43 @@ describe('splitTicketHolding', () => {
       create({ ...input, labels: input.labels.filter((l) => l !== 'lingtai:publishing') })
     expect((await go()).ok).toBe(true)
     expect(gh.calls.filter((c) => c.startsWith('addLabels'))).toHaveLength(3)
+  })
+
+  it('creates the repository label once when GitHub refuses a create naming it', async () => {
+    const { gh, go } = await setup()
+    gh.strictLabels = true
+    expect((await go()).ok).toBe(true)
+    expect(gh.calls.filter((c) => c.startsWith('createLabel'))).toEqual(['createLabel lingtai:publishing'])
+  })
+
+  it('relabels recorded but unlinked children from an earlier writer before creating the rest', async () => {
+    const { gh, go } = await setup()
+    gh.fail = { call: 'addBlockedBy 701', mode: 'before', times: 1 }
+    expect((await go()).ok).toBe(false)
+    // An earlier writer left two children unlabelled and unlinked.
+    gh.blocks.clear()
+    for (const n of [700, 701]) gh.issues.get(n)!.labels = [{ name: 'feature', color: null }]
+    gh.fail = null
+    gh.calls.length = 0
+    expect((await go(undefined)).ok).toBe(true)
+    const firstCreate = gh.calls.findIndex((c) => c.startsWith('createIssue'))
+    const relabels = gh.calls.map((c, i) => [c, i] as const).filter(([c]) => c.startsWith('addLabels 70'))
+    expect(relabels.length).toBeGreaterThanOrEqual(2)
+    expect(relabels[0]![1]).toBeLessThan(gh.calls.findIndex((c) => c.startsWith('addBlockedBy')))
+    void firstCreate
+  })
+
+  it('does not publish when a parent blocker vanishes while Split into is written', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    const update = gh.client.updateBody
+    gh.client.updateBody = async (n, body, opts) => {
+      await update(n, body, opts)
+      gh.blocks.delete('601<700')
+    }
+    const result = await go()
+    expect(result.ok).toBe(false)
+    expect(gh.calls.some((c) => c.startsWith('removeLabel'))).toBe(false)
+    expect((await store.read(ticketId)).some((e) => e.type === 'TicketSplit')).toBe(false)
   })
 
   it('refuses a second split of a ticket that already has a SplitStarted for another wait', async () => {

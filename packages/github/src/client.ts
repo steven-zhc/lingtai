@@ -303,6 +303,9 @@ export interface GitHub {
    */
   removeLabel(issue: number, name: string): E<void>
 
+  /** Creates a repository label; one that already exists is success (#1261). */
+  createLabel(name: string): E<void>
+
   /** Replaces one comment's whole body (#750). The response is read for its status only. */
   editComment(issue: number, commentId: number, body: string): E<void>
 
@@ -419,6 +422,7 @@ export interface GitHubClient {
   setLabels(issue: number, labels: readonly string[]): Promise<void>
   addLabels(issue: number, labels: readonly string[]): Promise<void>
   removeLabel(issue: number, name: string): Promise<void>
+  createLabel(name: string): Promise<void>
   editComment(issue: number, commentId: number, body: string): Promise<void>
   closeIssue(issue: number, reason?: 'completed' | 'not_planned'): Promise<void>
   updateBody(issue: number, body: string, opts?: { ifUnchanged?: string }): Promise<void>
@@ -727,6 +731,15 @@ export const makeGitHub = (
           )
         }),
 
+        createLabel: Effect.fn('github.createLabel')(function* (name: string) {
+          yield* send<unknown>('POST', `${repoPath}/labels`, { name, color: 'ededed' }).pipe(
+            Effect.catchIf(
+              (err) => err.status === 422,
+              () => Effect.void,
+            ),
+          )
+        }),
+
         defaultBranch: Effect.fn('github.defaultBranch')(function* () {
           const raw = yield* send<{ default_branch: string }>('GET', repoPath)
           return raw.default_branch
@@ -881,6 +894,7 @@ const toClient = (github: GitHub): GitHubClient => ({
   setLabels: (issue, labels) => runGitHub(github.setLabels(issue, labels)),
   addLabels: (issue, labels) => runGitHub(github.addLabels(issue, labels)),
   removeLabel: (issue, name) => runGitHub(github.removeLabel(issue, name)),
+  createLabel: (name) => runGitHub(github.createLabel(name)),
   editComment: (issue, commentId, body) => runGitHub(github.editComment(issue, commentId, body)),
   closeIssue: (issue, reason) => runGitHub(github.closeIssue(issue, reason)),
   updateBody: (issue, body, opts) => runGitHub(github.updateBody(issue, body, opts)),

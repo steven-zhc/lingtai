@@ -61,6 +61,7 @@ export type SplitClient = Pick<
   | 'listIssuesSince'
   | 'addLabels'
   | 'removeLabel'
+  | 'createLabel'
 >
 
 export interface SplitPlanInput {
@@ -363,6 +364,24 @@ export function splitTicketHoldingEffect(
     const expectedBody = (child: SplitPlanInput['children'][number]) =>
       `${child.body.trimEnd()}\n\n${splitMarker(waitId, child.key)}\n`
 
+    /** Whether the whole split is already on GitHub, so a child without the label was published rather than half-written. Read once. */
+    let publishedRead: boolean | undefined
+    const alreadyPublished: Effect.Effect<boolean, Error> = Effect.gen(function* () {
+      if (publishedRead !== undefined) return publishedRead
+      let all = plan.children.every((c) => found.has(c.key) && known.has(c.key))
+      if (all) {
+        const parentHolds = yield* lift(() => github.listBlockedBy(options.issue))
+        const subs = yield* lift(() => github.listSubIssues(options.issue))
+        all = plan.children.every((c) => links(parentHolds, numberOf(c.key)) && links(subs, numberOf(c.key)))
+        for (const d of plan.blockedBy) {
+          if (!all) break
+          all = links(yield* lift(() => github.listBlockedBy(numberOf(d.ticket))), numberOf(d.blockedBy))
+        }
+      }
+      publishedRead = all
+      return all
+    })
+
     /** Create (unless a marker answers), attach, record — and only then is the next child started. */
     // Uninterruptible: a create already sent cannot be taken back, so an interruption
     // must not release the decide lock before the child is found and recorded.
@@ -371,13 +390,14 @@ export function splitTicketHoldingEffect(
         Effect.gen(function* () {
           let status: StepStatus = 'skipped'
           if (!found.has(child.key)) {
-            yield* lift(() =>
+            const create = lift(() =>
               github.createIssue({
                 title: child.title.trim(),
                 body: expectedBody(child),
                 labels: [child.kind, PUBLISHING_LABEL],
               }),
-            ).pipe(
+            )
+            yield* create.pipe(
               Effect.map((opened) => {
                 found.set(child.key, opened.number)
               }),
@@ -390,16 +410,26 @@ export function splitTicketHoldingEffect(
                       () => true,
                       () => Effect.fail(err),
                     ),
-                    Effect.flatMap(() => (found.has(child.key) ? Effect.void : Effect.fail(err))),
+                    Effect.flatMap(() => {
+                      if (found.has(child.key)) return Effect.void
+                      // A repository without the label may refuse a create that names it: make the label once, create again.
+                      if (!/label/i.test(errorMessage(err))) return Effect.fail(err)
+                      return lift(() => github.createLabel(PUBLISHING_LABEL)).pipe(
+                        Effect.flatMap(() => create),
+                        Effect.map((opened) => {
+                          found.set(child.key, opened.number)
+                        }),
+                      )
+                    }),
                   ),
               ),
             )
             status = 'done'
           }
           const number = numberOf(child.key)
-          // Unrecorded means unpublished: a create whose label GitHub dropped, or a crash between create and record.
-          // A recorded child that lacks it was already published, and is left alone.
-          if (!known.has(child.key)) {
+          // Recorded means attached, not published. Only a split whose every child, link and parent blocker is
+          // already on GitHub can have had its labels lifted; any other split's child lacking the label gets it back.
+          if (!(yield* alreadyPublished)) {
             const labelled = (yield* lift(() => github.getIssue(number))).labels.some(
               (l) => l.name === PUBLISHING_LABEL,
             )
@@ -489,6 +519,10 @@ export function splitTicketHoldingEffect(
         run: Effect.gen(function* () {
           const subs = (yield* lift(() => github.listSubIssues(options.issue))).filter(here)
           const keyOf = new Map(plan.children.map((c) => [numberOf(c.key), c.key] as const))
+          const parentHolds = yield* lift(() => github.listBlockedBy(options.issue))
+          for (const c of plan.children)
+            if (!links(parentHolds, numberOf(c.key)))
+              return yield* Effect.fail(new Error(`the parent is not blocked by #${numberOf(c.key)} on read-back`))
           const children: { key: string; number: number; id: number }[] = []
           const blockedBy: { ticket: string; blockedBy: string }[] = []
           for (const c of plan.children) {

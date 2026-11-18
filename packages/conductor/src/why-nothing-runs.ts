@@ -65,6 +65,7 @@ export type RootKind =
   | 'blockers-unlistable'
   | 'blockers-closed'
   | 'backoff'
+  | 'publishing'
   | 'unknown'
 
 export interface Root {
@@ -352,6 +353,16 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
       add(v.key, v.kind, v.describe, ref, v.on)
     }
   }
+
+  // A split's children are passed over until the split is read back; it comes back on its own.
+  for (const s of facts.skipped.filter((s) => s.reason === 'publishing'))
+    add(
+      'publishing',
+      'publishing',
+      (n) =>
+        `${plural(n, 'ticket is', 'tickets are')} a split's ${n === 1 ? 'child' : 'children'} still being published`,
+      s.ref,
+    )
 
   // Everything runnable waiting out its retry.
   const wasRunnable = queuedOffered(facts)
