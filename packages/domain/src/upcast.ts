@@ -99,6 +99,42 @@ function renameEscalation(because: unknown): unknown {
     : because
 }
 
+/**
+ * `#1253`: an `InputNeeded` or `AgentQuestion` written with `question: string` reads as `questions: []` and the
+ * old text in `said`. Anything else, and one already in the new shape, is returned as it came.
+ */
+function askedAsSaid(v: unknown): unknown {
+  if (!isObj(v) || (v._tag !== 'InputNeeded' && v._tag !== 'AgentQuestion') || typeof v.question !== 'string') return v
+  const { question, ...rest } = v
+  return { ...rest, questions: [], said: question }
+}
+
+/** `#1253`: a wait reason, or the one a crash stands in for (`standing.reason`, one level and never recursive). */
+function reasonAsked(reason: unknown): unknown {
+  if (!isObj(reason)) return reason
+  if (reason._tag === 'AgentQuestion') return askedAsSaid(reason)
+  if (reason._tag === 'ProposedEscalated') return { ...reason, proposal: askedAsSaid(reason.proposal) }
+  return reason
+}
+
+/** `ProposalRouted` and `PassRouted` 2 → 3: the offer's proposal, where it is an `InputNeeded` (#1253). */
+const routeAsked: Upcaster = (data) => {
+  if (!isObj(data) || !isObj(data.offer)) return data
+  return { ...data, offer: { ...data.offer, proposal: askedAsSaid(data.offer.proposal) } }
+}
+
+/** `WaitStarted` 2 → 3: the reason's question, and a crash's standing reason's (#1253). */
+const waitAsked: Upcaster = (data) => {
+  if (!isObj(data) || !isObj(data.reason)) return data
+  const reason = reasonAsked(data.reason)
+  if (isObj(reason) && reason._tag === 'AgentCrashed' && isObj(reason.standing))
+    return {
+      ...data,
+      reason: { ...reason, standing: { ...reason.standing, reason: reasonAsked(reason.standing.reason) } },
+    }
+  return { ...data, reason }
+}
+
 /** `ProposalRouted` and `PassRouted` 1 → 2: the offer's nexts and ceilings, and an escalated decision's. */
 const routeRenamed: Upcaster = (data) => {
   if (!isObj(data)) return data
@@ -159,14 +195,16 @@ export const UPCASTERS: UpcastRegistry = {
       return { ...rest, ref: arm }
     },
   },
-  ProposalRouted: { 1: routeRenamed },
-  PassRouted: { 1: routeRenamed },
+  ProposalRouted: { 1: routeRenamed, 2: routeAsked },
+  PassRouted: { 1: routeRenamed, 2: routeAsked },
   WaitStarted: {
     /** 1 → 2: a `ProposedEscalated` whose excluded candidate hit a ceiling names the ceiling by its bound (#1241). */
     1: (data) => {
       if (!isObj(data) || !isObj(data.reason) || data.reason._tag !== 'ProposedEscalated') return data
       return { ...data, reason: { ...data.reason, because: renameEscalation(data.reason.because) } }
     },
+    /** 2 → 3: a question is `questions` in triage's shape, and an old one is `said` (#1253). */
+    2: waitAsked,
   },
   WaitResolved: {
     /** 1 → 2: a person's resolutions took the names of the moves they ask for (0108, #1267). */

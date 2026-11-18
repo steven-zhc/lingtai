@@ -73,12 +73,19 @@ export type AttemptRef = z.infer<typeof AttemptRef>
 const OwnQuestion = z.object({ _tag: z.literal('OwnQuestion'), question: z.string(), by: z.string() })
 
 /** A step stopped to ask, mid-run. */
-const AgentQuestion = z.object({
-  _tag: z.literal('AgentQuestion'),
-  run: AttemptRef,
-  step: Step.extract(['design', 'implement']),
-  question: z.string(),
-})
+const AgentQuestion = z
+  .object({
+    _tag: z.literal('AgentQuestion'),
+    run: AttemptRef,
+    step: Step.extract(['design', 'implement']),
+    /** What was asked, in triage's shape (#1253); empty where the question was prose. */
+    questions: z.array(TriageQuestion),
+    /** The question as prose: an `implement`'s, or one written before #1253. Absent when `questions` is not empty. */
+    said: z.string().optional(),
+  })
+  .refine((q) => q.questions.length > 0 || q.said !== undefined, {
+    message: 'a question carries questions or the prose it was asked in',
+  })
 
 /** A declared `human:` or an injected `--no-merge`, with every step green. */
 const SignoffRequired = z.object({

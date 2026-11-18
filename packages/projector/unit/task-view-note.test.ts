@@ -99,7 +99,8 @@ describe('ticketNoteOf: the transitions', () => {
     _tag: 'AgentQuestion' as const,
     run: { runId: run.runId },
     step: 'implement' as const,
-    question: 'which?',
+    questions: [],
+    said: 'which?',
   }
 
   it('lifecycle → blocked is the wait line', () => {

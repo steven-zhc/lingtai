@@ -178,7 +178,13 @@ export function routeNext(offer: RouteOffer, reply: JudgeReply, decision: RouteD
   if (decision.because._tag === 'NotAsked' && offer.proposal._tag === 'InputNeeded') {
     return {
       _tag: 'WaitOnPerson',
-      reason: { _tag: 'AgentQuestion', run, step: offer.proposal.from, question: offer.proposal.question },
+      reason: {
+        _tag: 'AgentQuestion',
+        run,
+        step: offer.proposal.from,
+        questions: offer.proposal.questions,
+        said: offer.proposal.said,
+      },
     }
   }
 

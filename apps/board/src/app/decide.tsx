@@ -13,7 +13,7 @@
  * card rendering and the click, so the diff being approved is not the diff that
  * was read. That has to be visible, not swallowed.
  */
-import type { WaitId } from '@lingtai/domain'
+import { askedText, type WaitId } from '@lingtai/domain'
 import type { Resolution, WaitReason } from '@lingtai/domain/wait'
 import Link from 'next/link'
 import { useState, useTransition } from 'react'
@@ -32,7 +32,7 @@ import {
   runNow,
   sendAttempt,
 } from './actions.ts'
-import { useTriageDraft } from './triage-picks.tsx'
+import { askedOf, TriageChoices, useTriageDraft } from './triage-picks.tsx'
 
 /**
  * The recommended move, as the diagnosis's own recommendation named it.
@@ -392,12 +392,15 @@ export function EditBodyAndRequeue({
   const body = triage?.body ?? null
   const draftWaitId = body?.waitId ?? null
   const currentText = waitId === null ? (body?.text ?? '') : body?.waitId === waitId ? body.text : composed
-  const question =
+  // What the agent asked: its questions drawn as choices, or the prose where it asked in prose (#1253).
+  const asked = askedOf(reason)
+  const asking =
     reason?._tag === 'AgentQuestion'
-      ? reason.question
+      ? reason
       : reason?._tag === 'ProposedEscalated' && reason.proposal._tag === 'InputNeeded'
-        ? reason.proposal.question
+        ? reason.proposal
         : null
+  const question = asking === null ? null : askedText(asking)
 
   if (waitId === null && (body?.text ?? '') === '' && !pending && detail === null) return null
 
@@ -408,7 +411,11 @@ export function EditBodyAndRequeue({
           This ticket is no longer waiting on you. Your unsent draft is below; copy it before leaving.
         </p>
       ) : null}
-      {question !== null ? <p>{question}</p> : null}
+      {asked.length > 0 ? (
+        asked.map((q, index) => <TriageChoices key={q.id} question={q} index={index} source="asked" />)
+      ) : question !== null ? (
+        <p>{question}</p>
+      ) : null}
       <label className="reason">
         <span>{question !== null ? 'Your answer' : 'Text to add to the ticket body'}</span>
         <textarea

@@ -211,7 +211,13 @@ describe('what wakes the loop', () => {
       ['own question', aWait(item, { _tag: 'OwnQuestion', question: 'why?', by: 'steven' }, ownQuestionId)],
       [
         'agent question',
-        aWait(item, { _tag: 'AgentQuestion', run: anAttemptRef(run.runId), step: 'implement', question: 'which way?' }),
+        aWait(item, {
+          _tag: 'AgentQuestion',
+          run: anAttemptRef(run.runId),
+          step: 'implement',
+          questions: [],
+          said: 'which way?',
+        }),
       ],
       [
         'answered',
@@ -284,7 +290,8 @@ describe("findIssueDrift's own choice of candidate and divergence", () => {
         _tag: 'AgentQuestion',
         run: anAttemptRef('pass-602'),
         step: 'implement',
-        question: 'which way?',
+        questions: [],
+        said: 'which way?',
       }),
     )
 

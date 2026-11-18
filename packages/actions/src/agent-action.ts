@@ -54,7 +54,7 @@
  */
 import { runtimeVersionOfEffect, type RunOutcome, type RunSandbox, type Runtime } from '@lingtai/agent'
 import type { RunTrace } from '@lingtai/agent/run-log'
-import type { RuntimeId, Step } from '@lingtai/domain'
+import { AskedQuestions, askedText, type RuntimeId, type Step, type TriageQuestion } from '@lingtai/domain'
 import {
   BOUNDS,
   composePrompt,
@@ -1401,7 +1401,7 @@ ${asking ? 'Reply with the document and nothing else, or with the `question` blo
 ${again === null ? '' : `\n${sentBackBlock(again)}\n`}${spec.prompt ? `\n## Also for this project\n\n${spec.prompt}\n` : ''}`
 }
 
-/** The edges a ticket may leave undecided, and the same eight whether the brief asks or assumes. */
+/** The edges a ticket may leave undecided, and the same nine whether the brief asks or assumes. */
 const EDGE_CHECKLIST = `- a read that fails;
 - a process that restarts or dies halfway;
 - two runs at once;
@@ -1409,6 +1409,7 @@ const EDGE_CHECKLIST = `- a read that fails;
 - a stale or disconnected page;
 - a retry;
 - a null or unknown value;
+- when an action in a step is redone or skipped, what happens to the other actions in that step;
 - the cost to every later change.`
 
 /**
@@ -1434,16 +1435,22 @@ with no question, and answering with nothing stays the common answer. Asking
 every ticket into a wait.
 
 To ask, reply with exactly this and nothing else — at most five questions, in one
-fence, as a numbered list. Each item is one sentence, then two to four options,
-the recommended one first and marked \`(recommended)\`:
+fence, as a JSON array. Each question is one sentence (\`text\`) with two to four
+\`answers\`, each saying what choosing it means for the code, and \`recommended\`
+names the \`id\` of the answer you would choose. Every \`id\` is short and unique:
 
 \`\`\`question
-1. the one thing somebody has to tell you, in a sentence
-   - (a) the reading you recommend (recommended) — what building it means
-   - (b) the other reading — what building that means
-2. the next, if there is one
-   - (a) … (recommended) — …
-   - (b) … — …
+[
+  {
+    "id": "q1",
+    "text": "the one thing somebody has to tell you, in a sentence",
+    "answers": [
+      { "id": "a", "text": "the reading you recommend — what building it means" },
+      { "id": "b", "text": "the other reading — what building that means" }
+    ],
+    "recommended": "a"
+  }
+]
 \`\`\`
 
 **A question is not a doubt, and the bar is high.** *I would probably put it in
@@ -1544,7 +1551,7 @@ of them can disagree with; a second question is this ticket stopping twice.`
  */
 export type Drafted =
   | { readonly kind: 'document'; readonly document: string }
-  | { readonly kind: 'question'; readonly question: string; readonly draft: string }
+  | { readonly kind: 'question'; readonly questions: TriageQuestion[]; readonly draft: string }
   | { readonly kind: 'unreadable'; readonly answer: string }
 
 /** The fence that announces a question, on its own line, and nothing else does. */
@@ -1577,11 +1584,21 @@ export function parseDraft(text: string | null): Drafted {
   const inside = answer.slice(opened.index + opened[0].length)
   const closed = CLOSES_THE_FENCE.exec(inside)
   if (closed === null) return { kind: 'unreadable', answer }
-  const question = inside.slice(0, closed.index).trim()
-  if (question === '') return { kind: 'unreadable', answer }
+  const body = inside.slice(0, closed.index).trim()
+  if (body === '') return { kind: 'unreadable', answer }
+  // A JSON array of `TriageQuestion` (#1253). What `JSON.parse` refuses, or what
+  // is not one to five questions of two to four answers each, is never guessed at.
+  let json: unknown
+  try {
+    json = JSON.parse(body)
+  } catch {
+    return { kind: 'unreadable', answer }
+  }
+  const parsed = AskedQuestions.safeParse(json)
+  if (!parsed.success) return { kind: 'unreadable', answer }
   // Everything before the fence, and it is not thrown away at any width: a
   // preamble and a whole design note are the same slice.
-  return { kind: 'question', question, draft: answer.slice(0, opened.index).trim() }
+  return { kind: 'question', questions: parsed.data, draft: answer.slice(0, opened.index).trim() }
 }
 
 /**
@@ -1744,15 +1761,17 @@ function draftAnswer(outcome: RunOutcome, runtime: RuntimeId): ActionResult {
      * the round it may buy something all three of them want. Absent, and not
      * an empty rule, where it asked and wrote nothing.
      */
+    // The text is what a person, a judge and `SentBack.asked` read; `questions` is
+    // the same asking in the shape a page can draw (#1253).
+    const asked = askedText({ questions: drafted.questions })
     return {
       verdict: 'did-not-finish',
       because: NEEDS_INPUT,
       evidence: boundedEvidence(
-        drafted.draft === ''
-          ? drafted.question
-          : `${drafted.question}\n\n---\n\nWhat it had written before it asked:\n\n${drafted.draft}`,
+        drafted.draft === '' ? asked : `${asked}\n\n---\n\nWhat it had written before it asked:\n\n${drafted.draft}`,
       ),
       findings: [],
+      questions: drafted.questions,
     }
   }
 

@@ -39,8 +39,13 @@ function finding(overrides: Partial<Finding> = {}): Finding {
   }
 }
 
-const inputNeededDesign: Proposal = { _tag: 'InputNeeded', from: 'design', question: 'which shape?' }
-const inputNeededImplement: Proposal = { _tag: 'InputNeeded', from: 'implement', question: 'rename to X or Y?' }
+const inputNeededDesign: Proposal = { _tag: 'InputNeeded', from: 'design', questions: [], said: 'which shape?' }
+const inputNeededImplement: Proposal = {
+  _tag: 'InputNeeded',
+  from: 'implement',
+  questions: [],
+  said: 'rename to X or Y?',
+}
 const buildRed: Proposal = { _tag: 'BuildRed', output: 'pnpm test failed' }
 const buildRedEmpty: Proposal = { _tag: 'BuildRed', output: '' }
 const reviewFindings: Proposal = { _tag: 'ReviewFindings', findings: [finding()] }
@@ -622,7 +627,7 @@ describe('routeNext', () => {
     const reply: JudgeReply = { _tag: 'NotAsked' }
     expect(routeNext(offer, reply, decision, run)).toEqual({
       _tag: 'WaitOnPerson',
-      reason: { _tag: 'AgentQuestion', run, step: 'design', question: 'which shape?' },
+      reason: { _tag: 'AgentQuestion', run, step: 'design', questions: [], said: 'which shape?' },
     })
   })
 

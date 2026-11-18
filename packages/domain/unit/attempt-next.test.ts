@@ -102,7 +102,7 @@ describe('nextOf: §2 Proposal table', () => {
     const result = next(outcome('design', [action('design', { _tag: 'Asked', question: 'which shape?', draft: null })]))
     expect(result).toEqual({
       _tag: 'Propose',
-      proposal: { _tag: 'InputNeeded', from: 'design', question: 'which shape?' },
+      proposal: { _tag: 'InputNeeded', from: 'design', questions: [], said: 'which shape?' },
     })
   })
 
@@ -112,7 +112,7 @@ describe('nextOf: §2 Proposal table', () => {
     )
     expect(result).toEqual({
       _tag: 'Propose',
-      proposal: { _tag: 'InputNeeded', from: 'implement', question: 'rename to X or Y?' },
+      proposal: { _tag: 'InputNeeded', from: 'implement', questions: [], said: 'rename to X or Y?' },
     })
   })
 
@@ -776,8 +776,10 @@ describe('fromOf', () => {
   })
 
   it('InputNeeded: its own from', () => {
-    expect(fromOf({ _tag: 'InputNeeded', from: 'design', question: 'which shape?' })).toBe('design')
-    expect(fromOf({ _tag: 'InputNeeded', from: 'implement', question: 'rename to X or Y?' })).toBe('implement')
+    expect(fromOf({ _tag: 'InputNeeded', from: 'design', questions: [], said: 'which shape?' })).toBe('design')
+    expect(fromOf({ _tag: 'InputNeeded', from: 'implement', questions: [], said: 'rename to X or Y?' })).toBe(
+      'implement',
+    )
   })
 
   it('MergeConflict: merge', () => {

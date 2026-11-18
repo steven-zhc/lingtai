@@ -25,9 +25,14 @@ type TriageDraft = {
   target: DraftTarget | null
   /** Appends to the target's draft. Page state only: the resolution is what writes (0118 §6). */
   add: (text: string) => void
-  selected: (index: number, question: TriageQuestion) => string
-  pick: (index: number, answerId: string) => void
+  /** The wait's own questions (`AgentQuestion`, `InputNeeded`), empty where it asked none in this shape (#1253). */
+  asked: readonly TriageQuestion[]
+  selected: (index: number, question: TriageQuestion, source?: AnswerSource) => string
+  pick: (index: number, answerId: string, source?: AnswerSource) => void
 }
+
+/** Whose question a choice answers: triage's advice, or the agent's own question on the wait. */
+export type AnswerSource = 'triage' | 'asked'
 
 const Context = createContext<TriageDraft | null>(null)
 
@@ -43,15 +48,34 @@ export function draftTarget(recommended: string | null): DraftTarget | null {
   return recommended === 'EditBodyAndStartNewAttempt' || recommended === 'AnswerQuestion' ? recommended : null
 }
 
+/**
+ * What the agent itself asked on a wait (#1253): an `AgentQuestion`'s questions, or those of a `ProposedEscalated`
+ * carrying an `InputNeeded`. Empty for every other reason, and for a question written as prose (`said`).
+ */
+export function askedOf(
+  reason: { readonly _tag: string; readonly questions?: readonly TriageQuestion[]; readonly proposal?: unknown } | null,
+): readonly TriageQuestion[] {
+  if (reason === null) return []
+  if (reason._tag === 'AgentQuestion') return reason.questions ?? []
+  const proposal = reason.proposal as { _tag?: string; questions?: readonly TriageQuestion[] } | undefined
+  return reason._tag === 'ProposedEscalated' && proposal?._tag === 'InputNeeded' ? (proposal.questions ?? []) : []
+}
+
 export function TriagePicks({
   waitId,
   cause,
+  asked = null,
   recommended = null,
   children,
 }: {
   waitId: WaitId | null
   /** The cause triage advised, whose questions the choices draw; null when there is none. */
   cause: Parameters<typeof triageAnswersText>[0] | null
+  /**
+   * What the agent asked on this wait, from the wait's own reason (#1253). Its picks are kept apart from
+   * triage's: the server checks `picks` against triage's cause, and an agent's answer id is not one of its.
+   */
+  asked?: readonly TriageQuestion[] | null
   /** The card triage's advice recommends, as `recommendedResolution` answered it on the server. */
   recommended?: string | null
   children: ReactNode
@@ -62,12 +86,19 @@ export function TriagePicks({
     body: null,
     answer: null,
   })
-  const selected = (index: number, question: TriageQuestion) => answers[index] ?? question.recommended
+  const [askedPicks, setAskedPicks] = useState<Picks>({ waitId, answers: {} })
+  const askedAnswers = askedPicks.waitId === waitId ? askedPicks.answers : {}
+  const askedList = asked ?? []
+  const selected = (index: number, question: TriageQuestion, source: AnswerSource = 'triage') =>
+    (source === 'asked' ? askedAnswers : answers)[index] ?? question.recommended
   // The one composition: the server writes this same text for the same picks (#921).
   const composed = cause === null ? null : triageAnswersText(cause, answers)
-  const text = composed?.ok ? composed.text : ''
-  const pick = (index: number, answerId: string) =>
-    setPicks((current) => ({
+  // What the wait itself asked is composed the same way and takes the body box first (#1253).
+  const composedAsked =
+    askedList.length === 0 ? null : triageAnswersText({ _tag: 'UndecidedQuestion', questions: askedList }, askedAnswers)
+  const text = composedAsked?.ok ? composedAsked.text : composed?.ok ? composed.text : ''
+  const pick = (index: number, answerId: string, source: AnswerSource = 'triage') =>
+    (source === 'asked' ? setAskedPicks : setPicks)((current) => ({
       waitId,
       answers: { ...(current.waitId === waitId ? current.answers : {}), [index]: answerId },
     }))
@@ -118,6 +149,7 @@ export function TriagePicks({
         closeAnswer,
         target,
         add,
+        asked: askedList,
         selected,
         pick,
       }}
@@ -131,9 +163,17 @@ export function useTriageDraft(): TriageDraft | null {
   return useContext(Context)
 }
 
-export function TriageChoices({ question, index }: { question: TriageQuestion; index: number }) {
+export function TriageChoices({
+  question,
+  index,
+  source = 'triage',
+}: {
+  question: TriageQuestion
+  index: number
+  source?: AnswerSource
+}) {
   const draft = useTriageDraft()
-  const selected = draft?.selected(index, question) ?? question.recommended
+  const selected = draft?.selected(index, question, source) ?? question.recommended
   return (
     <fieldset className="triage-choices">
       <legend className="triage-choices-question">{question.text}</legend>
@@ -143,10 +183,10 @@ export function TriageChoices({ question, index }: { question: TriageQuestion; i
             <span className="triage-choice-main">
               <input
                 type="radio"
-                name={`triage-question-${index}`}
+                name={`${source === 'asked' ? 'asked' : 'triage'}-question-${index}`}
                 value={answer.id}
                 checked={selected === answer.id}
-                onChange={() => draft?.pick(index, answer.id)}
+                onChange={() => draft?.pick(index, answer.id, source)}
               />
               <span className="triage-choice-text">{answer.text}</span>
             </span>

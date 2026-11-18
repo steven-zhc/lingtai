@@ -270,7 +270,8 @@ describe('closing a blocked item', () => {
         _tag: 'AgentQuestion',
         run: anAttemptRef('pass-40'),
         step: 'implement',
-        question: 'which helper?',
+        questions: [],
+        said: 'which helper?',
       }),
     ])
 

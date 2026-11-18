@@ -1298,7 +1298,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
       'RunRefsPublished',
     ])
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({ _tag: 'AgentQuestion', step: 'design', question: asked })
+    expect(hold).toMatchObject({ _tag: 'AgentQuestion', step: 'design', questions: [], said: asked })
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 

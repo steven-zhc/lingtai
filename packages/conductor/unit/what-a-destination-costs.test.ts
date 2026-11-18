@@ -338,7 +338,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
      * §3c's *that step again, stating the assumption*.
      */
     it('arrives with somewhere to go, which a crash never does', () => {
-      const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', question: 'which space?' }
+      const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', questions: [], said: 'which space?' }
       const offer = offerFor(
         proposal,
         { refusalFixes: SPARE.refusalFixes, newAttempts: SPARE.newAttempts, conflictResolutions: SPARE.refusalFixes },
@@ -364,7 +364,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
      * design run each time, up to `runtime.limits.rounds` and no further.
      */
     it('charges a round for `design` again, and stops offering it once they are spent', () => {
-      const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', question: 'which space?' }
+      const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', questions: [], said: 'which space?' }
       const offer = offerFor(
         proposal,
         { refusalFixes: SPARE.refusalFixes, newAttempts: SPARE.newAttempts, conflictResolutions: SPARE.refusalFixes },

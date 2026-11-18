@@ -24,7 +24,7 @@ async function blocked(store: EventStore, issue: number) {
     ...aClaim(stream, 'pass-1'),
     ...aWait(
       stream,
-      { _tag: 'AgentQuestion', run: anAttemptRef('pass-1'), step: 'implement', question: 'which?' },
+      { _tag: 'AgentQuestion', run: anAttemptRef('pass-1'), step: 'implement', questions: [], said: 'which?' },
       waitId,
     ),
   ])

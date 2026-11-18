@@ -72,7 +72,8 @@ add('AgentQuestion', 'agentquestion', (item) => [
     _tag: 'AgentQuestion',
     run: { runId: 'pass-pin-agentquestion' },
     step: 'implement',
-    question: 'which approach?',
+    questions: [],
+    said: 'which approach?',
   }),
 ])
 

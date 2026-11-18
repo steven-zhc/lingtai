@@ -99,7 +99,15 @@ beforeAll(async () => {
   await store.append(
     wi,
     0,
-    toAppend(aWait(makeStream(wi), { _tag: 'AgentQuestion', run: { runId }, step: 'design', question: 'which base?' })),
+    toAppend(
+      aWait(makeStream(wi), {
+        _tag: 'AgentQuestion',
+        run: { runId },
+        step: 'design',
+        questions: [],
+        said: 'which base?',
+      }),
+    ),
   )
   // A run refused before it started: no `RunStarted`, so nothing names a card.
   await store.append(startless, 0, [

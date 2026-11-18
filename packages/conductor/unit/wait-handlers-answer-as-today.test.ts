@@ -155,7 +155,8 @@ describe('answer', () => {
         _tag: 'AgentQuestion',
         run: anAttemptRef('pass-6'),
         step: 'implement',
-        question: 'which helper?',
+        questions: [],
+        said: 'which helper?',
       }),
     ])
 
@@ -260,7 +261,8 @@ describe('requeue', () => {
         _tag: 'AgentQuestion',
         run: anAttemptRef('pass-12'),
         step: 'implement',
-        question: 'which helper?',
+        questions: [],
+        said: 'which helper?',
       }),
     ])
 
@@ -291,7 +293,8 @@ describe('requeue', () => {
         _tag: 'AgentQuestion',
         run: anAttemptRef('pass-13'),
         step: 'implement',
-        question: 'which helper?',
+        questions: [],
+        said: 'which helper?',
       }),
     ])
 
@@ -322,7 +325,8 @@ describe('requeue', () => {
         _tag: 'AgentQuestion',
         run: anAttemptRef('pass-14'),
         step: 'implement',
-        question: 'which helper?',
+        questions: [],
+        said: 'which helper?',
       }),
     ])
     const waitA = waitsOf(await store.read(ticketId)).at(-1)!.waitId

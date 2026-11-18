@@ -211,7 +211,8 @@ const blocked = (question: string): ToAppend =>
       _tag: 'AgentQuestion',
       run: { runId: 'pass-0' },
       step: 'implement',
-      question,
+      questions: [],
+      said: question,
     })[0]!,
   )
 

@@ -35,6 +35,7 @@ import {
   type PayloadOf,
   type StoredRoute,
 } from '@lingtai/domain'
+import { triageQuestionsOf } from '@lingtai/domain'
 import { TriageResult, type WaitReason } from '@lingtai/domain/wait'
 
 import { kindOf } from './discover.ts'
@@ -437,6 +438,10 @@ export function parseTriage(text: string | null, options: { kind: string | null 
   if (parsed.data._tag !== 'TriageAdvised') {
     return { kind: 'refused', why: 'did not parse as advice', raw: text }
   }
+
+  // The bar on what an agent may ask is on the writer's side (#1253): two to four answers.
+  const asks = triageQuestionsOf(parsed.data.cause).filter(({ question }) => question.answers.length < 2)
+  if (asks.length > 0) return { kind: 'refused', why: 'a question needs two to four answers', raw: text }
 
   return { kind: 'advised', result: parsed.data }
 }

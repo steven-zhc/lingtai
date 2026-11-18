@@ -422,7 +422,7 @@ import { FollowedLog, RawRunLog, SaidLast } from './run-log.tsx'
 import { Since } from './since'
 import { Skeleton } from './skeleton.tsx'
 import { SplitPlan, type SplitControls } from './split-plan.tsx'
-import { ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
+import { askedOf, ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
 
 const MAX_TICKET_CELL = 600
 
@@ -1193,6 +1193,7 @@ export function Standing({
     <TriagePicks
       waitId={standing.state === 'blocked' ? standing.waitId : null}
       cause={cause}
+      asked={askedOf(standing.reason)}
       recommended={triageRecommended}
     >
       <FollowedLog

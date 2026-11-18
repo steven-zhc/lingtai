@@ -36,7 +36,7 @@ async function aBlockedTicket(store: EventStore): Promise<{ ticketId: string; wa
     ...aClaim(item, 'pass-1'),
     ...aWait(
       item,
-      { _tag: 'AgentQuestion', run: anAttemptRef('pass-1'), step: 'implement', question: 'which helper?' },
+      { _tag: 'AgentQuestion', run: anAttemptRef('pass-1'), step: 'implement', questions: [], said: 'which helper?' },
       waitId,
     ),
   ])

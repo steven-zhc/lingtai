@@ -301,7 +301,13 @@ it('appends under what is there, after a blank line, and names the target the re
 it.each([
   [
     'AgentQuestion',
-    { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'implement', question: 'which helper?' },
+    {
+      _tag: 'AgentQuestion',
+      run: { runId: 'pass-1' },
+      step: 'implement',
+      questions: [] as never[],
+      said: 'which helper?',
+    },
     'which helper?',
   ],
   [
@@ -309,7 +315,7 @@ it.each([
     {
       _tag: 'ProposedEscalated',
       run: { runId: 'pass-2' },
-      proposal: { _tag: 'InputNeeded', from: 'design', question: 'which design?' },
+      proposal: { _tag: 'InputNeeded', from: 'design', questions: [] as never[], said: 'which design?' },
       because: { _tag: 'NotAsked' },
     },
     'which design?',

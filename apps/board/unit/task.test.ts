@@ -455,7 +455,8 @@ describe('an attempt asked (#829)', () => {
       _tag: 'AgentQuestion' as const,
       run: { runId: RUN_1 },
       step: 'design' as const,
-      question: 'which?',
+      questions: [],
+      said: 'which?',
     }
     const claimed = e(ITEM, 'TicketClaimed', { runId: RUN_1, worker: 'w' })
     const wait = e(ITEM, 'WaitStarted', { waitId: 'wait-1', reason: ask })

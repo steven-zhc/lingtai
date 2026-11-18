@@ -16,6 +16,7 @@
  */
 import { z } from 'zod'
 
+import { TriageQuestion } from './triage.ts'
 import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts'
 
 /**
@@ -54,11 +55,18 @@ export const ReviewEmpty = z.object({ _tag: z.literal('ReviewEmpty'), said: z.st
 export type ReviewEmpty = z.infer<typeof ReviewEmpty>
 
 /** A `design` that asked, or an `implement` commit that asked — the only variant two steps can produce. */
-export const InputNeeded = z.object({
-  _tag: z.literal('InputNeeded'),
-  from: z.enum(['design', 'implement']),
-  question: z.string(),
-})
+export const InputNeeded = z
+  .object({
+    _tag: z.literal('InputNeeded'),
+    from: z.enum(['design', 'implement']),
+    /** In triage's shape (#1253); empty where the question was prose. */
+    questions: z.array(TriageQuestion),
+    /** The prose question: an `implement`'s, or one written before #1253. */
+    said: z.string().optional(),
+  })
+  .refine((q) => q.questions.length > 0 || q.said !== undefined, {
+    message: 'a question carries questions or the prose it was asked in',
+  })
 export type InputNeeded = z.infer<typeof InputNeeded>
 
 /**

@@ -46,7 +46,8 @@ const agentQuestion = (question: string): WaitReason => ({
   _tag: 'AgentQuestion',
   run: { runId: 'pass-0' },
   step: 'implement',
-  question,
+  questions: [],
+  said: question,
 })
 
 /** A declared `human:` or an injected `--no-merge`, with every step green. */
