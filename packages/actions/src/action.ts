@@ -1303,10 +1303,19 @@ export function recordedOr(
   context: Pick<ActionContext, 'recorded'>,
   name: string,
   composed: ComposedPrompt,
+  /** What ends the recorded brief when a step is redone whole (#1246): the 0108 §12 paragraph, never a `review`'s. */
+  tail?: string,
 ): ComposedPrompt {
-  return context.recorded?.name === name && context.recorded.prompt !== null
-    ? { handed: context.recorded.prompt, recorded: context.recorded.prompt, refs: [], values: [] }
-    : composed
+  if (context.recorded?.name !== name || context.recorded.prompt === null) return composed
+  const prompt = withRedoParagraph(context.recorded.prompt, tail)
+  return { handed: prompt, recorded: prompt, refs: [], values: [] }
+}
+
+/** `prompt` with its own trailing redo paragraph (a cut-off call that was itself a redo) replaced by `paragraph`, if any. */
+export function withRedoParagraph(prompt: string, paragraph: string | null | undefined): string {
+  if (paragraph === undefined || paragraph === null) return prompt
+  const at = prompt.lastIndexOf('\n\nThis step was interrupted (')
+  return `${at < 0 ? prompt : prompt.slice(0, at)}\n\n${paragraph}`
 }
 
 /**

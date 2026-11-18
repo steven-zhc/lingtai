@@ -24,6 +24,7 @@ import {
   makeWorktreeAction,
   commandEffect,
   redoParagraph,
+  withRedoParagraph,
   rerunId,
 } from '@lingtai/actions'
 import type { LandedCommit, LandedPath, LandedTitle } from '@lingtai/actions'
@@ -47,7 +48,7 @@ import {
   WIP_COMMIT_PREFIX,
   accountLimitReleases,
   releasesOf,
-  askedAgainOn,
+  stepStartedAtOf,
   continuableRelease,
   cutOffPromptOf,
   expandPrompt,
@@ -1500,7 +1501,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     for: cutOffFor,
                     prompt: recordedPrompt,
                     accountReruns,
-                    askedAgain: askedAgainOn(releasedEvents, cutOffFor.step),
+                    why: "the account's limit cut it off",
+                    startedAt: stepStartedAtOf(releasedEvents, cutOffFor.step) ?? undefined,
                   }
                 : { for: null, prompt: null, accountReruns },
           },
@@ -1563,7 +1565,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     for: cutOffFor,
                     prompt: recordedPrompt,
                     accountReruns,
-                    askedAgain: askedAgainOn(runEvents, cutOffFor.step),
+                    why: 'a person asked to redo it',
+                    startedAt: stepStartedAtOf(runEvents, cutOffFor.step) ?? undefined,
                   }
                 : { for: null, prompt: null, accountReruns },
           },
@@ -4790,7 +4793,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // that never ran before has no entry, and finds the tree as the one before it left it.
           const startKey = `${brief.context.onSha}:${spec.name}`
           const earlierStart = brief.context.rerun === undefined ? undefined : agentStarts.get(startKey)
-          const startedAt = earlierStart ?? (yield* gitOrDieEffect(['rev-parse', 'HEAD']))
+          // **A continuation's first agent starts where the log says the step began** (#1246): this process has
+          // no `agentStarts`, and the re-cut head already holds the WIP a redone `implement` is measured against.
+          const carried = firstStartOf(brief.context) === null ? brief.context.redo?.startedAt : undefined
+          const startedAt = earlierStart ?? carried ?? (yield* gitOrDieEffect(['rev-parse', 'HEAD']))
           if (!agentStarts.has(startKey)) agentStarts.set(startKey, startedAt)
           const redoNote = yield* redoNoteOf(brief.context, startedAt)
           const implementDecision = yield* decideSandbox
@@ -4884,7 +4890,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   brief.context.recorded?.name === spec.name ? (brief.context.recorded.prompt ?? null) : null
                 const implementerParts: RecordPart[] =
                   recordedBrief !== null
-                    ? [recordedBrief]
+                    ? [withRedoParagraph(recordedBrief, redoNote)]
                     : [
                         ...renderPromptParts(
                           options.prompt,
@@ -5201,7 +5207,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             brief.context.recorded?.name === spec.name ? (brief.context.recorded.prompt ?? null) : null
           const fixParts: RecordPart[] =
             recordedFix !== null
-              ? [recordedFix]
+              ? [withRedoParagraph(recordedFix, redoNote)]
               : [
                   ...fixBriefParts({
                     refusal,
@@ -5636,7 +5642,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ...(continuation.conflictResolved !== null ? { conflictResolved: continuation.conflictResolved } : {}),
                 ...(continuation.released?.rerun.for != null
                   ? {
-                      rerun: {
+                      redo: {
                         for: {
                           step: continuation.released.rerun.for.step,
                           name: continuation.released.rerun.for.name,
@@ -5644,7 +5650,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                         },
                         prompt: continuation.released.rerun.prompt,
                         accountReruns: continuation.released.rerun.accountReruns,
-                        askedAgain: continuation.released.rerun.askedAgain,
+                        why: continuation.released.rerun.why,
+                        ...(continuation.released.rerun.startedAt === undefined
+                          ? {}
+                          : { startedAt: continuation.released.rerun.startedAt }),
                       },
                     }
                   : {}),

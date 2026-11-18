@@ -19,6 +19,7 @@ export {
   type TheDesign,
   recordedOr,
   redoParagraph,
+  withRedoParagraph,
   rerunId,
   type RedoNote,
 } from './action.ts'

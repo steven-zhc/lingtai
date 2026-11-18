@@ -3215,12 +3215,71 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
         step: 'implement',
         waive: undefined,
         landingRetriesSpent: 1,
-        rerun: { for: { step: 'implement', name: 'write the change', round: 0 }, prompt: null, accountReruns: 2 },
+        redo: {
+          for: { step: 'implement', name: 'write the change', round: 0 },
+          prompt: null,
+          accountReruns: 2,
+          why: 'a person asked to redo it',
+        },
       },
     } as unknown as AttemptOptions)
 
     expect(contexts[0]?.rerun).toBe(3)
     expect(contexts[0]?.rerun).not.toBe(2)
+  })
+
+  it("redoes the cut-off step whole from the log's startedAt, spending no stepRedos (#1246)", async () => {
+    const { bodies } = watching()
+    const { actionsAt, contexts } = implementing([])
+    const { emit, seen } = events()
+
+    await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      from: {
+        step: 'implement',
+        waive: undefined,
+        stepRedosSpent: 1,
+        redo: {
+          for: { step: 'implement', name: 'write the change', round: 0 },
+          prompt: 'the recorded brief',
+          accountReruns: 1,
+          why: "the account's limit cut it off",
+          startedAt: 'started-at-sha',
+        },
+      },
+    } as unknown as AttemptOptions)
+
+    expect(contexts[0]?.redo).toEqual({
+      why: "the account's limit cut it off",
+      startedAt: 'started-at-sha',
+      head: context.onSha,
+    })
+    expect(contexts[0]?.recorded).toEqual({ name: 'write the change', prompt: 'the recorded brief' })
+    expect(seen.some((e) => e.type === 'StepRedone')).toBe(false)
+    const started = seen.find((e) => e.type === 'StepStarted' && (e.data as { step: string }).step === 'implement')
+    expect(((started?.data ?? {}) as { startedAt?: string }).startedAt).toBe('started-at-sha')
+  })
+
+  it('writes the head a step arrived at on a fresh StepStarted (#1246)', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = implementing([])
+    const { emit, seen } = events()
+
+    await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      from: { step: 'implement', waive: undefined },
+    } as unknown as AttemptOptions)
+
+    const started = seen.find((e) => e.type === 'StepStarted' && (e.data as { step: string }).step === 'implement')
+    expect(((started?.data ?? {}) as { startedAt?: string }).startedAt).toBe(context.onSha)
   })
 
   it('spends what a continuation already spent', async () => {

@@ -1028,17 +1028,19 @@ export interface AttemptOptions {
     /** The landings again the stream already holds (#1221, #1239): apart from `stepRedosSpent`, and never in a dispatch id. */
     readonly landingRetriesSpent?: number
     /**
-     * **The first visit of `step` is a rerun of the call an account limit cut off** (0108 §11, #1205): the
-     * recorded prompt (null: a fresh brief) is handed again under a new dispatch id. `accountReruns` is this
-     * rerun's number among the attempt's; every rerun's suffix is `stepRedosSpent + landingRetriesSpent + accountReruns` (a landing retry dispatches nothing, but an attempt begun before #1239 counted it here), so
+     * **The first visit of `step` redoes the step the stop cut off, whole, on the saved head** (0108 §11, §12,
+     * #1246): from its first action, with the recorded prompt (null: a fresh brief) under a new dispatch id and
+     * the §12 paragraph (`why`) ending it. No `StepRedone` is written and `stepRedos` is not spent. `startedAt` is
+     * the sha the step first began at, read from the log (absent: the head it was re-cut at). `accountReruns` is this
+     * redo's number among the attempt's; every redo's suffix is `stepRedosSpent + landingRetriesSpent + accountReruns` (a landing retry dispatches nothing, but an attempt begun before #1239 counted it here), so
      * the two kinds never repeat an id.
      */
-    readonly rerun?: {
+    readonly redo?: {
       readonly for: { readonly step: Step; readonly name: string; readonly round: number }
       readonly prompt: string | null
       readonly accountReruns: number
-      /** The cut-off call was itself an *ask again* of an unreadable answer: it is not granted a second (#1205). */
-      readonly askedAgain?: boolean
+      readonly why: string
+      readonly startedAt?: string
     }
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
     readonly landedOnBase?: {
@@ -2186,11 +2188,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       }
       // The first visit of `from.step` after an account limit: the cut-off call's round, its dispatch suffix and
       // its recorded brief (#1205).
-      const accountRerun = options.from?.rerun
+      const accountRerun = options.from?.redo
       const accountRerunsSpent = accountRerun?.accountReruns ?? 0
-      const firstAccountVisit =
-        accountRerun !== undefined && rerun === null && at === options.from?.step && !steps.some((v) => v.step === at)
-      if (firstAccountVisit && accountRerun.askedAgain === true) askingAgain = at
       const visitContext: ActionContext =
         rerun !== null
           ? { ...rerun.context, rerun: stepRedosSpent + landingRetriesSpent + accountRerunsSpent }
@@ -2200,6 +2199,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                 round: accountRerun.for.round,
                 rerun: stepRedosSpent + landingRetriesSpent + accountRerun.accountReruns,
                 recorded: { name: accountRerun.for.name, prompt: accountRerun.prompt },
+                // The re-cut is already done: the worktree stands at `onSha`, the saved head (#1246).
+                redo: {
+                  why: accountRerun.why,
+                  startedAt: accountRerun.startedAt ?? onSha,
+                  head: onSha,
+                },
               }
             : contextFor()
       const visitedBefore: readonly StepReached[] = rerun === null ? [...steps] : rerun.reached
@@ -2251,7 +2256,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         Effect.asVoid(
           options.emit({
             type: 'StepStarted',
-            data: { runId: options.context.runId, step: visiting, round: visitContext.round ?? 0 },
+            data: {
+              runId: options.context.runId,
+              step: visiting,
+              round: visitContext.round ?? 0,
+              startedAt: visitContext.redo?.startedAt ?? visitContext.onSha,
+            },
           }),
         ),
       )
@@ -2794,8 +2804,8 @@ function runVisit(
                 // id and its spend are the round's.
                 spec.step === 'implement' &&
                   firstVisitOfFrom &&
-                  options.from?.rerun !== undefined &&
-                  options.from.rerun.for.round > 0
+                  options.from?.redo !== undefined &&
+                  options.from.redo.for.round > 0
                 ? { why: 'a fixing run an account limit cut off, run again', asked: null, printed: null }
                 : sentBackTo(spec.step, reached),
         },
