@@ -81,7 +81,10 @@ export function describeSplitProblem(problem: SplitProblem): string {
  * without it and `resolveWait` with it. A kind outside it is a child the
  * queue would never see.
  */
-export function splitPlanProblems(plan: SplitPlanShape, options: { kinds?: readonly string[] } = {}): SplitProblem[] {
+export function splitPlanProblems(
+  plan: SplitPlanLike & { children: readonly { kind?: string }[] },
+  options: { kinds?: readonly string[] } = {},
+): SplitProblem[] {
   const problems: SplitProblem[] = []
   if (plan.children.length < 2) problems.push({ _tag: 'TooFewChildren', count: plan.children.length })
 
@@ -92,8 +95,8 @@ export function splitPlanProblems(plan: SplitPlanShape, options: { kinds?: reado
     keys.add(child.key)
     if (child.title.trim().length === 0) problems.push({ _tag: 'BlankTitle', key: child.key })
     if (child.body.trim().length === 0) problems.push({ _tag: 'BlankBody', key: child.key })
-    if (options.kinds !== undefined && !options.kinds.includes(child.kind))
-      problems.push({ _tag: 'UnknownKind', key: child.key, kind: child.kind })
+    if (options.kinds !== undefined && !options.kinds.includes(child.kind ?? ''))
+      problems.push({ _tag: 'UnknownKind', key: child.key, kind: child.kind ?? '' })
   }
 
   const edges = new Map<string, string[]>()
@@ -149,7 +152,13 @@ function findCycle(edges: ReadonlyMap<string, readonly string[]>): string[] | nu
   return null
 }
 
-const refuseProblems = (plan: SplitPlanShape, ctx: z.RefinementCtx): void => {
+/** What the structural checks read: no `kind`, which only the recipe-aware check does. */
+interface SplitPlanLike {
+  readonly children: readonly Omit<ChildTicket, 'kind'>[]
+  readonly blockedBy: readonly Dependency[]
+}
+
+const refuseProblems = (plan: SplitPlanLike, ctx: z.RefinementCtx): void => {
   for (const problem of splitPlanProblems(plan))
     ctx.addIssue({ code: 'custom', message: describeSplitProblem(problem) })
 }
@@ -178,3 +187,24 @@ export const SplitProposal = z
   })
   .superRefine(refuseProblems)
 export type SplitProposal = z.infer<typeof SplitProposal>
+
+/**
+ * What triage may *answer*: the proposal without a `kind` (#1271). A split's
+ * children are opened with the parent's own kind, which the runner owns and
+ * writes into the recorded `SplitProposal`; the model is never asked for one.
+ */
+export const SplitProposalAnswer = z
+  .object({
+    children: z
+      .array(
+        z.object({
+          key: z.string().max(KEY_MAX),
+          title: z.string().max(TRIAGE_TEXT_MAX),
+          body: z.string().max(TRIAGE_SPLIT_BODY_MAX),
+        }),
+      )
+      .max(TRIAGE_SPLIT_CHILDREN_MAX),
+    blockedBy: z.array(Dependency).max(TRIAGE_SPLIT_CHILDREN_MAX * TRIAGE_SPLIT_CHILDREN_MAX),
+  })
+  .superRefine(refuseProblems)
+export type SplitProposalAnswer = z.infer<typeof SplitProposalAnswer>

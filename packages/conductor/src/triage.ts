@@ -37,6 +37,7 @@ import {
 } from '@lingtai/domain'
 import { TriageResult, type WaitReason } from '@lingtai/domain/wait'
 
+import { kindOf } from './discover.ts'
 import {
   jsonCandidates,
   MAX_READ_ROUNDS,
@@ -128,10 +129,11 @@ never repeated beside it:
   does not match \`total\` at or below it, is refused.
 - \`TicketTooBig\` — *try it again, narrower*: the run did not finish. When
   smaller tickets would serve better, add \`split\`: \`{"children": [{"key": "parser",
-  "title": "…", "body": "…", "kind": "feature"}], "blockedBy": [{"ticket": "wire",
+  "title": "…", "body": "…"}], "blockedBy": [{"ticket": "wire",
   "blockedBy": "parser"}]}\` — at least two children, at most ${TRIAGE_SPLIT_CHILDREN_MAX}, each
   \`key\` unique (lower case letters, digits, hyphens), every \`blockedBy\` entry naming two
-  keys, and no cycle.
+  keys, and no cycle. Each child is opened with this ticket's own kind, so the plan
+  names none.
 - \`SetupBroken\` — *fix the setup*: the repository or the machine refused, before or around any agent's work
 
 \`resolution\` is one of \`"Approve"\`, \`"GrantFixRound"\`, \`"Requeue"\`, \`"EditBodyAndRequeue"\`,
@@ -347,8 +349,14 @@ function clip(text: string): string {
  * into an answer."* **No check against `allowedResolutions`.** An advised kind
  * the wait does not offer still parses; `recommendedResolution` already
  * returns `null` for it.
+ *
+ * **A split's `kind` is the runner's, not the model's** (#1271): it is not part
+ * of what triage answers, so whatever the reply carries there is overwritten
+ * with `options.kind`, the parent's — rewriting a field nobody asked the model
+ * for is not repairing an answer. `kind: null` means it could not be settled,
+ * and a reply with a split is then refused.
  */
-export function parseTriage(text: string | null): TriageReply {
+export function parseTriage(text: string | null, options: { kind: string | null }): TriageReply {
   if (text === null || text.trim() === '') {
     return { kind: 'refused', why: 'the reply was empty', raw: text ?? '' }
   }
@@ -408,6 +416,19 @@ export function parseTriage(text: string | null): TriageReply {
     return { kind: 'refused', why: 'resolution is a tag, not an object', raw: text }
   }
 
+  const cause = found['cause']
+  if (typeof cause === 'object' && cause !== null && (cause as Record<string, unknown>)['_tag'] === 'TicketTooBig') {
+    const split = (cause as Record<string, unknown>)['split']
+    if (typeof split === 'object' && split !== null && Array.isArray((split as Record<string, unknown>)['children'])) {
+      if (options.kind === null)
+        return { kind: 'refused', why: "the recipe's kinds could not be read, so a split has no kind", raw: text }
+      const { kind } = options
+      ;(split as { children: unknown[] }).children = (split as { children: unknown[] }).children.map((child) =>
+        typeof child === 'object' && child !== null && !Array.isArray(child) ? { ...child, kind } : child,
+      )
+    }
+  }
+
   const parsed = TriageResult.safeParse({ ...found, _tag: 'TriageAdvised' })
   if (!parsed.success) {
     const why = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
@@ -418,4 +439,17 @@ export function parseTriage(text: string | null): TriageReply {
   }
 
   return { kind: 'advised', result: parsed.data }
+}
+
+/**
+ * The kind a split's children are opened with (#1271): the parent's own,
+ * the recipe's first when the parent carries none it reads or could not be read
+ * (`labels` null), and null when the recipe's kinds were unavailable. Not
+ * `kindOf`'s job — the queue must never default a kind.
+ */
+export function splitChildKind(
+  labels: Parameters<typeof kindOf>[0]['labels'] | null,
+  kinds: readonly string[],
+): string | null {
+  return (labels === null ? null : kindOf({ labels }, kinds)) ?? kinds[0] ?? null
 }
