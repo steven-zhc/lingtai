@@ -1386,6 +1386,36 @@ export function triageSpentOn(
   return out
 }
 
+/**
+ * **The implement rounds a grant raised that no refusal fix paid for**, for one attempt: a `FixRefusal` resolution
+ * raises the attempt's implement round whoever gave it, but only an automatic route's fix and a triage's fix for a
+ * cause other than a conflict spend `refusalFixes` (0108 §8). A person's grant and a triage's conflict resolution
+ * (`conflictResolutions`) are rounds the allowance did not buy, so `implementRound - this` is what `refusalFixes` has
+ * spent (#1258). Counted once the attempt's `implementRoundSeq` is past the resolution, or for `pending`, the wait
+ * whose continuation is being started and whose round the caller has already added.
+ */
+export function fixRoundsNotBought(
+  state: TicketState,
+  runId: string,
+  attempt?: { implementRoundSeq?: number } | null,
+  pending?: WaitId | null,
+): number {
+  let n = 0
+  for (const w of state.waits) {
+    if (w.resolution?.resolution._tag !== 'FixRefusal') continue
+    if (!('run' in w.reason) || w.reason.run.runId !== runId) continue
+    const answered = w.triage.result
+    const bought =
+      w.resolution.by === 'triage' &&
+      !(answered?._tag === 'TriageAnswered' && answered.cause._tag === 'ConflictingHunks')
+    if (bought) continue
+    const seq = w.resolution.seq
+    const absorbed = seq === undefined || attempt?.implementRoundSeq === undefined || seq < attempt.implementRoundSeq
+    if (absorbed || w.waitId === pending) n += 1
+  }
+  return n
+}
+
 export type CloseDecline = { reason: 'already-closed' } | { reason: 'landed' } | { reason: 'changed' }
 
 /** A close is refused from either terminal, and when the stream moved since the caller's decision (#604). */

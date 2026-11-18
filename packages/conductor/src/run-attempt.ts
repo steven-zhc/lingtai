@@ -1023,6 +1023,10 @@ export interface AttemptOptions {
      * this one visit's.
      */
     readonly roundsSpent?: number
+    /** Of `roundsSpent`, the rounds no refusal fix paid for — a person's grant, a triage's conflict resolution (#1258). */
+    readonly roundsNotBought?: number
+    /** The grant this continues is one of those: its lap is not the one that ends at a person (#1258). */
+    readonly grantNotBought?: boolean
     /**
      * **A ticket released for a red base, taken again** (#1211, 0108 §13): at the first visit of `build` the base
      * is checked at `toSha` (`action` is the `build` action to ask; null: no action runs the red command any
@@ -1477,7 +1481,11 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           waitMs: Duration.toMillis(Duration.fromInputUnsafe(wait)),
         },
       })
-    const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.refusalFixes)
+    const roundLimit =
+      options.from?.roundLimit ??
+      (options.from?.grant && options.from.grantNotBought !== true
+        ? roundsSpent - (options.from.roundsNotBought ?? 0)
+        : ceilings.refusalFixes)
     // A restart is automatic fix routing too, and a bigger kind than a round: the lap
     // that spends a human grant ends at a person rather than at a restart nobody
     // decided. A continuation from `Approve` carries no grant and keeps the recipe's (#570).
@@ -1745,7 +1753,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           conflictResolutions: ceilings.conflictResolutions,
         }
         const spentNow = {
-          rounds: roundsSpent,
+          // `refusalFixes` spent is the rounds a fix bought, not every implement round (#1258).
+          rounds: Math.max(0, roundsSpent - (options.from?.roundsNotBought ?? 0)),
           newAttempts: ceilings.newAttemptsSpent,
           baseMerges: baseMergesSpent,
           conflictRounds: conflictRoundsSpent,

@@ -83,6 +83,7 @@ import {
   personAsksFromState,
   ticketStream,
   triageSpentOn,
+  fixRoundsNotBought,
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
 import {
@@ -1572,12 +1573,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const continuedSpent = continuationSpent(runState, triageSpentOn(reduced, options.continuing.runId, runState))
       // A crash that stands in for a wait carries that wait's advice (#654).
       const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
-      const priorGrant = waitsFromState(reduced).some(
+      // A triage's conflict resolution is a grant no refusal fix paid for: it neither ends the lap nor spends one (#1258).
+      const conflictOfTriage = (w: (typeof reduced.waits)[number]): boolean =>
+        w.resolution?.by === 'triage' &&
+        w.triage.result?._tag === 'TriageAnswered' &&
+        w.triage.result.cause._tag === 'ConflictingHunks'
+      const priorGrant = reduced.waits.some(
         (wait) =>
-          wait.resolution?._tag === 'FixRefusal' &&
+          wait.resolution?.resolution._tag === 'FixRefusal' &&
+          !conflictOfTriage(wait) &&
           'run' in wait.reason &&
           wait.reason.run.runId === options.continuing!.runId,
       )
+      const grantNotBought = reduced.waits.some((w) => w.waitId === approvedWaitId && conflictOfTriage(w))
       const criterion = granted ? grantCriterion(reason, standingRefusal(runState)) : null
       const next = granted ? { step: 'implement' as const } : continuationOf(reason, stepOutcomesOf(runEvents))
       if (next === null) return null
@@ -1652,11 +1660,25 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           ? { advice: grantedAdviceFromState(reduced, adviceWaitId)! }
           : {}),
         roundsSpent: continuationRound(runState, granted),
+        // Rounds in that count no refusal fix bought: a person's grant, a triage's conflict resolution (#1258).
+        roundsNotBought: fixRoundsNotBought(
+          reduced,
+          options.continuing.runId,
+          runState,
+          granted ? approvedWaitId : null,
+        ),
+        ...(grantNotBought ? { grantNotBought: true } : {}),
         baseMergesSpent: continuedSpent.baseMerges,
         conflictRoundsSpent: continuedSpent.conflictRounds,
         stepRedosSpent: continuedSpent.stepRedos,
         landingRetriesSpent: continuedSpent.landingRetries,
-        ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
+        ...(priorGrant
+          ? {
+              roundLimit:
+                continuationRound(runState, granted) -
+                fixRoundsNotBought(reduced, options.continuing.runId, runState, granted ? approvedWaitId : null),
+            }
+          : {}),
         ...(criterion !== null
           ? {
               grant: {

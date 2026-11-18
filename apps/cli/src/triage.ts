@@ -34,6 +34,7 @@ import {
   CONTROL_STREAM,
   parseTicketStream,
   attemptReducer,
+  fixRoundsNotBought,
   triageSpentOn,
   type CauseBound,
   type CauseCounter,
@@ -1353,9 +1354,11 @@ const waitTriageWithin = (
     ): Readonly<Record<CauseBound, CauseCounter>> => {
       // What the attempt's own counters do not yet hold: a resolution after the last event that raised the counter.
       const spent = triageSpentOn(state, waitRunId, run)
-      // `refusalFixes` is what triage itself bought: an implement round is not it (a conflict continuation or a
-      // person's grant starts one too), so only `WaitResolved{by: 'triage'}` counts, and it counts for good.
-      const fixesBought = triageSpentOn(state, waitRunId).refusalFixes
+      // `refusalFixes` is the implement rounds an automatic route or a triage fix bought: the attempt's round, less the
+      // rounds a person's grant or a conflict resolution raised, plus a triage fix whose continuation has not started.
+      const raised =
+        run === null || waitRunId === null ? 0 : run.implementRound - fixRoundsNotBought(state, waitRunId, run)
+      const fixesBought = Math.max(0, raised) + spent.refusalFixes
       return {
         refusalFixes: { used: fixesBought, allowed: allowed.refusalFixes },
         newAttempts: { used: state.newAttempts.length + spent.newAttempts, allowed: allowed.newAttempts },

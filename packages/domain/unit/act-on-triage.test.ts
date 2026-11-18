@@ -8,7 +8,13 @@ import { describe, expect, it } from 'vitest'
 import type { WaitId } from '../src/action.ts'
 import { Actor } from '../src/envelope.ts'
 import { BOUNDS, type CauseBound, type CauseCounter } from '../src/failure/respond.ts'
-import { actOnTriageTransition, reduceTicket, triageSpentOn, unchangedSince } from '../src/ticket.ts'
+import {
+  actOnTriageTransition,
+  fixRoundsNotBought,
+  reduceTicket,
+  triageSpentOn,
+  unchangedSince,
+} from '../src/ticket.ts'
 import type { TriageResult } from '../src/wait.ts'
 import { aClaim, anAttemptRef, aResolution, aTriageStart, aWait } from '../test/events.ts'
 import { makeStream } from '../test/support.ts'
@@ -190,5 +196,30 @@ describe('actOnTriageTransition', () => {
       ...aResolution(e, W, { _tag: 'RedoStep', onSha: 'abc', ref: 'agent/7' }, 'steven'),
     ])
     expect(triageSpentOn(resolved)).toEqual({ refusalFixes: 0, conflictResolutions: 0, newAttempts: 0, stepRedos: 0 })
+  })
+})
+
+describe('fixRoundsNotBought', () => {
+  it("a person's FixRefusal and a triage conflict resolution are rounds no refusal fix bought; a triage fix is not", () => {
+    const { e, events } = waiting()
+    const fix = { _tag: 'FixRefusal', onSha: 'abc', ref: 'agent/7' } as const
+    const person = reduceTicket([...events, ...aResolution(e, W, fix, 'steven')])
+    expect(fixRoundsNotBought(person, 'run-1', null)).toBe(1)
+    expect(fixRoundsNotBought(person, 'run-1', { implementRoundSeq: 0 })).toBe(0)
+    expect(fixRoundsNotBought(person, 'run-1', { implementRoundSeq: 0 }, W)).toBe(1)
+    const fixed = reduceTicket([...events, ...aResolution(e, W, fix, 'triage')])
+    expect(fixRoundsNotBought(fixed, 'run-1', null)).toBe(0)
+    const conflict = reduceTicket([
+      ...events,
+      e('WaitTriaged', {
+        waitId: W,
+        attempt: 1,
+        headSha: 'abc',
+        result: { ...unfinished, cause: { _tag: 'ConflictingHunks', hunks: [], total: 0 } },
+        by,
+      }),
+      ...aResolution(e, W, fix, 'triage'),
+    ])
+    expect(fixRoundsNotBought(conflict, 'run-1', null)).toBe(1)
   })
 })
