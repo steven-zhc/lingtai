@@ -219,7 +219,7 @@ const catchUpWait = (ticketId: string, triage: Triage, deps: CatchUpTriagePorts,
       declared: true,
       daemonStartedAt: startedAt,
     })
-    if (!askable(status, triageFactsFromState(state, waitId))) return
+    if (status._tag !== 'Interrupted' && !askable(status, triageFactsFromState(state, waitId))) return
     const start = () => enqueueTriage({ ticketId, waitId }, asked(), deps.log ?? console.error)
     const asked = (): Effect.Effect<typeof HELD | void, unknown> =>
       Effect.gen(function* () {
