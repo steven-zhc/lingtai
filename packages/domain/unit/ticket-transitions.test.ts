@@ -391,14 +391,20 @@ describe('startTriageTransition and finishTriageTransition', () => {
   })
 
   it('finishes a current wait and refuses one that is not', () => {
-    expect(finishTriageTransition(blocked(), done)).toMatchObject({ ok: true, events: [{ type: 'WaitTriaged' }] })
+    expect(finishTriageTransition(blocked(), { ...done, ifVersion: blocked().version })).toMatchObject({
+      ok: true,
+      events: [{ type: 'WaitTriaged' }],
+    })
     const resolved = reduceTicket([
       ...aClaim(item(), 'run-1'),
       ...aWait(item(), question, W),
       ...aResolution(item(), W, { _tag: 'Close' }),
       item()('TicketClosed', { by: 'steven', reason: 'x' }),
     ])
-    expect(finishTriageTransition(resolved, done)).toEqual({ ok: false, refusal: { reason: 'wait-not-current' } })
+    expect(finishTriageTransition(resolved, { ...done, ifVersion: resolved.version })).toEqual({
+      ok: false,
+      refusal: { reason: 'wait-not-current' },
+    })
   })
 
   it('refuses a finish when the stream moved past the version the caller decided on', () => {
