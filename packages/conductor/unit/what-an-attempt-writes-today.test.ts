@@ -1264,7 +1264,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
                 durationMs: 1234,
                 costUsd: 0.42,
                 failure: null,
-                text: 'done',
+                text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
                 sessionId: 'sess-1',
               },
         ),

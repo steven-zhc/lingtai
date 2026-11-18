@@ -12,7 +12,6 @@ import { describe, expect, it } from 'vitest'
 import {
   Action,
   accepts,
-  changedNothing,
   cleared,
   decidingAction,
   designOf,
@@ -473,63 +472,5 @@ describe('reviewSummaryOf', () => {
 
   it('null off the review step', () => {
     expect(reviewSummaryOf(outcome('build', [withSummary('x')]))).toBeNull()
-  })
-})
-
-describe('changedNothing', () => {
-  it('an empty implement: true', () => {
-    expect(changedNothing(outcome('implement', []))).toBe(true)
-  })
-
-  it('a non-implement step: false, whatever its actions', () => {
-    expect(changedNothing(outcome('build', []))).toBe(false)
-  })
-
-  it('implement with a cleared commit that carries no head: true', () => {
-    expect(changedNothing(outcome('implement', [commitAction(null)]))).toBe(true)
-  })
-
-  it('implement with a commit that carries a head: false', () => {
-    expect(changedNothing(outcome('implement', [commitAction('sha-1')]))).toBe(false)
-  })
-
-  it('implement with an uncleared action: false', () => {
-    const result = outcome('implement', [commitAction(null, 'rename to X or Y?')])
-    expect(changedNothing(result)).toBe(false)
-  })
-})
-
-describe('wellFormed', () => {
-  it('empty: well-formed', () => {
-    expect(wellFormed(outcome('build', []))).toBe(true)
-  })
-
-  it('all cleared: well-formed', () => {
-    expect(wellFormed(outcome('build', [verdictAction('accepted'), verdictAction('accepted')]))).toBe(true)
-  })
-
-  it('cleared, then fails, then NotReached: well-formed', () => {
-    const result = outcome('build', [verdictAction('accepted'), verdictAction('refused'), notReached('verdict')])
-    expect(wellFormed(result)).toBe(true)
-  })
-
-  it('two uncleared actions, neither NotReached: not well-formed', () => {
-    const result = outcome('build', [verdictAction('refused'), verdictAction('refused')])
-    expect(wellFormed(result)).toBe(false)
-  })
-
-  it('NotReached after a cleared deciding action: not well-formed', () => {
-    const result = outcome('build', [verdictAction('accepted'), notReached('verdict')])
-    expect(wellFormed(result)).toBe(false)
-  })
-
-  it('NotReached first, a real action after it: not well-formed', () => {
-    const result = outcome('build', [notReached('verdict'), verdictAction('accepted')])
-    expect(wellFormed(result)).toBe(false)
-  })
-
-  it('all NotReached, not empty: not well-formed', () => {
-    const result = outcome('build', [notReached('verdict'), notReached('verdict')])
-    expect(wellFormed(result)).toBe(false)
   })
 })

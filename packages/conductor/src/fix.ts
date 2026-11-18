@@ -630,7 +630,7 @@ When you did fix it, end with:
 
 \`\`\`outcome
 {"outcome": "Implemented"}
-\`\`\`,
+\`\`\``,
   ]
 }
 

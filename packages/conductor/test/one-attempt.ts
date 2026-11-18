@@ -535,7 +535,7 @@ export const runtime: Runtime = {
       durationMs: 1234,
       costUsd: 0.42,
       failure: null,
-      text: 'done',
+      text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
       sessionId: 'sess-1',
     }),
 }
@@ -601,7 +601,7 @@ export function reviewerThatCrashes(tried: { n: number }): Runtime {
           durationMs: 1234,
           costUsd: 0.42,
           failure: null,
-          text: 'done',
+          text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
           sessionId: 'sess-1',
         })
       }
@@ -683,7 +683,7 @@ export const reviewerAtTheWall: Runtime = {
             durationMs: 1234,
             costUsd: 0.42,
             failure: null,
-            text: 'done',
+            text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
             sessionId: 'sess-1',
           },
     ),
@@ -725,7 +725,7 @@ export const designerAtTheWall: Runtime = {
             durationMs: 1234,
             costUsd: 0.42,
             failure: null,
-            text: 'done',
+            text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
             sessionId: 'sess-1',
           },
     ),

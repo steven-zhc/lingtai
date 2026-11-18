@@ -714,7 +714,7 @@ describe('when the agent meets the wall', () => {
           turns: 3,
           durationMs: 1000,
           costUsd: 1,
-          text: 'done',
+          text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
           sessionId: 'sess',
         })) as unknown as Runtime['run']
       const { did, run } = await hitTheWallDirty(false, { ends: normal })
