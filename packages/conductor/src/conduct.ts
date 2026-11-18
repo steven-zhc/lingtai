@@ -2572,29 +2572,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         Effect.gen(function* () {
           for (const entry of wips) {
             if (entry.sha !== null) continue
-            // The WIP is the commit made directly on `parent` whose subject is the WIP's own — not
-            // merely the first one above it, which a later merge of an advanced base also is.
             const listed = yield* gitAskedEffect([
               'log',
               '--reverse',
-              '--ancestry-path',
+              '--first-parent',
               '--format=%H %P%x09%s',
               `${entry.parent}..HEAD`,
             ])
-            const taken = new Set(wips.map((w) => w.sha))
-            const first = Result.isSuccess(listed)
-              ? (listed.success
-                  .split('\n')
-                  .map((line) => line.split('\t'))
-                  .map(([ids = '', subject = '']) => ({ ids: ids.trim().split(/\s+/), subject }))
-                  .find(
-                    (c) =>
-                      c.ids.length === 2 &&
-                      c.ids[1] === entry.parent &&
-                      c.subject.startsWith(WIP_COMMIT_PREFIX) &&
-                      !taken.has(c.ids[0]!),
-                  )?.ids[0] ?? '')
-              : ''
+            // The first commit on the first-parent chain above `parent` is the WIP, which was made
+            // directly on it: an advanced base merged in later, or another ticket's commit on the same
+            // parent, is reached only through a merge's second parent and so is never on this chain.
+            const head = Result.isSuccess(listed) ? (listed.success.split('\n')[0] ?? '') : ''
+            const [ids = '', subject = ''] = head.split('\t')
+            const parts = ids.trim().split(/\s+/)
+            const first =
+              parts.length === 2 && parts[1] === entry.parent && subject.startsWith(WIP_COMMIT_PREFIX) ? parts[0]! : ''
             if (first !== '') {
               entry.sha = first
               continue
@@ -2661,7 +2653,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // rerun amended away) is never recorded, whatever local objects remain.
             if (entry.sha === null || notedKept.has(entry.sha)) continue
             const inside = yield* gitAskedEffect(['merge-base', '--is-ancestor', entry.sha, 'HEAD'])
-            if (Result.isFailure(inside)) {
+            // Only git's own "not an ancestor" (exit 1) is absence; a read that failed is unknown, and
+            // unknown is not absent — the sha came from this worktree's own HEAD chain, so it is recorded.
+            if (Result.isFailure(inside) && inside.failure.exitCode === 1) {
               runLog.note(
                 'push',
                 `${entry.sha.slice(0, 7)} is not in the history pushed to ${ref}, so it is not recorded`,
@@ -2897,6 +2891,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // A refusal is a defect now; retried as a failure, as it was.
             Effect.catchDefect((defect) => Effect.fail(defect)),
             Effect.retry({ times: 2 }),
+            // The publish is skipped once `didLand` is set, so the WIP rows are written first.
+            Effect.tap(() => noteAllKept(branch)),
             Effect.tap(() =>
               Effect.sync(() => {
                 released = true
