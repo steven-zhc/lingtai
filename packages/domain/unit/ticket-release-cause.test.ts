@@ -74,7 +74,21 @@ describe('a release BaseRed (#1208)', () => {
     expect(state.lifecycle.status).toBe('backlog')
     expect(state.lastAttemptAt).toBeNull()
     expect(state.claims[0]?.ended).toEqual({ kind: 'released', reason: 'red', cause: baseRed })
-    expect(continuableRelease(state)).toBeNull()
+    // The next claim continues it from its saved head (#1211).
+    expect(continuableRelease(state)).toEqual({ runId: 'r1', cause: baseRed })
+  })
+
+  it('is continued by the run it names and by no other (#1211)', () => {
+    const e = makeStream('ticket-p-1')
+    const state = reduceTicket([
+      e('TicketClaimed', claim('r1')),
+      e('TicketReleased', { runId: 'r1', reason: 'red', cause: baseRed }),
+    ])
+    expect(continueTransition(state, { runId: 'r1', worker: 'w2' }).ok).toBe(true)
+    expect(continueTransition(state, { runId: 'r2', worker: 'w2' })).toMatchObject({
+      ok: false,
+      refusal: { reason: 'wrong-run', runId: 'r1' },
+    })
   })
 
   it('leaves the backoff of any other release alone', () => {
