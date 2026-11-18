@@ -14,6 +14,7 @@ import type {
   IntegrateResult,
   ProvisionOptions,
   RepoFailed,
+  TokenSource,
   Worktree,
 } from '@lingtai/repo'
 /**
@@ -59,6 +60,24 @@ export interface RepoPort {
   remove(options: { project: string; runId: string; home?: string }): Effect.Effect<void>
   git(args: string[], options?: GitRunOptions): Effect.Effect<string, RepoFailed>
   integrate(options: IntegrateOptions): Effect.Effect<IntegrateResult>
+  /**
+   * Where the base branch stands in the mirror **after fetching it** (#1208): the one read the look makes of
+   * the repository, and only while the project's base is red. A failed fetch, a missing ref or an answer that
+   * is not a commit is `unreadable` — never a head.
+   */
+  baseHead(options: BaseHeadOptions): Effect.Effect<{ readonly at: string } | { readonly unreadable: string }>
+}
+
+/** What `RepoPort.baseHead` needs to fetch the mirror and read one branch. */
+export interface BaseHeadOptions {
+  project: string
+  owner: string
+  repo: string
+  base: string
+  token?: TokenSource
+  remote?: string
+  home?: string
+  gitEnv?: NodeJS.ProcessEnv
 }
 
 /** Everything a run needs to start an agent and hear what it reports. */

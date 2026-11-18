@@ -20,7 +20,14 @@ import {
   writeUnhookedSettingsEffect,
 } from '@lingtai/agent'
 import { resolveAgentEnv } from '@lingtai/agent-env'
-import { gitEffect, integrateEffect, provisionWorktreeEffect, removeWorktreeEffect } from '@lingtai/repo'
+import {
+  ensureMirrorEffect,
+  gitEffect,
+  integrateEffect,
+  mirrorBranchShaEffect,
+  provisionWorktreeEffect,
+  removeWorktreeEffect,
+} from '@lingtai/repo'
 import { Effect, Layer } from 'effect'
 
 import { AgentHost, Repo, type RunPorts } from './ports.ts'
@@ -32,6 +39,31 @@ export function livePorts(): RunPorts {
       remove: removeWorktreeEffect,
       git: gitEffect,
       integrate: integrateEffect,
+      baseHead: (options) =>
+        Effect.gen(function* () {
+          const fetched = yield* Effect.result(
+            ensureMirrorEffect({
+              project: options.project,
+              owner: options.owner,
+              repo: options.repo,
+              ...(options.token === undefined ? {} : { token: options.token }),
+              ...(options.remote === undefined ? {} : { remote: options.remote }),
+              ...(options.home === undefined ? {} : { home: options.home }),
+              ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
+            }),
+          )
+          if (fetched._tag === 'Failure') return { unreadable: `the mirror was not fetched: ${fetched.failure.detail}` }
+          const read = yield* mirrorBranchShaEffect({
+            project: options.project,
+            ref: `refs/heads/${options.base}`,
+            ...(options.home === undefined ? {} : { home: options.home }),
+          })
+          if ('missing' in read) return { unreadable: `${options.base} is not in the mirror` }
+          if ('unreadable' in read) return { unreadable: read.unreadable }
+          return /^[0-9a-f]{40}$/.test(read.at)
+            ? { at: read.at }
+            : { unreadable: `the mirror answered ${read.at.slice(0, 40)} for ${options.base}, which is not a commit` }
+        }),
     },
     agent: {
       wire: writeHookWiringEffect,

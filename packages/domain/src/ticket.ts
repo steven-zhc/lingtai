@@ -569,6 +569,9 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
         ...at,
         lifecycle: { status: 'backlog' },
         since: event.at,
+        // A red base ran no agent, so it is not an attempt the backoff counts: the base decides when it is
+        // taken again (#1208), and `lastAttemptAt` is what every reader of the backoff reads.
+        ...(d.cause?._tag === 'BaseRed' ? { lastAttemptAt: null } : {}),
         claims: endClaim(state.claims, d.runId, { kind: 'released', reason: d.reason, cause: d.cause ?? null }),
         restarts:
           d.cause?._tag === 'NewAttempt'

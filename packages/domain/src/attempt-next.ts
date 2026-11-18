@@ -66,8 +66,23 @@ export type Restart = z.infer<typeof Restart>
 
 const NeverStartedCause = z.object({ _tag: z.literal('NeverStarted'), scope: z.enum(['conductor', 'work-item']) })
 
-/** 0120 §4's two reasons `Requeued` ends a pass. */
-export const RequeueCause = z.discriminatedUnion('_tag', [Restart, NeverStartedCause])
+/**
+ * The command a `build` action refused fails on the base commit too (#1208, 0108 §13): the ticket is
+ * released keeping its head and the base decides when it is taken again. `evidence` is not carried — it is
+ * on the `BaseChecked` this names.
+ */
+const BaseRedCause = z.object({
+  _tag: z.literal('BaseRed'),
+  runId: z.string(),
+  headSha: z.string(),
+  base: z.string(),
+  baseSha: z.string(),
+  command: z.string(),
+  boundary: z.string(),
+})
+
+/** 0120 §4's reasons `Requeued` ends a pass, and 0108 §13's red base. */
+export const RequeueCause = z.discriminatedUnion('_tag', [Restart, NeverStartedCause, BaseRedCause])
 export type RequeueCause = z.infer<typeof RequeueCause>
 
 const Requeued = z.object({ _tag: z.literal('Requeued'), cause: RequeueCause })

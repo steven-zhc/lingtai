@@ -175,6 +175,12 @@ export type SkipReason =
    */
   | 'blocked-by'
   /**
+   * The project's base is red and its head is still the commit that was recorded red (#1208, 0108 §13): a
+   * fact about the project, so every offered ticket carries it. Never produced by `runnableNowEffect`, which
+   * asks GitHub alone — `passOverBaseRed` adds it after the log and the mirror have been read.
+   */
+  | 'base-red'
+  /**
    * Assigned to somebody other than this machine's login, under `take: mine`
    * or `take: unassigned` (0046 §2, #181).
    *

@@ -938,6 +938,13 @@ export interface AttemptOptions {
    * with no round bought and no judge asked; `notRed` is today's route, whether the base was
    * green or could not be checked. Absent where a caller says nothing.
    */
+  /**
+   * **The project's base was red when this attempt was claimed** (#1208, 0108 §13): `action` is the `build`
+   * action whose command the red record names. Asked once, on the attempt's own base commit, between `admit`
+   * and `prepared` and before any agent is paid; a red answer releases the ticket `BaseRed`. Never set for a
+   * continuation, whose base is not the one the record is about. Needs `baseIsRed`.
+   */
+  readonly baseFirst?: { readonly action: string }
   readonly baseIsRed?: (asked: { readonly action: string; readonly mergedOnto: string | null }) => Promise<
     | {
         readonly red: {
@@ -1125,6 +1132,8 @@ export interface AttemptPortOptions {
     readonly branchSha?: string
   } | null>
   readonly baseIsRed?: (asked: BaseIsRedAsked) => Effect.Effect<BaseIsRedAnswer>
+  /** `AttemptOptions.baseFirst`. */
+  readonly baseFirst?: AttemptOptions['baseFirst']
 }
 
 /**
@@ -1163,6 +1172,7 @@ export function attemptPortsFrom(options: AttemptOptions): AttemptPortOptions {
     ...(baseIsRed === undefined
       ? {}
       : { baseIsRed: (asked: BaseIsRedAsked) => Effect.promise(() => baseIsRed(asked)) }),
+    ...(options.baseFirst === undefined ? {} : { baseFirst: options.baseFirst }),
   }
 }
 
@@ -1746,14 +1756,19 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               decision,
               ended,
             })
+            // **Released, not waited on** (#1208, 0108 §13): nothing about this ticket is a person's to
+            // decide, and the base says when it is taken again. The visit and route above keep the sentence.
             stopped = reported
             end = {
-              _tag: 'WaitOnPerson',
-              reason: {
-                _tag: 'ProposedEscalated',
-                run: { runId: options.context.runId },
-                proposal: offer.proposal,
-                because,
+              _tag: 'Requeued',
+              cause: {
+                _tag: 'BaseRed',
+                runId: options.context.runId,
+                headSha: onSha,
+                base: because.base,
+                baseSha: because.baseSha,
+                command: because.command,
+                boundary: asked.red.boundary,
               },
             }
             return false
@@ -2024,6 +2039,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       })
 
     let grantedConflictMerged = false
+    let baseFirstAsked = false
     let conflictEvidenceRead = false
     while (at !== null && at !== 'end') {
       // A review carried across a disjoint merge (#1210) is neither visited nor recorded.
@@ -2031,6 +2047,30 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         reviewCarriedTo = null
         at = nextStep('review')
         continue
+      }
+      // **The base is asked before the first thing that costs anything** (#1208): the cut has been made at
+      // `admit`, and `prepared` is the first step that runs the recipe's own commands. Not a step and not a
+      // visit, so `redoStep` has nothing to repeat. Only a red answer ends the pass: unknown is not green, but
+      // it is not red either, and the guard at `proposed` asks again.
+      if (at === 'prepared' && options.baseFirst !== undefined && options.baseIsRed !== undefined && !baseFirstAsked) {
+        baseFirstAsked = true
+        const asked = yield* options.baseIsRed({ action: options.baseFirst.action, mergedOnto: null })
+        if ('red' in asked) {
+          stopped = null
+          end = {
+            _tag: 'Requeued',
+            cause: {
+              _tag: 'BaseRed',
+              runId: options.context.runId,
+              headSha: onSha,
+              base: asked.red.base,
+              baseSha: asked.red.baseSha,
+              command: asked.red.command,
+              boundary: asked.red.boundary,
+            },
+          }
+          break
+        }
       }
       const spec = SPEC[at]
       // **A resumed review is owed the conflict evidence** (#1120), rebuilt from the committed
