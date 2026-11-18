@@ -153,11 +153,13 @@ export type ProjectFilter =
        * empty list and reads exactly as it did.
        */
       limits: {
-        rounds: number
-        restarts: number
+        refusalFixes: number
+        conflictResolutions: number
+        newAttempts: number
         turns: TurnLimit
         wall: string
         wallMs: number
+        triage?: { turns: number; wall: string; usd: number }
         usd?: number
         steps: readonly StepBound[]
       }
@@ -433,16 +435,18 @@ export function projectFilterEffect(
       kinds: kindsOf(resolved.recipe),
       exclude: excludeOf(resolved.recipe),
       limits: {
-        // `rounds` and `restarts` are the pass's and are the ceiling's by
+        // the attempt's and the ticket's bounds are the ceiling's by
         // definition (0040); `turns` and `wall` are what `implement` may spend,
         // which is the ceiling unless a dispatch there narrowed it (`#314`).
-        rounds: ceilingOf(resolved.recipe).rounds,
-        restarts: ceilingOf(resolved.recipe).restarts,
+        refusalFixes: ceilingOf(resolved.recipe).attempt.refusalFixes,
+        conflictResolutions: ceilingOf(resolved.recipe).attempt.conflictResolutions,
+        newAttempts: ceilingOf(resolved.recipe).ticket.newAttempts,
         turns: limitsFor(resolved.recipe, 'implement').turns,
         wall: limitsFor(resolved.recipe, 'implement').wall,
         wallMs: parseDuration(limitsFor(resolved.recipe, 'implement').wall),
-        usd: ceilingOf(resolved.recipe).usd,
+        usd: ceilingOf(resolved.recipe).run.usd,
         steps: boundsBesides(resolved.recipe, 'implement'),
+        ...(resolved.recipe.triage === undefined ? {} : { triage: resolved.recipe.triage.limits }),
       },
       backoffMs: parseDuration(backoffOf(resolved.recipe)),
       plan: stepPlan(resolved.recipe),

@@ -27,17 +27,19 @@ import { CandidateId, ExcludedCandidate, RouteEscalation } from './route.ts'
 import { AttemptRef } from './wait.ts'
 
 /**
- * The two ceilings a recipe resolves to, as totals rather than what is left
+ * The three bounds a recipe resolves to, as totals rather than what is left
  * (0120 §4's `Spent` is the other half of that arithmetic). Not a zod
  * schema: like `Spent`, this is never parsed off the log, only computed by
- * `conduct.ts` from `runtime.limits.rounds`/`runtime.limits.restarts` at the
- * call site (#462) and handed in.
+ * `conduct.ts` from `runtime.limits.attempt` and `runtime.limits.ticket` at the
+ * call site (#462) and handed in. Each bounds exactly one action (0108 §8).
  */
 export type RoutingPolicy = {
-  rounds: number
-  restarts: number
-  /** The conflict rounds an attempt may buy: the recipe's `rounds`, never a grant-capped number (#1200). */
-  conflictRounds: number
+  /** Fixes after a build or review refusal an attempt may buy; spent as `Spent.rounds` until the log rename. */
+  refusalFixes: number
+  /** New attempts a ticket may buy; spent as `Spent.restarts` until the log rename. */
+  newAttempts: number
+  /** The conflict resolutions an attempt may buy: the recipe's own number, never a grant-capped one (#1200); spent as `Spent.conflictRounds`. */
+  conflictResolutions: number
 }
 
 /** `CandidateNext`'s own variant for ending at a person — one `_tag` alone, never the list of ids `CandidateId` names (`route.ts:22`). */

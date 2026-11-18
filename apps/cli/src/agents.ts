@@ -358,7 +358,7 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   if (
     writerCapabilities !== undefined &&
     !writerCapabilities.enforces.includes('turns') &&
-    at.draft.get(['runtime', 'limits', 'turns']) === null
+    at.draft.get(['runtime', 'limits', 'run', 'turns']) === null
   ) {
     changes.push(unboundedTurnsChange())
   }

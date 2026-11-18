@@ -168,15 +168,19 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
   // fact is, kept immediately after `runtime.agent` so a reading's row order
   // does not move.
   const ceiling = ceilingOf(recipe)
-  for (const key of Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]) {
-    provenance[`runtime.limits.${key}`] = `${ceiling[key]}${PROVENANCE_ARROW}${from(`runtime.limits.${key}`)}`
+  for (const group of Object.keys(LIMIT_DEFAULTS) as (keyof typeof LIMIT_DEFAULTS)[]) {
+    for (const key of Object.keys(LIMIT_DEFAULTS[group])) {
+      const path = `runtime.limits.${group}.${key}`
+      const value = (ceiling[group] as Record<string, unknown>)[key]
+      provenance[path] = `${value}${PROVENANCE_ARROW}${from(path)}`
+    }
   }
   // `usd` has no entry in `LIMIT_DEFAULTS` — it has no default to fall back to
   // (recipe.ts), so the loop above never sees it as a key. Read explicitly, and
   // absent reads as "(none)", never as a vanished key.
-  const limitsUsd = ceiling.usd
-  provenance['runtime.limits.usd'] =
-    `${limitsUsd ?? '(none)'}${PROVENANCE_ARROW}${limitsUsd === undefined ? 'default' : from('runtime.limits.usd')}`
+  const limitsUsd = ceiling.run.usd
+  provenance['runtime.limits.run.usd'] =
+    `${limitsUsd ?? '(none)'}${PROVENANCE_ARROW}${limitsUsd === undefined ? 'default' : from('runtime.limits.run.usd')}`
 
   // **Each step's runtime, off the recipe alone** (`#372`): the runtimes its
   // own `agent:` actions name, and for `implement` — which dispatches whether

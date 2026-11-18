@@ -165,7 +165,7 @@ import { heading, keyValues, renderNextBlock, renderNextLine, section, symbol } 
 import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
 import { questionEffect, spunEffect, type QuestionWorld } from './question.ts'
 import { DOCTOR_VERBOSE, liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './setup-end.ts'
-import type { WizardFlags } from './wizard-options.ts'
+import { ROUNDS_RETIRED, type WizardFlags } from './wizard-options.ts'
 
 // -------------------------------------------------------------- the world --
 
@@ -267,7 +267,7 @@ const USAGE =
   'lingtai init [--store sqlite|postgres] [--database-url <postgres url>] [--port <n>] ' +
   '[--project github|local] [--local <dir>] [--base <branch>] [--github-app create|skip] [--github-auth gh|app] ' +
   '[--agent <id>] [--model <id>] [--reviewer <id>] [--reviewer-model <id>] [--install <cmd>] ' +
-  '[--build <cmd>] [--tickets github|db] [--kinds <a,b,c>] [--land <branch>] [--rounds <n>] ' +
+  '[--build <cmd>] [--tickets github|db] [--kinds <a,b,c>] [--land <branch>] [--refusal-fixes <n>] [--conflict-resolutions <n>] ' +
   '[--wall <duration>] [--budget <amount>] [--defaults|--yes]'
 
 /** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
@@ -488,10 +488,13 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
           'check-build',
           'land',
           'rounds',
+          'refusal-fixes',
+          'conflict-resolutions',
           'wall',
           'budget',
           'github-auth',
         ].find((name) => flags[name] !== undefined)
+        if (flags['rounds'] !== undefined) return stop(ROUNDS_RETIRED)
         if (discardedFlag !== undefined) {
           return stop(
             `--${discardedFlag} ${flags[discardedFlag]}, but this machine already has a project and none is named ` +

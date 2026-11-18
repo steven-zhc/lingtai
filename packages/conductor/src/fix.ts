@@ -19,7 +19,7 @@
  * `decideRestart` gets the refusal first and may hand the ticket back to the
  * queue for a fresh pass instead; the two diagnoses below are what a person is
  * shown once *that* ceiling is spent too, or immediately, which is every
- * project whose recipe leaves `restarts` at its default of zero.
+ * project whose recipe sets `ticket.newAttempts` to zero (its default is two).
  *
  * On 2026-09-10 there was nothing between *refused* and *your problem*, and the
  * three items that produced were the three whose fixes were least in doubt: a
@@ -45,7 +45,7 @@
  *                the diff is still what everybody is talking about. It buys an
  *                agent **inside this pass**, and the point runs again.
  *
- * They now spend one ceiling, `runtime.limits.rounds` (0039 §3). 0038 §4 gave
+ * They now spend one ceiling, `runtime.limits.attempt.refusalFixes` (0039 §3). 0038 §4 gave
  * them two because a shared one was a race — whichever failure happened first
  * decided whether the other got an attempt at all — and that was true only while
  * the two went to different places. They go to the same place now, which is why
@@ -95,7 +95,7 @@ export type FixOn = 'findings' | 'output' | 'conflict'
  *
  * `why` is a sentence and has to stay one — it is read on a card. This is for a
  * caller that has to **decide** on the refusal, and `#146` is the caller that
- * does: `runtime.limits.restarts` buys a second approach when the *ceiling* is
+ * does: `runtime.limits.ticket.newAttempts` buys a second approach when the *ceiling* is
  * what stopped this one, and must not when the refusal carried no criterion,
  * because that is a gate with nothing to hold anybody to and starting over
  * answers none of it.
@@ -324,7 +324,7 @@ export interface FixInput {
      */
     on?: FixOn
   }
-  /** `runtime.limits.rounds`: how many times this pass may send the agent back. */
+  /** `runtime.limits.attempt.refusalFixes`: how many times this pass may send the agent back. */
   rounds: number
   /**
    * Rounds already spent on this run.
@@ -420,7 +420,7 @@ export function decideFix(input: FixInput): FixDecision {
     return no(
       'no-rounds',
       "this project's recipe buys no round of fix-and-recheck, so nothing " +
-        'patches this diff in place (runtime.limits.rounds: 0)',
+        'patches this diff in place (runtime.limits.attempt.refusalFixes: 0)',
     )
   }
 
@@ -1106,9 +1106,9 @@ function clipFailure(failure: string, chars: number = FAILURE_CHARS): string {
  * What a person is shown when the rounds are over, no restart was bought, and
  * the review still refuses.
  *
- * *No restart was bought* is the clause 0040 adds and it is true of every
- * project today: `restarts` defaults to zero, so this is still reached on the
- * first spent pass. Where it is not zero, this is the third destination rather
+ * *No restart was bought* is the clause 0040 adds: it holds where
+ * `ticket.newAttempts` is zero or already spent, and `newAttempts` defaults to
+ * two. Where one is still to spend, this is the third destination rather
  * than the second, and `earlier` below is what makes the card say so.
  *
  * **It says two agents disagreed, not that a gate refused**, and that is 0038's
@@ -1272,7 +1272,7 @@ export function diagnoseDisagreement(input: {
           `and the agent sent to answer them spent the recipe's whole budget without ` +
           `committing — ${clipFailure(input.stop.failure)}. The limit is a scope alarm: ` +
           `requeued as written this buys another round to the same limit, so what answers ` +
-          `it is narrowing or splitting the ticket, or raising runtime.limits.usd.`
+          `it is narrowing or splitting the ticket, or raising runtime.limits.run.usd.`
         )
       case 'declined':
         // An argument, and the one ending where the thing to read first is not
@@ -1323,7 +1323,7 @@ export function diagnoseDisagreement(input: {
           `project's recipe buys no round of fix-and-recheck, so no agent was sent ` +
           `to make them stop happening. Nothing here disagreed with anything: the ` +
           `findings stand unanswered, and what changes that is raising ` +
-          `\`runtime.limits.rounds\` — or reading them yourself.`
+          `\`runtime.limits.attempt.refusalFixes\` — or reading them yourself.`
         )
       case 'spent':
         // The ceiling, which is the only ending where two agents **can** have
@@ -1344,7 +1344,7 @@ export function diagnoseDisagreement(input: {
               `attempt's ${input.rounds} fix round(s) had already been spent on an earlier ` +
               `refusal, so no agent was sent to make them stop happening. The findings ` +
               `stand unanswered: what changes that is raising ` +
-              `\`runtime.limits.rounds\` — or reading them yourself.`
+              `\`runtime.limits.attempt.refusalFixes\` — or reading them yourself.`
           : `Two agents disagreed about ${at}. ${refused}, and it is still refused. ` +
               `This is a judgement, not a broken build.`
     }
@@ -1554,7 +1554,7 @@ export function diagnoseUnfixed(input: {
           `budget without committing — ${clipFailure(input.stop.failure)}, so ${notAgain}. ` +
           `The limit is a scope alarm: requeued as written this buys another ` +
           `round to the same limit, so what answers it is narrowing or splitting the ticket, ` +
-          `or raising runtime.limits.usd.`
+          `or raising runtime.limits.run.usd.`
         )
       case 'declined':
         return (

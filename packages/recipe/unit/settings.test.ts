@@ -79,7 +79,7 @@ describe('the accessors', () => {
     // By identity, and that is the cheap proof of *a recipe nobody edited
     // resolves to the same values*: nothing at `implement` narrows, so the
     // ceiling object itself comes back rather than a copy of its fields.
-    expect(limitsFor(RECIPE, 'implement')).toBe(RECIPE.runtime.limits)
+    expect(limitsFor(RECIPE, 'implement')).toBe(RECIPE.runtime.limits.run)
   })
 
   /**
@@ -415,9 +415,8 @@ describe('the accessors', () => {
       },
     })
     expect(limitsFor(narrowed, 'implement').turns).toBe(4)
-    expect(limitsFor(narrowed, 'implement').wall).toBe(ceilingOf(narrowed).wall)
-    expect(limitsFor(narrowed, 'implement').rounds).toBe(ceilingOf(narrowed).rounds)
-    expect(limitsFor(narrowed, 'build')).toBe(ceilingOf(narrowed))
+    expect(limitsFor(narrowed, 'implement').wall).toBe(ceilingOf(narrowed).run.wall)
+    expect(limitsFor(narrowed, 'build')).toBe(ceilingOf(narrowed).run)
   })
 
   /**
@@ -439,7 +438,7 @@ describe('the accessors', () => {
         ],
       },
     })
-    expect(limitsFor(both, 'review')).toBe(ceilingOf(both))
+    expect(limitsFor(both, 'review')).toBe(ceilingOf(both).run)
   })
 
   /**
@@ -456,8 +455,8 @@ describe('the accessors', () => {
         implement: [{ name: 'write it', agent: 'claude-code', prompt: 'go', limits: { turns: 4 } }],
       },
     })
-    expect(ceilingOf(narrowed).turns).toBe(RECIPE.runtime.limits.turns)
-    expect(limitsFor(narrowed, 'implement').turns).not.toBe(ceilingOf(narrowed).turns)
+    expect(ceilingOf(narrowed).run.turns).toBe(RECIPE.runtime.limits.run.turns)
+    expect(limitsFor(narrowed, 'implement').turns).not.toBe(ceilingOf(narrowed).run.turns)
   })
 
   /**
@@ -476,7 +475,7 @@ describe('the accessors', () => {
         review: [{ name: 'cold', agent: 'claude-code', prompt: 'read', limits: { turns: 4 } }],
       },
     })
-    expect(boundsBesides(mixed, 'implement')).toEqual([{ step: 'review', turns: 4, wall: ceilingOf(mixed).wall }])
+    expect(boundsBesides(mixed, 'implement')).toEqual([{ step: 'review', turns: 4, wall: ceilingOf(mixed).run.wall }])
     // A recipe that narrows nothing names nothing, which is what keeps today's
     // sentence character for character (0070 §8).
     expect(boundsBesides(RECIPE, 'implement')).toEqual([])

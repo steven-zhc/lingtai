@@ -76,7 +76,10 @@ describe("runOnce judges a change by the machine's recipe, not by any file in th
     await mkdir(join(lingtaiHome, PROJECT))
     await writeFile(
       join(lingtaiHome, PROJECT, 'recipe.yml'),
-      armed.replace(/^runtime:.*$/m, 'runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }'),
+      armed.replace(
+        /^runtime:.*$/m,
+        'runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }',
+      ),
     )
     const saved = process.env['LINGTAI_HOME']
     process.env['LINGTAI_HOME'] = lingtaiHome

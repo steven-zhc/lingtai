@@ -283,7 +283,7 @@ describe('askRecipe — --defaults (#433)', () => {
       ...BASE_AT,
       project: 'widget',
       local: true,
-      flags: { ...BASE_AT.flags, defaults: '', rounds: '5' },
+      flags: { ...BASE_AT.flags, defaults: '', 'refusal-fixes': '5' },
       seeds,
       kept: 'the seeded recipe is kept',
       again: 'lingtai add --local /repo',
@@ -297,7 +297,7 @@ describe('askRecipe — --defaults (#433)', () => {
     const path = recipePath('widget', HOME)
     const text = files.replaced.at(-1)!.text
     const resolved = resolveSource(text, path, path).recipe
-    expect(resolved.runtime.limits.rounds).toBe(5)
+    expect(resolved.runtime.limits.attempt.refusalFixes).toBe(5)
   })
 
   const SEEDS = [
@@ -393,7 +393,8 @@ describe('askRecipe — --defaults (#433)', () => {
     tickets: 'github',
     kinds: 'bug',
     land: 'main',
-    rounds: '3',
+    'refusal-fixes': '3',
+    'conflict-resolutions': '3',
     wall: '1h',
     budget: '5',
   }
@@ -437,7 +438,7 @@ describe('askRecipe — --defaults (#433)', () => {
     const path = recipePath('widget', HOME)
     const text = files.replaced.at(-1)!.text
     const resolved = resolveSource(text, path, path).recipe
-    expect(resolved.runtime.limits.rounds).toBe(3)
+    expect(resolved.runtime.limits.attempt.refusalFixes).toBe(3)
     expect(resolved.source.kinds).toEqual(['bug'])
   })
 

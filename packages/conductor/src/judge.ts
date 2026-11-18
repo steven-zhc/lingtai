@@ -219,10 +219,10 @@ export interface OfferInput {
     /** What a command printed, clipped by `command.ts` long before it reaches here. */
     evidence: string
   }
-  /** `runtime.limits.rounds` today; `implement`'s universal `rounds:` under 0061 §2. */
+  /** `runtime.limits.attempt.refusalFixes` today; `implement`'s universal `rounds:` under 0061 §2. */
   rounds: number
   roundsSpent: number
-  /** `runtime.limits.restarts` today; `claim`'s universal `restarts:` under 0061 §2. */
+  /** `runtime.limits.ticket.newAttempts` today; `claim`'s universal `restarts:` under 0061 §2. */
   restarts: number
   restartsSpent: number
   /**

@@ -157,11 +157,15 @@ function LeftColumn({ view, sandbox }: { view: Extract<ProjectRecipe, { ok: true
         </h3>
         <div className="stats">
           <div className="stat">
-            <b>{read.limits.rounds}</b>
-            <span>more tries in the same worktree</span>
+            <b>{read.limits.refusalFixes}</b>
+            <span>fixes after a refusal, in the same worktree</span>
           </div>
           <div className="stat">
-            <b>{read.limits.restarts}</b>
+            <b>{read.limits.conflictResolutions}</b>
+            <span>merge conflict resolutions</span>
+          </div>
+          <div className="stat">
+            <b>{read.limits.newAttempts}</b>
             <span>new attempts from the base</span>
           </div>
           <div className="stat">

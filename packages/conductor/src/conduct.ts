@@ -1144,12 +1144,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      */
     const spendFor = (own?: { readonly turns?: number; readonly wall?: string }) => ({
       // `unbounded` is a request with no `turns` (#547), as `usd` is.
-      turns: numericTurns(own?.turns ?? ceiling.turns),
-      wallMs: parseDuration(own?.wall ?? ceiling.wall),
+      turns: numericTurns(own?.turns ?? ceiling.run.turns),
+      wallMs: parseDuration(own?.wall ?? ceiling.run.wall),
       // The ceiling's own, unchanged: a dispatch's `limits:` is a
       // `strictObject` that refuses `usd` by name, so there is nothing a step
       // could narrow here (`#370`).
-      usd: ceiling.usd,
+      usd: ceiling.run.usd,
     })
     /**
      * **The runtime a step named, dispatched** (`#314`, 0070 §7).
@@ -1686,9 +1686,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
      * to.
      */
     const ceilings: Ceilings = {
-      rounds: ceiling.rounds,
-      restarts: ceiling.restarts,
-      restartsSpent: reduced.restarts.length,
+      refusalFixes: ceiling.attempt.refusalFixes,
+      conflictResolutions: ceiling.attempt.conflictResolutions,
+      newAttempts: ceiling.ticket.newAttempts,
+      newAttemptsSpent: reduced.restarts.length,
     }
 
     let released = false
@@ -4408,14 +4409,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // `limits:` narrows it in `actionsFromRecipe`, which is the seam that
           // holds the action (`#314`).
           limits: {
-            turns: numericTurns(ceiling.turns),
-            wallMs: parseDuration(ceiling.wall),
+            turns: numericTurns(ceiling.run.turns),
+            wallMs: parseDuration(ceiling.run.wall),
             diffBytes: recipe.runtime.budget.diff,
             // The pass's own, unnarrowable here for the reason `spendFor`
             // carries it unchanged too: a dispatch's `limits:` refuses `usd`
             // by name, so there is nothing for `actionsFromRecipe` to narrow
             // (`#370`).
-            usd: ceiling.usd,
+            usd: ceiling.run.usd,
           },
         },
         // **A sibling of `agent` and not a key on it** (`#314`): an action is
@@ -5113,6 +5114,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // and not on `from` alone: a `verify-failed` or `push-rejected` also
           // arrives from `merge`, and is output, not a merge to run.
           const conflict = from === 'merge' && again.printed?.because === 'conflict'
+          // The count said against the knob's own bound: a conflict resolution is counted
+          // apart from the refusal fixes, as it is bounded apart from them (0108 §8).
+          const counted = conflict ? (brief.context.conflictRound ?? 1) : round
           // A conflict round of any kind, including a granted one from an old wait whose brief
           // tells the agent to merge: it may leave a merge standing, so the keep checks (#1120).
           if (conflict) conflictMergeStood = true
@@ -5155,8 +5159,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             brief.context,
           )
 
-          log(`fixing ${from} — round ${round} of ${ceiling.rounds}`)
-          runLog.note('fix', `round ${round} for ${from}`)
+          // A conflict resolution is bounded by its own knob, never the refusal fixes' (0108 §8).
+          const bound = conflict ? ceiling.attempt.conflictResolutions : ceiling.attempt.refusalFixes
+          log(`fixing ${from} — round ${counted} of ${bound}`)
+          runLog.note('fix', `round ${counted} for ${from}`)
 
           const fixDecision = yield* decideSandbox
           const settings = yield* Effect.result(
@@ -5198,8 +5204,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               : [
                   ...fixBriefParts({
                     refusal,
-                    round,
-                    of: ceiling.rounds,
+                    round: counted,
+                    of: bound,
                     action: refusal.on === 'unfinished' ? 'implement' : from,
                     diff: underReview.text,
                     ...(underReview.from === null || underReview.to === null
@@ -5959,14 +5965,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           action: lastRoute?.from ?? 'review',
           rounds: roundsSpent,
           n: restart,
-          of: ceiling.restarts,
+          of: ceiling.ticket.newAttempts,
         })
         // **`PassRestarted` is gone (#502): `TicketReleased{cause: Restart}`
         // is the one event now** — what it also carried (the arm, its head,
         // the findings still live) is on the previous run's own stream,
         // which the next prompt already reads (`attempts.ts`'s `lastRun`,
         // `ticket.ts`'s own header on `RestartRecord`).
-        log(`starting over — restart ${restart} of ${ceiling.restarts}`)
+        log(`starting over — restart ${restart} of ${ceiling.ticket.newAttempts}`)
         runLog.note('restart', reason)
         yield* release(reason, { _tag: 'Restart', restart })
         return {
@@ -5991,10 +5997,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (
           headGone !== null &&
           continuation?.released?.by !== 'person' &&
-          reduced.restarts.length < ceiling.restarts
+          reduced.restarts.length < ceiling.ticket.newAttempts
         ) {
           const restart = reduced.restarts.length + 1
-          const why = `the saved head cannot be continued (${headGone}) — restart ${restart} of ${ceiling.restarts}`
+          const why = `the saved head cannot be continued (${headGone}) — restart ${restart} of ${ceiling.ticket.newAttempts}`
           log(why)
           runLog.note('restart', why)
           yield* release(why, { _tag: 'Restart', restart })
@@ -6068,7 +6074,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          *
          * **Every other blocked ending judged nothing, and must not offer the
          * control.** `did-not-finish` at `implement` is the `#237`/`#249` shape —
-         * an agent stopped at `runtime.limits.turns` having committed twice — and
+         * an agent stopped at `runtime.limits.run.turns` having committed twice — and
          * `admit`'s is a clone that did not finish. Asked there, a `signoff`'s request
          * sets `task_view.awaitingSha`, `standing.tsx` draws **Approve**, and
          * `refusingOn` (`approve.ts`) finds nothing to be refusing — the pass stopped

@@ -3,7 +3,7 @@
  * #504).
  *
  * The board builds its line through `toCard`, which calls `describeArm` with
- * the recipe's own `limits.restarts` as the ceiling (`board.ts:536`).
+ * the recipe's own `limits.newAttempts` as the ceiling (`board.ts:536`).
  * `lingtai status` has to feed `describeArm` the same ceiling rather than the
  * row's own `restarts_of`, which has had no writer since `#502` and stays at
  * its DDL default of 0. This is the one test that renders both and checks
@@ -55,11 +55,11 @@ function requeued(): TaskCard {
 
 describe('the arm line', () => {
   it('says the same thing on the board and in lingtai status, ceiling included', () => {
-    const limits = { rounds: 3, restarts: 2 }
+    const limits = { refusalFixes: 3, newAttempts: 2 }
     const t = requeued()
 
     expect(toCard(t, null, null, null, limits).arm).toBe('restart 1 of 2')
-    expect(armLine(t, limits.restarts)).toBe('restart 1 of 2')
+    expect(armLine(t, limits.newAttempts)).toBe('restart 1 of 2')
   })
 
   it('says the same thing when the recipe could not be read, with no ceiling', () => {

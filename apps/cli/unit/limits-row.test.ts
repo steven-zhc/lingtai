@@ -20,31 +20,31 @@ const recipe = (agent: string, limits: Record<string, unknown>, steps?: unknown)
 
 describe('limitsRow', () => {
   it('passes codex with turns unbounded and no usd', () => {
-    const row = limitsRow('app', recipe('codex', { turns: 'unbounded' }), CODEX_CAPABILITIES)
+    const row = limitsRow('app', recipe('codex', { run: { turns: 'unbounded' } }), CODEX_CAPABILITIES)
     expect(row.status).toBe('ok')
     expect(row.detail).toContain('turns — unbounded')
     expect(row.detail).toContain('wall 2h ← applied by codex')
   })
 
   it('fails codex on a number, and names unbounded as a way out', () => {
-    const row = limitsRow('app', recipe('codex', { turns: 300 }), CODEX_CAPABILITIES)
+    const row = limitsRow('app', recipe('codex', { run: { turns: 300 } }), CODEX_CAPABILITIES)
     expect(row.status).toBe('fail')
     expect(row.detail).toContain('turns: unbounded')
   })
 
   it('fails codex when a step promises turns the unbounded ceiling hides', () => {
     const steps = { implement: [{ name: 'write', agent: 'codex', prompt: 'go', limits: { turns: 50 } }] }
-    const row = limitsRow('app', recipe('codex', { turns: 'unbounded' }, steps), CODEX_CAPABILITIES)
+    const row = limitsRow('app', recipe('codex', { run: { turns: 'unbounded' } }, steps), CODEX_CAPABILITIES)
     expect(row.status).toBe('fail')
   })
 
   it('still fails codex with a usd ceiling', () => {
-    const row = limitsRow('app', recipe('codex', { turns: 'unbounded', usd: 5 }), CODEX_CAPABILITIES)
+    const row = limitsRow('app', recipe('codex', { run: { turns: 'unbounded', usd: 5 } }), CODEX_CAPABILITIES)
     expect(row.status).toBe('fail')
     expect(row.detail).toContain('usd')
   })
 
   it('passes claude-code on its enforced number', () => {
-    expect(limitsRow('app', recipe('claude-code', { turns: 300 }), CLAUDE_CODE_CAPABILITIES).status).toBe('ok')
+    expect(limitsRow('app', recipe('claude-code', { run: { turns: 300 } }), CLAUDE_CODE_CAPABILITIES).status).toBe('ok')
   })
 })

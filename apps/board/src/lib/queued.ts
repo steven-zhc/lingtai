@@ -69,12 +69,12 @@ export interface PlannedStep {
 export interface PlanView {
   /** All ten, in pass order, including the ones nothing is configured at. */
   steps: PlannedStep[]
-  /** `runtime.limits.turns`: a count, or `unbounded`. */
+  /** `runtime.limits.run.turns`: a count, or `unbounded`. */
   turns: TurnLimit
-  /** `runtime.limits.wall`, in the recipe's own words rather than milliseconds. */
+  /** `runtime.limits.run.wall`, in the recipe's own words rather than milliseconds. */
   wall: string
   /**
-   * How many times a pass sends the agent back, `runtime.limits.rounds`
+   * How many times a pass sends the agent back, `runtime.limits.attempt.refusalFixes`
    * ([0039](../../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
    *
    * Rendered whether it buys anything or not, like a skipped point: a default
@@ -82,9 +82,11 @@ export interface PlanView {
    * nobody can audit. Zero is the whole of what `repair.on: false` used to say,
    * and since `#143` the whole of what this repository buys for a refusal.
    */
-  rounds: number
+  refusalFixes: number
+  /** How many times an attempt sends the agent back to resolve a merge conflict, `runtime.limits.attempt.conflictResolutions`. */
+  conflictResolutions: number
   /**
-   * How many passes one ticket may buy, `runtime.limits.restarts`
+   * How many passes one ticket may buy, `runtime.limits.ticket.newAttempts`
    * ([0040](../../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
    *
    * **Beside `rounds` because the two multiply**, and a footer built from the
@@ -96,7 +98,7 @@ export interface PlanView {
    *
    * Rendered when it is zero too, for `rounds`' reason and `attemptCeiling`'s.
    */
-  restarts: number
+  newAttempts: number
 }
 
 /** Why GitHub is not offering this issue to the conductor, in words. */
@@ -198,7 +200,13 @@ export interface QueuedView {
 export function planOf(
   plan: StepPlan,
   runtime: {
-    limits: { turns: TurnLimit; wall: string; rounds: number; restarts: number }
+    limits: {
+      turns: TurnLimit
+      wall: string
+      refusalFixes: number
+      conflictResolutions: number
+      newAttempts: number
+    }
   },
 ): PlanView {
   return {
@@ -213,8 +221,9 @@ export function planOf(
     }),
     turns: runtime.limits.turns,
     wall: runtime.limits.wall,
-    rounds: runtime.limits.rounds,
-    restarts: runtime.limits.restarts,
+    refusalFixes: runtime.limits.refusalFixes,
+    conflictResolutions: runtime.limits.conflictResolutions,
+    newAttempts: runtime.limits.newAttempts,
   }
 }
 
@@ -300,15 +309,20 @@ export async function queuedFor(input: {
   // column: one failure costing an answer it had nothing to do with.
   const plan = planOf(filter.plan, {
     // **The ceiling, and not `implement`'s reduction from it** (`#314`).
-    // `PlanView.turns` and `.wall` are documented as `runtime.limits.turns` and
-    // `runtime.limits.wall`, and `Plan`'s own footer promises *`runtime.limits`
+    // `PlanView.turns` and `.wall` are documented as `runtime.limits.run.turns` and
+    // `runtime.limits.run.wall`, and `Plan`'s own footer promises *`runtime.limits`
     // in the recipe's own words … so the line reads back against the file it
     // came from*. Since `limitsFor` started reading its step, that call answered
     // a narrowed `implement` instead — two numbers for one documented field, and
     // the next reader comparing the panel against `~/.lingtai/config.yml` looks
     // for a bug in the machine-file merge. A step's own bound is named on the
     // `agent:` row, which is where it belongs.
-    limits: ceilingOf(filter.recipe),
+    limits: {
+      turns: ceilingOf(filter.recipe).run.turns,
+      wall: ceilingOf(filter.recipe).run.wall,
+      ...ceilingOf(filter.recipe).attempt,
+      ...ceilingOf(filter.recipe).ticket,
+    },
   })
   const until = backoffOf(input.own, filter.backoffMs)
 

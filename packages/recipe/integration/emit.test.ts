@@ -44,14 +44,14 @@ function commentCount(text: string): number {
 
 describe("editRecipe, on this repository's own recipe", () => {
   it('round-trips it with one field changed, and git diff shows only that line', () => {
-    const out = editRecipe(OWN, [{ path: ['runtime', 'limits', 'turns'], value: 200 }])
-    expect(gitDiff(OWN, out)).toEqual({ removed: ['    turns: 150'], added: ['    turns: 200'] })
-    expect(Recipe.parse(parse(out)).runtime.limits.turns).toBe(200)
+    const out = editRecipe(OWN, [{ path: ['runtime', 'limits', 'run', 'turns'], value: 200 }])
+    expect(gitDiff(OWN, out)).toEqual({ removed: ['      turns: 150'], added: ['      turns: 200'] })
+    expect(Recipe.parse(parse(out)).runtime.limits.run.turns).toBe(200)
   })
 
   it('changes nothing when nothing is changed, byte for byte', () => {
     expect(editRecipe(OWN, [])).toBe(OWN)
-    expect(editRecipe(OWN, [{ path: ['runtime', 'limits', 'turns'], value: 150 }])).toBe(OWN)
+    expect(editRecipe(OWN, [{ path: ['runtime', 'limits', 'run', 'turns'], value: 150 }])).toBe(OWN)
     expect(editRecipe(OWN, [{ path: ['source', 'exclude'], value: LABELS }])).toBe(OWN)
   })
 
@@ -118,13 +118,13 @@ describe("editRecipe, on this repository's own recipe", () => {
 
   it('makes several changes at once and moves only their lines', () => {
     const out = editRecipe(OWN, [
-      { path: ['runtime', 'limits', 'rounds'], value: 2 },
-      { path: ['runtime', 'limits', 'restarts'], value: 0 },
+      { path: ['runtime', 'limits', 'attempt', 'refusalFixes'], value: 2 },
+      { path: ['runtime', 'limits', 'ticket', 'newAttempts'], value: 0 },
       { path: ['repo', 'base'], value: 'develop' },
     ])
     expect(gitDiff(OWN, out)).toEqual({
-      removed: ['  base: main', '    rounds: 3', '    restarts: 1'],
-      added: ['  base: develop', '    rounds: 2', '    restarts: 0'],
+      removed: ['  base: main', '      refusalFixes: 3', '      newAttempts: 1'],
+      added: ['  base: develop', '      refusalFixes: 2', '      newAttempts: 0'],
     })
   })
 
@@ -237,7 +237,7 @@ describe("editRecipe, on this repository's own recipe", () => {
   it("keeps a file's CRLF line endings, on a changed line and on a new one", () => {
     const crlf = OWN.replace(/\n/g, '\r\n')
     for (const change of [
-      { path: ['runtime', 'limits', 'turns'], value: 200 },
+      { path: ['runtime', 'limits', 'run', 'turns'], value: 200 },
       { path: ['runtime', 'tier'], value: 'guarded' },
     ]) {
       expect(editRecipe(crlf, [change])).toBe(editRecipe(OWN, [change]).replace(/\n/g, '\r\n'))
@@ -402,7 +402,14 @@ describe('emitRecipe', () => {
       proposed: [{ name: 'build', run: 'pnpm typecheck && pnpm test', timeout: '20m' }],
       end: [{ name: 'close the ticket', when: 'landed', close: true }],
     },
-    runtime: { agent: 'claude-code', limits: { turns: 150, wall: '1h', rounds: 3, restarts: 1 } },
+    runtime: {
+      agent: 'claude-code',
+      limits: {
+        run: { turns: 150, wall: '1h' },
+        attempt: { refusalFixes: 3, conflictResolutions: 3 },
+        ticket: { newAttempts: 1 },
+      },
+    },
   })
 
   it('passes Recipe.parse, and re-reading it gives back what went in', () => {

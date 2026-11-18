@@ -399,7 +399,7 @@ env:
   it('gives a v2 recipe a digest nothing recomputes it from', async () => {
     const a = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), 'develop')
 
-    expect(a.configHash).toBe('255cbdfe463cca1177d756840de675ef2740b1e6665cc0e3bbd8cd412ca02b53')
+    expect(a.configHash).toBe('30c6cc561a536aed31822a1d7fde5465b32b75fc0b004aa1e759e8a3775b6344')
     // And the body on the event is the document that digest is of (0047 §2),
     // so the five are out of both or neither — a strip on one side only makes
     // `hashRecipe(StepsResolved.recipe) === configHash` false.
@@ -461,16 +461,32 @@ describe('a retired key', () => {
 
     const message = String((err as Error).message)
     expect(message).toContain('repair:')
-    expect(message).toContain('runtime.limits.rounds')
+    expect(message).toContain('runtime.limits.attempt.refusalFixes')
     // And says what the off switch became, since that is the one a project is
     // most likely to have set deliberately.
-    expect(message).toContain('rounds: 0')
+    expect(message).toContain('refusalFixes: 0')
+  })
+
+  it.each([
+    ['rounds', 'runtime.limits.attempt.refusalFixes'],
+    ['restarts', 'runtime.limits.ticket.newAttempts'],
+    ['turns', 'runtime.limits.run.turns'],
+    ['wall', 'runtime.limits.run.wall'],
+    ['usd', 'runtime.limits.run.usd'],
+  ])('refuses the ungrouped `runtime.limits.%s`, naming %s', async (key, where) => {
+    const text = VALID.replace('  agent: claude-code\n', `  agent: claude-code\n  limits:\n    ${key}: 1\n`)
+    const err = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: text }), 'develop').catch(
+      (e: unknown) => e as RecipeInvalidError,
+    )
+    expect(err).toBeInstanceOf(RecipeInvalidError)
+    expect(String((err as Error).message)).toContain(`runtime.limits.${key}`)
+    expect(String((err as Error).message)).toContain(where)
   })
 
   it('says nothing about a recipe that does not carry it', async () => {
     const resolved = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), 'develop')
 
-    expect(resolved.recipe.runtime.limits.rounds).toBe(LIMIT_DEFAULTS.rounds)
+    expect(resolved.recipe.runtime.limits.attempt.refusalFixes).toBe(LIMIT_DEFAULTS.attempt.refusalFixes)
   })
 })
 
@@ -537,7 +553,7 @@ describe('the hash of a recipe that does not write runtime.tier', () => {
   it('is the hash it had on main, when the defaulted tier was inside it (#1158)', async () => {
     const resolved = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), 'develop')
     // Recorded from `main` before the key left the schema.
-    expect(resolved.configHash).toBe('255cbdfe463cca1177d756840de675ef2740b1e6665cc0e3bbd8cd412ca02b53')
+    expect(resolved.configHash).toBe('30c6cc561a536aed31822a1d7fde5465b32b75fc0b004aa1e759e8a3775b6344')
     // And the body the event records still verifies against it: `forHash` is idempotent.
     expect(hashRecipe(canonicalRecipe(resolved.recipe) as never)).toBe(resolved.configHash)
   })

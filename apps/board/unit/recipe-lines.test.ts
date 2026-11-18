@@ -15,7 +15,7 @@ steps:
   build:
     - { name: build, run: "pnpm test", timeout: 20m }
     - { name: lint, run: "pnpm lint", timeout: 5m }
-runtime: { agent: claude-code, limits: { turns: unbounded, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: unbounded, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 const MINIMAL = `
 version: 2
@@ -23,7 +23,7 @@ repo: { base: main, submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps: {}
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 const lines = async (text: string) => {
@@ -129,7 +129,7 @@ describe('recipeLines', () => {
       { label: 'a fix round reads at most', value: '400,000 characters of the diff' },
     ])
     expect(block(read, 'review').after).toEqual([])
-    const noRounds = await lines(BASE.replace('wall: 2m', 'wall: 2m, rounds: 0'))
+    const noRounds = await lines(BASE.replace('refusalFixes: 2', 'refusalFixes: 0'))
     expect(block(noRounds, 'implement').after.map((l) => l.label)).not.toContain('a fix round reads at most')
     const reviewed = await lines(
       BASE.replace('steps:\n', 'steps:\n  review:\n    - { name: cold, agent: claude-code, prompt: look }\n'),

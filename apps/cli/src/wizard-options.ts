@@ -25,7 +25,10 @@ export const recipeOptions = {
   build: Flag.String('build').pipe(Flag.atLeast(0)),
   'check-build': text('check-build'),
   land: text('land'),
+  // `--rounds` is declared only to be refused by name (`askLimits`): it became two bounds (0108 §8).
   rounds: text('rounds'),
+  'refusal-fixes': text('refusal-fixes'),
+  'conflict-resolutions': text('conflict-resolutions'),
   wall: text('wall'),
   budget: text('budget'),
   sandbox: text('sandbox'),
@@ -110,3 +113,8 @@ export function valuelessFlag(argv: readonly string[]): string | null {
   }
   return null
 }
+
+/** `--rounds` became two bounds (0108 §8); every guard that would refuse it generically says this instead. */
+export const ROUNDS_RETIRED =
+  '--rounds is gone: it was two bounds, so write --refusal-fixes <n> (fixes after a build or review ' +
+  'refusal) and --conflict-resolutions <n> (merge conflict resolutions), 0108 §8'

@@ -1595,7 +1595,7 @@ steps:
     - name: agent B
       agent: claude-code
       prompt: do the second half
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
     const flaky: Runtime = {
       ...runtime,
@@ -2168,7 +2168,7 @@ steps:
       when: findings
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 0, restarts: 0 }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 0, conflictResolutions: 0 }, ticket: { newAttempts: 0 } }
 `
     const store = memoryStore()
     const did: string[] = []

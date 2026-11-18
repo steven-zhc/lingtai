@@ -1053,7 +1053,7 @@ export const SandboxConnectionsRefused = z.object({
  * The prose is kept whole in `detail`: evidence, not a verdict.
  *
  * `out-of-turns` is `#89`: the runtime stopped the run at the recipe's
- * `runtime.limits.turns`. It is not `timeout`, because *"it ran out of turns"*
+ * `runtime.limits.run.turns`. It is not `timeout`, because *"it ran out of turns"*
  * and *"it ran out of time"* are different findings about a ticket, and it is
  * not `crash`, which is where `error_max_turns` used to land beside a segfault.
  *

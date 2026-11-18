@@ -118,7 +118,7 @@ async function walk(options: {
     emit: () => undefined,
     bodies,
     actionsAt,
-    ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+    ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
     judge: async () => ({ next: 'implement', named: 'test', why: 'the lines' }),
     ...(options.from === undefined ? {} : { from: options.from }),
   } as AttemptOptions)

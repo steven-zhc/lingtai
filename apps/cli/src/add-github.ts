@@ -464,6 +464,8 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     'check-build',
     'land',
     'rounds',
+    'refusal-fixes',
+    'conflict-resolutions',
     'wall',
     'budget',
     'sandbox',

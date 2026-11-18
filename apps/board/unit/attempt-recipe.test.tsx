@@ -27,7 +27,7 @@ env: { required: [], plantAt: .env.local }
 steps:
   proposed:
     - { name: build, run: "pnpm typecheck && pnpm test", timeout: 20m }
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 /** Head, after a commit like `2d3353b`: the same action, a different command. */
 const HEAD = RECIPE.replace('pnpm typecheck && pnpm test', 'pnpm typecheck')

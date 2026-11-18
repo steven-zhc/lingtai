@@ -19,7 +19,11 @@ vi.mock('@lingtai/conductor/queue', async (orig) => ({
   selectRunnable: vi.fn(),
 }))
 vi.mock('@lingtai/recipe/settings', () => ({
-  ceilingOf: () => ({ turns: 10, wall: '1h', rounds: 1, restarts: 1 }),
+  ceilingOf: () => ({
+    run: { turns: 10, wall: '1h' },
+    attempt: { refusalFixes: 1, conflictResolutions: 1 },
+    ticket: { newAttempts: 1 },
+  }),
   queueOf: () => ({}),
 }))
 

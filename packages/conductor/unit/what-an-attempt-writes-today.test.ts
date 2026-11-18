@@ -482,7 +482,7 @@ steps:
       when: findings
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 1, restarts: 1 }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 1, conflictResolutions: 1 }, ticket: { newAttempts: 1 } }
 `
     const store = memoryStore()
     const did: string[] = []
@@ -614,7 +614,7 @@ steps:
       when: findings
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 1, restarts: 1 }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 1, conflictResolutions: 1 }, ticket: { newAttempts: 1 } }
 `
     const store = memoryStore()
     const did: string[] = []
@@ -946,7 +946,7 @@ steps:
       prompt: does this look safe to land
     - name: land the branch
       merge: { strategy: merge-commit }
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
     const store = memoryStore()
     const did: string[] = []
@@ -1229,7 +1229,7 @@ steps:
     - name: draft
       agent: claude-code
       prompt: say what shape this takes
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
     const store = memoryStore()
     const did: string[] = []
@@ -1317,7 +1317,7 @@ steps:
   proposed:
     - name: approval
       human: "Merge this? It is Lingtai's own code."
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
     const store = memoryStore()
     const did: string[] = []
@@ -1974,7 +1974,7 @@ steps:
       when: findings
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 1, restarts: 2 }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 1, conflictResolutions: 1 }, ticket: { newAttempts: 2 } }
 `
     /** The fix round's own commit — half the fix, on top of the implementer's. */
     const FIX_SHA = 'd'.repeat(40)

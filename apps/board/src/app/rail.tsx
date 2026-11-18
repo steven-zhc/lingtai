@@ -420,8 +420,9 @@ export function limits(plan: PlanView): string {
   return [
     formatTurns(plan.turns),
     plan.wall,
-    plan.rounds === 0 ? 'no rounds' : `${plan.rounds} round(s) back`,
-    plan.restarts === 0 ? 'then straight to you' : `${plan.restarts} restart(s)`,
+    plan.refusalFixes === 0 ? 'no refusal fixes' : `${plan.refusalFixes} refusal fix(es)`,
+    plan.conflictResolutions === 0 ? 'no conflict resolutions' : `${plan.conflictResolutions} conflict resolution(s)`,
+    plan.newAttempts === 0 ? 'then straight to you' : `${plan.newAttempts} new attempt(s)`,
   ].join(' · ')
 }
 

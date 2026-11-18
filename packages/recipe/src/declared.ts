@@ -9,7 +9,7 @@ import { parse as parseYaml } from 'yaml'
 import { SCHEMA_PROBE_AGENT, asRecord } from './local.ts'
 import { applyPreset } from './presets.ts'
 import { Recipe } from './recipe.ts'
-import { RecipeInvalidError, retiredTier, unknownKeys } from './resolve.ts'
+import { RecipeInvalidError, retiredLimits, retiredTier, unknownKeys } from './resolve.ts'
 import { SandboxBlock } from './sandbox-block.ts'
 import { refFor } from './write.ts'
 
@@ -46,7 +46,7 @@ export function checkDeclared(text: string, where: string): void {
 
   const unknown = unknownKeys(applied)
   if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where)
-  const retired = retiredTier(applied)
+  const retired = [...retiredTier(applied), ...retiredLimits(applied)]
   if (retired.length > 0) throw new RecipeInvalidError(ref, retired, where)
 
   // Only an absent or null `runtime:` is the schema's to default; any other non-mapping stays as written to be refused.

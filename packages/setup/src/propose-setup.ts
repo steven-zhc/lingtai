@@ -59,7 +59,7 @@ export interface Proposal {
    * a fact shown under that default, not a failed read.
    */
   sandbox: SandboxProposal | null
-  limits: Line<{ rounds: number; wall: string; turns: number | 'unbounded' }>
+  limits: Line<{ refusalFixes: number; conflictResolutions: number; wall: string; turns: number | 'unbounded' }>
   /** Always false: `proposed: []` (#964 decision 5). A person approving the merge is something chosen. */
   personApprovesMerge: boolean
 }
@@ -86,7 +86,7 @@ export const DEFAULT_HELD_BY = null
 /** What `lingtai add` seeds at `steps.end` for a new GitHub project (`add-github.ts`); a local project seeds none. */
 export const DEFAULT_END = ['close the ticket when landed', 'close the ticket when a person ended it']
 /** `runtime.limits`' schema default (`packages/recipe/src/recipe.ts`, the `limits` default). */
-export const DEFAULT_LIMITS = { turns: 300, wall: '2h', rounds: 2 } as const
+export const DEFAULT_LIMITS = { turns: 300, wall: '2h', refusalFixes: 6, conflictResolutions: 6 } as const
 
 /** `askAgents` writes `turns: unbounded` for a writer whose runtime does not enforce a turn count (#547). */
 function turnsFor(writer: string | null): number | 'unbounded' {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { attemptCeiling } from '../src/ceiling.ts'
 
-const base = { rounds: 2, restarts: 0, wall: '2h', wallMs: 7_200_000 }
+const base = { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, wall: '2h', wallMs: 7_200_000 }
 
 describe('passCeiling', () => {
   it('keeps the numeric sentence byte-identical', () => {
@@ -14,6 +14,6 @@ describe('passCeiling', () => {
     const text = attemptCeiling({ ...base, turns: 'unbounded' })
     expect(text).toContain('2h and no turn limit each')
     expect(text).not.toContain('300')
-    expect(attemptCeiling({ ...base, rounds: 0, turns: 'unbounded' })).toContain('2h and no turn limit each')
+    expect(attemptCeiling({ ...base, refusalFixes: 0, turns: 'unbounded' })).toContain('2h and no turn limit each')
   })
 })

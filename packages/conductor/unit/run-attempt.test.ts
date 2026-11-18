@@ -829,7 +829,7 @@ describe('every step that does not pass arrives at proposed', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     // 0058 §3c: *that step again with "state your assumption"*, or a person —
@@ -915,7 +915,7 @@ describe('every step that does not pass arrives at proposed', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
       judge: async () => ({ next: 'design', named: 'test', why: 'because a test said so' }),
     })
 
@@ -1360,7 +1360,7 @@ describe('every step that does not pass arrives at proposed', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
       judge: async (on) =>
         on.when === 'findings'
           ? { next: 'implement', named: 'test', why: 'the lines, not the approach' }
@@ -1463,7 +1463,7 @@ describe('every step that does not pass arrives at proposed', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 3, newAttemptsSpent: 0 },
     })
 
     expect(result.stopped).toMatchObject({ step: 'proposed', ending: { ending: 'refused' } })
@@ -1511,7 +1511,7 @@ describe('every step that does not pass arrives at proposed', () => {
         emit,
         bodies,
         actionsAt,
-        ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+        ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 3, newAttemptsSpent: 0 },
       })
 
       expect(result.stopped).toMatchObject({ step: 'merge', ending: { ending } })
@@ -1536,7 +1536,7 @@ describe('every step that does not pass arrives at proposed', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 3, newAttemptsSpent: 0 },
     })
 
     expect(result.stopped).toMatchObject({
@@ -1571,7 +1571,7 @@ describe('a granted fix round', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 0, newAttemptsSpent: 0 },
       from: {
         step: 'implement',
         waive: [],
@@ -1611,7 +1611,7 @@ describe('a granted fix round', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 0, newAttemptsSpent: 0 },
       from: { step: 'build', waive: [], roundsSpent: 1, roundLimit: 1 },
     })
 
@@ -1632,7 +1632,7 @@ describe('a granted fix round', () => {
       watchingActions({
         review: [canned('cold reviewer', { verdict: 'failed', evidence: 'a blocker', findings: [finding] })],
       })
-    const ceilings = { rounds: 3, restarts: 2, restartsSpent: 0 }
+    const ceilings = { refusalFixes: 3, conflictResolutions: 3, newAttempts: 2, newAttemptsSpent: 0 }
 
     it('ends a granted lap at a person, without asking the judge', async () => {
       let asked = 0
@@ -1740,7 +1740,7 @@ describe('proposed routes on the way through as well as on the way back', () => 
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
       judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
     })
 
@@ -1820,7 +1820,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(result.stopped).toBeNull()
@@ -1884,7 +1884,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(result.routes.map((r) => r.to)).toEqual(['implement', 'implement', 'waiting'])
@@ -1919,7 +1919,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
       judge: async () => {
         dispatched += 1
         return { noJudge: true }
@@ -1960,7 +1960,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 1, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 1, newAttemptsSpent: 0 },
       judge: async () => ({ next: 'claim', named: 'test', why: 'because a test said so' }),
     })
 
@@ -2080,7 +2080,7 @@ describe('PassOptions.from: continuing a held run (#465, 0120 §6)', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
       from: { step: 'merge', waive: [{ name: 'watch:ci', waitId: 'wait-1' as never }] },
       // `check-refused` has no built-in (`BUILT_IN_FOR`, `judge.ts`) — a
       // declared judge is what sends it to `implement` here, same as a
@@ -2216,7 +2216,7 @@ describe('a visit is judged against the head the walk has reached', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(result.stopped).toBeNull()
@@ -2307,7 +2307,7 @@ describe('a visit is judged in the round the pass is in', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     // `toMatchObject`, not `toEqual` — see the sibling pin above.
@@ -2376,7 +2376,7 @@ describe('the round a pass buys is bought on something', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
       judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
     })
 
@@ -2411,7 +2411,7 @@ describe('the round a pass buys is bought on something', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(judged.filter((j) => j.step === 'build').map((j) => j.recheck)).toEqual([[], [finding]])
@@ -2998,7 +2998,7 @@ describe('a route names the StepEnded it was taken from', () => {
       emit,
       bodies,
       actionsAt,
-      ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
       judge: async () => ({ next: 'implement', named: 'test', why: 'the lines, not the approach' }),
     })
 

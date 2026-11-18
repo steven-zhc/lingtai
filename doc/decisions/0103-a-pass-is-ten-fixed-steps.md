@@ -111,8 +111,9 @@ never report a fault.
 7. **The workflow computes the offer; the judge picks from it.** `offerFor` in
    `packages/domain/src/routing.ts` (mirrored by `stepsOnOffer` in `packages/conductor/src/judge.ts`)
    works out which destinations are *reachable* from where the attempt got to, then
-   which are *affordable* against two ceilings — `rounds` per attempt and `restarts`
-   per ticket (`runtime.limits.rounds`, `runtime.limits.restarts`):
+   which are *affordable* against three bounds — `refusalFixes` and `conflictResolutions` per
+   attempt and `newAttempts` per ticket (`runtime.limits.attempt.refusalFixes`,
+   `runtime.limits.attempt.conflictResolutions`, `runtime.limits.ticket.newAttempts`):
    - `waiting` — always, and free, so every arrival is answerable.
    - `implement` — from `implement` or any later step; never from `prepared`,
      because no agent has written anything yet. Costs a round.

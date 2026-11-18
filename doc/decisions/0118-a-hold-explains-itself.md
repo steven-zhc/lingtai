@@ -161,7 +161,7 @@ which kind a wait was got inferred again in each place that needed it, from
      exhaustive tests together cover every variant. `OwnQuestion` is
      `lingtai ask`'s. Every proposal the route hands over is
      `ProposedEscalated`, whatever it was: a build that stayed red with the
-     rounds spent is `ProposedEscalated{BuildRed}`, an unsatisfied review
+     refusal fixes spent is `ProposedEscalated{BuildRed}`, an unsatisfied review
      `ProposedEscalated{ReviewFindings}`, and the evidence travels inside the
      proposal.
    - **Each variant is a different thing to do.** A crash is usually re-run; a
@@ -353,8 +353,8 @@ which kind a wait was got inferred again in each place that needed it, from
      never as the ticket's words, and is plain text. Where triage could not say
      what the ticket wants, that is itself the wait's question.
    - **Where it is** is the ten-step rail the board already draws, and one line
-     under it: what refused, the automatic rounds spent, any human-granted
-     rounds and their spend, and the restarts left. It is put together from the
+     under it: what refused, the automatic refusal fixes spent, any human-granted
+     fixes and their spend, and the new attempts left. It is put together from the
      log every time it is drawn, and never generated. Once triage has answered,
      the stopping step's own sentence is not repeated above it — triage's panel
      says what stopped and why — and the rail and its line are the whole of
@@ -576,8 +576,8 @@ which kind a wait was got inferred again in each place that needed it, from
        and other tickets are refused the same way. A condition that lifts by
        itself, such as an account's usage limit, never waits: it is a requeue
        (0120 §4).
-   - Rounds and restarts left are facts on the log, shown on the rail line,
-     anywhere the budget is drawn. A restart ceiling of 0 with none taken is
+   - Refusal fixes and new attempts left are facts on the log, shown on the rail line,
+     anywhere the budget is drawn. A `newAttempts` ceiling of 0 with none taken is
      not shown: a ceiling nothing configured and nothing spent is no fact to a
      reader. A
      spent budget changes what the system does with a cause — `askPerson(limit)`

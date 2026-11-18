@@ -12,7 +12,7 @@ import { fixBrief } from '../src/fix.ts'
 import { judgePrompt } from '../src/judge-agent.ts'
 import { replyFor } from '../src/proposed-route.ts'
 
-const policy = { rounds: 2, restarts: 1, conflictRounds: 2 }
+const policy = { refusalFixes: 2, newAttempts: 1, conflictResolutions: 2 }
 const zero = { rounds: 0, restarts: 0 }
 const SAID = 'I read the module and stopped before writing the test'
 const proposal: Proposal = { _tag: 'NothingProduced', said: SAID }

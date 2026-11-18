@@ -123,7 +123,7 @@ describe('whether a refusal buys an agent', () => {
       const decision = decideFix({ refusal: r, rounds: 0, roundsSpent: 0 })
 
       expect(decision.fix).toBe(false)
-      expect(decision.fix === false && decision.why).toMatch(/runtime\.limits\.rounds: 0/)
+      expect(decision.fix === false && decision.why).toMatch(/runtime\.limits\.attempt\.refusalFixes: 0/)
       // **And it says what it refuses, not where the refusal goes.** It used to
       // say "sends every refusal straight to a person", which was true while
       // this was the only ceiling and is false beside a non-zero `restarts`
@@ -783,7 +783,7 @@ describe('the headline says what stopped the pass', () => {
     expect(once).toMatch(/no round answered it/i)
     // Where the money went, because that is what a person raises or does not.
     expect(once).toContain('3 fix round(s)')
-    expect(once).toContain('runtime.limits.rounds')
+    expect(once).toContain('runtime.limits.attempt.refusalFixes')
     // And the ordinary shape — the reviewer refused, a round answered, the
     // reviewer refused again — is the sentence it has always been.
     expect(after(3, 3)).toMatch(/two agents disagreed/i)
@@ -806,7 +806,7 @@ describe('the headline says what stopped the pass', () => {
     expect(none.what).toMatch(/one agent refused/i)
     expect(none.what).toMatch(/buys no round of fix-and-recheck/i)
     // And what changes it: money, not correctness.
-    expect(none.what).toContain('runtime.limits.rounds')
+    expect(none.what).toContain('runtime.limits.attempt.refusalFixes')
     expect(none.what).not.toBe(card({ ended: 'spent' }).what)
   })
 

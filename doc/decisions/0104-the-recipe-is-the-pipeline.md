@@ -78,17 +78,19 @@ in the source.
    knows which spelling a file used, and every reader goes through them.
 
 6. **`runtime.limits` is the ceiling, stated once; a dispatch may only narrow
-   it.** `turns` (default 300) and `wall` (default `2h`) bound one agent run.
-   `rounds` (default 2) bounds how many times an attempt sends the work back, and
-   `restarts` (default 0) bounds how many times a ticket starts over. `usd`
+   it.** `run.turns` (default 300) and `run.wall` (default `2h`) bound one agent run.
+   `attempt.refusalFixes` (default 6) bounds how many times an attempt sends the
+   work back after a refusal, `attempt.conflictResolutions` (default 6) how many
+   times it resolves a merge conflict, and `ticket.newAttempts` (default 2) how
+   many times a ticket starts over. `run.usd`
    (`#370`) bounds one agent run in dollars and has **no default** — absent
    means no dollar ceiling, reported as such rather than assumed unbounded or
    silently zero. A dispatch's own `limits:` may lower `turns` and `wall`; it
    may not carry `usd` at all either, because the dispatch schema has no key
-   for it — unlike `rounds` and `restarts`, which are refused by name with a
+   for it — unlike the attempt and ticket bounds, which are refused by name with a
    stated reason, `usd` there is refused only as an unrecognized key. A higher
-   `turns` or `wall` is refused at resolve, and so is `rounds` or `restarts`
-   inside a dispatch. `discuss:` carries its own
+   `turns` or `wall` is refused at resolve, and so is `refusalFixes`,
+   `conflictResolutions` or `newAttempts` inside a dispatch. `discuss:` carries its own
    `agent`, `model`, `prompt` and `limits` (defaults 40 turns, `5m`), because a
    discussion spends money outside any attempt, and that `limits` carries no `usd`
    either.

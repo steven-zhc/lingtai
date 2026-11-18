@@ -2587,7 +2587,7 @@ export function recipeRow(f: ProjectFilter, dispatched: string, signedIn: readon
  * For one round this was a `warn` wherever *some* other limit still bound, on the
  * grounds that a Codex project cannot clear it: `enforces` is `["wall"]` —
  * measured, `codex exec` has no `--max-turns` and no flag of any name bounds
- * turns — and `runtime.limits.turns` has a schema default of `300` that is always
+ * turns — and `runtime.limits.run.turns` has a schema default of `300` that is always
  * present, so red there is red for ever and `CheckStatus`'s docstring names that
  * trap. **The downgrade cost more than the trap.** `RUN_LIMITS` was two names then
  * and every runtime in `RUNTIMES` applies at least one of them, so `fail` became a
@@ -2600,7 +2600,7 @@ export function recipeRow(f: ProjectFilter, dispatched: string, signedIn: readon
  *
  * So the red is back, and it is a **true** sentence about a runtime that cannot
  * keep a bound the recipe declares. There are two levers and both are named:
- * `runtime.agent`, a runtime that applies it, or `runtime.limits.turns:
+ * `runtime.agent`, a runtime that applies it, or `runtime.limits.run.turns:
  * unbounded` (`#547`), which is the recipe saying *"I accept an unbounded turn
  * count"*. **That is a choice and not a promise, so it is not checked**: `turns:
  * unbounded` is excluded from `ignored` the way an undeclared `usd` is. A number
@@ -2622,17 +2622,17 @@ export function limitsRow(project: string, recipe: Recipe, capabilities: Runtime
   const name = `runtime: ${project} limits`
   // `usd` has no default (recipe.ts), so unlike `turns` and `wall` it can be
   // genuinely absent — and absent is never "ignored": a Codex project with no
-  // `runtime.limits.usd` declared has nothing for Codex to fail at holding.
-  const declaredUsd = ceilingOf(recipe).usd
+  // `runtime.limits.run.usd` declared has nothing for Codex to fail at holding.
+  const declaredUsd = ceilingOf(recipe).run.usd
   // `turns: unbounded` is the same shape (`#547`): a choice to promise nothing,
   // unless a dispatch on this very runtime narrows it to a number anyway.
-  const declaredTurns = ceilingOf(recipe).turns !== UNBOUNDED || declaresTurnsOn(recipe, capabilities.id)
+  const declaredTurns = ceilingOf(recipe).run.turns !== UNBOUNDED || declaresTurnsOn(recipe, capabilities.id)
   const declared: Record<(typeof RUN_LIMITS)[number], string> = {
     // The ceiling beside its provenance: this row is about what the recipe
     // says (`#375`) and whether the runtime applies it, and a step's
     // reduction is neither (`#314`).
-    turns: String(ceilingOf(recipe).turns),
-    wall: ceilingOf(recipe).wall,
+    turns: String(ceilingOf(recipe).run.turns),
+    wall: ceilingOf(recipe).run.wall,
     usd: declaredUsd === undefined ? 'none declared' : `$${declaredUsd}`,
   }
   const ignored = RUN_LIMITS.filter(
@@ -2664,13 +2664,13 @@ export function limitsRow(project: string, recipe: Recipe, capabilities: Runtime
   // which is not the only lever for either.
   const namedIgnored = ignored.filter((limit) => limit !== 'usd')
   const unboundedWay = ignored.includes('turns')
-    ? ", or write runtime.limits.turns: unbounded (and drop any step's limits.turns) to accept no turn ceiling"
+    ? ", or write runtime.limits.run.turns: unbounded (and drop any step's limits.turns) to accept no turn ceiling"
     : ''
   const lever =
     namedIgnored.length === 0
-      ? 'The lever is deleting runtime.limits.usd, or naming a runtime that applies usd'
+      ? 'The lever is deleting runtime.limits.run.usd, or naming a runtime that applies usd'
       : `The lever is runtime.agent — name a runtime that applies ${namedIgnored.join(' and ')}${unboundedWay}` +
-        (ignored.includes('usd') ? '. usd also clears by deleting runtime.limits.usd' : '')
+        (ignored.includes('usd') ? '. usd also clears by deleting runtime.limits.run.usd' : '')
   return {
     name,
     status: 'fail',

@@ -20,27 +20,27 @@ const WITH = (runtime: unknown, steps: unknown = undefined) =>
 
 describe('runtime.limits.turns', () => {
   it('parses unbounded, and leaves the default at 300', () => {
-    expect(Recipe.parse(WITH({ limits: { turns: 'unbounded' } })).runtime.limits.turns).toBe('unbounded')
-    expect(Recipe.parse(WITH({})).runtime.limits.turns).toBe(300)
+    expect(Recipe.parse(WITH({ limits: { run: { turns: 'unbounded' } } })).runtime.limits.run.turns).toBe('unbounded')
+    expect(Recipe.parse(WITH({})).runtime.limits.run.turns).toBe(300)
   })
 
   it.each([null, 0, 'none', -1, 1.5])('refuses %s, naming the word that is accepted', (turns) => {
-    const parsed = Recipe.safeParse(WITH({ limits: { turns } }))
+    const parsed = Recipe.safeParse(WITH({ limits: { run: { turns } } }))
     expect(parsed.success).toBe(false)
     expect(JSON.stringify(parsed.error?.issues)).toContain('unbounded')
   })
 
   it("lets a step narrow an unbounded ceiling, and still refuses widening a number's", () => {
     const step = { implement: [{ name: 'write', agent: 'codex', prompt: 'go', limits: { turns: 50 } }] }
-    const narrowed = Recipe.parse(WITH({ agent: 'codex', limits: { turns: 'unbounded' } }, step))
+    const narrowed = Recipe.parse(WITH({ agent: 'codex', limits: { run: { turns: 'unbounded' } } }, step))
     expect(limitsFor(narrowed, 'implement').turns).toBe(50)
-    expect(ceilingOf(narrowed).turns).toBe('unbounded')
-    expect(Recipe.safeParse(WITH({ agent: 'codex', limits: { turns: 40 } }, step)).success).toBe(false)
+    expect(ceilingOf(narrowed).run.turns).toBe('unbounded')
+    expect(Recipe.safeParse(WITH({ agent: 'codex', limits: { run: { turns: 40 } } }, step)).success).toBe(false)
   })
 
   it('knows which runtime a step-level turns count is promised on', () => {
     const step = { implement: [{ name: 'write', agent: 'codex', prompt: 'go', limits: { turns: 50 } }] }
-    const recipe = Recipe.parse(WITH({ agent: 'codex', limits: { turns: 'unbounded' } }, step))
+    const recipe = Recipe.parse(WITH({ agent: 'codex', limits: { run: { turns: 'unbounded' } } }, step))
     expect(declaresTurnsOn(recipe, 'codex')).toBe(true)
     expect(declaresTurnsOn(recipe, 'claude-code')).toBe(false)
   })

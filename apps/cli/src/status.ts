@@ -453,7 +453,7 @@ export const readStatus = (
       // Zero when the recipe would not resolve: nothing was offered either.
       const backoffMs = filter.ok ? filter.backoffMs : 0
       // The ceiling `describeArm` says `of` against — `limits.restarts`, null where the recipe would not resolve (#504).
-      const restartsOf = filter.ok ? filter.limits.restarts : null
+      const restartsOf = filter.ok ? filter.limits.newAttempts : null
       const runnable = yield* selectRunnableEffect({ project: name, offered, kinds, backoffMs })
       const tasks = yield* readTasksEffect({ project: name })
       // **The arm comes from the row, because the offer cannot carry it** (#100):

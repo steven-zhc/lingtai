@@ -22,7 +22,7 @@ describe('the preview of a new GitHub recipe', () => {
       heldBy: '',
       closeOnEnd: true,
       personApprovesMerge: true,
-      limits: { turns: 50, wall: '1h', rounds: 3, restarts: 2 },
+      limits: { turns: 50, wall: '1h', refusalFixes: 3, conflictResolutions: 3, newAttempts: 2 },
       turnsUnbounded: false,
       sandbox: null,
     }

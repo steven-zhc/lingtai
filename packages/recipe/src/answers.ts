@@ -116,29 +116,34 @@ export function holdRemovalChanges(currentProposed: readonly unknown[] | null): 
   return withoutHold.length !== proposed.length ? [{ path: ['steps', 'proposed'], value: withoutHold }] : []
 }
 
-/** `runtime.limits.rounds` — how many times a pass sends the agent back. */
-export function roundsChange(rounds: number): RecipeChange {
-  return { path: ['runtime', 'limits', 'rounds'], value: rounds }
+/** `runtime.limits.attempt.refusalFixes` — how many times an attempt sends the agent back after a refusal. */
+export function refusalFixesChange(refusalFixes: number): RecipeChange {
+  return { path: ['runtime', 'limits', 'attempt', 'refusalFixes'], value: refusalFixes }
+}
+
+/** `runtime.limits.attempt.conflictResolutions` — how many times an attempt sends the agent back to resolve a merge conflict. */
+export function conflictResolutionsChange(conflictResolutions: number): RecipeChange {
+  return { path: ['runtime', 'limits', 'attempt', 'conflictResolutions'], value: conflictResolutions }
 }
 
 /**
- * `runtime.limits.turns: unbounded` — the recipe saying it promises no turn
+ * `runtime.limits.run.turns: unbounded` — the recipe saying it promises no turn
  * ceiling (#547). Written for a runtime whose `enforces` omits `turns`, so a
  * project it starts does not open on a doctor failure about a bound the
  * schema's default of 300 made up; the caller checks the file does not
  * already declare one, because a number somebody wrote must stay a number.
  */
 export function unboundedTurnsChange(): RecipeChange {
-  return { path: ['runtime', 'limits', 'turns'], value: UNBOUNDED }
+  return { path: ['runtime', 'limits', 'run', 'turns'], value: UNBOUNDED }
 }
 
-/** `runtime.limits.wall` — what one agent run may take. */
+/** `runtime.limits.run.wall` — what one agent run may take. */
 export function wallChange(wall: string): RecipeChange {
-  return { path: ['runtime', 'limits', 'wall'], value: wall }
+  return { path: ['runtime', 'limits', 'run', 'wall'], value: wall }
 }
 
 /**
- * `runtime.limits.usd` — never `runtime.budget`, which is 0029's prompt
+ * `runtime.limits.run.usd` — never `runtime.budget`, which is 0029's prompt
  * budget (characters of evidence quoted), a different key this flag does not
  * touch (`recipe.ts:3194`). `null` removes the key — `value: undefined` is
  * `editRecipe`'s own spelling for that (`emit.ts:128`) — which is the write
@@ -146,7 +151,7 @@ export function wallChange(wall: string): RecipeChange {
  * assumed (`recipe.ts:3144-3146`).
  */
 export function budgetChange(usd: number | null): RecipeChange {
-  return { path: ['runtime', 'limits', 'usd'], value: usd === null ? undefined : usd }
+  return { path: ['runtime', 'limits', 'run', 'usd'], value: usd === null ? undefined : usd }
 }
 
 /** `source.tickets` — written only by the caller's own differs-from-current check, same as the other builders here. */
@@ -187,12 +192,12 @@ export function kindsChanges(kinds: readonly string[], rawClaim: readonly unknow
   ]
 }
 
-/** `runtime.limits.turns` — what one agent run may take in turns; `unbounded` is the recipe saying it promises none (#971). */
+/** `runtime.limits.run.turns` — what one agent run may take in turns; `unbounded` is the recipe saying it promises none (#971). */
 export function turnsChange(turns: number | typeof UNBOUNDED): RecipeChange {
-  return { path: ['runtime', 'limits', 'turns'], value: turns }
+  return { path: ['runtime', 'limits', 'run', 'turns'], value: turns }
 }
 
-/** `runtime.limits.restarts` — how many times a ticket is started over from the base (#971). */
-export function restartsChange(restarts: number): RecipeChange {
-  return { path: ['runtime', 'limits', 'restarts'], value: restarts }
+/** `runtime.limits.ticket.newAttempts` — how many times a ticket is started over from the base (#971). */
+export function newAttemptsChange(newAttempts: number): RecipeChange {
+  return { path: ['runtime', 'limits', 'ticket', 'newAttempts'], value: newAttempts }
 }

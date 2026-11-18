@@ -10,7 +10,7 @@
 #   ~/.lingtai/lingtai/recipe.yml   everything here but runtime.agent and runtime.limits
 #   ~/.lingtai/config.yml           runtime:
 #                                     agent: claude-code
-#                                     limits: { turns: 150, wall: 1h, rounds: 3, restarts: 1 }
+#                                     limits: { run: { turns: 150, wall: 1h }, attempt: { refusalFixes: 3, conflictResolutions: 3 }, ticket: { newAttempts: 1 } }
 #
 # It stays in the repository as the record of *why* each value is what it is,
 # and because tests read it as this repository's own recipe. An agent that
@@ -437,8 +437,9 @@ runtime:
   # one sitting; a run that needs hundreds of turns on this repository is a
   # ticket that was scoped wrong, and stopping is the more useful answer.
   limits:
-    turns: 150
-    wall: 1h
+    run:
+      turns: 150
+      wall: 1h
 
     # How many times a pass sends the agent back, carrying what refused it
     # ([0039](../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
@@ -479,7 +480,9 @@ runtime:
     # numbers in this block decide what a *ticket* costs between them, which is
     # why they are one block and why `lingtai add`, the board and the drain all
     # say it from `passCeiling` rather than each writing it out.
-    rounds: 3
+    attempt:
+      refusalFixes: 3
+      conflictResolutions: 3
 
     # How many times a spent `rounds` ceiling starts the ticket over from the
     # base instead of asking a person
@@ -511,7 +514,8 @@ runtime:
     # restarted pass exhausting its rounds too — twice.
     #
     # Whoever changes this next writes the run into `doc/experiments/` first.
-    restarts: 1
+    ticket:
+      newAttempts: 1
 
   # How much an agent is told about the attempts before it
   # ([0029](../doc/decisions-archive/0029-the-prompt-budget-is-the-recipes.md)).

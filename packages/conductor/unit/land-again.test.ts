@@ -124,7 +124,7 @@ steps:
     - name: the lines
       judge: same-worktree
       when: merge-refused
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
     // Judge-first would answer the first refusal with the judge's own reply, and no route would be a `land-again`.
     const { result, landAgains, routes, replyOf } = await land(
@@ -149,7 +149,7 @@ steps:
     - name: the lines
       judge: same-worktree
       when: merge-refused
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
     const { landAgains, routes, replyOf } = await land({ reason: 'remote-error', detail: MERGE_ERROR }, 3, recipe)
     expect(landAgains).toHaveLength(BOUNDS.landingRetries)

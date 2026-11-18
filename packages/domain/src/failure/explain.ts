@@ -279,7 +279,7 @@ const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
   // reason a crash is.
   'no-structured-answer': 'lingtai',
   // The dollar twin of the argument above, word for word (`#370`): a recipe
-  // that set `runtime.limits.usd` and a run that spent it is a ticket too
+  // that set `runtime.limits.run.usd` and a run that spent it is a ticket too
   // expensive for the ceiling, not Lingtai misbehaving.
   'out-of-usd': 'repository',
 }
@@ -487,7 +487,7 @@ const REFUSAL_READING: Record<
  * only from the merge lane or from `approve()`, and **neither is a place a
  * round runs** — a `merge:` gate goes from `integrate()` straight to a block,
  * and an approval that meets a moved base has no pass at all. So the sentence
- * must not point at `runtime.limits.rounds`: raising it buys nothing here, and
+ * must not point at `runtime.limits.attempt.refusalFixes`: raising it buys nothing here, and
  * a card that implied otherwise would send an operator to change a key that
  * the next identical refusal still ignores.
  */

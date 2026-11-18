@@ -21,7 +21,7 @@
  * which is the failure two jobs make likelier rather than rarer.
  *
  * **The board gets `stop` and never `shutdown`.** `shutdown` here means *finish
- * the pass in flight*, and waits as long as `runtime.limits.wall`. A board has
+ * the pass in flight*, and waits as long as `runtime.limits.run.wall`. A board has
  * no pass to finish, so a verb that waited for one would make somebody wait for
  * nothing — or believe the conductor was draining when it was not.
  *

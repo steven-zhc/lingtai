@@ -29,7 +29,7 @@ describe("editRecipe's mechanism", () => {
   it('reads the file through parseDocument, never calls stringify, and never returns a rendering', () => {
     const toString = vi.spyOn(yaml.Document.prototype, 'toString')
     const out = editRecipe(OWN, [
-      { path: ['runtime', 'limits', 'turns'], value: 200 },
+      { path: ['runtime', 'limits', 'run', 'turns'], value: 200 },
       // The lane rather than an approval since `#270`: `editRecipe` parses what it
       // wrote, and `human:` at `merge` is refused by name now. Still this key,
       // because a list this repository's own file writes as `[]` is the one a
@@ -65,13 +65,14 @@ describe("editRecipe's mechanism", () => {
       'runtime:',
       '  agent: "claude-code"',
       '  limits:',
-      '    turns: 150',
+      '    run:',
+      '      turns: 150',
       '',
     ].join('\n')
     expect(yaml.parseDocument(quirky).toString()).not.toBe(quirky)
 
-    const out = editRecipe(quirky, [{ path: ['runtime', 'limits', 'turns'], value: 90 }])
-    expect(out).toBe(quirky.replace('    turns: 150', '    turns: 90'))
+    const out = editRecipe(quirky, [{ path: ['runtime', 'limits', 'run', 'turns'], value: 90 }])
+    expect(out).toBe(quirky.replace('      turns: 150', '      turns: 90'))
     expect(yaml.stringify).not.toHaveBeenCalled()
   })
 })

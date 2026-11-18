@@ -210,7 +210,11 @@ const fixRound = (): Envelope[] => [...refused(), at('2026-09-15T17:34:01Z', 'St
  */
 const fixSpent = (): Envelope[] => {
   const proposal: Proposal = { _tag: 'BuildRed', output: '2 tests failed' }
-  const offer = offerFor(proposal, { rounds: 3, restarts: 1, conflictRounds: 3 }, { rounds: 0, restarts: 0 })
+  const offer = offerFor(
+    proposal,
+    { refusalFixes: 3, newAttempts: 1, conflictResolutions: 3 },
+    { rounds: 0, restarts: 0 },
+  )
   const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'same-worktree judge' }
   const decision = decideRoute(offer, reply)
   return [
@@ -415,7 +419,7 @@ const card = (
   events: Envelope[],
   plan = PLAN,
   over = false,
-  limits: { rounds: number; restarts: number } | null = null,
+  limits: { refusalFixes: number; newAttempts: number } | null = null,
 ) => {
   const merged = task(t)
   const progress = progressOf(reduceAttempt(events), plan, over)
@@ -438,7 +442,7 @@ const render = (
   events: Envelope[],
   plan = PLAN,
   over = false,
-  limits: { rounds: number; restarts: number } | null = null,
+  limits: { refusalFixes: number; newAttempts: number } | null = null,
 ) =>
   renderToStaticMarkup(
     <Card card={card(t, events, plan, over, limits)} showProject={false} issue={null} paused={false} />,
@@ -607,7 +611,7 @@ describe('a running card', () => {
    * two numbers still distinct inside it.
    */
   it('says which round as one object and still says both numbers', () => {
-    const html = render({}, running(), PLAN, false, { rounds: 3, restarts: 1 })
+    const html = render({}, running(), PLAN, false, { refusalFixes: 3, newAttempts: 1 })
     const pills = [...html.matchAll(/<li class="pill sig"[^>]*>([^<]*)</g)].map((m) => m[1])
 
     expect(pills).toContain('Attempt 2 · restart 1 of 1')
@@ -855,8 +859,8 @@ describe('a card answering a refusal', () => {
     // `of` of its own), the same fallback `describeHeld` always had for a
     // run that never bought one.
     const html = render({ state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40) }, fixSpent(), PLAN, false, {
-      rounds: 3,
-      restarts: 1,
+      refusalFixes: 3,
+      newAttempts: 1,
     })
 
     // The round `fixSpent()` bought is now on the budget line too.
@@ -880,7 +884,7 @@ describe("a held item's budget", () => {
       fixSpent(),
       PLAN,
       false,
-      { rounds: 3, restarts: 2 },
+      { refusalFixes: 3, newAttempts: 2 },
     )
 
     expect(sentence(html)).toBe('proposed:build refused — 1 of 3 rounds · 1 restart left')
@@ -898,7 +902,7 @@ describe("a held item's budget", () => {
       refused(),
       PLAN,
       false,
-      { rounds: 2, restarts: 1 },
+      { refusalFixes: 2, newAttempts: 1 },
     )
 
     expect(sentence(html)).toBe('proposed:build refused — 0 of 2 rounds · 1 restart left')
@@ -922,8 +926,8 @@ describe("a held item's budget", () => {
     const queuedHtml = renderToStaticMarkup(
       <Card
         card={toCard(task({ state: 'queued', restarts: 1, restartsOf: 1 }), null, null, null, {
-          rounds: 3,
-          restarts: 1,
+          refusalFixes: 3,
+          newAttempts: 1,
         })}
         showProject={false}
         issue={null}
@@ -962,7 +966,7 @@ describe("a held item's budget", () => {
       ],
       PLAN,
       false,
-      { rounds: 3, restarts: 1 },
+      { refusalFixes: 3, newAttempts: 1 },
     )
 
     expect(sentence(html)).toContain('— 0 of 3 rounds · 0 restarts left')
@@ -1286,7 +1290,7 @@ describe('the palette', () => {
 
 describe('the plan reduced into the rail (#781)', () => {
   const view = planOf(PLAN, {
-    limits: { turns: 150, wall: '1h', rounds: 2, restarts: 0 },
+    limits: { turns: 150, wall: '1h', refusalFixes: 2, conflictResolutions: 2, newAttempts: 0 },
   })
   const none = () => {
     const p = progressOf(reduceAttempt([resolved(PLAN)]), PLAN, false)

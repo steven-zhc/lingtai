@@ -26,7 +26,7 @@ steps:
       when: conflict
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 1, restarts: 0 }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 1, conflictResolutions: 1 }, ticket: { newAttempts: 0 } }
 `
 
 const BASE = 'a'.repeat(40)

@@ -785,33 +785,41 @@ export const NOT_BUILT_YET: StepBodies = {
  */
 export interface Ceilings {
   /**
-   * How many times this pass may go back into the spine — a fix round, and what
-   * `attemptCeiling` prices, with the conflict rounds and the reruns, at *up to `2 × rounds + 1 + stepRedos` agent runs* (0108 §8)
+   * How many times this pass may go back into the spine after a build or review
+   * refusal — `runtime.limits.attempt.refusalFixes` (0108 §8), which a person's
+   * grant may cap and `attemptCeiling` prices into `implement`'s runs
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
+   * Spent as `Spent.rounds` until the log rename.
    *
    * **This is what makes the loop bounded**, and the bound is structural rather
    * than a guard: every back edge spends one, and when they are spent `offerFor`
    * stops offering a step. A judge that answers `implement` anyway is refused
    * by name.
    */
-  readonly rounds: number
+  readonly refusalFixes: number
   /**
-   * How many restarts this **item** may spend in total — its ceiling, not what
+   * How many times this pass may send the agent back to resolve a merge
+   * conflict — `runtime.limits.attempt.conflictResolutions`, never grant-capped
+   * (#1200). Spent as `Spent.conflictRounds` until the log rename.
+   */
+  readonly conflictResolutions: number
+  /**
+   * How many new attempts this **item** may spend in total — its ceiling, not what
    * is left of it.
    *
-   * Zero, or equal to `restartsSpent`, means `claim` is not on offer and a spent
-   * pass rests with a person. Above `restartsSpent` it may be chosen, and
+   * Zero, or equal to `newAttemptsSpent`, means `claim` is not on offer and a spent
+   * pass rests with a person. Above `newAttemptsSpent` it may be chosen, and
    * choosing it **ends this pass**: a restart is a requeue (0058 §3b), the item
    * is released, and the queue's next pass orders by kind and then by number as
    * it always does — so *the next ticket taken may not be this one*.
    */
-  readonly restarts: number
-  /** How many restarts this item has already spent — its history, not this pass's. */
-  readonly restartsSpent: number
+  readonly newAttempts: number
+  /** How many new attempts this item has already spent — its history, not this pass's. */
+  readonly newAttemptsSpent: number
 }
 
 /** Nothing on the back edges, which is what a caller that says nothing gets. */
-const NOTHING_SPARE: Ceilings = { rounds: 0, restarts: 0, restartsSpent: 0 }
+const NOTHING_SPARE: Ceilings = { refusalFixes: 0, conflictResolutions: 0, newAttempts: 0, newAttemptsSpent: 0 }
 
 // ------------------------------------------------------------- the loop ----
 
@@ -990,7 +998,7 @@ export interface AttemptOptions {
     }
     /**
      * What the held run had already spent, so a continuation does not start
-     * the round budget over — `ceilings.rounds` bounds the pass's total, not
+     * the round budget over — `ceilings.refusalFixes` bounds the pass's total, not
      * this one visit's.
      */
     readonly roundsSpent?: number
@@ -1367,7 +1375,7 @@ export function outcomeOf(end: AttemptEnd): TerminalOutcome {
  *
  * **It terminates**, and structurally rather than by a guard: the only edges
  * that re-enter the spine are the ones `offerFor` offers, it offers none once
- * `roundsSpent` reaches `ceilings.rounds`, and a destination it did not offer
+ * `roundsSpent` reaches `ceilings.refusalFixes`, and a destination it did not offer
  * is refused. So the walk is at most `rounds + 1` laps long, conflict rounds and base merges (counted per attempt) apart.
  */
 export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<AttemptOver> {
@@ -1445,11 +1453,11 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         },
       }
     }
-    const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.rounds)
+    const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.refusalFixes)
     // A restart is automatic fix routing too, and a bigger kind than a round: the lap
     // that spends a human grant ends at a person rather than at a restart nobody
     // decided. A continuation from `Approve` carries no grant and keeps the recipe's (#570).
-    const restartLimit = options.from?.grant !== undefined ? ceilings.restartsSpent : ceilings.restarts
+    const restartLimit = options.from?.grant !== undefined ? ceilings.newAttemptsSpent : ceilings.newAttempts
 
     /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
     let at: Step | null = 'admit'
@@ -1533,6 +1541,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       ...options.context,
       onSha,
       round: roundsSpent,
+      conflictRound: conflictRoundsSpent,
       recheck,
       ...(landedOnBase === null ? {} : { landedOnBase }),
       ...(conflictMerge === null ? {} : { conflictMerge }),
@@ -1624,10 +1633,16 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             : proposalRaised
         const offer = offerFor(
           proposal,
-          { rounds: roundLimit, restarts: restartLimit, conflictRounds: ceilings.rounds },
+          // `refusalFixes` is spent as `rounds`, `conflictResolutions` as `conflictRounds` and
+          // `newAttempts` as `restarts` until the log rename; only the limits have their new names.
+          {
+            refusalFixes: roundLimit,
+            newAttempts: restartLimit,
+            conflictResolutions: ceilings.conflictResolutions,
+          },
           {
             rounds: roundsSpent,
-            restarts: ceilings.restartsSpent,
+            restarts: ceilings.newAttemptsSpent,
             baseMerges: baseMergesSpent,
             conflictRounds: conflictRoundsSpent,
             stepRedos: stepRedosSpent,

@@ -57,7 +57,12 @@ const run = (ceilings: { rounds: number }, over: Partial<AttemptOptions>) =>
         emit: () => {},
         bodies,
         actionsAt: actionsAt(),
-        ceilings: { rounds: ceilings.rounds, restarts: 0, restartsSpent: 0 },
+        ceilings: {
+          refusalFixes: ceilings.rounds,
+          conflictResolutions: ceilings.rounds,
+          newAttempts: 0,
+          newAttemptsSpent: 0,
+        },
         ...over,
       }),
     ),

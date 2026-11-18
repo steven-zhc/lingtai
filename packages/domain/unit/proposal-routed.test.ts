@@ -33,7 +33,7 @@ const verdict = (name: string, evidence: string, findings: (typeof finding)[]): 
 
 const outcomeOf = (step: StepOutcome['step'], action: Action): StepOutcome => ({ step, round: 0, actions: [action] })
 
-const NONE = { rounds: 0, restarts: 0, conflictRounds: 0 }
+const NONE = { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 }
 
 /** Every stripped variant, with the action on a `StepEnded` that holds what was stripped. */
 const CASES: { label: string; proposal: Proposal; outcome: StepOutcome }[] = [
@@ -164,7 +164,7 @@ describe('routeMove', () => {
       { _tag: 'Selected', candidate: 'hand-to-person', why: 'w' } as const,
       { _tag: 'Selected', candidate: 'nowhere', why: 'w' } as const,
     ]
-    const spents = [NONE, { rounds: 2, restarts: 1, conflictRounds: 2 }]
+    const spents = [NONE, { refusalFixes: 2, newAttempts: 1, conflictResolutions: 2 }]
     for (const { proposal } of CASES) {
       for (const spent of spents) {
         const offer = offerFor(proposal, spent, { rounds: 0, restarts: 0, baseMerges: 0, conflictRounds: 0 })

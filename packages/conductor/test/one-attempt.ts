@@ -159,7 +159,7 @@ repo: { base: main, submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps: {}
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 /**
@@ -178,7 +178,7 @@ source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
   admit: ${declared}
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 /**
@@ -197,7 +197,7 @@ source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
   merge: ${declared}
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 /**
@@ -221,7 +221,7 @@ steps:
       prompt: look at it coldly
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 0, restarts: ${restarts} }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 0, conflictResolutions: 0 }, ticket: { newAttempts: ${restarts} } }
 `
 
 /**
@@ -245,7 +245,7 @@ steps:
       prompt: look at it coldly
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 0, restarts: ${restarts} }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 0, conflictResolutions: 0 }, ticket: { newAttempts: ${restarts} } }
 `
 
 /**
@@ -266,7 +266,7 @@ steps:
     - name: review
       agent: claude-code
       prompt: look for races
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 /**
@@ -300,7 +300,7 @@ steps:
       when: findings
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 1, restarts: 0 }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 1, conflictResolutions: 1 }, ticket: { newAttempts: 0 } }
 `
 
 /**
@@ -333,7 +333,7 @@ steps:
       when: findings
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 2, restarts: 0 }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } }
 `
 
 /**
@@ -362,7 +362,7 @@ steps:
       model: gpt-5-codex
       limits: { turns: 4 }
       prompt: look for races
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 /**
@@ -391,7 +391,7 @@ steps:
       when: findings
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 1, restarts: 0 }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 1, conflictResolutions: 1 }, ticket: { newAttempts: 0 } }
 `
 
 /**
@@ -418,7 +418,7 @@ steps:
     - name: draft
       agent: claude-code
       prompt: say what shape this takes
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 /**
@@ -451,7 +451,7 @@ steps:
   proposed:
     - name: approval
       human: "Merge this? It is Lingtai's own code."
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 export const issue: Issue = {

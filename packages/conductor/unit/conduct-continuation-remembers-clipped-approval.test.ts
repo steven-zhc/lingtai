@@ -27,7 +27,7 @@ steps:
       human: "Merge this?"
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } }
   budget: { diff: 10 }
 `
 

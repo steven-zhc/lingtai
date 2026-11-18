@@ -61,7 +61,7 @@ repo: {base: main, submodules: false}
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps: {}
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 const DB_FIXTURE = `version: 2
@@ -69,7 +69,7 @@ repo: {base: main, submodules: false}
 source: {kinds: [bug], exclude: [], tickets: db}
 env: {required: [], plantAt: .env.local}
 steps: {}
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 // `source.kinds` is required (`.min(1)`, no schema default) and absent here,
@@ -80,7 +80,7 @@ repo: {base: main, submodules: false}
 source: {tickets: db}
 env: {required: [], plantAt: .env.local}
 steps: {}
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 // `env.plantAt` is required (`z.string()`, no schema default) and absent
@@ -91,7 +91,7 @@ const UNRESOLVABLE_KINDS_FIXTURE = `version: 2
 repo: {base: main, submodules: false}
 source: {kinds: [bug], exclude: []}
 steps: {}
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 const noHistory = async () => []

@@ -146,7 +146,13 @@ async function viaPage(form: (checks: { name: string; run: string }[], install: 
   return files.store.get(recipePath(f.project, HOME))
 }
 
-const LIMITS = { ...LIMIT_DEFAULTS, turns: 300 as number | 'unbounded' }
+const LIMITS = {
+  turns: 300 as number | 'unbounded',
+  wall: LIMIT_DEFAULTS.run.wall,
+  refusalFixes: LIMIT_DEFAULTS.attempt.refusalFixes,
+  conflictResolutions: LIMIT_DEFAULTS.attempt.conflictResolutions,
+  newAttempts: LIMIT_DEFAULTS.ticket.newAttempts,
+}
 
 describe('the page writes what lingtai add writes (#971)', () => {
   it('a GitHub repository, every default', async () => {

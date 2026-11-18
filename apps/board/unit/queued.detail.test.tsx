@@ -203,7 +203,7 @@ const STEPS: StepPlan = new Map([
 ])
 
 const PLAN: PlanView = planOf(STEPS, {
-  limits: { turns: 150, wall: '1h', rounds: 2, restarts: 0 },
+  limits: { turns: 150, wall: '1h', refusalFixes: 2, conflictResolutions: 2, newAttempts: 0 },
 })
 
 /** The queued page with the panel's plan filled in, as a resolved answer would draw it. */
@@ -255,10 +255,10 @@ describe('what will happen', () => {
     expect(PLAN.wall).toBe('1h')
     // The third number in the same block, because what a pass costs is all
     // three of them and 0039 §3 put them together for exactly that reason.
-    expect(PLAN.rounds).toBe(2)
+    expect(PLAN.refusalFixes).toBe(2)
     // And the fourth, because what a *ticket* costs is the product of the two
     // ceilings (0040 §5) — a page built from one of them names the wrong one.
-    expect(PLAN.restarts).toBe(0)
+    expect(PLAN.newAttempts).toBe(0)
   })
 
   it('renders the plan and the bounds together', () => {
@@ -276,7 +276,7 @@ describe('what will happen', () => {
     // line rather than omitted — 0016 §4 — and none gets a row of its own.
     expect(html).toContain('nothing configured at: design, build, review')
     expect(html.match(/<li><b>/g)).toHaveLength(PLAN.steps.length - 3)
-    expect(html).toContain('150 turns · 1h · 2 round(s) back · then straight to you')
+    expect(html).toContain('150 turns · 1h · 2 refusal fix(es) · 2 conflict resolution(s) · then straight to you')
   })
 
   /**
@@ -289,7 +289,7 @@ describe('what will happen', () => {
     // §4), and it has to render as loudly: a project that sends every refusal
     // to a person is making a choice somebody should be able to see.
     const none = planOf(STEPS, {
-      limits: { turns: 300, wall: '2h', rounds: 0, restarts: 0 },
+      limits: { turns: 300, wall: '2h', refusalFixes: 0, conflictResolutions: 0, newAttempts: 0 },
     })
     expect(planPage(none)).toContain('straight to you')
   })
@@ -307,11 +307,11 @@ describe('what will happen', () => {
    */
   it('does not promise a refusal is yours when a restart is bought', () => {
     const over = planOf(STEPS, {
-      limits: { turns: 150, wall: '1h', rounds: 0, restarts: 2 },
+      limits: { turns: 150, wall: '1h', refusalFixes: 0, conflictResolutions: 0, newAttempts: 2 },
     })
     const html = planPage(over)
 
-    expect(html).toContain('no rounds · 2 restart(s)')
+    expect(html).toContain('no refusal fixes · no conflict resolutions · 2 new attempt(s)')
     expect(html).not.toContain('straight to you')
   })
 

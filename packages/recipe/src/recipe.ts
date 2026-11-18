@@ -36,7 +36,7 @@ import {
 import { SandboxBlock } from './sandbox-block.ts'
 
 /**
- * `runtime.limits.turns`: a count, or the word `unbounded` (#547).
+ * `runtime.limits.run.turns`: a count, or the word `unbounded` (#547).
  *
  * The refusal names the word because the three spellings somebody reaches for
  * (`null` from a bare `turns:`, `0`, `none`) each mean *no ceiling* to a person
@@ -215,17 +215,22 @@ export const runPlugin = definePlugin('run', {
  * recipe's own voice, which is 0061 §9's rule — *a plugin refuses a field it
  * does not understand* — applied one level down, to a field of a field.
  */
-function boundsThePass(field: 'rounds' | 'restarts'): z.ZodType {
-  const counts =
-    field === 'rounds'
-      ? 'how many times an attempt sends the agent back'
-      : 'how many times a ticket starts the work over'
+function boundsThePass(
+  field: 'rounds' | 'restarts' | 'refusalFixes' | 'conflictResolutions' | 'newAttempts',
+): z.ZodType {
+  const where: Record<typeof field, string> = {
+    rounds: '`runtime.limits.attempt.refusalFixes` and `runtime.limits.attempt.conflictResolutions`',
+    restarts: '`runtime.limits.ticket.newAttempts`',
+    refusalFixes: '`runtime.limits.attempt.refusalFixes`',
+    conflictResolutions: '`runtime.limits.attempt.conflictResolutions`',
+    newAttempts: '`runtime.limits.ticket.newAttempts`',
+  }
   return z
     .never({
       error:
-        `\`${field}\` bounds the attempt and not one call (0040): it counts ${counts}, which is a fact ` +
-        'about the attempt rather than about one dispatch. Write it at `runtime.limits`, where the ' +
-        'ceiling is stated once (0070 §5)',
+        `\`${field}\` bounds the attempt or the ticket and not one call (0040, 0108 §8): it counts how many ` +
+        'runs there are, which is a fact about the attempt rather than about one dispatch. Write it at ' +
+        `${where[field]}, where the ceiling is stated once (0070 §5)`,
     })
     .optional()
 }
@@ -286,7 +291,7 @@ const DISPATCH = {
     .strictObject({
       turns: z.number().int().positive().optional(),
       /**
-       * A duration, checked where it is written for `runtime.limits.wall`'s own
+       * A duration, checked where it is written for `runtime.limits.run.wall`'s own
        * reason: `parseDuration` throws, and a throw out of something *reading* a
        * resolved recipe names neither the key nor the file (#218). The
        * narrowing rule never meets a malformed one, because this refuses first.
@@ -297,6 +302,9 @@ const DISPATCH = {
         .optional(),
       rounds: boundsThePass('rounds'),
       restarts: boundsThePass('restarts'),
+      refusalFixes: boundsThePass('refusalFixes'),
+      conflictResolutions: boundsThePass('conflictResolutions'),
+      newAttempts: boundsThePass('newAttempts'),
     })
     .optional(),
 } as const
@@ -1059,7 +1067,7 @@ const EXCLUDE = z.array(z.string())
  * flat — the wait does not grow with attempts, because what changes between
  * attempts is what the next one is told (#82) and not how long it sat.
  *
- * A duration like `runtime.limits.wall`, and it must be a positive one:
+ * A duration like `runtime.limits.run.wall`, and it must be a positive one:
  * zero is not a shorter backoff, it is the absence of the guard, and the
  * thing a person wants when they reach for it is `lingtai now`.
  *
@@ -1244,7 +1252,7 @@ export type QueueSettings = z.infer<typeof QueueSettings>
  *   which is what `Offered.dependenciesUnread` says out loud.
  * - **No `restarts`.** It is a universal key sitting beside this plugin rather
  *   than a field of it (0061 §2 and §3): *this item may be claimed twice* is
- *   the workflow's bound on the step, and `runtime.limits.restarts` is where a
+ *   the workflow's bound on the step, and `runtime.limits.ticket.newAttempts` is where a
  *   person writes it today.
  * - **No `env:`.** Nothing here spawns a process — the queue runs in the
  *   conductor's own process — so a recipe writing one is refused by name
@@ -2914,7 +2922,7 @@ export type DiscussAgent = z.infer<typeof DiscussAgent>
  * **And no narrowing check against `runtime.limits` either.** 0070 §5's
  * refusal protects `lingtai status`'s one-line answer to *what may a pass
  * spend*, and a discussion is not in a pass. A machine file that sets
- * `runtime.limits.turns: 30` must not make a recipe nobody edited stop
+ * `runtime.limits.run.turns: 30` must not make a recipe nobody edited stop
  * resolving because this default is 40.
  *
  * **`prompt:` is optional**, unlike `DISPATCH.prompt`. A recipe with no
@@ -3002,7 +3010,7 @@ export const Triage = z
           .default('5m')
           .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 5m' }),
         /**
-         * A dollar ceiling, defaulted — unlike `runtime.limits.usd`, which is
+         * A dollar ceiling, defaulted — unlike `runtime.limits.run.usd`, which is
          * absent on purpose so that "no ceiling" is never assumed. Here, writing
          * `triage:` at all is what turns the spend on, so the key needs a
          * number to mean anything the day someone writes it with nothing else
@@ -3290,100 +3298,68 @@ export const Recipe = z
        */
       limits: z
         .strictObject({
-          turns: TurnLimitSchema.default(300),
-          /**
-           * A duration, checked here for the reason `source.backoff` is checked
-           * where it is written: `parseDuration` throws, and a throw out of the
-           * middle of something *reading* the resolved recipe names neither the
-           * key nor the file. `wall: "90"` — the unit forgotten — resolved
-           * cleanly and threw later inside the board's reading of it, where it
-           * was read as *the recipe could not be read* (#218).
-           */
-          wall: z
-            .string()
-            .default('2h')
-            .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 2h' }),
-          /**
-           * How many times a pass sends the agent back, carrying what refused it.
-           *
-           * **Two by default, and the number has an argument.** 0025 §3's rule for
-           * a spending default is *the smallest number that makes the feature
-           * exist*, which would say one — but this key replaces two ceilings that
-           * were one each, and 0038 §4's reason for splitting them was real: a
-           * build going red and a review refusing are different failures, and a
-           * single round shared between them means whichever happens first decides
-           * whether the other gets an attempt at all. That is the race 0038 called
-           * *not a budget*. A pass that fixes a red build and then meets a finding
-           * needs two rounds to do what two purses of one used to do, so two is
-           * the smallest number that does not quietly take the feature away.
-           *
-           * Zero is legal and means **every refusal goes straight to a person** —
-           * what `repair.on: false` used to say, now said in the block where the
-           * other limits are. A boolean beside a count whose zero already means
-           * the same thing is a redundant pair (0039 §4).
-           *
-           * **And it is the only number a refusal spends against** (`#143`). It
-           * was read twice for a while: once here, for a round inside the pass,
-           * and once by `decideRepair` for a whole new run the merge lane bought
-           * — one key naming two extents, which is what `#141` left behind and
-           * 0039 §Consequences says should not exist. The second reading is gone
-           * with the purchase, so `rounds` means one thing: how many times a
-           * **pass** sends the agent back.
-           *
-           * Lingtai's *own* failures never reach it, in code (`whoseFailure`): no
-           * recipe can make an agent able to fix a database it cannot reach.
-           */
-          rounds: z.number().int().nonnegative().default(2),
-          /**
-           * How many times a spent `rounds` ceiling starts the work over instead
-           * of asking a person — a fresh pass, from a worktree cut off the base.
-           *
-           * **The breadth half of the pair `rounds` is the depth half of**
-           * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md)).
-           * A round buys another attempt at *this* approach; a restart buys
-           * another approach. When the approach is the defect, no value of
-           * `rounds` reaches the fix — which is what
-           * [experiment 011](../../../doc/experiments/011-patching-versus-starting-over.md)
-           * measured: `#144` patched across two rounds refused three times, cost
-           * ~$12 and landed nothing, while the same ticket started over carrying
-           * those findings passed first read for $6.56, using none of the ten
-           * rounds it had. Each refusal in the first arm was about the code the
-           * round before it had written.
-           *
-           * **Zero by default, and zero is today's behaviour**: a pass whose
-           * rounds are spent asks a person, exactly as it did before this key
-           * existed. That is 0040 §4 and it is the whole of why this is a key
-           * rather than a change — the evidence is one ticket, and no second
-           * restart has ever been observed.
-           *
-           * 0025 §3's rule for a spending default — *the smallest number that
-           * makes the feature exist* — would say one, and it does not apply here.
-           * That rule is about not taking a feature away by defaulting it too
-           * low; this default takes nothing away, because until a project writes
-           * a number down there is no feature to take. Turning it on for every
-           * project on the strength of n = 1 is the thing being avoided.
-           *
-           * Only a **judgement** is answered this way, in code and not by recipe:
-           * a red build and a conflict stay in the worktree, because for those
-           * *the work is still there* is a fact rather than an assumption
-           * (0039 §2). See `decideRestart`.
-           */
-          restarts: z.number().int().nonnegative().default(0),
-          /**
-           * A dollar ceiling on one agent run, passed to a runtime that can hold
-           * one (`--max-budget-usd` on Claude Code) and reported absent otherwise
-           * (`#370`).
-           *
-           * **No default, unlike the other four.** `turns`'s schema default of
-           * `300` is why a Codex project reads red on that limit until it writes
-           * `turns: unbounded` (`apps/cli/src/doctor.ts`'s `limitsRow`) — a
-           * default present on every recipe, whether anyone wrote it or not. `usd` must not do the same
-           * thing on a second axis: absent means "no dollar ceiling", said out
-           * loud, never assumed.
-           */
-          usd: z.number().positive().optional(),
+          /** What one agent run may spend. */
+          run: z
+            .strictObject({
+              turns: TurnLimitSchema.default(300),
+              /**
+               * A duration, checked here for the reason `source.backoff` is checked
+               * where it is written: `parseDuration` throws, and a throw out of the
+               * middle of something *reading* the resolved recipe names neither the
+               * key nor the file (#218).
+               */
+              wall: z
+                .string()
+                .default('2h')
+                .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 2h' }),
+              /**
+               * A dollar ceiling on one agent run, passed to a runtime that can hold
+               * one (`--max-budget-usd` on Claude Code) and reported absent otherwise
+               * (`#370`). **No default**: absent means "no dollar ceiling", said out
+               * loud, never assumed.
+               */
+              usd: z.number().positive().optional(),
+            })
+            .default({ turns: 300, wall: '2h' }),
+          /** What one attempt may buy, each knob bounding exactly one action (0108 §8). */
+          attempt: z
+            .strictObject({
+              /**
+               * How many times an attempt sends the agent back, carrying what a
+               * review or build refused. Zero buys no fix in the same worktree, and
+               * a refusal then goes straight to a person: a build or review refusal never
+               * offers a new attempt. A merge conflict is not a refusal; it has
+               * `conflictResolutions`.
+               */
+              refusalFixes: z.number().int().nonnegative().default(6),
+              /**
+               * How many times an attempt sends the agent back to resolve a merge
+               * conflict. Two things that mean differently have two names even where
+               * their values agree (0108 §8). Zero buys no resolution, and a conflict
+               * then goes straight to a person: a merge conflict never offers a new attempt.
+               */
+              conflictResolutions: z.number().int().nonnegative().default(6),
+            })
+            .default({ refusalFixes: 6, conflictResolutions: 6 }),
+          /** What one ticket may buy. */
+          ticket: z
+            .strictObject({
+              /**
+               * How many times a spent attempt starts the work over from a fresh
+               * worktree instead of asking a person (0040). Zero means a spent
+               * attempt asks a person. Only a spent attempt that the judge sends back to
+               * `claim` buys one; a build refusal or a merge conflict never does. Not a daemon
+               * restart: that is `lingtai restart`.
+               */
+              newAttempts: z.number().int().nonnegative().default(2),
+            })
+            .default({ newAttempts: 2 }),
         })
-        .default({ turns: 300, wall: '2h', rounds: 2, restarts: 0 }),
+        .default({
+          run: { turns: 300, wall: '2h' },
+          attempt: { refusalFixes: 6, conflictResolutions: 6 },
+          ticket: { newAttempts: 2 },
+        }),
       /**
        * Which issues this project takes, by their assignee
        * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §2, #181).
@@ -3474,14 +3450,14 @@ export const Recipe = z
    * spend knowable only after reading every action in every step — so the
    * ceiling is said once at `runtime.limits`, and every other number is a
    * reduction from it. An operator who wants `implement` to have 300 turns
-   * raises `runtime.limits.turns` and narrows the others.
+   * raises `runtime.limits.run.turns` and narrows the others.
    *
    * **Equal is not wider.** A `limits:` restating the ceiling is legal and says
    * a true thing — *this step is deliberately at the bound* — and refusing it
    * would be refusing a recipe for being explicit.
    */
   .superRefine((recipe, ctx) => {
-    const ceiling = recipe.runtime.limits
+    const ceiling = recipe.runtime.limits.run
     /**
      * **A duration this refinement is handed may be malformed, and it may not
      * throw on one** (#218).
@@ -3493,7 +3469,7 @@ export const Recipe = z
      * `safeParse`'s failure *result*: the throw escapes past the
      * `RecipeInvalidError` that names the key and the file, so `lingtai add`,
      * the board's reading and the wizard all print a bare duration message
-     * naming neither `runtime.limits.wall` nor which file to open. That is
+     * naming neither `runtime.limits.run.wall` nor which file to open. That is
      * exactly the failure `#218` was opened on, one layer up.
      *
      * So a wall the leaf already refused is a wall this has nothing to say
@@ -3544,7 +3520,7 @@ export const Recipe = z
         const { turns, wall } = action.limits
         if (turns !== undefined && ceiling.turns !== UNBOUNDED && turns > ceiling.turns) {
           refuse(
-            `steps.${step}'s "${action.name}" asks for ${turns} turns; runtime.limits.turns is ` +
+            `steps.${step}'s "${action.name}" asks for ${turns} turns; runtime.limits.run.turns is ` +
               `${ceiling.turns}, and a step may only narrow it (0070 §5)`,
           )
         }
@@ -3554,7 +3530,7 @@ export const Recipe = z
         const wallMs = wall === undefined ? null : msOf(wall)
         if (wallMs !== null && ceilingWallMs !== null && wallMs > ceilingWallMs) {
           refuse(
-            `steps.${step}'s "${action.name}" asks for ${wall} of wall clock; runtime.limits.wall is ` +
+            `steps.${step}'s "${action.name}" asks for ${wall} of wall clock; runtime.limits.run.wall is ` +
               `${ceiling.wall}, and a step may only narrow it (0070 §5)`,
           )
         }

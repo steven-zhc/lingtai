@@ -57,8 +57,10 @@ export async function previewAdd(form: SetupForm): Promise<Preview> {
     const { recipe } = resolveSource(previewed.text, path, path)
     const limits = ceilingOf(recipe)
     const ceiling = attemptCeiling({
-      ...limits,
-      wallMs: parseDuration(limits.wall),
+      ...limits.attempt,
+      ...limits.ticket,
+      ...limits.run,
+      wallMs: parseDuration(limits.run.wall),
       steps: boundsBesides(recipe, 'implement'),
     })
     return { text: previewed.text, ceiling }

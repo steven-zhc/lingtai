@@ -284,7 +284,7 @@ export function daemonStopping(ports: StoppingPorts) {
           timeoutMs === null
             ? // **A pass is no longer one agent**, and this sentence has now been
               // wrong twice for the same reason. It first said one
-              // `runtime.limits.wall`, which the fix loop made an understatement.
+              // `runtime.limits.run.wall`, which the fix loop made an understatement.
               // It was then rewritten as *each with its own <wall>, so several
               // times that* — a multiple, to avoid naming a number this line cannot
               // know. `#141` then made `WALL_LIMIT` a whole sentence rather than a

@@ -218,7 +218,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
    * delegate to — `codex exec --help` at 0.155.1 offers none, and `strings` finds
    * no hidden one the way `claude --max-turns` was hidden — so a recipe's `turns`
    * is a bound nothing applies, and `limitsRow` says so for every Codex project
-   * that promises one — **as a `fail`**. `runtime.limits.turns: unbounded` (#547)
+   * that promises one — **as a `fail`**. `runtime.limits.run.turns: unbounded` (#547)
    * is the spelling for not promising it, and `lingtai init` writes it for a
    * runtime whose `enforces` omits `turns`. Declaring it
    * honestly here is what makes that red true; softening the row instead put
@@ -243,7 +243,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
    * None of these take a number from here and none of them end a run. If a
    * future Codex ships one, this is wrong and `enforces` must grow a third
    * name the same way `claude-code.ts` did — but today there is nothing to
-   * wire, so `enforces` stays `["wall"]` and a recipe naming `runtime.limits.usd`
+   * wire, so `enforces` stays `["wall"]` and a recipe naming `runtime.limits.run.usd`
    * on this runtime is answered by `limitsRow` as `usd` carried and unapplied,
    * the same shape `turns` already is.
    */

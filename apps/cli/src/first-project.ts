@@ -100,6 +100,7 @@ import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } fro
 import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import { cardRecipe, type CardRecipe } from './setup-card.ts'
+import { ROUNDS_RETIRED } from './wizard-options.ts'
 
 /** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
 const LINGTAI_BASE = 'lingtai-base'
@@ -490,6 +491,8 @@ export const RECIPE_FLAGS = [
   'check-build',
   'land',
   'rounds',
+  'refusal-fixes',
+  'conflict-resolutions',
   'wall',
   'budget',
 ]
@@ -731,6 +734,8 @@ function runLocalBranch(
         'build',
         'check-build',
         'rounds',
+        'refusal-fixes',
+        'conflict-resolutions',
         'wall',
         'budget',
         'tickets',
@@ -765,6 +770,7 @@ function runLocalBranch(
         )
       }
       const keepsInstall = Array.isArray(prepared) && prepared.length > 0
+      if (flags['rounds'] !== undefined) return { refused: `${ROUNDS_RETIRED}. ${world.kept}` }
       const unapplied =
         unread ?? (installFlag !== undefined && (installFlag !== 'none' || keepsInstall) ? 'install' : undefined)
       const landFlag = flags['land']
@@ -1065,10 +1071,13 @@ function runGithubBranch(
       'check-build',
       'land',
       'rounds',
+      'refusal-fixes',
+      'conflict-resolutions',
       'wall',
       'budget',
     ]
     const namedRecipeFlag = recipeFlagNames.find((name) => flags[name] !== undefined)
+    if (flags['rounds'] !== undefined) return { refused: `${ROUNDS_RETIRED}. ${world.kept}` }
     if (namedRecipeFlag !== undefined) {
       return {
         refused:

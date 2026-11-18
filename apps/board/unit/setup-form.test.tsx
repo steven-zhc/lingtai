@@ -28,7 +28,7 @@ const view = (target: ReadView['target']): ReadView => ({
   kinds: line(['bug']),
   heldBy: line('agent:hold'),
   end: line(true),
-  limits: { turns: 300, wall: '1h', rounds: 3, restarts: 1 },
+  limits: { turns: 300, wall: '1h', refusalFixes: 3, conflictResolutions: 3, newAttempts: 1 },
   sandbox: null,
 })
 

@@ -73,7 +73,7 @@ const root = fileURLToPath(new URL('../../../', import.meta.url))
  * Rounds to spare on every pass below, so that *no round was bought* is a fact
  * about the ending rather than about an empty purse.
  */
-const SPARE: Ceilings = { rounds: 2, restarts: 1, restartsSpent: 0 }
+const SPARE: Ceilings = { refusalFixes: 2, conflictResolutions: 2, newAttempts: 1, newAttemptsSpent: 0 }
 
 /**
  * **The line a recipe writes to keep the design somewhere**, as near as the
@@ -341,7 +341,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', question: 'which space?' }
       const offer = offerFor(
         proposal,
-        { rounds: SPARE.rounds, restarts: SPARE.restarts, conflictRounds: SPARE.rounds },
+        { refusalFixes: SPARE.refusalFixes, newAttempts: SPARE.newAttempts, conflictResolutions: SPARE.refusalFixes },
         { rounds: 0, restarts: 0 },
       )
 
@@ -367,8 +367,8 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', question: 'which space?' }
       const offer = offerFor(
         proposal,
-        { rounds: SPARE.rounds, restarts: SPARE.restarts, conflictRounds: SPARE.rounds },
-        { rounds: SPARE.rounds, restarts: 0 },
+        { refusalFixes: SPARE.refusalFixes, newAttempts: SPARE.newAttempts, conflictResolutions: SPARE.refusalFixes },
+        { rounds: SPARE.refusalFixes, restarts: 0 },
       )
 
       expect(offer.available.map((candidate) => destinationOf(candidate, proposal))).toEqual(['waiting'])

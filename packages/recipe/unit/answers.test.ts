@@ -1,5 +1,5 @@
 /**
- * `landingChanges`, `roundsChange`, `wallChange` and `budgetChange` (#399) —
+ * `landingChanges`, `refusalFixesChange`, `wallChange` and `budgetChange` (#399) —
  * the pure half of `apps/cli/src/landing.ts`'s writes, turning an answer into
  * `RecipeChange[]`. `packages/conductor/unit/conduct-a-whole-attempt.test.ts`
  * imports the same builder to pin that what it writes actually holds or
@@ -7,7 +7,15 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { budgetChange, kindsChanges, landingChanges, roundsChange, ticketsChange, wallChange } from '../src/answers.ts'
+import {
+  budgetChange,
+  kindsChanges,
+  landingChanges,
+  conflictResolutionsChange,
+  refusalFixesChange,
+  ticketsChange,
+  wallChange,
+} from '../src/answers.ts'
 
 const HOLD = { name: 'hold every attempt', human: "Land this? The setup was answered 'hold'." }
 const HAND_WRITTEN_HOLD = { name: 'approval', human: 'Merge this? It is my own code.' }
@@ -74,20 +82,27 @@ describe('landingChanges', () => {
 })
 
 describe('the limits', () => {
-  it('roundsChange writes runtime.limits.rounds', () => {
-    expect(roundsChange(0)).toEqual({ path: ['runtime', 'limits', 'rounds'], value: 0 })
+  it('refusalFixesChange writes runtime.limits.attempt.refusalFixes', () => {
+    expect(refusalFixesChange(0)).toEqual({ path: ['runtime', 'limits', 'attempt', 'refusalFixes'], value: 0 })
   })
 
-  it('wallChange writes runtime.limits.wall', () => {
-    expect(wallChange('30m')).toEqual({ path: ['runtime', 'limits', 'wall'], value: '30m' })
+  it('conflictResolutionsChange writes runtime.limits.attempt.conflictResolutions', () => {
+    expect(conflictResolutionsChange(3)).toEqual({
+      path: ['runtime', 'limits', 'attempt', 'conflictResolutions'],
+      value: 3,
+    })
   })
 
-  it('budgetChange writes runtime.limits.usd, never runtime.budget', () => {
-    expect(budgetChange(4)).toEqual({ path: ['runtime', 'limits', 'usd'], value: 4 })
+  it('wallChange writes runtime.limits.run.wall', () => {
+    expect(wallChange('30m')).toEqual({ path: ['runtime', 'limits', 'run', 'wall'], value: '30m' })
   })
 
-  it('budgetChange(null) removes runtime.limits.usd', () => {
-    expect(budgetChange(null)).toEqual({ path: ['runtime', 'limits', 'usd'], value: undefined })
+  it('budgetChange writes runtime.limits.run.usd, never runtime.budget', () => {
+    expect(budgetChange(4)).toEqual({ path: ['runtime', 'limits', 'run', 'usd'], value: 4 })
+  })
+
+  it('budgetChange(null) removes runtime.limits.run.usd', () => {
+    expect(budgetChange(null)).toEqual({ path: ['runtime', 'limits', 'run', 'usd'], value: undefined })
   })
 })
 

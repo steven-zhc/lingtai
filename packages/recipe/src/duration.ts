@@ -53,7 +53,7 @@ export function formatDuration(ms: number): string {
  */
 export const UNBOUNDED = 'unbounded'
 
-/** What `runtime.limits.turns` holds: a count, or the choice to have none. */
+/** What `runtime.limits.run.turns` holds: a count, or the choice to have none. */
 export type TurnLimit = number | typeof UNBOUNDED
 
 /**

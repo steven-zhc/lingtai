@@ -31,7 +31,7 @@ const FORM: SetupForm = {
   heldBy: '',
   closeOnEnd: true,
   personApprovesMerge: false,
-  limits: { turns: 300, wall: '2h', rounds: 2, restarts: 0 },
+  limits: { turns: 300, wall: '2h', refusalFixes: 2, conflictResolutions: 2, newAttempts: 0 },
   turnsUnbounded: false,
   sandbox: null,
 }
@@ -170,7 +170,7 @@ describe('addProject under two tabs and a retry (#971)', () => {
       ...FORM,
       personApprovesMerge: true,
       heldBy: 'agent:hold',
-      limits: { turns: 500, wall: '9h', rounds: 7, restarts: 3 },
+      limits: { turns: 500, wall: '9h', refusalFixes: 7, conflictResolutions: 7, newAttempts: 3 },
     }
     await runWith(f, addProject(loud, ports(true)))
     expect(f.store.get(path)).toContain('agent:hold')

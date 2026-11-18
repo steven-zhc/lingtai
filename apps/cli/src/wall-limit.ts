@@ -10,7 +10,7 @@ import { LIMIT_DEFAULTS, parseDuration } from '@lingtai/recipe'
  * be wrong for every project but one.
  *
  * **Computed rather than written down** ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3).
- * This sentence used to say `runtime.limits.wall (2h by default)`, which was
+ * This sentence used to say `runtime.limits.run.wall (2h by default)`, which was
  * true when it was written and false once a pass could buy more than one agent
  * run — a sentence in `apps/cli` chasing a number in `packages/recipe`, with
  * nothing between them to notice. It is now made out of `LIMIT_DEFAULTS`, so the
@@ -22,6 +22,8 @@ import { LIMIT_DEFAULTS, parseDuration } from '@lingtai/recipe'
  * sentences about one limit are one sentence too many.
  */
 export const WALL_LIMIT = `the recipe's runtime.limits — by default, ${attemptCeiling({
-  ...LIMIT_DEFAULTS,
-  wallMs: parseDuration(LIMIT_DEFAULTS.wall),
+  ...LIMIT_DEFAULTS.attempt,
+  ...LIMIT_DEFAULTS.ticket,
+  ...LIMIT_DEFAULTS.run,
+  wallMs: parseDuration(LIMIT_DEFAULTS.run.wall),
 })}`
