@@ -3187,6 +3187,31 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
     )
   })
 
+  it('never reuses a dispatch id for an account rerun once a landing retry was spent (#1239)', async () => {
+    const { bodies } = watching()
+    const { actionsAt, contexts } = implementing([])
+    const { emit } = events()
+
+    // Before the split a landing retry shared the redo count, so account rerun 1 held suffix 1 + 1 = 2.
+    // Rebuilt, the attempt reads stepRedos 0 and landingRetries 1; rerun 2 must not be :rerun:2 again.
+    await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      from: {
+        step: 'implement',
+        waive: undefined,
+        landingRetriesSpent: 1,
+        rerun: { for: { step: 'implement', name: 'write the change', round: 0 }, prompt: null, accountReruns: 2 },
+      },
+    } as unknown as AttemptOptions)
+
+    expect(contexts[0]?.rerun).toBe(3)
+    expect(contexts[0]?.rerun).not.toBe(2)
+  })
+
   it('spends what a continuation already spent', async () => {
     const { bodies } = watching()
     const { actionsAt } = implementing(['API Error: 503'])

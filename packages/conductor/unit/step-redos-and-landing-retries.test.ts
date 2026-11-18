@@ -84,9 +84,13 @@ describe('stepRedos and landingRetries are counted apart (#1239)', () => {
     expect(landed.landingRetries).toBe(1)
     expect(landed.stepRedos).toBeUndefined()
 
-    const redone = reduceAttempt([routed(event, registry, none, 'rerun-setup'), rerun(2)])
-    expect(redone.stepRedos).toBe(2)
-    expect(redone.landingRetries).toBeUndefined()
+    const routedRedo = reduceAttempt([routed(event, registry, none, 'rerun-setup')])
+    expect(routedRedo.stepRedos).toBe(1)
+    expect(routedRedo.landingRetries).toBeUndefined()
+
+    const inPlace = reduceAttempt([rerun(2)])
+    expect(inPlace.stepRedos).toBe(2)
+    expect(inPlace.landingRetries).toBeUndefined()
 
     const both = reduceAttempt([
       routed(event, unreachable, none, 'land-again'),
@@ -94,19 +98,5 @@ describe('stepRedos and landingRetries are counted apart (#1239)', () => {
       routed(event, unreachable, { ...none, landingRetries: 1 }, 'land-again'),
     ])
     expect(continuationSpent(both)).toMatchObject({ stepRedos: 1, landingRetries: 2 })
-  })
-
-  it('a dispatch id suffix is stepRedos + accountReruns, so a landing retry cannot move it', () => {
-    // `run-attempt.ts` computes the suffix as `stepRedosSpent + accountReruns`; a landing retry
-    // dispatches no agent and only raises `landingRetries`, so two redos and one landing retry
-    // in one attempt give suffixes 1 and 2, never a repeat.
-    let spent = none
-    const suffixes: number[] = []
-    for (const step of ['redo', 'land', 'redo'] as const) {
-      spent = step === 'land' ? take(unreachable, spent, 'land-again') : take(registry, spent, 'rerun-setup')
-      if (step === 'redo') suffixes.push((spent.stepRedos ?? 0) + 0)
-    }
-    expect(suffixes).toEqual([1, 2])
-    expect(new Set(suffixes).size).toBe(suffixes.length)
   })
 })

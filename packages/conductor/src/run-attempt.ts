@@ -1004,7 +1004,7 @@ export interface AttemptOptions {
     /**
      * **The first visit of `step` is a rerun of the call an account limit cut off** (0108 §11, #1205): the
      * recorded prompt (null: a fresh brief) is handed again under a new dispatch id. `accountReruns` is this
-     * rerun's number among the attempt's; every rerun's suffix is `stepRedosSpent + accountReruns`, so
+     * rerun's number among the attempt's; every rerun's suffix is `stepRedosSpent + landingRetriesSpent + accountReruns` (a landing retry dispatches nothing, but an attempt begun before #1239 counted it here), so
      * the two kinds never repeat an id.
      */
     readonly rerun?: {
@@ -2033,12 +2033,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       if (firstAccountVisit && accountRerun.askedAgain === true) askingAgain = at
       const visitContext: ActionContext =
         rerun !== null
-          ? { ...rerun.context, rerun: stepRedosSpent + accountRerunsSpent }
+          ? { ...rerun.context, rerun: stepRedosSpent + landingRetriesSpent + accountRerunsSpent }
           : accountRerun !== undefined && at === options.from?.step && !steps.some((visit) => visit.step === at)
             ? {
                 ...contextFor(),
                 round: accountRerun.for.round,
-                rerun: stepRedosSpent + accountRerun.accountReruns,
+                rerun: stepRedosSpent + landingRetriesSpent + accountRerun.accountReruns,
                 recorded: { name: accountRerun.for.name, prompt: accountRerun.prompt },
               }
             : contextFor()
