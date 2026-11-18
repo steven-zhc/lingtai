@@ -57,7 +57,7 @@ describe('TicketReleased 1 → 2', () => {
 
 describe.each(['ProposalRouted', 'PassRouted'] as const)('%s 1 → 2', (type) => {
   it('reads every renamed next in the offer, field for field', () => {
-    expect(SCHEMA_VER[type]).toBe(2)
+    expect(SCHEMA_VER[type]).toBe(3)
     const read = parseStoredPayload(
       type,
       1,
@@ -117,7 +117,7 @@ describe('WaitStarted 1 → 2', () => {
   })
 
   it.each(Object.entries(OLD_TO_NEW))('reads a ceiling of %s as %s', (was, now) => {
-    expect(SCHEMA_VER.WaitStarted).toBe(2)
+    expect(SCHEMA_VER.WaitStarted).toBe(3)
     const excluded = (ceiling: string) => ({ id: 'restart', because: { _tag: 'CeilingReached', ceiling } })
     const read = parseStoredPayload(
       'WaitStarted',
