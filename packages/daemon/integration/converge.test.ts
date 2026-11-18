@@ -56,6 +56,7 @@ function fakeGitHub(start: { labels: string[]; state?: 'open' | 'closed' }) {
       url: `https://example.invalid/${n}`,
       dependencies: { blockedBy: 0, totalBlockedBy: 0 },
       assignees: [],
+      milestone: null,
       parent: null,
       subIssues: null,
     }),

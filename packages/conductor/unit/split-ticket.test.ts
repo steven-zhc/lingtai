@@ -32,6 +32,8 @@ class FakeGitHub {
   /** Labels the repository has; null means every label exists. A create naming another is refused. */
   labels = new Set<string>(['bug', 'feature'])
   strictLabels = false
+  /** Every `createIssue` input the writer sent. */
+  created: Parameters<SplitClient['createIssue']>[0][] = []
 
   constructor(parentBody: string) {
     this.issues.set(PARENT, this.make(PARENT, 'big ticket', parentBody))
@@ -48,6 +50,7 @@ class FakeGitHub {
       url: '',
       dependencies: null,
       assignees: [],
+      milestone: null,
       parent: null,
       subIssues: null,
     }
@@ -79,6 +82,7 @@ class FakeGitHub {
     listIssuesSince: async () => this.hit('listIssuesSince', () => [...this.issues.values()].map((i) => ({ ...i }))),
     createIssue: async (input) =>
       this.hit(`createIssue ${input.title}`, () => {
+        this.created.push(input)
         if (this.strictLabels)
           for (const l of input.labels) if (!this.labels.has(l)) throw new Error('Validation Failed')
         const issue = this.make(this.next++, input.title, input.body)
@@ -319,6 +323,56 @@ describe('splitTicketHolding', () => {
       create({ ...input, labels: input.labels.filter((l) => l !== 'lingtai:publishing') })
     expect((await go()).ok).toBe(true)
     expect(gh.calls.filter((c) => c.startsWith('addLabels'))).toHaveLength(3)
+  })
+
+  it("opens every child in the parent's milestone and assigned to the parent's assignees (#1272)", async () => {
+    const { gh, go } = await setup()
+    Object.assign(gh.issues.get(PARENT)!, {
+      milestone: 3,
+      assignees: ['a', 'b'],
+      labels: [{ name: 'agent:hold', color: null }],
+    })
+    expect((await go()).ok).toBe(true)
+    expect(gh.created).toHaveLength(3)
+    for (const input of gh.created) {
+      expect(input.milestone).toBe(3)
+      expect(input.assignees).toEqual(['a', 'b'])
+      expect(input.labels).not.toContain('agent:hold')
+    }
+  })
+
+  it('sends neither key for a parent with no milestone and no assignee', async () => {
+    const { gh, go } = await setup()
+    expect((await go()).ok).toBe(true)
+    for (const input of gh.created) {
+      expect('milestone' in input).toBe(false)
+      expect('assignees' in input).toBe(false)
+    }
+  })
+
+  it('a resumed write reads the parent again, so a child created on a retry is placed too', async () => {
+    const { gh, go } = await setup()
+    Object.assign(gh.issues.get(PARENT)!, { milestone: 3, assignees: ['a'] })
+    gh.fail = { call: 'createIssue part c', mode: 'before', times: 2 }
+    expect((await go()).ok).toBe(false)
+    gh.fail = null
+    gh.created.length = 0
+    expect((await go(undefined)).ok).toBe(true)
+    expect(gh.created).toHaveLength(1)
+    expect(gh.created[0]).toMatchObject({ milestone: 3, assignees: ['a'] })
+  })
+
+  it('a resumed write whose parent read fails opens no child and a later write converges', async () => {
+    const { gh, go } = await setup()
+    gh.fail = { call: 'createIssue part c', mode: 'before', times: 2 }
+    expect((await go()).ok).toBe(false)
+    gh.fail = { call: `getIssue ${PARENT}`, mode: 'before', times: 1 }
+    gh.created.length = 0
+    expect((await go(undefined)).ok).toBe(false)
+    expect(gh.created).toHaveLength(0)
+    gh.fail = null
+    expect((await go(undefined)).ok).toBe(true)
+    expect(gh.created).toHaveLength(1)
   })
 
   it('creates the repository label once when GitHub refuses a create naming it', async () => {
