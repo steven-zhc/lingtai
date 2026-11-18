@@ -73,7 +73,7 @@ export interface RestartInput {
     exhausted: boolean
   }
   /** `runtime.limits.ticket.newAttempts`. Two by default (0108 §8); zero hands a spent attempt to a person. */
-  restarts: number
+  newAttempts: number
   /** The work item, reduced. Carries the bound: `restarts`. */
   item: TicketState
   /**
@@ -97,10 +97,10 @@ export interface RestartInput {
  * what stopped it, is anybody else waiting, and only then the bound.
  */
 export function decideRestart(input: RestartInput): RestartDecision {
-  const { refusal, restarts, item, alsoAsked } = input
+  const { refusal, newAttempts, item, alsoAsked } = input
   const no = (why: string): RestartDecision => ({ restart: false, why })
 
-  if (restarts === 0) {
+  if (newAttempts === 0) {
     return no(
       "this project's recipe hands an attempt whose rounds are spent to a person " +
         '(runtime.limits.ticket.newAttempts: 0)',
@@ -162,14 +162,14 @@ export function decideRestart(input: RestartInput): RestartDecision {
     return no(`${alsoAsked} is asking for a person as well, and releasing the item would ` + 'throw that question away')
   }
 
-  if (item.restarts.length >= restarts) {
+  if (item.newAttempts.length >= newAttempts) {
     return no(
-      `the ceiling of ${restarts} restart(s) for this item is spent, and the ` +
+      `the ceiling of ${newAttempts} restart(s) for this item is spent, and the ` +
         `${refusal.action} reviewer still refuses`,
     )
   }
 
-  return { restart: true, n: item.restarts.length + 1, of: restarts }
+  return { restart: true, n: item.newAttempts.length + 1, of: newAttempts }
 }
 
 /**

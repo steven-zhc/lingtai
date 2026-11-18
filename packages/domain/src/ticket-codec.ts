@@ -94,7 +94,7 @@ const StoredTicket = z.strictObject({
         .nullable(),
     })
     .nullable(),
-  restarts: z.array(z.strictObject({ after: z.string(), restart: z.number() })),
+  newAttempts: z.array(z.strictObject({ after: z.string(), newAttempt: z.number() })),
   pendingPrompt: z.strictObject({ text: z.string(), by: z.string() }).nullable(),
   answers: z.array(
     z.strictObject({
@@ -169,10 +169,11 @@ export function decodeTicket(stored: unknown, projection: string, subject?: stri
 /** The ticket reduce as a snapshottable reducer (0124 §1). A snapshot is discarded, not rebuilt, so no remedy is named. */
 export const ticketReducer: Reducer<TicketState> = {
   name: 'ticket',
+  // 6: `restarts` is `newAttempts`, its records `{after, newAttempt}` (#1268); a version-5 snapshot holds the old key.
   // 5: a wait's `resolution` carries `FixRefusal`, `RedoStep`, `StartNewAttempt` or `EditBodyAndStartNewAttempt` (#1267); a version-4 snapshot holds the old tags.
   // 4: a `BaseRed` release resets `lastAttemptAt` (#1208), so a version-3 snapshot holds the old backoff.
   // 3: a release's `NewAttempt{newAttempt}` replaces `Restart{restart}`, and a wait's ceiling names its bound (#1241); a version-2 snapshot holds the old tags.
-  version: 5,
+  version: 6,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

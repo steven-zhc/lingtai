@@ -148,7 +148,7 @@ export type AttemptNext = z.infer<typeof AttemptNext>
  */
 export type Spent = {
   rounds: number
-  restarts: number
+  newAttempts: number
   baseMerges?: number
   conflictRounds?: number
   /** Redos of a step (`RerunStep` routes, `StepRerunInPlace`), against `stepRedos`. */
@@ -520,7 +520,7 @@ export function spentAfter(spent: Spent, next: AttemptNext): Spent {
     case 'RerunStep':
       return { ...spent, stepRedos: next.retry }
     case 'Requeued':
-      return next.cause._tag === 'NewAttempt' ? { ...spent, rounds: 0, restarts: next.cause.newAttempt } : spent
+      return next.cause._tag === 'NewAttempt' ? { ...spent, rounds: 0, newAttempts: next.cause.newAttempt } : spent
     case 'Advance':
     case 'Propose':
     case 'WaitOnPerson':

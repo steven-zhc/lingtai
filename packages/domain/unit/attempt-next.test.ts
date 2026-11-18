@@ -695,7 +695,7 @@ describe('nextOf never returns FixRound', () => {
 })
 
 describe('spentAfter', () => {
-  const spent: Spent = { rounds: 1, restarts: 2 }
+  const spent: Spent = { rounds: 1, newAttempts: 2 }
 
   it('Advance: unchanged', () => {
     const next = AttemptNext.parse({ _tag: 'Advance', to: 'merge' })
@@ -710,12 +710,12 @@ describe('spentAfter', () => {
 
   it('FixRound: sets rounds, leaves restarts', () => {
     const next = AttemptNext.parse({ _tag: 'FixRefusal', to: 'implement', round: 5 })
-    expect(spentAfter(spent, next)).toEqual({ rounds: 5, restarts: 2 })
+    expect(spentAfter(spent, next)).toEqual({ rounds: 5, newAttempts: 2 })
   })
 
   it('FixRound with conflict: counts the conflict round, leaving rounds alone (#653)', () => {
     const next = AttemptNext.parse({ _tag: 'FixRefusal', to: 'implement', round: 1, conflict: 1 })
-    expect(spentAfter(spent, next)).toEqual({ rounds: 1, restarts: 2, conflictRounds: 1 })
+    expect(spentAfter(spent, next)).toEqual({ rounds: 1, newAttempts: 2, conflictRounds: 1 })
   })
 
   it('parses a FixRound written before conflict existed, and a CeilingReached of rounds', () => {
@@ -729,13 +729,13 @@ describe('spentAfter', () => {
 
   it('MergeBase: counts the merge, leaving rounds and restarts alone', () => {
     const next = AttemptNext.parse({ _tag: 'MergeBaseBranch', toSha: 'base-1', merge: 2 })
-    expect(spentAfter(spent, next)).toEqual({ rounds: 1, restarts: 2, baseMerges: 2 })
+    expect(spentAfter(spent, next)).toEqual({ rounds: 1, newAttempts: 2, baseMerges: 2 })
   })
 
   it('Requeued{Restart}: sets restarts and resets rounds to 0', () => {
     const cause = RequeueCause.parse({ _tag: 'NewAttempt', newAttempt: 7 })
     const next = AttemptNext.parse({ _tag: 'Requeued', cause })
-    expect(spentAfter(spent, next)).toEqual({ rounds: 0, restarts: 7 })
+    expect(spentAfter(spent, next)).toEqual({ rounds: 0, newAttempts: 7 })
   })
 
   it('Requeued{NeverStarted}: unchanged', () => {

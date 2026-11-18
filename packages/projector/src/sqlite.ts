@@ -305,8 +305,8 @@ function toCard(row: ProjectionRow): TaskCard {
     closedAt: parseAt(row.closed_at),
     attempts: Number(row.attempts ?? 0),
     lastAttemptAt: parseAt(row.last_attempt_at),
-    restarts: Number(row.restarts ?? 0),
-    restartsOf: Number(row.restarts_of ?? 0),
+    newAttempts: Number(row.new_attempts ?? 0),
+    newAttemptsOf: Number(row.new_attempts_of ?? 0),
     // `waitOf` reads both columns through `columnOf`, so a stale table
     // reports shape drift instead of drawing a card without its wait.
     wait,

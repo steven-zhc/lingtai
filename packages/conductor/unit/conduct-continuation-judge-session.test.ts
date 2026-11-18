@@ -31,7 +31,7 @@ import {
 
 /** Rounds and restarts to spare: a granted continuation's own round is free and the next arrival
  * is offered `claim` and `waiting` only where a restart is left, so a judge is bought only then. */
-const MANY_ROUNDS = JUDGED_BY_AN_AGENT.replace('rounds: 2, restarts: 0', 'rounds: 9, restarts: 3')
+const MANY_ROUNDS = JUDGED_BY_AN_AGENT.replace('rounds: 2, newAttempts: 0', 'rounds: 9, newAttempts: 3')
 
 const judging = (ran: string[]): Runtime => ({
   ...refusingRuntime,

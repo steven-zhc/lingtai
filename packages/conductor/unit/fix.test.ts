@@ -1277,7 +1277,7 @@ describe('the headline says what stopped the pass', () => {
             base: 'main',
             rounds: 0,
             refusals: 1,
-            restarts: 2,
+            newAttempts: 2,
             stop,
           }),
         ).toContain('after 2 restart(s)')
@@ -1289,7 +1289,7 @@ describe('the headline says what stopped the pass', () => {
             findings: [finding({ severity: 'major' })],
             rounds: 0,
             refusals: 1,
-            restarts: 2,
+            newAttempts: 2,
             stop,
           }),
         ).toContain('after 2 restart(s)')
@@ -1479,7 +1479,7 @@ describe('what a person is shown when the restarts are over too', () => {
         findings: [finding()],
         rounds: 3,
         refusals: 3,
-        restarts: 2,
+        newAttempts: 2,
         stop: { ended: 'spent' },
       }),
     ).toContain('after 3 fix round(s) and 2 restart(s)')

@@ -52,7 +52,7 @@ const BUILD_RED: Proposal = { _tag: 'BuildRed', output: 'tsc failed' }
 const NOT_ASKED = offerFor(
   BUILD_RED,
   { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 },
-  { rounds: 0, restarts: 0 },
+  { rounds: 0, newAttempts: 0 },
 )
 const ADVISED: PayloadOf<'WaitTriaged'>['result'] = {
   _tag: 'TriageAdvised',
@@ -537,7 +537,7 @@ describe('a line of history', () => {
     const notAsked = offerFor(
       buildRed,
       { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 },
-      { rounds: 0, restarts: 0 },
+      { rounds: 0, newAttempts: 0 },
     )
     const said = summarise(
       e('PassRouted', {
@@ -559,7 +559,7 @@ describe('a line of history', () => {
     const spent = offerFor(
       reviewFindings,
       { refusalFixes: 1, newAttempts: 1, conflictResolutions: 1 },
-      { rounds: 1, restarts: 1 },
+      { rounds: 1, newAttempts: 1 },
     )
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'restart', why: 'start over' }
     const said2 = summarise(
@@ -582,7 +582,7 @@ describe('a line of history', () => {
     const offer = offerFor(
       buildRed,
       { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 },
-      { rounds: 0, restarts: 0 },
+      { rounds: 0, newAttempts: 0 },
     )
     const reply: JudgeReply = { _tag: 'NotAsked' }
     const decision = decideRoute(offer, reply)
@@ -623,7 +623,7 @@ describe('a line of history', () => {
       ...offerFor(
         { ...f, findings: [] },
         { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 },
-        { rounds: 0, restarts: 0 },
+        { rounds: 0, newAttempts: 0 },
       ),
     }
     const route = (candidate: string, next: object) => {
@@ -661,7 +661,7 @@ describe('a line of history', () => {
     const notAsked = offerFor(
       buildRed,
       { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 },
-      { rounds: 0, restarts: 0 },
+      { rounds: 0, newAttempts: 0 },
     )
     const said = summarise(
       e('PassRouted', {

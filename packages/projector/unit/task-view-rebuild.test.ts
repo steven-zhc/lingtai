@@ -642,7 +642,7 @@ describe('task_view rebuilds through the stored states exactly as it did through
    * `armIsUp` guard — a push that then fails falls through to `failed`
    * rather than `TicketReleased{cause: Restart}`, and counting on the
    * decision alone is what let this column disagree with
-   * `work-item.restarts`, which only `TicketReleased` feeds. Still `running`
+   * `work-item.newAttempts`, which only `TicketReleased` feeds. Still `running`
    * and `0` at the decision; `queued` and `1` once the release that may or
    * may not follow it lands.
    */
@@ -650,17 +650,17 @@ describe('task_view rebuilds through the stored states exactly as it did through
     const restarted = await reduce(afterRestarted)
     expect(taskOf(restarted.tasks, 'ticket-pin-restart')).toMatchObject({
       state: 'running',
-      restarts: 0,
+      new_attempts: 0,
     })
 
     const released = await reduce(afterReleased)
     const row = taskOf(released.tasks, 'ticket-pin-restart') as {
       state: string
-      restarts: number
+      new_attempts: number
       note: string
     }
     expect(row.state).toBe('queued')
-    expect(row.restarts).toBe(1)
+    expect(row.new_attempts).toBe(1)
     expect(row.note).toContain('restart 1 of 2')
   })
 

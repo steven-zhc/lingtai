@@ -188,7 +188,7 @@ describe('what wakes the loop', () => {
     const reviewOffer = offerFor(
       reviewFindings,
       { refusalFixes: 1, newAttempts: 1, conflictResolutions: 1 },
-      { rounds: 0, restarts: 0 },
+      { rounds: 0, newAttempts: 0 },
     )
     const reviewReply = { _tag: 'Selected' as const, candidate: 'fix-lines' as const, why: 'fixable' }
     const reviewDecision = decideRoute(reviewOffer, reviewReply)
@@ -199,7 +199,7 @@ describe('what wakes the loop', () => {
     const restartOffer = offerFor(
       checkRefused,
       { refusalFixes: 1, newAttempts: 1, conflictResolutions: 1 },
-      { rounds: 1, restarts: 0 },
+      { rounds: 1, newAttempts: 0 },
     )
     const restartReply = { _tag: 'Selected' as const, candidate: 'restart' as const, why: 'start over' }
     const restartDecision = decideRoute(restartOffer, restartReply)

@@ -2340,7 +2340,7 @@ runtime:
   /**
    * **`CandidateUnavailable`**: restarts spent, rounds left, and the judge
    * answers `claim` anyway. `JUDGED_BY_AN_AGENT`'s own ceilings (`rounds: 2,
-   * restarts: 0`) mean `restart` is excluded on the very first arrival, so a
+   * newAttempts: 0`) mean `restart` is excluded on the very first arrival, so a
    * judge choosing it is refused the same way a spent `rounds` would be —
    * `chose` still names the destination (`claim`), and `ceiling` names what
    * took it off the offer.

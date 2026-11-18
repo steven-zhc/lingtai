@@ -308,7 +308,7 @@ describe('rounds spent against the ceiling', () => {
     const offer = offerFor(
       proposal,
       { refusalFixes: 3, newAttempts: 1, conflictResolutions: 3 },
-      { rounds: 0, restarts: 0 },
+      { rounds: 0, newAttempts: 0 },
     )
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'the lines, not the approach' }
     return { runId: 'pass-59', offer, reply, decision: decideRoute(offer, reply) }
@@ -329,7 +329,7 @@ describe('rounds spent against the ceiling', () => {
     const offer = offerFor(
       escalated,
       { refusalFixes: 3, newAttempts: 1, conflictResolutions: 3 },
-      { rounds: 1, restarts: 0 },
+      { rounds: 1, newAttempts: 0 },
     )
     const declined = [
       ...timeline(),
@@ -353,28 +353,28 @@ describe('rounds spent against the ceiling', () => {
 
 describe('describeHeld', () => {
   it('says the rounds spent against their ceiling, and the restarts left against theirs', () => {
-    expect(describeHeld({ granted: [], spent: 2, roundsOf: 3, restarts: 1, restartsOf: 2 })).toBe(
+    expect(describeHeld({ granted: [], spent: 2, roundsOf: 3, newAttempts: 1, newAttemptsOf: 2 })).toBe(
       '2 of 3 rounds · 1 restart left',
     )
   })
 
   /** A ceiling nothing bought and a ceiling nothing configured are one fact, and `0 of 0` reads as a typo of it. */
   it('reads a zero ceiling as none, never as 0 of 0', () => {
-    expect(describeHeld({ granted: [], spent: 0, roundsOf: 0, restarts: 0, restartsOf: 0 })).toBe('no rounds')
+    expect(describeHeld({ granted: [], spent: 0, roundsOf: 0, newAttempts: 0, newAttemptsOf: 0 })).toBe('no rounds')
   })
 
   it('leaves out a restarts ceiling of 0 with none taken, and keeps the others', () => {
-    expect(describeHeld({ granted: [], spent: 0, roundsOf: 2, restarts: 0, restartsOf: 0 })).toBe('0 of 2 rounds')
-    expect(describeHeld({ granted: [], spent: 0, roundsOf: 2, restarts: 0, restartsOf: 2 })).toBe(
+    expect(describeHeld({ granted: [], spent: 0, roundsOf: 2, newAttempts: 0, newAttemptsOf: 0 })).toBe('0 of 2 rounds')
+    expect(describeHeld({ granted: [], spent: 0, roundsOf: 2, newAttempts: 0, newAttemptsOf: 2 })).toBe(
       '0 of 2 rounds · 2 restarts left',
     )
-    expect(describeHeld({ granted: [], spent: 0, roundsOf: 2, restarts: 3, restartsOf: 0 })).toBe(
+    expect(describeHeld({ granted: [], spent: 0, roundsOf: 2, newAttempts: 3, newAttemptsOf: 0 })).toBe(
       '0 of 2 rounds · no restarts left',
     )
   })
 
   it('never reads restarts left below zero', () => {
-    expect(describeHeld({ granted: [], spent: 0, roundsOf: 0, restarts: 3, restartsOf: 2 })).toBe(
+    expect(describeHeld({ granted: [], spent: 0, roundsOf: 0, newAttempts: 3, newAttemptsOf: 2 })).toBe(
       'no rounds · 0 restarts left',
     )
   })
@@ -386,7 +386,7 @@ describe('describeHeld', () => {
    * bought, the second says there was never anything to buy.
    */
   it('reads a null ceiling as unknown, never as zero', () => {
-    expect(describeHeld({ granted: [], spent: 1, roundsOf: null, restarts: 1, restartsOf: null })).toBe(
+    expect(describeHeld({ granted: [], spent: 1, roundsOf: null, newAttempts: 1, newAttemptsOf: null })).toBe(
       '1 rounds · 1 restart',
     )
   })
@@ -402,7 +402,7 @@ describe('human-granted rounds', () => {
     const offer = offerFor(
       proposal,
       { refusalFixes: 5, newAttempts: 1, conflictResolutions: 5 },
-      { rounds: spentRounds, restarts: 0 },
+      { rounds: spentRounds, newAttempts: 0 },
     )
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'the lines' }
     return { runId: 'pass-59', offer, reply, decision: decideRoute(offer, reply) }
@@ -445,7 +445,7 @@ describe('human-granted rounds', () => {
       const roundsSpent = spentOf(reduceAttempt(events).roundsOpened, granted)
       expect(roundsSpent).toBe(2)
       expect(granted).toEqual([{ round: 3, waitId: 'wait-1', costUsd: 1.416 }])
-      expect(describeHeld({ spent: roundsSpent, granted, roundsOf: 2, restarts: 0, restartsOf: 1 })).toBe(
+      expect(describeHeld({ spent: roundsSpent, granted, roundsOf: 2, newAttempts: 0, newAttemptsOf: 1 })).toBe(
         '2 of 2 rounds · round 3 granted, $1.42 · 1 restart left',
       )
     }
@@ -454,7 +454,7 @@ describe('human-granted rounds', () => {
   it('reads a granted round whose cost was not said as unknown, never $0.00', () => {
     const granted = grantedOf([...automaticRows(), spent(3, null, 'wait-1')])
     const roundsSpent = spentOf(reduceAttempt(automatic()).roundsOpened, granted)
-    expect(describeHeld({ spent: roundsSpent, granted, roundsOf: 2, restarts: 1, restartsOf: 1 })).toBe(
+    expect(describeHeld({ spent: roundsSpent, granted, roundsOf: 2, newAttempts: 1, newAttemptsOf: 1 })).toBe(
       '2 of 2 rounds · round 3 granted, cost unknown · 0 restarts left',
     )
   })

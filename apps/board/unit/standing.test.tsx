@@ -687,8 +687,8 @@ const HELD: StandingView = {
   failed: [],
   saidBy: null,
   deciding: { attempt: 1, source: 'proposed / build', line: 'error TS2741: …', evidence: null, fromStep: true },
-  restarts: 0,
-  restartsOf: 0,
+  newAttempts: 0,
+  newAttemptsOf: 0,
   waitId: aWaitId(),
   // A red build: `allowedResolutions` offers no `Approve` for it
   // (`wait.ts`'s `BuildRed` row), which is what keeps `awaitingSha: null`

@@ -127,7 +127,7 @@ const ALL_PROPOSALS = [
 ]
 
 describe('offerFor: zero spent', () => {
-  const zero: Spent = { rounds: 0, restarts: 0 }
+  const zero: Spent = { rounds: 0, newAttempts: 0 }
 
   it('InputNeeded{design}: state-assumption{round 1} and hand-to-person, nothing unavailable', () => {
     expect(offerFor(inputNeededDesign, policy, zero)).toEqual({
@@ -242,7 +242,7 @@ describe('offerFor: zero spent', () => {
 })
 
 describe("offerFor: #471's seven — a born-before-implement step leaves fix-lines out entirely, never unavailable", () => {
-  const zero: Spent = { rounds: 0, restarts: 0 }
+  const zero: Spent = { rounds: 0, newAttempts: 0 }
 
   it('SetupRefused{prepared} with output: fix-lines is not offered at all (born before implement), restart{1} and hand-to-person', () => {
     expect(offerFor(setupRefusedAtPrepared, policy, zero)).toEqual({
@@ -454,7 +454,7 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
   })
 
   it('MergeRefused: restart excluded by CeilingReached{restarts}, fix-lines still available', () => {
-    const atRestarts: Spent = { rounds: 0, restarts: 1 }
+    const atRestarts: Spent = { rounds: 0, newAttempts: 1 }
     expect(offerFor(mergeRefused, policy, atRestarts)).toEqual({
       proposal: mergeRefused,
       available: [
@@ -467,7 +467,7 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
 })
 
 describe('offerFor: at the rounds ceiling', () => {
-  const atRounds: Spent = { rounds: 2, restarts: 0 }
+  const atRounds: Spent = { rounds: 2, newAttempts: 0 }
 
   it('InputNeeded: state-assumption is unavailable{CeilingReached{rounds}}', () => {
     expect(offerFor(inputNeededDesign, policy, atRounds)).toEqual({
@@ -497,12 +497,14 @@ describe('offerFor: at the rounds ceiling', () => {
   })
 
   it('ReviewEmpty: unaffected — NoCriterion wins before the ceiling is even read', () => {
-    expect(offerFor(reviewEmpty, policy, atRounds)).toEqual(offerFor(reviewEmpty, policy, { rounds: 0, restarts: 0 }))
+    expect(offerFor(reviewEmpty, policy, atRounds)).toEqual(
+      offerFor(reviewEmpty, policy, { rounds: 0, newAttempts: 0 }),
+    )
   })
 })
 
 describe('offerFor: at the restarts ceiling', () => {
-  const atRestarts: Spent = { rounds: 0, restarts: 1 }
+  const atRestarts: Spent = { rounds: 0, newAttempts: 1 }
 
   it('ReviewFindings: restart is unavailable{CeilingReached{restarts}} but fix-lines is still available', () => {
     expect(offerFor(reviewFindings, policy, atRestarts)).toEqual({
@@ -516,12 +518,12 @@ describe('offerFor: at the restarts ceiling', () => {
   })
 
   it('BuildRed: unaffected — it never offered a restart', () => {
-    expect(offerFor(buildRed, policy, atRestarts)).toEqual(offerFor(buildRed, policy, { rounds: 0, restarts: 0 }))
+    expect(offerFor(buildRed, policy, atRestarts)).toEqual(offerFor(buildRed, policy, { rounds: 0, newAttempts: 0 }))
   })
 })
 
 describe('offerFor: at both ceilings', () => {
-  const both: Spent = { rounds: 2, restarts: 1 }
+  const both: Spent = { rounds: 2, newAttempts: 1 }
 
   it('ReviewFindings: fix-lines and restart both excluded, only hand-to-person left', () => {
     expect(offerFor(reviewFindings, policy, both)).toEqual({
@@ -538,7 +540,7 @@ describe('offerFor: at both ceilings', () => {
 describe('offerFor: policy{0,0} is the floor every proposal keeps', () => {
   const floor: RoutingPolicy = { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 }
   // The transient retries spent, so the free rule candidates (`land-again`, `ask-again`) are absent too.
-  const zero: Spent = { rounds: 0, restarts: 0, stepRedos: BOUNDS.stepRedos, landingRetries: BOUNDS.landingRetries }
+  const zero: Spent = { rounds: 0, newAttempts: 0, stepRedos: BOUNDS.stepRedos, landingRetries: BOUNDS.landingRetries }
 
   // A merge conflict's round is not `rounds`' to withhold (#653), so a zero ceiling leaves it on offer.
   it.each(
@@ -551,7 +553,7 @@ describe('offerFor: policy{0,0} is the floor every proposal keeps', () => {
 
 describe('offerFor: no candidate ever sends merge back to build', () => {
   it.each([mergeConflict, verifyRed, verifyRedEmpty])('%j', (proposal) => {
-    const offer = offerFor(proposal, policy, { rounds: 0, restarts: 0 })
+    const offer = offerFor(proposal, policy, { rounds: 0, newAttempts: 0 })
     for (const candidate of offer.available) {
       expect(candidate.next).not.toMatchObject({ to: 'build' })
       expect(candidate.id).not.toContain('build')
@@ -563,8 +565,8 @@ describe('offerFor: no candidate ever sends merge back to build', () => {
 })
 
 describe('decideRoute', () => {
-  const reviewFindingsOffer = offerFor(reviewFindings, policy, { rounds: 0, restarts: 0 })
-  const reviewEmptyOffer = offerFor(reviewEmpty, policy, { rounds: 0, restarts: 0 })
+  const reviewFindingsOffer = offerFor(reviewFindings, policy, { rounds: 0, newAttempts: 0 })
+  const reviewEmptyOffer = offerFor(reviewEmpty, policy, { rounds: 0, newAttempts: 0 })
 
   it('NotAsked: Escalated{NotAsked}', () => {
     expect(decideRoute(reviewFindingsOffer, { _tag: 'NotAsked' })).toEqual({
@@ -623,14 +625,14 @@ describe('decideRoute', () => {
 
 describe('routeNext', () => {
   it('Selected fix-lines: returns the stored FixRound exactly, without recomputing the round', () => {
-    const offer = offerFor(buildRed, policy, { rounds: 1, restarts: 0 })
+    const offer = offerFor(buildRed, policy, { rounds: 1, newAttempts: 0 })
     const decision: RouteDecision = { _tag: 'Selected', candidate: 'fix-lines' }
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'line is wrong' }
     expect(routeNext(offer, reply, decision, run)).toEqual({ _tag: 'FixRefusal', to: 'implement', round: 2 })
   })
 
   it('Selected restart: returns the stored Requeued{Restart} exactly', () => {
-    const offer = offerFor(reviewFindings, policy, { rounds: 0, restarts: 0 })
+    const offer = offerFor(reviewFindings, policy, { rounds: 0, newAttempts: 0 })
     const decision: RouteDecision = { _tag: 'Selected', candidate: 'restart' }
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'restart', why: 'approach is wrong' }
     expect(routeNext(offer, reply, decision, run)).toEqual({
@@ -640,7 +642,7 @@ describe('routeNext', () => {
   })
 
   it('Selected hand-to-person: WaitOnPerson{ProposedEscalated{because: JudgeHandedOver{why}}}', () => {
-    const offer = offerFor(reviewFindings, policy, { rounds: 0, restarts: 0 })
+    const offer = offerFor(reviewFindings, policy, { rounds: 0, newAttempts: 0 })
     const decision: RouteDecision = { _tag: 'Selected', candidate: 'hand-to-person' }
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'hand-to-person', why: 'none of these fit' }
     expect(routeNext(offer, reply, decision, run)).toEqual({
@@ -655,7 +657,7 @@ describe('routeNext', () => {
   })
 
   it('Escalated{NotAsked} with an InputNeeded proposal: WaitOnPerson{AgentQuestion}', () => {
-    const offer = offerFor(inputNeededDesign, policy, { rounds: 0, restarts: 0 })
+    const offer = offerFor(inputNeededDesign, policy, { rounds: 0, newAttempts: 0 })
     const decision: RouteDecision = { _tag: 'Escalated', because: { _tag: 'NotAsked' } }
     const reply: JudgeReply = { _tag: 'NotAsked' }
     expect(routeNext(offer, reply, decision, run)).toEqual({
@@ -665,7 +667,7 @@ describe('routeNext', () => {
   })
 
   it('Escalated{NotAsked} with a non-InputNeeded proposal: WaitOnPerson{ProposedEscalated}, not AgentQuestion', () => {
-    const offer = offerFor(buildRed, policy, { rounds: 0, restarts: 0 })
+    const offer = offerFor(buildRed, policy, { rounds: 0, newAttempts: 0 })
     const decision: RouteDecision = { _tag: 'Escalated', because: { _tag: 'NotAsked' } }
     const reply: JudgeReply = { _tag: 'NotAsked' }
     expect(routeNext(offer, reply, decision, run)).toEqual({
@@ -675,7 +677,7 @@ describe('routeNext', () => {
   })
 
   it('Escalated{UnreadableReply} on an InputNeeded proposal: still ProposedEscalated, never AgentQuestion', () => {
-    const offer = offerFor(inputNeededImplement, policy, { rounds: 0, restarts: 0 })
+    const offer = offerFor(inputNeededImplement, policy, { rounds: 0, newAttempts: 0 })
     const decision: RouteDecision = { _tag: 'Escalated', because: { _tag: 'UnreadableReply', raw: 'garbled' } }
     const reply: JudgeReply = { _tag: 'Unreadable', raw: 'garbled' }
     expect(routeNext(offer, reply, decision, run)).toEqual({
@@ -690,14 +692,14 @@ describe('routeNext', () => {
   })
 
   it('throws ImpossibleRouteError when a Selected decision is paired with a non-Selected reply', () => {
-    const offer = offerFor(buildRed, policy, { rounds: 0, restarts: 0 })
+    const offer = offerFor(buildRed, policy, { rounds: 0, newAttempts: 0 })
     const decision: RouteDecision = { _tag: 'Selected', candidate: 'fix-lines' }
     const reply: JudgeReply = { _tag: 'NotAsked' }
     expect(() => routeNext(offer, reply, decision, run)).toThrow(ImpossibleRouteError)
   })
 
   it('throws ImpossibleRouteError when a Selected decision names an id not in available', () => {
-    const offer = offerFor(buildRedEmpty, policy, { rounds: 0, restarts: 0 })
+    const offer = offerFor(buildRedEmpty, policy, { rounds: 0, newAttempts: 0 })
     const decision: RouteDecision = { _tag: 'Selected', candidate: 'fix-lines' }
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'fix it anyway' }
     expect(() => routeNext(offer, reply, decision, run)).toThrow(ImpossibleRouteError)
@@ -705,10 +707,10 @@ describe('routeNext', () => {
 
   it('cross product: HandToPerson never escapes, and AgentQuestion is exactly NotAsked × InputNeeded', () => {
     const spentPoints: Spent[] = [
-      { rounds: 0, restarts: 0 },
-      { rounds: 2, restarts: 0 },
-      { rounds: 0, restarts: 1 },
-      { rounds: 2, restarts: 1 },
+      { rounds: 0, newAttempts: 0 },
+      { rounds: 2, newAttempts: 0 },
+      { rounds: 0, newAttempts: 1 },
+      { rounds: 2, newAttempts: 1 },
     ]
     for (const proposal of ALL_PROPOSALS) {
       for (const spent of spentPoints) {
@@ -745,7 +747,7 @@ describe('offerFor: a base that moved on the branch’s own files (#593)', () =>
     [0, 1],
     [1, 2],
   ])('with %i merges spent, merge-base is on offer as merge %i', (baseMerges, merge) => {
-    expect(offerFor(baseMoved, policy, { rounds: 0, restarts: 0, baseMerges })).toEqual({
+    expect(offerFor(baseMoved, policy, { rounds: 0, newAttempts: 0, baseMerges })).toEqual({
       proposal: baseMoved,
       available: [mergeBase(merge), person],
       unavailable: [],
@@ -753,11 +755,11 @@ describe('offerFor: a base that moved on the branch’s own files (#593)', () =>
   })
 
   it('treats an absent count as none', () => {
-    expect(offerFor(baseMoved, policy, { rounds: 0, restarts: 0 }).available).toEqual([mergeBase(1), person])
+    expect(offerFor(baseMoved, policy, { rounds: 0, newAttempts: 0 }).available).toEqual([mergeBase(1), person])
   })
 
   it('with 10 merges spent, merge-base is excluded by the base-merges ceiling and only a person is left', () => {
-    expect(offerFor(baseMoved, policy, { rounds: 0, restarts: 0, baseMerges: 10 })).toEqual({
+    expect(offerFor(baseMoved, policy, { rounds: 0, newAttempts: 0, baseMerges: 10 })).toEqual({
       proposal: baseMoved,
       available: [person],
       unavailable: [{ id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'baseBranchMerges' } }],
@@ -768,7 +770,7 @@ describe('offerFor: a base that moved on the branch’s own files (#593)', () =>
     const offer = offerFor(
       baseMoved,
       { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 },
-      { rounds: 5, restarts: 5, baseMerges: 0 },
+      { rounds: 5, newAttempts: 5, baseMerges: 0 },
     )
     expect(offer.available.map((c) => c.id)).toEqual(['merge-base', 'hand-to-person'])
   })
@@ -776,13 +778,13 @@ describe('offerFor: a base that moved on the branch’s own files (#593)', () =>
   it('has nothing to merge without a toSha', () => {
     const offer = offerFor({ _tag: 'BaseMoved', paths: null, fromSha: null, toSha: null }, policy, {
       rounds: 0,
-      restarts: 0,
+      newAttempts: 0,
     })
     expect(offer.unavailable).toEqual([{ id: 'merge-base', because: { _tag: 'NoCriterion' } }])
   })
 
   it('routeNext hands the merge back as MergeBase when it is chosen', () => {
-    const offer = offerFor(baseMoved, policy, { rounds: 0, restarts: 0 })
+    const offer = offerFor(baseMoved, policy, { rounds: 0, newAttempts: 0 })
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'merge-base', why: 'free' }
     expect(routeNext(offer, reply, decideRoute(offer, reply), run)).toEqual({
       _tag: 'MergeBaseBranch',
@@ -797,7 +799,7 @@ describe('offerFor: a merge conflict buys its own round (#653)', () => {
     const offer = offerFor(
       mergeConflict,
       { refusalFixes: 4, newAttempts: 2, conflictResolutions: 4 },
-      { rounds: 4, restarts: 0 },
+      { rounds: 4, newAttempts: 0 },
     )
     expect(offer.available.find((c) => c.id === 'fix-lines')?.next).toEqual({
       _tag: 'FixRefusal',
@@ -811,7 +813,7 @@ describe('offerFor: a merge conflict buys its own round (#653)', () => {
     const offer = offerFor(
       mergeConflict,
       { refusalFixes: 4, newAttempts: 2, conflictResolutions: 4 },
-      { rounds: 4, restarts: 0, conflictRounds: 1 },
+      { rounds: 4, newAttempts: 0, conflictRounds: 1 },
     )
     expect(offer.available.find((c) => c.id === 'fix-lines')?.next).toMatchObject({ conflict: 2 })
   })
@@ -820,7 +822,7 @@ describe('offerFor: a merge conflict buys its own round (#653)', () => {
     const offer = offerFor(
       mergeConflict,
       { refusalFixes: 4, newAttempts: 2, conflictResolutions: 2 },
-      { rounds: 0, restarts: 0, conflictRounds: 2 },
+      { rounds: 0, newAttempts: 0, conflictRounds: 2 },
     )
     expect(offer.available.some((c) => c.id === 'fix-lines')).toBe(false)
     expect(offer.unavailable).toContainEqual({
@@ -834,7 +836,7 @@ describe('offerFor: a merge conflict buys its own round (#653)', () => {
       offerFor(
         mergeConflict,
         { refusalFixes: rounds, newAttempts: 0, conflictResolutions: rounds },
-        { rounds: 0, restarts: 0, conflictRounds: spent },
+        { rounds: 0, newAttempts: 0, conflictRounds: spent },
       )
     expect(at(0, 0).available.some((c) => c.id === 'fix-lines')).toBe(false)
     expect(at(3, 2).available.find((c) => c.id === 'fix-lines')?.next).toMatchObject({ conflict: 3 })
@@ -845,7 +847,7 @@ describe('offerFor: a merge conflict buys its own round (#653)', () => {
     const offer = offerFor(
       mergeConflict,
       { refusalFixes: 1, newAttempts: 0, conflictResolutions: 2 },
-      { rounds: 1, restarts: 0, conflictRounds: 1 },
+      { rounds: 1, newAttempts: 0, conflictRounds: 1 },
     )
     expect(offer.available.find((c) => c.id === 'fix-lines')?.next).toMatchObject({ conflict: 2 })
   })
@@ -854,7 +856,7 @@ describe('offerFor: a merge conflict buys its own round (#653)', () => {
     const offer = offerFor(
       reviewFindings,
       { refusalFixes: 4, newAttempts: 2, conflictResolutions: 4 },
-      { rounds: 4, restarts: 0, conflictRounds: 0 },
+      { rounds: 4, newAttempts: 0, conflictRounds: 0 },
     )
     expect(offer.available.some((c) => c.id === 'fix-lines')).toBe(false)
     expect(offer.unavailable).toContainEqual({

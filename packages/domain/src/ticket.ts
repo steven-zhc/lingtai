@@ -202,9 +202,9 @@ export type TicketStatus = TicketLifecycle['status']
  * stream, which the next prompt already reads (`attempts.ts`'s `lastRun`),
  * so there is no second copy to keep in step with it.
  */
-export interface RestartRecord {
+export interface NewAttemptRecord {
   after: string
-  restart: number
+  newAttempt: number
 }
 
 /**
@@ -334,7 +334,7 @@ export interface TicketState {
    * claim had to *become* one — and nothing buys a repair any more (0039
    * §Consequences).
    */
-  restarts: readonly RestartRecord[]
+  newAttempts: readonly NewAttemptRecord[]
 
   /**
    * A sentence somebody added for the next run, and not yet consumed.
@@ -400,7 +400,7 @@ export const emptyTicket: TicketState = {
   lastAttemptAt: null,
   since: null,
   lastMove: null,
-  restarts: [],
+  newAttempts: [],
   pendingPrompt: null,
   answers: [],
   github: { last: {}, labels: null, comments: [], edited: [], lastWait: null, bodyAfterWait: null },
@@ -574,10 +574,10 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
         // (#1208), and `lastAttemptAt` is what every reader of the backoff reads.
         ...(d.cause?._tag === 'BaseRed' ? { lastAttemptAt: null } : {}),
         claims: endClaim(state.claims, d.runId, { kind: 'released', reason: d.reason, cause: d.cause ?? null }),
-        restarts:
+        newAttempts:
           d.cause?._tag === 'NewAttempt'
-            ? [...state.restarts, { after: d.runId, restart: d.cause.newAttempt }]
-            : state.restarts,
+            ? [...state.newAttempts, { after: d.runId, newAttempt: d.cause.newAttempt }]
+            : state.newAttempts,
       }
     }
 

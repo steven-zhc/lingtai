@@ -482,7 +482,7 @@ function nowOf(state: AttemptState): Phase | null {
  * come off `AttemptState` and `spend`, not off `task_view`'s columns.
  *
  * Both ceilings are the caller's to resolve — **the event where the log has
- * one, the recipe only where it does not** (`roundsOf`, `restartsOf`): the
+ * one, the recipe only where it does not** (`roundsOf`, `newAttemptsOf`): the
  * event records what the pass actually ran under, and a recipe read now may
  * have moved since. A zero ceiling reads `no rounds` or `no restarts left`
  * rather than `0 of 0` — except a restarts ceiling of 0 with none taken, which
@@ -501,8 +501,8 @@ export function describeHeld({
   spent,
   granted,
   roundsOf,
-  restarts,
-  restartsOf,
+  newAttempts,
+  newAttemptsOf,
 }: {
   /** The highest automatic round this run's stream has spent — granted rounds are not in it. */
   spent: number
@@ -515,20 +515,20 @@ export function describeHeld({
   /** The resolved rounds ceiling, already event-then-recipe. Zero means none; null means unreadable. */
   roundsOf: number | null
   /** How many approaches this ticket has abandoned so far. */
-  restarts: number
+  newAttempts: number
   /** The resolved restarts ceiling, already event-then-recipe. Zero means none; null means unreadable. */
-  restartsOf: number | null
+  newAttemptsOf: number | null
 }): string {
   const rounds = roundsOf === null ? `${spent} rounds` : roundsOf > 0 ? `${spent} of ${roundsOf} rounds` : 'no rounds'
   const restartsLine =
-    restartsOf === null
-      ? `${restarts} restart${restarts === 1 ? '' : 's'}`
-      : restartsOf > 0
-        ? `${Math.max(0, restartsOf - restarts)} restart${Math.max(0, restartsOf - restarts) === 1 ? '' : 's'} left`
+    newAttemptsOf === null
+      ? `${newAttempts} restart${newAttempts === 1 ? '' : 's'}`
+      : newAttemptsOf > 0
+        ? `${Math.max(0, newAttemptsOf - newAttempts)} restart${Math.max(0, newAttemptsOf - newAttempts) === 1 ? '' : 's'} left`
         : 'no restarts left'
   const grants = granted.map((g) => `round ${g.round} granted, ${grantedBill(g.costUsd)}`)
   // A ceiling of 0 with none taken is no fact to a reader: nothing was configured and nothing spent.
-  const unconfigured = restartsOf === 0 && restarts === 0
+  const unconfigured = newAttemptsOf === 0 && newAttempts === 0
   return [rounds, ...grants, ...(unconfigured ? [] : [restartsLine])].join(' · ')
 }
 

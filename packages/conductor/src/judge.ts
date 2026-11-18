@@ -185,8 +185,8 @@ export type Destination = (typeof DESTINATIONS)[number]
  * The two counts are held by the loop that spends them rather than read back
  * off the log, which is sound for `roundsSpent` for `FixInput`'s reason — a
  * pass is one `runOnce` and a counter cannot outlive what it bounds — and for
- * `restartsSpent` because that one *is* reduced from the log
- * (`TicketState.restarts`), and is passed in here as a number so that this
+ * `newAttemptsSpent` because that one *is* reduced from the log
+ * (`TicketState.newAttempts`), and is passed in here as a number so that this
  * module stays a decision with no reader in it.
  */
 export interface OfferInput {
@@ -223,8 +223,8 @@ export interface OfferInput {
   rounds: number
   roundsSpent: number
   /** `runtime.limits.ticket.newAttempts` today; `claim`'s universal `restarts:` under 0061 §2. */
-  restarts: number
-  restartsSpent: number
+  newAttempts: number
+  newAttemptsSpent: number
   /**
    * What else on this pass is asking for a person, named, or null.
    *
@@ -284,7 +284,8 @@ export function stepsOnOffer(input: OfferInput): readonly Destination[] {
   if (!carriesACriterion(input)) return ['human']
   const offer: Destination[] = []
   if (anAgentHasRun(input.reached) && input.roundsSpent < input.rounds) offer.push('implement')
-  if (input.when === 'findings' && input.alsoAsked === null && input.restartsSpent < input.restarts) offer.push('claim')
+  if (input.when === 'findings' && input.alsoAsked === null && input.newAttemptsSpent < input.newAttempts)
+    offer.push('claim')
   offer.push('human')
   return offer
 }
@@ -357,9 +358,9 @@ export interface JudgeBrief {
   /** Never. What is spent is the workflow's arithmetic, and it is already in `offer`. */
   roundsSpent?: never
   /** Never. The ceiling is `claim`'s, for the same reason. */
-  restarts?: never
+  newAttempts?: never
   /** Never, and for the same reason as `roundsSpent`. */
-  restartsSpent?: never
+  newAttemptsSpent?: never
 }
 
 /**

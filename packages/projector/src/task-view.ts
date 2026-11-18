@@ -203,13 +203,13 @@ export const taskViewProjection: Projection = {
         -- acts on differently.
         --
         -- Assignment and not an increment, which is why there is no updated_seq
-        -- subtlety here: TicketReleased{cause: Restart} carries its own ordinal, so a replay
+        -- subtlety here: TicketReleased{cause: NewAttempt} carries its own ordinal, so a replay
         -- lands on the same number. attempts has to increment because a claim
         -- carries none.
         --
         -- Zero means no restart has been bought, which is every row today.
-        restarts     int not null default 0,
-        restarts_of  int not null default 0,
+        new_attempts    int not null default 0,
+        new_attempts_of int not null default 0,
 
         updated_seq  bigint not null,
 
@@ -319,7 +319,7 @@ interface Derived {
   closed_at: Date | null
   attempts: number
   last_attempt_at: Date | null
-  restarts: number
+  newAttempts: number
 }
 
 function derive(taskId: string, t: TicketState): Derived {
@@ -346,7 +346,7 @@ function derive(taskId: string, t: TicketState): Derived {
     closed_at: l.status === 'landed' || l.status === 'closed' ? t.since : null,
     attempts: t.claims.length,
     last_attempt_at: t.lastAttemptAt,
-    restarts: t.restarts.at(-1)?.restart ?? 0,
+    newAttempts: t.newAttempts.at(-1)?.newAttempt ?? 0,
   }
 }
 
@@ -634,7 +634,7 @@ class Cache {
           ['closed_at', c.closed_at, '::timestamptz'],
           ['attempts', c.attempts, '::int'],
           ['last_attempt_at', c.last_attempt_at, '::timestamptz'],
-          ['restarts', c.restarts, '::int'],
+          ['new_attempts', c.newAttempts, '::int'],
           ['updated_at', e.updatedAt, '::timestamptz'],
           ['updated_seq', e.updatedSeq.toString(), '::bigint'],
           ['ticket', encoded, '::jsonb'],
@@ -791,8 +791,8 @@ export interface TaskCard {
    * away all read as `attempt 3`. Read through `describeArm`, which is what
    * keeps the board and `lingtai status` saying it in the same words.
    */
-  restarts: number
-  restartsOf: number
+  newAttempts: number
+  newAttemptsOf: number
   /**
    * The current wait, non-null exactly when `state` is `'waiting'` (#440).
    * `waitId` names the `WaitStarted` that opened it, and `reason` is the
@@ -967,9 +967,9 @@ export function describeWait(card: {
  * differently is the failure this repository keeps finding. So the sentence is
  * decided once, here — but the ceiling is the recipe's, never the row's, and
  * every caller has to hand it in. `#502` dropped the ceiling from the event
- * (`TicketReleased{cause: Restart}` is `{after, restart}` alone — the policy
+ * (`TicketReleased{cause: NewAttempt}` is `{after, restart}` alone — the policy
  * it was spent against lives in the recipe, never on the event), so
- * `restartsOf` stays at its DDL default of 0 on every row now; a caller that
+ * `newAttemptsOf` stays at its DDL default of 0 on every row now; a caller that
  * wants `of N` reads the recipe's `limits?.restarts` and passes it, the same
  * source `describeHeld` falls back to.
  *
@@ -985,11 +985,11 @@ export function describeWait(card: {
  * every pass of it. Together they read *fixing round 2, restart 1 of 2*, which is
  * what 0040 §3 asks a card to be able to say.
  */
-export function describeArm(card: Pick<TaskCard, 'restarts'>, restartsOf: number | null): string | null {
-  if (card.restarts === 0) return null
-  return restartsOf !== null && restartsOf > 0
-    ? `restart ${card.restarts} of ${restartsOf}`
-    : `restart ${card.restarts}`
+export function describeArm(card: Pick<TaskCard, 'newAttempts'>, newAttemptsOf: number | null): string | null {
+  if (card.newAttempts === 0) return null
+  return newAttemptsOf !== null && newAttemptsOf > 0
+    ? `restart ${card.newAttempts} of ${newAttemptsOf}`
+    : `restart ${card.newAttempts}`
 }
 
 export interface ReadTasksOptions {

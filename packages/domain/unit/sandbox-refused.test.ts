@@ -101,7 +101,7 @@ describe('SandboxRefused offers only a person', () => {
     const offer = offerFor(
       proposal,
       { refusalFixes: 3, newAttempts: 1, conflictResolutions: 3 },
-      { rounds: 0, restarts: 0 },
+      { rounds: 0, newAttempts: 0 },
     )
     expect(offer.available.map((c) => c.id)).toEqual(['hand-to-person'])
     expect(offer.unavailable).toEqual([])

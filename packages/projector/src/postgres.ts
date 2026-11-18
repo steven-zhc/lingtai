@@ -124,8 +124,8 @@ function toCard(row: pg.QueryResultRow): TaskCard {
     closedAt: row.closed_at,
     attempts: row.attempts,
     lastAttemptAt: row.last_attempt_at,
-    restarts: row.restarts ?? 0,
-    restartsOf: row.restarts_of ?? 0,
+    newAttempts: row.new_attempts ?? 0,
+    newAttemptsOf: row.new_attempts_of ?? 0,
     // `waitOf` reads both columns through `columnOf`, so a stale table
     // reports shape drift instead of drawing a card without its wait.
     wait,

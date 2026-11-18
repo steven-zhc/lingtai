@@ -178,7 +178,7 @@ describe('addProject under two tabs and a retry (#971)', () => {
     const text = f.store.get(path)!
     expect(text).not.toContain('agent:hold')
     expect(text).not.toContain('human:')
-    expect(text).not.toMatch(/rounds: 7|restarts: 3|wall: 9h|turns: 500/)
+    expect(text).not.toMatch(/rounds: 7|newAttempts: 3|wall: 9h|turns: 500/)
   })
 })
 

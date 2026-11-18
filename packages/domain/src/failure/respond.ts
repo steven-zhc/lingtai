@@ -675,13 +675,13 @@ export function offerFor(
       unavailable.push({ id: 'restart', because: { _tag: 'NoCriterion' } })
       return
     }
-    if (spent.restarts >= policy.newAttempts) {
+    if (spent.newAttempts >= policy.newAttempts) {
       unavailable.push({ id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'newAttempts' } })
       return
     }
     available.push({
       id: 'restart',
-      next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: spent.restarts + 1 } },
+      next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: spent.newAttempts + 1 } },
     })
   }
 
