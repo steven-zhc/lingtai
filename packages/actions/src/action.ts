@@ -1051,13 +1051,15 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
             }
       // A rerun after an account limit names the action it re-runs (`recorded`): it is not spent on an action
       // before that one, whose own dispatch id must not be the cut-off one's.
+      // The redo paragraph waits for the recorded action: an agent before it must not consume it (#1246).
+      const awaitsRecorded = context.recorded !== undefined && context.recorded.name !== action.name
       if (context.recorded !== undefined && context.rerun !== undefined && context.recorded.name === action.name) {
         const { rerun: _rerun, recorded: _recorded, ...rest } = context
         context = rest
       }
       // **A step redone whole keeps `rerun` on every action** (#1245): every agent in it ran before, so every
       // one needs the suffix its dispatch id is built from. Only the paragraph is handed once.
-      if (context.redo !== undefined && action.kind === 'agent') {
+      if (context.redo !== undefined && action.kind === 'agent' && !awaitsRecorded) {
         const { redo: _redo, ...rest } = context
         context = rest
       }

@@ -5296,7 +5296,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             )
 
           const after = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
-          const committed = after !== brief.context.onSha
+          // A redone round is measured from where it first began, never the re-cut head (#1246).
+          const committed = after !== (brief.context.redo?.startedAt ?? brief.context.onSha)
 
           // A judge or a person reads this verdict, not a transcript — bounded the
           // same way claude-code.ts clips a crash's `detail`. Carried as `stopped`
