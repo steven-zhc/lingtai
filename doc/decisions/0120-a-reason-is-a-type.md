@@ -536,9 +536,10 @@ question, or something unreadable (`agent-action.ts:964-1031`).
 - `round` and `restart` are what was spent plus one, computed by `offerFor`,
   written into the candidate, and applied by `spentAfter` without a second
   judgement.
-- **Rounds count per attempt, restarts per item** (`onOffer`'s _claim spends the
-  item's restart and each of the others spends one of this attempt's rounds_).
-  An attempt after a restart starts at round 0.
+- **Refusal fixes count per attempt, new attempts per item** (`onOffer`'s _claim spends the
+  item's new attempt and each of the others spends one of this attempt's fixes_;
+  the counters keep their old names, `rounds` and `restarts`, until the log rename).
+  An attempt after a new attempt starts at round 0.
 
 ### 5. Events
 

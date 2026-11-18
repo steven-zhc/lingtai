@@ -219,7 +219,7 @@ export interface BoardCard {
   attempts: number
   /**
    * *restart 1 of 2*, or null on a ticket that has only ever had one approach
-   * — which is every ticket until a recipe sets `runtime.limits.ticket.newAttempts`
+   * — which is every ticket until a spent attempt starts over (`runtime.limits.ticket.newAttempts`, two by default)
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
    *
    * **The sentence and not the numbers**, because `lingtai status` shows the
@@ -349,7 +349,7 @@ export interface AttemptLimitsView {
   conflictResolutions: number
   /**
    * `runtime.limits.ticket.newAttempts`. Zero means a pass whose rounds are spent asks a
-   * person, which is every project today
+   * person; the default is two
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
    *
    * **Beside `refusalFixes` because the chip is about what a ticket costs**, and the

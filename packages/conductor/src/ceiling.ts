@@ -65,16 +65,21 @@ export function attemptCeiling(limits: {
     `${wallAndTurns} each${at}${elsewhere}, so at most ${formatDuration(limits.wallMs * runs)}` +
     (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, runs)}`)
   // Listed, not summed: each is bounded by its own step's limits.
+  const bound = `${limits.wall} and ${formatTurns(limits.turns)} a run unless its step narrows them`
   const others =
-    'design, review, a judge and triage are other agent steps, each within its own limits and not in this figure: ' +
-    "review runs once after each implement and once more after a base-branch merge that touched the branch's files"
+    'other agent steps are not in this figure, each with a bound of its own: ' +
+    `design runs once an attempt, ${bound}; ` +
+    `review runs once after each implement and once more after a base-branch merge that touched the branch's files, ${bound}; ` +
+    `a judge is asked once per refusal it is declared for, ${bound}; ` +
+    'triage runs within triage.limits, which is not runtime.limits.run and is not changed by it'
 
   // **Said whether it buys anything or not**, so a default that spends money is
   // auditable when it is off as well as when it is on (0025 §2).
   const zero: string[] = []
-  if (limits.refusalFixes === 0) zero.push('a refusal goes straight to you (runtime.limits.attempt.refusalFixes: 0)')
+  if (limits.refusalFixes === 0)
+    zero.push('a refusal buys no fix in the same worktree (runtime.limits.attempt.refusalFixes: 0)')
   if (limits.conflictResolutions === 0) {
-    zero.push('a merge conflict goes straight to you (runtime.limits.attempt.conflictResolutions: 0)')
+    zero.push('a merge conflict buys no resolution (runtime.limits.attempt.conflictResolutions: 0)')
   }
   if (limits.newAttempts === 0) {
     zero.push('an attempt that is spent goes to you (runtime.limits.ticket.newAttempts: 0)')

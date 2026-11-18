@@ -469,7 +469,14 @@ describe('what a ticket may spend', () => {
     // 3 × (1 + 6 + 6 + 3) + 5
     expect(said).toContain('up to 53 implement runs a ticket')
     expect(said).toContain('at most 106h')
-    for (const other of ['design', 'review', 'a judge', 'triage']) expect(said).toContain(other)
+    for (const other of [
+      'design runs once an attempt',
+      'review runs once after each implement',
+      'a judge is asked once per refusal',
+      'triage runs within triage.limits',
+    ]) {
+      expect(said).toContain(other)
+    }
     expect(said).toContain('not in this figure')
   })
 
@@ -502,8 +509,8 @@ describe('what a ticket may spend', () => {
   it('says where a refusal and a conflict go when nothing is bought', () => {
     const none = attemptCeiling(limits(0))
 
-    expect(none).toContain('a refusal goes straight to you (runtime.limits.attempt.refusalFixes: 0)')
-    expect(none).toContain('a merge conflict goes straight to you (runtime.limits.attempt.conflictResolutions: 0)')
+    expect(none).toContain('a refusal buys no fix in the same worktree (runtime.limits.attempt.refusalFixes: 0)')
+    expect(none).toContain('a merge conflict buys no resolution (runtime.limits.attempt.conflictResolutions: 0)')
     expect(none).toContain('up to 9 implement runs a ticket')
   })
 

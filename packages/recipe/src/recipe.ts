@@ -3300,15 +3300,16 @@ export const Recipe = z
             .strictObject({
               /**
                * How many times an attempt sends the agent back, carrying what a
-               * review or build refused. Zero means every refusal goes straight to a
-               * person. A merge conflict is not a refusal; it has
+               * review or build refused. Zero buys no fix in the same worktree; a
+               * refusal then reaches a person only once `ticket.newAttempts` is spent too. A merge conflict is not a refusal; it has
                * `conflictResolutions`.
                */
               refusalFixes: z.number().int().nonnegative().default(6),
               /**
                * How many times an attempt sends the agent back to resolve a merge
                * conflict. Two things that mean differently have two names even where
-               * their values agree (0108 §8). Zero means a conflict goes to a person.
+               * their values agree (0108 §8). Zero buys no resolution; a conflict
+               * then reaches a person once `ticket.newAttempts` is spent too.
                */
               conflictResolutions: z.number().int().nonnegative().default(6),
             })
@@ -3319,7 +3320,7 @@ export const Recipe = z
               /**
                * How many times a spent attempt starts the work over from a fresh
                * worktree instead of asking a person (0040). Zero means a spent
-               * attempt asks a person. Not a daemon restart: that is `lingtai restart`.
+               * attempt asks a person, and with `refusalFixes: 0` a refusal does. Not a daemon restart: that is `lingtai restart`.
                */
               newAttempts: z.number().int().nonnegative().default(2),
             })

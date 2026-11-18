@@ -165,7 +165,7 @@ import { heading, keyValues, renderNextBlock, renderNextLine, section, symbol } 
 import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
 import { questionEffect, spunEffect, type QuestionWorld } from './question.ts'
 import { DOCTOR_VERBOSE, liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './setup-end.ts'
-import type { WizardFlags } from './wizard-options.ts'
+import { ROUNDS_RETIRED, type WizardFlags } from './wizard-options.ts'
 
 // -------------------------------------------------------------- the world --
 
@@ -494,6 +494,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
           'budget',
           'github-auth',
         ].find((name) => flags[name] !== undefined)
+        if (flags['rounds'] !== undefined) return stop(ROUNDS_RETIRED)
         if (discardedFlag !== undefined) {
           return stop(
             `--${discardedFlag} ${flags[discardedFlag]}, but this machine already has a project and none is named ` +

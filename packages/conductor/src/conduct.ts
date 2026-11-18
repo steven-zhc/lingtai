@@ -5156,7 +5156,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             brief.context,
           )
 
-          log(`fixing ${from} — round ${round} of ${ceiling.attempt.refusalFixes}`)
+          // A conflict resolution is bounded by its own knob, never the refusal fixes' (0108 §8).
+          const bound = conflict ? ceiling.attempt.conflictResolutions : ceiling.attempt.refusalFixes
+          log(`fixing ${from} — round ${round} of ${bound}`)
           runLog.note('fix', `round ${round} for ${from}`)
 
           const fixDecision = yield* decideSandbox
@@ -5200,7 +5202,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   ...fixBriefParts({
                     refusal,
                     round,
-                    of: ceiling.attempt.refusalFixes,
+                    of: bound,
                     action: refusal.on === 'unfinished' ? 'implement' : from,
                     diff: underReview.text,
                     ...(underReview.from === null || underReview.to === null

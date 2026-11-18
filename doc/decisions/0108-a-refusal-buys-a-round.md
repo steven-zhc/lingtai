@@ -555,17 +555,16 @@ fixes the actions, their bounds and the endings that router works inside.
 ## Not built yet
 
 Everything in this rewrite is decided and is to be built in 0.15.0. What is
-built today is the 2026-11-13 state: one `rounds` for fixes and conflicts,
-`restarts`, `stepRedos` and `landingRetries` as two counts, a rerun
+built today is the 2026-11-13 state plus §8's grouped limits: `stepRedos` and `landingRetries` as two counts, a rerun
 that resumes at the cut-off action (#1201), WIP carried as a diff to the next
 attempt (#1170), triage that only advises, and a split a person approves.
 What changes:
 
-- **Names and bounds (§8).** The recipe's grouped `limits` and the refusal of
-  the old names; `refusalFixes` and `conflictResolutions` apart;
-  `ticketSplits` and `triageRetries`; `personAsks` counting `implement`'s
-  `Unclear` and triage's questions too, not only `design`'s; `attemptCeiling`'s
-  new product and its per-step list.
+- **Names and bounds (§8).** `ticketSplits` and `triageRetries`;
+  `personAsks` counting `implement`'s `Unclear` and triage's questions too, not
+  only `design`'s. (Built: the grouped `limits`, the refusal of the old names,
+  `refusalFixes` and `conflictResolutions` apart, `newAttempts`, and
+  `attemptCeiling`'s product with its per-step list.)
 - **The renames on the log.** `StepRerunInPlace` → `StepRedone`;
   `ReleaseCause.Restart` → `NewAttempt`; the route's `FixRound` and
   `MergeBase` → `FixRefusal` and `MergeBaseBranch`; the resolutions

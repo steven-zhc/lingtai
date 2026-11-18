@@ -72,7 +72,7 @@ export interface RestartInput {
      */
     exhausted: boolean
   }
-  /** `runtime.limits.ticket.newAttempts`. Zero is the default and is today's behaviour. */
+  /** `runtime.limits.ticket.newAttempts`. Two by default (0108 §8); zero hands a spent attempt to a person. */
   restarts: number
   /** The work item, reduced. Carries the bound: `restarts`. */
   item: TicketState

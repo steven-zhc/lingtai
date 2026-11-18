@@ -36,6 +36,7 @@ import { Effect } from 'effect'
 
 import { lift, recovering } from './exit.ts'
 import { type QuestionWorld, questionEffect } from './question.ts'
+import { ROUNDS_RETIRED } from './wizard-options.ts'
 
 export interface LandingDeps {
   home?: string
@@ -250,9 +251,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
 
   if (flags.rounds !== undefined) {
     return {
-      refused:
-        '--rounds is gone: it was two bounds, so write --refusal-fixes <n> (fixes after a build or review ' +
-        'refusal) and --conflict-resolutions <n> (merge conflict resolutions), 0108 §8',
+      refused: ROUNDS_RETIRED,
     }
   }
 
@@ -262,7 +261,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     given: flags.refusalFixes ?? null,
     prompt:
       'how many times an attempt sends the agent back after a build or review refuses it — ' +
-      '0 means every refusal goes straight to you',
+      '0 buys no fix in the same worktree (a new attempt, if the ticket has any, may still follow)',
     current: String(limits.attempt.refusalFixes),
     validate: (answer) => Effect.succeed(/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
     kept: options.kept,
@@ -280,7 +279,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     given: flags.conflictResolutions ?? null,
     prompt:
       'how many times an attempt sends the agent back to resolve a merge conflict — ' +
-      '0 means every conflict goes straight to you',
+      '0 buys no conflict resolution (a new attempt, if the ticket has any, may still follow)',
     current: String(limits.attempt.conflictResolutions),
     validate: (answer) => Effect.succeed(/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
     kept: options.kept,

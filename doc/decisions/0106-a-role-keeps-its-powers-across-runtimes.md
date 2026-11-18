@@ -117,28 +117,29 @@ on that path is paid for thousands of times per run.
    not `prompt`, because its question is fixed by `judgePrompt`. A built-in
    judge takes neither. **`limits` here is a `strictObject` of `turns` and
    `wall` only — `usd` has no key inside a dispatch's `limits:` (`#370`)**:
-   every call an attempt makes gets the one dollar ceiling `runtime.limits.usd`
+   every call an attempt makes gets the one dollar ceiling `runtime.limits.run.usd`
    states, unchanged, because nothing here lets a step narrow it the way it
    can narrow `turns` and `wall`.
 
 9. **The ceiling is stated once, and a dispatch may only narrow it.**
-   `runtime.limits` holds `turns` (default 300, or the word `unbounded` — see
-   10), `wall` (default `2h`),
-   `rounds` (default 2), `restarts` (default 0) and, since `#370`, `usd` — a
-   dollar ceiling on one agent run, with **no default**. `turns`, `wall`,
-   `rounds` and `restarts` all have schema defaults that are always present;
+   `runtime.limits` is grouped: `run` holds `turns` (default 300, or the word
+   `unbounded` — see 10), `wall` (default `2h`) and, since `#370`, `usd` — a
+   dollar ceiling on one agent run, with **no default**; `attempt` holds
+   `refusalFixes` and `conflictResolutions` (default 6 each) and `ticket` holds
+   `newAttempts` (default 2) (0108 §8). Everything but `run.usd` has a schema
+   default that is always present;
    `usd` does not, because a defaulted dollar ceiling would read Codex red
    on a second axis the way a defaulted `turns` would for a runtime that cannot
    hold it (see 10).
    Absent means no dollar ceiling, said in `lingtai doctor`'s row as
    `usd — none declared` rather than a number. A dispatch's `limits` may lower
    `turns` or `wall`; raising either is refused at resolve, and so is writing
-   `rounds` or `restarts` inside a dispatch, each refused by name with its own
+   `refusalFixes`, `conflictResolutions` or `newAttempts` inside a dispatch, each refused by name with its own
    reason. `usd` bounds one run too, the same as `turns` and `wall`, but the
    dispatch schema has no key for it at all, so writing it there is refused as
    an unrecognized key rather than by a reasoned name. `attemptCeiling` reports
-   the attempt's worst case in dollars by multiplying `usd` by the rounds and
-   restarts an attempt may buy, the same way it multiplies `wall` — a derived
+   the attempt's worst case in dollars by multiplying `usd` by the `implement` runs
+   a ticket may buy (0108 §8), the same way it multiplies `wall` — a derived
    figure, not what the field itself bounds. `lingtai status` computes the
    attempt's worst case, in dollars where one is declared, from these values.
    `discuss.limits` runs outside any attempt, so it has its own defaults (40
@@ -147,7 +148,7 @@ on that path is paid for thousands of times per run.
 10. **A limit the runtime cannot enforce is reported, not pretended.** Codex
     does not enforce `turns`, so `lingtai doctor`'s limits row fails for a Codex
     project that **promises** a turn count and says that the wall still stops the
-    run. **`runtime.limits.turns: unbounded` is the way to promise none** (`#547`):
+    run. **`runtime.limits.run.turns: unbounded` is the way to promise none** (`#547`):
     a choice and not a promise, so the row does not check it and reads
     `turns — unbounded`. It is the only spelling — an absent key is the default
     of 300, and `null`, `0` and `none` are refused by name — and `lingtai init`
@@ -159,10 +160,10 @@ on that path is paid for thousands of times per run.
     enforces it. Turns counted off the
     stream go into the receipt and the never-started check. They never trigger
     a kill. **`usd` is reported the same way when one is declared, and not at
-    all when it is not** (`#370`): a Codex project with no `runtime.limits.usd`
+    all when it is not** (`#370`): a Codex project with no `runtime.limits.run.usd`
     reads `usd — none declared` and is `ok` on that row, because there is
     nothing for Codex to fail at holding — only a project that actually writes
-    `runtime.limits.usd` against a runtime whose `enforces` omits it goes red.
+    `runtime.limits.run.usd` against a runtime whose `enforces` omits it goes red.
 
 11. **The hook is a thin client that fails closed.** `lingtai-hook`
     (`packages/hook/src/lingtai-hook.ts`, compiled with Bun to
