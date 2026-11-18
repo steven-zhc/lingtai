@@ -1051,13 +1051,22 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
             }
       // A rerun after an account limit names the action it re-runs (`recorded`): it is not spent on an action
       // before that one, whose own dispatch id must not be the cut-off one's.
-      if (context.recorded !== undefined && context.rerun !== undefined && context.recorded.name === action.name) {
-        const { rerun: _rerun, recorded: _recorded, ...rest } = context
-        context = rest
+      // The redo paragraph waits for the recorded action: an agent before it must not consume it (#1246).
+      const awaitsRecorded = context.recorded !== undefined && context.recorded.name !== action.name
+      if (context.recorded !== undefined && context.recorded.name === action.name) {
+        // A step redone whole keeps `rerun` for the actions after the recorded one: each ran before, under the
+        // original id, and a later redo's earlier action must not hand them that id again (#1246).
+        const { recorded: _recorded, ...rest } = context
+        if (context.rerun !== undefined && context.redo === undefined) {
+          const { rerun: _rerun, ...bare } = rest
+          context = bare
+        } else {
+          context = rest
+        }
       }
       // **A step redone whole keeps `rerun` on every action** (#1245): every agent in it ran before, so every
       // one needs the suffix its dispatch id is built from. Only the paragraph is handed once.
-      if (context.redo !== undefined && action.kind === 'agent') {
+      if (context.redo !== undefined && action.kind === 'agent' && !awaitsRecorded) {
         const { redo: _redo, ...rest } = context
         context = rest
       }
@@ -1303,10 +1312,22 @@ export function recordedOr(
   context: Pick<ActionContext, 'recorded'>,
   name: string,
   composed: ComposedPrompt,
+  /** What ends the recorded brief when a step is redone whole (#1246): the 0108 §12 paragraph, never a `review`'s. */
+  tail?: string,
 ): ComposedPrompt {
-  return context.recorded?.name === name && context.recorded.prompt !== null
-    ? { handed: context.recorded.prompt, recorded: context.recorded.prompt, refs: [], values: [] }
-    : composed
+  if (context.recorded?.name !== name || context.recorded.prompt === null) return composed
+  const prompt = withRedoParagraph(context.recorded.prompt, tail)
+  return { handed: prompt, recorded: prompt, refs: [], values: [] }
+}
+
+/** `prompt` with its own trailing redo paragraph (a cut-off call that was itself a redo) replaced by `paragraph`, if any. */
+export function withRedoParagraph(prompt: string, paragraph: string | null | undefined): string {
+  if (paragraph === undefined || paragraph === null) return prompt
+  // Only the generated paragraph itself, as the brief's last paragraph: quoted text that merely starts alike,
+  // or is followed by anything, is the brief's own and stays (#1246).
+  const trailing =
+    /\n\nThis step was interrupted \([^\n]*\); it began at [^\n]* and is committed to [^\n]*\. Carry on, and do not redo what is committed\.$/
+  return `${prompt.replace(trailing, '')}\n\n${paragraph}`
 }
 
 /**

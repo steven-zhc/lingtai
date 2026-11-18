@@ -1656,6 +1656,7 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
             ...designPromptParts(spec, issue, context.again ?? null, deps.personAsks ?? 0),
             ...(context.redo === undefined ? [] : [`\n\n${redoParagraph(context.redo)}`]),
           ]),
+          context.redo === undefined ? undefined : redoParagraph(context.redo),
         )
         const prompt = composed.handed
         // The body is a reference where the claim it came from is known (#928).

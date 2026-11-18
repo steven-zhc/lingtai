@@ -755,6 +755,21 @@ export function cutOffPromptOf(
   return null
 }
 
+/**
+ * The sha `step` began at on its latest arrival in this attempt (#1246): the last `StepStarted` that names one.
+ * A redo writes the value it was handed, so every redo of one arrival reads the same sha; a fix round's arrival
+ * is a new head and writes its own. Null where no row carries it (an attempt begun before the field).
+ */
+export function stepStartedAtOf(runEvents: readonly Envelope[], step: string): string | null {
+  for (let i = runEvents.length - 1; i >= 0; i--) {
+    const event = runEvents[i]!
+    if (event.type !== 'StepStarted') continue
+    const d = event.data as PayloadOf<'StepStarted'>
+    if (d.step === step && typeof d.startedAt === 'string') return d.startedAt
+  }
+  return null
+}
+
 /** `StepRedone`, or the `StepRedone` rows written under its retired name (#1241): one meaning. */
 export function isStepRedo(type: string): boolean {
   return type === 'StepRedone' || type === 'StepRerunInPlace'
