@@ -56,7 +56,7 @@ describe('renderVerdict, plain', () => {
   it('fix-refusal: granted, and granted but not scheduled', () => {
     expect(
       renderVerdict(VERBS['fix-refusal'].accepted, { outcome: 'accepted', ticketId: TICKET, detail: 'x' })[0],
-    ).toBe(`✓ refusal fix started ${TICKET}`)
+    ).toBe(`✓ refusal fix granted ${TICKET}`)
     const failed = renderVerdict(VERBS['fix-refusal'].accepted, {
       outcome: 'accepted',
       ticketId: TICKET,
@@ -64,7 +64,7 @@ describe('renderVerdict, plain', () => {
     })
     expect(failed.join('\n')).toContain('scheduling failed: boom')
     expect(renderVerdict(VERBS['fix-refusal'].refused, refusal(1, 'not-waiting', 'x').verdict)[0]).toBe(
-      '✗ refusal fix not started (not-waiting)',
+      '✗ refusal fix not granted (not-waiting)',
     )
   })
 

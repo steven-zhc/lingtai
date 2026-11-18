@@ -8,6 +8,16 @@
  */
 import { isCommand } from './commands.ts'
 
+/**
+ * The verbs that named a person's moves before 0108 named them, and the verb each is now (#1242). Routed to `cli`
+ * so it can refuse by name, before the parser and before anything is read or appended.
+ */
+export const RETIRED_VERBS = {
+  'grant-fix-round': 'fix-refusal',
+  rerun: 'redo-step',
+  requeue: 'start-new-attempt',
+} as const
+
 export type Route = 'effect' | 'help' | 'unknown'
 
 /**
@@ -20,6 +30,7 @@ export function versionFlagAsCommand(argv: readonly string[]): string[] {
 
 export function routeOf(argv: readonly string[]): Route {
   const first = argv[0] ?? ''
+  if (Object.hasOwn(RETIRED_VERBS, first)) return 'effect'
   const helped = argv.some((a) => a === '--help' || a === '-h')
   // `version`'s help is `@effect/cli`'s (#617); every other command's is the definition's (0121 §6).
   if (first !== 'version' && helped) return 'help'

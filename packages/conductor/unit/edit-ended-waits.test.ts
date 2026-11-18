@@ -91,8 +91,8 @@ describe('the waiting comment becomes its outcome', () => {
   it.each([
     [{ _tag: 'Approve', onSha: 'x' }, '**Approved by steven.**'],
     [{ _tag: 'FixRefusal', onSha: 'x', ref: 'r' }, '**One more refusal fix, granted by steven.**'],
-    [{ _tag: 'StartNewAttempt' }, '**A new attempt, started by steven.**'],
-    [{ _tag: 'EditBodyAndStartNewAttempt' }, '**A new attempt, started by steven.**'],
+    [{ _tag: 'StartNewAttempt' }, '**A new attempt, queued by steven.**'],
+    [{ _tag: 'EditBodyAndStartNewAttempt' }, '**A new attempt, queued by steven.**'],
     [{ _tag: 'AnswerQuestion', choice: 'main' }, '**Answered by steven: `main`**'],
     [
       {

@@ -441,7 +441,7 @@ export function EditBodyAndStartNewAttempt({
             })
           }}
         >
-          {pending ? '…' : question !== null ? 'Answer' : 'Write it into the body & requeue'}
+          {pending ? '…' : question !== null ? 'Answer' : 'Write it into the body & start a new attempt'}
         </button>
       ) : null}
       {detail ? <p className={doneWaitId !== null ? 'decided' : 'refusal'}>{detail}</p> : null}

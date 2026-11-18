@@ -14,6 +14,7 @@ import { definitionOf, PROJECTION_NAMES, startIsVerbose } from './commands.ts'
 import { USAGE as ENV_USAGE } from './env-usage.ts'
 import { CommandExit, exitWith, failed, lift, orFailed, orWizardFailed, printedBy, wizardFailed } from './exit.ts'
 import { commandHelp } from './help.ts'
+import { RETIRED_VERBS } from './migrated.ts'
 import { applyNoColor, heading, printJson, printJsonError, stripColour, symbol } from './output.ts'
 import { parseRestartArgs, type RestartArgs } from './restart.ts'
 import { createSteps } from './steps.ts'
@@ -1503,15 +1504,7 @@ function withReasonFolded(args: readonly string[]): string[] {
   return out
 }
 
-/**
- * The verbs that named a person's moves before 0108 named them, and the verb each is now (#1242). Answered by name, before
- * the parser and before anything is read or appended, so a script that still calls one is told what to call.
- */
-export const RETIRED_VERBS = {
-  'grant-fix-round': 'fix-refusal',
-  rerun: 'redo-step',
-  requeue: 'start-new-attempt',
-} as const
+export { RETIRED_VERBS }
 
 /** `backlog [<project>] [--all]` is `backlog list …`, so the verbs and the listing do not share a first position. */
 function withBacklogVerb(args: readonly string[]): string[] {

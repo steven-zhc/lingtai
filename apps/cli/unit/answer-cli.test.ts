@@ -129,7 +129,7 @@ describe('fix-refusal', () => {
   it('prints a refusal as one verdict line and the detail, exit 1', async () => {
     const r = await capture(['fix-refusal', 'p', '--issue', '5', '--if-head', 'abc1234'])
     expect(r.code).toBe(1)
-    expect(r.out).toBe('✗ refusal fix not started (head-moved) ticket-p-5\n  the head moved\n')
+    expect(r.out).toBe('✗ refusal fix not granted (head-moved) ticket-p-5\n  the head moved\n')
     expect(seen.calls[0]?.options).toEqual({ project: 'p', issue: 5, ifHead: 'abc1234' })
   })
 

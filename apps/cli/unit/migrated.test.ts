@@ -1,7 +1,7 @@
 /** The router's claim (#616): `version` is `@effect/cli`'s, and every command is its. */
 import { describe, expect, it } from 'vitest'
 
-import { routeOf, versionFlagAsCommand } from '../src/migrated.ts'
+import { routeOf, RETIRED_VERBS, versionFlagAsCommand } from '../src/migrated.ts'
 
 describe('routeOf', () => {
   it.each([
@@ -121,5 +121,12 @@ describe('versionFlagAsCommand (#740)', () => {
   it('routes the rewritten --version to @effect/cli, and -v stays unknown', () => {
     expect(routeOf(versionFlagAsCommand(['--version']))).toBe('effect')
     expect(routeOf(['-v'])).toBe('unknown')
+  })
+})
+
+describe('a verb that was renamed', () => {
+  it.each(Object.keys(RETIRED_VERBS))('%s still reaches the command line, which refuses it by name', (verb) => {
+    expect(routeOf([verb, 'lingtai', '--issue', '12'])).toBe('effect')
+    expect(routeOf([verb, '--help'])).toBe('effect')
   })
 })
