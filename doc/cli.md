@@ -414,10 +414,10 @@ End a wait with a new run.
 Changes state — `--json` on its verdict (version 1).
 
 ```text
-lingtai start-new-attempt <project> --issue <n> [--note <why>] [--into-body <text>]
-                [--json]
-  A blocked item goes back to the queue — held for approval or not —
-  and the next attempt cuts a fresh branch from a base that has since
+lingtai start-new-attempt <project> --issue <n> [--note <why>]
+                [--into-body <text>] [--json]
+  Queues a new attempt for a blocked item — held for approval or not —
+  and that attempt cuts a fresh branch from a base that has since
   moved. The actor is still recorded in by.
 ```
 
