@@ -2599,7 +2599,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * never before, for `RunRefsPublished`'s own reason: a sha named on the log
        * must be fetchable. Counted `parent..sha`, which is the WIP alone.
        */
-      const noteKept = (made: { parent: string; stoppedBy: string; sha: string | null }): Effect.Effect<void> =>
+      const noteKept = (
+        made: { parent: string; stoppedBy: string; sha: string | null },
+        ref: string,
+      ): Effect.Effect<void> =>
         Effect.gen(function* () {
           const sha = made.sha
           if (sha === null || notedKept.has(sha)) return
@@ -2609,7 +2612,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               type: 'RunKeptUncommitted',
               actor: 'conductor',
               data: parsePayload('RunKeptUncommitted', {
-                ref: branch,
+                ref,
                 sha,
                 parentSha: made.parent,
                 stoppedBy: made.stoppedBy,
@@ -2624,13 +2627,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             notedKept.add(sha)
           } else {
             const why = whyOf(failed.refused)
-            runLog.note('push', `${sha.slice(0, 7)} is on ${branch} and was not recorded — ${why}`)
+            runLog.note('push', `${sha.slice(0, 7)} is on ${ref} and was not recorded — ${why}`)
             log(`RunKeptUncommitted was refused by the store: ${why}`)
           }
         })
-      const noteAllKept = (): Effect.Effect<void> =>
+      /** `ref` is where the commits are: `branch`, or the arm alone when `agent/<n>` was refused. */
+      const noteAllKept = (ref: string): Effect.Effect<void> =>
         Effect.gen(function* () {
-          for (const entry of wips) yield* noteKept(entry)
+          for (const entry of wips) yield* noteKept(entry, ref)
         })
 
       /**
@@ -2722,7 +2726,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // `noteKept` is asked for again too, and for the same reason as
               // `recordDiff` above (`#251`, `#468`): `notedKept` lacks the sha when the
               // earlier attempt's append found the store down.
-              yield* noteAllKept()
+              yield* noteAllKept(branch)
               return null
             }
             // Retried while origin cannot be reached or answers a 5xx (#1125). A 5xx that origin
@@ -2789,7 +2793,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 kept = { _tag: 'Arm', ref: `refs/heads/${arm}`, sha: head }
                 yield* noteRefs('arm-only', head, withWipFailure(pushed.failure.detail))
                 yield* recordDiff(arm, head)
-                yield* noteAllKept()
+                yield* noteAllKept(arm)
                 return pushed.failure.detail
               }
               // **Kept before the account is written, not after** (`#421`) —
@@ -2810,7 +2814,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             runLog.note('push', `${branch} and ${arm} at ${head.slice(0, 7)}`)
             yield* noteRefs('published', head, withWipFailure(null))
             yield* recordDiff(branch, head)
-            yield* noteAllKept()
+            yield* noteAllKept(branch)
             return null
           }).pipe(
             Effect.catchDefect((defect) =>
@@ -5280,6 +5284,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           stoppedBy = fixed.failure ? fixed.failure.kind : null
           // Kept before `build` reads the worktree, so a check sees the head that lands (#1209, #1243).
           yield* keepUncommittedWork()
+          // The head the steps after this judge is the one the keep may have moved (#1209): a WIP
+          // on top of the round's commit is what `build` and `review` read, so it is what is recorded.
+          const reached = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
           // **A conflict round must have committed the merge** (#1120): `baseSha` has to be in
           // the head's history, or `build` and `review` would be spent on a resolution that is
           // not one. A failed read is *not an ancestor*.
@@ -5289,8 +5296,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               return { stopped: `the round committed without the merge of ${merge.baseSha.slice(0, 7)}` }
             }
           }
-          yield* recordDiff(branch, after)
-          return { committed: after }
+          yield* recordDiff(branch, reached)
+          return { committed: reached }
         })
 
       /**

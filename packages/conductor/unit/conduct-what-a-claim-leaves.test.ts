@@ -634,73 +634,57 @@ describe('when the agent meets the wall', () => {
       return { result, did, runId, run, item: await store.read(`ticket-${PROJECT}-7`) }
     }
 
-    it('keeps it on the arm at the agent’s own commit, and leaves the branch there too', async () => {
+    it('keeps it on HEAD at once and pushes agent/<n> at the WIP', async () => {
       const { result, did, run } = await hitTheWallDirty(true)
       expect(result.ok, JSON.stringify(result)).toBe('held')
 
-      // In order: add, commit, then a push whose branch refspec carries the
-      // agent's own commit — never the WIP sha.
+      // In order: add, commit, then a push whose branch refspec is `HEAD` — the WIP.
       expect(did.indexOf('git add -A')).toBeLessThan(did.indexOf('git commit --no-verify'))
-      const push = `git push ${'b'.repeat(40)}:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1`
+      const push = 'git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1'
       expect(did).toContain(push)
       expect(did.indexOf('git commit --no-verify')).toBeLessThan(did.indexOf(push))
 
       const kept = run.find((e) => e.type === 'RunKeptUncommitted')
       expect(kept).toBeDefined()
       expect(kept!.data).toMatchObject({
-        arm: 'agent/7-attempt-1',
+        ref: 'agent/7',
         sha: WIP_SHA,
         parentSha: 'b'.repeat(40),
         stoppedBy: 'out-of-turns',
       })
 
-      // The branch's own `RunProducedDiff` names the agent's commit, not the
-      // WIP sha on top of it.
+      // The branch's own `RunProducedDiff` names the head, which is the WIP (0108 §20).
       const produced = run.find((e) => e.type === 'RunProducedDiff')
-      expect(produced!.data).toMatchObject({ branch: 'agent/7', headSha: 'b'.repeat(40) })
+      expect(produced!.data).toMatchObject({ branch: 'agent/7', headSha: WIP_SHA })
 
-      // **The durable row must never assert the mergeable branch carries the
-      // WIP commit** (`#468`) — `agent/7` is at the agent's own commit, not
-      // the WIP sha `keepUncommittedWork` moved `HEAD` onto. `armSha` names
-      // where the arm actually is, one commit ahead of `headSha`, which is
-      // what stops the history line from reading the two refs as one sha.
+      // `agent/7` carries the WIP, and no `armSha` says the arm is anywhere else.
       const refs = run.find((e) => e.type === 'RunRefsPublished')
-      expect(refs!.data).toMatchObject({ outcome: 'published', headSha: 'b'.repeat(40), armSha: WIP_SHA })
+      expect(refs!.data).toMatchObject({ outcome: 'published', headSha: WIP_SHA })
+      expect((refs!.data as { armSha?: string }).armSha).toBeUndefined()
+      expect((refs!.data as { branchCarries?: boolean }).branchCarries).not.toBe(false)
     })
 
-    it('keeps it on the arm alone when the agent itself committed nothing', async () => {
+    it('keeps it on agent/<n> when the agent itself committed nothing', async () => {
       const { result, did, run } = await hitTheWallDirty(false)
       expect(result.ok, JSON.stringify(result)).toBe('held')
 
-      // The arm, and never `refs/heads/agent/7`.
       const pushes = did.filter((d) => d.startsWith('git push'))
-      expect(pushes).toEqual(['git push +HEAD:refs/heads/agent/7-attempt-1'])
+      expect(pushes).toEqual(['git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1'])
 
       const kept = run.find((e) => e.type === 'RunKeptUncommitted')
       expect(kept).toBeDefined()
       expect(kept!.data).toMatchObject({
-        arm: 'agent/7-attempt-1',
+        ref: 'agent/7',
         sha: WIP_SHA,
         parentSha: 'a'.repeat(40),
         stoppedBy: 'out-of-turns',
       })
 
-      // Nothing was ever this claim's own commit, so there is no
-      // `RunProducedDiff` at all — `RunKeptUncommitted` is the whole account.
-      // `approve()`/`waive()` read the former through `AttemptState.headSha`, and
-      // a WIP with no commit of the agent's own must never be offered there.
-      expect(run.some((e) => e.type === 'RunProducedDiff')).toBe(false)
-
-      // **Neither row leaves `branch`'s absence unsaid** (`#468`) — the
-      // inline publish writes `published`, and the finalizer's own call to
-      // the same function (the scope closes once `once()` returns) finds the
-      // same state and writes `already-published`; both must say `agent/7`
-      // never got this sha, as a typed field rather than a sentence in
-      // `detail` for a reader to infer the same thing from.
       const refs = run.filter((e) => e.type === 'RunRefsPublished')
       expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['published', 'already-published'])
       for (const row of refs) {
-        expect(row.data).toMatchObject({ headSha: WIP_SHA, branchCarries: false, detail: null })
+        expect(row.data).toMatchObject({ headSha: WIP_SHA, detail: null })
+        expect((row.data as { branchCarries?: boolean }).branchCarries).not.toBe(false)
       }
     })
 
@@ -723,7 +707,7 @@ describe('when the agent meets the wall', () => {
 
       const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
       expect(kept).toHaveLength(1)
-      expect(kept[0]!.data).toMatchObject({ arm: 'agent/7-attempt-1', sha: WIP_SHA, stoppedBy: 'out-of-turns' })
+      expect(kept[0]!.data).toMatchObject({ ref: 'agent/7', sha: WIP_SHA, stoppedBy: 'out-of-turns' })
     })
 
     /**
@@ -740,18 +724,16 @@ describe('when the agent meets the wall', () => {
       const refs = run.filter((e) => e.type === 'RunRefsPublished')
       expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['arm-only', 'arm-only'])
 
-      // **Never the WIP sha** (`#468`): the guard asks whether the agent
-      // committed, and the count it buys must be of that commit alone, not of
-      // the uncommitted edits layered on top of it and counted as if reviewed.
+      // The arm holds the WIP, so the diff is counted against the arm at the WIP head.
       const produced = run.find((e) => e.type === 'RunProducedDiff')
-      expect(produced!.data).toMatchObject({ branch: 'agent/7-attempt-1', headSha: 'b'.repeat(40) })
+      expect(produced!.data).toMatchObject({ branch: 'agent/7-attempt-1', headSha: WIP_SHA })
 
       // `publishWhatIsCommitted` runs twice on this ending (inline, then from
       // the finalizer) and both reach this same branch — one `RunKeptUncommitted`
       // for the one WIP commit, not two.
       const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
       expect(kept).toHaveLength(1)
-      expect(kept[0]!.data).toMatchObject({ sha: WIP_SHA, parentSha: 'b'.repeat(40) })
+      expect(kept[0]!.data).toMatchObject({ ref: 'agent/7-attempt-1', sha: WIP_SHA, parentSha: 'b'.repeat(40) })
     })
 
     /**
@@ -764,7 +746,7 @@ describe('when the agent meets the wall', () => {
      * merge lane reads, and `integrate.ts`'s own guard refuses it until
      * somebody unpicks the branch.
      */
-    it('names the branch’s own commit on a refused push, never the WIP sha kept on top of it', async () => {
+    it('names the head, which is the WIP, on a refused push', async () => {
       const unreachable = 'fatal: unable to access — Could not resolve host'
       const { result, run } = await hitTheWallDirty(true, { push: unreachable })
       expect(result.ok, JSON.stringify(result)).toBe('held')
@@ -772,7 +754,7 @@ describe('when the agent meets the wall', () => {
       const refs = run.filter((e) => e.type === 'RunRefsPublished')
       expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['refused', 'refused'])
       for (const row of refs) {
-        expect(row.data).toMatchObject({ headSha: 'b'.repeat(40) })
+        expect(row.data).toMatchObject({ headSha: WIP_SHA })
       }
 
       // Neither push ever landed the WIP sha on origin, so there is nothing
@@ -791,14 +773,14 @@ describe('when the agent meets the wall', () => {
      * Getting this wrong pushes the WIP sha to `agent/7` itself — the one
      * thing the ticket forbids.
      */
-    it('keeps the branch at the agent’s own commit even when the WIP’s own sha-read fails', async () => {
+    it('resolves the WIP’s sha at the publish when the keep’s own sha-read fails', async () => {
       const { did, run } = await (async () => {
         const store = memoryStore()
         const did: string[] = []
         const ports = fakePorts(did, store)
         let dirty = true
         let head = 'b'.repeat(40)
-        let revParses = 0
+        let failedRead = false
         const inner = ports.repo.git
         ports.repo.git = (args, o) => {
           if (args[0] === 'status') {
@@ -808,11 +790,10 @@ describe('when the agent meets the wall', () => {
             })
           }
           if (args[0] === 'rev-parse') {
-            revParses += 1
-            // The second `rev-parse HEAD` is `keepUncommittedWork`'s own,
-            // right after the commit below — the one this test fails. Every
-            // other call, including `publishWhatIsCommitted`'s, succeeds.
-            if (revParses === 2) {
+            // The first `rev-parse HEAD` after the commit is `keepUncommittedWork`'s own,
+            // right after it — the one this test fails. Every other call succeeds.
+            if (head === WIP_SHA && !failedRead) {
+              failedRead = true
               return Effect.sync(() => did.push('git rev-parse (failed)')).pipe(
                 Effect.andThen(repoFailedWith('git rev-parse', 'EAGAIN')),
               )
@@ -834,6 +815,12 @@ describe('when the agent meets the wall', () => {
               dirty = false
               head = WIP_SHA
               return ''
+            })
+          }
+          if (args[0] === 'rev-list') {
+            return Effect.sync(() => {
+              did.push('git rev-list')
+              return `${WIP_SHA}\n`
             })
           }
           return inner(args, o)
@@ -859,16 +846,16 @@ describe('when the agent meets the wall', () => {
         return { did, run }
       })()
 
-      // The branch's refspec carries the agent's own commit, never the WIP
-      // sha the failed read could not confirm.
-      const push = `git push ${'b'.repeat(40)}:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1`
+      expect(did).toContain('git rev-list')
+      const push = 'git push HEAD:refs/heads/agent/7 +HEAD:refs/heads/agent/7-attempt-1'
       expect(did).toContain(push)
 
       const refs = run.find((e) => e.type === 'RunRefsPublished')
-      expect(refs!.data).toMatchObject({ outcome: 'published', headSha: 'b'.repeat(40) })
+      expect(refs!.data).toMatchObject({ outcome: 'published', headSha: WIP_SHA })
 
-      const kept = run.find((e) => e.type === 'RunKeptUncommitted')
-      expect(kept!.data).toMatchObject({ sha: WIP_SHA, parentSha: 'b'.repeat(40) })
+      const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
+      expect(kept).toHaveLength(1)
+      expect(kept[0]!.data).toMatchObject({ sha: WIP_SHA, parentSha: 'b'.repeat(40) })
     })
 
     /**
@@ -1105,7 +1092,7 @@ describe('when the agent meets the wall', () => {
         }
         if (args.includes('commit')) {
           commitAttempts += 1
-          if (commitAttempts === 1) {
+          if (commitAttempts <= 2) {
             return Effect.sync(() => did.push('git commit (failed)')).pipe(
               Effect.andThen(repoFailedWith('git commit', 'EAGAIN')),
             )
