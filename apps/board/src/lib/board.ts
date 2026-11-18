@@ -1,5 +1,4 @@
 import { passOverBaseRed } from '@lingtai/conductor'
-import type { WhyNothingRuns } from '@lingtai/conductor/why-nothing-runs'
 import { BLOCKERS_READ_MOST, forgetBlockers, readBlockersEffect, type BlockedSkip } from '@lingtai/conductor/blockers'
 import { passedOver, runnableNow } from '@lingtai/conductor/discover'
 import { attemptCeiling } from '@lingtai/conductor/filter'
@@ -7,6 +6,7 @@ import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/condu
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { readState } from '@lingtai/conductor/snapshot-state'
+import type { WhyNothingRuns } from '@lingtai/conductor/why-nothing-runs'
 import { readStatus } from '@lingtai/daemon/control'
 import {
   CONFLICT_ROUND_HUNKS,
@@ -74,7 +74,6 @@ import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/sett
 import { SpanStatusCode } from '@opentelemetry/api'
 import { Effect } from 'effect'
 
-import type { Explain } from './why-read.ts'
 import {
   accountsHolding,
   anyCeilingToday,
@@ -99,6 +98,7 @@ import {
 } from './spend.ts'
 import { timed, traced } from './timing.ts'
 import { presentCause, type CausePresentation } from './triage-cause.ts'
+import type { Explain } from './why-read.ts'
 
 /**
  * Four, not five. `verifying` reduces into `running` (ADR 0016 §8).

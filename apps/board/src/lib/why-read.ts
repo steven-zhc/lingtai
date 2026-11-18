@@ -53,7 +53,9 @@ export const readWhy: Explain = {
     return Effect.gen(function* () {
       const tasks = yield* readTasksEffect({ project: filter.project })
       const read = yield* Effect.tryPromise(() => readProjectLocks())
-      const locks = read.ok ? (read.held.find((h) => h.project === filter.project)?.locks ?? []) : { unread: read.problem }
+      const locks = read.ok
+        ? (read.held.find((h) => h.project === filter.project)?.locks ?? [])
+        : { unread: read.problem }
       const control = yield* Effect.tryPromise(() => readControlOnce()).pipe(Effect.option)
       return yield* explainQueueEffect(
         {

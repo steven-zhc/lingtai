@@ -418,10 +418,7 @@ export interface WhyReads<E> {
  * blockers (`rootBeforeChains`), and only then the blockers. A live conductor that suppresses the
  * sentence reads no blockers for it.
  */
-export const explainQueueEffect = <E>(
-  facts: WhyFacts,
-  reads: WhyReads<E>,
-): Effect.Effect<WhyNothingRuns | null, E> =>
+export const explainQueueEffect = <E>(facts: WhyFacts, reads: WhyReads<E>): Effect.Effect<WhyNothingRuns | null, E> =>
   Effect.gen(function* () {
     if (!mayApply(facts)) return null
     const beacon = yield* reads.beacon

@@ -11,7 +11,6 @@ import { projectionLag } from '@lingtai/projector'
 import Link from 'next/link'
 import { type ComponentProps, Suspense } from 'react'
 
-import { readWhy } from '@/lib/why-read.ts'
 import { type BoardHalf } from '@/lib/blocker-state'
 import {
   emptyHeld,
@@ -45,6 +44,7 @@ import { sandboxStates } from '@/lib/sandbox-state.ts'
 import { billHasAny, billText } from '@/lib/spend'
 import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
+import { readWhy } from '@/lib/why-read.ts'
 
 import { Bar, BarActions } from './bar.tsx'
 // Both halves of the sequence, in the file the task page reads them from too
@@ -1034,12 +1034,16 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // awaited from both boundaries; two calls would be two fan-outs to GitHub.
   const queue: Promise<GithubQueue> = ctx.reads.board
     .then((board) =>
-      measure(() => timed('board.queue', () => githubQueue(board.askable, board.known, (f) => askProject(f, { explain: readWhy }))), { label: '/ queue' }).then(
-        (answered) => {
-          recordQueuedOffered(param, board.askable, answered[0].problems)
-          return answered
-        },
-      ),
+      measure(
+        () =>
+          timed('board.queue', () =>
+            githubQueue(board.askable, board.known, (f) => askProject(f, { explain: readWhy })),
+          ),
+        { label: '/ queue' },
+      ).then((answered) => {
+        recordQueuedOffered(param, board.askable, answered[0].problems)
+        return answered
+      }),
     )
     .then(([github]) => github)
   const app = hasGitHubAuth()

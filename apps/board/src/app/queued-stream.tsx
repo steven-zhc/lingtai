@@ -1,3 +1,4 @@
+import { omittedTickets as omittedCount } from '@lingtai/conductor/why-nothing-runs'
 /**
  * The parts of the home page that wait for GitHub (#884).
  *
@@ -27,9 +28,6 @@ import {
   groupQueue,
 } from '@/lib/board'
 import { kindDot } from '@/lib/kind-colour'
-
-import { omittedTickets as omittedCount } from '@lingtai/conductor/why-nothing-runs'
-
 import { whyLine } from '@/lib/why-line'
 
 import { Skeleton } from './skeleton'
