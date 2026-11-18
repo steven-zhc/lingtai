@@ -414,3 +414,17 @@ export function waitWords(
     }
   }
 }
+
+/** What a judge's cause says in words, for the route line (0108 §6): the three a judge may answer, and the rest by name. */
+export function judgeCauseWords(cause: { readonly _tag: string }): string {
+  switch (cause._tag) {
+    case 'FixableLines':
+      return 'the judge read lines to fix'
+    case 'WrongApproach':
+      return 'the judge read the approach as wrong'
+    case 'UndecidedQuestion':
+      return 'the judge read a question only a person can answer'
+    default:
+      return `the judge read ${cause._tag}`
+  }
+}

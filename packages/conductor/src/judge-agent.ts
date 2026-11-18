@@ -31,9 +31,11 @@ import type { ActionFinding } from '@lingtai/actions'
  * count, so there is no number here for a prompt to leak and no arithmetic for
  * one to argue with. A judge cannot widen what it cannot see.
  */
-import { type JudgeWhen, STEPS } from '@lingtai/domain'
+import { type JudgeWhen, STEPS, triageQuestionsOf } from '@lingtai/domain'
+import { JUDGE_CAUSES, JudgeAnswer, type Cause } from '@lingtai/domain/wait'
 
 import type { Judging } from './attempt-steps.ts'
+import { jsonCandidates } from './read-step.ts'
 import type { RecordPart } from './record-prompt.ts'
 import type { Destination } from './run-attempt.ts'
 
@@ -202,7 +204,56 @@ const WHEN_ROWS: Record<JudgeWhen, WhenRow> = {
   'sandbox-refused': REFUSED_ROW,
 }
 
+/** What a judge at `findings` is told each cause it may answer means — `wait.ts`'s own words for them. */
+const CAUSE_MEANS: Record<(typeof JUDGE_CAUSES)[number], string> = {
+  FixableLines: 'specific edits would answer the findings, and the approach is sound',
+  WrongApproach: 'patching will not converge: the shape of the change is wrong',
+  UndecidedQuestion: 'the findings turn on a question only a person can answer',
+}
+
+/** The prompt at `findings` (0108 §6): the judge names a cause, and what follows is the system's — no offer, no count. */
+function causeText(on: Judging, evidence: string): string {
+  const row = WHEN_ROWS[on.when]
+  const causes = JUDGE_CAUSES.map((tag) => `- \`${tag}\` — ${CAUSE_MEANS[tag]}`).join('\n')
+  return `# Why the pass did not pass
+
+A pass over one ticket did not pass. You say what the cause is; what is done about it is not yours to choose.
+
+## What refused, and why
+
+The reason the step gave is **\`${on.when}\`**.
+
+${row.arrived(on, evidence)}
+
+## The causes you may answer
+
+${causes}
+
+Any other cause is refused and the pass is held for a person.
+
+## What to weigh
+
+${row.weigh}
+
+Read only what is above. You have no worktree and nothing to run; this is a
+judgement about what has already been said, not a fresh investigation.
+
+## Answer
+
+One JSON object, and nothing else that could be read as one:
+
+\`\`\`json
+{"cause": {"_tag": "FixableLines", "fixes": []}, "summary": "<one sentence>"}
+{"cause": {"_tag": "WrongApproach", "why": "<one sentence>"}, "summary": "<one sentence>"}
+{"cause": {"_tag": "UndecidedQuestion", "questions": [...]}, "summary": "<one sentence>"}
+\`\`\`
+
+Answer with exactly one of those. A \`fixes\` entry names \`file\`, \`line\` and what to change; a question
+carries two to four answers. An answer that is not one cause is not read, and you will not be asked again.`
+}
+
 function judgeText(on: Judging, evidence: string): string {
+  if (on.when === 'findings') return causeText(on, evidence)
   const row = WHEN_ROWS[on.when]
   const offered = on.offering
     .map((to) => `- \`${to}\` — ${row.means?.[to] ?? MEANS[to] ?? `run the \`${to}\` step again`}`)
@@ -301,5 +352,47 @@ export function chosenIn(text: string | null): { readonly next: Destination; rea
     }
   }
 
+  return null
+}
+
+const CAUSE_TAGS = [
+  'UndecidedQuestion',
+  'FixableLines',
+  'WrongApproach',
+  'ConflictingHunks',
+  'TicketTooBig',
+  'SetupBroken',
+  'Unfinished',
+]
+
+/**
+ * **The cause a judge at `findings` answered** (0108 §6): `{ cause }` where it is one of `JUDGE_CAUSES` and
+ * within the bounds triage's is, `{ refused }` naming a cause a judge may not answer or a question with fewer than
+ * two answers, and null where there is no cause to read. Nothing is repaired, and nothing is asked again.
+ */
+export function causeIn(
+  text: string | null,
+): { readonly cause: Cause; readonly summary: string } | { readonly refused: string } | null {
+  if (!text) return null
+  for (const candidate of jsonCandidates(text)) {
+    let value: unknown
+    try {
+      value = JSON.parse(candidate.trim())
+    } catch {
+      continue
+    }
+    const cause = (value as { cause?: { _tag?: unknown } } | null)?.cause
+    if (cause === undefined || cause === null || typeof cause !== 'object') continue
+    const tag = cause._tag
+    if (typeof tag === 'string' && CAUSE_TAGS.includes(tag) && !(JUDGE_CAUSES as readonly string[]).includes(tag)) {
+      return { refused: tag }
+    }
+    const parsed = JudgeAnswer.safeParse(value)
+    if (!parsed.success) return null
+    if (triageQuestionsOf(parsed.data.cause as Cause).some(({ question }) => question.answers.length < 2)) {
+      return { refused: 'a question with fewer than two answers' }
+    }
+    return { cause: parsed.data.cause as Cause, summary: parsed.data.summary.trim() }
+  }
   return null
 }

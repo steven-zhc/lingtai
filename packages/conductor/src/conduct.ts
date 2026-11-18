@@ -273,7 +273,7 @@ import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
 import { fixBriefParts, grantedAdviceFromState } from './fix.ts'
 import { flakyPortOf } from './flaky-port.ts'
-import { chosenIn, judgePrompt, judgePromptParts } from './judge-agent.ts'
+import { causeIn, chosenIn, judgePrompt, judgePromptParts } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
 import {
   commitWipExceptPlanted,
@@ -1770,6 +1770,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       conflictResolutions: ceiling.attempt.conflictResolutions,
       newAttempts: ceiling.ticket.newAttempts,
       newAttemptsSpent: reduced.newAttempts.length,
+      personAsksSpent: personAsksFromState(reduced),
     }
 
     let released = false
@@ -3604,6 +3605,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               `the "${named}" judge did not answer (${outcome.failure.kind}): ` +
                 `${outcome.failure.detail} — so the attempt is held for a person (${spent})`,
             )
+          }
+          if (on.when === 'findings') {
+            // 0108 §6: the judge answers a cause, and the route applies `actionFor` to it (`replyFor`).
+            const read = causeIn(outcome.text)
+            if (read !== null && 'cause' in read) {
+              return { cause: read.cause, named, why: `the "${named}" judge: ${read.summary} (${spent})` }
+            }
+            markFailed()
+            return {
+              unreadable: {
+                named,
+                raw:
+                  (read === null
+                    ? `the "${named}" judge's answer was not readable as one cause`
+                    : `the "${named}" judge answered ${read.refused}, which a judge at findings may not answer (0118 §5)`) +
+                  ` (${spent}):\n${(outcome.text ?? '').slice(0, 2_000)}`,
+              },
+            }
           }
           const chose = chosenIn(outcome.text)
           if (chose === null) {

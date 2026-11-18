@@ -964,7 +964,7 @@ const causesWith = <S extends z.ZodType>(plan: S) =>
   ])
 
 /** The recorded cause: a plan's children carry the `kind` the runner set (#1271). */
-const RecordedCause = causesWith(TriagePlan)
+export const RecordedCause = causesWith(TriagePlan)
 export type Cause = z.infer<typeof RecordedCause>
 
 /**
@@ -993,6 +993,16 @@ const answerParts = {
 /** What the model answers: a cause and no action (0118 §1); a plan's children name no `kind` (#1271). */
 export const TriageAnswer = z.strictObject({ cause: causesWith(TriagePlanAnswer), ...answerParts })
 export type TriageAnswer = z.infer<typeof TriageAnswer>
+
+/** The three causes a judge at `findings` may answer (0118 §5): it reads only the findings, so it cannot plan a split or diagnose a setup. */
+export const JUDGE_CAUSES = ['FixableLines', 'WrongApproach', 'UndecidedQuestion'] as const
+
+/** What a judge answers: one of `JUDGE_CAUSES` and one sentence — triage's contract without `want`. */
+export const JudgeAnswer = z.strictObject({
+  cause: z.discriminatedUnion('_tag', [UndecidedQuestion, FixableLines, WrongApproach]),
+  summary: answerParts.summary,
+})
+export type JudgeAnswer = z.infer<typeof JudgeAnswer>
 
 /** Triage's reading: the cause, one sentence for the card, and what the ticket wants. What follows is the system's (0108 §6). */
 const TriageAnswered = z.strictObject({ _tag: z.literal('TriageAnswered'), cause: RecordedCause, ...answerParts })

@@ -17,9 +17,14 @@ import type { ActionFinding } from '@lingtai/actions'
 import {
   decideRoute,
   ImpossibleRouteError,
+  actionFor,
+  BOUNDS,
   BUILT_IN_FOR,
+  judgeCauseWords,
   routeNext,
   type Candidate,
+  type CauseBound,
+  type CauseCounter,
   type ExcludedCandidate,
   type JudgeReply,
   type AttemptNext,
@@ -30,7 +35,7 @@ import {
   type RuntimeId,
   type Spent,
 } from '@lingtai/domain'
-import type { AttemptRef } from '@lingtai/domain/wait'
+import type { AttemptRef, Cause } from '@lingtai/domain/wait'
 import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
@@ -161,6 +166,7 @@ export function replyFor(
   offer: RouteOffer,
   arrived: { readonly findings: readonly ActionFinding[]; readonly evidence: string },
   judge: ((on: Judging) => Effect.Effect<Judged>) | undefined,
+  bounds?: Readonly<Record<CauseBound, CauseCounter>>,
 ): Effect.Effect<JudgeReply | { readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string } }> {
   return Effect.gen(function* () {
     if (offer.available.length < 2) return { _tag: 'NotAsked' as const }
@@ -179,6 +185,8 @@ export function replyFor(
     if ('neverStarted' in answer) return { neverStarted: answer.neverStarted }
     if ('unreadable' in answer) return { _tag: 'Unreadable', raw: answer.unreadable.raw }
 
+    if ('cause' in answer) return causeReply(answer, offer, bounds ?? boundsFromOffer(offer))
+
     if ('next' in answer) return toReply(answer.next, offer, answer.why)
 
     // The recipe's own declaration for this direction, or — where it declared
@@ -192,6 +200,77 @@ export function replyFor(
         : `the "${built}" judge: a "${when}" is mechanical — the work is still there and the remedy is to fix it where it stands`
     return toReply(MECHANICAL_WANTS[built], offer, why)
   })
+}
+
+/**
+ * **The counters `actionFor` reads, from the numbers that built the offer** — the policy's limits and what was spent,
+ * so the table and the offer cannot disagree (0108 §6). Bounds a judge's three causes never reach are written as the
+ * policy and the spend say them.
+ */
+export function causeBoundsFor(
+  policy: RoutingPolicy,
+  spent: Spent,
+  personAsks: number,
+): Readonly<Record<CauseBound, CauseCounter>> {
+  return {
+    refusalFixes: { used: spent.rounds, allowed: policy.refusalFixes },
+    newAttempts: { used: spent.newAttempts, allowed: policy.newAttempts },
+    conflictResolutions: { used: spent.conflictRounds ?? 0, allowed: policy.conflictResolutions },
+    stepRedos: { used: spent.stepRedos ?? 0, allowed: BOUNDS.stepRedos },
+    ticketSplits: { used: 0, allowed: 1 },
+    personAsks: { used: personAsks, allowed: BOUNDS.personAsks },
+  }
+}
+
+/** What a caller that hands no bounds gets: a candidate on offer is a bound with room, one excluded is spent. */
+function boundsFromOffer(offer: RouteOffer): Readonly<Record<CauseBound, CauseCounter>> {
+  const room = (id: string): CauseCounter => ({ used: offer.available.some((c) => c.id === id) ? 0 : 1, allowed: 1 })
+  return {
+    refusalFixes: room('fix-lines'),
+    newAttempts: room('restart'),
+    conflictResolutions: { used: 0, allowed: 1 },
+    stepRedos: { used: 0, allowed: 1 },
+    ticketSplits: { used: 0, allowed: 1 },
+    personAsks: { used: 0, allowed: BOUNDS.personAsks },
+  }
+}
+
+/**
+ * **A cause answered by a judge, taken through the one table** (0108 §6): `actionFor` says what is done, and the
+ * candidate that is selects. An action the offer does not hold is a person's, with the reason in the sentence.
+ */
+function causeReply(
+  answer: { readonly cause: Cause; readonly why: string },
+  offer: RouteOffer,
+  bounds: Readonly<Record<CauseBound, CauseCounter>>,
+): JudgeReply {
+  const action = actionFor(answer.cause, 'other', bounds)
+  const says = judgeCauseWords(answer.cause)
+  const counted = (bound: CauseBound): string => `${bounds[bound].used} of ${bounds[bound].allowed} used`
+  const person = (why: string): JudgeReply => ({
+    _tag: 'Selected',
+    candidate: 'hand-to-person',
+    why: `${says}; ${why} — ${answer.why}`,
+    cause: answer.cause,
+  })
+  switch (action._tag) {
+    case 'fixRefusal':
+    case 'startNewAttempt': {
+      const id = action._tag === 'fixRefusal' ? 'fix-lines' : 'restart'
+      if (!offer.available.some((c) => c.id === id)) return person(`\`${id}\` is not on offer for this arrival`)
+      const bought =
+        action._tag === 'fixRefusal'
+          ? `a fix was bought, ${counted('refusalFixes')}`
+          : `a new attempt was bought, ${counted('newAttempts')}`
+      return { _tag: 'Selected', candidate: id, why: `${says}; ${bought} — ${answer.why}`, cause: answer.cause }
+    }
+    case 'askPerson':
+      return action.why._tag === 'limit'
+        ? person(`\`${action.why.bound}\` is spent, ${counted(action.why.bound)}`)
+        : person('a person is asked')
+    default:
+      return person(`${action._tag} is not an action a judge's cause can buy`)
+  }
 }
 
 /**
