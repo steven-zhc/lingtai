@@ -32,7 +32,7 @@ describe('a release with a cause', () => {
   it('round-trips through the codec, and the reducer version is 2', () => {
     const state = reduceTicket(released(limit))
     expect(decodeTicket(encodeTicket(state), 'ticket').claims[0]?.ended).toEqual(state.claims[0]?.ended)
-    expect(ticketReducer.version).toBe(3)
+    expect(ticketReducer.version).toBe(4)
   })
 
   it('names a continuable release only for an AccountLimit', () => {
@@ -51,6 +51,34 @@ describe('a release with a cause', () => {
     ]
     expect(accountLimitReleases(events, 'r1')).toBe(2)
     expect(accountLimitReleases(events, 'r2')).toBe(0)
+  })
+})
+
+describe('a release BaseRed (#1208)', () => {
+  const baseRed = {
+    _tag: 'BaseRed' as const,
+    runId: 'r1',
+    headSha: 'h'.repeat(40),
+    base: 'main',
+    baseSha: 'a'.repeat(40),
+    command: 'pnpm test',
+    boundary: 'unsandboxed',
+  }
+
+  it('queues the ticket with no backoff, the base deciding when it is taken again, and keeps the cause', () => {
+    const e = makeStream('ticket-p-1')
+    const state = reduceTicket([
+      e('TicketClaimed', claim('r1')),
+      e('TicketReleased', { runId: 'r1', reason: 'red', cause: baseRed }),
+    ])
+    expect(state.lifecycle.status).toBe('backlog')
+    expect(state.lastAttemptAt).toBeNull()
+    expect(state.claims[0]?.ended).toEqual({ kind: 'released', reason: 'red', cause: baseRed })
+    expect(continuableRelease(state)).toBeNull()
+  })
+
+  it('leaves the backoff of any other release alone', () => {
+    expect(reduceTicket(released(limit)).lastAttemptAt).not.toBeNull()
   })
 })
 

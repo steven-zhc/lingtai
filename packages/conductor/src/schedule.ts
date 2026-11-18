@@ -34,10 +34,11 @@ import { type EventStore, eventStore, log, readThroughSnapshot, type SnapshotSto
  * starts fresh, which is what you want after a fix.
  */
 import { parseDuration, type Recipe } from '@lingtai/recipe'
-import { backoffOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
+import { backoffOf, baseOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
+import { fetchedHead, lookAtBase, passOverBaseRed } from './base-red.ts'
 import { type TurnClient, type RunOnceOptions, type RunOnceResult, runOnce } from './conduct.ts'
 import { runnableNowEffect } from './discover.ts'
 import type { AgentHost, Repo } from './ports.ts'
@@ -230,10 +231,36 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       // pass is running changes the answer, and the old cached queue would have
       // taken it anyway.
       // `orDie`: a listing that failed ends the pass as it always did (a defect), never as an empty queue.
-      const offered = yield* runnableNowEffect({
+      const listed = yield* runnableNowEffect({
         client: options.discovery ?? options.client,
         queue: queueOf(options.recipe),
       }).pipe(Effect.orDie)
+      // **A red base is the project's** (#1208, 0108 §13): while its head is the commit the red was recorded
+      // on, every ticket is passed over as `base-red`. The mirror is read only for a base that is red, and a
+      // log or a mirror that cannot be read passes the tickets over too — unknown is not green.
+      const looked =
+        listed.runnable.length === 0
+          ? ({ clear: true } as const)
+          : yield* lookAtBase(
+              {
+                store: options.store ?? eventStore,
+                project: name,
+                base: baseOf(options.recipe),
+                recipe: options.recipe,
+              },
+              fetchedHead({
+                project: name,
+                base: baseOf(options.recipe),
+                owner: options.client.owner ?? '',
+                repo: options.client.repo,
+                ...(options.token === undefined ? {} : { token: options.token }),
+                ...(options.remote === undefined ? {} : { remote: options.remote }),
+                ...(options.home === undefined ? {} : { home: options.home }),
+                ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
+              }),
+            )
+      const { offered, line: baseRedLine } = passOverBaseRed(looked, listed)
+      if (baseRedLine !== null) log(baseRedLine)
       // Once, not once round the loop. It is a fact about the repository and
       // the same sentence would be true of every ticket in the queue — the
       // reason the `env` refusal above is reported per project rather than per

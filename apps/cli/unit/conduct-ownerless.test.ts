@@ -1,6 +1,7 @@
 import { memoryTickets } from '@lingtai/conductor/memory-tickets'
 import type { ControlState, ProjectState } from '@lingtai/domain'
 import { hasGitHubAuth } from '@lingtai/env'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { CreateClientOptions, GitHubClient } from '@lingtai/github'
 import { resolveRecipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -151,6 +152,7 @@ describe('conductWork, a pass across a project with no owner and a GitHub projec
         prompt: 'go read the ticket',
         control: EMPTY_CONTROL,
         outcome,
+        store: createMemoryEventStore(),
         log: () => {},
       },
       world,

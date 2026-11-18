@@ -622,11 +622,8 @@ What changes:
   `Unfinished`; the cause→action table in `respond`; `ifVersion` required;
   the append-then-act protocol for `by: judge` and `by: triage`; a run that
   met `run.turns` or `run.wall` sent to triage.
-- **A red base (§13).** Today a red base holds the attempt for a person
-  (`base is red: …`). To build: the release keeping the head, the queue's
-  `base-red` while the base's head is the red commit, the claimed attempt's
-  base check first when the head moved, and the one ticket Lingtai opens to
-  make the base green.
+- **A red base (§13).** The one ticket Lingtai opens to make the base green, and
+  that ticket's exemption from `base-red`.
 - **`backlog:` does not set the bar.** The plugin is declared in
   `packages/recipe/src/recipe.ts`, but the `minor` bar is still a literal in
   `verdictFor` and in the backlog reduce. Wiring it means handing one value to

@@ -26,6 +26,7 @@ import {
   currentRecipe,
   declinedBeforeWork,
   ownerlessClientEffect,
+  passOverForRedBase,
   ticketedClientOf,
   runOnce,
   runQueue,
@@ -524,10 +525,30 @@ export function conductWork(
       const offered = yield* runnableNowEffect({ client: discovery, queue: queueOf(resolved.recipe) }).pipe(
         Effect.orDie,
       )
+      // **A red base passes a requested ticket over too** (#1208): the same look the queue makes, so a `now`
+      // cannot claim a ticket the base would only release again. The request stays pending, and is said.
+      const { offered: seen, line: baseRedLine } = yield* passOverForRedBase({
+        store,
+        project: name,
+        recipe: resolved.recipe,
+        base: baseOf(resolved.recipe),
+        owner: common.client.owner ?? '',
+        repo: common.client.repo,
+        offered,
+        ...(common.token === undefined ? {} : { token: common.token }),
+        ...(common.remote === undefined ? {} : { remote: common.remote }),
+      }).pipe(Effect.provide(tracedPorts))
+      if (baseRedLine !== null) {
+        options.log(`${name}: ${baseRedLine}`)
+        for (const r of options.control.requested) {
+          if (r.project === name && seen.skipped.some((s) => String(s.ref) === r.issue && s.reason === 'base-red'))
+            say(`${name}: #${r.issue} not started — ${baseRedLine}`)
+        }
+      }
       const selected = yield* Effect.promise(() =>
         world.selectRunnable({
           project: name,
-          offered: offered.runnable,
+          offered: seen.runnable,
           kinds: kindsOf(resolved.recipe),
           backoffMs: 0,
         }),

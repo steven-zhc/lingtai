@@ -4,6 +4,7 @@
  */
 import type { Runtime } from '@lingtai/agent'
 import type { ProjectState } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect, Layer } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
@@ -34,6 +35,7 @@ vi.mock('../src/conduct.ts', () => ({
   },
 }))
 vi.mock('@lingtai/recipe/settings', () => ({
+  baseOf: () => 'main',
   queueOf: () => ({ kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'both' } }),
   kindsOf: () => ['bug'],
   backoffOf: () => '1h',
@@ -66,6 +68,7 @@ const queue = (
       client: client as never,
       runtime: untouched<Runtime>('runtime'),
       hookBinary: '/nonexistent',
+      store: createMemoryEventStore(),
       prompt: 'p',
       recipe: untouched<Recipe>('recipe'),
       ...(paused ? { paused: Effect.promise(() => paused()) } : {}),

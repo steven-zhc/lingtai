@@ -893,6 +893,8 @@ export function fakePorts(
             } as never
           return { ok: true, mergeCommit: 'c'.repeat(40) } as never
         }),
+      // The look reads the mirror only for a red base (#1208); a test that wants it hands its own.
+      baseHead: () => Effect.succeed({ unreadable: 'this fake has no mirror' }),
     },
     agent: {
       wire: () =>

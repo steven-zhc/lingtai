@@ -29,7 +29,13 @@ const notReached = (): never => {
 const FAKE_LOCK = Layer.succeed(ConductorLock, { key: 'test' })
 const FAKE_PROJECTOR = Layer.succeed(Projector, { following: false, failure: null })
 const FAKE_PORTS = Layer.merge(
-  Layer.succeed(Repo, { provision: notReached, remove: notReached, git: notReached, integrate: notReached }),
+  Layer.succeed(Repo, {
+    provision: notReached,
+    remove: notReached,
+    git: notReached,
+    integrate: notReached,
+    baseHead: notReached,
+  }),
   Layer.succeed(AgentHost, {
     wire: notReached,
     smokeTest: notReached,

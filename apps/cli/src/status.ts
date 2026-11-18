@@ -11,7 +11,10 @@ import {
   filterFacts,
   githubClientFor,
   heldUntil,
+  lookAtBase,
   passedOver,
+  passOverBaseRed,
+  type BaseHead,
   projectFilter,
   runnableNowEffect,
   type ClientFor,
@@ -44,7 +47,8 @@ import { paint, stateInk } from '@lingtai/env/colour'
 import { eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
 import { loadProjectsEffect } from '@lingtai/project'
 import { describeArm, describeWaitLines, describeWait, readTasksEffect, type TaskCard } from '@lingtai/projector'
-import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { baseOf, queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { mirrorBranchShaEffect } from '@lingtai/repo'
 import { Effect } from 'effect'
 
 import { ceilingFactsJson, ceilingUnreadLine, lockJson, lockLine, raisedLine, reachedLine } from './ceiling-words.ts'
@@ -444,8 +448,18 @@ export const readStatus = (
           asked = true
           // **`eligible`, not `runnable`** (#54): this is about the recipe, the queue line about state.
           eligible = found.runnable.length
-          skipped = found.skipped.map((s) => ({ ref: s.ref, reason: s.reason }))
-          passed = passedOver(found.skipped)
+          // **A red base, from what the last look fetched** (#1208): status is a read, so the head is the
+          // mirror as it stands and never a fetch of its own. A mirror it cannot read passes the tickets over,
+          // as the look does — unknown is not green.
+          const looked = yield* lookAtBase(
+            { store: eventStore, project: name, base: baseOf(recipe), recipe },
+            mirrorBranchShaEffect({ project: name, ref: `refs/heads/${baseOf(recipe)}` }).pipe(
+              Effect.map((head): BaseHead => ('at' in head ? head : { unreadable: 'the mirror has no such branch' })),
+            ),
+          )
+          const { offered: seen } = passOverBaseRed(looked, found)
+          skipped = seen.skipped.map((s) => ({ ref: s.ref, reason: s.reason }))
+          passed = passedOver(seen.skipped)
           unread = found.dependenciesUnread
         }
       }

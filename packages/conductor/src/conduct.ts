@@ -261,6 +261,7 @@ import {
   releasedHeadOf,
 } from './attempts.ts'
 import { baseCheckQuestion, createBaseCheck } from './base-check.ts'
+import { baseStateEffect } from './base-red.ts'
 import { agentBranch } from './branches.ts'
 import { closeHoldingEffect } from './close.ts'
 import { runnableNowEffect, type TicketSource } from './discover.ts'
@@ -5454,6 +5455,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         }),
       })
 
+      // **The project's base, once, before an agent is paid** (#1208, 0108 §13): where its last check was red
+      // this attempt asks again on its own base commit, and a red answer releases the ticket `BaseRed` with
+      // no agent run. Read off the log alone (the look already decided on the mirror), and never for a
+      // continuation, whose base is not the one the red record is about. A log that cannot be read is no
+      // reason to skip the question: the guard at `proposed` asks again.
+      const baseState = continuation === null ? yield* baseStateEffect({ store, project, base, recipe }) : null
+      const baseFirst = baseState !== null && 'red' in baseState ? { action: baseState.red.action } : undefined
+      if (baseState !== null && 'unread' in baseState) runLog.note('base', `base state not read: ${baseState.unread}`)
       const pass = yield* runAttemptEffect({
         recipe,
         context: passContext,
@@ -5493,6 +5502,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           gitAskedEffect(['merge-base', '--is-ancestor', baseSha, 'HEAD']).pipe(Effect.map(Result.isSuccess)),
         conflictEvidence,
         baseIsRed,
+        ...(baseFirst === undefined ? {} : { baseFirst }),
         // **Where this walk jumps to, once `admit` and `prepared` have
         // rebuilt the tree a held pass left** (#465, 0120 §6) — absent for
         // every ordinary pass, which starts at `admit` and walks the
@@ -5823,6 +5833,26 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         yield* noteAllKept(branch)
         didLand = true
         return { ok: true, ticketId, runId, mergeCommit: merged, summary: summaryOf() } satisfies RunOnceResult
+      }
+
+      // ---- requeued: the base is red (#1208, 0108 §13) --------------------------
+      // The branch is already published at its head (above, on every ending that did not land). Nothing
+      // about this ticket is a person's to decide: it is released, and the queue passes the project over
+      // until the base moves.
+      if (pass.end._tag === 'Requeued' && pass.end.cause._tag === 'BaseRed') {
+        const cause = pass.end.cause
+        const why = `the base is red: \`${cause.command}\` fails on ${cause.base} at ${cause.baseSha.slice(0, 7)}; taken again once ${cause.base} moves`
+        log(why)
+        runLog.note('base', why)
+        yield* release(why, cause)
+        return {
+          ok: false,
+          ticketId,
+          runId,
+          stage: 'base-red',
+          detail: why,
+          summary: summaryOf(),
+        } satisfies RunOnceResult
       }
 
       // ---- requeued: a second approach was bought (0040) -----------------------
