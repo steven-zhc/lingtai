@@ -39,7 +39,14 @@ import { NEEDS_INPUT, type Action, type PipelineResult } from '@lingtai/actions'
  * outright) and no effect on `cleared`/`headOf`, so dropping the trailing run
  * costs nothing once the action in front of it already cleared.
  */
-import { type Action as DomainAction, RefusalReason, type Step, type StepOutcome, cleared } from '@lingtai/domain'
+import {
+  type Action as DomainAction,
+  RefusalReason,
+  type Step,
+  type StepOutcome,
+  cleared,
+  unclearText,
+} from '@lingtai/domain'
 
 /** One entry of `PipelineResult.results` — the shape `outcomeOf` zips against `actions`. */
 type ActionOutcomeEntry = PipelineResult['results'][number]
@@ -194,7 +201,8 @@ function commitResultOf(outcome: ActionOutcomeEntry): ResultOf<'commit'> {
     case 'waived':
       return { _tag: 'Waived', waitId: outcome.waitId! }
     case 'passed':
-      return { _tag: 'Completed', head: outcome.head ?? null, question: null }
+      // A kept `run:` yields here too, and declares nothing: `outcome` is the agent's alone.
+      return { _tag: 'Completed', head: outcome.head ?? null, question: null, outcome: null }
     case 'never-ran':
       return { _tag: 'NeverStarted', scope: 'conductor' }
     case 'did-not-finish':
@@ -204,8 +212,15 @@ function commitResultOf(outcome: ActionOutcomeEntry): ResultOf<'commit'> {
       if (outcome.interrupted !== undefined) {
         return { _tag: 'Interrupted', cause: outcome.interrupted, head: outcome.head ?? null }
       }
-      if (outcome.committedNothing) {
-        return { _tag: 'Completed', head: null, question: null }
+      if (outcome.declared !== undefined) {
+        // What the agent declared (#1250). `question` is kept beside an `Unclear` as the sentence a
+        // reader of the old shape already reads.
+        return {
+          _tag: 'Completed',
+          head: outcome.head ?? null,
+          question: outcome.declared._tag === 'Unclear' ? unclearText(outcome.declared) : null,
+          outcome: outcome.declared,
+        }
       }
       // A setup broken before any agent ran — `conduct.ts`'s four `the hook …`
       // sentences — and never a throw: `runActionPipeline`'s catch always

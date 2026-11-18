@@ -3657,13 +3657,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const declared = judgeDeclaredAt(recipe.steps.proposed, on.when)
         if (declared === null) return Effect.succeed({ noJudge: true })
         if ('built' in declared) return Effect.succeed(declared)
-        // The ticket is shown for `nothing-produced` alone (#1198): *is it unclear* cannot be
-        // judged without it, and every other reason's prompt must not grow by a body.
-        const shown: Judging =
-          on.when === 'nothing-produced'
-            ? { ...on, ticket: took === null ? null : { title: took.ticket.title, body: took.ticket.body } }
-            : on
-        return askTheAgent(declared, shown)
+        return askTheAgent(declared, on)
       }
 
       /** `end` — the work item's own stream, read this late on purpose. */
@@ -5063,25 +5057,32 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // commit of its own cannot stand in for one. An agent that ran and committed
           // nothing left no receipt, and the pass stops rather than buying a round to
           // fix a diff that does not exist.
-          if (head === startedAt) {
-            // `StepDidNotFinish` at `implement`, named for itself (`#468`): the
-            // ticket's own second case, and the one `#237` was.
-            stoppedBy = 'no-commits'
-            // The agent's own last message is the evidence (#1198): it is what a judge
-            // declared at `nothing-produced` reads. A silent agent leaves it empty, so
-            // `said` is null and no judge is paid to read nothing.
-            return { stopped: (outcome.text ?? '').trim().slice(0, 8_000), committedNothing: true }
+          // **What the agent declared decides, and the head only corrects it** (0108 §21, #1250): an
+          // `Implemented` that moved nothing is `AgentFailed`, and so is a final message that declared
+          // nothing parseable. The sha it is measured from is the step's first start, never this run's.
+          const decided = decideImplementOutcome({
+            declared: parseImplementOutcome(outcome.text ?? null),
+            endedAbnormally: false,
+            startedAt,
+            head,
+            findingsOffered: 0,
+          })
+          const moved = head !== startedAt
+          // `keepUncommittedWork` still reads *no commits* where nothing moved (#1243).
+          stoppedBy = moved ? null : 'no-commits'
+          if (moved) {
+            yield* recordDiff(branch, head)
+            yield* appendNow(runId, [
+              {
+                type: 'RunProposedCompletion',
+                actor: 'conductor',
+                data: parsePayload('RunProposedCompletion', { headSha: head }),
+              },
+            ])
           }
-          // A receipt, so `interrupted` stands for nothing any more.
-          stoppedBy = null
-          yield* recordDiff(branch, head)
-          yield* appendNow(runId, [
-            {
-              type: 'RunProposedCompletion',
-              actor: 'conductor',
-              data: parsePayload('RunProposedCompletion', { headSha: head }),
-            },
-          ])
+          if (decided._tag !== 'Implemented') {
+            return { stopped: (outcome.text ?? '').trim().slice(0, 8_000), declared: decided, ...(moved ? { head } : {}) }
+          }
           return { committed: head }
         })
 
@@ -5150,9 +5151,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               } as const)
             : findings.length > 0
               ? ({ on: 'findings', findings } as const)
-              : again.said != null
-                ? ({ on: 'unfinished', said: again.said, why: again.why } as const)
-                : ({ on: 'output', output: said } as const)
+              : ({ on: 'output', output: said } as const)
+          // How many findings the fixer is shown, which is the range a `Disputed` may name: a
+          // refusal that is one command's output is finding 1 (#1250).
+          const offered = refusal.on === 'output' ? 1 : refusal.findings.length
 
           // Keyed on where the fix came from and not on `refusal`: a conflict round
           // keeps its own session id whichever brief it was given.
@@ -5207,7 +5209,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     refusal,
                     round: counted,
                     of: bound,
-                    action: refusal.on === 'unfinished' ? 'implement' : from,
+                    action: from,
                     diff: underReview.text,
                     ...(underReview.from === null || underReview.to === null
                       ? {}
@@ -5329,7 +5331,20 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // **Nor a fixer that committed and then met the account's wall** (#1205): it is released `AccountLimit`
           // at the ending like any run the wall cut off, never walked on to a review.
           const cutOffByWall = fixed.failure?.kind === 'crash' && wallOf(fixed.failure.detail) !== null
-          if (!committed || cutOffTransient || cutOffByWall) {
+          // **What the fixer declared decides, and the head only corrects it** (#1250), for a run that
+          // ended normally. One cut off keeps the cells above: `interrupted` names the runtime's cause.
+          const roundStart = brief.context.redo?.startedAt ?? brief.context.onSha
+          const decidedFix =
+            fixed.failure === undefined
+              ? decideImplementOutcome({
+                  declared: parseImplementOutcome(fixed.text),
+                  endedAbnormally: false,
+                  startedAt: roundStart,
+                  head: after,
+                  findingsOffered: offered,
+                })
+              : null
+          if (!committed || cutOffTransient || cutOffByWall || (decidedFix !== null && decidedFix._tag !== 'Implemented')) {
             // A decline judged the findings or the refusal rather than being cut
             // off mid-run, so `interrupted` does not stand for it either; a
             // crash or a wall does, in the runtime's own word for it (`#468`).
@@ -5347,9 +5362,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               // `Interrupted`. `never-started` cannot reach here (handled
               // above), and `no-commits`/`no-structured-answer` are never this
               // agent's own failure kind.
-              ...(cause === undefined
-                ? { committedNothing: true }
-                : cause === 'no-commits' || cause === 'no-structured-answer'
+              ...(cause === undefined && decidedFix !== null
+                ? { declared: decidedFix, ...(committed ? { head: after } : {}) }
+                : cause === undefined
+                  ? {}
+                  : cause === 'no-commits' || cause === 'no-structured-answer'
                   ? {}
                   : { interrupted: cause }),
             }

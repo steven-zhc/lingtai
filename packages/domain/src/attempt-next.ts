@@ -20,7 +20,8 @@
  */
 import { z } from 'zod'
 
-import { Action, changedNothing, cleared, decidingAction, Integration, StepOutcome } from './action.ts'
+import { disputedText, unclearText } from './implement-outcome.ts'
+import { Action, cleared, decidingAction, Integration, StepOutcome } from './action.ts'
 import { mergeRefusalProposal, Proposal } from './proposal.ts'
 import { Finding, Step, STEPS } from './vocabulary.ts'
 import { AttemptRef, WaitReason } from './wait.ts'
@@ -184,14 +185,6 @@ export function nextOf(outcome: StepOutcome, run: AttemptRef): NextOfResult {
     return sandboxRefusedOr(outcome, fellShortAs(step, action, run))
   }
 
-  if (step === 'implement' && changedNothing(outcome)) {
-    const said = lastCommitEvidence(outcome)
-    return {
-      _tag: 'Propose',
-      proposal: outcome.round > 0 ? { _tag: 'FixerDisagrees', said } : { _tag: 'NothingProduced', said },
-    }
-  }
-
   if (step === 'merge') {
     throw new ImpossibleOutcomeError(step, 'merge', 'merge cleared without an Integrated action')
   }
@@ -257,11 +250,44 @@ function signoffFellShort(step: Step, action: OfYields<'signoff'>, run: AttemptR
 /** No `default` — a new `commit` result `_tag` must be given a cell here. */
 function commitFellShort(step: Step, action: OfYields<'commit'>, run: AttemptRef): NextOfResult {
   switch (action.result._tag) {
-    case 'Completed':
-      return {
-        _tag: 'Propose',
-        proposal: { _tag: 'InputNeeded', from: 'implement', questions: [], said: action.result.question! },
+    case 'Completed': {
+      const declared = action.result.outcome
+      // What the agent declared (#1250, 0108 §21): each outcome has its own destination.
+      switch (declared?._tag) {
+        case 'AgentFailed':
+          // Redone by rule, the way a crash is (`redoAgentFailed`): the wait is the same shape.
+          return {
+            _tag: 'WaitOnPerson',
+            reason: {
+              _tag: 'AgentCrashed',
+              run,
+              step: 'implement',
+              cause: 'crash',
+              detail: declared.why ?? 'the agent declared no outcome',
+            },
+          }
+        case 'Disputed':
+          return { _tag: 'Propose', proposal: { _tag: 'FixerDisagrees', said: disputedText(declared.findings) } }
+        case 'Unclear':
+          return {
+            _tag: 'Propose',
+            proposal: {
+              _tag: 'InputNeeded',
+              from: 'implement',
+              questions: declared.questions,
+              ...(declared.questions.length === 0 ? { said: action.result.question ?? unclearText(declared) } : {}),
+            },
+          }
+        case 'Implemented':
+        case undefined:
+        case null:
+          // A row written before #1250: a question it asked.
+          return {
+            _tag: 'Propose',
+            proposal: { _tag: 'InputNeeded', from: 'implement', questions: [], said: action.result.question ?? '' },
+          }
       }
+    }
     case 'Interrupted':
       return interruptedAs(step, action.result.cause, action.evidence, run)
     case 'NotDone':
@@ -506,6 +532,20 @@ export function lastCommitEvidence(outcome: StepOutcome): string | null {
     if (action.yields === 'commit' && action.plugin === 'agent') evidence = action.evidence
   }
   return evidence === undefined || evidence === '' ? null : evidence
+}
+
+/** What the agent said when it declared `Disputed` (#1250), finding by finding; `null` where it declared otherwise. */
+export function disputedOf(outcome: StepOutcome): string | null {
+  for (const action of outcome.actions) {
+    if (
+      action.yields === 'commit' &&
+      action.plugin === 'agent' &&
+      action.result._tag === 'Completed' &&
+      action.result.outcome?._tag === 'Disputed'
+    )
+      return disputedText(action.result.outcome.findings)
+  }
+  return null
 }
 
 /**

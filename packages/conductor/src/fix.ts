@@ -482,12 +482,6 @@ export function fixBriefParts(input: {
   refusal:
     | { on: 'findings'; findings: readonly ActionFinding[] }
     | { on: 'output'; output: string }
-    /**
-     * An `implement` that committed nothing, and a judge that sent it back (#1198): the
-     * job is the ticket, finished from where the implementer stopped. The only arm whose
-     * brief is told the implementer's reasoning, because it is the only account of the work.
-     */
-    | { on: 'unfinished'; said: string; why: string }
     | {
         on: 'conflict'
         base: string
@@ -556,31 +550,17 @@ export function fixBriefParts(input: {
       ? { text: clipped, ref: { _tag: 'Diff', from: input.diffAt.from, to: input.diffAt.to } }
       : clipped
 
-  const unfinished = input.refusal.on === 'unfinished'
   const { evidence, criterion } =
     input.refusal.on === 'findings'
       ? findingsHalf(input.refusal.findings, input.action)
-      : input.refusal.on === 'unfinished'
-        ? unfinishedHalf(input.refusal.said, input.refusal.why)
-        : input.refusal.on === 'conflict'
-          ? input.refusal.merged === undefined
-            ? conflictHalf(input.refusal.base, input.refusal.paths)
-            : mergedConflictHalf(input.refusal.base, input.refusal.merged)
-          : outputHalf(input.refusal.output, input.action)
+      : input.refusal.on === 'conflict'
+        ? input.refusal.merged === undefined
+          ? conflictHalf(input.refusal.base, input.refusal.paths)
+          : mergedConflictHalf(input.refusal.base, input.refusal.merged)
+        : outputHalf(input.refusal.output, input.action)
 
   return [
-    unfinished
-      ? `# You are continuing an implementation that stopped before it committed
-
-You are in the worktree the work was started in. This is round
-${input.round} of ${input.of}.
-
-The implementer ended its turn without committing anything. **Its last message is
-below, and it is the only account you have of where it stopped** — no plan, no
-transcript, no session. What you have is below, and the code in front of you.
-
-`
-      : `# The ${input.action} action refused this change, and you are the fix
+    `# The ${input.action} action refused this change, and you are the fix
 
 You are in the worktree the change was made in. This is fix round
 ${input.round} of ${input.of}.
@@ -593,7 +573,7 @@ session. What you have is below, and the code in front of you.
     ...(input.refusal.on === 'conflict' ? [openFindingsContext(input.refusal.findings)] : []),
     `
 ${adviceSection(input.advice)}${declinedSection(input.declined)}${overruledSection(input.overruled)}
-${unfinished ? '## The ticket — this is the job' : '## The ticket the reviewer held this change to'}
+## The ticket the reviewer held this change to
 
 ${input.ticket.title}
 
@@ -601,14 +581,10 @@ ${input.ticket.title}
     body,
     `
 
-${
-  unfinished
-    ? "This is the job: finish it. The implementer's message above says where it stopped."
-    : `This is what the cold reviewer read the change against. It is context for the
-refusal, not the job handed to you again: ${input.refusal.on === 'conflict' ? 'the merge is the criterion.' : 'the findings are still the criterion.'}`
-}
+This is what the cold reviewer read the change against. It is context for the
+refusal, not the job handed to you again: ${input.refusal.on === 'conflict' ? 'the merge is the criterion.' : 'the findings are still the criterion.'}
 
-${unfinished ? '## What is in the worktree so far' : '## The change under review'}
+## The change under review
 
 \`\`\`diff
 `,
@@ -618,15 +594,10 @@ ${unfinished ? '## What is in the worktree so far' : '## The change under review
 
 ${criterion}
 
-${
-  unfinished
-    ? `- **Do what the ticket asks and nothing else.** Not the formatting, not the
-  neighbouring function, not the thing you would have done differently.`
-    : `- **Change nothing else.** Not the formatting, not the neighbouring function, not
+- **Change nothing else.** Not the formatting, not the neighbouring function, not
   the thing you would have done differently. A diff wider than the refusal is a
   diff the review has to read again from scratch, and it is no longer the change
-  anybody asked for.`
-}
+  anybody asked for.
 - Add or tighten a test where a test is what would have caught it.
 
 **Commit what you fix.** What the steps judge, and what a person may be asked to
@@ -635,19 +606,31 @@ nothing anyone can act on.
 
 ${checksBrief(input.checks)}
 
-## If this is not yours to fix, change nothing and commit nothing
+## If this is not yours to fix, declare \`Disputed\`
 
 That is not giving up, and it is not a wasted round. **It is how your objection
-reaches a person.** A round that ends with no new commit stops this loop and puts
-the evidence in front of somebody, together with your final message — so say
-plainly there what you are declining and why.
+reaches a person.** End your final message with a fenced \`\`\`outcome block of JSON
+naming each finding you dispute — by the number it has above — and why:
+
+\`\`\`outcome
+{"outcome": "Disputed", "findings": [{"index": 1, "why": "<one sentence>"}]}
+\`\`\`
 
 Decline when the refusal is wrong or is not this change's: the sequence a finding
 describes cannot happen, or it does not happen here, or the failure was not
-caused by this diff. **Never make the code worse to make the refusal go away.** A
-fixer that rewrites working code to silence a false finding, or deletes a test to
-make a build go green, is the failure this whole loop is most likely to produce,
-and committing nothing is the move that exists so you never have to.`,
+caused by this diff. (A refusal that is one command's output is finding 1.)
+**Never make the code worse to make the refusal go away.** A fixer that rewrites
+working code to silence a false finding, or deletes a test to make a build go
+green, is the failure this whole loop is most likely to produce, and disputing
+is the move that exists so you never have to. **Committing nothing without
+declaring \`Disputed\` is not an objection** — it is a round that did not finish,
+and it is redone.
+
+When you did fix it, end with:
+
+\`\`\`outcome
+{"outcome": "Implemented"}
+\`\`\`,
   ]
 }
 
@@ -997,28 +980,6 @@ ${STOP_AND_ASK}- Change nothing the conflict did not force you to. The diff is a
 
 The base can move again while you work. If it does, this comes back around —
 that is ordinary, and it is bounded by the rounds above.`,
-  }
-}
-
-/** `fixBriefParts`'s `unfinished` arm: what the implementer said, what the judge said of it, and what done is. */
-function unfinishedHalf(said: string, why: string): { evidence: readonly RecordPart[]; criterion: string } {
-  return {
-    evidence: [
-      `## What the implementer said when it stopped
-
-\`\`\`
-${said.slice(0, 8_000).trim()}
-\`\`\`
-
-## Why you were sent back to it
-
-${why}
-`,
-    ],
-    criterion: `## What counts as done
-
-The ticket is done: what it asks for is in the worktree, **committed**, and the
-checks below pass. The cold reviewer reads the result against the ticket.`,
   }
 }
 

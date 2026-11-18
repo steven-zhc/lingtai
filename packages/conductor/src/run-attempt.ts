@@ -102,11 +102,11 @@ import { FAILED } from '@lingtai/actions/spans'
  */
 import {
   decidingAction,
-  changedNothing,
   decideRoute,
-  lastCommitEvidence,
+  disputedOf,
   nextOf,
   offerFor,
+  redoAgentFailed,
   rerunInPlace,
   routeNext,
   STEPS,
@@ -2399,7 +2399,19 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // that dies during it has spent the retry.
         const reason = next.reason
         if (reason._tag === 'AgentCrashed' && (at === 'design' || at === 'implement' || at === 'review')) {
-          const again = rerunInPlace(reason.cause, reason.detail, stepRedosSpent)
+          // An `implement` that declared nothing usable is `AgentFailed` (#1250): redone by its
+          // own rule, whatever words the agent ended on — they are not a runtime's error text.
+          const failed =
+            decided !== null &&
+            decided.yields === 'commit' &&
+            decided.result._tag === 'Completed' &&
+            decided.result.outcome?._tag === 'AgentFailed'
+          const again = failed
+            ? (() => {
+                const redo = redoAgentFailed(stepRedosSpent)
+                return redo === null ? null : { wait: redo.wait, expected: false }
+              })()
+            : rerunInPlace(reason.cause, reason.detail, stepRedosSpent)
           if (again !== null) {
             const retry = stepRedosSpent + 1
             const redone = yield* redoStep({
@@ -2407,9 +2419,11 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               visit: { context: visitContext, reached: visitedBefore, startedAt: recordedStartedAt },
               retry,
               said: reason.detail,
-              why: again.expected
-                ? `a transient API error: ${reason.detail}`
-                : `a crash no rule recognises: ${reason.detail}`,
+              why: failed
+                ? `the agent did not finish: ${reason.detail}`
+                : again.expected
+                  ? `a transient API error: ${reason.detail}`
+                  : `a crash no rule recognises: ${reason.detail}`,
               wait: waitFor(retry),
             })
             if (redone) continue
@@ -2617,33 +2631,21 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
             : {}),
         }
       : null
-  // A round bought on an `implement` that committed nothing: the agent's own last message.
-  const said =
-    arrived !== undefined &&
-    arrived.step === 'implement' &&
-    step === 'implement' &&
-    asked === null &&
-    arrived.outcome !== undefined &&
-    arrived.outcome.round === 0 &&
-    changedNothing(arrived.outcome)
-      ? lastCommitEvidence(arrived.outcome)
-      : null
-  // #1199: a later round the fixer declined, which a judge overruled.
+  // #1199, #1250: a later round the fixer declared `Disputed`, which a judge overruled — what it
+  // said, finding by finding.
   const objection =
     arrived !== undefined &&
     arrived.step === 'implement' &&
     step === 'implement' &&
     asked === null &&
     arrived.outcome !== undefined &&
-    arrived.outcome.round > 0 &&
-    changedNothing(arrived.outcome)
-      ? lastCommitEvidence(arrived.outcome)
+    arrived.outcome.round > 0
+      ? disputedOf(arrived.outcome)
       : null
   return {
     why: route.why,
     asked,
     printed,
-    ...(said === null ? {} : { said }),
     ...(objection === null ? {} : { objection }),
   }
 }

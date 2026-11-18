@@ -61,7 +61,8 @@ export function whenOf(proposal: Proposal): JudgeWhen {
     case 'AnswerUnreadable':
       return 'answer-unreadable'
     case 'NothingProduced':
-      return 'nothing-produced'
+      // Retired (#1250): nothing proposes it, and a person's answer to an old wait is not a judge's.
+      return 'needs-input'
     case 'FixerDisagrees':
       return 'fixer-disagrees'
     case 'MergeRefused':
@@ -172,7 +173,6 @@ export function replyFor(
       offering,
       findings: arrived.findings,
       evidence: arrived.evidence,
-      ...(offer.proposal._tag === 'NothingProduced' ? { said: offer.proposal.said } : {}),
     }
     const answer = judge === undefined ? { noJudge: true as const } : yield* judge(on)
 

@@ -1,4 +1,12 @@
-import { SEVERITIES, RuntimeId, JudgeWhen, type Step, isEventType, isRetiredEventType } from '@lingtai/domain'
+import {
+  SEVERITIES,
+  RuntimeId,
+  JudgeWhen,
+  RETIRED_JUDGE_WHEN,
+  type Step,
+  isEventType,
+  isRetiredEventType,
+} from '@lingtai/domain'
 import { PREFIX } from '@lingtai/env'
 /**
  * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, its
@@ -1308,6 +1316,25 @@ export const queuePlugin = definePlugin('queue', {
 export { JudgeWhen }
 
 /**
+ * A `judge:`'s `when:`, refused by name where the reason is one that no longer exists (0108 §21,
+ * #1250): `nothing-produced` was a run that committed nothing, and that is `AgentFailed` now — redone by
+ * rule, with no judge asked. Said before zod's own *invalid option*, which would not say why.
+ */
+const NamedJudgeWhen = z
+  .string()
+  .superRefine((name, ctx) => {
+    if ((RETIRED_JUDGE_WHEN as readonly string[]).includes(name)) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          `"${name}" is a retired reason — an implement that committed nothing is AgentFailed now (0108 §21), ` +
+          'redone by rule, so no judge is asked about it',
+      })
+    }
+  })
+  .pipe(JudgeWhen)
+
+/**
  * **The judges that spend nothing**, and the list is shorter than 0061 §3's
  * example on purpose.
  *
@@ -1417,7 +1444,7 @@ export const judgePlugin = definePlugin('judge', {
     /** A built-in, which spends nothing, or a runtime, which is a dispatch (`JudgeName`). */
     judge: JudgeName,
     /** The direction it answers. Required, undefaulted: one entry per `when:`. */
-    when: JudgeWhen,
+    when: NamedJudgeWhen,
     model: DISPATCH.model,
     limits: DISPATCH.limits,
   },

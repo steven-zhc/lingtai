@@ -33,7 +33,6 @@ export const JudgeWhen = z.enum([
   'setup-refused',
   'check-refused',
   'answer-unreadable',
-  'nothing-produced',
   'fixer-disagrees',
   'merge-refused',
   'budget-exhausted',
@@ -41,6 +40,16 @@ export const JudgeWhen = z.enum([
   'sandbox-refused',
 ])
 export type JudgeWhen = z.infer<typeof JudgeWhen>
+
+/**
+ * **Reasons a recipe may no longer name and the log still holds** (0108 §21, #1250): a run that
+ * committed nothing is `AgentFailed` and redone, so `nothing-produced` is not a reason anybody
+ * is asked about. A stored `RunSpent{for: Judge}` names it, and nothing on the log may become
+ * unreadable (0118 §1) — so it is read through `StoredJudgeWhen` and offered through `JudgeWhen`.
+ */
+export const RETIRED_JUDGE_WHEN = ['nothing-produced'] as const
+export const StoredJudgeWhen = z.enum([...JudgeWhen.options, ...RETIRED_JUDGE_WHEN])
+export type StoredJudgeWhen = z.infer<typeof StoredJudgeWhen>
 
 /** `build`'s own refusal, with the rounds spent (0120 §2 table). */
 export const BuildRed = z.object({ _tag: z.literal('BuildRed'), output: z.string() })
