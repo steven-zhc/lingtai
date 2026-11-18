@@ -28,7 +28,7 @@ steps:
   proposed:
     - name: approval
       human: "Merge this?"
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 describe('an approved continuation refused at the lane', () => {

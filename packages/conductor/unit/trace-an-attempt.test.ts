@@ -330,7 +330,7 @@ steps:
       when: needs-input
 runtime:
   agent: claude-code
-  limits: { turns: 10, wall: 2m, rounds: 2, restarts: 0 }
+  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } }
 `
     const asking = (judged: RunOutcome): typeof runtime => ({
       ...runtime,

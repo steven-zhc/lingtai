@@ -37,7 +37,7 @@ steps:
       human: "Merge this? It is Lingtai's own code."
     - name: tamper
       watch: ["src/fix.ts"]
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 describe('a continuation never diffs against the sha it was approved at', () => {

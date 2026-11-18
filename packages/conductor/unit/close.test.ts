@@ -308,7 +308,7 @@ steps:
     - name: close it
       when: closed
       close: true
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
   /** Tracks every one of `IssueChannel`'s verbs reaching the raw fake, so a regression that hands `close()` the raw github client instead of its `dbTickets`-backed one is visible here. */

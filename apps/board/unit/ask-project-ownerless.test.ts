@@ -28,7 +28,7 @@ repo: { base: main, remote: git@example.com:esctest/esctest.git }
 source: { kinds: [bug, feature], exclude: [agent:hold], tickets: db }
 env: { required: [], plantAt: .env.local }
 steps: {}
-runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
