@@ -26,6 +26,7 @@ import {
 import { readBlockersEffect } from '@lingtai/conductor/blockers'
 import { selectRunnableEffect } from '@lingtai/conductor/queue'
 import {
+  applies,
   mayApply,
   omittedTickets,
   rootBeforeChains,
@@ -630,8 +631,9 @@ export const readStatus = (
             recovering(() => Effect.succeed(true)),
           )
           const withBeacon: WhyFacts = { ...facts, beacon, conductorHeld }
+          // A live conductor suppresses the sentence: read no blockers for one that cannot show.
           why = rootBeforeChains(withBeacon)
-          if (why === null) {
+          if (why === null && applies(withBeacon)) {
             const blockers = fullSkipped.some((s) => s.reason === 'blocked-by')
               ? yield* (reading.blockers ?? readBlockersEffect)(filter, fullSkipped, () => now)
               : null
