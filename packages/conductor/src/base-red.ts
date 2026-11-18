@@ -9,6 +9,7 @@
 import { baseStateOf, integrationStream, type BaseState } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 import type { Recipe } from '@lingtai/recipe'
+import type { TokenSource } from '@lingtai/repo'
 import { Effect, Result } from 'effect'
 
 import type { Offered } from './discover.ts'
@@ -116,3 +117,39 @@ export function passOverBaseRed(look: BaseRedLook, offered: Offered): { offered:
     line,
   }
 }
+
+/**
+ * The look's whole question in one Effect: the base's state off the log, the mirror fetched only when it is
+ * red, and the offered tickets passed over accordingly. Shared by every path that picks a ticket to claim —
+ * the queue's and a `now` request's — so neither can take one the other would pass over (#1208).
+ */
+export const passOverForRedBase = (options: {
+  store: Pick<EventStore, 'read'>
+  project: string
+  recipe: Recipe
+  base: string
+  owner: string
+  repo: string
+  offered: Offered
+  token?: TokenSource
+  remote?: string
+  home?: string
+  gitEnv?: NodeJS.ProcessEnv
+}) =>
+  Effect.gen(function* () {
+    if (options.offered.runnable.length === 0) return { offered: options.offered, line: null as string | null }
+    const looked = yield* lookAtBase(
+      { store: options.store, project: options.project, base: options.base, recipe: options.recipe },
+      fetchedHead({
+        project: options.project,
+        base: options.base,
+        owner: options.owner,
+        repo: options.repo,
+        ...(options.token === undefined ? {} : { token: options.token }),
+        ...(options.remote === undefined ? {} : { remote: options.remote }),
+        ...(options.home === undefined ? {} : { home: options.home }),
+        ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
+      }),
+    )
+    return passOverBaseRed(looked, options.offered)
+  })

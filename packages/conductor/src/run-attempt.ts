@@ -934,17 +934,10 @@ export interface AttemptOptions {
   /**
    * **Whether the command a `build` action refused fails on the base too** (#744, 0108 §13) —
    * asked before a `BuildRed` buys a round, and only when a round is on offer. `mergedOnto` is
-   * the base this pass merged in, or null where the cut stands. `red` ends the pass at a person
-   * with no round bought and no judge asked; `notRed` is today's route, whether the base was
-   * green or could not be checked. Absent where a caller says nothing.
+   * the base this pass merged in, or null where the cut stands. `red` releases the ticket `BaseRed`
+   * keeping its head (#1208), with no round bought and no judge asked; `notRed` is today's route,
+   * whether the base was green or could not be checked. Absent where a caller says nothing.
    */
-  /**
-   * **The project's base was red when this attempt was claimed** (#1208, 0108 §13): `action` is the `build`
-   * action whose command the red record names. Asked once, on the attempt's own base commit, between `admit`
-   * and `prepared` and before any agent is paid; a red answer releases the ticket `BaseRed`. Never set for a
-   * continuation, whose base is not the one the record is about. Needs `baseIsRed`.
-   */
-  readonly baseFirst?: { readonly action: string }
   readonly baseIsRed?: (asked: { readonly action: string; readonly mergedOnto: string | null }) => Promise<
     | {
         readonly red: {
@@ -958,6 +951,13 @@ export interface AttemptOptions {
       }
     | { readonly notRed: string }
   >
+  /**
+   * **The project's base was red when this attempt was claimed** (#1208, 0108 §13): `action` is the `build`
+   * action whose command the red record names. Asked once, on the attempt's own base commit, between `admit`
+   * and `prepared` and before any agent is paid; a red answer releases the ticket `BaseRed`. Never set for a
+   * continuation, whose base is not the one the record is about. Needs `baseIsRed`.
+   */
+  readonly baseFirst?: { readonly action: string }
   /**
    * **Where an approved wait continues the run** (#465, 0120 §6) — absent for
    * an ordinary pass, which starts at `admit` as it always has.
@@ -1741,17 +1741,32 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           const asked = yield* options.baseIsRed({ action: reported.ending.at, mergedOnto })
           if ('red' in asked) {
             const because = { _tag: 'BaseRed' as const, ...asked.red }
-            const reply: JudgeReply = { _tag: 'NotAsked' }
-            const decision = decideRoute(offer, reply)
-            const routed = { ...routedVisit(offer, reply, decision), why: baseRedText(because) }
+            const cause = {
+              _tag: 'BaseRed' as const,
+              runId: options.context.runId,
+              headSha: onSha,
+              base: because.base,
+              baseSha: because.baseSha,
+              command: because.command,
+              boundary: asked.red.boundary,
+            }
+            // **The route says what happens** (#1208): a candidate of its own, whose `next` is the release, so
+            // replaying `routeNext` on the stored triple answers `Requeued{BaseRed}` and not a wait.
+            const routedOffer = {
+              ...offer,
+              available: [...offer.available, { id: 'base-red', next: { _tag: 'Requeued' as const, cause } }],
+            }
+            const reply: JudgeReply = { _tag: 'Selected', candidate: 'base-red', why: baseRedText(because) }
+            const decision = decideRoute(routedOffer, reply)
+            const routed = routedVisit(routedOffer, reply, decision)
             record({ step: 'proposed', ending: routed, results: [] })
             routes.push({
               from: reported.step,
               chose: routed.chose ?? routed.to,
               to: routed.to,
               why: routed.why,
-              ceiling: ceilingOf(routed.chose ?? routed.to, offer),
-              offer,
+              ceiling: ceilingOf(routed.chose ?? routed.to, routedOffer),
+              offer: routedOffer,
               reply,
               decision,
               ended,
@@ -1759,18 +1774,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             // **Released, not waited on** (#1208, 0108 §13): nothing about this ticket is a person's to
             // decide, and the base says when it is taken again. The visit and route above keep the sentence.
             stopped = reported
-            end = {
-              _tag: 'Requeued',
-              cause: {
-                _tag: 'BaseRed',
-                runId: options.context.runId,
-                headSha: onSha,
-                base: because.base,
-                baseSha: because.baseSha,
-                command: because.command,
-                boundary: asked.red.boundary,
-              },
-            }
+            end = { _tag: 'Requeued', cause }
             return false
           }
         }

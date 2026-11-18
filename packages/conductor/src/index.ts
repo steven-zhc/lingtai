@@ -18,7 +18,7 @@ export {
   type TicketListing,
   type TicketSource,
 } from './discover.ts'
-export { lookAtBase, passOverBaseRed, type BaseHead, type BaseRedLook } from './base-red.ts'
+export { lookAtBase, passOverBaseRed, passOverForRedBase, type BaseHead, type BaseRedLook } from './base-red.ts'
 export { currentRecipe, provideHostAnswer, signedInHere } from './projects.ts'
 export { gitRefChannel, type GitRefChannelOptions } from './git-refs.ts'
 export { ownerlessClient, ownerlessClientEffect, type OwnerlessClient } from './ownerless.ts'

@@ -1,11 +1,11 @@
 import type { Action, ActionContext, CommandOutcome } from '@lingtai/actions'
-import { STEPS, type Step } from '@lingtai/domain'
+import { routeNext, STEPS, type Step } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { StepMap } from '@lingtai/recipe'
 /**
  * **A `build` refusal the base shares buys no round** (#744, 0108 §13): `runAttempt` asks
- * `baseIsRed` before `replyFor`, only when a round is on offer, and a `red` ends the pass at a
- * person with the base's own evidence. Over fake bodies and the memory store — the live wiring
+ * `baseIsRed` before `replyFor`, only when a round is on offer, and a `red` releases the ticket
+ * `BaseRed` keeping its head (#1208), the stored route replaying as that release. Over fake bodies and the memory store — the live wiring
  * in `conduct.ts` (the cut, the plant) is reached only by the integration half.
  */
 import { Effect } from 'effect'
@@ -91,6 +91,9 @@ describe('a build refusal the base shares', () => {
     })
     expect(result.steps.filter((s) => s.step === 'implement')).toHaveLength(1)
     expect(result.routes[0]!.why).toContain('base is red: `pnpm test`')
+    // The stored triple replays as the release the pass ended in, never as a wait.
+    const route = result.routes[0]!
+    expect(routeNext(route.offer, route.reply, route.decision, { runId: 'pass-1' })).toEqual(result.end)
   })
 
   it.each([
