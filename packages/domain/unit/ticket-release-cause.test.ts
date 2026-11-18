@@ -54,6 +54,34 @@ describe('a release with a cause', () => {
   })
 })
 
+describe('a release BaseRed (#1208)', () => {
+  const baseRed = {
+    _tag: 'BaseRed' as const,
+    runId: 'r1',
+    headSha: 'h'.repeat(40),
+    base: 'main',
+    baseSha: 'a'.repeat(40),
+    command: 'pnpm test',
+    boundary: 'unsandboxed',
+  }
+
+  it('queues the ticket with no backoff, the base deciding when it is taken again, and keeps the cause', () => {
+    const e = makeStream('ticket-p-1')
+    const state = reduceTicket([
+      e('TicketClaimed', claim('r1')),
+      e('TicketReleased', { runId: 'r1', reason: 'red', cause: baseRed }),
+    ])
+    expect(state.lifecycle.status).toBe('backlog')
+    expect(state.lastAttemptAt).toBeNull()
+    expect(state.claims[0]?.ended).toEqual({ kind: 'released', reason: 'red', cause: baseRed })
+    expect(continuableRelease(state)).toBeNull()
+  })
+
+  it('leaves the backoff of any other release alone', () => {
+    expect(reduceTicket(released(limit)).lastAttemptAt).not.toBeNull()
+  })
+})
+
 describe('continueTransition on a queued ticket', () => {
   it('continues the run its last release names', () => {
     const result = continueTransition(reduceTicket(released(limit)), { runId: 'r1', worker: 'w2' })

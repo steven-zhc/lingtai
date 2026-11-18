@@ -53,25 +53,32 @@ export type BaseRedLook =
   /** The log or the mirror could not be read: nothing is taken this look. */
   | { unreadable: string }
 
+/** Where the base's head is, or why it could not be read. */
+export type BaseHead = { readonly at: string } | { readonly unreadable: string }
+
+/** The look's head reader: the mirror fetched first, by the one `Repo` the daemon holds (#1208). */
+export const fetchedHead = (options: Omit<BaseHeadOptions, 'project' | 'base'> & { project: string; base: string }) =>
+  Effect.gen(function* () {
+    const repo = yield* Repo
+    return yield* repo.baseHead(options)
+  })
+
 /**
- * What a look makes of the project's base. **The mirror is read only when the state is red**; a base that is
- * green, or never checked, costs no fetch at all.
+ * What a look makes of the project's base. **The head is read only when the state is red**; a base that is
+ * green, or never checked, costs no fetch at all. `head` is how: the daemon's look fetches, a status read
+ * does not.
  */
-export const lookAtBase = (
-  options: { store: Pick<EventStore, 'read'>; project: string; base: string; recipe: Recipe } & Omit<
-    BaseHeadOptions,
-    'project' | 'base'
-  >,
-): Effect.Effect<BaseRedLook, never, Repo> =>
+export const lookAtBase = <R>(
+  options: { store: Pick<EventStore, 'read'>; project: string; base: string; recipe: Recipe },
+  head: Effect.Effect<BaseHead, never, R>,
+): Effect.Effect<BaseRedLook, never, R> =>
   Effect.gen(function* () {
     const state = yield* baseStateEffect(options)
     if ('unread' in state) return { unreadable: `the base's log could not be read: ${state.unread}` }
     if ('notRed' in state) return { clear: true }
-    const repo = yield* Repo
-    const { store: _store, recipe: _recipe, ...asked } = options
-    const head = yield* repo.baseHead(asked)
-    if ('unreadable' in head) return { unreadable: head.unreadable }
-    return head.at === state.red.baseSha
+    const found = yield* head
+    if ('unreadable' in found) return { unreadable: found.unreadable }
+    return found.at === state.red.baseSha
       ? { held: { command: state.red.command, baseSha: state.red.baseSha, base: state.red.base } }
       : { moved: true }
   })

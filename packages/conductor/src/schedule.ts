@@ -38,7 +38,7 @@ import { backoffOf, baseOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
-import { lookAtBase, passOverBaseRed } from './base-red.ts'
+import { fetchedHead, lookAtBase, passOverBaseRed } from './base-red.ts'
 import { type TurnClient, type RunOnceOptions, type RunOnceResult, runOnce } from './conduct.ts'
 import { runnableNowEffect } from './discover.ts'
 import type { AgentHost, Repo } from './ports.ts'
@@ -241,18 +241,24 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       const looked =
         listed.runnable.length === 0
           ? ({ clear: true } as const)
-          : yield* lookAtBase({
-              store: options.store ?? eventStore,
-              project: name,
-              base: baseOf(options.recipe),
-              recipe: options.recipe,
-              owner: options.client.owner ?? '',
-              repo: options.client.repo,
-              ...(options.token === undefined ? {} : { token: options.token }),
-              ...(options.remote === undefined ? {} : { remote: options.remote }),
-              ...(options.home === undefined ? {} : { home: options.home }),
-              ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
-            })
+          : yield* lookAtBase(
+              {
+                store: options.store ?? eventStore,
+                project: name,
+                base: baseOf(options.recipe),
+                recipe: options.recipe,
+              },
+              fetchedHead({
+                project: name,
+                base: baseOf(options.recipe),
+                owner: options.client.owner ?? '',
+                repo: options.client.repo,
+                ...(options.token === undefined ? {} : { token: options.token }),
+                ...(options.remote === undefined ? {} : { remote: options.remote }),
+                ...(options.home === undefined ? {} : { home: options.home }),
+                ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
+              }),
+            )
       const { offered, line: baseRedLine } = passOverBaseRed(looked, listed)
       if (baseRedLine !== null) log(baseRedLine)
       // Once, not once round the loop. It is a fact about the repository and
