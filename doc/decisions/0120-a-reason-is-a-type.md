@@ -374,9 +374,9 @@ counted in `restartsSpent` like any other.
 type CandidateId = string // 'fix-lines', 'restart', 'hand-to-person', …
 
 type CandidateNext =
-  | Extract<AttemptNext, { _tag: 'FixRound' }>
-  | Extract<AttemptNext, { _tag: 'MergeBase' }> // { toSha, merge }: the system merges the base in and the walk resumes at build (#593)
-  | { _tag: 'Requeued'; cause: Extract<RequeueCause, { _tag: 'Restart' }> }
+  | Extract<AttemptNext, { _tag: 'FixRefusal' }>
+  | Extract<AttemptNext, { _tag: 'MergeBaseBranch' }> // { toSha, merge }: the system merges the base in and the walk resumes at build (#593)
+  | { _tag: 'Requeued'; cause: Extract<RequeueCause, { _tag: 'NewAttempt' }> }
   | { _tag: 'HandToPerson' } // a placeholder: the offer is built before there is a reason to hand over
 
 type RouteCandidate = { id: CandidateId; next: CandidateNext } // next already carries the round or restart it spends
@@ -408,7 +408,7 @@ const routeNext: (
   offer: RouteOffer,
   reply: JudgeReply,
   decision: RouteDecision,
-) => Extract<AttemptNext, { _tag: 'FixRound' | 'Requeued' | 'WaitOnPerson' }>
+) => Extract<AttemptNext, { _tag: 'FixRefusal' | 'Requeued' | 'WaitOnPerson' }>
 ```
 
 - **A judge picks an id from the offer**, never an arbitrary step. An answer
@@ -420,10 +420,10 @@ const routeNext: (
   including a conflict or a red re-verify at `merge`, for the agent to fix on
   the new base; a restart from the base, for `ReviewFindings` only; a person,
   always.
-- **`MergeConflict`'s `fix-lines` draws from `conflict-rounds`, not `rounds`** (#653): at most `CONFLICT_ROUNDS_LIMIT = 2` per attempt, its `FixRound` carries `conflict` and leaves `round` at what `rounds` was. Before that round's agent starts, whether the round was bought or granted, the conductor merges the lane's `baseSha` into the attempt's worktree with `--no-commit`. A merge that does not conflict there goes to a person. A round that commits without `baseSha` in its history goes to a person too. The `review` after it is shown `fromSha..baseSha` and asked whether the resolution lost any of it.
+- **`MergeConflict`'s `fix-lines` draws from `conflict-rounds`, not `rounds`** (#653): at most `CONFLICT_ROUNDS_LIMIT = 2` per attempt, its `FixRefusal` carries `conflict` and leaves `round` at what `rounds` was. Before that round's agent starts, whether the round was bought or granted, the conductor merges the lane's `baseSha` into the attempt's worktree with `--no-commit`. A merge that does not conflict there goes to a person. A round that commits without `baseSha` in its history goes to a person too. The `review` after it is shown `fromSha..baseSha` and asked whether the resolution lost any of it.
 - **`merge-base` is the one candidate that sends `merge` back to `build`, and
   it spends no round** (#593). A `BaseMoved` is offered `merge-base`
-  (`MergeBase{toSha, merge}`) and a person. Choosing it merges `toSha` into
+  (`MergeBaseBranch{toSha, merge}`) and a person. Choosing it merges `toSha` into
   the attempt's own branch **with no agent** — the lane's trial merge just proved
   it clean — moves `onSha` to the merge commit (the third mover of it, after
   `admit` and `implement`), and resumes at `build`, so `build`, `review`,
@@ -449,7 +449,7 @@ const routeNext: (
   both `NotAsked`. This is `judged`'s order today (`attempt-steps.ts`):
   readable first, a criterion second, a judge last.
 - **The budget is spent in `offerFor`.** An available candidate already
-  carries `FixRound{to: 'implement', round: 3}`; `decideRoute` needs only the
+  carries `FixRefusal{to: 'implement', round: 3}`; `decideRoute` needs only the
   offer and the reply and never reinterprets a ceiling.
 - **The decision stores no `next`.** A `Selected` that also stored `next`
   could pair `fix-lines` with `Landed`; `next` comes only from the stored
@@ -469,13 +469,13 @@ const routeNext: (
 type AttemptNext =
   | { _tag: 'Advance'; to: Step } // along the spine, spending nothing, carrying no reason
   | { _tag: 'Propose'; proposal: Proposal } // to proposed, which routes
-  | { _tag: 'FixRound'; to: 'design' | 'implement'; round: number } // back one step, spending this attempt's round `round`
+  | { _tag: 'FixRefusal'; to: 'design' | 'implement'; round: number } // back one step, spending this attempt's round `round`
   | { _tag: 'Requeued'; cause: RequeueCause } // the claim released: terminal
   | { _tag: 'WaitOnPerson'; reason: WaitReason } // 0118: terminal
   | { _tag: 'Landed'; integrated: string } // terminal; the mergeSha of this attempt's Integrated
 
 type RequeueCause =
-  | { _tag: 'Restart'; restart: number } // proposed chose to start over, spending the item's restart `restart`
+  | { _tag: 'NewAttempt'; newAttempt: number } // proposed chose to start over, spending the item's restart `newAttempt`
   | { _tag: 'NeverStarted'; scope: 'conductor' | 'work-item' } // nothing to do with the diff; conductor scope also pauses
 
 const nextOf: (
@@ -485,7 +485,7 @@ const nextOf: (
 const spentAfter: (spent: Spent, next: AttemptNext) => Spent
 ```
 
-`nextOf` never returns `FixRound`: a step that falls short proposes, and only
+`nextOf` never returns `FixRefusal`: a step that falls short proposes, and only
 a route spends. **What does not propose** is what has nothing to decide, or
 nobody able to decide it, and `nextOf` answers it by yield and step:
 
@@ -525,7 +525,7 @@ question, or something unreadable (`agent-action.ts:964-1031`).
 
 **Invariants**, fixed by tests rather than types:
 
-- `Advance.to` is later on the spine. Going back is only `FixRound`: `design`
+- `Advance.to` is later on the spine. Going back is only `FixRefusal`: `design`
   only for a question asked at `design`; `implement` for a question asked at
   `implement` and for every proposal from a step after it.
 - `Landed` comes only from a `merge` action's `Integrated`, never from
@@ -562,12 +562,12 @@ PassRouted { runId, offer: RouteOffer, reply: JudgeReply, decision: RouteDecisio
   other results of `nextOf` land through the events that already carry them:
   `WaitStarted` (0118), `TicketReleased`, `TicketLanded`. Rounds spent are
   reduced from the run's `PassRouted`; restarts spent from the work item's
-  `TicketReleased{cause: Restart}`, so neither reduce reads another stream.
-- **`TicketReleased` carries a `cause`**: `Restart{restart}`,
+  `TicketReleased{cause: NewAttempt}`, so neither reduce reads another stream.
+- **`TicketReleased` carries a `cause`**: `NewAttempt{newAttempt}`,
   `NeverStarted{scope}`, `ByPerson{waitId}` or `ClaimUnconfirmed`. Restarts
   are counted on the work item today (`conduct.ts:946`, from `PassRestarted`,
   `work-item.ts:282`), and `PassRestarted` becomes part of `PassRouted` on the
-  run stream, so the release says why on the work item. Only `Restart` counts;
+  run stream, so the release says why on the work item. Only `NewAttempt` counts;
   a person's requeue does not, as today.
 - **The merged sha is in three places**: `StepEnded`'s `Integrated`,
   `IntegrationSucceeded` on the integration stream, `TicketLanded` on the
@@ -679,7 +679,7 @@ What each event becomes in phase 2.
 | `StepPassed`, `StepFailed`, `StepAsked`, `StepDidNotFinish`, `StepNeverRan`, `FixApplied`, `RunFailed{no-commits}` | `StepEnded`                                                     | §1; a fix round is `implement` again with `round` > 0                                                                                                                                                                                                     |
 | `StepStarted` (one per action, `events.ts:736`)                                                                    | `StepStarted`, one per step                                     | the same grain as `StepEnded`                                                                                                                                                                                                                             |
 | `StepRequested`                                                                                                    | removed                                                         | per action, before it runs (`action.ts:615`); the run log carries it                                                                                                                                                                                      |
-| `FixRequested`, `PassRestarted`, `FixDeclined`                                                                     | `PassRouted`; a restart also `TicketReleased{cause: Restart}` | the selected candidate's `next` is `FixRound` or `Requeued{Restart}`; a decline is `Escalated{CandidateUnavailable}`. What `PassRestarted` carried (branch, head, findings) is on the previous run, which the next prompt reads (`lastRun`, `conduct.ts`) |
+| `FixRequested`, `PassRestarted`, `FixDeclined`                                                                     | `PassRouted`; a restart also `TicketReleased{cause: NewAttempt}` | the selected candidate's `next` is `FixRefusal` or `Requeued{NewAttempt}`; a decline is `Escalated{CandidateUnavailable}`. What `PassRestarted` carried (branch, head, findings) is on the previous run, which the next prompt reads (`lastRun`, `conduct.ts`) |
 | `WorkItemBlocked{hold}`                                                                                            | `WaitStarted` (0118)                                            | _blocked by_ is GitHub's word for a dependency                                                                                                                                                                                                            |
 | `WorkItemUnblocked{by, note, withdrawn}`                                                                           | `WaitResolved` (0118)                                           | one event carrying a `Resolution`; `withdrawn` is an `OwnQuestion` resolved by `Requeue`                                                                                                                                                                  |
 | `ApprovalRequested`                                                                                                | removed                                                         | a `signoff` with `requested` on `StepEnded`, then `WaitStarted{SignoffRequired}`                                                                                                                                                                          |
