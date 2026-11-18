@@ -583,9 +583,9 @@ export interface StandingView {
    * arm that bought it — `item.newAttempts.length` and the last record's `of`,
    * read off `reduceTicketEvent` rather than re-reduced here (`#415`).
    *
-   * The same two numbers `TaskCard.restarts`/`.newAttemptsOf` carry, so the
+   * The same two numbers `TaskCard.newAttempts`/`.newAttemptsOf` carry, so the
    * page's own `held` line and the board's cannot word one ticket's budget
-   * two ways. **`newAttemptsOf` is zero regardless of `restarts`, since `#502`**
+   * two ways. **`newAttemptsOf` is zero regardless of `newAttempts`, since `#502`**
    * — `TicketReleased{cause: Restart}` carries `{after, restart}` alone, so
    * there is no ceiling left on any event for this reduce to read, however
    * many times the ticket has restarted. `describeArm` (#504) no longer
