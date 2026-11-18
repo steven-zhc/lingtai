@@ -248,7 +248,7 @@ One JSON object, and nothing else that could be read as one:
 {"cause": {"_tag": "UndecidedQuestion", "questions": [...]}, "summary": "<one sentence>"}
 \`\`\`
 
-Answer with exactly one of those. A \`fixes\` entry names \`file\`, \`line\` and what to change; a question
+Answer with exactly one of those. A \`fixes\` entry names \`path\`, \`line\` (or null) and \`what\` to change; a question has an \`id\`, \`text\`, \`answers\` and a \`recommended\` answer id; a question
 carries two to four answers. An answer that is not one cause is not read, and you will not be asked again.`
 }
 
