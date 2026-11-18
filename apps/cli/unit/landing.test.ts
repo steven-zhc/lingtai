@@ -82,7 +82,7 @@ steps:
   merge:
     - name: land the branch
       merge: {strategy: merge-commit}
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 /** The same, holding at `proposed` beside a judge, so removing the hold can be told apart from removing the judge. */
@@ -97,7 +97,7 @@ steps:
     - name: the lines or the approach
       judge: claude-code
       when: findings
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 /** No `runtime.limits` at all — every number is the schema's own default. */
@@ -119,7 +119,7 @@ extends: pnpm-workspace
 repo: {base: main}
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 /**
@@ -136,7 +136,7 @@ steps:
   admit:
     - name: cut the tree
       worktree: {base: release, submodules: false}
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 /**
@@ -150,7 +150,7 @@ repo: {base: "", submodules: false}
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps: {}
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 /** A terse `steps.proposed` entry, with none of `runPlugin`'s defaulted fields (`timeout`, `env`) written. */
@@ -162,7 +162,7 @@ steps:
   proposed:
     - name: smoke
       run: pnpm smoke
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 describe('askLanding', () => {
@@ -470,7 +470,7 @@ steps:
     # I want to see every merge while we learn the loop
     - name: approval
       human: "Merge this? It is my own code."
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2m, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
     const files = mapFiles({ [PATH]: COMMENTED_HOLD })
     const draft = await draftOver(PROJECT, { home: HOME, files })
@@ -501,39 +501,39 @@ steps:
       agent: claude-code
       prompt: 'fix {{issue}}'
       limits: {turns: 4, wall: 10m}
-runtime: {agent: claude-code, limits: {turns: 10, wall: 2h, rounds: 2, restarts: 0}}
+runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2h}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 describe('askLimits', () => {
-  it('--rounds 0 --wall 30m --budget 4 each land at their runtime.limits key', async () => {
+  it('--refusal-fixes 0 --wall 30m --budget 4 each land at their runtime.limits key', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w, lines } = world()
-    const result = await askLimits(w, PROJECT, { rounds: '0', wall: '30m', budget: '4' }, { home: HOME, draft })
+    const result = await askLimits(w, PROJECT, { refusalFixes: '0', wall: '30m', budget: '4' }, { home: HOME, draft })
     expect(result).toEqual({ ok: true })
 
     const written = draft.text()!
     const limits = resolveSource(written, PATH, PATH).recipe.runtime.limits
-    expect(limits.rounds).toBe(0)
-    expect(limits.wall).toBe('30m')
-    expect(limits.usd).toBe(4)
+    expect(limits.attempt.refusalFixes).toBe(0)
+    expect(limits.run.wall).toBe('30m')
+    expect(limits.run.usd).toBe(4)
 
     // The per-answer echo of the ceiling is gone (#773); a dollar ceiling's warning stays.
     expect(lines.some((l) => l.includes('an attempt'))).toBe(false)
   })
 
   it('--budget none removes usd', async () => {
-    const files = mapFiles({ [PATH]: FIXTURE.replace('rounds: 2, restarts: 0', 'rounds: 2, restarts: 0, usd: 7') })
+    const files = mapFiles({ [PATH]: FIXTURE.replace('wall: 2h}', 'wall: 2h, usd: 7}') })
     const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLimits(
       world().world,
       PROJECT,
-      { rounds: '2', wall: '2m', budget: 'none' },
+      { refusalFixes: '2', wall: '2m', budget: 'none' },
       { home: HOME, draft },
     )
     expect(result).toEqual({ ok: true })
     const written = draft.text()!
-    expect(resolveSource(written, PATH, PATH).recipe.runtime.limits.usd).toBeUndefined()
+    expect(resolveSource(written, PATH, PATH).recipe.runtime.limits.run.usd).toBeUndefined()
   })
 
   it('pressing enter on an inherited default writes nothing', async () => {
@@ -546,7 +546,7 @@ describe('askLimits', () => {
   })
 
   it('the budget prompt shows an existing ceiling in money, formatted by show', async () => {
-    const files = mapFiles({ [PATH]: FIXTURE.replace('rounds: 2, restarts: 0', 'rounds: 2, restarts: 0, usd: 7') })
+    const files = mapFiles({ [PATH]: FIXTURE.replace('wall: 2h}', 'wall: 2h, usd: 7}') })
     const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w, asked } = world(['', '', ''])
     await askLimits(w, PROJECT, {}, { home: HOME, draft })
@@ -574,8 +574,8 @@ describe('askLimits', () => {
 
     const written = draft.text()!
     const limits = resolveSource(written, PATH, PATH).recipe.runtime.limits
-    expect(limits.rounds).toBe(0)
-    expect(limits.wall).toBe('30m')
+    expect(limits.attempt.refusalFixes).toBe(0)
+    expect(limits.run.wall).toBe('30m')
     expect(draft.changes()).toHaveLength(2)
     expect(files.replaced).toEqual([])
   })
@@ -588,12 +588,12 @@ describe('askLimits', () => {
     // `resolveSource` call, which must surface as `{refused}` rather than an
     // uncaught `RecipeInvalidError` — the flags pass validation (`5m` is a
     // valid positive duration), so only the write itself catches this.
-    const result = await askLimits(world().world, PROJECT, { rounds: '3', wall: '5m' }, { home: HOME, draft })
+    const result = await askLimits(world().world, PROJECT, { refusalFixes: '3', wall: '5m' }, { home: HOME, draft })
     expect(result).toMatchObject({ refused: expect.stringContaining('may only narrow') })
 
     // The rounds answer, asked and written first, stays on disk.
     const written = draft.text()!
-    expect(resolveSource(written, PATH, PATH).recipe.runtime.limits.rounds).toBe(3)
+    expect(resolveSource(written, PATH, PATH).recipe.runtime.limits.attempt.refusalFixes).toBe(3)
     expect(draft.changes()).toHaveLength(1)
     expect(files.replaced).toEqual([])
   })

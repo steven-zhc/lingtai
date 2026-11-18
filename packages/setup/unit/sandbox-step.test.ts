@@ -67,7 +67,13 @@ describe('the answers write the block', () => {
     heldBy: '',
     closeOnEnd: false,
     personApprovesMerge: false,
-    limits: { ...LIMIT_DEFAULTS, turns: 300 },
+    limits: {
+      turns: 300,
+      wall: LIMIT_DEFAULTS.run.wall,
+      refusalFixes: LIMIT_DEFAULTS.attempt.refusalFixes,
+      conflictResolutions: LIMIT_DEFAULTS.attempt.conflictResolutions,
+      newAttempts: LIMIT_DEFAULTS.ticket.newAttempts,
+    },
     turnsUnbounded: false,
     sandbox,
   })

@@ -305,8 +305,8 @@ steps:
       )
       expect(resolved.recipe.runtime.limits).toEqual({ ...LIMIT_DEFAULTS, rounds: 3 })
       expect(resolved.provenance?.['runtime.limits.rounds']).toBe(`3 ← ${recipePath('app', HOME)}`)
-      expect(resolved.provenance?.['runtime.limits.turns']).toBe(`${LIMIT_DEFAULTS.turns} ← default`)
-      expect(resolved.provenance?.['runtime.limits.usd']).toBe('(none) ← default')
+      expect(resolved.provenance?.['runtime.limits.run.turns']).toBe(`${LIMIT_DEFAULTS.run.turns} ← default`)
+      expect(resolved.provenance?.['runtime.limits.run.usd']).toBe('(none) ← default')
     })
 
     it('changes the hash, because a run under other limits is another run', async () => {
@@ -529,7 +529,7 @@ steps:
       const resolved = await Effect.runPromise(
         resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
-      expect(resolved.recipe.runtime.limits.turns).toBe(5)
+      expect(resolved.recipe.runtime.limits.run.turns).toBe(5)
     })
   })
 })

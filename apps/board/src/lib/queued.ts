@@ -200,7 +200,13 @@ export interface QueuedView {
 export function planOf(
   plan: StepPlan,
   runtime: {
-    limits: ReturnType<typeof ceilingOf>
+    limits: {
+      turns: TurnLimit
+      wall: string
+      refusalFixes: number
+      conflictResolutions: number
+      newAttempts: number
+    }
   },
 ): PlanView {
   return {
@@ -213,11 +219,11 @@ export function planOf(
       ]
       return { step, actions, skipped: actions.length === 0 }
     }),
-    turns: runtime.limits.run.turns,
-    wall: runtime.limits.run.wall,
-    refusalFixes: runtime.limits.attempt.refusalFixes,
-    conflictResolutions: runtime.limits.attempt.conflictResolutions,
-    newAttempts: runtime.limits.ticket.newAttempts,
+    turns: runtime.limits.turns,
+    wall: runtime.limits.wall,
+    refusalFixes: runtime.limits.refusalFixes,
+    conflictResolutions: runtime.limits.conflictResolutions,
+    newAttempts: runtime.limits.newAttempts,
   }
 }
 
@@ -311,7 +317,12 @@ export async function queuedFor(input: {
     // the next reader comparing the panel against `~/.lingtai/config.yml` looks
     // for a bug in the machine-file merge. A step's own bound is named on the
     // `agent:` row, which is where it belongs.
-    limits: ceilingOf(filter.recipe),
+    limits: {
+      turns: ceilingOf(filter.recipe).run.turns,
+      wall: ceilingOf(filter.recipe).run.wall,
+      ...ceilingOf(filter.recipe).attempt,
+      ...ceilingOf(filter.recipe).ticket,
+    },
   })
   const until = backoffOf(input.own, filter.backoffMs)
 

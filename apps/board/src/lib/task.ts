@@ -1637,7 +1637,10 @@ async function planFor(
   if (!state) return undefined
   const filter = await projectFilter(state)
   return filter.ok
-    ? { plan: filter.plan, limits: { refusalFixes: filter.limits.refusalFixes, newAttempts: filter.limits.newAttempts } }
+    ? {
+        plan: filter.plan,
+        limits: { refusalFixes: filter.limits.refusalFixes, newAttempts: filter.limits.newAttempts },
+      }
     : undefined
 }
 

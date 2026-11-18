@@ -46,7 +46,7 @@ describe("editRecipe, on this repository's own recipe", () => {
   it('round-trips it with one field changed, and git diff shows only that line', () => {
     const out = editRecipe(OWN, [{ path: ['runtime', 'limits', 'turns'], value: 200 }])
     expect(gitDiff(OWN, out)).toEqual({ removed: ['    turns: 150'], added: ['    turns: 200'] })
-    expect(Recipe.parse(parse(out)).runtime.limits.turns).toBe(200)
+    expect(Recipe.parse(parse(out)).runtime.limits.run.turns).toBe(200)
   })
 
   it('changes nothing when nothing is changed, byte for byte', () => {

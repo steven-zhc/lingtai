@@ -360,7 +360,9 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
       rounds: at.flags['rounds'],
       refusalFixes: at.flags['refusal-fixes'],
       conflictResolutions: at.flags['conflict-resolutions'],
-      wall: at.flags['wall'], budget: at.flags['budget'] },
+      wall: at.flags['wall'],
+      budget: at.flags['budget'],
+    },
     { home: at.home, draft, kept: at.kept },
   )
   if ('refused' in limited) return limited

@@ -49,7 +49,11 @@ const ONE_ACTION: Action = {
   result: { _tag: 'Completed', assessment: { verdict: 'refused', findings: [] } },
 }
 const BUILD_RED: Proposal = { _tag: 'BuildRed', output: 'tsc failed' }
-const NOT_ASKED = offerFor(BUILD_RED, { rounds: 0, restarts: 0, conflictRounds: 0 }, { rounds: 0, restarts: 0 })
+const NOT_ASKED = offerFor(
+  BUILD_RED,
+  { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 },
+  { rounds: 0, restarts: 0 },
+)
 const ADVISED: PayloadOf<'WaitTriaged'>['result'] = {
   _tag: 'TriageAdvised',
   cause: { _tag: 'FixableLines', fixes: [] },
@@ -526,7 +530,11 @@ describe('a line of history', () => {
    */
   it('says where a route went, when it lands on a person', () => {
     const buildRed: Proposal = { _tag: 'BuildRed', output: 'tsc failed' }
-    const notAsked = offerFor(buildRed, { rounds: 0, restarts: 0, conflictRounds: 0 }, { rounds: 0, restarts: 0 })
+    const notAsked = offerFor(
+      buildRed,
+      { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 },
+      { rounds: 0, restarts: 0 },
+    )
     const said = summarise(
       e('PassRouted', {
         runId: 'pass-1',
@@ -544,7 +552,11 @@ describe('a line of history', () => {
       _tag: 'ReviewFindings',
       findings: [{ file: 'x.ts', line: 1, claim: 'no', failureScenario: 'it breaks', severity: 'blocker' }],
     }
-    const spent = offerFor(reviewFindings, { rounds: 1, restarts: 1, conflictRounds: 1 }, { rounds: 1, restarts: 1 })
+    const spent = offerFor(
+      reviewFindings,
+      { refusalFixes: 1, newAttempts: 1, conflictResolutions: 1 },
+      { rounds: 1, restarts: 1 },
+    )
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'restart', why: 'start over' }
     const said2 = summarise(
       e('PassRouted', { runId: 'pass-1', offer: spent, reply, decision: decideRoute(spent, reply) }),
@@ -563,7 +575,11 @@ describe('a line of history', () => {
   it('reads a route the same whether it kept its evidence or names its StepEnded', () => {
     const output = 'tsc failed: 3 errors'
     const buildRed: Proposal = { _tag: 'BuildRed', output }
-    const offer = offerFor(buildRed, { rounds: 0, restarts: 0, conflictRounds: 0 }, { rounds: 0, restarts: 0 })
+    const offer = offerFor(
+      buildRed,
+      { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 },
+      { rounds: 0, restarts: 0 },
+    )
     const reply: JudgeReply = { _tag: 'NotAsked' }
     const decision = decideRoute(offer, reply)
     const outcome = {
@@ -600,7 +616,11 @@ describe('a line of history', () => {
   it('names the missing StepEnded version for a fix-round and for a restart route', () => {
     const f = { _tag: 'ReviewFindings' as const }
     const base = {
-      ...offerFor({ ...f, findings: [] }, { rounds: 0, restarts: 0, conflictRounds: 0 }, { rounds: 0, restarts: 0 }),
+      ...offerFor(
+        { ...f, findings: [] },
+        { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 },
+        { rounds: 0, restarts: 0 },
+      ),
     }
     const route = (candidate: string, next: object) => {
       const offer = {
@@ -634,7 +654,11 @@ describe('a line of history', () => {
    */
   it('falls back to the payload for a routed wait with no branch to open on', () => {
     const buildRed: Proposal = { _tag: 'BuildRed', output: 'tsc failed' }
-    const notAsked = offerFor(buildRed, { rounds: 0, restarts: 0, conflictRounds: 0 }, { rounds: 0, restarts: 0 })
+    const notAsked = offerFor(
+      buildRed,
+      { refusalFixes: 0, newAttempts: 0, conflictResolutions: 0 },
+      { rounds: 0, restarts: 0 },
+    )
     const said = summarise(
       e('PassRouted', {
         runId: 'pass-1',

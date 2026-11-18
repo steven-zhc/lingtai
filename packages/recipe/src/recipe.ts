@@ -210,7 +210,9 @@ export const runPlugin = definePlugin('run', {
  * recipe's own voice, which is 0061 §9's rule — *a plugin refuses a field it
  * does not understand* — applied one level down, to a field of a field.
  */
-function boundsThePass(field: 'rounds' | 'restarts' | 'refusalFixes' | 'conflictResolutions' | 'newAttempts'): z.ZodType {
+function boundsThePass(
+  field: 'rounds' | 'restarts' | 'refusalFixes' | 'conflictResolutions' | 'newAttempts',
+): z.ZodType {
   const where: Record<typeof field, string> = {
     rounds: '`runtime.limits.attempt.refusalFixes` and `runtime.limits.attempt.conflictResolutions`',
     restarts: '`runtime.limits.ticket.newAttempts`',

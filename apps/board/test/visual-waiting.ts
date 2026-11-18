@@ -120,7 +120,11 @@ function fixableFixture(published: boolean) {
   const chat = makeStream('chat-preview-393')
   const at = (minute: number) => ({ at: new Date(Date.parse('2026-08-31T13:00:00Z') + minute * 60_000) })
   const routed = (proposal: Proposal, spent: number, minute: number) => {
-    const offer = offerFor(proposal, { rounds: 2, restarts: 1, conflictRounds: 2 }, { rounds: spent, restarts: 0 })
+    const offer = offerFor(
+      proposal,
+      { refusalFixes: 2, newAttempts: 1, conflictResolutions: 2 },
+      { rounds: spent, restarts: 0 },
+    )
     const reply = { _tag: 'Selected' as const, candidate: 'fix-lines' as const, why: 'Fix the recorded findings' }
     return run('PassRouted', { runId, offer, reply, decision: decideRoute(offer, reply) }, at(minute))
   }

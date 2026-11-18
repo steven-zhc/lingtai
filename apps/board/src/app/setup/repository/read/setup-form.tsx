@@ -436,8 +436,7 @@ export function SetupForm({ view }: { view: ReadView }) {
           <h3 className="rcard-h">What an attempt may spend</h3>
           <div className="s2-limits">
             <label>
-              refusal fixes{' '}
-              {num(limits.refusalFixes, (refusalFixes) => setLimits({ ...limits, refusalFixes }))}
+              refusal fixes {num(limits.refusalFixes, (refusalFixes) => setLimits({ ...limits, refusalFixes }))}
             </label>
             <label>
               conflict resolutions{' '}

@@ -102,7 +102,8 @@ export function decideRestart(input: RestartInput): RestartDecision {
 
   if (restarts === 0) {
     return no(
-      "this project's recipe hands an attempt whose rounds are spent to a person " + '(runtime.limits.ticket.newAttempts: 0)',
+      "this project's recipe hands an attempt whose rounds are spent to a person " +
+        '(runtime.limits.ticket.newAttempts: 0)',
     )
   }
 

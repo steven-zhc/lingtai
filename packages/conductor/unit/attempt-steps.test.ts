@@ -848,7 +848,7 @@ describe('prepared refuses, and the refusal reports like any other', () => {
     const { result, asked } = await pass({
       steps: { prepared: [{ name: 'install', run: 'false' }] },
       actions: { prepared: [canned('install', RED)] },
-      ceilings: { rounds: 3, restarts: 1, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 1, newAttemptsSpent: 0 },
     })
 
     expect(asked.judge[0]?.offering).not.toContain('implement')
@@ -870,7 +870,7 @@ describe('prepared refuses, and the refusal reports like any other', () => {
       steps: { prepared: [{ name: 'install', run: 'false' }] },
       actions: { prepared: [canned('install', RED)] },
       answers: { judge: { next: 'claim', named: 'claude-code', why: 'fresh worktree' } },
-      ceilings: { rounds: 3, restarts: 1, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 1, newAttemptsSpent: 0 },
     })
 
     expect(asked.judge[0]?.when).toBe('setup-refused')
@@ -1141,7 +1141,7 @@ describe('implement dispatches the one agent, and reports what it committed', ()
         on.when === 'needs-input'
           ? { next: 'implement', named: 'test', why: 'state your assumption and carry on' }
           : { noJudge: true },
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
       // `claim`'s default, because the body takes nothing since `#269` and a pass
       // that claimed no item cannot brief an agent.
       actionsAt: (step, actions) =>
@@ -1268,7 +1268,7 @@ describe('implement may also carry a run: after the agent, since #390', () => {
           },
         ],
       },
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(walk(result).slice(4)).toEqual([
@@ -1346,7 +1346,7 @@ describe('review returns findings and judges nothing', () => {
   it('passes carrying the findings, and the judge is asked about them', async () => {
     const { result, asked } = await pass({
       actions: { review: [canned('cold reviewer', REVIEW_REFUSED)] },
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     const reviewed = result.steps.find((visit) => visit.step === 'review')
@@ -1452,7 +1452,7 @@ describe('proposed is the only step that routes, and one judge answers each when
           },
         ],
       },
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(walk(result).slice(4)).toEqual([
@@ -1530,7 +1530,7 @@ describe('proposed is the only step that routes, and one judge answers each when
           },
         ],
       },
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(walk(result).slice(4)).toEqual([
@@ -1578,7 +1578,12 @@ describe('proposed is the only step that routes, and one judge answers each when
     const steps = declaring('findings', 'the lines, until the rounds are spent')
     const spend = {
       ...checked(PASSED, REVIEW_REFUSED),
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 } as AttemptOptions['ceilings'],
+      ceilings: {
+        refusalFixes: 1,
+        conflictResolutions: 1,
+        newAttempts: 0,
+        newAttemptsSpent: 0,
+      } as AttemptOptions['ceilings'],
     }
 
     const declared = await pass({ ...spend, steps, answers: { judge: theRecipesJudge(steps) } })
@@ -1637,7 +1642,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       ...checked(PASSED, REVIEW_REFUSED),
       steps,
       answers: { judge: theRecipesJudge(steps, theLines) },
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     // Asked once, and never handed a count — the brief is the direction, the
@@ -1683,7 +1688,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       steps,
       answers: { judge: theRecipesJudge(steps, silent) },
       // Three rounds to spend, and not one of them is spent on an answer nobody got.
-      ceilings: { rounds: 3, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(result.routes[0]).toMatchObject({ to: 'waiting', ceiling: null })
@@ -1714,7 +1719,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       // `restarts` left to spend keeps a second candidate on offer (`claim`,
       // off `restart`) so the declared judge is genuinely asked rather than
       // skipped outright — `rounds` spent is what takes `implement` off it.
-      ceilings: { rounds: 0, restarts: 1, restartsSpent: 0 },
+      ceilings: { refusalFixes: 0, conflictResolutions: 0, newAttempts: 1, newAttemptsSpent: 0 },
     })
 
     expect(result.routes[0]).toMatchObject({ chose: 'implement', to: 'waiting' })
@@ -1734,7 +1739,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       actions: { build: [canned('typecheck', RED)] },
       answers: { judge: { next: 'claim', named: 'claude-code', why: 'start over' } },
       // A restart to spend, and it is still on no offer: the direction is `red`.
-      ceilings: { rounds: 1, restarts: 3, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 3, newAttemptsSpent: 0 },
     })
 
     expect(asked.judge[0]?.offering).toEqual(['implement', 'waiting'])
@@ -1760,7 +1765,7 @@ describe('proposed is the only step that routes, and one judge answers each when
    * a fresh worktree, and no judge should be able to either.
    */
   it('offers a judge only the steps the pass reached', async () => {
-    const spare = { rounds: 3, restarts: 1, restartsSpent: 0 }
+    const spare = { refusalFixes: 3, conflictResolutions: 3, newAttempts: 1, newAttemptsSpent: 0 }
     const early = await pass({
       steps: { prepared: [{ name: 'install', run: 'x' }] },
       actions: { prepared: [canned('install', RED)] },
@@ -1792,7 +1797,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       answers: {
         judge: { next: 'claim', named: 'claude-code', why: 'the approach is wrong, not the lines' },
       },
-      ceilings: { rounds: 1, restarts: 1, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 1, newAttemptsSpent: 0 },
     })
 
     expect(asked.judge[0]?.when).toBe('findings')
@@ -1823,7 +1828,7 @@ describe('proposed is the only step that routes, and one judge answers each when
   it('holds a direction no judge answers for a person', async () => {
     const { result, asked } = await pass({
       answers: { dispatch: { asked: 'the ticket names two files and neither exists' } },
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(asked.judge.map((on) => on.when)).toEqual([NEEDS_INPUT])
@@ -1855,7 +1860,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       // `restarts` left to spend keeps a second candidate on offer (`claim`,
       // off `restart`) so the judge is genuinely asked rather than skipped —
       // `rounds` spent is what takes `implement` off it.
-      ceilings: { rounds: 0, restarts: 1, restartsSpent: 0 },
+      ceilings: { refusalFixes: 0, conflictResolutions: 0, newAttempts: 1, newAttemptsSpent: 0 },
     })
 
     expect(result.routes[0]?.to).toBe('waiting')
@@ -1875,7 +1880,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     const anOpinion: ActionFinding = { ...BLOCKER, failureScenario: '  ' }
     const { result, asked } = await pass({
       ...checked(PASSED, { verdict: 'failed', evidence: '', findings: [anOpinion] }),
-      ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 3, newAttemptsSpent: 0 },
     })
 
     expect(asked.judge).toEqual([])
@@ -1911,7 +1916,7 @@ describe('proposed is the only step that routes, and one judge answers each when
         build: [canned('typecheck', PASSED)],
         review: [coldReviewerSaying(AN_ANSWER_NOBODY_CAN_READ)],
       },
-      ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 3, newAttemptsSpent: 0 },
     })
 
     expect(asked.judge).toEqual([expect.objectContaining({ when: 'answer-unreadable' })])
@@ -1955,7 +1960,7 @@ describe('proposed is the only step that routes, and one judge answers each when
         review: [coldReviewerSaying('{"findings":[]}')],
         merge: [coldReviewerSaying(AN_ANSWER_NOBODY_CAN_READ)],
       },
-      ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 3, newAttemptsSpent: 0 },
     })
 
     expect(asked.judge).toEqual([expect.objectContaining({ when: 'answer-unreadable' })])
@@ -1988,7 +1993,7 @@ describe('proposed is the only step that routes, and one judge answers each when
         build: [canned('typecheck', PASSED)],
         review: [coldReviewerSaying('{"findings":[]}')],
       },
-      ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 3, newAttemptsSpent: 0 },
     })
 
     expect(result.routes).toEqual([])
@@ -2043,7 +2048,7 @@ describe('proposed is the only step that routes, and one judge answers each when
           build: [canned('typecheck', PASSED)],
           review: [coldReviewerSaying(answer)],
         },
-        ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+        ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
       })
 
       // Both reviews — the one that bought the round and the one after it — and
@@ -2096,7 +2101,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     for (const rounds of [0, 1]) {
       const { result } = await pass({
         actions: { build: [canned('typecheck', RED)] },
-        ceilings: { rounds, restarts: 0, restartsSpent: 0 },
+        ceilings: { refusalFixes: rounds, conflictResolutions: rounds, newAttempts: 0, newAttemptsSpent: 0 },
       })
       const theirs = BUILT_IN[named ?? 'same-worktree']({
         when: 'red',
@@ -2127,7 +2132,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       // Nothing but a person is on offer with no round to buy `implement`
       // with, so no judge is asked at all (the ticket's own rule, `#462`) —
       // `chose` is `waiting` rather than naming the built-in's own choice.
-      ceilings: { rounds: 0, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 0, conflictResolutions: 0, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(spent.result.routes).toMatchObject([
@@ -2145,7 +2150,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       answers: { judge: { next: 'claim', named: 'claude-code', why: 'the approach is wrong' } },
       // A round to spend, so `claim` is the one destination off the set — and the
       // ceiling that took it off is the item's and not this pass's.
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     // `chose` still names the destination the judge picked (`claim`, off
@@ -2178,7 +2183,7 @@ describe('proposed is the only step that routes, and one judge answers each when
   it('names the ceiling in the words, where a number is what refused the choice', async () => {
     const spent = await pass({
       actions: { build: [canned('typecheck', RED)] },
-      ceilings: { rounds: 0, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 0, conflictResolutions: 0, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(spent.result.routes[0]?.why).toContain('`fix-lines` — `rounds` is spent')
@@ -2188,7 +2193,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     const overruled = await pass({
       ...checked(PASSED, REVIEW_REFUSED),
       answers: { judge: { next: 'claim', named: 'claude-code', why: 'the approach is wrong' } },
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(overruled.result.routes[0]?.why).toContain('the judge chose `restart`, and `restarts` is spent')
@@ -2256,7 +2261,7 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
           return answer
         },
       },
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     /**
@@ -2299,7 +2304,7 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
         land: () => ({ notMerged: { reason: 'conflict', detail: 'both changed doc/design/the-pipeline.md' } }),
         judge: { next: 'build', named: 'claude-code', why: 'the text resolves; the intent is one file' },
       },
-      ceilings: { rounds: 1, restarts: 0, restartsSpent: 0 },
+      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
     expect(walk(result).slice(7)).toEqual(['merge:refused', 'proposed:routed', 'end:passed'])
@@ -2331,7 +2336,7 @@ describe('merge reports a reason and a detail, and decides nothing', () => {
   it('holds a lane reason no judge answers for a person', async () => {
     const { result, asked } = await pass({
       answers: { land: { notMerged: { reason: 'pending-migration', detail: '1 migration file' } } },
-      ceilings: { rounds: 3, restarts: 3, restartsSpent: 0 },
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 3, newAttemptsSpent: 0 },
     })
 
     expect(asked.judge).toEqual([expect.objectContaining({ when: 'merge-refused' })])
@@ -2602,7 +2607,10 @@ describe('a conflict a person confirmed continues through the steps', () => {
   }
 
   it('walks implement, build and review before the merge lane, and hands the brief to the first visit', async () => {
-    const { result, asked } = await pass({ from, ceilings: { rounds: 2, restarts: 0, restartsSpent: 0 } })
+    const { result, asked } = await pass({
+      from,
+      ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
+    })
 
     const steps = walk(result)
     expect(steps.slice(steps.indexOf('implement:passed'))).toEqual([
@@ -2620,7 +2628,7 @@ describe('a conflict a person confirmed continues through the steps', () => {
     const { result, asked } = await pass({
       from,
       answers: { land: () => ({ notMerged: { reason: 'conflict', detail: 'src/fix.ts again' } }) },
-      ceilings: { rounds: 9, restarts: 3, restartsSpent: 0 },
+      ceilings: { refusalFixes: 9, conflictResolutions: 9, newAttempts: 3, newAttemptsSpent: 0 },
     })
 
     expect(result.routes).toMatchObject([{ from: 'merge', to: 'waiting' }])

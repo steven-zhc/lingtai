@@ -429,7 +429,7 @@ describe('describeFilter', () => {
 })
 
 /**
- * What a pass costs, said once so three places cannot disagree.
+ * What a ticket costs, said once so three places cannot disagree.
  *
  * On 2026-09-10 `lingtai shutdown` told an operator it would wait at most one
  * `wall`. That was true when the sentence was written and false once a refusal
@@ -438,127 +438,126 @@ describe('describeFilter', () => {
  * better sentence, it is one sentence that is **made of** the numbers, so the
  * only way to make it wrong is to change the numbers.
  */
-describe('what a pass may spend', () => {
-  const limits = (rounds: number, wall = '1h', wallMs = 3_600_000, restarts = 0) => ({
-    rounds,
-    restarts,
+describe('what a ticket may spend', () => {
+  const limits = (
+    refusalFixes: number,
+    wall = '1h',
+    wallMs = 3_600_000,
+    newAttempts = 0,
+    conflictResolutions = refusalFixes,
+  ) => ({
+    refusalFixes,
+    conflictResolutions,
+    newAttempts,
     turns: 150,
     wall,
     wallMs,
   })
 
-  it('multiplies the wall by the runs a pass can buy, not by the rounds', () => {
-    // Two rounds is eight runs (#1200): the work, two goes at what refused it,
-    // two more for merge conflicts, and three reruns.
-    expect(attemptCeiling(limits(2))).toContain('up to 8 agent runs')
-    expect(attemptCeiling(limits(2))).toContain('at most 8h')
+  it("multiplies the wall by 0108 §8's product, not by the rounds", () => {
+    // One attempt: the work, two refusal fixes, two conflict resolutions and three reruns is eight
+    // runs, and a person may be asked five times: thirteen.
+    expect(attemptCeiling(limits(2))).toContain('up to 13 implement runs a ticket')
+    expect(attemptCeiling(limits(2))).toContain('at most 13h')
+  })
+
+  it('says 53 implement runs for the defaults 6, 6 and 2, and lists the other steps without summing them', () => {
+    const said = attemptCeiling({
+      ...limits(6, '2h', 7_200_000, 2),
+      turns: 300,
+    })
+    // 3 × (1 + 6 + 6 + 3) + 5
+    expect(said).toContain('up to 53 implement runs a ticket')
+    expect(said).toContain('at most 106h')
+    for (const other of ['design', 'review', 'a judge', 'triage']) expect(said).toContain(other)
+    expect(said).toContain('not in this figure')
   })
 
   /** The assertion the ticket asked for: change the number, the sentence moves. */
-  it('changes when rounds changes', () => {
-    const one = attemptCeiling(limits(1))
-    const four = attemptCeiling(limits(4))
+  it('changes when either attempt bound changes, and they are told apart', () => {
+    const one = attemptCeiling(limits(1, '1h', 3_600_000, 0, 1))
+    const fixes = attemptCeiling(limits(4, '1h', 3_600_000, 0, 1))
+    const conflicts = attemptCeiling(limits(1, '1h', 3_600_000, 0, 4))
 
-    expect(one).not.toBe(four)
-    expect(one).toContain('at most 6h')
-    expect(four).toContain('at most 12h')
+    expect(one).toContain('at most 11h')
+    expect(fixes).toContain('at most 14h')
+    expect(conflicts).toContain('at most 14h')
+    expect(fixes).toContain('4 refusal fix(es)')
+    expect(fixes).toContain('1 conflict resolution(s)')
+    expect(conflicts).toContain('1 refusal fix(es)')
+    expect(conflicts).toContain('4 conflict resolution(s)')
   })
 
   it("reads the wall back in the recipe's own words", () => {
     // `15m` and not `900000`: this line is read against the file it came from.
     expect(attemptCeiling(limits(1, '15m', 900_000))).toContain('15m and 150 turns each')
-    expect(attemptCeiling(limits(1, '15m', 900_000))).toContain('at most 90m')
+    expect(attemptCeiling(limits(1, '15m', 900_000))).toContain('at most 165m')
   })
 
   /**
-   * `rounds: 0` is the whole of what `repair.on: false` used to say (0039 §4),
+   * `refusalFixes: 0` is the whole of what `repair.on: false` used to say (0039 §4),
    * and it has to read as a choice rather than as an absence — 0025 §2's rule
    * that a default which spends money is shown when it is off as well as on.
    */
-  it('says where a refusal goes when nothing is bought', () => {
+  it('says where a refusal and a conflict go when nothing is bought', () => {
     const none = attemptCeiling(limits(0))
 
-    expect(none).toContain('straight to you')
-    expect(none).toContain('runtime.limits.rounds: 0')
-    // The reruns are still bought (0108 §8): the work, and three reruns.
-    expect(none).toContain('up to 4 agent runs — the work, and up to 3 reruns of a run an API error cut off')
-    expect(none).not.toContain('round(s)')
+    expect(none).toContain('a refusal goes straight to you (runtime.limits.attempt.refusalFixes: 0)')
+    expect(none).toContain('a merge conflict goes straight to you (runtime.limits.attempt.conflictResolutions: 0)')
+    expect(none).toContain('up to 9 implement runs a ticket')
   })
 
   /**
-   * **The second ceiling multiplies the first**
-   * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5),
-   * and this is the assertion that stops it being a ceiling nobody was told
-   * about. A restart buys a whole further pass, so the thing an operator is
-   * deciding about is `(restarts + 1) × (2 × rounds + 1 + stepRedos) × wall` — and a sentence
-   * that named `rounds` and not `restarts` would be exactly the 2026-09-10
-   * failure again, with more money on it.
+   * **The ticket's bound multiplies the attempt's** (0040 §5), and this is the
+   * assertion that stops it being a ceiling nobody was told about.
    */
-  it('multiplies again for the passes a restart can buy', () => {
-    // Two rounds is eight runs an attempt; one restart is two attempts. Sixteen runs.
+  it('multiplies again for the attempts a new attempt can buy', () => {
+    // Eight runs an attempt; one new attempt is two attempts; five answers to a person.
     const once = attemptCeiling(limits(2, '1h', 3_600_000, 1))
 
-    expect(once).toContain('up to 8 agent runs')
-    expect(once).toContain('up to 1 restart(s)')
-    expect(once).toContain('at most 2 attempts, 16 agent runs and 16h')
+    expect(once).toContain('up to 21 implement runs a ticket')
+    expect(once).toContain('2 attempt(s) of 8 runs')
+    expect(once).toContain('up to 1 time(s) before it is yours')
+    expect(once).toContain('at most 21h')
   })
 
   /**
-   * 0025 §2 again, one ceiling along: a default that spends money is shown when
-   * it is off as well as when it is on. `restarts: 0` is the default and is
-   * every project today, so this is the line an operator reads to learn that a
-   * spent pass is theirs.
+   * 0025 §2 again, one ceiling along: `newAttempts: 0` is said, so an operator
+   * learns that a spent attempt is theirs.
    */
-  it('says a spent pass is yours when no restart is bought', () => {
+  it('says a spent attempt is yours when no new attempt is bought', () => {
     const none = attemptCeiling(limits(2))
 
-    expect(none).toContain('runtime.limits.restarts: 0')
+    expect(none).toContain('runtime.limits.ticket.newAttempts: 0')
     expect(none).toContain('goes to you')
-    expect(none).not.toContain('restart(s) —')
   })
 
-  /**
-   * **A recipe that narrows nothing prints today's sentence, character for
-   * character** (`#314`, 0070 §8).
-   *
-   * Byte-identical and not *contains*: this line is on `lingtai status`,
-   * `lingtai add`, `lingtai doctor` and the board's chip, a person reads it
-   * every day, and *an empty `steps` changes nothing* is a claim a substring
-   * assertion cannot make. `LIMIT_DEFAULTS` rather than a hand-written pair, so
-   * the recipe it is asserted about is the one every project has.
-   */
-  it('prints exactly what it printed before a step could narrow', () => {
+  /** The recipe nobody edited prints one sentence, and an empty `steps` changes nothing (`#314`, 0070 §8). */
+  it('prints the same sentence with an empty steps as with none', () => {
     const defaults = {
-      rounds: LIMIT_DEFAULTS.rounds,
-      restarts: LIMIT_DEFAULTS.restarts,
-      turns: LIMIT_DEFAULTS.turns,
-      wall: LIMIT_DEFAULTS.wall,
-      wallMs: parseDuration(LIMIT_DEFAULTS.wall),
+      ...LIMIT_DEFAULTS.attempt,
+      ...LIMIT_DEFAULTS.ticket,
+      turns: LIMIT_DEFAULTS.run.turns,
+      wall: LIMIT_DEFAULTS.run.wall,
+      wallMs: parseDuration(LIMIT_DEFAULTS.run.wall),
     }
     expect(attemptCeiling({ ...defaults, steps: [] })).toBe(attemptCeiling(defaults))
-    expect(attemptCeiling(defaults)).toBe(
-      'up to 8 agent runs — the work, then 2 round(s) back to the agent carrying what refused it, ' +
-        'up to 2 more for merge conflicts, and up to 3 reruns of a run an API error cut off. ' +
-        '2h and 300 turns each, so at most 16h. An attempt whose rounds are spent goes to you ' +
-        '(runtime.limits.restarts: 0)',
-    )
+    expect(attemptCeiling(defaults)).toContain('up to 53 implement runs a ticket')
+    expect(attemptCeiling(defaults)).toContain('2h and 300 turns each')
   })
 
   /**
    * **And a step that narrows is named, on the same line** (`#314`, 0070 §9).
    *
-   * The figure and the product stay `implement`'s, because the rounds are rounds
-   * at `implement` and they are what the product multiplies; the cold reviewer's
-   * own wall was never in this arithmetic and making it a true sum would move the
-   * number every recipe prints today. So the other bounds are *named* rather than
+   * The figure stays `implement`'s, so the other bounds are *named* rather than
    * added, which is what keeps this one line and keeps it true.
    */
   it('names the dispatching steps bounded differently from the one it prints', () => {
     const said = attemptCeiling({ ...limits(2), steps: [{ step: 'review', turns: 50, wall: '30m' }] })
 
     expect(said).toContain('1h and 150 turns each at implement (review 30m/50 turns)')
-    // The arithmetic is untouched: eight runs of `implement`'s hour.
-    expect(said).toContain('at most 8h')
+    // The arithmetic is untouched: thirteen runs of `implement`'s hour.
+    expect(said).toContain('at most 13h')
   })
 })
 
@@ -566,44 +565,30 @@ describe('what a pass may spend', () => {
  * `usd`, the dollar ceiling (`#370`). Follows `wallMs`, not `turns` — it
  * multiplies across runs the same way the wall does.
  */
-describe('what a pass may spend in dollars', () => {
-  const limits = (rounds: number, restarts = 0) => ({
-    rounds,
-    restarts,
+describe('what a ticket may spend in dollars', () => {
+  const limits = (refusalFixes: number, newAttempts = 0) => ({
+    refusalFixes,
+    conflictResolutions: refusalFixes,
+    newAttempts,
     turns: 150,
     wall: '1h',
     wallMs: 3_600_000,
   })
 
-  /** Absent is today's string, character for character — 0070 §8's rule, carried. */
-  it('is byte-identical to the pre-#370 sentence when usd is absent', () => {
-    expect(attemptCeiling(limits(2))).toBe(
-      'up to 8 agent runs — the work, then 2 round(s) back to the agent carrying what refused it, ' +
-        'up to 2 more for merge conflicts, and up to 3 reruns of a run an API error cut off. ' +
-        '1h and 150 turns each, so at most 8h. An attempt whose rounds are spent goes to you ' +
-        '(runtime.limits.restarts: 0)',
-    )
+  it('names no dollars when usd is absent', () => {
+    expect(attemptCeiling(limits(2))).not.toContain('$')
   })
 
-  it('multiplies usd by the runs a pass can buy, beside the wall', () => {
+  it('multiplies usd by the runs a ticket can buy, beside the wall', () => {
     const said = attemptCeiling({ ...limits(2), usd: 12 })
     expect(said).toContain('1h, 150 turns and $12 each')
-    expect(said).toContain('at most 8h and $96')
+    expect(said).toContain('at most 13h and $156')
   })
 
-  it("names one run's figure rather than 'each' where rounds is zero", () => {
-    const said = attemptCeiling({ ...limits(0), usd: 12 })
-    expect(said).toBe(
-      'up to 4 agent runs — the work, and up to 3 reruns of a run an API error cut off. ' +
-        '1h, 150 turns and $12 each, so at most 4h and $48. Every refusal goes straight to you ' +
-        '(runtime.limits.rounds: 0, restarts: 0)',
-    )
-    expect(said).not.toContain('round(s)')
-  })
-
-  it('multiplies again for the passes a restart can buy', () => {
+  it('multiplies again for the attempts a new attempt can buy', () => {
     const said = attemptCeiling({ ...limits(2, 1), usd: 12 })
-    expect(said).toContain('at most 2 attempts, 16 agent runs and 16h and $192')
+    expect(said).toContain('up to 21 implement runs a ticket')
+    expect(said).toContain('at most 21h and $252')
   })
 })
 

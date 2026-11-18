@@ -75,9 +75,7 @@ export function viewOf(proposal: Proposal, project: string, remote: string | nul
     limits: {
       turns: proposal.limits.known ? proposal.limits.value.turns : LIMIT_DEFAULTS.run.turns,
       wall: proposal.limits.known ? proposal.limits.value.wall : LIMIT_DEFAULTS.run.wall,
-      refusalFixes: proposal.limits.known
-        ? proposal.limits.value.refusalFixes
-        : LIMIT_DEFAULTS.attempt.refusalFixes,
+      refusalFixes: proposal.limits.known ? proposal.limits.value.refusalFixes : LIMIT_DEFAULTS.attempt.refusalFixes,
       conflictResolutions: proposal.limits.known
         ? proposal.limits.value.conflictResolutions
         : LIMIT_DEFAULTS.attempt.conflictResolutions,

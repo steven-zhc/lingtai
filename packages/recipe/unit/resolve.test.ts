@@ -470,7 +470,7 @@ describe('a retired key', () => {
   it('says nothing about a recipe that does not carry it', async () => {
     const resolved = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), 'develop')
 
-    expect(resolved.recipe.runtime.limits.rounds).toBe(LIMIT_DEFAULTS.rounds)
+    expect(resolved.recipe.runtime.limits.attempt.refusalFixes).toBe(LIMIT_DEFAULTS.attempt.refusalFixes)
   })
 })
 
