@@ -389,11 +389,19 @@ describe('parseTriage', () => {
     },
     {
       tag: 'TicketTooBig',
-      answer: { cause: { _tag: 'TicketTooBig', plan: null, spentOn: 'reading the parser' }, summary: 'split it', want: null },
+      answer: {
+        cause: { _tag: 'TicketTooBig', plan: null, spentOn: 'reading the parser' },
+        summary: 'split it',
+        want: null,
+      },
     },
     {
       tag: 'SetupBroken',
-      answer: { cause: { _tag: 'SetupBroken', what: 'no network', repair: 'restore it' }, summary: 'the setup is broken', want: null },
+      answer: {
+        cause: { _tag: 'SetupBroken', what: 'no network', repair: 'restore it' },
+        summary: 'the setup is broken',
+        want: null,
+      },
     },
   ]
 
@@ -429,16 +437,16 @@ describe('parseTriage', () => {
   })
 
   it('refuses an unknown cause, and says which', () => {
-    const reply = parseTriage(
-      JSON.stringify({ cause: { _tag: 'NotACause' }, summary: 'x', want: null }),
-    )
+    const reply = parseTriage(JSON.stringify({ cause: { _tag: 'NotACause' }, summary: 'x', want: null }))
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
     expect(reply.why).toContain('cause')
   })
 
   it('refuses a missing summary, and says which', () => {
-    const reply = parseTriage(JSON.stringify({ cause: { _tag: 'WrongApproach', why: 'it does not converge' }, want: null }))
+    const reply = parseTriage(
+      JSON.stringify({ cause: { _tag: 'WrongApproach', why: 'it does not converge' }, want: null }),
+    )
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
     expect(reply.why).toContain('summary')
@@ -497,9 +505,7 @@ describe('parseTriage', () => {
 
   it('refuses more than 20 fixes, and names the bound', () => {
     const fixes = Array.from({ length: 21 }, (_, i) => ({ path: `a${i}.ts`, line: i, what: 'fix' }))
-    const reply = parseTriage(
-      JSON.stringify({ cause: { _tag: 'FixableLines', fixes }, summary: 'x', want: null }),
-    )
+    const reply = parseTriage(JSON.stringify({ cause: { _tag: 'FixableLines', fixes }, summary: 'x', want: null }))
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
     expect(reply.why).toContain('fixes')
@@ -659,9 +665,16 @@ describe("a split's children take the parent's kind (#1271)", () => {
     )
     expect(r.kind).toBe('refused')
     expect(
-      parseTriage(JSON.stringify({ cause: { _tag: 'SetupBroken', what: 'no network', repair: 'restore it' }, summary: 's', want: null }), {
-        kind: null,
-      }).kind,
+      parseTriage(
+        JSON.stringify({
+          cause: { _tag: 'SetupBroken', what: 'no network', repair: 'restore it' },
+          summary: 's',
+          want: null,
+        }),
+        {
+          kind: null,
+        },
+      ).kind,
     ).toBe('answered')
   })
 

@@ -925,7 +925,11 @@ const ConflictingHunks = conflictingHunks(CauseHunk)
 
 /** The run did not finish, and either the body can save the next one what it spent its turns on, or the ticket is split. */
 const ticketTooBig = <S extends z.ZodType>(plan: S) =>
-  z.strictObject({ _tag: z.literal('TicketTooBig'), plan: plan.nullable(), spentOn: z.string().max(TRIAGE_TEXT_MAX).nullable() })
+  z.strictObject({
+    _tag: z.literal('TicketTooBig'),
+    plan: plan.nullable(),
+    spentOn: z.string().max(TRIAGE_TEXT_MAX).nullable(),
+  })
 
 /** The repository or the machine refused before or around any agent's work — no edit to the ticket can help. */
 const SetupBroken = z.strictObject({
@@ -935,7 +939,10 @@ const SetupBroken = z.strictObject({
 })
 
 /** The step stopped short of finishing what the ticket says; `addToBody` is what would let the next run finish it. */
-const Unfinished = z.strictObject({ _tag: z.literal('Unfinished'), addToBody: z.string().max(TRIAGE_TEXT_MAX).nullable() })
+const Unfinished = z.strictObject({
+  _tag: z.literal('Unfinished'),
+  addToBody: z.string().max(TRIAGE_TEXT_MAX).nullable(),
+})
 
 /** Why triage says the step stopped — 0118 §1's seven causes. */
 const causesWith = <S extends z.ZodType>(plan: S) =>

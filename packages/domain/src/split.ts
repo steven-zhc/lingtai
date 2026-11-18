@@ -229,9 +229,7 @@ const planRest = {
  */
 export const TriagePlan = z
   .object({
-    children: z
-      .array(z.object({ ...planChild, kind: z.string().max(TRIAGE_TEXT_MAX) }))
-      .max(TRIAGE_SPLIT_CHILDREN_MAX),
+    children: z.array(z.object({ ...planChild, kind: z.string().max(TRIAGE_TEXT_MAX) })).max(TRIAGE_SPLIT_CHILDREN_MAX),
     ...planRest,
   })
   .superRefine(refuseProblems)

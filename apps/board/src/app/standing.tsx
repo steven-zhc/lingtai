@@ -444,7 +444,8 @@ function recommendationLine(
       : `Recommends ${RESOLUTION_COPY[recommended].title}${paid}`
   const advised = adviceResolution(result.resolution)
   if (recommended === advised) return `Recommends ${RESOLUTION_COPY[advised].title}${paid}`
-  if (cause._tag === 'WrongApproach') return 'The approach is wrong; start over from base instead of continuing saved work.'
+  if (cause._tag === 'WrongApproach')
+    return 'The approach is wrong; start over from base instead of continuing saved work.'
   if (cause._tag === 'FixableLines' && advised === 'Approve')
     return 'Triage suggested approval, which waives the refusal. Use Continue fixing to repair the failed check when saved work is available.'
   if (cause._tag === 'ConflictingHunks' && recommended === 'FixRefusal')

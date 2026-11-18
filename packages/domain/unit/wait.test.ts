@@ -1440,9 +1440,12 @@ describe('grantCriterion on a declined refusal fix (#935)', () => {
 describe('adviceResolution', () => {
   const tags = ResolutionSchema.options.map((o) => o.shape._tag.value as string)
 
-  it.each(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'] as const)('maps %s to a member of Resolution', (advice) => {
-    expect(tags).toContain(adviceResolution(advice))
-  })
+  it.each(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'] as const)(
+    'maps %s to a member of Resolution',
+    (advice) => {
+      expect(tags).toContain(adviceResolution(advice))
+    },
+  )
 
   it('names the three advices whose resolution is spelled differently', () => {
     expect(adviceResolution('GrantFixRound')).toBe('FixRefusal')

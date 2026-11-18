@@ -108,7 +108,9 @@ export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: 
   const progress: SplitProgress = controls?.progress ?? { state: 'idle' }
   const mode = splitModeOf(progress, controls?.tickets ?? 'github')
   const frozen = progress.state === 'idle' ? null : progress.plan
-  const [localChildren, setChildren] = useState<Child[]>(() => plan.children.map(({ key, title, body, kind }) => ({ key, title, body, kind })))
+  const [localChildren, setChildren] = useState<Child[]>(() =>
+    plan.children.map(({ key, title, body, kind }) => ({ key, title, body, kind })),
+  )
   const [localLinks, setLinks] = useState<Link[]>(() => plan.blockedBy.map((link) => ({ ...link })))
   const children: Child[] = frozen === null ? localChildren : frozen.children.map((child) => ({ ...child }))
   const links: Link[] = frozen === null ? localLinks : frozen.blockedBy.map((link) => ({ ...link }))

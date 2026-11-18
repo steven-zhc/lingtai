@@ -1515,11 +1515,7 @@ async function laneProgress(
   // saved head is read for it too — but only where `FixRefusal` can be
   // recommended: triage advised it, or a small conflict swaps it in (#652). No rail is reduced.
   const headOnly = tasks.filter(
-    (t) =>
-      t.runId !== null &&
-      t.wait !== null &&
-      !railedIds.has(t.taskId) &&
-      mayRecommendFixRefusal(t.triage.result),
+    (t) => t.runId !== null && t.wait !== null && !railedIds.has(t.taskId) && mayRecommendFixRefusal(t.triage.result),
   )
   const headOf = (task: TaskCard, state: AttemptState) => {
     const saved = task.wait === null ? null : savedFixWorkFromState(task.runId as string, state)

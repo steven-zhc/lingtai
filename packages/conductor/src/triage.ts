@@ -415,7 +415,7 @@ export function parseTriage(text: string | null, options: { kind: string | null 
   if ('resolution' in found) {
     return {
       kind: 'refused',
-      why: 'resolution: triage answers a cause and never an action; what follows a cause is the system\'s (0118 §1)',
+      why: "resolution: triage answers a cause and never an action; what follows a cause is the system's (0118 §1)",
       raw: text,
     }
   }
