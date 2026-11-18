@@ -21,7 +21,7 @@ import type { ActionFinding } from '@lingtai/actions'
 import { describe, expect, it } from 'vitest'
 
 import type { Judging } from '../src/attempt-steps.ts'
-import { chosenIn, judgePrompt, judgePromptParts } from '../src/judge-agent.ts'
+import { causeIn, chosenIn, judgePrompt, judgePromptParts } from '../src/judge-agent.ts'
 
 const BLOCKER: ActionFinding = {
   file: 'packages/conductor/src/conduct.ts',
@@ -29,6 +29,13 @@ const BLOCKER: ActionFinding = {
   claim: 'the judge is asked before the worktree exists',
   failureScenario: 'a refusal at `admit` reaches the router and `cutTree()` throws',
   severity: 'blocker',
+}
+
+const ARRIVED_RED: Judging = {
+  when: 'red',
+  offering: ['waiting', 'claim', 'implement'],
+  findings: [BLOCKER],
+  evidence: '1 blocker, 0 major, 2 minor',
 }
 
 const ARRIVED: Judging = {
@@ -48,9 +55,9 @@ describe('what a runtime judge is asked', () => {
    * how it would be added. A judge cannot widen what it cannot see.
    */
   it('carries the offered steps and not one ceiling', () => {
-    const prompt = judgePrompt(ARRIVED)
+    const prompt = judgePrompt(ARRIVED_RED)
 
-    for (const to of ARRIVED.offering) expect(prompt, to).toContain(`\`${to}\``)
+    for (const to of ARRIVED_RED.offering) expect(prompt, to).toContain(`\`${to}\``)
     // The words that name a ceiling, none of which a judge may be told. *Another
     // round* is in it and is not one of them: it is what `implement` **means**,
     // where `rounds` is how many of them are left — and the second is the one a
@@ -183,13 +190,13 @@ describe('judgePromptParts (#928)', () => {
  */
 describe('the findings prompt is fixed', () => {
   it('is byte-identical to what it was before the prompt had a row per reason', () => {
-    expect(judgePrompt(ARRIVED)).toBe(`# Which step is next
+    expect(judgePrompt(ARRIVED_RED)).toBe(`# Which step is next
 
 A pass over one ticket did not pass. You decide where it goes.
 
 ## What refused, and why
 
-The reason the step gave is **\`findings\`**.
+The reason the step gave is **\`red\`**.
 
 The cold reviewer's findings, verbatim:
 
@@ -235,5 +242,61 @@ One JSON object, and nothing else that could be read as one:
 naming anything else is refused and the pass is held for a person — you will not
 be asked again, so a destination you are unsure of is worth less than
 \`waiting\` with your reason on it.`)
+  })
+})
+
+describe('a judge at findings answers a cause (0108 §6)', () => {
+  it('asks for a cause, offers no destination and carries no count', () => {
+    const prompt = judgePrompt({ ...ARRIVED, offering: ['waiting', 'claim', 'implement'] })
+    for (const tag of ['FixableLines', 'WrongApproach', 'UndecidedQuestion']) expect(prompt).toContain(tag)
+    expect(prompt).not.toContain('"next"')
+    expect(prompt).not.toContain('## The choices')
+    expect(prompt).not.toMatch(/[0-9]+ of [0-9]+/)
+    for (const ceiling of ['rounds', 'restarts', 'spent', 'budget']) expect(prompt, ceiling).not.toContain(ceiling)
+  })
+
+  it('reads each cause a judge may answer, fenced or trailing', () => {
+    const wrong = causeIn(
+      '```json\n{"cause": {"_tag": "WrongApproach", "why": "wrong seam"}, "summary": "the seam"}\n```',
+    )
+    expect(wrong).toMatchObject({ cause: { _tag: 'WrongApproach' }, summary: 'the seam' })
+    const fixable = causeIn('so: {"cause": {"_tag": "FixableLines", "fixes": []}, "summary": "two lines"}')
+    expect(fixable).toMatchObject({ cause: { _tag: 'FixableLines' } })
+    const asked = causeIn(
+      '{"cause": {"_tag": "UndecidedQuestion", "questions": [{"id": "q", "text": "which?", "answers": [{"id": "a", "text": "A"}, {"id": "b", "text": "B"}], "recommended": "a"}]}, "summary": "s"}',
+    )
+    expect(asked === null ? null : 'cause' in asked ? asked.cause._tag : asked).toBe('UndecidedQuestion')
+  })
+
+  it('names a cause a judge may not answer, and reads no destination as one', () => {
+    expect(causeIn('{"cause": {"_tag": "SetupBroken", "what": "x", "repair": "y"}, "summary": "s"}')).toEqual({
+      refused: 'SetupBroken',
+    })
+    expect(
+      causeIn(
+        '{"cause": {"_tag": "UndecidedQuestion", "questions": [{"id": "q", "text": "which?", "answers": [{"id": "a", "text": "A"}], "recommended": "a"}]}, "summary": "s"}',
+      ),
+    ).toMatchObject({ refused: expect.any(String) })
+    expect(causeIn('{"next": "implement", "why": "lines"}')).toBeNull()
+    // two different causes are an ambiguous answer, not the first of them
+    expect(
+      causeIn(
+        '```json\n{"cause": {"_tag": "FixableLines", "fixes": []}, "summary": "a"}\n```\n```json\n{"cause": {"_tag": "WrongApproach", "why": "w"}, "summary": "b"}\n```',
+      ),
+    ).toBeNull()
+    // two unfenced answers are ambiguous too, not the last of them
+    expect(
+      causeIn(
+        '{"cause": {"_tag": "WrongApproach", "why": "w"}, "summary": "a"} then {"cause": {"_tag": "FixableLines", "fixes": []}, "summary": "b"}',
+      ),
+    ).toBeNull()
+    // prose with braces before the answer does not hide it
+    expect(
+      causeIn(
+        'The shape is {cause, summary}. Mine: {"cause":{"_tag":"WrongApproach","why":"seam"},"summary":"restart"}',
+      ),
+    ).toMatchObject({ cause: { _tag: 'WrongApproach' } })
+    expect(causeIn('nothing')).toBeNull()
+    expect(causeIn(null)).toBeNull()
   })
 })

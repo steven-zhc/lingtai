@@ -495,7 +495,7 @@ runtime:
           judgePrompts.push(request.prompt)
           return {
             ...(yield* refusingRuntime.run(request)),
-            text: '```json\n{"next": "claim", "why": "start over from a clean worktree"}\n```',
+            text: '```json\n{"cause": {"_tag": "WrongApproach", "why": "start over from a clean worktree"}, "summary": "start over from a clean worktree"}\n```',
           }
         }),
     }
@@ -571,7 +571,7 @@ runtime:
     // so the judge's brief offers `claim` (off `restart`) beside `implement`
     // and `waiting`, not only the two a spent restart would leave.
     expect(judgePrompts).toHaveLength(1)
-    expect(judgePrompts[0]).toContain('`claim`')
+    expect(judgePrompts[0]).toContain('WrongApproach')
 
     const runId = theRun(store)![0]!.streamId
     const all = await allEvents(store)
@@ -625,7 +625,7 @@ runtime:
           if (!request.runId.includes(':judge:')) return yield* refusingRuntime.run(request)
           return {
             ...(yield* refusingRuntime.run(request)),
-            text: '```json\n{"next": "claim", "why": "start over from a clean worktree"}\n```',
+            text: '```json\n{"cause": {"_tag": "WrongApproach", "why": "start over from a clean worktree"}, "summary": "start over from a clean worktree"}\n```',
           }
         }),
     }
@@ -714,10 +714,8 @@ runtime:
     // `ProposedEscalated{CandidateUnavailable}` any ceiling escalation is.**
     expect(hold).toMatchObject({
       _tag: 'ProposedEscalated',
-      because: {
-        _tag: 'CandidateUnavailable',
-        excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'newAttempts' } },
-      },
+      // 0108 §6: the judge read WrongApproach, `actionFor` says `newAttempts` is spent, and a person is handed it.
+      because: { _tag: 'JudgeHandedOver', why: expect.stringContaining('`newAttempts` is spent') },
     })
     expect(waitWords(hold!).line).toContain('`newAttempts` is spent')
 
@@ -729,13 +727,7 @@ runtime:
       {
         runId: runId2,
         from: 'review',
-        decision: {
-          _tag: 'Escalated',
-          because: {
-            _tag: 'CandidateUnavailable',
-            excluded: { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'newAttempts' } },
-          },
-        },
+        decision: { _tag: 'Selected', candidate: 'hand-to-person' },
         // The move needs no proposal (#932): a person is waited on.
         next: { _tag: 'WaitOnPerson' },
       },
@@ -1470,7 +1462,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
       proposal: { _tag: 'ReviewFindings' },
       because: { _tag: 'UnreadableReply' },
     })
-    expect(waitWords(hold!).line).toContain('was not readable as one of the steps')
+    expect(waitWords(hold!).line).toContain('was not readable as one cause')
     // The judge's own sentence is on `because.raw` directly (#502) — there is
     // no translation left to drop it on the way to the wait.
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
@@ -2015,10 +2007,13 @@ runtime:
             // The first arrival still has a round to spend — buy it. The
             // second has none left (`stepsOnOffer`), and the point of this
             // fixture is what the judge says there: start over.
-            const next = judged.n === 1 ? 'implement' : 'claim'
+            const cause =
+              judged.n === 1
+                ? '{"_tag": "FixableLines", "fixes": []}'
+                : `{"_tag": "WrongApproach", "why": "round ${judged.n}"}`
             return {
               ...(yield* refusingRuntime.run(request)),
-              text: `\`\`\`json\n{"next": "${next}", "why": "round ${judged.n}"}\n\`\`\``,
+              text: `\`\`\`json\n{"cause": ${cause}, "summary": "round ${judged.n}"}\n\`\`\``,
             }
           }
           if (!request.runId.includes(':review:')) return yield* runtime.run(request)

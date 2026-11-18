@@ -126,6 +126,7 @@
  */
 import type { ActionContext, ActionFinding, InterruptedCause, TheDesign } from '@lingtai/actions'
 import type { Envelope, RuntimeId, ToAppend } from '@lingtai/domain'
+import type { Cause as TriageCause } from '@lingtai/domain/wait'
 import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 // Type-only, and the shape is imported rather than redeclared for the reason
 // `ports.ts` gives: a worktree's path and base sha are data, and a second
@@ -409,6 +410,15 @@ type Arrival = Omit<Judging, 'offering'> & {
  * is never silently let past.
  */
 export type Judged =
+  | {
+      /**
+       * **The cause a runtime judge at `findings` answered** (0108 §6) — the system acts on it, from `actionFor`,
+       * never the judge. `why` is the judge's `summary` and what it cost.
+       */
+      readonly cause: TriageCause
+      readonly named: string
+      readonly why: string
+    }
   | {
       /** Which of the offered steps is next. Held to `offering` by the body. */
       readonly next: Destination
