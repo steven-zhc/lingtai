@@ -187,6 +187,8 @@ describe('whyNothingRuns', () => {
     expect(says({ ...run(10), beacon: { up: true } })).toBeUndefined()
     // nothing carries an old running row: it is an orphan, and the outage is said
     expect(says(run(10))?.[0]).toMatch(/daemon is not running/)
+    // a live `lingtai run` holds the lock and writes no beacon: its old running row is a pass in flight
+    expect(says({ ...run(10), conductorHeld: true })).toBeUndefined()
   })
 
   it('traces a chain through a ticket the red base holds to the base', () => {

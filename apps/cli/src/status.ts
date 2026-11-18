@@ -34,7 +34,7 @@ import {
   type WhyFacts,
   type WhyNothingRuns,
 } from '@lingtai/conductor/why-nothing-runs'
-import { lastBeat, readControlEffect } from '@lingtai/daemon'
+import { conductorLockHolder, lastBeat, readControlEffect } from '@lingtai/daemon'
 import { readStatusEffect } from '@lingtai/daemon/control'
 import {
   agentBranchOf,
@@ -624,7 +624,12 @@ export const readStatus = (
               Effect.succeed<Beacon>({ unread: err instanceof Error ? err.message : String(err) }),
             ),
           )
-          const withBeacon: WhyFacts = { ...facts, beacon }
+          // A `lingtai run` conducts without a beacon: its lock is what says a pass may be live. A failed read counts as held.
+          const conductorHeld = yield* Effect.tryPromise(() => conductorLockHolder()).pipe(
+            Effect.map((holder) => holder !== null),
+            recovering(() => Effect.succeed(true)),
+          )
+          const withBeacon: WhyFacts = { ...facts, beacon, conductorHeld }
           why = rootBeforeChains(withBeacon)
           if (why === null) {
             const blockers = fullSkipped.some((s) => s.reason === 'blocked-by')

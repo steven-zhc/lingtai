@@ -30,6 +30,8 @@ export interface WhyRow {
 export interface WhyFacts {
   now: Date
   beacon: Beacon
+  /** Whether some conductor holds the lock — a daemon or a live `lingtai run`, which writes no beacon. Unknown counts as held. */
+  conductorHeld?: boolean
   /** A drain stands (`control.shutdown !== null`). */
   draining: boolean
   locks: readonly Lock[] | { unread: string }
@@ -114,14 +116,15 @@ export function mayApply(facts: WhyFacts): boolean {
 
 /**
  * The same question, once the beacon is known. A row left `running` longer ago than that is a pass in
- * flight only while a daemon is up; with none, nothing is carrying it and it is an orphan, which must not
- * silence the explanation.
+ * flight while a conductor lives — a daemon, or a `lingtai run` holding the lock, which writes no beacon;
+ * with neither, nothing is carrying it and it is an orphan, which must not silence the explanation.
  */
 export function applies(facts: WhyFacts): boolean {
   if (!mayApply(facts)) return false
   const b = facts.beacon
   const daemonUp = 'up' in b && b.up
-  return !(daemonUp && facts.rows.some(flying))
+  const conductorLive = daemonUp || facts.conductorHeld === true
+  return !(conductorLive && facts.rows.some(flying))
 }
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
