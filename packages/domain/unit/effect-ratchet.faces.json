@@ -79,7 +79,7 @@
   },
   {
     "file": "packages/conductor/src/edit-body.ts",
-    "fn": "editBodyAndRequeue",
+    "fn": "editBodyAndStartNewAttempt",
     "until": "0101 §7",
     "why": "apps/board/src/app/actions.ts"
   },
