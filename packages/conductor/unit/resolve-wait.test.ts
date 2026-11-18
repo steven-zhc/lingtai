@@ -412,7 +412,7 @@ describe('resolveWait', () => {
           waitId,
         ),
       ])
-      const before = reduceTicket(await store.read(ticketId)).restarts.length
+      const before = reduceTicket(await store.read(ticketId)).newAttempts.length
       const result = await resolveWaitHolding(
         { ticketId, issue: 578, waitId, resolution: { _tag: resolution }, by: 'human:steven', store },
         ticketId,
@@ -433,7 +433,7 @@ describe('resolveWait', () => {
         ])
         const reduced = reduceTicket(events)
         expect(before).toBe(1)
-        expect(reduced.restarts).toHaveLength(before)
+        expect(reduced.newAttempts).toHaveLength(before)
         expect(reduced.lifecycle.status).toBe('backlog')
       },
     )

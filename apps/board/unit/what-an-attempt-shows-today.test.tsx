@@ -350,7 +350,7 @@ const RUN_1: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 2,
             turns: 10,
             wall: '2m',
@@ -924,7 +924,7 @@ const RUN_2: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 1,
             turns: 10,
             wall: '2m',
@@ -1801,7 +1801,7 @@ const RUN_4: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 1,
+            newAttempts: 1,
             rounds: 1,
             turns: 10,
             wall: '2m',
@@ -2511,7 +2511,7 @@ const RUN_5: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 1,
+            newAttempts: 1,
             rounds: 1,
             turns: 10,
             wall: '2m',
@@ -3275,7 +3275,7 @@ const RUN_6: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 2,
             turns: 10,
             wall: '2m',
@@ -3796,7 +3796,7 @@ const RUN_7: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 1,
             turns: 10,
             wall: '2m',
@@ -4595,7 +4595,7 @@ const RUN_9: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 2,
             turns: 10,
             wall: '2m',
@@ -5389,7 +5389,7 @@ const RUN_10a: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 2,
             turns: 10,
             wall: '2m',
@@ -6103,7 +6103,7 @@ const RUN_10b: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 2,
             turns: 10,
             wall: '2m',
@@ -7166,7 +7166,7 @@ const RUN_12: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 2,
             turns: 10,
             wall: '2m',
@@ -7782,7 +7782,7 @@ const RUN_13: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 1,
             turns: 10,
             wall: '2m',
@@ -8536,7 +8536,7 @@ const RUN_13b: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 1,
             turns: 10,
             wall: '2m',
@@ -9217,7 +9217,7 @@ const RUN_14a: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 2,
             turns: 10,
             wall: '2m',
@@ -9770,7 +9770,7 @@ const RUN_14b: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 2,
             turns: 10,
             wall: '2m',
@@ -10264,7 +10264,7 @@ const RUN_14c: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 1,
             turns: 10,
             wall: '2m',
@@ -11071,7 +11071,7 @@ const RUN_14d: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 0,
+            newAttempts: 0,
             rounds: 1,
             turns: 10,
             wall: '2m',
@@ -11782,7 +11782,7 @@ const RUN_16: EventSpec[] = [
             findings: 5,
           },
           limits: {
-            restarts: 2,
+            newAttempts: 2,
             rounds: 1,
             turns: 10,
             wall: '2m',

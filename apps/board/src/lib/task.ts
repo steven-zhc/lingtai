@@ -580,12 +580,12 @@ export interface StandingView {
   deciding: Deciding | null
   /**
    * How many approaches this ticket has abandoned, and the ceiling of the
-   * arm that bought it — `item.restarts.length` and the last record's `of`,
+   * arm that bought it — `item.newAttempts.length` and the last record's `of`,
    * read off `reduceTicketEvent` rather than re-reduced here (`#415`).
    *
-   * The same two numbers `TaskCard.restarts`/`.restartsOf` carry, so the
+   * The same two numbers `TaskCard.newAttempts`/`.newAttemptsOf` carry, so the
    * page's own `held` line and the board's cannot word one ticket's budget
-   * two ways. **`restartsOf` is zero regardless of `restarts`, since `#502`**
+   * two ways. **`newAttemptsOf` is zero regardless of `newAttempts`, since `#502`**
    * — `TicketReleased{cause: Restart}` carries `{after, restart}` alone, so
    * there is no ceiling left on any event for this reduce to read, however
    * many times the ticket has restarted. `describeArm` (#504) no longer
@@ -593,8 +593,8 @@ export interface StandingView {
    * `limits.restarts` as the ceiling directly — and `describeHeld` falls
    * back to that same `limits.restarts` wherever this reads zero.
    */
-  restarts: number
-  restartsOf: number
+  newAttempts: number
+  newAttemptsOf: number
   /**
    * The wait a card renders, so `Approve`/`StartNewAttempt`/`AnswerQuestion`/`Close`
    * can send back **the wait it was shown**, not whatever the ticket is
@@ -939,14 +939,14 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
         ? null
         : ([...(run?.steps ?? [])].reverse().find((g) => g.state === 'failed' && quotes(raw, g))?.step ?? null),
     deciding: decidingOf(runs, run),
-    restarts: item.restarts.length,
-    // `RestartRecord` carries no ceiling since #502 (`TicketReleased{cause:
+    newAttempts: item.newAttempts.length,
+    // `NewAttemptRecord` carries no ceiling since #502 (`TicketReleased{cause:
     // Restart}` is `{after, restart}` alone — the policy it was spent against
     // lives in the recipe, never on the event). Zero here is "the log has
     // none", the same reading a missing ceiling always got; `board.ts`'s own
-    // `restartsOf > 0 ? … : limits?.restarts` already falls back to the
+    // `newAttemptsOf > 0 ? … : limits?.restarts` already falls back to the
     // recipe for it.
-    restartsOf: 0,
+    newAttemptsOf: 0,
     waitId: life.status === 'blocked' || life.status === 'approved' ? life.waitId : null,
     reason: blocked ? life.reason : null,
     unpushed: blocked && 'run' in life.reason ? (life.reason.run.unpushed ?? null) : null,
@@ -2083,8 +2083,8 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
           spent: spentOf(states[claims.findIndex((c) => c.runId === standing.runId)]?.roundsOpened ?? [], namedGranted),
           granted: namedGranted,
           roundsOf: limits?.refusalFixes ?? null,
-          restarts: standing.restarts,
-          restartsOf: standing.restartsOf > 0 ? standing.restartsOf : (limits?.newAttempts ?? null),
+          newAttempts: standing.newAttempts,
+          newAttemptsOf: standing.newAttemptsOf > 0 ? standing.newAttemptsOf : (limits?.newAttempts ?? null),
         })
 
   return {

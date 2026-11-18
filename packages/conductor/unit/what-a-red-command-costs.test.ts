@@ -133,7 +133,7 @@ describe('the run page says what a red command costs at each step it may be writ
       const offer = offerFor(
         proposal!,
         { refusalFixes: 2, newAttempts: 1, conflictResolutions: 2 },
-        { rounds: 0, restarts: 0 },
+        { rounds: 0, newAttempts: 0 },
       )
       expect(
         offer.available.some((candidate) => destinationOf(candidate, proposal!) === 'implement'),
@@ -165,7 +165,7 @@ describe('the run page says what a red command costs at each step it may be writ
     const preparedOffer = offerFor(
       prepared,
       { refusalFixes: 2, newAttempts: 1, conflictResolutions: 2 },
-      { rounds: 0, restarts: 0 },
+      { rounds: 0, newAttempts: 0 },
     )
     expect(
       preparedOffer.available.some((candidate) => destinationOf(candidate, prepared) === 'implement'),
@@ -176,7 +176,7 @@ describe('the run page says what a red command costs at each step it may be writ
       const offer = offerFor(
         proposal,
         { refusalFixes: 2, newAttempts: 1, conflictResolutions: 2 },
-        { rounds: 0, restarts: 0 },
+        { rounds: 0, newAttempts: 0 },
       )
       expect(
         offer.available.some((candidate) => destinationOf(candidate, proposal) === 'implement'),

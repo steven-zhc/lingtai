@@ -1,4 +1,4 @@
-import { emptyTicket, type RestartRecord, type TicketState } from '@lingtai/domain'
+import { emptyTicket, type NewAttemptRecord, type TicketState } from '@lingtai/domain'
 /**
  * Whether a pass whose rounds are spent starts the work over, or asks a person.
  *
@@ -21,15 +21,15 @@ import { describe, expect, it } from 'vitest'
 import { armBranch } from '../src/branches.ts'
 import { decideRestart, restartReason } from '../src/restart.ts'
 
-const arm = (over: Partial<RestartRecord> = {}): RestartRecord => ({
+const arm = (over: Partial<NewAttemptRecord> = {}): NewAttemptRecord => ({
   after: 'pass-1',
-  restart: 1,
+  newAttempt: 1,
   ...over,
 })
 
-const item = (restarts: readonly RestartRecord[] = []): TicketState => ({
+const item = (newAttempts: readonly NewAttemptRecord[] = []): TicketState => ({
   ...emptyTicket,
-  restarts,
+  newAttempts,
 })
 
 /** A review that refused, with the rounds spent against it. The ordinary case. */
@@ -37,7 +37,7 @@ const refused = { action: 'review', on: 'findings' as const, exhausted: true }
 
 describe('whether a spent pass buys another approach', () => {
   it('buys one when the recipe asks for one and the ceiling is not spent', () => {
-    expect(decideRestart({ refusal: refused, restarts: 2, item: item(), alsoAsked: null })).toEqual({
+    expect(decideRestart({ refusal: refused, newAttempts: 2, item: item(), alsoAsked: null })).toEqual({
       restart: true,
       n: 1,
       of: 2,
@@ -45,7 +45,7 @@ describe('whether a spent pass buys another approach', () => {
 
     // And the ordinal counts off the arms on the log rather than a counter —
     // which is what makes it survive a rebuild (0025 §3, one ceiling along).
-    expect(decideRestart({ refusal: refused, restarts: 2, item: item([arm()]), alsoAsked: null })).toEqual({
+    expect(decideRestart({ refusal: refused, newAttempts: 2, item: item([arm()]), alsoAsked: null })).toEqual({
       restart: true,
       n: 2,
       of: 2,
@@ -60,7 +60,7 @@ describe('whether a spent pass buys another approach', () => {
    * drifts to `1` is a new way to spend an agent on every project at once.
    */
   it('buys nothing when the recipe says nothing, and names the key', () => {
-    const none = decideRestart({ refusal: refused, restarts: 0, item: item(), alsoAsked: null })
+    const none = decideRestart({ refusal: refused, newAttempts: 0, item: item(), alsoAsked: null })
 
     expect(none.restart).toBe(false)
     expect(none.restart === false && none.why).toMatch(/runtime\.limits\.ticket\.newAttempts: 0/)
@@ -79,7 +79,7 @@ describe('whether a spent pass buys another approach', () => {
     for (const on of ['output', 'conflict'] as const) {
       const no = decideRestart({
         refusal: { action: 'build', on, exhausted: true },
-        restarts: 2,
+        newAttempts: 2,
         item: item(),
         alsoAsked: null,
       })
@@ -99,7 +99,7 @@ describe('whether a spent pass buys another approach', () => {
   it('buys nothing when an agent declined rather than the ceiling being spent', () => {
     const no = decideRestart({
       refusal: { action: 'review', on: 'findings', exhausted: false },
-      restarts: 2,
+      newAttempts: 2,
       item: item(),
       alsoAsked: null,
     })
@@ -111,7 +111,7 @@ describe('whether a spent pass buys another approach', () => {
   it('defers to anything already asking for a person, and says who', () => {
     const no = decideRestart({
       refusal: refused,
-      restarts: 2,
+      newAttempts: 2,
       item: item(),
       alsoAsked: 'the a-person-sees-a-new-noun action',
     })
@@ -128,8 +128,8 @@ describe('whether a spent pass buys another approach', () => {
   it('stops at the ceiling, and says which ceiling', () => {
     const spent = decideRestart({
       refusal: refused,
-      restarts: 2,
-      item: item([arm({ restart: 1 }), arm({ restart: 2, after: 'pass-2' })]),
+      newAttempts: 2,
+      item: item([arm({ newAttempt: 1 }), arm({ newAttempt: 2, after: 'pass-2' })]),
       alsoAsked: null,
     })
 
@@ -146,7 +146,7 @@ describe('whether a spent pass buys another approach', () => {
   it('names the recipe before the ceiling when both would refuse', () => {
     const no = decideRestart({
       refusal: refused,
-      restarts: 0,
+      newAttempts: 0,
       item: item([arm()]),
       alsoAsked: 'a repair',
     })

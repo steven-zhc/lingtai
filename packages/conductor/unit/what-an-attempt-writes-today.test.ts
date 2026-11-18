@@ -589,7 +589,7 @@ runtime:
 
   /**
    * The same pass, run twice on the same store with fresh ports each time —
-   * `reduced.restarts` is read off the work-item stream (`conduct.ts:3351`), so
+   * `reduced.newAttempts` is read off the work-item stream (`conduct.ts:3351`), so
    * the second `once()` sees the first's restart without any event being
    * hand-seeded. With `restarts: 1` already spent, the judge's second `claim`
    * answer is not one of the steps on offer (`"waiting"`, `"implement"`), so
@@ -1954,7 +1954,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
    * (`headReached(pass.steps)`, the commit `review` judged — the WIP's own
    * *parent*) directly. Every ending that kept a WIP therefore read the arm as
    * down though it was on origin and `headSha` was its ancestor: no
-   * `PassRestarted` was appended and `restartsSpent` never advanced. `armIsUp`
+   * `PassRestarted` was appended and `newAttemptsSpent` never advanced. `armIsUp`
    * now also accepts a WIP whose own parent is `headSha` (`conduct.ts:3719`).
    */
   function restartWithAKeptWip(did: string[], store: ReturnType<typeof memoryStore>) {
@@ -2136,7 +2136,7 @@ runtime:
     expect(implementRound1?.actions[0]?.result).toMatchObject({ head: fixture.WIP_SHA })
 
     // The same pass, run again on the same store with fresh ports:
-    // `reduced.restarts` already carries the first, and a second WIP on a
+    // `reduced.newAttempts` already carries the first, and a second WIP on a
     // fresh worktree spends the second.
     const did2: string[] = []
     const again = restartWithAKeptWip(did2, store)

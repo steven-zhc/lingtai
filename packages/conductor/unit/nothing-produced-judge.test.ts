@@ -13,7 +13,7 @@ import { judgePrompt } from '../src/judge-agent.ts'
 import { replyFor } from '../src/proposed-route.ts'
 
 const policy = { refusalFixes: 2, newAttempts: 1, conflictResolutions: 2 }
-const zero = { rounds: 0, restarts: 0 }
+const zero = { rounds: 0, newAttempts: 0 }
 const SAID = 'I read the module and stopped before writing the test'
 const proposal: Proposal = { _tag: 'NothingProduced', said: SAID }
 const arrived = { findings: [], evidence: '' }
@@ -43,7 +43,7 @@ describe('replyFor at nothing-produced', () => {
 
   it('rounds spent: only a person is on offer and the judge is never called', async () => {
     const { seen, judge } = counting({ next: 'implement', named: 'claude-code', why: 'x' })
-    await Effect.runPromise(replyFor(offerFor(proposal, policy, { rounds: 2, restarts: 0 }), arrived, judge))
+    await Effect.runPromise(replyFor(offerFor(proposal, policy, { rounds: 2, newAttempts: 0 }), arrived, judge))
     expect(seen).toHaveLength(0)
   })
 

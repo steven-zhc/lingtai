@@ -330,8 +330,8 @@ describe('reduceTicket', () => {
       e('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
     ])
 
-    expect(after.restarts).toHaveLength(1)
-    expect(after.restarts[0]!).toEqual({ after: 'pass-a', restart: 1 })
+    expect(after.newAttempts).toHaveLength(1)
+    expect(after.newAttempts[0]!).toEqual({ after: 'pass-a', newAttempt: 1 })
     // And it is claimed, not blocked — a restart is not a state an item is in.
     expect(after.lifecycle.status).toBe('claimed')
 
@@ -339,7 +339,7 @@ describe('reduceTicket', () => {
       e('TicketReleased', { runId: 'pass-a', reason: 'restart 1', cause: { _tag: 'NewAttempt', newAttempt: 1 } }),
       e('TicketReleased', { runId: 'pass-b', reason: 'restart 2', cause: { _tag: 'NewAttempt', newAttempt: 2 } }),
     ])
-    expect(twice.restarts.map((r) => r.restart)).toEqual([1, 2])
+    expect(twice.newAttempts.map((r) => r.newAttempt)).toEqual([1, 2])
   })
 
   it('ignores an event type it has never heard of, but still advances', () => {

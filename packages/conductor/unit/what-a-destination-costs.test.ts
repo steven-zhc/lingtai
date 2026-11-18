@@ -342,7 +342,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       const offer = offerFor(
         proposal,
         { refusalFixes: SPARE.refusalFixes, newAttempts: SPARE.newAttempts, conflictResolutions: SPARE.refusalFixes },
-        { rounds: 0, restarts: 0 },
+        { rounds: 0, newAttempts: 0 },
       )
 
       expect(offer.available.map((candidate) => destinationOf(candidate, proposal)).sort()).toEqual([
@@ -368,7 +368,7 @@ describe('a destination fails three ways, and a step has one way to say so', () 
       const offer = offerFor(
         proposal,
         { refusalFixes: SPARE.refusalFixes, newAttempts: SPARE.newAttempts, conflictResolutions: SPARE.refusalFixes },
-        { rounds: SPARE.refusalFixes, restarts: 0 },
+        { rounds: SPARE.refusalFixes, newAttempts: 0 },
       )
 
       expect(offer.available.map((candidate) => destinationOf(candidate, proposal))).toEqual(['waiting'])

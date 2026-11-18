@@ -1761,7 +1761,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     /**
      * **What the back edges may spend** (0061 §3, and 0040's two dimensions).
      *
-     * `rounds` bounds depth and `restarts`/`restartsSpent` bound breadth, and
+     * `rounds` bounds depth and `restarts`/`newAttemptsSpent` bound breadth, and
      * the pass reads all three rather than asking anybody: `offerFor`
      * (`@lingtai/domain`) puts `implement` on the offer while rounds are left
      * and `claim` while restarts are, and offers neither once they are spent.
@@ -1775,7 +1775,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       refusalFixes: ceiling.attempt.refusalFixes,
       conflictResolutions: ceiling.attempt.conflictResolutions,
       newAttempts: ceiling.ticket.newAttempts,
-      newAttemptsSpent: reduced.restarts.length,
+      newAttemptsSpent: reduced.newAttempts.length,
     }
 
     let released = false
@@ -6037,7 +6037,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         log(`not starting over — ${arm} was not published, so no restart is spent`)
       }
       if (restarted && armIsUp) {
-        const restart = reduced.restarts.length + 1
+        const restart = reduced.newAttempts.length + 1
         const reason = restartReason({
           action: lastRoute?.from ?? 'review',
           rounds: roundsSpent,
@@ -6074,9 +6074,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (
           headGone !== null &&
           continuation?.released?.by !== 'person' &&
-          reduced.restarts.length < ceiling.ticket.newAttempts
+          reduced.newAttempts.length < ceiling.ticket.newAttempts
         ) {
-          const restart = reduced.restarts.length + 1
+          const restart = reduced.newAttempts.length + 1
           const why = `the saved head cannot be continued (${headGone}) — restart ${restart} of ${ceiling.ticket.newAttempts}`
           log(why)
           runLog.note('restart', why)

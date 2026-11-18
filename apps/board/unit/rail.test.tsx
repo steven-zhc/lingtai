@@ -213,7 +213,7 @@ const fixSpent = (): Envelope[] => {
   const offer = offerFor(
     proposal,
     { refusalFixes: 3, newAttempts: 1, conflictResolutions: 3 },
-    { rounds: 0, restarts: 0 },
+    { rounds: 0, newAttempts: 0 },
   )
   const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'same-worktree judge' }
   const decision = decideRoute(offer, reply)
@@ -384,8 +384,8 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     updatedAt: new Date('2026-09-15T17:20:43Z'),
     closedAt: null,
     attempts: 2,
-    restarts: 1,
-    restartsOf: 1,
+    newAttempts: 1,
+    newAttemptsOf: 1,
     lastAttemptAt: null,
     awaitingSha: null,
     awaitingApproval: false,
@@ -731,7 +731,7 @@ describe('a card stopped on a person', () => {
     const html = blocked()
 
     // The budget line is appended here too — `task()`'s own fixture carries
-    // `restarts: 1, restartsOf: 1`, and no project limits are given here, so
+    // `restarts: 1, newAttemptsOf: 1`, and no project limits are given here, so
     // the rounds ceiling is unknown rather than zero (`#415`'s own distinction
     // — see `describeHeld`). The budget line is its own describe block below.
     expect(sentence(html)).toBe('proposed:build refused — 0 rounds · 0 restarts left')
@@ -880,7 +880,7 @@ describe("a held item's budget", () => {
     // The rounds ceiling is the recipe's to hand in since #502 — see the
     // sibling test above.
     const html = render(
-      { state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 2 },
+      { state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40), newAttempts: 1, newAttemptsOf: 2 },
       fixSpent(),
       PLAN,
       false,
@@ -898,7 +898,7 @@ describe("a held item's budget", () => {
    */
   it("falls back to the recipe's own ceiling when the run never bought one", () => {
     const html = render(
-      { state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40), restarts: 0, restartsOf: 0 },
+      { state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40), newAttempts: 0, newAttemptsOf: 0 },
       refused(),
       PLAN,
       false,
@@ -916,7 +916,7 @@ describe("a held item's budget", () => {
    */
   it('drops the arm from the pill wherever the rail carries it, and keeps it on a queued card', () => {
     const waiting = render(
-      { state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40), restarts: 1, restartsOf: 1 },
+      { state: 'waiting', failed: 1, awaitingSha: 'b'.repeat(40), newAttempts: 1, newAttemptsOf: 1 },
       refused(),
     )
     // Not the arm's own words — the held line beside it says "restarts left"
@@ -925,7 +925,7 @@ describe("a held item's budget", () => {
 
     const queuedHtml = renderToStaticMarkup(
       <Card
-        card={toCard(task({ state: 'queued', restarts: 1, restartsOf: 1 }), null, null, null, {
+        card={toCard(task({ state: 'queued', newAttempts: 1, newAttemptsOf: 1 }), null, null, null, {
           refusalFixes: 3,
           newAttempts: 1,
         })}
@@ -950,7 +950,7 @@ describe("a held item's budget", () => {
    */
   it('carries the budget line on an open approval, not just a refusal', () => {
     const html = render(
-      { state: 'waiting', restarts: 1, restartsOf: 1 },
+      { state: 'waiting', newAttempts: 1, newAttemptsOf: 1 },
       [
         ...running().slice(0, 5),
         at('2026-09-15T17:20:43Z', 'StepStarted', started('proposed')),

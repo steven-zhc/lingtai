@@ -53,8 +53,8 @@ function task(over: Partial<TaskCard> = {}): TaskCard {
     closedAt: null,
     attempts: 1,
     lastAttemptAt: null,
-    restarts: 0,
-    restartsOf: 0,
+    newAttempts: 0,
+    newAttemptsOf: 0,
     awaitingSha: null,
     awaitingApproval: false,
     // A real wait when the caller asks for `state: 'waiting'` — `wait: null`

@@ -123,7 +123,7 @@ function fixableFixture(published: boolean) {
     const offer = offerFor(
       proposal,
       { refusalFixes: 2, newAttempts: 1, conflictResolutions: 2 },
-      { rounds: spent, restarts: 0 },
+      { rounds: spent, newAttempts: 0 },
     )
     const reply = { _tag: 'Selected' as const, candidate: 'fix-lines' as const, why: 'Fix the recorded findings' }
     return run('PassRouted', { runId, offer, reply, decision: decideRoute(offer, reply) }, at(minute))
@@ -515,8 +515,8 @@ export async function preview(name: CaseName) {
             spent: rounds?.spent ?? 0,
             granted: rounds?.granted ?? [],
             roundsOf: 2,
-            restarts: 0,
-            restartsOf: 1,
+            newAttempts: 0,
+            newAttemptsOf: 1,
           })
         : null,
     totals: totalsOf(foldedRuns, discussions),

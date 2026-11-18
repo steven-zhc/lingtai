@@ -66,8 +66,8 @@ const EVERYTHING = {
   refusal: { findings: [FINDING], evidence: 'tsc: 3 errors in 2 files' },
   rounds: 2,
   roundsSpent: 0,
-  restarts: 1,
-  restartsSpent: 0,
+  newAttempts: 1,
+  newAttemptsSpent: 0,
   alsoAsked: null,
 } as const
 
@@ -115,7 +115,7 @@ describe("the set is the workflow's", () => {
    */
   it('offers `claim` only for a judgement, and only while restarts are left', () => {
     expect(stepsOnOffer({ ...EVERYTHING, when: 'findings' })).toContain('claim')
-    expect(stepsOnOffer({ ...EVERYTHING, when: 'findings', restartsSpent: 1 })).not.toContain('claim')
+    expect(stepsOnOffer({ ...EVERYTHING, when: 'findings', newAttemptsSpent: 1 })).not.toContain('claim')
     for (const when of ['red', 'verify-failed', 'conflict', 'needs-input'] as const) {
       expect(stepsOnOffer({ ...EVERYTHING, when }), when).not.toContain('claim')
     }
@@ -177,7 +177,7 @@ describe("the set is the workflow's", () => {
   it('always offers a person', () => {
     for (const when of JudgeWhen.options) {
       for (const reached of STEPS) {
-        const offer = stepsOnOffer({ ...EVERYTHING, when, reached, rounds: 0, restarts: 0 })
+        const offer = stepsOnOffer({ ...EVERYTHING, when, reached, rounds: 0, newAttempts: 0 })
         expect(offer, `${when} at ${reached}`).toContain('human')
         expect(offer.every((step) => DESTINATIONS.includes(step))).toBe(true)
       }

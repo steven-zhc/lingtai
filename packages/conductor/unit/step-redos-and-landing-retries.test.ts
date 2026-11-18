@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest'
 import { continuationSpent } from '../src/conduct.ts'
 
 const policy = { refusalFixes: 2, newAttempts: 0, conflictResolutions: 2 }
-const none: Spent = { rounds: 0, restarts: 0 }
+const none: Spent = { rounds: 0, newAttempts: 0 }
 const unreachable: Proposal = {
   _tag: 'MergeRefused',
   reason: 'unreachable',

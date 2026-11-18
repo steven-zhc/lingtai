@@ -777,7 +777,7 @@ export const NOT_BUILT_YET: StepBodies = {
  * it does not care which key they came from, and it will not need editing when
  * they move.
  *
- * **`restarts`/`restartsSpent` rather than one precomputed `restartsLeft`**,
+ * **`restarts`/`newAttemptsSpent` rather than one precomputed `restartsLeft`**,
  * since `#462`: `offerFor` (`@lingtai/domain`) wants a total policy and what
  * has already been spent as two separate numbers — the same split `rounds`
  * already has against this pass's own `roundsSpent` — rather than the
@@ -1737,7 +1737,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         const offer = offerFor(
           proposal,
           // `refusalFixes` is spent as `rounds`, `conflictResolutions` as `conflictRounds` and
-          // `newAttempts` as `restarts` until the log rename; only the limits have their new names.
           {
             refusalFixes: roundLimit,
             newAttempts: restartLimit,
@@ -1745,7 +1744,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           },
           {
             rounds: roundsSpent,
-            restarts: ceilings.newAttemptsSpent,
+            newAttempts: ceilings.newAttemptsSpent,
             baseMerges: baseMergesSpent,
             conflictRounds: conflictRoundsSpent,
             stepRedos: stepRedosSpent,

@@ -36,7 +36,7 @@ import { AttemptRef } from './wait.ts'
 export type RoutingPolicy = {
   /** Fixes after a build or review refusal an attempt may buy; spent as `Spent.rounds` until the log rename. */
   refusalFixes: number
-  /** New attempts a ticket may buy; spent as `Spent.restarts` until the log rename. */
+  /** New attempts a ticket may buy; spent as `Spent.newAttempts`. */
   newAttempts: number
   /** The conflict resolutions an attempt may buy: the recipe's own number, never a grant-capped one (#1200); spent as `Spent.conflictRounds`. */
   conflictResolutions: number

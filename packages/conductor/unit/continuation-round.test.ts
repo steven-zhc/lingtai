@@ -19,7 +19,7 @@ describe('continuation round accounting', () => {
 
 describe('continuation spent accounting (#1200)', () => {
   const policy = { refusalFixes: 2, newAttempts: 0, conflictResolutions: 2 }
-  const none = { rounds: 0, restarts: 0 }
+  const none = { rounds: 0, newAttempts: 0 }
   const routed = (
     event: ReturnType<typeof makeStream>,
     proposal: Proposal,

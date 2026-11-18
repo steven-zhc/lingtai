@@ -1386,12 +1386,12 @@ export function diagnoseDisagreement(input: {
 }
 
 /**
- * One abandoned approach, as `TicketState.restarts` holds it.
+ * One abandoned approach, as `TicketState.newAttempts` holds it.
  *
  * Declared here rather than imported from `@lingtai/domain` for the reason
  * `PromptBudget` is declared in `attempts.ts`: this module is pure decisions
  * and prose, and what it needs of a restart record is the fields that go on a
- * card, not the reducer that produced them. `RestartRecord` satisfies it
+ * card, not the reducer that produced them. `NewAttemptRecord` satisfies it
  * structurally, so the conductor passes the reducer's own values straight through.
  */
 export interface RestartArm {
@@ -1678,10 +1678,10 @@ export function unfixedQuestion(input: {
   /** What ended the loop, which is what the line is about (`#197`). */
   stop: FixStop
   /** Approaches already abandoned. Absent or zero on every card today. */
-  restarts?: number
+  newAttempts?: number
 }): string {
   const where = `${input.branch} into ${input.base}`
-  const spent = `${input.rounds} fix round(s)${armSuffix(input.restarts)}`
+  const spent = `${input.rounds} fix round(s)${armSuffix(input.newAttempts)}`
   // *Never re-run* is a claim about a count, and the count is in `rounds`
   // (`#197`): on these endings it is the round that produced nothing, so the
   // rounds before it each committed and the action ran on each of their diffs.
@@ -1710,13 +1710,13 @@ export function unfixedQuestion(input: {
         'it changed nothing and said why instead'
       )
     case 'no-rounds':
-      return `${input.action} refuses ${where} and this recipe buys no fix round` + afterArms(input.restarts)
+      return `${input.action} refuses ${where} and this recipe buys no fix round` + afterArms(input.newAttempts)
     case 'no-criterion':
       // The rounds when there were any, for the reason the findings-shaped line
       // names them (`#197`): the criterion rule is checked before either
       // ceiling, so this ending is not a first refusal's alone.
       return input.rounds === 0
-        ? `${input.action} refuses ${where} and printed nothing to fix${afterArms(input.restarts)}`
+        ? `${input.action} refuses ${where} and printed nothing to fix${afterArms(input.newAttempts)}`
         : `${input.action} refuses ${where} and printed nothing to fix, after ${spent}`
     case 'spent':
       // The one line it has always been, byte for byte, for the ending where
@@ -1752,10 +1752,10 @@ export function disagreementQuestion(input: {
   /** What ended the loop, which is what the line is about (`#197`). */
   stop: FixStop
   /** Approaches already abandoned. Absent or zero on every card today. */
-  restarts?: number
+  newAttempts?: number
 }): string {
   const where = `${input.branch} into ${input.base}`
-  const spent = `${input.rounds} fix round(s)${armSuffix(input.restarts)}`
+  const spent = `${input.rounds} fix round(s)${armSuffix(input.newAttempts)}`
   const scored = `${count(input.findings)} (worst: ${severest(input.findings)})`
   switch (input.stop.ended) {
     case 'crashed':
@@ -1789,13 +1789,13 @@ export function disagreementQuestion(input: {
       // one step earlier, where a person reads it first.
       return input.rounds === 0
         ? `the ${input.action} reviewer refuses ${where} with ${scored} and no failure ` +
-            `scenario, so no fixing agent was bought${afterArms(input.restarts)}`
+            `scenario, so no fixing agent was bought${afterArms(input.newAttempts)}`
         : `the ${input.action} reviewer refuses ${where} with ${scored} and no failure ` +
             `scenario, so no further fixing agent was bought after ${spent}`
     case 'no-rounds':
       return (
         `the ${input.action} reviewer refuses ${where} with ${scored}, and this ` +
-        `recipe buys no fix round, so nothing answered it${afterArms(input.restarts)}`
+        `recipe buys no fix round, so nothing answered it${afterArms(input.newAttempts)}`
       )
     case 'spent':
       // Byte for byte the line it has always been where two agents did look at
@@ -1898,8 +1898,8 @@ export function mergeAnywayBecause(input: {
  * nobody has managed to do. Nothing when there have been none, so a card on a
  * project that buys no restart reads exactly as it did.
  */
-function armSuffix(restarts: number | undefined): string {
-  return restarts === undefined || restarts === 0 ? '' : ` and ${restarts} restart(s)`
+function armSuffix(newAttempts: number | undefined): string {
+  return newAttempts === undefined || newAttempts === 0 ? '' : ` and ${newAttempts} restart(s)`
 }
 
 /**
@@ -1920,8 +1920,8 @@ function armSuffix(restarts: number | undefined): string {
  * that two approaches were started over and thrown away, so what is in doubt
  * may be the ticket.
  */
-function afterArms(restarts: number | undefined): string {
-  return restarts === undefined || restarts === 0 ? '' : `, after ${restarts} restart(s)`
+function afterArms(newAttempts: number | undefined): string {
+  return newAttempts === undefined || newAttempts === 0 ? '' : `, after ${newAttempts} restart(s)`
 }
 
 /** The findings, whole — severity, place, claim and scenario, nothing dropped. */

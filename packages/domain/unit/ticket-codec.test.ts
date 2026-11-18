@@ -81,3 +81,11 @@ describe('decodeTicket refuses another shape', () => {
     expect(() => decodeTicket('{nope', 'ticket_report')).toThrow(/not JSON.*rebuild/s)
   })
 })
+
+describe('a row written before #1268', () => {
+  it('is refused naming the rebuild, never read as zero new attempts', () => {
+    const { newAttempts: _gone, ...rest } = JSON.parse(encodeTicket(emptyTicket)) as Record<string, unknown>
+    const old = { ...rest, restarts: [{ after: 'r1', restart: 1 }] }
+    expect(() => decodeTicket(old, 'task_view')).toThrow(/lingtai projection rebuild task_view/)
+  })
+})

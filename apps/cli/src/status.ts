@@ -203,8 +203,8 @@ export function offerFailedLine(source: string, err: Error): string {
  * unit test can render it beside the board's `toCard` without going through
  * `status()`, which `unit/status.test.ts` says is unreachable from here.
  */
-export function armLine(row: { restarts?: number }, restartsOf: number | null): string | null {
-  return describeArm({ restarts: row.restarts ?? 0 }, restartsOf)
+export function armLine(row: { newAttempts?: number }, newAttemptsOf: number | null): string | null {
+  return describeArm({ newAttempts: row.newAttempts ?? 0 }, newAttemptsOf)
 }
 
 /**
@@ -317,7 +317,7 @@ export interface StatusRow {
   title: string
   /** The projection's own state value — `verifying` stays `verifying`. */
   state: string
-  restarts: number
+  newAttempts: number
   /** `describeArm`'s sentence, or null. */
   arm: string | null
   /** `backingOff`'s sentence while the retry window holds it. */
@@ -488,12 +488,12 @@ export const readStatus = (
       // Zero when the recipe would not resolve: nothing was offered either.
       const backoffMs = filter.ok ? filter.backoffMs : 0
       // The ceiling `describeArm` says `of` against — `limits.restarts`, null where the recipe would not resolve (#504).
-      const restartsOf = filter.ok ? filter.limits.newAttempts : null
+      const newAttemptsOf = filter.ok ? filter.limits.newAttempts : null
       const runnable = yield* selectRunnableEffect({ project: name, offered, kinds, backoffMs })
       const tasks = yield* readTasksEffect({ project: name })
       // **The arm comes from the row, because the offer cannot carry it** (#100):
       // a restarted ticket is queued, so it is listed from here and nowhere else.
-      const restartsByTask = new Map(tasks.map((t) => [t.taskId, t.restarts ?? 0]))
+      const newAttemptsByTask = new Map(tasks.map((t) => [t.taskId, t.newAttempts ?? 0]))
       const now = Date.now()
       const offeredKinds = kinds.length > 0 ? kinds : ['bug']
       const offeredRefs = new Set(offered.filter((o) => offeredKinds.includes(o.kind)).map((o) => o.ref))
@@ -512,7 +512,7 @@ export const readStatus = (
           awaitingSha?: string | null
           savedHead?: SavedHeadReading
         },
-        restarts: number,
+        newAttempts: number,
       ): StatusRow => {
         // **When, not whether** (#95): the sentence is `backingOff`'s, so the card says it in the same words (#100).
         const until =
@@ -530,8 +530,8 @@ export const readStatus = (
           kind: t.kind,
           title: t.title,
           state: t.state,
-          restarts,
-          arm: armLine({ restarts }, restartsOf),
+          newAttempts,
+          arm: armLine({ newAttempts }, newAttemptsOf),
           held: until ? backingOff(until, now) : null,
           // Said only when the source actually answered: with no answer every row looks unoffered.
           // Against the offer and not `runnable`, which the retry window has already thinned.
@@ -633,7 +633,7 @@ export const readStatus = (
         passedOver: skipped,
         passedOverLine: passed,
         dependenciesUnread: unread,
-        runnable: runnable.map((r) => rowOf({ ...r, state: 'queued' }, restartsByTask.get(r.taskId) ?? 0)),
+        runnable: runnable.map((r) => rowOf({ ...r, state: 'queued' }, newAttemptsByTask.get(r.taskId) ?? 0)),
         known: yield* Effect.forEach(
           tasks,
           (t) =>
@@ -652,7 +652,7 @@ export const readStatus = (
                     ),
                   )
                 : undefined
-              const row = rowOf({ ...t, savedHead }, t.restarts ?? 0)
+              const row = rowOf({ ...t, savedHead }, t.newAttempts ?? 0)
               // Every pass in flight is a row with its step, not only the first (#640).
               if ((t.state === 'running' || t.state === 'verifying') && t.runId) {
                 const runId = t.runId
@@ -850,7 +850,7 @@ export function statusJson(report: StatusReport, all = false): Record<string, un
       for (const t of p.known)
         (byState[t.state] ??= []).push({
           ...rowJson(t),
-          restarts: t.restarts,
+          newAttempts: t.newAttempts,
           held: t.held,
           arm: t.arm,
           unoffered: t.unoffered,
@@ -885,7 +885,7 @@ export function statusJson(report: StatusReport, all = false): Record<string, un
         dependenciesUnread: p.dependenciesUnread,
         runnable: p.runnable.map((r) => ({
           ...rowJson(r),
-          restarts: r.restarts,
+          newAttempts: r.newAttempts,
           held: r.held,
           arm: r.arm,
         })),

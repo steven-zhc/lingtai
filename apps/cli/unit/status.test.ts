@@ -71,7 +71,7 @@ const row = (over: Partial<StatusRow> & Pick<StatusRow, 'taskId' | 'ref'>): Stat
   kind: 'bug',
   title: `title of ${over.ref}`,
   state: 'queued',
-  restarts: 0,
+  newAttempts: 0,
   arm: null,
   held: null,
   unoffered: false,
@@ -121,11 +121,23 @@ const fixture: StatusReport = {
       passedOverLine: '1 passed over — agent:hold 1',
       dependenciesUnread: 'GitHub reported no issue dependencies for this repository',
       runnable: [
-        row({ taskId: 't612', ref: '612', held: 'backing off — runnable in 32m', restarts: 1, arm: 'restart 1 of 3' }),
+        row({
+          taskId: 't612',
+          ref: '612',
+          held: 'backing off — runnable in 32m',
+          newAttempts: 1,
+          arm: 'restart 1 of 3',
+        }),
         row({ taskId: 't613', ref: '613', kind: 'tech-debt', unoffered: true }),
       ],
       known: [
-        row({ taskId: 't612', ref: '612', held: 'backing off — runnable in 32m', restarts: 1, arm: 'restart 1 of 3' }),
+        row({
+          taskId: 't612',
+          ref: '612',
+          held: 'backing off — runnable in 32m',
+          newAttempts: 1,
+          arm: 'restart 1 of 3',
+        }),
         row({ taskId: 't609', ref: '609', state: 'waiting', wait: asked }),
         row({
           taskId: 't610',
@@ -191,7 +203,7 @@ function fixture0Ok(): Extract<StatusFilter, { ok: true }> {
 
 describe('statusJson', () => {
   it('pins the whole shape', () => {
-    const off = { restarts: 0, held: null, arm: null, unoffered: false }
+    const off = { newAttempts: 0, held: null, arm: null, unoffered: false }
     const r = (ref: string, kind = 'bug') => ({ taskId: `t${ref}`, ref, kind, title: `title of ${ref}` })
     expect(statusJson(fixture)).toEqual({
       projects: [
@@ -221,12 +233,12 @@ describe('statusJson', () => {
           whyNothingRuns: null,
           dependenciesUnread: 'GitHub reported no issue dependencies for this repository',
           runnable: [
-            { ...r('612'), restarts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
-            { ...r('613', 'tech-debt'), restarts: 0, held: null, arm: null },
+            { ...r('612'), newAttempts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
+            { ...r('613', 'tech-debt'), newAttempts: 0, held: null, arm: null },
           ],
           byState: {
             queued: [
-              { ...r('612'), ...off, restarts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
+              { ...r('612'), ...off, newAttempts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
             ],
             waiting: [
               { ...r('609'), ...off },

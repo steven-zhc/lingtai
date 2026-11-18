@@ -581,7 +581,7 @@ async function seed(): Promise<void> {
         .map(toAppend),
     ])
     // `PassRestarted` is gone (#502): a restart decision writes `PassRouted`
-    // on the run's own stream alone, and `restarts`/`restarts_of` — the
+    // on the run's own stream alone, and `restarts`/`new_attempts_of` — the
     // denominator is gone with it — comes off that (`AttemptState.route`). The release that follows is
     // its own event, with its own reason and an explicit `cause` naming the
     // arm, rather than `aRoute` inferring one.
@@ -758,14 +758,14 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
       expect(card(tasks, 13)!.note).toBe('fixing round 1')
 
       // The breadth half, which outlives the pass that spent it.
-      // `restartsOf` is gone with `PassRestarted`'s own ceiling (#502) —
+      // `newAttemptsOf` is gone with `PassRestarted`'s own ceiling (#502) —
       // `describeArm` falls back to the number alone, the same way it
       // always has for a row whose denominator is zero.
       const over = card(tasks, 14)!
-      expect(over.restarts).toBe(1)
-      expect(over.restartsOf).toBe(0)
+      expect(over.newAttempts).toBe(1)
+      expect(over.newAttemptsOf).toBe(0)
       expect(describeArm(over, null)).toBe('restart 1')
-      // And the caller's own fallback — `board.ts`'s `limits?.restarts`, the
+      // And the caller's own fallback — `board.ts`'s `limits?.newAttempts`, the
       // same recipe ceiling `describeHeld` reads — restores the denominator
       // this column can no longer carry.
       expect(describeArm(over, 2)).toBe('restart 1 of 2')
@@ -777,7 +777,7 @@ describe.skipIf(!postgresUnderTest())('against the real store', () => {
 
       // Nothing on a ticket that has only ever had one approach, so a card on a
       // project that buys no restart reads exactly as it did.
-      expect(card(tasks, 2)!.restarts).toBe(0)
+      expect(card(tasks, 2)!.newAttempts).toBe(0)
       expect(describeArm(card(tasks, 2)!, null)).toBeNull()
     })
 

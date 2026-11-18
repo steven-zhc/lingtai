@@ -249,7 +249,7 @@ describe("what a project's recipe says today", () => {
 
     expect(html).toContain('repo.base')
     expect(html).toContain('env.required')
-    expect(html).toContain('runtime.limits.restarts')
+    expect(html).toContain('runtime.limits.newAttempts')
   })
 })
 

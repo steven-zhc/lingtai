@@ -298,7 +298,7 @@ describe('what will happen', () => {
    * **The other ceiling, on the one page where somebody is deciding whether to
    * press the button** (0040 §5).
    *
-   * `rounds: 0, restarts: 2` is 0040's *never patch, start over twice* and it
+   * `rounds: 0, newAttempts: 2` is 0040's *never patch, start over twice* and it
    * is the configuration this footer used to describe backwards: no round is
    * bought, and then the ticket is released for two further passes — three
    * agent runs — before any refusal is the operator's. Saying `straight to
@@ -348,8 +348,8 @@ const NEVER_RUN: StandingView = {
   failed: [],
   saidBy: null,
   deciding: null,
-  restarts: 0,
-  restartsOf: 0,
+  newAttempts: 0,
+  newAttemptsOf: 0,
   waitId: null,
   reason: null,
   unpushed: null,

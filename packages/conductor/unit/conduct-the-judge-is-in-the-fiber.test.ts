@@ -25,7 +25,10 @@ import {
   withPorts,
 } from '../test/one-attempt.ts'
 
-const MANY_ROUNDS = JUDGED_BY_AN_AGENT.replace('rounds: 2, restarts: 0', 'rounds: 9, restarts: 3')
+const MANY_ROUNDS = JUDGED_BY_AN_AGENT.replace(
+  'attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 }',
+  'attempt: { refusalFixes: 9, conflictResolutions: 9 }, ticket: { newAttempts: 3 }',
+)
 
 const argsFor = (runtime: Runtime, store: ReturnType<typeof memoryStore>) => ({
   project,
