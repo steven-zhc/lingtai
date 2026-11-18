@@ -94,7 +94,7 @@ const StoredTicket = z.strictObject({
         .nullable(),
     })
     .nullable(),
-  restarts: z.array(z.strictObject({ after: z.string(), restart: z.number() })),
+  newAttempts: z.array(z.strictObject({ after: z.string(), newAttempt: z.number() })),
   pendingPrompt: z.strictObject({ text: z.string(), by: z.string() }).nullable(),
   answers: z.array(
     z.strictObject({
@@ -170,7 +170,8 @@ export function decodeTicket(stored: unknown, projection: string, subject?: stri
 export const ticketReducer: Reducer<TicketState> = {
   name: 'ticket',
   // 3: a release's `NewAttempt{newAttempt}` replaces `Restart{restart}`, and a wait's ceiling names its bound (#1241); a version-2 snapshot holds the old tags.
-  version: 3,
+  // 4: a wait's resolution carries the new move tags, and `restarts` is `newAttempts` (#1242); a version-3 snapshot holds the old ones.
+  version: 4,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

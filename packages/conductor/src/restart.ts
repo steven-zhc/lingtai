@@ -162,14 +162,14 @@ export function decideRestart(input: RestartInput): RestartDecision {
     return no(`${alsoAsked} is asking for a person as well, and releasing the item would ` + 'throw that question away')
   }
 
-  if (item.restarts.length >= restarts) {
+  if (item.newAttempts.length >= restarts) {
     return no(
       `the ceiling of ${restarts} restart(s) for this item is spent, and the ` +
         `${refusal.action} reviewer still refuses`,
     )
   }
 
-  return { restart: true, n: item.restarts.length + 1, of: restarts }
+  return { restart: true, n: item.newAttempts.length + 1, of: restarts }
 }
 
 /**

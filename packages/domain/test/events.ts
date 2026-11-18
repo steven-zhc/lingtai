@@ -92,7 +92,7 @@ export function aSplit(
 
 /** A withdrawn wait — a person taking back an `OwnQuestion` asked before any run claimed the item, by requeuing with no note. */
 export function aWithdrawal(itemStream: ReturnType<typeof makeStream>, waitId: WaitId): Envelope[] {
-  return [itemStream('WaitResolved', { waitId, by: 'steven', resolution: { _tag: 'Requeue' }, note: '' })]
+  return [itemStream('WaitResolved', { waitId, by: 'steven', resolution: { _tag: 'StartNewAttempt' }, note: '' })]
 }
 
 /** `TriageStarted{waitId, attempt, by}` — appended before the triage agent is dispatched. */

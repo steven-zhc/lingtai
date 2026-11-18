@@ -2885,6 +2885,8 @@ const BUMPED: Partial<Record<EventType, number>> = {
   AccountLimitLifted: 2,
   // 2: `cause: Restart{restart}` became `NewAttempt{newAttempt}` (0108, #1241). See the upcaster.
   TicketReleased: 2,
+  // 2: the resolution's tags are `FixRefusal`, `RedoStep`, `StartNewAttempt`, `EditBodyAndStartNewAttempt` (0108, #1242). See the upcaster.
+  WaitResolved: 2,
   // 2: a route's `FixRound`/`MergeBase`/`Restart` and a ceiling's name are the bound's own (0108, #1241). See the upcaster.
   ProposalRouted: 2,
   PassRouted: 2,

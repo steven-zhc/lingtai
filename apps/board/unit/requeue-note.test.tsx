@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-describe('Requeue', () => {
+describe('StartNewAttempt', () => {
   it('disables its button for a blank note only while answering', () => {
     const source = read('../src/app/decide.tsx')
     const requeue = source.slice(source.indexOf('export function Requeue'), source.indexOf('export function Close'))

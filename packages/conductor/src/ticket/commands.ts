@@ -336,7 +336,7 @@ function appendLost(
 
 /**
  * What the caller's own checks settled, between the ticket's and the append: the resolution it will record (a
- * `GrantFixRound` is rewritten to the head it was checked against), the triage answers it wrote into the body, and
+ * `FixRefusal` is rewritten to the head it was checked against), the triage answers it wrote into the body, and
  * whether it wrote one — the stream moved by its own events then, so the version is read again.
  */
 export type PreparedResolve = {

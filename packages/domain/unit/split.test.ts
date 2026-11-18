@@ -125,7 +125,7 @@ describe('the schemas call the same checks', () => {
   })
 
   it('a bare TicketTooBig still parses with other advice', () => {
-    expect(TriageResult.safeParse(advice({ _tag: 'TicketTooBig' }, 'EditBodyAndRequeue')).success).toBe(true)
+    expect(TriageResult.safeParse(advice({ _tag: 'TicketTooBig' }, 'EditBodyAndStartNewAttempt')).success).toBe(true)
   })
 
   it('refuses a proposal past the children cap', () => {

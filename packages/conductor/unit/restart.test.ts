@@ -1,4 +1,4 @@
-import { emptyTicket, type RestartRecord, type TicketState } from '@lingtai/domain'
+import { emptyTicket, type NewAttemptRecord, type TicketState } from '@lingtai/domain'
 /**
  * Whether a pass whose rounds are spent starts the work over, or asks a person.
  *
@@ -21,15 +21,15 @@ import { describe, expect, it } from 'vitest'
 import { armBranch } from '../src/branches.ts'
 import { decideRestart, restartReason } from '../src/restart.ts'
 
-const arm = (over: Partial<RestartRecord> = {}): RestartRecord => ({
+const arm = (over: Partial<NewAttemptRecord> = {}): NewAttemptRecord => ({
   after: 'pass-1',
-  restart: 1,
+  newAttempt: 1,
   ...over,
 })
 
-const item = (restarts: readonly RestartRecord[] = []): TicketState => ({
+const item = (restarts: readonly NewAttemptRecord[] = []): TicketState => ({
   ...emptyTicket,
-  restarts,
+  newAttempts: restarts,
 })
 
 /** A review that refused, with the rounds spent against it. The ordinary case. */
@@ -129,7 +129,7 @@ describe('whether a spent pass buys another approach', () => {
     const spent = decideRestart({
       refusal: refused,
       restarts: 2,
-      item: item([arm({ restart: 1 }), arm({ restart: 2, after: 'pass-2' })]),
+      item: item([arm({ newAttempt: 1 }), arm({ newAttempt: 2, after: 'pass-2' })]),
       alsoAsked: null,
     })
 

@@ -111,7 +111,7 @@ function outcomeOf(overrides: Partial<RunOutcome> = {}): RunOutcome {
 
 const ADVICE_TEXT = JSON.stringify({
   cause: { _tag: 'WrongApproach' },
-  resolution: 'Requeue',
+  resolution: 'StartNewAttempt',
   summary: 'patching will not converge',
   want: null,
 })
@@ -311,7 +311,7 @@ function racedByUnrelatedAppend(store: EventStore): EventStore {
             data: {
               waitId: aWaitId(),
               by: 'human:steven',
-              resolution: { _tag: 'Requeue' },
+              resolution: { _tag: 'StartNewAttempt' },
               note: 'resolved a different wait on this ticket',
             },
           },
@@ -454,7 +454,7 @@ describe('waitTriage', () => {
         {
           type: 'WaitResolved',
           actor: 'human:steven',
-          data: { waitId, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: 'answered' },
+          data: { waitId, by: 'human:steven', resolution: { _tag: 'StartNewAttempt' }, note: 'answered' },
         },
       ])
       return ADVISED
@@ -625,7 +625,7 @@ describe('waitTriage', () => {
       return outcomeOf({
         text: JSON.stringify({
           cause: { _tag: 'ConflictingHunks', total: 1, hunks: [{ _tag: 'Mechanical', path: 'a.ts', line: 1 }] },
-          resolution: 'Requeue',
+          resolution: 'StartNewAttempt',
           summary: 'one mechanical conflict',
           want: null,
         }),
@@ -676,7 +676,7 @@ describe('waitTriage', () => {
       outcomeOf({
         text: JSON.stringify({
           cause: { _tag: 'ConflictingHunks', total: 2, hunks: [mechanical, mechanical] },
-          resolution: 'Requeue',
+          resolution: 'StartNewAttempt',
           summary: 'both mechanical',
           want: null,
         }),
@@ -711,7 +711,7 @@ describe('waitTriage', () => {
               { _tag: 'Mechanical', path: 'a.ts', line: 2 },
             ],
           },
-          resolution: 'Requeue',
+          resolution: 'StartNewAttempt',
           summary: 'both mechanical',
           want: null,
         }),
@@ -756,7 +756,7 @@ describe('waitTriage', () => {
           },
         ],
       },
-      resolution: 'Requeue',
+      resolution: 'StartNewAttempt',
       summary: 'one divergent hunk',
       want: null,
     }
@@ -1000,7 +1000,7 @@ describe('waitTriage', () => {
             {
               type: 'WaitResolved',
               actor: 'human:steven',
-              data: { waitId, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: 'answered' },
+              data: { waitId, by: 'human:steven', resolution: { _tag: 'StartNewAttempt' }, note: 'answered' },
             },
           ])
           throw new ConcurrencyError(streamId, version, [version + 1])

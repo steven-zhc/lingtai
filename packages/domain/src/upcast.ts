@@ -121,6 +121,14 @@ const runtimeBecameAccount: Upcaster = (data) => {
   return { ...rest, account: runtime }
 }
 
+/** `WaitResolved`'s version-1 resolution tags and the move each became (#1242). */
+const RESOLUTION_RENAMED: Readonly<Record<string, string>> = {
+  GrantFixRound: 'FixRefusal',
+  RerunStep: 'RedoStep',
+  Requeue: 'StartNewAttempt',
+  EditBodyAndRequeue: 'EditBodyAndStartNewAttempt',
+}
+
 export const UPCASTERS: UpcastRegistry = {
   AccountLimitReached: { 1: runtimeBecameAccount },
   AccountLimitLifted: { 1: runtimeBecameAccount },
@@ -157,14 +165,24 @@ export const UPCASTERS: UpcastRegistry = {
      * 1 → 2: `ContinueConflict` left `TriageAdvice` (#591), and triage had been
      * invited to advise it since #557, so the log may hold it. A conflict is
      * answered by a granted fix round now, so an old advice reads as that.
-     * `WaitResolved`'s `Resolution` needs no step: no caller could write the
-     * variant, so no row holds it.
+     * `WaitResolved`'s `Resolution` needs no step for that: no caller could
+     * write the variant, so no row holds it. Its own rename is `WaitResolved`'s
+     * 1 → 2 below, and this advice keeps `GrantFixRound` because it is a
+     * `TriageAdvice` value, which stays (#1242).
      */
     1: (data) => {
       const row = data as { result?: { resolution?: unknown } }
       return row.result?.resolution === 'ContinueConflict'
         ? { ...row, result: { ...row.result, resolution: 'GrantFixRound' } }
         : data
+    },
+  },
+  WaitResolved: {
+    /** 1 → 2: a person's moves are `FixRefusal`, `RedoStep`, `StartNewAttempt` and `EditBodyAndStartNewAttempt` (0108, #1242). */
+    1: (data) => {
+      if (!isObj(data) || !isObj(data.resolution)) return data
+      const renamed = RESOLUTION_RENAMED[String(data.resolution._tag)]
+      return renamed === undefined ? data : { ...data, resolution: { ...data.resolution, _tag: renamed } }
     },
   },
   Reconciled: {

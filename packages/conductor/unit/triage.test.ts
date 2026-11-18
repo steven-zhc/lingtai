@@ -314,7 +314,7 @@ describe('parseTriage', () => {
    */
   it('reads the earlier candidate as advice, even when a later one asks to read', () => {
     const reply = parseTriage(
-      '```json\n{"cause":{"_tag":"WrongApproach"},"resolution":"Requeue","summary":"s","want":null}\n```\n\n' +
+      '```json\n{"cause":{"_tag":"WrongApproach"},"resolution":"StartNewAttempt","summary":"s","want":null}\n```\n\n' +
         'If you want me to confirm, I can read:\n\n```json\n{"read":["main:a.ts"]}\n```',
     )
     expect(reply.kind).toBe('advised')
@@ -333,7 +333,7 @@ describe('parseTriage', () => {
   it('skips an earlier candidate that carries neither cause nor resolution, and reads the real answer after it', () => {
     const reply = parseTriage(
       'Here is the hunk shape I used:\n```json\n{"_tag":"Mechanical","path":"a.ts","line":10}\n```\n' +
-        'My answer:\n```json\n{"cause":{"_tag":"WrongApproach"},"resolution":"Requeue","summary":"s","want":null}\n```',
+        'My answer:\n```json\n{"cause":{"_tag":"WrongApproach"},"resolution":"StartNewAttempt","summary":"s","want":null}\n```',
     )
     expect(reply.kind).toBe('advised')
     if (reply.kind !== 'advised') throw new Error('unreachable')
@@ -359,7 +359,7 @@ describe('parseTriage', () => {
             },
           ],
         },
-        resolution: 'EditBodyAndRequeue',
+        resolution: 'EditBodyAndStartNewAttempt',
         summary: 'a person has to decide',
         want: null,
       },
@@ -368,27 +368,27 @@ describe('parseTriage', () => {
       tag: 'FixableLines',
       answer: {
         cause: { _tag: 'FixableLines', fixes: [{ path: 'a.ts', line: 10, what: 'fix the thing' }] },
-        resolution: 'Requeue',
+        resolution: 'StartNewAttempt',
         summary: 'specific edits',
         want: 'fix the bug',
       },
     },
     {
       tag: 'WrongApproach',
-      answer: { cause: { _tag: 'WrongApproach' }, resolution: 'Requeue', summary: 'wrong shape', want: null },
+      answer: { cause: { _tag: 'WrongApproach' }, resolution: 'StartNewAttempt', summary: 'wrong shape', want: null },
     },
     {
       tag: 'ConflictingHunks',
       answer: {
         cause: { _tag: 'ConflictingHunks', hunks: [{ _tag: 'Mechanical', path: 'a.ts', line: 1 }], total: 1 },
-        resolution: 'Requeue',
+        resolution: 'StartNewAttempt',
         summary: 'a conflict',
         want: null,
       },
     },
     {
       tag: 'TicketTooBig',
-      answer: { cause: { _tag: 'TicketTooBig' }, resolution: 'EditBodyAndRequeue', summary: 'split it', want: null },
+      answer: { cause: { _tag: 'TicketTooBig' }, resolution: 'EditBodyAndStartNewAttempt', summary: 'split it', want: null },
     },
     {
       tag: 'SetupBroken',

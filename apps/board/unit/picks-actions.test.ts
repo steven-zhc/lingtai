@@ -43,7 +43,7 @@ it('sends rerunStepCard’s shown head as a RerunStep, and never an empty one', 
   const waitId = aWaitId()
   await rerunStepCard({ project: 'p', issue: 1, waitId, onSha: 'abc' })
   expect(conductor.resolveWait).toHaveBeenCalledWith(
-    expect.objectContaining({ resolution: { _tag: 'RerunStep', onSha: 'abc', ref: null } }),
+    expect.objectContaining({ resolution: { _tag: 'RedoStep', onSha: 'abc', ref: null } }),
   )
   conductor.resolveWait.mockClear()
   expect(await rerunStepCard({ project: 'p', issue: 1, waitId, onSha: '' })).toMatchObject({ ok: false })

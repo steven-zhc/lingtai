@@ -501,7 +501,7 @@ async function seed(): Promise<void> {
           waitId12,
         )[0]!,
       ),
-      ...aResolution(makeStream(wi(12)), waitId12, { _tag: 'Requeue' }, 'human:steven', 'requeued').map(toAppend),
+      ...aResolution(makeStream(wi(12)), waitId12, { _tag: 'StartNewAttempt' }, 'human:steven', 'requeued').map(toAppend),
     ])
   }
 

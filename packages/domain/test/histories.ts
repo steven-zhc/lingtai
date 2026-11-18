@@ -277,7 +277,7 @@ function claimedAfterClosed(): readonly Envelope[] {
   ])
 }
 
-/** D5: waits resolved by `GrantFixRound` and by `Close`, before any `TicketClosed`. */
+/** D5: waits resolved by `FixRefusal` and by `Close`, before any `TicketClosed`. */
 function waitsResolvedBeforeClose(): readonly Envelope[] {
   const t = makeStream(ticketStream(PROJECT, 9104))
   const run = attemptStream('t9104-a')
@@ -290,7 +290,7 @@ function waitsResolvedBeforeClose(): readonly Envelope[] {
       { _tag: 'CheckRefused', run: { runId: run }, step: 'proposed', action: 'test', evidence: 'red', findings: [] },
       check,
     ),
-    ...aResolution(t, check, { _tag: 'GrantFixRound', onSha: 'sha-1', ref: 'refs/lingtai/9104' }),
+    ...aResolution(t, check, { _tag: 'FixRefusal', onSha: 'sha-1', ref: 'refs/lingtai/9104' }),
     t('TicketContinued', { runId: run, worker: 'conductor:1' }),
     ...aWait(
       t,
@@ -546,7 +546,7 @@ function answerAfterRunNote(): Scenario {
     ),
     // After the wait opened: the run stream's note overwrites the wait's own before the answer lands.
     run.event('RunAwaitingInput', { prompt: 'which of the two, really?' }),
-    ...aResolution(t, ask, { _tag: 'EditBodyAndRequeue' }, 'steven', 'the first'),
+    ...aResolution(t, ask, { _tag: 'EditBodyAndStartNewAttempt' }, 'steven', 'the first'),
   ])
 }
 
@@ -816,7 +816,7 @@ const late_escalatedThenRequeued = (() => {
       } as never,
       w,
     ),
-    ...aResolution(t, w, { _tag: 'Requeue' }, 'steven', 'not this way'),
+    ...aResolution(t, w, { _tag: 'StartNewAttempt' }, 'steven', 'not this way'),
   ])
 })()
 
@@ -836,7 +836,7 @@ function githubLedger(): readonly Envelope[] {
     t('IssueUpdated', { ...at, change: 'comment', detail: '101', waitId: w1, question: 'ship it?' }),
     t('IssueUpdated', { ...at, change: 'labels', detail: 'lingtai:waiting' }),
     t('IssueUpdated', { ...at, change: 'body', detail: 'section written' }),
-    ...aResolution(t, w1, { _tag: 'EditBodyAndRequeue' }),
+    ...aResolution(t, w1, { _tag: 'EditBodyAndStartNewAttempt' }),
     t('IssueUpdated', { ...at, change: 'comment-edited', detail: '101', waitId: w1 }),
     t('IssueUpdateFailed', { ...at, change: 'labels', error: 'HTTP 502' }),
     t('IssueUpdateFailed', { ...at, change: 'closed', error: 'HTTP 502' }),
@@ -856,7 +856,7 @@ function bodyBeforeAnotherWait(): readonly Envelope[] {
     ...aClaim(t, run),
     ...aWait(t, reason('first?'), w1),
     t('IssueUpdated', { ...at, change: 'body', detail: 'section written' }),
-    ...aResolution(t, w1, { _tag: 'EditBodyAndRequeue' }),
+    ...aResolution(t, w1, { _tag: 'EditBodyAndStartNewAttempt' }),
     t('TicketContinued', { runId: run, worker: 'conductor:1' }),
     ...aWait(t, reason('second?'), w2),
   ])
@@ -941,7 +941,7 @@ const late_askedThenReleasedByPerson = (() => {
       { _tag: 'CheckRefused', run: { runId: r1 }, step: 'proposed', action: 'test', evidence: 'red', findings: [] },
       w,
     ),
-    ...aResolution(t, w, { _tag: 'Requeue' }),
+    ...aResolution(t, w, { _tag: 'StartNewAttempt' }),
     ...aRelease(t, r1, 'Requeued by steven.', { _tag: 'ByPerson', waitId: w }),
   ])
 })()
@@ -1020,8 +1020,8 @@ const late_triagedTwice = (() => {
     triaged(1, 'late'),
     triaged(2, 'second'),
     triaged(2, 'duplicate'),
-    ...aResolution(t, w, { _tag: 'Requeue' }),
-    ...aResolution(t, w, { _tag: 'Requeue' }, 'someone'),
+    ...aResolution(t, w, { _tag: 'StartNewAttempt' }),
+    ...aResolution(t, w, { _tag: 'StartNewAttempt' }, 'someone'),
   ])
 })()
 
@@ -1377,7 +1377,7 @@ const late_requeueOfRunWait = (() => {
       { _tag: 'AgentQuestion', run: { runId: run.runId }, step: 'implement', question: 'which approach?' },
       ask,
     ),
-    ...aResolution(t, ask, { _tag: 'Requeue' }),
+    ...aResolution(t, ask, { _tag: 'StartNewAttempt' }),
     ...aRelease(t, run.runId, 'Requeued by steven.', { _tag: 'ByPerson', waitId: ask }),
   ])
 })()

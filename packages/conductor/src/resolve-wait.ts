@@ -104,7 +104,7 @@ export interface ResolveWaitOptions extends SnapshotReadOptions {
   issue?: number
   waitId: WaitId
   resolution: Resolution
-  /** The exact text `editBodyAndRequeue` handed `writeSection`; read only for `EditBodyAndRequeue`. */
+  /** The exact text `editBodyAndRequeue` handed `writeSection`; read only for `EditBodyAndStartNewAttempt`. */
   writtenSection?: string
   /** Recorded on the resolution. A waiver, a close, an answer — none of them is anonymous. */
   by: string
@@ -136,7 +136,7 @@ export interface ResolveWaitOptions extends SnapshotReadOptions {
   split?: unknown
   /**
    * Where the wait's triage answers are written (#921) — read only for
-   * `GrantFixRound` and `Requeue` on a wait whose triage asked questions.
+   * `FixRefusal` and `Requeue` on a wait whose triage asked questions.
    */
   github?: IssueChannel
   /** A question's index in `triageQuestionsOf`'s order → the answer id picked. A missing index takes the recommended answer. */
@@ -196,7 +196,7 @@ export function resolveWaitHoldingEffect(
     const note = options.note?.trim() ?? ''
 
     if (
-      options.resolution._tag === 'GrantFixRound' &&
+      options.resolution._tag === 'FixRefusal' &&
       options.resolution.onSha &&
       matchHead(options.resolution.onSha, '') === 'bad-sha'
     )
@@ -270,7 +270,7 @@ export function resolveWaitHoldingEffect(
     // notice (`unscheduled`, below, and `approve()`'s own "way out" above), not
     // a reason to say the approval itself did not happen.
     let unscheduled: string | undefined
-    if (resolution._tag === 'Approve' || resolution._tag === 'GrantFixRound' || resolution._tag === 'RerunStep') {
+    if (resolution._tag === 'Approve' || resolution._tag === 'FixRefusal' || resolution._tag === 'RedoStep') {
       const parsed = parseTicketStream(ticketId)
       if (parsed !== null) {
         unscheduled = (yield* requestContinuation(store, options.by, parsed.project, parsed.issue, runId!)) ?? undefined
@@ -320,7 +320,7 @@ function prepare(
     }
 
     let resolution = options.resolution
-    if (resolution._tag === 'GrantFixRound') {
+    if (resolution._tag === 'FixRefusal') {
       const saved = yield* savedHead(store, ticketId, block.runId, {
         snapshots: options.snapshots,
         writer: options.writer,
@@ -351,10 +351,10 @@ function prepare(
           detail: `${ref} is ${remote ?? 'missing'}, not the saved ${head}. Restore that ref to the saved head or requeue for a fresh attempt.`,
         })
       }
-      resolution = { _tag: 'GrantFixRound', onSha: head, ref }
+      resolution = { _tag: 'FixRefusal', onSha: head, ref }
     }
 
-    if (resolution._tag === 'RerunStep') {
+    if (resolution._tag === 'RedoStep') {
       // **The saved head a rerun continues from** (#1218): `rerunHeadOf`'s own table, the one the re-cut reads, so
       // what this accepts is exactly what the next pass can cut. Every refusal is before any append.
       if (block.runId === null)
@@ -413,7 +413,7 @@ function prepare(
           })
         }
       }
-      resolution = { _tag: 'RerunStep', onSha: at, ref: atRef }
+      resolution = { _tag: 'RedoStep', onSha: at, ref: atRef }
     }
 
     if (resolution._tag === 'Approve') {
@@ -426,9 +426,9 @@ function prepare(
     // written for a refusal it was always going to get.
     let recorded: PayloadOf<'WaitResolved'>['answers']
     let wroteBody = false
-    if (resolution._tag === 'EditBodyAndRequeue' && options.writtenSection !== undefined)
+    if (resolution._tag === 'EditBodyAndStartNewAttempt' && options.writtenSection !== undefined)
       recorded = { picks: [], section: options.writtenSection }
-    if (resolution._tag === 'GrantFixRound' || resolution._tag === 'Requeue') {
+    if (resolution._tag === 'FixRefusal' || resolution._tag === 'StartNewAttempt') {
       const triage = triageFactsFromState(item, options.waitId).result
       const answers = triage?._tag === 'TriageAdvised' ? triageAnswersText(triage.cause, options.picks) : null
       if (answers !== null && !answers.ok)

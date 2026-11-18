@@ -19,13 +19,13 @@ export function waitCommand(
   const entries: string[] = []
   let requeued = false
   for (const tag of ordered) {
-    if (tag === 'Requeue' || tag === 'EditBodyAndRequeue') {
+    if (tag === 'StartNewAttempt' || tag === 'EditBodyAndStartNewAttempt') {
       if (requeued) continue
       requeued = true
-      // Only what the wait allows is spelled: the body edit when `EditBodyAndRequeue` is offered,
+      // Only what the wait allows is spelled: the body edit when `EditBodyAndStartNewAttempt` is offered,
       // and the bare restart (brackets) when `Requeue` is offered beside it.
-      const editsBody = ordered.includes('EditBodyAndRequeue')
-      const bare = ordered.includes('Requeue')
+      const editsBody = ordered.includes('EditBodyAndStartNewAttempt')
+      const bare = ordered.includes('StartNewAttempt')
       const body = !editsBody
         ? ''
         : asksForAnswer
@@ -36,9 +36,9 @@ export function waitCommand(
       entries.push(`${base('requeue')}${body}`)
     } else if (tag === 'Approve') {
       entries.push(reason._tag === 'SignoffRequired' ? base('approve') : `${base('approve')} --note "<why>"`)
-    } else if (tag === 'GrantFixRound') {
+    } else if (tag === 'FixRefusal') {
       entries.push(base('grant-fix-round'))
-    } else if (tag === 'RerunStep') {
+    } else if (tag === 'RedoStep') {
       entries.push(base('rerun'))
     } else if (tag === 'AnswerQuestion') {
       entries.push(`${base('answer')} "<choice>"`)

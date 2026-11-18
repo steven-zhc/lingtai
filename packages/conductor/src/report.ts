@@ -370,11 +370,11 @@ export const REASON_WORDS: Record<WaitReason['_tag'], string> = {
 /** How a wait ended. */
 export const RESOLUTION_WORDS: Record<Resolution['_tag'], string> = {
   Approve: 'approved',
-  GrantFixRound: 'a fix round granted',
-  RerunStep: 'the step run again',
+  FixRefusal: 'a refusal fixed',
+  RedoStep: 'the step run again',
   AnswerQuestion: 'answered',
-  Requeue: 'started over',
-  EditBodyAndRequeue: 'ticket edited, started over',
+  StartNewAttempt: 'started over',
+  EditBodyAndStartNewAttempt: 'ticket edited, started over',
   Split: 'split',
   Close: 'closed',
 }

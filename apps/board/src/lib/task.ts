@@ -480,7 +480,7 @@ export interface StandingView {
   } | null
   /** Render-time check only; resolveWait checks the remote again under the decision lock. */
   fixWork?: { head: string; ref: string } | { refusal: string } | null
-  /** The saved head a `RerunStep` continues from (#1219); its own field, since a crash wait offers no `GrantFixRound`. */
+  /** The saved head a `RedoStep` continues from (#1219); its own field, since a crash wait offers no `FixRefusal`. */
   rerunWork?: { head: string; ref: string | null } | { refusal: string } | null
   /** A body I/O fact on this stream; these events do not identify a wait. */
   bodyOutcome?: { result: 'updated' | 'failed'; detail: string } | null
@@ -869,21 +869,21 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
     live &&
     m.then?.kind === 'released' &&
     life.status === 'backlog' &&
-    (m.resolution._tag === 'Requeue' || m.resolution._tag === 'EditBodyAndRequeue') &&
+    (m.resolution._tag === 'StartNewAttempt' || m.resolution._tag === 'EditBodyAndStartNewAttempt') &&
     m.then.cause?._tag === 'ByPerson' &&
     m.then.cause.waitId === m.waitId
   const requeued =
     live &&
     m.then === null &&
     life.status === 'backlog' &&
-    (m.resolution._tag === 'Requeue' ||
-      m.resolution._tag === 'EditBodyAndRequeue' ||
+    (m.resolution._tag === 'StartNewAttempt' ||
+      m.resolution._tag === 'EditBodyAndStartNewAttempt' ||
       m.resolution._tag === 'AnswerQuestion')
   const continued =
     live &&
     m.then === null &&
     life.status === 'approved' &&
-    (m.resolution._tag === 'GrantFixRound' || m.resolution._tag === 'RerunStep')
+    (m.resolution._tag === 'FixRefusal' || m.resolution._tag === 'RedoStep')
   const body = item.github.last.body
 
   return {
@@ -896,7 +896,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
             note: m.note,
             result: closed ? 'closed' : continued ? 'continued' : 'requeued',
             reason: continued
-              ? m.resolution._tag === 'RerunStep'
+              ? m.resolution._tag === 'RedoStep'
                 ? 'The stopped step runs again on its saved work; no round or restart is spent.'
                 : 'Continued saved work for one additional fix round; build and review run again.'
               : requeued
@@ -904,9 +904,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
                 : released
                   ? `${m.then?.reason ?? ''} A new attempt starts from base.`
                   : (m.then?.reason ?? ''),
-            ...(continued && m.resolution._tag === 'GrantFixRound'
+            ...(continued && m.resolution._tag === 'FixRefusal'
               ? { ref: m.resolution.ref, head: m.resolution.onSha }
-              : continued && m.resolution._tag === 'RerunStep'
+              : continued && m.resolution._tag === 'RedoStep'
                 ? { head: m.resolution.onSha }
                 : {}),
           }
@@ -939,8 +939,8 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
         ? null
         : ([...(run?.steps ?? [])].reverse().find((g) => g.state === 'failed' && quotes(raw, g))?.step ?? null),
     deciding: decidingOf(runs, run),
-    restarts: item.restarts.length,
-    // `RestartRecord` carries no ceiling since #502 (`TicketReleased{cause:
+    restarts: item.newAttempts.length,
+    // `NewAttemptRecord` carries no ceiling since #502 (`TicketReleased{cause:
     // Restart}` is `{after, restart}` alone — the policy it was spent against
     // lives in the recipe, never on the event). Zero here is "the log has
     // none", the same reading a missing ceiling always got; `board.ts`'s own
@@ -1989,7 +1989,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   if (
     standing.state === 'blocked' &&
     standing.reason !== null &&
-    allowedResolutions(standing.reason).includes('GrantFixRound') &&
+    allowedResolutions(standing.reason).includes('FixRefusal') &&
     standing.runId !== null
   ) {
     const runIndex = claims.findIndex((claim) => claim.runId === standing.runId)
@@ -2021,7 +2021,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   if (
     standing.state === 'blocked' &&
     standing.reason !== null &&
-    allowedResolutions(standing.reason).includes('RerunStep') &&
+    allowedResolutions(standing.reason).includes('RedoStep') &&
     standing.runId !== null
   ) {
     const runIndex = claims.findIndex((claim) => claim.runId === standing.runId)

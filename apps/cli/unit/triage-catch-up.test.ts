@@ -404,7 +404,7 @@ describe('triage catch-up', () => {
       resolved.event('WaitResolved', {
         waitId: resolved.waitId,
         by: 'steven',
-        resolution: { _tag: 'Requeue' },
+        resolution: { _tag: 'StartNewAttempt' },
         note: 'done',
       }),
     )

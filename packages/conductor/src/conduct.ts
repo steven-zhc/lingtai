@@ -319,9 +319,9 @@ import {
   type SplitChildState,
 } from './ticket/commands.ts'
 
-/** How many times a person asked for `RerunStep` on `runId`'s waits: one summand of a rerun's dispatch suffix (#1218). */
+/** How many times a person asked for `RedoStep` on `runId`'s waits: one summand of a rerun's dispatch suffix (#1218). */
 function personRerunsOf(waits: ReturnType<typeof waitsFromState>, runId: string): number {
-  return waits.filter((w) => w.resolution?._tag === 'RerunStep' && 'run' in w.reason && w.reason.run.runId === runId)
+  return waits.filter((w) => w.resolution?._tag === 'RedoStep' && 'run' in w.reason && w.reason.run.runId === runId)
     .length
 }
 
@@ -1416,13 +1416,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const runEvents = yield* Effect.promise(() => store.read(options.continuing!.runId))
       const runState = reduceAttempt(runEvents)
       /**
-       * **A person's `RerunStep` continues the same attempt at the step that stopped, on the saved head** (#1218):
+       * **A person's `RedoStep` continues the same attempt at the step that stopped, on the saved head** (#1218):
        * #1205's re-cut and recorded-prompt rerun, asked for by a wait's resolution rather than by a release. The
        * wait's own resolution says so — the lifecycle carries no new field — and `rerunStepOf` names the step, as it
        * named the offer. No grant, no criterion and no round: the counters are the attempt's own, unchanged.
        */
       const approvedWait = waitsFromState(reduced).find((w) => w.waitId === approvedWaitId)
-      if (approvedWait?.resolution?._tag === 'RerunStep') {
+      if (approvedWait?.resolution?._tag === 'RedoStep') {
         const step = rerunStepOf(reason)
         if (step === null) return null
         const head = releasedHeadOf(runEvents)
@@ -1477,7 +1477,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
       const priorGrant = waitsFromState(reduced).some(
         (wait) =>
-          wait.resolution?._tag === 'GrantFixRound' &&
+          wait.resolution?._tag === 'FixRefusal' &&
           'run' in wait.reason &&
           wait.reason.run.runId === options.continuing!.runId,
       )
@@ -1689,7 +1689,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       refusalFixes: ceiling.attempt.refusalFixes,
       conflictResolutions: ceiling.attempt.conflictResolutions,
       newAttempts: ceiling.ticket.newAttempts,
-      newAttemptsSpent: reduced.restarts.length,
+      newAttemptsSpent: reduced.newAttempts.length,
     }
 
     let released = false
@@ -5960,7 +5960,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         log(`not starting over — ${arm} was not published, so no restart is spent`)
       }
       if (restarted && armIsUp) {
-        const restart = reduced.restarts.length + 1
+        const restart = reduced.newAttempts.length + 1
         const reason = restartReason({
           action: lastRoute?.from ?? 'review',
           rounds: roundsSpent,
@@ -5971,7 +5971,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // is the one event now** — what it also carried (the arm, its head,
         // the findings still live) is on the previous run's own stream,
         // which the next prompt already reads (`attempts.ts`'s `lastRun`,
-        // `ticket.ts`'s own header on `RestartRecord`).
+        // `ticket.ts`'s own header on `NewAttemptRecord`).
         log(`starting over — restart ${restart} of ${ceiling.ticket.newAttempts}`)
         runLog.note('restart', reason)
         yield* release(reason, { _tag: 'NewAttempt', newAttempt: restart })
@@ -5997,9 +5997,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (
           headGone !== null &&
           continuation?.released?.by !== 'person' &&
-          reduced.restarts.length < ceiling.ticket.newAttempts
+          reduced.newAttempts.length < ceiling.ticket.newAttempts
         ) {
-          const restart = reduced.restarts.length + 1
+          const restart = reduced.newAttempts.length + 1
           const why = `the saved head cannot be continued (${headGone}) — restart ${restart} of ${ceiling.ticket.newAttempts}`
           log(why)
           runLog.note('restart', why)

@@ -346,7 +346,7 @@ function derive(taskId: string, t: TicketState): Derived {
     closed_at: l.status === 'landed' || l.status === 'closed' ? t.since : null,
     attempts: t.claims.length,
     last_attempt_at: t.lastAttemptAt,
-    restarts: t.restarts.at(-1)?.restart ?? 0,
+    restarts: t.newAttempts.at(-1)?.newAttempt ?? 0,
   }
 }
 

@@ -244,7 +244,7 @@ describe('requeue', () => {
 
     const events = await store.read(ticketId)
     const wait = waitsOf(events).at(-1)
-    expect(wait?.resolution).toEqual({ _tag: 'Requeue' })
+    expect(wait?.resolution).toEqual({ _tag: 'StartNewAttempt' })
     const item = reduceTicket(events)
     expect(item.answers).toEqual([])
     expect(item.lifecycle.status).toBe('backlog')

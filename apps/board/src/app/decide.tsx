@@ -325,7 +325,7 @@ export function ContinueFixing({
 }
 
 /** `ContinueFixing`'s sibling: rerun the stopped step on the saved head shown, never primary (#1219). */
-export function RerunStepButton({
+export function RedoStepButton({
   project,
   issue,
   waitId,
@@ -372,7 +372,7 @@ export function RerunStepButton({
 }
 
 /** Write text into the ticket body and requeue only when the current wait allows it. */
-export function EditBodyAndRequeue({
+export function EditBodyAndStartNewAttempt({
   project,
   issue,
   waitId,
@@ -614,7 +614,7 @@ export function Requeue({
             })
           }}
         >
-          {pending ? '…' : withdrawing ? 'Withdraw' : asked ? 'Answer' : 'Requeue'}
+          {pending ? '…' : withdrawing ? 'Withdraw' : asked ? 'Answer' : 'StartNewAttempt'}
         </button>
         <button
           className="btn"
@@ -953,10 +953,10 @@ export function TriageMove({
   }
 
   let click: (() => void) | null = null
-  if (move.resolution === 'GrantFixRound' && move.onSha !== null) {
+  if (move.resolution === 'FixRefusal' && move.onSha !== null) {
     const onSha = move.onSha
     click = () => run(() => continueFixingCard({ project, issue, waitId, onSha }))
-  } else if (move.resolution === 'Requeue') {
+  } else if (move.resolution === 'StartNewAttempt') {
     // An empty note on purpose: the requeue note is what every later attempt is
     // told, and triage's sentence is not the person's.
     click = () => run(() => requeueCard({ project, issue, note: '', waitId }))

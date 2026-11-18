@@ -42,6 +42,7 @@ import {
   waitWords,
 } from '@lingtai/domain'
 import type { ClaimShape } from '@lingtai/domain'
+import { resolutionAdvised } from '@lingtai/domain/wait'
 
 import { sourceOfPayloadDocument, type DocumentSource } from './markdown.ts'
 import { RESOLUTION_COPY } from './resolution-copy.ts'
@@ -724,7 +725,7 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
     const name = triageName(by !== null && typeof by === 'object' ? (by as { _tag?: string }) : {}, f.attempt)
     const result = f.result
     if (result._tag === 'TriageFailed') return `${name} failed: ${clip(result.why)}`
-    return `${name} advised: ${RESOLUTION_COPY[result.resolution].title} — ${presentCause(result.cause).label}: ${clip(result.summary)}`
+    return `${name} advised: ${RESOLUTION_COPY[resolutionAdvised(result.resolution)].title} — ${presentCause(result.cause).label}: ${clip(result.summary)}`
   },
 
   RunEnded: (f) => `${f.kind}: ${clip(f.detail)}`,

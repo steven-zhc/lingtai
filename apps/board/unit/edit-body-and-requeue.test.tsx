@@ -44,7 +44,7 @@ vi.mock('../src/app/actions.ts', () => ({
   requeueCard: harness.requeue,
 }))
 
-import { ContinueFixing, EditBodyAndRequeue, Requeue } from '../src/app/decide.tsx'
+import { ContinueFixing, EditBodyAndStartNewAttempt, Requeue } from '../src/app/decide.tsx'
 import { TriagePicks, appendTo, draftTarget } from '../src/app/triage-picks.tsx'
 
 type Tag = string | null
@@ -83,7 +83,7 @@ function mount<T>(
 }
 
 const editor = (waitId: WaitId | null, reason: WaitReason | null = null) =>
-  EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId, reason })
+  EditBodyAndStartNewAttempt({ project: 'lingtai', issue: 112, waitId, reason })
 
 type ControlProps = {
   children?: ReactNode
@@ -212,7 +212,7 @@ const resetAdd = () => {
   harness.conclude.mockClear()
 }
 const addToDraft = (text: string) => (harness.triage as { add: (text: string) => void }).add(text)
-const body: Tag = 'EditBodyAndRequeue'
+const body: Tag = 'EditBodyAndStartNewAttempt'
 const asked: Tag = 'AnswerQuestion'
 
 it('adds a discussion answer under the picks, writes nothing, and stops following the picks', () => {
@@ -293,7 +293,7 @@ it('appends under what is there, after a blank line, and names the target the re
   expect(appendTo('x', 'a')).toBe('x\n\na')
   expect(draftTarget(null)).toBeNull()
   expect(draftTarget('AnswerQuestion')).toBe('AnswerQuestion')
-  expect(draftTarget('EditBodyAndRequeue')).toBe('EditBodyAndRequeue')
+  expect(draftTarget('EditBodyAndStartNewAttempt')).toBe('EditBodyAndStartNewAttempt')
   expect(draftTarget('Close')).toBeNull()
   expect(draftTarget('Split')).toBeNull()
 })
@@ -348,7 +348,7 @@ it('keeps the body-writing label for FixerDisagrees', () => {
   harness.cursor = 0
   harness.triage = null
   const html = renderToStaticMarkup(
-    EditBodyAndRequeue({
+    EditBodyAndStartNewAttempt({
       project: 'lingtai',
       issue: 112,
       waitId: aWaitId(),

@@ -174,7 +174,7 @@ describe("the next attempt's prompt", () => {
         e('WaitResolved', {
           waitId: 'wait-2' as PayloadOf<'WaitResolved'>['waitId'],
           by: 'human:steven',
-          resolution: { _tag: 'Requeue' },
+          resolution: { _tag: 'StartNewAttempt' },
           note: 'the base has moved',
         }),
       ],

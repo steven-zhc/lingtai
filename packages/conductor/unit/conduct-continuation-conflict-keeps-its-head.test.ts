@@ -6,7 +6,7 @@
  * sha, and nothing dispatches before the lane. `publishWhatIsCommitted` read
  * `head === tree.baseSha` as *nothing committed* and wrote a last
  * `RunRefsPublished` of `nothing-committed` over the `published` one, so
- * `GrantFixRound` on the conflict wait was refused `no-saved-head`.
+ * `FixRefusal` on the conflict wait was refused `no-saved-head`.
  *
  * Unit by [0060](../../../doc/decisions-archive/0060-the-gate-runs-unit-tests.md) §1.
  */
@@ -83,7 +83,7 @@ describe('an approved continuation refused at the lane', () => {
           ticketId,
           issue: 7,
           waitId: conflictWait.waitId,
-          resolution: { _tag: 'GrantFixRound', onSha: '', ref: '' },
+          resolution: { _tag: 'FixRefusal', onSha: '', ref: '' },
           by: 'human:steven',
           client: { refSha: async () => onSha },
           store,

@@ -21,7 +21,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { describe, expect, it } from 'vitest'
 
-import { Close, EditBodyAndRequeue } from '../src/app/decide.tsx'
+import { Close, EditBodyAndStartNewAttempt } from '../src/app/decide.tsx'
 import { Coords, Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
 import { sinceText } from '../src/lib/progress.ts'
 import type { OutgoingView } from '../src/lib/prompt.ts'
@@ -81,7 +81,7 @@ it('exposes unpushed work only while its wait is current', () => {
 
   expect(standingOf(own, []).unpushed).toEqual(unpushed)
   expect(
-    standingOf([...own, e(ITEM, 'WaitResolved', { waitId: 'wait-unpushed', resolution: { _tag: 'Requeue' } })], [])
+    standingOf([...own, e(ITEM, 'WaitResolved', { waitId: 'wait-unpushed', resolution: { _tag: 'StartNewAttempt' } })], [])
       .unpushed,
   ).toBeNull()
 })
@@ -1347,8 +1347,8 @@ const OUTGOING: OutgoingView = {
 const moves = (html: string) => html.slice(html.indexOf('class="sresolutiongrid"'), html.indexOf('data-rank="pair"'))
 
 /**
- * `allowedResolutions` offers `Approve` for this one — `['Approve', 'Requeue',
- * 'EditBodyAndRequeue', 'Close']` (`wait.ts`'s `SignoffRequired` row) — so
+ * `allowedResolutions` offers `Approve` for this one — `['Approve', 'StartNewAttempt',
+ * 'EditBodyAndStartNewAttempt', 'Close']` (`wait.ts`'s `SignoffRequired` row) — so
  * tests below that want Approve on the row swap `HELD`'s own `BuildRed`
  * reason (which never offers it) for this one, alongside `awaitingSha` (#442:
  * the two now have to agree, where before only `awaitingSha` was read).
@@ -1361,7 +1361,7 @@ const SIGNOFF_REASON = {
   question: 'merge this?',
 }
 
-/** `allowedResolutions` offers `['AnswerQuestion', 'Requeue', 'Close']` — no `Approve`, and `Requeue` draws as Answer/Withdraw. */
+/** `allowedResolutions` offers `['AnswerQuestion', 'StartNewAttempt', 'Close']` — no `Approve`, and `Requeue` draws as Answer/Withdraw. */
 const OWN_QUESTION_REASON = { _tag: 'OwnQuestion' as const, question: 'which design?', by: 'steven' }
 
 const render = (standing: StandingView, outgoing: OutgoingView | null) =>
@@ -1439,7 +1439,7 @@ const FIXABLE: StandingView = {
 
 it('offers distinct saved-head and base-starting actions without triage', () => {
   const html = render(FIXABLE, OUTGOING)
-  expect(html).toContain('data-resolution="GrantFixRound"')
+  expect(html).toContain('data-resolution="FixRefusal"')
   expect(html).toContain('Continue fixing current work')
   expect(html).toContain('saved branch and head')
   expect(html).toContain('Build and review run again')
@@ -1487,10 +1487,10 @@ it('uses triage advice to recommend a choice without granting it', () => {
   const fixable = moves(
     render({ ...FIXABLE, triageStatus: advice({ _tag: 'FixableLines', fixes: [] }, 'GrantFixRound') }, OUTGOING),
   )
-  expect(fixable.indexOf('data-resolution="GrantFixRound"')).toBeLessThan(fixable.indexOf('data-resolution="Requeue"'))
+  expect(fixable.indexOf('data-resolution="FixRefusal"')).toBeLessThan(fixable.indexOf('data-resolution="StartNewAttempt"'))
   expect(fixable).toContain('Continue fixing current work')
   const wrong = moves(render({ ...FIXABLE, triageStatus: advice({ _tag: 'WrongApproach' }, 'Requeue') }, OUTGOING))
-  expect(wrong.indexOf('data-resolution="Requeue"')).toBeLessThan(wrong.indexOf('data-resolution="GrantFixRound"'))
+  expect(wrong.indexOf('data-resolution="StartNewAttempt"')).toBeLessThan(wrong.indexOf('data-resolution="FixRefusal"'))
   expect(wrong).toContain('Start over from base')
   // The board draws what `recommendedResolution` returns and nothing else
   // (#572): a diagnosis-contradicted advice is dropped, not swapped for Requeue.
@@ -1530,7 +1530,7 @@ it('uses triage advice to recommend a choice without granting it', () => {
   expect(waiver).toContain('approval, which waives the refusal')
   expect(waiver).not.toContain('sresolution--recommended')
   expect(recommendedResolution(FIXABLE.reason!, advice({ _tag: 'FixableLines', fixes: [] }, 'Approve'))).toBeNull()
-  // No saved head: the domain does not recommend GrantFixRound, so nothing is
+  // No saved head: the domain does not recommend FixRefusal, so nothing is
   // drawn first and nothing else is recommended in its place.
   const headless = advice({ _tag: 'FixableLines', fixes: [] }, 'GrantFixRound')
   const noHeadHtml = render({ ...FIXABLE, fixWork: null, triageStatus: headless }, OUTGOING)
@@ -1649,7 +1649,7 @@ it('keeps the body editor at the same mount when a written wait moves out of blo
         if (found !== null || !isValidElement(child)) return
         const here = `${path}/${child.key ?? index}`
         const isHidden = hidden || (child.props as { hidden?: boolean }).hidden === true
-        if (child.type === EditBodyAndRequeue) {
+        if (child.type === EditBodyAndStartNewAttempt) {
           found = { path: here, waitId: (child.props as { waitId: unknown }).waitId, hidden: isHidden }
         } else {
           found = find((child.props as { children?: ReactNode }).children, here, isHidden)
@@ -1667,7 +1667,7 @@ it('keeps the body editor at the same mount when a written wait moves out of blo
     onYou: false,
     reason: null,
     waitId: null,
-    afterMove: { resolution: 'Requeue', by: 'steven', note: '', result: 'requeued', reason: 'returned to queue' },
+    afterMove: { resolution: 'StartNewAttempt', by: 'steven', note: '', result: 'requeued', reason: 'returned to queue' },
   })
   const closed = editorOn({
     ...HELD,
@@ -1753,8 +1753,8 @@ it('draws triage’s advice as the recommendation where the judge handed the wai
   const html = render(handedOver, OUTGOING)
   const grid = moves(html)
 
-  expect(grid.indexOf('data-resolution="GrantFixRound"')).toBeLessThan(grid.indexOf('data-resolution="Requeue"'))
-  expect(grid).toMatch(/sresolution--recommended" data-resolution="GrantFixRound"/)
+  expect(grid.indexOf('data-resolution="FixRefusal"')).toBeLessThan(grid.indexOf('data-resolution="StartNewAttempt"'))
+  expect(grid).toMatch(/sresolution--recommended" data-resolution="FixRefusal"/)
   expect(grid).toContain('Continue fixing current work')
   expect(grid).toContain('Triage recommended')
   expect(html).toContain('class="triage-cause cause-chip cause-chip--lines">Lines to fix</p>')
@@ -2231,7 +2231,7 @@ describe('the subject, at the top', () => {
     const advised = (want: string | null) => ({
       _tag: 'TriageAdvised',
       cause: { _tag: 'WrongApproach' },
-      resolution: { _tag: 'Requeue' },
+      resolution: { _tag: 'StartNewAttempt' },
       summary: 'Try again',
       want,
     })
@@ -2434,10 +2434,10 @@ const CRASHED: StandingView = {
 
 it('offers the rerun on a crash with a saved head, after the grant would sit and before starting over', () => {
   const html = render({ ...CRASHED, rerunWork: { head: SHA, ref: null } }, OUTGOING)
-  expect(html).toContain('data-resolution="RerunStep"')
+  expect(html).toContain('data-resolution="RedoStep"')
   expect(html).toContain(`Rerun this step on ${SHA.slice(0, 7)}</button>`)
   expect(html).not.toContain('Cannot rerun on saved work')
-  expect(html.indexOf('data-resolution="RerunStep"')).toBeLessThan(html.indexOf('data-resolution="Requeue"'))
+  expect(html.indexOf('data-resolution="RedoStep"')).toBeLessThan(html.indexOf('data-resolution="StartNewAttempt"'))
 })
 
 it('shows the refusal and no button where the rerun has no usable head', () => {

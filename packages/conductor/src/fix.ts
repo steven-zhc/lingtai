@@ -1391,7 +1391,7 @@ export function diagnoseDisagreement(input: {
  * Declared here rather than imported from `@lingtai/domain` for the reason
  * `PromptBudget` is declared in `attempts.ts`: this module is pure decisions
  * and prose, and what it needs of a restart record is the fields that go on a
- * card, not the reducer that produced them. `RestartRecord` satisfies it
+ * card, not the reducer that produced them. `NewAttemptRecord` satisfies it
  * structurally, so the conductor passes the reducer's own values straight through.
  */
 export interface RestartArm {
