@@ -31,14 +31,9 @@ const above = (text: string) => {
   return i < 0 ? text : text.slice(0, i)
 }
 
-const DRAWN_PATHS = [
-  '~/.ssh/id_ed25519',
-  '~/.aws/credentials',
-  '~/.npmrc',
-  '~/.lingtai',
-  '~/.config/gh/hosts.yml',
-  '~/Library/Keychains',
-]
+const DRAWN_PATHS = ['~/.ssh/id_ed25519', '~/.npmrc', '~/.lingtai', '~/Library/Keychains']
+
+const DRAWN_HOSTS = ['api.anthropic.com', 'api.openai.com', 'github.com', 'registry.npmjs.org']
 
 describe("the home page's argument", () => {
   it('uses the public home as the installer front door', async () => {
@@ -182,10 +177,10 @@ describe("the home page's argument", () => {
     expect(block).toContain('ILLUSTRATION')
     expect(block).toContain('class="home-shield"')
     expect(block).toContain(
-      'aria-label="A shield around the agent&#x27;s run; the keys and config on the machine stay outside it"',
+      'aria-label="A shield around the agent&#x27;s run; the hosts on the allowlist are reached from it, and the keys and config on the machine stay outside it"',
     )
     expect(block).not.toContain('home-sbx')
-    for (const drawn of [...DRAWN_PATHS, 'api.anthropic.com', 'pastebin.com']) {
+    for (const drawn of [...DRAWN_PATHS, ...DRAWN_HOSTS, 'pastebin.com', '+ your allowlist', '+ blocked by default']) {
       expect(block).toContain(drawn)
     }
     // Every path drawn is on the built-in deny list (packages/sandbox/src/policy.ts), by prefix. `~/.lingtai` is
@@ -193,6 +188,11 @@ describe("the home page's argument", () => {
     const DENY = ['~/.ssh', '~/.aws', '~/.npmrc', '~/.lingtai', '~/.config/gh', '~/Library/Keychains']
     for (const drawn of DRAWN_PATHS) {
       expect(DENY.some((d) => drawn === d || drawn.startsWith(`${d}/`))).toBe(true)
+    }
+    // Every host drawn as reachable is on the built-in allowlist (BUILT_IN_DOMAINS in the same file).
+    const ALLOW = ['api.anthropic.com', 'api.openai.com', 'registry.npmjs.org', 'github.com']
+    for (const drawn of DRAWN_HOSTS) {
+      expect(ALLOW).toContain(drawn)
     }
     expect(block).not.toContain('sandbox.svg')
     expect(block).not.toContain('sandbox-facts')

@@ -1,35 +1,28 @@
-/* The home page's sandbox band, right side (#1264): one attempt's runs inside a shield, the keys and
-   hosts it cannot reach outside it. Copied from doc/milestone/0.15.0/home-shield/index.html — every
-   number is the mock's, so do not recompute them. Every path drawn is on the built-in deny list
-   (packages/sandbox/src/policy.ts). Classes and ids are prefixed because the site also loads the
-   board's stylesheet, which owns `.chip`. */
+/* The home page's sandbox band, right side (#1264): one attempt's runs inside a shield. Left of it,
+   left-aligned, the hosts a run may reach; right of it, right-aligned, the keys and hosts it may not.
+   The shield and what is inside it are doc/milestone/0.15.0/home-shield/index.html's; the tags and
+   their lines are not. Every host on the left is in BUILT_IN_DOMAINS and every path on the
+   right is on the built-in deny list (packages/sandbox/src/policy.ts). The last tag on each side is a
+   stack: more than is drawn. A line meets the shield at a mark 5 units outside its edge, drawn along
+   the edge's tangent there — computed from the shield's path, so move a tag by moving the far end
+   of its line and leave the mark alone. Classes and ids are prefixed because the site also loads
+   the board's stylesheet, which owns `.chip`. */
 export function SandboxShield() {
   return (
     <figure
       className="home-shield"
-      aria-label="A shield around the agent's run; the keys and config on the machine stay outside it"
+      aria-label="A shield around the agent's run; the hosts on the allowlist are reached from it, and the keys and config on the machine stay outside it"
     >
       <svg viewBox="0 0 560 490" aria-hidden="true">
         <defs>
           <linearGradient id="home-shield-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#173540" />
-            <stop offset="1" stopColor="#0e191d" />
+            <stop offset="0" stopColor="#215663" />
+            <stop offset="1" stopColor="#122a31" />
           </linearGradient>
           <radialGradient id="home-shield-aura" cx="50%" cy="45%" r="55%">
-            <stop className="home-shield-aura-stop" offset="0" stopOpacity=".16" />
+            <stop className="home-shield-aura-stop" offset="0" stopOpacity=".34" />
             <stop className="home-shield-aura-stop" offset="1" stopOpacity="0" />
           </radialGradient>
-          <marker
-            id="home-shield-arrow"
-            viewBox="0 0 8 8"
-            refX="6"
-            refY="4"
-            markerWidth="7"
-            markerHeight="7"
-            orient="auto"
-          >
-            <path className="home-shield-arrowhead" d="M0 0 L8 4 L0 8 Z" />
-          </marker>
         </defs>
         <ellipse cx="280" cy="230" rx="210" ry="200" fill="url(#home-shield-aura)" />
         <path
@@ -37,24 +30,39 @@ export function SandboxShield() {
           d="M280 70 L392 112 V214 C392 296 344 360 280 392 C216 360 168 296 168 214 V112 Z"
           transform="translate(280 231) scale(1.13) translate(-280 -231)"
         />
-        <path className="home-shield-ray" d="M167.0 55.0 Q174.6 79.6 197.6 91.3" />
-        <circle className="home-shield-halo" cx="197.6" cy="91.3" r="7" />
-        <line className="home-shield-cap" x1="193.0" y1="95.2" x2="202.2" y2="87.5" />
-        <path className="home-shield-ray" d="M386.0 55.0 Q365.6 67.2 361.6 90.7" />
-        <circle className="home-shield-halo" cx="361.6" cy="90.7" r="7" />
-        <line className="home-shield-cap" x1="356.7" y1="87.4" x2="366.6" y2="94.1" />
-        <path className="home-shield-ray" d="M120.0 226.0 Q139.0 236.0 158.0 226.0" />
-        <circle className="home-shield-halo" cx="158.0" cy="226.0" r="7" />
-        <line className="home-shield-cap" x1="158.0" y1="232.0" x2="158.0" y2="220.0" />
-        <path className="home-shield-ray" d="M426.0 226.0 Q414.0 216.0 402.0 226.0" />
-        <circle className="home-shield-halo" cx="402.0" cy="226.0" r="7" />
-        <line className="home-shield-cap" x1="402.0" y1="220.0" x2="402.0" y2="232.0" />
-        <path className="home-shield-ray" d="M164.0 352.0 Q184.6 347.9 192.3 328.4" />
-        <circle className="home-shield-halo" cx="192.3" cy="328.4" r="7" />
-        <line className="home-shield-cap" x1="196.2" y1="333.0" x2="188.5" y2="323.8" />
-        <path className="home-shield-ray" d="M418.0 352.0 Q398.0 330.4 368.9 326.6" />
-        <circle className="home-shield-halo" cx="368.9" cy="326.6" r="7" />
-        <line className="home-shield-cap" x1="371.6" y1="321.3" x2="366.1" y2="331.9" />
+        <path className="home-shield-ok" d="M200.6 94.4 Q176 82 167 58" />
+        <circle className="home-shield-halo home-shield-open" cx="200.6" cy="94.4" r="7" />
+        <line className="home-shield-cap home-shield-open" x1="195" y1="96.5" x2="206.2" y2="92.3" />
+        <path className="home-shield-ok" d="M163 143.1 Q157 135 143 141" />
+        <circle className="home-shield-halo home-shield-open" cx="163" cy="143.1" r="7" />
+        <line className="home-shield-cap home-shield-open" x1="163" y1="149.1" x2="163" y2="137.1" />
+        <path className="home-shield-ok" d="M163.3 226.1 Q142 238 113 228" />
+        <circle className="home-shield-halo home-shield-open" cx="163.3" cy="226.1" r="7" />
+        <line className="home-shield-cap home-shield-open" x1="163.7" y1="232.1" x2="163" y2="220.1" />
+        <path className="home-shield-ok" d="M196 324.7 Q186 346 173 352" />
+        <circle className="home-shield-halo home-shield-open" cx="196" cy="324.7" r="7" />
+        <line className="home-shield-cap home-shield-open" x1="199.3" y1="329.7" x2="192.7" y2="319.7" />
+        <path className="home-shield-ok" d="M252.7 381.8 Q232 424 128 448" />
+        <circle className="home-shield-halo home-shield-open" cx="252.7" cy="381.8" r="7" />
+        <line className="home-shield-cap home-shield-open" x1="257.7" y1="385.2" x2="247.7" y2="378.4" />
+        <path className="home-shield-ray" d="M393 55 Q365.6 67.2 360.2 94.7" />
+        <circle className="home-shield-halo" cx="360.2" cy="94.7" r="7" />
+        <line className="home-shield-cap" x1="354.6" y1="92.6" x2="365.8" y2="96.8" />
+        <path className="home-shield-ray" d="M458 141 Q430 130 397 140.9" />
+        <circle className="home-shield-halo" cx="397" cy="140.9" r="7" />
+        <line className="home-shield-cap" x1="397" y1="134.9" x2="397" y2="146.9" />
+        <path className="home-shield-ray" d="M444 226 Q423 214 396.7 225.7" />
+        <circle className="home-shield-halo" cx="396.7" cy="225.7" r="7" />
+        <line className="home-shield-cap" x1="397" y1="219.7" x2="396.4" y2="231.6" />
+        <path className="home-shield-ray" d="M429 297 Q406 284 382 290.9" />
+        <circle className="home-shield-halo" cx="382" cy="290.9" r="7" />
+        <line className="home-shield-cap" x1="384.3" y1="285.3" x2="379.7" y2="296.4" />
+        <path className="home-shield-ray" d="M418 352 Q398 334 361.8 328" />
+        <circle className="home-shield-halo" cx="361.8" cy="328" r="7" />
+        <line className="home-shield-cap" x1="365.2" y1="323" x2="358.4" y2="332.9" />
+        <path className="home-shield-ray" d="M402 448 Q362.7 409.9 307.7 381.5" />
+        <circle className="home-shield-halo" cx="307.7" cy="381.5" r="7" />
+        <line className="home-shield-cap" x1="312.6" y1="378.2" x2="302.7" y2="384.9" />
         <path
           className="home-shield-glow"
           d="M280 70 L392 112 V214 C392 296 344 360 280 392 C216 360 168 296 168 214 V112 Z"
@@ -96,54 +104,92 @@ export function SandboxShield() {
         <text className="home-shield-title" x="280" y="292" textAnchor="middle">
           IN ITS WORKTREE
         </text>
-        <g className="home-shield-chip">
+        <g className="home-shield-chip home-shield-allowed">
           <rect x="0" y="40" width="167" height="30" rx="8" />
           <g transform="translate(16 55)">
             <circle r="7" className="home-shield-lock" />
-            <path className="home-shield-lockx" d="M-2.6 -2.6 L2.6 2.6 M2.6 -2.6 L-2.6 2.6" />
+            <path className="home-shield-okv" d="M-3 0.2 L-0.8 2.4 L3.2 -2.2" />
           </g>
           <text className="home-shield-file" x="30" y="59.5">
+            api.anthropic.com
+          </text>
+        </g>
+        <g className="home-shield-chip home-shield-allowed">
+          <rect x="0" y="126" width="143" height="30" rx="8" />
+          <g transform="translate(16 141)">
+            <circle r="7" className="home-shield-lock" />
+            <path className="home-shield-okv" d="M-3 0.2 L-0.8 2.4 L3.2 -2.2" />
+          </g>
+          <text className="home-shield-file" x="30" y="145.5">
+            api.openai.com
+          </text>
+        </g>
+        <g className="home-shield-chip home-shield-allowed">
+          <rect x="0" y="211" width="113" height="30" rx="8" />
+          <g transform="translate(16 226)">
+            <circle r="7" className="home-shield-lock" />
+            <path className="home-shield-okv" d="M-3 0.2 L-0.8 2.4 L3.2 -2.2" />
+          </g>
+          <text className="home-shield-file" x="30" y="230.5">
+            github.com
+          </text>
+        </g>
+        <g className="home-shield-chip home-shield-allowed">
+          <rect x="0" y="352" width="173" height="30" rx="8" />
+          <g transform="translate(16 367)">
+            <circle r="7" className="home-shield-lock" />
+            <path className="home-shield-okv" d="M-3 0.2 L-0.8 2.4 L3.2 -2.2" />
+          </g>
+          <text className="home-shield-file" x="30" y="371.5">
+            registry.npmjs.org
+          </text>
+        </g>
+        <g className="home-shield-chip home-shield-allowed">
+          <rect className="home-shield-under-2" x="10" y="456" width="146" height="30" rx="8" />
+          <rect className="home-shield-under-1" x="5" y="452" width="146" height="30" rx="8" />
+          <rect x="0" y="448" width="146" height="30" rx="8" />
+          <text className="home-shield-file" x="73" y="467.5" textAnchor="middle">
+            + your allowlist
+          </text>
+        </g>
+        <g className="home-shield-chip">
+          <rect x="393" y="40" width="167" height="30" rx="8" />
+          <g transform="translate(409 55)">
+            <circle r="7" className="home-shield-lock" />
+            <path className="home-shield-lockx" d="M-2.6 -2.6 L2.6 2.6 M2.6 -2.6 L-2.6 2.6" />
+          </g>
+          <text className="home-shield-file" x="423" y="59.5">
             ~/.ssh/id_ed25519
           </text>
         </g>
         <g className="home-shield-chip">
-          <rect x="386" y="40" width="174" height="30" rx="8" />
-          <g transform="translate(402 55)">
+          <rect x="458" y="126" width="102" height="30" rx="8" />
+          <g transform="translate(474 141)">
             <circle r="7" className="home-shield-lock" />
             <path className="home-shield-lockx" d="M-2.6 -2.6 L2.6 2.6 M2.6 -2.6 L-2.6 2.6" />
           </g>
-          <text className="home-shield-file" x="416" y="59.5">
-            ~/.aws/credentials
-          </text>
-        </g>
-        <g className="home-shield-chip">
-          <rect x="18" y="211" width="102" height="30" rx="8" />
-          <g transform="translate(34 226)">
-            <circle r="7" className="home-shield-lock" />
-            <path className="home-shield-lockx" d="M-2.6 -2.6 L2.6 2.6 M2.6 -2.6 L-2.6 2.6" />
-          </g>
-          <text className="home-shield-file" x="48" y="230.5">
+          <text className="home-shield-file" x="488" y="145.5">
             ~/.npmrc
           </text>
         </g>
         <g className="home-shield-chip">
-          <rect x="426" y="211" width="116" height="30" rx="8" />
-          <g transform="translate(442 226)">
+          <rect x="444" y="211" width="116" height="30" rx="8" />
+          <g transform="translate(460 226)">
             <circle r="7" className="home-shield-lock" />
             <path className="home-shield-lockx" d="M-2.6 -2.6 L2.6 2.6 M2.6 -2.6 L-2.6 2.6" />
           </g>
-          <text className="home-shield-file" x="456" y="230.5">
+          <text className="home-shield-file" x="474" y="230.5">
             ~/.lingtai
           </text>
         </g>
         <g className="home-shield-chip">
-          <rect x="0" y="352" width="204" height="30" rx="8" />
-          <g transform="translate(16 367)">
+          <rect x="429" y="282" width="131" height="30" rx="8" />
+          <g transform="translate(445 297)">
             <circle r="7" className="home-shield-lock" />
             <path className="home-shield-lockx" d="M-2.6 -2.6 L2.6 2.6 M2.6 -2.6 L-2.6 2.6" />
           </g>
-          <text className="home-shield-file" x="30" y="371.5">
-            ~/.config/gh/hosts.yml
+          <text className="home-shield-file" x="459" y="301.5">
+            pastebin.com
           </text>
         </g>
         <g className="home-shield-chip">
@@ -156,28 +202,12 @@ export function SandboxShield() {
             ~/Library/Keychains
           </text>
         </g>
-        <path className="home-shield-ok" d="M262 372 Q252 408 224 440" markerEnd="url(#home-shield-arrow)" />
-        <g className="home-shield-chip home-shield-allowed">
-          <rect x="86" y="448" width="167" height="30" rx="8" />
-          <g transform="translate(102 463)">
-            <circle r="7" className="home-shield-lock" />
-            <path className="home-shield-okv" d="M-3 0.2 L-0.8 2.4 L3.2 -2.2" />
-          </g>
-          <text className="home-shield-file" x="116" y="467.5">
-            api.anthropic.com
-          </text>
-        </g>
-        <path className="home-shield-ray" d="M402.0 448.0 Q362.7 409.9 312.3 388.5" />
-        <circle className="home-shield-halo" cx="312.3" cy="388.5" r="7" />
-        <line className="home-shield-cap" x1="315.6" y1="383.5" x2="309.0" y2="393.5" />
         <g className="home-shield-chip">
-          <rect x="372" y="448" width="131" height="30" rx="8" />
-          <g transform="translate(388 463)">
-            <circle r="7" className="home-shield-lock" />
-            <path className="home-shield-lockx" d="M-2.6 -2.6 L2.6 2.6 M2.6 -2.6 L-2.6 2.6" />
-          </g>
-          <text className="home-shield-file" x="402" y="467.5">
-            pastebin.com
+          <rect className="home-shield-under-2" x="374" y="456" width="176" height="30" rx="8" />
+          <rect className="home-shield-under-1" x="379" y="452" width="176" height="30" rx="8" />
+          <rect x="384" y="448" width="176" height="30" rx="8" />
+          <text className="home-shield-file" x="472" y="467.5" textAnchor="middle">
+            + blocked by default
           </text>
         </g>
       </svg>
