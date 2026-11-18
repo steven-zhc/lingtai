@@ -60,6 +60,10 @@ export const readWhy: Explain = {
           ? { unread: read.controlProblem }
           : (read.held.find((h) => h.project === filter.project)?.locks ?? [])
       const control = yield* Effect.tryPromise(() => readControlOnce()).pipe(Effect.option)
+      // GitHub did not answer: the log's own queued rows are what is waiting.
+      const logQueued = tasks.filter((t) => t.state === 'queued').map((t) => Number(t.issue))
+      // A known red or unreadable base holds those rows as it would the listing's: the base needs no GitHub.
+      const baseHolds = 'held' in look || 'unreadable' in look
       return yield* explainQueueEffect(
         {
           now: new Date(now),
@@ -68,13 +72,14 @@ export const readWhy: Explain = {
           draining: control._tag === 'Some' && control.value.shutdown !== null,
           locks,
           base: look,
-          // GitHub did not answer: the log's own queued rows are what is waiting, and the roots that need no GitHub still stand.
-          offered:
-            offered === null
-              ? tasks.filter((t) => t.state === 'queued').map((t) => Number(t.issue))
-              : offered.runnable.map((o) => Number(o.ref)),
+          offered: offered === null ? logQueued : offered.runnable.map((o) => Number(o.ref)),
           runnable: runnable.map((r) => Number(r.issue)),
-          skipped: (seen?.skipped ?? []).map((s) => ({ ref: s.ref, reason: s.reason })),
+          skipped:
+            seen === null
+              ? baseHolds
+                ? logQueued.map((ref) => ({ ref, reason: 'base-red' }))
+                : []
+              : seen.skipped.map((s) => ({ ref: s.ref, reason: s.reason })),
           rows: whyRows(tasks, filter.backoffMs, now),
           repository: filter.links?.repository ?? null,
           canListBlockers: filter.links !== null,

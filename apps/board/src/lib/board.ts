@@ -1386,8 +1386,8 @@ export async function githubQueue(
       notes.push({ project: filter.project, reason: offered.dependenciesUnread })
     }
     for (const r of [...answer.runnable, ...(answer.baseHeld ?? [])]) {
-      if (known.has(r.taskId)) continue
       if (!answer.runnable.includes(r)) baseHeldIds.add(r.taskId)
+      if (known.has(r.taskId)) continue
       cards.push({
         taskId: r.taskId,
         project: filter.project,
