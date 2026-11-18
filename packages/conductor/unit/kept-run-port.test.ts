@@ -12,7 +12,13 @@ import { makeAgentAction, type AgentPortDeps } from '@lingtai/actions'
 import { Deferred, Effect, Exit, Fiber, Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type GitHere, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from '../src/kept-run-port.ts'
+import {
+  type GitHere,
+  keptRunPort,
+  onlyThePlantedFileIsDirty,
+  resetToHead,
+  restoreAfterReview,
+} from '../src/kept-run-port.ts'
 
 const PLANT = 'apps/web/.env.local'
 
@@ -295,5 +301,35 @@ describe('the restore under interruption (#1043, #587)', () => {
     expect(Exit.hasInterrupts(exit)).toBe(true)
     expect(log).toContain(`reset --mixed ${ON}`)
     expect(log.indexOf(`reset --mixed ${ON}`)).toBeLessThan(log.indexOf('checkout -- .'))
+  })
+})
+
+describe('resetToHead (#1245)', () => {
+  it('resets hard, cleans without -x and with the planted file named, then reads the head', async () => {
+    const { git, asked } = fakeGit({ 'rev-parse HEAD': Result.succeed('abc123\n') })
+    expect(await Effect.runPromise(resetToHead({ git, plantAt: PLANT }))).toEqual({ head: 'abc123' })
+    expect(asked).toEqual([
+      ['reset', '--hard', 'HEAD'],
+      ['clean', '-ffd', '-e', `/${PLANT}`],
+      ['rev-parse', 'HEAD'],
+    ])
+    // Ignored files stay: nothing here may pass -x or -X.
+    expect(asked.flat().some((arg) => /^-\w*[xX]/.test(arg))).toBe(false)
+  })
+
+  it('escapes the planted path as a gitignore pattern', async () => {
+    const { git, asked } = fakeGit()
+    await Effect.runPromise(resetToHead({ git, plantAt: 'a b/[x]*.env' }))
+    expect(asked[1]).toEqual(['clean', '-ffd', '-e', '/a\\ b/\\[x\\]\\*.env'])
+  })
+
+  it.each([
+    ['reset --hard HEAD', 'git reset refused it', 1],
+    ['clean -ffd -e /apps/web/.env.local', 'git clean refused it', 2],
+    ['rev-parse HEAD', 'git rev-parse refused it', 3],
+  ])('stops at a refused %s and makes no later call', async (call, words, made) => {
+    const { git, asked } = fakeGit({ [call]: Result.fail({ detail: 'no' }) })
+    expect(await Effect.runPromise(resetToHead({ git, plantAt: PLANT }))).toEqual({ failed: `${words}: no` })
+    expect(asked).toHaveLength(made)
   })
 })

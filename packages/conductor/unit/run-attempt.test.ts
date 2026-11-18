@@ -3666,3 +3666,219 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
     })
   })
 })
+
+// ------------------------------------------- a step redone whole, from the head (#1245) ----
+
+describe('a step redone whole is reset to the head first, then run from its first action (#1245)', () => {
+  const STEPS = [
+    ['design', 'design'],
+    ['implement', 'commit'],
+    ['review', 'verdict'],
+  ] as const
+
+  /** A `run:` then an `agent:` at one step; the agent crashes with each detail in turn, then passes. */
+  const runThenAgent = (at: 'design' | 'implement' | 'review', details: readonly string[]) => {
+    const { actionsAt: base } = watchingActions()
+    const log: string[] = []
+    const contexts: ActionContext[] = []
+    let lap = 0
+    const yields = STEPS.find(([step]) => step === at)![1]
+    const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+      step === at
+        ? [
+            {
+              name: 'prepare the tree',
+              kind: 'run',
+              yields: 'nothing',
+              run: async () => {
+                log.push('run')
+                return PASSED
+              },
+            },
+            {
+              name: 'the agent',
+              kind: 'agent',
+              yields,
+              run: async (seenWith) => {
+                log.push('agent')
+                contexts.push(seenWith)
+                const detail = details[lap++]
+                return detail === undefined
+                  ? { ...PASSED, ...(at === 'implement' ? { head: 'feedface00' } : {}), runtime: 'claude-code' }
+                  : { ...crashed(detail), runtime: 'claude-code' }
+              },
+            },
+          ]
+        : base(step, actions)
+    return { actionsAt, log, contexts }
+  }
+
+  it.each(STEPS)('%s: a transient crash is followed by a reset, then every action again from the first', async (at) => {
+    const { bodies } = watching()
+    const { actionsAt, log, contexts } = runThenAgent(at, ['API Error: 503'])
+    const { emit, seen } = events()
+    const resets: string[] = []
+
+    await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      resetToHead: async () => {
+        resets.push('reset')
+        log.push('reset')
+        return { head: 'reset-head' }
+      },
+    })
+
+    expect(resets).toHaveLength(1)
+    expect(log.slice(0, 5)).toEqual(['run', 'agent', 'reset', 'run', 'agent'])
+    expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(1)
+    // Every agent of a redone step is under the redo's suffix, and the first one is handed the paragraph.
+    expect(contexts.map((c) => c.rerun)).toEqual([undefined, 1])
+    expect(contexts[0]!.redo).toBeUndefined()
+    expect(contexts[1]!.redo).toMatchObject({ why: 'API Error: 503', head: 'reset-head' })
+  })
+
+  it('appends StepRedone before the wait, and resets only after it', async () => {
+    const { bodies } = watching()
+    const { actionsAt, log } = runThenAgent('implement', ['API Error: 503'])
+    const dispatched = {
+      get agents() {
+        return log.filter((entry) => entry === 'agent')
+      },
+    }
+    const { emit, seen } = events()
+    let resets = 0
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          runAttemptEffect(
+            attemptPortsFrom({
+              recipe: recipeWith({}),
+              context,
+              emit,
+              bodies,
+              actionsAt,
+              resetToHead: async () => {
+                resets += 1
+                return { head: 'reset-head' }
+              },
+            }),
+          ),
+        )
+        yield* TestClock.adjust('1 second')
+        expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(1)
+        expect(resets).toBe(0)
+        yield* TestClock.adjust('58 seconds')
+        expect(resets).toBe(0)
+        yield* TestClock.adjust('2 seconds')
+        expect(resets).toBe(1)
+        for (let i = 0; i < 4; i++) yield* TestClock.adjust('20 minutes')
+        yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(TestClock.layer())),
+    )
+    expect(dispatched.agents).toEqual(['agent', 'agent'])
+  })
+
+  it('goes to a person, as before, once the attempt has spent its redos: nothing is waited, reset or run', async () => {
+    const { bodies } = watching()
+    const { actionsAt, log } = runThenAgent('implement', ['API Error: 503'])
+    const dispatched = {
+      get agents() {
+        return log.filter((entry) => entry === 'agent')
+      },
+    }
+    const { emit, seen } = events()
+    let resets = 0
+
+    const result = await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      from: { step: 'implement', waive: undefined, stepRedosSpent: 3 },
+      resetToHead: async () => {
+        resets += 1
+        return { head: 'reset-head' }
+      },
+    } as unknown as AttemptOptions)
+
+    expect(resets).toBe(0)
+    expect(dispatched.agents).toEqual(['agent'])
+    expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(0)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed' } })
+  })
+
+  it('never dispatches an agent into a tree it could not reset: it ends at a person with git’s words', async () => {
+    const { bodies } = watching()
+    const { actionsAt, log } = runThenAgent('implement', ['API Error: 503'])
+    const dispatched = {
+      get agents() {
+        return log.filter((entry) => entry === 'agent')
+      },
+    }
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      resetToHead: async () => ({ failed: 'git reset refused it: index.lock exists' }),
+    })
+
+    expect(dispatched.agents).toEqual(['agent'])
+    // The redo was spent before anything was waited for, and the log says no dispatch followed.
+    expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(1)
+    expect(result.stopped).toMatchObject({
+      step: 'implement',
+      ending: { ending: 'did-not-finish', detail: expect.stringContaining('git reset refused it: index.lock exists') },
+    })
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'AgentCrashed', detail: expect.stringContaining('index.lock exists') },
+    })
+  })
+
+  it('stands a conflict round’s merge up again after the reset, which aborted it', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = runThenAgent('implement', ['API Error: 503'])
+    const { emit } = events()
+    const order: string[] = []
+    const baseSha = 'b'.repeat(40)
+
+    const ports = {
+      ...attemptPortsFrom({
+        recipe: recipeWith({}),
+        context,
+        emit,
+        bodies,
+        actionsAt,
+        from: { step: 'implement', waive: undefined, conflict: { baseSha, paths: ['a.ts'] } },
+        resetToHead: async () => {
+          order.push('reset')
+          return { head: 'reset-head' }
+        },
+      } as unknown as AttemptOptions),
+      mergeForConflict: (sha: string) =>
+        Effect.sync(() => {
+          order.push(`merge ${sha === baseSha}`)
+          return { conflicted: { paths: ['a.ts'], fromSha: 'f'.repeat(40) } }
+        }),
+    }
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(runAttemptEffect(ports))
+        for (let i = 0; i < 8; i++) yield* TestClock.adjust('20 minutes')
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(TestClock.layer())),
+    )
+
+    expect(order).toEqual(['merge true', 'reset', 'merge true'])
+  })
+})
