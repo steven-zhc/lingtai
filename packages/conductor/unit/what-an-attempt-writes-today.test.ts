@@ -57,7 +57,7 @@
  * process, no socket, no network.
  */
 import { AgentHostFailed, type Runtime } from '@lingtai/agent'
-import { askedText, expandPrompt, type Envelope, type PayloadOf } from '@lingtai/domain'
+import { expandPrompt, type Envelope, type PayloadOf } from '@lingtai/domain'
 import {
   integrationStream,
   waitWords,
@@ -1244,7 +1244,6 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
         recommended: 'a',
       },
     ]
-    const asked = askedText({ questions })
     const asking: Runtime = {
       ...runtime,
       run: (request) =>
