@@ -476,13 +476,23 @@ describe('triage catch-up', () => {
       .fn<(project: string, issue: string, runId: string) => string | null>()
       .mockReturnValueOnce('append failed')
       .mockReturnValue(null)
+    // What the control stream holds: a request that landed is not asked again, whatever the ticket still says.
+    const landed: unknown[] = []
     const deps: CatchUpTriagePorts = {
       ...f.deps,
-      store: { ...f.deps.store, read: async () => events },
+      store: { ...f.deps.store, read: async () => events, readTypes: async () => landed as never },
       readTasks: () => Effect.succeed([{ issue: '21', state: 'approved' }] as never),
-      continuation: (project, issue, runId) => Effect.sync(() => continuation(project, issue, runId)),
+      continuation: (project, issue, runId) =>
+        Effect.sync(() => {
+          const failed = continuation(project, issue, runId)
+          if (failed === null) landed.push({ data: { project, issue, runId } })
+          return failed
+        }),
     }
     const hashes = new Map<string, string>()
+    await catchUpChangedTriage('lingtai', triage, hashes, deps)
+    await catchUpChangedTriage('lingtai', triage, hashes, deps)
+    // The first request failed and is asked again; once one lands the ticket staying `approved` asks nothing more.
     await catchUpChangedTriage('lingtai', triage, hashes, deps)
     await catchUpChangedTriage('lingtai', triage, hashes, deps)
     expect(continuation).toHaveBeenCalledTimes(2)

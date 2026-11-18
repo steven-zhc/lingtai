@@ -31,6 +31,7 @@ import {
 import { TRIAGE_EVENTS } from '@lingtai/daemon'
 import {
   BOUNDS,
+  CONTROL_STREAM,
   parseTicketStream,
   attemptReducer,
   triageSpentOn,
@@ -230,6 +231,17 @@ const reofferContinuation = (ticketId: string, deps: CatchUpTriagePorts) =>
     if (wait?.resolution?.by !== 'triage' || (tag !== 'FixRefusal' && tag !== 'RedoStep')) return
     const parsed = parseTicketStream(ticketId)
     if (parsed === null) return
+    // A request that already landed is not asked again: a ticket the conductor declined to claim (an `agent:hold`
+    // added meanwhile) stays `approved`, and repeating the request would wake a turn that declines it again, forever.
+    const requests = yield* Effect.tryPromise({
+      try: () => deps.store.readTypes(CONTROL_STREAM, ['ContinueRequested']),
+      catch: (e) => e,
+    })
+    const landed = requests.some((r) => {
+      const d = r.data as { project?: string; issue?: string; runId?: string }
+      return d.project === parsed.project && d.issue === parsed.issue && d.runId === life.runId
+    })
+    if (landed) return
     const failed = yield* deps.continuation(parsed.project, parsed.issue, life.runId)
     if (failed !== null) deps.log?.(`triage ${life.waitId} on ${ticketId}: continuation not requested — ${failed}`)
   })
