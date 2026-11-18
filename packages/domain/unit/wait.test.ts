@@ -53,7 +53,13 @@ describe('allowedResolutions', () => {
   })
 
   it('AgentQuestion: EditBodyAndRequeue, Requeue, Close', () => {
-    const reason = parseReason({ _tag: 'AgentQuestion', run, step: 'implement', question: 'rename to X or Y?' })
+    const reason = parseReason({
+      _tag: 'AgentQuestion',
+      run,
+      step: 'implement',
+      questions: [],
+      said: 'rename to X or Y?',
+    })
     expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close'])
   })
 
@@ -266,7 +272,7 @@ describe('allowedResolutions', () => {
     })
 
     it('InputNeeded: Requeue, EditBodyAndRequeue, Close — a question wants an answer', () => {
-      const reason = parseProposed({ _tag: 'InputNeeded', from: 'implement', question: 'rename to X or Y?' })
+      const reason = parseProposed({ _tag: 'InputNeeded', from: 'implement', questions: [], said: 'rename to X or Y?' })
       expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
     })
 
@@ -684,7 +690,7 @@ describe('recommendedResolution', () => {
     it('is not offered where 0118 §1 gives it no row', () => {
       for (const reason of [
         parseReason({ _tag: 'OwnQuestion', question: 'which design?', by: 'steven' }),
-        parseReason({ _tag: 'AgentQuestion', run, step: 'implement', question: 'X or Y?' }),
+        parseReason({ _tag: 'AgentQuestion', run, step: 'implement', questions: [], said: 'X or Y?' }),
         parseReason({ _tag: 'MergeRefused', run, reason: 'dirty-base', raw: 'refused' }),
       ])
         expect(allowedResolutions(reason)).not.toContain('Split')
@@ -898,7 +904,7 @@ describe('triageStatus', () => {
     }
 
     const reasons = [
-      parseOther({ _tag: 'AgentQuestion', run, step: 'implement', question: 'rename to X or Y?' }),
+      parseOther({ _tag: 'AgentQuestion', run, step: 'implement', questions: [], said: 'rename to X or Y?' }),
       parseOther({ _tag: 'FixerDisagrees', run, said: null }),
       parseOther({ _tag: 'NothingProduced', run, said: null }),
       parseOther({
@@ -1196,7 +1202,7 @@ describe('continuationOf', () => {
   it('null exactly where allowedResolutions does not offer Approve', () => {
     const samples: WaitReason[] = [
       parseReason({ _tag: 'OwnQuestion', question: 'which design?', by: 'steven' }),
-      parseReason({ _tag: 'AgentQuestion', run, step: 'implement', question: 'rename to X or Y?' }),
+      parseReason({ _tag: 'AgentQuestion', run, step: 'implement', questions: [], said: 'rename to X or Y?' }),
       parseReason({ _tag: 'SignoffRequired', run, step: 'merge', action: 'human:land', question: 'land it?' }),
       parseReason({ _tag: 'FixerDisagrees', run, said: null }),
       parseReason({ _tag: 'NothingProduced', run, said: null }),

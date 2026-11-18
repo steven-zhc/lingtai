@@ -147,7 +147,8 @@ describe('the person decides a wait', () => {
     _tag: 'AgentQuestion',
     run: anAttemptRef('run-1'),
     step: 'implement',
-    question: 'which?',
+    questions: [] as never[],
+    said: 'which?',
   } as const
   const blocked = () => reduceTicket([...aClaim(item(), 'run-1'), ...aWait(item(), question, W)])
   const own = () =>
@@ -281,7 +282,11 @@ describe('closeChecks and closeTransition', () => {
   const blocked = () =>
     reduceTicket([
       ...aClaim(item(), 'run-1'),
-      ...aWait(item(), { _tag: 'AgentQuestion', run: anAttemptRef('run-1'), step: 'implement', question: 'q' }, W),
+      ...aWait(
+        item(),
+        { _tag: 'AgentQuestion', run: anAttemptRef('run-1'), step: 'implement', questions: [] as never[], said: 'q' },
+        W,
+      ),
     ])
   const closed = () => reduceTicket([item()('TicketClosed', { by: 'steven', reason: 'no' })])
 
@@ -323,7 +328,13 @@ describe('closeChecks and closeTransition', () => {
 
 describe('startTriageTransition and finishTriageTransition', () => {
   const W = '66666666-6666-4666-8666-666666666666' as WaitId
-  const question = { _tag: 'AgentQuestion', run: anAttemptRef('run-1'), step: 'implement', question: 'q' } as const
+  const question = {
+    _tag: 'AgentQuestion',
+    run: anAttemptRef('run-1'),
+    step: 'implement',
+    questions: [] as never[],
+    said: 'q',
+  } as const
   const by = { _tag: 'Mechanical' } as const
   const blocked = (...more: ReturnType<typeof aTriageStart>) =>
     reduceTicket([...aClaim(item(), 'run-1'), ...aWait(item(), question, W), ...more])

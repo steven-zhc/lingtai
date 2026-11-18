@@ -23,7 +23,8 @@ describe('waitWords', () => {
       _tag: 'AgentQuestion',
       run: { runId: 'pass-1' },
       step: 'design',
-      question: 'which base?',
+      questions: [],
+      said: 'which base?',
     }
     const cols = waitWords(reason)
     expect(cols.line).toBe('the `design` step asked: which base?')

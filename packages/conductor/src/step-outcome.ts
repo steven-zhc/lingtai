@@ -251,7 +251,12 @@ function designResultOf(outcome: ActionOutcomeEntry): ResultOf<'design'> {
         // asked are reduced into `evidence`'s one string
         // (`agent-action.ts:994-998`), and nothing on `ActionResult` carries
         // them apart from the question.
-        return { _tag: 'Asked', question: outcome.evidence, draft: null }
+        return {
+          _tag: 'Asked',
+          question: outcome.evidence,
+          draft: null,
+          ...(outcome.questions === undefined ? {} : { questions: outcome.questions }),
+        }
       }
       if (outcome.interrupted !== undefined) {
         return { _tag: 'Interrupted', cause: outcome.interrupted }

@@ -77,7 +77,8 @@ events.push(
     _tag: 'AgentQuestion',
     run: anAttemptRef('pass-pin-asked'),
     step: 'implement',
-    question: 'which approach?',
+    questions: [],
+    said: 'which approach?',
   }),
 )
 
@@ -534,7 +535,8 @@ events.push(
       _tag: 'AgentQuestion',
       run: anAttemptRef(requeueOfRunWaitRun.runId),
       step: 'implement',
-      question: 'which approach?',
+      questions: [],
+      said: 'which approach?',
     },
     requeueOfRunWaitId,
   ),

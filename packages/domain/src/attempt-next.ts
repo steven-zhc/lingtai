@@ -260,7 +260,7 @@ function commitFellShort(step: Step, action: OfYields<'commit'>, run: AttemptRef
     case 'Completed':
       return {
         _tag: 'Propose',
-        proposal: { _tag: 'InputNeeded', from: 'implement', question: action.result.question! },
+        proposal: { _tag: 'InputNeeded', from: 'implement', questions: [], said: action.result.question! },
       }
     case 'Interrupted':
       return interruptedAs(step, action.result.cause, action.evidence, run)
@@ -279,8 +279,16 @@ function designFellShort(step: Step, action: OfYields<'design'>, run: AttemptRef
   switch (action.result._tag) {
     case 'Drafted':
       throw new ImpossibleOutcomeError(step, action.yields, 'Drafted always clears')
-    case 'Asked':
-      return { _tag: 'Propose', proposal: { _tag: 'InputNeeded', from: 'design', question: action.result.question } }
+    case 'Asked': {
+      const { questions, question } = action.result
+      return {
+        _tag: 'Propose',
+        proposal:
+          questions !== undefined && questions.length > 0
+            ? { _tag: 'InputNeeded', from: 'design', questions }
+            : { _tag: 'InputNeeded', from: 'design', questions: [], said: question },
+      }
+    }
     case 'AnswerUnreadable':
       return answerUnreadable(step, action.result.raw)
     case 'Interrupted':

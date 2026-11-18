@@ -67,6 +67,36 @@ export const TriageQuestion = z
   })
 export type TriageQuestion = z.infer<typeof TriageQuestion>
 
+/**
+ * What an agent is allowed to *ask* (#1253): a `TriageQuestion` with two to
+ * four answers (0108 §22). The bar is on the writer's side only — a stored
+ * `WaitTriaged` may carry a one-answer question, and nothing on the log may
+ * become unreadable because of it.
+ */
+export const AskedQuestion = TriageQuestion.refine((q) => q.answers.length >= 2, {
+  message: 'a question needs two to four answers',
+  path: ['answers'],
+})
+/** One to five of them. */
+export const AskedQuestions = z.array(AskedQuestion).min(1).max(TRIAGE_QUESTIONS_MAX)
+
+/**
+ * A question as text, for everything that reads it as a sentence rather than
+ * as a form: the card, the judge's evidence, the issue comment, the history.
+ * `said` where there are no questions (an `implement` that asked in prose, or
+ * a row written before #1253); otherwise a numbered list with each answer and
+ * the recommended one marked.
+ */
+export function askedText(asked: { readonly questions: readonly TriageQuestion[]; readonly said?: string }): string {
+  if (asked.questions.length === 0) return asked.said ?? ''
+  return asked.questions
+    .map((q, i) => {
+      const answers = q.answers.map((a) => `   - ${a.text}${a.id === q.recommended ? ' (recommended)' : ''}`)
+      return [`${i + 1}. ${q.text}`, ...answers].join('\n')
+    })
+    .join('\n')
+}
+
 /** A hunk git merged without trouble. */
 export const MechanicalHunk = z.strictObject({
   _tag: z.literal('Mechanical'),

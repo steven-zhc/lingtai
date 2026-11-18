@@ -149,7 +149,8 @@ describe("requeue — apps/cli/src/start-new-attempt.ts's shape: { by, note }, n
         _tag: 'AgentQuestion',
         run: anAttemptRef('pass-103'),
         step: 'implement',
-        question: 'which helper?',
+        questions: [],
+        said: 'which helper?',
       }),
     ])
 
@@ -368,7 +369,8 @@ describe("answer — apps/cli/src/ask.ts's shape: { project, issue, answer, by }
         _tag: 'AgentQuestion',
         run: anAttemptRef('pass-122'),
         step: 'implement',
-        question: 'which helper?',
+        questions: [],
+        said: 'which helper?',
       }),
     ])
 

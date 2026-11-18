@@ -3,7 +3,8 @@
 import { triageAnswersText, type TriageQuestion, type WaitId } from '@lingtai/domain'
 import { createContext, useContext, useState, type ReactNode } from 'react'
 
-type Picks = { waitId: WaitId | null; answers: Record<number, string> }
+/** Triage's picks and the agent's own are kept apart (#1253): one state, two maps. */
+type Picks = { waitId: WaitId | null; answers: Record<number, string>; asked: Record<number, string> }
 /** A text the person has made their own, with the wait it was written under. */
 type Draft = { waitId: WaitId | null; text: string }
 type AnswerDraft = Draft & { open: boolean }
@@ -25,9 +26,14 @@ type TriageDraft = {
   target: DraftTarget | null
   /** Appends to the target's draft. Page state only: the resolution is what writes (0118 §6). */
   add: (text: string) => void
-  selected: (index: number, question: TriageQuestion) => string
-  pick: (index: number, answerId: string) => void
+  /** The wait's own questions (`AgentQuestion`, `InputNeeded`), empty where it asked none in this shape (#1253). */
+  asked: readonly TriageQuestion[]
+  selected: (index: number, question: TriageQuestion, source?: AnswerSource) => string
+  pick: (index: number, answerId: string, source?: AnswerSource) => void
 }
+
+/** Whose question a choice answers: triage's advice, or the agent's own question on the wait. */
+export type AnswerSource = 'triage' | 'asked'
 
 const Context = createContext<TriageDraft | null>(null)
 
@@ -46,31 +52,47 @@ export function draftTarget(recommended: string | null): DraftTarget | null {
 export function TriagePicks({
   waitId,
   cause,
+  asked = null,
   recommended = null,
   children,
 }: {
   waitId: WaitId | null
   /** The cause triage advised, whose questions the choices draw; null when there is none. */
   cause: Parameters<typeof triageAnswersText>[0] | null
+  /**
+   * What the agent asked on this wait, from the wait's own reason (#1253). Its picks are kept apart from
+   * triage's: the server checks `picks` against triage's cause, and an agent's answer id is not one of its.
+   */
+  asked?: readonly TriageQuestion[] | null
   /** The card triage's advice recommends, as `recommendedResolution` answered it on the server. */
   recommended?: string | null
   children: ReactNode
 }) {
-  const [picks, setPicks] = useState<Picks>({ waitId, answers: {} })
+  const [picks, setPicks] = useState<Picks>({ waitId, answers: {}, asked: {} })
   const answers = picks.waitId === waitId ? picks.answers : {}
+  const askedAnswers = picks.waitId === waitId ? picks.asked : {}
   const [drafts, setDrafts] = useState<{ body: Draft | null; answer: AnswerDraft | null }>({
     body: null,
     answer: null,
   })
-  const selected = (index: number, question: TriageQuestion) => answers[index] ?? question.recommended
+  const askedList = asked ?? []
+  const selected = (index: number, question: TriageQuestion, source: AnswerSource = 'triage') =>
+    (source === 'asked' ? askedAnswers : answers)[index] ?? question.recommended
   // The one composition: the server writes this same text for the same picks (#921).
   const composed = cause === null ? null : triageAnswersText(cause, answers)
-  const text = composed?.ok ? composed.text : ''
-  const pick = (index: number, answerId: string) =>
-    setPicks((current) => ({
-      waitId,
-      answers: { ...(current.waitId === waitId ? current.answers : {}), [index]: answerId },
-    }))
+  // What the wait itself asked is composed the same way and takes the body box first (#1253).
+  const composedAsked =
+    askedList.length === 0 ? null : triageAnswersText({ _tag: 'UndecidedQuestion', questions: askedList }, askedAnswers)
+  const text = composedAsked?.ok ? composedAsked.text : composed?.ok ? composed.text : ''
+  const pick = (index: number, answerId: string, source: AnswerSource = 'triage') =>
+    setPicks((current) => {
+      const same = current.waitId === waitId
+      const answers = same ? current.answers : {}
+      const asked = same ? current.asked : {}
+      return source === 'asked'
+        ? { waitId, answers, asked: { ...asked, [index]: answerId } }
+        : { waitId, answers: { ...answers, [index]: answerId }, asked }
+    })
 
   // A draft belongs to the wait it was written under, and is never cleared when
   // that wait ends: the person is told to copy it before leaving.
@@ -118,6 +140,7 @@ export function TriagePicks({
         closeAnswer,
         target,
         add,
+        asked: askedList,
         selected,
         pick,
       }}
@@ -131,9 +154,17 @@ export function useTriageDraft(): TriageDraft | null {
   return useContext(Context)
 }
 
-export function TriageChoices({ question, index }: { question: TriageQuestion; index: number }) {
+export function TriageChoices({
+  question,
+  index,
+  source = 'triage',
+}: {
+  question: TriageQuestion
+  index: number
+  source?: AnswerSource
+}) {
   const draft = useTriageDraft()
-  const selected = draft?.selected(index, question) ?? question.recommended
+  const selected = draft?.selected(index, question, source) ?? question.recommended
   return (
     <fieldset className="triage-choices">
       <legend className="triage-choices-question">{question.text}</legend>
@@ -143,10 +174,10 @@ export function TriageChoices({ question, index }: { question: TriageQuestion; i
             <span className="triage-choice-main">
               <input
                 type="radio"
-                name={`triage-question-${index}`}
+                name={`${source === 'asked' ? 'asked' : 'triage'}-question-${index}`}
                 value={answer.id}
                 checked={selected === answer.id}
-                onChange={() => draft?.pick(index, answer.id)}
+                onChange={() => draft?.pick(index, answer.id, source)}
               />
               <span className="triage-choice-text">{answer.text}</span>
             </span>

@@ -46,7 +46,7 @@ import type {
   ComposedPrompt,
   WaitId,
 } from '@lingtai/domain'
-import type { RuntimeId } from '@lingtai/domain'
+import type { RuntimeId, TriageQuestion } from '@lingtai/domain'
 import { context as otelContext } from '@opentelemetry/api'
 import { Cause, Effect } from 'effect'
 
@@ -125,6 +125,11 @@ interface ActionResultFields {
    */
   evidence: string
   findings: ActionFinding[]
+  /**
+   * Beside `because: NEEDS_INPUT` from a `design` agent: what it asked, in triage's shape (#1253).
+   * `evidence` carries the same questions as text (`askedText`), for every reader that wants a sentence.
+   */
+  questions?: TriageQuestion[]
   /**
    * Set by a `run:` whose sandbox would not wrap it (#1152): the command never started, so the failure is the
    * machine's and not a judgement about the diff. A kept run at `implement` must not turn it into a pass.
@@ -759,7 +764,7 @@ export interface PipelineResult {
    * No `because`: *it asked* is the whole reason, where `didNotFinishAt` carries
    * a word for each of the several unlike things that end that way.
    */
-  askedAt: { action: string; detail: string } | null
+  askedAt: { action: string; detail: string; questions?: TriageQuestion[] } | null
   /**
    * Every verdict, with the findings behind it.
    *
@@ -773,6 +778,8 @@ export interface PipelineResult {
     verdict: ActionVerdict
     evidence: string
     findings: ActionFinding[]
+    /** `ActionResult.questions`. */
+    questions?: TriageQuestion[]
     /** The reviewer's summary of the change, where it wrote one. `ActionResult.summary`. */
     summary?: string
     /** That the host lost the sandbox, with the sentence (#1157). `ActionResult.sandboxUnavailable`. */
@@ -1134,6 +1141,7 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
         // reads it with `!== undefined` and `LeftTheTreeAt` is optional for the
         // same reason.
         ...(result.head === undefined ? {} : { head: result.head }),
+        ...(result.questions === undefined ? {} : { questions: result.questions }),
         // Spread for `head`'s reason: no summary is an absent key (#890).
         ...(result.summary === undefined ? {} : { summary: result.summary }),
         ...(result.clipped === undefined ? {} : { clipped: result.clipped }),
@@ -1253,7 +1261,13 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
                 detail: result.evidence,
                 ...(result.because === undefined ? {} : { because: result.because }),
               },
-          askedAt: asked ? { action: action.name, detail: result.evidence } : null,
+          askedAt: asked
+            ? {
+                action: action.name,
+                detail: result.evidence,
+                ...(result.questions === undefined ? {} : { questions: result.questions }),
+              }
+            : null,
           results,
           skipped: actions.slice(index + 1).map((a) => a.name),
         }

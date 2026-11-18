@@ -31,7 +31,7 @@ import type {
   RunSpent,
   ToAppend,
 } from '@lingtai/domain'
-import { cleared, resolveOffer, stepEndedsOf, waitWords, STEPS } from '@lingtai/domain'
+import { askedText, cleared, resolveOffer, stepEndedsOf, waitWords, STEPS } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { ProjectFiles, recipePath, recipeValue } from '@lingtai/project'
@@ -1366,7 +1366,18 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
   it("carries a design agent's question to a person when nothing at `proposed` answers it", async () => {
     const store = memoryStore()
     const did: string[] = []
-    const asked = 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?'
+    const questions = [
+      {
+        id: 'q1',
+        text: 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
+        answers: [
+          { id: 'a', text: 'the hold goes at `proposed:`' },
+          { id: 'b', text: 'nothing holds' },
+        ],
+        recommended: 'a',
+      },
+    ]
+    const asked = askedText({ questions })
     /** Answers a question at `design` and a document nowhere — `design` is all `DRAFTED` declares. */
     const asking: Runtime = {
       ...runtime,
@@ -1379,7 +1390,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
                 durationMs: 1234,
                 costUsd: 0.21,
                 failure: null,
-                text: `\`\`\`question\n${asked}\n\`\`\``,
+                text: '```question\n' + JSON.stringify(questions) + '\n```',
                 sessionId: 'sess-design',
               }
             : {

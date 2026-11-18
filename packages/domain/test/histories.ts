@@ -541,7 +541,7 @@ function answerAfterRunNote(): Scenario {
     runStarted(run, ticketId),
     ...aWait(
       t,
-      { _tag: 'AgentQuestion', run: { runId: run.runId }, step: 'implement', question: 'which of the two?' },
+      { _tag: 'AgentQuestion', run: { runId: run.runId }, step: 'implement', questions: [], said: 'which of the two?' },
       ask,
     ),
     // After the wait opened: the run stream's note overwrites the wait's own before the answer lands.
@@ -953,7 +953,11 @@ const late_askedThenAnswered = (() => {
   const w = wait('9110-ask')
   return stamp([
     ...aClaim(t, r1),
-    ...aWait(t, { _tag: 'AgentQuestion', run: { runId: r1 }, step: 'design', question: 'which of the two?' }, w),
+    ...aWait(
+      t,
+      { _tag: 'AgentQuestion', run: { runId: r1 }, step: 'design', questions: [], said: 'which of the two?' },
+      w,
+    ),
     ...aResolution(t, w, { _tag: 'AnswerQuestion', choice: 'the first' }),
   ])
 })()
@@ -1374,7 +1378,7 @@ const late_requeueOfRunWait = (() => {
     runStarted(run, ticketId),
     ...aWait(
       t,
-      { _tag: 'AgentQuestion', run: { runId: run.runId }, step: 'implement', question: 'which approach?' },
+      { _tag: 'AgentQuestion', run: { runId: run.runId }, step: 'implement', questions: [], said: 'which approach?' },
       ask,
     ),
     ...aResolution(t, ask, { _tag: 'StartNewAttempt' }),

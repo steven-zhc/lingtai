@@ -6625,7 +6625,8 @@ const ITEM_11: EventSpec[] = [
           runId: 'pass-204c6511-9f2f-446d-a41f-e00fdfeae742',
         },
         step: 'design',
-        question: 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
+        questions: [],
+        said: 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
       },
     },
   },
@@ -6755,7 +6756,8 @@ const RUN_11: EventSpec[] = [
         proposal: {
           _tag: 'InputNeeded',
           from: 'design',
-          question: 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
+          questions: [],
+          said: 'The ticket asks for a hold at `merge:` and says nothing may hold there. Which wins?',
         },
         available: [
           {
