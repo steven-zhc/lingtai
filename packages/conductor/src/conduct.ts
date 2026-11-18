@@ -5019,7 +5019,30 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // Kept now, on `HEAD`, before any step after this one reads the worktree (`#1243`).
             yield* keepUncommittedWork()
             const cause = outcome.failure.kind
+            // What the cut-off run left, WIP included, so the stored outcome keeps the receipt (#1250).
+            const left = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+            const kept = left === startedAt ? {} : { head: left }
+            // **An abnormal ending is decided like any other outcome** (0108 §21): a budget or a wall is
+            // `AgentFailed`, redone by rule. A crash keeps its cell, which `rerunInPlace` redoes.
+            const failedRun =
+              cause === 'crash' || cause === 'no-commits' || cause === 'no-structured-answer'
+                ? null
+                : decideImplementOutcome({
+                    declared: null,
+                    endedAbnormally: true,
+                    startedAt,
+                    head: left,
+                    findingsOffered: 0,
+                  })
+            if (failedRun !== null) {
+              return {
+                stopped: `${outcome.failure.kind}: ${outcome.failure.detail}`,
+                declared: failedRun,
+                ...kept,
+              }
+            }
             return {
+              ...kept,
               stopped: `${outcome.failure.kind}: ${outcome.failure.detail}`,
               // Neither word is one this dispatch's own runtime ever reports
               // (`no-commits` is `head === startedAt`'s own check, two lines
@@ -5338,27 +5361,29 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // **What the fixer declared decides, and the head only corrects it** (#1250), for a run that
           // ended normally. One cut off keeps the cells above: `interrupted` names the runtime's cause.
           const roundStart = brief.context.redo?.startedAt ?? brief.context.onSha
-          // **A fixer that committed and then met its budget or its wall is cut off too** (#1250): the
-          // commit is not the end of the round, and `interrupted` names the runtime's cause, so the
-          // abnormal-ending cell decides (`interruptedAs`) rather than a success the agent never declared.
-          const cutOffByBudget =
-            fixed.failure?.kind === 'out-of-turns' ||
-            fixed.failure?.kind === 'out-of-usd' ||
-            fixed.failure?.kind === 'timeout'
-          const decidedFix = !fixed.failure
-            ? decideImplementOutcome({
-                declared: parseImplementOutcome(fixed.text),
-                endedAbnormally: false,
-                startedAt: roundStart,
-                head: after,
-                findingsOffered: offered,
-              })
-            : null
+          // **A fixer cut off by its budget is `AgentFailed`, whatever it committed first** (0108 §21,
+          // #1250): the commit is not the end of the round. A crash keeps its cell, which the walk reruns.
+          const failedKind = fixed.failure?.kind
+          const budgetEnded =
+            failedKind !== undefined &&
+            failedKind !== 'crash' &&
+            failedKind !== 'no-commits' &&
+            failedKind !== 'no-structured-answer'
+          const decidedFix =
+            fixed.failure == null || budgetEnded
+              ? decideImplementOutcome({
+                  declared: fixed.failure == null ? parseImplementOutcome(fixed.text) : null,
+                  endedAbnormally: budgetEnded,
+                  startedAt: roundStart,
+                  head: after,
+                  findingsOffered: offered,
+                })
+              : null
           if (
             !committed ||
             cutOffTransient ||
             cutOffByWall ||
-            cutOffByBudget ||
+            budgetEnded ||
             (decidedFix !== null && decidedFix._tag !== 'Implemented')
           ) {
             // A decline judged the findings or the refusal rather than being cut
@@ -5367,24 +5392,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             stoppedBy = fixed.failure ? fixed.failure.kind : null
             yield* keepUncommittedWork()
             const cause = fixed.failure?.kind
+            // The head the round left, WIP included, kept on the stored outcome (#1250).
+            const left = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+            const kept = left === roundStart ? {} : { head: left }
             return {
+              ...kept,
               stopped: fixed.failure
                 ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
                   'so there is nothing new for the review to read'
                 : (fixSaid ?? 'the fixing agent committed nothing, so there is nothing new for the review to read'),
-              // **`committed` false and no `failure`** is the fixer reading the
-              // findings and declining, not crashing — the `commit
-              // Completed{head: null, question: null}` cell rather than
-              // `Interrupted`. `never-started` cannot reach here (handled
-              // above), and `no-commits`/`no-structured-answer` are never this
-              // agent's own failure kind.
-              ...(cause === undefined && decidedFix !== null
-                ? { declared: decidedFix, ...(committed ? { head: after } : {}) }
-                : cause === undefined
+              // **`committed` false and no `failure`** is the fixer declaring something other than
+              // `Implemented`; a crash is `Interrupted` for the walk to rerun; a budget is `AgentFailed`.
+              ...(budgetEnded || cause === undefined
+                ? { declared: decidedFix! }
+                : cause === 'no-commits' || cause === 'no-structured-answer'
                   ? {}
-                  : cause === 'no-commits' || cause === 'no-structured-answer'
-                    ? {}
-                    : { interrupted: cause }),
+                  : { interrupted: cause }),
             }
           }
           // A commit clears `interrupted`, but not a failure that still ended
