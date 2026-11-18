@@ -12,6 +12,7 @@ import {
   REFUSED_ABOUT,
   REVIEW_ANSWER_JSON_SCHEMA,
   SEVERITIES,
+  askedText,
   expandPrompt,
   parsePayload,
   type ComposedPrompt,
@@ -1243,6 +1244,19 @@ describe('the action', () => {
  * announced-but-unasked question as a document would hand `implement` a design
  * note that is really a difficulty (`#279`).
  */
+/** One question in triage's shape (#1253), and the fence a design agent writes around a list of them. */
+const aQuestion = (text: string, extra: object = {}) => ({
+  id: 'q1',
+  text,
+  answers: [
+    { id: 'a', text: 'the first reading' },
+    { id: 'b', text: 'the second reading' },
+  ],
+  recommended: 'a',
+  ...extra,
+})
+const questionFence = (questions: unknown) => '```question\n' + JSON.stringify(questions) + '\n```'
+
 describe("the drafting agent's answer", () => {
   const drafter = (reply: RunOutcome) =>
     createDraftAction(
@@ -1282,8 +1296,9 @@ describe("the drafting agent's answer", () => {
   })
 
   it("is a question when it is a question, and that is 0058 §3c's token", async () => {
-    const asked = 'The ticket asks for a hold at `merge` and for nothing to hold there. Which wins?'
-    const result = await drafter(outcome({ text: `\`\`\`question\n${asked}\n\`\`\`` })).run(context)
+    const questions = [aQuestion('The ticket asks for a hold at `merge` and for nothing to hold there. Which wins?')]
+    const asked = askedText({ questions })
+    const result = await drafter(outcome({ text: questionFence(questions) })).run(context)
 
     // `did-not-finish` and not `failed`: the agent judged nothing, so nothing is
     // charged for the asking (0058 §3b), and `because` is what carries it past
@@ -1294,6 +1309,8 @@ describe("the drafting agent's answer", () => {
     // back to the next design agent as `SentBack.asked`.
     expect(result.evidence).toBe(asked)
     expect(result.evidence).not.toContain('turns')
+    // And the same asking in triage's shape, for the page to draw and the answer to be picked from (#1253).
+    expect(result.questions).toEqual(questions)
     // And it is not a document — nothing reaches `implement` from a question.
     expect(result.document).toBeUndefined()
   })
@@ -1315,8 +1332,9 @@ describe("the drafting agent's answer", () => {
    */
   it('keeps the design note when the answer is a document and a question', async () => {
     const note = "## Shape\n\nPut `judgeDeclaredAt` in `judge.ts` and hand it the step's own list."
-    const asked = 'should the hold go at `proposed:` or `merge:`?'
-    const result = await drafter(outcome({ text: `${note}\n\n\`\`\`question\n${asked}\n\`\`\`` })).run(context)
+    const questions = [aQuestion('should the hold go at `proposed:` or `merge:`?')]
+    const asked = askedText({ questions })
+    const result = await drafter(outcome({ text: `${note}\n\n${questionFence(questions)}` })).run(context)
 
     // Still a question: the agent asked, so the pass has somewhere to go and
     // nothing is charged for the asking.
@@ -1370,15 +1388,16 @@ describe("the drafting agent's answer", () => {
    * are never both set.
    */
   it('leaves a question as `askedAt`, and a crash as neither', async () => {
-    const asked = 'which of the two `base` values is meant?'
+    const questions = [aQuestion('which of the two `base` values is meant?')]
+    const asked = askedText({ questions })
     const question = await runActionPipeline({
       step: 'design',
-      actions: [drafter(outcome({ text: `\`\`\`question\n${asked}\n\`\`\`` }))],
+      actions: [drafter(outcome({ text: questionFence(questions) }))],
       context,
       emit: () => {},
     })
 
-    expect(question.askedAt).toEqual({ action: 'draft', detail: asked })
+    expect(question.askedAt).toEqual({ action: 'draft', detail: asked, questions })
     // And not the other field: a reader that checked `didNotFinishAt` first would
     // otherwise still see a crash where a person was being asked something.
     expect(question.didNotFinishAt).toBeNull()
@@ -1406,27 +1425,50 @@ describe("the drafting agent's answer", () => {
     expect(parseDraft(null)).toEqual({ kind: 'document', document: '' })
     expect(parseDraft('')).toEqual({ kind: 'document', document: '' })
     expect(parseDraft('a design')).toEqual({ kind: 'document', document: 'a design' })
-    expect(parseDraft('```question\nwhich?\n```')).toEqual({
-      kind: 'question',
-      question: 'which?',
-      draft: '',
-    })
+    const questions = [aQuestion('which?')]
+    expect(parseDraft(questionFence(questions))).toEqual({ kind: 'question', questions, draft: '' })
     // A document that quotes a fenced block is still a document: only the
     // `question` tag announces one.
     expect(parseDraft('use:\n\n```ts\nconst x = 1\n```')).toMatchObject({ kind: 'document' })
     // And whatever stood before the fence comes back on `draft`, at every width:
     // one sentence of apology and a whole design note are the same slice, because
     // nothing about the answer tells them apart.
-    expect(parseDraft('I cannot.\n\n```question\nwhich?\n```')).toEqual({
+    expect(parseDraft('I cannot.\n\n' + questionFence(questions))).toEqual({
       kind: 'question',
-      question: 'which?',
+      questions,
       draft: 'I cannot.',
     })
-    expect(parseDraft('## Shape\n\nDo it in `judge.ts`.\n\n```question\nwhich?\n```')).toEqual({
+    expect(parseDraft('## Shape\n\nDo it in `judge.ts`.\n\n' + questionFence(questions))).toEqual({
       kind: 'question',
-      question: 'which?',
+      questions,
       draft: '## Shape\n\nDo it in `judge.ts`.',
     })
+  })
+
+  /** Every way a fence can fail to be one to five questions of two to four answers is `unreadable`, never a guess (#1253). */
+  it.each([
+    ['JSON that JSON.parse refuses', '```question\n1. which?\n   - (a) x (recommended)\n```'],
+    ['no questions', questionFence([])],
+    [
+      'more than five questions',
+      questionFence(Array.from({ length: 6 }, (_, i) => aQuestion(`q${i}?`, { id: `q${i}` }))),
+    ],
+    ['one answer', questionFence([aQuestion('which?', { answers: [{ id: 'a', text: 'only' }], recommended: 'a' })])],
+    [
+      'five answers',
+      questionFence([
+        aQuestion('which?', { answers: ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, text: id })), recommended: 'a' }),
+      ]),
+    ],
+    ['a recommended answer that names none', questionFence([aQuestion('which?', { recommended: 'z' })])],
+    ['an object rather than an array', questionFence(aQuestion('which?'))],
+  ])('is unreadable for %s', (_name, text) => {
+    expect(parseDraft(text)).toEqual({ kind: 'unreadable', answer: text })
+  })
+
+  it('reads five questions', () => {
+    const questions = Array.from({ length: 5 }, (_, i) => aQuestion(`q${i}?`, { id: `q${i}` }))
+    expect(parseDraft(questionFence(questions))).toMatchObject({ kind: 'question', questions })
   })
 })
 
@@ -1475,10 +1517,7 @@ describe('the design prompt', () => {
  */
 describe('the design step asks about undecided edges', () => {
   const SPEC = { name: 'draft', prompt: '' }
-  const THREE =
-    '1. What happens when the read fails?\n   - (a) retry once (recommended) — costs a second read\n   - (b) refuse — stops the pass\n' +
-    '2. Does a restart resume?\n   - (a) yes (recommended) — needs a checkpoint\n   - (b) no — starts over\n' +
-    '3. Is a null value an error?\n   - (a) no (recommended) — treated as absent\n   - (b) yes — refuses'
+  const THREE = Array.from({ length: 3 }, (_, i) => aQuestion(`question ${i + 1}?`, { id: `q${i + 1}` }))
   const CHECKLIST = [
     'a read that fails',
     'a process that restarts or dies halfway',
@@ -1487,14 +1526,15 @@ describe('the design step asks about undecided edges', () => {
     'a stale or disconnected page',
     'a retry',
     'a null or unknown value',
+    'when an action in a step is redone or skipped, what happens to the other actions in that step',
     'the cost to every later change',
   ]
 
   it('keeps a fence of three numbered questions as one question, and charges no round', async () => {
-    expect(parseDraft(`\`\`\`question\n${THREE}\n\`\`\``)).toEqual({ kind: 'question', question: THREE, draft: '' })
+    expect(parseDraft(questionFence(THREE))).toEqual({ kind: 'question', questions: THREE, draft: '' })
 
     const result = await createDraftAction(SPEC, {
-      runtime: reviewer(outcome({ text: `\`\`\`question\n${THREE}\n\`\`\`` })),
+      runtime: reviewer(outcome({ text: questionFence(THREE) })),
       issue: async () => ISSUE,
       diff: async () => '',
       restore: async () => ({ untouched: true as const }),
@@ -1504,7 +1544,7 @@ describe('the design step asks about undecided edges', () => {
 
     expect(result.verdict).toBe('did-not-finish')
     expect(result.because).toBe(NEEDS_INPUT)
-    expect(result.evidence).toBe(THREE)
+    expect(result.evidence).toBe(askedText({ questions: THREE }))
   })
 
   it('still reads an answer with no question form as a document, and an empty one as empty', () => {
@@ -1524,7 +1564,8 @@ describe('the design step asks about undecided edges', () => {
     )
     expect(prompt).toContain('```question')
     expect(prompt).toContain('at most five questions')
-    expect(prompt).toContain('(recommended)')
+    expect(prompt).toContain('"recommended": "a"')
+    expect(prompt).toContain('two to four')
     expect(prompt).toContain('A ticket with no `## Edges` section is not a question in itself')
     expect(prompt).not.toContain('One question, not a list')
     expect(prompt).not.toContain('## Assumptions')
@@ -1925,7 +1966,7 @@ describe('RunSpent, on every branch (#494)', () => {
       const events: ActionEvent[] = []
       await runActionPipeline({
         step: 'design',
-        actions: [drafter(outcome({ text: '```question\nwhich reading?\n```' }))],
+        actions: [drafter(outcome({ text: questionFence([aQuestion('which reading?')]) }))],
         context,
         emit: (e) => void events.push(e),
       })
