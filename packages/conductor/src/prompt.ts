@@ -371,6 +371,10 @@ export function buildCommands(steps: {
  * declares no command at `build:`, `proposed:` or `merge:` still has to be
  * told not to wait on a background task before it has committed, so the
  * second paragraph renders whatever the first says.
+ *
+ * **The commit-as-you-go paragraph is 0108 §20's**: a redo from the head costs
+ * at most what the step had not yet committed, so the agent is asked to commit
+ * each piece that works as it finishes it.
  */
 export function checksBrief(commands: readonly string[]): string {
   const bar =
@@ -398,6 +402,12 @@ export function checksBrief(commands: readonly string[]): string {
     '## What this attempt checks, and what it does not',
     '',
     bar,
+    '',
+    '**Commit each piece that works as you finish it**, rather than holding the whole change ' +
+      'until the end. An attempt that is cut off is redone from the head, so an interruption ' +
+      'loses only the piece in progress and whatever you had not yet committed. The commands ' +
+      'above are run against the final head, not against each commit, so a commit does not ' +
+      'have to pass them — it has to be a piece that works.',
     '',
     '**Once you have changed anything, commit it before you verify something this turn ' +
       'cannot finish.** There is no later turn: the run ends with your final message, and ' +

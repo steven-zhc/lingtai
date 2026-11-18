@@ -101,6 +101,7 @@ describe("the next attempt's prompt", () => {
     expect(text.startsWith('#104 — The control is the prompt\n\nthe body\n\n')).toBe(true)
     expect(text).toContain('## What this attempt checks, and what it does not')
     expect(text).toMatch(/commit it before you verify/i)
+    expect(text).toMatch(/commit each piece that works as you finish it/i)
   })
 
   it('carries an answer given before any run into every attempt, without the issue body', () => {
