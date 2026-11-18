@@ -17,6 +17,9 @@
  * - **One child at a time:** create, attach, `SplitChildWritten`, then the next
  *   child. A crash between a create and its record is accepted: a retry finds
  *   the child by marker.
+ * - **A child is opened with the parent's milestone and assignees**, as read in
+ *   that write, and no other label of the parent's; a child found by marker
+ *   keeps what GitHub holds (#1272).
  * - **`TicketSplit` is the outcome read back:** its `blockedBy` is what GitHub
  *   returned, mapped to keys.
  *
@@ -38,7 +41,7 @@ import {
 } from '@lingtai/domain'
 import { allowedResolutions, splitPlanProblems, describeSplitProblem } from '@lingtai/domain/wait'
 import { type EventStore, eventStore } from '@lingtai/event-store'
-import type { GitHubClient, LinkedIssue } from '@lingtai/github'
+import type { GitHubClient, Issue, LinkedIssue } from '@lingtai/github'
 import { Cause, Effect } from 'effect'
 
 import { upsertSection } from './body-section.ts'
@@ -109,6 +112,10 @@ export function splitMarker(waitId: string, key: string): string {
 
 /** Clocks disagree; see `SKEW_MS` in `ticket-store.ts`. */
 const SKEW_MS = 60 * 60_000
+
+/** What places a ticket besides its kind: the parent's milestone and assignees (#1272), and nothing else of its. */
+type Placement = { milestone: number | null; assignees: readonly string[] }
+const placementOf = (parent: Issue): Placement => ({ milestone: parent.milestone, assignees: parent.assignees })
 
 export type StepStatus = 'done' | 'skipped' | 'failed' | 'not-reached'
 
@@ -268,9 +275,12 @@ export function splitTicketHoldingEffect(
     // **Once per root** (#1261): a `SplitStarted` for another wait has spent the split; one for this wait is this split resuming.
     const spent = events.some((e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId !== waitId)
     if (spent) return stop(`${ticketId} was already split once — nothing was written.`)
+    let parentRead: Issue | undefined
+    let placementRead: Placement | undefined
     if (first === undefined) {
       // A read, so nothing is written: a child is known by its marker, and a child is never split.
       const parent = yield* settled(lift(() => github.getIssue(options.issue)))
+      if (parent.ok) parentRead = parent.value
       if (!parent.ok)
         return stop(`the ticket's body could not be read — nothing was written: ${errorMessage(parent.error)}`)
       if (ANY_SPLIT_MARKER.test(parent.value.body))
@@ -278,6 +288,7 @@ export function splitTicketHoldingEffect(
           `${ticketId} carries a split marker, so it is a split's child and is not split — nothing was written.`,
         )
     }
+    if (first === undefined) placementRead = placementOf(parentRead!)
     // Before this attempt's own `SplitStarted`: a read that threw after it would leave a start with nothing terminal after it.
     const since = new Date((first?.at ?? new Date()).getTime() - SKEW_MS)
 
@@ -382,6 +393,13 @@ export function splitTicketHoldingEffect(
       return all
     })
 
+    /** The parent's milestone and assignees, read once per write: seeded by the first attempt's read, else read on first need. */
+    const placement: Effect.Effect<Placement, Error> = Effect.gen(function* () {
+      if (placementRead !== undefined) return placementRead
+      placementRead = placementOf(yield* lift(() => github.getIssue(options.issue)))
+      return placementRead
+    })
+
     /** Create (unless a marker answers), attach, record — and only then is the next child started. */
     // Uninterruptible: a create already sent cannot be taken back, so an interruption
     // must not release the decide lock before the child is found and recorded.
@@ -390,11 +408,15 @@ export function splitTicketHoldingEffect(
         Effect.gen(function* () {
           let status: StepStatus = 'skipped'
           if (!found.has(child.key)) {
+            // Outside `create`: a failed parent read is not a refused create, so it must not reach the fallback below.
+            const p = yield* placement
             const create = lift(() =>
               github.createIssue({
                 title: child.title.trim(),
                 body: expectedBody(child),
                 labels: [child.kind, PUBLISHING_LABEL],
+                ...(p.milestone === null ? {} : { milestone: p.milestone }),
+                ...(p.assignees.length === 0 ? {} : { assignees: [...p.assignees] }),
               }),
             )
             yield* create.pipe(

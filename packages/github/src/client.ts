@@ -173,6 +173,11 @@ export interface Issue {
    */
   assignees: string[]
   /**
+   * The number of the milestone the issue is in, and null when it is in none.
+   * Read so a split's children can be opened in their parent's (#1272).
+   */
+  milestone: number | null
+  /**
    * The issue this one is a sub-issue of, off `parent_issue_url`, and null when
    * it has none or the URL is not one we can read. The repository is carried
    * because a parent may live elsewhere; readers decide what to do about that.
@@ -356,7 +361,13 @@ export interface GitHub {
    * the conductor's `TicketStore`. Nothing decides on its own that an issue
    * should exist — Lingtai proposes, a person decides.
    */
-  createIssue(input: { title: string; body: string; labels: readonly string[] }): E<Issue>
+  createIssue(input: {
+    title: string
+    body: string
+    labels: readonly string[]
+    milestone?: number
+    assignees?: readonly string[]
+  }): E<Issue>
 
   /**
    * Attaches `child` to `parent` as a sub-issue. Both are issue **numbers** in
@@ -426,7 +437,13 @@ export interface GitHubClient {
   editComment(issue: number, commentId: number, body: string): Promise<void>
   closeIssue(issue: number, reason?: 'completed' | 'not_planned'): Promise<void>
   updateBody(issue: number, body: string, opts?: { ifUnchanged?: string }): Promise<void>
-  createIssue(input: { title: string; body: string; labels: readonly string[] }): Promise<Issue>
+  createIssue(input: {
+    title: string
+    body: string
+    labels: readonly string[]
+    milestone?: number
+    assignees?: readonly string[]
+  }): Promise<Issue>
   addSubIssue(parent: number, child: number): Promise<void>
   listSubIssues(parent: number): Promise<LinkedIssue[]>
   addBlockedBy(issue: number, blocker: number): Promise<void>
@@ -539,12 +556,19 @@ function toIssue(raw: {
   html_url: string
   issue_dependencies_summary?: { blocked_by?: number; total_blocked_by?: number } | null
   assignees?: ({ login?: string } | null)[] | null
+  milestone?: { number?: number } | null
   parent_issue_url?: string | null
   sub_issues_summary?: { total?: number; completed?: number } | null
 }): Issue {
   return {
     dependencies: dependenciesOf(raw),
     parent: parentOf(raw.parent_issue_url),
+    milestone:
+      typeof raw.milestone?.number === 'number' &&
+      Number.isSafeInteger(raw.milestone.number) &&
+      raw.milestone.number > 0
+        ? raw.milestone.number
+        : null,
     subIssues: subIssuesOf(raw.sub_issues_summary),
     // Off the listing, never `/issues/{n}/assignees`: a pass considers every
     // open issue, and one request each would be the cost `dependenciesOf`
@@ -800,12 +824,18 @@ export const makeGitHub = (
           title: string
           body: string
           labels: readonly string[]
+          milestone?: number
+          assignees?: readonly string[]
         }) {
           return toIssue(
             yield* send<Parameters<typeof toIssue>[0]>('POST', `${repoPath}/issues`, {
               title: input.title,
               body: input.body,
               labels: [...input.labels],
+              ...(input.milestone === undefined ? {} : { milestone: input.milestone }),
+              ...(input.assignees === undefined || input.assignees.length === 0
+                ? {}
+                : { assignees: [...input.assignees] }),
             }),
           )
         }),
