@@ -50,11 +50,11 @@ export function rerunWorkFromState(runId: string, state: AttemptState, base: str
   const head = rerunHeadOf(state)
   if ('cannot' in head)
     return {
-      refusal: `Run ${runId} has no saved head a rerun can continue: ${head.cannot}. Start a new attempt instead.`,
+      refusal: `Run ${runId} has no saved head a redo can continue: ${head.cannot}. Start a new attempt instead.`,
     }
   if ('atBase' in head)
     return base === null
-      ? { refusal: `Run ${runId} recorded no base commit to rerun on. Start a new attempt instead.` }
+      ? { refusal: `Run ${runId} recorded no base commit to redo on. Start a new attempt instead.` }
       : { head: base, ref: null }
   return { head: head.at, ref: head.atRef }
 }

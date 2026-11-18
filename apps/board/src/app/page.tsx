@@ -253,7 +253,7 @@ export function Card({
         ) : null}
         {card.move?.advised ? (
           <p className="question waiting-advised">
-            Triage advised {RESOLUTION_COPY[card.move.advised].title}; a fix round is drawn first.
+            Triage advised {RESOLUTION_COPY[card.move.advised].title}; a refusal fix is drawn first.
           </p>
         ) : null}
         {card.move && card.waitId !== null ? (

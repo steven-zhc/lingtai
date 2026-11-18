@@ -184,7 +184,7 @@ Reads only — takes `--json` (version 1).
 lingtai report [--window today|7d] [--kind <k>] [--project <p>]
                 [--json] [--no-color]
 lingtai report --from <date> --to <date> [--kind <k>] [--project <p>]
-  Tickets landed, closed and open, the fix rounds and cost of the
+  Tickets landed, closed and open, the refusal fixes and cost of the
   landed ones, spend by kind, and the tickets that went round most.
   --window <w>    today, or 7d: the last seven days (the default)
   --from <date>   first day of a range, as YYYY-MM-DD, local time
@@ -383,7 +383,7 @@ Changes state — `--json` on its verdict (version 1).
 ```text
 lingtai fix-refusal <project> --issue <n> [--if-head <sha>] [--json]
   Run one more implementation round on saved work, then repeat the
-  checks without waiving a refusal. This was lingtai grant-fix-round.
+  checks without waiving a refusal. This was lingtai grant-refusal-fix.
 ```
 
 ```sh

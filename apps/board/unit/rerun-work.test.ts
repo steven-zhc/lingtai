@@ -30,7 +30,7 @@ it('names the attempt’s base when nothing was committed, and refuses without o
 it('refuses with the server’s sentence where nothing can be continued', () => {
   expect(rerunWorkFromState('r1', empty, null)).toEqual({
     refusal:
-      'Run r1 has no saved head a rerun can continue: the run recorded no saved head. Start a new attempt instead.',
+      'Run r1 has no saved head a redo can continue: the run recorded no saved head. Start a new attempt instead.',
   })
 })
 

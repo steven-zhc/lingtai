@@ -11,10 +11,10 @@ export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; conseq
   FixRefusal: {
     title: 'Continue fixing current work',
     consequence:
-      'Start from the saved branch and head for one additional paid fix round. Build and review run again; this does not waive either refusal.',
+      'Start from the saved branch and head for one additional paid refusal fix. Build and review run again; this does not waive either refusal.',
   },
   RedoStep: {
-    title: 'Rerun this step on the saved work',
+    title: 'Redo this step on the saved work',
     consequence:
       'Run the step that stopped again, in this attempt, on its saved head. No fixer is dispatched and nothing is cut from base; no round or restart is spent.',
   },

@@ -340,7 +340,7 @@ function prepare(
           ok: false,
           ticketId,
           reason: 'no-client',
-          detail: 'A remote ref check is required before granting a fix round.',
+          detail: 'A remote ref check is required before granting a refusal fix.',
         })
       const remote = yield* refShaOrNull(options.client, `heads/${ref}`)
       if (remote !== head) {
@@ -369,7 +369,7 @@ function prepare(
           ok: false,
           ticketId,
           reason: 'no-rerun-head',
-          detail: `Run ${block.runId} has no saved head a rerun can continue: ${head.cannot}. Start a new attempt instead.`,
+          detail: `Run ${block.runId} has no saved head a redo can continue: ${head.cannot}. Start a new attempt instead.`,
         })
       let at: string
       let atRef: string | null = null
@@ -380,7 +380,7 @@ function prepare(
             ok: false,
             ticketId,
             reason: 'no-rerun-head',
-            detail: `Run ${block.runId} recorded no base commit to rerun on. Start a new attempt instead.`,
+            detail: `Run ${block.runId} recorded no base commit to redo on. Start a new attempt instead.`,
           })
         at = base
       } else {
@@ -392,7 +392,7 @@ function prepare(
           ok: false,
           ticketId,
           reason: 'stale',
-          detail: `The saved head is ${at}, not the displayed ${resolution.onSha}. Reload this wait before rerunning.`,
+          detail: `The saved head is ${at}, not the displayed ${resolution.onSha}. Reload this wait before redoing the step.`,
         })
       }
       if (atRef !== null) {
@@ -401,7 +401,7 @@ function prepare(
             ok: false,
             ticketId,
             reason: 'no-client',
-            detail: 'A remote ref check is required before rerunning a step on the saved head.',
+            detail: 'A remote ref check is required before redoing a step on the saved head.',
           })
         const remote = yield* refShaOrNull(options.client, `heads/${atRef}`)
         if (remote !== at) {

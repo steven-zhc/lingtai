@@ -1569,7 +1569,7 @@ function closeOn(standing: StandingView): { key: string | null; prefill: string 
   return close
 }
 
-it('says why a small conflict draws a fix round over what triage advised (#652)', () => {
+it('says why a small conflict draws a refusal fix over what triage advised (#652)', () => {
   const triageStatus = {
     _tag: 'Done' as const,
     result: {
@@ -1584,7 +1584,7 @@ it('says why a small conflict draws a fix round over what triage advised (#652)'
   const html = render({ ...saved, triageStatus }, OUTGOING)
   expect(html).toContain('Start from main again')
   expect(html).toContain(
-    'Triage advised Start over from base. With 2 hunks to resolve, a fix round is drawn first instead',
+    'Triage advised Start over from base. With 2 hunks to resolve, a refusal fix is drawn first instead',
   )
   expect(html).not.toContain('which this decision does not offer')
   expect(html).not.toContain('recommended answer goes to the fixer')
@@ -1624,7 +1624,7 @@ it('says why a small conflict draws a fix round over what triage advised (#652)'
     OUTGOING,
   )
   expect(large).toContain('Recommends ')
-  expect(large).not.toContain('a fix round is drawn first instead')
+  expect(large).not.toContain('a refusal fix is drawn first instead')
 })
 
 it('keeps the body editor at the same mount when a written wait moves out of blocked', () => {
@@ -2435,14 +2435,14 @@ const CRASHED: StandingView = {
 it('offers the rerun on a crash with a saved head, after the grant would sit and before starting over', () => {
   const html = render({ ...CRASHED, rerunWork: { head: SHA, ref: null } }, OUTGOING)
   expect(html).toContain('data-resolution="RedoStep"')
-  expect(html).toContain(`Rerun this step on ${SHA.slice(0, 7)}</button>`)
-  expect(html).not.toContain('Cannot rerun on saved work')
+  expect(html).toContain(`Redo this step on ${SHA.slice(0, 7)}</button>`)
+  expect(html).not.toContain('Cannot redo the step on saved work')
   expect(html.indexOf('data-resolution="RedoStep"')).toBeLessThan(html.indexOf('data-resolution="StartNewAttempt"'))
 })
 
 it('shows the refusal and no button where the rerun has no usable head', () => {
   const html = render({ ...CRASHED, rerunWork: { refusal: 'no head here' } }, OUTGOING)
-  expect(html).toContain('Cannot rerun on saved work')
+  expect(html).toContain('Cannot redo the step on saved work')
   expect(html).toContain('no head here')
-  expect(html).not.toContain('Rerun this step on')
+  expect(html).not.toContain('Redo this step on')
 })

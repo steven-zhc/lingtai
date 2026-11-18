@@ -54,13 +54,13 @@ async function rowAfter(events: readonly Envelope[]): Promise<ProjectionRow> {
 const parsed = (v: unknown): unknown => (typeof v === 'string' ? JSON.parse(v) : v)
 
 describe('task_view reads state and answer off the ticket reduce', () => {
-  it('D5: a fix round granted is approved', async () => {
+  it('D5: a refusal fix granted is approved', async () => {
     const h = histories.ticket.waitsResolvedBeforeClose
     const cut = h.findIndex((e) => e.type === 'WaitResolved')
     const row = await rowAfter(h.slice(0, cut + 1))
     expect(row).toMatchObject({
       state: 'approved',
-      note: 'fix round granted — continues once a conductor is free',
+      note: 'refusal fix granted — continues once a conductor is free',
       wait_id: null,
     })
   })

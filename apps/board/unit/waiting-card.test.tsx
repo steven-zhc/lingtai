@@ -245,12 +245,12 @@ describe('a small conflict’s card (#652)', () => {
     const html = await cardOf(2, 'abc123')
     expect(html).toContain('The daemon entry moved.')
     expect(buttonsOf(html)).toEqual(['Continue fixing current work'])
-    expect(html).toContain('Triage advised Start over from base; a fix round is drawn first.')
+    expect(html).toContain('Triage advised Start over from base; a refusal fix is drawn first.')
   })
 
   it('says nothing extra above the threshold', async () => {
     const html = await cardOf(8, 'abc123')
-    expect(html).not.toContain('a fix round is drawn first')
+    expect(html).not.toContain('a refusal fix is drawn first')
     expect(buttonsOf(html)).toEqual(['Start over from base'])
   })
 })

@@ -394,7 +394,7 @@ export function ticketNoteOf(before: TicketState, after: TicketState): Note {
           value:
             l.grantRef === undefined
               ? 'approved — continues once a conductor is free'
-              : 'fix round granted — continues once a conductor is free',
+              : 'refusal fix granted — continues once a conductor is free',
         }
       case 'claimed':
       case 'backlog':
@@ -428,7 +428,7 @@ export interface RunColumns {
  * The row's run columns. `run` is the state of `ticket.runs.at(-1)`, or null when none is stored yet.
  *
  * `state` is the ticket's, except `verifying`: a claimed ticket whose run proposed completion and has opened
- * no fix round since (`RunProposedCompletion` is appended by the first dispatch only, and `RoundOpened`
+ * no refusal fix since (`RunProposedCompletion` is appended by the first dispatch only, and `RoundOpened`
  * puts the pass back to `running` for good).
  */
 export function rowOf(ticket: TicketState, run: AttemptState | null): RunColumns {

@@ -433,7 +433,7 @@ function resolutionWords(resolution: PayloadOf<'WaitResolved'>['resolution'], by
       return sentence('Approved', by)
     case 'FixRefusal': {
       const name = who(by)
-      return name === '' ? 'One more fix round, granted.' : `One more fix round, granted by ${name}.`
+      return name === '' ? 'One more refusal fix, granted.' : `One more refusal fix, granted by ${name}.`
     }
     case 'RedoStep': {
       const name = who(by)
@@ -443,7 +443,7 @@ function resolutionWords(resolution: PayloadOf<'WaitResolved'>['resolution'], by
     }
     case 'StartNewAttempt':
     case 'EditBodyAndStartNewAttempt':
-      return `${sentence('Requeued', by).replace(/\.$/, '')} — a new attempt started.`
+      return sentence('A new attempt, started', by)
     case 'AnswerQuestion': {
       const name = who(by)
       return `${name === '' ? 'Answered' : `Answered by ${name}`}: \`${resolution.choice}\``

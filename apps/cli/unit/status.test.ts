@@ -592,9 +592,9 @@ describe('conflictLines (#652)', () => {
       },
     }) as never
 
-  it('recommends a fix round at 5 hunks or fewer and shows triage’s own resolution and summary', () => {
+  it('recommends a refusal fix at 5 hunks or fewer and shows triage’s own resolution and summary', () => {
     const c = conflictLines(reason, triage(2))
-    expect(c?.rec).toContain('recommends a fix round')
+    expect(c?.rec).toContain('recommends a refusal fix')
     expect(c?.advised).toBe('triage advised StartNewAttempt: why')
   })
 
@@ -604,10 +604,10 @@ describe('conflictLines (#652)', () => {
 
   it('recommends triage’s resolution when the saved head is gone, as the task page does', () => {
     expect(conflictLines(reason, triage(2), false)).toEqual({ rec: 'recommends StartNewAttempt — why', advised: null })
-    expect(conflictLines(reason, triage(2), true)?.rec).toContain('recommends a fix round')
+    expect(conflictLines(reason, triage(2), true)?.rec).toContain('recommends a refusal fix')
   })
 
-  it('says the saved head could not be checked, and recommends no fix round, when the read failed', () => {
+  it('says the saved head could not be checked, and recommends no refusal fix, when the read failed', () => {
     const c = conflictLines(reason, triage(2), { unreadable: 'rate limited' })
     expect(c?.rec).toBe('recommends StartNewAttempt — why')
     expect(c?.advised).toContain('saved head could not be checked (rate limited)')
@@ -653,7 +653,7 @@ describe('waitDetail (#656)', () => {
 
   it('prints the recommendation and triage’s own words for a reason with no recommendation line', () => {
     const lines = detail(disagrees, triage())
-    expect(lines.some((l) => l.includes('recommends a fix round'))).toBe(true)
+    expect(lines.some((l) => l.includes('recommends a refusal fix'))).toBe(true)
     expect(lines).toContain('triage advised StartNewAttempt: why')
   })
 

@@ -271,7 +271,7 @@ export function ScheduleContinuation({
             })
           }}
         >
-          {pending ? 'asking…' : grant ? 'Schedule saved-work fix round' : 'Schedule it'}
+          {pending ? 'asking…' : grant ? 'Schedule saved-work refusal fix' : 'Schedule it'}
         </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}
@@ -363,7 +363,7 @@ export function RedoStepButton({
             })
           }}
         >
-          {pending ? 'rerunning…' : `Rerun this step on ${onSha.slice(0, 7)}`}
+          {pending ? 'redoing…' : `Redo this step on ${onSha.slice(0, 7)}`}
         </button>
       )}
       {detail ? <p className={done ? 'decided' : 'refusal'}>{detail}</p> : null}
@@ -614,7 +614,7 @@ export function StartNewAttempt({
             })
           }}
         >
-          {pending ? '…' : withdrawing ? 'Withdraw' : asked ? 'Answer' : 'StartNewAttempt'}
+          {pending ? '…' : withdrawing ? 'Withdraw' : asked ? 'Answer' : 'Start a new attempt'}
         </button>
         <button
           className="btn"
