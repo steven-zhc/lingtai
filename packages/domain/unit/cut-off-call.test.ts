@@ -1,7 +1,7 @@
 /** The call an account limit cut off is named by its spend, not by the last prompt that happened to be recorded (#1205). */
 import { describe, expect, it } from 'vitest'
 
-import { askedAgainOn, cutOffPromptOf, stepStartedAtOf } from '../src/index.ts'
+import { cutOffPromptOf, stepStartedAtOf } from '../src/index.ts'
 import { makeStream } from '../test/support.ts'
 
 const forOf = (name: string) => ({ _tag: 'Action' as const, step: 'review' as const, name, round: 0 })
@@ -29,15 +29,6 @@ describe('cutOffPromptOf', () => {
       e('RunSpent', { for: forOf('B'), ...spent }),
     ]
     expect(cutOffPromptOf(events)?.prompt?.prompt).toBe('B')
-  })
-})
-
-describe('askedAgainOn', () => {
-  it('is true once a rule asked the step again', () => {
-    const e = makeStream('pass-1')
-    const rerun = { runId: 'r', step: 'review', rerun: 1, said: 'x', waitMs: 0 }
-    expect(askedAgainOn([e('StepRedone', rerun)], 'review')).toBe(false)
-    expect(askedAgainOn([e('StepRedone', { ...rerun, askedAgain: true })], 'review')).toBe(true)
   })
 })
 

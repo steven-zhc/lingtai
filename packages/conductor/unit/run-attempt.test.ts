@@ -3329,9 +3329,8 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
 
   it.each([
     ['the account wall', "You've hit your monthly spend limit · API Error: 503"],
-    ['a sentence on no row', 'the model wandered off'],
-    ['a bare 403', 'API Error: 403 Forbidden'],
-  ])('holds for %s as it did', async (_name, detail) => {
+    ['the Codex account wall', "You've hit your usage limit"],
+  ])('holds for %s, spending no redo (#1249, 0108 §11)', async (_name, detail) => {
     const { bodies } = watching()
     const { actionsAt } = implementing([detail])
     const { emit, seen } = events()
@@ -3339,6 +3338,22 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
     const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
     expect(seen.some((e) => e.type === 'StepRedone')).toBe(false)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed', detail } })
+  })
+
+  it.each([
+    ['a sentence on no row', 'the model wandered off'],
+    ['a bare 403', 'API Error: 403 Forbidden'],
+    ['no words at all', ''],
+  ])('redoes %s while stepRedos is left, then holds for a person (#1249)', async (_name, detail) => {
+    const { bodies } = watching()
+    const { actionsAt, contexts } = implementing([detail, detail, detail, detail])
+    const { emit, seen } = events()
+
+    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+
+    expect(contexts).toHaveLength(4)
+    expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(3)
     expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed' } })
   })
 
@@ -3690,30 +3705,35 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
       expect(result.steps.filter((s) => s.step === 'implement')).toHaveLength(1)
     })
 
-    it('goes where it goes today when it is unreadable twice in a row', async () => {
+    it('is asked again more than once, then goes to a person when stepRedos is spent (#1249)', async () => {
       const { bodies } = watching()
-      const { actionsAt, contexts } = reviewing([unreadable, unreadable])
+      const { actionsAt, contexts } = reviewing([unreadable, unreadable, unreadable, unreadable])
       const { emit, seen } = events()
 
       const result = await walkOnTestClock({ recipe: recipe(), context, emit, bodies, actionsAt })
 
-      expect(contexts).toHaveLength(2)
-      expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(1)
+      expect(contexts).toHaveLength(4)
+      expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(3)
       expect(result.end).toMatchObject({
         _tag: 'WaitOnPerson',
         reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'AnswerUnreadable', from: 'review' } },
       })
     })
 
-    it('is not asked a second time when its ask-again crashes transiently and the rerun is unreadable again', async () => {
+    it('spends one count for an ask-again and a crash alike (#1249)', async () => {
       const { bodies } = watching()
-      const { actionsAt, contexts } = reviewing([unreadable, crashed('crash: API Error: 503 upstream'), unreadable])
+      const { actionsAt, contexts } = reviewing([
+        unreadable,
+        crashed('crash: API Error: 503 upstream'),
+        unreadable,
+        unreadable,
+      ])
       const { emit, seen } = events()
 
       const result = await walkOnTestClock({ recipe: recipe(), context, emit, bodies, actionsAt })
 
-      expect(contexts).toHaveLength(3)
-      expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(2)
+      expect(contexts).toHaveLength(4)
+      expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(3)
       expect(result.end).toMatchObject({
         _tag: 'WaitOnPerson',
         reason: { proposal: { _tag: 'AnswerUnreadable', from: 'review' } },
@@ -3824,7 +3844,7 @@ describe('a step redone whole is reset to the head first, then run from its firs
     // Every agent of a redone step is under the redo's suffix, and the first one is handed the paragraph.
     expect(contexts.map((c) => c.rerun)).toEqual([undefined, 1])
     expect(contexts[0]!.redo).toBeUndefined()
-    expect(contexts[1]!.redo).toMatchObject({ why: 'API Error: 503', head: 'reset-head' })
+    expect(contexts[1]!.redo).toMatchObject({ why: 'a transient API error: API Error: 503', head: 'reset-head' })
   })
 
   it('appends StepRedone before the wait, and resets only after it', async () => {

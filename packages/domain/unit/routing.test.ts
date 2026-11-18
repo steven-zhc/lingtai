@@ -289,47 +289,18 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     })
   })
 
-  it('AnswerUnreadable{design} with raw: fix-lines is not offered at all (born before implement), restart{1} and hand-to-person', () => {
-    expect(offerFor(answerUnreadableAtDesign, policy, zero)).toEqual({
-      proposal: answerUnreadableAtDesign,
-      available: [
-        { id: 'ask-again', next: { _tag: 'RerunStep', step: 'design', retry: 1 } },
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } },
-        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
-      ],
-      unavailable: [],
-    })
-  })
-
-  it('AnswerUnreadable{review} with raw: fix-lines{round 1}, restart{restart 1} and hand-to-person', () => {
-    expect(offerFor(answerUnreadableAtReview, policy, zero)).toEqual({
-      proposal: answerUnreadableAtReview,
-      available: [
-        { id: 'ask-again', next: { _tag: 'RerunStep', step: 'review', retry: 1 } },
-        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } },
-        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
-      ],
-      unavailable: [],
-    })
-  })
-
-  it('ask-again is once per arrival, offered at proposed and merge too, and absent once the transient retries are spent (#1224)', () => {
-    const base = offerFor(answerUnreadableAtReview, policy, zero).available.map((c) => c.id)
-    expect(base).toContain('ask-again')
-    expect(offerFor(answerUnreadableAtReview, policy, zero, true).available.map((c) => c.id)).toEqual(
-      base.filter((id) => id !== 'ask-again'),
-    )
-    const spent = { ...zero, stepRedos: BOUNDS.stepRedos }
-    const out = offerFor(answerUnreadableAtReview, policy, spent)
-    expect(out.available.map((c) => c.id)).not.toContain('ask-again')
-    expect(out.unavailable.map((c) => c.id)).not.toContain('ask-again')
-    for (const from of ['proposed', 'merge'] as const) {
-      const p: Proposal = { _tag: 'AnswerUnreadable', from, raw: 'not JSON' }
-      expect(offerFor(p, policy, zero).available).toContainEqual({
-        id: 'ask-again',
-        next: { _tag: 'RerunStep', step: from, retry: 1 },
-      })
+  it('AnswerUnreadable, empty raw or not, is asked again while stepRedos is left, then only a person (#1249)', () => {
+    for (const raw of ['', 'not JSON']) {
+      for (const from of ['design', 'review', 'proposed', 'merge'] as const) {
+        const p: Proposal = { _tag: 'AnswerUnreadable', from, raw }
+        expect(offerFor(p, policy, zero).available).toEqual([
+          { id: 'ask-again', next: { _tag: 'RerunStep', step: from, retry: 1 } },
+          { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
+        ])
+        expect(offerFor(p, policy, { ...zero, stepRedos: 2 }).available[0]).toMatchObject({ next: { retry: 3 } })
+        const spent = offerFor(p, policy, { ...zero, stepRedos: BOUNDS.stepRedos })
+        expect(spent.available).toEqual([{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }])
+      }
     }
   })
 
@@ -348,17 +319,6 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(spent.unavailable.map((c) => c.id)).not.toContain('rerun-setup')
     const other = offerFor(refused('ERR_PNPM_FETCH_404'), policy, zero)
     expect(other.available.map((c) => c.id)).not.toContain('rerun-setup')
-  })
-
-  it('AnswerUnreadable{review} with empty raw: fix-lines and restart are both unavailable{NoCriterion}', () => {
-    expect(offerFor(answerUnreadableEmpty, policy, zero)).toEqual({
-      proposal: answerUnreadableEmpty,
-      available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
-      unavailable: [
-        { id: 'fix-lines', because: { _tag: 'NoCriterion' } },
-        { id: 'restart', because: { _tag: 'NoCriterion' } },
-      ],
-    })
   })
 
   it('NothingProduced with something said: fix-lines{round 1} and hand-to-person, and no restart (0108 §18)', () => {

@@ -111,7 +111,7 @@ possible `error.type` [O1].
   - `push-rejected`: `[rejected]`, `non-fast-forward`, `fetch first` and `updates were rejected`: somebody else got there first.
   - `remote-error`: a `[remote rejected] … (Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)` line: the server answered a push with a 5xx. Retried after 10 s and 30 s, then refused as `remote-error`.
   - `unreachable`: git could not reach origin — `unable to access '`, `Could not resolve host`, `Connection timed out`, `early EOF`, `RPC failed`, `remote end hung up unexpectedly`, `The requested URL returned error: 5\d\d` and the other wordings listed in the table. Retried after 10 s and 30 s, then refused as `unreachable`.
-- **Claude Code.** A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. A crash whose detail is on a `transient` row is run again in place (`rerunInPlace`, 0108 §12), up to `stepRedos` times in an attempt; a sentence on no row is a crash and holds for a person.
+- **Claude Code.** A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. Any other crash is run again in place (`rerunInPlace`, 0108 §12), up to `stepRedos` times in an attempt; a crash on no row is redone too, and a `transient` row only says the redo is expected to clear it.
   - `account-limit`: `You've hit your … limit`, other than the usage limit Codex says.
   - `account-limit`: `your session limit resets`.
   - `transient`: `API Error: 500`, `502`, `503` and `504`: a server error a rerun can clear.
