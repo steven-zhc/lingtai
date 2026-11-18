@@ -398,6 +398,7 @@ export const STREAMS = {
   IntegrationRefused: ['int-'],
   IntegrationSucceeded: ['int-'],
   BaseChecked: ['int-'],
+  BaseFixProposed: ['int-'],
   PassRouted: ['pass-'],
   ProposalRouted: ['pass-'],
   StepRerunInPlace: ['pass-'],

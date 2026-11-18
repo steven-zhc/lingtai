@@ -34,7 +34,7 @@ describe('baseStateOf (#1208)', () => {
   })
 
   it('is red at the record, naming the action, command, commit and boundary', () => {
-    expect(baseStateOf([checked('pnpm test', false, { boundary: 'sb-1' })], builds)).toEqual({
+    expect(baseStateOf([checked('pnpm test', false, { boundary: 'sb-1' })], builds)).toMatchObject({
       red: {
         action: 'tests',
         command: 'pnpm test',
@@ -42,6 +42,9 @@ describe('baseStateOf (#1208)', () => {
         baseSha: 'a'.repeat(40),
         boundary: 'sb-1',
         runId: 'r1',
+        firstRedSha: 'a'.repeat(40),
+        key: `base-red:main:${'a'.repeat(40)}`,
+        fix: null,
       },
     })
   })

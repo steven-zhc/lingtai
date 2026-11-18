@@ -166,6 +166,16 @@ export type BaseState =
         readonly baseSha: string
         readonly boundary: string
         readonly runId: string
+        /** The oldest red since the last green: the commit the fix ticket is keyed by (#1266). */
+        readonly firstRedSha: string
+        readonly firstRedAt: Date
+        /** The newest red's bounded output, and the failing tests of a flake since the last green, if any. */
+        readonly evidence: string
+        readonly flaky: readonly string[] | null
+        /** `base-red:<base>:<firstRedSha>`. */
+        readonly key: string
+        /** The newest `BaseFixProposed` for exactly this key, or none. */
+        readonly fix: { readonly externalRef: string; readonly url: string | null } | null
       }
     }
   | { readonly notRed: 'none' | 'green' | 'not-built' }
@@ -180,6 +190,23 @@ export function baseStateOf(
   if (d.ok) return { notRed: 'green' }
   const action = builds().find((build) => build.run === d.command)
   if (action === undefined) return { notRed: 'not-built' }
+  // The first red since the last green, whatever its command: the key must not move while the base stays red.
+  const checks = events.filter((event) => event.type === 'BaseChecked')
+  const lastGreen = checks.findLastIndex((event) => (event.data as PayloadOf<'BaseChecked'>).ok)
+  const first = checks[lastGreen + 1] ?? newest
+  const flaky = checks.slice(lastGreen + 1).findLast((c) => (c.data as PayloadOf<'BaseChecked'>).flaky?.length)
+  const firstRedSha = (first.data as PayloadOf<'BaseChecked'>).baseSha
+  const key = `base-red:${d.base}:${firstRedSha}`
+  const proposed = events.findLast(
+    (event) => event.type === 'BaseFixProposed' && (event.data as PayloadOf<'BaseFixProposed'>).key === key,
+  )
+  const fix =
+    proposed === undefined
+      ? null
+      : {
+          externalRef: (proposed.data as PayloadOf<'BaseFixProposed'>).externalRef,
+          url: (proposed.data as PayloadOf<'BaseFixProposed'>).url,
+        }
   return {
     red: {
       action: action.name,
@@ -188,6 +215,12 @@ export function baseStateOf(
       baseSha: d.baseSha,
       boundary: d.boundary ?? 'unsandboxed',
       runId: d.runId,
+      evidence: d.evidence,
+      flaky: flaky === undefined ? null : ((flaky.data as PayloadOf<'BaseChecked'>).flaky ?? null),
+      firstRedSha,
+      firstRedAt: first.at,
+      key,
+      fix,
     },
   }
 }

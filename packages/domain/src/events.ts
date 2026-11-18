@@ -1566,6 +1566,22 @@ export const BaseChecked = z.object({
   /** The pass that ran it, for "who ran this". */
   runId: z.string(),
 })
+/**
+ * @summary The conductor opened the one ticket that makes a red base green and recorded which ticket it is.
+ *
+ * On `int-{project}-{base}`, beside the `BaseChecked` it answers (#1266, 0108 §13).
+ */
+export const BaseFixProposed = z.object({
+  project: z.string(),
+  base: z.string(),
+  /** The commit the red it answers was recorded on. */
+  baseSha: z.string(),
+  /** `base-red:<base>:<first red sha since the last green>`. */
+  key: z.string(),
+  /** The store's own identity for the ticket: `"212"` on GitHub. */
+  externalRef: z.string(),
+  url: z.string().nullable(),
+})
 
 // --------------------------------------------------------------- route ----
 
@@ -2715,6 +2731,7 @@ export const EVENTS = {
   IntegrationRefused,
   IntegrationSucceeded,
   BaseChecked,
+  BaseFixProposed,
   PassRouted,
   ProposalRouted,
   StepRerunInPlace,
@@ -2824,6 +2841,7 @@ export const EVENT_AT = {
   IntegrationRefused: ['merge'],
   IntegrationSucceeded: ['merge'],
   BaseChecked: ['proposed', 'end'],
+  BaseFixProposed: ['end'],
   PassRouted: [],
   ProposalRouted: ['review', 'proposed', 'end'],
   StepRerunInPlace: [],

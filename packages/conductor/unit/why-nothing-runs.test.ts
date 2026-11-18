@@ -75,7 +75,7 @@ describe('whyNothingRuns', () => {
   })
 
   it('names a red base and the tickets that wait for it', () => {
-    const base = { held: { command: 'pnpm test', baseSha: 'a7148c1ffff', base: 'main' } }
+    const base = { held: { command: 'pnpm test', baseSha: 'a7148c1ffff', base: 'main', fix: null } }
     const r = says(facts({ base, skipped: [3, 4, 5].map((ref) => ({ ref, reason: 'base-red' })) }))
     expect(r).toEqual(['main is red at a7148c1 (`pnpm test`); 3 tickets wait for it'])
     expect(says(facts({ base: { unreadable: 'no mirror' }, skipped: [{ ref: 3, reason: 'base-red' }] }))).toEqual([
@@ -161,7 +161,7 @@ describe('whyNothingRuns', () => {
   })
 
   it('puts a red base before chains, and does not count waiting rows as queued', () => {
-    const base = { held: { command: 'pnpm test', baseSha: 'a7148c1ffff', base: 'main' } }
+    const base = { held: { command: 'pnpm test', baseSha: 'a7148c1ffff', base: 'main', fix: null } }
     const skipped = [{ ref: 9, reason: 'base-red' }, ...skipBlocked(2, 3, 4)]
     expect(rootBeforeChains(facts({ base, skipped }))).toBeNull()
     const r = whyNothingRuns(facts({ base, skipped, rows: [row({ ref: 1111, waiting: true })] }), [
@@ -192,7 +192,7 @@ describe('whyNothingRuns', () => {
   })
 
   it('traces a chain through a ticket the red base holds to the base', () => {
-    const base = { held: { command: 'pnpm test', baseSha: 'a7148c1ffff', base: 'main' } }
+    const base = { held: { command: 'pnpm test', baseSha: 'a7148c1ffff', base: 'main', fix: null } }
     const skipped = [{ ref: 9, reason: 'base-red' }, ...skipBlocked(2, 3)]
     const r = whyNothingRuns(facts({ base, skipped }), [blocked(2, 9), blocked(3, 9)])
     expect(r?.roots).toHaveLength(1)

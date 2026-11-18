@@ -16,6 +16,9 @@
  *
  * > **Lingtai proposes; a person decides it exists.**
  *
+ * (One place the conductor proposes with no person: 0108 §13's ticket to make a red base green,
+ * `base-fix.ts`.)
+ *
  * The store is how it comes to exist, and it obeys 0036 §4 from this end too:
  * **the store translates and does not judge.** What the ticket says — its
  * title, body, kind and any hold — is decided before it arrives here, by the
