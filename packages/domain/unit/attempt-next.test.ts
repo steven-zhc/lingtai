@@ -106,6 +106,24 @@ describe('nextOf: §2 Proposal table', () => {
     })
   })
 
+  it('design, design Asked{questions}: InputNeeded{from: design, questions}, with no prose', () => {
+    const questions = [
+      {
+        id: 'q1',
+        text: 'Which shape?',
+        answers: [
+          { id: 'a', text: 'this' },
+          { id: 'b', text: 'that' },
+        ],
+        recommended: 'a',
+      },
+    ]
+    const result = next(
+      outcome('design', [action('design', { _tag: 'Asked', question: 'Which shape?', draft: null, questions })]),
+    )
+    expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'InputNeeded', from: 'design', questions } })
+  })
+
   it('implement, commit Completed with a question: InputNeeded{from: implement, question}', () => {
     const result = next(
       outcome('implement', [action('commit', { _tag: 'Completed', head: null, question: 'rename to X or Y?' })]),

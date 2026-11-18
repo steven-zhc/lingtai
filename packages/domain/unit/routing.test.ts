@@ -631,6 +631,15 @@ describe('routeNext', () => {
     })
   })
 
+  it('Escalated{NotAsked} with an InputNeeded{implement} proposal asked in prose: AgentQuestion with `said`', () => {
+    const offer = offerFor(inputNeededImplement, policy, { rounds: 0, newAttempts: 0 })
+    const decision: RouteDecision = { _tag: 'Escalated', because: { _tag: 'NotAsked' } }
+    expect(routeNext(offer, { _tag: 'NotAsked' }, decision, run)).toEqual({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'AgentQuestion', run, step: 'implement', questions: [], said: 'rename to X or Y?' },
+    })
+  })
+
   it('Escalated{NotAsked} with a non-InputNeeded proposal: WaitOnPerson{ProposedEscalated}, not AgentQuestion', () => {
     const offer = offerFor(buildRed, policy, { rounds: 0, newAttempts: 0 })
     const decision: RouteDecision = { _tag: 'Escalated', because: { _tag: 'NotAsked' } }
