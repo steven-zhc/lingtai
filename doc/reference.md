@@ -142,7 +142,7 @@ are not — one per work item, attempt, lane and project, forever.
 | Prefix | One per | State | Event types |
 |---|---|---|---|
 | `ticket-` | issue, `ticket-{project}-{issue}` | [TicketState](glossary.md#the-log-and-its-states) | [TicketDiscovered](events.json#TicketDiscovered), [TicketClaimed](events.json#TicketClaimed), [TicketContinued](events.json#TicketContinued), [TicketReleased](events.json#TicketReleased), [WaitStarted](events.json#WaitStarted), [WaitResolved](events.json#WaitResolved), [TicketSplit](events.json#TicketSplit), [SplitStarted](events.json#SplitStarted), [SplitChildWritten](events.json#SplitChildWritten), [SplitLinkWritten](events.json#SplitLinkWritten), [SplitFailed](events.json#SplitFailed), [TicketLinked](events.json#TicketLinked) *(retired)*, [TicketLanded](events.json#TicketLanded), [TicketClosed](events.json#TicketClosed), [DispatchRefused](events.json#DispatchRefused), [RunSpent](events.json#RunSpent), [EndActionsResolved](events.json#EndActionsResolved), [IssueUpdated](events.json#IssueUpdated), [IssueUpdateFailed](events.json#IssueUpdateFailed), [DiscussionHeld](events.json#DiscussionHeld), [PromptEdited](events.json#PromptEdited), [TriageStarted](events.json#TriageStarted), [WaitTriaged](events.json#WaitTriaged) |
-| `pass-` | attempt, `pass-…` | [AttemptState](glossary.md#the-log-and-its-states) | [RunStarted](events.json#RunStarted), [RunPrompted](events.json#RunPrompted), [RunTouchedFile](events.json#RunTouchedFile), [RunContextExhausted](events.json#RunContextExhausted), [RunAwaitingInput](events.json#RunAwaitingInput), [RunProducedDiff](events.json#RunProducedDiff), [RunRefsPublished](events.json#RunRefsPublished), [RunKeptUncommitted](events.json#RunKeptUncommitted), [RunAppliedKeptWork](events.json#RunAppliedKeptWork), [RunProposedCompletion](events.json#RunProposedCompletion), [RunFinished](events.json#RunFinished), [SandboxBoundaryRecorded](events.json#SandboxBoundaryRecorded), [SandboxConnectionsRefused](events.json#SandboxConnectionsRefused), [RunFailed](events.json#RunFailed), [RunSpent](events.json#RunSpent), [StepsResolved](events.json#StepsResolved), [StepStarted](events.json#StepStarted), [StepEnded](events.json#StepEnded), [MergeLaneWaited](events.json#MergeLaneWaited), [PassRouted](events.json#PassRouted) *(retired)*, [ProposalRouted](events.json#ProposalRouted), [StepRerunInPlace](events.json#StepRerunInPlace) |
+| `pass-` | attempt, `pass-…` | [AttemptState](glossary.md#the-log-and-its-states) | [RunStarted](events.json#RunStarted), [RunPrompted](events.json#RunPrompted), [RunTouchedFile](events.json#RunTouchedFile), [RunContextExhausted](events.json#RunContextExhausted), [RunAwaitingInput](events.json#RunAwaitingInput), [RunProducedDiff](events.json#RunProducedDiff), [RunRefsPublished](events.json#RunRefsPublished), [RunKeptUncommitted](events.json#RunKeptUncommitted), [RunAppliedKeptWork](events.json#RunAppliedKeptWork), [RunProposedCompletion](events.json#RunProposedCompletion), [RunFinished](events.json#RunFinished), [SandboxBoundaryRecorded](events.json#SandboxBoundaryRecorded), [SandboxConnectionsRefused](events.json#SandboxConnectionsRefused), [RunFailed](events.json#RunFailed), [RunSpent](events.json#RunSpent), [StepsResolved](events.json#StepsResolved), [StepStarted](events.json#StepStarted), [StepEnded](events.json#StepEnded), [MergeLaneWaited](events.json#MergeLaneWaited), [PassRouted](events.json#PassRouted) *(retired)*, [ProposalRouted](events.json#ProposalRouted), [StepRerunInPlace](events.json#StepRerunInPlace) *(retired)*, [StepRedone](events.json#StepRedone) |
 | `int-` | base branch, `int-{project}-{base}` | [IntegrationState](glossary.md#the-log-and-its-states) | [IntegrationAttempted](events.json#IntegrationAttempted), [IntegrationRefused](events.json#IntegrationRefused), [IntegrationSucceeded](events.json#IntegrationSucceeded), [BaseChecked](events.json#BaseChecked) |
 | `prj-` | repository, `prj-{project}` | [ProjectState](glossary.md#the-log-and-its-states) | [ProjectOnboardingStarted](events.json#ProjectOnboardingStarted) *(retired)*, [ProjectConfigured](events.json#ProjectConfigured), [ProjectRecipeChanged](events.json#ProjectRecipeChanged), [ProjectSandboxObserved](events.json#ProjectSandboxObserved), [ProjectRefused](events.json#ProjectRefused), [ProjectRecovered](events.json#ProjectRecovered), [ProjectPaused](events.json#ProjectPaused), [ProjectResumed](events.json#ProjectResumed) |
 | `ctl-` | control stream: `ctl-conductor` (one per machine) and `ctl-github-app` | [ControlState](glossary.md#the-log-and-its-states) (`ctl-conductor`); none for `ctl-github-app` | [ConductorPaused](events.json#ConductorPaused), [ConductorResumed](events.json#ConductorResumed), [DayCeilingReached](events.json#DayCeilingReached), [DayCeilingLifted](events.json#DayCeilingLifted), [ConductorShutdownRequested](events.json#ConductorShutdownRequested), [ConductorStarted](events.json#ConductorStarted), [ConductorShutdownWithdrawn](events.json#ConductorShutdownWithdrawn) *(retired)*, [QueueChanged](events.json#QueueChanged), [RunRequested](events.json#RunRequested), [ContinueRequested](events.json#ContinueRequested), [DiscussionRequested](events.json#DiscussionRequested), [Reconciled](events.json#Reconciled), [GitHubAppCreated](events.json#GitHubAppCreated) |
@@ -162,7 +162,7 @@ On no stream: [OutboxDelivered](events.json#OutboxDelivered) *(retired)*, [Outbo
 appends to that stream while it runs, and a board recording an App would race a
 turn for the version — `ext-subscribers` is apart for the same reason.
 
-## upcaster — 9 chains, 11 steps
+## upcaster — 13 chains, 15 steps
 
 A function reading an older event shape and returning the current one.
 Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
@@ -180,9 +180,13 @@ Source: `UPCASTERS` in `packages/domain/src/upcast.ts`.
 | `AccountLimitReached` | 1 → 2 | `runtime` became `account`, which names a platform (a runtime, or `github`) — [0126](decisions/0126-a-stop-is-a-lock-and-an-unlock.md) §2, #1212. The value is unchanged: every runtime is an account |
 | `AccountLimitLifted` | 1 → 2 | the same rename, on both shapes (with `by` and without) |
 | `PromptEdited` | 1 → 2 | `hash` and `basedOn` (`#104`). Both null: the digest could be recomputed from `text`, but recomputing it and recording it are different claims |
+| `TicketReleased` | 1 → 2 | `cause: Restart{restart}` is `NewAttempt{newAttempt}` (0108, #1241). A release with no cause stays without one |
+| `ProposalRouted` | 1 → 2 | a candidate's `FixRound`, `MergeBase` and `Requeued{Restart}` are `FixRefusal`, `MergeBaseBranch` and `Requeued{NewAttempt}`, and an excluded candidate's `ceiling` is named for its bound (`rounds` → `refusalFixes`, `conflict-rounds` → `conflictResolutions`, `restarts` → `newAttempts`, `base-merges` → `baseBranchMerges`), in the offer and in an escalated decision (#1241) |
+| `PassRouted` | 1 → 2 | the same rewrite, on the retired type's rows |
+| `WaitStarted` | 1 → 2 | a `ProposedEscalated` whose excluded candidate hit a ceiling names the ceiling by its bound (#1241) |
 
 **The counts in this heading are counted off the table, never computed.** Each
-of the **nine** chains below is its own row — a heading that is arithmetic on a
+of the **thirteen** chains below is its own row — a heading that is arithmetic on a
 number nobody re-derived is how a reader comes to believe a row is stale and
 deletable.
 
@@ -886,7 +890,7 @@ rename, the same way `gate` sat in `events.ts` until `#247`'s reset spent it.
 
 ### the allowlist
 
-**27 occurrences in 18 files, counted 2026-10-20** — and that sentence is
+**26 occurrences in 17 files, counted 2026-10-20** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table
 below and not a number somebody forgot to raise when the table grew.
 
@@ -1007,7 +1011,6 @@ failure, not a number nobody was watching.
 | `packages/domain/src/action.ts` | `work-item` ×1 |
 | `packages/domain/src/attempt-next.ts` | `work-item` ×2 |
 | `packages/domain/src/envelope.ts` | `work-item` ×1 |
-| `packages/domain/src/events.ts` | `work-item` ×1 |
 | `packages/domain/src/ticket.ts` | `WorkItemLink` ×2 |
 | `packages/event-store/src/queries.ts` | `work_item` ×2 |
 | `packages/event-store/src/sqlite.ts` | `work_item` ×2 |
@@ -1017,7 +1020,7 @@ failure, not a number nobody was watching.
 
 ### ordinary English
 
-**0 of those 27 occurrences are the English word** — the 27 is the pair rule's,
+**0 of those 26 occurrences are the English word** — the 26 is the pair rule's,
 read above, and none of it is the English *point at* residue this table once
 carried: every occurrence the pair rule counts is the retired concept, a ticket,
 not the verb. The table that stood here for the four words is gone, and that is

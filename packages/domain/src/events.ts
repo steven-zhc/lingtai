@@ -1669,6 +1669,8 @@ export const StepRedone = z.object({
 /**
  * `StepRedone`'s retired name (0108): the log holds rows written under it, the same payload, and a reducer reads
  * both alike. Nothing appends it again — see `RETIRED`.
+ *
+ * @summary No longer written: a step run again in place, under the name it had before; the rows already on the log read as the new one.
  */
 export const StepRerunInPlace = StepRedone
 

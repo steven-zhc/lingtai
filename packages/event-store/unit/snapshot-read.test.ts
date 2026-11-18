@@ -138,7 +138,7 @@ describe("readThroughSnapshot with 'all' over the attempt reducer", () => {
     await store.append(
       streamId,
       0,
-      // A store refuses the retired `PassRouted`; the same route is appended as a
+      // A store refuses the retired `PassRouted` and `StepRerunInPlace` (the latter appended as `StepRedone`); the same route is appended as a
       // `ProposalRouted` that kept its evidence (`ended: null`).
       history.slice(0, n).map((e) =>
         e.type === 'PassRouted'
@@ -150,7 +150,7 @@ describe("readThroughSnapshot with 'all' over the attempt reducer", () => {
                 offer: { ...(e.data as { offer: object }).offer, ended: null },
               },
             } as never)
-          : ({ type: e.type, actor: e.actor, data: e.data } as never),
+          : ({ type: e.type === 'StepRerunInPlace' ? 'StepRedone' : e.type, actor: e.actor, data: e.data } as never),
       ),
     )
     const stored = await store.read(streamId)

@@ -565,7 +565,7 @@ describe('a line of history', () => {
     )
     expect(said2).toContain('review → waiting')
     expect(said2).toContain('agent/7 is waiting on you')
-    expect(said2).toContain('restarts` is spent')
+    expect(said2).toContain('newAttempts` is spent')
   })
 
   /**
