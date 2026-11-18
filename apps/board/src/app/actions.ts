@@ -219,8 +219,8 @@ export async function continueFixingCard(input: {
       ? {
           ok: true,
           detail: result.unscheduled
-            ? `refusal fix granted on saved work — continuation was not scheduled (${result.unscheduled}); click again to schedule it`
-            : 'refusal fix granted on saved work',
+            ? `refusal fix recorded on saved work — continuation was not scheduled (${result.unscheduled}); click again to schedule it`
+            : 'refusal fix recorded on saved work; it runs when the daemon picks it up',
         }
       : { ok: false, detail: result.detail }
   } catch (err) {
@@ -262,8 +262,8 @@ export async function rerunStepCard(input: {
       ? {
           ok: true,
           detail: result.unscheduled
-            ? `step redone on saved work — continuation was not scheduled (${result.unscheduled}); click again to schedule it`
-            : 'step redone on saved work',
+            ? `redo recorded on saved work — continuation was not scheduled (${result.unscheduled}); click again to schedule it`
+            : 'redo recorded on saved work; the step runs when the daemon picks it up',
         }
       : { ok: false, detail: result.detail }
   } catch (err) {

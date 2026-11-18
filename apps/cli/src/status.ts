@@ -105,7 +105,7 @@ export function conflictLines(
         rec === null
           ? `triage advised ${result.resolution} — ${result.summary}`
           : `recommends ${rec} — ${result.summary}`,
-      advised: `the saved head could not be checked (${unreadable}), so a refusal fix is not recommended; redo the step to see whether saved work can be continued`,
+      advised: `the saved head could not be checked (${unreadable}), so a refusal fix is not recommended; check again to see whether saved work can be continued`,
     }
   }
   if (rec === null) {
