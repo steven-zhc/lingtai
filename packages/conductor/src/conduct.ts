@@ -1417,6 +1417,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             conflict: undefined,
             readClipped: undefined,
             roundLimit: undefined,
+            roundsNotBought: undefined,
+            grantNotBought: undefined,
             onSha: 'at' in head ? head.at : '',
             // Its own dispatch ids: two continuations of one run for a red base must not share them.
             resumedWaitId: `base-red:${releases}` as WaitId,
@@ -1478,6 +1480,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           conflict: undefined,
           readClipped: undefined,
           roundLimit: undefined,
+          roundsNotBought: undefined,
+          grantNotBought: undefined,
           onSha: 'at' in head ? head.at : '',
           resumedWaitId: `account-limit:${releases}` as WaitId,
           roundsSpent: continuationRound(releasedState, false),
@@ -1542,6 +1546,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           conflict: undefined,
           readClipped: undefined,
           roundLimit: undefined,
+          roundsNotBought: undefined,
+          grantNotBought: undefined,
           onSha: 'at' in head ? head.at : approvedOnSha,
           resumedWaitId: approvedWaitId,
           roundsSpent: continuationRound(runState, false),
@@ -5671,6 +5677,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 waive: continuation.waive,
                 ...(continuation.readClipped === undefined ? {} : { readClipped: continuation.readClipped }),
                 roundsSpent: continuation.roundsSpent,
+                ...(continuation.roundsNotBought !== undefined
+                  ? { roundsNotBought: continuation.roundsNotBought }
+                  : {}),
+                ...(continuation.grantNotBought ? { grantNotBought: true } : {}),
                 baseMergesSpent: continuation.baseMergesSpent,
                 conflictRoundsSpent: continuation.conflictRoundsSpent,
                 stepRedosSpent: continuation.stepRedosSpent,
