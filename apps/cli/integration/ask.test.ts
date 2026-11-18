@@ -133,7 +133,7 @@ describe('lingtai ask / answer', () => {
     expect(last.data).toEqual({
       waitId: expect.any(String),
       by: ACTOR,
-      resolution: { _tag: 'Requeue' },
+      resolution: { _tag: 'StartNewAttempt' },
       note: 'asked by mistake, ignore',
     })
     const item = reduceTicket(events)

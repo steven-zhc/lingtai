@@ -437,7 +437,7 @@ export function requeueHoldingEffect(
       {
         ticketId,
         waitId: options.waitId ?? item.lifecycle.waitId,
-        resolution: { _tag: 'Requeue' },
+        resolution: { _tag: 'StartNewAttempt' },
         by: options.by,
         note,
         github: options.github,

@@ -209,7 +209,7 @@ describe('the person decides a wait', () => {
     const d = resolvedEvents(blocked(), block(), {
       waitId: W,
       by: 'steven',
-      resolution: { _tag: 'Requeue' },
+      resolution: { _tag: 'StartNewAttempt' },
       note: 'n',
     })
     if (!d.ok) throw new Error('refused')

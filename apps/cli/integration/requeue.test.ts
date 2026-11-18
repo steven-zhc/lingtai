@@ -109,7 +109,7 @@ describe('lingtai requeue', () => {
     // The resolution, then the release it asks for (`de6671a4`): the requeue arrives with both.
     const [resolved, released] = events.slice(-2)
     expect(resolved!.type).toBe('WaitResolved')
-    expect(resolved!.data).toMatchObject({ by: ACTOR, resolution: { _tag: 'Requeue' }, note: NOTE })
+    expect(resolved!.data).toMatchObject({ by: ACTOR, resolution: { _tag: 'StartNewAttempt' }, note: NOTE })
     expect(released!.type).toBe('TicketReleased')
     expect(reduceTicket(events).lifecycle.status).toBe('backlog')
   })
@@ -181,7 +181,7 @@ describe('lingtai requeue', () => {
     const events = await store.read(wi(BLANK_NOTE))
     const [resolved, released] = events.slice(-2)
     expect(resolved!.type).toBe('WaitResolved')
-    expect(resolved!.data).toMatchObject({ by: ACTOR, resolution: { _tag: 'Requeue' }, note: '' })
+    expect(resolved!.data).toMatchObject({ by: ACTOR, resolution: { _tag: 'StartNewAttempt' }, note: '' })
     expect(released!.type).toBe('TicketReleased')
   })
 

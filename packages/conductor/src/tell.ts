@@ -431,18 +431,18 @@ function resolutionWords(resolution: PayloadOf<'WaitResolved'>['resolution'], by
   switch (resolution._tag) {
     case 'Approve':
       return sentence('Approved', by)
-    case 'GrantFixRound': {
+    case 'FixRefusal': {
       const name = who(by)
       return name === '' ? 'One more fix round, granted.' : `One more fix round, granted by ${name}.`
     }
-    case 'RerunStep': {
+    case 'RedoStep': {
       const name = who(by)
       return name === ''
         ? 'The step, run again on the saved work.'
         : `The step, run again on the saved work by ${name}.`
     }
-    case 'Requeue':
-    case 'EditBodyAndRequeue':
+    case 'StartNewAttempt':
+    case 'EditBodyAndStartNewAttempt':
       return `${sentence('Requeued', by).replace(/\.$/, '')} — a new attempt started.`
     case 'AnswerQuestion': {
       const name = who(by)

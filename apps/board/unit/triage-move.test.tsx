@@ -7,7 +7,7 @@ import { approveHolding } from '@lingtai/conductor/decide'
 import { reduceTicket, ticketStream, waitsOf, type WaitId } from '@lingtai/domain'
 import { aClaim, anAttemptRef, aWait } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
-import { acceptedTriageNote, type Resolution, type WaitReason } from '@lingtai/domain/wait'
+import { acceptedTriageNote, type TriageAdvice, type WaitReason } from '@lingtai/domain/wait'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { TaskCard } from '@lingtai/projector/task-view'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -30,7 +30,7 @@ const checkRefused = {
   findings: [],
 } as unknown as WaitReason
 
-function result(resolution: Resolution['_tag'], cause = 'FixableLines'): TaskCard['triage'] {
+function result(resolution: TriageAdvice, cause = 'FixableLines'): TaskCard['triage'] {
   return {
     started: null,
     result: {
@@ -85,20 +85,20 @@ function card(t: TaskCard, fixHead: string | null = HEAD, declared = true): Boar
 }
 
 describe('a card’s move', () => {
-  it('carries the saved head for an advised GrantFixRound', () => {
+  it('carries the saved head for an advised FixRefusal', () => {
     expect(card(waiting(result('GrantFixRound'))).move).toEqual({
-      resolution: 'GrantFixRound',
+      resolution: 'FixRefusal',
       onSha: HEAD,
       note: null,
     })
   })
 
-  it('has no GrantFixRound where the log has no saved head, and swaps nothing in', () => {
+  it('has no FixRefusal where the log has no saved head, and swaps nothing in', () => {
     expect(card(waiting(result('GrantFixRound')), null).move).toBeNull()
   })
 
   it('carries an advised Requeue with nothing to send', () => {
-    expect(card(waiting(result('Requeue'))).move).toEqual({ resolution: 'Requeue', onSha: null, note: null })
+    expect(card(waiting(result('Requeue'))).move).toEqual({ resolution: 'StartNewAttempt', onSha: null, note: null })
   })
 
   it('carries the awaited sha and the accepted-triage note for an advised Approve', () => {
@@ -138,7 +138,7 @@ describe('the button', () => {
   const props = { project: 'lingtai', issue: 647, taskId: 'ticket-lingtai-647', waitId }
 
   it.each([
-    ['EditBodyAndRequeue', 'resolution-EditBodyAndRequeue'],
+    ['EditBodyAndStartNewAttempt', 'resolution-EditBodyAndStartNewAttempt'],
     ['AnswerQuestion', 'resolution-AnswerQuestion'],
     ['Close', 'resolution-Close'],
     ['Split', 'triage'],
@@ -148,7 +148,7 @@ describe('the button', () => {
     expect(html).not.toContain('<button')
   })
 
-  it.each(['GrantFixRound', 'Requeue', 'Approve'] as const)('%s is one button', (resolution) => {
+  it.each(['FixRefusal', 'StartNewAttempt', 'Approve'] as const)('%s is one button', (resolution) => {
     const html = renderToStaticMarkup(
       <TriageMove {...props} move={{ resolution, onSha: SHA, note: resolution === 'Approve' ? 'n' : null }} />,
     )

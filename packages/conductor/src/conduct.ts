@@ -330,9 +330,9 @@ import {
   type SplitChildState,
 } from './ticket/commands.ts'
 
-/** How many times a person asked for `RerunStep` on `runId`'s waits: one summand of a rerun's dispatch suffix (#1218). */
+/** How many times a person asked for `RedoStep` on `runId`'s waits: one summand of a rerun's dispatch suffix (#1218). */
 function personRerunsOf(waits: ReturnType<typeof waitsFromState>, runId: string): number {
-  return waits.filter((w) => w.resolution?._tag === 'RerunStep' && 'run' in w.reason && w.reason.run.runId === runId)
+  return waits.filter((w) => w.resolution?._tag === 'RedoStep' && 'run' in w.reason && w.reason.run.runId === runId)
     .length
 }
 
@@ -1515,13 +1515,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const runEvents = yield* Effect.promise(() => store.read(options.continuing!.runId))
       const runState = reduceAttempt(runEvents)
       /**
-       * **A person's `RerunStep` continues the same attempt at the step that stopped, on the saved head** (#1218):
+       * **A person's `RedoStep` continues the same attempt at the step that stopped, on the saved head** (#1218):
        * #1205's re-cut and recorded-prompt rerun, asked for by a wait's resolution rather than by a release. The
        * wait's own resolution says so — the lifecycle carries no new field — and `rerunStepOf` names the step, as it
        * named the offer. No grant, no criterion and no round: the counters are the attempt's own, unchanged.
        */
       const approvedWait = waitsFromState(reduced).find((w) => w.waitId === approvedWaitId)
-      if (approvedWait?.resolution?._tag === 'RerunStep') {
+      if (approvedWait?.resolution?._tag === 'RedoStep') {
         const step = rerunStepOf(reason)
         if (step === null) return null
         const head = releasedHeadOf(runEvents)
@@ -1577,7 +1577,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
       const priorGrant = waitsFromState(reduced).some(
         (wait) =>
-          wait.resolution?._tag === 'GrantFixRound' &&
+          wait.resolution?._tag === 'FixRefusal' &&
           'run' in wait.reason &&
           wait.reason.run.runId === options.continuing!.runId,
       )

@@ -59,7 +59,7 @@ describe('requeue command', () => {
     expect((await tickets.getIssue(1)).body).toContain('Use the small helper')
     expect((await store.read(ticketId)).find((e) => e.type === 'WaitResolved')?.data).toMatchObject({
       waitId,
-      resolution: { _tag: 'EditBodyAndRequeue' },
+      resolution: { _tag: 'EditBodyAndStartNewAttempt' },
       note: requeueNote('Use the small helper'),
     })
   })
@@ -79,7 +79,7 @@ describe('requeue command', () => {
     expect(reduceTicket(await store.read(ticketId)).lifecycle.status).toBe('backlog')
     expect((await store.read(ticketId)).find((e) => e.type === 'WaitResolved')?.data).toMatchObject({
       waitId,
-      resolution: { _tag: 'Requeue' },
+      resolution: { _tag: 'StartNewAttempt' },
     })
   })
 })

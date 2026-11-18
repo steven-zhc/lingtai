@@ -108,7 +108,7 @@ describe('WaitStarted triage trigger', () => {
       f.event('WaitResolved', {
         waitId: f.waitId,
         by: 'steven',
-        resolution: { _tag: 'Requeue' },
+        resolution: { _tag: 'StartNewAttempt' },
         note: 'continue',
       }),
     ])
@@ -153,7 +153,7 @@ describe('WaitStarted triage trigger', () => {
       f.event('WaitResolved', {
         waitId: f.waitId,
         by: 'steven',
-        resolution: { _tag: 'Requeue' },
+        resolution: { _tag: 'StartNewAttempt' },
         note: 'continue',
       }),
     ])

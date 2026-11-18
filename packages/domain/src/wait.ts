@@ -245,21 +245,21 @@ export type WaitReason = z.infer<typeof WaitReason>
 /** Continue the run — refused if the branch moved off `onSha`. */
 const Approve = z.object({ _tag: z.literal('Approve'), onSha: z.string() })
 /** One human-authorized implement round on the saved remote ref. */
-const GrantFixRound = z.object({ _tag: z.literal('GrantFixRound'), onSha: z.string(), ref: z.string() })
+const FixRefusal = z.object({ _tag: z.literal('FixRefusal'), onSha: z.string(), ref: z.string() })
 /**
  * Run the step a stop outside the diff ended again, in the same attempt, on its saved head (#1218). `onSha` is the
  * head the person saw (`''`: no check); `ref` the ref that must still carry it, `null` where none does (a kept WIP,
  * or nothing committed: the attempt's base). Named apart from `attempt-next.ts`'s own `RerunStep`, the walk's.
  */
-const RerunStepResolution = z.object({
-  _tag: z.literal('RerunStep'),
+const RedoStep = z.object({
+  _tag: z.literal('RedoStep'),
   onSha: z.string(),
   ref: z.string().nullable(),
 })
 /** A new pass, from the base. */
-const Requeue = z.object({ _tag: z.literal('Requeue') })
+const StartNewAttempt = z.object({ _tag: z.literal('StartNewAttempt') })
 /** Write into the body, then requeue. */
-const EditBodyAndRequeue = z.object({ _tag: z.literal('EditBodyAndRequeue') })
+const EditBodyAndStartNewAttempt = z.object({ _tag: z.literal('EditBodyAndStartNewAttempt') })
 /** An `OwnQuestion` only. */
 const AnswerQuestion = z.object({ _tag: z.literal('AnswerQuestion'), choice: z.string() })
 /** Ends the wait; `lingtai close` reaches it from any ticket, waiting or not. */
@@ -268,10 +268,10 @@ const Close = z.object({ _tag: z.literal('Close') })
 /** What a person does about a wait, 0118 §1's `Resolution`. */
 export const Resolution = z.discriminatedUnion('_tag', [
   Approve,
-  GrantFixRound,
-  RerunStepResolution,
-  Requeue,
-  EditBodyAndRequeue,
+  FixRefusal,
+  RedoStep,
+  StartNewAttempt,
+  EditBodyAndStartNewAttempt,
   AnswerQuestion,
   // the person's approved plan (0118 §12); a structural fault never parses, so never reaches the log
   SplitResolution,
@@ -290,13 +290,31 @@ export type Resolution = z.infer<typeof Resolution>
 export const TriageAdvice = z.enum(['Approve', 'GrantFixRound', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close'])
 export type TriageAdvice = z.infer<typeof TriageAdvice>
 
+/**
+ * The resolution each advice recommends. `TriageAdvice` keeps the names it was logged with (the cause ticket replaces
+ * it), so three of its values are spelled differently from the resolution they ask for: this table is the one place
+ * the two are joined, and a reader that turns an advice into a button or a command goes through it.
+ */
+const ADVICE_RESOLUTION = {
+  Approve: 'Approve',
+  GrantFixRound: 'FixRefusal',
+  Requeue: 'StartNewAttempt',
+  EditBodyAndRequeue: 'EditBodyAndStartNewAttempt',
+  Split: 'Split',
+  Close: 'Close',
+} as const satisfies Record<TriageAdvice, Resolution['_tag']>
+
+export function adviceResolution(advice: TriageAdvice): Resolution['_tag'] {
+  return ADVICE_RESOLUTION[advice]
+}
+
 type AssertEqual<T, U> = [T] extends [U] ? ([U] extends [T] ? true : never) : never
-// a Resolution tag added later must be added here or excluded here on purpose.
-// `RerunStep` is excluded on purpose (#1218): triage cannot tell a flaky red from a real one, and a follow-up
+// a Resolution tag added later must be added to the table above or excluded here on purpose.
+// `RedoStep` is excluded on purpose (#1218): triage cannot tell a flaky red from a real one, and a follow-up
 // adds it once people have used the move.
 const _triageAdviceCoversResolution: AssertEqual<
-  TriageAdvice,
-  Exclude<Resolution['_tag'], 'AnswerQuestion' | 'RerunStep'>
+  (typeof ADVICE_RESOLUTION)[TriageAdvice],
+  Exclude<Resolution['_tag'], 'AnswerQuestion' | 'RedoStep'>
 > = true as const
 
 /**
@@ -308,69 +326,69 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
   // #654: a crash that stands in for a wait offers what that wait offered —
   // and a way out of it, which the wait itself may not have carried.
   if (reason._tag === 'AgentCrashed' && reason.standing !== undefined) {
-    return [...new Set([...tableResolutions(reason.standing.reason), 'Requeue', 'Close'] as const)]
+    return [...new Set([...tableResolutions(reason.standing.reason), 'StartNewAttempt', 'Close'] as const)]
   }
   switch (reason._tag) {
     case 'OwnQuestion':
-      return ['AnswerQuestion', 'Requeue', 'Close']
+      return ['AnswerQuestion', 'StartNewAttempt', 'Close']
     case 'AgentQuestion':
-      return ['EditBodyAndRequeue', 'Requeue', 'Close']
+      return ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
     case 'SignoffRequired':
     case 'CheckRefused':
     case 'FixerDisagrees':
-      return ['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close']
+      return ['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
     case 'ProposedEscalated':
       switch (reason.proposal._tag) {
         case 'ReviewFindings':
-          return ['Approve', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close']
+          return ['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Split', 'Close']
         case 'ReviewEmpty':
-          return ['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close']
+          return ['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
         case 'BuildRed':
         case 'VerifyRed':
-          return ['Requeue', 'EditBodyAndRequeue', 'Split', 'Close']
+          return ['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Split', 'Close']
         case 'MergeConflict':
-          // 0118 §1: `GrantFixRound` is appended by `allowedResolutions`;
-          // this row is `Requeue`, `Close` — no body edit.
-          return ['Requeue', 'Close']
+          // 0118 §1: `FixRefusal` is appended by `allowedResolutions`;
+          // this row is `StartNewAttempt`, `Close` — no body edit.
+          return ['StartNewAttempt', 'Close']
         case 'InputNeeded':
-          return ['Requeue', 'EditBodyAndRequeue', 'Close']
+          return ['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
         // `#471`'s seven, each given the direct `WaitReason` variant's own
         // row (`:217-240` above) rather than a new one — `#471`'s equality
         // is a claim about the wait, and the resolutions offered for it
         // follow the same `Hold`.
         case 'CheckRefused':
         case 'FixerDisagrees':
-          return ['Approve', 'Requeue', 'EditBodyAndRequeue', 'Close']
+          return ['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
         case 'MergeRefused':
         // The base moved, and the system's two merges are spent: `Approve`
         // continues at `merge` with the count back at zero, which reads as
         // *keep merging the base in* (#593).
         case 'BaseMoved':
-          return ['Approve', 'Requeue', 'Close']
+          return ['Approve', 'StartNewAttempt', 'Close']
         case 'NothingProduced':
         case 'BudgetExhausted':
         case 'AnswerUnreadable':
-          return ['EditBodyAndRequeue', 'Requeue', 'Split', 'Close']
+          return ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close']
         // Allow the host (or install the sandbox), then requeue: the
         // requeue runs under the edited recipe or the repaired host (#1157).
         case 'SetupRefused':
         case 'SandboxRefused':
-          return ['Requeue', 'Close']
+          return ['StartNewAttempt', 'Close']
         // 0108 §14: no reviewer ran, so `Approve` here waives nothing — it
         // means *review the clipped diff anyway* (#892) — and there is no round
         // to grant. `Split` still waits on triage's plan.
         case 'DiffTooLarge':
-          return ['Approve', 'Requeue', 'EditBodyAndRequeue', 'Split', 'Close']
+          return ['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Split', 'Close']
       }
     case 'MergeRefused':
-      return ['Approve', 'Requeue', 'Close']
+      return ['Approve', 'StartNewAttempt', 'Close']
     case 'NothingProduced':
     case 'BudgetExhausted':
     case 'AgentCrashed':
     case 'AnswerUnreadable':
-      return ['EditBodyAndRequeue', 'Requeue', 'Split', 'Close']
+      return ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close']
     case 'SetupRefused':
-      return ['Requeue', 'Close']
+      return ['StartNewAttempt', 'Close']
   }
 }
 
@@ -511,13 +529,13 @@ export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
   const fixable = grantCriterion(reason) !== null
   return [
     ...(unpushed ? table.filter((tag) => tag !== 'Approve') : table),
-    ...(fixable && !unpushed ? (['GrantFixRound'] as const) : []),
-    ...(rerunStepOf(reason) !== null && !unpushed ? (['RerunStep'] as const) : []),
+    ...(fixable && !unpushed ? (['FixRefusal'] as const) : []),
+    ...(rerunStepOf(reason) !== null && !unpushed ? (['RedoStep'] as const) : []),
   ]
 }
 
 /**
- * The step a `RerunStep` runs again, or `null` where the wait does not offer it (#1218): one answer for the offer and
+ * The step a `RedoStep` runs again, or `null` where the wait does not offer it (#1218): one answer for the offer and
  * for the continuation, so they cannot disagree. A crash at `design`, `implement` or `review`; a red `build`; a
  * declared check that refused at `proposed`. Not `merge` (`VerifyRed` reruns the merge, which `Approve` and the lane
  * own), not `SetupRefused`, and not a standing crash, whose offer is the stood wait's own.
@@ -700,13 +718,13 @@ function lastRefusedActionName(
 
 /**
  * The wait's own default resolution, with no triage advice in play —
- * `Approve` for `SignoffRequired`, `Requeue` for `BudgetExhausted`,
+ * `Approve` for `SignoffRequired`, `StartNewAttempt` for `BudgetExhausted`,
  * `AgentCrashed` and an escalation whose `because` is `BaseRed`, `null` everywhere else. No `default`, for the reason
  * {@link tableResolutions} has none.
  *
  * **`ProposedEscalated` branches on its own proposal** (and on a `BaseRed` `because`, #744: the
  * refusal is not about the diff, so a round would pay an agent for the base's error), so an escalated
- * `BudgetExhausted` (`#471`) still prefills `Requeue`, the same as the direct
+ * `BudgetExhausted` (`#471`) still prefills `StartNewAttempt`, the same as the direct
  * one above — `#471`'s equality is about the wait, and the card's
  * prefilled resolution is read off this function.
  */
@@ -717,12 +735,12 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
       return 'Approve'
     case 'BudgetExhausted':
     case 'AgentCrashed':
-      return 'Requeue'
+      return 'StartNewAttempt'
     case 'ProposedEscalated':
       return reason.proposal._tag === 'BudgetExhausted' ||
         reason.proposal._tag === 'DiffTooLarge' ||
         reason.because._tag === 'BaseRed'
-        ? 'Requeue'
+        ? 'StartNewAttempt'
         : null
     case 'OwnQuestion':
     case 'AgentQuestion':
@@ -741,16 +759,16 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
  * (`status` is `Done` with `TriageAdvised`) is recommended exactly when
  * `allowedResolutions` offers it — a disallowed advice returns `null`, not
  * the default, because there was advice and it is simply not drawn. The same
- * goes for an advice its own cause contradicts: `Approve` or `GrantFixRound`
+ * goes for an advice its own cause contradicts: `Approve` or `FixRefusal`
  * on a `WrongApproach`, and `Approve` on `FixableLines`. The one swap is a
  * `ConflictingHunks` of at most `CONFLICT_ROUND_HUNKS` hunks, which recommends
- * `GrantFixRound` whatever triage chose when that is offered (#652). With no
+ * `FixRefusal` whatever triage chose when that is offered (#652). With no
  * advice (`NotNeeded`, `NotDeclared`, `Queued`, `Running`, `Interrupted`, or
  * `Done` with `TriageFailed`) the wait's own default stands, itself run back
  * through `allowedResolutions` so a default an `unpushed` run disallows is
  * `null` too. `savedHead: false` is a fact the caller knows and a pure
  * function cannot (the board's read of the saved ref): no published head means
- * `GrantFixRound` has nothing to continue, so it is not offered here either.
+ * `FixRefusal` has nothing to continue, so it is not offered here either.
  */
 export function recommendedResolution(
   reason: WaitReason,
@@ -761,7 +779,7 @@ export function recommendedResolution(
   // the judge read only the findings, triage read the ticket, the diff and the
   // code with the judge's routing in front of it, so the judge's routing is
   // not drawn as a competing reading (decided 2026-10-25).
-  const allowed = allowedResolutions(reason).filter((tag) => tag !== 'GrantFixRound' || options.savedHead !== false)
+  const allowed = allowedResolutions(reason).filter((tag) => tag !== 'FixRefusal' || options.savedHead !== false)
   const toDefault = () => {
     const fallback = defaultResolution(reason)
     return fallback !== null && allowed.includes(fallback) ? fallback : null
@@ -769,7 +787,7 @@ export function recommendedResolution(
   switch (status._tag) {
     case 'Done':
       if (status.result._tag === 'TriageAdvised') {
-        const advised = status.result.resolution
+        const advised = adviceResolution(status.result.resolution)
         const cause = status.result.cause._tag
         // The one swap: a small conflict's hunks carry their own recommended
         // answers, which are triage's reading of it, so they outrank the
@@ -777,15 +795,15 @@ export function recommendedResolution(
         if (
           status.result.cause._tag === 'ConflictingHunks' &&
           status.result.cause.total <= CONFLICT_ROUND_HUNKS &&
-          allowed.includes('GrantFixRound')
+          allowed.includes('FixRefusal')
         ) {
-          return 'GrantFixRound'
+          return 'FixRefusal'
         }
         if (!allowed.includes(advised)) return null
         // Any other advice that contradicts its own diagnosis is dropped, not
         // swapped for another: a wrong approach is not continued or waived, and
         // a fixable line is repaired rather than waived (#529, #551).
-        if (cause === 'WrongApproach' && (advised === 'Approve' || advised === 'GrantFixRound')) return null
+        if (cause === 'WrongApproach' && (advised === 'Approve' || advised === 'FixRefusal')) return null
         if (cause === 'FixableLines' && advised === 'Approve') return null
         return advised
       }
@@ -826,7 +844,7 @@ export function waitMoves(
 }
 
 /**
- * The reason an `EditBodyAndRequeue` is recorded with when the person gave
+ * The reason an `EditBodyAndStartNewAttempt` is recorded with when the person gave
  * none (0118 §6): composed from the text the resolution writes, so it is
  * never stale against an edited answer and never asks them for one.
  */

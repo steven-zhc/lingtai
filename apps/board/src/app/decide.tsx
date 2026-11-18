@@ -953,10 +953,10 @@ export function TriageMove({
   }
 
   let click: (() => void) | null = null
-  if (move.resolution === 'GrantFixRound' && move.onSha !== null) {
+  if (move.resolution === 'FixRefusal' && move.onSha !== null) {
     const onSha = move.onSha
     click = () => run(() => continueFixingCard({ project, issue, waitId, onSha }))
-  } else if (move.resolution === 'Requeue') {
+  } else if (move.resolution === 'StartNewAttempt') {
     // An empty note on purpose: the requeue note is what every later attempt is
     // told, and triage's sentence is not the person's.
     click = () => run(() => requeueCard({ project, issue, note: '', waitId }))

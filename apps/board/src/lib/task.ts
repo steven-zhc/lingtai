@@ -480,7 +480,7 @@ export interface StandingView {
   } | null
   /** Render-time check only; resolveWait checks the remote again under the decision lock. */
   fixWork?: { head: string; ref: string } | { refusal: string } | null
-  /** The saved head a `RerunStep` continues from (#1219); its own field, since a crash wait offers no `GrantFixRound`. */
+  /** The saved head a `RedoStep` continues from (#1219); its own field, since a crash wait offers no `FixRefusal`. */
   rerunWork?: { head: string; ref: string | null } | { refusal: string } | null
   /** A body I/O fact on this stream; these events do not identify a wait. */
   bodyOutcome?: { result: 'updated' | 'failed'; detail: string } | null
@@ -596,7 +596,7 @@ export interface StandingView {
   restarts: number
   restartsOf: number
   /**
-   * The wait a card renders, so `Approve`/`Requeue`/`AnswerQuestion`/`Close`
+   * The wait a card renders, so `Approve`/`StartNewAttempt`/`AnswerQuestion`/`Close`
    * can send back **the wait it was shown**, not whatever the ticket is
    * blocked on by the time the click lands (#465). Set while `blocked` *and*
    * while `approved` (#508) — an `approved` item still names the wait
@@ -869,21 +869,21 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
     live &&
     m.then?.kind === 'released' &&
     life.status === 'backlog' &&
-    (m.resolution._tag === 'Requeue' || m.resolution._tag === 'EditBodyAndRequeue') &&
+    (m.resolution._tag === 'StartNewAttempt' || m.resolution._tag === 'EditBodyAndStartNewAttempt') &&
     m.then.cause?._tag === 'ByPerson' &&
     m.then.cause.waitId === m.waitId
   const requeued =
     live &&
     m.then === null &&
     life.status === 'backlog' &&
-    (m.resolution._tag === 'Requeue' ||
-      m.resolution._tag === 'EditBodyAndRequeue' ||
+    (m.resolution._tag === 'StartNewAttempt' ||
+      m.resolution._tag === 'EditBodyAndStartNewAttempt' ||
       m.resolution._tag === 'AnswerQuestion')
   const continued =
     live &&
     m.then === null &&
     life.status === 'approved' &&
-    (m.resolution._tag === 'GrantFixRound' || m.resolution._tag === 'RerunStep')
+    (m.resolution._tag === 'FixRefusal' || m.resolution._tag === 'RedoStep')
   const body = item.github.last.body
 
   return {
@@ -896,7 +896,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
             note: m.note,
             result: closed ? 'closed' : continued ? 'continued' : 'requeued',
             reason: continued
-              ? m.resolution._tag === 'RerunStep'
+              ? m.resolution._tag === 'RedoStep'
                 ? 'The stopped step runs again on its saved work; no round or restart is spent.'
                 : 'Continued saved work for one additional fix round; build and review run again.'
               : requeued
@@ -904,9 +904,9 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
                 : released
                   ? `${m.then?.reason ?? ''} A new attempt starts from base.`
                   : (m.then?.reason ?? ''),
-            ...(continued && m.resolution._tag === 'GrantFixRound'
+            ...(continued && m.resolution._tag === 'FixRefusal'
               ? { ref: m.resolution.ref, head: m.resolution.onSha }
-              : continued && m.resolution._tag === 'RerunStep'
+              : continued && m.resolution._tag === 'RedoStep'
                 ? { head: m.resolution.onSha }
                 : {}),
           }
@@ -1989,7 +1989,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   if (
     standing.state === 'blocked' &&
     standing.reason !== null &&
-    allowedResolutions(standing.reason).includes('GrantFixRound') &&
+    allowedResolutions(standing.reason).includes('FixRefusal') &&
     standing.runId !== null
   ) {
     const runIndex = claims.findIndex((claim) => claim.runId === standing.runId)
@@ -2021,7 +2021,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   if (
     standing.state === 'blocked' &&
     standing.reason !== null &&
-    allowedResolutions(standing.reason).includes('RerunStep') &&
+    allowedResolutions(standing.reason).includes('RedoStep') &&
     standing.runId !== null
   ) {
     const runIndex = claims.findIndex((claim) => claim.runId === standing.runId)

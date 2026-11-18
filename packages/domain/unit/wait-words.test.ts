@@ -276,9 +276,9 @@ describe('waitWords', () => {
     })
 
     it('recommends a requeue, and leaves a BuildRed with any other because as it was', () => {
-      expect(recommendedResolution(reason, { _tag: 'NotNeeded' })).toBe('Requeue')
+      expect(recommendedResolution(reason, { _tag: 'NotNeeded' })).toBe('StartNewAttempt')
       const other: WaitReason = { ...reason, because: { _tag: 'NotAsked' } } as WaitReason
-      expect(recommendedResolution(other, { _tag: 'NotNeeded' })).not.toBe('Requeue')
+      expect(recommendedResolution(other, { _tag: 'NotNeeded' })).not.toBe('StartNewAttempt')
     })
   })
 

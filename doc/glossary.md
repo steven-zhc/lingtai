@@ -10,7 +10,7 @@ disagree, the code is right and this is corrected.
 | | Continues the saved branch | Cuts a new branch from the base |
 |---|---|---|
 | **The machine** | **fix round** (修复轮) — another `design` or `implement` in the same worktree, carrying what refused it. Code: `FixRefusal` (`packages/domain/src/attempt-next.ts`). Bounded by `runtime.limits.attempt.refusalFixes` (merge conflicts have their own bound, `runtime.limits.attempt.conflictResolutions`). | **restart** (重来) — the ticket is released and claimed again. Code: `Requeued{cause: NewAttempt}` as a `AttemptNext`, `TicketReleased{cause: NewAttempt}` on the log (`packages/domain/src/events.ts`, `packages/conductor/src/conduct.ts`). Bounded by `runtime.limits.ticket.newAttempts`. |
-| **A person** | **GrantFixRound** (批一轮) — one more `implement` on the saved head, then build → review → proposed; ends at a person. Board: *Continue fixing current work*; CLI: `lingtai grant-fix-round` (`apps/cli/src/grant-fix-round.ts`).<br>**Approve** (批准) — no new work; continue past the refusal. Board: *Approve and continue*; CLI: `lingtai approve` (`apps/cli/src/approve.ts`). | **Requeue** (重新排队) — `TicketReleased{cause: ByPerson}`; spends no restart, because only `cause: Restart` is counted. Board: *Start over from base*; CLI: `lingtai requeue` (`apps/cli/src/requeue.ts`).<br>**EditBodyAndRequeue** — write into the body, then requeue. Board: *Add to the ticket and start over*; CLI: `lingtai requeue --into-body`. |
+| **A person** | **FixRefusal** (批一轮) — one more `implement` on the saved head, then build → review → proposed; ends at a person. Board: *Continue fixing current work*; CLI: `lingtai grant-fix-round` (`apps/cli/src/grant-fix-round.ts`).<br>**Approve** (批准) — no new work; continue past the refusal. Board: *Approve and continue*; CLI: `lingtai approve` (`apps/cli/src/approve.ts`). | **StartNewAttempt** (重新排队) — `TicketReleased{cause: ByPerson}`; spends no restart, because only `cause: Restart` is counted. Board: *Start over from base*; CLI: `lingtai requeue` (`apps/cli/src/requeue.ts`).<br>**EditBodyAndStartNewAttempt** — write into the body, then start a new attempt. Board: *Add to the ticket and start over*; CLI: `lingtai requeue --into-body`. |
 
 - **Continuation** (续跑) is the umbrella for every move a person makes in the
   left column: the conductor calls `runPass({ from: … })`, which still starts
@@ -92,7 +92,7 @@ Lingtai is an event log. Everything else is what the log's events add up to.
   projection or a caller's join.
 - **Attempt** (尝试) — one try at changing a ticket: Lingtai claims it and works it
   through the steps once. One attempt is one `pass-…` stream. A continuation
-  (Approve, GrantFixRound) stays in the same attempt; a Requeue or a restart starts
+  (Approve, FixRefusal) stays in the same attempt; a StartNewAttempt or a restart starts
   a new one. Say *attempt*, never *pass* or *run*, for this. Names the log already
   holds stay as they are, because an event never changes: the `pass-` stream prefix,
   the `runId` field (the attempt's stream id) and the `Run…` event names.

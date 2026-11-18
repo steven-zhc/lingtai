@@ -8,7 +8,7 @@ type Picks = { waitId: WaitId | null; answers: Record<number, string> }
 type Draft = { waitId: WaitId | null; text: string }
 type AnswerDraft = Draft & { open: boolean }
 /** The two resolutions whose text a discussion answer can be added to. */
-export type DraftTarget = 'EditBodyAndRequeue' | 'AnswerQuestion'
+export type DraftTarget = 'EditBodyAndStartNewAttempt' | 'AnswerQuestion'
 type TriageDraft = {
   waitId: WaitId | null
   text: string
@@ -40,7 +40,7 @@ export const appendTo = (current: string, addition: string): string =>
  * Split's plan and the fixes list are #563's and are not targets.
  */
 export function draftTarget(recommended: string | null): DraftTarget | null {
-  return recommended === 'EditBodyAndRequeue' || recommended === 'AnswerQuestion' ? recommended : null
+  return recommended === 'EditBodyAndStartNewAttempt' || recommended === 'AnswerQuestion' ? recommended : null
 }
 
 export function TriagePicks({
@@ -86,7 +86,7 @@ export function TriagePicks({
       answer: current.answer === null ? null : { ...current.answer, open: false },
     }))
   const add = (addition: string) => {
-    if (target === 'EditBodyAndRequeue')
+    if (target === 'EditBodyAndStartNewAttempt')
       setDrafts((current) => ({
         ...current,
         body: {

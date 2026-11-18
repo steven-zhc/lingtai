@@ -7,8 +7,9 @@
  */
 import { type Envelope, type EventType, parseStoredPayload } from '@lingtai/domain'
 import type { JudgeReply, RouteDecision, RouteOffer } from '@lingtai/domain'
-import { aClaim, aRelease, aRoute, anAttempt } from '@lingtai/domain/test/events'
+import { aClaim, aRelease, aResolution, aRoute, aWait, aWaitId, anAttempt } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
+import type { Resolution } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
 import { backlogProjection } from '../src/backlog.ts'
@@ -83,7 +84,37 @@ function newLog(): Envelope[] {
     }),
   )
   out.push(...aRelease(third, thirdRun.runId, 'restart', { _tag: 'NewAttempt', newAttempt: 2 }))
+
+  // #1267: a person answers four waits, once with each of the moves whose tag was renamed.
+  const resolutions: Resolution[] = [
+    { _tag: 'FixRefusal', onSha: 'a'.repeat(40), ref: 'agent/9' },
+    { _tag: 'RedoStep', onSha: 'b'.repeat(40), ref: null },
+    { _tag: 'StartNewAttempt' },
+    { _tag: 'EditBodyAndStartNewAttempt' },
+  ]
+  resolutions.forEach((resolution, i) => {
+    const t = makeStream(`ticket-renamed-wait-${i}`)
+    const r = anAttempt(`pass-renamed-wait-${i}`)
+    const waitId = aWaitId()
+    out.push(...aClaim(t, r.runId))
+    out.push(
+      ...aWait(
+        t,
+        { _tag: 'SignoffRequired', run: { runId: r.runId }, step: 'merge', action: 'human', question: 'land it?' },
+        waitId,
+      ),
+    )
+    out.push(...aResolution(t, waitId, resolution))
+  })
   return out
+}
+
+/** What a `WaitResolved` held before the rename: the four tags, written back. */
+const RESOLUTIONS_BACK: Record<string, string> = {
+  FixRefusal: 'GrantFixRound',
+  RedoStep: 'RerunStep',
+  StartNewAttempt: 'Requeue',
+  EditBodyAndStartNewAttempt: 'EditBodyAndRequeue',
 }
 
 const CEILINGS_BACK: Record<string, string> = {
@@ -117,14 +148,21 @@ const OLD_VERSION_TYPES: ReadonlySet<string> = new Set([
   'ProposalRouted',
   'TicketReleased',
   'WaitStarted',
+  'WaitResolved',
 ])
+
+function withOldResolution(data: { resolution: { _tag: string } }): unknown {
+  const { _tag } = data.resolution
+  return { ...data, resolution: { ...data.resolution, _tag: RESOLUTIONS_BACK[_tag] ?? _tag } }
+}
 
 /** The same log as an old store would have held it, read back as today's store reads it. */
 function oldLog(events: readonly Envelope[]): Envelope[] {
   return events.map((e) => {
     const type = (e.type === 'StepRedone' ? 'StepRerunInPlace' : e.type) as EventType
     if (!OLD_VERSION_TYPES.has(e.type) && e.type !== 'StepRedone') return e
-    const stored = unrename(e.data)
+    const stored =
+      e.type === 'WaitResolved' ? withOldResolution(e.data as { resolution: { _tag: string } }) : unrename(e.data)
     const read = OLD_VERSION_TYPES.has(e.type) ? parseStoredPayload(type, 1, stored) : stored
     return { ...e, type, data: read } as Envelope
   })
@@ -157,6 +195,22 @@ describe('a log written under the retired names rebuilds as the same log under t
     const text = JSON.stringify(before, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))
     expect(text).toContain('StepRerunInPlace')
     expect(JSON.stringify(now, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))).not.toContain('StepRerunInPlace')
+  })
+
+  it('holds every renamed resolution, which an old WaitResolved read at version 1 gives back as the new tag', () => {
+    const tags = (log: readonly Envelope[]) =>
+      log
+        .filter((e) => e.type === 'WaitResolved')
+        .map((e) => (e.data as { resolution: { _tag: string } }).resolution._tag)
+    expect(tags(now)).toEqual(['FixRefusal', 'RedoStep', 'StartNewAttempt', 'EditBodyAndStartNewAttempt'])
+    expect(tags(before)).toEqual(tags(now))
+    expect(
+      parseStoredPayload(
+        'WaitResolved',
+        1,
+        withOldResolution(now.find((e) => e.type === 'WaitResolved')!.data as never),
+      ),
+    ).toEqual(now.find((e) => e.type === 'WaitResolved')!.data)
   })
 
   it.each([

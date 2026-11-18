@@ -145,7 +145,7 @@ describe('readers over a ticket snapshot planted below the head', () => {
           ticketId: second.ticketId,
           issue: 5,
           waitId: 'open' as never,
-          resolution: { _tag: 'Requeue' },
+          resolution: { _tag: 'StartNewAttempt' },
           by: 'human:s',
           note: '',
           store: second.store,

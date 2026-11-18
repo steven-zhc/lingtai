@@ -213,12 +213,12 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
   /**
    * **The gate `#464` could silently drop.** `approveHolding`'s #150 guard
    * reads `item.lifecycle.status !== 'blocked'` off the reducer — if a
-   * `Requeue` resolution stopped leaving a requeued item off `blocked`,
+   * `StartNewAttempt` resolution stopped leaving a requeued item off `blocked`,
    * this would start passing where it must refuse, and `lingtai approve`
    * would merge a held diff onto an item a new run has already claimed. So
    * the item is actually blocked here — `aWait` appends the `WorkItemBlocked`
    * a real signoff request writes — and then actually requeued, through
-   * `aResolution(item, { _tag: 'Requeue' })`, before `approveHolding` is
+   * `aResolution(item, { _tag: 'StartNewAttempt' })`, before `approveHolding` is
    * asked for the same run: an item that was simply never held would refuse
    * for the same reason and prove nothing about the requeue.
    */
@@ -243,7 +243,7 @@ describe("approve — apps/cli/src/approve.ts's shape: no onSha", () => {
       ),
     ])
     await seed(store, 'pass-114', run.aStepEnded({ step: 'proposed', round: 0, actions: [approvalRequested(SHA)] }))
-    await seed(store, ticketId, aResolution(item, waitId, { _tag: 'Requeue' }))
+    await seed(store, ticketId, aResolution(item, waitId, { _tag: 'StartNewAttempt' }))
 
     const result = await approveHolding(
       { project: PROJECT, issue: 114, by: 'human:steven', waitId: 'open', client: fakeClient(SHA), store },

@@ -138,7 +138,7 @@ describe('every way `waiting` is cleared clears wait_id and wait_reason with it'
     const waitId = aWaitId()
     const events = [
       ...aWait(stream, { _tag: 'OwnQuestion', question: 'which registry?', by: 'steven' }, waitId),
-      ...aResolution(stream, waitId, { _tag: 'Requeue' }),
+      ...aResolution(stream, waitId, { _tag: 'StartNewAttempt' }),
     ]
     await withFold(events, async (store) => {
       const row = await rowOf(store, 'ticket-wait-440-requeue')
@@ -269,7 +269,7 @@ it('Requeue of an OwnQuestion preserves the previous answer', async () => {
     ...aWait(stream, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }, answeredId),
     ...aResolution(stream, answeredId, { _tag: 'AnswerQuestion', choice: 'main' }),
     ...aWait(stream, { _tag: 'OwnQuestion', question: 'still needed?', by: 'steven' }, withdrawnId),
-    ...aResolution(stream, withdrawnId, { _tag: 'Requeue' }),
+    ...aResolution(stream, withdrawnId, { _tag: 'StartNewAttempt' }),
   ]
   await withFold(events, async (store) => {
     const row = await rowOf(store, 'ticket-wait-522-answer')
@@ -300,7 +300,7 @@ describe('a TicketSplit puts the children on the parent, in a column of their ow
     const events = [
       ...aWait(stream, { _tag: 'OwnQuestion', question: 'split it?', by: 'steven' }, waitId),
       ...aSplit(stream, waitId, [161, 162]),
-      ...aResolution(stream, waitId, { _tag: 'Requeue' }),
+      ...aResolution(stream, waitId, { _tag: 'StartNewAttempt' }),
     ]
     await withFold(events, async (store) => {
       const card = await cardOf(store)

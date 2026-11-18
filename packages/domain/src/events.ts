@@ -637,7 +637,7 @@ export const RunStarted = z.object({
  * in `packages/recipe/src/recipe.ts` refuses a recipe that would break that.
  *
  * `Action.grant` names the person's decision that paid for the round — the
- * `waitId` of the `WaitResolved{GrantFixRound}` it spent. It is absent on every automatic round, and
+ * `waitId` of the `WaitResolved{FixRefusal}` it spent. It is absent on every automatic round, and
  * optional so a payload written before it existed still parses.
  */
 export const SpentFor = z.discriminatedUnion('_tag', [
@@ -2919,6 +2919,9 @@ const BUMPED: Partial<Record<EventType, number>> = {
   WaitStarted: 2,
   // 2: `arm` became `ref`, which names `agent/<n>` for a new row (0108 §20, #1243). See the upcaster.
   RunKeptUncommitted: 2,
+  // 2: a resolution's four tags are named for the moves they ask for: `FixRefusal`, `RedoStep`, `StartNewAttempt` and
+  // `EditBodyAndStartNewAttempt` (0108, #1267). See the upcaster.
+  WaitResolved: 2,
 }
 
 export const SCHEMA_VER: Record<EventType, number> = Object.fromEntries(

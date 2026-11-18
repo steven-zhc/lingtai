@@ -30,8 +30,8 @@ describe('TicketState.waits', () => {
 
   it('the first WaitResolved is the resolution', () => {
     const w = reduceTicket(triaged).waits[0]!
-    expect(w.resolution).toEqual({ resolution: { _tag: 'Requeue' }, by: 'steven' })
-    expect(waitsOf(triaged)[0]!.resolution).toEqual({ _tag: 'Requeue' })
+    expect(w.resolution).toEqual({ resolution: { _tag: 'StartNewAttempt' }, by: 'steven' })
+    expect(waitsOf(triaged)[0]!.resolution).toEqual({ _tag: 'StartNewAttempt' })
   })
 
   it('a wait after a close is listed', () => {

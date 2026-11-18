@@ -97,7 +97,7 @@ events.push(
     humanWaitId,
   ),
 )
-events.push(...aResolution(human, humanWaitId, { _tag: 'Requeue' }))
+events.push(...aResolution(human, humanWaitId, { _tag: 'StartNewAttempt' }))
 
 // ---- row 4: a fix round's implement disagreed with the reviewer -----------
 const declined = makeStream('ticket-pin-declined')
@@ -540,7 +540,7 @@ events.push(
   ),
 )
 const whileRequeueWaits = events.length
-events.push(...aResolution(requeueOfRunWaitStream, requeueOfRunWaitId, { _tag: 'Requeue' }))
+events.push(...aResolution(requeueOfRunWaitStream, requeueOfRunWaitId, { _tag: 'StartNewAttempt' }))
 events.push(
   ...aRelease(requeueOfRunWaitStream, requeueOfRunWaitRun.runId, 'Requeued by steven.', {
     _tag: 'ByPerson',
