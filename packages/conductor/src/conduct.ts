@@ -2572,13 +2572,34 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         Effect.gen(function* () {
           for (const entry of wips) {
             if (entry.sha !== null) continue
-            const listed = yield* gitAskedEffect(['rev-list', '--reverse', '--ancestry-path', `${entry.parent}..HEAD`])
-            const first = Result.isSuccess(listed) ? (listed.success.split('\n')[0]?.trim() ?? '') : ''
+            // The WIP is the commit made directly on `parent` whose subject is the WIP's own — not
+            // merely the first one above it, which a later merge of an advanced base also is.
+            const listed = yield* gitAskedEffect([
+              'log',
+              '--reverse',
+              '--ancestry-path',
+              '--format=%H %P%x09%s',
+              `${entry.parent}..HEAD`,
+            ])
+            const taken = new Set(wips.map((w) => w.sha))
+            const first = Result.isSuccess(listed)
+              ? (listed.success
+                  .split('\n')
+                  .map((line) => line.split('\t'))
+                  .map(([ids = '', subject = '']) => ({ ids: ids.trim().split(/\s+/), subject }))
+                  .find(
+                    (c) =>
+                      c.ids.length === 2 &&
+                      c.ids[1] === entry.parent &&
+                      c.subject.startsWith(WIP_COMMIT_PREFIX) &&
+                      !taken.has(c.ids[0]!),
+                  )?.ids[0] ?? '')
+              : ''
             if (first !== '') {
               entry.sha = first
               continue
             }
-            const why = Result.isFailure(listed) ? listed.failure.detail : 'no commit above its parent'
+            const why = Result.isFailure(listed) ? listed.failure.detail : 'no WIP commit directly above its parent'
             const note = `the kept tree's sha could not be resolved — ${why}`
             wipFailure = wipFailure === null ? note : `${wipFailure}; ${note}`
             runLog.note('push', note)
@@ -2634,7 +2655,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /** `ref` is where the commits are: `branch`, or the arm alone when `agent/<n>` was refused. */
       const noteAllKept = (ref: string): Effect.Effect<void> =>
         Effect.gen(function* () {
-          for (const entry of wips) yield* noteKept(entry, ref)
+          yield* resolveWipShas()
+          for (const entry of wips) {
+            // A row names a sha the remote holds: one the pushed history does not contain (a WIP a
+            // rerun amended away) is never recorded, whatever local objects remain.
+            if (entry.sha === null || notedKept.has(entry.sha)) continue
+            const inside = yield* gitAskedEffect(['merge-base', '--is-ancestor', entry.sha, 'HEAD'])
+            if (Result.isFailure(inside)) {
+              runLog.note(
+                'push',
+                `${entry.sha.slice(0, 7)} is not in the history pushed to ${ref}, so it is not recorded`,
+              )
+              continue
+            }
+            yield* noteKept(entry, ref)
+          }
         })
 
       /**
@@ -5824,6 +5859,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               runLog.note('push', `${ref} was not dropped on landing — ${dropped.failure.detail}`)
           }
         })
+        // The publish is skipped on a landing, so a WIP the landed branch carries is accounted for here.
+        yield* noteAllKept(branch)
         didLand = true
         return { ok: true, ticketId, runId, mergeCommit: merged, summary: summaryOf() } satisfies RunOnceResult
       }

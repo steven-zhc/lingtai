@@ -421,7 +421,7 @@ function keptWorkLines(
   return [
     '',
     `**The worktree already holds ${carried.applied.length} file(s) of ${alongside ? 'those' : "the stopped run's"} edits**, applied`,
-    `uncommitted from \`${kept.ref}\` at \`${short}\`. They were never built or reviewed: commit them as`,
+    `uncommitted from \`${kept.ref}\` at \`${short}\`. They are the conductor's own safety net, not a verdict about the code: commit them as`,
     'the work stands, or change them first.',
     ...(carried.leftOut.length === 0
       ? []
@@ -495,8 +495,8 @@ export function attemptBrief(
       lines.push(
         `Nothing of its own, but it stopped (${kept.stoppedBy}) with ${kept.files} file(s) of`,
         `uncommitted edits, +${kept.insertions} −${kept.deletions}, kept as \`${kept.sha.slice(0, 7)}\` on`,
-        `\`${kept.ref}\`. **That commit was never built or reviewed** — it is this file's own`,
-        'safety net, not a verdict about the code.',
+        `\`${kept.ref}\`. **That commit is the conductor's own safety net** — made when the`,
+        'agent stopped, not a verdict about the code.',
         '',
         ...keptWorkLines(kept, carried, false),
       )
@@ -514,7 +514,7 @@ export function attemptBrief(
       lines.push(
         '',
         `It then stopped (${kept.stoppedBy}) with ${kept.files} more file(s) of uncommitted edits, kept`,
-        `as \`${kept.sha.slice(0, 7)}\` on \`${kept.ref}\` — also never built or reviewed.`,
+        `as \`${kept.sha.slice(0, 7)}\` on \`${kept.ref}\` — the conductor's own safety net, made when it stopped.`,
         ...keptWorkLines(kept, carried, true),
       )
     }

@@ -876,10 +876,10 @@ describe('when the agent meets the wall', () => {
               return ''
             })
           }
-          if (args[0] === 'rev-list') {
+          if (args[0] === 'log') {
             return Effect.sync(() => {
               did.push('git rev-list')
-              return `${WIP_SHA}\n`
+              return `${WIP_SHA} ${'b'.repeat(40)}\twip: run-x stopped by out-of-turns\n`
             })
           }
           return inner(args, o)
