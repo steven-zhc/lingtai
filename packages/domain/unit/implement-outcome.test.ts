@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { StepOutcome } from '../src/action.ts'
+import { Action, cleared, type StepOutcome } from '../src/action.ts'
 import { nextOf } from '../src/attempt-next.ts'
 import { SpentFor } from '../src/events.ts'
 import { ImplementOutcome, decideImplementOutcome, parseImplementOutcome, type Declared } from '../src/index.ts'
@@ -124,7 +124,19 @@ describe('what the log already holds', () => {
     expect(JudgeWhen.safeParse('nothing-produced').success).toBe(false)
     expect(WaitReason.parse({ _tag: 'NothingProduced', run: { runId: 'r' }, said: null })._tag).toBe('NothingProduced')
   })
-  it('a stored Completed with no outcome decodes', () => {
+  it('a stored Completed with no outcome decodes, and a legacy question still reads as asked', () => {
+    const row = (result: object) => ({
+      name: 'a',
+      plugin: 'agent',
+      onSha: 'o',
+      yields: 'commit',
+      evidence: '',
+      result: { _tag: 'Completed', ...result },
+    })
+    const legacy = Action.parse(row({ head: 'h', question: null }))
+    expect(legacy.yields === 'commit' && legacy.result._tag === 'Completed' && legacy.result.outcome).toBeFalsy()
+    expect(cleared(legacy)).toBe(true)
+    expect(cleared(Action.parse(row({ head: null, question: 'which?' })))).toBe(false)
     expect(ImplementOutcome.safeParse({ _tag: 'AgentFailed' }).success).toBe(true)
   })
 })

@@ -1637,8 +1637,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
               durationMs: 10,
               costUsd: 0.1,
               failure: null,
-              // The rerun objects, by declaring it (#1250): it commits nothing and is not redone.
-              text: '```outcome\n{"outcome": "Disputed", "findings": [{"index": 1, "why": "not this diff"}]}\n```',
+              // A's rerun and B both say they are done (#1250); only A's moved the head.
+              text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
               sessionId: 'sess-fix',
             })
       },

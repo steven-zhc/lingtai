@@ -5338,6 +5338,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // **What the fixer declared decides, and the head only corrects it** (#1250), for a run that
           // ended normally. One cut off keeps the cells above: `interrupted` names the runtime's cause.
           const roundStart = brief.context.redo?.startedAt ?? brief.context.onSha
+          // **A fixer that committed and then met its budget or its wall is cut off too** (#1250): the
+          // commit is not the end of the round, and `interrupted` names the runtime's cause, so the
+          // abnormal-ending cell decides (`interruptedAs`) rather than a success the agent never declared.
+          const cutOffByBudget =
+            fixed.failure?.kind === 'out-of-turns' ||
+            fixed.failure?.kind === 'out-of-usd' ||
+            fixed.failure?.kind === 'timeout'
           const decidedFix = !fixed.failure
             ? decideImplementOutcome({
                 declared: parseImplementOutcome(fixed.text),
@@ -5351,6 +5358,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             !committed ||
             cutOffTransient ||
             cutOffByWall ||
+            cutOffByBudget ||
             (decidedFix !== null && decidedFix._tag !== 'Implemented')
           ) {
             // A decline judged the findings or the refusal rather than being cut

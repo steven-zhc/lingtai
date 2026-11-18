@@ -630,6 +630,16 @@ When you did fix it, end with:
 
 \`\`\`outcome
 {"outcome": "Implemented"}
+\`\`\`
+
+When you cannot proceed without a person's decision — a choice only they can make,
+such as a permission or a retention rule — do not ask in prose: declare \`Unclear\`
+with one to five questions, each with two to four answers and the one you
+recommend. Keep what you committed; a person answers and the work continues from it.
+Prose that is not this block is a run that did not finish, and it is redone.
+
+\`\`\`outcome
+{"outcome": "Unclear", "questions": [{"id": "q1", "text": "<the question>", "answers": [{"id": "a", "text": "<option>"}, {"id": "b", "text": "<option>"}], "recommended": "a"}]}
 \`\`\``,
   ]
 }
