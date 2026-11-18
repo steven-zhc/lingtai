@@ -225,10 +225,10 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'ProposalRouted' as const,",
   },
   {
-    event: 'StepRerunInPlace',
+    event: 'StepRedone',
     why: 'the walk emits it through the pass-level `emit`, which appends the type it is handed',
     file: 'packages/conductor/src/run-attempt.ts',
-    anchor: "type: 'StepRerunInPlace',",
+    anchor: "type: 'StepRedone',",
   },
   {
     event: 'ProjectRecovered',
@@ -401,6 +401,7 @@ export const STREAMS = {
   PassRouted: ['pass-'],
   ProposalRouted: ['pass-'],
   StepRerunInPlace: ['pass-'],
+  StepRedone: ['pass-'],
   ConductorPaused: ['ctl-'],
   ConductorResumed: ['ctl-'],
   DayCeilingReached: ['ctl-'],

@@ -65,6 +65,16 @@ describe('in memory: what is not in the contract', () => {
 })
 
 describe('in memory: what is retired', () => {
+  it('refuses StepRerunInPlace, which StepRedone replaced (#1241), and takes StepRedone', async () => {
+    const s = createMemoryEventStore()
+    const redo = { runId: 'pass-1', step: 'implement', rerun: 1, said: 'API Error: 503', waitMs: 60_000 }
+    await expect(
+      s.append('pass-r-1', 0, [{ type: 'StepRerunInPlace', actor: 'conductor', data: redo }]),
+    ).rejects.toBeInstanceOf(RetiredEventTypeError)
+    await s.append('pass-r-1', 0, [{ type: 'StepRedone', actor: 'conductor', data: redo }])
+    expect(s.all().map((e) => e.type)).toEqual(['StepRedone'])
+  })
+
   it('refuses TicketLinked, whose writer is gone, and still takes TicketDiscovered, which the bootstrap appends', async () => {
     const s = createMemoryEventStore()
     await expect(

@@ -5093,7 +5093,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * that refused, and a command's own output for everything else.
        *
        * **`FixRequested` is gone (#502): the route that bought this round
-       * already said so.** `PassRouted{next: {_tag: 'FixRound', round}}` is
+       * already said so.** `PassRouted{next: {_tag: 'FixRefusal', round}}` is
        * appended by `routeProposal` before this is ever called, and carries
        * `from`/`round` already — a second event naming the same decision
        * would be the round's own fact told twice.
@@ -5768,7 +5768,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       /** How many rounds the pass actually bought — a route back into the spine. */
       const roundsSpent = pass.routes.filter((route) => route.to !== 'waiting' && route.to !== 'claim').length
       /** Whether `pass.end` is the one `Requeued` cause a route spends — the rest of the requeued section's own test. */
-      const restarted = pass.end._tag === 'Requeued' && pass.end.cause._tag === 'Restart'
+      const restarted = pass.end._tag === 'Requeued' && pass.end.cause._tag === 'NewAttempt'
 
       /**
        * **The `run` every `WaitReason` carries, patched on here** — the one
@@ -5974,7 +5974,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // `ticket.ts`'s own header on `RestartRecord`).
         log(`starting over — restart ${restart} of ${ceiling.ticket.newAttempts}`)
         runLog.note('restart', reason)
-        yield* release(reason, { _tag: 'Restart', restart })
+        yield* release(reason, { _tag: 'NewAttempt', newAttempt: restart })
         return {
           ok: false,
           ticketId,
@@ -6003,7 +6003,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const why = `the saved head cannot be continued (${headGone}) — restart ${restart} of ${ceiling.ticket.newAttempts}`
           log(why)
           runLog.note('restart', why)
-          yield* release(why, { _tag: 'Restart', restart })
+          yield* release(why, { _tag: 'NewAttempt', newAttempt: restart })
           return {
             ok: false,
             ticketId,

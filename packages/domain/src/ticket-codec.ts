@@ -169,7 +169,8 @@ export function decodeTicket(stored: unknown, projection: string, subject?: stri
 /** The ticket reduce as a snapshottable reducer (0124 §1). A snapshot is discarded, not rebuilt, so no remedy is named. */
 export const ticketReducer: Reducer<TicketState> = {
   name: 'ticket',
-  version: 2,
+  // 3: a release's `NewAttempt{newAttempt}` replaces `Restart{restart}`, and a wait's ceiling names its bound (#1241); a version-2 snapshot holds the old tags.
+  version: 3,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

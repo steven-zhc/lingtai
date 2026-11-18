@@ -98,9 +98,9 @@ const MECHANICAL_WANTS: Record<BuiltInJudge, Destination> = {
 export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal: Proposal): Destination {
   if ('next' in candidate) {
     switch (candidate.next._tag) {
-      case 'FixRound':
+      case 'FixRefusal':
         return candidate.next.to
-      case 'MergeBase':
+      case 'MergeBaseBranch':
         return 'build'
       case 'LandAgain':
         return 'merge'

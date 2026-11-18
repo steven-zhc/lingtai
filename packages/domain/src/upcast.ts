@@ -50,6 +50,63 @@ export type UpcastRegistry = Partial<Record<EventType, Record<number, Upcaster>>
  * in language that history never used.
  */
 
+type Json = Record<string, unknown>
+const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null
+
+/** `#1241`: a candidate's or a route's `next`, in the tags 0108 retired. Anything else is returned as it came. */
+function renameNext(next: unknown): unknown {
+  if (!isObj(next)) return next
+  if (next._tag === 'FixRound') return { ...next, _tag: 'FixRefusal' }
+  if (next._tag === 'MergeBase') return { ...next, _tag: 'MergeBaseBranch' }
+  if (next._tag === 'Requeued') return { ...next, cause: renameCause(next.cause) }
+  return next
+}
+
+/** `#1241`: `Restart{restart}` is `NewAttempt{newAttempt}`. */
+function renameCause(cause: unknown): unknown {
+  if (!isObj(cause) || cause._tag !== 'Restart') return cause
+  const { restart, ...rest } = cause
+  return { ...rest, _tag: 'NewAttempt', newAttempt: restart }
+}
+
+const CEILINGS: Record<string, string> = {
+  rounds: 'refusalFixes',
+  'conflict-rounds': 'conflictResolutions',
+  restarts: 'newAttempts',
+  'base-merges': 'baseBranchMerges',
+}
+
+/** `#1241`: an `ExcludedCandidate`, whose `CeilingReached` names its bound as the recipe does. */
+function renameExcluded(excluded: unknown): unknown {
+  if (!isObj(excluded) || !isObj(excluded.because) || excluded.because._tag !== 'CeilingReached') return excluded
+  const c = excluded.because.ceiling
+  const to = typeof c === 'string' ? CEILINGS[c] : undefined
+  return to === undefined ? excluded : { ...excluded, because: { ...excluded.because, ceiling: to } }
+}
+
+/** `#1241`: the `CandidateUnavailable` a `RouteEscalation` (a decision's, or a wait's) may carry. */
+function renameEscalation(because: unknown): unknown {
+  return isObj(because) && because._tag === 'CandidateUnavailable'
+    ? { ...because, excluded: renameExcluded(because.excluded) }
+    : because
+}
+
+/** `ProposalRouted` and `PassRouted` 1 → 2: the offer's nexts and ceilings, and an escalated decision's. */
+const routeRenamed: Upcaster = (data) => {
+  if (!isObj(data)) return data
+  const out: Json = { ...data }
+  if (isObj(data.offer)) {
+    const offer: Json = { ...data.offer }
+    if (Array.isArray(offer.available))
+      offer.available = offer.available.map((c: unknown) => (isObj(c) ? { ...c, next: renameNext(c.next) } : c))
+    if (Array.isArray(offer.unavailable)) offer.unavailable = offer.unavailable.map(renameExcluded)
+    out.offer = offer
+  }
+  if (isObj(data.decision) && data.decision._tag === 'Escalated')
+    out.decision = { ...data.decision, because: renameEscalation(data.decision.because) }
+  return out
+}
+
 /**
  * Add a step here in the same commit that bumps that type's `SCHEMA_VER`, never
  * separately.
@@ -81,6 +138,19 @@ export const UPCASTERS: UpcastRegistry = {
      * GitHub", which is exactly what those runs did.
      */
     2: (data) => ({ ...(data as object), base: null }),
+  },
+  TicketReleased: {
+    /** 1 → 2: `cause: Restart{restart}` is `NewAttempt{newAttempt}` (#1241). A release with no cause stays without one. */
+    1: (data) => (isObj(data) && data.cause !== undefined ? { ...data, cause: renameCause(data.cause) } : data),
+  },
+  ProposalRouted: { 1: routeRenamed },
+  PassRouted: { 1: routeRenamed },
+  WaitStarted: {
+    /** 1 → 2: a `ProposedEscalated` whose excluded candidate hit a ceiling names the ceiling by its bound (#1241). */
+    1: (data) => {
+      if (!isObj(data) || !isObj(data.reason) || data.reason._tag !== 'ProposedEscalated') return data
+      return { ...data, reason: { ...data.reason, because: renameEscalation(data.reason.because) } }
+    },
   },
   WaitTriaged: {
     /**

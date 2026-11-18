@@ -133,7 +133,7 @@ describe('offerFor: zero spent', () => {
     expect(offerFor(inputNeededDesign, policy, zero)).toEqual({
       proposal: inputNeededDesign,
       available: [
-        { id: 'state-assumption', next: { _tag: 'FixRound', to: 'design', round: 1 } },
+        { id: 'state-assumption', next: { _tag: 'FixRefusal', to: 'design', round: 1 } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -144,7 +144,7 @@ describe('offerFor: zero spent', () => {
     expect(offerFor(inputNeededImplement, policy, zero)).toEqual({
       proposal: inputNeededImplement,
       available: [
-        { id: 'state-assumption', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'state-assumption', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -155,7 +155,7 @@ describe('offerFor: zero spent', () => {
     expect(offerFor(buildRed, policy, zero)).toEqual({
       proposal: buildRed,
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -174,7 +174,7 @@ describe('offerFor: zero spent', () => {
     expect(offerFor(verifyRed, policy, zero)).toEqual({
       proposal: verifyRed,
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -193,7 +193,7 @@ describe('offerFor: zero spent', () => {
     expect(offerFor(mergeConflict, policy, zero)).toEqual({
       proposal: mergeConflict,
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 0, conflict: 1 } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 0, conflict: 1 } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -204,8 +204,8 @@ describe('offerFor: zero spent', () => {
     expect(offerFor(reviewFindings, policy, zero)).toEqual({
       proposal: reviewFindings,
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -248,7 +248,7 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(offerFor(setupRefusedAtPrepared, policy, zero)).toEqual({
       proposal: setupRefusedAtPrepared,
       available: [
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -270,8 +270,8 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(offerFor(checkRefused, policy, zero)).toEqual({
       proposal: checkRefused,
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -294,7 +294,7 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
       proposal: answerUnreadableAtDesign,
       available: [
         { id: 'ask-again', next: { _tag: 'RerunStep', step: 'design', retry: 1 } },
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -306,8 +306,8 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
       proposal: answerUnreadableAtReview,
       available: [
         { id: 'ask-again', next: { _tag: 'RerunStep', step: 'review', retry: 1 } },
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -365,7 +365,7 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(offerFor(nothingProduced, policy, zero)).toEqual({
       proposal: nothingProduced,
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [{ id: 'restart', because: { _tag: 'NoCriterion' } }],
@@ -387,7 +387,7 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(offerFor(fixerDisagrees, policy, zero)).toEqual({
       proposal: fixerDisagrees,
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [{ id: 'restart', because: { _tag: 'NoCriterion' } }],
@@ -411,8 +411,8 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(offerFor(mergeRefused, policy, zero)).toEqual({
       proposal: mergeRefused,
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -434,8 +434,8 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(offerFor(budgetExhaustedAtImplement, policy, zero)).toEqual({
       proposal: budgetExhaustedAtImplement,
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -446,7 +446,7 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(offerFor(budgetExhaustedAtDesign, policy, zero)).toEqual({
       proposal: budgetExhaustedAtDesign,
       available: [
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
       unavailable: [],
@@ -458,10 +458,10 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(offerFor(mergeRefused, policy, atRestarts)).toEqual({
       proposal: mergeRefused,
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
-      unavailable: [{ id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } }],
+      unavailable: [{ id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'newAttempts' } }],
     })
   })
 })
@@ -473,7 +473,7 @@ describe('offerFor: at the rounds ceiling', () => {
     expect(offerFor(inputNeededDesign, policy, atRounds)).toEqual({
       proposal: inputNeededDesign,
       available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
-      unavailable: [{ id: 'state-assumption', because: { _tag: 'CeilingReached', ceiling: 'rounds' } }],
+      unavailable: [{ id: 'state-assumption', because: { _tag: 'CeilingReached', ceiling: 'refusalFixes' } }],
     })
   })
 
@@ -481,7 +481,7 @@ describe('offerFor: at the rounds ceiling', () => {
     expect(offerFor(buildRed, policy, atRounds)).toEqual({
       proposal: buildRed,
       available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
-      unavailable: [{ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'rounds' } }],
+      unavailable: [{ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'refusalFixes' } }],
     })
   })
 
@@ -489,10 +489,10 @@ describe('offerFor: at the rounds ceiling', () => {
     expect(offerFor(reviewFindings, policy, atRounds)).toEqual({
       proposal: reviewFindings,
       available: [
-        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } },
+        { id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
-      unavailable: [{ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'rounds' } }],
+      unavailable: [{ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'refusalFixes' } }],
     })
   })
 
@@ -508,10 +508,10 @@ describe('offerFor: at the restarts ceiling', () => {
     expect(offerFor(reviewFindings, policy, atRestarts)).toEqual({
       proposal: reviewFindings,
       available: [
-        { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: 1 } },
+        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
         { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
       ],
-      unavailable: [{ id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } }],
+      unavailable: [{ id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'newAttempts' } }],
     })
   })
 
@@ -528,8 +528,8 @@ describe('offerFor: at both ceilings', () => {
       proposal: reviewFindings,
       available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
       unavailable: [
-        { id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'rounds' } },
-        { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } },
+        { id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'refusalFixes' } },
+        { id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'newAttempts' } },
       ],
     })
   })
@@ -626,14 +626,17 @@ describe('routeNext', () => {
     const offer = offerFor(buildRed, policy, { rounds: 1, restarts: 0 })
     const decision: RouteDecision = { _tag: 'Selected', candidate: 'fix-lines' }
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'fix-lines', why: 'line is wrong' }
-    expect(routeNext(offer, reply, decision, run)).toEqual({ _tag: 'FixRound', to: 'implement', round: 2 })
+    expect(routeNext(offer, reply, decision, run)).toEqual({ _tag: 'FixRefusal', to: 'implement', round: 2 })
   })
 
   it('Selected restart: returns the stored Requeued{Restart} exactly', () => {
     const offer = offerFor(reviewFindings, policy, { rounds: 0, restarts: 0 })
     const decision: RouteDecision = { _tag: 'Selected', candidate: 'restart' }
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'restart', why: 'approach is wrong' }
-    expect(routeNext(offer, reply, decision, run)).toEqual({ _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } })
+    expect(routeNext(offer, reply, decision, run)).toEqual({
+      _tag: 'Requeued',
+      cause: { _tag: 'NewAttempt', newAttempt: 1 },
+    })
   })
 
   it('Selected hand-to-person: WaitOnPerson{ProposedEscalated{because: JudgeHandedOver{why}}}', () => {
@@ -734,7 +737,7 @@ describe('offerFor: a base that moved on the branch’s own files (#593)', () =>
   const baseMoved: Proposal = { _tag: 'BaseMoved', paths: ['a.ts'], fromSha: 'fork-1', toSha: 'base-1' }
   const mergeBase = (merge: number): Candidate => ({
     id: 'merge-base',
-    next: { _tag: 'MergeBase', toSha: 'base-1', merge },
+    next: { _tag: 'MergeBaseBranch', toSha: 'base-1', merge },
   })
   const person: Candidate = { id: 'hand-to-person', next: { _tag: 'HandToPerson' } }
 
@@ -757,7 +760,7 @@ describe('offerFor: a base that moved on the branch’s own files (#593)', () =>
     expect(offerFor(baseMoved, policy, { rounds: 0, restarts: 0, baseMerges: 10 })).toEqual({
       proposal: baseMoved,
       available: [person],
-      unavailable: [{ id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } }],
+      unavailable: [{ id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'baseBranchMerges' } }],
     })
   })
 
@@ -782,7 +785,7 @@ describe('offerFor: a base that moved on the branch’s own files (#593)', () =>
     const offer = offerFor(baseMoved, policy, { rounds: 0, restarts: 0 })
     const reply: JudgeReply = { _tag: 'Selected', candidate: 'merge-base', why: 'free' }
     expect(routeNext(offer, reply, decideRoute(offer, reply), run)).toEqual({
-      _tag: 'MergeBase',
+      _tag: 'MergeBaseBranch',
       toSha: 'base-1',
       merge: 1,
     })
@@ -797,7 +800,7 @@ describe('offerFor: a merge conflict buys its own round (#653)', () => {
       { rounds: 4, restarts: 0 },
     )
     expect(offer.available.find((c) => c.id === 'fix-lines')?.next).toEqual({
-      _tag: 'FixRound',
+      _tag: 'FixRefusal',
       to: 'implement',
       round: 4,
       conflict: 1,
@@ -822,7 +825,7 @@ describe('offerFor: a merge conflict buys its own round (#653)', () => {
     expect(offer.available.some((c) => c.id === 'fix-lines')).toBe(false)
     expect(offer.unavailable).toContainEqual({
       id: 'fix-lines',
-      because: { _tag: 'CeilingReached', ceiling: 'conflict-rounds' },
+      because: { _tag: 'CeilingReached', ceiling: 'conflictResolutions' },
     })
   })
 
@@ -856,7 +859,7 @@ describe('offerFor: a merge conflict buys its own round (#653)', () => {
     expect(offer.available.some((c) => c.id === 'fix-lines')).toBe(false)
     expect(offer.unavailable).toContainEqual({
       id: 'fix-lines',
-      because: { _tag: 'CeilingReached', ceiling: 'rounds' },
+      because: { _tag: 'CeilingReached', ceiling: 'refusalFixes' },
     })
   })
 })

@@ -313,7 +313,7 @@ export function boardFactOf(event: Envelope, endedAt: (version: number) => StepO
       const d = event.data as PayloadOf<'PassRouted'> | PayloadOf<'ProposalRouted'>
       const next = routeMove(d.offer, d.reply, d.decision)
       const facts: BoardFact[] = []
-      if (next._tag === 'FixRound') {
+      if (next._tag === 'FixRefusal') {
         const resolved = resolveOffer(d.offer, endedAt)
         if (resolved._tag === 'Unresolved') {
           facts.push({
@@ -333,12 +333,12 @@ export function boardFactOf(event: Envelope, endedAt: (version: number) => StepO
           })
         }
       }
-      if (next._tag === 'Requeued' && next.cause._tag === 'Restart') {
+      if (next._tag === 'Requeued' && next.cause._tag === 'NewAttempt') {
         const resolved = resolveOffer(d.offer, endedAt)
         facts.push(
           resolved._tag === 'Unresolved'
-            ? { _tag: 'Restarted', restart: next.cause.restart, evidenceUnknown: { version: resolved.version } }
-            : { _tag: 'Restarted', restart: next.cause.restart },
+            ? { _tag: 'Restarted', restart: next.cause.newAttempt, evidenceUnknown: { version: resolved.version } }
+            : { _tag: 'Restarted', restart: next.cause.newAttempt },
         )
       }
       return facts

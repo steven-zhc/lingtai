@@ -809,7 +809,7 @@ describe('every step that does not pass arrives at proposed', () => {
         from: 'build',
         chose: 'waiting',
         to: 'waiting',
-        why: 'nothing but a person was on offer (`fix-lines` — `rounds` is spent)',
+        why: 'nothing but a person was on offer (`fix-lines` — `refusalFixes` is spent)',
         ceiling: null,
       },
     ])
@@ -1675,7 +1675,7 @@ describe('a granted fix round', () => {
         judge: async () => ({ next: 'claim', named: 'test', why: 'restart it' }),
       })
 
-      expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
+      expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'NewAttempt' } })
     })
 
     it('still restarts an ungranted pass with the same proposal', async () => {
@@ -1691,7 +1691,7 @@ describe('a granted fix round', () => {
         judge: async () => ({ next: 'claim', named: 'test', why: 'restart it' }),
       })
 
-      expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
+      expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'NewAttempt' } })
     })
   })
 })
@@ -1964,7 +1964,7 @@ describe('a route back into the spine resumes there, and the loop is bounded', (
       judge: async () => ({ next: 'claim', named: 'test', why: 'because a test said so' }),
     })
 
-    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
+    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'NewAttempt' } })
     // `toMatchObject`, not `toEqual` — see the sibling pin above.
     expect(result.routes).toMatchObject([
       { from: 'proposed', chose: 'claim', to: 'claim', why: 'because a test said so', ceiling: null },
@@ -2753,7 +2753,7 @@ describe('end is told which of the four endings it is running for', () => {
     ).toBe('blocked')
     expect(outcomeOf({ _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope: 'conductor' } })).toBe('failed')
     // A restart releases the item too, for the opposite reason (0040).
-    expect(outcomeOf({ _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } })).toBe('failed')
+    expect(outcomeOf({ _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } })).toBe('failed')
   })
 })
 
@@ -3095,7 +3095,7 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
 
     const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    const reruns = seen.filter((e) => e.type === 'StepRerunInPlace').map((e) => e.data)
+    const reruns = seen.filter((e) => e.type === 'StepRedone').map((e) => e.data)
     expect(reruns).toMatchObject([
       { step: 'implement', rerun: 1, waitMs: 60_000 },
       { step: 'implement', rerun: 2, waitMs: 300_000 },
@@ -3113,7 +3113,7 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
 
     const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(seen.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(3)
+    expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(3)
     expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed', cause: 'crash' } })
   })
 
@@ -3152,7 +3152,7 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
 
     const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    const reruns = seen.filter((e) => e.type === 'StepRerunInPlace').map((e) => e.data)
+    const reruns = seen.filter((e) => e.type === 'StepRedone').map((e) => e.data)
     expect(reruns).toMatchObject([
       { step: 'implement', rerun: 1 },
       { step: 'implement', rerun: 2 },
@@ -3226,7 +3226,7 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
       from: { step: 'implement', waive: undefined, stepRedosSpent: 3 },
     } as unknown as AttemptOptions)
 
-    expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)
+    expect(seen.some((e) => e.type === 'StepRedone')).toBe(false)
     expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed' } })
   })
 
@@ -3241,7 +3241,7 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
 
     const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)
+    expect(seen.some((e) => e.type === 'StepRedone')).toBe(false)
     expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed' } })
   })
 
@@ -3252,7 +3252,7 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
 
     const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)
+    expect(seen.some((e) => e.type === 'StepRedone')).toBe(false)
     expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { _tag: 'AgentCrashed', cause: 'timeout' } })
   })
 })
@@ -3454,7 +3454,7 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
     })
 
     expect(judged).toBe(0)
-    expect(seen.filter((e) => e.type === 'StepRerunInPlace').map((e) => e.data)).toMatchObject([
+    expect(seen.filter((e) => e.type === 'StepRedone').map((e) => e.data)).toMatchObject([
       { step: 'prepared', rerun: 1, waitMs: 60_000 },
     ])
     expect(contexts).toHaveLength(2)
@@ -3492,7 +3492,7 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
 
     const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)
+    expect(seen.some((e) => e.type === 'StepRedone')).toBe(false)
     expect(result.end).toMatchObject({
       _tag: 'WaitOnPerson',
       reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'SetupRefused' } },
@@ -3506,7 +3506,7 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
 
     const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(seen.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(3)
+    expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(3)
     expect(result.end).toMatchObject({ _tag: 'WaitOnPerson', reason: { proposal: { _tag: 'SetupRefused' } } })
   })
 
@@ -3547,7 +3547,7 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
       const ids = contexts.map((c) => rerunId('pass-1:review:cold review:abc1234', c))
       expect(new Set(ids).size).toBe(2)
       expect(ids[1]).toMatch(/:rerun:1$/)
-      expect(seen.filter((e) => e.type === 'StepRerunInPlace').map((e) => e.data)).toMatchObject([
+      expect(seen.filter((e) => e.type === 'StepRedone').map((e) => e.data)).toMatchObject([
         { step: 'review', rerun: 1, waitMs: 0 },
       ])
       expect(result.routes).toHaveLength(1)
@@ -3564,7 +3564,7 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
       const result = await walkOnTestClock({ recipe: recipe(), context, emit, bodies, actionsAt })
 
       expect(contexts).toHaveLength(2)
-      expect(seen.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(1)
+      expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(1)
       expect(result.end).toMatchObject({
         _tag: 'WaitOnPerson',
         reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'AnswerUnreadable', from: 'review' } },
@@ -3579,7 +3579,7 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
       const result = await walkOnTestClock({ recipe: recipe(), context, emit, bodies, actionsAt })
 
       expect(contexts).toHaveLength(3)
-      expect(seen.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(2)
+      expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(2)
       expect(result.end).toMatchObject({
         _tag: 'WaitOnPerson',
         reason: { proposal: { _tag: 'AnswerUnreadable', from: 'review' } },
@@ -3609,7 +3609,7 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
 
       const result = await walkOnTestClock({ recipe: recipe(), context, emit, bodies, actionsAt })
 
-      expect(seen.filter((e) => e.type === 'StepRerunInPlace')).toHaveLength(3)
+      expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(3)
       expect(contexts).toHaveLength(1)
       expect(result.end).toMatchObject({
         _tag: 'WaitOnPerson',

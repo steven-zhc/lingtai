@@ -216,7 +216,7 @@ export interface AttemptState {
    */
   roundsOpened: readonly number[]
 
-  /** The last `RunFailed`. A later `RunFinished` does not undo it (D3); only a `StepRerunInPlace` clears it, because the rerun is the run now (#1201). */
+  /** The last `RunFailed`. A later `RunFinished` does not undo it (D3); only a `StepRedone` clears it, because the rerun is the run now (#1201). */
   failure: { readonly kind: RunFailureKind; readonly detail: string } | null
   /** The last refused verdict, by `step:action` key. Not cleared by a later pass or a new head. */
   refusal: {
@@ -245,7 +245,7 @@ export interface AttemptState {
   baseMerges?: number
   /** The conflict rounds this attempt's routes bought (#1200). Absent until one is reduced, read as 0. */
   conflictRounds?: number
-  /** The redos of a step (`StepRerunInPlace`, #1201; `RerunStep` routes, #1224); absent reads as 0. */
+  /** The redos of a step (`StepRedone`, #1201; `RerunStep` routes, #1224); absent reads as 0. */
   stepRedos?: number
   /** The landings again after origin refused one (`LandAgain` routes, #1221); apart from `stepRedos`; absent reads as 0. */
   landingRetries?: number
@@ -577,8 +577,9 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
     // `implement` start; `lingtai attach`'s run log is where a running step's
     // current action is now.
     // A rerun in place raises the count by its own number, never by one: a replay cannot double it (#1201).
+    case 'StepRedone':
     case 'StepRerunInPlace': {
-      const d = event.data as PayloadOf<'StepRerunInPlace'>
+      const d = event.data as PayloadOf<'StepRedone'>
       // The cut-off's failure is not the attempt's: the rerun is the run now, so a recovery reads as one.
       return { ...state, ...at, failure: null, stepRedos: Math.max(state.stepRedos ?? 0, d.rerun) }
     }
@@ -620,10 +621,10 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
       if (next._tag === 'RerunStep') {
         return { ...state, ...settled, ...at, stepRedos: Math.max(state.stepRedos ?? 0, next.retry), route: d }
       }
-      if (next._tag === 'MergeBase') {
+      if (next._tag === 'MergeBaseBranch') {
         return { ...state, ...settled, ...at, baseMerges: Math.max(state.baseMerges ?? 0, next.merge), route: d }
       }
-      return next._tag === 'FixRound'
+      return next._tag === 'FixRefusal'
         ? {
             ...state,
             ...settled,
@@ -754,11 +755,16 @@ export function cutOffPromptOf(
   return null
 }
 
+/** `StepRedone`, or the `StepRedone` rows written under its retired name (#1241): one meaning. */
+export function isStepRedo(type: string): boolean {
+  return type === 'StepRedone' || type === 'StepRerunInPlace'
+}
+
 /** Whether a rule's *ask again* was already spent on `step` in this run: a continuation of it is not granted another (#1205). */
 export function askedAgainOn(runEvents: readonly Envelope[], step: string): boolean {
   return runEvents.some((event) => {
-    if (event.type !== 'StepRerunInPlace') return false
-    const d = event.data as PayloadOf<'StepRerunInPlace'>
+    if (!isStepRedo(event.type)) return false
+    const d = event.data as PayloadOf<'StepRedone'>
     return d.step === step && d.askedAgain === true
   })
 }

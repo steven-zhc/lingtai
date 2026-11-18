@@ -107,7 +107,7 @@ function fixRoundOffer(round: number): RouteOffer {
   return {
     proposal: { _tag: 'ReviewFindings', findings: [] },
     available: [
-      { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round } },
+      { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round } },
       { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
     ],
     unavailable: [],
@@ -120,8 +120,8 @@ const fixLinesDecision: RouteDecision = { _tag: 'Selected', candidate: 'fix-line
 function restartOffer(restart: number): RouteOffer {
   return {
     proposal: { _tag: 'ReviewFindings', findings: [] },
-    available: [{ id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart } } }],
-    unavailable: [{ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'rounds' } }],
+    available: [{ id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: restart } } }],
+    unavailable: [{ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'refusalFixes' } }],
   }
 }
 const restartReply: JudgeReply = { _tag: 'Selected', candidate: 'restart', why: 'try a fresh approach' }
@@ -594,7 +594,7 @@ async function seed(): Promise<void> {
         data: {
           runId: run(14),
           reason: 'the review reviewer still refused — restart 1 of 2',
-          cause: { _tag: 'Restart', restart: 1 },
+          cause: { _tag: 'NewAttempt', newAttempt: 1 },
         },
       },
     ])

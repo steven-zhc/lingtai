@@ -321,7 +321,7 @@ describe('reduceTicket', () => {
     const e = makeStream('ticket-p-1')
     const after = reduceTicket([
       e('TicketClaimed', { runId: 'pass-a', worker: 'w', title: null, kind: null }),
-      e('TicketReleased', { runId: 'pass-a', reason: '…restart 1 of 2', cause: { _tag: 'Restart', restart: 1 } }),
+      e('TicketReleased', { runId: 'pass-a', reason: '…restart 1 of 2', cause: { _tag: 'NewAttempt', newAttempt: 1 } }),
       e('TicketClaimed', { runId: 'pass-b', worker: 'w', title: null, kind: null }),
     ])
 
@@ -331,8 +331,8 @@ describe('reduceTicket', () => {
     expect(after.lifecycle.status).toBe('claimed')
 
     const twice = reduceTicket([
-      e('TicketReleased', { runId: 'pass-a', reason: 'restart 1', cause: { _tag: 'Restart', restart: 1 } }),
-      e('TicketReleased', { runId: 'pass-b', reason: 'restart 2', cause: { _tag: 'Restart', restart: 2 } }),
+      e('TicketReleased', { runId: 'pass-a', reason: 'restart 1', cause: { _tag: 'NewAttempt', newAttempt: 1 } }),
+      e('TicketReleased', { runId: 'pass-b', reason: 'restart 2', cause: { _tag: 'NewAttempt', newAttempt: 2 } }),
     ])
     expect(twice.restarts.map((r) => r.restart)).toEqual([1, 2])
   })

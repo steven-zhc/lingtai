@@ -82,7 +82,7 @@ const SAMPLES = {
   TicketContinued: [{ runId: RUN, worker: 'conductor:1' }],
   TicketReleased: [
     { runId: RUN, reason: 'the pass did not finish', cause: null },
-    { runId: RUN, reason: 'restart', cause: { _tag: 'Restart', restart: 1 } },
+    { runId: RUN, reason: 'restart', cause: { _tag: 'NewAttempt', newAttempt: 1 } },
   ],
   WaitStarted: [{ waitId: WAIT, reason: { _tag: 'OwnQuestion', question: 'which one?', by: 'human:steven' } }],
   WaitResolved: [{ waitId: WAIT, by: 'human:steven', resolution: { _tag: 'Requeue' }, note: '' }],
@@ -253,6 +253,7 @@ const SAMPLES = {
       decision: decideRoute(NOT_ASKED, { _tag: 'NotAsked' }),
     },
   ],
+  StepRedone: [{ runId: RUN, step: 'implement', rerun: 1, said: 'API Error: 503', waitMs: 60_000 }],
   StepRerunInPlace: [{ runId: RUN, step: 'implement', rerun: 1, said: 'API Error: 503', waitMs: 60_000 }],
   ConductorPaused: [{ by: 'human:steven', reason: 'maintenance', until: null, holdsAcrossStarts: false }],
   ConductorResumed: [{ by: 'human:steven' }],
@@ -564,7 +565,7 @@ describe('a line of history', () => {
     )
     expect(said2).toContain('review → waiting')
     expect(said2).toContain('agent/7 is waiting on you')
-    expect(said2).toContain('restarts` is spent')
+    expect(said2).toContain('newAttempts` is spent')
   })
 
   /**
@@ -636,11 +637,11 @@ describe('a line of history', () => {
         decision: { _tag: 'Selected', candidate },
       })
     }
-    const fix = route('fix-lines', { _tag: 'FixRound', to: 'implement', round: 1 })
+    const fix = route('fix-lines', { _tag: 'FixRefusal', to: 'implement', round: 1 })
     expect(summarise(fix, { branch: 'agent/7', endedAt: () => undefined })).toContain(
       'round 1 — findings not found (StepEnded version 9)',
     )
-    const restart = route('restart', { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } })
+    const restart = route('restart', { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } })
     expect(summarise(restart, { branch: 'agent/7', endedAt: () => undefined })).toContain(
       'restart 1 — evidence not found (StepEnded version 9)',
     )

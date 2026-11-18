@@ -36,7 +36,7 @@ describe('askedAgainOn', () => {
   it('is true once a rule asked the step again', () => {
     const e = makeStream('pass-1')
     const rerun = { runId: 'r', step: 'review', rerun: 1, said: 'x', waitMs: 0 }
-    expect(askedAgainOn([e('StepRerunInPlace', rerun)], 'review')).toBe(false)
-    expect(askedAgainOn([e('StepRerunInPlace', { ...rerun, askedAgain: true })], 'review')).toBe(true)
+    expect(askedAgainOn([e('StepRedone', rerun)], 'review')).toBe(false)
+    expect(askedAgainOn([e('StepRedone', { ...rerun, askedAgain: true })], 'review')).toBe(true)
   })
 })

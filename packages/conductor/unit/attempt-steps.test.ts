@@ -874,7 +874,7 @@ describe('prepared refuses, and the refusal reports like any other', () => {
     })
 
     expect(asked.judge[0]?.when).toBe('setup-refused')
-    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
+    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'NewAttempt' } })
   })
 
   it('passes on a green install, and adds nothing of its own', async () => {
@@ -1600,7 +1600,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     // rule: a judge is paid, and one that cannot help is not asked) — a
     // declared judge is bounded by the ceiling, never above it (0064 §7).
     expect(declared.result.end._tag).toBe('WaitOnPerson')
-    expect(declared.result.routes[1]?.why).toContain('`rounds` is spent')
+    expect(declared.result.routes[1]?.why).toContain('`refusalFixes` is spent')
 
     const nothing = await pass({ ...spend, steps: { proposed: [] }, answers: {} })
     expect(nothing.result.routes[0]?.to).toBe('waiting')
@@ -1654,12 +1654,12 @@ describe('proposed is the only step that routes, and one judge answers each when
     expect(result.routes[0]?.why).toContain('two of its lines are wrong')
     expect(asked.dispatch).toHaveLength(2)
     expect(asked.dispatch[1]?.context.recheck).toEqual([BLOCKER])
-    // The second refusal offers nothing but a person — `rounds` is spent and
+    // The second refusal offers nothing but a person — `refusalFixes` is spent and
     // `implement` is off the set — so no judge is asked, declared or not, and
     // `chose` is `waiting` rather than naming the destination a judge never
     // got to choose.
     expect(result.routes[1]).toMatchObject({ chose: 'waiting', to: 'waiting', ceiling: null })
-    expect(result.routes[1]?.why).toContain('`rounds` is spent')
+    expect(result.routes[1]?.why).toContain('`refusalFixes` is spent')
     expect(result.end._tag).toBe('WaitOnPerson')
   })
 
@@ -1723,7 +1723,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     })
 
     expect(result.routes[0]).toMatchObject({ chose: 'implement', to: 'waiting' })
-    expect(result.routes[0]?.why).toContain('the judge chose `fix-lines`, and `rounds` is spent')
+    expect(result.routes[0]?.why).toContain('the judge chose `fix-lines`, and `refusalFixes` is spent')
     expect(result.end._tag).toBe('WaitOnPerson')
   })
 
@@ -1810,7 +1810,7 @@ describe('proposed is the only step that routes, and one judge answers each when
         ceiling: null,
       },
     ])
-    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'Restart' } })
+    expect(result.end).toMatchObject({ _tag: 'Requeued', cause: { _tag: 'NewAttempt' } })
     // Nothing refused, so nothing is named as having stopped it — and a requeue
     // releases the item, which is `failed` at `end`.
     expect(result.stopped).toBeNull()
@@ -1865,7 +1865,7 @@ describe('proposed is the only step that routes, and one judge answers each when
 
     expect(result.routes[0]?.to).toBe('waiting')
     expect(result.routes[0]?.chose).toBe('implement')
-    expect(result.routes[0]?.why).toContain('the judge chose `fix-lines`, and `rounds` is spent')
+    expect(result.routes[0]?.why).toContain('the judge chose `fix-lines`, and `refusalFixes` is spent')
     expect(result.end._tag).toBe('WaitOnPerson')
   })
 
@@ -2072,7 +2072,7 @@ describe('proposed is the only step that routes, and one judge answers each when
 
     // The pass that is compared is a real one: a round bought on the findings, a
     // second refusal with nothing left to spend, and a person at the end of it.
-    // The second refusal offers nothing but a person (`rounds` is spent), so
+    // The second refusal offers nothing but a person (`refusalFixes` is spent), so
     // the judge is asked only once (`#462`'s own rule).
     expect(passes[0]).toMatchObject({
       end: { _tag: 'WaitOnPerson' },
@@ -2140,7 +2140,7 @@ describe('proposed is the only step that routes, and one judge answers each when
         from: 'build',
         chose: 'waiting',
         to: 'waiting',
-        why: expect.stringContaining('`fix-lines` — `rounds` is spent'),
+        why: expect.stringContaining('`fix-lines` — `refusalFixes` is spent'),
         ceiling: null,
       },
     ])
@@ -2164,8 +2164,8 @@ describe('proposed is the only step that routes, and one judge answers each when
         from: 'proposed',
         chose: 'claim',
         to: 'waiting',
-        why: 'the judge chose `restart`, and `restarts` is spent',
-        ceiling: 'restarts',
+        why: 'the judge chose `restart`, and `newAttempts` is spent',
+        ceiling: 'newAttempts',
       },
     ])
   })
@@ -2186,7 +2186,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { refusalFixes: 0, conflictResolutions: 0, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
-    expect(spent.result.routes[0]?.why).toContain('`fix-lines` — `rounds` is spent')
+    expect(spent.result.routes[0]?.why).toContain('`fix-lines` — `refusalFixes` is spent')
 
     // The item's ceiling rather than this pass's, and through the other door: a
     // declared judge answering outside the set it was handed.
@@ -2196,7 +2196,7 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
-    expect(overruled.result.routes[0]?.why).toContain('the judge chose `restart`, and `restarts` is spent')
+    expect(overruled.result.routes[0]?.why).toContain('the judge chose `restart`, and `newAttempts` is spent')
 
     // **A destination no number would have offered used to be named here too,
     // read off `prepared`'s own refusal and a built-in that answered anyway**

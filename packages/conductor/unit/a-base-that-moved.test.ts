@@ -187,7 +187,7 @@ describe('a base that moved on the branch’s own files', () => {
     // Nothing but a person was on offer, so no judge was asked and `chose` is
     // `waiting` (as for a spent round): the ceiling is read off the offer.
     expect(result.routes.at(-1)?.offer.unavailable).toEqual([
-      { id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } },
+      { id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'baseBranchMerges' } },
     ])
   })
 
@@ -199,7 +199,7 @@ describe('a base that moved on the branch’s own files', () => {
     })
 
     expect(result.routes.at(-1)?.offer.unavailable).toEqual([
-      { id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } },
+      { id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'baseBranchMerges' } },
     ])
   })
 

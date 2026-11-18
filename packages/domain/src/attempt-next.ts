@@ -48,7 +48,7 @@ const Propose = z.object({ _tag: z.literal('Propose'), proposal: Proposal })
 
 /** A fix round's own shape, reused whole by `routing.ts`'s `CandidateNext` (#460). */
 export const FixRound = z.object({
-  _tag: z.literal('FixRound'),
+  _tag: z.literal('FixRefusal'),
   to: Step.extract(['design', 'implement']),
   round: z.number().int(),
   /**
@@ -61,7 +61,7 @@ export const FixRound = z.object({
 export type FixRound = z.infer<typeof FixRound>
 
 /** A restart's own shape, reused by `routing.ts`'s `CandidateNext` inside `{ _tag: 'Requeued', cause: Restart }` (#460). */
-export const Restart = z.object({ _tag: z.literal('Restart'), restart: z.number().int() })
+export const Restart = z.object({ _tag: z.literal('NewAttempt'), newAttempt: z.number().int() })
 export type Restart = z.infer<typeof Restart>
 
 const NeverStartedCause = z.object({ _tag: z.literal('NeverStarted'), scope: z.enum(['conductor', 'work-item']) })
@@ -81,7 +81,7 @@ const Landed = z.object({ _tag: z.literal('Landed'), integrated: z.string() })
  * `routing.ts`'s `CandidateNext`, the way `FixRound` is.
  */
 export const MergeBase = z.object({
-  _tag: z.literal('MergeBase'),
+  _tag: z.literal('MergeBaseBranch'),
   toSha: z.string(),
   merge: z.number().int(),
 })
@@ -494,18 +494,18 @@ export function lastCommitEvidence(outcome: StepOutcome): string | null {
  */
 export function spentAfter(spent: Spent, next: AttemptNext): Spent {
   switch (next._tag) {
-    case 'FixRound':
+    case 'FixRefusal':
       return next.conflict === undefined
         ? { ...spent, rounds: next.round }
         : { ...spent, conflictRounds: next.conflict }
-    case 'MergeBase':
+    case 'MergeBaseBranch':
       return { ...spent, baseMerges: next.merge }
     case 'LandAgain':
       return { ...spent, landingRetries: next.retry }
     case 'RerunStep':
       return { ...spent, stepRedos: next.retry }
     case 'Requeued':
-      return next.cause._tag === 'Restart' ? { ...spent, rounds: 0, restarts: next.cause.restart } : spent
+      return next.cause._tag === 'NewAttempt' ? { ...spent, rounds: 0, restarts: next.cause.newAttempt } : spent
     case 'Advance':
     case 'Propose':
     case 'WaitOnPerson':

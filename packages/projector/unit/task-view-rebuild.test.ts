@@ -265,7 +265,7 @@ function fixRoundOffer(round: number): RouteOffer {
   return {
     proposal: { _tag: 'ReviewFindings', findings: [] },
     available: [
-      { id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round } },
+      { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round } },
       { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
     ],
     unavailable: [],
@@ -284,8 +284,8 @@ const restartRun = anAttempt('pass-pin-restart')
 events.push(...aClaim(restartStream, restartRun.runId))
 const restartOffer: RouteOffer = {
   proposal: { _tag: 'ReviewFindings', findings: [] },
-  available: [{ id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'Restart', restart: 1 } } }],
-  unavailable: [{ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'rounds' } }],
+  available: [{ id: 'restart', next: { _tag: 'Requeued', cause: { _tag: 'NewAttempt', newAttempt: 1 } } }],
+  unavailable: [{ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'refusalFixes' } }],
 }
 events.push(
   ...aRoute(restartRun, {
@@ -297,8 +297,8 @@ events.push(
 const afterRestarted = events.length
 events.push(
   ...aRelease(restartStream, restartRun.runId, 'the review reviewer still refused — restart 1 of 2', {
-    _tag: 'Restart',
-    restart: 1,
+    _tag: 'NewAttempt',
+    newAttempt: 1,
   }),
 )
 const afterReleased = events.length
@@ -486,7 +486,7 @@ const afterSecondContinuation = events.length
 
 // A claim after a release with a *different* run id must still count: this
 // pins that the new condition cannot pass by never counting at all.
-events.push(...aRelease(continuedStream, continuedRun.runId, 'restart 1 of 1', { _tag: 'Restart', restart: 1 }))
+events.push(...aRelease(continuedStream, continuedRun.runId, 'restart 1 of 1', { _tag: 'NewAttempt', newAttempt: 1 }))
 const continuedRestartRunId = 'pass-pin-continued-restart'
 events.push(...aClaim(continuedStream, continuedRestartRunId))
 const afterContinuedRestart = events.length

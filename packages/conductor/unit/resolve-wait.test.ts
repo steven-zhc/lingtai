@@ -404,7 +404,7 @@ describe('resolveWait', () => {
       const waitId = aWaitId()
       await seed(store, ticketId, [
         ...aClaim(item, 'pass-1'),
-        ...aRelease(item, 'pass-1', 'restart', { _tag: 'Restart', restart: 1 }),
+        ...aRelease(item, 'pass-1', 'restart', { _tag: 'NewAttempt', newAttempt: 1 }),
         ...aClaim(item, 'pass-2'),
         ...aWait(
           item,
@@ -428,7 +428,7 @@ describe('resolveWait', () => {
         expect(result.ok).toBe(true)
         const events = await store.read(ticketId)
         expect(releaseCauseOf(events)).toEqual([
-          { _tag: 'Restart', restart: 1 },
+          { _tag: 'NewAttempt', newAttempt: 1 },
           { _tag: 'ByPerson', waitId },
         ])
         const reduced = reduceTicket(events)

@@ -691,7 +691,7 @@ describe('the headline says what stopped the pass', () => {
    * **And the counter that says so cannot be `rounds`**, which is the whole of
    * the last row here. The pass keeps *one ceiling, so one counter*
    * (`Ceilings` in `run-attempt.ts`):
-   * `rounds` is spent by whichever point refused, so it is as easily *`build`
+   * `refusalFixes` is spent by whichever point refused, so it is as easily *`build`
    * refused A, round 1 fixed it, `review` refused B* — where this reviewer has
    * read exactly one diff and the card would credit it with refusing a diff it
    * never saw. The two numbers are given apart here for that reason, and the
