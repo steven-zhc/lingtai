@@ -49,7 +49,7 @@ const status = Command.make(
       const { readStatus, renderStatus, statusJson } = yield* lift(() => import('./status.ts'))
       const project = args.project._tag === 'Some' ? args.project.value : undefined
       const report = yield* readStatus({ project, all: args.all })
-      if (args.json) printJson('status', statusJson(report))
+      if (args.json) printJson('status', statusJson(report, args.all))
       else
         for (const line of renderStatus(report, { all: args.all, columns: process.stdout.columns })) console.log(line)
     }).pipe(orFailed('status', args.json)),

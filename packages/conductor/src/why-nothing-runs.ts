@@ -1,7 +1,7 @@
 import { localDay, lockSentence, type Lock } from '@lingtai/domain'
 
-import type { BlockedSkip } from './blockers.ts'
 import type { BaseRedLook } from './base-red.ts'
+import type { BlockedSkip } from './blockers.ts'
 
 /**
  * Why a project with work queued has nothing running (0122 §8, #1215): one
@@ -94,7 +94,9 @@ export function applies(facts: WhyFacts): boolean {
   if (unheldQueued(facts).length === 0) return false
   const at = facts.now.getTime()
   return !facts.rows.some(
-    (r) => (r.state === 'running' || r.state === 'verifying') && (r.updatedAt === null || at - r.updatedAt.getTime() < IN_FLIGHT_WITHIN_MS),
+    (r) =>
+      (r.state === 'running' || r.state === 'verifying') &&
+      (r.updatedAt === null || at - r.updatedAt.getTime() < IN_FLIGHT_WITHIN_MS),
   )
 }
 
@@ -108,15 +110,18 @@ export function rootBeforeChains(facts: WhyFacts): WhyNothingRuns | null {
   const only = (root: Root): WhyNothingRuns => ({ roots: [root] })
   const b = facts.beacon
   if ('unread' in b)
-    return only({ root: 'beacon-unread', sentence: `could not read whether the daemon is running — ${b.unread}`, tickets })
+    return only({
+      root: 'beacon-unread',
+      sentence: `could not read whether the daemon is running — ${b.unread}`,
+      tickets,
+    })
   if ('never' in b || !b.up)
     return only({
       root: 'no-daemon',
       sentence: 'the daemon is not running — lingtai daemon or lingtai service start',
       tickets,
     })
-  if (facts.draining)
-    return only({ root: 'drain', sentence: 'the daemon is draining and takes nothing new', tickets })
+  if (facts.draining) return only({ root: 'drain', sentence: 'the daemon is draining and takes nothing new', tickets })
   if ('unread' in facts.locks)
     return only({ root: 'locks-unread', sentence: 'what holds it could not be read — see above', tickets })
   const locks = facts.locks.filter((l) => l.kind !== 'ceiling' || l.day === localDay(facts.now))
@@ -188,7 +193,12 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
   for (const ref of blocked) {
     const start = byRef.get(ref)
     if (!facts.canListBlockers || start === undefined) {
-      add('unlistable', 'blockers-unlistable', (n) => `${said(n, 'ticket waits', 'tickets wait')} on blockers this project cannot list`, ref)
+      add(
+        'unlistable',
+        'blockers-unlistable',
+        (n) => `${said(n, 'ticket waits', 'tickets wait')} on blockers this project cannot list`,
+        ref,
+      )
       continue
     }
     const seen: number[] = []
@@ -203,12 +213,14 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
             ? {
                 key: 'past-cap',
                 kind: 'blockers-unread',
-                describe: (n) => `${said(n, 'ticket waits', 'tickets wait')} on a blocker past the cap of what this reads`,
+                describe: (n) =>
+                  `${said(n, 'ticket waits', 'tickets wait')} on a blocker past the cap of what this reads`,
               }
             : {
                 key: `long:${through}`,
                 kind: 'chain-long',
-                describe: (n) => `${said(n, 'ticket waits', 'tickets wait')} on a chain longer than this reads, through ${through}`,
+                describe: (n) =>
+                  `${said(n, 'ticket waits', 'tickets wait')} on a chain longer than this reads, through ${through}`,
               }
         break
       }
@@ -226,7 +238,8 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
         verdict = {
           key: `unread:${problem}`,
           kind: 'blockers-unread',
-          describe: (n) => `${said(n, 'ticket waits', 'tickets wait')} on a blocker that could not be read — ${problem}`,
+          describe: (n) =>
+            `${said(n, 'ticket waits', 'tickets wait')} on a blocker that could not be read — ${problem}`,
         }
         break
       }
@@ -247,7 +260,8 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
         verdict = {
           key: `foreign:${next.repository}#${next.number}`,
           kind: 'chain',
-          describe: (n) => `${said(n, 'ticket waits', 'tickets wait')} on ${next.repository}#${next.number}, a blocker that is not a ticket here`,
+          describe: (n) =>
+            `${said(n, 'ticket waits', 'tickets wait')} on ${next.repository}#${next.number}, a blocker that is not a ticket here`,
         }
         break
       }
@@ -270,7 +284,8 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
         verdict = {
           key: `long:${through}`,
           kind: 'chain-long',
-          describe: (n) => `${said(n, 'ticket waits', 'tickets wait')} on a chain longer than this reads, through ${through}`,
+          describe: (n) =>
+            `${said(n, 'ticket waits', 'tickets wait')} on a chain longer than this reads, through ${through}`,
         }
         break
       }
@@ -294,7 +309,12 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
   const explained = new Set([...groups.values()].flatMap((g) => g.tickets))
   for (const ref of unheldQueued(facts))
     if (!explained.has(ref))
-      add('unknown', 'unknown', (n) => `nothing runs, and no reason was found (${plural(n, 'ticket', 'tickets')} queued)`, ref)
+      add(
+        'unknown',
+        'unknown',
+        (n) => `nothing runs, and no reason was found (${plural(n, 'ticket', 'tickets')} queued)`,
+        ref,
+      )
 
   const roots = [...groups.values()]
     .map((g): Root => ({ root: g.kind, sentence: g.describe(g.tickets.length), tickets: g.tickets }))
