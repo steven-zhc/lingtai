@@ -1,3 +1,5 @@
+import { passOverBaseRed } from '@lingtai/conductor'
+import type { WhyNothingRuns } from '@lingtai/conductor/why-nothing-runs'
 import { BLOCKERS_READ_MOST, forgetBlockers, readBlockersEffect, type BlockedSkip } from '@lingtai/conductor/blockers'
 import { passedOver, runnableNow } from '@lingtai/conductor/discover'
 import { attemptCeiling } from '@lingtai/conductor/filter'
@@ -72,6 +74,7 @@ import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/sett
 import { SpanStatusCode } from '@opentelemetry/api'
 import { Effect } from 'effect'
 
+import type { Explain } from './why-read.ts'
 import {
   accountsHolding,
   anyCeilingToday,
@@ -918,6 +921,8 @@ export type ProjectQueue =
       runnable: Awaited<ReturnType<typeof selectRunnable>>
       /** The `blocked-by` skips with their blockers read (#954). Never cards. */
       blocked: BlockedSkip[]
+      /** Why nothing of this project runs, when the page asked (#1216). */
+      why?: WhyNothingRuns | null
     }
 
 /**
@@ -937,19 +942,35 @@ export type ProjectQueue =
  */
 export async function askProject(
   filter: AskableFilter,
-  options: { select?: typeof selectRunnable; now?: () => number } = {},
+  options: { select?: typeof selectRunnable; now?: () => number; explain?: Explain } = {},
 ): Promise<ProjectQueue> {
   const select = options.select ?? selectRunnable
+  const explain = options.explain
   try {
-    const offered = await runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) })
-    const runnable = await select({
-      project: filter.project,
-      offered: offered.runnable,
-      kinds: filter.kinds,
-      backoffMs: filter.backoffMs,
-    })
-    const blocked = await Effect.runPromise(readBlockersEffect(filter, offered.skipped, options.now ?? Date.now))
-    return { state: 'listed', filter, offered, runnable, blocked }
+    const found = await runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) })
+    // One run for every read after the offer, so the board's count of `Effect.run*` does not grow (#1216).
+    return await Effect.runPromise(
+      Effect.gen(function* () {
+        // **A red base passes the queue over here as it does at the conductor** (`schedule.ts`): without a
+        // look the board drew tickets runnable that no pass would take. No look is a project not explained.
+        const look = explain === undefined ? null : yield* explain.look(filter)
+        const offered = look === null ? found : passOverBaseRed(look, found).offered
+        const runnable = yield* Effect.tryPromise(() =>
+          select({
+            project: filter.project,
+            offered: offered.runnable,
+            kinds: filter.kinds,
+            backoffMs: filter.backoffMs,
+          }),
+        )
+        const blocked = yield* readBlockersEffect(filter, offered.skipped, options.now ?? Date.now)
+        const why =
+          explain === undefined || look === null
+            ? null
+            : yield* explain.why({ filter, look, offered: found, seen: offered, runnable, blocked })
+        return { state: 'listed', filter, offered, runnable, blocked, why } satisfies ProjectQueue
+      }),
+    )
   } catch (err) {
     // The recipe resolved and GitHub still would not answer — a rate limit, a
     // revoked installation. Named rather than dropped, for the same reason.
@@ -1194,6 +1215,8 @@ export interface GithubQueue {
    * repository's issue number means nothing here.
    */
   parents: Map<string, number>
+  /** Why nothing of a project runs, one per project that has queued work and no pass in flight (#1216). */
+  why?: { project: string; why: WhyNothingRuns }[]
   /** How many projects were asked, and how many of them answered. */
   asked: number
   answered: number
@@ -1233,6 +1256,7 @@ export async function githubQueue(
   const held: HeldTicket[] = []
   const epics: EpicTicket[] = []
   const parents = new Map<string, number>()
+  const why: { project: string; why: WhyNothingRuns }[] = []
   let answered = 0
   let runnable = 0
 
@@ -1310,7 +1334,12 @@ export async function githubQueue(
     // `lingtai status` prints every skip; the column draws the `blocked-by` ones
     // as cards (#960) and the held and epic ones as its fold (#955), so its note
     // counts only the skips it does not.
-    const passed = passedOver(offered.skipped.filter((s) => !DRAWN_SKIPS.has(s.reason)))
+    // The base-red count is the line's own when the line says it (#1216); otherwise it is still the note's.
+    const sayingBase = answer.why?.roots.some((r) => r.root === 'base-red' || r.root === 'base-unreadable') ?? false
+    if (answer.why != null) why.push({ project: filter.project, why: answer.why })
+    const passed = passedOver(
+      offered.skipped.filter((s) => !DRAWN_SKIPS.has(s.reason) && !(sayingBase && s.reason === 'base-red')),
+    )
     if (passed !== null) notes.push({ project: filter.project, reason: passed })
     if (offered.dependenciesUnread !== null) {
       notes.push({ project: filter.project, reason: offered.dependenciesUnread })
@@ -1379,6 +1408,7 @@ export async function githubQueue(
     held,
     epics,
     parents,
+    why,
     asked: askable.length,
     answered,
     runnable: answered < askable.length && runnable === 0 ? null : runnable,
