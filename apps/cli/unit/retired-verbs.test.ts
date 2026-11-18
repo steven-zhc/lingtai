@@ -1,13 +1,11 @@
 /**
- * The renamed verbs (#1269) refuse naming the new one, through the same router and the same functions
- * `entry.ts` runs — its `switch` is exhaustive over `Route`, so `tsc` fails if it stops handling `'retired'`.
- * `cli.ts` is never imported on this path, so no store is opened and nothing can be appended.
+ * The renamed verbs (#1269) refuse naming the new one, **through `entry.ts`** — the file `bin` runs — by importing it
+ * with the verb as `process.argv`. A retired verb is routed before `cli.ts` is imported, so no store is opened and
+ * nothing is appended.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { COMMANDS } from '../src/commands.ts'
-import { helpCommand, retiredCommand } from '../src/help.ts'
-import { routeOf } from '../src/migrated.ts'
 
 const RETIRED = [
   ['grant-fix-round', 'fix-refusal'],
@@ -15,36 +13,48 @@ const RETIRED = [
   ['requeue', 'start-new-attempt'],
 ] as const
 
-function capture(run: () => number): { code: number; out: string; err: string } {
+const argv0 = process.argv
+
+async function runEntry(args: string[]): Promise<{ code: number | undefined; out: string; err: string }> {
   let out = ''
   let err = ''
   vi.spyOn(process.stdout, 'write').mockImplementation((c: string | Uint8Array) => ((out += String(c)), true))
   vi.spyOn(process.stderr, 'write').mockImplementation((c: string | Uint8Array) => ((err += String(c)), true))
-  return { code: run(), out, err }
+  process.argv = ['node', 'lingtai', ...args]
+  process.exitCode = undefined
+  vi.resetModules()
+  await import('../src/entry.ts')
+  const code = process.exitCode as number | undefined
+  process.exitCode = undefined
+  return { code, out, err }
 }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  process.argv = argv0
+  process.exitCode = undefined
+})
 
 describe.each(RETIRED)('%s is retired', (old, now) => {
-  it.each([[['--issue', '5']], [['--help']], [['--json']], [[]]])('routes %j to the refusal', (rest) => {
-    expect(routeOf([old, 'lingtai', ...rest])).toBe('retired')
-  })
+  it.each([[['lingtai', '--issue', '5']], [['--help']], [[]]])(
+    'entry.ts exits 2 and names the new verb for %j, appending nothing',
+    async (rest) => {
+      const r = await runEntry([old, ...rest])
+      expect(r.code).toBe(2)
+      expect(r.err).toContain(`\`${old}\` is now \`lingtai ${now}\``)
+      expect(r.err).not.toContain('unknown command')
+      expect(r.out).toBe('')
+    },
+  )
 
-  it('exits non-zero and names the new verb on stderr', () => {
-    const r = capture(() => retiredCommand([old, 'lingtai', '--issue', '5']))
-    expect(r.code).toBe(2)
-    expect(r.err).toContain(`\`${old}\` is now \`lingtai ${now}\``)
-    expect(r.out).toBe('')
-  })
-
-  it('answers --json with an error document on stdout', () => {
-    const r = capture(() => retiredCommand([old, '--json']))
+  it('entry.ts answers --json with an error document on stdout', async () => {
+    const r = await runEntry([old, 'lingtai', '--json'])
     expect(r.code).toBe(2)
     expect(r.out).toContain(`lingtai ${now}`)
   })
 
-  it('is named by `help <verb>` too', () => {
-    const r = capture(() => helpCommand(['help', old]))
+  it('entry.ts names it for `help <verb>` too', async () => {
+    const r = await runEntry(['help', old])
     expect(r.code).toBe(2)
     expect(r.err).toContain(`lingtai ${now}`)
   })

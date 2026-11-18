@@ -60,16 +60,18 @@ export function redoStepVerdict(
       if (!result.ok) {
         return refusal(1, result.reason, result.detail, { ticketId: result.ticketId })
       }
+      if (result.unscheduled) {
+        // The wait is resolved but nothing was queued: not an acceptance.
+        return refusal(
+          1,
+          'unscheduled',
+          `the wait was resolved, but scheduling failed: ${result.unscheduled}; run it again to schedule it`,
+          { ticketId, extra: { unscheduled: result.unscheduled } },
+        )
+      }
       return {
         code: 0,
-        verdict: {
-          outcome: 'accepted',
-          ticketId,
-          detail: result.unscheduled
-            ? `scheduling failed: ${result.unscheduled}`
-            : 'the step runs again on the saved work',
-          ...(result.unscheduled ? { extra: { unscheduled: result.unscheduled } } : {}),
-        },
+        verdict: { outcome: 'accepted', ticketId, detail: 'the step runs again on the saved work' },
       } satisfies Answered
     })
     const answered: Answered = yield* append
