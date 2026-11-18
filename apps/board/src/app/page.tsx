@@ -16,6 +16,7 @@ import {
   emptyHeld,
   emptyNote,
   COLUMNS,
+  askProject,
   githubQueue,
   issueUrl,
   loadBoard,
@@ -25,6 +26,7 @@ import {
   queuedSkeletonCount,
   recordQueuedOffered,
   skeletonCount,
+  whySkeletonCount,
   type BoardCard,
   type GithubQueue,
   LANDED_OPEN,
@@ -42,6 +44,7 @@ import { sandboxStates } from '@/lib/sandbox-state.ts'
 import { billHasAny, billText } from '@/lib/spend'
 import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
+import { readWhy } from '@/lib/why-read.ts'
 
 import { Bar, BarActions } from './bar.tsx'
 // Both halves of the sequence, in the file the task page reads them from too
@@ -219,7 +222,7 @@ export function Card({
   if (card.column === 'waiting') {
     const fallback = card.note?.split(/\r?\n/, 1)[0]?.trim() ?? null
     return (
-      <article className={`card waiting-card ${accent(card)}`}>
+      <article id={`ticket-${card.project}-${card.ref}`} className={`card waiting-card ${accent(card)}`}>
         <span className="id">
           {showProject ? <span className="proj">{card.project}</span> : null}
           <IssueRef href={issue} issue={card.ref} />
@@ -942,6 +945,7 @@ async function CardsPart({
             logCards={queuedColumn.cards}
             onBoard={onBoard}
             count={skeletonCount(askable.map((f) => f.project))}
+            whyLines={whySkeletonCount(askable.map((f) => f.project))}
             order={queueOrder}
             list={list}
           />
@@ -1030,12 +1034,16 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // awaited from both boundaries; two calls would be two fan-outs to GitHub.
   const queue: Promise<GithubQueue> = ctx.reads.board
     .then((board) =>
-      measure(() => timed('board.queue', () => githubQueue(board.askable, board.known)), { label: '/ queue' }).then(
-        (answered) => {
-          recordQueuedOffered(param, board.askable, answered[0].problems)
-          return answered
-        },
-      ),
+      measure(
+        () =>
+          timed('board.queue', () =>
+            githubQueue(board.askable, board.known, (f) => askProject(f, { explain: readWhy })),
+          ),
+        { label: '/ queue' },
+      ).then((answered) => {
+        recordQueuedOffered(param, board.askable, answered[0].problems)
+        return answered
+      }),
     )
     .then(([github]) => github)
   const app = hasGitHubAuth()

@@ -26,11 +26,9 @@ import {
 import { readBlockersEffect } from '@lingtai/conductor/blockers'
 import { selectRunnableEffect } from '@lingtai/conductor/queue'
 import {
-  applies,
-  mayApply,
+  explainQueueEffect,
   omittedTickets,
-  rootBeforeChains,
-  whyNothingRuns,
+  whyRows,
   type Beacon,
   type WhyFacts,
   type WhyNothingRuns,
@@ -596,25 +594,13 @@ export const readStatus = (
           offered: offered.map((o) => Number(o.ref)),
           runnable: runnable.map((r) => Number(r.issue)),
           skipped,
-          rows: tasks.map((t) => ({
-            ref: Number(t.issue),
-            state: t.state,
-            updatedAt: t.updatedAt ?? null,
-            heldUntil:
-              t.state === 'queued'
-                ? heldUntil(
-                    { lastAttemptAt: t.lastAttemptAt ?? null, repairPending: t.repairPending === true },
-                    backoffMs,
-                    now,
-                  )
-                : null,
-            waiting: t.wait != null,
-          })),
+          rows: whyRows(tasks, backoffMs, now),
           repository: filter.links?.repository ?? null,
           canListBlockers: filter.links !== null,
         }
-        if (mayApply(facts)) {
-          const beacon: Beacon = yield* Effect.suspend(
+        // The order of the reads is the shared function's (#1216): the board reads them the same way.
+        why = yield* explainQueueEffect(facts, {
+          beacon: Effect.suspend(
             reading.beacon ??
               (() =>
                 readStatusEffect().pipe(
@@ -624,22 +610,16 @@ export const readStatus = (
             recovering((err: unknown) =>
               Effect.succeed<Beacon>({ unread: err instanceof Error ? err.message : String(err) }),
             ),
-          )
+          ),
           // A `lingtai run` conducts without a beacon: its lock is what says a pass may be live. A failed read counts as held.
-          const conductorHeld = yield* Effect.tryPromise(() => conductorLockHolder()).pipe(
+          conductorHeld: Effect.tryPromise(() => conductorLockHolder()).pipe(
             Effect.map((holder) => holder !== null),
             recovering(() => Effect.succeed(true)),
-          )
-          const withBeacon: WhyFacts = { ...facts, beacon, conductorHeld }
-          // A live conductor suppresses the sentence: read no blockers for one that cannot show.
-          why = rootBeforeChains(withBeacon)
-          if (why === null && applies(withBeacon)) {
-            const blockers = fullSkipped.some((s) => s.reason === 'blocked-by')
-              ? yield* (reading.blockers ?? readBlockersEffect)(filter, fullSkipped, () => now)
-              : null
-            why = whyNothingRuns(withBeacon, blockers)
-          }
-        }
+          ),
+          blockers: fullSkipped.some((s) => s.reason === 'blocked-by')
+            ? (reading.blockers ?? readBlockersEffect)(filter, fullSkipped, () => now)
+            : Effect.succeed(null),
+        })
       }
       out.push({
         whyNothingRuns: why,

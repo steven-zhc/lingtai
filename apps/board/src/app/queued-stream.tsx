@@ -1,3 +1,4 @@
+import { omittedTickets as omittedCount } from '@lingtai/conductor/why-nothing-runs'
 /**
  * The parts of the home page that wait for GitHub (#884).
  *
@@ -27,6 +28,7 @@ import {
   groupQueue,
 } from '@/lib/board'
 import { kindDot } from '@/lib/kind-colour'
+import { whyLine } from '@/lib/why-line'
 
 import { Skeleton } from './skeleton'
 
@@ -294,6 +296,7 @@ export function QueuedFallback({
   list,
   order,
   count,
+  whyLines = 0,
 }: {
   unreadable: readonly QueueProblem[]
   logCards: BoardCard[]
@@ -303,11 +306,14 @@ export function QueuedFallback({
   order: readonly string[]
   /** How many card skeletons to draw: what GitHub offered last time, from `skeletonCount`. */
   count: number
+  /** How many *why nothing runs* lines the last answer had: the line's skeleton, in its place and size (#1216). */
+  whyLines?: number
 }) {
   // Log cards only: no groups, and no mark, since GitHub has not answered.
   const { entries } = groupQueue(logCards, [], order, new Map(), [], false)
   return (
     <>
+      {whyLines > 0 ? <Skeleton shape="whynot" count={whyLines} /> : null}
       <Problems recipe problems={unreadable} />
       {logCards.length > 0 ? (
         <QueuedList
@@ -322,6 +328,50 @@ export function QueuedFallback({
         />
       ) : null}
       <Skeleton shape="card" count={count} />
+    </>
+  )
+}
+
+/**
+ * *Why nothing runs* (#1216, 0122 §8): the column's first line, one per project that has queued work and
+ * nothing in flight, from the one function `lingtai status` reads. Absent when every queued ticket is held.
+ * A lock root points up at the banner; it never names the reset, which is the banner's alone.
+ */
+export function WhyNothingRuns({
+  why,
+  showProject,
+}: {
+  why: readonly { project: string; why: NonNullable<GithubQueue['why']>[number]['why'] }[]
+  showProject: boolean
+}) {
+  return (
+    <>
+      {why.map(({ project, why: w }) => {
+        const [first] = w.roots
+        if (first === undefined) return null
+        const line = whyLine(project, first)
+        const more = omittedCount(w)
+        return (
+          <p key={project} className={line.tone === '' ? 'whynot' : `whynot ${line.tone}`}>
+            <span className="wk">why nothing runs</span>
+            <span>
+              {showProject ? <strong>{project}: </strong> : null}
+              {line.segments.map((seg, i) =>
+                seg.kind === 'code' ? (
+                  <code key={i}>{seg.text}</code>
+                ) : seg.kind === 'ticket' ? (
+                  <a key={i} href={`#ticket-${project}-${seg.ref}`}>
+                    {seg.text}
+                  </a>
+                ) : (
+                  <Fragment key={i}>{seg.text}</Fragment>
+                ),
+              )}
+              {more > 0 ? <span className="more"> · and {more} more for other reasons</span> : null}
+            </span>
+          </p>
+        )
+      })}
     </>
   )
 }
@@ -372,21 +422,23 @@ export function QueuedAnswered({
   const waiting = github.blocked.length
   const drawn = github.blocked.filter((b) => !b.unread)
   const unread = waiting - drawn.length
-  const { entries, next, headed } = groupQueue(cards, drawn, order, github.parents, github.epics, true)
+  const heldByBase = github.baseHeld ?? new Set<string>()
+  const { entries, next, headed } = groupQueue(cards, drawn, order, github.parents, github.epics, true, heldByBase)
+  const runnableCount = cards.filter((c) => !heldByBase.has(c.taskId)).length
   const summary =
     waiting === 0 ? (
-      cards.length === 0 ? null : (
+      runnableCount === 0 ? null : (
         <p className="qsum">
-          <b>{cards.length}</b> runnable
+          <b>{runnableCount}</b> runnable
         </p>
       )
     ) : (
       <p className="qsum">
-        {cards.length === 0 ? (
+        {runnableCount === 0 ? (
           'nothing runnable'
         ) : (
           <>
-            <b>{cards.length}</b> runnable
+            <b>{runnableCount}</b> runnable
           </>
         )}{' '}
         · <b>{waiting}</b> waiting on a blocker
@@ -394,6 +446,7 @@ export function QueuedAnswered({
     )
   return (
     <>
+      <WhyNothingRuns why={github.why ?? []} showProject={projects.size > 1} />
       {summary}
       <Problems recipe problems={unreadable} />
       <Problems recipe={false} problems={github.problems} />
