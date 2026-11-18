@@ -5114,6 +5114,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // and not on `from` alone: a `verify-failed` or `push-rejected` also
           // arrives from `merge`, and is output, not a merge to run.
           const conflict = from === 'merge' && again.printed?.because === 'conflict'
+          // The count said against the knob's own bound: a conflict resolution is counted
+          // apart from the refusal fixes, as it is bounded apart from them (0108 §8).
+          const counted = conflict ? (brief.context.conflictRound ?? 1) : round
           // A conflict round of any kind, including a granted one from an old wait whose brief
           // tells the agent to merge: it may leave a merge standing, so the keep checks (#1120).
           if (conflict) conflictMergeStood = true
@@ -5158,8 +5161,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
 
           // A conflict resolution is bounded by its own knob, never the refusal fixes' (0108 §8).
           const bound = conflict ? ceiling.attempt.conflictResolutions : ceiling.attempt.refusalFixes
-          log(`fixing ${from} — round ${round} of ${bound}`)
-          runLog.note('fix', `round ${round} for ${from}`)
+          log(`fixing ${from} — round ${counted} of ${bound}`)
+          runLog.note('fix', `round ${counted} for ${from}`)
 
           const fixDecision = yield* decideSandbox
           const settings = yield* Effect.result(
@@ -5201,7 +5204,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               : [
                   ...fixBriefParts({
                     refusal,
-                    round,
+                    round: counted,
                     of: bound,
                     action: refusal.on === 'unfinished' ? 'implement' : from,
                     diff: underReview.text,

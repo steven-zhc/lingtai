@@ -261,7 +261,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     given: flags.refusalFixes ?? null,
     prompt:
       'how many times an attempt sends the agent back after a build or review refuses it — ' +
-      '0 buys no fix in the same worktree (a new attempt, if the ticket has any, may still follow)',
+      '0 buys no fix in the same worktree (a failed build then goes straight to you)',
     current: String(limits.attempt.refusalFixes),
     validate: (answer) => Effect.succeed(/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
     kept: options.kept,
@@ -279,7 +279,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     given: flags.conflictResolutions ?? null,
     prompt:
       'how many times an attempt sends the agent back to resolve a merge conflict — ' +
-      '0 buys no conflict resolution (a new attempt, if the ticket has any, may still follow)',
+      '0 buys no conflict resolution (a merge conflict then goes straight to you)',
     current: String(limits.attempt.conflictResolutions),
     validate: (answer) => Effect.succeed(/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
     kept: options.kept,

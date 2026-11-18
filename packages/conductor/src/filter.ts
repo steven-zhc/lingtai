@@ -159,6 +159,7 @@ export type ProjectFilter =
         turns: TurnLimit
         wall: string
         wallMs: number
+        triage?: { turns: number; wall: string; usd: number }
         usd?: number
         steps: readonly StepBound[]
       }
@@ -445,6 +446,7 @@ export function projectFilterEffect(
         wallMs: parseDuration(limitsFor(resolved.recipe, 'implement').wall),
         usd: ceilingOf(resolved.recipe).run.usd,
         steps: boundsBesides(resolved.recipe, 'implement'),
+        ...(resolved.recipe.triage === undefined ? {} : { triage: resolved.recipe.triage.limits }),
       },
       backoffMs: parseDuration(backoffOf(resolved.recipe)),
       plan: stepPlan(resolved.recipe),

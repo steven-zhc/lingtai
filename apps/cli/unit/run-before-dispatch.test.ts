@@ -118,11 +118,12 @@ describe('statedBeforeDispatch', () => {
         '6 refusal fix(es) back to the agent carrying what refused it, 6 conflict resolution(s), and up to 3 ' +
         'reruns of a run an API error cut off) and up to 5 answers to a person — 2h and 300 turns each, so at ' +
         'most 106h. a spent attempt starts the ticket over from the base up to 2 time(s) before it is yours. ' +
-        'other agent steps are not in this figure, each with a bound of its own: design runs once an attempt, ' +
-        '2h and 300 turns a run unless its step narrows them; review runs once after each implement and once ' +
-        "more after a base-branch merge that touched the branch's files, 2h and 300 turns a run unless its step " +
-        'narrows them; a judge is asked once per refusal it is declared for, 2h and 300 turns a run unless its ' +
-        'step narrows them; triage runs within triage.limits, which is not runtime.limits.run and is not changed by it',
+        'other agent steps are not in this figure, each with a bound of its own: design runs once an attempt and ' +
+        'again each time a state-assumption route sends a question back to it, within runtime.limits.run (wall ' +
+        'and turns) a run unless its step narrows them; review runs once after each implement and once more ' +
+        "after a base-branch merge that touched the branch's files, within runtime.limits.run (wall and turns) " +
+        'a run unless its step narrows them; a judge is asked once per refusal it is declared for, within ' +
+        'runtime.limits.run (wall and turns) a run unless its step narrows them; triage runs within triage.limits, which is not runtime.limits.run and is not changed by it',
     )
   })
 })

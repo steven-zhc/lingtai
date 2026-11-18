@@ -619,6 +619,11 @@ export interface ActionContext {
    */
   round?: number
   /**
+   * Which conflict resolution this pipeline is on — 0 before any was bought.
+   * Counted apart from `round`, the way the recipe bounds them apart (0108 §8).
+   */
+  conflictRound?: number
+  /**
    * The run's log ([0034](../../../doc/decisions-archive/0034-the-run-log.md), #153).
    *
    * `runActionPipeline` writes each action's start and end here under

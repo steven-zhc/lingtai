@@ -19,7 +19,7 @@
  * `decideRestart` gets the refusal first and may hand the ticket back to the
  * queue for a fresh pass instead; the two diagnoses below are what a person is
  * shown once *that* ceiling is spent too, or immediately, which is every
- * project whose recipe leaves `restarts` at its default of zero.
+ * project whose recipe sets `ticket.newAttempts` to zero (its default is two).
  *
  * On 2026-09-10 there was nothing between *refused* and *your problem*, and the
  * three items that produced were the three whose fixes were least in doubt: a
@@ -1106,9 +1106,9 @@ function clipFailure(failure: string, chars: number = FAILURE_CHARS): string {
  * What a person is shown when the rounds are over, no restart was bought, and
  * the review still refuses.
  *
- * *No restart was bought* is the clause 0040 adds and it is true of every
- * project today: `restarts` defaults to zero, so this is still reached on the
- * first spent pass. Where it is not zero, this is the third destination rather
+ * *No restart was bought* is the clause 0040 adds: it holds where
+ * `ticket.newAttempts` is zero or already spent, and `newAttempts` defaults to
+ * two. Where one is still to spend, this is the third destination rather
  * than the second, and `earlier` below is what makes the card say so.
  *
  * **It says two agents disagreed, not that a gate refused**, and that is 0038's

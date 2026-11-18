@@ -42,6 +42,8 @@ export function attemptCeiling(limits: {
   usd?: number
   /** The dispatching steps whose own bound is not the figure named above. */
   steps?: readonly { step: string; turns: TurnLimit; wall: string }[]
+  /** `triage.limits` where the recipe declares a triage; its bound is its own, never `run`'s. */
+  triage?: { turns: number; wall: string; usd: number }
 }): string {
   const elsewhere =
     limits.steps === undefined || limits.steps.length === 0
@@ -65,13 +67,19 @@ export function attemptCeiling(limits: {
     `${wallAndTurns} each${at}${elsewhere}, so at most ${formatDuration(limits.wallMs * runs)}` +
     (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, runs)}`)
   // Listed, not summed: each is bounded by its own step's limits.
-  const bound = `${limits.wall} and ${formatTurns(limits.turns)} a run unless its step narrows them`
+  // `run.turns` and `run.wall` are named and not quoted: the figure above is `implement`'s, and a step may narrow either.
+  const bound = 'within runtime.limits.run (wall and turns) a run unless its step narrows them'
+  const triage =
+    limits.triage === undefined
+      ? 'triage runs within triage.limits, which is not runtime.limits.run and is not changed by it'
+      : `triage runs within triage.limits — ${limits.triage.wall}, ${formatTurns(limits.triage.turns)} and ` +
+        `$${limits.triage.usd} a run — which is not runtime.limits.run and is not changed by it`
   const others =
     'other agent steps are not in this figure, each with a bound of its own: ' +
-    `design runs once an attempt, ${bound}; ` +
+    `design runs once an attempt and again each time a state-assumption route sends a question back to it, ${bound}; ` +
     `review runs once after each implement and once more after a base-branch merge that touched the branch's files, ${bound}; ` +
     `a judge is asked once per refusal it is declared for, ${bound}; ` +
-    'triage runs within triage.limits, which is not runtime.limits.run and is not changed by it'
+    triage
 
   // **Said whether it buys anything or not**, so a default that spends money is
   // auditable when it is off as well as when it is on (0025 §2).

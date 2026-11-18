@@ -1541,6 +1541,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       ...options.context,
       onSha,
       round: roundsSpent,
+      conflictRound: conflictRoundsSpent,
       recheck,
       ...(landedOnBase === null ? {} : { landedOnBase }),
       ...(conflictMerge === null ? {} : { conflictMerge }),
