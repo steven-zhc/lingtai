@@ -520,7 +520,7 @@ describe('attemptBrief', () => {
       reduceAttempt([
         run('RunFailed', { kind: 'out-of-turns', detail: '60 turns, and the recipe allows 60' }),
         run('RunKeptUncommitted', {
-          arm: 'agent/59-attempt-2',
+          ref: 'agent/59-attempt-2',
           sha: 'c'.repeat(40),
           parentSha: 'a'.repeat(40),
           stoppedBy: 'out-of-turns',

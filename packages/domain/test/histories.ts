@@ -658,7 +658,7 @@ type Published = {
 function publishedRun(
   name: string,
   row: Published,
-  kept: readonly { arm: string; sha: string }[] = [],
+  kept: readonly { ref: string; sha: string }[] = [],
 ): readonly Envelope[] {
   const run = anAttempt(attemptStream(name))
   return stamp([
@@ -764,17 +764,17 @@ const late_publishedClean = publishedRun('published-clean', { outcome: 'publishe
 const late_publishedWithWip = publishedRun(
   'published-with-wip',
   { outcome: 'published', headSha: 'sha-1', branchCarries: true, armSha: 'sha-wip' },
-  [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
+  [{ ref: 'agent/9-attempt-1', sha: 'sha-wip' }],
 )
 const late_wipRecorded = publishedRun(
   'wip-recorded',
   { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
-  [{ arm: 'agent/9-attempt-1', sha: 'sha-wip' }],
+  [{ ref: 'agent/9-attempt-1', sha: 'sha-wip' }],
 )
 const late_wipOnAnotherArm = publishedRun(
   'wip-on-another-arm',
   { outcome: 'published', headSha: 'sha-1', branchCarries: false, armSha: 'sha-wip' },
-  [{ arm: 'agent/9-attempt-2', sha: 'sha-wip' }],
+  [{ ref: 'agent/9-attempt-2', sha: 'sha-wip' }],
 )
 const late_armOnly = publishedRun('arm-only', { outcome: 'arm-only', headSha: 'sha-1' })
 const late_nothingCommitted = publishedRun('nothing-committed', { outcome: 'nothing-committed', headSha: null })

@@ -158,7 +158,7 @@ describe('resolveWait', () => {
         detail: null,
       }),
       run.event('RunKeptUncommitted', {
-        arm: 'agent/539-attempt-1',
+        ref: 'agent/539-attempt-1',
         sha: SHA2,
         parentSha: SHA,
         stoppedBy: 'out-of-turns',

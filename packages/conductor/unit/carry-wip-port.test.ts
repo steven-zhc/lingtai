@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { carryKeptWork } from '../src/carry-wip-port.ts'
 
-const KEPT = { arm: 'agent/9-attempt-1', sha: 'c'.repeat(40), parentSha: 'a'.repeat(40) }
+const KEPT = { ref: 'agent/9-attempt-1', sha: 'c'.repeat(40), parentSha: 'a'.repeat(40) }
 
 /** A git that answers by the first words of the command and records every call. */
 function scripted(answers: Record<string, string | { fail: string }>) {

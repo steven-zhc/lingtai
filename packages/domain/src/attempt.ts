@@ -797,7 +797,7 @@ export function savedHeadOf(state: AttemptState): SavedHead {
       _tag: 'WipHead',
       arm: saved.arm,
       armSha,
-      recorded: state.kept.some((k) => k.sha === armSha && k.arm === saved.arm),
+      recorded: state.kept.some((k) => k.sha === armSha && k.ref === saved.arm),
     }
   }
   if (saved.outcome === 'arm-only') return { _tag: 'BranchDiverged', arm: saved.arm, branch: saved.branch }
@@ -833,7 +833,7 @@ export function rerunHeadOf(state: AttemptState): RerunHead {
       return { at: head.head, atRef: head.ref, carry }
     }
     case 'WipHead': {
-      const carry = state.kept.find((k) => k.sha === head.armSha && k.arm === head.arm)
+      const carry = state.kept.find((k) => k.sha === head.armSha && k.ref === head.arm)
       return carry === undefined
         ? { cannot: `the kept work ${head.armSha.slice(0, 7)} on ${head.arm} was never recorded` }
         : { at: carry.parentSha, atRef: null, carry }

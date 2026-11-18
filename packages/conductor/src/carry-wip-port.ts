@@ -56,15 +56,15 @@ export function carryKeptWork(options: {
   /** `fetch origin refs/heads/<arm>`, with retry where the caller has one. */
   fetchArm: (arm: string) => Effect.Effect<Result.Result<string, { readonly detail: string }>>
   plantAt: string
-  kept: { arm: string; sha: string; parentSha: string }
+  kept: { ref: string; sha: string; parentSha: string }
 }): Effect.Effect<CarriedWork | null> {
   const { git, fetchArm, plantAt, kept } = options
   return Effect.gen(function* () {
-    const fetched = yield* fetchArm(kept.arm)
-    if (Result.isFailure(fetched)) return none(`${kept.arm} could not be fetched: ${fetched.failure.detail}`)
+    const fetched = yield* fetchArm(kept.ref)
+    if (Result.isFailure(fetched)) return none(`${kept.ref} could not be fetched: ${fetched.failure.detail}`)
     for (const sha of [kept.sha, kept.parentSha]) {
       const there = yield* git(['rev-parse', '--verify', '--quiet', `${sha}^{commit}`])
-      if (Result.isFailure(there)) return none(`${sha.slice(0, 7)} is not on ${kept.arm}, so it could not be fetched`)
+      if (Result.isFailure(there)) return none(`${sha.slice(0, 7)} is not on ${kept.ref}, so it could not be fetched`)
     }
 
     const where = yield* git(['rev-parse', '--git-path', 'lingtai-wip.patch'])

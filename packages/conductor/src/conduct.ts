@@ -3222,7 +3222,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               carriedWork = carried
               log(
                 carried.unapplied === null
-                  ? `carried ${carried.applied.length} file(s) of ${keptWip.sha.slice(0, 7)} from ${keptWip.arm}` +
+                  ? `carried ${carried.applied.length} file(s) of ${keptWip.sha.slice(0, 7)} from ${keptWip.ref}` +
                       (carried.leftOut.length > 0 ? `, left out ${carried.leftOut.join(', ')}` : '')
                   : `kept work ${keptWip.sha.slice(0, 7)} not carried — ${carried.unapplied}`,
               )
@@ -3232,7 +3232,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   actor: 'conductor',
                   data: parsePayload('RunAppliedKeptWork', {
                     fromRunId: keptFrom,
-                    arm: keptWip.arm,
+                    arm: keptWip.ref,
                     sha: keptWip.sha,
                     parentSha: keptWip.parentSha,
                     applied: carried.applied,
