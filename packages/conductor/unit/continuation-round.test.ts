@@ -36,7 +36,7 @@ describe('continuation spent accounting (#1200)', () => {
     })
   }
 
-  it('reads two MergeBase routes and one conflict FixRound back, with transientRetries absent', () => {
+  it('reads two MergeBase routes and one conflict FixRound back, with stepRedos and landingRetries absent', () => {
     const event = makeStream('pass-1200')
     const moved: Proposal = { _tag: 'BaseMoved', paths: ['a.ts'], fromSha: 'f', toSha: 't' }
     const conflict: Proposal = { _tag: 'MergeConflict', output: 'x', paths: ['a.ts'], baseSha: null, headSha: null }
@@ -47,9 +47,14 @@ describe('continuation spent accounting (#1200)', () => {
     ])
     expect(run.baseMerges).toBe(2)
     expect(run.conflictRounds).toBe(1)
-    expect(run.transientRetries).toBeUndefined()
-    expect(continuationSpent(run)).toEqual({ baseMerges: 2, conflictRounds: 1, transientRetries: 0 })
-    expect(continuationSpent(reduceAttempt([]))).toEqual({ baseMerges: 0, conflictRounds: 0, transientRetries: 0 })
+    expect(run.stepRedos).toBeUndefined()
+    expect(continuationSpent(run)).toEqual({ baseMerges: 2, conflictRounds: 1, stepRedos: 0, landingRetries: 0 })
+    expect(continuationSpent(reduceAttempt([]))).toEqual({
+      baseMerges: 0,
+      conflictRounds: 0,
+      stepRedos: 0,
+      landingRetries: 0,
+    })
   })
 })
 
@@ -68,6 +73,6 @@ describe('a rerun in place clears the failure it recovers from (#1201)', () => {
       event('RunProposedCompletion', { headSha: 'abc' }),
     ])
     expect(run.failure).toBeNull()
-    expect(run.transientRetries).toBe(1)
+    expect(run.stepRedos).toBe(1)
   })
 })

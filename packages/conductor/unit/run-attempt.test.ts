@@ -3198,7 +3198,7 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
       emit,
       bodies,
       actionsAt,
-      from: { step: 'implement', waive: undefined, transientRetriesSpent: 3 },
+      from: { step: 'implement', waive: undefined, stepRedosSpent: 3 },
     } as unknown as AttemptOptions)
 
     expect(seen.some((e) => e.type === 'StepRerunInPlace')).toBe(false)

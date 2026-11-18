@@ -52,7 +52,7 @@ async function land(pushDetail: string | undefined, failures: number, lsFailures
       home: '/tmp/fake-home',
       store,
       unreachableWaits: ['0 millis', '0 millis'],
-      transientWaits: ['0 millis', '0 millis', '0 millis'],
+      stepRedoWaits: ['0 millis', '0 millis', '0 millis'],
     },
     ports,
   )

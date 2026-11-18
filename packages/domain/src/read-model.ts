@@ -119,13 +119,16 @@ export function waitsFromState(state: TicketState): WaitFold[] {
   }))
 }
 
-/** How many times the ticket has stopped at `design` to ask a person — every such wait, resolved or not (`#649`). */
-export function designAsksOf(events: readonly Envelope[]): number {
-  return designAsksFromState(reduceTicket(events))
+/**
+ * How many times the ticket has stopped at `design` to ask a person — every such wait, resolved or not (`#649`).
+ * Counts `design`'s `AgentQuestion` only; `implement`'s `Unclear` and triage's questions join it in a later ticket (#1254).
+ */
+export function personAsksOf(events: readonly Envelope[]): number {
+  return personAsksFromState(reduceTicket(events))
 }
 
-/** `designAsksOf` over a state already reduced. */
-export function designAsksFromState(state: TicketState): number {
+/** `personAsksOf` over a state already reduced. */
+export function personAsksFromState(state: TicketState): number {
   return waitsFromState(state).filter((w) => w.reason._tag === 'AgentQuestion' && w.reason.step === 'design').length
 }
 

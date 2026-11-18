@@ -111,7 +111,7 @@ possible `error.type` [O1].
   - `push-rejected`: `[rejected]`, `non-fast-forward`, `fetch first` and `updates were rejected`: somebody else got there first.
   - `remote-error`: a `[remote rejected] … (Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)` line: the server answered a push with a 5xx. Retried after 10 s and 30 s, then refused as `remote-error`.
   - `unreachable`: git could not reach origin — `unable to access '`, `Could not resolve host`, `Connection timed out`, `early EOF`, `RPC failed`, `remote end hung up unexpectedly`, `The requested URL returned error: 5\d\d` and the other wordings listed in the table. Retried after 10 s and 30 s, then refused as `unreachable`.
-- **Claude Code.** A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. A crash whose detail is on a `transient` row is run again in place (`rerunInPlace`, 0108 §12), up to `TRANSIENT_RETRIES_LIMIT` times in an attempt; a sentence on no row is a crash and holds for a person.
+- **Claude Code.** A run is `never-started` on three facts, no words (`neverStarted`). A crash whose detail is the account-limit sentence locks the account, and `standDown` says until when. A crash whose detail is on a `transient` row is run again in place (`rerunInPlace`, 0108 §12), up to `stepRedos` times in an attempt; a sentence on no row is a crash and holds for a person.
   - `account-limit`: `You've hit your … limit`, other than the usage limit Codex says.
   - `account-limit`: `your session limit resets`.
   - `transient`: `API Error: 500`, `502`, `503` and `504`: a server error a rerun can clear.
@@ -121,7 +121,7 @@ possible `error.type` [O1].
   - `transient`: `Server is temporarily limiting requests`.
   - `transient`: `Request rejected (429)`.
   - `transient`: Cloudflare's `Attention Required! | Cloudflare` page, matched on its title and never on a bare `403`.
-- **Package registry.** A `prepared` step whose output is on one of these rows is run again in place (`rerunSetup`, 0108 §18), after the wait its count names, up to `TRANSIENT_RETRIES_LIMIT` times in an attempt. Output on no row, a 404 included, is a person's. yarn, bun and a proxy's own page have no row.
+- **Package registry.** A `prepared` step whose output is on one of these rows is run again in place (`rerunSetup`, 0108 §18), after the wait its count names, up to `stepRedos` times in an attempt. Output on no row, a 404 included, is a person's. yarn, bun and a proxy's own page have no row.
   - `transient`: pnpm's `ERR_PNPM_FETCH_500`, `_502`, `_503` and `_504`: the registry answered a fetch with a 5xx.
   - `transient`: pnpm's `ERR_PNPM_META_FETCH_FAIL`: the package's metadata could not be fetched.
   - `transient`: npm's `code E500`, `E502`, `E503` and `E504` line: the registry answered with a 5xx.

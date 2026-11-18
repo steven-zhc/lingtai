@@ -140,6 +140,6 @@ describe('a step a person asked to run again', () => {
     expect(spentAfter.implementRound).toBe(spentBefore.implementRound)
     expect(spentAfter.baseMerges ?? 0).toBe(spentBefore.baseMerges ?? 0)
     expect(spentAfter.conflictRounds ?? 0).toBe(spentBefore.conflictRounds ?? 0)
-    expect(spentAfter.transientRetries ?? 0).toBe(spentBefore.transientRetries ?? 0)
+    expect(spentAfter.stepRedos ?? 0).toBe(spentBefore.stepRedos ?? 0)
   })
 })

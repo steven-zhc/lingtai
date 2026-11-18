@@ -245,8 +245,10 @@ export interface AttemptState {
   baseMerges?: number
   /** The conflict rounds this attempt's routes bought (#1200). Absent until one is reduced, read as 0. */
   conflictRounds?: number
-  /** The reruns of a run an API error cut off (`StepRerunInPlace`, #1201; #1221 spends it too); absent reads as 0. */
-  transientRetries?: number
+  /** The redos of a step (`StepRerunInPlace`, #1201; `RerunStep` routes, #1224); absent reads as 0. */
+  stepRedos?: number
+  /** The landings again after origin refused one (`LandAgain` routes, #1221); apart from `stepRedos`; absent reads as 0. */
+  landingRetries?: number
 
   version: number
   lastSeq: bigint | null
@@ -578,7 +580,7 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
     case 'StepRerunInPlace': {
       const d = event.data as PayloadOf<'StepRerunInPlace'>
       // The cut-off's failure is not the attempt's: the rerun is the run now, so a recovery reads as one.
-      return { ...state, ...at, failure: null, transientRetries: Math.max(state.transientRetries ?? 0, d.rerun) }
+      return { ...state, ...at, failure: null, stepRedos: Math.max(state.stepRedos ?? 0, d.rerun) }
     }
 
     case 'StepStarted': {
@@ -606,14 +608,17 @@ export function reduceAttemptEvent(state: AttemptState, event: Envelope): Attemp
         state.sandbox?.some((i) => !i.ended) === true
           ? { sandbox: state.sandbox.map((i) => (i.ended ? i : { ...i, ended: true })) }
           : {}
-      if (next._tag === 'LandAgain' || next._tag === 'RerunStep') {
+      if (next._tag === 'LandAgain') {
         return {
           ...state,
           ...settled,
           ...at,
-          transientRetries: Math.max(state.transientRetries ?? 0, next.retry),
+          landingRetries: Math.max(state.landingRetries ?? 0, next.retry),
           route: d,
         }
+      }
+      if (next._tag === 'RerunStep') {
+        return { ...state, ...settled, ...at, stepRedos: Math.max(state.stepRedos ?? 0, next.retry), route: d }
       }
       if (next._tag === 'MergeBase') {
         return { ...state, ...settled, ...at, baseMerges: Math.max(state.baseMerges ?? 0, next.merge), route: d }

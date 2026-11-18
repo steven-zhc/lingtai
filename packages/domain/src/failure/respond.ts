@@ -570,51 +570,54 @@ function nextWallClock(now: Date, zone: string, hour: number, minute: number): D
 // ─── What a failure buys (0108 §19) ───
 
 /**
- * **At most this many base merges per attempt, then a person** (#593, #1200;
- * 0108 §8). A constant and not a recipe knob: the number is the ticket's, and a
- * knob is a value somebody can set to a loop. The merges cost no agent, so it
- * bounds nothing `rounds` or `restarts` do — it bounds a base that keeps moving.
- * Counted on the attempt's own stream, so a continuation does not reset it.
+ * **The mechanical bounds** (0108 §8, §15), the one place their values are written. A
+ * constant and not a recipe knob: a knob is a value somebody can set to a loop. Each is
+ * counted on the attempt's own stream (`personAsks` on the ticket's), so a continuation
+ * does not reset it.
  */
-export const BASE_MERGES_LIMIT = 10
-
-/**
- * **At most this many reruns of a run an API error cut off, per attempt** (0108
- * §8, #1200). Declared here so `attemptCeiling` says the one total; what spends
- * it is #1201 and #1221.
- */
-export const TRANSIENT_RETRIES_LIMIT = 3
-
-/** The growing waits before each transient rerun (0108 §8): the first, second and third. */
-export const TRANSIENT_WAITS = ['1 minute', '5 minutes', '15 minutes'] as const
+export const BOUNDS = {
+  /** At most this many redos of a step that crashed, answered unreadably or got a registry 5xx, per attempt (#1200, #1201, #1224). */
+  stepRedos: 3,
+  /** The growing waits before each step redo: the first, second and third. A landing retry waits on the same schedule. */
+  stepRedoWaits: ['1 minute', '5 minutes', '15 minutes'],
+  /** At most this many landings again after origin refused one, per attempt (#1221); a count of its own, never `stepRedos`. */
+  landingRetries: 3,
+  /** At most this many base merges per attempt, then a person (#593). They cost no agent, so it bounds a base that keeps moving. */
+  baseBranchMerges: 10,
+  /** At most this many times a ticket stops to ask a person, then the agent assumes and proceeds (#649). */
+  personAsks: 5,
+} as const
 
 /**
  * **Whether a crash is run again in place, and after how long** (0108 §12, #1201): null when
  * the cause is not `crash` (a wall is the recipe's bound), when the runtime's words are not on a
- * transient row, or when `spent` has used the attempt's `TRANSIENT_RETRIES_LIMIT`.
+ * transient row, or when `spent` has used the attempt's `BOUNDS.stepRedos`.
  */
 export function rerunInPlace(
   cause: 'crash' | 'timeout' | 'aborted',
   detail: string,
   spent: number,
-): { readonly wait: (typeof TRANSIENT_WAITS)[number] } | null {
-  if (cause !== 'crash' || spent >= TRANSIENT_RETRIES_LIMIT) return null
+): { readonly wait: (typeof BOUNDS.stepRedoWaits)[number] } | null {
+  if (cause !== 'crash' || spent >= BOUNDS.stepRedos) return null
   const seen = classify({ platform: 'runtime', text: detail })
   if (seen?.platform !== 'runtime' || seen.kind !== 'transient') return null
-  const wait = TRANSIENT_WAITS[spent]
+  const wait = BOUNDS.stepRedoWaits[spent]
   return wait === undefined ? null : { wait }
 }
 
 /**
  * **Whether a setup a registry refused is run again in place, and after how long** (0108 §18,
  * #1224): null when the output is on no registry row, or when `spent` has used the attempt's
- * `TRANSIENT_RETRIES_LIMIT`. The wait is the one a crash's count would get.
+ * `BOUNDS.stepRedos`. The wait is the one a crash's count would get.
  */
-export function rerunSetup(output: string, spent: number): { readonly wait: (typeof TRANSIENT_WAITS)[number] } | null {
-  if (spent >= TRANSIENT_RETRIES_LIMIT) return null
+export function rerunSetup(
+  output: string,
+  spent: number,
+): { readonly wait: (typeof BOUNDS.stepRedoWaits)[number] } | null {
+  if (spent >= BOUNDS.stepRedos) return null
   const seen = classify({ platform: 'registry', text: output })
   if (seen?.platform !== 'registry' || seen.kind !== 'transient') return null
-  const wait = TRANSIENT_WAITS[spent]
+  const wait = BOUNDS.stepRedoWaits[spent]
   return wait === undefined ? null : { wait }
 }
 
@@ -715,7 +718,7 @@ export function offerFor(
       // having moved on again and again, and a `toSha` to merge.
       if (proposal.toSha === null) {
         unavailable.push({ id: 'merge-base', because: { _tag: 'NoCriterion' } })
-      } else if ((spent.baseMerges ?? 0) >= BASE_MERGES_LIMIT) {
+      } else if ((spent.baseMerges ?? 0) >= BOUNDS.baseBranchMerges) {
         unavailable.push({ id: 'merge-base', because: { _tag: 'CeilingReached', ceiling: 'base-merges' } })
       } else {
         available.push({
@@ -742,10 +745,10 @@ export function offerFor(
     case 'SetupRefused': {
       // #1224, 0108 §18: a registry's 5xx is a rule's. Free, and absent (never `unavailable`) when
       // the output is on no row or the retries are spent, as `land-again` is.
-      if (rerunSetup(proposal.output, spent.transientRetries ?? 0) !== null) {
+      if (rerunSetup(proposal.output, spent.stepRedos ?? 0) !== null) {
         available.push({
           id: 'rerun-setup',
-          next: { _tag: 'RerunStep', step: 'prepared', retry: (spent.transientRetries ?? 0) + 1 },
+          next: { _tag: 'RerunStep', step: 'prepared', retry: (spent.stepRedos ?? 0) + 1 },
         })
       }
       const hasCriterion = proposal.output.trim() !== ''
@@ -762,10 +765,10 @@ export function offerFor(
     case 'AnswerUnreadable': {
       // #1224, 0108 §18: the same agent is asked again, once per arrival. Only where an agent was
       // dispatched to be asked: any step an agent can be declared at.
-      if (proposal.raw.trim() !== '' && !askedAgain && (spent.transientRetries ?? 0) < TRANSIENT_RETRIES_LIMIT) {
+      if (proposal.raw.trim() !== '' && !askedAgain && (spent.stepRedos ?? 0) < BOUNDS.stepRedos) {
         available.push({
           id: 'ask-again',
-          next: { _tag: 'RerunStep', step: proposal.from, retry: (spent.transientRetries ?? 0) + 1 },
+          next: { _tag: 'RerunStep', step: proposal.from, retry: (spent.stepRedos ?? 0) + 1 },
         })
       }
       const hasCriterion = proposal.raw.trim() !== ''
@@ -796,9 +799,9 @@ export function offerFor(
       // byte for byte what it was before this existed.
       if (
         (proposal.reason === 'unreachable' || proposal.reason === 'remote-error') &&
-        (spent.transientRetries ?? 0) < TRANSIENT_RETRIES_LIMIT
+        (spent.landingRetries ?? 0) < BOUNDS.landingRetries
       ) {
-        available.push({ id: 'land-again', next: { _tag: 'LandAgain', retry: (spent.transientRetries ?? 0) + 1 } })
+        available.push({ id: 'land-again', next: { _tag: 'LandAgain', retry: (spent.landingRetries ?? 0) + 1 } })
       }
       const hasCriterion = proposal.output.trim() !== ''
       round('fix-lines', 'implement', hasCriterion)
@@ -866,6 +869,6 @@ export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
   // Allowing a host or installing the sandbox is the operator's (#1157).
   'sandbox-refused': null,
   // Free and mechanical: the base moved on the branch's own files, so merge it in
-  // and build and review again (#593). Bounded by `BASE_MERGES_LIMIT`, not by a judge.
+  // and build and review again (#593). Bounded by `BOUNDS.baseBranchMerges`, not by a judge.
   'base-moved': 'merge-the-base',
 }

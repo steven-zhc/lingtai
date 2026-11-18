@@ -1033,7 +1033,7 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
        * round (§2), no stand-down (§3), and the pass reports it. Whether another
        * agent is spent on it is decided above this loop, not by a constant in it: a
        * crash a transient API error caused is run again automatically, in place and
-       * under a dispatch id of its own, within the attempt's `TRANSIENT_RETRIES_LIMIT`
+       * under a dispatch id of its own, within the attempt's `stepRedos`
        * (0108 §12, #1201); any other is a person's, or
        * [0058](../../../doc/decisions-archive/0058-lingtai-is-a-development-pipeline.md)
        * §3c's judge.

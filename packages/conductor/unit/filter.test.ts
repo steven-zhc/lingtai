@@ -490,7 +490,7 @@ describe('what a pass may spend', () => {
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5),
    * and this is the assertion that stops it being a ceiling nobody was told
    * about. A restart buys a whole further pass, so the thing an operator is
-   * deciding about is `(restarts + 1) × (2 × rounds + 1 + TRANSIENT_RETRIES_LIMIT) × wall` — and a sentence
+   * deciding about is `(restarts + 1) × (2 × rounds + 1 + stepRedos) × wall` — and a sentence
    * that named `rounds` and not `restarts` would be exactly the 2026-09-10
    * failure again, with more money on it.
    */

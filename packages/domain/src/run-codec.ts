@@ -141,7 +141,8 @@ const StoredRun = z.strictObject({
   /** #1200; each absent until its route is reduced, read as 0. */
   baseMerges: z.number().int().optional(),
   conflictRounds: z.number().int().optional(),
-  transientRetries: z.number().int().optional(),
+  stepRedos: z.number().int().optional(),
+  landingRetries: z.number().int().optional(),
 })
 
 /** Thrown for a stored state that is not a `AttemptState` of today's shape. */
@@ -202,7 +203,8 @@ export const attemptReducer: Reducer<AttemptState> = {
   // 7: a `land-again` route folds into `transientRetries` (#1221); a version-6 snapshot was cut by a reducer that ignored it.
   // 8: a `StepRerunInPlace` folds into `transientRetries` and clears `failure` (#1201); a version-7 snapshot was cut by a reducer that ignored it.
   // 9: a `rerun-setup` or `ask-again` route folds into `transientRetries` (#1224); a version-8 snapshot was cut by a reducer that ignored it.
-  version: 9,
+  // 10: `transientRetries` is split into `stepRedos` (`StepRerunInPlace`, `RerunStep`) and `landingRetries` (`LandAgain`) (#1239); a version-9 snapshot holds the one counter.
+  version: 10,
   initial: emptyAttempt,
   reduceEvent: reduceAttemptEvent,
   encode: encodeRun,

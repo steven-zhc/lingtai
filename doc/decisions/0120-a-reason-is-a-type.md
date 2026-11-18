@@ -428,7 +428,7 @@ const routeNext: (
   it clean — moves `onSha` to the merge commit (the third mover of it, after
   `admit` and `implement`), and resumes at `build`, so `build`, `review`,
   `proposed` and `merge` run again on the merged code. It is bounded by a
-  constant, not a recipe knob: at most **2** per attempt (`BASE_MERGES_LIMIT`),
+  constant, not a recipe knob: at most **10** per attempt (`baseBranchMerges`),
   after which `merge-base` is `unavailable{CeilingReached{base-merges}}` and
   only a person is left. `Approve` over that hold continues at `merge` as a
   continuation of the same attempt with the count at zero. Its built-in judge is `merge-the-base`,

@@ -77,7 +77,7 @@ import {
   reviewSummaryOf,
   stepOutcomesOf,
   waitsFromState,
-  designAsksFromState,
+  personAsksFromState,
   ticketStream,
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
@@ -608,8 +608,8 @@ export interface RunOnceOptions {
   gitEnv?: NodeJS.ProcessEnv
   /** The waits between tries of a landing's git network call (#1029); a test passes zeros. Default `UNREACHABLE_WAITS`. */
   unreachableWaits?: readonly Duration.Input[]
-  /** The waits before each `land-again` (#1221); absent is `TRANSIENT_WAITS`. */
-  transientWaits?: readonly Duration.Input[]
+  /** The waits before each step redo and each `land-again` (#1221); absent is `BOUNDS.stepRedoWaits`. */
+  stepRedoWaits?: readonly Duration.Input[]
   /** Overrides the clone source. The tests point it at a local repository. */
   remote?: string
   /**
@@ -793,7 +793,8 @@ export function continuationRound(run: AttemptState, granted: boolean): number {
 export const continuationSpent = (run: AttemptState) => ({
   baseMerges: run.baseMerges ?? 0,
   conflictRounds: run.conflictRounds ?? 0,
-  transientRetries: run.transientRetries ?? 0,
+  stepRedos: run.stepRedos ?? 0,
+  landingRetries: run.landingRetries ?? 0,
 })
 
 /** srt's own explanation out of a `SandboxWrapFailed`'s `cause`. */
@@ -1387,7 +1388,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           roundsSpent: continuationRound(releasedState, false),
           baseMergesSpent: spent.baseMerges,
           conflictRoundsSpent: spent.conflictRounds,
-          transientRetriesSpent: spent.transientRetries,
+          stepRedosSpent: spent.stepRedos,
+          landingRetriesSpent: spent.landingRetries,
           diffBaseSha: diffBaseShaOf(releasedEvents),
           landedOnBase: landedOnBaseOf(releasedEvents),
           conflictResolved: conflictResolvedOf(releasedEvents),
@@ -1449,7 +1451,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           roundsSpent: continuationRound(runState, false),
           baseMergesSpent: spent.baseMerges,
           conflictRoundsSpent: spent.conflictRounds,
-          transientRetriesSpent: spent.transientRetries,
+          stepRedosSpent: spent.stepRedos,
+          landingRetriesSpent: spent.landingRetries,
           diffBaseSha: diffBaseShaOf(runEvents),
           landedOnBase: landedOnBaseOf(runEvents),
           conflictResolved: conflictResolvedOf(runEvents),
@@ -1554,7 +1557,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         roundsSpent: continuationRound(runState, granted),
         baseMergesSpent: continuationSpent(runState).baseMerges,
         conflictRoundsSpent: continuationSpent(runState).conflictRounds,
-        transientRetriesSpent: continuationSpent(runState).transientRetries,
+        stepRedosSpent: continuationSpent(runState).stepRedos,
+        landingRetriesSpent: continuationSpent(runState).landingRetries,
         ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
         ...(criterion !== null
           ? {
@@ -3822,7 +3826,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `toSha`, not the base's tip: it is what the lane's trial merge just proved
        * clean, so the merge here is clean by construction. If the base has moved
        * again since, the next visit to `merge` sees that and counts it, which is
-       * what `BASE_MERGES_LIMIT` bounds. **Not pushed here**: `land` pushes `onSha`
+       * what `baseBranchMerges` bounds. **Not pushed here**: `land` pushes `onSha`
        * against `lease` on the next visit to `merge`, and this commit is a
        * fast-forward of the head it pushed last; any ending before that publishes
        * from the finalizer. A third push site would be a third place `lease` has
@@ -4382,7 +4386,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           runtime: options.runtime,
           issue,
           // Counted from the stream read at claim, so a second pass sees the first's ask (`#649`).
-          designAsks: designAsksFromState(reduced),
+          personAsks: personAsksFromState(reduced),
           diff: (from?: string) =>
             (from === undefined ? changeStart() : Effect.succeed(from)).pipe(
               Effect.flatMap((start) => diffBetween(start)),
@@ -5561,7 +5565,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ceilings,
         judge,
         mergeBase,
-        transientWaits: options.transientWaits,
+        stepRedoWaits: options.stepRedoWaits,
         mergeForConflict,
         conflictEvidence,
         baseIsRed,
@@ -5578,7 +5582,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 roundsSpent: continuation.roundsSpent,
                 baseMergesSpent: continuation.baseMergesSpent,
                 conflictRoundsSpent: continuation.conflictRoundsSpent,
-                transientRetriesSpent: continuation.transientRetriesSpent,
+                stepRedosSpent: continuation.stepRedosSpent,
+                landingRetriesSpent: continuation.landingRetriesSpent,
                 ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                 ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                 ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),

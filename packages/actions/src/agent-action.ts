@@ -56,6 +56,7 @@ import { runtimeVersionOfEffect, type RunOutcome, type RunSandbox, type Runtime 
 import type { RunTrace } from '@lingtai/agent/run-log'
 import type { RuntimeId, Step } from '@lingtai/domain'
 import {
+  BOUNDS,
   composePrompt,
   REFUSED_ABOUT,
   REVIEW_ANSWER_JSON_SCHEMA,
@@ -149,9 +150,9 @@ export interface AgentActionDeps {
    *  recipe without an agent action costs no API call. */
   issue: () => Promise<ReviewIssue>
   /** How many times this ticket has already stopped at `design` with an
-   *  `AgentQuestion` (`designAsksOf`, counted at claim). Absent is 0. From 2 the
+   *  `AgentQuestion` (`personAsksOf`, counted at claim). Absent is 0. From `BOUNDS.personAsks` the
    *  design brief forbids the fence (`#649`). `dispatchDeps` forwards it by hand. */
-  designAsks?: number
+  personAsks?: number
   /** The diff under review, `base...head`. Supplied by the caller: the actions
    *  package does not know about git, and should not learn. */
   diff: (from?: string) => Promise<string | DiffRead>
@@ -211,7 +212,7 @@ export interface AgentActionDeps {
 export interface AgentPortDeps {
   runtime: Runtime
   issue(): Effect.Effect<ReviewIssue>
-  designAsks?: number
+  personAsks?: number
   diff(from?: string): Effect.Effect<string | DiffRead>
   landed?(moved: {
     paths: readonly string[]
@@ -236,7 +237,7 @@ export const agentPortDepsFrom = (deps: AgentActionDeps): AgentPortDeps => {
   const lifted: { [K in keyof Required<AgentActionDeps>]: AgentPortDeps[K] } = {
     runtime: deps.runtime,
     issue: () => liftPromise(() => deps.issue()),
-    designAsks: deps.designAsks,
+    personAsks: deps.personAsks,
     diff: (from) => liftPromise(() => deps.diff(from)),
     landed:
       deps.landed === undefined
@@ -1357,14 +1358,14 @@ function designText(
   again: SentBack | null = null,
   /**
    * How many times this ticket has already stopped at design for a person
-   * (`designAsksOf`), and the fence is forbidden from the second (`#649`): a
-   * ticket stops here at most twice, then the agent writes its assumptions.
+   * (`personAsksOf`), and the fence is forbidden from `BOUNDS.personAsks` on (`#649`): a
+   * ticket stops here at most that many times, then the agent writes its assumptions.
    */
   asks: number = 0,
 ): string {
   // A judge's send-back forbids the fence too: `sentBackBlock` says *do not ask
   // again*, and a section that still taught the fence would contradict it.
-  const asking = asks < 2 && again === null
+  const asking = asks < BOUNDS.personAsks && again === null
   return `You are writing the design note for a change nobody has written yet. You
 have the ticket and the worktree it will be made in, and nothing has been
 committed. What you write is handed to the agent that does the work, beside the
@@ -1650,7 +1651,7 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
         const composed = recordedOr(
           context,
           spec.name,
-          composePrompt(designPromptParts(spec, issue, context.again ?? null, deps.designAsks ?? 0)),
+          composePrompt(designPromptParts(spec, issue, context.again ?? null, deps.personAsks ?? 0)),
         )
         const prompt = composed.handed
         // The body is a reference where the claim it came from is known (#928).

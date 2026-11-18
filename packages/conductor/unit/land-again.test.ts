@@ -5,10 +5,10 @@
  * that with `land-again`, waits, and goes to `merge` again. Nothing is built or
  * reviewed again.
  *
- * The waits are injected (`transientWaits`) the way `unreachableWaits` is, and are
+ * The waits are injected (`stepRedoWaits`) the way `unreachableWaits` is, and are
  * a few milliseconds here; what is asserted of them is the order and the count.
  */
-import { TRANSIENT_RETRIES_LIMIT } from '@lingtai/domain'
+import { BOUNDS } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -54,7 +54,7 @@ async function land(refusal: Refusal, refusals: number, recipe = RECIPE, refuseR
       home: '/tmp/fake-home',
       store,
       unreachableWaits: ['0 millis', '0 millis'],
-      transientWaits: WAITS,
+      stepRedoWaits: WAITS,
     },
     ports,
   )
@@ -89,17 +89,17 @@ describe('a landing the lane refused because origin did not answer', () => {
     expect(landAgains).toHaveLength(2)
   })
 
-  it('takes exactly TRANSIENT_RETRIES_LIMIT land-agains, then holds for a person and says how many', async () => {
+  it('takes exactly BOUNDS.landingRetries land-agains, then holds for a person and says how many', async () => {
     const { result, lane, landAgains, events, elapsed } = await land(
       { reason: 'remote-error', detail: MERGE_ERROR },
       99,
     )
     expect(result.ok).not.toBe(true)
-    expect(landAgains).toHaveLength(TRANSIENT_RETRIES_LIMIT)
+    expect(landAgains).toHaveLength(BOUNDS.landingRetries)
     // The waits were slept, in order, one per retry: 40 + 80 + 120 ms at least.
     expect(elapsed).toBeGreaterThanOrEqual(240)
     // The first land, and one per retry.
-    expect(lane()).toBe(TRANSIENT_RETRIES_LIMIT + 1)
+    expect(lane()).toBe(BOUNDS.landingRetries + 1)
     const held = JSON.stringify(events, (_k, v) => (typeof v === 'bigint' ? Number(v) : v))
     expect(held).toContain('"landedAgain":{"times":3')
   })
@@ -152,9 +152,9 @@ steps:
 runtime: { agent: claude-code, limits: { turns: 10, wall: 2m } }
 `
     const { landAgains, routes, replyOf } = await land({ reason: 'remote-error', detail: MERGE_ERROR }, 3, recipe)
-    expect(landAgains).toHaveLength(TRANSIENT_RETRIES_LIMIT)
+    expect(landAgains).toHaveLength(BOUNDS.landingRetries)
     // The route after the three land-agains is the judge's: its reply is not a rule's land-again.
-    const after = routes.slice(TRANSIENT_RETRIES_LIMIT)
+    const after = routes.slice(BOUNDS.landingRetries)
     for (const r of after) expect(replyOf(r).candidate).not.toBe('land-again')
   })
 
