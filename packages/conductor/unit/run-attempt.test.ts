@@ -1223,7 +1223,7 @@ describe('every step that does not pass arrives at proposed', () => {
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    const result = await walkOnTestClock({ recipe, context, emit, bodies, actionsAt })
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
     expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
@@ -3049,7 +3049,9 @@ describe('a route names the StepEnded it was taken from', () => {
 const walkOnTestClock = (options: AttemptOptions) =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const fiber = yield* Effect.forkChild(runAttemptEffect(attemptPortsFrom(options)))
+      const fiber = yield* Effect.forkChild(
+        runAttemptEffect(attemptPortsFrom({ resetToHead: async () => ({ head: 'reset-head' }), ...options })),
+      )
       for (let i = 0; i < 8; i++) yield* TestClock.adjust('20 minutes')
       return yield* Fiber.join(fiber)
     }).pipe(Effect.provide(TestClock.layer())),
@@ -3169,7 +3171,16 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
     await Effect.runPromise(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkChild(
-          runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+          runAttemptEffect(
+            attemptPortsFrom({
+              recipe: recipeWith({}),
+              context,
+              emit,
+              bodies,
+              actionsAt,
+              resetToHead: async () => ({ head: 'reset-head' }),
+            }),
+          ),
         )
         yield* TestClock.adjust('1 second')
         expect(dispatched).toEqual(['implement'])
@@ -3257,8 +3268,8 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
   })
 })
 
-describe('a rerun in place keeps the brief a file-brief read (#1201)', () => {
-  it('does not read the file again, so the rerun is handed the design the cut-off run was', async () => {
+describe('a step redone whole reads a file-brief again (#1245)', () => {
+  it('reads the file again, so the redo is briefed with what the file says at the head', async () => {
     const { bodies } = watching()
     const { actionsAt: base } = watchingActions()
     let file = 'the design as first written'
@@ -3296,8 +3307,8 @@ describe('a rerun in place keeps the brief a file-brief read (#1201)', () => {
 
     await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
 
-    expect(seen).toEqual(['the design as first written', 'the design as first written'])
-    expect(reads).toBe(1)
+    expect(seen).toEqual(['the design as first written', 'the design as the cut-off run edited it'])
+    expect(reads).toBe(2)
   })
 })
 
@@ -3358,8 +3369,8 @@ describe('a file-brief the crash stopped before it ran still runs on the rerun (
   })
 })
 
-describe('a rerun in place resumes at the cut-off action, whatever came before it (#1201)', () => {
-  it('does not run a preceding run action again, so its clean cannot delete the cut-off edits', async () => {
+describe('a step redone whole runs every action again, from its first (#1245)', () => {
+  it('runs a preceding run action again, after the worktree was reset to the head', async () => {
     const { bodies } = watching()
     const { actionsAt: base } = watchingActions()
     const tree = new Set<string>()
@@ -3396,10 +3407,24 @@ describe('a rerun in place resumes at the cut-off action, whatever came before i
         : base(step, actions)
     const { emit } = events()
 
-    const result = await walkOnTestClock({ recipe: recipeWith({}), context, emit, bodies, actionsAt })
+    let resets = 0
+    const result = await walkOnTestClock({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      resetToHead: async () => {
+        resets += 1
+        // What the reset does: the cut-off run's uncommitted edits are dropped.
+        tree.clear()
+        return { head: 'reset-head' }
+      },
+    })
 
-    expect(cleans).toBe(1)
-    expect(editsSeenByAgent).toEqual([false, true])
+    expect(resets).toBe(1)
+    expect(cleans).toBe(2)
+    expect(editsSeenByAgent).toEqual([false, false])
     expect(result.steps.some((s) => s.step === 'build')).toBe(true)
   })
 })
@@ -3459,7 +3484,8 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
     ])
     expect(contexts).toHaveLength(2)
     // The whole step again, from its first action: nothing is skipped as already done.
-    expect(contexts[1]!.resumedAfter).toBeUndefined()
+    expect(contexts[1]!.rerun).toBe(1)
+    expect(contexts[1]!.redo).toMatchObject({ head: 'reset-head' })
     expect(result.steps.some((s) => s.step === 'implement')).toBe(true)
     expect(result.end).not.toMatchObject({ _tag: 'WaitOnPerson' })
     expect(result.routes).toHaveLength(1)
@@ -3473,7 +3499,16 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
     await Effect.runPromise(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkChild(
-          runAttemptEffect(attemptPortsFrom({ recipe: recipeWith({}), context, emit, bodies, actionsAt })),
+          runAttemptEffect(
+            attemptPortsFrom({
+              recipe: recipeWith({}),
+              context,
+              emit,
+              bodies,
+              actionsAt,
+              resetToHead: async () => ({ head: 'reset-head' }),
+            }),
+          ),
         )
         yield* TestClock.adjust('59 seconds')
         expect(contexts).toHaveLength(1)
@@ -3536,19 +3571,32 @@ describe('a rule runs a step again in place before any judge (#1224, 0108 §18)'
       return { actionsAt, contexts }
     }
 
-    it('is asked once more at once, under a new dispatch id, and spends no round', async () => {
+    it('is asked once more as a step redone whole, after the wait, under a new dispatch id, and spends no round', async () => {
       const { bodies } = watching()
       const { actionsAt, contexts } = reviewing([unreadable])
       const { emit, seen } = events()
+      let resets = 0
 
-      const result = await walkOnTestClock({ recipe: recipe(), context, emit, bodies, actionsAt })
+      const result = await walkOnTestClock({
+        recipe: recipe(),
+        context,
+        emit,
+        bodies,
+        actionsAt,
+        resetToHead: async () => {
+          resets += 1
+          return { head: 'reset-head' }
+        },
+      })
 
+      expect(resets).toBe(1)
       expect(contexts.map((c) => c.rerun)).toEqual([undefined, 1])
+      expect(contexts[1]!.redo).toMatchObject({ head: 'reset-head' })
       const ids = contexts.map((c) => rerunId('pass-1:review:cold review:abc1234', c))
       expect(new Set(ids).size).toBe(2)
       expect(ids[1]).toMatch(/:rerun:1$/)
       expect(seen.filter((e) => e.type === 'StepRedone').map((e) => e.data)).toMatchObject([
-        { step: 'review', rerun: 1, waitMs: 0 },
+        { step: 'review', rerun: 1, waitMs: 60_000 },
       ])
       expect(result.routes).toHaveLength(1)
       expect(result.routes[0]).toMatchObject({ reply: { _tag: 'Selected', candidate: 'ask-again' } })

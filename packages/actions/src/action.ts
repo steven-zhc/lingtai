@@ -504,6 +504,16 @@ export interface SentBack {
   readonly objection?: string | null
 }
 
+/** What a step redone whole tells its agent (0108 §12, #1245): rendered by `redoParagraph`. */
+export interface RedoNote {
+  /** Why the step was interrupted, in a sentence. */
+  readonly why: string
+  /** The sha the step first started at in this attempt. */
+  readonly startedAt: string
+  /** `HEAD` after the reset: everything committed, WIP included. */
+  readonly head: string
+}
+
 export interface ActionContext {
   runId: string
   /**
@@ -535,11 +545,12 @@ export interface ActionContext {
    */
   recorded?: { readonly name: string; readonly prompt: string | null }
   /**
-   * On a rerun, the results the cut-off visit recorded for the actions **before** the one that was cut
-   * off, by position (#1201). Those actions are not run again, whatever their kind — a `run:` whose clean
-   * step resets the tree would delete the edits the cut-off agent left — and each stands with its verdict.
+   * **This step is being run again whole, from the attempt's head** (0108 §12, #1245): why, the sha the step
+   * first started at, and the head the worktree was reset to. An agent's brief ends with one paragraph from
+   * it (`redoParagraph`); a `review` is handed none. Stripped once the first `agent` action of the step has
+   * been handed it, so a later agent in the same step is briefed as on any visit.
    */
-  resumedAfter?: readonly PipelineResult['results'][number][]
+  redo?: RedoNote
   /** The worktree. Actions run where the agent worked, never anywhere else. */
   cwd: string
   /**
@@ -959,26 +970,6 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
     const keptSpent = new Set<string>()
 
     for (const [index, action] of actions.entries()) {
-      // **A rerun in place resumes at the action that was cut off** (#1201): every action before it, of any
-      // kind, keeps the verdict the cut-off visit gave it and is not executed again.
-      const resumedResult = context.rerun === undefined ? undefined : context.resumedAfter?.[index]
-      if (resumedResult !== undefined) {
-        context.log?.note(`${step}:${action.name}`, 'not run again — a rerun in place resumes at the cut-off action')
-        results.push({
-          ...resumedResult,
-          evidence: `not run again: this is a rerun in place; ${resumedResult.evidence}`,
-        })
-        if (resumedResult.document !== undefined) {
-          context = {
-            ...context,
-            design: {
-              document: resumedResult.document,
-              ...(resumedResult.locator === undefined ? {} : { locator: resumedResult.locator }),
-            },
-          }
-        }
-        continue
-      }
       const kept = options.kept?.find((k) => k.name === action.name && !keptSpent.has(k.name))
       if (kept !== undefined && !options.waived?.some((w) => w.name === action.name)) {
         keptSpent.add(kept.name)
@@ -1058,13 +1049,16 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
               prompted: (promptVersion, prompt, runtimeVersion) =>
                 recordPrompt({ for: spentFor, promptVersion, runtimeVersion, prompt }),
             }
-      // **Only the action that was cut off is a rerun** (#1201): this is it (every one before it was
-      // skipped above), so every action after it in the step's list runs as on any visit — a fresh
-      // dispatch id, a fresh `startedAt`, its own diff.
       // A rerun after an account limit names the action it re-runs (`recorded`): it is not spent on an action
       // before that one, whose own dispatch id must not be the cut-off one's.
-      if (context.rerun !== undefined && (context.recorded === undefined || context.recorded.name === action.name)) {
-        const { rerun: _rerun, resumedAfter: _resumedAfter, recorded: _recorded, ...rest } = context
+      if (context.recorded !== undefined && context.rerun !== undefined && context.recorded.name === action.name) {
+        const { rerun: _rerun, recorded: _recorded, ...rest } = context
+        context = rest
+      }
+      // **A step redone whole keeps `rerun` on every action** (#1245): every agent in it ran before, so every
+      // one needs the suffix its dispatch id is built from. Only the paragraph is handed once.
+      if (context.redo !== undefined && action.kind === 'agent') {
+        const { redo: _redo, ...rest } = context
         context = rest
       }
 
@@ -1313,6 +1307,18 @@ export function recordedOr(
   return context.recorded?.name === name && context.recorded.prompt !== null
     ? { handed: context.recorded.prompt, recorded: context.recorded.prompt, refs: [], values: [] }
     : composed
+}
+
+/**
+ * **The one paragraph that ends the brief of an agent whose step is redone** (0108 §12, #1245): why it was
+ * interrupted, where it began, what is committed now, and the WIP Lingtai saved for it (`kept`, the shas of
+ * the commits made for the cut-off run). Never written into a `review`'s brief. One function, so the three
+ * agents that are handed it cannot word it differently.
+ */
+export function redoParagraph(redo: RedoNote, kept: readonly string[] = []): string {
+  const saved = kept.length === 0 ? '' : `, including any unfinished work Lingtai saved for you (${kept.join(', ')})`
+  const began = redo.startedAt === redo.head ? `it began at ${redo.head}` : `it began at ${redo.startedAt}`
+  return `This step was interrupted (${redo.why}); ${began} and is committed to ${redo.head}${saved}. Carry on, and do not redo what is committed.`
 }
 
 /** `id`, with `:rerun:<n>` when this visit is a rerun in place (#1201): a session id is never reused. */

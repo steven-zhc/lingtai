@@ -23,6 +23,7 @@ import {
   makeWorkAction,
   makeWorktreeAction,
   commandEffect,
+  redoParagraph,
   rerunId,
 } from '@lingtai/actions'
 import type { LandedCommit, LandedPath, LandedTitle } from '@lingtai/actions'
@@ -270,7 +271,13 @@ import { fixBriefParts, grantedAdviceFromState } from './fix.ts'
 import { flakyPortOf } from './flaky-port.ts'
 import { chosenIn, judgePrompt, judgePromptParts } from './judge-agent.ts'
 import { type Declared, judgeDeclaredAt } from './judge.ts'
-import { commitWipExceptPlanted, keptRunPort, onlyThePlantedFileIsDirty, restoreAfterReview } from './kept-run-port.ts'
+import {
+  commitWipExceptPlanted,
+  keptRunPort,
+  onlyThePlantedFileIsDirty,
+  resetToHead,
+  restoreAfterReview,
+} from './kept-run-port.ts'
 import { labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { AgentHost, Repo } from './ports.ts'
@@ -2064,8 +2071,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       let stoppedBy: string | null = null
       /** Where the first implementer dispatch found the tree: a rerun's receipt is measured from it too (#1201). */
       let implementerStartedAt: string | null = null
-      /** The diff the first fix-round dispatch was briefed with: a rerun is briefed with the same one (#1201). */
-      let fixDiffSeen: { text: string; from: string | null; to: string | null } | null = null
       /**
        * Conflict fix rounds dispatched so far (#653). A conflict round leaves
        * `round` where `rounds` was, so `round` alone would hand Claude Code the
@@ -2370,6 +2375,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * read, since the read is a second git call that can fail on its own.
        */
       const wips: Array<{ parent: string; stoppedBy: string; sha: string | null }> = []
+      /**
+       * Where `wips` stood when the step's agent was first dispatched (#1245): a step redone whole is told
+       * the WIP made since, and only that. Set by every first dispatch, never by a redo of it.
+       */
+      let stepWipFrom = 0
+      /** The paragraph a redone step's agent ends its brief with, or null on a first dispatch (0108 §12). */
+      const redoNoteOf = (context: ActionContext, startedAt: string): string | null => {
+        if (context.redo === undefined) {
+          stepWipFrom = wips.length
+          return null
+        }
+        return redoParagraph(
+          { ...context.redo, startedAt },
+          wips.slice(stepWipFrom).flatMap((entry) => (entry.sha === null ? [] : [entry.sha])),
+        )
+      }
       /** The worktree's `HEAD` as `publishWhatIsCommitted` last read it — what `standingFor` compares to the granted sha (#654). */
       let headNow: string | null = null
       /** Whether the dispatch that ran last was a conflict round, which keeps nothing (0108 §20). */
@@ -4751,11 +4772,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
            * true: prose in a prompt is not a guard, and the agent that ignores it is
            * exactly the one the guard is for.
            */
+          // Only the agent a redo's paragraph is handed to is measured from the first start (#1245): a later
+          // agent in the same step, handed none, found the tree where the one before it left it.
           const startedAt =
-            brief.context.rerun !== undefined && implementerStartedAt !== null
+            brief.context.redo !== undefined && implementerStartedAt !== null
               ? implementerStartedAt
               : yield* gitOrDieEffect(['rev-parse', 'HEAD'])
           implementerStartedAt = startedAt
+          const redoNote = redoNoteOf(brief.context, startedAt)
           const implementDecision = yield* decideSandbox
           const wired = yield* Effect.result(
             host.wire({
@@ -4872,6 +4896,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                         ),
                         // The recipe's own words at `implement`, appended (`#266`).
                         ...(spec.prompt === '' ? [] : [alsoText(spec.prompt)]),
+                        ...(redoNote === null ? [] : [`\n\n${redoNote}`]),
                       ]
                 const implementerFor = {
                   _tag: 'Action' as const,
@@ -5148,14 +5173,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // there is a continuation — see `baseShaOr`'s own comment.
           // The reviewer's own spelling (`DIFF_FLAGS`), as `fixBrief`'s doc says the
           // two should be looking at the same change, and the two shas it ran between.
-          // A rerun in place (#1201) is handed the diff the cut-off round saw, not the partly fixed tree.
-          const underReview =
-            brief.context.rerun !== undefined && fixDiffSeen !== null
-              ? fixDiffSeen
-              : yield* changeStart(continuation?.diffBaseSha ?? tree.baseSha).pipe(
-                  Effect.flatMap((start) => diffBetween(start)),
-                )
-          fixDiffSeen = underReview
+          // A step redone whole (#1245) reads the diff as it stands at the head it was reset to.
+          const underReview = yield* changeStart(continuation?.diffBaseSha ?? tree.baseSha).pipe(
+            Effect.flatMap((start) => diffBetween(start)),
+          )
+          const redoNote = redoNoteOf(brief.context, brief.context.redo?.startedAt ?? brief.context.onSha)
           // The same flag `firstDispatch` sets before its own dispatch, and for
           // the same reason (`#468`): an agent is running, and nothing has
           // judged what it leaves in the worktree if it is interrupted here.
@@ -5196,6 +5218,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   // Appended as a part, never to the finished string, so no recorded offset
                   // depends on where the text before it happened to end.
                   ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
+                  ...(redoNote === null ? [] : [`\n\n${redoNote}`]),
                 ]
           const fixPrompt = fixParts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
           const fixFor: SpentFor = {
@@ -5544,6 +5567,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         judge,
         mergeBase,
         stepRedoWaits: options.stepRedoWaits,
+        resetToHead: () => resetToHead({ git: gitAskedEffect, plantAt: recipe.env.plantAt }),
         mergeForConflict,
         conflictEvidence,
         baseIsRed,
