@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { requeueHoldingEffect } from '../../../packages/conductor/src/approve.ts'
 import { editBodyAndRequeueHoldingEffect } from '../../../packages/conductor/src/edit-body.ts'
 import { memoryTickets } from '../../../packages/conductor/test/memory-tickets.ts'
-import { requeueCommand } from '../src/requeue.ts'
+import { startNewAttemptCommand } from '../src/start-new-attempt.ts'
 
 async function seed(store: EventStore, streamId: string, events: readonly Envelope[]) {
   await store.append(streamId, 0, events)
@@ -42,7 +42,7 @@ describe('requeue command', () => {
     const { ticketId, waitId } = await blocked(store, 1)
     const lines: string[] = []
     const code = await Effect.runPromise(
-      requeueCommand(
+      startNewAttemptCommand(
         { project: 'lingtai', issue: 1, note: '', intoBody: 'Use the small helper', by: 'human:test' },
         (line) => lines.push(line),
         {
@@ -69,7 +69,7 @@ describe('requeue command', () => {
     const { ticketId, waitId } = await blocked(store, 2)
     const lines: string[] = []
     const code = await Effect.runPromise(
-      requeueCommand(
+      startNewAttemptCommand(
         { project: 'lingtai', issue: 2, note: 'try again', by: 'human:test' },
         (line) => lines.push(line),
         { store, readProject, conductorNote, requeue: (options) => requeueHoldingEffect(options, store, ticketId) },

@@ -1,7 +1,7 @@
 import { userInfo } from 'node:os'
 
 /**
- * `lingtai requeue <project> --issue <n> [--note <why>] [--into-body <text>]` —
+ * `lingtai start-new-attempt <project> --issue <n> [--note <why>] [--into-body <text>]` —
  * hand a blocked item back to the queue.
  *
  * The board has had this button since `#84`; the terminal has not. The two are
@@ -39,7 +39,7 @@ import { Effect } from 'effect'
 import { type ConductorNote, noteConductor } from './conductor-note.ts'
 import { VERBS, fromOutcome, logVerdict, refusal, type Answered } from './verdict.ts'
 
-export interface RequeueCommandOptions {
+export interface StartNewAttemptCommandOptions {
   project: string
   issue: number
   /**
@@ -62,8 +62,8 @@ type RequeueDeps = {
   requeue?: typeof requeueEffect
 }
 
-export function requeueVerdict(
-  options: RequeueCommandOptions,
+export function startNewAttemptVerdict(
+  options: StartNewAttemptCommandOptions,
   progress: (line: string) => void,
   deps: RequeueDeps = {},
 ): Effect.Effect<Answered, unknown> {
@@ -124,10 +124,12 @@ export function requeueVerdict(
   })
 }
 
-export function requeueCommand(
-  options: RequeueCommandOptions,
+export function startNewAttemptCommand(
+  options: StartNewAttemptCommandOptions,
   log = console.log,
   deps: RequeueDeps = {},
 ): Effect.Effect<number, unknown> {
-  return Effect.map(requeueVerdict(options, log, deps), (answered) => logVerdict(VERBS['requeue'], answered, log))
+  return Effect.map(startNewAttemptVerdict(options, log, deps), (answered) =>
+    logVerdict(VERBS['start-new-attempt'], answered, log),
+  )
 }

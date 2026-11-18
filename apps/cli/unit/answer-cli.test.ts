@@ -13,18 +13,18 @@ vi.mock('../src/close.ts', () => ({
     return Effect.succeed({ code: 0, verdict: { outcome: 'accepted', ticketId: 'ticket-p-5', detail: 'closed it' } })
   },
 }))
-vi.mock('../src/requeue.ts', () => ({
-  requeueVerdict: (options: unknown) => {
-    seen.calls.push({ command: 'requeue', options })
+vi.mock('../src/start-new-attempt.ts', () => ({
+  startNewAttemptVerdict: (options: unknown) => {
+    seen.calls.push({ command: 'start-new-attempt', options })
     return Effect.succeed({
       code: 0,
       verdict: { outcome: 'accepted', ticketId: 'ticket-p-5', detail: 'back in the queue' },
     })
   },
 }))
-vi.mock('../src/grant-fix-round.ts', () => ({
-  grantFixRoundVerdict: (options: unknown) => {
-    seen.calls.push({ command: 'grant-fix-round', options })
+vi.mock('../src/fix-refusal.ts', () => ({
+  fixRefusalVerdict: (options: unknown) => {
+    seen.calls.push({ command: 'fix-refusal', options })
     return Effect.succeed({
       code: 1,
       verdict: { outcome: 'refused', reason: 'head-moved', ticketId: 'ticket-p-5', detail: 'the head moved' },
@@ -95,11 +95,11 @@ describe('the sentence after the project', () => {
   })
 })
 
-describe('requeue', () => {
+describe('start-new-attempt', () => {
   it('--note with nothing after it is recorded as the empty string, as leaving it off is', async () => {
-    await capture(['requeue', 'p', '--issue', '5', '--note'])
-    await capture(['requeue', 'p', '--issue', '5'])
-    await capture(['requeue', 'p', '--issue', '5', '--note', '--into-body', 'the answer'])
+    await capture(['start-new-attempt', 'p', '--issue', '5', '--note'])
+    await capture(['start-new-attempt', 'p', '--issue', '5'])
+    await capture(['start-new-attempt', 'p', '--issue', '5', '--note', '--into-body', 'the answer'])
     expect(seen.calls.map((c) => c.options)).toEqual([
       { project: 'p', issue: 5, note: '' },
       { project: 'p', issue: 5, note: '' },
@@ -109,8 +109,8 @@ describe('requeue', () => {
 
   it('--into-body with no text is refused in its own words, exit 2, before anything runs', async () => {
     for (const argv of [
-      ['requeue', 'p', '--issue', '5', '--into-body'],
-      ['requeue', 'p', '--issue', '5', '--into-body', '  '],
+      ['start-new-attempt', 'p', '--issue', '5', '--into-body'],
+      ['start-new-attempt', 'p', '--issue', '5', '--into-body', '  '],
     ]) {
       const r = await capture(argv)
       expect(r).toEqual({ code: 2, out: '', err: '--into-body takes text\n' })
@@ -119,27 +119,27 @@ describe('requeue', () => {
   })
 })
 
-describe('grant-fix-round', () => {
+describe('fix-refusal', () => {
   it('--if-head with no value is refused in its own words, exit 2', async () => {
-    const r = await capture(['grant-fix-round', 'p', '--issue', '5', '--if-head'])
+    const r = await capture(['fix-refusal', 'p', '--issue', '5', '--if-head'])
     expect(r).toEqual({ code: 2, out: '', err: '--if-head takes the commit SHA, full or at least 7 characters\n' })
     expect(seen.calls).toEqual([])
   })
 
   it('prints a refusal as one verdict line and the detail, exit 1', async () => {
-    const r = await capture(['grant-fix-round', 'p', '--issue', '5', '--if-head', 'abc1234'])
+    const r = await capture(['fix-refusal', 'p', '--issue', '5', '--if-head', 'abc1234'])
     expect(r.code).toBe(1)
     expect(r.out).toBe('✗ fix round refused (head-moved) ticket-p-5\n  the head moved\n')
     expect(seen.calls[0]?.options).toEqual({ project: 'p', issue: 5, ifHead: 'abc1234' })
   })
 
   it('--json prints a refusal as an outcome and not as the error document', async () => {
-    const r = await capture(['grant-fix-round', 'p', '--issue', '5', '--json'])
+    const r = await capture(['fix-refusal', 'p', '--issue', '5', '--json'])
     expect(r.code).toBe(1)
     expect(r.out.trim().split('\n')).toHaveLength(1)
     expect(JSON.parse(r.out)).toEqual({
       version: 1,
-      command: 'grant-fix-round',
+      command: 'fix-refusal',
       outcome: 'refused',
       ticketId: 'ticket-p-5',
       reason: 'head-moved',
@@ -156,7 +156,7 @@ describe('approve --reject', () => {
       [
         '✗ not approved (removed-flag)',
         '  --reject is gone: it asked the same question again and ended nothing.',
-        '  next: lingtai requeue p --issue 5',
+        '  next: lingtai start-new-attempt p --issue 5',
         '',
       ].join('\n'),
     )
@@ -169,7 +169,7 @@ describe('approve --reject', () => {
       command: 'approve',
       outcome: 'refused',
       reason: 'removed-flag',
-      next: 'lingtai requeue p --issue 5',
+      next: 'lingtai start-new-attempt p --issue 5',
     })
   })
 })
