@@ -269,6 +269,7 @@ describe('what the fixer is told', () => {
     expect(brief).toContain('the whole of what this attempt asks you to run')
     expect(brief).toContain('There is no later turn')
     expect(brief).toMatch(/once you have changed anything, commit it before you verify/i)
+    expect(brief).toMatch(/commit each piece that works as you finish it/i)
   })
 
   /**
