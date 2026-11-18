@@ -163,9 +163,13 @@ describe('whyNothingRuns', () => {
   it('puts a red base before chains, and does not count waiting rows as queued', () => {
     const base = { held: { command: 'pnpm test', baseSha: 'a7148c1ffff', base: 'main' } }
     const skipped = [{ ref: 9, reason: 'base-red' }, ...skipBlocked(2, 3, 4)]
-    const r = rootBeforeChains(facts({ base, skipped }))
-    expect(r?.roots).toHaveLength(1)
-    expect(r?.roots[0]?.root).toBe('base-red')
+    expect(rootBeforeChains(facts({ base, skipped }))).toBeNull()
+    const r = whyNothingRuns(facts({ base, skipped, rows: [row({ ref: 1111, waiting: true })] }), [
+      blocked(2, 1111),
+      blocked(3, 1111),
+      blocked(4, 1111),
+    ])
+    expect(r?.roots.map((x) => x.root)).toEqual(['chain', 'base-red'])
     const waiting = facts({ offered: [9], rows: [row({ ref: 9, state: 'waiting' })] })
     expect(says(waiting)).toBeUndefined()
   })
@@ -181,7 +185,8 @@ describe('whyNothingRuns', () => {
       })
     expect(says(run(2))).toBeUndefined()
     expect(says({ ...run(10), beacon: { up: true } })).toBeUndefined()
-    expect(says(run(10))?.[0]).toMatch(/daemon is not running/)
+    // a `lingtai run` pass writes no beacon: an old running row is still a pass
+    expect(says(run(10))).toBeUndefined()
   })
 
   it('says it found no reason, rather than nothing', () => {

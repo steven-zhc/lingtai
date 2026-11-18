@@ -102,22 +102,17 @@ export function unheldQueued(facts: Pick<WhyFacts, 'offered' | 'skipped' | 'rows
 const flying = (r: WhyRow): boolean => r.state === 'running' || r.state === 'verifying'
 
 /**
- * Whether the sentence can show, before the beacon is known: unheld work queued and no row updated within
- * the last five minutes while running. An older running row is settled by `applies`, which has the beacon.
+ * Whether the sentence can show: unheld work queued and no row `running` or `verifying` at all. A pass
+ * that has not changed a column for ten minutes is still a pass, and a `lingtai run` writes no beacon,
+ * so neither row age nor the daemon's beacon is evidence that nothing is in flight.
  */
 export function mayApply(facts: WhyFacts): boolean {
-  if (unheldQueued(facts).length === 0) return false
-  const at = facts.now.getTime()
-  return !facts.rows.some(
-    (r) => flying(r) && (r.updatedAt === null || at - r.updatedAt.getTime() < IN_FLIGHT_WITHIN_MS),
-  )
+  return unheldQueued(facts).length > 0 && !facts.rows.some(flying)
 }
 
-/** `mayApply`, and a running row that has not changed lately is a live pass while the daemon is up: row age is not liveness. */
+/** The same question, once the beacon is known; the beacon does not change the answer. */
 export function applies(facts: WhyFacts): boolean {
-  if (!mayApply(facts)) return false
-  const b = facts.beacon
-  return !('up' in b && b.up && facts.rows.some(flying))
+  return mayApply(facts)
 }
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
@@ -154,6 +149,12 @@ export function rootBeforeChains(facts: WhyFacts): WhyNothingRuns | null {
       lock,
     })
   }
+  return null
+}
+
+/** A red or unreadable base, which holds only the tickets skipped for it, so other roots may stand beside it. */
+export function baseRoot(facts: WhyFacts): Root | null {
+  const only = (root: Root): Root => root
   const baseRed = facts.skipped.filter((s) => s.reason === 'base-red').map((s) => s.ref)
   if (baseRed.length > 0) {
     const look = facts.base
@@ -335,7 +336,7 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
   }
 
   // Whatever is unheld and unexplained is said as such, never hidden.
-  const explained = new Set([...groups.values()].flatMap((g) => g.tickets))
+  const explained = new Set([...[...groups.values()].flatMap((g) => g.tickets), ...(baseRoot(facts)?.tickets ?? [])])
   for (const ref of unheldQueued(facts))
     if (!explained.has(ref))
       add(
@@ -345,9 +346,15 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
         ref,
       )
 
-  const roots = [...groups.values()]
-    .map((g): Root => ({ root: g.kind, sentence: g.describe(g.tickets.length), tickets: g.tickets }))
-    .sort((a, b) => b.tickets.length - a.tickets.length)
+  const base = baseRoot(facts)
+  const roots = [
+    ...(base === null ? [] : [base]),
+    ...[...groups.values()].map((g): Root => ({
+      root: g.kind,
+      sentence: g.describe(g.tickets.length),
+      tickets: g.tickets,
+    })),
+  ].sort((a, b) => b.tickets.length - a.tickets.length)
   return roots.length === 0 ? null : { roots }
 }
 
