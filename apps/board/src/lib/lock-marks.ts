@@ -6,7 +6,7 @@
  * component, and `locks.ts` reaches the store. Only `paused` is drawn here; the
  * ceiling and account kinds add a case beside `isPaused`, never a new parameter.
  */
-import { type Lock, accountWords, localDay, whenLabel } from '@lingtai/domain'
+import { type Lock, localDay } from '@lingtai/domain'
 
 import type { ProjectLocks } from './locks.ts'
 
@@ -32,7 +32,7 @@ export function ceilingToday(locks: readonly Lock[] | undefined, now: Date): Ext
 /**
  * The account limits that still hold at `now`, in `locksOn`'s order (by runtime).
  * `locksOn` keeps a passed one (lifting it is the guard's); a passed one marks
- * nothing, so every card and line reads this and only the banner sees the rest.
+ * nothing, so every line reads this and only the banner sees the rest. A card carries no account mark (#1216): the banner is the one place a runtime's limit is named.
  */
 export function accountsHolding(locks: readonly Lock[] | undefined, now: Date): Extract<Lock, { kind: 'account' }>[] {
   const held: Extract<Lock, { kind: 'account' }>[] = []
@@ -72,7 +72,7 @@ export function everyPaused(map: LockMap, registered: readonly string[]): boolea
 /** A project's standing under the first lock that holds it: the card's words and the panel's. */
 export interface LockStanding {
   /** The short word the panel's chip uses. */
-  kind: 'ceiling' | 'usage limit' | 'rate limit' | 'paused'
+  kind: 'ceiling' | 'paused'
   text: string
   title: string
   /** What the request waits for, as a clause after *until*. */
@@ -82,8 +82,7 @@ export interface LockStanding {
 /**
  * The one place a lock is worded for a queued ticket: the home page's card
  * (`queuedStanding`) and the task page's Queued panel (`holding`) both read it,
- * so they cannot drift. Order: today's ceiling, the first account limit, the
- * project's own pause. Null when nothing holds.
+ * so they cannot drift. Order: today's ceiling, then the project's own pause; an account limit marks no card (#1216). Null when nothing holds.
  */
 export function lockStanding(project: string, locks: readonly Lock[] | undefined, now: Date): LockStanding | null {
   if (ceilingToday(locks, now) !== null) {
@@ -92,20 +91,6 @@ export function lockStanding(project: string, locks: readonly Lock[] | undefined
       text: "today's spend reached the ceiling — nothing will start",
       title: 'no new work starts until midnight or until today’s ceiling is raised; this card keeps its place',
       waitsFor: 'midnight, or until today’s ceiling is raised',
-    }
-  }
-  const limit = accountsHolding(locks, now)[0]
-  if (limit !== undefined) {
-    const until = whenLabel(limit.until, now)
-    const words = accountWords(limit.account)
-    return {
-      kind: words.limit === 'rate limit' ? 'rate limit' : 'usage limit',
-      text: `${words.name} is at its ${words.limit} until ${until} — nothing will start`,
-      title:
-        limit.account === 'github'
-          ? `${project} is on GitHub; this card keeps its place`
-          : `${project}'s recipe uses ${limit.account}; this card keeps its place`,
-      waitsFor: `${words.name}'s limit passes (${until})`,
     }
   }
   if (isPaused(locks)) {

@@ -140,6 +140,10 @@ export type BannerRow =
       untilLabel: string
       title: string
       passed: boolean
+      /** What the runtime said, when the lock was written with it (#1214): the banner words it. */
+      named?: Extract<Lock, { kind: 'account' }>['named']
+      untilFrom: string
+      said: string
       /** The projects in scope this limit holds, by name. */
       waiting: string[]
       /** *All projects* only: the projects nothing holds, with the runtimes their recipes use. */
@@ -182,6 +186,9 @@ export function bannerRows(
         untilLabel: whenLabel(lock.until, now),
         title: `${untilFromWords(lock.untilFrom)} — "${lock.said}"`,
         passed: lock.until.getTime() <= now.getTime(),
+        ...(lock.named === undefined ? {} : { named: lock.named }),
+        untilFrom: lock.untilFrom,
+        said: lock.said,
         waiting: [h.project],
         others: [],
       })
