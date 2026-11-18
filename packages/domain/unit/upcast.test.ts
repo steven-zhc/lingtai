@@ -424,3 +424,30 @@ describe("doc/reference.md's upcaster counts", () => {
     ).toBe(chains)
   })
 })
+
+/** #1242 / 0108: a person's moves were named for what they ran, and are named for what they do. */
+describe('WaitResolved', () => {
+  const stored = (resolution: unknown) => ({ waitId: 'wait-1', by: 'human:steven', resolution, note: 'why' })
+
+  it.each([
+    [{ _tag: 'GrantFixRound', onSha: 'a'.repeat(40), ref: 'refs/lingtai/1' }, 'FixRefusal'],
+    [{ _tag: 'RerunStep', onSha: 'a'.repeat(40), ref: null }, 'RedoStep'],
+    [{ _tag: 'Requeue' }, 'StartNewAttempt'],
+    [{ _tag: 'EditBodyAndRequeue' }, 'EditBodyAndStartNewAttempt'],
+  ] as const)('reads a version-1 %j as %s, the fields unchanged', (old, now) => {
+    const read = parseStoredPayload('WaitResolved', 1, stored(old))
+    expect(read).toEqual(stored({ ...old, _tag: now }))
+  })
+
+  it('passes every other resolution through at version 1, and reads version 2 as it is', () => {
+    for (const resolution of [{ _tag: 'Approve', onSha: 'b' }, { _tag: 'Close' }, { _tag: 'AnswerQuestion', choice: 'a' }]) {
+      expect(parseStoredPayload('WaitResolved', 1, stored(resolution))).toEqual(stored(resolution))
+    }
+    const second = stored({ _tag: 'FixRefusal', onSha: 'a', ref: 'r' })
+    expect(parseStoredPayload('WaitResolved', 2, second)).toEqual(second)
+  })
+
+  it('refuses a version-2 row that still carries a retired tag', () => {
+    expect(() => parseStoredPayload('WaitResolved', 2, stored({ _tag: 'Requeue' }))).toThrow()
+  })
+})

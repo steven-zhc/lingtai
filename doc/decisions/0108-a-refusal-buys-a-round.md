@@ -565,19 +565,6 @@ What changes:
   only `design`'s. (Built: the grouped `limits`, the refusal of the old names,
   `refusalFixes` and `conflictResolutions` apart, `newAttempts`, and
   `attemptCeiling`'s product with its per-step list.)
-- **The renames on the log.** The resolutions `GrantFixRound`, `RerunStep`,
-  `Requeue`, `EditBodyAndRequeue` → `FixRefusal`, `RedoStep`,
-  `StartNewAttempt`, `EditBodyAndStartNewAttempt`. (Built: `StepRerunInPlace` →
-  `StepRedone`, `ReleaseCause.Restart` → `NewAttempt`, the route's `FixRound`
-  and `MergeBase` → `FixRefusal` and `MergeBaseBranch`, and a ceiling named for
-  its bound; the old type is in `RETIRED` and read beside the new one, the old
-  tags are rewritten on read by an upcaster at a bumped `SCHEMA_VER`.) A
-  renamed event type joins `RETIRED` and the reducer reads both names with
-  one meaning, as `PassRouted` beside `ProposalRouted`
-  (`packages/domain/src/attempt.ts:597`); a renamed tag inside a payload
-  bumps the type's `SCHEMA_VER` with an upcaster, as `WaitTriaged` (#591).
-  Every projection rebuilt from empty gives the same answer before and after.
-  The board's and the CLI's words follow.
 - **WIP on the branch (§20).** `keepUncommittedWork` commits to `agent/<n>`;
   the lane's `wip-commit` refusal (`packages/repo/src/integrate.ts:520-536`)
   goes; #1170's carry (`RunAppliedKeptWork`) is removed.
@@ -586,7 +573,7 @@ What changes:
   per-action rerun marks, `startedAt`, `fixDiffSeen`); `replay` declared by
   every plugin and checked when the recipe resolves; an unknown crash, a
   missing receipt and an unreadable answer redone by rule (#1205's
-  `askedAgainOn` goes); a person's rerun (#1218, #1219) becomes `RedoStep`.
+  `askedAgainOn` goes); a person's `RedoStep` (#1218, #1219) keeps their behaviour until then.
 - **`implement`'s outcomes (§21).** The declared outcome, the two
   corrections, `already-done` at the router, the review of `AlreadyDone`,
   `TicketSatisfied` and the `satisfied` ending; `nothing-produced` (#1198)

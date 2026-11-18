@@ -15,6 +15,9 @@ import {
   continuationOf,
   grantCriterion,
   recommendedResolution,
+  resolutionAdvised,
+  TriageAdvice as TriageAdviceSchema,
+  Resolution as ResolutionSchema,
   standingFor,
   triageStatus,
   waivedActionsAt,
@@ -1397,4 +1400,25 @@ describe('grantCriterion on a declined fix round (#935)', () => {
       })
     })
   }
+})
+
+/** #1242: `TriageAdvice` keeps its values, and every one of them names a resolution a person can be offered. */
+describe('resolutionAdvised', () => {
+  const resolutions = ResolutionSchema.options.map((o) => o.shape._tag.value)
+
+  it.each(TriageAdviceSchema.options)('%s maps to a member of Resolution', (advice) => {
+    expect(resolutions).toContain(resolutionAdvised(advice))
+  })
+
+  it('maps the three advices that were renamed, and the three that were not to themselves', () => {
+    expect(resolutionAdvised('GrantFixRound')).toBe('FixRefusal')
+    expect(resolutionAdvised('Requeue')).toBe('StartNewAttempt')
+    expect(resolutionAdvised('EditBodyAndRequeue')).toBe('EditBodyAndStartNewAttempt')
+    for (const same of ['Approve', 'Split', 'Close'] as const) expect(resolutionAdvised(same)).toBe(same)
+  })
+
+  it('leaves out exactly the two resolutions triage cannot advise', () => {
+    const advised = new Set(TriageAdviceSchema.options.map(resolutionAdvised))
+    expect(resolutions.filter((r) => !advised.has(r)).sort()).toEqual(['AnswerQuestion', 'RedoStep'])
+  })
 })

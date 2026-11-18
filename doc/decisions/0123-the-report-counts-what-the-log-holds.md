@@ -3,7 +3,7 @@
 **Status** accepted · 2026-10-28
 
 The report says, for a window of time and a project, how many tickets the
-pipeline resolved, and for each landed ticket how many attempts, fix rounds and
+pipeline resolved, and for each landed ticket how many attempts, refusal fixes and
 waits it took, how long the machine worked on it and what it cost. It also lists
 the tickets that went round most, and where each one's money went. Every number is read
 from events already on the log, reduced into one row per ticket by a
@@ -16,7 +16,7 @@ plugin at `end:`, decided in its own ADR.
 **Words.** A **ticket** is one `ticket-<project>-<n>` stream. An **attempt** is one
 claim of it, whatever started it: the queue, a restart or a requeue. A **continuation**, a held run going on after a person's approval or a granted round, is
 not a claim (0109 §5): it is `TicketContinued`, or, on the log written before
-that, a `TicketClaimed` whose `runId` was already claimed on its stream. A **fix round** is a paid run answering a refusal.
+that, a `TicketClaimed` whose `runId` was already claimed on its stream. A **refusal fix** is a paid run answering a refusal.
 A **wait** is one `WaitStarted` on the ticket's stream. The **window** is the
 span of time the report covers.
 
@@ -54,7 +54,7 @@ The operator's decisions in epic #648 are the inputs here.
    | Fact | Read from |
    | --- | --- |
    | attempts | the claims on the ticket's stream, continuations excluded by 0109 §5's rule |
-   | fix rounds | distinct `(pass, round)` pairs among the ticket's `RunSpent` events whose `for` is `Action` with `round ≥ 1` (0110 §10), **summed over every attempt of the ticket** |
+   | refusal fixes | distinct `(pass, round)` pairs among the ticket's `RunSpent` events whose `for` is `Action` with `round ≥ 1` (0110 §10), **summed over every attempt of the ticket** |
    | reviews | each review's `StepEnded` on the ticket's attempt streams (`outcome.step` is `review`), with its `round`, its time, and the count of its findings that are `blocker` or `major`; a review passed when it has none of those **and** every action of the step cleared, so an interrupted review has not passed |
    | waits | `WaitStarted` on the ticket's stream, each with its reason's tag, its latest `WaitTriaged` cause if any, and its `WaitResolved` resolution |
    | machine time | one interval per claim and per continuation, from it to the earlier of the first `TicketLanded`, `WaitStarted`, `TicketReleased` or `TicketClosed` after it and its last sign of life (below), summed. The approval itself starts nothing; the continuation after it opens its own interval |
@@ -90,11 +90,11 @@ The operator's decisions in epic #648 are the inputs here.
    *unclassified*, a value of its own in the kind filter and in the per-kind
    table, never dropped.
 
-   **Fix rounds sum over attempts.** A ticket that took three attempts of four
+   **Refusal fixes sum over attempts.** A ticket that took three attempts of four
    rounds each took twelve rounds, not four. A per-attempt count hides exactly the
    tickets that cost most (#658: 14 rounds over 4 attempts).
 
-   **Fix rounds are counted from `RunSpent`, not from routing, and are a floor.**
+   **Refusal fixes are counted from `RunSpent`, not from routing, and are a floor.**
    `PassRouted`'s `fix-lines` decisions miss the rounds a person grants, the
    rounds after a base merge and the rounds a red build buys mechanically: on
    2026-10-28 the log held 347 rounds by `RunSpent` and 288 by `fix-lines`. A round
@@ -105,9 +105,9 @@ The operator's decisions in epic #648 are the inputs here.
 3. **The overview averages landed tickets only.** For the window and project
    chosen it shows:
    - landed, closed and open counts;
-   - for landed tickets, the mean **and** the median of attempts, fix rounds,
+   - for landed tickets, the mean **and** the median of attempts, refusal fixes,
      waits, machine time and cost;
-   - for landed tickets, the share that landed after **0 or 1 fix rounds** and
+   - for landed tickets, the share that landed after **0 or 1 refusal fixes** and
      the share that needed **5 or more**. The second is the convergence measure
      (#669): on 2026-10-27 it was 10% of 167 landed tickets, while the median
      was already 1;
@@ -132,7 +132,7 @@ The operator's decisions in epic #648 are the inputs here.
      needs and an average over landings hides. A ticket's own cost (its
      average, its row in §4) is a different figure: all of that ticket's spend,
      on whatever days it fell. Both are said by their labels;
-   - **per kind**: landed count, median fix rounds, the 0-or-1 and 5-or-more
+   - **per kind**: landed count, median refusal fixes, the 0-or-1 and 5-or-more
      shares and mean cost per landed ticket, from `ticket_report`; and spend in
      the window, from `spend` by the kind it recorded per run. Kinds converge
      differently: on 2026-10-27, 15% of landed `feature` tickets needed 5 or
@@ -142,17 +142,17 @@ The operator's decisions in epic #648 are the inputs here.
      (#645) and shown as estimated, never as reported.
 
 4. **The tickets that went round most are explained mechanically.** The eight
-   tickets in the window with the most fix rounds, any outcome, cost breaking a
+   tickets in the window with the most refusal fixes, any outcome, cost breaking a
    tie; the reader can sort the same list by cost instead. The terminal lists
-   only those with at least one fix round, and leaves the section out when none
+   only those with at least one refusal fix, and leaves the section out when none
    had one; the board's list, which sorts by cost as well, keeps every ticket.
    Each with:
    - its cost and the share of each purpose;
-   - its attempts, fix rounds and waits;
+   - its attempts, refusal fixes and waits;
    - each wait's reason and triage cause, and how it was resolved, in words
      (`--json` keeps the tags);
    - one sentence assembled from those facts, leading with the largest share:
-     *72% answering refusals over 6 fix rounds · 3 attempts · waited 3 times
+     *72% answering refusals over 6 refusal fixes · 3 attempts · waited 3 times
      (for a call between the fixer and the reviewer ×2, for a decision on a
      refused merge).*
 
@@ -169,19 +169,19 @@ The operator's decisions in epic #648 are the inputs here.
 
 6. **One projection, two surfaces.** `ticket_report` is a projection beside
    `task_view`, `finding_backlog` and `spend`: one row per ticket holding the
-   facts of §2 (outcome and its time, attempts, fix rounds, reviews with their
+   facts of §2 (outcome and its time, attempts, refusal fixes, reviews with their
    rounds, times and blocking counts, waits with their
    reasons and resolutions, machine time, cost by purpose, unknown count, and
    the time of every attempt, so a window can place an open ticket) and, for a
    landed ticket, **its landing facts**: title, merge commit, the landing
-   attempt's number, that attempt's fix rounds and last `RunProducedDiff`
+   attempt's number, that attempt's refusal fixes and last `RunProducedDiff`
    (files, insertions, deletions), and the summary of its last review
    (`reviewSummaryOf`, with how much of the diff that review read when it was
    clipped). **The landing attempt is inferred**: `TicketLanded` is only
    `{ mergeCommit, base }`, so it is the ticket's last claim (`claims.at(-1)`,
    continuations excluded) and its number is `claims.length`. The last review
    wins, a missing summary included, because an earlier summary describes a
-   diff that a fix round replaced; a landing run with no diff or no summary
+   diff that a refusal fix replaced; a landing run with no diff or no summary
    holds null, never zero. `landed()` reads these newest landing first, a page at
    a time, with a `(outcome_at, ticket)` cursor. It is a reducer
    and nothing else, kept current by the projector every appending process
@@ -219,10 +219,10 @@ The operator's decisions in epic #648 are the inputs here.
    amber means *a person is waited on*. Chart series use colours that are none of
    the board's states (not amber, red or green). Top to bottom:
    - the filters: window, dates, kinds;
-   - figure tiles: landed (with closed and open), median fix rounds, the
+   - figure tiles: landed (with closed and open), median refusal fixes, the
      5-or-more share, the 0-or-1 share, spend in the window (by run day) with
      its unknown count, median machine time;
-   - five panels: fix rounds by bucket (0, 1, 2, 3, 4, 5+) stacked by kind;
+   - five panels: refusal fixes by bucket (0, 1, 2, 3, 4, 5+) stacked by kind;
      **reviews to pass**, the share of tickets still not passed after k
      reviews, a step line from 100% down with steps 1 to 6 and then one 7+
      step holding every ticket with seven or more, the tickets still counted
@@ -247,7 +247,7 @@ The operator's decisions in epic #648 are the inputs here.
      is the caption above it, as the person wrote it; the rest of the summary
      under it; then whatever a person should know (a decision a person made, the
      minor findings sent to the backlog, no tests changed); then one ruled line
-     of facts: kind, the landing attempt and its fix rounds, the diff's files and
+     of facts: kind, the landing attempt and its refusal fixes, the diff's files and
      lines, the cost, the merge commit and the issue.
    - A ticket without a summary is one line: time, number, title, diff, cost.
    - Every fact comes from the log through `ticket_report`; nothing is asked of

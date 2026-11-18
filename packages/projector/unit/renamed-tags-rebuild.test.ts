@@ -1,5 +1,5 @@
 /**
- * #1241 / 0108: a log written under the names 0108 retired and the same log written under the new ones rebuild
+ * #1241 / #1242 / 0108: a log written under the names 0108 retired and the same log written under the new ones rebuild
  * every projection to identical rows. The old log is made from the new one by writing each name back — and is then
  * read the way the store reads it, through the upcaster of the version it claims to be at.
  *
@@ -7,7 +7,7 @@
  */
 import { type Envelope, type EventType, parseStoredPayload } from '@lingtai/domain'
 import type { JudgeReply, RouteDecision, RouteOffer } from '@lingtai/domain'
-import { aClaim, aRelease, aRoute, anAttempt } from '@lingtai/domain/test/events'
+import { aClaim, aRelease, aResolution, aRoute, aWait, anAttempt } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { describe, expect, it } from 'vitest'
 
@@ -83,6 +83,26 @@ function newLog(): Envelope[] {
     }),
   )
   out.push(...aRelease(third, thirdRun.runId, 'restart', { _tag: 'NewAttempt', newAttempt: 2 }))
+
+  // #1242: one wait resolved by each of a person's four moves, and a release `NewAttempt` that counts.
+  const fourth = makeStream('ticket-renamed-4')
+  const fourthRun = anAttempt('pass-renamed-4')
+  out.push(...aClaim(fourth, fourthRun.runId))
+  const check = (n: number) =>
+    ({ _tag: 'CheckRefused', run: { runId: fourthRun.runId }, step: 'proposed', action: 'test', evidence: `red ${n}`, findings: [] }) as const
+  const waits = ['wait-moves-1', 'wait-moves-2', 'wait-moves-3', 'wait-moves-4'] as never[]
+  out.push(...aWait(fourth, check(1), waits[0]))
+  out.push(...aResolution(fourth, waits[0], { _tag: 'FixRefusal', onSha: 'a'.repeat(40), ref: 'refs/lingtai/1242' }))
+  out.push(fourth('TicketContinued', { runId: fourthRun.runId, worker: 'conductor:1' }))
+  out.push(...aWait(fourth, check(2), waits[1]))
+  out.push(...aResolution(fourth, waits[1], { _tag: 'RedoStep', onSha: 'a'.repeat(40), ref: null }))
+  out.push(fourth('TicketContinued', { runId: fourthRun.runId, worker: 'conductor:1' }))
+  out.push(...aWait(fourth, check(3), waits[2]))
+  out.push(...aResolution(fourth, waits[2], { _tag: 'EditBodyAndStartNewAttempt' }))
+  out.push(...aRelease(fourth, fourthRun.runId, 'new attempt', { _tag: 'NewAttempt', newAttempt: 1 }))
+  out.push(...aClaim(fourth, 'pass-renamed-4b'))
+  out.push(...aWait(fourth, { ...check(4), run: { runId: 'pass-renamed-4b' } }, waits[3]))
+  out.push(...aResolution(fourth, waits[3], { _tag: 'StartNewAttempt' }))
   return out
 }
 
@@ -119,9 +139,22 @@ const OLD_VERSION_TYPES: ReadonlySet<string> = new Set([
   'WaitStarted',
 ])
 
+/** A person's moves under the names they had before #1242. */
+const MOVES_BACK: Record<string, string> = {
+  FixRefusal: 'GrantFixRound',
+  RedoStep: 'RerunStep',
+  StartNewAttempt: 'Requeue',
+  EditBodyAndStartNewAttempt: 'EditBodyAndRequeue',
+}
+
 /** The same log as an old store would have held it, read back as today's store reads it. */
 function oldLog(events: readonly Envelope[]): Envelope[] {
   return events.map((e) => {
+    if (e.type === 'WaitResolved') {
+      const data = e.data as { resolution: { _tag: string } }
+      const stored = { ...data, resolution: { ...data.resolution, _tag: MOVES_BACK[data.resolution._tag] ?? data.resolution._tag } }
+      return { ...e, data: parseStoredPayload('WaitResolved', 1, stored) } as Envelope
+    }
     const type = (e.type === 'StepRedone' ? 'StepRerunInPlace' : e.type) as EventType
     if (!OLD_VERSION_TYPES.has(e.type) && e.type !== 'StepRedone') return e
     const stored = unrename(e.data)
@@ -152,6 +185,12 @@ async function rebuild(projection: Projection, events: readonly Envelope[]): Pro
 describe('a log written under the retired names rebuilds as the same log under the new ones', () => {
   const now = newLog()
   const before = oldLog(now)
+
+  it('holds each of the four moves a person has, and a release that spent a new attempt', () => {
+    const tags = now.filter((e) => e.type === 'WaitResolved').map((e) => (e.data as { resolution: { _tag: string } }).resolution._tag)
+    expect(tags).toEqual(['FixRefusal', 'RedoStep', 'EditBodyAndStartNewAttempt', 'StartNewAttempt'])
+    expect(now.filter((e) => e.type === 'TicketReleased' && JSON.stringify(e.data).includes('"NewAttempt"')).length).toBeGreaterThan(0)
+  })
 
   it('is a different log, on the retired names', () => {
     const text = JSON.stringify(before, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))
