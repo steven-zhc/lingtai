@@ -85,7 +85,10 @@ const cardsOf = (html: string) =>
       ({ attrs, body }) =>
         !attrs.includes('hidden=""') &&
         !attrs.includes('sresolution--draft') &&
-        !(attrs.includes('data-resolution="EditBodyAndStartNewAttempt"') && body.includes('class="sresolutionaction"></div>')),
+        !(
+          attrs.includes('data-resolution="EditBodyAndStartNewAttempt"') &&
+          body.includes('class="sresolutionaction"></div>')
+        ),
     )
     .map(({ attrs }) => attrs.match(/data-resolution="([^"]+)"/)?.[1])
 

@@ -19,14 +19,20 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf
 describe('StartNewAttempt', () => {
   it('disables its button for a blank note only while answering', () => {
     const source = read('../src/app/decide.tsx')
-    const requeue = source.slice(source.indexOf('export function StartNewAttempt'), source.indexOf('export function Close'))
+    const requeue = source.slice(
+      source.indexOf('export function StartNewAttempt'),
+      source.indexOf('export function Close'),
+    )
 
     expect(requeue).toMatch(/disabled=\{\(asked && !withdrawing && !note\.trim\(\)\) \|\| pending\}/)
   })
 
   it('says the box may be left empty, on Withdraw and Back to the queue', () => {
     const source = read('../src/app/decide.tsx')
-    const requeue = source.slice(source.indexOf('export function StartNewAttempt'), source.indexOf('export function Close'))
+    const requeue = source.slice(
+      source.indexOf('export function StartNewAttempt'),
+      source.indexOf('export function Close'),
+    )
 
     expect(requeue).toContain('Why withdraw it? (optional)')
     expect(requeue).toContain('Why? (optional)')

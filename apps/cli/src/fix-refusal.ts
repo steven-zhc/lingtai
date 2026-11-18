@@ -77,7 +77,5 @@ export function fixRefusalCommand(
   options: { project: string; issue: number; ifHead?: string },
   log = console.log,
 ): Effect.Effect<number, unknown> {
-  return Effect.map(fixRefusalVerdict(options, log), (answered) =>
-    logVerdict(VERBS['fix-refusal'], answered, log),
-  )
+  return Effect.map(fixRefusalVerdict(options, log), (answered) => logVerdict(VERBS['fix-refusal'], answered, log))
 }

@@ -190,7 +190,12 @@ describe('reduceTicket', () => {
     // Withdrawn rather than answered: back in the backlog, and nothing kept.
     const withdrawn = reduceTicket([
       ...asked,
-      e('WaitResolved', { waitId: 'wait-1' as WaitId, by: 'human:steven', resolution: { _tag: 'StartNewAttempt' }, note: '' }),
+      e('WaitResolved', {
+        waitId: 'wait-1' as WaitId,
+        by: 'human:steven',
+        resolution: { _tag: 'StartNewAttempt' },
+        note: '',
+      }),
     ])
     expect(withdrawn.lifecycle).toEqual({ status: 'backlog' })
     expect(withdrawn.answers).toEqual([])

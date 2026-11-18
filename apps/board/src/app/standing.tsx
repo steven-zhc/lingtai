@@ -581,7 +581,9 @@ export function TriageBand({
                       recommendedResolution(reason, status, { savedHead }) === 'FixRefusal'
                     ? `Triage advised ${RESOLUTION_COPY[resolutionAdvised(result.resolution)].title}. With ${cause.total} hunk${cause.total === 1 ? '' : 's'} to resolve, a refusal fix is drawn first instead${cause.hunks.some((h) => h._tag === 'Divergent') ? ': each divergent hunk’s recommended answer goes to the fixer' : ''}.`
                     : `Triage advised ${RESOLUTION_COPY[resolutionAdvised(result.resolution)].title}, which this decision does not offer.`}
-            {kept && resolutionAdvised(result.resolution) === 'FixRefusal' ? ' — only your click grants the paid round.' : null}
+            {kept && resolutionAdvised(result.resolution) === 'FixRefusal'
+              ? ' — only your click grants the paid round.'
+              : null}
           </p>
           {parts ? (
             <div className="triage-evidence" role="group" aria-label="Triage’s evidence">
@@ -1479,8 +1481,7 @@ export function Standing({
                         const visible = standing.state === 'blocked' && allowed.includes(tag)
                         const waitId = standing.waitId
                         const copy = resolutionCopyFor(tag, standing.reason)
-                        const fixUnavailable =
-                          tag === 'FixRefusal' && !(standing.fixWork && 'head' in standing.fixWork)
+                        const fixUnavailable = tag === 'FixRefusal' && !(standing.fixWork && 'head' in standing.fixWork)
                         const rerunUnavailable =
                           tag === 'RedoStep' && !(standing.rerunWork && 'head' in standing.rerunWork)
                         const consequenceOf = (sendable: number | null) =>
@@ -1617,7 +1618,10 @@ export function Standing({
                               {visible && tag === 'StartNewAttempt' && waitId !== null ? (
                                 allowed.includes('AnswerQuestion') ? (
                                   // Never sendable (#147): the form needs nothing of GitHub's.
-                                  startNewAttemptForm({ project, issue, waitId }, recommended === 'StartNewAttempt' ? 'requeue' : null)
+                                  startNewAttemptForm(
+                                    { project, issue, waitId },
+                                    recommended === 'StartNewAttempt' ? 'requeue' : null,
+                                  )
                                 ) : (
                                   // Send needs the body, and the body is GitHub's: drawn disabled,
                                   // and said why, until the answer is in.
@@ -1633,7 +1637,11 @@ export function Standing({
                                     {(a) => {
                                       const sendable = sendableOf(a.outgoing)
                                       return sendable !== null ? (
-                                        <Send taskId={taskId} attempt={sendable} primary={recommended === 'StartNewAttempt'} />
+                                        <Send
+                                          taskId={taskId}
+                                          attempt={sendable}
+                                          primary={recommended === 'StartNewAttempt'}
+                                        />
                                       ) : (
                                         startNewAttemptForm(
                                           { project, issue, waitId },

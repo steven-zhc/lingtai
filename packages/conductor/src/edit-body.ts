@@ -7,7 +7,7 @@
  *
  * **The body is written first, and a failed write resolves nothing.**
  * `writeSection` never throws and never appends `WaitResolved` itself —
- * `editBodyAndRequeueHolding` is what decides, from `writeSection`'s own
+ * `editBodyAndStartNewAttemptHolding` is what decides, from `writeSection`'s own
  * result, whether `resolveWaitHolding` is called at all.
  */
 import { ticketReducer, ticketStream, type WaitId } from '@lingtai/domain'
@@ -23,7 +23,7 @@ import { writeSectionEffect } from './write-section.ts'
 export type { IssueChannel } from './tell.ts'
 export { type WriteSectionResult } from './write-section.ts'
 
-export interface EditBodyAndRequeueResult {
+export interface EditBodyAndStartNewAttemptResult {
   ok: boolean
   ticketId: string
   reason?: string
@@ -32,7 +32,7 @@ export interface EditBodyAndRequeueResult {
   detail: string
 }
 
-export interface EditBodyAndRequeueOptions extends SnapshotReadOptions {
+export interface EditBodyAndStartNewAttemptOptions extends SnapshotReadOptions {
   project: string
   issue: number
   waitId: WaitId
@@ -52,16 +52,18 @@ export interface EditBodyAndRequeueOptions extends SnapshotReadOptions {
  * (`decidingEffect`, `deciding.ts`) — see their own comments for why the log cannot
  * serialise this on its own.
  */
-export function editBodyAndRequeue(options: EditBodyAndRequeueOptions): Promise<EditBodyAndRequeueResult> {
-  return Effect.runPromise(editBodyAndRequeueEffect(options))
+export function editBodyAndStartNewAttempt(
+  options: EditBodyAndStartNewAttemptOptions,
+): Promise<EditBodyAndStartNewAttemptResult> {
+  return Effect.runPromise(editBodyAndStartNewAttemptEffect(options))
 }
 
-export function editBodyAndRequeueEffect(
-  options: EditBodyAndRequeueOptions,
-): Effect.Effect<EditBodyAndRequeueResult, unknown> {
+export function editBodyAndStartNewAttemptEffect(
+  options: EditBodyAndStartNewAttemptOptions,
+): Effect.Effect<EditBodyAndStartNewAttemptResult, unknown> {
   const store = options.store ?? eventStore
   const ticketId = ticketStream(options.project, options.issue)
-  return decidingEffect<EditBodyAndRequeueResult, unknown, never>(
+  return decidingEffect<EditBodyAndStartNewAttemptResult, unknown, never>(
     ticketId,
     () => ({
       ok: false,
@@ -70,19 +72,19 @@ export function editBodyAndRequeueEffect(
       written: false,
       detail: `${ticketId} is being decided by someone else right now — an approval may be merging it. Reload and read it again`,
     }),
-    editBodyAndRequeueHoldingEffect(options, store, ticketId, {
+    editBodyAndStartNewAttemptHoldingEffect(options, store, ticketId, {
       snapshots: options.snapshots ?? (options.store === undefined ? log.snapshots : undefined),
       writer: options.writer,
     }),
   )
 }
 
-export function editBodyAndRequeueHoldingEffect(
-  options: EditBodyAndRequeueOptions,
+export function editBodyAndStartNewAttemptHoldingEffect(
+  options: EditBodyAndStartNewAttemptOptions,
   store: EventStore,
   ticketId: string,
   read: SnapshotReadOptions = {},
-): Effect.Effect<EditBodyAndRequeueResult, unknown> {
+): Effect.Effect<EditBodyAndStartNewAttemptResult, unknown> {
   return Effect.gen(function* () {
     // **Refuse before writing** (0118 §6): a body edited for a refusal it was
     // always going to get is a body changed for nothing.

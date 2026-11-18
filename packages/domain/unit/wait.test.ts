@@ -96,7 +96,13 @@ describe('allowedResolutions', () => {
       evidence: '  ',
       findings: [],
     })
-    expect(allowedResolutions(reason)).toEqual(['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close', 'RedoStep'])
+    expect(allowedResolutions(reason)).toEqual([
+      'Approve',
+      'StartNewAttempt',
+      'EditBodyAndStartNewAttempt',
+      'Close',
+      'RedoStep',
+    ])
   })
 
   it('CheckRefused unpushed: neither Approve nor FixRefusal', () => {
@@ -113,7 +119,13 @@ describe('allowedResolutions', () => {
 
   it('FixerDisagrees with a last word: also FixRefusal', () => {
     const reason = parseReason({ _tag: 'FixerDisagrees', run, said: 'nothing here answers the finding' })
-    expect(allowedResolutions(reason)).toEqual(['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close', 'FixRefusal'])
+    expect(allowedResolutions(reason)).toEqual([
+      'Approve',
+      'StartNewAttempt',
+      'EditBodyAndStartNewAttempt',
+      'Close',
+      'FixRefusal',
+    ])
   })
 
   it('FixerDisagrees with nothing said, or unpushed: no FixRefusal', () => {
@@ -239,7 +251,13 @@ describe('allowedResolutions', () => {
 
     it('DiffTooLarge: Approve, Requeue, EditBodyAndStartNewAttempt, Split, Close — and no FixRefusal', () => {
       const reason = parseProposed({ _tag: 'DiffTooLarge', from: 'review', size: 938_000, limit: 400_000 })
-      expect(allowedResolutions(reason)).toEqual(['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Split', 'Close'])
+      expect(allowedResolutions(reason)).toEqual([
+        'Approve',
+        'StartNewAttempt',
+        'EditBodyAndStartNewAttempt',
+        'Split',
+        'Close',
+      ])
     })
 
     it('DiffTooLarge: Approve continues at review, waives nothing, and reads the diff clipped (#892)', () => {
@@ -300,7 +318,13 @@ describe('allowedResolutions', () => {
 
     it('VerifyRed: Requeue, EditBodyAndStartNewAttempt, Close', () => {
       const reason = parseProposed({ _tag: 'VerifyRed', output: 'FAIL ...' })
-      expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Split', 'Close', 'FixRefusal'])
+      expect(allowedResolutions(reason)).toEqual([
+        'StartNewAttempt',
+        'EditBodyAndStartNewAttempt',
+        'Split',
+        'Close',
+        'FixRefusal',
+      ])
     })
 
     it('CheckRefused: Approve, Requeue, EditBodyAndStartNewAttempt, Close, and a grant when it has output', () => {
@@ -425,7 +449,13 @@ describe('allowedResolutions', () => {
       cause: 'crash',
       detail: 'the agent crashed',
     })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close', 'RedoStep'])
+    expect(allowedResolutions(reason)).toEqual([
+      'EditBodyAndStartNewAttempt',
+      'StartNewAttempt',
+      'Split',
+      'Close',
+      'RedoStep',
+    ])
   })
 
   describe('RerunStep (#1218)', () => {
@@ -1302,7 +1332,13 @@ describe('AgentCrashed{standing} (#654)', () => {
   })
 
   it('without standing, today’s row', () => {
-    expect(allowedResolutions(crash())).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close', 'RedoStep'])
+    expect(allowedResolutions(crash())).toEqual([
+      'EditBodyAndStartNewAttempt',
+      'StartNewAttempt',
+      'Split',
+      'Close',
+      'RedoStep',
+    ])
     expect(continuationOf(crash(), [])).toBeNull()
   })
 

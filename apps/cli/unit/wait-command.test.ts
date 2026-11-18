@@ -24,7 +24,10 @@ describe('waitCommand', () => {
   })
 
   it('writes the answer unbracketed for a question', () => {
-    const line = waitCommand({ first: null, rest: ['EditBodyAndStartNewAttempt', 'StartNewAttempt'] }, at({ _tag: 'AgentQuestion' }))
+    const line = waitCommand(
+      { first: null, rest: ['EditBodyAndStartNewAttempt', 'StartNewAttempt'] },
+      at({ _tag: 'AgentQuestion' }),
+    )
     expect(line).toContain('lingtai start-new-attempt p --issue 3 --into-body "<answer>"')
     expect(line).not.toContain('[')
   })
@@ -37,7 +40,10 @@ describe('waitCommand', () => {
   })
 
   it('keeps the bare requeue visible when a body edit is recommended', () => {
-    const line = waitCommand({ first: 'EditBodyAndStartNewAttempt', rest: ['StartNewAttempt'] }, at({ _tag: 'BudgetExhausted' }))
+    const line = waitCommand(
+      { first: 'EditBodyAndStartNewAttempt', rest: ['StartNewAttempt'] },
+      at({ _tag: 'BudgetExhausted' }),
+    )
     expect(line).toBe('lingtai start-new-attempt p --issue 3 [--into-body "<text>"]   (or the board)')
   })
 

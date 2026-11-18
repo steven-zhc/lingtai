@@ -8,7 +8,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { requeueHoldingEffect } from '../../../packages/conductor/src/approve.ts'
-import { editBodyAndRequeueHoldingEffect } from '../../../packages/conductor/src/edit-body.ts'
+import { editBodyAndStartNewAttemptHoldingEffect } from '../../../packages/conductor/src/edit-body.ts'
 import { memoryTickets } from '../../../packages/conductor/test/memory-tickets.ts'
 import { startNewAttemptCommand } from '../src/start-new-attempt.ts'
 
@@ -50,7 +50,7 @@ describe('requeue command', () => {
           client: tickets,
           readProject,
           conductorNote,
-          editBodyAndRequeue: (options) => editBodyAndRequeueHoldingEffect(options, store, ticketId),
+          editBodyAndStartNewAttempt: (options) => editBodyAndStartNewAttemptHoldingEffect(options, store, ticketId),
         },
       ),
     )

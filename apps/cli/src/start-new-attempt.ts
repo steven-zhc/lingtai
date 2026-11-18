@@ -26,7 +26,7 @@ import { userInfo } from 'node:os'
  * write leaves the body changed and reports the item's current state.
  */
 import { requeueEffect } from '@lingtai/conductor/decide'
-import { editBodyAndRequeueEffect, type IssueChannel } from '@lingtai/conductor/edit-body'
+import { editBodyAndStartNewAttemptEffect, type IssueChannel } from '@lingtai/conductor/edit-body'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
@@ -58,7 +58,7 @@ type StartNewAttemptDeps = {
   store?: EventStore
   /** The line that says no conductor will reduce this. Replaceable so a test needs no lock file. */
   conductorNote?: ConductorNote
-  editBodyAndRequeue?: typeof editBodyAndRequeueEffect
+  editBodyAndStartNewAttempt?: typeof editBodyAndStartNewAttemptEffect
   requeue?: typeof requeueEffect
 }
 
@@ -89,7 +89,7 @@ export function startNewAttemptVerdict(
             { ticketId },
           )
         }
-        const outcome = yield* (deps.editBodyAndRequeue ?? editBodyAndRequeueEffect)({
+        const outcome = yield* (deps.editBodyAndStartNewAttempt ?? editBodyAndStartNewAttemptEffect)({
           project: options.project,
           issue: options.issue,
           waitId: item.lifecycle.waitId,
@@ -129,5 +129,7 @@ export function startNewAttemptCommand(
   log = console.log,
   deps: StartNewAttemptDeps = {},
 ): Effect.Effect<number, unknown> {
-  return Effect.map(startNewAttemptVerdict(options, log, deps), (answered) => logVerdict(VERBS['start-new-attempt'], answered, log))
+  return Effect.map(startNewAttemptVerdict(options, log, deps), (answered) =>
+    logVerdict(VERBS['start-new-attempt'], answered, log),
+  )
 }

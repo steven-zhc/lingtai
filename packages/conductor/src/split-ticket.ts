@@ -141,7 +141,7 @@ function settled<A, E>(eff: Effect.Effect<A, E>): Effect.Effect<Settled<A>> {
 
 type StepOutcome = StepStatus | { detail: string }
 
-/** One decision at a time — the lock `editBodyAndRequeue` takes, held through every write. */
+/** One decision at a time — the lock `editBodyAndStartNewAttempt` takes, held through every write. */
 export function splitTicket(options: SplitTicketOptions): Promise<SplitTicketResult> {
   return Effect.runPromise(splitTicketEffect(options))
 }

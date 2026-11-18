@@ -663,9 +663,7 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
       // `allowedResolutions` offers `Approve` for no `WaitReason` that lacks
       // a run.
       if (
-        (d.resolution._tag === 'Approve' ||
-          d.resolution._tag === 'FixRefusal' ||
-          d.resolution._tag === 'RedoStep') &&
+        (d.resolution._tag === 'Approve' || d.resolution._tag === 'FixRefusal' || d.resolution._tag === 'RedoStep') &&
         block !== null
       ) {
         return {
@@ -919,7 +917,13 @@ export type ReleaseInput =
   | { by: 'run'; runId: string; reason: string; cause: ReleaseCause | null }
   | { by: 'dead-worker'; mine: string; lock: string }
   /** A person's requeue, edit or split gives the held run's claim up (0118 §7): the actor is the person. */
-  | { by: 'person'; person: string; runId: string; waitId: WaitId; how: 'StartNewAttempt' | 'EditBodyAndStartNewAttempt' | 'Split' }
+  | {
+      by: 'person'
+      person: string
+      runId: string
+      waitId: WaitId
+      how: 'StartNewAttempt' | 'EditBodyAndStartNewAttempt' | 'Split'
+    }
 
 /** A release the ticket will not make: the claim moved on between the scan and the write. */
 export type ReleaseDecline = { reason: 'moved-on'; status: string; worker?: string }
@@ -933,7 +937,11 @@ export function releaseTransition(
     data = parsePayload('TicketReleased', { runId: input.runId, reason: input.reason, cause: input.cause })
   } else if (input.by === 'person') {
     const how =
-      input.how === 'EditBodyAndStartNewAttempt' ? ' with an edited body' : input.how === 'Split' ? ' after a split' : ''
+      input.how === 'EditBodyAndStartNewAttempt'
+        ? ' with an edited body'
+        : input.how === 'Split'
+          ? ' after a split'
+          : ''
     data = parsePayload('TicketReleased', {
       runId: input.runId,
       reason: `Requeued by ${input.person}${how}.`,
@@ -1072,7 +1080,9 @@ export function resolvedEvents(
   })
   if (
     block.runId !== null &&
-    (resolution._tag === 'StartNewAttempt' || resolution._tag === 'EditBodyAndStartNewAttempt' || resolution._tag === 'Split')
+    (resolution._tag === 'StartNewAttempt' ||
+      resolution._tag === 'EditBodyAndStartNewAttempt' ||
+      resolution._tag === 'Split')
   ) {
     const released = releaseTransition(state, {
       by: 'person',

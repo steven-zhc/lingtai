@@ -6,9 +6,10 @@
  * Runs on `createSqliteProjectionStore(openSqliteProjections(':memory:'))`, so it is unit under 0060 §1.
  */
 import { type Envelope, type EventType, parseStoredPayload } from '@lingtai/domain'
-import type { JudgeReply, RouteDecision, RouteOffer } from '@lingtai/domain'
-import { aClaim, aRelease, aResolution, aRoute, aWait, anAttempt } from '@lingtai/domain/test/events'
+import type { JudgeReply, RouteDecision, RouteOffer, WaitId } from '@lingtai/domain'
+import { aClaim, aRelease, aResolution, aRoute, aWait, aWaitId, anAttempt } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
+import type { WaitReason } from '@lingtai/domain/wait'
 import { describe, expect, it } from 'vitest'
 
 import { backlogProjection } from '../src/backlog.ts'
@@ -89,8 +90,15 @@ function newLog(): Envelope[] {
   const fourthRun = anAttempt('pass-renamed-4')
   out.push(...aClaim(fourth, fourthRun.runId))
   const check = (n: number) =>
-    ({ _tag: 'CheckRefused', run: { runId: fourthRun.runId }, step: 'proposed', action: 'test', evidence: `red ${n}`, findings: [] }) as const
-  const waits = ['wait-moves-1', 'wait-moves-2', 'wait-moves-3', 'wait-moves-4'] as never[]
+    ({
+      _tag: 'CheckRefused',
+      run: { runId: fourthRun.runId },
+      step: 'proposed',
+      action: 'test',
+      evidence: `red ${n}`,
+      findings: [],
+    }) as never as WaitReason
+  const waits = [aWaitId(), aWaitId(), aWaitId(), aWaitId()] as [WaitId, WaitId, WaitId, WaitId]
   out.push(...aWait(fourth, check(1), waits[0]))
   out.push(...aResolution(fourth, waits[0], { _tag: 'FixRefusal', onSha: 'a'.repeat(40), ref: 'refs/lingtai/1242' }))
   out.push(fourth('TicketContinued', { runId: fourthRun.runId, worker: 'conductor:1' }))
@@ -101,7 +109,7 @@ function newLog(): Envelope[] {
   out.push(...aResolution(fourth, waits[2], { _tag: 'EditBodyAndStartNewAttempt' }))
   out.push(...aRelease(fourth, fourthRun.runId, 'new attempt', { _tag: 'NewAttempt', newAttempt: 1 }))
   out.push(...aClaim(fourth, 'pass-renamed-4b'))
-  out.push(...aWait(fourth, { ...check(4), run: { runId: 'pass-renamed-4b' } }, waits[3]))
+  out.push(...aWait(fourth, { ...check(4), run: { runId: 'pass-renamed-4b' } } as WaitReason, waits[3]))
   out.push(...aResolution(fourth, waits[3], { _tag: 'StartNewAttempt' }))
   return out
 }
@@ -152,7 +160,10 @@ function oldLog(events: readonly Envelope[]): Envelope[] {
   return events.map((e) => {
     if (e.type === 'WaitResolved') {
       const data = e.data as { resolution: { _tag: string } }
-      const stored = { ...data, resolution: { ...data.resolution, _tag: MOVES_BACK[data.resolution._tag] ?? data.resolution._tag } }
+      const stored = {
+        ...data,
+        resolution: { ...data.resolution, _tag: MOVES_BACK[data.resolution._tag] ?? data.resolution._tag },
+      }
       return { ...e, data: parseStoredPayload('WaitResolved', 1, stored) } as Envelope
     }
     const type = (e.type === 'StepRedone' ? 'StepRerunInPlace' : e.type) as EventType
@@ -187,9 +198,13 @@ describe('a log written under the retired names rebuilds as the same log under t
   const before = oldLog(now)
 
   it('holds each of the four moves a person has, and a release that spent a new attempt', () => {
-    const tags = now.filter((e) => e.type === 'WaitResolved').map((e) => (e.data as { resolution: { _tag: string } }).resolution._tag)
+    const tags = now
+      .filter((e) => e.type === 'WaitResolved')
+      .map((e) => (e.data as { resolution: { _tag: string } }).resolution._tag)
     expect(tags).toEqual(['FixRefusal', 'RedoStep', 'EditBodyAndStartNewAttempt', 'StartNewAttempt'])
-    expect(now.filter((e) => e.type === 'TicketReleased' && JSON.stringify(e.data).includes('"NewAttempt"')).length).toBeGreaterThan(0)
+    expect(
+      now.filter((e) => e.type === 'TicketReleased' && JSON.stringify(e.data).includes('"NewAttempt"')).length,
+    ).toBeGreaterThan(0)
   })
 
   it('is a different log, on the retired names', () => {

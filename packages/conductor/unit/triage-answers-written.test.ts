@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { IssueChannel } from '../src/tell.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
-import { editBodyAndRequeueHolding, requeueHolding, resolveWaitHolding } from '../test/promise-faces.ts'
+import { editBodyAndStartNewAttemptHolding, requeueHolding, resolveWaitHolding } from '../test/promise-faces.ts'
 
 const PROJECT = 'lingtai'
 const ISSUE = 1
@@ -225,7 +225,7 @@ describe('Requeue writes the triage answers first (#921)', () => {
 describe('EditBodyAndStartNewAttempt keeps its own text (#921)', () => {
   it('is not overwritten by the composed answers', async () => {
     const { store, tickets, ticketId, waitId } = await blocked(undecided)
-    const result = await editBodyAndRequeueHolding(
+    const result = await editBodyAndStartNewAttemptHolding(
       { project: PROJECT, issue: ISSUE, waitId, text: 'my own words', by: 'human:steven', github: tickets },
       store,
       ticketId,
@@ -287,7 +287,7 @@ describe('WaitResolved carries what was written (#924)', () => {
 
   it('EditBodyAndStartNewAttempt records the person’s text and no picks', async () => {
     const { store, tickets, ticketId, waitId } = await blocked(undecided)
-    await editBodyAndRequeueHolding(
+    await editBodyAndStartNewAttemptHolding(
       { project: PROJECT, issue: ISSUE, waitId, text: 'my own words', by: 'human:steven', github: tickets },
       store,
       ticketId,

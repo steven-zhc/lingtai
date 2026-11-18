@@ -637,7 +637,7 @@ export const RunStarted = z.object({
  * in `packages/recipe/src/recipe.ts` refuses a recipe that would break that.
  *
  * `Action.grant` names the person's decision that paid for the round — the
- * `waitId` of the `WaitResolved{GrantFixRound}` it spent. It is absent on every automatic round, and
+ * `waitId` of the `WaitResolved{FixRefusal}` it spent. It is absent on every automatic round, and
  * optional so a payload written before it existed still parses.
  */
 export const SpentFor = z.discriminatedUnion('_tag', [

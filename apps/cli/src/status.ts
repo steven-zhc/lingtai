@@ -565,7 +565,8 @@ export const readStatus = (
                 t.wait != null &&
                 t.runId &&
                 t.triage?.result?._tag === 'TriageAdvised' &&
-                (t.triage.result.cause._tag === 'ConflictingHunks' || resolutionAdvised(t.triage.result.resolution) === 'FixRefusal')
+                (t.triage.result.cause._tag === 'ConflictingHunks' ||
+                  resolutionAdvised(t.triage.result.resolution) === 'FixRefusal')
               const savedHead = conflict
                 ? yield* Effect.suspend(() =>
                     (reading.savedHeadOf ?? ((id, p) => hasSavedHead(id, p, reading.clientFor)))(

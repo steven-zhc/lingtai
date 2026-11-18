@@ -3,7 +3,7 @@ import { Effect } from 'effect'
 
 /**
  * One decision about a work item at a time (#150) — the hold `approve`,
- * `requeue`, `resolveWait`, `answer`, `close` and `editBodyAndRequeue` all run
+ * `requeue`, `resolveWait`, `answer`, `close` and `editBodyAndStartNewAttempt` all run
  * inside.
  *
  * **The log cannot serialise this on its own.** Two resolutions landing on the

@@ -96,7 +96,10 @@ describe('ticket_report rebuilds to the rows it held before it read the ticket r
     expect(wait!.triage.result).toMatchObject({ _tag: 'TriageFailed', why: 'second' })
     expect(wait!.resolution?.by).not.toBe('someone')
     expect(parse(row.waits)).toEqual([
-      expect.objectContaining({ triage: { attempt: 2, result: 'TriageFailed', cause: null }, resolution: 'StartNewAttempt' }),
+      expect.objectContaining({
+        triage: { attempt: 2, result: 'TriageFailed', cause: null },
+        resolution: 'StartNewAttempt',
+      }),
     ])
   })
 

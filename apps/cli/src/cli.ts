@@ -286,7 +286,10 @@ const redoStep = Command.make(
     answerWith('redo-step', args, (progress) =>
       Effect.gen(function* () {
         const { redoStepVerdict } = yield* lift(() => import('./redo-step.ts'))
-        return yield* redoStepVerdict({ project: args.project, issue: args.issue, ifHead: given(args.ifHead) }, progress)
+        return yield* redoStepVerdict(
+          { project: args.project, issue: args.issue, ifHead: given(args.ifHead) },
+          progress,
+        )
       }),
     ),
 ).pipe(Command.withDescription(definitionOf('redo-step').task))

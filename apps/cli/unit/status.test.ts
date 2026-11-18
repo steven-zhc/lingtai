@@ -121,11 +121,23 @@ const fixture: StatusReport = {
       passedOverLine: '1 passed over — agent:hold 1',
       dependenciesUnread: 'GitHub reported no issue dependencies for this repository',
       runnable: [
-        row({ taskId: 't612', ref: '612', held: 'backing off — runnable in 32m', newAttempts: 1, arm: 'restart 1 of 3' }),
+        row({
+          taskId: 't612',
+          ref: '612',
+          held: 'backing off — runnable in 32m',
+          newAttempts: 1,
+          arm: 'restart 1 of 3',
+        }),
         row({ taskId: 't613', ref: '613', kind: 'tech-debt', unoffered: true }),
       ],
       known: [
-        row({ taskId: 't612', ref: '612', held: 'backing off — runnable in 32m', newAttempts: 1, arm: 'restart 1 of 3' }),
+        row({
+          taskId: 't612',
+          ref: '612',
+          held: 'backing off — runnable in 32m',
+          newAttempts: 1,
+          arm: 'restart 1 of 3',
+        }),
         row({ taskId: 't609', ref: '609', state: 'waiting', wait: asked }),
         row({
           taskId: 't610',

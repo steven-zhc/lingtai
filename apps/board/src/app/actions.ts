@@ -38,7 +38,7 @@ import { close } from '@lingtai/conductor/close'
 // the same reason `./board` and `./projects` exist.
 import { approve, requeue } from '@lingtai/conductor/decide'
 import { concludeDiscussion, type IssueChannel } from '@lingtai/conductor/discuss'
-import { editBodyAndRequeue } from '@lingtai/conductor/edit-body'
+import { editBodyAndStartNewAttempt } from '@lingtai/conductor/edit-body'
 import { githubClientFor, projectClient } from '@lingtai/conductor/filter'
 import { recheck } from '@lingtai/conductor/onboard'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
@@ -377,7 +377,7 @@ export async function editBodyAndStartNewAttemptCard(input: {
     }
     const state = await project(input.project)
     const { client } = await projectClient(state)
-    const result = await editBodyAndRequeue({
+    const result = await editBodyAndStartNewAttempt({
       writer: await boardWriterOrNone(),
       ...input,
       by: actor(),

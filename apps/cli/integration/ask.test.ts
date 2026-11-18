@@ -122,7 +122,9 @@ describe('lingtai ask / answer', () => {
 
     const said: string[] = []
     const code = await Effect.runPromise(
-      startNewAttemptCommand({ project: PROJECT, issue: WITHDRAWN, note: 'asked by mistake, ignore' }, (l) => said.push(l)),
+      startNewAttemptCommand({ project: PROJECT, issue: WITHDRAWN, note: 'asked by mistake, ignore' }, (l) =>
+        said.push(l),
+      ),
     )
     expect(code).toBe(0)
     expect(said.join('\n')).toContain('withdrawn')

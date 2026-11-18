@@ -767,7 +767,9 @@ function moveOf(
             resolution,
             onSha: fixHead,
             note: null,
-            ...(resolutionAdvised(status.result.resolution) === resolution ? {} : { advised: resolutionAdvised(status.result.resolution) }),
+            ...(resolutionAdvised(status.result.resolution) === resolution
+              ? {}
+              : { advised: resolutionAdvised(status.result.resolution) }),
           }
     case 'Approve':
       return t.awaitingSha === null

@@ -1,6 +1,6 @@
 import { parsePayload, reduceTicket, ticketStream, waitsOf, type Envelope, type WaitId } from '@lingtai/domain'
 /**
- * `writeSection` and `editBodyAndRequeue` (#422, 0118 §6): a wait's answer
+ * `writeSection` and `editBodyAndStartNewAttempt` (#422, 0118 §6): a wait's answer
  * goes into the ticket's body before the wait is resolved. Checked against
  * `createMemoryEventStore()` and `memoryTickets()` — no filesystem, no
  * network (0060 §1).
@@ -14,7 +14,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { answerOpenMarker } from '../src/body-section.ts'
-import { editBodyAndRequeueHoldingEffect } from '../src/edit-body.ts'
+import { editBodyAndStartNewAttemptHoldingEffect } from '../src/edit-body.ts'
 import type { IssueChannel } from '../src/tell.ts'
 import { writeSectionEffect } from '../src/write-section.ts'
 import { memoryTickets, type MemoryTickets } from '../test/memory-tickets.ts'
@@ -125,7 +125,7 @@ function requeuedDuringTheWrite(
   }
 }
 
-describe('editBodyAndRequeueHolding', () => {
+describe('editBodyAndStartNewAttemptHolding', () => {
   it('writes the section, resolves the wait, and the ticket is backlog', async () => {
     const store = createMemoryEventStore()
     const { ticketId, waitId } = await aBlockedTicket(store)
@@ -133,7 +133,7 @@ describe('editBodyAndRequeueHolding', () => {
     await tickets.createIssue({ title: 't', body: 'the ticket.', labels: [] })
 
     const result = await Effect.runPromise(
-      editBodyAndRequeueHoldingEffect(
+      editBodyAndStartNewAttemptHoldingEffect(
         {
           project: PROJECT,
           issue: ISSUE,
@@ -178,9 +178,9 @@ describe('editBodyAndRequeueHolding', () => {
       store,
     }
 
-    const first = await Effect.runPromise(editBodyAndRequeueHoldingEffect(options, store, ticketId))
+    const first = await Effect.runPromise(editBodyAndStartNewAttemptHoldingEffect(options, store, ticketId))
     expect(first.ok).toBe(true)
-    const second = await Effect.runPromise(editBodyAndRequeueHoldingEffect(options, store, ticketId))
+    const second = await Effect.runPromise(editBodyAndStartNewAttemptHoldingEffect(options, store, ticketId))
     expect(second.ok).toBe(false) // the ticket is backlog now; the wait is no longer current
 
     const issue = await tickets.getIssue(ISSUE)
@@ -196,7 +196,7 @@ describe('editBodyAndRequeueHolding', () => {
     const github = landsButThrows(tickets, 'socket hang up')
 
     const result = await Effect.runPromise(
-      editBodyAndRequeueHoldingEffect(
+      editBodyAndStartNewAttemptHoldingEffect(
         { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
         store,
         ticketId,
@@ -225,7 +225,7 @@ describe('editBodyAndRequeueHolding', () => {
     const github = alwaysFails(tickets, 'connection refused')
 
     const result = await Effect.runPromise(
-      editBodyAndRequeueHoldingEffect(
+      editBodyAndStartNewAttemptHoldingEffect(
         { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
         store,
         ticketId,
@@ -247,7 +247,7 @@ describe('editBodyAndRequeueHolding', () => {
     const github = conflictOnFirstWrite(tickets, (body) => `${body}\n\n## Someone else's edit\n`)
 
     const result = await Effect.runPromise(
-      editBodyAndRequeueHoldingEffect(
+      editBodyAndStartNewAttemptHoldingEffect(
         { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
         store,
         ticketId,
@@ -285,7 +285,7 @@ describe('editBodyAndRequeueHolding', () => {
     await tickets.createIssue({ title: 't', body: 'the ticket.', labels: [] })
 
     const result = await Effect.runPromise(
-      editBodyAndRequeueHoldingEffect(
+      editBodyAndStartNewAttemptHoldingEffect(
         { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github: tickets, store },
         store,
         ticketId,
@@ -308,7 +308,7 @@ describe('editBodyAndRequeueHolding', () => {
     const github = requeuedDuringTheWrite(tickets, store, ticketId, waitId)
 
     const result = await Effect.runPromise(
-      editBodyAndRequeueHoldingEffect(
+      editBodyAndStartNewAttemptHoldingEffect(
         { project: PROJECT, issue: ISSUE, waitId, text: 'the answer', by: 'human:steven', github, store },
         store,
         ticketId,

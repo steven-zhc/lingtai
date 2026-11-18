@@ -249,9 +249,13 @@ it('adds a discussion answer to the answer box, opening it, and the person still
   resetAdd()
   const waitId = aWaitId()
   const render = () =>
-    mount(waitId, () => StartNewAttempt({ project: 'lingtai', issue: 112, waitId, asked: true, question: 'Which helper?' }), {
-      by: asked,
-    })
+    mount(
+      waitId,
+      () => StartNewAttempt({ project: 'lingtai', issue: 112, waitId, asked: true, question: 'Which helper?' }),
+      {
+        by: asked,
+      },
+    )
   expect(findControl(render(), 'textarea')).toBeNull()
   addToDraft('Use the first helper.')
   const open = render()

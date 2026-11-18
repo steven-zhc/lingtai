@@ -440,7 +440,11 @@ describe('WaitResolved', () => {
   })
 
   it('passes every other resolution through at version 1, and reads version 2 as it is', () => {
-    for (const resolution of [{ _tag: 'Approve', onSha: 'b' }, { _tag: 'Close' }, { _tag: 'AnswerQuestion', choice: 'a' }]) {
+    for (const resolution of [
+      { _tag: 'Approve', onSha: 'b' },
+      { _tag: 'Close' },
+      { _tag: 'AnswerQuestion', choice: 'a' },
+    ]) {
       expect(parseStoredPayload('WaitResolved', 1, stored(resolution))).toEqual(stored(resolution))
     }
     const second = stored({ _tag: 'FixRefusal', onSha: 'a', ref: 'r' })

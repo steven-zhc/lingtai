@@ -42,10 +42,21 @@ it('puts the rerun after the grant, else first', () => {
     'StartNewAttempt',
     'Close',
   ])
-  expect(rerunStepFirstAmongSavedWork(['StartNewAttempt', 'Close', 'RedoStep'])).toEqual(['RedoStep', 'StartNewAttempt', 'Close'])
+  expect(rerunStepFirstAmongSavedWork(['StartNewAttempt', 'Close', 'RedoStep'])).toEqual([
+    'RedoStep',
+    'StartNewAttempt',
+    'Close',
+  ])
   expect(rerunStepFirstAmongSavedWork(['StartNewAttempt', 'Close'])).toEqual(['StartNewAttempt', 'Close'])
   // `allowedResolutions` puts the grant after Requeue and the rerun last; the rerun must still precede starting over.
   expect(
-    rerunStepFirstAmongSavedWork(['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Split', 'Close', 'FixRefusal', 'RedoStep']),
+    rerunStepFirstAmongSavedWork([
+      'StartNewAttempt',
+      'EditBodyAndStartNewAttempt',
+      'Split',
+      'Close',
+      'FixRefusal',
+      'RedoStep',
+    ]),
   ).toEqual(['FixRefusal', 'RedoStep', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Split', 'Close'])
 })

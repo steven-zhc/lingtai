@@ -394,7 +394,12 @@ describe('after the move', () => {
 
   it('does not present a past requeue as the move behind a later close', () => {
     const own = [
-      e(ITEM, 'WaitResolved', { waitId: 'wait-old', resolution: { _tag: 'StartNewAttempt' }, by: 'steven', note: 'old move' }),
+      e(ITEM, 'WaitResolved', {
+        waitId: 'wait-old',
+        resolution: { _tag: 'StartNewAttempt' },
+        by: 'steven',
+        note: 'old move',
+      }),
       e(ITEM, 'TicketClosed', { by: 'steven', reason: 'later close' }),
     ]
     const html = page(task(own, []))

@@ -8,7 +8,7 @@
 import { Effect } from 'effect'
 
 import { requeueHoldingEffect } from '../src/approve.ts'
-import { editBodyAndRequeueHoldingEffect } from '../src/edit-body.ts'
+import { editBodyAndStartNewAttemptHoldingEffect } from '../src/edit-body.ts'
 import { resolveWaitHoldingEffect, type ResolveWaitOptions, type ResolveWaitResult } from '../src/resolve-wait.ts'
 import {
   attemptPortsFrom,
@@ -39,7 +39,7 @@ export function requeueHolding(...args: Parameters<typeof requeueHoldingEffect>)
   return Effect.runPromise(requeueHoldingEffect(...args))
 }
 
-/** `editBodyAndRequeueHoldingEffect` as a promise. */
-export function editBodyAndRequeueHolding(...args: Parameters<typeof editBodyAndRequeueHoldingEffect>) {
-  return Effect.runPromise(editBodyAndRequeueHoldingEffect(...args))
+/** `editBodyAndStartNewAttemptHoldingEffect` as a promise. */
+export function editBodyAndStartNewAttemptHolding(...args: Parameters<typeof editBodyAndStartNewAttemptHoldingEffect>) {
+  return Effect.runPromise(editBodyAndStartNewAttemptHoldingEffect(...args))
 }

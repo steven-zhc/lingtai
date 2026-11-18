@@ -104,7 +104,7 @@ export interface ResolveWaitOptions extends SnapshotReadOptions {
   issue?: number
   waitId: WaitId
   resolution: Resolution
-  /** The exact text `editBodyAndRequeue` handed `writeSection`; read only for `EditBodyAndStartNewAttempt`. */
+  /** The exact text `editBodyAndStartNewAttempt` handed `writeSection`; read only for `EditBodyAndStartNewAttempt`. */
   writtenSection?: string
   /** Recorded on the resolution. A waiver, a close, an answer — none of them is anonymous. */
   by: string

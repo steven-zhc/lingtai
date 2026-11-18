@@ -142,9 +142,9 @@ export {
 } from './ticket-store.ts'
 export { ANSWER_CLOSE_MARKER, answerOpenMarker, upsertSection } from './body-section.ts'
 export {
-  editBodyAndRequeue,
-  type EditBodyAndRequeueOptions,
-  type EditBodyAndRequeueResult,
+  editBodyAndStartNewAttempt,
+  type EditBodyAndStartNewAttemptOptions,
+  type EditBodyAndStartNewAttemptResult,
   type WriteSectionResult,
 } from './edit-body.ts'
 export {

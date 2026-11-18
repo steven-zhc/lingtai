@@ -81,8 +81,10 @@ it('exposes unpushed work only while its wait is current', () => {
 
   expect(standingOf(own, []).unpushed).toEqual(unpushed)
   expect(
-    standingOf([...own, e(ITEM, 'WaitResolved', { waitId: 'wait-unpushed', resolution: { _tag: 'StartNewAttempt' } })], [])
-      .unpushed,
+    standingOf(
+      [...own, e(ITEM, 'WaitResolved', { waitId: 'wait-unpushed', resolution: { _tag: 'StartNewAttempt' } })],
+      [],
+    ).unpushed,
   ).toBeNull()
 })
 
@@ -1487,7 +1489,9 @@ it('uses triage advice to recommend a choice without granting it', () => {
   const fixable = moves(
     render({ ...FIXABLE, triageStatus: advice({ _tag: 'FixableLines', fixes: [] }, 'GrantFixRound') }, OUTGOING),
   )
-  expect(fixable.indexOf('data-resolution="FixRefusal"')).toBeLessThan(fixable.indexOf('data-resolution="StartNewAttempt"'))
+  expect(fixable.indexOf('data-resolution="FixRefusal"')).toBeLessThan(
+    fixable.indexOf('data-resolution="StartNewAttempt"'),
+  )
   expect(fixable).toContain('Continue fixing current work')
   const wrong = moves(render({ ...FIXABLE, triageStatus: advice({ _tag: 'WrongApproach' }, 'Requeue') }, OUTGOING))
   expect(wrong.indexOf('data-resolution="StartNewAttempt"')).toBeLessThan(wrong.indexOf('data-resolution="FixRefusal"'))
@@ -1667,7 +1671,13 @@ it('keeps the body editor at the same mount when a written wait moves out of blo
     onYou: false,
     reason: null,
     waitId: null,
-    afterMove: { resolution: 'StartNewAttempt', by: 'steven', note: '', result: 'requeued', reason: 'returned to queue' },
+    afterMove: {
+      resolution: 'StartNewAttempt',
+      by: 'steven',
+      note: '',
+      result: 'requeued',
+      reason: 'returned to queue',
+    },
   })
   const closed = editorOn({
     ...HELD,
