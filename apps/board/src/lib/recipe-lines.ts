@@ -42,7 +42,7 @@ export interface StepBlock {
 
 export interface RecipeLines {
   steps: StepBlock[]
-  limits: { rounds: string; restarts: string; wall: string; turns: string }
+  limits: { refusalFixes: string; conflictResolutions: string; newAttempts: string; wall: string; turns: string }
   /** `an attempt`'s sentence, the note under the limits. */
   ceiling: string
 }
@@ -119,7 +119,7 @@ export function recipeLines(recipe: Recipe, ref: string): RecipeLines {
       // A fix round is briefed with the diff under the same ceiling the review
       // reads (`fixBriefParts`, `packages/conductor/src/fix.ts`), whether or not the
       // recipe declares a review agent; with no rounds there is no such brief.
-      if (limits.rounds > 0) {
+      if (limits.attempt.refusalFixes > 0) {
         after.push({
           label: 'a fix round reads at most',
           value: `${count(budget.diff, 'character', 'characters')} of the diff`,
@@ -139,10 +139,11 @@ export function recipeLines(recipe: Recipe, ref: string): RecipeLines {
   return {
     steps,
     limits: {
-      rounds: String(limits.rounds),
-      restarts: String(limits.restarts),
-      wall: String(limits.wall),
-      turns: String(limits.turns),
+      refusalFixes: String(limits.attempt.refusalFixes),
+      conflictResolutions: String(limits.attempt.conflictResolutions),
+      newAttempts: String(limits.ticket.newAttempts),
+      wall: String(limits.run.wall),
+      turns: String(limits.run.turns),
     },
     ceiling: says('an attempt'),
   }

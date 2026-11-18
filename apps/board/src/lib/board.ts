@@ -219,7 +219,7 @@ export interface BoardCard {
   attempts: number
   /**
    * *restart 1 of 2*, or null on a ticket that has only ever had one approach
-   * — which is every ticket until a recipe sets `runtime.limits.restarts`
+   * — which is every ticket until a recipe sets `runtime.limits.ticket.newAttempts`
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
    *
    * **The sentence and not the numbers**, because `lingtai status` shows the
@@ -343,20 +343,22 @@ export interface BoardCard {
  */
 export interface AttemptLimitsView {
   project: string
-  /** `runtime.limits.rounds`. Zero means nothing patches a diff in place. */
-  rounds: number
+  /** `runtime.limits.attempt.refusalFixes`. Zero means nothing patches a diff in place. */
+  refusalFixes: number
+  /** `runtime.limits.attempt.conflictResolutions`. Zero means a merge conflict goes to a person. */
+  conflictResolutions: number
   /**
-   * `runtime.limits.restarts`. Zero means a pass whose rounds are spent asks a
+   * `runtime.limits.ticket.newAttempts`. Zero means a pass whose rounds are spent asks a
    * person, which is every project today
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
    *
-   * **Beside `rounds` because the chip is about what a ticket costs**, and the
-   * two ceilings multiply: `rounds: 0, restarts: 2` buys three agent runs on a
+   * **Beside `refusalFixes` because the chip is about what a ticket costs**, and the
+   * two ceilings multiply: `refusalFixes: 0, newAttempts: 2` buys three agent runs on a
    * ticket while advertising a depth ceiling of none. A chip that named only
    * the first would be the 2026-09-10 drain failure on the one always-visible
    * surface — a sentence that is true of a number it is not made of.
    */
-  restarts: number
+  newAttempts: number
   /** `attemptCeiling`'s sentence, for the chip's title. */
   summary: string
 }
@@ -798,7 +800,7 @@ export function toCard(
    * named none of its own — a round never bought, a restart never spent. Null
    * where the recipe could not be read; `held` then reads the log alone.
    */
-  limits: Pick<AttemptLimitsView, 'rounds' | 'restarts'> | null = null,
+  limits: Pick<AttemptLimitsView, 'refusalFixes' | 'newAttempts'> | null = null,
   /**
    * This ticket's `spend`, already split by `billOf` — read once for the whole
    * board and handed in here, never read per card (`#498`). Empty bills on
@@ -863,16 +865,16 @@ export function toCard(
           : null,
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
-    arm: describeArm(t, limits?.restarts ?? null),
+    arm: describeArm(t, limits?.newAttempts ?? null),
     held:
       rounds === null
         ? null
         : describeHeld({
             spent: rounds.spent,
             granted: rounds.granted,
-            roundsOf: limits?.rounds ?? null,
+            roundsOf: limits?.refusalFixes ?? null,
             restarts: t.restarts,
-            restartsOf: t.restartsOf > 0 ? t.restartsOf : (limits?.restarts ?? null),
+            restartsOf: t.restartsOf > 0 ? t.restartsOf : (limits?.newAttempts ?? null),
           }),
     waiting: t.wait !== null,
     asked: t.wait?.reason._tag === 'OwnQuestion',
@@ -1091,8 +1093,9 @@ export async function queueFilters(
     askable.push(filter)
     limits.push({
       project: filter.project,
-      rounds: filter.limits.rounds,
-      restarts: filter.limits.restarts,
+      refusalFixes: filter.limits.refusalFixes,
+      conflictResolutions: filter.limits.conflictResolutions,
+      newAttempts: filter.limits.newAttempts,
       summary: attemptCeiling(filter.limits),
     })
     backoffMs.set(filter.project, filter.backoffMs)

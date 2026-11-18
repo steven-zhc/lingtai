@@ -315,7 +315,7 @@ export const serveBoardEffect: (options: BoardOptions) => Effect.Effect<void, Er
  * ## `stop`, and deliberately not `shutdown`
  *
  * `lingtai shutdown` means *finish the pass in flight*, and waits as long as
- * `runtime.limits.wall` — an hour here. **A board has no pass to finish.**
+ * `runtime.limits.run.wall` — an hour here. **A board has no pass to finish.**
  * Giving it the same verb would make somebody wait for nothing, or believe the
  * conductor was draining when it was not. So the board stops at once, and the
  * word for it is `stop`.

@@ -11,56 +11,31 @@ import { BOUNDS } from '@lingtai/domain'
 import { formatDuration, formatTurns, type TurnLimit } from '@lingtai/recipe/duration'
 
 /**
- * What one pass may spend, as one sentence, out of the numbers that decide it
- * ([0039](../../../doc/decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3,
- * [0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
+ * What a ticket may spend at `implement`, as one sentence, out of the numbers
+ * that decide it (0108 §8, 0040).
  *
- * **The product is the fact, and nothing was computing it.** `wall` bounds one
- * agent run; an attempt buys up to `2 × rounds + 1 + stepRedos`
- * of them (the work, `rounds` fix rounds, as many conflict rounds, and the
- * reruns — 0108 §8, #1200); a ticket buys up to `restarts + 1` attempts. On 2026-09-10 the drain told an operator it would wait
- * at most one `wall` — true when that sentence was written, false by the time
- * the fix loop shipped, and false in a way no reader could catch, because the
- * sentence was in one file and the number in another. Everything that says what
- * a pass costs calls this, so there is one sentence and it is made of the
- * numbers. `restarts` is in it for exactly that reason: a second ceiling
- * multiplying the first, described by a sentence that did not know about it,
- * would be the same failure again with more money on it.
+ * **The product is 0108 §8's, and nothing else is summed into it.** `implement`
+ * runs at most `(newAttempts + 1) × (1 + refusalFixes + conflictResolutions +
+ * stepRedos) + personAsks` times a ticket: the work, a fix for each refusal, a
+ * resolution for each conflict, and the reruns of a run an API error cut off, in
+ * each attempt; and a person's answer is one more run each time the ticket asks.
+ * Each run is within `run.wall` and, where declared, `run.usd`. `design`,
+ * `review`, a judge and triage are other agent steps with bounds of their own,
+ * so they are **listed after the figure and never added to it**.
  *
- * **`restarts` multiplies rather than adding**, and the wording is careful
- * about whose bound each is: a pass is what the operator waits for, and a
- * restart happens *after* a pass has ended and the item has gone back through
- * the queue's backoff — so the product is what the ticket may cost in agent
- * time, not how long any one command blocks.
+ * Turns bound a run and do not add up across runs the way time does, so they are
+ * named and not multiplied.
  *
- * Turns are named too, and not multiplied: they bound a run and do not add up
- * across runs the way time does.
+ * **`steps` is the per-step half** (`#314`, 0070 §9): the dispatching steps whose
+ * own bound is not the figure named, named so the arithmetic stays `implement`'s.
  *
- * **`steps` is the per-step half, and it is a list rather than a longer sum**
- * (`#314`, [0070](../../../doc/decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md)
- * §9). Since a dispatch may narrow the ceiling, the one figure this sentence
- * names stopped being true of every step — so the steps that disagree with it
- * are named, and the arithmetic is untouched. `turns`, `wall` and `wallMs` stay
- * `implement`'s, because `rounds` are rounds *at* `implement` and they are what
- * the product multiplies; a true sum over every dispatching step is a different
- * sentence, would move the number every recipe prints today, and was never what
- * this said — the cold reviewer's own wall has never been in it.
- *
- * **Empty is today's string, character for character**, which is 0070 §8's *a
- * recipe nobody edited* asserted on the line a person reads every day. It stays
- * one line: a step that narrows costs seven words, not a second row.
- *
- * **`usd` follows `wallMs`, not `turns`** (`#370`). Dollars add up across runs
- * the same way time does — a round spends another agent run's worth of money —
- * where turns bound one run and are never summed across several. Absent unless
- * the recipe declared one: a project with no `runtime.limits.usd` must print
- * exactly today's sentence, character for character, same as 0070 §8 requires
- * for `steps`. Only `implement`'s runs are in the product, for the reason the
- * cold reviewer's own `wall` already is not (see `boundsBesides`).
+ * **`usd` follows `wallMs`, not `turns`** (`#370`): dollars add up across runs
+ * the way time does. Absent unless the recipe declared one.
  */
 export function attemptCeiling(limits: {
-  rounds: number
-  restarts: number
+  refusalFixes: number
+  conflictResolutions: number
+  newAttempts: number
   turns: TurnLimit
   wall: string
   wallMs: number
@@ -73,46 +48,42 @@ export function attemptCeiling(limits: {
       ? ''
       : ` (${limits.steps.map((s) => `${s.step} ${s.wall}/${formatTurns(s.turns)}`).join(', ')})`
   const at = elsewhere === '' ? '' : ' at implement'
-  // Byte-identical to the pre-#370 text when `usd` is absent (0070 §8's rule,
-  // carried to the new field): the join between `wall` and `turns` only
-  // changes from "and" to a comma when there is a third figure to join in.
   const wallAndTurns =
     limits.usd === undefined
       ? `${limits.wall} and ${formatTurns(limits.turns)}`
       : `${limits.wall}, ${formatTurns(limits.turns)} and $${limits.usd}`
-  // 0108 §8: the work, a round back for each `rounds`, as many again for merge conflicts, and the reruns.
-  const perAttempt = 2 * limits.rounds + 1 + BOUNDS.stepRedos
+  const attempts = limits.newAttempts + 1
+  const perAttempt = 1 + limits.refusalFixes + limits.conflictResolutions + BOUNDS.stepRedos
+  const runs = attempts * perAttempt + BOUNDS.personAsks
   const reruns = `up to ${BOUNDS.stepRedos} reruns of a run an API error cut off`
-  const pass =
-    `up to ${perAttempt} agent runs — the work, ` +
-    (limits.rounds === 0
-      ? `and ${reruns}. `
-      : `then ${limits.rounds} round(s) back to the agent carrying what refused it, ` +
-        `up to ${limits.rounds} more for merge conflicts, and ${reruns}. `) +
-    `${wallAndTurns} each${at}${elsewhere}, ` +
-    `so at most ${formatDuration(limits.wallMs * perAttempt)}` +
-    (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, perAttempt)}`)
+  const perAttemptSaid =
+    `an attempt is the work, ${limits.refusalFixes} refusal fix(es) back to the agent carrying what refused it, ` +
+    `${limits.conflictResolutions} conflict resolution(s), and ${reruns}`
+  const figure =
+    `up to ${runs} implement runs a ticket — ${attempts} attempt(s) of ${perAttempt} runs (${perAttemptSaid}) ` +
+    `and up to ${BOUNDS.personAsks} answers to a person — ` +
+    `${wallAndTurns} each${at}${elsewhere}, so at most ${formatDuration(limits.wallMs * runs)}` +
+    (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, runs)}`)
+  // Listed, not summed: each is bounded by its own step's limits.
+  const others =
+    'design, review, a judge and triage are other agent steps, each within its own limits and not in this figure: ' +
+    "review runs once after each implement and once more after a base-branch merge that touched the branch's files"
 
-  // **Said whether it buys anything or not**, like a `skipped` gate point and
-  // like `rounds: 0` below it: a default that spends money has to be auditable
-  // when it is off as well as when it is on (0025 §2).
-  if (limits.restarts === 0) {
-    return (
-      `${pass}. ` +
-      (limits.rounds === 0
-        ? 'Every refusal goes straight to you (runtime.limits.rounds: 0, restarts: 0)'
-        : 'An attempt whose rounds are spent goes to you (runtime.limits.restarts: 0)')
+  // **Said whether it buys anything or not**, so a default that spends money is
+  // auditable when it is off as well as when it is on (0025 §2).
+  const zero: string[] = []
+  if (limits.refusalFixes === 0) zero.push('a refusal goes straight to you (runtime.limits.attempt.refusalFixes: 0)')
+  if (limits.conflictResolutions === 0) {
+    zero.push('a merge conflict goes straight to you (runtime.limits.attempt.conflictResolutions: 0)')
+  }
+  if (limits.newAttempts === 0) {
+    zero.push('an attempt that is spent goes to you (runtime.limits.ticket.newAttempts: 0)')
+  } else {
+    zero.push(
+      `a spent attempt starts the ticket over from the base up to ${limits.newAttempts} time(s) before it is yours`,
     )
   }
-  const attempts = limits.restarts + 1
-  const runs = attempts * perAttempt
-  return (
-    `${pass}. Then up to ${limits.restarts} restart(s) — the ticket started over ` +
-    `from the base carrying what refused it — so at most ${attempts} attempts, ` +
-    `${runs} agent runs and ${formatDuration(limits.wallMs * runs)}` +
-    (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, runs)}`) +
-    ` before it is yours`
-  )
+  return `${figure}. ${zero.join('; ')}. ${others}`
 }
 
 /**

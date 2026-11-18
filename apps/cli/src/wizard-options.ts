@@ -25,7 +25,10 @@ export const recipeOptions = {
   build: Flag.String('build').pipe(Flag.atLeast(0)),
   'check-build': text('check-build'),
   land: text('land'),
+  // `--rounds` is declared only to be refused by name (`askLimits`): it became two bounds (0108 §8).
   rounds: text('rounds'),
+  'refusal-fixes': text('refusal-fixes'),
+  'conflict-resolutions': text('conflict-resolutions'),
   wall: text('wall'),
   budget: text('budget'),
   sandbox: text('sandbox'),

@@ -245,7 +245,7 @@ export function resolveSource(
   const unknown = unknownKeys(applied.recipe)
   if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where)
 
-  const retired = retiredTier(applied.recipe)
+  const retired = [...retiredTier(applied.recipe), ...retiredLimits(applied.recipe)]
   if (retired.length > 0) throw new RecipeInvalidError(ref, retired, where)
 
   // A recipe may write no `runtime:` at all — its agent on each step or
@@ -307,6 +307,39 @@ export function retiredTier(raw: unknown): string[] {
 }
 
 /**
+ * `runtime.limits` is grouped as `run`, `attempt` and `ticket` (#1240, 0108 §8),
+ * and the flat keys are refused **by name before the parse**, each sentence
+ * naming where it went. Checked on the raw file rather than in the schema so the
+ * old names never appear in the `Recipe` type: a reader still writing
+ * `limits.rounds` fails typecheck instead of compiling against `undefined`.
+ * Lingtai does not rewrite the file: `rounds` became two numbers, and only the
+ * repository can say what it meant.
+ */
+export function retiredLimits(raw: unknown): string[] {
+  if (typeof raw !== 'object' || raw === null) return []
+  const runtime = (raw as Record<string, unknown>)['runtime']
+  if (typeof runtime !== 'object' || runtime === null) return []
+  const limits = (runtime as Record<string, unknown>)['limits']
+  if (typeof limits !== 'object' || limits === null) return []
+  const out: string[] = []
+  if ('rounds' in limits) {
+    out.push(
+      'runtime.limits.rounds: write `runtime.limits.attempt.refusalFixes` and ' +
+        '`runtime.limits.attempt.conflictResolutions` (0108 §8): they are two bounds now',
+    )
+  }
+  if ('restarts' in limits) {
+    out.push('runtime.limits.restarts: write `runtime.limits.ticket.newAttempts` (0108 §8)')
+  }
+  for (const key of ['turns', 'wall', 'usd']) {
+    if (key in limits) {
+      out.push(`runtime.limits.${key}: write \`runtime.limits.run.${key}\` (0108 §8): the run's bounds are grouped`)
+    }
+  }
+  return out
+}
+
+/**
  * Every top-level key `Recipe` does not declare, refused **by its own name**.
  *
  * `Recipe` is `z.object` and not `z.strictObject`, so a key it does not know is
@@ -339,8 +372,8 @@ export function unknownKeys(raw: unknown): string[] {
     .map((key) =>
       key === 'repair'
         ? 'repair: retired by ADR 0039 — `repair.maxAttempts`, `repair.fix` and `repair.on` ' +
-          'are now one number, `runtime.limits.rounds`, beside `turns` and `wall`. ' +
-          '`repair.on: false` is `rounds: 0`. Delete the `repair` block and say what this ' +
+          'are now `runtime.limits.attempt.refusalFixes`, beside `run.turns` and `run.wall`. ' +
+          '`repair.on: false` is `refusalFixes: 0`. Delete the `repair` block and say what this ' +
           'repository wants an attempt to spend; the two old ceilings do not add up to the new one, ' +
           'so Lingtai will not guess'
         : `${key}: a recipe has no such key, and nothing read it — a recipe declares ` +

@@ -490,6 +490,8 @@ export const RECIPE_FLAGS = [
   'check-build',
   'land',
   'rounds',
+  'refusal-fixes',
+  'conflict-resolutions',
   'wall',
   'budget',
 ]
@@ -731,6 +733,8 @@ function runLocalBranch(
         'build',
         'check-build',
         'rounds',
+        'refusal-fixes',
+        'conflict-resolutions',
         'wall',
         'budget',
         'tickets',
@@ -1065,6 +1069,8 @@ function runGithubBranch(
       'check-build',
       'land',
       'rounds',
+      'refusal-fixes',
+      'conflict-resolutions',
       'wall',
       'budget',
     ]

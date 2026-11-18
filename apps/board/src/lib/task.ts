@@ -1632,12 +1632,12 @@ export async function knowable(taskId: string): Promise<boolean> {
  */
 async function planFor(
   project: string,
-): Promise<{ plan: StepPlan; limits: Pick<AttemptLimitsView, 'rounds' | 'restarts'> } | undefined> {
+): Promise<{ plan: StepPlan; limits: Pick<AttemptLimitsView, 'refusalFixes' | 'newAttempts'> } | undefined> {
   const state = await readProject(project).catch(() => null)
   if (!state) return undefined
   const filter = await projectFilter(state)
   return filter.ok
-    ? { plan: filter.plan, limits: { rounds: filter.limits.rounds, restarts: filter.limits.restarts } }
+    ? { plan: filter.plan, limits: { refusalFixes: filter.limits.refusalFixes, newAttempts: filter.limits.newAttempts } }
     : undefined
 }
 
@@ -1837,7 +1837,7 @@ export const readAttempts = cache(async (taskId: string) => {
             {
               rows: spend.filter((row) => row.pass === enriched.runId),
               currency: spendFold.currency,
-              rounds: limits?.rounds ?? null,
+              rounds: limits?.refusalFixes ?? null,
             },
             newestEvent(
               streams[claims.findIndex((c) => c.runId === enriched.runId)]?.at(-1),
@@ -2079,9 +2079,9 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       : describeHeld({
           spent: spentOf(states[claims.findIndex((c) => c.runId === standing.runId)]?.roundsOpened ?? [], namedGranted),
           granted: namedGranted,
-          roundsOf: limits?.rounds ?? null,
+          roundsOf: limits?.refusalFixes ?? null,
           restarts: standing.restarts,
-          restartsOf: standing.restartsOf > 0 ? standing.restartsOf : (limits?.restarts ?? null),
+          restartsOf: standing.restartsOf > 0 ? standing.restartsOf : (limits?.newAttempts ?? null),
         })
 
   return {

@@ -4,8 +4,9 @@ import {
   landOnBranchChanges,
   LIMIT_DEFAULTS,
   type RecipeChange,
-  restartsChange,
-  roundsChange,
+  newAttemptsChange,
+  conflictResolutionsChange,
+  refusalFixesChange,
   type Said,
   ticketsChange,
   turnsChange,
@@ -96,7 +97,13 @@ export interface SetupForm {
   closeOnEnd: boolean
   /** A person approves the merge: `Yes` is the hold, `No` writes nothing. */
   personApprovesMerge: boolean
-  limits: { turns: number | 'unbounded'; wall: string; rounds: number; restarts: number }
+  limits: {
+    turns: number | 'unbounded'
+    wall: string
+    refusalFixes: number
+    conflictResolutions: number
+    newAttempts: number
+  }
   /** The writer's runtime enforces no turn count, so the recipe promises none. */
   turnsUnbounded: boolean
   /**
@@ -205,13 +212,20 @@ export function setupChanges(form: SetupForm, rewrite = false): RecipeChange[] {
   else if (rewrite) changes.push({ path: ['steps', 'proposed'], value: [] })
 
   const limits = form.limits
-  if (rewrite || limits.rounds !== LIMIT_DEFAULTS.rounds) changes.push(roundsChange(limits.rounds))
-  if (rewrite || limits.wall !== LIMIT_DEFAULTS.wall) changes.push(wallChange(limits.wall))
+  if (rewrite || limits.refusalFixes !== LIMIT_DEFAULTS.attempt.refusalFixes) {
+    changes.push(refusalFixesChange(limits.refusalFixes))
+  }
+  if (rewrite || limits.conflictResolutions !== LIMIT_DEFAULTS.attempt.conflictResolutions) {
+    changes.push(conflictResolutionsChange(limits.conflictResolutions))
+  }
+  if (rewrite || limits.wall !== LIMIT_DEFAULTS.run.wall) changes.push(wallChange(limits.wall))
   if (!form.turnsUnbounded) {
     if (limits.turns === 'unbounded') changes.push(turnsChange(UNBOUNDED))
-    else if (rewrite || limits.turns !== LIMIT_DEFAULTS.turns) changes.push(turnsChange(limits.turns))
+    else if (rewrite || limits.turns !== LIMIT_DEFAULTS.run.turns) changes.push(turnsChange(limits.turns))
   }
-  if (rewrite || limits.restarts !== LIMIT_DEFAULTS.restarts) changes.push(restartsChange(limits.restarts))
+  if (rewrite || limits.newAttempts !== LIMIT_DEFAULTS.ticket.newAttempts) {
+    changes.push(newAttemptsChange(limits.newAttempts))
+  }
   return changes
 }
 

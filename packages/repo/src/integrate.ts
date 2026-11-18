@@ -225,7 +225,7 @@ const MIGRATION_GLOB = /(^|\/)(prisma\/)?migrations?\//i
  * behind before it cuts its own.
  *
  * Age is the whole of what tells a corpse from a colleague now that two on one
- * base is ordinary. An hour is `runtime.limits.wall`, the ceiling on the pass
+ * base is ordinary. An hour is `runtime.limits.run.wall`, the ceiling on the pass
  * that owns the merge — past it, whatever cut the directory is not coming back
  * for it.
  */

@@ -286,7 +286,7 @@ function argsFor(
     // The dollar twin of `--max-turns`, applied the same way: the binary
     // stops the session itself and still prints a receipt, this time with
     // `subtype: "error_max_budget_usd"` (`#370`). Absent unless the recipe
-    // declared `runtime.limits.usd` — there is no default to fall back to.
+    // declared `runtime.limits.run.usd` — there is no default to fall back to.
     ...(request.limits.usd === undefined ? [] : ['--max-budget-usd', String(request.limits.usd)]),
     ...(request.model ? ['--model', request.model] : []),
     // A forced tool call, measured against 2.1.285: every run that carried

@@ -663,7 +663,7 @@ export function offerFor(
       unavailable.push({ id, because: { _tag: 'NoCriterion' } })
       return
     }
-    if (spent.rounds >= policy.rounds) {
+    if (spent.rounds >= policy.refusalFixes) {
       unavailable.push({ id, because: { _tag: 'CeilingReached', ceiling: 'rounds' } })
       return
     }
@@ -675,7 +675,7 @@ export function offerFor(
       unavailable.push({ id: 'restart', because: { _tag: 'NoCriterion' } })
       return
     }
-    if (spent.restarts >= policy.restarts) {
+    if (spent.restarts >= policy.newAttempts) {
       unavailable.push({ id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'restarts' } })
       return
     }
@@ -706,7 +706,7 @@ export function offerFor(
       // Its own budget, never `rounds`: `round` stays what `rounds` is so the
       // review's counter is not reset by the lap this buys.
       const conflict = (spent.conflictRounds ?? 0) + 1
-      if (conflict > policy.conflictRounds) {
+      if (conflict > policy.conflictResolutions) {
         unavailable.push({ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'conflict-rounds' } })
       } else {
         available.push({ id: 'fix-lines', next: { _tag: 'FixRound', to: 'implement', round: spent.rounds, conflict } })

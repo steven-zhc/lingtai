@@ -159,7 +159,7 @@ function budgetExhaustedColumns(run: AttemptRef, cause: 'out-of-turns' | 'out-of
         action: 'requeue',
         why:
           cause === 'out-of-usd'
-            ? 'narrow or split the ticket first, or raise runtime.limits.usd; requeued as written, ' +
+            ? 'narrow or split the ticket first, or raise runtime.limits.run.usd; requeued as written, ' +
               'it buys another run to the same limit'
             : 'narrow or split the ticket first; requeued as written, it buys another run to the same limit',
       },

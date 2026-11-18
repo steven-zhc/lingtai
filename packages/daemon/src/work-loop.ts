@@ -643,7 +643,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
         if (followScope) yield* Scope.close(followScope, Exit.void)
         followScope = null
         // And then the drain. There is no timeout here on purpose (0030 §6). A
-        // pass may take as long as `runtime.limits.wall`, and a wait that gave
+        // pass may take as long as `runtime.limits.run.wall`, and a wait that gave
         // up after some minutes would recreate the orphan this exists to
         // prevent, silently, at the moment it matters most.
         yield* passesInFlight.settled()

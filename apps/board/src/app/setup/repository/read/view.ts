@@ -73,10 +73,15 @@ export function viewOf(proposal: Proposal, project: string, remote: string | nul
     heldBy: lineOf(proposal.heldBy, (h) => h ?? '', ''),
     end: lineOf(proposal.end, (e) => e.length > 0, false),
     limits: {
-      turns: proposal.limits.known ? proposal.limits.value.turns : LIMIT_DEFAULTS.turns,
-      wall: proposal.limits.known ? proposal.limits.value.wall : LIMIT_DEFAULTS.wall,
-      rounds: proposal.limits.known ? proposal.limits.value.rounds : LIMIT_DEFAULTS.rounds,
-      restarts: LIMIT_DEFAULTS.restarts,
+      turns: proposal.limits.known ? proposal.limits.value.turns : LIMIT_DEFAULTS.run.turns,
+      wall: proposal.limits.known ? proposal.limits.value.wall : LIMIT_DEFAULTS.run.wall,
+      refusalFixes: proposal.limits.known
+        ? proposal.limits.value.refusalFixes
+        : LIMIT_DEFAULTS.attempt.refusalFixes,
+      conflictResolutions: proposal.limits.known
+        ? proposal.limits.value.conflictResolutions
+        : LIMIT_DEFAULTS.attempt.conflictResolutions,
+      newAttempts: LIMIT_DEFAULTS.ticket.newAttempts,
     },
     sandbox:
       proposal.sandbox === null
@@ -124,7 +129,13 @@ export function emptyView(
     kinds: { value: ['bug', 'feature', 'tech-debt', 'documentation'], note: '', known: true },
     heldBy: unread(''),
     end: unread(false),
-    limits: { ...LIMIT_DEFAULTS },
+    limits: {
+      turns: LIMIT_DEFAULTS.run.turns,
+      wall: LIMIT_DEFAULTS.run.wall,
+      refusalFixes: LIMIT_DEFAULTS.attempt.refusalFixes,
+      conflictResolutions: LIMIT_DEFAULTS.attempt.conflictResolutions,
+      newAttempts: LIMIT_DEFAULTS.ticket.newAttempts,
+    },
     sandbox:
       sandbox === null
         ? null

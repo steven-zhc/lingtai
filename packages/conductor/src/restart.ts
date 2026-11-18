@@ -72,7 +72,7 @@ export interface RestartInput {
      */
     exhausted: boolean
   }
-  /** `runtime.limits.restarts`. Zero is the default and is today's behaviour. */
+  /** `runtime.limits.ticket.newAttempts`. Zero is the default and is today's behaviour. */
   restarts: number
   /** The work item, reduced. Carries the bound: `restarts`. */
   item: TicketState
@@ -102,7 +102,7 @@ export function decideRestart(input: RestartInput): RestartDecision {
 
   if (restarts === 0) {
     return no(
-      "this project's recipe hands an attempt whose rounds are spent to a person " + '(runtime.limits.restarts: 0)',
+      "this project's recipe hands an attempt whose rounds are spent to a person " + '(runtime.limits.ticket.newAttempts: 0)',
     )
   }
 

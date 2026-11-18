@@ -37,6 +37,7 @@ import {
   excludeOf,
   kindOfAction,
   kindsOf,
+  ceilingOf,
   limitsFor,
   parseDuration,
   provenanceSource,
@@ -53,7 +54,10 @@ import { Context, Effect } from 'effect'
  * `usd` is appended rather than read off `LIMIT_DEFAULTS`: it has no default
  * (recipe.ts), so `Object.keys(LIMIT_DEFAULTS)` never contains it.
  */
-const LIMIT_KEYS = [...Object.keys(LIMIT_DEFAULTS), 'usd'] as (keyof Recipe['runtime']['limits'])[]
+const LIMIT_KEYS = [
+  ...Object.entries(LIMIT_DEFAULTS).flatMap(([group, keys]) => Object.keys(keys).map((key) => `${group}.${key}`)),
+  'run.usd',
+]
 
 /**
  * `ResolvedRecipe`, named off the function that returns one.
@@ -463,7 +467,7 @@ async function textIfReadable(project: string): Promise<string | null> {
  * `try` is sorted by its `else` branch and comes out as `fault: "recipe"`,
  * naming a file that need not hold the offending value at all. `readRecipe` is
  * outside it for that reason, and may be: the one value it parses rather than
- * prints is `runtime.limits.wall`, and since #218 (and `#375`, now that it is
+ * prints is `runtime.limits.run.wall`, and since #218 (and `#375`, now that it is
  * the recipe's own key) the schema that carries a `wall` refuses one that is
  * not a duration — so the file that holds it says so, under its own key,
  * before a resolve ever succeeds.
@@ -620,7 +624,7 @@ export function describeAction(
        * its own to name, and this is the one column whose job is to say what
        * bounds an action — so an operator who has just written
        * `limits: { wall: 30m }` and reads that sentence back concludes the
-       * narrowing did not take, or goes raising `runtime.limits.wall` looking
+       * narrowing did not take, or goes raising `runtime.limits.run.wall` looking
        * for the bound the page says is missing.
        *
        * Field by field, because the narrowing is: an absent one is the
@@ -850,7 +854,7 @@ export function underHome(where: string): string {
 
 /** One line of `lingtai doctor`'s provenance block, split into its columns. */
 export interface Provenance {
-  /** Its path in the recipe — `runtime.limits.turns`. */
+  /** Its path in the recipe — `runtime.limits.run.turns`. */
   key: string
   value: string
   /** The file, `detected …`, or `default`. */
@@ -897,6 +901,7 @@ export function provenanceRows(provenance: Readonly<Record<string, string>>): Pr
  */
 export function readRecipe(recipe: Recipe): Reading[] {
   const limits = limitsFor(recipe, 'implement')
+  const ceiling = ceilingOf(recipe)
   const budget = recipe.runtime.budget
   return [
     {
@@ -922,6 +927,8 @@ export function readRecipe(recipe: Recipe): Reading[] {
     {
       name: 'an attempt',
       says: attemptCeiling({
+        ...ceiling.attempt,
+        ...ceiling.ticket,
         ...limits,
         wallMs: parseDuration(limits.wall),
         steps: boundsBesides(recipe, 'implement'),

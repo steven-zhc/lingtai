@@ -785,7 +785,7 @@ export interface TaskCard {
    * How many approaches this ticket has abandoned, and the ceiling
    * ([0040](../../../doc/decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §3).
    *
-   * Both zero on every card today, because `runtime.limits.restarts` defaults
+   * Both zero on every card today, because `runtime.limits.ticket.newAttempts` defaults
    * to zero. `attempts` is not this number and never was: it counts claims, so
    * a claim after a crash, after a backoff and after an approach was thrown
    * away all read as `attempt 3`. Read through `describeArm`, which is what

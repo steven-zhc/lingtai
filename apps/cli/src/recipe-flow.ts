@@ -356,7 +356,11 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   const limited = yield* askLimits(
     askWorld,
     at.project,
-    { rounds: at.flags['rounds'], wall: at.flags['wall'], budget: at.flags['budget'] },
+    {
+      rounds: at.flags['rounds'],
+      refusalFixes: at.flags['refusal-fixes'],
+      conflictResolutions: at.flags['conflict-resolutions'],
+      wall: at.flags['wall'], budget: at.flags['budget'] },
     { home: at.home, draft, kept: at.kept },
   )
   if ('refused' in limited) return limited

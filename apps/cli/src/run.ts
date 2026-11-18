@@ -29,6 +29,7 @@ import {
   boundsBesides,
   dispatchingSteps,
   isBuiltInJudge,
+  ceilingOf,
   limitsFor,
   parseDuration,
   type Recipe,
@@ -231,6 +232,8 @@ export function statedBeforeDispatch(recipe: Recipe): string[] {
     `runtime: ${named.join(', ')} — lingtai holds no key of its own, so this attempt spends on whatever account ` +
       `${named.length === 1 ? 'that runtime is' : 'those runtimes are'} signed in to on this machine`,
     `an attempt ${attemptCeiling({
+      ...ceilingOf(recipe).attempt,
+      ...ceilingOf(recipe).ticket,
       ...limitsFor(recipe, 'implement'),
       wallMs: parseDuration(limitsFor(recipe, 'implement').wall),
       // `implement`'s own runs, which is the whole of what the sentence counts

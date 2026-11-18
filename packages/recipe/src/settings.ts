@@ -137,8 +137,8 @@ export function declaresTurnsOn(recipe: Recipe, runtime: string): boolean {
  * *a recipe nobody edited resolves to the same values* is cheap to assert
  * (0070 §8).
  */
-export function limitsFor(recipe: Recipe, step: Step): Recipe['runtime']['limits'] {
-  const ceiling = recipe.runtime.limits
+export function limitsFor(recipe: Recipe, step: Step): Recipe['runtime']['limits']['run'] {
+  const ceiling = recipe.runtime.limits.run
   const ceilingWallMs = parseDuration(ceiling.wall)
   let turns: TurnLimit = 0
   let wall = ceiling.wall

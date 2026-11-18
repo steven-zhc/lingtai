@@ -787,7 +787,7 @@ export interface Where {
   ref: string | null
   /**
    * The project was looked at without refusing: records the recovery now, while
-   * the rest of the work — a run, up to `runtime.limits.wall` — is still ahead.
+   * the rest of the work — a run, up to `runtime.limits.run.wall` — is still ahead.
    * Idempotent, since `turnTransition` appends nothing once nothing is on record.
    */
   looked: Effect.Effect<void>

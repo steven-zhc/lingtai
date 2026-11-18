@@ -435,8 +435,17 @@ export function SetupForm({ view }: { view: ReadView }) {
         <section className="rcard">
           <h3 className="rcard-h">What an attempt may spend</h3>
           <div className="s2-limits">
-            <label>rounds {num(limits.rounds, (rounds) => setLimits({ ...limits, rounds }))}</label>
-            <label>restarts {num(limits.restarts, (restarts) => setLimits({ ...limits, restarts }))}</label>
+            <label>
+              refusal fixes{' '}
+              {num(limits.refusalFixes, (refusalFixes) => setLimits({ ...limits, refusalFixes }))}
+            </label>
+            <label>
+              conflict resolutions{' '}
+              {num(limits.conflictResolutions, (conflictResolutions) => setLimits({ ...limits, conflictResolutions }))}
+            </label>
+            <label>
+              new attempts {num(limits.newAttempts, (newAttempts) => setLimits({ ...limits, newAttempts }))}
+            </label>
             <label>
               wall{' '}
               <input

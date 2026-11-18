@@ -1,6 +1,6 @@
 /**
  * `lingtai add`'s setup questions (#399): land on a branch or hold every pass,
- * then the limits — rounds, wall, and a spend ceiling in money.
+ * then the limits — refusal fixes, conflict resolutions, wall, and a spend ceiling in money.
  *
  * Asked before `add()` runs, never inside it (`onboard.ts`'s `add` has a
  * second caller, the board's Recheck, which must never ask a question), and
@@ -29,7 +29,8 @@ import {
   landingChanges,
   parseDuration,
   resolveSource,
-  roundsChange,
+  conflictResolutionsChange,
+  refusalFixesChange,
   wallChange,
 } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -78,7 +79,7 @@ function resolvedFile(
       proposed: readonly Record<string, unknown>[]
       admit: readonly Record<string, unknown>[]
       base: string
-      limits: { turns: TurnLimit; wall: string; rounds: number; restarts: number; usd?: number }
+      limits: ReturnType<typeof ceilingOf>
       agent: string
     }
   | { refused: string } {
@@ -102,11 +103,11 @@ function resolvedFile(
   }
 }
 
-/** The recipe's `runtime.limits.usd` is written, but only claude-code enforces it. */
+/** The recipe's `runtime.limits.run.usd` is written, but only claude-code enforces it. */
 export function dollarCeilingNote(named: unknown): string {
   return typeof named === 'string'
-    ? `${named} cannot hold a dollar ceiling on one run — runtime.limits.usd is written, and reported absent at that runtime`
-    : 'only claude-code holds a dollar ceiling on one run, and this recipe names no runtime.agent — runtime.limits.usd is written, and holds only where claude-code is the runtime that runs'
+    ? `${named} cannot hold a dollar ceiling on one run — runtime.limits.run.usd is written, and reported absent at that runtime`
+    : 'only claude-code holds a dollar ceiling on one run, and this recipe names no runtime.agent — runtime.limits.run.usd is written, and holds only where claude-code is the runtime that runs'
 }
 
 const WAIT = 'wait for me to approve'
@@ -224,13 +225,16 @@ function parseBudget(answer: string): number | null | string {
 }
 
 export interface LimitsFlags {
+  /** Refused by name: it became two bounds (0108 §8). */
   rounds?: string
+  refusalFixes?: string
+  conflictResolutions?: string
   wall?: string
   budget?: string
 }
 
 /**
- * **The limits: rounds, wall and a spend ceiling, each narrowed only when the
+ * **The limits: refusal fixes, conflict resolutions, wall and a spend ceiling, each narrowed only when the
  * answer differs from what the recipe resolves to now** — pressing enter on
  * an inherited default must not pin it into the file (`write.ts`'s
  * `readRecipeKey` comment, #392).
@@ -245,19 +249,47 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
   if ('refused' in file) return file
   const { limits } = file
 
-  const rounds = yield* questionEffect(world, {
-    name: 'rounds',
-    flag: '--rounds <n>',
-    given: flags.rounds ?? null,
-    prompt: 'how many times an attempt sends the agent back — 0 means every refusal goes straight to you',
-    current: String(limits.rounds),
+  if (flags.rounds !== undefined) {
+    return {
+      refused:
+        '--rounds is gone: it was two bounds, so write --refusal-fixes <n> (fixes after a build or review ' +
+        'refusal) and --conflict-resolutions <n> (merge conflict resolutions), 0108 §8',
+    }
+  }
+
+  const refusalFixes = yield* questionEffect(world, {
+    name: 'refusal fixes',
+    flag: '--refusal-fixes <n>',
+    given: flags.refusalFixes ?? null,
+    prompt:
+      'how many times an attempt sends the agent back after a build or review refuses it — ' +
+      '0 means every refusal goes straight to you',
+    current: String(limits.attempt.refusalFixes),
     validate: (answer) => Effect.succeed(/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
     kept: options.kept,
   })
-  if ('refused' in rounds) return rounds
-  const roundsValue = Number(rounds.answer)
-  if (roundsValue !== limits.rounds) {
-    const written = yield* setRecipeOrRefuse([roundsChange(roundsValue)], options)
+  if ('refused' in refusalFixes) return refusalFixes
+  const refusalFixesValue = Number(refusalFixes.answer)
+  if (refusalFixesValue !== limits.attempt.refusalFixes) {
+    const written = yield* setRecipeOrRefuse([refusalFixesChange(refusalFixesValue)], options)
+    if ('refused' in written) return written
+  }
+
+  const conflictResolutions = yield* questionEffect(world, {
+    name: 'conflict resolutions',
+    flag: '--conflict-resolutions <n>',
+    given: flags.conflictResolutions ?? null,
+    prompt:
+      'how many times an attempt sends the agent back to resolve a merge conflict — ' +
+      '0 means every conflict goes straight to you',
+    current: String(limits.attempt.conflictResolutions),
+    validate: (answer) => Effect.succeed(/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
+    kept: options.kept,
+  })
+  if ('refused' in conflictResolutions) return conflictResolutions
+  const conflictResolutionsValue = Number(conflictResolutions.answer)
+  if (conflictResolutionsValue !== limits.attempt.conflictResolutions) {
+    const written = yield* setRecipeOrRefuse([conflictResolutionsChange(conflictResolutionsValue)], options)
     if ('refused' in written) return written
   }
 
@@ -266,7 +298,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     flag: '--wall <duration>',
     given: flags.wall ?? null,
     prompt: 'what one agent run may take, like 30m or 2h',
-    current: limits.wall,
+    current: limits.run.wall,
     validate: (answer) =>
       Effect.sync(() => {
         try {
@@ -278,7 +310,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     kept: options.kept,
   })
   if ('refused' in wall) return wall
-  if (wall.answer !== limits.wall) {
+  if (wall.answer !== limits.run.wall) {
     const written = yield* setRecipeOrRefuse([wallChange(wall.answer)], options)
     if ('refused' in written) return written
   }
@@ -288,7 +320,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     flag: '--budget <dollars>|none',
     given: flags.budget ?? null,
     prompt: 'a dollar ceiling per agent run, like $5, or "none" for no ceiling',
-    current: limits.usd === undefined ? 'none' : String(limits.usd),
+    current: limits.run.usd === undefined ? 'none' : String(limits.run.usd),
     show: (value) => (value === 'none' ? 'none' : `$${Number(value).toFixed(2)}`),
     validate: (answer) => {
       const parsed = parseBudget(answer)
@@ -300,7 +332,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
 
   const usdValue =
     budget.answer.trim().toLowerCase() === 'none' ? null : Number(budget.answer.trim().replace(/^\$/, ''))
-  if ((usdValue ?? null) !== (limits.usd ?? null)) {
+  if ((usdValue ?? null) !== (limits.run.usd ?? null)) {
     const written = yield* setRecipeOrRefuse([budgetChange(usdValue)], options)
     if ('refused' in written) return written
   }
@@ -311,7 +343,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
   // naming none runs whichever runtime this machine detects (local.ts), which
   // may not be claude-code.
   const named = options.draft.get(['runtime', 'agent'])
-  if (after.limits.usd !== undefined && named !== 'claude-code') {
+  if (after.limits.run.usd !== undefined && named !== 'claude-code') {
     world.log(paint.muted(dollarCeilingNote(named)))
   }
   return { ok: true }
