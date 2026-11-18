@@ -110,8 +110,7 @@ function outcomeOf(overrides: Partial<RunOutcome> = {}): RunOutcome {
 }
 
 const ADVICE_TEXT = JSON.stringify({
-  cause: { _tag: 'WrongApproach' },
-  resolution: 'Requeue',
+  cause: { _tag: 'WrongApproach', why: 'it does not converge' },
   summary: 'patching will not converge',
   want: null,
 })
@@ -364,12 +363,15 @@ describe('waitTriage', () => {
   it("records a split whose children carry the parent's kind, whatever the model sent (#1271)", async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 568)
-    const child = (key: string) => ({ key, title: key, body: key, kind: 'refactor' })
+    const child = (key: string) => ({ key, title: key, body: key, kind: 'refactor', covers: [] })
     const { runtime } = stubRuntime(() =>
       outcomeOf({
         text: JSON.stringify({
-          cause: { _tag: 'TicketTooBig', split: { children: [child('a'), child('b')], blockedBy: [] } },
-          resolution: 'Split',
+          cause: {
+            _tag: 'TicketTooBig',
+            spentOn: null,
+            plan: { children: [child('a'), child('b')], blockedBy: [], uncovered: [] },
+          },
           summary: 'too big',
           want: null,
         }),
@@ -381,9 +383,9 @@ describe('waitTriage', () => {
 
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { reason: reasonOn('pass-568') }))
 
-    if (held.result._tag !== 'TriageAdvised' || held.result.cause._tag !== 'TicketTooBig')
+    if (held.result._tag !== 'TriageAnswered' || held.result.cause._tag !== 'TicketTooBig')
       throw new Error(`not a split: ${JSON.stringify(held.result)}`)
-    expect(held.result.cause.split?.children.map((c) => c.kind)).toEqual(['tech-debt', 'tech-debt'])
+    expect(held.result.cause.plan?.children.map((c) => c.kind)).toEqual(['tech-debt', 'tech-debt'])
   })
 
   it('uses one full-tools Codex call at the saved head and cleans its checkout', async () => {
@@ -415,7 +417,7 @@ describe('waitTriage', () => {
       requestOn(ticketId, waitId, { reason: reasonOn(runId), triage: Triage.parse({ agent: 'codex', tools: 'full' }) }),
     )
 
-    expect(held.result._tag).toBe('TriageAdvised')
+    expect(held.result._tag).toBe('TriageAnswered')
     expect(prepareCheckout).toHaveBeenCalledExactlyOnceWith('lingtai', headSha, expect.any(AbortSignal))
     expect(deps.runtime).toHaveBeenCalledWith('codex', { tools: 'full' })
     expect(requests).toHaveLength(1)
@@ -629,14 +631,14 @@ describe('waitTriage', () => {
       fakeDeps(store, runtime, { runtime: factory }),
       requestOn(ticketId, aWaitId(), { triage }),
     )
-    expect(held.result._tag).toBe('TriageAdvised')
+    expect(held.result._tag).toBe('TriageAnswered')
     expect(factory).toHaveBeenCalledWith('codex', { tools: 'none' })
     expect(sent).toHaveLength(1)
     expect(JSON.parse(sent[0]!.body as string)).toMatchObject({ tools: [], tool_choice: 'none' })
     const events = await store.read(ticketId)
     expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
     expect(events[2]?.data).toMatchObject({ runtime: 'codex', costUsd: null, usage: [{ model: 'priced-model' }] })
-    expect(events[3]?.data).toMatchObject({ result: { _tag: 'TriageAdvised' } })
+    expect(events[3]?.data).toMatchObject({ result: { _tag: 'TriageAnswered' } })
   })
 
   it('answers over twenty hunks mechanically without creating a runtime or recording spend', async () => {
@@ -648,9 +650,8 @@ describe('waitTriage', () => {
     })
     const result = await waitTriage(deps, requestOn(ticketId, aWaitId(), { reason: conflictReason('a', 'b') }))
     expect(result.result).toMatchObject({
-      _tag: 'TriageAdvised',
+      _tag: 'TriageAnswered',
       cause: { _tag: 'ConflictingHunks', hunks: [], total: 21 },
-      resolution: 'Requeue',
       want: null,
     })
     expect(deps.runtime).not.toHaveBeenCalled()
@@ -669,7 +670,6 @@ describe('waitTriage', () => {
       return outcomeOf({
         text: JSON.stringify({
           cause: { _tag: 'ConflictingHunks', total: 1, hunks: [{ _tag: 'Mechanical', path: 'a.ts', line: 1 }] },
-          resolution: 'Requeue',
           summary: 'one mechanical conflict',
           want: null,
         }),
@@ -692,12 +692,12 @@ describe('waitTriage', () => {
 
   it.each([
     { _tag: 'ConflictingHunks', total: 1, hunks: [{ _tag: 'Mechanical', path: 'a.ts', line: 1 }] },
-    { _tag: 'WrongApproach' },
+    { _tag: 'WrongApproach', why: 'it does not converge' },
   ])('refuses conflict advice that omits a mirror-counted hunk: %j', async (cause) => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 418)
     const { runtime } = stubRuntime(() =>
-      outcomeOf({ text: JSON.stringify({ cause, resolution: 'Requeue', summary: 'incomplete', want: null }) }),
+      outcomeOf({ text: JSON.stringify({ cause, summary: 'incomplete', want: null }) }),
     )
     const deps = fakeDeps(store, runtime, {
       mirror: fakeMirror({ conflictedPathsAt: async () => [{ ...CONFLICT_PATH, hunks: 2, hunkLines: [1, 50] }] }),
@@ -720,7 +720,6 @@ describe('waitTriage', () => {
       outcomeOf({
         text: JSON.stringify({
           cause: { _tag: 'ConflictingHunks', total: 2, hunks: [mechanical, mechanical] },
-          resolution: 'Requeue',
           summary: 'both mechanical',
           want: null,
         }),
@@ -755,7 +754,6 @@ describe('waitTriage', () => {
               { _tag: 'Mechanical', path: 'a.ts', line: 2 },
             ],
           },
-          resolution: 'Requeue',
           summary: 'both mechanical',
           want: null,
         }),
@@ -800,7 +798,6 @@ describe('waitTriage', () => {
           },
         ],
       },
-      resolution: 'Requeue',
       summary: 'one divergent hunk',
       want: null,
     }
@@ -814,7 +811,7 @@ describe('waitTriage', () => {
       requestOn(ticketStream('lingtai', 421), aWaitId(), { reason: conflictReason('a', 'b') }),
     )
 
-    expect(result.result).toMatchObject({ _tag: 'TriageAdvised', ...advice })
+    expect(result.result).toMatchObject({ _tag: 'TriageAnswered', ...advice })
   })
 
   it.each([
@@ -863,7 +860,7 @@ describe('waitTriage', () => {
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
 
     expect(held.attempt).toBe(1)
-    expect(held.result._tag).toBe('TriageAdvised')
+    expect(held.result._tag).toBe('TriageAnswered')
 
     const events = await store.read(ticketId)
     expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
@@ -924,7 +921,7 @@ describe('waitTriage', () => {
         requestOn(ticketStream('lingtai', 4), aWaitId()),
       )
       expect(requests).toHaveLength(2)
-      expect(held.result._tag).toBe('TriageAdvised')
+      expect(held.result._tag).toBe('TriageAnswered')
     })
 
     it('still refuses an over-bound structured answer', async () => {
@@ -1019,7 +1016,7 @@ describe('waitTriage', () => {
 
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
 
-    expect(held.result._tag).toBe('TriageAdvised')
+    expect(held.result._tag).toBe('TriageAnswered')
     const events = await store.read(ticketId)
     // The unrelated `WaitResolved` landed first, and the retried `TriageStarted`
     // still landed after it — never the false "another attempt was already
@@ -1088,7 +1085,7 @@ describe('waitTriage', () => {
 
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
 
-    expect(held.result._tag).toBe('TriageAdvised')
+    expect(held.result._tag).toBe('TriageAnswered')
     const events = await store.read(ticketId)
     expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
   })
@@ -1135,7 +1132,7 @@ describe('waitTriage', () => {
 
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
 
-    expect(held.result._tag).toBe('TriageAdvised')
+    expect(held.result._tag).toBe('TriageAnswered')
     const events = await store.read(ticketId)
     expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
   })
@@ -1163,7 +1160,7 @@ describe('waitTriage', () => {
 
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
 
-    expect(held.result._tag).toBe('TriageAdvised')
+    expect(held.result._tag).toBe('TriageAnswered')
     const events = await store.read(ticketId)
     // Not `['TriageStarted', 'RunPrompted', 'RunSpent', 'RunSpent', 'WaitTriaged']` — a retry
     // that blindly re-appended on this error would double the ledger row for
@@ -1179,7 +1176,7 @@ describe('waitTriage', () => {
 
     const held = await waitTriage(deps, requestOn(ticketId, aWaitId()))
 
-    expect(held.result._tag).toBe('TriageAdvised')
+    expect(held.result._tag).toBe('TriageAnswered')
     const events = await store.read(ticketId)
     expect(typesOf(events)).toEqual(['TriageStarted', 'RunPrompted', 'RunSpent', 'WaitTriaged'])
   })
@@ -1639,7 +1636,7 @@ describe('waitTriage', () => {
     // Two runtime calls (the `read`, then the `advised` that follows it), so
     // two `RunSpent` rows — one per call, the invariant this suite is named
     // for, which stays unchecked if nothing here reads the ticket stream.
-    expect(held.result._tag).toBe('TriageAdvised')
+    expect(held.result._tag).toBe('TriageAnswered')
     const events = await store.read(ticketId)
     expect(typesOf(events)).toEqual([
       'TriageStarted',

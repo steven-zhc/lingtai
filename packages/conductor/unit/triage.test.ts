@@ -283,7 +283,7 @@ describe('triageBrief', () => {
   it('states the strict key set, the character bound, and the >20-hunk rule', () => {
     const brief = triageBrief({ evidence: EVIDENCE, served: [], roundsLeft: 4 })
 
-    expect(brief).toContain('cause`, `resolution`, `summary`, `want`')
+    expect(brief).toContain('cause`, `summary`, `want`')
     expect(brief).toMatch(/and no\s+others/)
     expect(brief).toContain('"confidence"')
     expect(brief).toContain(`at most ${TRIAGE_SENTENCE_MAX} characters`)
@@ -291,12 +291,13 @@ describe('triageBrief', () => {
     expect(brief).toContain(`${MERGE_HUNKS_ONE_BY_ONE}`)
   })
 
-  it('asks the resolution to agree with a conflict’s hunk answers (#652)', () => {
+  it('asks for a cause and never an action, and says a resolution key is refused', () => {
     const brief = triageBrief({ evidence: EVIDENCE, served: [], roundsLeft: 4 })
-    expect(brief).toMatch(/With `ConflictingHunks`, the resolution agrees with the hunks' recommended\s+answers/)
-    expect(brief).toMatch(
-      /Recommend `Requeue` only when every `Divergent` hunk's recommended\s+answer is to redo the work/,
-    )
+    expect(brief).toMatch(/A cause, never an action/)
+    expect(brief).toMatch(/a\s+`resolution` key is refused/)
+    expect(brief).not.toMatch(/GrantFixRound|EditBodyAndRequeue/)
+    for (const part of ['why', 'what', 'repair', 'spentOn', 'addToBody', 'covers', 'uncovered', 'Contradicting'])
+      expect(brief).toContain(`\`${part}\``)
   })
 })
 
@@ -317,11 +318,11 @@ describe('parseTriage', () => {
    */
   it('reads the earlier candidate as advice, even when a later one asks to read', () => {
     const reply = parseTriage(
-      '```json\n{"cause":{"_tag":"WrongApproach"},"resolution":"Requeue","summary":"s","want":null}\n```\n\n' +
+      '```json\n{"cause":{"_tag":"WrongApproach","why":"it does not converge"},"summary":"s","want":null}\n```\n\n' +
         'If you want me to confirm, I can read:\n\n```json\n{"read":["main:a.ts"]}\n```',
     )
-    expect(reply.kind).toBe('advised')
-    if (reply.kind !== 'advised') throw new Error('unreachable')
+    expect(reply.kind).toBe('answered')
+    if (reply.kind !== 'answered') throw new Error('unreachable')
     expect(reply.result.cause._tag).toBe('WrongApproach')
     expect(reply.result.summary).toBe('s')
   })
@@ -336,10 +337,10 @@ describe('parseTriage', () => {
   it('skips an earlier candidate that carries neither cause nor resolution, and reads the real answer after it', () => {
     const reply = parseTriage(
       'Here is the hunk shape I used:\n```json\n{"_tag":"Mechanical","path":"a.ts","line":10}\n```\n' +
-        'My answer:\n```json\n{"cause":{"_tag":"WrongApproach"},"resolution":"Requeue","summary":"s","want":null}\n```',
+        'My answer:\n```json\n{"cause":{"_tag":"WrongApproach","why":"it does not converge"},"summary":"s","want":null}\n```',
     )
-    expect(reply.kind).toBe('advised')
-    if (reply.kind !== 'advised') throw new Error('unreachable')
+    expect(reply.kind).toBe('answered')
+    if (reply.kind !== 'answered') throw new Error('unreachable')
     expect(reply.result.cause._tag).toBe('WrongApproach')
     expect(reply.result.summary).toBe('s')
   })
@@ -362,7 +363,6 @@ describe('parseTriage', () => {
             },
           ],
         },
-        resolution: 'EditBodyAndRequeue',
         summary: 'a person has to decide',
         want: null,
       },
@@ -371,57 +371,56 @@ describe('parseTriage', () => {
       tag: 'FixableLines',
       answer: {
         cause: { _tag: 'FixableLines', fixes: [{ path: 'a.ts', line: 10, what: 'fix the thing' }] },
-        resolution: 'Requeue',
         summary: 'specific edits',
         want: 'fix the bug',
       },
     },
     {
       tag: 'WrongApproach',
-      answer: { cause: { _tag: 'WrongApproach' }, resolution: 'Requeue', summary: 'wrong shape', want: null },
+      answer: { cause: { _tag: 'WrongApproach', why: 'it does not converge' }, summary: 'wrong shape', want: null },
     },
     {
       tag: 'ConflictingHunks',
       answer: {
         cause: { _tag: 'ConflictingHunks', hunks: [{ _tag: 'Mechanical', path: 'a.ts', line: 1 }], total: 1 },
-        resolution: 'Requeue',
         summary: 'a conflict',
         want: null,
       },
     },
     {
       tag: 'TicketTooBig',
-      answer: { cause: { _tag: 'TicketTooBig' }, resolution: 'EditBodyAndRequeue', summary: 'split it', want: null },
+      answer: { cause: { _tag: 'TicketTooBig', plan: null, spentOn: 'reading the parser' }, summary: 'split it', want: null },
     },
     {
       tag: 'SetupBroken',
-      answer: { cause: { _tag: 'SetupBroken' }, resolution: 'Requeue', summary: 'the setup is broken', want: null },
+      answer: { cause: { _tag: 'SetupBroken', what: 'no network', repair: 'restore it' }, summary: 'the setup is broken', want: null },
     },
   ]
 
-  it.each(CAUSES)('parses a $tag cause into TriageAdvised', ({ tag, answer }) => {
+  it.each(CAUSES)('parses a $tag cause into TriageAnswered', ({ tag, answer }) => {
     const reply = parseTriage(JSON.stringify(answer))
-    expect(reply.kind).toBe('advised')
-    if (reply.kind !== 'advised') throw new Error('unreachable')
+    expect(reply.kind).toBe('answered')
+    if (reply.kind !== 'answered') throw new Error('unreachable')
     expect(reply.result.cause._tag).toBe(tag)
     expect(reply.result.summary).toBe(answer['summary'])
   })
 
-  it('refuses a Split answer whose plan has a cycle', () => {
-    const child = (key: string) => ({ key, title: key, body: key, kind: 'feature' })
+  it('refuses a plan with a cycle', () => {
+    const child = (key: string) => ({ key, title: key, body: key, covers: [] })
     const reply = parseTriage(
       JSON.stringify({
         cause: {
           _tag: 'TicketTooBig',
-          split: {
+          spentOn: null,
+          plan: {
             children: [child('a'), child('b')],
             blockedBy: [
               { ticket: 'a', blockedBy: 'b' },
               { ticket: 'b', blockedBy: 'a' },
             ],
+            uncovered: [],
           },
         },
-        resolution: 'Split',
         summary: 'too big',
         want: null,
       }),
@@ -431,7 +430,7 @@ describe('parseTriage', () => {
 
   it('refuses an unknown cause, and says which', () => {
     const reply = parseTriage(
-      JSON.stringify({ cause: { _tag: 'NotACause' }, resolution: 'Close', summary: 'x', want: null }),
+      JSON.stringify({ cause: { _tag: 'NotACause' }, summary: 'x', want: null }),
     )
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
@@ -439,43 +438,33 @@ describe('parseTriage', () => {
   })
 
   it('refuses a missing summary, and says which', () => {
-    const reply = parseTriage(JSON.stringify({ cause: { _tag: 'WrongApproach' }, resolution: 'Close', want: null }))
+    const reply = parseTriage(JSON.stringify({ cause: { _tag: 'WrongApproach', why: 'it does not converge' }, want: null }))
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
     expect(reply.why).toContain('summary')
   })
 
   it.each(['out-of-turns', 'out-of-usd', 'out of rounds'])('refuses the budget given as the cause: %s', (budget) => {
-    const reply = parseTriage(JSON.stringify({ cause: budget, resolution: 'Requeue', summary: 'x', want: null }))
+    const reply = parseTriage(JSON.stringify({ cause: budget, summary: 'x', want: null }))
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
     expect(reply.why).toContain('budget is not a cause')
     expect(reply.why).toContain(budget)
   })
 
-  it('refuses AnswerQuestion', () => {
-    const reply = parseTriage(
-      JSON.stringify({ cause: { _tag: 'WrongApproach' }, resolution: 'AnswerQuestion', summary: 'x', want: null }),
-    )
-    expect(reply.kind).toBe('refused')
-    if (reply.kind !== 'refused') throw new Error('unreachable')
-    expect(reply.why).toContain('AnswerQuestion')
-  })
-
   it('parses want: null', () => {
     const reply = parseTriage(
-      JSON.stringify({ cause: { _tag: 'WrongApproach' }, resolution: 'Requeue', summary: 'x', want: null }),
+      JSON.stringify({ cause: { _tag: 'WrongApproach', why: 'it does not converge' }, summary: 'x', want: null }),
     )
-    expect(reply.kind).toBe('advised')
-    if (reply.kind !== 'advised') throw new Error('unreachable')
+    expect(reply.kind).toBe('answered')
+    if (reply.kind !== 'answered') throw new Error('unreachable')
     expect(reply.result.want).toBeNull()
   })
 
   it('refuses a want past TRIAGE_SENTENCE_MAX, and names the bound', () => {
     const reply = parseTriage(
       JSON.stringify({
-        cause: { _tag: 'WrongApproach' },
-        resolution: 'Requeue',
+        cause: { _tag: 'WrongApproach', why: 'it does not converge' },
         summary: 'x',
         want: 'a'.repeat(TRIAGE_SENTENCE_MAX + 1),
       }),
@@ -496,7 +485,6 @@ describe('parseTriage', () => {
     const reply = parseTriage(
       JSON.stringify({
         cause: { _tag: 'UndecidedQuestion', questions },
-        resolution: 'EditBodyAndRequeue',
         summary: 'x',
         want: null,
       }),
@@ -510,7 +498,7 @@ describe('parseTriage', () => {
   it('refuses more than 20 fixes, and names the bound', () => {
     const fixes = Array.from({ length: 21 }, (_, i) => ({ path: `a${i}.ts`, line: i, what: 'fix' }))
     const reply = parseTriage(
-      JSON.stringify({ cause: { _tag: 'FixableLines', fixes }, resolution: 'Requeue', summary: 'x', want: null }),
+      JSON.stringify({ cause: { _tag: 'FixableLines', fixes }, summary: 'x', want: null }),
     )
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
@@ -524,7 +512,6 @@ describe('parseTriage', () => {
     const reply = parseTriage(
       JSON.stringify({
         cause: { _tag: 'ConflictingHunks', hunks, total: 21 },
-        resolution: 'Requeue',
         summary: 'x',
         want: null,
       }),
@@ -539,7 +526,6 @@ describe('parseTriage', () => {
     const reply = parseTriage(
       JSON.stringify({
         cause: { _tag: 'FixableLines', fixes: [{ path: 'a.ts', line: 1, what: 'x'.repeat(TRIAGE_TEXT_MAX + 1) }] },
-        resolution: 'Requeue',
         summary: 'x',
         want: null,
       }),
@@ -550,27 +536,36 @@ describe('parseTriage', () => {
     expect(reply.why).toContain(`${TRIAGE_TEXT_MAX}`)
   })
 
-  it("returns the tag 'Approve'", () => {
-    const reply = parseTriage(
-      JSON.stringify({ cause: { _tag: 'WrongApproach' }, resolution: 'Approve', summary: 'x', want: null }),
-    )
-    expect(reply.kind).toBe('advised')
-    if (reply.kind !== 'advised') throw new Error('unreachable')
-    expect(reply.result.resolution).toBe('Approve')
-  })
-
-  it('refuses an object resolution', () => {
+  it.each([
+    ['a tag', 'Approve'],
+    ['an object', { _tag: 'Approve', onSha: 'abc' }],
+    ['AnswerQuestion', 'AnswerQuestion'],
+  ])('refuses a resolution key by name: %s', (_name, resolution) => {
     const reply = parseTriage(
       JSON.stringify({
-        cause: { _tag: 'WrongApproach' },
-        resolution: { _tag: 'Approve', onSha: 'abc' },
+        cause: { _tag: 'WrongApproach', why: 'it does not converge' },
+        resolution,
         summary: 'x',
         want: null,
       }),
     )
     expect(reply.kind).toBe('refused')
     if (reply.kind !== 'refused') throw new Error('unreachable')
-    expect(reply.why).toContain('tag')
+    expect(reply.why).toContain('resolution')
+  })
+
+  it('refuses any other extra key by name', () => {
+    const reply = parseTriage(
+      JSON.stringify({ cause: { _tag: 'Unfinished', addToBody: null }, summary: 'x', want: null, confidence: 1 }),
+    )
+    expect(reply.kind).toBe('refused')
+    if (reply.kind !== 'refused') throw new Error('unreachable')
+    expect(reply.why).toContain('confidence')
+  })
+
+  it('does not read an answer that carries only a resolution', () => {
+    const reply = parseTriage(JSON.stringify({ resolution: 'Requeue', summary: 'x', want: null }))
+    expect(reply.kind).toBe('refused')
   })
 })
 
@@ -615,18 +610,19 @@ describe("a split's children take the parent's kind (#1271)", () => {
     JSON.stringify({
       cause: {
         _tag: 'TicketTooBig',
-        split: {
-          children: ['a', 'b'].map((key) => ({ key, title: key, body: key, ...kindOf(key) })),
+        spentOn: null,
+        plan: {
+          children: ['a', 'b'].map((key) => ({ key, title: key, body: key, covers: [], ...kindOf(key) })),
           blockedBy: [],
+          uncovered: [],
         },
       },
-      resolution: 'Split',
       summary: 's',
       want: null,
     })
   const kinds = (r: ReturnType<typeof parseTriage>) => {
-    if (r.kind !== 'advised' || r.result.cause._tag !== 'TicketTooBig') throw new Error('not advised')
-    return r.result.cause.split?.children.map((c) => c.kind)
+    if (r.kind !== 'answered' || r.result.cause._tag !== 'TicketTooBig') throw new Error('not answered')
+    return r.result.cause.plan?.children.map((c) => c.kind)
   }
 
   it('overwrites a kind the model sent, whatever it was', () => {
@@ -663,10 +659,10 @@ describe("a split's children take the parent's kind (#1271)", () => {
     )
     expect(r.kind).toBe('refused')
     expect(
-      parseTriage(JSON.stringify({ cause: { _tag: 'SetupBroken' }, resolution: 'Requeue', summary: 's', want: null }), {
+      parseTriage(JSON.stringify({ cause: { _tag: 'SetupBroken', what: 'no network', repair: 'restore it' }, summary: 's', want: null }), {
         kind: null,
       }).kind,
-    ).toBe('advised')
+    ).toBe('answered')
   })
 
   it('names no kind in the brief for a split', () => {
