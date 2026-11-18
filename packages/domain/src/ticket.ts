@@ -1066,6 +1066,8 @@ export function resolvedEvents(
     note: string
     answers?: PayloadOf<'WaitResolved'>['answers']
     split?: unknown
+    /** Who appends: an `Actor` (`human:…`, `conductor`). Absent, `by` is it; a system resolution is `by: 'triage'` and `conductor`. */
+    actor?: string
   },
 ): { ok: true; events: ToAppend[] } | { ok: false; refusal: ResolveRefusal } {
   const events: ToAppend[] = []
@@ -1079,11 +1081,11 @@ export function resolvedEvents(
     }
     if (written === null || written.waitId !== input.waitId)
       return { ok: false, refusal: { reason: 'split-not-written' } }
-    events.push({ type: 'TicketSplit', actor: input.by, data: written })
+    events.push({ type: 'TicketSplit', actor: input.actor ?? input.by, data: written })
   }
   events.push({
     type: 'WaitResolved',
-    actor: input.by,
+    actor: input.actor ?? input.by,
     data: parsePayload('WaitResolved', {
       waitId: input.waitId,
       by: input.by,
@@ -1100,7 +1102,7 @@ export function resolvedEvents(
   ) {
     const released = releaseTransition(state, {
       by: 'person',
-      person: input.by,
+      person: input.actor ?? input.by,
       runId: block.runId,
       waitId: input.waitId,
       how: resolution._tag,
@@ -1318,6 +1320,8 @@ export function actOnTriageTransition(
   const resolved = resolvedEvents(state, decided.block, {
     waitId: input.waitId,
     by: 'triage',
+    // `by` is the provenance the counters read; the event's actor must be one the store accepts.
+    actor: 'conductor',
     resolution,
     note: input.answer.summary,
   })
@@ -1334,21 +1338,31 @@ export function actOnTriageTransition(
  */
 export function triageSpentOn(
   state: TicketState,
-  /** The attempt a per-attempt bound (`stepRedos`) is counted for; absent counts every wait's. */
+  /** The attempt a per-attempt bound is counted for; absent counts every wait's. `newAttempts` is the ticket's. */
   runId?: string | null,
 ): {
   refusalFixes: number
+  conflictResolutions: number
   newAttempts: number
   stepRedos: number
 } {
-  const out = { refusalFixes: 0, newAttempts: 0, stepRedos: 0 }
+  const out = { refusalFixes: 0, conflictResolutions: 0, newAttempts: 0, stepRedos: 0 }
   for (const w of state.waits) {
     if (w.resolution?.by !== 'triage') continue
     const tag = w.resolution.resolution._tag
-    if (tag === 'FixRefusal') out.refusalFixes += 1
-    else if (tag === 'StartNewAttempt') out.newAttempts += 1
-    else if (tag === 'RedoStep' && (runId === undefined || ('run' in w.reason && w.reason.run.runId === runId)))
-      out.stepRedos += 1
+    if (tag === 'StartNewAttempt') {
+      out.newAttempts += 1
+      continue
+    }
+    if (!(runId === undefined || ('run' in w.reason && w.reason.run.runId === runId))) continue
+    if (tag === 'RedoStep') out.stepRedos += 1
+    else if (tag === 'FixRefusal') {
+      // Which bound a fix spent is the cause it answered: a conflict's resolution is `conflictResolutions`.
+      const answered = w.triage.result
+      if (answered?._tag === 'TriageAnswered' && answered.cause._tag === 'ConflictingHunks')
+        out.conflictResolutions += 1
+      else out.refusalFixes += 1
+    }
   }
   return out
 }

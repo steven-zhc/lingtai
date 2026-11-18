@@ -82,6 +82,7 @@ import {
   waitsFromState,
   personAsksFromState,
   ticketStream,
+  triageSpentOn,
 } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
 import {
@@ -795,10 +796,11 @@ export function continuationRound(run: AttemptState, granted: boolean): number {
 }
 
 /** What a held attempt's stream says it has spent of the mechanical bounds, absent read as 0 (0108 §8, #1200). */
-export const continuationSpent = (run: AttemptState) => ({
+export const continuationSpent = (run: AttemptState, triage?: { stepRedos: number }) => ({
   baseMerges: run.baseMerges ?? 0,
   conflictRounds: run.conflictRounds ?? 0,
-  stepRedos: run.stepRedos ?? 0,
+  // A triage's `RedoStep` is counted by its `WaitResolved` and its continuation writes no `StepRedone` (#1258).
+  stepRedos: (run.stepRedos ?? 0) + (triage?.stepRedos ?? 0),
   landingRetries: run.landingRetries ?? 0,
 })
 
@@ -1397,7 +1399,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               : { cannot: `the saved head ${cause.headSha.slice(0, 7)} of ${branch} is no longer on origin` }
           const releasedEvents = yield* Effect.promise(() => store.read(releasedFrom.runId))
           const releasedState = reduceAttempt(releasedEvents)
-          const spent = continuationSpent(releasedState)
+          const spent = continuationSpent(releasedState, triageSpentOn(reduced, releasedFrom.runId))
           const ticketEvents = yield* Effect.promise(() => store.read(ticketId))
           const releases = releasesOf(ticketEvents, releasedFrom.runId, 'BaseRed')
           const accountReruns =
@@ -1451,7 +1453,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const releasedEvents = yield* Effect.promise(() => store.read(releasedFrom.runId))
         const releasedState = reduceAttempt(releasedEvents)
         const head = releasedHeadOf(releasedEvents)
-        const spent = continuationSpent(releasedState)
+        const spent = continuationSpent(releasedState, triageSpentOn(reduced, releasedFrom.runId))
         // Each lift is one release naming this run, so this rerun's number among them is their count.
         const releases = accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), releasedFrom.runId)
         // A person's rerun of this attempt is a rerun too: its dispatch id is its own (#1218).
@@ -1519,7 +1521,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const step = rerunStepOf(reason)
         if (step === null) return null
         const head = releasedHeadOf(runEvents)
-        const spent = continuationSpent(runState)
+        const spent = continuationSpent(runState, triageSpentOn(reduced, options.continuing.runId))
         const accountReruns =
           accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), options.continuing.runId) +
           personRerunsOf(waitsFromState(reduced), options.continuing.runId)
@@ -1649,10 +1651,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           ? { advice: grantedAdviceFromState(reduced, adviceWaitId)! }
           : {}),
         roundsSpent: continuationRound(runState, granted),
-        baseMergesSpent: continuationSpent(runState).baseMerges,
-        conflictRoundsSpent: continuationSpent(runState).conflictRounds,
-        stepRedosSpent: continuationSpent(runState).stepRedos,
-        landingRetriesSpent: continuationSpent(runState).landingRetries,
+        baseMergesSpent: continuationSpent(runState, triageSpentOn(reduced, options.continuing.runId)).baseMerges,
+        conflictRoundsSpent: continuationSpent(runState, triageSpentOn(reduced, options.continuing.runId))
+          .conflictRounds,
+        stepRedosSpent: continuationSpent(runState, triageSpentOn(reduced, options.continuing.runId)).stepRedos,
+        landingRetriesSpent: continuationSpent(runState, triageSpentOn(reduced, options.continuing.runId))
+          .landingRetries,
         ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
         ...(criterion !== null
           ? {
@@ -1769,7 +1773,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       refusalFixes: ceiling.attempt.refusalFixes,
       conflictResolutions: ceiling.attempt.conflictResolutions,
       newAttempts: ceiling.ticket.newAttempts,
-      newAttemptsSpent: reduced.newAttempts.length,
+      newAttemptsSpent: reduced.newAttempts.length + triageSpentOn(reduced).newAttempts,
       personAsksSpent: personAsksFromState(reduced),
     }
 
@@ -6050,7 +6054,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         log(`not starting over — ${arm} was not published, so no restart is spent`)
       }
       if (restarted && armIsUp) {
-        const restart = reduced.newAttempts.length + 1
+        const restart = reduced.newAttempts.length + triageSpentOn(reduced).newAttempts + 1
         const reason = restartReason({
           action: lastRoute?.from ?? 'review',
           rounds: roundsSpent,
@@ -6087,9 +6091,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         if (
           headGone !== null &&
           continuation?.released?.by !== 'person' &&
-          reduced.newAttempts.length < ceiling.ticket.newAttempts
+          reduced.newAttempts.length + triageSpentOn(reduced).newAttempts < ceiling.ticket.newAttempts
         ) {
-          const restart = reduced.newAttempts.length + 1
+          const restart = reduced.newAttempts.length + triageSpentOn(reduced).newAttempts + 1
           const why = `the saved head cannot be continued (${headGone}) — restart ${restart} of ${ceiling.ticket.newAttempts}`
           log(why)
           runLog.note('restart', why)

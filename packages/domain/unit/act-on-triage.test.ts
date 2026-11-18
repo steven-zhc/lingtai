@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WaitId } from '../src/action.ts'
+import { Actor } from '../src/envelope.ts'
 import { BOUNDS, type CauseBound, type CauseCounter } from '../src/failure/respond.ts'
 import { actOnTriageTransition, reduceTicket, triageSpentOn, unchangedSince } from '../src/ticket.ts'
 import type { TriageResult } from '../src/wait.ts'
@@ -83,6 +84,32 @@ describe('actOnTriageTransition', () => {
     expect(triageSpentOn(resolved, 'other-run').stepRedos).toBe(0)
   })
 
+  it('every event it returns carries an actor the store accepts, a start-over release included', () => {
+    const { state } = waiting()
+    for (const over of [{}, { answer: wrong, boundSha: '', headNow: null }]) {
+      const d = actOnTriageTransition(state, input(state, over))
+      if (!d.ok) throw new Error('unreachable')
+      for (const e of d.events) expect(() => Actor.parse(e.actor)).not.toThrow()
+      expect(d.events.some((e) => e.type === 'WaitResolved')).toBe(true)
+    }
+  })
+
+  it('a triage conflict resolution counts as conflictResolutions, a fix as refusalFixes', () => {
+    const { e, events } = waiting()
+    const resolved = reduceTicket([
+      ...events,
+      e('WaitTriaged', {
+        waitId: W,
+        attempt: 1,
+        headSha: 'abc',
+        result: { ...unfinished, cause: { _tag: 'ConflictingHunks', hunks: [], total: 0 } },
+        by,
+      }),
+      ...aResolution(e, W, { _tag: 'FixRefusal', onSha: 'abc', ref: 'agent/7' }, 'triage'),
+    ])
+    expect(triageSpentOn(resolved, 'run-1')).toMatchObject({ conflictResolutions: 1, refusalFixes: 0 })
+  })
+
   it('records only WaitTriaged when the bound is spent', () => {
     const { state } = waiting()
     const d = actOnTriageTransition(
@@ -146,6 +173,6 @@ describe('actOnTriageTransition', () => {
       ...events,
       ...aResolution(e, W, { _tag: 'RedoStep', onSha: 'abc', ref: 'agent/7' }, 'steven'),
     ])
-    expect(triageSpentOn(resolved)).toEqual({ refusalFixes: 0, newAttempts: 0, stepRedos: 0 })
+    expect(triageSpentOn(resolved)).toEqual({ refusalFixes: 0, conflictResolutions: 0, newAttempts: 0, stepRedos: 0 })
   })
 })
