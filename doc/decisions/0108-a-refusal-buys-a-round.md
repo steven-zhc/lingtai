@@ -1,6 +1,6 @@
 # 0108 — Failure and recovery: a rule answers first, a judge or triage names the cause and the system acts on it, and a person is the floor
 
-**Status** accepted · 2026-10-01 · amended 2026-11-13 · rewritten 2026-11-17: nine named actions with one bound each, committed work kept on the branch, a step redone whole from its head, implement's five outcomes, a judge or triage answers a cause and the system acts on it, and a person only for a spent bound, an unclear requirement or a broken environment
+**Status** accepted · 2026-10-01 · amended 2026-11-13 · amended 2026-11-18: a red base is the project's, lifted by a commit and fixed by one ticket Lingtai opens · rewritten 2026-11-17: nine named actions with one bound each, committed work kept on the branch, a step redone whole from its head, implement's five outcomes, a judge or triage answers a cause and the system acts on it, and a person only for a spent bound, an unclear requirement or a broken environment
 
 A failure is answered in three layers. A **rule** answers what is mechanical or
 transient, costs nothing and runs no agent. What a rule cannot answer is a
@@ -309,23 +309,48 @@ fixes the actions, their bounds and the endings that router works inside.
     the attempt stops without a wait: its branch is published at its head, and
     the item goes back to the queue keeping its place and that head. A fix
     agent does not fix what it did not break, and a person has nothing to
-    decide about this ticket — the base is someone's to fix, and who is not
-    Lingtai's to guess. **The queue passes the item over as `base-red` while
-    the recorded result for the current base commit is red**, and the board and
-    `lingtai status` show it in the queue with the check that is red, the same
-    way they show `blocked-by`. The base's result is recorded on the log, keyed
+    decide about this ticket. The base's result is recorded on the log, keyed
     by the base commit, the command and the boundary it ran under
     (`unsandboxed`, or a fingerprint of the sandbox policy; 0127 §15) — an
-    answer under one boundary never answers a question under another — so
-    attempts in flight and every queued ticket reuse it; when the base moves
-    the check runs once on the new commit — no agent, no claim — and a green
-    result lets every item it held be taken again. **Taken again, it continues
+    answer under one boundary never answers a question under another.
+
+    **A red base is a fact about the project's base commit, not about a
+    ticket.** Leaving flakes aside (§17 runs a red base check twice), a base
+    turns green only when a commit lands on it, so *is it green yet* is *has
+    the base's head moved* — a comparison of two shas, never a watch. Every
+    rule below follows from that:
+
+    - **The queue passes the project's tickets over as `base-red` while the
+      last recorded result is red and the base's head is still the commit it
+      was recorded on.** The queue reads the base's head only when the last
+      result is red, so a green base costs it nothing. The board and
+      `lingtai status` show the count with the check that is red, the same way
+      they show `blocked-by`. No ticket carries a hold of its own: a ticket
+      released for a red base is an ordinary queued ticket, and a person's
+      requeue or `now` on it works as on any other.
+    - **When the head has moved, the next claimed attempt checks the base
+      first.** An attempt whose project's last base result is red asks the
+      base check on its own base commit before anything else runs — before an
+      agent is paid. Green, it goes on. Red, it is released as above, having
+      spent the check's time and no agent. Nothing checks the base in the
+      background, so there is nothing for a drain, a pause or a recipe change
+      to stop or lift.
+    - **Someone has to make it green, and that is a ticket.** When an
+      attempt's base check is red twice, Lingtai opens one ticket for it — the
+      recipe's first `source.kinds` kind, carrying the commit, the command and
+      the failing tests — through the ticket store's one door, keyed by the
+      first red commit since the last green one, so a red base opens one
+      ticket however many attempts meet it. That ticket alone is not passed
+      over as `base-red`, and the base-check guard above does not apply to
+      it: a red base is what it is for. If it cannot make the base green, it
+      fails as any ticket does, and a person is the floor.
+
+    **Taken again, it continues
     from its saved head, not from the base**: the new base is merged in by
     `mergeBaseBranch` and `build` runs again, then `review` and `proposed` as
     after any base merge; nothing is implemented again, and it is the same
     attempt continued, so its counters stand. Only a head that can no longer
-    be continued starts over from the base (§7). Lingtai opens no ticket about
-    a red base.
+    be continued starts over from the base (§7).
 
     **A base that moved is merged in by the system: `mergeBaseBranch`.** When
     the base moved on files the branch also changed, the system merges it in
@@ -597,6 +622,11 @@ What changes:
   `Unfinished`; the cause→action table in `respond`; `ifVersion` required;
   the append-then-act protocol for `by: judge` and `by: triage`; a run that
   met `run.turns` or `run.wall` sent to triage.
+- **A red base (§13).** Today a red base holds the attempt for a person
+  (`base is red: …`). To build: the release keeping the head, the queue's
+  `base-red` while the base's head is the red commit, the claimed attempt's
+  base check first when the head moved, and the one ticket Lingtai opens to
+  make the base green.
 - **`backlog:` does not set the bar.** The plugin is declared in
   `packages/recipe/src/recipe.ts`, but the `minor` bar is still a literal in
   `verdictFor` and in the backlog reduce. Wiring it means handing one value to

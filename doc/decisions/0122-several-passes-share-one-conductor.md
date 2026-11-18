@@ -1,6 +1,6 @@
 # 0122 — Several attempts, one conductor: slots per project, who runs together, one landing at a time, what a drain waits for
 
-**Status** accepted · 2026-10-25 · amended 2026-11-13: the queue checks a red base itself, and says why nothing runs
+**Status** accepted · 2026-10-25 · amended 2026-11-13: says why nothing runs · amended 2026-11-18: a red base is a sha comparison in the queue, checked by the next attempt claimed, never by the look
 
 One conductor may run several attempts at once. How many is `runtime.concurrency`
 in a project's recipe, default 1. Tickets that cannot safely run together are
@@ -65,14 +65,12 @@ and the dollar ceiling lands before any N > 1.
      to guess one. Where the second to land meets a base that moved under it, the
      re-review on a moved base (§3, #593) and the `conflict` route answer it.
    - **A ticket whose base is red is passed over as `base-red`**
-     ([0108](0108-a-refusal-buys-a-round.md) §13), and it is the queue's look
-     that decides when the base is green again. When a project has a
-     `base-red` ticket and its base's head is not the commit last checked, the
-     look runs the refused check once on that head, in a throwaway worktree —
-     no agent, no claim, no slot — and records the result keyed by the commit
-     and the command. Green, every ticket it held is taken again from its saved
-     head; red, they stay, and the reason says which check on which commit. A
-     base that does not move is not checked again: it is someone's to fix.
+     ([0108](0108-a-refusal-buys-a-round.md) §13) while the project's last base
+     result is red and the base's head has not moved from the commit it was
+     recorded on. The look compares two shas and checks nothing itself: once
+     the head moves, the next attempt claimed checks the base first, before an
+     agent is paid, and is released again if it is still red. The one ticket
+     Lingtai opened to make the base green is never passed over for it.
    - **The in-memory set of attempts in flight is subtracted first.** A ticket
      claimed a moment ago may still read `queued` in `task_view` on the next look,
      because the projection lags the claim. If both miss, the claim's version
@@ -195,7 +193,7 @@ and the dollar ceiling lands before any N > 1.
    | A refused recipe | `stage: "recipe"` in `conduct.ts` | Already per project | — |
    | A missing environment | `env` in `schedule.ts` | Already per project | — |
    | No GitHub App | `projectsForTurn` in `apps/cli/src/conduct.ts` (#355) | Stays installation-wide: one App per machine ([0114](0114-a-github-app-not-a-token.md)) | — |
-   | A red base | `base-red`, checked by the look (§2, 0108 §13) | Per project | — |
+   | A red base | `base-red` while the base's head is the red commit (§2, 0108 §13) | Per project | A commit on the base, checked by the next attempt claimed |
 
 8. **When a project has work queued and nothing running, it says why.** A
    project whose queue holds a ticket that is not on hold (`agent:hold` and the
