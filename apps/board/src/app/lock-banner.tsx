@@ -102,7 +102,7 @@ function AccountRow({
   now: Date
 }) {
   // A lock written with what the runtime said names which limit it is (#1214), and says it once, here (#1216).
-  if (row.named !== undefined) {
+  if (row.named != null) {
     const sentence = limitSentence(row.account, row.named, now, { untilFrom: row.untilFrom, said: row.said })
     const then = row.passed
       ? ' · lifts when the conductor next looks'

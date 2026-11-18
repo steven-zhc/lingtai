@@ -186,7 +186,7 @@ export function bannerRows(
         untilLabel: whenLabel(lock.until, now),
         title: `${untilFromWords(lock.untilFrom)} — "${lock.said}"`,
         passed: lock.until.getTime() <= now.getTime(),
-        ...(lock.named === undefined ? {} : { named: lock.named }),
+        ...(lock.named == null ? {} : { named: lock.named }),
         untilFrom: lock.untilFrom,
         said: lock.said,
         waiting: [h.project],
