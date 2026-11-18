@@ -926,13 +926,16 @@ export const RunKeptUncommitted = z.object({
 })
 
 /**
+ * **Retired** (0108 §20, #1244): no attempt carries another's work, so nothing appends this
+ * again — see `RETIRED`. The rows already on the log still read.
+ *
  * **The conductor applied the previous attempt's kept WIP to this attempt's
  * fresh worktree, uncommitted, before any agent ran** (#1170, 0109 §8). Its
  * own type rather than a field on `RunKeptUncommitted`, which belongs to the
  * run that stopped. `unapplied` is why nothing was applied (the arm could not
  * be fetched, the diff could not be read), and null when something was.
  *
- * @summary The conductor carried a stopped run's uncommitted edits into the new worktree before the agent started.
+ * @summary No longer written: the conductor carried a stopped run's uncommitted edits into the new worktree before the agent started.
  */
 export const RunAppliedKeptWork = z.object({
   /** The run whose `RunKeptUncommitted` this carries. */
@@ -2801,7 +2804,7 @@ export const EVENT_AT = {
   RunProducedDiff: ['implement', 'end'],
   RunRefsPublished: ['implement', 'end'],
   RunKeptUncommitted: ['implement', 'end'],
-  RunAppliedKeptWork: ['admit'],
+  RunAppliedKeptWork: [],
   RunProposedCompletion: ['implement', 'end'],
   RunFinished: [...AGENT_STEPS, 'end'],
   SandboxBoundaryRecorded: ['prepared', ...AGENT_STEPS, 'build', 'proposed', 'merge'],
@@ -2919,6 +2922,7 @@ export const RETIRED: ReadonlySet<EventType> = new Set<EventType>([
   'ConductorShutdownWithdrawn',
   'ProjectOnboardingStarted',
   'RecipeRecorded',
+  'RunAppliedKeptWork',
 ])
 
 export function isRetiredEventType(t: string): boolean {

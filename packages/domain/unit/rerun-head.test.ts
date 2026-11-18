@@ -23,37 +23,39 @@ const published = (over: object = {}) => ({
 const keptAt = (sha: string, parentSha: string) => ({ sha, ref: arm, parentSha })
 
 describe('rerunHeadOf', () => {
-  it('Saved: the pushed head, on its ref, with nothing carried', () => {
+  it('Saved: the pushed head, on its ref', () => {
     const state = stateOf(published())
     expect(savedHeadOf(state)._tag).toBe('Saved')
-    expect(rerunHeadOf(state)).toEqual({ at: HEAD, atRef: 'agent/7', carry: null })
+    expect(rerunHeadOf(state)).toEqual({ at: HEAD, atRef: 'agent/7' })
   })
 
-  it('Saved, with a recorded arm commit on top: that record is carried', () => {
-    const record = keptAt(ARM, HEAD)
-    const state = stateOf(published({ armSha: ARM }), [record])
-    expect(rerunHeadOf(state)).toEqual({ at: HEAD, atRef: 'agent/7', carry: record })
+  it('Saved at a WIP committed to the branch (#1243): the WIP’s sha, on the branch', () => {
+    const state = stateOf(published({ armSha: undefined, headSha: ARM }), [
+      { sha: ARM, ref: 'agent/7', parentSha: PARENT },
+    ])
+    expect(rerunHeadOf(state)).toEqual({ at: ARM, atRef: 'agent/7' })
   })
 
-  it('Saved, with an arm commit nobody recorded: refused, the work would be published over', () => {
-    expect(rerunHeadOf(stateOf(published({ armSha: ARM })))).toMatchObject({
-      cannot: expect.stringContaining('never recorded'),
+  it.each([
+    ['recorded', true],
+    ['unrecorded', false],
+  ])('Saved, with an arm WIP beside it (%s): refused with a sentence', (_n, recorded) => {
+    const state = stateOf(published({ armSha: ARM }), recorded ? [keptAt(ARM, HEAD)] : [])
+    expect(rerunHeadOf(state)).toEqual({
+      cannot: `the saved work ${ARM.slice(0, 7)} is a WIP on ${arm}, kept before WIP was committed to the branch; start a new attempt`,
     })
   })
 
-  it('WipHead, recorded: re-cut at the WIP’s parent with the WIP carried, on no ref', () => {
-    const record = keptAt(ARM, PARENT)
-    const state = stateOf(published({ outcome: 'arm-only', armSha: ARM, headSha: null, branchCarries: false }), [
-      record,
-    ])
+  it.each([
+    ['recorded', true],
+    ['unrecorded', false],
+  ])('WipHead, %s: refused, never continued on the clean parent', (_n, recorded) => {
+    const state = stateOf(
+      published({ outcome: 'arm-only', armSha: ARM, headSha: null, branchCarries: false }),
+      recorded ? [keptAt(ARM, PARENT)] : [],
+    )
     expect(savedHeadOf(state)._tag).toBe('WipHead')
-    expect(rerunHeadOf(state)).toEqual({ at: PARENT, atRef: null, carry: record })
-  })
-
-  it('WipHead, unrecorded: refused', () => {
-    const state = stateOf(published({ outcome: 'arm-only', armSha: ARM, headSha: null, branchCarries: false }))
-    expect(savedHeadOf(state)._tag).toBe('WipHead')
-    expect(rerunHeadOf(state)).toMatchObject({ cannot: expect.stringContaining('never recorded') })
+    expect(rerunHeadOf(state)).toMatchObject({ cannot: expect.stringContaining('is a WIP on') })
   })
 
   it('BranchDiverged: refused by name', () => {

@@ -28,7 +28,6 @@ import type { StepAction } from '@lingtai/recipe'
 
 import type { ArmsOnOrigin } from './arms.ts'
 import {
-  type CarriedBrief,
   attemptBrief,
   answersBrief,
   attemptOutcome,
@@ -113,8 +112,6 @@ export function nextPrompt(input: {
    * that attempt's commits are (#315). Null is *nobody asked*, and names none.
    */
   arms?: ArmsOnOrigin | null
-  /** What the conductor carried of the previous attempt's kept WIP (#1170); absent before the cut. */
-  carried?: CarriedBrief | null
 }): NextPrompt {
   const held = 'state' in input.item ? input.item : null
   const state = held !== null ? held.state : reduceTicket(input.item as readonly Envelope[])
@@ -141,10 +138,7 @@ export function nextPrompt(input: {
   // is about the ticket rather than about an attempt, so it leads, and it is
   // Lingtai's own composition — read off the log like the history — rather than
   // the page's edit, which is why it sits inside `composed`.
-  const history = join([
-    answersBrief(state.answers),
-    attemptBrief(attempts, input.budget, input.arms ?? null, input.carried),
-  ])
+  const history = join([answersBrief(state.answers), attemptBrief(attempts, input.budget, input.arms ?? null)])
   const failure = join([history, humanBrief(edit)])
 
   return {
