@@ -1280,7 +1280,9 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
             failure: null,
             // The document at `design`, and the implementer's decline message
             // everywhere else — one runtime, as `runOnce` has (`one-attempt.ts`).
-            text: 'Put it in `packages/recipe`, beside `whyNoKindAt`.',
+            text: request.runId.includes(':design:')
+              ? 'Put it in `packages/recipe`, beside `whyNoKindAt`.'
+              : 'done\n```outcome\n{"outcome": "Implemented"}\n```',
             sessionId: 'sess-1',
           }
         }),
@@ -1629,7 +1631,16 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
               text: null,
               sessionId: 'sess-cut',
             })
-          : runtime.run(request)
+          : Effect.succeed({
+              exitCode: 0,
+              turns: 1,
+              durationMs: 10,
+              costUsd: 0.1,
+              failure: null,
+              // The rerun objects, by declaring it (#1250): it commits nothing and is not redone.
+              text: '```outcome\n{"outcome": "Disputed", "findings": [{"index": 1, "why": "not this diff"}]}\n```',
+              sessionId: 'sess-fix',
+            })
       },
     }
 
@@ -1649,13 +1660,15 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
     )
 
     // A, A's rerun, then B: the step is redone whole, so B is dispatched under the redo's suffix too.
-    expect(ids).toHaveLength(3)
+    expect(ids.slice(0, 3)).toHaveLength(3)
     expect(ids[1]).toBe(`${ids[0]}:rerun:1`)
-    // B committed nothing, so the step holds; A's commit is not recorded as B's.
+    // B declared it was done and moved nothing, so it is `AgentFailed` and the step is redone by rule
+    // until `stepRedos` is spent (#1250), and then holds; A's commit is not recorded as B's.
     expect(result.ok).toBe('held')
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
-    expect(run.filter((e) => e.type === 'StepRedone')).toHaveLength(1)
-    expect(run.filter((e) => e.type === 'RunProposedCompletion')).toHaveLength(1)
+    expect(run.filter((e) => e.type === 'StepRedone')).toHaveLength(3)
+    // A is the one that moved, once per time the step ran it to the end: three redos, three.
+    expect(run.filter((e) => e.type === 'RunProposedCompletion')).toHaveLength(3)
   })
 
   it('reruns a cut-off fix round with the prompt it was cut off with, and the redo paragraph', async () => {
@@ -1678,7 +1691,16 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
               text: null,
               sessionId: 'sess-cut',
             })
-          : runtime.run(request)
+          : Effect.succeed({
+              exitCode: 0,
+              turns: 1,
+              durationMs: 10,
+              costUsd: 0.1,
+              failure: null,
+              // The rerun objects, by declaring it (#1250): it commits nothing and is not redone.
+              text: '```outcome\n{"outcome": "Disputed", "findings": [{"index": 1, "why": "not this diff"}]}\n```',
+              sessionId: 'sess-fix',
+            })
       },
     }
 

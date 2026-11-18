@@ -7,6 +7,7 @@
  * start sha, head).
  */
 import { z } from 'zod'
+
 import { AskedQuestions, TriageQuestion, askedText } from './triage.ts'
 
 /** The stored outcome: lenient, because nothing on the log may become unreadable (#1253's bar is the writer's). */
@@ -100,9 +101,11 @@ export function decideImplementOutcome(input: DecideInput): ImplementOutcome {
         ? { _tag: 'AgentFailed', why: 'declared Implemented and the head did not move' }
         : { _tag: 'Implemented' }
     case 'Disputed': {
-      if (input.findingsOffered === 0) return { _tag: 'AgentFailed', why: 'declared Disputed with no finding to dispute' }
+      if (input.findingsOffered === 0)
+        return { _tag: 'AgentFailed', why: 'declared Disputed with no finding to dispute' }
       const bad = d.findings.find((f) => f.index < 1 || f.index > input.findingsOffered)
-      if (bad !== undefined) return { _tag: 'AgentFailed', why: `Disputed names finding ${bad.index}, which was not offered` }
+      if (bad !== undefined)
+        return { _tag: 'AgentFailed', why: `Disputed names finding ${bad.index}, which was not offered` }
       return { _tag: 'Disputed', findings: [...d.findings] }
     }
     case 'Unclear':

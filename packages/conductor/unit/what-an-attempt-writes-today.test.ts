@@ -57,7 +57,7 @@
  * process, no socket, no network.
  */
 import { AgentHostFailed, type Runtime } from '@lingtai/agent'
-import { expandPrompt, type Envelope, type PayloadOf } from '@lingtai/domain'
+import { BOUNDS, expandPrompt, type Envelope, type PayloadOf } from '@lingtai/domain'
 import {
   integrationStream,
   waitWords,
@@ -773,37 +773,12 @@ runtime:
     )
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
-    expect(typesOf(await theItem(store))).toEqual([
-      'TicketClaimed',
-      'IssueUpdated',
-      'WaitStarted',
-      'IssueUpdated',
-      'IssueUpdated',
-    ])
-    expect(typesOf(theRun(store))).toEqual([
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'RunStarted',
-      'StepsResolved',
-      'RunPrompted',
-      'SandboxBoundaryRecorded',
-      'RunFinished',
-      'RunSpent',
-      'StepEnded',
-      'ProposalRouted',
-      'RunRefsPublished',
-      'RunRefsPublished',
-    ])
+    // It said `Implemented` and moved nothing: `AgentFailed`, redone by rule until `stepRedos` is
+    // spent (#1250), and then a person's — there is no router visit and no judge asked.
+    expect(typesOf(theRun(store)).filter((t) => t === 'StepRedone')).toHaveLength(BOUNDS.stepRedos)
+    expect(typesOf(theRun(store))).not.toContain('ProposalRouted')
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'NothingProduced', said: 'done' },
-    })
+    expect(hold).toMatchObject({ _tag: 'AgentCrashed', step: 'implement' })
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
@@ -832,7 +807,22 @@ runtime:
       {
         project,
         client: fakeGitHub([], JUDGED),
-        runtime: refusingRuntime,
+        // The fixer disputes finding 1 by declaring it (#1250); everyone else is `refusingRuntime`.
+        runtime: {
+          ...refusingRuntime,
+          run: (request) =>
+            request.runId.includes(':fix:')
+              ? Effect.succeed({
+                  exitCode: 0,
+                  turns: 1,
+                  durationMs: 10,
+                  costUsd: 0.1,
+                  failure: null,
+                  text: '```outcome\n{"outcome": "Disputed", "findings": [{"index": 1, "why": "the approach cannot work"}]}\n```',
+                  sessionId: 'sess-fix',
+                })
+              : refusingRuntime.run(request),
+        },
         issue: 7,
         hookBinary: '/tmp/fake/lingtai-hook',
         prompt: 'fix {{issue}}',
@@ -902,7 +892,12 @@ runtime:
     // `Declined`/`FixerDisagrees` off the stored hold regardless; this is the
     // other half, read off the run's own wire events.
     const implementRound1 = stepOutcomesOf(all).find((o) => o.step === 'implement' && o.round === 1)
-    expect(implementRound1?.actions[0]?.result).toEqual({ _tag: 'Completed', head: null, question: null })
+    expect(implementRound1?.actions[0]?.result).toEqual({
+      _tag: 'Completed',
+      head: null,
+      question: null,
+      outcome: { _tag: 'Disputed', findings: [{ index: 1, why: 'the approach cannot work' }] },
+    })
     const routes = routesOf(all)
     expect(routes).toHaveLength(2)
     expect(routes[0]).toMatchObject({ from: 'review', decision: { _tag: 'Selected', candidate: 'fix-lines' } })

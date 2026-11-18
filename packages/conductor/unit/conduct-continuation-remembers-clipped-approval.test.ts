@@ -48,6 +48,8 @@ const reviewing = {
       })
     }
     dispatched.push(request.runId)
+    // An implementer or a fixer declares it did the work; only a reviewer answers in findings (#1250).
+    if (!request.runId.includes(':review:')) return runtime.run(request as never)
     return Effect.succeed({
       exitCode: 0,
       turns: 1,

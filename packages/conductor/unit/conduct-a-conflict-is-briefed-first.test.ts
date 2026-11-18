@@ -42,6 +42,7 @@ describe('a conflict round after a review that passed with a minor', () => {
           fixPrompts.push(request.prompt)
           return runtime.run(request)
         }
+        if (!request.runId.includes(':review:')) return runtime.run(request)
         return Effect.succeed({
           exitCode: 0,
           turns: 1,

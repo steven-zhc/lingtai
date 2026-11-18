@@ -5081,7 +5081,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             ])
           }
           if (decided._tag !== 'Implemented') {
-            return { stopped: (outcome.text ?? '').trim().slice(0, 8_000), declared: decided, ...(moved ? { head } : {}) }
+            return {
+              stopped: (outcome.text ?? '').trim().slice(0, 8_000),
+              declared: decided,
+              ...(moved ? { head } : {}),
+            }
           }
           return { committed: head }
         })
@@ -5334,17 +5338,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // **What the fixer declared decides, and the head only corrects it** (#1250), for a run that
           // ended normally. One cut off keeps the cells above: `interrupted` names the runtime's cause.
           const roundStart = brief.context.redo?.startedAt ?? brief.context.onSha
-          const decidedFix =
-            fixed.failure === undefined
-              ? decideImplementOutcome({
-                  declared: parseImplementOutcome(fixed.text),
-                  endedAbnormally: false,
-                  startedAt: roundStart,
-                  head: after,
-                  findingsOffered: offered,
-                })
-              : null
-          if (!committed || cutOffTransient || cutOffByWall || (decidedFix !== null && decidedFix._tag !== 'Implemented')) {
+          const decidedFix = !fixed.failure
+            ? decideImplementOutcome({
+                declared: parseImplementOutcome(fixed.text),
+                endedAbnormally: false,
+                startedAt: roundStart,
+                head: after,
+                findingsOffered: offered,
+              })
+            : null
+          if (
+            !committed ||
+            cutOffTransient ||
+            cutOffByWall ||
+            (decidedFix !== null && decidedFix._tag !== 'Implemented')
+          ) {
             // A decline judged the findings or the refusal rather than being cut
             // off mid-run, so `interrupted` does not stand for it either; a
             // crash or a wall does, in the runtime's own word for it (`#468`).
@@ -5367,8 +5375,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 : cause === undefined
                   ? {}
                   : cause === 'no-commits' || cause === 'no-structured-answer'
-                  ? {}
-                  : { interrupted: cause }),
+                    ? {}
+                    : { interrupted: cause }),
             }
           }
           // A commit clears `interrupted`, but not a failure that still ended

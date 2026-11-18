@@ -20,8 +20,8 @@
  */
 import { z } from 'zod'
 
-import { disputedText, unclearText } from './implement-outcome.ts'
 import { Action, cleared, decidingAction, Integration, StepOutcome } from './action.ts'
+import { disputedText, unclearText } from './implement-outcome.ts'
 import { mergeRefusalProposal, Proposal } from './proposal.ts'
 import { Finding, Step, STEPS } from './vocabulary.ts'
 import { AttemptRef, WaitReason } from './wait.ts'
@@ -263,7 +263,9 @@ function commitFellShort(step: Step, action: OfYields<'commit'>, run: AttemptRef
               run,
               step: 'implement',
               cause: 'crash',
-              detail: declared.why ?? 'the agent declared no outcome',
+              detail:
+                (declared.why ?? 'the agent declared no outcome') +
+                (action.evidence.trim() === '' ? '' : ` — its last message: ${action.evidence}`),
             },
           }
         case 'Disputed':

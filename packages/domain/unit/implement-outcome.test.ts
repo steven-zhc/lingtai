@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { ImplementOutcome, decideImplementOutcome, parseImplementOutcome, type Declared } from '../src/index.ts'
-import { nextOf } from '../src/attempt-next.ts'
+
 import type { StepOutcome } from '../src/action.ts'
+import { nextOf } from '../src/attempt-next.ts'
+import { SpentFor } from '../src/events.ts'
+import { ImplementOutcome, decideImplementOutcome, parseImplementOutcome, type Declared } from '../src/index.ts'
 import { StoredJudgeWhen, JudgeWhen } from '../src/proposal.ts'
 import { WaitReason } from '../src/wait.ts'
-import { SpentFor } from '../src/events.ts'
 
 const q = {
   id: 'q1',
@@ -78,7 +79,9 @@ describe('nextOf an implement that declared', () => {
     ({
       step: 'implement',
       round: 0,
-      actions: [{ name: 'a', plugin: 'agent', yields: 'commit', evidence: 'said', result: { _tag: 'Completed', ...result } }],
+      actions: [
+        { name: 'a', plugin: 'agent', yields: 'commit', evidence: 'said', result: { _tag: 'Completed', ...result } },
+      ],
     }) as unknown as StepOutcome
 
   it('Implemented advances to build', () => {
@@ -93,23 +96,30 @@ describe('nextOf an implement that declared', () => {
   })
   it('Disputed proposes FixerDisagrees with the why lines', () => {
     const next = nextOf(
-      outcomeOf({ head: null, question: null, outcome: { _tag: 'Disputed', findings: [{ index: 1, why: 'cannot happen' }] } }),
+      outcomeOf({
+        head: null,
+        question: null,
+        outcome: { _tag: 'Disputed', findings: [{ index: 1, why: 'cannot happen' }] },
+      }),
       run,
     )
     expect(next).toEqual({ _tag: 'Propose', proposal: { _tag: 'FixerDisagrees', said: 'finding 1: cannot happen' } })
   })
   it('Unclear proposes InputNeeded with its questions, commits kept', () => {
-    const next = nextOf(
-      outcomeOf({ head: 'h', question: 'x', outcome: { _tag: 'Unclear', questions: [q] } }),
-      run,
-    )
-    expect(next).toMatchObject({ _tag: 'Propose', proposal: { _tag: 'InputNeeded', from: 'implement', questions: [q] } })
+    const next = nextOf(outcomeOf({ head: 'h', question: 'x', outcome: { _tag: 'Unclear', questions: [q] } }), run)
+    expect(next).toMatchObject({
+      _tag: 'Propose',
+      proposal: { _tag: 'InputNeeded', from: 'implement', questions: [q] },
+    })
   })
 })
 
 describe('what the log already holds', () => {
   it('a stored judge spend and wait at the retired reason still decode', () => {
-    expect(SpentFor.parse({ _tag: 'Judge', when: 'nothing-produced' })).toEqual({ _tag: 'Judge', when: 'nothing-produced' })
+    expect(SpentFor.parse({ _tag: 'Judge', when: 'nothing-produced' })).toEqual({
+      _tag: 'Judge',
+      when: 'nothing-produced',
+    })
     expect(StoredJudgeWhen.safeParse('nothing-produced').success).toBe(true)
     expect(JudgeWhen.safeParse('nothing-produced').success).toBe(false)
     expect(WaitReason.parse({ _tag: 'NothingProduced', run: { runId: 'r' }, said: null })._tag).toBe('NothingProduced')

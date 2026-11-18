@@ -17,8 +17,8 @@
  */
 import { isReached, reviewSummaryOf, type Reached, type StepOutcome } from './action.ts'
 import type { Envelope } from './envelope.ts'
-import { unclearText } from './implement-outcome.ts'
 import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity, SpentFor } from './events.ts'
+import { unclearText } from './implement-outcome.ts'
 import { routeMove, type StoredRoute } from './routing.ts'
 import type { Finding, Step } from './vocabulary.ts'
 
