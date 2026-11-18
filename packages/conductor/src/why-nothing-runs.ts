@@ -273,7 +273,10 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
       if (seen.includes(hop.ref)) {
         const loop = [...seen.slice(seen.indexOf(hop.ref)), hop.ref].map((r) => `#${r}`).join(' → ')
         verdict = {
-          key: `cycle:${[...seen.slice(seen.indexOf(hop.ref))].sort((a, b) => a - b).join(',')}`,
+          key: `cycle:${seen
+            .slice(seen.indexOf(hop.ref))
+            .sort((a, b) => a - b)
+            .join(',')}`,
           kind: 'chain-cycle',
           describe: (n) => `${said(n, 'ticket waits', 'tickets wait')} on a cycle: ${loop}`,
         }

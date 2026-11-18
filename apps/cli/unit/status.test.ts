@@ -218,6 +218,7 @@ describe('statusJson', () => {
           eligible: 3,
           offerError: null,
           passedOver: [{ ref: 9, reason: 'agent:hold' }],
+          whyNothingRuns: null,
           dependenciesUnread: 'GitHub reported no issue dependencies for this repository',
           runnable: [
             { ...r('612'), restarts: 1, held: 'backing off — runnable in 32m', arm: 'restart 1 of 3' },
@@ -275,6 +276,7 @@ describe('statusJson', () => {
           offerError: null,
           locks: [],
           passedOver: [],
+          whyNothingRuns: null,
           dependenciesUnread: null,
           runnable: [],
           byState: {},
@@ -296,6 +298,7 @@ describe('statusJson', () => {
           eligible: null,
           offerError: 'no such table',
           passedOver: [],
+          whyNothingRuns: null,
           dependenciesUnread: null,
           runnable: [],
           byState: {},
@@ -838,5 +841,40 @@ describe('waitPassOf (#1030)', () => {
   it('names the project’s base in a refusal, and says the base when none is recorded', () => {
     expect(first('main')).toMatch(/^main moved while agent\/1/)
     expect(first(null)).toMatch(/^the base moved while agent\/1/)
+  })
+})
+
+describe('whyNothingRuns under Queue (#1215)', () => {
+  const root = (sentence: string, tickets: number[]) => ({ root: 'chain' as const, sentence, tickets })
+  const withWhy = (): StatusReport => ({
+    ...fixture,
+    projects: [
+      {
+        ...fixture.projects[0]!,
+        whyNothingRuns: {
+          roots: [
+            root('3 tickets wait on #9, which waits on you', [1, 2, 3]),
+            root('1 ticket waits on #8, which is on hold', [4]),
+          ],
+        },
+      },
+    ],
+  })
+
+  it('prints one line and "and N more", and every root under --all', () => {
+    const plain = renderStatus(withWhy(), {}).join('\n')
+    expect(plain).toContain('3 tickets wait on #9, which waits on you')
+    expect(plain).toContain('and 1 more for other reasons')
+    expect(plain).not.toContain('#8, which is on hold')
+    const all = renderStatus(withWhy(), { all: true }).join('\n')
+    expect(all).toContain('#8, which is on hold')
+    expect(all).not.toContain('and 1 more')
+  })
+
+  it('carries the first root in --json, the rest only under --all', () => {
+    const one = (statusJson(withWhy()).projects as { whyNothingRuns: Record<string, unknown> }[])[0]!.whyNothingRuns
+    expect(one).toEqual({ root: 'chain', sentence: '3 tickets wait on #9, which waits on you', tickets: [1, 2, 3] })
+    const all = (statusJson(withWhy(), true).projects as { whyNothingRuns: { others: unknown[] } }[])[0]!.whyNothingRuns
+    expect(all.others).toHaveLength(1)
   })
 })
