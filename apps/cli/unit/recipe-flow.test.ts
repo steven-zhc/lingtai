@@ -395,7 +395,6 @@ describe('askRecipe — --defaults (#433)', () => {
     land: 'main',
     'refusal-fixes': '3',
     'conflict-resolutions': '3',
-    'conflict-resolutions': '3',
     wall: '1h',
     budget: '5',
   }
