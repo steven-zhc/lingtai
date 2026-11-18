@@ -89,7 +89,6 @@ export const proposeBaseFix = (options: {
     if (!('red' in state) || state.red.fix !== null) return
     const red = state.red
 
-
     const ref: ProposedRef = yield* tickets.propose({
       key: red.key,
       since: red.firstRedAt,

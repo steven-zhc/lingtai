@@ -1566,11 +1566,7 @@ export const BaseChecked = z.object({
   /** The pass that ran it, for "who ran this". */
   runId: z.string(),
 })
-/**
- * @summary The conductor opened the one ticket that makes a red base green and recorded which ticket it is.
- *
- * On `int-{project}-{base}`, beside the `BaseChecked` it answers (#1266, 0108 §13).
- */
+/** @summary The conductor opened the one ticket that makes a red base green and recorded which one it is. */
 export const BaseFixProposed = z.object({
   project: z.string(),
   base: z.string(),
