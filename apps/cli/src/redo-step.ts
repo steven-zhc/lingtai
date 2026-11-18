@@ -60,7 +60,7 @@ export function redoStepVerdict(
       if (!result.ok) {
         return refusal(1, result.reason, result.detail, { ticketId: result.ticketId })
       }
-      if (result.unscheduled) {
+      if (result.unscheduled !== undefined) {
         // The wait is resolved but nothing was queued: not an acceptance.
         return refusal(
           1,
