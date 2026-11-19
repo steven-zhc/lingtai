@@ -77,7 +77,7 @@ const ITEMS: Item[] = [
     say: 'My Claude limit ran out',
     lane: 'rule',
     laneName: 'Rule',
-    what: 'Nothing could start, so nothing was spent. It waited for your limit to reset, then carried on from the same point.',
+    what: 'Nothing could start, so nothing was spent. It waited for your limit to reset, then carried on from the same place.',
     bound: 'Nothing to count: waiting is free. A limit with no reset, like a monthly cap, waits for you.',
   },
 ]

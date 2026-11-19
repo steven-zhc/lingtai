@@ -879,6 +879,64 @@ function mount(host: HTMLElement, section: HTMLElement): () => void {
     return `M${f(a.x)} ${f(a.y)} A${RAD} ${RAD} 0 1 ${sweep} ${f(b.x)} ${f(b.y)} A${RAD} ${RAD} 0 1 ${sweep} ${f(a.x)} ${f(a.y)}`
   }
 
+  /** Where a dot is a fraction of the way along a path, sampled from the same coordinates the path is drawn from. */
+  type At = (frac: number) => { x: number; y: number }
+  const sampled = (pts: { x: number; y: number }[]): At => {
+    const cum = [0]
+    for (let i = 1; i < pts.length; i++)
+      cum.push(cum[i - 1]! + Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y))
+    const total = cum[cum.length - 1] || 1
+    return (frac) => {
+      const want = Math.min(1, Math.max(0, frac)) * total
+      let i = 1
+      while (i < cum.length - 1 && cum[i]! < want) i++
+      const span = cum[i]! - cum[i - 1]! || 1
+      const k = Math.min(1, Math.max(0, (want - cum[i - 1]!) / span))
+      const a = pts[i - 1]!
+      const b = pts[i]!
+      return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k }
+    }
+  }
+  function trackOf(pts: Pt[]): At {
+    const q = pts.map(tp)
+    const out = [xy(q[0]!)]
+    for (let i = 1; i < q.length; i++) {
+      const p = q[i - 1]!
+      const c = q[i]!
+      if (Math.abs(c.P - p.P) < 0.5) {
+        out.push(xy(c))
+        continue
+      }
+      const m = (p.T + c.T) / 2
+      const p0 = xy(p)
+      const c1 = xy({ T: m, P: p.P })
+      const c2 = xy({ T: m, P: c.P })
+      const p3 = xy(c)
+      for (let n = 1; n <= 24; n++) {
+        const t = n / 24
+        const u = 1 - t
+        out.push({
+          x: u * u * u * p0.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p3.x,
+          y: u * u * u * p0.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p3.y,
+        })
+      }
+    }
+    return sampled(out)
+  }
+  function loopTrack(p: Pt): At {
+    const c = tp(p)
+    const a = xy(c)
+    const mid = xy({ T: c.T, P: c.P - RAD })
+    const phi0 = Math.atan2(a.y - mid.y, a.x - mid.x)
+    const dir = G.wide ? -1 : 1
+    const out = []
+    for (let n = 0; n <= 48; n++) {
+      const th = phi0 + dir * ((2 * Math.PI * n) / 48)
+      out.push({ x: mid.x + RAD * Math.cos(th), y: mid.y + RAD * Math.sin(th) })
+    }
+    return sampled(out)
+  }
+
   function el<K extends keyof SVGElementTagNameMap>(
     tag: K,
     attrs: Record<string, string | number> = {},
@@ -1148,7 +1206,7 @@ function mount(host: HTMLElement, section: HTMLElement): () => void {
     })
     frames.add(id)
   }
-  function draw(paths: SVGPathElement[], who: string | null, lane: number, ms: number, tk: number) {
+  function draw(paths: SVGPathElement[], who: string | null, lane: number, ms: number, tk: number, at?: At) {
     const lens = paths.map((p) => p.getTotalLength())
     paths.forEach((p, i) => {
       p.style.strokeDasharray = `${lens[i]} ${lens[i]}`
@@ -1162,7 +1220,7 @@ function mount(host: HTMLElement, section: HTMLElement): () => void {
     if (ms === 0) {
       clear()
       if (who) {
-        const e = paths[0]!.getPointAtLength(lens[0]!)
+        const e = at!(1)
         place(who, e.x, e.y, lane)
       }
       return Promise.resolve(true)
@@ -1177,7 +1235,7 @@ function mount(host: HTMLElement, section: HTMLElement): () => void {
           p.style.strokeDashoffset = String(lens[i]! * (1 - e))
         })
         if (who) {
-          const q = paths[0]!.getPointAtLength(lens[0]! * e)
+          const q = at!(e)
           place(who, q.x, q.y, lane)
         }
         if (t < 1) nextFrame(step)
@@ -1221,7 +1279,7 @@ function mount(host: HTMLElement, section: HTMLElement): () => void {
         const len = p.getTotalLength()
         const ms = fast ? 0 : Math.max(380, Math.min(op.slow ? 2200 : 1100, len * (op.slow ? 6 : 2.6)))
         if (who) dot(who)
-        const ok = await draw(paths, who, op.line[op.line.length - 1]![0], ms, tk)
+        const ok = await draw(paths, who, op.line[op.line.length - 1]![0], ms, tk, trackOf(op.line))
         if (!ok) return
         if (op.label) show(label(op.label, pt(op.labelAt || op.line[0]!), 'above', 'fix'))
       } else if (op.lines) {
@@ -1263,14 +1321,21 @@ function mount(host: HTMLElement, section: HTMLElement): () => void {
           )
           num.textContent = String(op.n)
         }
-        const ok = await draw([p], 'main', op.loop[0], fast ? 0 : 900, tk)
+        const ok = await draw([p], 'main', op.loop[0], fast ? 0 : 900, tk, loopTrack(op.loop))
         if (!ok) return
         show([clock, num])
         show(label(op.label, far, 'above', 'rule', 4))
       } else if (op.mark) {
         if (op.pre) {
           const p = el('path', { d: pathD(op.pre), class: 'fp-seg ' + laneCls(op.pre) }, trail)
-          const ok = await draw([p], op.who || 'main', op.pre[op.pre.length - 1]![0], fast ? 0 : 300, tk)
+          const ok = await draw(
+            [p],
+            op.who || 'main',
+            op.pre[op.pre.length - 1]![0],
+            fast ? 0 : 300,
+            tk,
+            trackOf(op.pre),
+          )
           if (!ok) return
         }
         const { g, a } = mark(op)
