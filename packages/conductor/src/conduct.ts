@@ -42,9 +42,13 @@ import {
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
 import {
+  type Envelope,
   type PayloadOf,
   type SpentFor,
+  type TicketState,
   type WaitId,
+  triageSpentOf,
+  personFixRoundsOf,
   WIP_COMMIT_PREFIX,
   accountLimitReleases,
   releasesOf,
@@ -264,6 +268,7 @@ import {
   armForState,
   alreadyDoneOf,
   conflictResolvedOf,
+  reviewedHeadOf,
   diffBaseShaOf,
   landedOnBaseOf,
   priorAttemptsFromState,
@@ -813,6 +818,34 @@ export const continuationSpent = (run: AttemptState) => ({
   stepRedos: run.stepRedos ?? 0,
   landingRetries: run.landingRetries ?? 0,
 })
+
+/**
+ * **What a held attempt has spent, with what triage's own resolutions spent before the continuation could record it**
+ * (#1258): each counter is the larger of the attempt's own and `triageSpentOf`'s, never their sum — the number a triage
+ * resolution carries is the one the continuation records itself, so once it has there is one spend, and before it has
+ * this says it alone, whatever restarts between the append and the effect.
+ */
+export const continuationSpentWithTriage = (
+  run: AttemptState,
+  ticket: TicketState,
+  runId: string,
+  runEvents: readonly Envelope[],
+) => {
+  const personRounds = personFixRoundsOf(ticket, runId, runEvents)
+  const own = continuationSpent(run)
+  const triage = triageSpentOf(ticket, runId)
+  return {
+    ...own,
+    conflictRounds: Math.max(own.conflictRounds, triage.conflictResolutions),
+    stepRedos: Math.max(own.stepRedos, triage.stepRedos),
+    // `triage.refusalFixes` is in the allowance's units (a person's rounds taken out), `implementRound` is the round counter.
+    rounds: Math.max(run.implementRound, triage.refusalFixes + personRounds),
+    /** The refusal fixes the allowance has spent: a person's `FixRefusal` rounds are not among them. */
+    refusalFixes: Math.max(run.implementRound - personRounds, triage.refusalFixes, 0),
+    /** A person's fix rounds inside `rounds`: the allowance is judged without them. */
+    personRounds,
+  }
+}
 
 /** srt's own explanation out of a `SandboxWrapFailed`'s `cause`. */
 const causeText = (cause: unknown): string =>
@@ -1409,7 +1442,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               : { cannot: `the saved head ${cause.headSha.slice(0, 7)} of ${branch} is no longer on origin` }
           const releasedEvents = yield* Effect.promise(() => store.read(releasedFrom.runId))
           const releasedState = reduceAttempt(releasedEvents)
-          const spent = continuationSpent(releasedState)
+          const spent = continuationSpentWithTriage(releasedState, reduced, releasedFrom.runId, releasedEvents)
           const ticketEvents = yield* Effect.promise(() => store.read(ticketId))
           const releases = releasesOf(ticketEvents, releasedFrom.runId, 'BaseRed')
           const accountReruns =
@@ -1429,7 +1462,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             onSha: 'at' in head ? head.at : '',
             // Its own dispatch ids: two continuations of one run for a red base must not share them.
             resumedWaitId: `base-red:${releases}` as WaitId,
-            roundsSpent: continuationRound(releasedState, false),
+            roundsSpent: spent.rounds,
+            personRounds: spent.personRounds,
             baseMergesSpent: spent.baseMerges,
             conflictRoundsSpent: spent.conflictRounds,
             stepRedosSpent: spent.stepRedos,
@@ -1437,6 +1471,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             diffBaseSha: diffBaseShaOf(releasedEvents),
             landedOnBase: landedOnBaseOf(releasedEvents),
             conflictResolved: conflictResolvedOf(releasedEvents),
+            reviewedHead: reviewedHeadOf(releasedEvents),
             alreadyDone: alreadyDoneOf(releasedEvents),
             baseRed: { toSha: baseRead.at, fromSha: cause.baseSha, action },
             released: {
@@ -1464,7 +1499,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const releasedEvents = yield* Effect.promise(() => store.read(releasedFrom.runId))
         const releasedState = reduceAttempt(releasedEvents)
         const head = releasedHeadOf(releasedEvents)
-        const spent = continuationSpent(releasedState)
+        const spent = continuationSpentWithTriage(releasedState, reduced, releasedFrom.runId, releasedEvents)
         // Each lift is one release naming this run, so this rerun's number among them is their count.
         const releases = accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), releasedFrom.runId)
         // A person's rerun of this attempt is a rerun too: its dispatch id is its own (#1218).
@@ -1490,7 +1525,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           roundLimit: undefined,
           onSha: 'at' in head ? head.at : '',
           resumedWaitId: `account-limit:${releases}` as WaitId,
-          roundsSpent: continuationRound(releasedState, false),
+          roundsSpent: spent.rounds,
+          personRounds: spent.personRounds,
           baseMergesSpent: spent.baseMerges,
           conflictRoundsSpent: spent.conflictRounds,
           stepRedosSpent: spent.stepRedos,
@@ -1498,6 +1534,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           diffBaseSha: diffBaseShaOf(releasedEvents),
           landedOnBase: landedOnBaseOf(releasedEvents),
           conflictResolved: conflictResolvedOf(releasedEvents),
+          reviewedHead: reviewedHeadOf(releasedEvents),
           alreadyDone: alreadyDoneOf(releasedEvents),
           released: {
             by: 'release' as const,
@@ -1533,7 +1570,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const step = rerunStepOf(reason)
         if (step === null) return null
         const head = releasedHeadOf(runEvents)
-        const spent = continuationSpent(runState)
+        const spent = continuationSpentWithTriage(runState, reduced, options.continuing.runId, runEvents)
         const accountReruns =
           accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), options.continuing.runId) +
           personRerunsOf(waitsFromState(reduced), options.continuing.runId)
@@ -1555,7 +1592,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           roundLimit: undefined,
           onSha: 'at' in head ? head.at : approvedOnSha,
           resumedWaitId: approvedWaitId,
-          roundsSpent: continuationRound(runState, false),
+          roundsSpent: spent.rounds,
+          personRounds: spent.personRounds,
           baseMergesSpent: spent.baseMerges,
           conflictRoundsSpent: spent.conflictRounds,
           stepRedosSpent: spent.stepRedos,
@@ -1563,6 +1601,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           diffBaseSha: diffBaseShaOf(runEvents),
           landedOnBase: landedOnBaseOf(runEvents),
           conflictResolved: conflictResolvedOf(runEvents),
+          reviewedHead: reviewedHeadOf(runEvents),
           alreadyDone: alreadyDoneOf(runEvents),
           released: {
             by: 'person' as const,
@@ -1584,12 +1623,25 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const granted = reduced.lifecycle.grantRef !== undefined
       // A crash that stands in for a wait carries that wait's advice (#654).
       const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
+      const byTriage = new Set(reduced.waits.filter((w) => w.resolution?.by === 'triage').map((w) => w.waitId))
+      // Only a person's grants cap a lap here: a triage round (`byTriage` below) follows the recipe's `refusalFixes` (#1258).
       const priorGrant = waitsFromState(reduced).some(
         (wait) =>
           wait.resolution?._tag === 'FixRefusal' &&
+          !byTriage.has(wait.waitId) &&
           'run' in wait.reason &&
           wait.reason.run.runId === options.continuing!.runId,
       )
+      const spentNow = continuationSpentWithTriage(runState, reduced, options.continuing.runId, runEvents)
+      const grantedBy = byTriage.has(approvedWaitId) ? 'triage' : 'person'
+      // A conflict resolution triage made spends `conflictResolutions` alone: its implement visit re-opens the current
+      // round, so `StepStarted` does not raise `implementRound` and no refusal fix is counted (#1258).
+      // The wait's own reason says it too, so a `spent` a stale snapshot lost cannot turn a conflict into a refusal fix.
+      const conflictByTriage =
+        grantedBy === 'triage' &&
+        (reduced.waits.find((w) => w.waitId === approvedWaitId)?.resolution?.spent?.bound === 'conflictResolutions' ||
+          (reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'MergeConflict'))
+      const lapRound = continuationRound(runState, granted && !conflictByTriage)
       const criterion = granted ? grantCriterion(reason, standingRefusal(runState)) : null
       const next = granted ? { step: 'implement' as const } : continuationOf(reason, stepOutcomesOf(runEvents))
       if (next === null) return null
@@ -1663,16 +1715,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(granted && grantedAdviceFromState(reduced, adviceWaitId) !== undefined
           ? { advice: grantedAdviceFromState(reduced, adviceWaitId)! }
           : {}),
-        roundsSpent: continuationRound(runState, granted),
-        baseMergesSpent: continuationSpent(runState).baseMerges,
-        conflictRoundsSpent: continuationSpent(runState).conflictRounds,
-        stepRedosSpent: continuationSpent(runState).stepRedos,
-        landingRetriesSpent: continuationSpent(runState).landingRetries,
-        ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
+        roundsSpent: Math.max(lapRound, spentNow.rounds),
+        personRounds: spentNow.personRounds,
+        baseMergesSpent: spentNow.baseMerges,
+        conflictRoundsSpent: spentNow.conflictRounds,
+        stepRedosSpent: spentNow.stepRedos,
+        landingRetriesSpent: spentNow.landingRetries,
+        // An earlier person's grant does not cap a triage round: `byTriage` follows the recipe's `refusalFixes`.
+        ...(priorGrant && grantedBy !== 'triage' ? { roundLimit: lapRound } : {}),
+        ...(grantedBy === 'triage' ? { byTriage: true as const } : {}),
         ...(criterion !== null
           ? {
               grant: {
-                why: 'A person granted one checked fix round.',
+                why:
+                  grantedBy === 'triage'
+                    ? 'Triage granted one checked fix round.'
+                    : 'A person granted one checked fix round.',
                 asked: null,
                 printed: criterion.printed,
               },
@@ -1700,6 +1758,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         diffBaseSha: diffBaseShaOf(runEvents),
         landedOnBase: landedOnBaseOf(runEvents),
         conflictResolved: conflictResolvedOf(runEvents),
+        reviewedHead: reviewedHeadOf(runEvents),
         alreadyDone: alreadyDoneOf(runEvents),
       }
     })
@@ -2345,6 +2404,32 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           return { text, from: null, to: null }
         })
       }
+
+      /**
+       * What the head changed against the merge the base would have made of
+       * `reviewed` alone (#1274): `git merge-tree --write-tree reviewed base` writes
+       * loose objects and moves no ref, so it needs no mirror lock. Two dots, since a
+       * tree has no merge base. Any failure is a defect the review reads as a full review.
+       */
+      const diffSinceMerge = (reviewed: string, base: string): Effect.Effect<DiffRead> =>
+        Effect.gen(function* () {
+          const version = yield* Effect.orDie(gitHere(['--version']))
+          const m = /git version (\d+)\.(\d+)/.exec(version)
+          if (!m || Number(m[1]) < 2 || (Number(m[1]) === 2 && Number(m[2]) < 38))
+            return yield* Effect.die(new Error(`git merge-tree --write-tree needs git 2.38; found ${version}`))
+          // Exit 1 is a conflict, and the tree with its markers is still written to stdout.
+          const out = yield* gitHere(['merge-tree', '--write-tree', reviewed, base]).pipe(
+            Effect.catchTag('RepoFailed', (err) =>
+              err.exitCode === 1 && typeof err.stdout === 'string' ? Effect.succeed(err.stdout) : Effect.fail(err),
+            ),
+            Effect.orDie,
+          )
+          const tree = out.split('\n')[0]?.trim() ?? ''
+          if (!/^[0-9a-f]{40,64}$/.test(tree)) return yield* Effect.die(new Error('git merge-tree returned no tree'))
+          const head = (yield* gitOrDieEffect(['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
+          const text = yield* gitOrDieEffect(['diff', ...DIFF_FLAGS, tree, head])
+          return { text, from: reviewed, to: head }
+        })
 
       /**
        * **Never `worktree.baseSha` on its own, once there is a continuation**
@@ -4427,6 +4512,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             (from === undefined ? changeStart() : Effect.succeed(from)).pipe(
               Effect.flatMap((start) => diffBetween(start)),
             ),
+          diffSinceMerge: (reviewed: string, base: string) => diffSinceMerge(reviewed, base),
           // `landedOnBaseRead`: a read that cannot be made is text, not a dead review.
           landed: landedOnBaseRead,
           restore: restoreReview,
@@ -5331,7 +5417,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             round,
             // The lap a person's grant paid for is capped at one round
             // (`runAttempt`'s `roundLimit`), so this is that round.
-            ...(continuation?.grant ? { grant: continuation.resumedWaitId } : {}),
+            ...(continuation?.grant && !('byTriage' in continuation && continuation.byTriage)
+              ? { grant: continuation.resumedWaitId }
+              : {}),
           }
           const fixEnv = runnableEnv(env.values)
           const fixVersion = yield* runtimeVersionOfEffect(dispatched, fixEnv, tree.path)
@@ -5746,6 +5834,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 waive: continuation.waive,
                 ...(continuation.readClipped === undefined ? {} : { readClipped: continuation.readClipped }),
                 roundsSpent: continuation.roundsSpent,
+                ...(continuation.personRounds === undefined ? {} : { personRounds: continuation.personRounds }),
                 baseMergesSpent: continuation.baseMergesSpent,
                 conflictRoundsSpent: continuation.conflictRoundsSpent,
                 stepRedosSpent: continuation.stepRedosSpent,
@@ -5753,11 +5842,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ...(continuation.baseRed !== undefined ? { baseRed: continuation.baseRed } : {}),
                 ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                 ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
+                ...('byTriage' in continuation && continuation.byTriage ? { byTriage: true as const } : {}),
                 ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
                 ...(continuation.grant && continuation.conflict !== undefined
                   ? { conflict: continuation.conflict }
                   : {}),
                 ...(continuation.conflictResolved !== null ? { conflictResolved: continuation.conflictResolved } : {}),
+                ...(continuation.reviewedHead !== null ? { reviewedHead: continuation.reviewedHead } : {}),
                 ...(continuation.alreadyDone !== null ? { alreadyDone: continuation.alreadyDone } : {}),
                 ...(continuation.released?.rerun.for != null
                   ? {

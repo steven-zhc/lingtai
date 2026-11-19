@@ -312,6 +312,24 @@ describe('a granted conflict round', () => {
     expect(implementSaw[0]?.landedOnBase?.conflicted).toEqual(['src/fix.ts'])
   })
 
+  it('keeps the reviewed head across a granted conflict round (#1274)', async () => {
+    const { implementSaw } = await walk({
+      lane: [],
+      port: () => Effect.succeed(STANDING),
+      from: {
+        step: 'implement',
+        waive: [],
+        grant,
+        findings: [],
+        reviewedHead: 'r'.repeat(40),
+        conflict: { baseSha: BASE, paths: ['src/fix.ts'] },
+      },
+    })
+
+    expect(implementSaw[0]?.mergedSinceReview).toMatchObject({ reviewed: 'r'.repeat(40), base: BASE })
+    expect('reviewedSha' in implementSaw[0]!).toBe(false)
+  })
+
   it('goes to a person when the merge cannot be made, and runs no round', async () => {
     const { result, implementSaw } = await walk({
       lane: [],
@@ -345,5 +363,35 @@ describe('a resumed review after a conflict round', () => {
 
     expect(order.indexOf('evidence')).toBeGreaterThan(order.indexOf('admit'))
     expect(reviewSaw[0]?.landedOnBase).toMatchObject({ conflicted: ['src/fix.ts'], toSha: BASE, fromSha: FORK })
+  })
+
+  it('measures the resumed review from the head the last review read, not a full review (#1274)', async () => {
+    const { reviewSaw } = await walk({
+      lane: [],
+      evidence: () => Effect.succeed({ fromSha: FORK, overlap: ['src/other.ts'] }),
+      from: {
+        step: 'review',
+        waive: [],
+        reviewedHead: 'r'.repeat(40),
+        conflictResolved: { baseSha: BASE, paths: ['src/fix.ts'] },
+      },
+    })
+
+    expect(reviewSaw[0]?.mergedSinceReview).toEqual({
+      reviewed: 'r'.repeat(40),
+      base: BASE,
+      overlap: ['src/other.ts', 'src/fix.ts'],
+    })
+    expect('reviewedSha' in reviewSaw[0]!).toBe(false)
+  })
+
+  it('stays a full review when the log named no reviewed head', async () => {
+    const { reviewSaw } = await walk({
+      lane: [],
+      evidence: () => Effect.succeed({ fromSha: FORK, overlap: [] }),
+      from: { step: 'review', waive: [], conflictResolved: { baseSha: BASE, paths: ['src/fix.ts'] } },
+    })
+
+    expect('mergedSinceReview' in reviewSaw[0]!).toBe(false)
   })
 })

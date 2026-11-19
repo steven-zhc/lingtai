@@ -134,9 +134,15 @@ const PREFIX = 'pre-existing — was '
  * said how the diff makes it reachable. `failureScenario` is left alone: the
  * recheck block quotes it word for word.
  */
-export function demoteOutsideDiff(findings: readonly ActionFinding[], hunks: DiffHunks): ActionFinding[] {
+export function demoteOutsideDiff(
+  findings: readonly ActionFinding[],
+  hunks: DiffHunks,
+  keep: ReadonlySet<string> = new Set(),
+): ActionFinding[] {
   return findings.map((f) => {
     if (f.severity === 'minor') return f
+    // The files both sides changed after a base merge stay open, whatever the whole-diff hunks say (#1274).
+    if (keep.has(f.file)) return f
     if (f.reachableBecause !== undefined && f.reachableBecause.trim() !== '') return f
     if (isInsideHunks(f, hunks)) return f
     return {
@@ -152,12 +158,19 @@ const FIX_PREFIX = 'outside the fix — was '
 /**
  * Demote every finding outside what the fix changed to `minor` (#671). Unlike
  * `demoteOutsideDiff` there is no `reachableBecause` escape: a new finding
- * outside the fix is always a backlog entry. The caller exempts rechecks.
+ * outside the fix is always a backlog entry, except in the `keep` paths — the
+ * files both sides changed after a base merge (#1274). The caller exempts rechecks.
  */
-export function demoteOutsideFix(findings: readonly ActionFinding[], delta: DiffHunks): ActionFinding[] {
+export function demoteOutsideFix(
+  findings: readonly ActionFinding[],
+  delta: DiffHunks,
+  keep: ReadonlySet<string> = new Set(),
+): ActionFinding[] {
   return findings.map((f) => {
     if (f.severity === 'minor') return f
     if (isInsideHunks(f, delta)) return f
+    // The files both sides changed after a base merge stay open (#1274).
+    if (keep.has(f.file)) return f
     return {
       ...f,
       severity: 'minor',
