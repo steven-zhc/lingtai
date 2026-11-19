@@ -37,4 +37,18 @@ describe('home.css sandbox block', () => {
     const board = classesOf(await readFile(BOARD, 'utf8'))
     expect([...mine].filter((name) => board.has(name))).toEqual([])
   })
+
+  it('names no board class in the failure-paths block (#1265)', async () => {
+    const site = await readFile(SITE, 'utf8')
+    const start = site.indexOf('/* When it fails: pick a failure')
+    const end = site.indexOf('/* The sandbox: a dark band.')
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+
+    const mine = classesOf(site.slice(start, end))
+    expect(mine.has('fp-chip')).toBe(true)
+
+    const board = classesOf(await readFile(BOARD, 'utf8'))
+    expect([...mine].filter((name) => board.has(name))).toEqual([])
+  })
 })
