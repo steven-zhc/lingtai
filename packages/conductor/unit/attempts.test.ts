@@ -902,16 +902,16 @@ describe('reviewedHeadOf (#1274)', () => {
       'merge',
     )
   const commit = (c: string) => act('commit', { _tag: 'Completed', head: c.repeat(40), question: null })
-  const review = () => verdictAction('cold', 'ok')
+  const review = (c: string) => ({ ...verdictAction('cold', 'ok'), onSha: c.repeat(40) }) as Action
 
   it('names the head the passing review read, though a second conflict round came after it', () => {
     const e = stream('r')
     const events = [
       ...step(e, 'implement', [commit('a')]),
-      ...step(e, 'review', [review()]),
+      ...step(e, 'review', [review('a')]),
       ...step(e, 'merge', [conflict('1'.repeat(40))]),
       ...step(e, 'implement', [commit('c')]),
-      ...step(e, 'review', [review()]),
+      ...step(e, 'review', [review('c')]),
       ...step(e, 'merge', [conflict('2'.repeat(40))]),
       ...step(e, 'implement', [commit('d')]),
     ]
@@ -922,7 +922,7 @@ describe('reviewedHeadOf (#1274)', () => {
     const e = stream('r')
     const events = [
       ...step(e, 'implement', [commit('a')]),
-      ...step(e, 'review', [review()]),
+      ...step(e, 'review', [review('a')]),
       ...step(e, 'merge', [conflict('1'.repeat(40))]),
       ...step(e, 'implement', [commit('c')]),
       ...step(e, 'merge', [conflict('2'.repeat(40))]),
@@ -930,5 +930,17 @@ describe('reviewedHeadOf (#1274)', () => {
     ]
     expect(reviewedHeadOf(events)).toBe('a'.repeat(40))
     expect(conflictResolvedOf(events)).toMatchObject({ baseSha: '2'.repeat(40) })
+  })
+
+  it('names the head the review recorded when a clean overlapping merge came before it', () => {
+    const e = stream('r')
+    const events = [
+      ...step(e, 'implement', [commit('a')]),
+      ...step(e, 'merge', [conflict('1'.repeat(40))]),
+      ...step(e, 'review', [review('b')]),
+      ...step(e, 'merge', [conflict('2'.repeat(40))]),
+      ...step(e, 'implement', [commit('d')]),
+    ]
+    expect(reviewedHeadOf(events)).toBe('b'.repeat(40))
   })
 })

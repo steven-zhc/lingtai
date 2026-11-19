@@ -312,6 +312,24 @@ describe('a granted conflict round', () => {
     expect(implementSaw[0]?.landedOnBase?.conflicted).toEqual(['src/fix.ts'])
   })
 
+  it('keeps the reviewed head across a granted conflict round (#1274)', async () => {
+    const { implementSaw } = await walk({
+      lane: [],
+      port: () => Effect.succeed(STANDING),
+      from: {
+        step: 'implement',
+        waive: [],
+        grant,
+        findings: [],
+        reviewedHead: 'r'.repeat(40),
+        conflict: { baseSha: BASE, paths: ['src/fix.ts'] },
+      },
+    })
+
+    expect(implementSaw[0]?.mergedSinceReview).toMatchObject({ reviewed: 'r'.repeat(40), base: BASE })
+    expect('reviewedSha' in implementSaw[0]!).toBe(false)
+  })
+
   it('goes to a person when the merge cannot be made, and runs no round', async () => {
     const { result, implementSaw } = await walk({
       lane: [],

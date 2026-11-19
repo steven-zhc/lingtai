@@ -680,13 +680,9 @@ export function reviewedHeadOf(runEvents: readonly Envelope[]): string | null {
   const review = outcomes.slice(0, merged).findLastIndex((o) => o.step === 'review' && reviewerRanIn(o))
   if (review < 0) return null
   if (reviewSummaryOf(outcomes[review]!)?.clipped !== undefined) return null
-  // Merges between that review and the last one are fine: the baseline is the latest base, the head the one that review read.
-  for (let i = review - 1; i >= 0; i--) {
-    // A merge with no step after it that recorded a head moved the head by a commit no step recorded.
-    if (outcomes[i]!.step === 'merge' && (conflictedIn(outcomes[i]!) !== null || movedIn(outcomes[i]!) !== null))
-      return null
-    const head = headOf(outcomes[i]!)
-    if (head !== null) return head
+  // The head the review read is the one its own action recorded; a clean merge before it records no head.
+  for (const action of outcomes[review]!.actions) {
+    if (action.yields === 'verdict' && action.result._tag === 'Completed' && action.onSha !== '') return action.onSha
   }
   return null
 }

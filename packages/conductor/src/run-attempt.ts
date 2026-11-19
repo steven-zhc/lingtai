@@ -2272,6 +2272,9 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           )
           break
         }
+        // The review that passed before the round read `reviewedHead`; the merge is measured from it (#1274).
+        if (options.from.reviewedHead !== undefined && reviewedSha === null && mergedSinceReview === null)
+          mergedSinceReview = { reviewed: options.from.reviewedHead, base: asked.baseSha, overlap: [] }
         applyConflictMerge(asked.baseSha, got.conflicted)
       }
       // The first visit of `from.step` after an account limit: the cut-off call's round, its dispatch suffix and
