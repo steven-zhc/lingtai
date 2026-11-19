@@ -1090,9 +1090,13 @@ the banner is the one place that says why a project's work does not start.
   with an `until`. The banner names the limit and its reset in `limitSentence`'s
   words (`packages/domain/src/failure/explain.ts`): *`<account>`'s `<kind>`,
   resets `<when>`*, or *— no reset named* where the platform named none, and
-  *— passed* once the reset has gone by. A limit with no reset is lifted by a
-  person: on the banner, or `lingtai account lift <account>` (which appends
-  nothing when no limit stands; accounts: `claude-code`, `codex`, `github`).
+  *— passed* once the reset has gone by. Where the platform named no reset the lock's
+  `until` is a fallback and not a person's to wait on: a runtime's is the
+  recipe's `source.backoff`, GitHub's is one minute doubling up to an hour
+  (`githubLimitUntil`, `packages/domain/src/failure/respond.ts`), and the
+  conductor lifts the lock itself when that passes. A person may lift it sooner:
+  on the banner, or `lingtai account lift <account>` (which appends nothing when
+  no limit stands; accounts: `claude-code`, `codex`, `github`).
   **Never a restart.** It holds only the projects that use that account.
   **A run the limit cut off** is released to the queue without a wait; the first
   claim after the lock lifts continues the same attempt, re-cut at the saved
@@ -1717,9 +1721,13 @@ A failure is answered in three layers, and a person is the last of them
 3. **A person**, asked only for a *limit* (a bound is spent), an *unclear*
    requirement or a broken *environment* (`AskPersonWhy`).
 
-**The actions and their bounds.** A bound is counted on the attempt's own
-stream, and the ticket's for `personAsks`; **no counter is reset by a daemon
-restart, a release or a person's resolution**. The recipe keys are
+**The actions and their bounds.** Each bound has its own scope. `refusalFixes`,
+`conflictResolutions`, `stepRedos`, `baseBranchMerges` and `landingRetries` are
+counted on the attempt's own stream. `newAttempts` is counted across the whole
+ticket, and `ticketSplits` and `personAsks` are spent once per root ticket and
+on the ticket's own stream, so a split parent that returns in a new attempt has
+no second split. **No counter is reset by a daemon restart, a release or a
+person's resolution**. The recipe keys are
 `runtime.limits.*`; the rest are constants in `BOUNDS` — *"a constant and not a
 recipe knob: a knob is a value somebody can set to a loop."*
 
@@ -1729,9 +1737,9 @@ recipe knob: a knob is a value somebody can set to a loop."*
 | `resolveConflict` | the same for a merge conflict | the saved head | `attempt.conflictResolutions` | recipe, 6 |
 | `redoStep` | the step that did not finish runs again, whole | the saved head | `stepRedos` | constant, 3 |
 | `writeSpentOnThenRedoStep` | writes where the turns went into the body, then redoes | the saved head | `stepRedos` | constant, 3 |
-| `startNewAttempt` | the ticket is released and claimed again | the base | `ticket.newAttempts` | recipe, 2 |
-| `splitTicket` | triage's plan opens child tickets | the base | `ticketSplits` | constant, 1 |
-| `askPerson` | a wait for a limit, a question or the environment | — | `personAsks` | constant, 5 |
+| `startNewAttempt` | the ticket is released and claimed again | the base | `ticket.newAttempts` | recipe, 2, across the ticket |
+| `splitTicket` | triage's plan opens child tickets | the base | `ticketSplits` | constant, 1 per root ticket |
+| `askPerson` | a wait for a limit, a question or the environment | — | `personAsks` | constant, 5 questions per ticket; only a question wait is counted (below) |
 
 Two more are done by the conductor and not chosen from a cause: a base that
 moved is merged in (`baseBranchMerges`, 10 per attempt) and a landing origin
@@ -1763,8 +1771,13 @@ says why instead (`heldLine`): *a person is asked*, and the bound spent, as in
 *3 of 3 redos used*. A wait that stays open is one of the three kinds. A
 question — from `design`, from `implement`'s `Unclear`, or from triage — is up
 to five questions with a recommended answer first and a box for your own;
-answering writes into the body and continues the step that asked, spending one
-of the five `personAsks`. With none left, nothing continues on its own.
+answering writes into the body and continues the step that asked — except that
+a question raised at `build`, `proposed` or `merge` goes back to `implement`,
+because those steps do not read the changed body (`answerStepOf`,
+`packages/domain/src/wait.ts`). Each question wait spends one of the five
+`personAsks` **when it opens**, answered or not (`isPersonAsk`); a wait for a
+limit or for the environment is not counted. With none left the next question
+becomes an `AskLimit` wait and nothing continues on its own.
 
 **Already done.** `implement` may declare the work already on the base, and
 `review` checks each `## Done when` item at the base's sha. The ticket then ends
@@ -1850,8 +1863,11 @@ The person's moves differ in what they start from (`lingtai <verb> --help`):
 `--note` is optional (`#424`), and the actor is recorded in `by` either way.
 A move refuses by naming the state the item is actually in, so
 *`ticket-lingtai-122` is claimed, not blocked* is the answer rather than "not
-blocked". None makes a GitHub call — `reconcile` converges the label the block
-left behind. There is no `lingtai requeue`: the verb is retired.
+blocked". The moves append to the log and `reconcile` converges the label the
+block left behind, but not every one is local: `start-new-attempt --into-body`
+writes the issue through GitHub, and `fix-refusal` and `redo-step` check the
+remote refs before they resolve the wait, so with GitHub unreachable they
+refuse and the wait stays unresolved. There is no `lingtai requeue`: the verb is retired.
 
 `ask` and `answer` are the pair for a decision **before** any run (`#147`):
 
