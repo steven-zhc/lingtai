@@ -3519,3 +3519,6 @@ button.navlink { font-family: inherit; cursor: pointer; }
 .ssatisfied-met { font-weight: 600; }
 .ssatisfied-source { color: var(--muted); }
 .ssatisfiedreading { margin: 8px 0 12px; }
+.triage-choice-hint { color: var(--ink-2); font-size: 0.8rem; }
+.triage-own { display: grid; gap: 0.3rem; margin-top: 0.65rem; color: var(--ink-2); font-size: 0.85rem; }
+.triage-own textarea { width: 100%; min-height: 5rem; font: inherit; color: var(--ink); }

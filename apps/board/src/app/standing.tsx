@@ -580,7 +580,7 @@ export function TriageBand({
                   <h3>
                     Divergent · {divergent.length} {divergent.length === 1 ? 'question' : 'questions'}
                   </h3>
-                  <ol>
+                  <ol style={{ listStyle: 'none', paddingLeft: 0 }}>
                     {divergent.map((hunk, index) => (
                       <li key={index} className="triage-hunk triage-hunk--divergent">
                         <span className="triage-location">

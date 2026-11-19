@@ -35,6 +35,7 @@ import {
   TRIAGE_FIXES_MAX,
   TRIAGE_QUESTIONS_MAX,
   TRIAGE_TEXT_MAX,
+  TriagePick,
   TriageQuestion,
 } from './triage.ts'
 import { Finding, RefusalReason, RUN_FAILURE_KINDS, Step } from './vocabulary.ts'
@@ -305,7 +306,7 @@ const AnswerQuestions = z.object({
   _tag: z.literal('AnswerQuestions'),
   onSha: z.string(),
   ref: z.string().nullable(),
-  answers: z.record(z.string(), z.string()),
+  answers: z.record(z.string(), TriagePick),
 })
 /** A person agrees the ticket is already satisfied by the base: ends it `satisfied` (#1251). A `SatisfiedUnconfirmed` only. */
 const ConfirmSatisfied = z.object({ _tag: z.literal('ConfirmSatisfied') })

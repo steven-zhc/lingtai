@@ -10,6 +10,16 @@ describe('WaitResolved.answers (#924)', () => {
     const answers = { picks: [{ index: 0, answerId: 'a' }], section: 's' }
     expect(parsePayload('WaitResolved', { ...base, answers })).toMatchObject({ answers })
   })
+  it('parses an own answer, and an AnswerQuestions carrying one', () => {
+    const answers = { picks: [{ index: 0, own: 'mine' }], section: 's' }
+    expect(parsePayload('WaitResolved', { ...base, answers })).toMatchObject({ answers })
+    expect(
+      parsePayload('WaitResolved', {
+        ...base,
+        resolution: { _tag: 'AnswerQuestions', onSha: 'x', ref: null, answers: { '0': { own: 'mine' } } },
+      }),
+    ).toMatchObject({ resolution: { answers: { '0': { own: 'mine' } } } })
+  })
   it('refuses a negative index', () => {
     expect(() =>
       parsePayload('WaitResolved', { ...base, answers: { picks: [{ index: -1, answerId: 'a' }], section: 's' } }),

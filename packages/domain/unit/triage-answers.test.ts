@@ -58,3 +58,45 @@ describe('triageAnswersText picks (#924)', () => {
     })
   })
 })
+
+describe('an own answer (#1255)', () => {
+  const undecided = { _tag: 'UndecidedQuestion', questions: [q('one'), q('two', 'b')] }
+
+  it('is written verbatim and recorded as written', () => {
+    const r = triageAnswersText(undecided, { 0: { own: ' my words ' } })
+    expect(r).toEqual({
+      ok: true,
+      text: '- one? —  my words \n- two? — no',
+      picks: [
+        { index: 0, own: ' my words ' },
+        { index: 1, answerId: 'b' },
+      ],
+    })
+  })
+
+  it('keeps a newline inside its list item', () => {
+    expect(triageAnswersText(undecided, { 0: { own: 'a\nb' } })).toMatchObject({ text: '- one? — a\n  b\n- two? — no' })
+  })
+
+  it('is never read as an unknown answer id, even when it equals none of them', () => {
+    expect(triageAnswersText(undecided, { 0: { own: 'zzz' } })).toMatchObject({ ok: true })
+  })
+
+  it.each(['', '  \n '])('refuses %j with its own words, not "triage changed"', (own) => {
+    const r = triageAnswersText(undecided, { 1: { own } })
+    expect(r).toMatchObject({ ok: false })
+    expect(r.ok === false && r.detail).toContain('question 2 has no answer written')
+    expect(r.ok === false && r.detail).not.toContain('triage changed')
+  })
+
+  it('mixes ids, own answers and absent picks, and composes the same twice', () => {
+    const picks = { 0: 'b', 1: { own: 'else' } }
+    const a = triageAnswersText(undecided, picks)
+    expect(a).toMatchObject({ text: '- one? — no\n- two? — else' })
+    expect(triageAnswersText(undecided, picks)).toEqual(a)
+  })
+
+  it('refuses an own answer to a question past the end', () => {
+    expect(triageAnswersText(undecided, { 5: { own: 'x' } })).toMatchObject({ ok: false })
+  })
+})

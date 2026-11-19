@@ -3,7 +3,7 @@ import { aWaitId } from '@lingtai/domain/test/events'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => ({
   values: [] as unknown[],
@@ -488,4 +488,134 @@ it('draws a question asked in prose as the paragraph it was', () => {
   } as WaitReason
   const html = renderToStaticMarkup(mount(waitId, () => editor(waitId, reason)))
   expect(html).toContain('<p>which of the two?</p>')
+})
+
+const unrecommendedFirst = {
+  id: 'q',
+  text: '<question>',
+  recommended: 'b',
+  answers: [
+    { id: 'a', text: '<first>' },
+    { id: 'b', text: '<second>' },
+    { id: 'c', text: '<third>' },
+  ],
+}
+
+it.each([
+  [
+    'design (AgentQuestion)',
+    { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'design', questions: [unrecommendedFirst] },
+  ],
+  [
+    "implement's Unclear (ProposedEscalated InputNeeded)",
+    {
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'InputNeeded', from: 'implement', questions: [unrecommendedFirst], said: '' },
+    },
+  ],
+])('the page draws %s numbered, recommended first, own answer last (#1255)', (_name, raw) => {
+  harness.values = []
+  const waitId = aWaitId()
+  const reason = raw as unknown as WaitReason
+  const asked = [unrecommendedFirst]
+  const html = renderToStaticMarkup(mount(waitId, () => editor(waitId, reason), { asked }))
+  expect(html).toContain('1. &lt;question&gt;')
+  const at = (t: string) => html.indexOf(`>${t}<`)
+  const order = ['&lt;second&gt;', '&lt;first&gt;', '&lt;third&gt;', 'My own answer'].map(at)
+  expect(order.every((n) => n >= 0)).toBe(true)
+  expect([...order].sort((x, y) => x - y)).toEqual(order)
+  expect(html.indexOf('Recommended')).toBeGreaterThan(order[0]!)
+  expect(html.indexOf('Recommended')).toBeLessThan(order[1]!)
+})
+
+it('keeps an own answer on the page when another person resolves the wait (#1255)', () => {
+  harness.values = []
+  const waitId = aWaitId()
+  const asked = [unrecommendedFirst as unknown as ReturnType<typeof question>]
+  const reason = { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'design', questions: asked } as WaitReason
+  mount(waitId, () => editor(waitId, reason), { asked })
+  ;(harness.triage as { pickOwn: (i: number, s: 'asked') => void }).pickOwn(0, 'asked')
+  mount(waitId, () => editor(waitId, reason), { asked })
+  ;(harness.triage as { setOwn: (i: number, t: string, s: 'asked') => void }).setOwn(0, 'my own words', 'asked')
+  const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
+  expect(html).toContain('my own words')
+  expect(html).toContain('Your unsent draft is below')
+})
+
+describe('an own answer and the other retained drafts (#1255)', () => {
+  const asked = [unrecommendedFirst as unknown as ReturnType<typeof question>]
+  const reason = { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'design', questions: asked } as WaitReason
+  type Api = {
+    pickOwn: (i: number, s: 'asked') => void
+    setOwn: (i: number, t: string, s: 'asked') => void
+    setBody: (t: string) => void
+  }
+  const typeOwn = (waitId: WaitId, body?: string) => {
+    harness.values = []
+    mount(waitId, () => editor(waitId, reason), { asked })
+    ;(harness.triage as Api).pickOwn(0, 'asked')
+    mount(waitId, () => editor(waitId, reason), { asked })
+    if (body !== undefined) (harness.triage as Api).setBody(body)
+    mount(waitId, () => editor(waitId, reason), { asked })
+    ;(harness.triage as Api).setOwn(0, 'my own words', 'asked')
+  }
+
+  it('is kept beside an empty body draft', () => {
+    typeOwn(aWaitId(), '')
+    const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
+    expect(html).toContain('my own words')
+    expect(html).toContain('Your unsent draft is below')
+  })
+
+  it('is kept beside a body draft with text, and neither replaces the other', () => {
+    typeOwn(aWaitId(), 'body words')
+    const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
+    expect(html).toContain('body words')
+    expect(html).toContain('my own words')
+  })
+
+  it('does not call the wait ended where only the body edit is unavailable', () => {
+    const waitId = aWaitId()
+    typeOwn(waitId)
+    const html = renderToStaticMarkup(mount(waitId, () => editor(null, reason), { asked }))
+    expect(html).not.toContain('no longer waiting')
+    expect(html).toBe('')
+  })
+
+  it('does not append the retained words again once the recovered draft is edited', () => {
+    typeOwn(aWaitId())
+    mount(null, () => editor(null, reason), { asked })
+    ;(harness.triage as Api).setBody('my own words!')
+    const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
+    expect(html).toContain('my own words!')
+    expect(html.split('my own words').length - 1).toBe(1)
+  })
+
+  it("keeps a later wait's own answer beside an earlier wait's edited draft", () => {
+    typeOwn(aWaitId())
+    mount(null, () => editor(null, reason), { asked })
+    ;(harness.triage as Api).setBody('my own words (edited A)')
+    const b = aWaitId()
+    mount(b, () => editor(b, reason), { asked })
+    ;(harness.triage as Api).pickOwn(0, 'asked')
+    mount(b, () => editor(b, reason), { asked })
+    ;(harness.triage as Api).setOwn(0, 'B unsent', 'asked')
+    const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
+    expect(html).toContain('my own words (edited A)')
+    expect(html).toContain('B unsent')
+  })
+
+  it("keeps a later wait's own answer whose text equals the earlier wait's retained words", () => {
+    typeOwn(aWaitId())
+    mount(null, () => editor(null, reason), { asked })
+    ;(harness.triage as Api).setBody('A revised')
+    const b = aWaitId()
+    mount(b, () => editor(b, reason), { asked })
+    ;(harness.triage as Api).pickOwn(0, 'asked')
+    mount(b, () => editor(b, reason), { asked })
+    ;(harness.triage as Api).setOwn(0, 'my own words', 'asked')
+    const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
+    expect(html).toContain('A revised')
+    expect(html).toContain('my own words')
+  })
 })
