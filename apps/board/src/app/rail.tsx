@@ -161,7 +161,9 @@ export function Segs({
             ))}
           </span>
           {labels ? <span className={`slab ${labelTone(p, at)}`}>{p.step}</span> : null}
-          {labels && times?.[p.step] !== undefined ? <span className="stime mono">{times[p.step]}</span> : null}
+          {labels && p.step !== at && times?.[p.step] !== undefined ? (
+            <span className="stime mono">{times[p.step]}</span>
+          ) : null}
         </li>
       ))}
     </ol>

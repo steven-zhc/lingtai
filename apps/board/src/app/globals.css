@@ -3630,3 +3630,9 @@ button.navlink { font-family: inherit; cursor: pointer; }
 .livelog { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1rem; }
 @media (max-width: 40rem) { .livelog { grid-template-columns: minmax(0, 1fr); } }
 .running-log .alogbody { height: 14rem; margin-top: 0.3rem; }
+
+/* The ask under a running card is one line: note, input, button side by side. */
+.running-ask .chat { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; min-height: 0; }
+.running-ask .chat > .chatscroll { flex-basis: 100%; }
+.running-ask .chat .chatask { display: flex; flex: 1 1 20rem; align-items: center; gap: 0.5rem; }
+.running-ask .chat .chatask textarea { flex: 1; min-height: 0; height: 2rem; resize: vertical; }

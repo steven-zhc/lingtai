@@ -225,6 +225,12 @@ function QueuedBand({
   )
 }
 
+/** A ceiling and a freshness warning are independent facts: say each that there is. */
+const both = (a: string | null, b: string | null): string | null => {
+  const t = [a, b].filter((x): x is string => x !== null && x !== '')
+  return t.length === 0 ? null : t.join(' · ')
+}
+
 function Cell({ name, children, sub }: { name: string; children: ReactNode; sub?: string | null }) {
   return (
     <div className="meter" data-meter={name}>
@@ -247,11 +253,11 @@ function Meters({ m, held, serverNow }: { m: RunningPanelView['meters']; held: s
               <Since key={`${m.runId}:${m.round.since}`} iso={m.round.since} serverNow={serverNow} />
             </Cell>
           )}
-          <Cell name="this attempt" sub={m.attempt.ceiling ?? m.attempt.behind}>
+          <Cell name="this attempt" sub={both(m.attempt.ceiling, m.attempt.behind)}>
             <Since key={`${m.runId}:${m.attempt.since}`} iso={m.attempt.since} serverNow={serverNow} />
             {` · ${m.attempt.turns}`}
           </Cell>
-          <Cell name="cost so far" sub={m.cost.ceiling ?? m.cost.behind}>
+          <Cell name="cost so far" sub={both(m.cost.ceiling, m.cost.behind)}>
             {m.cost.text}
           </Cell>
         </>

@@ -518,8 +518,14 @@ export function RawRunLog({ where }: { where: 'running' | 'ended' }) {
           </p>
         ) : (
           <>
-            {f.state === 'trouble' ? <p className="empty">The run log could not be followed.</p> : null}
-            {logBody}
+            {f.state === 'trouble' && count === 0 ? (
+              <p className="empty">The run log could not be read.</p>
+            ) : (
+              <>
+                {f.state === 'trouble' ? <p className="empty">The run log could not be followed.</p> : null}
+                {logBody}
+              </>
+            )}
           </>
         )}
       </div>
