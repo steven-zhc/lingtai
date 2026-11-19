@@ -1941,6 +1941,7 @@ export const readAttempts = cache(async (taskId: string) => {
               streams[claims.findIndex((c) => c.runId === enriched.runId)]?.at(-1),
               new Map(claims.map((c, i) => [c.runId, i + 1])),
             ),
+            streams[claims.findIndex((c) => c.runId === enriched.runId)] ?? [],
           )
   }
 

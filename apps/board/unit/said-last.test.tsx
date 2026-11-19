@@ -2,7 +2,7 @@ import { runLogLine } from '@lingtai/agent/run-log-format'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { FollowedLog, RawRunLog, SaidLast } from '../src/app/run-log.tsx'
+import { FollowedLog, LiveLog, RawRunLog } from '../src/app/run-log.tsx'
 import { openFor, saidLast, tailRule } from '../src/lib/said.ts'
 
 const at = (s: number) => new Date(2026, 10, 5, 2, 0, s)
@@ -48,16 +48,17 @@ describe('the tail rule', () => {
 describe('FollowedLog on a live attempt', () => {
   const html = renderToStaticMarkup(
     <FollowedLog running="run-1" tags={[null]}>
-      <SaidLast />
-      <RawRunLog where="running" />
+      <LiveLog />
       <RawRunLog where="ended" />
     </FollowedLog>,
   )
-  it('draws the raw log closed, once', () => {
-    expect(html.split('<details').length - 1).toBe(1)
-    expect(html).not.toContain('open=""')
+  it('draws the live log open, with no fold to open, once', () => {
+    expect(html.split('The run log').length - 1).toBe(1)
+    expect(html).not.toContain('<details')
+    expect(html).not.toContain('follows live when open')
   })
-  it('says nothing yet when there are no lines', () => {
-    expect(html).toContain('Nothing said yet in this round.')
+  it('says nothing about what the agent said when it has said nothing', () => {
+    expect(html).not.toContain('Nothing said')
+    expect(html).not.toContain('agent said')
   })
 })

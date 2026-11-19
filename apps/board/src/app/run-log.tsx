@@ -37,7 +37,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 
-import { openFor, saidLast, scannedAll, tailRule } from '@/lib/said'
+import { openFor, saidLast, tailRule } from '@/lib/said'
 
 import { useLatch } from './latch.tsx'
 
@@ -403,7 +403,11 @@ export function FollowedLog({
   const shown = heldRun(held, running)
   const below = logBelow(shown, running)
   const live = shown !== null && running === shown
-  const open = openFor(opened, shown)
+  // A run being watched is an open log: when it ends the same log stays open (#152).
+  useEffect(() => {
+    if (live && shown !== null) setOpened(shown)
+  }, [live, shown])
+  const open = openFor(opened, shown) || live
   const { lines, state, writing } = useLogTail(shown ?? '', shown !== null && tailRule(live, open), false, live)
   const setOpen = useCallback((next: boolean) => setOpened(next ? shown : null), [shown])
   return (
@@ -416,51 +420,47 @@ export function FollowedLog({
 }
 
 /** What the agent said last, from the run log: a trace, and nothing here is decided from it (0111 §13). */
-export function SaidLast() {
-  const f = useContext(FollowedContext)
-  if (f === null || !f.live) return null
-  const said = saidLast(f.lines, f.tags)
+function SaidLast({ said }: { said: ReturnType<typeof saidLast> }) {
   return (
     <div className="saidlast" data-rank="said">
       <p className="triage-then">
-        <b>What the agent said last</b> · from the run log, newest first
+        <b>agent said</b>
       </p>
-      {f.state === 'gone' ? (
-        <p className="empty">
-          No run log for this attempt, so what the agent said cannot be shown; the steps above are from the log of
-          events.
-        </p>
-      ) : (
-        <>
-          {f.state === 'trouble' ? <p className="empty">The run log could not be followed.</p> : null}
-          {said.length === 0 ? (
-            <p className="empty">
-              {scannedAll(f.lines, KEEP_LINES)
-                ? `Nothing said in the last ${KEEP_LINES.toLocaleString('en-US')} lines.`
-                : 'Nothing said yet in this round.'}
-            </p>
-          ) : (
-            <ul className="saidlines">
-              {said.map((l, i) => (
-                <li key={`${l.at}-${i}`}>
-                  <span className="mono">{l.at}</span>{' '}
-                  <span
-                    title={l.text}
-                    style={{
-                      display: '-webkit-box',
-                      WebkitLineClamp: 3,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {l.text}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
+      <ul className="saidlines">
+        {said.map((l, i) => (
+          <li key={`${l.at}-${i}`}>
+            <span className="mono">{l.at}</span>{' '}
+            <span
+              title={l.text}
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {l.text}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/**
+ * The live area of the running card: the log at full width while the agent has
+ * said nothing, and once it has, *agent said* on the left and the log on the right.
+ */
+export function LiveLog() {
+  const f = useContext(FollowedContext)
+  if (f === null || !f.live) return null
+  const said = f.state === 'gone' ? [] : saidLast(f.lines, f.tags)
+  if (said.length === 0) return <RawRunLog where="running" />
+  return (
+    <div className="livelog">
+      <SaidLast said={said} />
+      <RawRunLog where="running" />
     </div>
   )
 }
@@ -490,17 +490,52 @@ export function RawRunLog({ where }: { where: 'running' | 'ended' }) {
   if (f === null || f.shown === null) return null
   if (where === 'running' ? !f.live : !f.below) return null
   const count = f.lines.length
-  return (
-    <details
-      className={where === 'running' ? 'alog slog' : 'alog slog ended'}
-      open={f.open}
-      onToggle={(event) => f.setOpen(event.currentTarget.open)}
+  const logBody = (
+    <div
+      className="alogbody"
+      ref={tail}
+      onScroll={(event) => {
+        const el = event.currentTarget
+        if (place)
+          place.current = {
+            run: f.shown,
+            top: el.scrollTop,
+            pinned: el.scrollHeight - el.scrollTop - el.clientHeight < 8,
+          }
+      }}
     >
+      <pre className="hdoctext">{f.lines.join('\n')}</pre>
+    </div>
+  )
+  if (where === 'running') {
+    return (
+      <div className="alog slog running-log">
+        <p className="hdocsize">The run log · {say(f.state, count)}</p>
+        {f.state === 'gone' ? (
+          <p className="empty">
+            No run log for this attempt. A run log is deleted when the attempt lands or the ticket closes — what is kept
+            is exactly what is still owed an explanation (0034).
+          </p>
+        ) : (
+          <>
+            {f.state === 'trouble' && count === 0 ? (
+              <p className="empty">The run log could not be read.</p>
+            ) : (
+              <>
+                {f.state === 'trouble' ? <p className="empty">The run log could not be followed.</p> : null}
+                {logBody}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
+  return (
+    <details className="alog slog ended" open={f.open} onToggle={(event) => f.setOpen(event.currentTarget.open)}>
       <summary>
         <span className="hdocname">The run log</span>
-        <span className="hdocsize">
-          {f.open || !f.live ? say(f.state, count) : `${count} lines · follows live when open`}
-        </span>
+        <span className="hdocsize">{say(f.state, count)}</span>
       </summary>
       {f.state === 'gone' ? (
         <p className="empty">
@@ -508,21 +543,7 @@ export function RawRunLog({ where }: { where: 'running' | 'ended' }) {
           is exactly what is still owed an explanation (0034).
         </p>
       ) : (
-        <div
-          className="alogbody"
-          ref={tail}
-          onScroll={(event) => {
-            const el = event.currentTarget
-            if (place)
-              place.current = {
-                run: f.shown,
-                top: el.scrollTop,
-                pinned: el.scrollHeight - el.scrollTop - el.clientHeight < 8,
-              }
-          }}
-        >
-          <pre className="hdoctext">{f.lines.join('\n')}</pre>
-        </div>
+        logBody
       )}
     </details>
   )
