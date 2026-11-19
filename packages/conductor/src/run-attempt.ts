@@ -1073,6 +1073,8 @@ export interface AttemptOptions {
     readonly conflictResolved?: { readonly baseSha: string; readonly paths: readonly string[] }
     /** A prior human grant caps automatic fix routing across later continuations. */
     readonly roundLimit?: number
+    /** The grant is triage's (#1258): only a person's grant caps a lap to one round, so triage's follows the recipe. */
+    readonly byTriage?: true
     /** One fix dispatch authorized by the wait resolution, consumed on the first implement visit. */
     readonly grant?: SentBack
     readonly findings?: readonly ActionFinding[]
@@ -1477,11 +1479,13 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           waitMs: Duration.toMillis(Duration.fromInputUnsafe(wait)),
         },
       })
-    const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.refusalFixes)
+    const roundLimit =
+      options.from?.roundLimit ?? (options.from?.grant && !options.from.byTriage ? roundsSpent : ceilings.refusalFixes)
     // A restart is automatic fix routing too, and a bigger kind than a round: the lap
     // that spends a human grant ends at a person rather than at a restart nobody
     // decided. A continuation from `Approve` carries no grant and keeps the recipe's (#570).
-    const restartLimit = options.from?.grant !== undefined ? ceilings.newAttemptsSpent : ceilings.newAttempts
+    const restartLimit =
+      options.from?.grant !== undefined && !options.from.byTriage ? ceilings.newAttemptsSpent : ceilings.newAttempts
 
     /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
     let at: Step | null = 'admit'

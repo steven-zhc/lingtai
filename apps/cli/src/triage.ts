@@ -36,6 +36,7 @@ import {
   parseTicketStream,
   attemptReducer,
   personAsksFromState,
+  personFixRoundsOf,
   rerunHeadOf,
   savedHeadOf,
   triageSpentOf,
@@ -882,7 +883,11 @@ const readActContext = (
       // A conflict resolution is its own budget (`conflictResolutions`, from the ticket stream's triage spend): its
       // continuation does not raise `implementRound`, and a mechanically routed conflict never did, so nothing is subtracted.
       refusalFixes: {
-        used: Math.max(run?.implementRound ?? 0, spent.refusalFixes),
+        used: Math.max(
+          (run?.implementRound ?? 0) - (runId === null ? 0 : personFixRoundsOf(state, runId)),
+          spent.refusalFixes,
+          0,
+        ),
         allowed: limits.refusalFixes,
       },
       newAttempts: { used: state.newAttempts.length, allowed: limits.newAttempts },

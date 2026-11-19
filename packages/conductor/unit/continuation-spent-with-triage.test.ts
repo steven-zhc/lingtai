@@ -72,3 +72,41 @@ describe('refusal fixes and conflict rounds are independent budgets (#1258)', ()
     expect(spent.conflictRounds).toBe(1)
   })
 })
+
+describe('actor-aware refusal fixes (#1258)', () => {
+  const personFix = async () => {
+    const store = createMemoryEventStore()
+    await store.append(ticketId, 0, [
+      {
+        type: 'TicketClaimed',
+        actor: 'conductor',
+        data: { runId: 'run-1', worker: 'host:1', title: 't', kind: 'bug', body: 'b' },
+      },
+      { type: 'WaitStarted', actor: 'conductor', data: { waitId, reason: crashed } },
+      {
+        type: 'WaitResolved',
+        actor: 'human:steven',
+        data: {
+          waitId,
+          by: 'human:steven',
+          resolution: { _tag: 'FixRefusal', onSha: 'abc', ref: 'agent/7' },
+          note: '',
+        },
+      },
+    ])
+    return reduceTicket(await store.read(ticketId))
+  }
+
+  it("a person's FixRefusal continuation raising implementRound spends no refusalFix", async () => {
+    const ticket = await personFix()
+    const run = { ...reduceAttempt([]), implementRound: 1 }
+    expect(continuationSpentWithTriage(run, ticket, 'run-1').refusalFixes).toBe(0)
+    expect(continuationSpentWithTriage(run, ticket, 'run-1').rounds).toBe(1)
+  })
+
+  it('a triage conflict resolution leaves refusalFixes used at 0', async () => {
+    const ticket = await resolvedBy('triage', { bound: 'conflictResolutions', n: 1 })
+    const run = { ...reduceAttempt([]), implementRound: 0, conflictRounds: 1 }
+    expect(continuationSpentWithTriage(run, ticket, 'run-1').refusalFixes).toBe(0)
+  })
+})

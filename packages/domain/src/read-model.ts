@@ -401,3 +401,18 @@ export function triageSpentOf(
   }
   return out
 }
+
+/**
+ * **The fix rounds a person's `FixRefusal` raised on one attempt** (#1258): each one's continuation records a round on
+ * the attempt stream (`implementRound`), but a person's resolution spends nothing of `refusalFixes`, so a reader of the
+ * allowance takes these out of `implementRound`.
+ */
+export function personFixRoundsOf(state: TicketState, runId: string): number {
+  return state.waits.filter(
+    (w) =>
+      w.resolution?.resolution._tag === 'FixRefusal' &&
+      w.resolution.by !== 'triage' &&
+      'run' in w.reason &&
+      w.reason.run.runId === runId,
+  ).length
+}

@@ -47,6 +47,7 @@ import {
   type TicketState,
   type WaitId,
   triageSpentOf,
+  personFixRoundsOf,
   WIP_COMMIT_PREFIX,
   accountLimitReleases,
   releasesOf,
@@ -817,7 +818,10 @@ export const continuationSpentWithTriage = (run: AttemptState, ticket: TicketSta
     ...own,
     conflictRounds: Math.max(own.conflictRounds, triage.conflictResolutions),
     stepRedos: Math.max(own.stepRedos, triage.stepRedos),
-    rounds: Math.max(run.implementRound, triage.refusalFixes),
+    // `triage.refusalFixes` is in the allowance's units (a person's rounds taken out), `implementRound` is the round counter.
+    rounds: Math.max(run.implementRound, triage.refusalFixes + personFixRoundsOf(ticket, runId)),
+    /** The refusal fixes the allowance has spent: a person's `FixRefusal` rounds are not among them. */
+    refusalFixes: Math.max(run.implementRound - personFixRoundsOf(ticket, runId), triage.refusalFixes, 0),
   }
 }
 
@@ -1589,7 +1593,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // A crash that stands in for a wait carries that wait's advice (#654).
       const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
       const byTriage = new Set(reduced.waits.filter((w) => w.resolution?.by === 'triage').map((w) => w.waitId))
-      // Only a person's grants cap a lap: a round triage bought is the allowance's own (#1258).
+      // Only a person's grants cap a lap here: a triage round (`byTriage` below) follows the recipe's `refusalFixes` (#1258).
       const priorGrant = waitsFromState(reduced).some(
         (wait) =>
           wait.resolution?._tag === 'FixRefusal' &&
@@ -1601,9 +1605,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const grantedBy = byTriage.has(approvedWaitId) ? 'triage' : 'person'
       // A conflict resolution triage made spends `conflictResolutions` alone: its implement visit re-opens the current
       // round, so `StepStarted` does not raise `implementRound` and no refusal fix is counted (#1258).
+      // The wait's own reason says it too, so a `spent` a stale snapshot lost cannot turn a conflict into a refusal fix.
       const conflictByTriage =
         grantedBy === 'triage' &&
-        reduced.waits.find((w) => w.waitId === approvedWaitId)?.resolution?.spent?.bound === 'conflictResolutions'
+        (reduced.waits.find((w) => w.waitId === approvedWaitId)?.resolution?.spent?.bound === 'conflictResolutions' ||
+          (reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'MergeConflict'))
       const lapRound = continuationRound(runState, granted && !conflictByTriage)
       const criterion = granted ? grantCriterion(reason, standingRefusal(runState)) : null
       const next = granted ? { step: 'implement' as const } : continuationOf(reason, stepOutcomesOf(runEvents))
@@ -1684,6 +1690,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         stepRedosSpent: spentNow.stepRedos,
         landingRetriesSpent: spentNow.landingRetries,
         ...(priorGrant ? { roundLimit: lapRound } : {}),
+        ...(grantedBy === 'triage' ? { byTriage: true as const } : {}),
         ...(criterion !== null
           ? {
               grant: {
@@ -5686,6 +5693,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ...(continuation.baseRed !== undefined ? { baseRed: continuation.baseRed } : {}),
                 ...(continuation.landedOnBase !== null ? { landedOnBase: continuation.landedOnBase } : {}),
                 ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
+                ...('byTriage' in continuation && continuation.byTriage ? { byTriage: true as const } : {}),
                 ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
                 ...(continuation.grant && continuation.conflict !== undefined
                   ? { conflict: continuation.conflict }

@@ -182,7 +182,8 @@ export const ticketReducer: Reducer<TicketState> = {
   // 4: a `BaseRed` release resets `lastAttemptAt` (#1208), so a version-3 snapshot holds the old backoff.
   // 3: a release's `NewAttempt{newAttempt}` replaces `Restart{restart}`, and a wait's ceiling names its bound (#1241); a version-2 snapshot holds the old tags.
   // 7: an `AgentQuestion` or `InputNeeded` carries `questions` and `said`, not `question` (#1253); a version-6 snapshot holds the string.
-  version: 7,
+  // 8: a wait's `resolution` carries the optional `spent` of a triage resolution (#1258); a version-7 snapshot may have lost it.
+  version: 8,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,
