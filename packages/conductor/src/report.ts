@@ -192,13 +192,20 @@ export interface HandledCount {
 
 export interface HandledProblem extends Problem {
   ticket: string
+  /** The ticket's outcome now — LATEST says `landed` when it has. */
+  outcome: ReportTicketRow['outcome']
+}
+
+/** One day's problems, by kind: only the kinds with a count, in `PROBLEM_KINDS` order. */
+export interface HandledDayKind extends HandledCount {
+  kind: string
 }
 
 export interface Handled {
   /** Every kind of `PROBLEM_KINDS`, in its order, a zero included. */
   kinds: ({ kind: string } & HandledCount)[]
   /** The same days as `spend.days`. */
-  days: ({ day: string } & HandledCount)[]
+  days: ({ day: string; kinds: HandledDayKind[] } & HandledCount)[]
   /** The eight newest problems, newest first. */
   latest: HandledProblem[]
   /** What answering them cost in the window: the `Answering`, `Judge` and `Triage` purposes, reported and estimated apart. */
@@ -486,6 +493,23 @@ function topTicket(row: ReportTicketRow): TopTicket {
   }
 }
 
+/**
+ * Every problem raised in the window by the tickets the filters keep, newest
+ * first (ties by ticket). `report()` keeps the eight newest; the board's
+ * drill-down reads all of them, which is why they are not on `Report` — the
+ * CLI spreads that whole into `--json`.
+ */
+export function handledProblems(input: ReportInput): HandledProblem[] {
+  const { window: w, project } = input
+  const kindOk = (k: string | null): boolean => input.kinds === null || input.kinds.includes(k)
+  return input.tickets
+    .filter((t) => (project === null || t.project === project) && kindOk(t.kind))
+    .flatMap((t) =>
+      t.problems.filter((p) => inWindow(p.at, w)).map((p) => ({ ...p, ticket: t.ticket, outcome: t.outcome })),
+    )
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || a.ticket.localeCompare(b.ticket))
+}
+
 export function report(input: ReportInput): Report {
   const { window: w, project } = input
   const kindOk = (k: string | null): boolean => input.kinds === null || input.kinds.includes(k)
@@ -553,19 +577,24 @@ export function report(input: ReportInput): Report {
     }
   }
 
-  const raised: HandledProblem[] = filtered.flatMap((t) =>
-    t.problems.filter((p) => inWindow(p.at, w)).map((p) => ({ ...p, ticket: t.ticket })),
-  )
+  const raised = handledProblems(input)
   const countOf = (of: readonly Problem[]): HandledCount => ({
     system: of.filter((p) => p.answeredBy === 'system').length,
     you: of.filter((p) => p.answeredBy === 'you').length,
   })
   const handled: Handled = {
     kinds: PROBLEM_KINDS.map((kind) => ({ kind, ...countOf(raised.filter((p) => p.kind === kind)) })),
-    days: days.map(({ day }) => ({ day, ...countOf(raised.filter((p) => dayKey(new Date(p.at)) === day)) })),
-    latest: [...raised]
-      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || a.ticket.localeCompare(b.ticket))
-      .slice(0, 8),
+    days: days.map(({ day }) => {
+      const of = raised.filter((p) => dayKey(new Date(p.at)) === day)
+      return {
+        day,
+        ...countOf(of),
+        kinds: PROBLEM_KINDS.map((kind) => ({ kind, ...countOf(of.filter((p) => p.kind === kind)) })).filter(
+          (k) => k.system + k.you > 0,
+        ),
+      }
+    }),
+    latest: raised.slice(0, 8),
     answeringCost: byPurpose
       .filter((p) => p.purpose === 'Answering' || p.purpose === 'Judge' || p.purpose === 'Triage')
       .reduce<Money>((n, p) => addMoney(n, p.money), { reportedCents: 0, estimatedCents: 0, unknown: 0 }),

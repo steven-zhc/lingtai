@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  handledProblems,
   report,
   resolveWindow,
   reviewPassed,
@@ -534,6 +535,33 @@ describe('report().handled (#1284)', () => {
     )
     expect(h.latest[0]).toMatchObject({ ticket: t.ticket, kind: 'review-fixed' })
     expect(h.answeringCost).toEqual({ reportedCents: 250, estimatedCents: 25, unknown: 1 })
+  })
+
+  it('breaks each day into its kinds, and lists every problem newest first with the ticket’s outcome', () => {
+    const t = ticket({
+      outcome: 'landed',
+      problems: [
+        p('conflict', 'system', day(28, 9)),
+        p('review-fixed', 'system', day(28, 10)),
+        p('review-fixed', 'you', day(28, 11)),
+        p('stopped', 'system', day(1)),
+      ],
+    })
+    const input = { tickets: [t], spend: [], window: resolveWindow('7d', now), project: null, kinds: null }
+    const r = report({ ...input, sortBy: 'rounds' })
+    const last = r.handled.days.at(-1)!
+    expect(last.kinds).toEqual([
+      { kind: 'review-fixed', system: 1, you: 1 },
+      { kind: 'conflict', system: 1, you: 0 },
+    ])
+    for (const d of r.handled.days) {
+      expect(d.kinds.reduce((n, k) => n + k.system, 0)).toBe(d.system)
+      expect(d.kinds.reduce((n, k) => n + k.you, 0)).toBe(d.you)
+    }
+    const all = handledProblems(input)
+    expect(all.map((x) => x.kind)).toEqual(['review-fixed', 'review-fixed', 'conflict'])
+    expect(all.every((x) => x.outcome === 'landed')).toBe(true)
+    expect(r.handled.latest).toEqual(all)
   })
 
   it('respects the kind filter', () => {

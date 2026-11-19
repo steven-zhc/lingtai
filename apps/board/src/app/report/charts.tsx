@@ -6,7 +6,7 @@
  * figures from the static markup. Each has an HTML legend above it and one
  * y-axis, never two.
  *
- * Series colours come from `--s1`–`--s4` and `--muted` only (`lib/report.ts`):
+ * Series colours come from `--s1`–`--s6` and `--muted` only (`lib/report.ts`):
  * amber, red and green are the board's states and no series wears them.
  */
 import type { LandingDay, Report, RoundBucket, SpendDay, SurvivalStep } from '@lingtai/conductor/report'

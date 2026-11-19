@@ -1,3 +1,4 @@
+import { resolveWindow, type Money, type ReportWindow, type WindowSpec } from '@lingtai/conductor/report'
 /**
  * What the `/report` page reads and how it reads it ([0123](../../../../doc/decisions/0123-the-report-counts-what-the-log-holds.md)
  * §7, #689): the URL → the report's inputs, the two reduces brought to the head,
@@ -8,9 +9,10 @@
  * **The filters are the URL.** There is no client state: a reload, a shared link
  * and the back button all work, and the server reads what the address says.
  */
-import { resolveWindow, type Money, type ReportWindow, type WindowSpec } from '@lingtai/conductor/report'
+import type { Answerer, ProblemKind } from '@lingtai/domain'
 import { readSpend, readTicketReport, type SpendRow, type TicketReportRow } from '@lingtai/projector'
 
+import { isProblemKind } from './handled.ts'
 import { lagOf, type SpendCurrency } from './spend.ts'
 
 export type ReportParams = Record<string, string | string[] | undefined>
@@ -24,8 +26,32 @@ export interface ReportQuery {
   /** Null is every kind; a null inside is unclassified. */
   kinds: (string | null)[] | null
   sort: 'rounds' | 'cost'
+  /** The drill-down of *handled for you*: one problem kind (or `all`), one answerer, one page. Null is the panel. */
+  handled: HandledQuery | null
   /** Said on the page when the address asked for something that was not used. */
   note: string | null
+}
+
+export interface HandledQuery {
+  kind: ProblemKindOrAll
+  by: Answerer | null
+  /** The last row of the page before, `(at, ticket)`: a position in the order, not a row id. */
+  before: { at: Date; ticket: string; seen: number } | null
+}
+type ProblemKindOrAll = ProblemKind | 'all'
+
+/** `<ISO at>,<seen>,<ticket>`; null when it is not a real date, a count and a ticket. */
+export function parseHandledCursor(text: string | undefined): HandledQuery['before'] {
+  if (text === undefined) return null
+  const cut = text.indexOf(',')
+  const cut2 = text.indexOf(',', cut + 1)
+  if (cut < 0 || cut2 < 0) return null
+  const at = new Date(text.slice(0, cut))
+  const seen = Number(text.slice(cut + 1, cut2))
+  const ticket = text.slice(cut2 + 1)
+  return ticket === '' || Number.isNaN(at.getTime()) || !Number.isInteger(seen) || seen < 0
+    ? null
+    : { at, ticket, seen }
 }
 
 const first = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v)
@@ -85,12 +111,25 @@ export function reportQuery(params: ReportParams, now: Date): ReportQuery {
       : params.kinds !== undefined
         ? []
         : null
+  let handled: HandledQuery | null = null
+  const hk = first(params.handled)
+  if (hk !== undefined) {
+    if (hk === 'all' || isProblemKind(hk)) {
+      const by = first(params.by)
+      handled = {
+        kind: hk,
+        by: by === 'system' || by === 'you' ? by : null,
+        before: parseHandledCursor(first(params.before)),
+      }
+    } else note ??= 'that problem kind was not read — showing the whole panel'
+  }
   return {
     which,
     window: resolveWindow(spec, now),
     project: first(params.project) || null,
     kinds,
     sort: first(params.sort) === 'cost' ? 'cost' : 'rounds',
+    handled,
     note,
   }
 }
@@ -111,7 +150,10 @@ export const dateText = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 /** The address for the same query with some of it changed. */
-export function reportHref(q: ReportQuery, change: { sort?: 'rounds' | 'cost' } = {}): string {
+export function reportHref(
+  q: ReportQuery,
+  change: { sort?: 'rounds' | 'cost'; handled?: HandledQuery | null } = {},
+): string {
   const p = new URLSearchParams()
   if (q.project !== null) p.set('project', q.project)
   if (q.which === 'today') p.set('window', 'today')
@@ -123,8 +165,15 @@ export function reportHref(q: ReportQuery, change: { sort?: 'rounds' | 'cost' } 
   for (const k of q.kinds ?? []) p.append('kind', k ?? '')
   const sort = change.sort ?? q.sort
   if (sort === 'cost') p.set('sort', 'cost')
+  const h = change.handled === undefined ? q.handled : change.handled
+  if (h !== null) {
+    p.set('handled', h.kind)
+    if (h.by !== null) p.set('by', h.by)
+    if (h.before !== null) p.set('before', `${h.before.at.toISOString()},${h.before.seen},${h.before.ticket}`)
+  }
   const s = p.toString()
-  return s === '' ? '/report' : `/report?${s}`
+  const base = s === '' ? '/report' : `/report?${s}`
+  return h === null ? base : `${base}#handled`
 }
 
 export interface ReportCurrency {
