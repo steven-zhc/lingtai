@@ -1,5 +1,5 @@
 /**
- * **The problems a step raised, and who finally answered each** (#1284, 0123 §2's
+ * **The problems a step raised, and the group each belongs to** (#1284, 0123 §2's
  * `problems`) — the figures behind *handled for you*.
  *
  * A problem cannot be reduced one event at a time: a route's answer is a wait that
@@ -8,9 +8,9 @@
  * reduced `waits` and `claims` on every save. This is the one rule; nothing else
  * decides a kind or a `system`/`you`.
  *
- * **One problem is counted once, by who finally answered it.** A route that opened
- * a wait is not a problem on its own: the pair is one, with the route's kind and
- * the wait's answer. Nothing on the log links the two (`ProposalRouted` carries no
+ * **One problem is counted once, grouped by its kind** (`you` for `asked` and
+ * `setup`, `system` for every other kind, whoever answered it). A route that opened
+ * a wait is not a problem on its own: the pair is one, with the route's kind. Nothing on the log links the two (`ProposalRouted` carries no
  * `waitId`), so a wait with a `run` claims the **last** route (or redo group) on
  * that run at or before the wait's `at`, if its tags agree: the route batch is
  * appended before the pass's ending, so on one run the route that ended the pass is
@@ -51,7 +51,7 @@ export type Raised =
       readonly decision: 'Selected' | 'Escalated'
     }
   | { readonly _tag: 'Redo'; readonly seq: string; readonly at: string; readonly runId: string; readonly step: string }
-  /** A `WaitResolved`, kept because the ticket reduce keeps only the first and the last one decides. */
+  /** A `WaitResolved`, kept so a `Split` resolution is known: it tells `too-big` apart, whatever resolved the wait after. */
   | {
       readonly _tag: 'Answer'
       readonly seq: string
@@ -66,7 +66,7 @@ export interface Problem {
   readonly at: string
   /** The number of the claim it was raised in, from 1; null where no claim is known. */
   readonly attempt: number | null
-  /** Who finally answered it: `you` also while it is still open. */
+  /** The problem's group, decided by its kind: `you` for `asked` and `setup`, `system` for every other kind. */
   readonly answeredBy: Answerer
   /** The wait that answered it, where there was one. */
   readonly waitId: string | null
@@ -140,17 +140,7 @@ type Item =
       claimedBy: TicketWait | null
     }
 
-type Answers = ReadonlyMap<string, { by: string; resolution: string }>
-
-/** The wait's deciding resolution: the last `WaitResolved` kept, else the reduce's first. */
-const finalOf = (w: TicketWait, answers: Answers): { by: string; resolution: string } | null =>
-  answers.get(w.waitId) ??
-  (w.resolution === null ? null : { by: w.resolution.by, resolution: w.resolution.resolution._tag })
-
-const answerOf = (w: TicketWait | null, answers: Answers): Answerer =>
-  w !== null && finalOf(w, answers)?.by === 'triage' ? 'system' : 'you'
-
-/** Always a person's: the table says a question or a broken setup is never answered by the system. */
+/** The kinds only a person can answer: a question, or a setup broken in their environment. Every other kind is the system's, whoever approved it. */
 const alwaysYou = (kind: ProblemKind): boolean => kind === 'asked' || kind === 'setup'
 
 export function problemsOf(
@@ -161,14 +151,12 @@ export function problemsOf(
   const ordered = [...raised].sort((a, b) =>
     BigInt(a.seq) < BigInt(b.seq) ? -1 : BigInt(a.seq) > BigInt(b.seq) ? 1 : 0,
   )
-  const answers = new Map<string, { by: string; resolution: string }>()
   /** Waits any resolution of which was a split: a completed split is a fact a later resolution does not undo. */
   const splits = new Set<string>()
   const items: Item[] = []
   const last = new Map<string, Item>()
   for (const r of ordered) {
     if (r._tag === 'Answer') {
-      answers.set(r.waitId, { by: r.by, resolution: r.resolution })
       if (r.resolution === 'Split') splits.add(r.waitId)
       continue
     }
@@ -220,7 +208,7 @@ export function problemsOf(
         kind,
         at: i.at,
         attempt: attemptOf(i.runId, i.at),
-        answeredBy: alwaysYou(kind) ? 'you' : w === null ? 'system' : answerOf(w, answers),
+        answeredBy: alwaysYou(kind) ? 'you' : 'system',
         waitId: w?.waitId ?? null,
       })
       continue
@@ -230,8 +218,7 @@ export function problemsOf(
       w === null
         ? kindOfRoute(r.proposal, r.candidate)
         : (kindOfWaitOverride(w, splitOf(w)) ?? kindOfRoute(r.proposal, r.candidate))
-    const handed = r.decision === 'Escalated' || r.candidate === 'hand-to-person'
-    const answeredBy: Answerer = alwaysYou(kind) ? 'you' : w !== null ? answerOf(w, answers) : handed ? 'you' : 'system'
+    const answeredBy: Answerer = alwaysYou(kind) ? 'you' : 'system'
     out.push({ kind, at: r.at, attempt: attemptOf(r.runId, r.at), answeredBy, waitId: w?.waitId ?? null })
   }
   for (const w of lonely) {
@@ -243,7 +230,7 @@ export function problemsOf(
       kind,
       at,
       attempt: run === null ? attemptOf('', at) : attemptOf(run.runId, at),
-      answeredBy: alwaysYou(kind) ? 'you' : answerOf(w, answers),
+      answeredBy: alwaysYou(kind) ? 'you' : 'system',
       waitId: w.waitId,
     })
   }

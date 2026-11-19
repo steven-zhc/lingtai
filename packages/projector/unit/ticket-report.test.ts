@@ -328,7 +328,7 @@ describe('ticket_report problems (#1284)', () => {
     const open = await reduce([events])
     expect(parse(open?.raised)).toHaveLength(1)
     expect(parse(open?.problems)).toMatchObject([
-      { kind: 'review-fixed', answeredBy: 'you', attempt: 1, waitId: 'w1' as never },
+      { kind: 'review-fixed', answeredBy: 'system', attempt: 1, waitId: 'w1' as never },
     ])
     const resolved = t(
       'WaitResolved',
