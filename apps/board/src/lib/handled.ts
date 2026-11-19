@@ -158,7 +158,8 @@ export function pageHandled<T extends Placed>(
     const ct = before.at.getTime()
     const ahead = rows.filter((r) => {
       const t = Date.parse(r.at)
-      return t > ct || (t === ct && r.ticket < before.ticket)
+      // The same comparison `handledProblems` sorts by, or the two disagree on `a_b` against `a-b`.
+      return t > ct || (t === ct && r.ticket !== before.ticket && r.ticket.localeCompare(before.ticket) < 0)
     }).length
     const tied = rows.filter((r) => sameKey(r, before)).length
     skipped = ahead + Math.min(before.seen, tied)

@@ -54,4 +54,18 @@ describe('pageHandled ties', () => {
     const two = pageHandled(rows, one.next)
     expect(two).toMatchObject({ from: 21, to: 22, total: 22, next: null })
   })
+
+  it('counts rows ahead of the cursor in the order the list is sorted in', () => {
+    const at = new Date(Date.UTC(2026, 10, 18, 12)).toISOString()
+    const newer = Array.from({ length: 19 }, (_, i) => ({
+      at: new Date(Date.UTC(2026, 10, 18, 13, 0, i)).toISOString(),
+      ticket: 'z',
+    })).reverse()
+    const rows = [...newer, { at, ticket: 'ticket-a_b-1' }, { at, ticket: 'ticket-a-b-1' }].sort(
+      (a, b) => Date.parse(b.at) - Date.parse(a.at) || a.ticket.localeCompare(b.ticket),
+    )
+    const one = pageHandled(rows, null)
+    const two = pageHandled(rows, one.next)
+    expect(two).toMatchObject({ from: 21, to: 21, total: 21, next: null })
+  })
 })
