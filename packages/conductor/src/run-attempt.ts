@@ -2796,15 +2796,15 @@ function sentBackTo(step: Step, reached: readonly StepReached[]): SentBack | nul
             : {}),
         }
       : null
-  // #1199, #1250: a later round the fixer declared `Disputed`, which a judge overruled — what it
-  // said, finding by finding.
+  // #1199, #1250, #1277: a round the fixer declared `Disputed`, which a judge overruled — what it
+  // said, finding by finding. A first visit is excluded by `decideImplementOutcome`, which refuses a
+  // `Disputed` with nothing offered, and not by the round: a conflict round runs at round 0.
   const objection =
     arrived !== undefined &&
     arrived.step === 'implement' &&
     step === 'implement' &&
     asked === null &&
-    arrived.outcome !== undefined &&
-    arrived.outcome.round > 0
+    arrived.outcome !== undefined
       ? disputedOf(arrived.outcome)
       : null
   return {
