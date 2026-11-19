@@ -1149,7 +1149,7 @@ const late_claimedThenSatisfied = (() => {
       bodyVersion: 1,
       items: [{ item: 'it works', evidence: 'src/a.ts:1' }],
     }),
-  ].map((e, i) => ({ ...e, seq: 9_000_000 + i, at: new Date(START_MS + 9_000_000 + i * STEP_MS) }))
+  ].map((e, i) => ({ ...e, seq: BigInt(9_000_000 + i), at: new Date(START_MS + 9_000_000 + i * STEP_MS) }))
 })()
 
 /**
