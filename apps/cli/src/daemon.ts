@@ -745,11 +745,16 @@ export function daemonCommand(
               for (const [project, triage] of recipes) yield* scanTriage(project, triage)
               // A continuation a failed request left unasked-for is asked again here, only for the projects this
               // turn looked at; the `control.continuing` row is the guard beside a live one (#1282).
-              yield* catchUpRegisteredContinuations(
-                [...recipes.keys()].map((project) => ({ project })),
-                daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
-                (line) => console.error(line),
-              )
+              // Asked again after the turn: a pause or a shutdown requested while it ran must stop this append too.
+              const stoppedAfterTurn = yield* claiming
+              const shutdownAfterTurn = (yield* controlRead().pipe(Effect.orDie)).shutdown
+              if (stoppedAfterTurn === null && !shutdownAfterTurn) {
+                yield* catchUpRegisteredContinuations(
+                  [...recipes.keys()].map((project) => ({ project })),
+                  daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
+                  (line) => console.error(line),
+                )
+              }
               // The run told GitHub as it went (0022), so there is nothing left
               // here to send and nothing to report about sending it.
               // A routine pass, in the accent — structure, not a verdict. What the

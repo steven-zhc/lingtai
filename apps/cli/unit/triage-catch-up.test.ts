@@ -695,6 +695,43 @@ describe('triage continuation catch-up on the ordinary pass (#1282)', () => {
     expect(await none.requested()).toHaveLength(0)
   })
 
+  it('skips an approved card whose ticket was claimed, resolved by triage and then continued', async () => {
+    const store = createMemoryEventStore()
+    const waitId = 'wait-7' as WaitId
+    await store.append(stream, 0, [
+      { type: 'TicketClaimed', actor: 'conductor', data: { runId: 'run-one', worker: 'w', title: null, kind: null } },
+      { type: 'WaitStarted', actor: 'conductor', data: { waitId, reason } },
+      {
+        type: 'WaitResolved',
+        actor: 'conductor',
+        data: { waitId, by: 'triage', resolution: { _tag: 'RedoStep', onSha: 'abc', ref: null }, note: '' },
+      },
+    ] as never)
+    const ports: CatchUpTriagePorts = {
+      store,
+      // the board's card is stale: it still says approved after the continuation
+      readTasks: () => Effect.succeed([{ issue: '7', state: 'approved' as const }]),
+      baseSha: () => Effect.succeed('base'),
+      daemonStartedAt: () => Effect.succeed(startedAt),
+      run: () => Effect.void,
+    }
+    // Control: before the continuation the same ticket is asked for.
+    const before = createMemoryEventStore()
+    await before.append(
+      stream,
+      0,
+      (await store.read(stream)).map(({ type, actor, data }) => ({ type, actor, data })) as never,
+    )
+    await scan({ ...ports, store: before })
+    expect((await before.read('ctl-conductor')).filter((e) => e.type === 'ContinueRequested')).toHaveLength(1)
+    // The continuation claims the run: the ticket leaves `approved`.
+    await store.append(stream, 3, [
+      { type: 'TicketContinued', actor: 'conductor', data: { runId: 'run-one', worker: 'w' } },
+    ] as never)
+    await scan(ports)
+    expect((await store.read('ctl-conductor')).filter((e) => e.type === 'ContinueRequested')).toHaveLength(0)
+  })
+
   it('skips a locked project and logs a failed lock read while scanning the next', async () => {
     const f = await setup()
     await scan(f.ports({ locked: () => Effect.succeed('paused') }))
