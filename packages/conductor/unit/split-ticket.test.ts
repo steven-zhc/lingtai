@@ -11,10 +11,19 @@ import { aClaim, aWait, aWaitId, anAttempt, anAttemptRef } from '@lingtai/domain
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Issue, LinkedIssue } from '@lingtai/github'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { splitIntoSection, splitTicketHolding, type SplitClient, type SplitPlanInput } from '../src/split-ticket.ts'
+import {
+  splitIntoSection,
+  splitTicketHoldingEffect,
+  type SplitClient,
+  type SplitPlanInput,
+} from '../src/split-ticket.ts'
 import { BodyChanged } from '../src/ticket-store.ts'
+
+const splitTicketHolding = (...args: Parameters<typeof splitTicketHoldingEffect>) =>
+  Effect.runPromise(splitTicketHoldingEffect(...args))
 
 const PROJECT = 'lingtai'
 const REPO = 'steven-zhc/lingtai'

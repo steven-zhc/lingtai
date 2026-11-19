@@ -171,7 +171,7 @@ describe('recommendedResolution for a TriageAnswered', () => {
     [{ _tag: 'UndecidedQuestion', questions: [question] }, 'AnswerQuestions'],
     [{ _tag: 'ConflictingHunks', hunks: [], total: 40 }, 'FixRefusal'],
     [{ _tag: 'SetupBroken', what: 'w', repair: 'r' }, 'RedoStep'],
-    [{ _tag: 'TicketTooBig', plan, spentOn: null }, 'Split'],
+    [{ _tag: 'TicketTooBig', plan, spentOn: null }, 'EditBodyAndStartNewAttempt'],
     [{ _tag: 'TicketTooBig', plan: null, spentOn: null }, 'RedoStep'],
   ] as [Cause, string][])('%j → %s where the wait offers it, else null', (cause, expected) => {
     const wanted = recommend(cause)

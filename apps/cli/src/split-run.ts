@@ -10,7 +10,7 @@
  * than from this process's own memory, so a daemon that restarts in a loop cannot hammer a GitHub that keeps refusing.
  * The clock is Effect's, so a test drives it with `TestClock`.
  */
-import { reduceTicket, ticketStream, type Envelope, type PayloadOf, type WaitId } from '@lingtai/domain'
+import { reduceTicket, splitLastOf, ticketStream, type Envelope, type PayloadOf, type WaitId } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 import type { TaskCard } from '@lingtai/projector'
 import { Clock, Effect } from 'effect'
@@ -51,11 +51,9 @@ export function splitStandingOf(events: readonly Envelope[]): SplitStanding {
   const life = reduceTicket(events).lifecycle
   if (life.status !== 'blocked') return { _tag: 'None' }
   const waitId = life.waitId
-  const mine = events.filter((e) => (e.data as { waitId?: string }).waitId === waitId)
-  const last = mine.findLast((e) => e.type === 'SplitStarted' || e.type === 'SplitFailed' || e.type === 'TicketSplit')
-  if (last === undefined || last.type === 'TicketSplit') return { _tag: 'None' }
-  if (last.type === 'SplitFailed') return { _tag: 'Failed', waitId, at: last.at }
-  return { _tag: 'Interrupted', waitId }
+  const last = splitLastOf(events, waitId)
+  if (last._tag === 'failed') return { _tag: 'Failed', waitId, at: last.at }
+  return last._tag === 'started' ? { _tag: 'Interrupted', waitId } : { _tag: 'None' }
 }
 
 const guarded = (deps: SplitPorts, request: SplitRequest): Effect.Effect<void> =>

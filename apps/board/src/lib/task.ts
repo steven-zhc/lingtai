@@ -2154,9 +2154,7 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       status.result._tag === 'TriageAnswered' &&
       status.result.cause._tag === 'TicketTooBig' &&
       status.result.cause.plan !== null
-    const started = own.some(
-      (e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId === waitId,
-    )
+    const started = reduceTicket(own).splitStarts.includes(waitId)
     if (planned || started) {
       const state = await readProject(ticket.project)
       const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)

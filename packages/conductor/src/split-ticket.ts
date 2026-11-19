@@ -32,9 +32,11 @@
  * transaction, so a retry after a lost race re-reads and lands only that.
  */
 import {
+  firstSplitStartOf,
   frozenPlan,
   PUBLISHING_LABEL,
   reduceTicket,
+  splitLastOf,
   splitProgressOf,
   systemSplitAllowed,
   ticketStream,
@@ -180,10 +182,6 @@ function settled<A, E>(eff: Effect.Effect<A, E>): Effect.Effect<Settled<A>> {
 type StepOutcome = StepStatus | { detail: string }
 
 /** One decision at a time — the lock `editBodyAndRequeue` takes, held through every write. */
-export function splitTicket(options: SplitTicketOptions): Promise<SplitTicketResult> {
-  return Effect.runPromise(splitTicketEffect(options))
-}
-
 export function splitTicketEffect(options: SplitTicketOptions): Effect.Effect<SplitTicketResult, Error> {
   const store = options.store ?? eventStore
   const ticketId = ticketStream(options.project, options.issue)
@@ -219,15 +217,7 @@ function refused(plan: SplitPlanInput | undefined, ticketId: string, detail: str
   }
 }
 
-/** Exported for the unit half alone — the lock is the filesystem. */
-export function splitTicketHolding(
-  options: SplitTicketOptions,
-  store: EventStore,
-  ticketId: string,
-): Promise<SplitTicketResult> {
-  return Effect.runPromise(splitTicketHoldingEffect(options, store, ticketId))
-}
-
+/** Exported for the unit half alone — the lock is the filesystem — through `splitTicketHoldingEffect`. */
 export function splitTicketHoldingEffect(
   options: SplitTicketOptions,
   store: EventStore,
@@ -238,21 +228,19 @@ export function splitTicketHoldingEffect(
 
     // **Refuse before writing**, with no GitHub call until every check passed.
     const events = yield* lift(() => store.read(ticketId))
-    const started = events.filter((e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId === waitId)
     // The plan is the one the decision froze (0118 §12.3), whoever calls: this writer never takes a plan of its own.
-    const first = started[0]
-    const plan: SplitPlanInput | undefined =
-      first === undefined ? undefined : (first.data as PayloadOf<'SplitStarted'>).plan
+    const first = firstSplitStartOf(events, waitId)
+    const plan: SplitPlanInput | undefined = first === null ? undefined : first.data.plan
     const stop = (detail: string) => refused(plan, ticketId, detail)
     const item = reduceTicket(events)
     if (item.lifecycle.status !== 'blocked' || item.lifecycle.waitId !== waitId)
       return stop(`${ticketId} is not waiting on ${waitId} — nothing was written. Reload and read it again.`)
-    if (plan === undefined || first === undefined)
+    if (plan === undefined || first === null)
       return stop(`nothing decided to split ${ticketId} for ${waitId} — nothing was written.`)
     if (!systemSplitAllowed(item, waitId, 'triage'))
       return stop(`a split is not offered for ${waitId} — nothing was written.`)
     // **Once per root** (#1261): a `SplitStarted` for another wait has spent the split; one for this wait is this split resuming.
-    const spent = events.some((e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId !== waitId)
+    const spent = item.splitStarts.some((w) => w !== waitId)
     if (spent) return stop(`${ticketId} was already split once — nothing was written.`)
     let placementRead: Placement | undefined
     // Before this attempt's own `SplitStarted`: a read that threw after it would leave a start with nothing terminal after it.
@@ -270,15 +258,8 @@ export function splitTicketHoldingEffect(
       recordSplitProgress(store, ticketId, type, data, options.by).pipe(Effect.mapError(asFailure))
     // The decision's own record stands for this attempt while it is this writer's and nothing terminal followed it;
     // any other is a resume, and starts its attempt afresh so the page reads from its start.
-    const latest = events.findLast(
-      (e) =>
-        (e.data as { waitId?: string }).waitId === waitId &&
-        (e.type === 'SplitStarted' || e.type === 'SplitFailed' || e.type === 'TicketSplit'),
-    )
-    const standing =
-      latest !== undefined &&
-      latest.type === 'SplitStarted' &&
-      (latest.data as PayloadOf<'SplitStarted'>).instance === options.instance
+    const latest = splitLastOf(events, waitId)
+    const standing = latest._tag === 'started' && latest.instance === options.instance
     if (!standing) yield* note('SplitStarted', { waitId, plan: frozenPlan(plan), instance: options.instance })
 
     /** The terminal event. If it cannot be appended the caller's running set still says the writer is gone. */

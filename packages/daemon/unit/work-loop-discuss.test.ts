@@ -63,7 +63,7 @@ describe('the loop delivers to discuss', () => {
 
 describe('the loop delivers to triage', () => {
   it('names a new wait and a resume', () => {
-    expect([...TRIAGE_EVENTS]).toEqual(['WaitStarted', 'ProjectResumed', 'DayCeilingLifted'])
+    expect([...TRIAGE_EVENTS]).toEqual(['WaitStarted', 'SplitStarted', 'ProjectResumed', 'DayCeilingLifted'])
   })
 
   it('hands a ProjectResumed to triage, and not a pause', async () => {
