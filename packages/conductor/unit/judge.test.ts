@@ -428,7 +428,6 @@ describe('the mechanical directions spend nothing', () => {
     expect(BUILT_IN_FOR['setup-refused']).toBeNull()
     expect(BUILT_IN_FOR['check-refused']).toBeNull()
     expect(BUILT_IN_FOR['answer-unreadable']).toBeNull()
-    expect(BUILT_IN_FOR['nothing-produced']).toBeNull()
     expect(BUILT_IN_FOR['fixer-disagrees']).toBeNull()
     expect(BUILT_IN_FOR['merge-refused']).toBeNull()
     expect(BUILT_IN_FOR['budget-exhausted']).toBeNull()

@@ -97,6 +97,20 @@ const SignoffRequired = z.object({
   question: z.string(),
 })
 
+/**
+ * **The work is already on the base, and `review` agrees item by item; a person confirms** (#1251,
+ * 0108 §21). Carries what `TicketSatisfied` will record, so confirming reads the wait alone.
+ * `reading` is the reviewer's per-item reading.
+ */
+const SatisfiedUnconfirmed = z.object({
+  _tag: z.literal('SatisfiedUnconfirmed'),
+  run: AttemptRef,
+  baseSha: z.string(),
+  bodyVersion: z.number().int(),
+  items: z.array(z.object({ item: z.string(), evidence: z.string() })),
+  reading: z.string(),
+})
+
 /** A fix round's `implement` changed nothing — the fixer disagrees with the reviewer. */
 const FixerDisagrees = z.object({ _tag: z.literal('FixerDisagrees'), run: AttemptRef, said: z.string().nullable() })
 
@@ -247,6 +261,7 @@ export const WaitReason = z.discriminatedUnion('_tag', [
   AgentCrashed,
   SetupRefused,
   AnswerUnreadable,
+  SatisfiedUnconfirmed,
 ])
 export type WaitReason = z.infer<typeof WaitReason>
 
@@ -264,6 +279,8 @@ const RedoStep = z.object({
   onSha: z.string(),
   ref: z.string().nullable(),
 })
+/** A person agrees the ticket is already satisfied by the base: ends it `satisfied` (#1251). A `SatisfiedUnconfirmed` only. */
+const ConfirmSatisfied = z.object({ _tag: z.literal('ConfirmSatisfied') })
 /** A new pass, from the base. */
 const StartNewAttempt = z.object({ _tag: z.literal('StartNewAttempt') })
 /** Write into the body, then requeue. */
@@ -281,6 +298,7 @@ export const Resolution = z.discriminatedUnion('_tag', [
   StartNewAttempt,
   EditBodyAndStartNewAttempt,
   AnswerQuestion,
+  ConfirmSatisfied,
   // the person's approved plan (0118 §12); a structural fault never parses, so never reaches the log
   SplitResolution,
   Close,
@@ -332,6 +350,8 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
       return ['AnswerQuestion', 'StartNewAttempt', 'Close']
     case 'AgentQuestion':
       return ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
+    case 'SatisfiedUnconfirmed':
+      return ['ConfirmSatisfied', 'EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
     case 'SignoffRequired':
     case 'CheckRefused':
     case 'FixerDisagrees':
@@ -350,6 +370,8 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
           // this row is `StartNewAttempt`, `Close` — no body edit.
           return ['StartNewAttempt', 'Close']
         case 'InputNeeded':
+        // #1251: the work is already on the base and nothing has checked it yet, so only a way out.
+        case 'AlreadyDone':
           return ['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
         // `#471`'s seven, each given the direct `WaitReason` variant's own
         // row (`:217-240` above) rather than a new one — `#471`'s equality
@@ -509,6 +531,7 @@ export function standingFor(input: {
   if (input.head === null || input.head !== input.onSha) return null
   const resumed = input.resumed
   if (resumed.reason._tag === 'AgentCrashed') return resumed.reason.standing ?? null
+  if (resumed.reason._tag === 'SatisfiedUnconfirmed') return null
   return { waitId: resumed.waitId, reason: resumed.reason }
 }
 
@@ -632,11 +655,13 @@ export function continuationOf(
         case 'AnswerUnreadable':
         case 'NothingProduced':
         case 'BudgetExhausted':
+        case 'AlreadyDone':
           return null
       }
     }
     case 'OwnQuestion':
     case 'AgentQuestion':
+    case 'SatisfiedUnconfirmed':
     case 'NothingProduced':
     case 'BudgetExhausted':
     case 'AgentCrashed':
@@ -743,6 +768,7 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
         : null
     case 'OwnQuestion':
     case 'AgentQuestion':
+    case 'SatisfiedUnconfirmed':
     case 'FixerDisagrees':
     case 'NothingProduced':
     case 'CheckRefused':
@@ -1139,6 +1165,7 @@ export function triageStatus(
   switch (reason._tag) {
     case 'OwnQuestion':
     case 'SignoffRequired':
+    case 'SatisfiedUnconfirmed':
       return { _tag: 'NotNeeded' }
     case 'AgentQuestion':
     case 'FixerDisagrees':

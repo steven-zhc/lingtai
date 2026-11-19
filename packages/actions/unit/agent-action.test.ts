@@ -2776,3 +2776,86 @@ describe('the paragraph a step redone whole ends its brief with (#1245)', () => 
     expect(redone.seen[0]!.prompt).toBe(plain.seen[0]!.prompt)
   })
 })
+
+describe('a review of declared evidence, not of a diff (#1251, 0108 §21)', () => {
+  const BASE = 'b'.repeat(40)
+  const items = [
+    { item: 'the importer takes the lock', evidence: 'src/importer.ts:12' },
+    { item: 'a test pins it', evidence: 'unit/importer.test.ts:30' },
+  ]
+  const check = { ...context, alreadyDone: { baseSha: BASE, items } }
+  const answer = (findings: unknown[]) => outcome({ text: JSON.stringify({ findings }) })
+
+  /** An action whose diff port records being asked: an empty diff is passed unread, so a check must never ask. */
+  function checking(reply: RunOutcome) {
+    const asked = { diff: 0 }
+    const runtime = reviewer(reply)
+    const action = createAgentAction(
+      { name: 'review', prompt: '' },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async () => {
+          asked.diff += 1
+          return ''
+        },
+        restore: async () => ({ untouched: true as const }),
+        settingsPath: '/tmp/settings.json',
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    )
+    return { action, runtime, asked }
+  }
+
+  it('dispatches the reviewer — it is not passed unread for want of a diff — and reads no diff', async () => {
+    const { action, runtime, asked } = checking(answer([]))
+    const result = await action.run(check)
+
+    expect(runtime.seen).toHaveLength(1)
+    expect(asked.diff).toBe(0)
+    expect(result.verdict).toBe('passed')
+    expect(result.evidence).not.toContain('the diff is empty')
+  })
+
+  it('hands it each item as written, the evidence for it and the base sha, and a session id of its own', async () => {
+    const { action, runtime } = checking(answer([]))
+    await action.run(check)
+
+    const prompt = runtime.seen[0]!.prompt
+    for (const i of items) {
+      expect(prompt).toContain(i.item)
+      expect(prompt).toContain(i.evidence)
+    }
+    expect(prompt).toContain(BASE)
+    expect(prompt).not.toContain('## The diff')
+    expect(runtime.seen[0]!.runId).toBe(`pass-abc:check:review:${BASE.slice(0, 7)}`)
+    expect(runtime.seen[0]!.runId).not.toBe(`pass-abc:review:review:${check.onSha.slice(0, 7)}`)
+  })
+
+  it('refuses with a finding per unmet item, each carrying the item as its failure scenario', async () => {
+    const { action } = checking(
+      answer([
+        {
+          file: 'src/importer.ts',
+          line: 12,
+          severity: 'major',
+          claim: 'no test pins the lock at the base',
+          failureScenario: 'a test pins it',
+        },
+      ]),
+    )
+    const result = await action.run(check)
+
+    expect(result.verdict).toBe('failed')
+    // Not demoted for lying outside a diff there is none of.
+    expect(result.findings).toMatchObject([{ severity: 'major', failureScenario: 'a test pins it' }])
+  })
+
+  it('reads an answer it cannot read as unreadable, never as accepted', async () => {
+    const { action } = checking(outcome({ text: 'looks fine to me' }))
+    const result = await action.run(check)
+
+    expect(result.verdict).toBe('failed')
+    expect(result.unreadable).toBe(true)
+  })
+})

@@ -7,6 +7,7 @@ import {
   claimTransition,
   closeChecks,
   closeTransition,
+  confirmSatisfiedTransition,
   continueTransition,
   finishTriageTransition,
   startTriageTransition,
@@ -14,6 +15,7 @@ import {
   reduceTicket,
   resolvedEvents,
   resolveWaitTransition,
+  satisfyTransition,
 } from '../src/ticket.ts'
 import type { Resolution } from '../src/wait.ts'
 import { aClaim, anAttemptRef, aResolution, aSplit, aTriageStart, aWait } from '../test/events.ts'
@@ -422,3 +424,74 @@ describe('startTriageTransition and finishTriageTransition', () => {
 function aWaitIdOther(): WaitId {
   return '77777777-7777-4777-8777-777777777777' as WaitId
 }
+
+describe('the satisfied ending (#1251, 0108 §21)', () => {
+  const SHA = 'a'.repeat(40)
+  const items = [{ item: 'it works', evidence: 'src/a.ts:1' }]
+  const input = { baseSha: SHA, bodyVersion: 3, items }
+  const satisfied = () => {
+    const t = item()
+    return reduceTicket([...aClaim(t, 'run-1'), t('TicketSatisfied', input)])
+  }
+  const unconfirmed = () => {
+    const t = item()
+    return reduceTicket([
+      ...aClaim(t, 'run-1'),
+      ...aWait(
+        t,
+        { _tag: 'SatisfiedUnconfirmed', run: anAttemptRef('run-1'), ...input, reading: 'every item is met' },
+        WAIT,
+      ),
+    ])
+  }
+
+  it('a TicketSatisfied ends the ticket satisfied, with the base and the body version', () => {
+    expect(satisfied().lifecycle).toEqual({ status: 'satisfied', baseSha: SHA, bodyVersion: 3 })
+  })
+
+  it('is one append with the end plan, and a second on a ticket already ended is refused', () => {
+    const plan = [{ type: 'EndActionsResolved', actor: 'conductor', data: { outcome: 'satisfied', actions: [] } }]
+    const first = satisfyTransition(claimed(), { ...input, ended: plan as never })
+    expect(first).toMatchObject({ ok: true })
+    if (first.ok) expect(first.events.map((e) => e.type)).toEqual(['TicketSatisfied', 'EndActionsResolved'])
+    expect(satisfyTransition(satisfied(), { ...input, ended: [] })).toEqual({
+      ok: false,
+      refusal: { reason: 'terminal', status: 'satisfied' },
+    })
+  })
+
+  it('is not claimable, and `lingtai close` refuses it', () => {
+    expect(claimTransition(satisfied(), base)).toMatchObject({ ok: false, refusal: { reason: 'not-claimable' } })
+    expect(closeChecks(satisfied(), {})).toEqual({ reason: 'satisfied' })
+  })
+
+  it('a person confirming a SatisfiedUnconfirmed appends the resolution, TicketSatisfied and the end plan, in that order', () => {
+    const state = unconfirmed()
+    const decided = confirmSatisfiedTransition(state, { waitId: WAIT, by: 'steven', note: '', ended: [] })
+    expect(decided).toMatchObject({ ok: true })
+    if (!decided.ok) return
+    expect(decided.events.map((e) => e.type)).toEqual(['WaitResolved', 'TicketSatisfied'])
+    expect(decided.events[1]).toMatchObject({ data: input })
+    expect(decided.events[0]).toMatchObject({ data: { resolution: { _tag: 'ConfirmSatisfied' } } })
+  })
+
+  it('refuses a confirmation for another wait, and for a wait that is not a SatisfiedUnconfirmed', () => {
+    expect(
+      confirmSatisfiedTransition(unconfirmed(), {
+        waitId: '22222222-2222-4222-8222-222222222222' as WaitId,
+        by: 'steven',
+        note: '',
+        ended: [],
+      }),
+    ).toMatchObject({ ok: false, refusal: { reason: 'not-blocked' } })
+    const t = item()
+    const other = reduceTicket([
+      ...aClaim(t, 'run-1'),
+      ...aWait(t, { _tag: 'NothingProduced', run: anAttemptRef('run-1'), said: null }, WAIT),
+    ])
+    expect(confirmSatisfiedTransition(other, { waitId: WAIT, by: 'steven', note: '', ended: [] })).toMatchObject({
+      ok: false,
+      refusal: { reason: 'not-offered' },
+    })
+  })
+})

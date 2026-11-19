@@ -201,6 +201,17 @@ export function resolveWaitHoldingEffect(
     const store = options.store ?? eventStore
     const note = options.note?.trim() ?? ''
 
+    // **A confirmation ends the ticket, so it is not a plain resolution** (#1251): `TicketSatisfied` and the recipe's
+    // `satisfied` end plan ride in the same append (`confirmSatisfiedEffect`), and a generic resolve would answer the
+    // wait and leave the ticket open. Refused by name here; the caller that offers the button is #1252's.
+    if (options.resolution._tag === 'ConfirmSatisfied')
+      return {
+        ok: false,
+        ticketId,
+        reason: 'confirm-satisfied',
+        detail: `confirming ${ticketId} as satisfied ends it, and is not a plain resolution — nothing was resolved.`,
+      }
+
     if (
       options.resolution._tag === 'FixRefusal' &&
       options.resolution.onSha &&

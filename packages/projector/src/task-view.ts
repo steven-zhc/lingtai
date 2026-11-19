@@ -296,6 +296,9 @@ export function taskStateOf(l: TicketLifecycle): TaskState {
       return 'approved'
     case 'landed':
       return 'landed'
+    // Beside `landed` until the board draws its own ending (#1252).
+    case 'satisfied':
+      return 'landed'
     case 'closed':
       return 'closed'
   }
@@ -343,7 +346,7 @@ function derive(taskId: string, t: TicketState): Derived {
     answer:
       answer === undefined ? null : JSON.stringify({ question: answer.question, answer: answer.answer, by: answer.by }),
     split: t.split === null ? null : JSON.stringify(t.split.children.map((c) => ({ key: c.key, number: c.number }))),
-    closed_at: l.status === 'landed' || l.status === 'closed' ? t.since : null,
+    closed_at: l.status === 'landed' || l.status === 'satisfied' || l.status === 'closed' ? t.since : null,
     attempts: t.claims.length,
     last_attempt_at: t.lastAttemptAt,
     newAttempts: t.newAttempts.at(-1)?.newAttempt ?? 0,
@@ -389,6 +392,8 @@ export function ticketNoteOf(before: TicketState, after: TicketState): Note {
         return { value: l.reason }
       case 'landed':
         return { value: l.mergeCommit }
+      case 'satisfied':
+        return { value: `already satisfied on ${l.baseSha}` }
       case 'approved':
         return {
           value:

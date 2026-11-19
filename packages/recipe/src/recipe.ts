@@ -1,4 +1,12 @@
-import { SEVERITIES, RuntimeId, JudgeWhen, type Step, isEventType, isRetiredEventType } from '@lingtai/domain'
+import {
+  SEVERITIES,
+  RuntimeId,
+  JudgeWhen,
+  RETIRED_JUDGE_WHEN,
+  type Step,
+  isEventType,
+  isRetiredEventType,
+} from '@lingtai/domain'
 import { PREFIX } from '@lingtai/env'
 /**
  * The recipe: `~/.lingtai/<project>/recipe.yml`, on this machine, its
@@ -107,7 +115,7 @@ export const ExtensionEnvNames = z
   })
 
 /** The outcomes `end` fires on, which is what `close:` and `labels:` filter by. */
-const WHEN = z.enum(['landed', 'blocked', 'failed', 'closed', 'any'])
+const WHEN = z.enum(['landed', 'blocked', 'failed', 'closed', 'satisfied', 'any'])
 
 /**
  * A command. Its exit code is the verdict, and `env` is every credential it
@@ -1308,6 +1316,25 @@ export const queuePlugin = definePlugin('queue', {
 export { JudgeWhen }
 
 /**
+ * A `judge:`'s `when:`, refused by name where the reason is one that no longer exists (0108 §21,
+ * #1250): `nothing-produced` was a run that committed nothing, and that is `AgentFailed` now — redone by
+ * rule, with no judge asked. Said before zod's own *invalid option*, which would not say why.
+ */
+const NamedJudgeWhen = z
+  .string()
+  .superRefine((name, ctx) => {
+    if ((RETIRED_JUDGE_WHEN as readonly string[]).includes(name)) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          `"${name}" is a retired reason — an implement that committed nothing is AgentFailed now (0108 §21), ` +
+          'redone by rule, so no judge is asked about it',
+      })
+    }
+  })
+  .pipe(JudgeWhen)
+
+/**
  * **The judges that spend nothing**, and the list is shorter than 0061 §3's
  * example on purpose.
  *
@@ -1417,7 +1444,7 @@ export const judgePlugin = definePlugin('judge', {
     /** A built-in, which spends nothing, or a runtime, which is a dispatch (`JudgeName`). */
     judge: JudgeName,
     /** The direction it answers. Required, undefaulted: one entry per `when:`. */
-    when: JudgeWhen,
+    when: NamedJudgeWhen,
     model: DISPATCH.model,
     limits: DISPATCH.limits,
   },
@@ -3503,6 +3530,12 @@ export const Recipe = z
               `steps.${step}'s "${action.name}" names the built-in judge \`merge-the-base\` for ` +
                 `\`when: ${action.when}\` — but it merges the base into the branch, which only ` +
                 'answers a `base-moved`. At any other direction it would silently mean nothing',
+            )
+          }
+          if (action.judge === 'check-the-evidence' && action.when !== 'already-done') {
+            refuse(
+              `steps.${step}'s "${action.name}" names the built-in judge \`check-the-evidence\` for ` +
+                `\`when: ${action.when}\` — but it only answers an \`already-done\``,
             )
           }
           for (const field of ['model', 'limits'] as const) {

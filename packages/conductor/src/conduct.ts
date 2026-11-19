@@ -87,7 +87,13 @@ import {
   personAsksFromState,
   ticketStream,
 } from '@lingtai/domain'
-import type { ProjectState } from '@lingtai/domain'
+import {
+  decideImplementOutcome,
+  doneWhenItems,
+  parseImplementOutcome,
+  type ImplementOutcome,
+  type ProjectState,
+} from '@lingtai/domain'
 import {
   continuationOf,
   grantCriterion,
@@ -260,6 +266,7 @@ import {
 } from './attempt-steps.ts'
 import {
   armForState,
+  alreadyDoneOf,
   conflictResolvedOf,
   diffBaseShaOf,
   landedOnBaseOf,
@@ -331,6 +338,7 @@ import {
   landTicketEffect,
   refuseDispatchEffect,
   releaseTicketEffect,
+  satisfyTicketEffect,
   type SplitChildState,
 } from './ticket/commands.ts'
 
@@ -678,7 +686,11 @@ export type AttemptSummary = {
 }
 
 export type RunOnceResult =
-  | { ok: true; ticketId: string; runId: string; mergeCommit: string; summary?: AttemptSummary }
+  /**
+   * `satisfied` is set where the base already held the work and a review checked it (#1251): nothing landed, and
+   * `mergeCommit` is then the base's sha the check was bound to.
+   */
+  | { ok: true; ticketId: string; runId: string; mergeCommit: string; satisfied?: true; summary?: AttemptSummary }
   /**
    * Reached the merge and stopped, because a person asked it to. Deliberately
    * not `ok: false` with a stage — nothing refused, and calling it a failure
@@ -1458,6 +1470,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             diffBaseSha: diffBaseShaOf(releasedEvents),
             landedOnBase: landedOnBaseOf(releasedEvents),
             conflictResolved: conflictResolvedOf(releasedEvents),
+            alreadyDone: alreadyDoneOf(releasedEvents),
             baseRed: { toSha: baseRead.at, fromSha: cause.baseSha, action },
             released: {
               by: 'release' as const,
@@ -1519,6 +1532,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           diffBaseSha: diffBaseShaOf(releasedEvents),
           landedOnBase: landedOnBaseOf(releasedEvents),
           conflictResolved: conflictResolvedOf(releasedEvents),
+          alreadyDone: alreadyDoneOf(releasedEvents),
           released: {
             by: 'release' as const,
             runId: releasedFrom.runId,
@@ -1584,6 +1598,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           diffBaseSha: diffBaseShaOf(runEvents),
           landedOnBase: landedOnBaseOf(runEvents),
           conflictResolved: conflictResolvedOf(runEvents),
+          alreadyDone: alreadyDoneOf(runEvents),
           released: {
             by: 'person' as const,
             runId: options.continuing.runId,
@@ -1739,6 +1754,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         diffBaseSha: diffBaseShaOf(runEvents),
         landedOnBase: landedOnBaseOf(runEvents),
         conflictResolved: conflictResolvedOf(runEvents),
+        alreadyDone: alreadyDoneOf(runEvents),
       }
     })
 
@@ -3730,13 +3746,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const declared = judgeDeclaredAt(recipe.steps.proposed, on.when)
         if (declared === null) return Effect.succeed({ noJudge: true })
         if ('built' in declared) return Effect.succeed(declared)
-        // The ticket is shown for `nothing-produced` alone (#1198): *is it unclear* cannot be
-        // judged without it, and every other reason's prompt must not grow by a body.
-        const shown: Judging =
-          on.when === 'nothing-produced'
-            ? { ...on, ticket: took === null ? null : { title: took.ticket.title, body: took.ticket.body } }
-            : on
-        return askTheAgent(declared, shown)
+        return askTheAgent(declared, on)
       }
 
       /** `end` — the work item's own stream, read this late on purpose. */
@@ -5098,7 +5108,30 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // Kept now, on `HEAD`, before any step after this one reads the worktree (`#1243`).
             yield* keepUncommittedWork()
             const cause = outcome.failure.kind
+            // What the cut-off run left, WIP included, so the stored outcome keeps the receipt (#1250).
+            const left = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+            const kept = left === startedAt ? {} : { head: left }
+            // **An abnormal ending is decided like any other outcome** (0108 §21): a budget or a wall is
+            // `AgentFailed`, redone by rule. A crash keeps its cell, which `rerunInPlace` redoes.
+            const failedRun =
+              cause === 'crash' || cause === 'no-commits' || cause === 'no-structured-answer'
+                ? null
+                : decideImplementOutcome({
+                    declared: null,
+                    endedAbnormally: true,
+                    startedAt,
+                    head: left,
+                    findingsOffered: 0,
+                  })
+            if (failedRun !== null) {
+              return {
+                stopped: `${outcome.failure.kind}: ${outcome.failure.detail}`,
+                declared: failedRun,
+                ...kept,
+              }
+            }
             return {
+              ...kept,
               stopped: `${outcome.failure.kind}: ${outcome.failure.detail}`,
               // Neither word is one this dispatch's own runtime ever reports
               // (`no-commits` is `head === startedAt`'s own check, two lines
@@ -5136,25 +5169,49 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // commit of its own cannot stand in for one. An agent that ran and committed
           // nothing left no receipt, and the pass stops rather than buying a round to
           // fix a diff that does not exist.
-          if (head === startedAt) {
-            // `StepDidNotFinish` at `implement`, named for itself (`#468`): the
-            // ticket's own second case, and the one `#237` was.
-            stoppedBy = 'no-commits'
-            // The agent's own last message is the evidence (#1198): it is what a judge
-            // declared at `nothing-produced` reads. A silent agent leaves it empty, so
-            // `said` is null and no judge is paid to read nothing.
-            return { stopped: (outcome.text ?? '').trim().slice(0, 8_000), committedNothing: true }
+          // **What the agent declared decides, and the head only corrects it** (0108 §21, #1250): an
+          // `Implemented` that moved nothing is `AgentFailed`, and so is a final message that declared
+          // nothing parseable. The sha it is measured from is the step's first start, never this run's.
+          // **`AlreadyDone` is decided against the body this attempt claimed** (#1251): the text the prompt pasted,
+          // read from this pass's own claim and never fetched again, and its version is that claim's. Without a
+          // version the check could not name what it read, so it is not offered.
+          const claimedBody = took?.ticket.body ?? brief.ticket.body
+          const claimedAt = took?.claimVersion
+          const decidedRaw = decideImplementOutcome({
+            declared: parseImplementOutcome(outcome.text ?? null),
+            endedAbnormally: false,
+            startedAt,
+            head,
+            findingsOffered: 0,
+            doneWhen: doneWhenItems(claimedBody),
+            offersAlreadyDone: claimedAt !== undefined,
+          })
+          const decided: ImplementOutcome =
+            decidedRaw._tag === 'AlreadyDone' && claimedAt !== undefined
+              ? { ...decidedRaw, baseSha: continuation?.diffBaseSha ?? tree.baseSha, bodyVersion: claimedAt }
+              : decidedRaw
+          const moved = head !== startedAt
+          // `keepUncommittedWork` still reads *no commits* where nothing moved (#1243).
+          stoppedBy = moved ? null : 'no-commits'
+          if (moved) yield* recordDiff(branch, head)
+          // Completion is proposed only for what the agent declared `Implemented`; a run that is
+          // `AgentFailed` or `Unclear` has not offered finished work, and no check follows it.
+          if (decided._tag === 'Implemented') {
+            yield* appendNow(runId, [
+              {
+                type: 'RunProposedCompletion',
+                actor: 'conductor',
+                data: parsePayload('RunProposedCompletion', { headSha: head }),
+              },
+            ])
           }
-          // A receipt, so `interrupted` stands for nothing any more.
-          stoppedBy = null
-          yield* recordDiff(branch, head)
-          yield* appendNow(runId, [
-            {
-              type: 'RunProposedCompletion',
-              actor: 'conductor',
-              data: parsePayload('RunProposedCompletion', { headSha: head }),
-            },
-          ])
+          if (decided._tag !== 'Implemented') {
+            return {
+              stopped: (outcome.text ?? '').trim().slice(0, 8_000),
+              declared: decided,
+              ...(moved ? { head } : {}),
+            }
+          }
           return { committed: head }
         })
 
@@ -5223,9 +5280,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               } as const)
             : findings.length > 0
               ? ({ on: 'findings', findings } as const)
-              : again.said != null
-                ? ({ on: 'unfinished', said: again.said, why: again.why } as const)
-                : ({ on: 'output', output: said } as const)
+              : ({ on: 'output', output: said } as const)
+          // How many findings the fixer is shown, which is the range a `Disputed` may name: a
+          // refusal that is one command's output, or a merge's, is finding 1 (#1250).
+          const offered =
+            refusal.on === 'output'
+              ? 1
+              : refusal.on === 'conflict'
+                ? Math.max(1, refusal.findings.length)
+                : refusal.findings.length
 
           // Keyed on where the fix came from and not on `refusal`: a conflict round
           // keeps its own session id whichever brief it was given.
@@ -5280,7 +5343,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     refusal,
                     round: counted,
                     of: bound,
-                    action: refusal.on === 'unfinished' ? 'implement' : from,
+                    action: from,
                     diff: underReview.text,
                     ...(underReview.from === null || underReview.to === null
                       ? {}
@@ -5404,26 +5467,53 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // **Nor a fixer that committed and then met the account's wall** (#1205): it is released `AccountLimit`
           // at the ending like any run the wall cut off, never walked on to a review.
           const cutOffByWall = fixed.failure?.kind === 'crash' && wallOf(fixed.failure.detail) !== null
-          if (!committed || cutOffTransient || cutOffByWall) {
+          // **What the fixer declared decides, and the head only corrects it** (#1250), for a run that
+          // ended normally. One cut off keeps the cells above: `interrupted` names the runtime's cause.
+          const roundStart = brief.context.redo?.startedAt ?? brief.context.onSha
+          // **A fixer cut off by its budget is `AgentFailed`, whatever it committed first** (0108 §21,
+          // #1250): the commit is not the end of the round. A crash keeps its cell, which the walk reruns.
+          const failedKind = fixed.failure?.kind
+          const budgetEnded =
+            failedKind !== undefined &&
+            failedKind !== 'crash' &&
+            failedKind !== 'no-commits' &&
+            failedKind !== 'no-structured-answer'
+          const decidedFix =
+            fixed.failure == null || budgetEnded
+              ? decideImplementOutcome({
+                  declared: fixed.failure == null ? parseImplementOutcome(fixed.text) : null,
+                  endedAbnormally: budgetEnded,
+                  startedAt: roundStart,
+                  head: after,
+                  findingsOffered: offered,
+                })
+              : null
+          if (
+            !committed ||
+            cutOffTransient ||
+            cutOffByWall ||
+            budgetEnded ||
+            (decidedFix !== null && decidedFix._tag !== 'Implemented')
+          ) {
             // A decline judged the findings or the refusal rather than being cut
             // off mid-run, so `interrupted` does not stand for it either; a
             // crash or a wall does, in the runtime's own word for it (`#468`).
             stoppedBy = fixed.failure ? fixed.failure.kind : null
             yield* keepUncommittedWork()
             const cause = fixed.failure?.kind
+            // The head the round left, WIP included, kept on the stored outcome (#1250).
+            const left = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+            const kept = left === roundStart ? {} : { head: left }
             return {
+              ...kept,
               stopped: fixed.failure
                 ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
                   'so there is nothing new for the review to read'
                 : (fixSaid ?? 'the fixing agent committed nothing, so there is nothing new for the review to read'),
-              // **`committed` false and no `failure`** is the fixer reading the
-              // findings and declining, not crashing — the `commit
-              // Completed{head: null, question: null}` cell rather than
-              // `Interrupted`. `never-started` cannot reach here (handled
-              // above), and `no-commits`/`no-structured-answer` are never this
-              // agent's own failure kind.
-              ...(cause === undefined
-                ? { committedNothing: true }
+              // **`committed` false and no `failure`** is the fixer declaring something other than
+              // `Implemented`; a crash is `Interrupted` for the walk to rerun; a budget is `AgentFailed`.
+              ...(budgetEnded || cause === undefined
+                ? { declared: decidedFix! }
                 : cause === 'no-commits' || cause === 'no-structured-answer'
                   ? {}
                   : { interrupted: cause }),
@@ -5669,6 +5759,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         bodies: passBodies,
         ceilings,
         judge,
+        // A parent after a split ends `satisfied` the moment its check passes; any other ticket waits to be confirmed (#1251).
+        splitParent: reduced.split !== null,
         mergeBase,
         stepRedoWaits: options.stepRedoWaits,
         headNow: () =>
@@ -5716,6 +5808,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   ? { conflict: continuation.conflict }
                   : {}),
                 ...(continuation.conflictResolved !== null ? { conflictResolved: continuation.conflictResolved } : {}),
+                ...(continuation.alreadyDone !== null ? { alreadyDone: continuation.alreadyDone } : {}),
                 ...(continuation.released?.rerun.for != null
                   ? {
                       redo: {
@@ -6027,6 +6120,57 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         yield* noteAllKept(branch)
         didLand = true
         return { ok: true, ticketId, runId, mergeCommit: merged, summary: summaryOf() } satisfies RunOnceResult
+      }
+
+      // ---- satisfied: the base already held the work (#1251, 0108 §21) ----------
+      // A split parent whose check passed ends here at once, in the one append `landTicketEffect` makes for a
+      // landing. Nothing is merged and no lane is used. The ticket ending is refused by the reducer's own transition
+      // when it has already ended, and a stream that moved is a person's: the walk's end is then held, not lost.
+      if (pass.end._tag === 'Satisfied') {
+        const done = pass.end
+        const ended = yield* remembered(
+          satisfyTicketEffect(
+            ticketId,
+            { baseSha: done.baseSha, bodyVersion: done.bodyVersion, items: [...done.items], endPlan },
+            store,
+            ticketSnapshots,
+          ),
+        )
+        if (ended.ok) {
+          endResolved = endPlan
+          released = true
+          yield* tellGitHubAboutEffect({
+            store,
+            github: options.client,
+            ticketId,
+            ...ticketSnapshots,
+            labels: labelsFor('landed'),
+            editEnded: true,
+            appended: endResolved,
+          })
+          log(`satisfied on ${done.baseSha.slice(0, 7)}: the base already held the work`)
+          didLand = true
+          return {
+            ok: true,
+            ticketId,
+            runId,
+            mergeCommit: done.baseSha,
+            satisfied: true,
+            summary: summaryOf(),
+          } satisfies RunOnceResult
+        }
+        const why = 'refusal' in ended ? `the ticket had already ended (${ended.refusal.reason})` : 'the stream moved'
+        log(`satisfied was not recorded: ${why}`)
+        runLog.note('end', `satisfied was not recorded: ${why}`)
+        yield* release(`the satisfied ending was not recorded: ${why}`)
+        return {
+          ok: false,
+          ticketId,
+          runId,
+          stage: 'satisfied-refused',
+          detail: why,
+          summary: summaryOf(),
+        } satisfies RunOnceResult
       }
 
       // ---- requeued: the base is red (#1208, 0108 §13) --------------------------

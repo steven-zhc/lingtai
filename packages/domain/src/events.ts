@@ -25,7 +25,7 @@ import { z } from 'zod'
 import { StepOutcome, WaitId } from './action.ts'
 import { RequeueCause } from './attempt-next.ts'
 import { PromptRefEntry } from './prompt-ref.ts'
-import { JudgeWhen } from './proposal.ts'
+import { StoredJudgeWhen } from './proposal.ts'
 import { StoredProposal, copiedFieldsOf } from './proposal.ts'
 import { RouteOffer, JudgeReply, RouteDecision } from './routing.ts'
 import { Usage } from './spend.ts'
@@ -548,6 +548,19 @@ export const TicketLinked = z.object({
 export const TicketLanded = z.object({ mergeCommit: z.string(), base: z.string() })
 
 /**
+ * The work was already on the base, and a review checked each `## Done when` item against the
+ * evidence at that base's sha (#1251, 0108 §21): a terminal like `landed`, with nothing landed.
+ * `bodyVersion` is the version of the claimed body the items were read from.
+ *
+ * @summary A ticket ended satisfied by what the base already held.
+ */
+export const TicketSatisfied = z.object({
+  baseSha: z.string(),
+  bodyVersion: z.number().int(),
+  items: z.array(z.object({ item: z.string(), evidence: z.string() })),
+})
+
+/**
  * A person decided nobody is going to do this — the second terminal, and the
  * first one that is not an outcome of work (#151).
  *
@@ -666,7 +679,7 @@ export const SpentFor = z.discriminatedUnion('_tag', [
     round: z.number().int().nonnegative(),
     grant: WaitId.optional(),
   }),
-  z.object({ _tag: z.literal('Judge'), when: JudgeWhen }),
+  z.object({ _tag: z.literal('Judge'), when: StoredJudgeWhen }),
   z.object({ _tag: z.literal('Triage'), waitId: WaitId }),
   z.object({ _tag: z.literal('Discussion') }),
 ])
@@ -1275,7 +1288,7 @@ export const EndActionsResolved = z.object({
    * test found rather than a reader, which is the argument for the enum being
    * here at all.
    */
-  outcome: z.enum(['landed', 'blocked', 'failed', 'closed']),
+  outcome: z.enum(['landed', 'blocked', 'failed', 'closed', 'satisfied']),
   /**
    * `refs` is the third, and it is the one that **deletes** (`#240`): the
    * `agent/<n>-attempt-<k>` refs a landed ticket's abandoned approaches left on
@@ -2721,6 +2734,7 @@ export const EVENTS = {
   SplitFailed,
   TicketLinked,
   TicketLanded,
+  TicketSatisfied,
   TicketClosed,
   DispatchRefused,
   RunStarted,
@@ -2830,6 +2844,7 @@ export const EVENT_AT = {
   SplitFailed: ['outside'],
   TicketLinked: [],
   TicketLanded: ['merge', 'end'],
+  TicketSatisfied: ['review', 'end'],
   TicketClosed: ['outside'],
   DispatchRefused: ['claim'],
   RunStarted: [...AGENT_STEPS],

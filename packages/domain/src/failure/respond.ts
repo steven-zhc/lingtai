@@ -613,6 +613,17 @@ export function rerunInPlace(
 }
 
 /**
+ * **Whether an `implement` that declared nothing usable — `AgentFailed` — is redone, and after how
+ * long** (0108 §21, #1250): by rule, bounded by `BOUNDS.stepRedos` like any other redo of a step,
+ * and null once `spent` has used them, when the wait stands for a person.
+ */
+export function redoAgentFailed(spent: number): { readonly wait: (typeof BOUNDS.stepRedoWaits)[number] } | null {
+  if (spent >= BOUNDS.stepRedos) return null
+  const wait = BOUNDS.stepRedoWaits[spent]
+  return wait === undefined ? null : { wait }
+}
+
+/**
  * **Whether a setup a registry refused is run again in place, and after how long** (0108 §18,
  * #1224): null when the output is on no registry row, or when `spent` has used the attempt's
  * `BOUNDS.stepRedos`. The wait is the one a crash's count would get.
@@ -781,10 +792,9 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       break
     }
     case 'NothingProduced': {
-      // 0108 §18: the implementer's own last message is the criterion, as for
-      // `FixerDisagrees`. Said nothing, and no judge is paid to read nothing.
-      const hasCriterion = proposal.said !== null && proposal.said.trim() !== ''
-      round('fix-lines', 'implement', hasCriterion)
+      // Retired (0108 §21, #1250): nothing proposes it any more, but a wait on the log may
+      // still be answered. It offers no round — it is `AgentFailed` now, and a rule's.
+      round('fix-lines', 'implement', false)
       restart(false)
       break
     }
@@ -810,6 +820,20 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       const hasCriterion = proposal.output.trim() !== ''
       round('fix-lines', 'implement', hasCriterion)
       restart(hasCriterion)
+      break
+    }
+    case 'AlreadyDone': {
+      // #1251, 0108 §18: the check is a rule's, free, and the only move: there is no criterion yet,
+      // so no fix round and no restart is offered, and a person is the floor.
+      available.push({
+        id: 'check-done',
+        next: {
+          _tag: 'CheckDone',
+          baseSha: proposal.baseSha,
+          bodyVersion: proposal.bodyVersion,
+          items: proposal.items,
+        },
+      })
       break
     }
     case 'BudgetExhausted': {
@@ -866,7 +890,6 @@ export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
   'setup-refused': null,
   'check-refused': null,
   'answer-unreadable': null,
-  'nothing-produced': null,
   'fixer-disagrees': null,
   'merge-refused': null,
   'budget-exhausted': null,
@@ -875,6 +898,8 @@ export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
   // Free and mechanical: the base moved on the branch's own files, so merge it in
   // and build and review again (#593). Bounded by `BOUNDS.baseBranchMerges`, not by a judge.
   'base-moved': 'merge-the-base',
+  // The check of the declared evidence is a rule's move (`check-done`), taken before any judge (#1251).
+  'already-done': 'check-the-evidence',
 }
 
 // ─── What follows a cause (0108 §6) ───

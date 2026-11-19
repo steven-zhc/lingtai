@@ -46,7 +46,7 @@ import type {
   ComposedPrompt,
   WaitId,
 } from '@lingtai/domain'
-import type { RuntimeId, TriageQuestion } from '@lingtai/domain'
+import type { ImplementOutcome, RuntimeId, TriageQuestion } from '@lingtai/domain'
 import { context as otelContext } from '@opentelemetry/api'
 import { Cause, Effect } from 'effect'
 
@@ -306,17 +306,12 @@ interface ActionResultFields {
    */
   interrupted?: InterruptedCause
   /**
-   * **The work action ran and left no commit, as a fact rather than a
-   * sentence** (`#466`). Absent everywhere else, including on a kept `run:`'s
-   * own "nothing to commit" — that one is a `passed` verdict already
-   * (`kept-run-action.ts`), and this field exists only to tell apart the two
-   * `did-not-finish`s that string has meant since 0120 §1 was written:
-   * *the hook was never wired* (`NotDone`, nothing ran) and *the agent ran and
-   * committed nothing* (`commit Completed{head: null, question: null}`,
-   * `changedNothing`'s own cell). Reading the sentence to tell them apart is
-   * what 0031 §1 forbids; this is the token instead.
+   * **What the agent declared** (0108 §21, #1250), carried on the work action's result: `Implemented`
+   * on its `passed` with a `head`, and `AgentFailed`, `Disputed` or `Unclear` on a `did-not-finish`
+   * (an `Unclear` may carry the `head` it left). The stored outcome is built from it, so a work-action
+   * adapter must set it. Absent on every other action, including a kept `run:`'s own "nothing to commit".
    */
-  committedNothing?: true
+  declared?: ImplementOutcome
   /**
    * **The merge lane's own commit on the base branch** — absent on every
    * result but the lane's `passed` (`#466`). `evidence` has carried it since
@@ -606,6 +601,16 @@ export interface ActionContext {
     readonly branchSha?: string
   }
   /**
+   * **The review runs on evidence, not on a diff** (#1251, 0108 §18, §21): `implement` declared the
+   * work already on the base. The agent action reads no diff and is handed each `## Done when` item
+   * the body carries, the evidence the implementer gave for it, and the base's sha to judge them at.
+   * Absent on every review but the one an `already-done` route buys. A fact about this run.
+   */
+  alreadyDone?: {
+    readonly baseSha: string
+    readonly items: readonly { readonly item: string; readonly evidence: string }[]
+  }
+  /**
    * The merge the conductor started in the worktree before a conflict round's
    * agent began (#1120): `MERGE_HEAD` and the markers are standing. Replaced or
    * cleared by the next fix round or base merge. A fact about this run.
@@ -802,8 +807,8 @@ export interface PipelineResult {
     locator?: string
     /** How an agent action was cut off, where one was. `ActionResult.interrupted`. */
     interrupted?: InterruptedCause
-    /** The work action ran and left no commit, where that happened. `ActionResult.committedNothing`. */
-    committedNothing?: true
+    /** What the agent declared, `Implemented` included. `ActionResult.declared`. */
+    declared?: ImplementOutcome
     /** The three fields a real conflict carries, where the lane refused with one. `ActionResult.conflict`. */
     conflict?: { paths: string[]; baseSha: string; headSha: string }
     /** The files and shas of a base that moved on the branch's own, where the lane refused with that. `ActionResult.baseMoved`. */
@@ -1179,7 +1184,7 @@ export function runActionPipelineEffect(options: PortPipelineOptions): Effect.Ef
         // Spread for `head`'s reason a seventh time: *the agent ran and left no
         // commit* and *nothing ran at all* are different facts and only the
         // work action's own result can tell them apart (`#466`).
-        ...(result.committedNothing === undefined ? {} : { committedNothing: result.committedNothing }),
+        ...(result.declared === undefined ? {} : { declared: result.declared }),
         // Spread for `head`'s reason an eighth time: the merge lane's own commit,
         // carried the way `worktree:`'s `head` is (`#466`).
         ...(result.merged === undefined ? {} : { merged: result.merged }),
