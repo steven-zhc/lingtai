@@ -745,10 +745,11 @@ export function daemonCommand(
               for (const [project, triage] of recipes) yield* scanTriage(project, triage)
               // A continuation a failed request left unasked-for is asked again here, only for the projects this
               // turn looked at; the `control.continuing` row is the guard beside a live one (#1282).
-              // Asked again after the turn: a pause or a shutdown requested while it ran must stop this append too.
+              // Asked again after the turn: a pause, a shutdown request or a SIGINT/SIGTERM drain while it ran must stop this append too.
               const stoppedAfterTurn = yield* claiming
               const shutdownAfterTurn = (yield* controlRead().pipe(Effect.orDie)).shutdown
-              if (stoppedAfterTurn === null && !shutdownAfterTurn) {
+              // A signal drains without a control-stream shutdown, so the daemon's own flags are asked too.
+              if (stoppedAfterTurn === null && !shutdownAfterTurn && !stopping.draining && !stopping.stopping) {
                 yield* catchUpRegisteredContinuations(
                   [...recipes.keys()].map((project) => ({ project })),
                   daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
