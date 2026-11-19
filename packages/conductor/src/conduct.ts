@@ -42,6 +42,7 @@ import {
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
 import {
+  type Envelope,
   type PayloadOf,
   type SpentFor,
   type TicketState,
@@ -811,7 +812,13 @@ export const continuationSpent = (run: AttemptState) => ({
  * resolution carries is the one the continuation records itself, so once it has there is one spend, and before it has
  * this says it alone, whatever restarts between the append and the effect.
  */
-export const continuationSpentWithTriage = (run: AttemptState, ticket: TicketState, runId: string) => {
+export const continuationSpentWithTriage = (
+  run: AttemptState,
+  ticket: TicketState,
+  runId: string,
+  runEvents: readonly Envelope[],
+) => {
+  const personRounds = personFixRoundsOf(ticket, runId, runEvents)
   const own = continuationSpent(run)
   const triage = triageSpentOf(ticket, runId)
   return {
@@ -819,11 +826,11 @@ export const continuationSpentWithTriage = (run: AttemptState, ticket: TicketSta
     conflictRounds: Math.max(own.conflictRounds, triage.conflictResolutions),
     stepRedos: Math.max(own.stepRedos, triage.stepRedos),
     // `triage.refusalFixes` is in the allowance's units (a person's rounds taken out), `implementRound` is the round counter.
-    rounds: Math.max(run.implementRound, triage.refusalFixes + personFixRoundsOf(ticket, runId)),
+    rounds: Math.max(run.implementRound, triage.refusalFixes + personRounds),
     /** The refusal fixes the allowance has spent: a person's `FixRefusal` rounds are not among them. */
-    refusalFixes: Math.max(run.implementRound - personFixRoundsOf(ticket, runId), triage.refusalFixes, 0),
+    refusalFixes: Math.max(run.implementRound - personRounds, triage.refusalFixes, 0),
     /** A person's fix rounds inside `rounds`: the allowance is judged without them. */
-    personRounds: personFixRoundsOf(ticket, runId),
+    personRounds,
   }
 }
 
@@ -1422,7 +1429,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               : { cannot: `the saved head ${cause.headSha.slice(0, 7)} of ${branch} is no longer on origin` }
           const releasedEvents = yield* Effect.promise(() => store.read(releasedFrom.runId))
           const releasedState = reduceAttempt(releasedEvents)
-          const spent = continuationSpentWithTriage(releasedState, reduced, releasedFrom.runId)
+          const spent = continuationSpentWithTriage(releasedState, reduced, releasedFrom.runId, releasedEvents)
           const ticketEvents = yield* Effect.promise(() => store.read(ticketId))
           const releases = releasesOf(ticketEvents, releasedFrom.runId, 'BaseRed')
           const accountReruns =
@@ -1477,7 +1484,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const releasedEvents = yield* Effect.promise(() => store.read(releasedFrom.runId))
         const releasedState = reduceAttempt(releasedEvents)
         const head = releasedHeadOf(releasedEvents)
-        const spent = continuationSpentWithTriage(releasedState, reduced, releasedFrom.runId)
+        const spent = continuationSpentWithTriage(releasedState, reduced, releasedFrom.runId, releasedEvents)
         // Each lift is one release naming this run, so this rerun's number among them is their count.
         const releases = accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), releasedFrom.runId)
         // A person's rerun of this attempt is a rerun too: its dispatch id is its own (#1218).
@@ -1546,7 +1553,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const step = rerunStepOf(reason)
         if (step === null) return null
         const head = releasedHeadOf(runEvents)
-        const spent = continuationSpentWithTriage(runState, reduced, options.continuing.runId)
+        const spent = continuationSpentWithTriage(runState, reduced, options.continuing.runId, runEvents)
         const accountReruns =
           accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), options.continuing.runId) +
           personRerunsOf(waitsFromState(reduced), options.continuing.runId)
@@ -1606,7 +1613,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           'run' in wait.reason &&
           wait.reason.run.runId === options.continuing!.runId,
       )
-      const spentNow = continuationSpentWithTriage(runState, reduced, options.continuing.runId)
+      const spentNow = continuationSpentWithTriage(runState, reduced, options.continuing.runId, runEvents)
       const grantedBy = byTriage.has(approvedWaitId) ? 'triage' : 'person'
       // A conflict resolution triage made spends `conflictResolutions` alone: its implement visit re-opens the current
       // round, so `StepStarted` does not raise `implementRound` and no refusal fix is counted (#1258).

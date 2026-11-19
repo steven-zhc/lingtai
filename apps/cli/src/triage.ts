@@ -357,7 +357,7 @@ export const catchUpTriageContinuations = (project: string, deps: CatchUpTriageP
       if (tag !== 'FixRefusal' && tag !== 'RedoStep') continue
       const unscheduled = yield* requestContinuation(
         deps.store as EventStore,
-        'triage',
+        'conductor',
         project,
         card.issue,
         life.runId,
@@ -877,6 +877,7 @@ const readActContext = (
     const limits = read ?? { refusalFixes: 0, conflictResolutions: 0, newAttempts: 0 }
     const runId = state.lifecycle.status === 'blocked' ? state.lifecycle.runId : null
     const run = runId === null ? null : yield* readThroughSnapshot(deps.store, attemptReducer, runId, 'all', deps)
+    const runEvents = runId === null ? [] : yield* lift(() => deps.store.read(runId))
     const spent =
       runId === null ? { refusalFixes: 0, conflictResolutions: 0, stepRedos: 0 } : triageSpentOf(state, runId)
     const counters = {
@@ -884,7 +885,7 @@ const readActContext = (
       // continuation does not raise `implementRound`, and a mechanically routed conflict never did, so nothing is subtracted.
       refusalFixes: {
         used: Math.max(
-          (run?.implementRound ?? 0) - (runId === null ? 0 : personFixRoundsOf(state, runId)),
+          (run?.implementRound ?? 0) - (runId === null ? 0 : personFixRoundsOf(state, runId, runEvents)),
           spent.refusalFixes,
           0,
         ),
@@ -1487,7 +1488,7 @@ const waitTriageWithin = (
               if (parsed !== null) {
                 const unscheduled = yield* requestContinuation(
                   deps.store,
-                  'triage',
+                  'conductor',
                   parsed.project,
                   parsed.issue,
                   runId,
