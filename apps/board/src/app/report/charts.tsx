@@ -9,7 +9,7 @@
  * Series colours come from `--s1`–`--s6` and `--muted` only (`lib/report.ts`):
  * amber, red and green are the board's states and no series wears them.
  */
-import type { LandingDay, Report, RoundBucket, SpendDay, SurvivalStep } from '@lingtai/conductor/report'
+import type { LandingDay, Money, Report, RoundBucket, SpendDay, SurvivalStep } from '@lingtai/conductor/report'
 
 import {
   axisFor,
@@ -211,9 +211,23 @@ export function SpendPanel({ days }: { days: SpendDay[] }) {
             const i = purposeSeriesOf(p.purpose)
             bySeries.set(i, (bySeries.get(i) ?? 0) + centsOf(p.money) / 100)
           }
+          // One line per legend entry, so Triage and Discussion read as the one *triage* the legend shows.
+          const named = new Map<number, Money>()
+          for (const p of d.byPurpose) {
+            const i = purposeSeriesOf(p.purpose)
+            const m = named.get(i) ?? { reportedCents: 0, estimatedCents: 0, unknown: 0 }
+            named.set(i, {
+              reportedCents: m.reportedCents + p.money.reportedCents,
+              estimatedCents: m.estimatedCents + p.money.estimatedCents,
+              unknown: m.unknown + p.money.unknown,
+            })
+          }
+          const lines = [...named]
+            .sort(([a], [b]) => a - b)
+            .map(([i, m]) => `${PURPOSE_SERIES[i]!.name}: ${moneyText(m)}`)
           return {
             label: d.day.slice(5),
-            tip: [d.day, ...d.byPurpose.map((p) => `${p.purpose}: ${moneyText(p.money)}`), `day: ${moneyText(d)}`],
+            tip: [d.day, ...lines, `day: ${moneyText(d)}`],
             segs: [...bySeries].map(([series, value]) => ({ series, value })),
           }
         })}

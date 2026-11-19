@@ -20,3 +20,9 @@ const CAUSES: Record<Cause['_tag'], CausePresentation> = {
 export function presentCause(cause: Cause | AdvisedCause): CausePresentation {
   return CAUSES[cause._tag]
 }
+
+/** A cause tag as the page says it: no tag is *not triaged*, and a tag with no entry shows itself. */
+export function causeLabel(tag: string | null): string {
+  if (tag === null) return 'not triaged'
+  return (CAUSES as Record<string, CausePresentation | undefined>)[tag]?.label ?? tag
+}

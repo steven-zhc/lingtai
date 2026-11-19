@@ -31,6 +31,7 @@ import {
   pageHandled,
   shareWithoutYou,
   TICK_LIMIT,
+  waitReasonText,
   whenText,
   windowText,
 } from '@/lib/handled.ts'
@@ -49,6 +50,7 @@ import {
   type HandledQuery,
   type ReportQuery,
 } from '@/lib/report.ts'
+import { causeLabel } from '@/lib/triage-cause.ts'
 
 import { Empty } from './charts.tsx'
 
@@ -214,7 +216,7 @@ export function WhereItWentPanel({ byPurpose }: { byPurpose: Report['spend']['by
             strokeWidth="1.5"
           />
         ))}
-        <text x="90" y="86" textAnchor="middle" style={{ font: '600 20px var(--mono)', fill: 'var(--ink)' }}>
+        <text x="90" y="86" textAnchor="middle" style={{ font: '600 17px var(--mono)', fill: 'var(--ink)' }}>
           {total === 0 ? '—' : dollars(total)}
         </text>
         <text x="90" y="106" textAnchor="middle" style={{ font: '11px var(--mono)', fill: 'var(--muted)' }}>
@@ -279,7 +281,7 @@ export function WaitsPanel({ cells }: { cells: WaitCauseCell[] }) {
             {causes.map((c) => (
               <th key={c ?? 'none'} className="c">
                 {/* The null column is both untriaged waits and waits triaged without an advised cause. */}
-                {c ?? 'no triage cause'}
+                {causeLabel(c)}
               </th>
             ))}
             <th className="num">total</th>
@@ -288,7 +290,7 @@ export function WaitsPanel({ cells }: { cells: WaitCauseCell[] }) {
         <tbody>
           {ordered.map((r) => (
             <tr key={r}>
-              <td className="rl">{r}</td>
+              <td className="rl">{waitReasonText(r)}</td>
               {causes.map((c) => (
                 <td key={c ?? 'none'} className="cell" style={shade(at(r, c), max)}>
                   {at(r, c) || '·'}

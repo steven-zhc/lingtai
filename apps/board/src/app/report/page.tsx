@@ -31,30 +31,10 @@ import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
 import { FooterFetched } from '../footer-fetched'
-import { LandingsPanel, RoundsPanel, SpendPanel, SurvivalPanel, kindsOfReport } from './charts.tsx'
-import { Filters, HandledPanel, KindsPanel, Tiles, TopPanel, WaitsPanel, WhereItWentPanel } from './panels.tsx'
+import { ReportGrid } from './grid.tsx'
+import { Filters, HandledPanel, Tiles } from './panels.tsx'
 
 export const dynamic = 'force-dynamic'
-
-function Panel({
-  title,
-  sub,
-  wide,
-  children,
-}: {
-  title: string
-  sub: string
-  wide?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <div className={`rp-panel${wide ? ' wide' : ''}`}>
-      <h2>{title}</h2>
-      <p className="sub">{sub}</p>
-      {children}
-    </div>
-  )
-}
 
 export default async function ReportPage({ searchParams }: { searchParams: Promise<ReportParams> }) {
   const query = reportQuery(await searchParams, new Date())
@@ -131,43 +111,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
             <>
               <Tiles report={report} day={await dayReading} query={query} />
               <HandledPanel handled={report.handled} spend={report.spend.total} query={query} problems={problems} />
-              <section className="rp-grid">
-                <Panel
-                  title="Fix rounds per landed ticket"
-                  sub="how many times review sent the work back before it landed · by kind"
-                >
-                  <RoundsPanel buckets={report.roundBuckets} kinds={kindsOfReport(report)} />
-                </Panel>
-                <Panel title="Reviews needed to pass" sub="share of tickets not yet passed after each review">
-                  <SurvivalPanel steps={report.survival} />
-                </Panel>
-                <Panel
-                  title="Spend"
-                  sub="every run in the window · by purpose · solid is reported, pale is estimated"
-                  wide
-                >
-                  <div className="sw-sub">by purpose</div>
-                  <WhereItWentPanel byPurpose={report.spend.byPurpose} />
-                  <div className="sw-sub">each day</div>
-                  <SpendPanel days={report.spend.days} />
-                </Panel>
-                <Panel title="Landed each day" sub="by kind">
-                  <LandingsPanel days={report.landingDays} kinds={kindsOfReport(report)} />
-                </Panel>
-                <Panel title="By ticket type" sub="landed tickets · rounds are fix rounds">
-                  <KindsPanel kinds={report.kinds} />
-                </Panel>
-                <Panel title="Tickets that took the most work" sub="most fix rounds or most spend" wide>
-                  <TopPanel top={report.top} query={query} />
-                </Panel>
-                <Panel
-                  title="Why work stopped for a person"
-                  sub="reason it stopped × what triage found · darker is more often"
-                  wide
-                >
-                  <WaitsPanel cells={report.waitCauses} />
-                </Panel>
-              </section>
+              <ReportGrid report={report} query={query} />
             </>
           )}
         </div>
