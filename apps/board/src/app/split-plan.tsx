@@ -14,8 +14,8 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react'
-import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { AppRouterContext } from 'next/dist/shared/lib/app-router-context.shared-runtime'
+import { useContext, useEffect, useMemo, useState } from 'react'
 
 import { waves, type Link } from '../lib/split-waves.ts'
 
@@ -113,11 +113,11 @@ export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: 
   const written = new Map(progress.state === 'idle' ? [] : progress.children.map((c) => [c.key, c.number] as const))
   const [selected, setSelected] = useState<string | null>(null)
   // *Writing* is read off recent activity and expires with no append to say so: look again once it has.
-  const router = useRouter()
+  const router = useContext(AppRouterContext)
   const writing = progress.state === 'writing'
   useEffect(() => {
     if (!writing) return
-    const timer = setTimeout(() => router.refresh(), 5 * 60_000 + 1_000)
+    const timer = setTimeout(() => router?.refresh(), 5 * 60_000 + 1_000)
     return () => clearTimeout(timer)
   }, [writing, router])
 
