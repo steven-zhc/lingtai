@@ -1604,24 +1604,37 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      * A grant continuation is a fix round, and a wait before `proposed` was never
      * reviewed.
      */
-    let approvedAt: string | null =
+    let approvedAt: string | null = null
+    /**
+     * An approval this continuation carries but has not yet seen the head of: `conduct.ts` hands the walk an empty
+     * `onSha` until `admit` supplies the tree's head, so the approval is resolved against the first real head (#1279).
+     */
+    let approvalPending =
       options.from !== undefined &&
       options.from.grant === undefined &&
       // An approval to read the diff clipped is not a head that was read whole (#892).
       options.from.readClipped === undefined &&
       options.from.approvedHead !== undefined &&
-      (options.from.approvedNow === true
-        ? options.from.step === 'proposed' || options.from.step === 'merge'
-        : options.context.onSha !== options.from.approvedHead &&
-          (options.from.step === 'proposed' || options.from.step === 'merge' || options.from.step === 'build'))
-        ? options.context.onSha
-        : null
-    // After the system's own merges the baseline is the approved head, not what an earlier review read (#1279).
-    if (approvedAt !== null && options.from?.approvedHead !== undefined && approvedAt !== options.from.approvedHead) {
-      mergedSinceReview = { reviewed: options.from.approvedHead, base: options.context.onSha, overlap: [] }
-      baselineApproved = true
-      if (options.from.step === 'build') reviewCarriedTo = approvedAt
+      (options.from.step === 'proposed' ||
+        options.from.step === 'merge' ||
+        (options.from.approvedNow !== true && options.from.step === 'build'))
+    const resolveApproval = () => {
+      if (!approvalPending || onSha === '' || options.from?.approvedHead === undefined) return
+      approvalPending = false
+      if (options.from.approvedNow !== true && onSha === options.from.approvedHead) return
+      approvedAt = onSha
+      // After the system's own merges the baseline is the approved head, not what an earlier review read (#1279).
+      if (onSha !== options.from.approvedHead) {
+        mergedSinceReview = {
+          reviewed: options.from.approvedHead,
+          base: options.from.landedOnBase?.toSha ?? onSha,
+          overlap: [],
+        }
+        baselineApproved = true
+        if (options.from.step === 'build') reviewCarriedTo = onSha
+      }
     }
+    resolveApproval()
     /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
     let lapStart = 0
     /**
@@ -1668,6 +1681,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     const record = (visit: StepReached): StepReached => {
       steps.push(visit)
       if (visit.ending.head !== undefined) onSha = visit.ending.head
+      resolveApproval()
       return visit
     }
 

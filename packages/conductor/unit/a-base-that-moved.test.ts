@@ -292,6 +292,16 @@ describe('what the next review is told it already read (#671)', () => {
     expect(reviewSaw).toHaveLength(0)
   })
 
+  it('keeps the carry when the attempt is resumed at build after the merge (#1279)', async () => {
+    const { reviewSaw, started } = await walk([], async () => ({ head: 'merged-1' }), [], {
+      step: 'build',
+      waive: [],
+      approvedHead: 'old0000',
+    })
+    expect(reviewSaw).toHaveLength(0)
+    expect(started.map((s) => s.step)).not.toContain('review')
+  })
+
   it('does not carry for a retry that is not an approval (#1279)', async () => {
     const { reviewSaw } = await walk([moved('base-1')], async () => ({ head: 'merged-1' }), [], {
       step: 'proposed',
