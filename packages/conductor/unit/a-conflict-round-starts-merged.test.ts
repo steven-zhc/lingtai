@@ -56,6 +56,8 @@ async function walk(options: {
   lane: readonly ActionResult[]
   port?: (baseSha: string) => Effect.Effect<ConflictMergeAnswer>
   from?: AttemptOptions['from']
+  judge?: AttemptOptions['judge']
+  conflictResolutions?: number
   evidence?: () => Effect.Effect<{ fromSha: string; overlap: readonly string[] } | null>
 }) {
   const order: string[] = []
@@ -118,8 +120,15 @@ async function walk(options: {
     emit: () => undefined,
     bodies,
     actionsAt,
-    ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
-    judge: async () => ({ next: 'implement', named: 'test', why: 'the lines' }),
+    ceilings: {
+      refusalFixes: 2,
+      conflictResolutions: options.conflictResolutions ?? 2,
+      newAttempts: 0,
+      newAttemptsSpent: 0,
+    },
+    ...('judge' in options
+      ? { judge: options.judge }
+      : { judge: async () => ({ next: 'implement', named: 'test', why: 'the lines' }) }),
     ...(options.from === undefined ? {} : { from: options.from }),
   } as AttemptOptions)
   const result = await Effect.runPromise(
@@ -219,6 +228,62 @@ describe('a bought conflict round', () => {
 
     // Two conflict rounds: each is told its own merge.
     expect(implementSaw.slice(1).every((c) => c.conflictMerge?.baseSha === BASE)).toBe(true)
+  })
+})
+
+describe('a merge conflict is the agent’s by rule (#1273)', () => {
+  const judgeCalls: number[] = []
+  const noJudge: AttemptOptions['judge'] = async () => {
+    judgeCalls.push(1)
+    throw new Error('the judge must not be asked')
+  }
+
+  it('buys a fix round without asking a declared judge', async () => {
+    judgeCalls.length = 0
+    const { result, implementSaw } = await walk({
+      lane: [conflicted(BASE)],
+      port: () => Effect.succeed(STANDING),
+      judge: noJudge,
+    })
+    expect(judgeCalls).toEqual([])
+    expect(implementSaw).toHaveLength(2)
+    expect(result.end).toMatchObject({ _tag: 'Landed' })
+  })
+
+  it('buys a fix round where no judge is declared', async () => {
+    const { result, implementSaw } = await walk({
+      lane: [conflicted(BASE)],
+      port: () => Effect.succeed(STANDING),
+      judge: undefined,
+    })
+    expect(implementSaw).toHaveLength(2)
+    expect(result.end).toMatchObject({ _tag: 'Landed' })
+  })
+
+  it('reaches a person once the rounds are spent, without asking the judge', async () => {
+    judgeCalls.length = 0
+    const { result, implementSaw } = await walk({
+      lane: [conflicted(BASE)],
+      port: () => Effect.succeed(STANDING),
+      judge: noJudge,
+      conflictResolutions: 0,
+    })
+    expect(judgeCalls).toEqual([])
+    expect(implementSaw).toHaveLength(1)
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson' })
+  })
+
+  it('does not take the rule with no base sha: the judge is asked', async () => {
+    judgeCalls.length = 0
+    const { result } = await walk({
+      lane: [conflicted(null)],
+      judge: async () => {
+        judgeCalls.push(1)
+        return { next: 'implement', named: 'test', why: 'the lines' }
+      },
+    })
+    expect(judgeCalls).toEqual([1])
+    expect(result.end).toMatchObject({ _tag: 'WaitOnPerson' })
   })
 })
 

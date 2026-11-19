@@ -114,6 +114,7 @@ function fakeGitHub(hooks: { beforeCreate?: () => Promise<void>; afterCreate?: (
         url: `https://example/${212 + issues.length}`,
         dependencies: null,
         assignees: [],
+        milestone: null,
         parent: null,
         subIssues: null,
       }

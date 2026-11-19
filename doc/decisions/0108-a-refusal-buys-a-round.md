@@ -100,7 +100,7 @@ fixes the actions, their bounds and the endings that router works inside.
      `findings`. Where no judge is declared, triage answers instead.
    - Where a wait would otherwise open — a run that met `run.turns` or
      `run.wall`, a diff too large to review (§14), a setup that failed for a
-     reason no rule knows, a conflict past `CONFLICT_ROUND_HUNKS` (§8), a bound
+     reason no rule knows, a bound
      that is spent — **triage** ([0118](0118-a-hold-explains-itself.md) §3)
      reads the ticket, the diff and the code.
    - **Both answer one type: a cause and the parts that cause carries**, never
@@ -184,8 +184,8 @@ fixes the actions, their bounds and the endings that router works inside.
    `run.usd`; meeting one is not an action but sends the step to triage
    (§12). One triage call is bounded by `triage.turns`, `triage.wall` and
    `triage.usd`, and an unusable answer is asked again `triageRetries` (1)
-   times. A conflict of at most `CONFLICT_ROUND_HUNKS` (5) hunks is resolved
-   by rule, without triage. The recipe groups its bounds by scope:
+   times. A merge conflict is resolved by rule — `resolveConflict` while
+   `conflictResolutions` is left — without a judge or triage, whatever its size. The recipe groups its bounds by scope:
 
    ```yaml
    runtime:
@@ -432,7 +432,7 @@ fixes the actions, their bounds and the endings that router works inside.
     | `findings` | The reviewer refused with findings | A declared judge (§6); triage where none is declared |
     | `fixer-disagrees` | A fixer declared `Disputed` (§5) | A declared judge; triage where none is |
     | `already-done` | `implement` declared `AlreadyDone` (§21) | `review` checks the evidence (§21) |
-    | `conflict` | The lane could not merge | A rule up to `CONFLICT_ROUND_HUNKS`; triage past it (§6) |
+    | `conflict` | The lane could not merge | A rule: `resolveConflict` while `conflictResolutions` is left; a person once spent |
     | `setup-refused` | `prepared` failed before any agent ran | A rule: a transient error in the failure table (a registry's 5xx) is `redoStep`; anything else is triage, usually `SetupBroken` |
     | `check-refused` | A check declared at `proposed` or before the lane refused | A rule: run twice (§17); red with output is answered as `red` |
     | `answer-unreadable` | An agent answered and the machine could not read it | A rule: `redoStep` (§12) |

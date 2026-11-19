@@ -67,6 +67,7 @@ describe('runSplit around the writer (0118 §12 rule 7)', () => {
       return real(id, version, events)
     }
     const github = {
+      getIssue: async () => ({ body: 'the parent' }),
       listIssuesSince: async () => {
         throw new Error('GitHub is down')
       },

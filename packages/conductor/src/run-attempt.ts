@@ -1823,6 +1823,17 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           landAgain !== undefined && landAgain.next._tag === 'LandAgain'
             ? ((options.stepRedoWaits ?? BOUNDS.stepRedoWaits)[landAgain.next.retry - 1] ?? '0 millis')
             : null
+        // **And a merge conflict** (#1273, 0108 §8): any size, while `conflictResolutions` is left and the
+        // lane named a base to merge, is the agent's before any judge; spent, `fix-lines` is not offered.
+        const conflictCandidate = offer.available.find((c) => c.id === 'fix-lines')
+        const conflictRule =
+          offer.proposal._tag === 'MergeConflict' &&
+          offer.proposal.baseSha !== null &&
+          conflictCandidate !== undefined &&
+          conflictCandidate.next._tag === 'FixRefusal' &&
+          conflictCandidate.next.conflict !== undefined
+            ? { id: conflictCandidate.id, round: conflictCandidate.next.conflict }
+            : null
         const reply: JudgeReply | { readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string } } =
           landAgain !== undefined && landAgain.next._tag === 'LandAgain'
             ? {
@@ -1841,12 +1852,18 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                       ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`
                       : `the ${rerunNext.step} answer could not be read; asking the same agent again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`,
                 }
-              : yield* replyFor(
-                  offer,
-                  shown,
-                  options.judge,
-                  causeBoundsFor(policy, spentNow, ceilings.personAsksSpent ?? 0),
-                )
+              : conflictRule !== null && offer.proposal._tag === 'MergeConflict'
+                ? {
+                    _tag: 'Selected',
+                    candidate: conflictRule.id,
+                    why: `a merge conflict ${offer.proposal.paths === null || offer.proposal.paths.length === 0 ? 'with the base' : `in ${offer.proposal.paths.join(', ')}`} is the agent's to resolve (0108 §8), round ${conflictRule.round} of ${policy.conflictResolutions} conflictResolutions`,
+                  }
+                : yield* replyFor(
+                    offer,
+                    shown,
+                    options.judge,
+                    causeBoundsFor(policy, spentNow, ceilings.personAsksSpent ?? 0),
+                  )
         if ('neverStarted' in reply) {
           // 0031 §3, at the third depth the same wall is met at: the judge
           // itself is an agent, and an account-wide wall is the conductor's to
