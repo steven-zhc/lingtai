@@ -31,7 +31,7 @@ import type {
   RunSpent,
   ToAppend,
 } from '@lingtai/domain'
-import { askedText, cleared, resolveOffer, stepEndedsOf, waitWords, STEPS } from '@lingtai/domain'
+import { askedText, cleared, resolveOffer, stepEndedsOf, stepOutcomesOf, waitWords, STEPS } from '@lingtai/domain'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { ProjectFiles, recipePath, recipeValue } from '@lingtai/project'
@@ -2548,5 +2548,75 @@ runtime:
       .filter((e) => e.type === 'ProposalRouted')
       .map((e) => routeFacts(e.data as { offer: RouteOffer; reply: JudgeReply; decision: RouteDecision }))
     expect(routed[0]!.why).toContain('claude-code (haiku)')
+  })
+  /**
+   * **A round that committed partial work and declared `Disputed` moves the walk's head** (#1250).
+   * The next round is compared against *its own* start, never an earlier round's: a fixer that
+   * moves nothing and says `Implemented` is `AgentFailed` and redone, not advanced to `build`.
+   */
+  it('measures a fix round from the head the last round left, so an unmoved Implemented is AgentFailed', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const tree = { at: 'a'.repeat(40), implementerCommits: true }
+    const H2 = 'c'.repeat(40)
+    const recipe = JUDGED.replace(
+      '      when: findings\n',
+      '      when: findings\n    - name: the fixer disputed\n      judge: claude-code\n      when: fixer-disagrees\n',
+    ).replace('refusalFixes: 1', 'refusalFixes: 3')
+    let fixes = 0
+    const fixerThenJudge: Runtime = {
+      ...refusingRuntime,
+      run: (request) => {
+        if (request.runId.includes(':judge:')) {
+          return Effect.succeed({
+            exitCode: 0,
+            turns: 1,
+            durationMs: 10,
+            costUsd: 0.1,
+            failure: null,
+            text: '{"next": "implement", "why": "the objection does not hold"}',
+            sessionId: 'sess-judge',
+          })
+        }
+        if (!request.runId.includes(':fix:')) return refusingRuntime.run(request)
+        fixes += 1
+        // Round 1 commits partial work (H2) and disputes; every later round moves nothing and says it is done.
+        if (fixes === 1) tree.at = H2
+        return Effect.succeed({
+          exitCode: 0,
+          turns: 1,
+          durationMs: 10,
+          costUsd: 0.1,
+          failure: null,
+          text:
+            fixes === 1
+              ? '```outcome\n{"outcome": "Disputed", "findings": [{"index": 1, "why": "not this diff"}]}\n```'
+              : 'done\n```outcome\n{"outcome": "Implemented"}\n```',
+          sessionId: 'sess-fix',
+        })
+      },
+    }
+
+    await onceOnTestClock(
+      {
+        project,
+        client: fakeGitHub([], recipe),
+        runtime: fixerThenJudge,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: false,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store, false, tree),
+    )
+
+    const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
+    const implementEnds = stepOutcomesOf(run as never).filter((o) => o.step === 'implement' && o.round > 0)
+    expect(implementEnds[0]!.actions[0]!.result).toMatchObject({ head: H2, outcome: { _tag: 'Disputed' } })
+    // The round after the overruled dispute started at H2 and left it there: not `Implemented`.
+    expect(implementEnds[1]!.actions[0]!.result).toMatchObject({ outcome: { _tag: 'AgentFailed' } })
+    expect(run.filter((e) => e.type === 'StepRedone').length).toBeGreaterThan(0)
   })
 })

@@ -2869,7 +2869,10 @@ function runVisit(
       // Not `continue`, and not a swallowed failure: a step whose plugins did
       // not pass has ended, and the body does not run.
       if (ending.ending !== 'passed') {
-        return { step: spec.step, ending, results, outcome }
+        // The head the step's plugins left survives a non-passing ending too (#1250): a round that
+        // committed partial work and then declared `Disputed` or `AgentFailed` moved the tree, and the
+        // walk's `onSha` must follow it, or the next round is compared against a stale start.
+        return { step: spec.step, ending: { ...leftTheTreeAt, ...ending } as typeof ending, results, outcome }
       }
     }
 
