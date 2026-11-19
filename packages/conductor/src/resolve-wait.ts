@@ -567,7 +567,7 @@ function savedHead(
  * and must not report that as a failed approval (see the call sites' own
  * comments). `null` once it lands; otherwise the last error's message.
  */
-function requestContinuation(
+export function requestContinuation(
   store: EventStore,
   by: string,
   project: string,

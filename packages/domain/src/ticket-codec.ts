@@ -37,7 +37,15 @@ const Wait = z.strictObject({
   waitId: WaitId,
   reason: WaitReason,
   at: IsoDate,
-  resolution: z.strictObject({ resolution: Resolution, by: z.string() }).nullable(),
+  resolution: z
+    .strictObject({
+      resolution: Resolution,
+      by: z.string(),
+      spent: z
+        .strictObject({ bound: z.enum(['refusalFixes', 'conflictResolutions', 'stepRedos']), n: z.number().int() })
+        .optional(),
+    })
+    .nullable(),
   triage: z.strictObject({
     started: z.strictObject({ attempt: z.number(), at: IsoDate, by: TriageStartedBy }).nullable(),
     result: TriageResult.nullable(),
@@ -176,7 +184,8 @@ export const ticketReducer: Reducer<TicketState> = {
   // 3: a release's `NewAttempt{newAttempt}` replaces `Restart{restart}`, and a wait's ceiling names its bound (#1241); a version-2 snapshot holds the old tags.
   // 7: an `AgentQuestion` or `InputNeeded` carries `questions` and `said`, not `question` (#1253); a version-6 snapshot holds the string.
   // 8: a `TicketSatisfied` ends a ticket `satisfied` (#1251); a version-7 snapshot cannot hold it.
-  version: 8,
+  // 9: a wait's `resolution` carries the optional `spent` of a triage resolution (#1258); a version-8 snapshot may have lost it.
+  version: 9,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

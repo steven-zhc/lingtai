@@ -412,14 +412,14 @@ describe('triage catch-up', () => {
     done.push(
       done.event(
         'TriageStarted',
-        { waitId: done.waitId, attempt: 1, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } },
+        { waitId: done.waitId, attempt: 2, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } },
         { at: old },
       ),
     )
     done.push(
       done.event('WaitTriaged', {
         waitId: done.waitId,
-        attempt: 1,
+        attempt: 2,
         headSha: 'head',
         result: { _tag: 'TriageFailed', why: 'failed' },
         by: { _tag: 'Agent', runtime: 'claude-code', model: '' },
@@ -510,6 +510,37 @@ describe('triage catch-up', () => {
     expect(hashes.get('lingtai')).toBe(JSON.stringify(triage))
   })
 
+  it('asks once more after a failed attempt, and a second failure leaves the wait for a person (#1258)', async () => {
+    const f = fixture()
+    f.add(11)
+    const failed = (attempt: number) => ({
+      started: true,
+      attempt,
+      result: { _tag: 'TriageFailed' as const, why: 'changed' },
+    })
+    f.run.mockResolvedValueOnce(failed(1) as never).mockResolvedValueOnce(failed(2) as never)
+    await catchUpTriage('lingtai', triage, f.deps)
+    expect(f.run).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not ask again when the wait is no longer current', async () => {
+    const f = fixture()
+    const wait = f.add(12)
+    f.run.mockImplementationOnce((async () => {
+      wait.push(
+        wait.event('WaitResolved', {
+          waitId: wait.waitId,
+          by: 'human:steven',
+          resolution: { _tag: 'StartNewAttempt' },
+          note: '',
+        }),
+      )
+      return { started: true, attempt: 1, result: { _tag: 'TriageFailed', why: 'wait no longer current' } }
+    }) as never)
+    await catchUpTriage('lingtai', triage, f.deps)
+    expect(f.run).toHaveBeenCalledOnce()
+  })
+
   it('scans when the triage section changes and leaves a result alone on later passes', async () => {
     const f = fixture()
     const wait = f.add(9)
@@ -522,14 +553,14 @@ describe('triage catch-up', () => {
     wait.push(
       wait.event('TriageStarted', {
         waitId: wait.waitId,
-        attempt: 1,
+        attempt: 2,
         by: { _tag: 'Agent', runtime: 'claude-code', model: '' },
       }),
     )
     wait.push(
       wait.event('WaitTriaged', {
         waitId: wait.waitId,
-        attempt: 1,
+        attempt: 2,
         headSha: 'head',
         result: { _tag: 'TriageFailed', why: 'failed' },
         by: { _tag: 'Agent', runtime: 'claude-code', model: '' },

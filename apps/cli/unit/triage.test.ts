@@ -351,10 +351,10 @@ function flakyReadAtCall(store: EventStore, failAtCall: number): EventStore {
   let call = -1
   return {
     ...store,
-    read: async (streamId) => {
+    read: async (streamId, fromVersion) => {
       call += 1
       if (call === failAtCall) throw new Error('connection dropped')
-      return store.read(streamId)
+      return store.read(streamId, fromVersion)
     },
   }
 }
@@ -520,6 +520,8 @@ describe('waitTriage', () => {
       'RunPrompted',
       'WaitResolved',
       'RunSpent',
+      // Recorded for its cost and shown nowhere (0118 §9): it resolves nothing and starts nothing.
+      'WaitTriaged',
     ])
     expect(cleanup).toHaveBeenCalledOnce()
   })
@@ -1265,6 +1267,34 @@ describe('waitTriage', () => {
       expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'timeout' })
       expect(prepareCheckout).not.toHaveBeenCalled()
       expect(requests).toHaveLength(0)
+    })
+
+    it('a final limits read that stalls past the wall ends the attempt failed and appends no WaitResolved (#1258)', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 72)
+      const waitId = aWaitId()
+      await store.append(ticketId, 0, [
+        { type: 'WaitStarted', actor: 'conductor', data: { waitId, reason: OWN_QUESTION } },
+      ])
+      const { runtime } = stubRuntime(() => ADVISED)
+      const entered = latch()
+      const deps = {
+        ...fakeDeps(store, runtime, { mirror: fakeMirror({ refSha: async () => 'a'.repeat(40) }) }),
+        limits: () => Effect.sync(entered.open).pipe(Effect.andThen(Effect.never)),
+      }
+
+      const held = await waitPastWall(
+        deps,
+        requestOn(ticketId, waitId, { triage: Triage.parse({ limits: { wall: '50ms' } }) }),
+        entered.reached,
+        50,
+      )
+
+      expect(held.result._tag).toBe('TriageFailed')
+      const types = typesOf(await store.read(ticketId))
+      expect(types).not.toContain('WaitResolved')
+      expect(types).not.toContain('TicketReleased')
+      expect(types.at(-1)).toBe('WaitTriaged')
     })
 
     it('cleans up a checkout that lands after the wall, and does not wait for it', async () => {
