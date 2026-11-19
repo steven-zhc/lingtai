@@ -25,7 +25,7 @@ const findings = [
     severity: 'blocking',
   },
 ] as never
-const arrived = { findings, evidence: SAID }
+const arrived = { findings, evidence: SAID, questions: [] }
 
 const counting = (answer: Judged) => {
   const seen: Judging[] = []
@@ -72,7 +72,13 @@ describe('replyFor at fixer-disagrees', () => {
 })
 
 describe('what the judge is shown at fixer-disagrees', () => {
-  const on: Judging = { when: 'fixer-disagrees', offering: ['waiting', 'implement'], findings, evidence: SAID }
+  const on: Judging = {
+    when: 'fixer-disagrees',
+    offering: ['waiting', 'implement'],
+    findings,
+    evidence: SAID,
+    questions: [],
+  }
 
   it('carries the findings, the message and this reason’s question', () => {
     const prompt = judgePrompt(on)

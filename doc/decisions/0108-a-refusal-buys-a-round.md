@@ -465,7 +465,9 @@ fixes the actions, their bounds and the endings that router works inside.
       works as it finishes it, so an interruption loses little.
     - **The one exception is WIP**: when the agent at `implement` — the first
       run or a `fixRefusal` — ends abnormally (a crash, a timeout, `run.turns`
-      or `run.usd` met, or the attempt stopped while it ran), Lingtai commits
+      or `run.usd` met, or the attempt stopped while it ran), or ends normally
+      and is decided `AgentFailed` (no readable outcome block; `stoppedBy` reads
+      `agent-failed`, #1276), Lingtai commits
       what `git add -A` collects in its worktree, without ignored files or the
       seeded env files, to the attempt's own branch `agent/<n>`, and pushes it.
       The message begins `wip:` for a person to read; `RunKeptUncommitted`

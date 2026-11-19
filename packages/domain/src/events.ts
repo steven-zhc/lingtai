@@ -949,7 +949,7 @@ export const RunKeptUncommitted = z.object({
   sha: z.string(),
   /** What it is a WIP on top of: the agent's own last commit, or the base. */
   parentSha: z.string(),
-  /** `RunFailed.kind`, `'no-commits'`, or `'interrupted'` — why the agent stopped mid-run. */
+  /** `RunFailed.kind`, `'no-commits'`, `'agent-failed'`, or `'interrupted'` — why the agent stopped mid-run. */
   stoppedBy: z.string(),
   files: z.number().int(),
   insertions: z.number().int(),

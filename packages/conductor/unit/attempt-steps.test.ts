@@ -1373,6 +1373,7 @@ describe('review returns findings and judges nothing', () => {
         offering: ['implement', 'waiting'],
         findings: [BLOCKER],
         evidence: '',
+        questions: [],
       },
     ])
   })
@@ -1657,7 +1658,7 @@ describe('proposed is the only step that routes, and one judge answers each when
     // Asked once, and never handed a count — the brief is the direction, the
     // words and the set (`JudgeBrief`).
     expect(seen.map((on) => on.when)).toEqual(['findings'])
-    expect(Object.keys(seen[0]!).sort()).toEqual(['evidence', 'findings', 'offering', 'when'])
+    expect(Object.keys(seen[0]!).sort()).toEqual(['evidence', 'findings', 'offering', 'questions', 'when'])
     // The round it asked for, bought once, on the findings it read.
     expect(result.routes[0]).toMatchObject({ from: 'proposed', chose: 'implement', to: 'implement' })
     expect(result.routes[0]?.why).toContain('two of its lines are wrong')
@@ -1791,7 +1792,13 @@ describe('proposed is the only step that routes, and one judge answers each when
     // And a judge is never told what it is answering for, nor what is left to
     // spend: `Judging` carries the direction, the words and the set, and no
     // ceiling and no count (`JudgeBrief`).
-    expect(Object.keys(late.asked.judge[0] ?? {}).sort()).toEqual(['evidence', 'findings', 'offering', 'when'])
+    expect(Object.keys(late.asked.judge[0] ?? {}).sort()).toEqual([
+      'evidence',
+      'findings',
+      'offering',
+      'questions',
+      'when',
+    ])
   })
 
   /**

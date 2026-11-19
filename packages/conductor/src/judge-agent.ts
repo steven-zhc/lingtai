@@ -31,7 +31,7 @@ import type { ActionFinding } from '@lingtai/actions'
  * count, so there is no number here for a prompt to leak and no arithmetic for
  * one to argue with. A judge cannot widen what it cannot see.
  */
-import { type JudgeWhen, STEPS, triageQuestionsOf } from '@lingtai/domain'
+import { askedText, type JudgeWhen, STEPS, triageQuestionsOf } from '@lingtai/domain'
 import { JUDGE_CAUSES, JudgeAnswer, type Cause } from '@lingtai/domain/wait'
 
 import type { Judging } from './attempt-steps.ts'
@@ -243,7 +243,7 @@ A pass over one ticket did not pass. You decide where it goes.
 The reason the step gave is **\`${on.when}\`**.
 
 ${row.arrived(on, evidence)}
-
+${on.questions.length > 0 ? `\n## The questions the implementer asked\n\n${askedText({ questions: on.questions })}\n` : ''}
 ## The choices
 
 These are the only destinations on offer. The list is the workflow's: it has

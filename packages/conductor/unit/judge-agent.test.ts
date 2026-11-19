@@ -36,6 +36,7 @@ const ARRIVED_RED: Judging = {
   offering: ['waiting', 'claim', 'implement'],
   findings: [BLOCKER],
   evidence: '1 blocker, 0 major, 2 minor',
+  questions: [],
 }
 
 const ARRIVED: Judging = {
@@ -43,6 +44,7 @@ const ARRIVED: Judging = {
   offering: ['waiting', 'claim', 'implement'],
   findings: [BLOCKER],
   evidence: '1 blocker, 0 major, 2 minor',
+  questions: [],
 }
 
 describe('what a runtime judge is asked', () => {
