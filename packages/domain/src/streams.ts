@@ -164,7 +164,7 @@ export function integrationStream(project: string, base: string): string {
  * lands on a column (#59) instead of asserting it about the five a test
  * happened to think of.
  */
-export const LABEL_STATES = ['queued', 'running', 'verifying', 'approved', 'waiting', 'landed', 'closed'] as const
+export const LABEL_STATES = ['queued', 'running', 'verifying', 'approved', 'waiting', 'landed', 'satisfied', 'closed'] as const
 
 export type LabelState = (typeof LABEL_STATES)[number]
 

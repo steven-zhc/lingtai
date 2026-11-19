@@ -296,9 +296,9 @@ export function taskStateOf(l: TicketLifecycle): TaskState {
       return 'approved'
     case 'landed':
       return 'landed'
-    // Beside `landed` until the board draws its own ending (#1252).
+    // Its own ending (#1252): found already done, nothing was landed.
     case 'satisfied':
-      return 'landed'
+      return 'satisfied'
     case 'closed':
       return 'closed'
   }

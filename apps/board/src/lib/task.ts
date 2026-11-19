@@ -1288,10 +1288,10 @@ export function presentAttemptEvents(
    */
   {
     plan,
-    over = false,
+    over = null,
     held = false,
     branch = '',
-  }: { plan?: StepPlan; over?: boolean; held?: boolean; branch?: string } = {},
+  }: { plan?: StepPlan; over?: 'landed' | 'satisfied' | null; held?: boolean; branch?: string } = {},
 ): AttemptView {
   const state = reduceAttempt(run)
   return presentAttempt(state, claim, attempt, progressOf(state, plan, over), held, branch)
@@ -1785,7 +1785,7 @@ export const readAttempts = cache(async (taskId: string) => {
   const heldRun = heldRunOf(ticketState.lifecycle)
   const branch = ticketState.externalRef === null ? '' : agentBranchOf(ticketState.externalRef)
   const reduced = claims.map((c, i) =>
-    presentAttempt(states[i]!, c, i + 1, progressOf(states[i]!, undefined, false), c.runId === heldRun, branch),
+    presentAttempt(states[i]!, c, i + 1, progressOf(states[i]!, undefined, null), c.runId === heldRun, branch),
   )
   const standing = standingOf(own, reduced)
 
@@ -1805,13 +1805,14 @@ export const readAttempts = cache(async (taskId: string) => {
   // The last attempt reduced again with what only this function holds. **Only
   // the last**, and `over` only where the item landed: an earlier attempt was
   // released or refused, and its later points recorded nothing because nothing
-  // should have run in them — the same line `RailCandidate.over` holds, and
+  // should have run in them — the same line `RailCandidate.ending` holds, and
   // drawing the hatch there would be inventing Lingtai's bug (0041 §4).
   const last = reduced.length - 1
   const landed = standing.state === 'landed'
+  const ending = landed ? ('landed' as const) : standing.state === 'satisfied' ? ('satisfied' as const) : null
   const runs = (
-    last >= 0 && (landed || plan !== undefined)
-      ? reduced.map((r, i) => (i === last ? { ...r, progress: progressOf(states[i]!, plan, landed) } : r))
+    last >= 0 && (ending !== null || plan !== undefined)
+      ? reduced.map((r, i) => (i === last ? { ...r, progress: progressOf(states[i]!, plan, ending) } : r))
       : reduced
   ).map((r) => {
     // This attempt's own spend: the rows whose `pass` is this run's stream —

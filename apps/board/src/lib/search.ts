@@ -53,6 +53,7 @@ export const TICKET_WORD: Record<TaskState, string> = {
   approved: 'approved',
   waiting: 'waiting on you',
   landed: 'landed',
+  satisfied: 'satisfied',
   closed: 'closed',
 }
 

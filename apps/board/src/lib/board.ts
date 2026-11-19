@@ -265,6 +265,12 @@ export interface BoardCard {
    */
   closed: boolean
   /**
+   * Whether this item ended *found already done* (#1252): over like `landed`,
+   * but nothing was landed, and the row says so. It counts inside the Landed
+   * figure — it is work that is done.
+   */
+  satisfied: boolean
+  /**
    * Whether that question was asked before any run (`lingtai ask`, #147) — so
    * the move is an answer, not a review and not a requeue.
    */
@@ -664,6 +670,9 @@ export const COLUMN_OF: Record<TaskState, ColumnId> = {
   approved: 'running',
   waiting: 'waiting',
   landed: 'landed',
+  // Found already done (#1252): shares Landed's column; the row says which
+  // ending it was, as it does for `closed`.
+  satisfied: 'landed',
   // Closed shares Landed's column and not Queued's. Both are over, and Landed
   // is already the archive — a list of one-line rows rather than a lane of
   // cards. What must not happen is the state before this existed: an item
@@ -855,6 +864,7 @@ export function toCard(
     project: t.project,
     column: COLUMN_OF[t.state],
     closed: t.state === 'closed',
+    satisfied: t.state === 'satisfied',
     ref: t.issue,
     kind: t.kind,
     kindColor,
@@ -1410,6 +1420,7 @@ export async function githubQueue(
         taskId: r.taskId,
         project: filter.project,
         column: 'queued',
+        satisfied: false,
         ref: r.issue,
         kind: r.kind,
         kindColor: offered.kindColors[r.kind] ?? null,
@@ -1525,14 +1536,14 @@ async function laneProgress(
   // offers snapshots through its writer; one lookup for all the cards.
   const read = { snapshots: log.snapshots, writer: await traced('snapshot.writer', () => boardWriterOrNone()) }
   const reduced = await Promise.all([
-    ...railed.map(async ({ task, over }) => {
+    ...railed.map(async ({ task, ending }) => {
       try {
         const state = await traced('attempt.state', () =>
           readState(eventStore, attemptReducer, task.runId as string, 'all', read),
         )
         // The saved head rides on the read already made, for the waiting cards
         // only; the remote-ref check stays in the action (#647).
-        const progress = progressOf(state, plans.get(task.project), over)
+        const progress = progressOf(state, plans.get(task.project), ending)
         // The rounds ride only where the rail does: a stream with no progress has no held line.
         const opened = progress === null ? null : state.roundsOpened
         return [task.taskId, progress, headOf(task, state), opened] as const
@@ -1572,8 +1583,12 @@ export interface RailCandidate {
    * (0041 §4), so a run refused at `prepared` and then closed by a person has
    * later points that correctly did not run, and marking them our bug would
    * draw the hatch on exactly the outcome the rail exists to report truthfully.
+   *
+   * **A `satisfied` ending is told apart** (#1252): it is over without a landing,
+   * and the steps that recorded nothing were never meant to run, so they draw
+   * `skipped` — never `never-ran`'s hatch.
    */
-  over: boolean
+  ending: 'landed' | 'satisfied' | null
 }
 
 /**
@@ -1600,7 +1615,10 @@ export function railCandidates(tasks: readonly TaskCard[]): RailCandidate[] {
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
       .slice(0, LANDED_OPEN),
   ]
-  return open.filter((t) => t.runId !== null).map((t) => ({ task: t, over: t.state === 'landed' }))
+  return open.filter((t) => t.runId !== null).map((t) => ({
+    task: t,
+    ending: t.state === 'landed' ? ('landed' as const) : t.state === 'satisfied' ? ('satisfied' as const) : null,
+  }))
 }
 
 /**
