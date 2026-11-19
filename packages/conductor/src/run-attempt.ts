@@ -1626,7 +1626,16 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       if (!approvalPending || onSha === '' || options.from?.approvedHead === undefined) return
       approvalPending = false
       // The resolution of a conflict round was never read by the person: the baseline is theirs, the head is not (#1279).
-      if (options.from.conflictResolved !== undefined) return
+      if (options.from.conflictResolved !== undefined) {
+        // Whatever an earlier clean merge restored, the resolution is read from the approved head, with no overlap open.
+        mergedSinceReview = {
+          reviewed: options.from.approvedHead,
+          base: options.from.conflictResolved.baseSha,
+          overlap: [],
+        }
+        baselineApproved = true
+        return
+      }
       approvedAt = onSha
       // After the system's own merges the baseline is the approved head, not what an earlier review read (#1279).
       if (onSha !== options.from.approvedHead) {
