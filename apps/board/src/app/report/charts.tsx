@@ -213,25 +213,31 @@ export function SpendPanel({ days }: { days: SpendDay[] }) {
           }
           // One line per legend entry, so Triage and Discussion read as the one *triage* the legend shows.
           // A purpose the legend has no entry for keeps its own key rather than joining *building*.
-          const named = new Map<string, Money>()
-          const order = new Map<string, number>()
+          // Keyed by the series slot, or by the raw purpose for one the legend lacks, never by a display name.
+          const named = new Map<string, { name: string; order: number; money: Money }>()
           for (const p of d.byPurpose) {
             const known = PURPOSE_SERIES.some(
               (s) => s.key === (p.purpose === 'Triage' || p.purpose === 'Discussion' ? 'Other' : p.purpose),
             )
             const i = purposeSeriesOf(p.purpose)
-            const name = known ? PURPOSE_SERIES[i]!.name : p.purpose
-            order.set(name, known ? i : PURPOSE_SERIES.length)
-            const m = named.get(name) ?? { reportedCents: 0, estimatedCents: 0, unknown: 0 }
-            named.set(name, {
-              reportedCents: m.reportedCents + p.money.reportedCents,
-              estimatedCents: m.estimatedCents + p.money.estimatedCents,
-              unknown: m.unknown + p.money.unknown,
+            const key = known ? `series:${i}` : `purpose:${p.purpose}`
+            const cur = named.get(key) ?? {
+              name: known ? PURPOSE_SERIES[i]!.name : p.purpose,
+              order: known ? i : PURPOSE_SERIES.length,
+              money: { reportedCents: 0, estimatedCents: 0, unknown: 0 },
+            }
+            named.set(key, {
+              ...cur,
+              money: {
+                reportedCents: cur.money.reportedCents + p.money.reportedCents,
+                estimatedCents: cur.money.estimatedCents + p.money.estimatedCents,
+                unknown: cur.money.unknown + p.money.unknown,
+              },
             })
           }
-          const lines = [...named]
-            .sort(([a], [b]) => order.get(a)! - order.get(b)!)
-            .map(([name, m]) => `${name}: ${moneyText(m)}`)
+          const lines = [...named.values()]
+            .sort((a, b) => a.order - b.order)
+            .map((e) => `${e.name}: ${moneyText(e.money)}`)
           return {
             label: d.day.slice(5),
             tip: [d.day, ...lines, `day: ${moneyText(d)}`],
