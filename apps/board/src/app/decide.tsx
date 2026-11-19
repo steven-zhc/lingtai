@@ -386,11 +386,14 @@ export function EditBodyAndRequeue({
   waitId,
   reason,
   triaged = null,
+  answerOnly = false,
 }: {
   project: string
   issue: number
   waitId: WaitId | null
   reason: WaitReason | null
+  /** The wait offers the answering but no body edit: only the picked answers and their button are drawn (#1254). */
+  answerOnly?: boolean
   /** What triage answered on this wait: an `UndecidedQuestion` is answerable whatever the wait began as (#1254). */
   triaged?: TriageResult | null
 }) {
@@ -432,21 +435,23 @@ export function EditBodyAndRequeue({
         </p>
       ) : null}
       {asked.length > 0 ? (
-        asked.map((q, index) => <TriageChoices key={q.id} question={q} index={index} source="asked" />)
+        asked.map((q, index) => <TriageChoices key={q.id} question={q} index={index} source={askedSource} />)
       ) : question !== null ? (
         <p>{question}</p>
       ) : null}
-      <label className="reason">
-        <span>{question !== null ? 'Your answer' : 'Text to add to the ticket body'}</span>
-        <textarea
-          value={currentText}
-          placeholder={question !== null ? 'every attempt at this ticket is told this' : undefined}
-          onChange={(event) => {
-            triage?.setBody(event.target.value)
-            if (draftWaitId !== waitId) setDetail(null)
-          }}
-        />
-      </label>
+      {answerOnly ? null : (
+        <label className="reason">
+          <span>{question !== null ? 'Your answer' : 'Text to add to the ticket body'}</span>
+          <textarea
+            value={currentText}
+            placeholder={question !== null ? 'every attempt at this ticket is told this' : undefined}
+            onChange={(event) => {
+              triage?.setBody(event.target.value)
+              if (draftWaitId !== waitId) setDetail(null)
+            }}
+          />
+        </label>
+      )}
       {waitId !== null &&
       asked.length > 0 &&
       triage !== null &&
@@ -479,7 +484,7 @@ export function EditBodyAndRequeue({
           {pending ? '…' : 'Answer and continue the step'}
         </button>
       ) : null}
-      {waitId !== null ? (
+      {waitId !== null && !answerOnly ? (
         <button
           className="btn"
           disabled={pending || doneWaitId === waitId || !currentText.trim()}
