@@ -26,7 +26,7 @@ lingtai init --store sqlite --local chapter-garden \
 | `--local chapter-garden`   | Registers your checkout without a GitHub App ([Part 2](#part-2--move-the-project-to-github) adds one). |
 | `--base lingtai-base`      | Lands on a `lingtai-base` branch in your checkout; `main` and your working tree are never touched. |
 | `--agent claude-code`      | Uses the Claude Code account you signed in to for the change.      |
-| `--reviewer claude-code`   | Uses the same account for the cold review.                         |
+| `--reviewer claude-code`   | Uses the same account for the AI review.                           |
 | `--install 'npm ci'`       | Installs Chapter Garden's dependencies in each worktree.           |
 | `--build ...`              | Runs the site's checks and build before review.                    |
 | `--check-build yes`        | Tries the install and build once during setup; the default leaves it off. |
