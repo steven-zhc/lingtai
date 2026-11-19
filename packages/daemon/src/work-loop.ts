@@ -116,7 +116,7 @@ export const DISCUSSION_EVENTS = ['DiscussionRequested', 'ProjectResumed', 'DayC
  * held one back. One list, read by the loop's delivery and by the handler's own
  * guard, so the next unlock event is added once.
  */
-export const TRIAGE_EVENTS = ['WaitStarted', 'ProjectResumed', 'DayCeilingLifted'] as const
+export const TRIAGE_EVENTS = ['WaitStarted', 'SplitStarted', 'ProjectResumed', 'DayCeilingLifted'] as const
 
 /**
  * The events that mean the conductor is free to look again.

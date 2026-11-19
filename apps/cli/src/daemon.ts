@@ -66,11 +66,13 @@ import { releaseSandbox } from './sandbox.ts'
 import { keeper, serviceCommand, type ServiceOptions } from './service.ts'
 import type { Steps } from './steps.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
+import { catchUpRegisteredSplits } from './split-run.ts'
 import { flushTracing, startTracing } from './tracing.ts'
 import {
   catchUpChangedTriage,
   catchUpRegisteredContinuations,
   catchUpRegisteredTriage,
+  daemonSplitPorts,
   daemonTriagePorts,
   memoDaemonStartedAt,
   onWaitStarted,
@@ -755,6 +757,11 @@ export function daemonCommand(
                   daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
                   (line) => console.error(line),
                 )
+                yield* catchUpRegisteredSplits(
+                  [...recipes.keys()].map((project) => ({ project })),
+                  daemonSplitPorts(daemonStartedAt, (line) => console.log(line), locked),
+                  (line) => console.error(line),
+                )
               }
               // The run told GitHub as it went (0022), so there is nothing left
               // here to send and nothing to report about sending it.
@@ -812,6 +819,12 @@ export function daemonCommand(
           yield* catchUpRegisteredContinuations(
             projects,
             daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
+            (line) => console.error(line),
+          )
+          // A split triage decided whose writer died with the last daemon, or failed partway (#1262).
+          yield* catchUpRegisteredSplits(
+            projects,
+            daemonSplitPorts(daemonStartedAt, (line) => console.log(line), locked),
             (line) => console.error(line),
           )
           // A question asked while nothing was listening is waiting in the stream,
