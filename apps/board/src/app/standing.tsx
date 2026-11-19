@@ -225,82 +225,106 @@ function QueuedBand({
   )
 }
 
-function Meters({ m, serverNow }: { m: NonNullable<RunningPanelView['meters']>; serverNow: number }) {
+function Cell({ name, children, sub }: { name: string; children: ReactNode; sub?: string | null }) {
   return (
-    <dl className="meters">
-      {m.round === null ? null : (
-        <div className="meter" data-meter="round">
-          <dt>This round</dt>
-          <dd>
-            <Since key={`${m.runId}:${m.round.since}`} iso={m.round.since} serverNow={serverNow} />
-            {m.round.budget === null ? '' : ` of ${m.round.budget}`}
-            {m.round.of === null ? '' : ` · ${m.round.of}`}
-          </dd>
-          <dd className="sub">{m.round.budget === null ? 'no limit' : `at most ${m.round.budget}`}</dd>
-        </div>
+    <div className="meter" data-meter={name}>
+      <dt>{name}</dt>
+      <dd>{children}</dd>
+      {sub == null || sub === '' ? null : <dd className="sub">{sub}</dd>}
+    </div>
+  )
+}
+
+/** One row of facts: this step · this attempt · cost so far · fix rounds · limits (none set, once). */
+function Meters({ m, held, serverNow }: { m: RunningPanelView['meters']; held: string | null; serverNow: number }) {
+  const unlimited = m !== null && m.round?.budget == null && m.attempt.ceiling === null && m.cost.ceiling === null
+  return (
+    <dl className="meters facts">
+      {m === null ? null : (
+        <>
+          {m.round === null ? null : (
+            <Cell name="this step" sub={m.round.budget === null ? null : `of ${m.round.budget}`}>
+              <Since key={`${m.runId}:${m.round.since}`} iso={m.round.since} serverNow={serverNow} />
+            </Cell>
+          )}
+          <Cell name="this attempt" sub={m.attempt.ceiling ?? m.attempt.behind}>
+            <Since key={`${m.runId}:${m.attempt.since}`} iso={m.attempt.since} serverNow={serverNow} />
+            {` · ${m.attempt.turns}`}
+          </Cell>
+          <Cell name="cost so far" sub={m.cost.ceiling ?? m.cost.behind}>
+            {m.cost.text}
+          </Cell>
+        </>
       )}
-      <div className="meter" data-meter="attempt">
-        <dt>The attempt so far</dt>
-        <dd>
-          <Since key={`${m.runId}:${m.attempt.since}`} iso={m.attempt.since} serverNow={serverNow} />
-          {` · ${m.attempt.turns}`}
-          {m.attempt.behind === null ? '' : ` (${m.attempt.behind})`}
-        </dd>
-        <dd className="sub">{m.attempt.ceiling ?? 'no limit'}</dd>
-      </div>
-      <div className="meter" data-meter="cost">
-        <dt>Cost so far</dt>
-        <dd>
-          {m.cost.text}
-          {m.cost.behind === null ? '' : ` (${m.cost.behind})`}
-        </dd>
-        <dd className="sub">{m.cost.ceiling ?? 'no limit'}</dd>
-      </div>
+      {held === null ? null : <Cell name="fix rounds">{held}</Cell>}
+      {unlimited ? <Cell name="limits">none set</Cell> : null}
     </dl>
+  )
+}
+
+/** The running state's reading beside its label: the step, then both clocks. */
+function RunningMeta({ view, serverNow }: { view: RunningPanelView; serverNow: number }) {
+  const { head, meters } = view
+  const chip = [head.step ?? 'between steps', head.round === null ? null : `fix round ${head.round}`]
+    .filter((x) => x !== null)
+    .join(' · ')
+  return (
+    <p className="sread" data-rank="state">
+      <span className="sstate">{stateWord('running')}</span>
+      <span className="sage">[{chip}]</span>
+      {meters?.round == null ? null : (
+        <span className="sage">
+          step <Since key={`${meters.runId}:${meters.round.since}`} iso={meters.round.since} serverNow={serverNow} />
+        </span>
+      )}
+      {meters === null ? null : (
+        <span className="sage">
+          attempt{' '}
+          <Since key={`${meters.runId}:${meters.attempt.since}`} iso={meters.attempt.since} serverNow={serverNow} />
+        </span>
+      )}
+    </p>
   )
 }
 
 function RunningPanel({
   view,
+  held,
   discussion,
   serverNow,
 }: {
   view: RunningPanelView
+  held: string | null
   discussion: ReactNode
   serverNow: number
 }) {
-  const { head, line } = view
-  const chip = [head.step ?? 'between steps', head.round === null ? null : `refusal fix ${head.round}`]
-    .filter((x) => x !== null)
-    .join(' · ')
+  const { line } = view
   return (
     <div className="sreading sreading--advised">
-      <section className="triage-band triage-band--advised" data-rank="running">
+      <section className="triage-band triage-band--advised running-card" data-rank="running">
         <div className="triage-head">
-          <span className="triage-label">{head.label}</span>
-          <p className="triage-cause cause-chip">{chip}</p>
+          <div className="running-what">
+            {line.kind === 'step' ? (
+              line.actions === null ? (
+                <p className="triage-summary">{UNREADABLE}</p>
+              ) : line.actions.length === 0 ? (
+                <ol className="planlist">
+                  <li className="none">nothing configured at: {line.step}</li>
+                </ol>
+              ) : (
+                <ol className="planlist">
+                  <PlanStep step={line.step} actions={line.actions} skipped={false} />
+                </ol>
+              )
+            ) : line.kind === 'between' ? (
+              <p className="triage-summary">Between steps.</p>
+            ) : (
+              <p className="triage-summary">{line.text}</p>
+            )}
+          </div>
+          {view.watch === null ? null : <LastEvent watch={view.watch} serverNow={serverNow} />}
         </div>
-        {line.kind === 'step' ? (
-          line.actions === null ? (
-            <p className="triage-summary">{UNREADABLE}</p>
-          ) : line.actions.length === 0 ? (
-            <ol className="planlist">
-              <li className="none">nothing configured at: {line.step}</li>
-            </ol>
-          ) : (
-            <ol className="planlist">
-              <PlanStep step={line.step} actions={line.actions} skipped={false} />
-            </ol>
-          )
-        ) : line.kind === 'between' ? (
-          <p className="triage-summary">Between steps.</p>
-        ) : (
-          <p className="triage-summary">{line.text}</p>
-        )}
-        <p className="triage-ask">{view.ask}</p>
-        {view.meters === null ? null : <Meters m={view.meters} serverNow={serverNow} />}
-        {view.watch === null ? null : <LastEvent watch={view.watch} serverNow={serverNow} />}
-        <SaidLast />
+        <Meters m={view.meters} held={held} serverNow={serverNow} />
         {line.kind === 'fixing' ? (
           <ul className="findings">
             {line.findings.map((f, i) => (
@@ -314,17 +338,9 @@ function RunningPanel({
         {line.kind === 'refused' && line.evidence !== null && line.evidence !== '' ? (
           <RawEvidence raw={line.evidence} said={null} />
         ) : null}
-        <p className="triage-then">
-          <b>Then</b>{' '}
-          {view.then === null
-            ? UNREADABLE
-            : view.then.length === 0
-              ? 'nothing further is configured.'
-              : `${view.then.join(' → ')}, unless a step sends it back.`}
-        </p>
-        <RawRunLog where="running" />
+        <LiveLog />
       </section>
-      <div className="spair" data-rank="discussion">
+      <div className="spair running-ask" data-rank="discussion">
         {discussion}
       </div>
     </div>
@@ -422,7 +438,7 @@ import { LastEvent } from './last-event.tsx'
 import { DocumentBody } from './markdown.tsx'
 import { Outgoing, OutgoingPrompt } from './outgoing.tsx'
 import { PlanStep, Rail, UNREADABLE, limits } from './rail.tsx'
-import { FollowedLog, RawRunLog, SaidLast } from './run-log.tsx'
+import { FollowedLog, LiveLog, RawRunLog } from './run-log.tsx'
 import { SatisfiedItems } from './satisfied-items.tsx'
 import { Since } from './since'
 import { Skeleton } from './skeleton.tsx'
@@ -1173,17 +1189,20 @@ export function Standing({
         )}
       </Gh>
     )
-  const readout = (inLine: string | null) => (
-    <p className="sread" data-rank="state">
-      <span className="sstate">{stateWord(standing.state)}</span>
-      {standing.since !== null ? (
-        <span className="sage" title={standing.since}>
-          {inWords(now - Date.parse(standing.since))}
-        </span>
-      ) : null}
-      {inLine !== null ? <span className="sage">{inLine}</span> : null}
-    </p>
-  )
+  const readout = (inLine: string | null) =>
+    standing.state === 'running' && standing.running ? (
+      <RunningMeta view={standing.running} serverNow={now} />
+    ) : (
+      <p className="sread" data-rank="state">
+        <span className="sstate">{stateWord(standing.state)}</span>
+        {standing.since !== null ? (
+          <span className="sage" title={standing.since}>
+            {inWords(now - Date.parse(standing.since))}
+          </span>
+        ) : null}
+        {inLine !== null ? <span className="sage">{inLine}</span> : null}
+      </p>
+    )
   const stateReadout = (
     <Gh g={g} pending={pending} fallback={readout(null)}>
       {(a) =>
@@ -1300,6 +1319,7 @@ export function Standing({
                         live={standing.state === 'running'}
                         held={budget}
                         plan={a.queued?.plan}
+                        times={standing.state === 'running' ? standing.running?.stepTimes : undefined}
                       />
                     </div>
                   ) : null
@@ -1493,7 +1513,7 @@ export function Standing({
           ) : null}
 
           {standing.state === 'running' && standing.running ? (
-            <RunningPanel view={standing.running} discussion={discussion} serverNow={now} />
+            <RunningPanel view={standing.running} held={budget} discussion={discussion} serverNow={now} />
           ) : null}
 
           {standing.state === 'blocked' ? (

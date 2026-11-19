@@ -667,6 +667,7 @@ body {
   color: var(--muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.stime { display: block; font-size: 10px; color: var(--muted); }
 .slab.l-at { color: var(--accent-ink); font-weight: 500; }
 .slab.l-done { color: var(--muted); }
 /* Italic, and not merely paler. *Nothing configured* and *not reached yet* are
@@ -3618,3 +3619,14 @@ button.navlink { font-family: inherit; cursor: pointer; }
 .triage-choice-hint { color: var(--ink-2); font-size: 0.8rem; }
 .triage-own { display: grid; gap: 0.3rem; margin-top: 0.65rem; color: var(--ink-2); font-size: 0.85rem; }
 .triage-own textarea { width: 100%; min-height: 5rem; font: inherit; color: var(--ink); }
+
+/* The running card (#1290): one facts row, the live log open under it. */
+.running-card .triage-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.running-card .triage-head .planlist, .running-card .triage-head .triage-summary { margin: 0; }
+.meters.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.5rem 1rem; margin: 0.5rem 0; }
+.meters.facts .meter dt { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; }
+.meters.facts .meter dd { margin: 0; }
+.meters.facts .meter dd.sub { font-size: 0.7rem; color: var(--muted); }
+.livelog { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1rem; }
+@media (max-width: 40rem) { .livelog { grid-template-columns: minmax(0, 1fr); } }
+.running-log .alogbody { height: 14rem; margin-top: 0.3rem; }

@@ -138,8 +138,11 @@ export function Segs({
   steps,
   at,
   labels,
+  times,
 }: {
   steps: readonly StepProgress[]
+  /** How long a finished step took, printed under its name. Only the live task page hands it in. */
+  times?: Partial<Record<string, string>>
   at: string | null
   /**
    * Off on a landed row, which is one line by #81's decision and has no room
@@ -158,6 +161,7 @@ export function Segs({
             ))}
           </span>
           {labels ? <span className={`slab ${labelTone(p, at)}`}>{p.step}</span> : null}
+          {labels && times?.[p.step] !== undefined ? <span className="stime mono">{times[p.step]}</span> : null}
         </li>
       ))}
     </ol>
@@ -235,6 +239,7 @@ export function Rail({
   held = null,
   line = true,
   plan,
+  times,
 }: {
   /** Null on a ticket that has never run: the segments are then the plan's. */
   progress: AttemptProgress | null
@@ -275,6 +280,8 @@ export function Rail({
    * read, and the panel says so (#76).
    */
   plan?: PlanView | null
+  /** The finished steps' times, drawn under their names; the live task page's rail only. */
+  times?: Partial<Record<string, string>>
 }) {
   if (progress === null && !plan) return null
   const drawn = progress !== null ? progress.steps : plannedSegments(plan ?? null)
@@ -301,7 +308,7 @@ export function Rail({
 
   return (
     <div className="seq" style={style}>
-      <Segs steps={progress.steps} at={at} labels />
+      <Segs steps={progress.steps} at={at} labels times={times} />
       {!line ? null : now ? (
         <p
           className="snow"
