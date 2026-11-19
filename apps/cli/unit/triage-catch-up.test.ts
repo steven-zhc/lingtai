@@ -412,14 +412,14 @@ describe('triage catch-up', () => {
     done.push(
       done.event(
         'TriageStarted',
-        { waitId: done.waitId, attempt: 1, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } },
+        { waitId: done.waitId, attempt: 2, by: { _tag: 'Agent', runtime: 'claude-code', model: '' } },
         { at: old },
       ),
     )
     done.push(
       done.event('WaitTriaged', {
         waitId: done.waitId,
-        attempt: 1,
+        attempt: 2,
         headSha: 'head',
         result: { _tag: 'TriageFailed', why: 'failed' },
         by: { _tag: 'Agent', runtime: 'claude-code', model: '' },
@@ -522,14 +522,14 @@ describe('triage catch-up', () => {
     wait.push(
       wait.event('TriageStarted', {
         waitId: wait.waitId,
-        attempt: 1,
+        attempt: 2,
         by: { _tag: 'Agent', runtime: 'claude-code', model: '' },
       }),
     )
     wait.push(
       wait.event('WaitTriaged', {
         waitId: wait.waitId,
-        attempt: 1,
+        attempt: 2,
         headSha: 'head',
         result: { _tag: 'TriageFailed', why: 'failed' },
         by: { _tag: 'Agent', runtime: 'claude-code', model: '' },

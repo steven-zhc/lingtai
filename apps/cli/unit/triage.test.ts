@@ -351,10 +351,10 @@ function flakyReadAtCall(store: EventStore, failAtCall: number): EventStore {
   let call = -1
   return {
     ...store,
-    read: async (streamId) => {
+    read: async (streamId, fromVersion) => {
       call += 1
       if (call === failAtCall) throw new Error('connection dropped')
-      return store.read(streamId)
+      return store.read(streamId, fromVersion)
     },
   }
 }
@@ -520,6 +520,8 @@ describe('waitTriage', () => {
       'RunPrompted',
       'WaitResolved',
       'RunSpent',
+      // Recorded for its cost and shown nowhere (0118 §9): it resolves nothing and starts nothing.
+      'WaitTriaged',
     ])
     expect(cleanup).toHaveBeenCalledOnce()
   })
