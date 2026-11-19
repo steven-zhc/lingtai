@@ -14,9 +14,10 @@
  */
 import { createRuntime, runtimeVersionOfEffect, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
-import { diffBaseShaOf } from '@lingtai/conductor'
 import type { TicketListing } from '@lingtai/conductor/discover'
 import { readingFor } from '@lingtai/conductor/discuss'
+import { projectClientEffect } from '@lingtai/conductor/filter'
+import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
 import { requestContinuation } from '@lingtai/conductor/resolve-wait'
@@ -61,6 +62,7 @@ import {
   type TriageResult,
   type WaitReason,
 } from '@lingtai/domain/wait'
+import { hasGitHubAuth } from '@lingtai/env'
 import {
   eventStore,
   log as processLog,
@@ -78,6 +80,7 @@ import {
   listAtEffect,
   readAtEffect,
   refShaEffect,
+  refShaStrictEffect,
   type ConflictedPath,
 } from '@lingtai/repo'
 import { Cause, Clock, Deferred, Duration, Effect, Exit, Fiber, Semaphore } from 'effect'
@@ -548,6 +551,26 @@ const baseOf = (ticketId: string): Effect.Effect<string> =>
     return (yield* readProjectEffect(project))?.base ?? 'main'
   })
 
+/** A branch's head read from the remote itself, as the person's own paths read it (`redo-step.ts`). No auth is a failed read. */
+const remoteRefSha = (input: { project: string; ref: string }): Effect.Effect<string, unknown> =>
+  Effect.gen(function* () {
+    const project = yield* readProjectEffect(input.project)
+    if (project === null) return yield* Effect.fail(new Error(`no project named "${input.project}"`))
+    let client: { refSha(ref: string): Promise<string | null> }
+    if (project.owner === null) {
+      client = (yield* ownerlessClientEffect(project, (yield* currentRecipeEffect(project)).recipe)).client
+    } else {
+      if (!hasGitHubAuth()) return yield* Effect.fail(new Error('no GitHub App configured'))
+      client = (yield* projectClientEffect(project)).client
+    }
+    const sha = yield* Effect.tryPromise({
+      try: () => client.refSha(`heads/${input.ref}`),
+      catch: (error) => new Error(`could not read ${input.ref} on the remote: ${messageOf(error)}`),
+    })
+    if (sha === null) return yield* Effect.fail(new Error(`${input.ref} is not on the remote`))
+    return sha
+  })
+
 /** The daemon's real ports. A recipe that cannot resolve leaves triage undeclared. */
 export function daemonTriagePorts(
   daemonStartedAt: () => Effect.Effect<Date, unknown>,
@@ -585,8 +608,9 @@ export function daemonTriagePorts(
           snapshots: processLog.snapshots,
           writer,
           runtime: createRuntime,
+          remote: { refSha: remoteRefSha },
           mirror: {
-            refSha: refShaEffect,
+            refSha: refShaStrictEffect,
             listAt: listAtEffect,
             readAt: readAtEffect,
             diffStatAt: diffStatAtEffect,
@@ -636,6 +660,8 @@ const clip = (text: string): string => cut(text)
 export interface TriagePorts extends SnapshotReadOptions {
   store: EventStore
   runtime(agent: DiscussAgent, options: { tools: 'none' | 'full' }): Runtime
+  /** The remote itself, read when an answer is acted on: a failed read fails the act, and is never "unchanged". */
+  remote: { refSha(input: { project: string; ref: string }): Effect.Effect<string, unknown> }
   mirror: {
     refSha(input: { project: string; ref: string; signal?: AbortSignal }): Effect.Effect<string | null, unknown>
     listAt(input: {
@@ -802,7 +828,9 @@ const gatherEvidence = (
     }
 
     const noPaths = { paths: [] as string[], truncated: false }
-    const baseSha = yield* guard(deps.mirror.refSha({ project, ref: base, signal })).pipe(orElse<string | null>(null))
+    const baseSha = yield* guard(deps.mirror.refSha({ project, ref: base, signal })).pipe(
+      Effect.mapError((error) => new Error(`could not read ${base} in the mirror: ${messageOf(error)}`)),
+    )
     const refs: ReadableRef[] = []
     if (baseSha !== null) {
       const listed = yield* guard(deps.mirror.listAt({ project, ref: base, signal })).pipe(orElse(noPaths))
@@ -810,7 +838,9 @@ const gatherEvidence = (
     }
     let headSha: string | null = null
     if (head !== null) {
-      headSha = yield* guard(deps.mirror.refSha({ project, ref: head, signal })).pipe(orElse<string | null>(null))
+      headSha = yield* guard(deps.mirror.refSha({ project, ref: head, signal })).pipe(
+        Effect.mapError((error) => new Error(`could not read ${head} in the mirror: ${messageOf(error)}`)),
+      )
       if (headSha !== null) {
         const listed = yield* guard(deps.mirror.listAt({ project, ref: headSha, signal })).pipe(orElse(noPaths))
         refs.push({
@@ -858,7 +888,7 @@ const gatherEvidence = (
 /**
  * **What the answer is acted on against, read when it is appended** (#1258): the attempt's own counters beside what triage
  * has itself spent (`triageSpentOf`, the larger of the two and never the sum), the head the attempt is at now, and the
- * saved head a fix or a rerun would continue — checked against the mirror's ref, since there is no GitHub client here. A
+ * saved head a fix or a rerun would continue — checked against the remote's own ref (`deps.remote`), never the mirror. A
  * read that fails fails this, and the answer is recorded `TriageFailed`: it is never taken as unchanged.
  *
  * The action is named once here only to know which head to look for; `actOnTriageTransition` names it again from the same
@@ -910,7 +940,7 @@ const readActContext = (
         ? ('diff-too-large' as const)
         : ('other' as const)
     const refIs = (ref: string, sha: string): Effect.Effect<boolean, unknown> =>
-      deps.mirror.refSha({ project, ref }).pipe(Effect.map((found) => found === sha))
+      deps.remote.refSha({ project, ref }).pipe(Effect.map((found) => found === sha))
     const action = answer._tag === 'TriageAnswered' ? actionFor(answer.cause, origin, counters) : null
     let fix: ActContext['fix'] = null
     let redo: ActContext['redo'] = null
@@ -920,12 +950,9 @@ const readActContext = (
     }
     if (run !== null && runId !== null && action?._tag === 'redoStep') {
       const head = rerunHeadOf(run)
-      if ('at' in head) {
-        if (head.atRef === null || (yield* refIs(head.atRef, head.at))) redo = { onSha: head.at, ref: head.atRef }
-      } else if ('atBase' in head) {
-        const base = diffBaseShaOf(yield* lift(() => deps.store.read(runId)))
-        if (base !== null) redo = { onSha: base, ref: null }
-      }
+      // Only a head read from the remote just now is one a rerun continues on; the recorded base is not offered.
+      if ('at' in head && head.atRef !== null && (yield* refIs(head.atRef, head.at)))
+        redo = { onSha: head.at, ref: head.atRef }
     }
     return { origin, counters, boundHead, headNow: run?.headSha ?? null, fix, redo }
   })

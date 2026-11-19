@@ -57,6 +57,7 @@ import {
   continueTransition,
   parsePayload,
   releaseTransition,
+  cut,
   ticketReducer,
   type ToAppend,
 } from '@lingtai/domain'
@@ -574,13 +575,19 @@ export function finishTriage(
       ifVersion: options.ifVersion,
       since,
     }
-    let decided: { ok: true; events: ToAppend[]; resolution: Resolution | null } | { ok: false; refusal: TriageRefusal }
+    let decided:
+      | { ok: true; events: ToAppend[]; resolution: Resolution | null }
+      | { ok: false; refusal: TriageRefusal; why?: string }
     if (result._tag === 'TriageAnswered' && options.act !== undefined) {
       const read = yield* Effect.exit(options.act(state))
+      const unreadable = (cause: Cause.Cause<unknown>) => {
+        const squashed = Cause.squash(cause)
+        return cut(`unreadable: ${squashed instanceof Error ? squashed.message : String(squashed)}`)
+      }
       if (Exit.isFailure(read) && Cause.hasInterruptsOnly(read.cause)) return yield* Effect.failCause(read.cause)
       // A read that fails is never taken as unchanged (#1258): the answer acts on nothing and is recorded failed.
       decided = Exit.isFailure(read)
-        ? { ok: false, refusal: 'unreadable' }
+        ? { ok: false, refusal: 'unreadable', why: unreadable(read.cause) }
         : actOnTriageTransition(state, { ...input, result, context: read.value })
     } else {
       const finished = finishTriageTransition(state, { ...input, result })
@@ -597,7 +604,7 @@ export function finishTriage(
     }
     // The refusal is a failure of this attempt, and a record of it: bound to the version just read.
     const { since: _since, ifVersion: _ifVersion, ...recorded } = input
-    const failed = triageFailedEvent({ ...recorded, why: decided.refusal })
+    const failed = triageFailedEvent({ ...recorded, why: decided.why ?? decided.refusal })
     const lost = yield* appendLost(options.store, ticketId, state.version, [failed])
     return lost ? ({ ok: false, lost: true } as const) : ({ ok: false, refusal: decided.refusal } as const)
   })

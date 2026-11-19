@@ -193,6 +193,7 @@ function fakeDeps(store: EventStore, runtime: Runtime, overrides: DepsOverrides 
   return {
     store,
     runtime: vi.fn(() => runtime),
+    remote: { refSha: () => Effect.fail(new Error('remote not stubbed')) },
     mirror: fakeMirror(),
     issue: (ticketId, signal) =>
       Effect.suspend(() =>

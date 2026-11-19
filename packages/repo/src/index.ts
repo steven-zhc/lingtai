@@ -33,6 +33,7 @@ export {
   readAtEffect,
   refSha,
   refShaEffect,
+  refShaStrictEffect,
   type ConflictedPath,
   type MirrorOptions,
 } from './mirror.ts'
