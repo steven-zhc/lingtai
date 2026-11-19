@@ -60,7 +60,7 @@ export const DOCS_PUBLIC = false
  * fourteen under it, which are the recipe's vocabulary and were written for a
  * reader who has never seen the source. `safety` is the page the home page's
  * sandbox band links to (#809). `guide` is the habits that make a run cheap and
- * predictable (#817, #818). Nothing else in `doc/` has been through
+ * predictable (#817, #818). `when-it-fails` is what Lingtai does when something breaks, for a reader who has run the tutorial (#1295). Nothing else in `doc/` has been through
  * that edit yet. A slug, as `slugOf` gives them; one names itself and, as a
  * directory, everything beneath it.
  *
@@ -71,6 +71,7 @@ export const PUBLIC_SLUGS = [
   'tutorial',
   'tutorial-more',
   'concepts',
+  'when-it-fails',
   'recipe',
   'cli',
   'requirements',
@@ -123,6 +124,7 @@ export const SECTIONS: Section[] = [
       'tutorial.md',
       'tutorial-more.md',
       'concepts.md',
+      'when-it-fails.md',
       'recipe.md',
       'cli.md',
       'requirements.md',

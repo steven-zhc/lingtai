@@ -238,6 +238,12 @@ describe('where a link inside a document goes', () => {
     expect(resolveHref('tutorial.md', 'safety.md', (f) => served.includes(f))).toBe('/docs/safety/')
   })
 
+  it('publishes the failures page', async () => {
+    const served = await servable()
+    expect(served).toContain('when-it-fails.md')
+    expect(resolveHref('tutorial.md', 'when-it-fails.md', (f) => served.includes(f))).toBe('/docs/when-it-fails/')
+  })
+
   it('publishes the best practices page', async () => {
     const served = await servable()
     expect(served).toContain('guide.md')
