@@ -850,13 +850,19 @@ export interface SplitChildState {
 export type SplitChildren =
   | null
   | { readonly unreadable: string }
-  | { readonly read: readonly { number: number; state: string; stateReason?: 'completed' | 'not_planned' | null }[] }
+  | {
+      readonly read: readonly {
+        number: number
+        title?: string
+        state: string
+        stateReason?: 'completed' | 'not_planned' | null
+      }[]
+    }
 
 /** Why a claim is refused by the ticket's own state. A lost race is a fact about the append, not here. */
 export type ClaimDecline =
   | { reason: 'held'; by: string; runId: string }
   | { reason: 'not-claimable'; status: string }
-  | { reason: 'split-done'; version: number; waitId: string; children: SplitChildState[] }
   | { reason: 'split-open'; open: number[] }
   | { reason: 'split-unreadable'; detail: string }
 
@@ -886,15 +892,7 @@ export function claimTransition(
     const read = input.children.read
     const open = read.filter((i) => i.state !== 'closed').map((i) => i.number)
     if (open.length > 0) return { ok: false, refusal: { reason: 'split-open', open } }
-    return {
-      ok: false,
-      refusal: {
-        reason: 'split-done',
-        version: state.version,
-        waitId: state.split.waitId,
-        children: read.map((i) => ({ number: i.number, stateReason: i.stateReason ?? null })),
-      },
-    }
+    // Every child closed: the parent is claimed like any ticket and checks its own `## Done when` (#1263).
   }
 
   return {
