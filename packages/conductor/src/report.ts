@@ -19,7 +19,7 @@ export interface ReportTicketRow {
   ticket: string
   project: string | null
   kind: string | null
-  outcome: 'open' | 'landed' | 'closed'
+  outcome: 'open' | 'landed' | 'satisfied' | 'closed'
   outcomeAt: Date | null
   passes: number
   fixRounds: number

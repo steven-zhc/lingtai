@@ -1074,6 +1074,12 @@ export interface AttemptOptions {
      * continuation that resumes the review is still owed the conflict block and question.
      */
     readonly conflictResolved?: { readonly baseSha: string; readonly paths: readonly string[] }
+    /** A check of declared evidence the held run had started and not finished (#1251): the resumed review stays a check. */
+    readonly alreadyDone?: {
+      readonly baseSha: string
+      readonly bodyVersion: number
+      readonly items: readonly { readonly item: string; readonly evidence: string }[]
+    }
     /** A prior human grant caps automatic fix routing across later continuations. */
     readonly roundLimit?: number
     /** One fix dispatch authorized by the wait resolution, consumed on the first implement visit. */
@@ -1579,7 +1585,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       readonly baseSha: string
       readonly bodyVersion: number
       readonly items: readonly { readonly item: string; readonly evidence: string }[]
-    } | null = null
+    } | null = options.from?.alreadyDone ?? null
     /** Whether the last `review` visit read: a reviewer that ran and answered readably (#671). */
     let reviewRead = false
 
@@ -1869,9 +1875,14 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // judge declared `when: already-done` is ever paid. And **a refused check is `fixRefusal` by rule**
         // (0108 §21): the unmet items are the criterion already, so a judge declared at `findings` is never asked.
         const checkDone = offer.available.find((c) => c.id === 'check-done' && c.next._tag === 'CheckDone')
-        const fixAfterCheck =
-          checking !== null && offer.proposal._tag === 'ReviewFindings'
-            ? offer.available.find((c) => c.id === 'fix-lines' && c.next._tag === 'FixRefusal')
+        const refusedCheck = checking !== null && offer.proposal._tag === 'ReviewFindings'
+        const fixAfterCheck = refusedCheck
+          ? offer.available.find((c) => c.id === 'fix-lines' && c.next._tag === 'FixRefusal')
+          : undefined
+        // Where `fix-lines` is spent the answer is still not a judge's (0108 §21): the offer's own floor, a person.
+        const handAfterCheck =
+          refusedCheck && fixAfterCheck === undefined
+            ? offer.available.find((c) => c.id === 'hand-to-person')
             : undefined
         const reply: JudgeReply | { readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string } } =
           checkDone !== undefined
@@ -1886,35 +1897,41 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                   candidate: 'fix-lines',
                   why: 'the evidence did not satisfy every Done-when item: each unmet item is a finding, and the agent is sent to do it',
                 }
-              : landAgain !== undefined && landAgain.next._tag === 'LandAgain'
+              : handAfterCheck !== undefined
                 ? {
                     _tag: 'Selected',
-                    candidate: 'land-again',
-                    why: `origin did not answer the land; landing again from ${onSha} after ${Duration.format(Duration.fromInputUnsafe(landWait ?? '0 millis'))}, retry ${landAgain.next.retry} of ${BOUNDS.landingRetries}`,
+                    candidate: 'hand-to-person',
+                    why: 'the evidence did not satisfy every Done-when item and no fix round is left: a person decides',
                   }
-                : rerunNext !== null &&
-                    rerunCandidate !== undefined &&
-                    (rerunNext.step === 'prepared' || lastVisit !== null)
+                : landAgain !== undefined && landAgain.next._tag === 'LandAgain'
                   ? {
                       _tag: 'Selected',
-                      candidate: rerunCandidate.id,
-                      why:
-                        rerunNext.step === 'prepared'
-                          ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`
-                          : `the ${rerunNext.step} answer could not be read; asking the same agent again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`,
+                      candidate: 'land-again',
+                      why: `origin did not answer the land; landing again from ${onSha} after ${Duration.format(Duration.fromInputUnsafe(landWait ?? '0 millis'))}, retry ${landAgain.next.retry} of ${BOUNDS.landingRetries}`,
                     }
-                  : conflictRule !== null && offer.proposal._tag === 'MergeConflict'
+                  : rerunNext !== null &&
+                      rerunCandidate !== undefined &&
+                      (rerunNext.step === 'prepared' || lastVisit !== null)
                     ? {
                         _tag: 'Selected',
-                        candidate: conflictRule.id,
-                        why: `a merge conflict ${offer.proposal.paths === null || offer.proposal.paths.length === 0 ? 'with the base' : `in ${offer.proposal.paths.join(', ')}`} is the agent's to resolve (0108 §8), round ${conflictRule.round} of ${policy.conflictResolutions} conflictResolutions`,
+                        candidate: rerunCandidate.id,
+                        why:
+                          rerunNext.step === 'prepared'
+                            ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`
+                            : `the ${rerunNext.step} answer could not be read; asking the same agent again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`,
                       }
-                    : yield* replyFor(
-                        offer,
-                        shown,
-                        options.judge,
-                        causeBoundsFor(policy, spentNow, ceilings.personAsksSpent ?? 0),
-                      )
+                    : conflictRule !== null && offer.proposal._tag === 'MergeConflict'
+                      ? {
+                          _tag: 'Selected',
+                          candidate: conflictRule.id,
+                          why: `a merge conflict ${offer.proposal.paths === null || offer.proposal.paths.length === 0 ? 'with the base' : `in ${offer.proposal.paths.join(', ')}`} is the agent's to resolve (0108 §8), round ${conflictRule.round} of ${policy.conflictResolutions} conflictResolutions`,
+                        }
+                      : yield* replyFor(
+                          offer,
+                          shown,
+                          options.judge,
+                          causeBoundsFor(policy, spentNow, ceilings.personAsksSpent ?? 0),
+                        )
         if ('neverStarted' in reply) {
           // 0031 §3, at the third depth the same wall is met at: the judge
           // itself is an agent, and an account-wide wall is the conductor's to
@@ -2473,7 +2490,9 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               baseSha: c.baseSha,
               bodyVersion: c.bodyVersion,
               items: [...c.items],
-              reading: (outcome === undefined ? null : reviewSummaryOf(outcome)?.summary) ?? '',
+              reading:
+                (outcome === undefined ? null : reviewSummaryOf(outcome)?.summary) ??
+                'the reviewer gave no per-item reading; its answer cleared every item against the evidence above',
             },
           }
         }

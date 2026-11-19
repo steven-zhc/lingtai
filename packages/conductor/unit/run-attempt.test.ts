@@ -4186,4 +4186,53 @@ describe('an implementer that found the work already on the base (#1251, 0108 §
     expect(seen.map((c) => c.alreadyDone !== undefined)).toEqual([true, false])
     expect(seen[1]!.recheck).toEqual([unmet])
   })
+  it("with no fix round left, a refused check is a person's — never a judge declared at findings", async () => {
+    const unmet: ActionFinding = {
+      file: 'src/importer.ts',
+      line: 12,
+      claim: 'the lock is not taken at the base',
+      failureScenario: 'a test pins it',
+      severity: 'major',
+    }
+    const { bodies } = watching()
+    const { actionsAt } = watchingActions({
+      implement: [alreadyDone()],
+      review: [reviewing(() => ({ verdict: 'failed', evidence: 'unmet', findings: [unmet] }), [])],
+    })
+    const { emit } = events()
+    let judged = 0
+    const result = await runAttempt({
+      recipe,
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { ...ceilings, refusalFixes: 0, newAttempts: 1 },
+      judge: async () => {
+        judged += 1
+        return { next: 'implement', named: 'test', why: 'asked' }
+      },
+    })
+    expect(judged).toBe(0)
+    expect(result.end._tag).toBe('WaitOnPerson')
+  })
+
+  it('a continuation that resumes the review keeps check mode, so an empty diff is not passed unread', async () => {
+    const seen: ActionContext[] = []
+    const { bodies } = watching()
+    const { actionsAt } = watchingActions({ review: [reviewing(() => PASSED, seen)] })
+    const { emit } = events()
+    const result = await runAttempt({
+      recipe,
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings,
+      splitParent: true,
+      from: { step: 'review', alreadyDone: { baseSha: BASE, bodyVersion: 4, items } } as never,
+    })
+    expect(seen[0]!.alreadyDone).toEqual({ baseSha: BASE, items })
+    expect(result.end).toMatchObject({ _tag: 'Satisfied', baseSha: BASE })
+  })
 })

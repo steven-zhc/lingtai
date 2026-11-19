@@ -36,7 +36,7 @@ export interface Receipt {
   number: number
   title: string
   kind: string | null
-  outcome: 'open' | 'landed' | 'closed'
+  outcome: 'open' | 'landed' | 'satisfied' | 'closed'
   /** Which cost percentile this ticket stands for: the landed ticket nearest it. */
   percentile: 25 | 50 | 90
   fixRounds: number

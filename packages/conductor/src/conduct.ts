@@ -262,6 +262,7 @@ import {
 } from './attempt-steps.ts'
 import {
   armForState,
+  alreadyDoneOf,
   conflictResolvedOf,
   diffBaseShaOf,
   landedOnBaseOf,
@@ -1436,6 +1437,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             diffBaseSha: diffBaseShaOf(releasedEvents),
             landedOnBase: landedOnBaseOf(releasedEvents),
             conflictResolved: conflictResolvedOf(releasedEvents),
+            alreadyDone: alreadyDoneOf(releasedEvents),
             baseRed: { toSha: baseRead.at, fromSha: cause.baseSha, action },
             released: {
               by: 'release' as const,
@@ -1496,6 +1498,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           diffBaseSha: diffBaseShaOf(releasedEvents),
           landedOnBase: landedOnBaseOf(releasedEvents),
           conflictResolved: conflictResolvedOf(releasedEvents),
+          alreadyDone: alreadyDoneOf(releasedEvents),
           released: {
             by: 'release' as const,
             runId: releasedFrom.runId,
@@ -1560,6 +1563,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           diffBaseSha: diffBaseShaOf(runEvents),
           landedOnBase: landedOnBaseOf(runEvents),
           conflictResolved: conflictResolvedOf(runEvents),
+          alreadyDone: alreadyDoneOf(runEvents),
           released: {
             by: 'person' as const,
             runId: options.continuing.runId,
@@ -1696,6 +1700,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         diffBaseSha: diffBaseShaOf(runEvents),
         landedOnBase: landedOnBaseOf(runEvents),
         conflictResolved: conflictResolvedOf(runEvents),
+        alreadyDone: alreadyDoneOf(runEvents),
       }
     })
 
@@ -5745,6 +5750,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   ? { conflict: continuation.conflict }
                   : {}),
                 ...(continuation.conflictResolved !== null ? { conflictResolved: continuation.conflictResolved } : {}),
+                ...(continuation.alreadyDone !== null ? { alreadyDone: continuation.alreadyDone } : {}),
                 ...(continuation.released?.rerun.for != null
                   ? {
                       redo: {

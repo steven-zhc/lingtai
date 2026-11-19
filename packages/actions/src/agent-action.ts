@@ -372,6 +372,12 @@ it.
 Each unmet item is one finding at severity \`major\`. Put the Done-when item **word for word** in its
 \`failureScenario\`, and say in \`claim\` what is missing at that commit. Met items are not findings.
 
+## Your reading
+
+Here \`summary\` is not a description of a change: it is **required**, and holds your reading of every item, one line
+per item in order — the item, whether it is met at \`${check.baseSha}\`, and what you opened to know. A person who is
+asked to confirm reads it, and nothing else of yours.
+
 ${spec.prompt ? `## Also for this project\n\n${spec.prompt}\n` : ''}## How to report
 ${CONTRACT}
 `,

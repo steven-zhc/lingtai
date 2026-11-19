@@ -307,6 +307,25 @@ export function conflictResolvedOf(runEvents: readonly Envelope[]): { baseSha: s
   return conflictedIn(outcomes[at]!)
 }
 
+/**
+ * **A check of declared evidence still standing** (#1251): the last `CheckDone` route, while nothing but a
+ * redo of the same step has been routed since. A continuation (account recovery, `RedoStep`) is a fresh
+ * `runAttempt`, so check mode is read back off the log, or the resumed review would pass an empty diff unread.
+ */
+export function alreadyDoneOf(runEvents: readonly Envelope[]): {
+  baseSha: string
+  bodyVersion: number
+  items: { item: string; evidence: string }[]
+} | null {
+  const routes = routesOf(runEvents)
+  const at = routes.findLastIndex((r) => r.next._tag === 'CheckDone')
+  if (at < 0) return null
+  if (routes.slice(at + 1).some((r) => r.next._tag !== 'RerunStep')) return null
+  const next = routes[at]!.next
+  if (next._tag !== 'CheckDone') return null
+  return { baseSha: next.baseSha, bodyVersion: next.bodyVersion, items: next.items.map((i) => ({ ...i })) }
+}
+
 function reviewerRanIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
   return outcome.actions.some(
     (a) =>
