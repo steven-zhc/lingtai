@@ -162,11 +162,14 @@ export function problemsOf(
     BigInt(a.seq) < BigInt(b.seq) ? -1 : BigInt(a.seq) > BigInt(b.seq) ? 1 : 0,
   )
   const answers = new Map<string, { by: string; resolution: string }>()
+  /** Waits any resolution of which was a split: a completed split is a fact a later resolution does not undo. */
+  const splits = new Set<string>()
   const items: Item[] = []
   const last = new Map<string, Item>()
   for (const r of ordered) {
     if (r._tag === 'Answer') {
       answers.set(r.waitId, { by: r.by, resolution: r.resolution })
+      if (r.resolution === 'Split') splits.add(r.waitId)
       continue
     }
     const before = last.get(r.runId)
@@ -179,7 +182,7 @@ export function problemsOf(
     last.set(r.runId, item)
   }
 
-  const splitOf = (w: TicketWait): boolean => finalOf(w, answers)?.resolution === 'Split'
+  const splitOf = (w: TicketWait): boolean => splits.has(w.waitId) || w.resolution?.resolution._tag === 'Split'
   const waitsInOrder = [...waits].sort((a, b) => a.at.getTime() - b.at.getTime())
   const lonely: TicketWait[] = []
   for (const w of waitsInOrder) {

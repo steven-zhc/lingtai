@@ -219,6 +219,12 @@ describe('problemsOf, the sequences a review refused', () => {
     expect(one([split], [w])).toMatchObject({ kind: 'too-big', answeredBy: 'system' })
   })
 
+  it('a completed split stays too-big when the wait is resolved again afterwards', () => {
+    const w = wait({ _tag: 'BudgetExhausted', run: { runId: RUN } }, 2, 'triage', 'TicketTooBig')
+    const a = [answer('w2', 'triage', 'Split', 3), answer('w2', 'triage', 'StartNewAttempt', 4)]
+    expect(one(a, [w])).toMatchObject({ kind: 'too-big', answeredBy: 'system' })
+  })
+
   it('a redo whose wait triage diagnosed as a broken setup is setup, you', () => {
     const w = wait({ _tag: 'AgentCrashed', run: { runId: RUN }, step: 'implement' }, 5, 'triage', 'SetupBroken')
     expect(one([redo(1)], [w])).toMatchObject({ kind: 'setup', answeredBy: 'you' })
