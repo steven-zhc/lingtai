@@ -28,8 +28,9 @@ import {
   TRIAGE_SPLIT_CHILDREN_MAX,
   TRIAGE_FIXES_MAX,
   TRIAGE_QUESTIONS_MAX,
-  TRIAGE_SENTENCE_MAX,
   TRIAGE_TEXT_MAX,
+  cut,
+  cutProse,
   type PayloadOf,
   type StoredRoute,
 } from '@lingtai/domain'
@@ -96,10 +97,11 @@ name a cause and never an action: what follows it is not yours to choose, so a
 \`resolution\` key is refused, and so is any other extra key, for example
 \`"confidence"\`, each by name rather than ignored.
 
-\`summary\` and \`want\` are each at most ${TRIAGE_SENTENCE_MAX} characters — one
-sentence, not a paragraph. Every other free-text field below — every \`id\`,
-\`path\`, \`what\`, \`why\`, \`text\` and \`recommended\` — is at most ${TRIAGE_TEXT_MAX}
-characters.
+\`summary\` and \`want\` are each one sentence, not a paragraph. Every
+free-text field — \`summary\`, \`want\`, \`what\`, \`why\`, \`text\` — is at most
+${TRIAGE_TEXT_MAX} characters, and prose over it is cut. Every \`id\`, \`path\` and
+\`recommended\` is at most ${TRIAGE_TEXT_MAX} characters too, and one over it is
+not read.
 
 \`cause\` is exactly one of these seven (0118 §4), and its parts belong to it —
 never repeated beside it:
@@ -116,7 +118,7 @@ never repeated beside it:
   \`{"path": "a.ts", "line": 10, "what": "fix the thing"}\` — \`line\` may be
   \`null\` where no one line applies.
 - \`WrongApproach\` — *the approach is wrong*: patching will not converge.
-  \`why\` is one sentence of what was wrong, at most ${TRIAGE_SENTENCE_MAX} characters;
+  \`why\` is one sentence of what was wrong, at most ${TRIAGE_TEXT_MAX} characters;
   the next attempt's brief quotes it.
 - \`ConflictingHunks\` — *merge by hand*: \`hunks\` and \`total\`, a conflict. Each
   hunk carries its own \`_tag\`: \`{"_tag": "Mechanical", "path": "a.ts",
@@ -343,9 +345,7 @@ export type TriageReply =
 /** A cause naming a budget, never a legitimate one (0118 §4). */
 const BUDGET_NAMED = /out[- ]of[- ](turns|usd|rounds|budget)|budget/i
 
-function clip(text: string): string {
-  return text.length > TRIAGE_TEXT_MAX ? text.slice(0, TRIAGE_TEXT_MAX) : text
-}
+const clip = (text: string): string => cut(text)
 
 /**
  * The reply, from whatever the agent actually said — defensive in the way
@@ -353,7 +353,8 @@ function clip(text: string): string {
  * JSON usually gives JSON, and the turn where it does not must not become a
  * crash with no record of why.
  *
- * **No repair.** An answer that misses the schema is never coerced into one
+ * **No repair of shape.** Prose over `TRIAGE_TEXT_MAX` is cut (`cutProse`) and
+ * answered; an answer that misses the schema in any other way is never coerced into one
  * that fits — `parseReply`'s own rule: *"An unreadable reply is not repaired
  * into an answer."* **No action, ever:** a `resolution` key is refused by name,
  * because triage answers a cause and what follows it is the system's (0118 §1).
@@ -434,7 +435,7 @@ export function parseTriage(text: string | null, options: { kind: string | null 
     }
   }
 
-  const parsed = TriageResult.safeParse({ ...found, _tag: 'TriageAnswered' })
+  const parsed = TriageResult.safeParse(cutProse({ ...found, _tag: 'TriageAnswered' }))
   if (!parsed.success) {
     const why = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
     return { kind: 'refused', why: clip(why), raw: text }
