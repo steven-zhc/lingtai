@@ -820,6 +820,20 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       restart(hasCriterion)
       break
     }
+    case 'AlreadyDone': {
+      // #1251, 0108 §18: the check is a rule's, free, and the only move: there is no criterion yet,
+      // so no fix round and no restart is offered, and a person is the floor.
+      available.push({
+        id: 'check-done',
+        next: {
+          _tag: 'CheckDone',
+          baseSha: proposal.baseSha,
+          bodyVersion: proposal.bodyVersion,
+          items: proposal.items,
+        },
+      })
+      break
+    }
     case 'BudgetExhausted': {
       if (bornAtOrAfterImplement(proposal.from)) round('fix-lines', 'implement', true)
       restart(true)
@@ -882,6 +896,8 @@ export const BUILT_IN_FOR: Record<JudgeWhen, BuiltInJudge | null> = {
   // Free and mechanical: the base moved on the branch's own files, so merge it in
   // and build and review again (#593). Bounded by `BOUNDS.baseBranchMerges`, not by a judge.
   'base-moved': 'merge-the-base',
+  // The check of the declared evidence is a rule's move (`check-done`), taken before any judge (#1251).
+  'already-done': 'check-the-evidence',
 }
 
 // ─── What follows a cause (0108 §6) ───

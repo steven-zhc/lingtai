@@ -31,6 +31,7 @@ import {
   attemptBrief,
   attemptOutcome,
   clamp,
+  alreadyDoneOf,
   conflictResolvedOf,
   diffBaseShaOf,
   priorAttempts,
@@ -881,5 +882,47 @@ describe('conflictResolvedOf (#1120)', () => {
       ]),
     ]
     expect(conflictResolvedOf(events)).toEqual({ baseSha: BASE, paths: ['a.ts'] })
+  })
+})
+
+describe('alreadyDoneOf (#1251)', () => {
+  const act = (yields: Action['yields'], result: unknown): Action =>
+    ({ plugin: 'x', name: 'x', onSha: 'sha-1', evidence: '', yields, result }) as Action
+  const step = (e: ReturnType<typeof stream>, step: PayloadOf<'StepStarted'>['step'], actions: Action[]) => [
+    e('StepStarted', started('r', step)),
+    e('StepEnded', { runId: 'r', outcome: { step, round: 0, actions } }),
+  ]
+  const items = [{ item: 'it works', evidence: 'a.ts:1' }]
+  const declared = act('commit', {
+    _tag: 'Completed',
+    head: null,
+    question: null,
+    outcome: { _tag: 'AlreadyDone', items, baseSha: 'b'.repeat(40), bodyVersion: 4 },
+  })
+
+  it('is read off the implement outcome, with no CheckDone route on the log', () => {
+    const e = stream('r')
+    const events = [...step(e, 'implement', [declared]), ...step(e, 'review', [act('verdict', { _tag: 'NotReached' })])]
+    expect(alreadyDoneOf(events)).toEqual({ baseSha: 'b'.repeat(40), bodyVersion: 4, items })
+  })
+
+  it('survives a continuation’s own admit and prepared steps', () => {
+    const e = stream('r')
+    const events = [
+      ...step(e, 'implement', [declared]),
+      ...step(e, 'review', [act('verdict', { _tag: 'NotReached' })]),
+      ...step(e, 'admit', []),
+      ...step(e, 'prepared', []),
+    ]
+    expect(alreadyDoneOf(events)).toEqual({ baseSha: 'b'.repeat(40), bodyVersion: 4, items })
+  })
+
+  it('ends once a fix round implements again', () => {
+    const e = stream('r')
+    const events = [
+      ...step(e, 'implement', [declared]),
+      ...step(e, 'implement', [act('commit', { _tag: 'Completed', head: 'c'.repeat(40), question: null })]),
+    ]
+    expect(alreadyDoneOf(events)).toBeNull()
   })
 })

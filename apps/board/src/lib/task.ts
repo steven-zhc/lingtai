@@ -425,7 +425,7 @@ export interface Deciding {
 }
 
 /** `queued` and `running` are the lifecycle's `backlog` and `claimed`, in the board's words. */
-export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'closed' | 'approved'
+export type StandingState = 'queued' | 'running' | 'blocked' | 'landed' | 'satisfied' | 'closed' | 'approved'
 
 /**
  * The word the page draws for a state. `blocked` is the reducer's value for an item
@@ -439,6 +439,7 @@ const STATE_WORD: Record<StandingState, string> = {
   running: 'running',
   blocked: 'waiting on you',
   landed: 'landed',
+  satisfied: 'already satisfied',
   closed: 'closed',
   approved: 'approved',
 }

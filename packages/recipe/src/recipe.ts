@@ -115,7 +115,7 @@ export const ExtensionEnvNames = z
   })
 
 /** The outcomes `end` fires on, which is what `close:` and `labels:` filter by. */
-const WHEN = z.enum(['landed', 'blocked', 'failed', 'closed', 'any'])
+const WHEN = z.enum(['landed', 'blocked', 'failed', 'closed', 'satisfied', 'any'])
 
 /**
  * A command. Its exit code is the verdict, and `env` is every credential it
@@ -3530,6 +3530,12 @@ export const Recipe = z
               `steps.${step}'s "${action.name}" names the built-in judge \`merge-the-base\` for ` +
                 `\`when: ${action.when}\` — but it merges the base into the branch, which only ` +
                 'answers a `base-moved`. At any other direction it would silently mean nothing',
+            )
+          }
+          if (action.judge === 'check-the-evidence' && action.when !== 'already-done') {
+            refuse(
+              `steps.${step}'s "${action.name}" names the built-in judge \`check-the-evidence\` for ` +
+                `\`when: ${action.when}\` — but it only answers an \`already-done\``,
             )
           }
           for (const field of ['model', 'limits'] as const) {

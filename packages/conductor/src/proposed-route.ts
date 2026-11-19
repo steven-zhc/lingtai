@@ -75,6 +75,8 @@ export function whenOf(proposal: Proposal): JudgeWhen {
       return 'merge-refused'
     case 'BaseMoved':
       return 'base-moved'
+    case 'AlreadyDone':
+      return 'already-done'
     case 'BudgetExhausted':
       return 'budget-exhausted'
     case 'SandboxRefused':
@@ -92,6 +94,8 @@ const MECHANICAL_WANTS: Record<BuiltInJudge, Destination> = {
   'same-worktree': 'implement',
   // The merged code is built and reviewed again, and no round is spent (#593).
   'merge-the-base': 'build',
+  // The declared evidence is checked by `review`, with no diff and no round spent (#1251).
+  'check-the-evidence': 'review',
 }
 
 /**
@@ -111,6 +115,8 @@ export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal
         return 'build'
       case 'LandAgain':
         return 'merge'
+      case 'CheckDone':
+        return 'review'
       case 'RerunStep':
         return candidate.next.step
       case 'Requeued':
@@ -126,6 +132,8 @@ export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal
       return 'build'
     case 'land-again':
       return 'merge'
+    case 'check-done':
+      return 'review'
     case 'rerun-setup':
       return 'prepared'
     case 'ask-again':

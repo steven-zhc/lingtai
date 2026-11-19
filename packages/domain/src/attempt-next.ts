@@ -116,6 +116,20 @@ export const LandAgain = z.object({
 export type LandAgain = z.infer<typeof LandAgain>
 
 /**
+ * **The review run on evidence, not on a diff** (#1251, 0108 §18, §21): `implement` declared the work
+ * already on the base, and `review` is handed each Done-when item with what satisfies it, at the
+ * base's sha. A rule's move, never offered to a chooser; it spends nothing and moves no `onSha`. The
+ * items ride on the route so a walk that dies during the check rebuilds check mode from the log.
+ */
+export const CheckDone = z.object({
+  _tag: z.literal('CheckDone'),
+  baseSha: z.string(),
+  bodyVersion: z.number().int(),
+  items: z.array(z.object({ item: z.string(), evidence: z.string() })),
+})
+export type CheckDone = z.infer<typeof CheckDone>
+
+/**
  * A step run again in place, chosen by a rule (#1224; 0108 §18): `rerun-setup` for a `prepared` an
  * install's registry refused, `ask-again` for an agent whose answer could not be read. `retry` is
  * the count this makes, against `stepRedos`; it spends no round and no restart, and
@@ -135,6 +149,7 @@ export const AttemptNext = z.discriminatedUnion('_tag', [
   FixRound,
   MergeBase,
   LandAgain,
+  CheckDone,
   RerunStep,
   Requeued,
   WaitOnPerson,
@@ -278,6 +293,16 @@ function commitFellShort(step: Step, action: OfYields<'commit'>, run: AttemptRef
               from: 'implement',
               questions: declared.questions,
               ...(declared.questions.length === 0 ? { said: action.result.question ?? unclearText(declared) } : {}),
+            },
+          }
+        case 'AlreadyDone':
+          return {
+            _tag: 'Propose',
+            proposal: {
+              _tag: 'AlreadyDone',
+              items: declared.items,
+              baseSha: declared.baseSha ?? '',
+              bodyVersion: declared.bodyVersion ?? 0,
             },
           }
         case 'Implemented':
@@ -555,6 +580,7 @@ export function spentAfter(spent: Spent, next: AttemptNext): Spent {
       return next.cause._tag === 'NewAttempt' ? { ...spent, rounds: 0, newAttempts: next.cause.newAttempt } : spent
     case 'Advance':
     case 'Propose':
+    case 'CheckDone':
     case 'WaitOnPerson':
     case 'Landed':
       return spent

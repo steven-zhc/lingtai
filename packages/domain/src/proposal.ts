@@ -38,6 +38,7 @@ export const JudgeWhen = z.enum([
   'budget-exhausted',
   'base-moved',
   'sandbox-refused',
+  'already-done',
 ])
 export type JudgeWhen = z.infer<typeof JudgeWhen>
 
@@ -232,7 +233,20 @@ const BudgetExhausted = z.object({
 })
 type BudgetExhausted = z.infer<typeof BudgetExhausted>
 
-/** Why the pass is at `proposed` — 0120 §2's fourteen reasons. */
+/**
+ * `implement` found the work already on the base and declared it, item by item (#1251, 0108 §21).
+ * The head did not move. `baseSha` is the attempt's own base; `bodyVersion` the version of the
+ * claimed body the items were read from.
+ */
+const AlreadyDone = z.object({
+  _tag: z.literal('AlreadyDone'),
+  items: z.array(z.object({ item: z.string(), evidence: z.string() })),
+  baseSha: z.string(),
+  bodyVersion: z.number().int(),
+})
+type AlreadyDone = z.infer<typeof AlreadyDone>
+
+/** Why the pass is at `proposed` — 0120 §2's fourteen reasons, and #1251's fifteenth. */
 export const Proposal = z.discriminatedUnion('_tag', [
   BuildRed,
   ReviewFindings,
@@ -250,6 +264,7 @@ export const Proposal = z.discriminatedUnion('_tag', [
   MergeRefused,
   SandboxRefused,
   BudgetExhausted,
+  AlreadyDone,
 ])
 export type Proposal = z.infer<typeof Proposal>
 
@@ -298,6 +313,7 @@ export const StoredProposal = z.discriminatedUnion('_tag', [
   MergeRefused.partial({ output: true }),
   SandboxRefused,
   BudgetExhausted,
+  AlreadyDone,
 ])
 export type StoredProposal = z.infer<typeof StoredProposal>
 
@@ -337,6 +353,7 @@ export function fromOf(proposal: StoredProposal): Step {
       return proposal.from
     case 'NothingProduced':
     case 'FixerDisagrees':
+    case 'AlreadyDone':
       return 'implement'
     case 'MergeConflict':
     case 'BaseMoved':

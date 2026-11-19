@@ -448,6 +448,8 @@ function resolutionWords(resolution: PayloadOf<'WaitResolved'>['resolution'], by
       const name = who(by)
       return `${name === '' ? 'Answered' : `Answered by ${name}`}: \`${resolution.choice}\``
     }
+    case 'ConfirmSatisfied':
+      return sentence('Confirmed already satisfied', by)
     case 'Close':
       return sentence('Closed', by)
     case 'Split':

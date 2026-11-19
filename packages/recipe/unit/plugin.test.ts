@@ -958,7 +958,7 @@ describe('the one `proposed` will hold', () => {
    * instead of three.
    */
   it('accepts every name something answers, and no name nothing answers', () => {
-    expect(BUILT_IN_JUDGES).toEqual(['same-worktree', 'merge-the-base'])
+    expect(BUILT_IN_JUDGES).toEqual(['same-worktree', 'merge-the-base', 'check-the-evidence'])
     for (const answered of [...BUILT_IN_JUDGES, ...RuntimeId.options]) {
       expect(judgePlugin.schema.safeParse({ name: 'j', judge: answered, when: 'red' }).success, answered).toBe(true)
     }

@@ -60,7 +60,7 @@ import { Effect } from 'effect'
  * silently — which is the half of the responsibility 0016 §4 calls Lingtai's
  * bug rather than the operator's. A recipe saying `when: any` means any.
  */
-export type TerminalOutcome = 'landed' | 'blocked' | 'failed' | 'closed'
+export type TerminalOutcome = 'landed' | 'blocked' | 'failed' | 'closed' | 'satisfied'
 
 /**
  * The event the `end` point resolves to, or nothing.

@@ -451,6 +451,8 @@ export const BUILT_IN: Record<BuiltInJudge, BuiltIn> = {
    * Free either way — no agent runs, and no round is spent.
    */
   'merge-the-base': () => 'human',
+  /** The evidence check (#1251): `review` is the live answer, in `MECHANICAL_WANTS`; a person is the floor. */
+  'check-the-evidence': () => 'human',
 }
 
 /** Where the pass goes, and whether the judge had to be overruled to send it there. */

@@ -83,7 +83,13 @@ import {
   personAsksFromState,
   ticketStream,
 } from '@lingtai/domain'
-import { decideImplementOutcome, parseImplementOutcome, type ProjectState } from '@lingtai/domain'
+import {
+  decideImplementOutcome,
+  doneWhenItems,
+  parseImplementOutcome,
+  type ImplementOutcome,
+  type ProjectState,
+} from '@lingtai/domain'
 import {
   continuationOf,
   grantCriterion,
@@ -256,6 +262,7 @@ import {
 } from './attempt-steps.ts'
 import {
   armForState,
+  alreadyDoneOf,
   conflictResolvedOf,
   diffBaseShaOf,
   landedOnBaseOf,
@@ -327,6 +334,7 @@ import {
   landTicketEffect,
   refuseDispatchEffect,
   releaseTicketEffect,
+  satisfyTicketEffect,
   type SplitChildState,
 } from './ticket/commands.ts'
 
@@ -674,7 +682,11 @@ export type AttemptSummary = {
 }
 
 export type RunOnceResult =
-  | { ok: true; ticketId: string; runId: string; mergeCommit: string; summary?: AttemptSummary }
+  /**
+   * `satisfied` is set where the base already held the work and a review checked it (#1251): nothing landed, and
+   * `mergeCommit` is then the base's sha the check was bound to.
+   */
+  | { ok: true; ticketId: string; runId: string; mergeCommit: string; satisfied?: true; summary?: AttemptSummary }
   /**
    * Reached the merge and stopped, because a person asked it to. Deliberately
    * not `ok: false` with a stage — nothing refused, and calling it a failure
@@ -1425,6 +1437,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             diffBaseSha: diffBaseShaOf(releasedEvents),
             landedOnBase: landedOnBaseOf(releasedEvents),
             conflictResolved: conflictResolvedOf(releasedEvents),
+            alreadyDone: alreadyDoneOf(releasedEvents),
             baseRed: { toSha: baseRead.at, fromSha: cause.baseSha, action },
             released: {
               by: 'release' as const,
@@ -1485,6 +1498,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           diffBaseSha: diffBaseShaOf(releasedEvents),
           landedOnBase: landedOnBaseOf(releasedEvents),
           conflictResolved: conflictResolvedOf(releasedEvents),
+          alreadyDone: alreadyDoneOf(releasedEvents),
           released: {
             by: 'release' as const,
             runId: releasedFrom.runId,
@@ -1549,6 +1563,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           diffBaseSha: diffBaseShaOf(runEvents),
           landedOnBase: landedOnBaseOf(runEvents),
           conflictResolved: conflictResolvedOf(runEvents),
+          alreadyDone: alreadyDoneOf(runEvents),
           released: {
             by: 'person' as const,
             runId: options.continuing.runId,
@@ -1685,6 +1700,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         diffBaseSha: diffBaseShaOf(runEvents),
         landedOnBase: landedOnBaseOf(runEvents),
         conflictResolved: conflictResolvedOf(runEvents),
+        alreadyDone: alreadyDoneOf(runEvents),
       }
     })
 
@@ -5102,13 +5118,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // **What the agent declared decides, and the head only corrects it** (0108 §21, #1250): an
           // `Implemented` that moved nothing is `AgentFailed`, and so is a final message that declared
           // nothing parseable. The sha it is measured from is the step's first start, never this run's.
-          const decided = decideImplementOutcome({
+          // **`AlreadyDone` is decided against the body this attempt claimed** (#1251): the text the prompt pasted,
+          // read from this pass's own claim and never fetched again, and its version is that claim's. Without a
+          // version the check could not name what it read, so it is not offered.
+          const claimedBody = took?.ticket.body ?? brief.ticket.body
+          const claimedAt = took?.claimVersion
+          const decidedRaw = decideImplementOutcome({
             declared: parseImplementOutcome(outcome.text ?? null),
             endedAbnormally: false,
             startedAt,
             head,
             findingsOffered: 0,
+            doneWhen: doneWhenItems(claimedBody),
+            offersAlreadyDone: claimedAt !== undefined,
           })
+          const decided: ImplementOutcome =
+            decidedRaw._tag === 'AlreadyDone' && claimedAt !== undefined
+              ? { ...decidedRaw, baseSha: continuation?.diffBaseSha ?? tree.baseSha, bodyVersion: claimedAt }
+              : decidedRaw
           const moved = head !== startedAt
           // `keepUncommittedWork` still reads *no commits* where nothing moved (#1243).
           stoppedBy = moved ? null : 'no-commits'
@@ -5676,6 +5703,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         bodies: passBodies,
         ceilings,
         judge,
+        // A parent after a split ends `satisfied` the moment its check passes; any other ticket waits to be confirmed (#1251).
+        splitParent: reduced.split !== null,
         mergeBase,
         stepRedoWaits: options.stepRedoWaits,
         headNow: () =>
@@ -5721,6 +5750,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   ? { conflict: continuation.conflict }
                   : {}),
                 ...(continuation.conflictResolved !== null ? { conflictResolved: continuation.conflictResolved } : {}),
+                ...(continuation.alreadyDone !== null ? { alreadyDone: continuation.alreadyDone } : {}),
                 ...(continuation.released?.rerun.for != null
                   ? {
                       redo: {
@@ -6032,6 +6062,57 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         yield* noteAllKept(branch)
         didLand = true
         return { ok: true, ticketId, runId, mergeCommit: merged, summary: summaryOf() } satisfies RunOnceResult
+      }
+
+      // ---- satisfied: the base already held the work (#1251, 0108 §21) ----------
+      // A split parent whose check passed ends here at once, in the one append `landTicketEffect` makes for a
+      // landing. Nothing is merged and no lane is used. The ticket ending is refused by the reducer's own transition
+      // when it has already ended, and a stream that moved is a person's: the walk's end is then held, not lost.
+      if (pass.end._tag === 'Satisfied') {
+        const done = pass.end
+        const ended = yield* remembered(
+          satisfyTicketEffect(
+            ticketId,
+            { baseSha: done.baseSha, bodyVersion: done.bodyVersion, items: [...done.items], endPlan },
+            store,
+            ticketSnapshots,
+          ),
+        )
+        if (ended.ok) {
+          endResolved = endPlan
+          released = true
+          yield* tellGitHubAboutEffect({
+            store,
+            github: options.client,
+            ticketId,
+            ...ticketSnapshots,
+            labels: labelsFor('landed'),
+            editEnded: true,
+            appended: endResolved,
+          })
+          log(`satisfied on ${done.baseSha.slice(0, 7)}: the base already held the work`)
+          didLand = true
+          return {
+            ok: true,
+            ticketId,
+            runId,
+            mergeCommit: done.baseSha,
+            satisfied: true,
+            summary: summaryOf(),
+          } satisfies RunOnceResult
+        }
+        const why = 'refusal' in ended ? `the ticket had already ended (${ended.refusal.reason})` : 'the stream moved'
+        log(`satisfied was not recorded: ${why}`)
+        runLog.note('end', `satisfied was not recorded: ${why}`)
+        yield* release(`the satisfied ending was not recorded: ${why}`)
+        return {
+          ok: false,
+          ticketId,
+          runId,
+          stage: 'satisfied-refused',
+          detail: why,
+          summary: summaryOf(),
+        } satisfies RunOnceResult
       }
 
       // ---- requeued: the base is red (#1208, 0108 §13) --------------------------

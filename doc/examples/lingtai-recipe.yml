@@ -216,6 +216,12 @@ steps:
       when: closed
       close: true
 
+    # A ticket found already done on the base (#1251) ends `satisfied`, and its issue is closed too.
+    # Paste this after the daemon is restarted onto the code that knows the word — never before.
+    - name: close the ticket it found already done
+      when: satisfied
+      close: true
+
     # Landed tickets lose their arms and keep `agent/<n>`, the branch a person
     # follows from the merge commit.
     - name: sweep the arms

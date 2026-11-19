@@ -289,6 +289,7 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   SplitFailed: (d) => `Split failed at ${need(d, 'step')}: ${clip(d['detail'])}`,
   TicketLinked: (d) => `${need(d, 'relation')} ${need(d, 'otherRef')}`,
   TicketLanded: (d) => `merged as ${sha(d, 'mergeCommit')}`,
+  TicketSatisfied: (d) => `already satisfied on ${sha(d, 'baseSha')}`,
   // `requiredTier` is on events written before #1158 and absent on every later one.
   DispatchRefused: (d) =>
     d['requiredTier'] === undefined

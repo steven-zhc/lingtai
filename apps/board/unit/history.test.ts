@@ -108,6 +108,7 @@ const SAMPLES = {
   SplitFailed: [{ waitId: WAIT, step: 'write-children', detail: 'GitHub refused' }],
   TicketLinked: [{ relation: 'follows-up', otherRef: '58' }],
   TicketLanded: [{ mergeCommit: SHA, base: 'main' }],
+  TicketSatisfied: [{ baseSha: SHA, bodyVersion: 1, items: [{ item: 'it works', evidence: 'src/a.ts:1' }] }],
   TicketClosed: [{ by: 'human:steven', reason: 'no longer wanted' }],
   DispatchRefused: [{ requiredTier: 'sandboxed', runtime: 'codex', missing: ['sandbox'] }],
   RunStarted: [

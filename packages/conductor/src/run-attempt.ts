@@ -107,6 +107,7 @@ import {
   nextOf,
   offerFor,
   redoAgentFailed,
+  reviewSummaryOf,
   rerunInPlace,
   routeNext,
   STEPS,
@@ -936,6 +937,8 @@ export interface AttemptOptions {
    * where a caller says nothing, and the route then ends at a person: a merge
    * this pass cannot make is not one it pretends to have made.
    */
+  /** Whether the ticket carries a split (#1251): see `AttemptPortOptions.splitParent`. */
+  readonly splitParent?: boolean
   readonly mergeBase?: (toSha: string) => Promise<{ readonly head: string } | { readonly failed: string }>
   /** `AttemptPortOptions.stepRedoWaits`: a test walking on the real clock hands none, and waits none. */
   readonly stepRedoWaits?: readonly Duration.Input[]
@@ -1071,6 +1074,12 @@ export interface AttemptOptions {
      * continuation that resumes the review is still owed the conflict block and question.
      */
     readonly conflictResolved?: { readonly baseSha: string; readonly paths: readonly string[] }
+    /** A check of declared evidence the held run had started and not finished (#1251): the resumed review stays a check. */
+    readonly alreadyDone?: {
+      readonly baseSha: string
+      readonly bodyVersion: number
+      readonly items: readonly { readonly item: string; readonly evidence: string }[]
+    }
     /** A prior human grant caps automatic fix routing across later continuations. */
     readonly roundLimit?: number
     /** One fix dispatch authorized by the wait resolution, consumed on the first implement visit. */
@@ -1125,6 +1134,11 @@ export interface AttemptPortOptions {
    */
   readonly sandboxAt?: (step: Step) => StepOutcome['sandbox']
   readonly judge?: (on: Judging) => Effect.Effect<Judged>
+  /**
+   * Whether the ticket carries a split (#1251, 0108 §21): a parent whose children did the work ends
+   * `satisfied` the moment the check passes; any other ticket waits for a person to confirm.
+   */
+  readonly splitParent?: boolean
   readonly mergeBase?: (toSha: string) => Effect.Effect<MergeBaseAnswer>
   /** The waits before each step redo and each `land-again`, indexed by the count already made; absent is `BOUNDS.stepRedoWaits` (#1221). */
   readonly stepRedoWaits?: readonly Duration.Input[]
@@ -1198,6 +1212,7 @@ export function attemptPortsFrom(options: AttemptOptions): AttemptPortOptions {
       ? {}
       : { baseIsRed: (asked: BaseIsRedAsked) => Effect.promise(() => baseIsRed(asked)) }),
     ...(options.baseFirst === undefined ? {} : { baseFirst: options.baseFirst }),
+    ...(options.splitParent === undefined ? {} : { splitParent: options.splitParent }),
   }
 }
 
@@ -1279,7 +1294,15 @@ export type Ceiling = CeilingReached['ceiling']
  * off its `StepReached` directly, and never `end`'s own ending, which cannot
  * change what already happened.
  */
-export type AttemptEnd = Extract<AttemptNext, { _tag: 'Requeued' | 'WaitOnPerson' | 'Landed' }>
+export type AttemptEnd =
+  | Extract<AttemptNext, { _tag: 'Requeued' | 'WaitOnPerson' | 'Landed' }>
+  /** The ticket is already satisfied by the base and a review checked each item (#1251): nothing to land. */
+  | {
+      readonly _tag: 'Satisfied'
+      readonly baseSha: string
+      readonly bodyVersion: number
+      readonly items: readonly { readonly item: string; readonly evidence: string }[]
+    }
 
 /**
  * **What `runAttempt` hands back** — the terminal, the evidence it is worded
@@ -1380,6 +1403,8 @@ export function outcomeOf(end: AttemptEnd): TerminalOutcome {
   switch (end._tag) {
     case 'Landed':
       return 'landed'
+    case 'Satisfied':
+      return 'satisfied'
     case 'Requeued':
       return 'failed'
     case 'WaitOnPerson':
@@ -1552,6 +1577,17 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         : null
     /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
     let lapStart = 0
+    /**
+     * **The review is run on evidence, not on a diff** (#1251): set by a `check-done` route, cleared
+     * by the fix round a refused check buys. `build` and `merge` are not visited while it stands.
+     */
+    let checking: {
+      readonly baseSha: string
+      readonly bodyVersion: number
+      readonly items: readonly { readonly item: string; readonly evidence: string }[]
+    } | null = options.from?.step === 'review' ? (options.from.alreadyDone ?? null) : null
+    /** Whether the last `review` visit read: a reviewer that ran and answered readably (#671). */
+    let reviewRead = false
 
     /**
      * What this visit is judged against — rebuilt per visit, never shared.
@@ -1571,6 +1607,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       ...(conflictMerge === null ? {} : { conflictMerge }),
       ...(mergedOnto === null ? {} : { mergedOnto }),
       ...(reviewedSha === null ? {} : { reviewedSha }),
+      ...(checking === null ? {} : { alreadyDone: { baseSha: checking.baseSha, items: checking.items } }),
     })
 
     /**
@@ -1834,36 +1871,67 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           conflictCandidate.next.conflict !== undefined
             ? { id: conflictCandidate.id, round: conflictCandidate.next.conflict }
             : null
+        // **The declared evidence is checked by rule** (#1251, 0108 §18): `check-done` is the only move, so no
+        // judge declared `when: already-done` is ever paid. And **a refused check is `fixRefusal` by rule**
+        // (0108 §21): the unmet items are the criterion already, so a judge declared at `findings` is never asked.
+        const checkDone = offer.available.find((c) => c.id === 'check-done' && c.next._tag === 'CheckDone')
+        const refusedCheck = checking !== null && offer.proposal._tag === 'ReviewFindings'
+        const fixAfterCheck = refusedCheck
+          ? offer.available.find((c) => c.id === 'fix-lines' && c.next._tag === 'FixRefusal')
+          : undefined
+        // Where `fix-lines` is spent the answer is still not a judge's (0108 §21): the offer's own floor, a person.
+        const handAfterCheck =
+          refusedCheck && fixAfterCheck === undefined
+            ? offer.available.find((c) => c.id === 'hand-to-person')
+            : undefined
         const reply: JudgeReply | { readonly neverStarted: { readonly agent: RuntimeId; readonly detail: string } } =
-          landAgain !== undefined && landAgain.next._tag === 'LandAgain'
+          checkDone !== undefined
             ? {
                 _tag: 'Selected',
-                candidate: 'land-again',
-                why: `origin did not answer the land; landing again from ${onSha} after ${Duration.format(Duration.fromInputUnsafe(landWait ?? '0 millis'))}, retry ${landAgain.next.retry} of ${BOUNDS.landingRetries}`,
+                candidate: 'check-done',
+                why: 'the work is declared already on the base: review checks each Done-when item against the evidence, at the base',
               }
-            : rerunNext !== null &&
-                rerunCandidate !== undefined &&
-                (rerunNext.step === 'prepared' || lastVisit !== null)
+            : fixAfterCheck !== undefined
               ? {
                   _tag: 'Selected',
-                  candidate: rerunCandidate.id,
-                  why:
-                    rerunNext.step === 'prepared'
-                      ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`
-                      : `the ${rerunNext.step} answer could not be read; asking the same agent again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`,
+                  candidate: 'fix-lines',
+                  why: 'the evidence did not satisfy every Done-when item: each unmet item is a finding, and the agent is sent to do it',
                 }
-              : conflictRule !== null && offer.proposal._tag === 'MergeConflict'
+              : handAfterCheck !== undefined
                 ? {
                     _tag: 'Selected',
-                    candidate: conflictRule.id,
-                    why: `a merge conflict ${offer.proposal.paths === null || offer.proposal.paths.length === 0 ? 'with the base' : `in ${offer.proposal.paths.join(', ')}`} is the agent's to resolve (0108 §8), round ${conflictRule.round} of ${policy.conflictResolutions} conflictResolutions`,
+                    candidate: 'hand-to-person',
+                    why: 'the evidence did not satisfy every Done-when item and no fix round is left: a person decides',
                   }
-                : yield* replyFor(
-                    offer,
-                    shown,
-                    options.judge,
-                    causeBoundsFor(policy, spentNow, ceilings.personAsksSpent ?? 0),
-                  )
+                : landAgain !== undefined && landAgain.next._tag === 'LandAgain'
+                  ? {
+                      _tag: 'Selected',
+                      candidate: 'land-again',
+                      why: `origin did not answer the land; landing again from ${onSha} after ${Duration.format(Duration.fromInputUnsafe(landWait ?? '0 millis'))}, retry ${landAgain.next.retry} of ${BOUNDS.landingRetries}`,
+                    }
+                  : rerunNext !== null &&
+                      rerunCandidate !== undefined &&
+                      (rerunNext.step === 'prepared' || lastVisit !== null)
+                    ? {
+                        _tag: 'Selected',
+                        candidate: rerunCandidate.id,
+                        why:
+                          rerunNext.step === 'prepared'
+                            ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`
+                            : `the ${rerunNext.step} answer could not be read; asking the same agent again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`,
+                      }
+                    : conflictRule !== null && offer.proposal._tag === 'MergeConflict'
+                      ? {
+                          _tag: 'Selected',
+                          candidate: conflictRule.id,
+                          why: `a merge conflict ${offer.proposal.paths === null || offer.proposal.paths.length === 0 ? 'with the base' : `in ${offer.proposal.paths.join(', ')}`} is the agent's to resolve (0108 §8), round ${conflictRule.round} of ${policy.conflictResolutions} conflictResolutions`,
+                        }
+                      : yield* replyFor(
+                          offer,
+                          shown,
+                          options.judge,
+                          causeBoundsFor(policy, spentNow, ceilings.personAsksSpent ?? 0),
+                        )
         if ('neverStarted' in reply) {
           // 0031 §3, at the third depth the same wall is met at: the judge
           // itself is an agent, and an account-wide wall is the conductor's to
@@ -2013,6 +2081,14 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             at = 'merge'
             return true
           }
+          case 'CheckDone': {
+            // Free: no round, no restart, no wait. `review` is visited on evidence and the base's sha; `build`
+            // is not (nothing changed), and `onSha`, the reviewed head and the recheck stay as they were.
+            checking = { baseSha: next.baseSha, bodyVersion: next.bodyVersion, items: next.items }
+            lapStart = steps.length
+            at = 'review'
+            return true
+          }
           case 'RerunStep': {
             // **A rerun spends a retry too, and is durable first** (#1224), as a crash's is: the count goes on
             // the log before the wait. Nothing moves but the count and the step: not `onSha`, the lap, the
@@ -2043,6 +2119,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             // visit alone, which raises nothing, and the round a judge buys must
             // still hold the re-review to the findings it disputed.
             if (offer.proposal._tag !== 'FixerDisagrees') recheck = findingsIn(steps.slice(lapStart))
+            // A refused check is over: the fix round's own review is an ordinary one (#1251).
+            checking = null
             // Dropped once a review has had it; a build that failed first never
             // reached the review, which is still owed the section.
             if (steps.slice(lapStart).some((v) => v.step === 'review')) landedOnBase = null
@@ -2319,7 +2397,9 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // not one a later review may treat as read, or a defect in the unread tail
         // would be demoted as lying outside the fix delta.
         const clippedRead = reached.results.some((r) => r.clipped !== undefined)
-        if (read && !clippedRead) reviewedSha = visitContext.onSha
+        reviewRead = read
+        // A check read no diff (#1251): it is no head a later review may treat as read.
+        if (read && !clippedRead && checking === null) reviewedSha = visitContext.onSha
       }
       const ending = reached.ending
       if (ending.ending === 'routed') {
@@ -2372,6 +2452,50 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             ? { _tag: 'InputNeeded', from, questions: [...ending.questions] }
             : { _tag: 'InputNeeded', from, questions: [], said: ending.detail }
         if (yield* routing(proposal, { step: at, ending }, whatArrived(reached), ended)) continue
+        break
+      }
+
+      // **A check that cleared ends the walk** (#1251, 0108 §21): nothing is built, proposed or merged. A split
+      // parent is `satisfied` at once; any other ticket waits for a person to confirm. A review that did not read
+      // anything (none declared, or none that answered) checked nothing, and a person is the floor.
+      if (
+        checking !== null &&
+        at === 'review' &&
+        ending.ending === 'passed' &&
+        (next === null || next._tag === 'Advance')
+      ) {
+        const c = checking
+        stopped = null
+        if (!reviewRead) {
+          end = {
+            _tag: 'WaitOnPerson',
+            reason: {
+              _tag: 'ProposedEscalated',
+              run: { runId: options.context.runId },
+              proposal: { _tag: 'AlreadyDone', items: [...c.items], baseSha: c.baseSha, bodyVersion: c.bodyVersion },
+              because: {
+                _tag: 'JudgeHandedOver',
+                why: 'no reviewer answered at review, so the declared evidence was not checked',
+              },
+            },
+          }
+        } else if (options.splitParent === true) {
+          end = { _tag: 'Satisfied', baseSha: c.baseSha, bodyVersion: c.bodyVersion, items: [...c.items] }
+        } else {
+          end = {
+            _tag: 'WaitOnPerson',
+            reason: {
+              _tag: 'SatisfiedUnconfirmed',
+              run: { runId: options.context.runId },
+              baseSha: c.baseSha,
+              bodyVersion: c.bodyVersion,
+              items: [...c.items],
+              reading:
+                (outcome === undefined ? null : reviewSummaryOf(outcome)?.summary) ??
+                'the reviewer gave no per-item reading; its answer cleared every item against the evidence above',
+            },
+          }
+        }
         break
       }
 

@@ -207,7 +207,8 @@ export const attemptReducer: Reducer<AttemptState> = {
   // 11: a route's `FixRefusal`/`MergeBaseBranch`/`NewAttempt` and a ceiling's bound name replace the old tags (#1241); a version-10 snapshot holds the old ones, and a `StepRedone` folds as a `StepRerunInPlace` did.
   // 12: a `RunKeptUncommitted` names its commit's ref as `ref`, not `arm` (#1243); a version-11 snapshot holds `arm`.
   // 13: an `InputNeeded` and an `Asked` carry `questions` (#1253); a version-12 snapshot holds `question` alone.
-  version: 13,
+  // 14: a `CheckDone` route folds as any other route and an `AlreadyDone` outcome reads (#1251); the fixture now holds `TicketSatisfied`'s catalogue.
+  version: 14,
   initial: emptyAttempt,
   reduceEvent: reduceAttemptEvent,
   encode: encodeRun,
