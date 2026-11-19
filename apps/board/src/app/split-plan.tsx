@@ -305,7 +305,9 @@ export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: 
           </p>
         ) : null}
         {already.length > 0 && progress.state !== 'writing' ? (
-          <p className="split-note">Created so far: {already.map((child) => `#${child.number} (${child.key})`).join(', ')}.</p>
+          <p className="split-note">
+            Created so far: {already.map((child) => `#${child.number} (${child.key})`).join(', ')}.
+          </p>
         ) : null}
         {controls === undefined ? (
           <p className="split-note">Split is not offered for this decision, so this plan is only for reading.</p>

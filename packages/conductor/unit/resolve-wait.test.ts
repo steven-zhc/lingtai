@@ -79,14 +79,43 @@ describe('resolveWaitHolding, Split (#560)', () => {
     await seed(store, ticketId, [
       ...aClaim(item, run.runId),
       ...aWait(item, { _tag: 'NothingProduced', run: anAttemptRef(run.runId), said: null }, waitId),
+      // The decision (0118 §12): a `Split` resolves only a wait the system started one for, and only `by: 'triage'`.
+      item('SplitStarted', {
+        waitId,
+        plan: { children: sound.children, blockedBy: sound.blockedBy },
+        instance: 'daemon:1',
+      }),
     ])
-    const split = (resolution: unknown, kinds?: readonly string[]) =>
+    const split = (resolution: unknown, kinds?: readonly string[], by = 'triage') =>
       resolveWaitHolding(
-        { ticketId, waitId, resolution: resolution as never, by: 'human:steven', kinds, store },
+        { ticketId, waitId, resolution: resolution as never, by, system: by === 'triage', kinds, store },
         ticketId,
       )
     return { store, ticketId, waitId, split }
   }
+
+  it('is refused for anyone but the system, and for a wait nothing decided to split', async () => {
+    const { store, ticketId, split } = await blockedOnFirstWait()
+    const before = (await store.read(ticketId)).length
+    expect(await split(sound, ['feature'], 'human:steven')).toMatchObject({ ok: false, reason: 'not-offered' })
+    expect((await store.read(ticketId)).length).toBe(before)
+    // No `SplitStarted` for this wait: `by: 'triage'` alone is not enough.
+    const other = createMemoryEventStore()
+    const otherId = ticketStream(PROJECT, 561)
+    const item = makeStream(otherId)
+    const run = anAttempt('pass-561')
+    const waitId = aWaitId()
+    await seed(other, otherId, [
+      ...aClaim(item, run.runId),
+      ...aWait(item, { _tag: 'NothingProduced', run: anAttemptRef(run.runId), said: null }, waitId),
+    ])
+    expect(
+      await resolveWaitHolding(
+        { ticketId: otherId, waitId, resolution: sound, by: 'triage', system: true, kinds: ['feature'], store: other },
+        otherId,
+      ),
+    ).toMatchObject({ ok: false, reason: 'not-offered' })
+  })
 
   it('refuses an invalid plan by name and appends nothing', async () => {
     const { store, ticketId, split } = await blockedOnFirstWait()

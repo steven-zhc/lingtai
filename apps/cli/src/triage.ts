@@ -1027,7 +1027,8 @@ export const readActContext = (
     const run = runId === null ? null : yield* readThroughSnapshot(deps.store, attemptReducer, runId, 'all', deps)
     const runEvents = runId === null ? [] : yield* lift(() => deps.store.read(runId))
     // A split is read before the counters, because `ticketSplits` is what `actionFor` answers it from (0118 §12.2).
-    const planned = answer._tag === 'TriageAnswered' && answer.cause._tag === 'TicketTooBig' && answer.cause.plan !== null
+    const planned =
+      answer._tag === 'TriageAnswered' && answer.cause._tag === 'TicketTooBig' && answer.cause.plan !== null
     const splitFacts = planned && deps.split !== undefined ? yield* deps.split(request.ticketId) : null
     let splitsUsed = 0
     if (splitFacts !== null) {
@@ -1057,7 +1058,10 @@ export const readActContext = (
         used: Math.max(run?.stepRedos ?? 0, spent.stepRedos),
         allowed: read === null ? 0 : BOUNDS.stepRedos,
       },
-      ticketSplits: { used: splitsUsed, allowed: splitFacts !== null && !splitFacts.onGithub ? 0 : BOUNDS.ticketSplits },
+      ticketSplits: {
+        used: splitsUsed,
+        allowed: splitFacts !== null && !splitFacts.onGithub ? 0 : BOUNDS.ticketSplits,
+      },
       personAsks: { used: personAsksFromState(state), allowed: BOUNDS.personAsks },
     } as const
     const origin =

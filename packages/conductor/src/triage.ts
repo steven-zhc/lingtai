@@ -141,7 +141,10 @@ never repeated beside it:
   covers"]}\` — at least two children, at most ${TRIAGE_SPLIT_CHILDREN_MAX}, each
   \`key\` unique (lower case letters, digits, hyphens), every \`blockedBy\` entry naming two
   keys, and no cycle. Each child is opened with this ticket's own kind, so the plan
-  names none. Otherwise give \`spentOn\`: one sentence of where the run spent its turns,
+  names none. **The system writes the plan exactly as you give it** — once per root
+  ticket, never for a child, and never where the tickets are in the database, which
+  waits for a person with the plan shown — so give one only when you would stand
+  behind every child. Otherwise give \`spentOn\`: one sentence of where the run spent its turns,
   which the next run is told.
 - \`SetupBroken\` — *fix the setup*: the repository or the machine refused, before or
   around any agent's work. \`what\` is what is broken and \`repair\` how to repair it.

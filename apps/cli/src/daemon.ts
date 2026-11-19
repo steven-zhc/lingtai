@@ -64,9 +64,9 @@ import type { RestartArgs } from './restart.ts'
 import { openDaemon, prepareRestart, queueForTheLock, startRecorder, restartSupervised } from './restart.ts'
 import { releaseSandbox } from './sandbox.ts'
 import { keeper, serviceCommand, type ServiceOptions } from './service.ts'
+import { catchUpRegisteredSplits } from './split-run.ts'
 import type { Steps } from './steps.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
-import { catchUpRegisteredSplits } from './split-run.ts'
 import { flushTracing, startTracing } from './tracing.ts'
 import {
   catchUpChangedTriage,

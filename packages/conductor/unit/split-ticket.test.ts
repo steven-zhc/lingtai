@@ -273,6 +273,33 @@ describe('splitTicketHolding', () => {
     expect(gh.issues.get(700)!.labels.map((l) => l.name)).toEqual(['feature'])
   })
 
+  it('ends the wait as the system: WaitResolved by triage beside TicketSplit, a release that spends no new attempt, no second SplitStarted', async () => {
+    const { store, ticketId, waitId, go } = await setup()
+    await go()
+    const events = await store.read(ticketId)
+    // The decision's own `SplitStarted` stands for the writer's attempt: it appends none of its own.
+    expect(events.filter((e) => e.type === 'SplitStarted')).toHaveLength(1)
+    const end = events.slice(events.findIndex((e) => e.type === 'TicketSplit'))
+    expect(end.map((e) => e.type)).toEqual(['TicketSplit', 'WaitResolved', 'TicketReleased'])
+    expect(end.map((e) => e.actor)).toEqual(['conductor', 'conductor', 'conductor'])
+    expect(end[1]!.data).toMatchObject({ waitId, by: 'triage', resolution: { _tag: 'Split' } })
+    // A split is not a new attempt (0118 §12.8): the release carries no cause, and `newAttempts` is untouched.
+    expect(end[2]!.data).toMatchObject({ cause: null })
+    expect(reduceTicket(events).newAttempts).toEqual([])
+  })
+
+  it('a resume after a failure appends its own SplitStarted and finishes the same frozen plan with no second child', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    gh.fail = { call: 'createIssue part c', mode: 'before', times: 2 }
+    expect((await go()).ok).toBe(false)
+    gh.fail = null
+    expect((await go(undefined)).ok).toBe(true)
+    const events = await store.read(ticketId)
+    expect(events.filter((e) => e.type === 'SplitStarted')).toHaveLength(2)
+    expect(gh.created.map((c) => c.title)).toEqual(['part a', 'part b', 'part c'])
+    expect(events.filter((e) => e.type === 'TicketSplit')).toHaveLength(1)
+  })
+
   it('leaves the parent Done when untouched and lists every child under Split into', async () => {
     const { gh, go } = await setup()
     await go()

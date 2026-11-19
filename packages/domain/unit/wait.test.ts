@@ -255,12 +255,7 @@ describe('allowedResolutions', () => {
 
     it('DiffTooLarge: Approve, Requeue, EditBodyAndRequeue, Close — and no FixRefusal', () => {
       const reason = parseProposed({ _tag: 'DiffTooLarge', from: 'review', size: 938_000, limit: 400_000 })
-      expect(allowedResolutions(reason)).toEqual([
-        'Approve',
-        'StartNewAttempt',
-        'EditBodyAndStartNewAttempt',
-        'Close',
-      ])
+      expect(allowedResolutions(reason)).toEqual(['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
     })
 
     it('DiffTooLarge: Approve continues at review, waives nothing, and reads the diff clipped (#892)', () => {
@@ -482,12 +477,7 @@ describe('allowedResolutions', () => {
       cause: 'crash',
       detail: 'the agent crashed',
     })
-    expect(allowedResolutions(reason)).toEqual([
-      'EditBodyAndStartNewAttempt',
-      'StartNewAttempt',
-      'Close',
-      'RedoStep',
-    ])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close', 'RedoStep'])
   })
 
   describe('RedoStep (#1218)', () => {
@@ -1478,12 +1468,7 @@ describe('AgentCrashed{standing} (#654)', () => {
   })
 
   it('without standing, today’s row', () => {
-    expect(allowedResolutions(crash())).toEqual([
-      'EditBodyAndStartNewAttempt',
-      'StartNewAttempt',
-      'Close',
-      'RedoStep',
-    ])
+    expect(allowedResolutions(crash())).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close', 'RedoStep'])
     expect(continuationOf(crash(), [])).toBeNull()
   })
 
