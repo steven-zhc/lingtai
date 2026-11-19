@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WaitId } from '../src/action.ts'
-import { BOUNDS, type CauseBound, type CauseCounter } from '../src/failure/respond.ts'
+import { BOUNDS, causeOriginOf, rerunInPlace, type CauseBound, type CauseCounter } from '../src/failure/respond.ts'
 import { triageSpentOf } from '../src/read-model.ts'
 import {
   actOnTriageTransition,
@@ -319,5 +319,89 @@ describe('triageSpentOf', () => {
     expect(Math.max(2, spent)).toBe(2)
     // A restart between the append and the effect re-reads the same log and reads the same one.
     expect(Math.max(0, triageSpentOf(state, 'run-1').stepRedos)).toBe(1)
+  })
+
+  describe('a run that met its limit (#1260)', () => {
+    const limited = (proposal: object): WaitReason =>
+      ({
+        _tag: 'ProposedEscalated',
+        run: anAttemptRef('run-1'),
+        proposal,
+        because: { _tag: 'NotAsked' },
+      }) as unknown as WaitReason
+    const turns = limited({
+      _tag: 'BudgetExhausted',
+      from: 'implement',
+      kind: 'out-of-turns',
+      turns: 90,
+      costUsd: null,
+      detail: 'x',
+    })
+    const tooBig = (over: object): Answered => ({
+      _tag: 'TriageAnswered',
+      cause: { _tag: 'TicketTooBig', plan: null, spentOn: null, ...over },
+      summary: 'too much',
+      want: null,
+    })
+
+    it('names the origin from the wait alone, and a timeout at proposed is not a run limit', () => {
+      expect(causeOriginOf(turns)).toBe('run-limit')
+      expect(causeOriginOf({ ...crashed, cause: 'timeout' })).toBe('run-limit')
+      expect(causeOriginOf({ ...crashed, cause: 'crash' })).toBe('other')
+      expect(causeOriginOf({ ...crashed, cause: 'timeout', step: 'proposed' })).toBe('other')
+      expect(causeOriginOf(limited({ ...(turns as { proposal: object }).proposal, kind: 'out-of-usd' }))).toBe(
+        'run-limit',
+      )
+      // #1249's rule leaves a wall alone
+      expect(rerunInPlace('timeout', 'x', 0)).toBeNull()
+    })
+
+    it('Unfinished redoes the step and spends one stepRedos, writing nothing', () => {
+      const { state } = waiting(turns)
+      const d = actOnTriageTransition(state, input(state, {}, { origin: 'run-limit' }))
+      expect(d).toMatchObject({ ok: true, section: null })
+      if (!d.ok) throw new Error('unreachable')
+      expect(d.events[1]).toMatchObject({
+        data: { resolution: { _tag: 'RedoStep' }, spent: { bound: 'stepRedos', n: 1 } },
+      })
+    })
+
+    it('TicketTooBig with spentOn writes it: the text is on the resolution and handed back', () => {
+      const { state } = waiting(turns)
+      const d = actOnTriageTransition(
+        state,
+        input(state, { result: tooBig({ spentOn: ' reading the whole repo ' }) }, { origin: 'run-limit' }),
+      )
+      expect(d).toMatchObject({ ok: true, section: 'reading the whole repo' })
+      if (!d.ok) throw new Error('unreachable')
+      expect(d.events[1]).toMatchObject({
+        data: { resolution: { _tag: 'RedoStep' }, answers: { section: 'reading the whole repo' } },
+      })
+    })
+
+    it('Unfinished with addToBody writes its sentence; both null is a plain redo', () => {
+      const { state } = waiting(turns)
+      const withText: Answered = { ...unfinished, cause: { _tag: 'Unfinished', addToBody: 'start at the parser' } }
+      const d = actOnTriageTransition(state, input(state, { result: withText }, { origin: 'run-limit' }))
+      expect(d).toMatchObject({ ok: true, section: 'start at the parser' })
+      const plain = actOnTriageTransition(state, input(state, { result: tooBig({}) }, { origin: 'run-limit' }))
+      expect(plain).toMatchObject({ ok: true, section: null })
+      if (plain.ok) expect(plain.events[1]).toMatchObject({ data: { resolution: { _tag: 'RedoStep' } } })
+    })
+
+    it('refuses any other cause, by name', () => {
+      const { state } = waiting(turns)
+      const d = actOnTriageTransition(state, input(state, { result: fixable }, { origin: 'run-limit' }))
+      expect(d).toMatchObject({ ok: false, refusal: 'cause-refused' })
+      if (!d.ok) expect(d.why).toContain('FixableLines')
+    })
+
+    it('with stepRedos spent the wait stays, and the action names the bound', () => {
+      const { state } = waiting(turns)
+      const spent = { ...room, stepRedos: { used: BOUNDS.stepRedos, allowed: BOUNDS.stepRedos } }
+      const d = actOnTriageTransition(state, input(state, {}, { origin: 'run-limit', counters: spent }))
+      expect(d).toMatchObject({ ok: true, action: { _tag: 'askPerson', why: { _tag: 'limit', bound: 'stepRedos' } } })
+      if (d.ok) expect(d.events.map((x) => x.type)).toEqual(['WaitTriaged'])
+    })
   })
 })
