@@ -2,124 +2,124 @@
   "version": 1,
   "window": {
     "from": "2026-11-01",
-    "to": "2026-11-16"
+    "to": "2026-11-19"
   },
-  "capturedAt": "2026-11-16T13:58:46.110Z",
-  "commit": "687f913a",
+  "capturedAt": "2026-11-19T23:48:19.863Z",
+  "commit": "e232612e",
   "outcomes": {
-    "landed": 370,
-    "closed": 2,
+    "landed": 471,
+    "closed": 5,
     "open": 0,
     "landedByKind": [
       {
         "kind": "bug",
-        "count": 52
+        "count": 72
       },
       {
         "kind": "documentation",
-        "count": 39
+        "count": 44
       },
       {
         "kind": "feature",
-        "count": 127
+        "count": 186
       },
       {
         "kind": "tech-debt",
-        "count": 152
+        "count": 169
       }
     ]
   },
   "fixRounds": {
     "median": 0,
-    "zeroOrOneShare": 0.8027027027027027,
-    "fiveOrMoreShare": 0.04054054054054054
+    "zeroOrOneShare": 0.7643312101910829,
+    "fiveOrMoreShare": 0.04883227176220807
   },
   "cost": {
-    "median": 3.95,
-    "mean": 5.926486486486485,
-    "p90": 10.13,
+    "median": 4.31,
+    "mean": 6.728768577494687,
+    "p90": 12.07,
     "includesEstimates": true,
-    "costUnknown": 5
+    "costUnknown": 9
   },
   "machineMinutes": {
-    "median": 11.990008333333334,
-    "mean": 16.524580135135135
+    "median": 13.426483333333334,
+    "mean": 19.27595346779901
   },
   "elapsedMinutes": {
-    "median": 12.320291666666666,
-    "mean": 43.67827337837839,
-    "withinHourShare": 0.9054054054054054
+    "median": 13.76425,
+    "mean": 48.58097034677989,
+    "withinHourShare": 0.89171974522293
   },
-  "waitedShare": 0.07837837837837838,
+  "waitedShare": 0.08917197452229299,
   "spendShare": [
     {
       "purpose": "Work",
-      "share": 0.6492952034378902
+      "share": 0.5989838426936698
     },
     {
       "purpose": "Answering",
-      "share": 0.29643282014379935
+      "share": 0.3434202262600149
     },
     {
       "purpose": "Judge",
-      "share": 0.02804120519252089
+      "share": 0.025090546931100063
     },
     {
       "purpose": "Triage",
-      "share": 0.026230771225789585
+      "share": 0.0325053841152154
     }
   ],
   "receipts": [
     {
       "median": true,
       "fixRounds": 0,
-      "machineMinutes": 11.990008333333334,
+      "machineMinutes": 13.426483333333334,
       "waits": 0,
-      "cost": 3.95
+      "cost": 4.31
     },
     {
       "median": false,
-      "number": 837,
-      "title": "fix(domain): a discussion is folded once, by reduceChat, and an answer with no open ask counts for nothing",
+      "number": 1042,
+      "title": "tech-debt(actions): a command, the `run:` action and a subscriber's delivery run as Effects, and `runCommand` and `Subscriber.deliver` are faces over them",
       "kind": "tech-debt",
       "outcome": "landed",
       "percentile": 25,
       "fixRounds": 0,
       "passes": 1,
       "waits": 0,
-      "machineMinutes": 15.473633333333334,
-      "cost": 2.72
+      "machineMinutes": 7.9592833333333335,
+      "cost": 2.81
     },
     {
       "median": false,
-      "number": 933,
-      "title": "fix(board): a recorded prompt is shown as it was handed, expanded from its references, on the attempt tab and in its events",
-      "kind": "bug",
+      "number": 953,
+      "title": "docs(design): the-bar.md describes one bar with Report and a footer without links",
+      "kind": "documentation",
       "outcome": "landed",
       "percentile": 50,
-      "fixRounds": 0,
+      "fixRounds": 1,
       "passes": 1,
       "waits": 0,
-      "machineMinutes": 16.323033333333335,
-      "cost": 3.95
+      "machineMinutes": 7.71265,
+      "cost": 4.31
     },
     {
       "median": false,
-      "number": 1146,
-      "title": "feat(sandbox): one sandbox policy as a module, @lingtai/sandbox, that wraps nothing yet",
-      "kind": "feature",
+      "number": 1002,
+      "title": "fix(cli): service and upgrade withdraw no drain; each adopts this person's own and leaves it to the next start",
+      "kind": "bug",
       "outcome": "landed",
       "percentile": 90,
       "fixRounds": 3,
-      "passes": 2,
-      "waits": 2,
-      "machineMinutes": 20.497066666666665,
-      "cost": 10.13
+      "passes": 1,
+      "waits": 0,
+      "machineMinutes": 41.2258,
+      "cost": 12.07
     }
   ],
   "landedAllTime": {
-    "count": 700,
+    "count": 802,
     "since": "2026-09-08",
-    "asOf": "2026-11-16T13:58:46.110Z"
+    "asOf": "2026-11-19T23:48:19.863Z"
   }
 }
