@@ -1327,6 +1327,12 @@ export const StepStarted = z.object({
    * than from memory. Absent on a row written before it existed — and a reader falls back to the head it re-cut at.
    */
   startedAt: z.string().optional(),
+  /**
+   * The person's decision that paid for this round — the `waitId` of the `WaitResolved{FixRefusal}` it spent, as
+   * `SpentFor.Action.grant` (#1280). Written on the first implement visit of a person's grant only; absent on every
+   * automatic or triage round, and optional so a payload written before it existed still parses.
+   */
+  grant: z.string().optional(),
 })
 
 /**

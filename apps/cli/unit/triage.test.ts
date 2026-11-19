@@ -1,6 +1,6 @@
 import { createRuntime, type Runtime, type RunOutcome, type RunRequest } from '@lingtai/agent'
-import { ticketStream, type Envelope, type WaitId } from '@lingtai/domain'
-import { anAttemptRef, aWaitId } from '@lingtai/domain/test/events'
+import { reduceTicket, ticketStream, type Envelope, type WaitId } from '@lingtai/domain'
+import { aClaim, anAttemptRef, aWait, aWaitId } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { TRIAGE_ANSWER_JSON_SCHEMA, type WaitReason } from '@lingtai/domain/wait'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   enqueueTriage as enqueueTriageEffect,
+  readActContext,
   waitTriage as waitTriageEffect,
   type TriagePorts,
   type WaitTriageRequest,
@@ -193,6 +194,7 @@ function fakeDeps(store: EventStore, runtime: Runtime, overrides: DepsOverrides 
   return {
     store,
     runtime: vi.fn(() => runtime),
+    remote: { refSha: () => Effect.fail(new Error('remote not stubbed')) },
     mirror: fakeMirror(),
     issue: (ticketId, signal) =>
       Effect.suspend(() =>
@@ -451,6 +453,29 @@ describe('waitTriage', () => {
     )
     expect(held.result).toEqual({ _tag: 'TriageFailed', why: 'crashed: recorded attempt head unavailable' })
     expect(prepareCheckout).not.toHaveBeenCalled()
+    expect(requests).toEqual([])
+  })
+
+  it('a failed read of the base is TriageFailed naming the read, never evidence that there is no base', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 570)
+    const runId = 'pass-570'
+    const ticket = makeStream(ticketId)
+    await store.append(ticketId, 0, [
+      ticket('TicketClaimed', { runId, worker: 'lingtai:daemon:1', title: null, kind: null }),
+    ])
+    const { runtime, requests } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({
+        refSha: () => Effect.fail(new Error('fatal: not a git repository')),
+      }),
+    })
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { reason: reasonOn(runId) }))
+    expect(held.result).toMatchObject({ _tag: 'TriageFailed' })
+    if (held.result._tag === 'TriageFailed') {
+      expect(held.result.why).toContain('could not read main in the mirror')
+      expect(held.result.why).toContain('not a git repository')
+    }
     expect(requests).toEqual([])
   })
 
@@ -1692,5 +1717,64 @@ describe('waitTriage', () => {
 
     expect(runtimeFactory).toHaveBeenCalledWith('claude-code', { tools: 'none' })
     expect(requests[0]?.limits).toEqual(triageCallFor(TRIAGE))
+  })
+})
+
+describe('readActContext', () => {
+  const heads = async (remoteHead: string) => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 7)
+    const runId = 'pass-7'
+    const waitId = aWaitId()
+    const e = makeStream(ticketId)
+    const events = [...aClaim(e, runId), ...aWait(e, reasonOn(runId), waitId)]
+    await store.append(ticketId, 0, events)
+    const run = makeStream(runId)
+    await store.append(runId, 0, [
+      run('RunRefsPublished', {
+        branch: 'agent/7',
+        arm: 'agent/7-attempt-1',
+        detail: 'x',
+        outcome: 'published',
+        headSha: 'A'.repeat(40),
+      } as never),
+    ])
+    const { runtime } = stubRuntime(() => ADVISED)
+    const asked: string[] = []
+    const deps = fakeDeps(store, runtime, {
+      // The mirror still says A: only the remote's own answer may decide.
+      mirror: fakeMirror({ refSha: async () => 'A'.repeat(40) }),
+    })
+    deps.remote = {
+      refSha: ({ ref }) => {
+        asked.push(ref)
+        return Effect.succeed(remoteHead)
+      },
+    }
+    const state = reduceTicket(await store.read(ticketId))
+    const answer = {
+      _tag: 'TriageAnswered',
+      cause: { _tag: 'Unfinished', addToBody: null },
+      summary: 's',
+      want: null,
+    } as const
+    const context = await Effect.runPromise(
+      readActContext(deps, requestOn(ticketId, waitId, { reason: reasonOn(runId) }), state, answer, null, () =>
+        Effect.succeed({ refusalFixes: 3, conflictResolutions: 3, newAttempts: 2 }),
+      ),
+    )
+    return { context, asked }
+  }
+
+  it('offers a head to re-cut on only while the remote ref still carries it', async () => {
+    const same = await heads('A'.repeat(40))
+    expect(same.asked).toEqual(['agent/7'])
+    expect(same.context.redo).toEqual({ onSha: 'A'.repeat(40), ref: 'agent/7' })
+  })
+
+  it('a remote ref that moved A→B offers none, though the mirror still says A', async () => {
+    const moved = await heads('B'.repeat(40))
+    expect(moved.asked).toEqual(['agent/7'])
+    expect(moved.context.redo).toBeNull()
   })
 })

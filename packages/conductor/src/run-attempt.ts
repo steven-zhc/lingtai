@@ -1105,6 +1105,8 @@ export interface AttemptOptions {
     readonly byTriage?: true
     /** One fix dispatch authorized by the wait resolution, consumed on the first implement visit. */
     readonly grant?: SentBack
+    /** The wait a person's grant resolved (#1280), written on the grant's `StepStarted`; absent for triage's. */
+    readonly grantWait?: WaitId
     readonly findings?: readonly ActionFinding[]
   }
 }
@@ -2518,6 +2520,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               step: visiting,
               round: visitContext.round ?? 0,
               startedAt: actual ?? visitContext.onSha,
+              ...(visiting === 'implement' &&
+              options.from?.step === 'implement' &&
+              options.from.grantWait !== undefined &&
+              !visitedBefore.some((v) => v.step === 'implement')
+                ? { grant: options.from.grantWait }
+                : {}),
             },
           })
         }),

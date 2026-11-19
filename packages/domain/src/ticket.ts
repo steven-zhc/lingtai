@@ -1339,8 +1339,8 @@ export type ActContext = {
   headNow: string | null
   /** The saved head a `FixRefusal` continues, already checked against the remote ref; `null` when there is none. */
   fix: { onSha: string; ref: string } | null
-  /** Where a `RedoStep` re-cuts, already checked; `null` when the attempt has no head a rerun can continue. */
-  redo: { onSha: string; ref: string | null } | null
+  /** Where a `RedoStep` re-cuts, already checked against the remote ref; `null` when the attempt has no head a rerun can continue. */
+  redo: { onSha: string; ref: string } | null
 }
 
 /** `resolution` is the one the same append resolved the wait with, or `null` when only the answer is recorded. */
@@ -1383,7 +1383,11 @@ export function actOnTriageTransition(
   // A wait the reduce has never seen has no reason to resolve against: advice only.
   const life = state.lifecycle
   if (life.status !== 'blocked' || life.waitId !== input.waitId) return advice
-  if (action._tag !== 'startNewAttempt' && context.headNow !== context.boundHead)
+  // A head that was not read is not a head that is unchanged: `null` on either side refuses, `startNewAttempt` needs none.
+  if (
+    action._tag !== 'startNewAttempt' &&
+    (context.boundHead === null || context.headNow === null || context.headNow !== context.boundHead)
+  )
     return { ok: false, refusal: 'head-moved' }
   let resolution: Resolution
   let bound: 'refusalFixes' | 'conflictResolutions' | 'stepRedos' | null = null
