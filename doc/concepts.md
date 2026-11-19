@@ -59,9 +59,10 @@ Some details that are easy to get wrong:
 ## Handled for you
 
 The home page and /report show **Handled for you**: one mark per problem a step
-raised. A solid mark is a problem Lingtai got past without you, by a fix round
-or a restart. A hollow one **needed you**, and /report lists what you did about
-it.
+raised. A solid mark is a problem Lingtai got past without you: by a fix round,
+a restart, or by merging the updated base when another change landed (that
+spends neither). A hollow one **needed you**, and /report lists what you did
+about it.
 
 ## When a step stops
 
