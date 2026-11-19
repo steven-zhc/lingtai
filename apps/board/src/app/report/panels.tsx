@@ -5,6 +5,8 @@
  * `TopTicket.sentence`, unchanged (0123 §4).
  */
 import {
+  type Handled,
+  type HandledProblem,
   causeWords,
   purposeWords,
   reasonWords,
@@ -19,6 +21,17 @@ import Link from 'next/link'
 import { DayMeter } from '@/app/footer.tsx'
 import type { DaySpendReading } from '@/lib/day-spend.ts'
 import {
+  DAY_STACK_PX,
+  dayText,
+  HANDLED_ORDER,
+  handledRow,
+  pageHandled,
+  shareWithoutYou,
+  TICK_LIMIT,
+  whenText,
+  windowText,
+} from '@/lib/handled.ts'
+import {
   centsOf,
   dollars,
   durationText,
@@ -29,6 +42,7 @@ import {
   PURPOSE_SERIES,
   purposeSeriesOf,
   reportHref,
+  type HandledQuery,
   type ReportQuery,
 } from '@/lib/report.ts'
 
@@ -435,6 +449,8 @@ export function Filters({ query, kinds }: { query: ReportQuery; kinds: readonly 
     <form className="rp-filters" method="get" action="/report" aria-label="filters">
       {query.project === null ? null : <input type="hidden" name="project" value={query.project} />}
       <input type="hidden" name="was" value={query.which} />
+      {query.handled === null ? null : <input type="hidden" name="handled" value={query.handled.kind} />}
+      {query.handled?.by == null ? null : <input type="hidden" name="by" value={query.handled.by} />}
       <input type="hidden" name="kinds" value="1" />
       <label>
         window
@@ -471,5 +487,362 @@ export function Filters({ query, kinds }: { query: ReportQuery; kinds: readonly 
         {day(query.window.from)} → {day(last)}
       </span>
     </form>
+  )
+}
+
+// --- handled for you (#1285) -------------------------------------------------------
+
+type Group = 'system' | 'you'
+
+function CheckMark() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <circle cx="7" cy="7" r="6.25" fill="var(--pass-soft)" stroke="var(--pass)" strokeWidth="1.5" />
+      <path
+        d="M4 7.2l2 2 4-4.4"
+        fill="none"
+        stroke="var(--pass)"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** The window's problems and who answered them: the hero, ticks, table, cost, days and LATEST — or the problems behind one count. */
+export function HandledPanel({
+  handled,
+  spend,
+  query,
+  problems,
+}: {
+  handled: Handled
+  spend: Report['spend']['total']
+  query: ReportQuery
+  /** Every problem of the window, newest first; read only when the address asks for a drill-down. */
+  problems: readonly HandledProblem[] | null
+}) {
+  const head = (
+    <div className="hfr-k">
+      <span className="l">
+        <CheckMark />
+        Handled for you
+      </span>
+      <span className="when">{windowText(query.which, query.window.from, query.window.to)}</span>
+    </div>
+  )
+  const total = (g: Group): number => handled.kinds.reduce((n, k) => n + k[g], 0)
+  const system = total('system')
+  const you = total('you')
+  const href = (kind: HandledQuery['kind'], by: Group | null) =>
+    reportHref(query, { handled: { kind, by, before: null } })
+
+  if (system + you === 0) {
+    return (
+      <section className="hfr" id="handled">
+        {head}
+        <p className="rp-empty">no problem was raised in the window</p>
+      </section>
+    )
+  }
+  if (query.handled !== null && problems !== null) {
+    return (
+      <section className="hfr" id="handled">
+        {head}
+        <HandledProblems handled={query.handled} problems={problems} query={query} />
+      </section>
+    )
+  }
+
+  const share = shareWithoutYou(system, you)
+  const n = system + you
+  const mark = (kind: string, g: Group, key: number) => (
+    <i
+      key={key}
+      className={g === 'you' ? 'you' : undefined}
+      style={g === 'you' ? undefined : { background: handledRow(kind).colour }}
+    />
+  )
+  const groups = (['system', 'you'] as const).flatMap((g) =>
+    HANDLED_ORDER.map((kind) => ({ kind, g, count: handled.kinds.find((k) => k.kind === kind)?.[g] ?? 0 })),
+  )
+  const weighted = n > TICK_LIMIT
+  const marks = groups.filter((x) => x.count > 0)
+  const ticks = weighted
+    ? marks.map((x) => (
+        <i
+          key={`${x.kind}/${x.g}`}
+          className={x.g === 'you' ? 'you' : undefined}
+          style={x.g === 'you' ? undefined : { background: handledRow(x.kind).colour }}
+          title={`${x.count} × ${handledRow(x.kind).wrong}`}
+        />
+      ))
+    : marks.flatMap((x) => Array.from({ length: x.count }, () => x)).map((x, key) => mark(x.kind, x.g, key))
+  const tickColumns = weighted ? marks.map((x) => `${x.count}fr`).join(' ') : `repeat(${n},1fr)`
+
+  const cents = centsOf(spend)
+  const cost = handled.answeringCost
+  const noun = query.which === 'today' ? "today's" : query.which === '7d' ? "the week's" : "the range's"
+
+  const rows = (g: Group) =>
+    groups
+      .filter((x) => x.g === g && x.count > 0)
+      .map(({ kind, count }) => {
+        const r = handledRow(kind)
+        const link = (
+          <Link href={href(kind, g)} scroll={false}>
+            {count}
+          </Link>
+        )
+        return g === 'system' ? (
+          <tr key={kind} title={r.hover === '' ? undefined : r.hover}>
+            <td>
+              <span className="dot" style={{ background: r.colour }} />
+              <span className={kind === 'other' ? 'w other' : 'w'}>{r.wrong}</span>
+              {r.did === undefined ? null : (
+                <>
+                  <span className="ar">→</span>
+                  <span className="d">{r.did}</span>
+                </>
+              )}
+            </td>
+            <td className="n">{link}</td>
+          </tr>
+        ) : (
+          <tr key={kind} className="you" title={r.hover === '' ? undefined : r.hover}>
+            <td>
+              <span className="dot" />
+              <span className={kind === 'other' ? 'w other' : 'y2'}>{r.wrong}</span>
+            </td>
+            <td className="n">{link}</td>
+          </tr>
+        )
+      })
+
+  const days = handled.days
+  const biggest = Math.max(1, ...days.map((d) => d.system + d.you))
+  const unit = DAY_STACK_PX / biggest
+  const every = Math.ceil(days.length / 14)
+
+  return (
+    <section className="hfr" id="handled">
+      {head}
+      <div className="hfr-hero">
+        <b>{system}</b>
+        <span className="t">
+          problems solved
+          <br />
+          without you
+        </span>
+        <div className="side">
+          <div>
+            <span className="v">{share === null ? '—' : `${share}%`}</span>
+            <span className="s">of {n} problems</span>
+          </div>
+          <div>
+            <span className="v">{you}</span>
+            <span className="s">needed you</span>
+          </div>
+        </div>
+      </div>
+      <p className="hfr-sub">each would have stopped the work until you stepped in</p>
+      <div
+        className="hfr-ticks"
+        style={{ gridTemplateColumns: tickColumns }}
+        title="one mark per problem · hollow ones needed you"
+      >
+        {ticks}
+      </div>
+      <div className="hfr-body">
+        <div>
+          <table className="hfr-t">
+            <tbody>
+              <tr className="grp g1">
+                <td>Lingtai auto-fixed</td>
+                <td className="n">
+                  {system === 0 ? (
+                    0
+                  ) : (
+                    <Link href={href('all', 'system')} scroll={false}>
+                      {system}
+                    </Link>
+                  )}
+                </td>
+              </tr>
+              {rows('system')}
+              <tr className="grp">
+                <td>needed you</td>
+                <td className="n">
+                  {you === 0 ? (
+                    0
+                  ) : (
+                    <Link href={href('all', 'you')} scroll={false}>
+                      {you}
+                    </Link>
+                  )}
+                </td>
+              </tr>
+              {rows('you')}
+            </tbody>
+          </table>
+          <div className="hfr-cost">
+            Solving these cost{' '}
+            <b>
+              {dollars(cost.reportedCents)} reported · ~{dollars(cost.estimatedCents)} est.
+            </b>
+            {cost.unknown > 0 ? ` + ${cost.unknown} unknown` : ''} in agent runs
+            {cents === 0 ? (
+              ''
+            ) : (
+              <>
+                {' — '}
+                <b>{Math.round((centsOf(cost) / cents) * 100)}%</b> of {noun} spend
+              </>
+            )}
+            . Click any number for the tickets.
+          </div>
+        </div>
+        <div className="hfr-days">
+          <div className="h">per day · share without you</div>
+          <div className="hfr-cols">
+            {days.map((d, i) => {
+              const dayShare = shareWithoutYou(d.system, d.you)
+              const labelled = i % every === 0
+              return (
+                <div
+                  className="hfr-col"
+                  key={d.day}
+                  title={`${dayText(d.day)}: ${d.system} solved without you · ${d.you} needed you`}
+                >
+                  <div className="hfr-stack">
+                    {HANDLED_ORDER.flatMap((kind) => {
+                      const c = d.kinds.find((k) => k.kind === kind)?.system ?? 0
+                      return c === 0
+                        ? []
+                        : [<i key={kind} style={{ background: handledRow(kind).colour, height: `${c * unit}px` }} />]
+                    })}
+                    {d.you === 0 ? null : <i className="you" style={{ height: `${d.you * unit}px` }} />}
+                  </div>
+                  <span className="p">{labelled ? (dayShare === null ? '—' : `${dayShare}%`) : '\u00a0'}</span>
+                  <span className="d">{labelled ? dayText(d.day) : '\u00a0'}</span>
+                </div>
+              )
+            })}
+          </div>
+          <div className="hfr-feed">
+            <div className="h">
+              <span>latest</span>
+              <Link href={href('all', null)} scroll={false}>
+                all {n} →
+              </Link>
+            </div>
+            <ul>
+              {handled.latest.slice(0, 6).map((p) => {
+                const r = handledRow(p.kind)
+                const verb = p.answeredBy === 'system' ? r.did : undefined
+                return (
+                  <li
+                    key={`${p.ticket}/${p.at}/${p.kind}`}
+                    title={p.answeredBy === 'system' && r.did !== undefined ? `${r.wrong} → ${r.did}` : r.wrong}
+                  >
+                    <span
+                      className="dot"
+                      style={
+                        p.answeredBy === 'system'
+                          ? { background: r.colour }
+                          : { boxShadow: 'inset 0 0 0 1.5px var(--rule-2)' }
+                      }
+                    />
+                    <span className="m">
+                      <Link href={`/task/${p.ticket}`}>#{issueOf(p.ticket)}</Link>
+                      <span className="d">{p.answeredBy === 'you' ? 'needed you' : (verb ?? r.wrong)}</span>
+                    </span>
+                    <span className="t">
+                      {p.outcome === 'landed' ? (
+                        <>
+                          <span className="ok">landed</span> · {whenText(p.at, wide(query))}
+                        </>
+                      ) : (
+                        whenText(p.at, wide(query))
+                      )}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** A window wider than a week names the date, not just the weekday. */
+const wide = (q: ReportQuery): boolean => q.window.to.getTime() - q.window.from.getTime() > 7 * 86_400_000
+
+function HandledProblems({
+  handled,
+  problems,
+  query,
+}: {
+  handled: HandledQuery
+  problems: readonly HandledProblem[]
+  query: ReportQuery
+}) {
+  const rows = problems.filter(
+    (p) => (handled.kind === 'all' || p.kind === handled.kind) && (handled.by === null || p.answeredBy === handled.by),
+  )
+  const page = pageHandled(rows, handled.before)
+  const title = handled.kind === 'all' ? 'all problems' : handledRow(handled.kind).wrong
+  const who = handled.by === 'system' ? ' · solved without you' : handled.by === 'you' ? ' · needed you' : ''
+  const withDate = wide(query)
+  return (
+    <>
+      <Link className="hfr-back" href={`${reportHref(query, { handled: null })}#handled`} scroll={false}>
+        ← handled for you
+      </Link>
+      <h3 className="hfr-note">
+        {title}
+        {who} — showing {page.from}–{page.to} of {page.total}
+      </h3>
+      <table className="rp-table">
+        <thead>
+          <tr>
+            <th>when</th>
+            <th>ticket</th>
+            <th>what happened</th>
+            <th>answered by</th>
+            <th>outcome</th>
+          </tr>
+        </thead>
+        <tbody>
+          {page.rows.map((p) => {
+            const r = handledRow(p.kind)
+            return (
+              <tr key={`${p.ticket}/${p.at}/${p.kind}`}>
+                <td className="num">{whenText(p.at, withDate)}</td>
+                <td className="t">
+                  <Link href={`/task/${p.ticket}`}>#{issueOf(p.ticket)}</Link>
+                </td>
+                <td>
+                  {r.wrong}
+                  {p.answeredBy === 'system' && r.did !== undefined ? ` → ${r.did}` : ''}
+                </td>
+                <td>{p.answeredBy === 'system' ? 'Lingtai' : 'you'}</td>
+                <td>{p.outcome}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      {page.next === null ? null : (
+        <p className="hfr-pager">
+          <Link href={reportHref(query, { handled: { ...handled, before: page.next } })} scroll={false}>
+            earlier →
+          </Link>
+        </p>
+      )}
+    </>
   )
 }

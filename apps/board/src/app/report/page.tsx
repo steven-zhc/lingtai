@@ -11,7 +11,7 @@
  * (nothing reduces them), and the bar says how far behind either is. A read that fails is a
  * sentence in place of the panels, never a 500.
  */
-import { report as buildReport, type Report } from '@lingtai/conductor/report'
+import { handledProblems, report as buildReport, type HandledProblem, type Report } from '@lingtai/conductor/report'
 
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
@@ -32,7 +32,16 @@ import { TimingMeta } from '@/lib/timing-meta'
 
 import { FooterFetched } from '../footer-fetched'
 import { LandingsPanel, RoundsPanel, SpendPanel, SurvivalPanel, kindsOfReport } from './charts.tsx'
-import { CostliestPanel, Filters, KindsPanel, Tiles, TopPanel, WaitsPanel, WhereItWentPanel } from './panels.tsx'
+import {
+  CostliestPanel,
+  Filters,
+  HandledPanel,
+  KindsPanel,
+  Tiles,
+  TopPanel,
+  WaitsPanel,
+  WhereItWentPanel,
+} from './panels.tsx'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,6 +70,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const only = query.project ?? undefined
 
   let report: Report | null = null
+  let problems: HandledProblem[] | null = null
   let kinds = query.kinds ?? []
   let chip: ReportChip
   let failure: string | null = null
@@ -82,14 +92,17 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
     chip = reportChip(data.currency)
     kinds = sortKinds([...kindsOf(data.tickets, query.project), ...(query.kinds ?? [])])
     kinds = kinds.filter((k, i) => kinds.indexOf(k) === i)
-    report = buildReport({
+    const input = {
       tickets: data.tickets,
       spend: data.spend,
       window: query.window,
       project: query.project,
       kinds: query.kinds,
       sortBy: query.sort,
-    })
+    }
+    report = buildReport(input)
+    // Every problem is read only when the address asks for the ones behind a count.
+    problems = query.handled === null ? null : handledProblems(input)
   } catch (err) {
     failure = (err as Error).message
     const none: ReportCurrency['spend'] = { lag: null, error: failure }
@@ -126,6 +139,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
           ) : (
             <>
               <Tiles report={report} day={await dayReading} query={query} />
+              <HandledPanel handled={report.handled} spend={report.spend.total} query={query} problems={problems} />
               <section className="rp-grid">
                 <Panel
                   title="refusal fixes"
