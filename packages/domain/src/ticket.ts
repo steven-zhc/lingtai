@@ -701,9 +701,9 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
       // a run.
       if (
         (d.resolution._tag === 'Approve' ||
-        d.resolution._tag === 'FixRefusal' ||
-        d.resolution._tag === 'RedoStep' ||
-        d.resolution._tag === 'AnswerQuestions') &&
+          d.resolution._tag === 'FixRefusal' ||
+          d.resolution._tag === 'RedoStep' ||
+          d.resolution._tag === 'AnswerQuestions') &&
         block !== null
       ) {
         return {

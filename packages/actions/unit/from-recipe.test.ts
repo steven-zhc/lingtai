@@ -11,7 +11,6 @@
  * carrying it.
  */
 import type { RunOutcome, RunRequest, Runtime } from '@lingtai/agent'
-import { BOUNDS } from '@lingtai/domain'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -170,4 +169,3 @@ describe('a run: at implement needs the git port, and env: alone is not enough',
     expect(built[0]!.kind).toBe('run')
   })
 })
-

@@ -2382,7 +2382,9 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                   head: onSha,
                 },
               }
-            : options.from?.answered !== undefined && at === options.from.step && !steps.some((visit) => visit.step === at)
+            : options.from?.answered !== undefined &&
+                at === options.from.step &&
+                !steps.some((visit) => visit.step === at)
               ? {
                   ...contextFor(),
                   rerun: stepRedosSpent + landingRetriesSpent + options.from.answered.accountReruns,

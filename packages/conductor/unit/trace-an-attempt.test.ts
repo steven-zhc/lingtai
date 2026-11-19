@@ -6,7 +6,6 @@
  * `installTracingEffect`, so the provider, the batch processor, the context manager and
  * the Effect tracer are the production ones.
  */
-import type { RunOutcome } from '@lingtai/agent'
 import type { Envelope, ToAppend } from '@lingtai/domain'
 import { machineFileFrom } from '@lingtai/env'
 import { context, trace } from '@opentelemetry/api'

@@ -429,7 +429,11 @@ export function EditBodyAndRequeue({
           }}
         />
       </label>
-      {waitId !== null && asked.length > 0 && triage !== null && reason !== null && allowedResolutions(reason).includes('AnswerQuestions') ? (
+      {waitId !== null &&
+      asked.length > 0 &&
+      triage !== null &&
+      reason !== null &&
+      allowedResolutions(reason).includes('AnswerQuestions') ? (
         <button
           className="btn pri"
           disabled={pending || doneWaitId === waitId}

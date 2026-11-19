@@ -20,7 +20,9 @@ import { refusal, type Answered } from './verdict.ts'
  * (from 1), `a` the answer id. A pick that is not that is refused by name; a question with no pick takes its
  * recommended answer, which is what the resolution means by a missing index (#1254).
  */
-export function parsePicks(picks: readonly string[]): { ok: true; answers: Record<string, string> } | { ok: false; detail: string } {
+export function parsePicks(
+  picks: readonly string[],
+): { ok: true; answers: Record<string, string> } | { ok: false; detail: string } {
   const answers: Record<string, string> = {}
   for (const pick of picks) {
     const match = /^(\d+)=(.+)$/.exec(pick.trim())
@@ -57,7 +59,9 @@ export function answerQuestionsVerdict(
     if (wait === undefined) return null
     if (!answeredAlready && !allowedResolutions(wait.reason, wait.triage.result).includes('AnswerQuestions')) {
       if (options.picks.length > 0)
-        return refusal(1, 'not-offered', `${ticketId} asked no questions to answer — nothing was resolved`, { ticketId })
+        return refusal(1, 'not-offered', `${ticketId} asked no questions to answer — nothing was resolved`, {
+          ticketId,
+        })
       return null
     }
     let client: IssueChannel & { refSha(ref: string): Promise<string | null> }
@@ -88,7 +92,11 @@ export function answerQuestionsVerdict(
     yield* noteConductor(progress)
     return {
       code: 0,
-      verdict: { outcome: 'accepted', ticketId, detail: 'the answers are in the body; the step continues on the saved work' },
+      verdict: {
+        outcome: 'accepted',
+        ticketId,
+        detail: 'the answers are in the body; the step continues on the saved work',
+      },
     } satisfies Answered
   })
 }

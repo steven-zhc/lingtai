@@ -177,9 +177,7 @@ describe('recommendedResolution for a TriageAnswered', () => {
     const wanted = recommend(cause)
     expect(wanted === null || wanted === expected).toBe(true)
     // `allowedResolutions` is what decides, so the answer is the cause's move exactly when the wait offers it
-    expect(wanted === null).toBe(
-      !allowedResolutions(check, answered(cause)).includes(expected as Resolution['_tag']),
-    )
+    expect(wanted === null).toBe(!allowedResolutions(check, answered(cause)).includes(expected as Resolution['_tag']))
   })
 
   it('draws the cause’s move on a wait that offers it', () => {

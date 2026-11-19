@@ -491,7 +491,8 @@ function prepare(
           ok: false,
           ticketId,
           reason: 'no-github',
-          detail: 'The answers have to be written into the body first, and there is no GitHub to write to — nothing was resolved.',
+          detail:
+            'The answers have to be written into the body first, and there is no GitHub to write to — nothing was resolved.',
         })
       const result = yield* writeSectionEffect({
         store,

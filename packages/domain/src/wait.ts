@@ -590,7 +590,9 @@ export function allowedResolutions(reason: WaitReason, triage?: TriageResult | n
   const fixable = grantCriterion(reason) !== null
   return [
     // A wait triage answered `UndecidedQuestion` offers the answering first (#1254), whatever it began as.
-    ...(triagedAsk(reason, triage) !== null && !table.includes('AnswerQuestions') ? (['AnswerQuestions'] as const) : []),
+    ...(triagedAsk(reason, triage) !== null && !table.includes('AnswerQuestions')
+      ? (['AnswerQuestions'] as const)
+      : []),
     ...(unpushed ? table.filter((tag) => tag !== 'Approve') : table),
     ...(fixable && !unpushed ? (['FixRefusal'] as const) : []),
     ...(rerunStepOf(reason) !== null && !unpushed ? (['RedoStep'] as const) : []),
@@ -617,7 +619,14 @@ export function isPersonAsk(reason: WaitReason, triage: TriageResult | null | un
  */
 export function limitedReason(reason: WaitReason, triage: TriageResult | null | undefined, spent: number): WaitReason {
   if (!isPersonAsk(reason, triage) || spent < PERSON_ASKS || !('run' in reason)) return reason
-  return { _tag: 'AskLimit', run: reason.run, bound: 'personAsks', used: spent, allowed: PERSON_ASKS, asked: reason as never }
+  return {
+    _tag: 'AskLimit',
+    run: reason.run,
+    bound: 'personAsks',
+    used: spent,
+    allowed: PERSON_ASKS,
+    asked: reason as never,
+  }
 }
 
 /** The `UndecidedQuestion` triage answered a wait with, where it did and asked something (#1254). A limit wait asks nothing. */
@@ -648,9 +657,7 @@ export function answerStepOf(reason: WaitReason, triage?: TriageResult | null): 
   if (reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'InputNeeded') return reason.proposal.from
   if (triagedAsk(reason, triage) === null) return null
   const named = stepNamedBy(reason)
-  return named === 'design' || named === 'implement' || named === 'review' || named === 'prepared'
-    ? named
-    : 'implement'
+  return named === 'design' || named === 'implement' || named === 'review' || named === 'prepared' ? named : 'implement'
 }
 
 /** The step a wait's own reason says it stopped at, `null` where it names none. */

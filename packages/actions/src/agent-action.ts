@@ -56,7 +56,6 @@ import { runtimeVersionOfEffect, type RunOutcome, type RunSandbox, type Runtime 
 import type { RunTrace } from '@lingtai/agent/run-log'
 import { AskedQuestions, askedText, type RuntimeId, type Step, type TriageQuestion } from '@lingtai/domain'
 import {
-  BOUNDS,
   composePrompt,
   REFUSED_ABOUT,
   REVIEW_ANSWER_JSON_SCHEMA,
@@ -78,7 +77,6 @@ import {
   type ActionFinding,
   type ActionResult,
   type ActionSpent,
-  type SentBack,
 } from './action.ts'
 import { boundedEvidence } from './command.ts'
 import { demoteOutsideDiff, demoteOutsideFix, hunksOf, type DiffHunks } from './diff-hunks.ts'

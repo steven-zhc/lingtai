@@ -8,7 +8,6 @@
 import type { RunOutcome, RunRequest, Runtime } from '@lingtai/agent'
 import { sessionIdFor } from '@lingtai/agent'
 import {
-  BOUNDS,
   REFUSED_ABOUT,
   REVIEW_ANSWER_JSON_SCHEMA,
   SEVERITIES,
@@ -1497,7 +1496,6 @@ describe('the design prompt', () => {
     // Nothing was sent back, so nothing says it was.
     expect(prompt).not.toContain('a second time')
   })
-
 })
 
 /**
@@ -1559,7 +1557,6 @@ describe('the design step asks about undecided edges', () => {
     expect(prompt).not.toContain('One question, not a list')
     expect(prompt).not.toContain('## Assumptions')
   })
-
 })
 
 /**
