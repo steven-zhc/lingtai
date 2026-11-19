@@ -916,7 +916,7 @@ async function HandledPart({ only, note }: { only: string | undefined; note: str
   try {
     const data = await currentReport(today.project, today.window.from)
     const cur = data.currency.ticketReport
-    if (cur.error !== undefined || cur.lag === null) return empty
+    if (cur.error !== undefined || cur.lag !== 0) return empty
     const handled = handledToday(
       buildReport({
         tickets: data.tickets,

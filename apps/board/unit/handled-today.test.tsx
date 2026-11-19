@@ -24,7 +24,7 @@ describe('handledToday', () => {
       ]),
     )!
     expect(t.kinds.map((k) => k.kind)).toEqual(['b', 'g', 'c', 'e'])
-    expect(t.more).toEqual({ kinds: 2, problems: 2 })
+    expect(t.more).toMatchObject({ kinds: 2, problems: 2 })
     expect(t.solved).toBe(16)
     expect(t.needed).toBe(1)
     expect(t.percent).toBe(94)
@@ -42,7 +42,22 @@ describe('HandledCard', () => {
     const t = handledToday(kinds([['a', 2, 1]]))!
     const html = renderToStaticMarkup(<HandledCard today={t} todayHref="/report?window=today" weekHref="/report" />)
     expect(html).toContain('Nothing needs you')
-    expect(html).toContain('67% without you · 1 needed you')
+    expect(html).toContain('<b>67%</b> without you · 1 needed you')
     expect(html).toContain('href="/report#handled"')
+  })
+  it('explains each kind and draws one mark per problem, hollow for the ones that needed you', () => {
+    const t = handledToday(
+      kinds([
+        ['review-fixed', 2, 1],
+        ['base-moved', 1, 0],
+      ]),
+    )!
+    const html = renderToStaticMarkup(<HandledCard today={t} todayHref="/report?window=today" weekHref="/report" />)
+    expect(html).toContain('AI review found problems')
+    expect(html).toContain('newer changes landed first')
+    expect(html).toContain('auto-merged, re-tested')
+    expect(html).not.toContain('review-fixed')
+    expect((html.match(/<i /g) ?? []).length).toBe(4 + 2)
+    expect((html.match(/class="you"/g) ?? []).length).toBe(1)
   })
 })
