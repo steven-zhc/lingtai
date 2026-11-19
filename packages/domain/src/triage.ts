@@ -38,10 +38,12 @@ export const TRIAGE_QUESTIONS_MAX = 5
 export const TRIAGE_ANSWERS_MAX = 4
 /** At most 20 fixes a `Lines` cause may list (0118 §3). */
 export const TRIAGE_FIXES_MAX = 20
-/** Every free-text field the agent writes — including the ids and paths it writes too. */
-export const TRIAGE_TEXT_MAX = 500
-/** `sentence` and `want`, the two fields built for the card. */
-export const TRIAGE_SENTENCE_MAX = 200
+/**
+ * Every free-text field the agent writes — including the ids and paths it
+ * writes too. Prose over it is cut by `cutProse`; an identifier over it is
+ * refused.
+ */
+export const TRIAGE_TEXT_MAX = 1200
 /** At most 8 children a triaged `Split` proposal may suggest (0118 §12). */
 export const TRIAGE_SPLIT_CHILDREN_MAX = 8
 /** A child's body is a ticket's prompt, so it needs more room than `TRIAGE_TEXT_MAX`. */
@@ -191,4 +193,41 @@ export function triageAnswersText(
     chosen.push({ index: i, answerId: id })
   }
   return { ok: true, text: lines.join('\n'), picks: chosen }
+}
+
+/** `text` cut to `max` characters, ending `…`, never ending on half a surrogate pair. */
+export const cut = (text: string, max: number = TRIAGE_TEXT_MAX): string => {
+  if (text.length <= max) return text
+  let end = max - 1
+  const last = text.charCodeAt(end - 1)
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1
+  return `${text.slice(0, end)}…`
+}
+
+/**
+ * The keys that hold prose wherever they appear in a triage or judge answer.
+ * An identifier (`id`, `recommended`, `path`, `kind`, `covers`, `uncovered`,
+ * split's `title` and `body`) must never be added: cutting one turns a readable
+ * answer into a wrong one.
+ */
+export const PROSE_KEYS: ReadonlySet<string> = new Set([
+  'summary',
+  'want',
+  'why',
+  'what',
+  'text',
+  'spentOn',
+  'repair',
+  'addToBody',
+])
+
+/** Cuts every string under a `PROSE_KEYS` key to `TRIAGE_TEXT_MAX`; copies the rest as it is. */
+export const cutProse = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(cutProse)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, typeof v === 'string' && PROSE_KEYS.has(k) ? cut(v) : cutProse(v)]),
+    )
+  }
+  return value
 }

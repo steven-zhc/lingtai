@@ -34,7 +34,6 @@ import {
   READS_PER_TURN,
   TRIAGE_FIXES_MAX,
   TRIAGE_QUESTIONS_MAX,
-  TRIAGE_SENTENCE_MAX,
   TRIAGE_TEXT_MAX,
   TriageQuestion,
 } from './triage.ts'
@@ -934,7 +933,7 @@ const UndecidedQuestion = z.strictObject({
 const FixableLines = z.strictObject({ _tag: z.literal('FixableLines'), fixes: z.array(LineFix).max(TRIAGE_FIXES_MAX) })
 
 /** Patching will not converge — and why, in one sentence. */
-const WrongApproach = z.strictObject({ _tag: z.literal('WrongApproach'), why: z.string().max(TRIAGE_SENTENCE_MAX) })
+const WrongApproach = z.strictObject({ _tag: z.literal('WrongApproach'), why: z.string().max(TRIAGE_TEXT_MAX) })
 
 const conflictingHunks = <H extends z.ZodType<{ _tag: string }>>(hunk: H) =>
   z
@@ -1012,8 +1011,8 @@ const TriageFailed = z.strictObject({ _tag: z.literal('TriageFailed'), why: z.st
 
 /** What the card shows of a cause: one sentence, and one more of what the ticket wants — `null` where the body does not say. */
 const answerParts = {
-  summary: z.string().max(TRIAGE_SENTENCE_MAX),
-  want: z.string().max(TRIAGE_SENTENCE_MAX).nullable(),
+  summary: z.string().max(TRIAGE_TEXT_MAX),
+  want: z.string().max(TRIAGE_TEXT_MAX).nullable(),
 }
 
 /** What the model answers: a cause and no action (0118 §1); a plan's children name no `kind` (#1271). */

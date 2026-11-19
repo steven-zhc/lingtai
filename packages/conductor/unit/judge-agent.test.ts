@@ -18,6 +18,7 @@ import type { ActionFinding } from '@lingtai/actions'
  *
  * Unit, under `--project unit`: nothing here spawns anything or reads a file.
  */
+import { TRIAGE_TEXT_MAX } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
 import type { Judging } from '../src/attempt-steps.ts'
@@ -268,6 +269,40 @@ describe('a judge at findings answers a cause (0108 §6)', () => {
       '{"cause": {"_tag": "UndecidedQuestion", "questions": [{"id": "q", "text": "which?", "answers": [{"id": "a", "text": "A"}, {"id": "b", "text": "B"}], "recommended": "a"}]}, "summary": "s"}',
     )
     expect(asked === null ? null : 'cause' in asked ? asked.cause._tag : asked).toBe('UndecidedQuestion')
+  })
+
+  it('cuts prose over the bound, and does not read an identifier over it', () => {
+    const wrong = causeIn(
+      JSON.stringify({ cause: { _tag: 'WrongApproach', why: 'w'.repeat(1300) }, summary: 's'.repeat(1300) }),
+    )
+    if (wrong === null || !('cause' in wrong) || wrong.cause._tag !== 'WrongApproach') throw new Error('unread')
+    expect(wrong.cause.why).toHaveLength(TRIAGE_TEXT_MAX)
+    expect(wrong.cause.why.endsWith('…')).toBe(true)
+    expect(wrong.summary).toHaveLength(TRIAGE_TEXT_MAX)
+    const question = (id: string) =>
+      JSON.stringify({
+        cause: {
+          _tag: 'UndecidedQuestion',
+          questions: [
+            {
+              id,
+              text: 'which?',
+              answers: [
+                { id: 'a', text: 'A' },
+                { id: 'b', text: 'B' },
+              ],
+              recommended: 'a',
+            },
+          ],
+        },
+        summary: 's',
+      })
+    expect(causeIn(question('q'))).toMatchObject({ cause: { _tag: 'UndecidedQuestion' } })
+    expect(causeIn(question('q'.repeat(TRIAGE_TEXT_MAX + 1)))).toBeNull()
+  })
+
+  it('tells the judge the bound', () => {
+    expect(judgePrompt(ARRIVED)).toContain(`at most ${TRIAGE_TEXT_MAX} characters`)
   })
 
   it('names a cause a judge may not answer, and reads no destination as one', () => {

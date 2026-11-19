@@ -31,7 +31,7 @@ import type { ActionFinding } from '@lingtai/actions'
  * count, so there is no number here for a prompt to leak and no arithmetic for
  * one to argue with. A judge cannot widen what it cannot see.
  */
-import { askedText, type JudgeWhen, STEPS, triageQuestionsOf } from '@lingtai/domain'
+import { askedText, cutProse, type JudgeWhen, STEPS, TRIAGE_TEXT_MAX, triageQuestionsOf } from '@lingtai/domain'
 import { JUDGE_CAUSES, JudgeAnswer, type Cause } from '@lingtai/domain/wait'
 
 import type { Judging } from './attempt-steps.ts'
@@ -225,7 +225,7 @@ One JSON object, and nothing else that could be read as one:
 \`\`\`
 
 Answer with exactly one of those. A \`fixes\` entry names \`path\`, \`line\` (or null) and \`what\` to change; a question has an \`id\`, \`text\`, \`answers\` and a \`recommended\` answer id; a question
-carries two to four answers. An answer that is not one cause is not read, and you will not be asked again.`
+carries two to four answers. Every text field is at most ${TRIAGE_TEXT_MAX} characters and prose over it is cut; an \`id\`, \`path\` or \`recommended\` over it is not read. An answer that is not one cause is not read, and you will not be asked again.`
 }
 
 function judgeText(on: Judging, evidence: string): string {
@@ -313,7 +313,7 @@ export function chosenIn(text: string | null): { readonly next: Destination; rea
   for (const candidate of candidates) {
     let value: unknown
     try {
-      value = JSON.parse(candidate.trim())
+      value = cutProse(JSON.parse(candidate.trim()))
     } catch {
       continue
     }
@@ -344,7 +344,7 @@ const CAUSE_TAGS = [
 /**
  * **The cause a judge at `findings` answered** (0108 §6): `{ cause }` where it is one of `JUDGE_CAUSES` and
  * within the bounds triage's is, `{ refused }` naming a cause a judge may not answer or a question with fewer than
- * two answers, and null where there is no cause to read. Nothing is repaired, and nothing is asked again.
+ * two answers, and null where there is no cause to read. Prose over the bound is cut; nothing else is repaired, and nothing is asked again.
  */
 export function causeIn(
   text: string | null,
@@ -359,7 +359,7 @@ export function causeIn(
   for (const candidate of candidates) {
     let value: unknown
     try {
-      value = JSON.parse(candidate.trim())
+      value = cutProse(JSON.parse(candidate.trim()))
     } catch {
       continue
     }
