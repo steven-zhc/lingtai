@@ -1504,11 +1504,7 @@ export function Standing({
                   status={standing.triageStatus}
                   headLine={standing.triageHeadLine}
                   savedHead={savedHead}
-                  split={
-                    standing.split !== undefined && project !== null && issue !== null && standing.waitId !== null
-                      ? { project, issue, waitId: standing.waitId, ...standing.split }
-                      : undefined
-                  }
+                  split={standing.split}
                 />
               ) : null}
               <div className="spair" data-rank="discussion">

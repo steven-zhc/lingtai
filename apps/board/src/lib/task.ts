@@ -5,7 +5,7 @@ import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@l
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { readProjectTicket } from '@lingtai/conductor/read-ticket'
-import { readControl, readStatus } from '@lingtai/daemon/control'
+import { lastBeat, readControl, readStatus } from '@lingtai/daemon/control'
 import {
   agentBranchOf,
   emptyControl,
@@ -135,7 +135,6 @@ import {
   type Purpose,
   type SpendCurrency,
 } from './spend.ts'
-import { isSplitRunning, splitInstance } from './split-instance.ts'
 import { timed } from './timing.ts'
 import { triageHeadLine } from './triage-head.ts'
 
@@ -2146,21 +2145,31 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       }
     }
   }
-  if (
-    standing.state === 'blocked' &&
-    standing.waitId !== null &&
-    standing.reason !== null &&
-    allowedResolutions(standing.reason).includes('Split')
-  ) {
-    const state = await readProject(ticket.project)
-    const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)
-    standing.split = {
-      progress: splitProgressOf(own, {
-        waitId: standing.waitId,
-        instance: splitInstance(),
-        running: isSplitRunning(standing.waitId),
-      }),
-      tickets,
+  // **A split is the daemon's** (0118 §12): the page reads it and offers no way to start one. It is shown where the
+  // wait's triage answered `TicketTooBig` with a plan, or the log holds a `SplitStarted` for it.
+  if (standing.state === 'blocked' && standing.waitId !== null) {
+    const waitId = standing.waitId
+    const planned =
+      status?._tag === 'Done' &&
+      status.result._tag === 'TriageAnswered' &&
+      status.result.cause._tag === 'TicketTooBig' &&
+      status.result.cause.plan !== null
+    const started = own.some(
+      (e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId === waitId,
+    )
+    if (planned || started) {
+      const state = await readProject(ticket.project)
+      const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)
+      // A split the daemon writes is *writing* while the daemon that started it is beating (`SplitStarted.instance`).
+      const daemon = await readStatus()
+      standing.split = {
+        progress: splitProgressOf(own, {
+          waitId,
+          instance: daemon === null ? '' : `daemon:${daemon.pid}@${daemon.startedAt.toISOString()}`,
+          running: daemon !== null && lastBeat(daemon).up,
+        }),
+        tickets,
+      }
     }
   }
   const want = status?._tag === 'Done' && status.result._tag !== 'TriageFailed' ? status.result.want : null

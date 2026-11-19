@@ -79,7 +79,6 @@ import { readDayReading } from '@/lib/day-spend'
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
 import { askRefusal, continueTodayWith, liftAccountWith, setProjectPaused } from '@/lib/locks'
 import type { SaveRecipeState } from '@/lib/recipe-edit'
-import { runSplit, splitInstance } from '@/lib/split-instance'
 
 import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
 
@@ -1038,63 +1037,6 @@ export async function loadDiff(input: { project: string; baseSha: string; headSh
     // that was scoped too large, which the card says elsewhere.
     const truncated = files.length > DIFF_FILE_LIMIT
     return { ok: true, files: files.slice(0, DIFF_FILE_LIMIT), truncated }
-  } catch (err) {
-    return { ok: false, detail: (err as Error).message }
-  }
-}
-
-/**
- * **Create all**, and **Retry what is missing** (#603, 0118 §12).
- *
- * Both start the same writer: the first call freezes `plan` in `SplitStarted`,
- * and a retry sends none — the writer reads the frozen one off the log. It
- * returns once `SplitStarted` is appended (or the writer refused before writing
- * anything), not when the writing ends: the page learns the rest from the log,
- * which `live.tsx` re-renders on every append. Returning earlier would render
- * the page idle and editable for a moment.
- */
-export async function splitCard(input: {
-  project: string
-  issue: number
-  waitId: WaitId
-  plan?: SplitPlanInput
-}): Promise<ActionResult> {
-  try {
-    if (!input.waitId) {
-      return {
-        ok: false,
-        detail: 'stale: this card was rendered without the wait it is about — reload and read it again',
-      }
-    }
-    const state = await project(input.project)
-    const { recipe } = await currentRecipe(state)
-    if (ticketSourceOf(recipe) === 'db')
-      return { ok: false, detail: 'splitting is not available for a project whose tickets are in the database yet' }
-    const github = await githubClientFor(state)
-
-    let started!: () => void
-    const begun = new Promise<void>((resolve) => (started = resolve))
-    // Detached once running: the board must not hold a request open for the writes, nor crash on one.
-    const done = runSplit(input.waitId, () =>
-      splitTicket({
-        project: input.project,
-        issue: input.issue,
-        waitId: input.waitId,
-        plan: input.plan,
-        kinds: kindsOf(recipe),
-        repository: `${state.owner}/${state.project}`,
-        by: actor(),
-        instance: splitInstance(),
-        github,
-        onStarted: started,
-      }),
-    )
-    if (done === null) return { ok: false, detail: 'a write for this split is already running in this board' }
-    const refused = await Promise.race([begun.then(() => 'started' as const), done])
-    if (refused === null) return { ok: false, detail: 'the split could not be started — nothing was written' }
-    if (refused !== 'started') return { ok: refused.ok, detail: refused.detail }
-    revalidatePath(`/task/${ticketStream(input.project, input.issue)}`)
-    return { ok: true, detail: 'writing the split' }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }
