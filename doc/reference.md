@@ -349,7 +349,7 @@ say different things about the same recipe
 | `runtime.limits.run.usd` | *(none)* | a dollar ceiling before the runtime stops the agent, **per run** (`#370`). No default, unlike `turns` and `wall` — absent means no dollar ceiling, and `lingtai doctor` says so (`usd — none declared`) rather than assuming unbounded or reading a Codex project red forever the way a defaulted `turns` would |
 | `runtime.limits.attempt.refusalFixes` | `6` | how many times an attempt sends the agent back **into the same worktree**, carrying what a build or review refused. `0` buys no fix, and a refusal then goes to a person |
 | `runtime.limits.attempt.conflictResolutions` | `6` | how many times an attempt sends the agent back to resolve a merge conflict. Two things that mean differently have two names even where their values agree. `0` buys no resolution |
-| `runtime.limits.ticket.newAttempts` | `2` | how many times a spent attempt **starts the ticket over** from the base instead of asking a person. Only a spent attempt a judge sends back to `claim` buys one: a build refusal or a merge conflict never does. Not a daemon restart. `0` means a spent attempt asks a person |
+| `runtime.limits.ticket.newAttempts` | `2` | how many times a spent attempt **starts the ticket over** from the base instead of asking a person. It is bought when a cause says the approach was wrong (`WrongApproach`, from a judge at `findings` or triage) or a conflict has a `Contradicting` hunk — whether or not `refusalFixes` is spent (`actionFor`, `packages/domain/src/failure/respond.ts`). A red build and a conflict with only mechanical hunks never buy one. Not a daemon restart. `0` means a spent attempt asks a person |
 | `gates.<point>[].timeout` | `15m` | per process action, not per point |
 | `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
 
@@ -476,7 +476,7 @@ Not the recipe's, and each row says why.
 | `BOUNDS.triageRetries` (same) | `1` | how many more times a triage whose answer failed or went stale is asked, before the wait is a person's (0118 §3, #1258) | each retry is a paid agent turn, and a knob is a value somebody can set to a loop |
 | `BOUNDS.ticketSplits` (same) | `1` per root ticket | how many times a ticket is split: spent by its first `SplitStarted` for any wait (#1261), so a parent that returns in a new attempt has no second split | a split opens tickets, which is a cost to a repository and not only to a run; unlimited it is an unbounded tree |
 | `TRIAGE_SPLIT_CHILDREN_MAX` (`packages/domain/src/triage.ts`) | `8` | how many children a triaged split proposal may suggest (0118 §12) | it bounds what one answer may open, as `TRIAGE_QUESTIONS_MAX` bounds what it may ask |
-| `CONFLICT_ROUND_HUNKS` (same file) | `5` | up to this many hunks a conflict is resolved in place by a conflict resolution whatever resolution triage chose: its hunks' own recommended answers say how, and starting over throws that away (#652). Past it, triage's resolution stands | the line between *the work is still there* and *the work is not worth keeping* is a judgement about the shape of a conflict, not a project's budget |
+| `CONFLICT_ROUND_HUNKS` (same file) | `5` | read only by `recommendedResolution` (`packages/domain/src/wait.ts`), for a recorded `TriageAdvised` row: a conflict of up to this many hunks recommends `FixRefusal` over the advice's own resolution (#652). It does not decide what the system does with a current `TriageAnswered` cause: `actionFor` reads the hunks' kinds — a `Divergent` hunk asks a person, a `Contradicting` one starts a new attempt, otherwise the conflict is resolved in place — within `conflictResolutions`, whatever the hunk count | the line between *the work is still there* and *the work is not worth keeping* is a judgement about the shape of a conflict, not a project's budget |
 | a red check's one rerun (`flakyVerdict`, `packages/domain/src/failure/flaky.ts`; `packages/conductor/src/base-check.ts`) | **one rerun, at once**, in the same tree; `prepared` is not rerun | whether a check that failed goes on (0108 §17). The rerun can only turn a red into a green. A red then green lets the attempt go on, filed as a minor `flaky:` finding, when **all three** hold: the failing tests can be named; no failing test's file is in this diff; and every failing test has failed on the base before, or the backlog already names it. A read that failed is red, saying which | a rerun is a second run of somebody's command, so it is the system's rule and not a number: the conditions say what a flake is, and a recipe that wrote *two* would be deciding that a project's red is allowed to repeat |
 
 **And these rows are why the section exists.** `RUN_LOG_MAX_BYTES` and
@@ -1446,13 +1446,16 @@ lines or the approach*, and a `switch` cannot tell those apart from a findings
 array.
 
 **What a runtime judge may spend is what the counting already left.** It is
-handed the offered set and no ceiling — there is no `refusalFixes` in the prompt, and
-choosing `implement` spends one of the fixes `runtime.limits.attempt.refusalFixes` had already
-paid for. On the arrival where none is left, `implement` is simply not on the set
-to ask for, and a judge that asks anyway is refused by name with the ceiling that
-refused it on the card. **Three answers are not a choice and each is a person**:
-a run that never started, one that did not finish, and an answer that does not
-read as one of the offered steps. None of them is retried.
+handed no offer and no ceiling — there is no `refusalFixes` in the prompt. A judge at
+`findings` **names a cause** from `JUDGE_CAUSES` (`FixableLines`, `WrongApproach`,
+`UndecidedQuestion`) and never a destination: the system chooses the action from it
+(`actionFor`), so `FixableLines` buys one of the fixes
+`runtime.limits.attempt.refusalFixes` had already paid for, and `WrongApproach` one
+`newAttempts`. Where that bound is spent the answer is still valid — the system
+opens a `limit` wait naming the bound, and nothing is wrong with the judge. **Three
+answers are not a cause and each is a person**: a run that never started, one that
+did not finish, and an answer that does not read as one of the causes it may give
+(it is refused by name). None of them is retried.
 
 ```yaml
 proposed:
