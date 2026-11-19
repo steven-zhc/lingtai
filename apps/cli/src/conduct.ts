@@ -585,7 +585,7 @@ export function conductWork(
               .pipe(Effect.provide(tracedPorts))
             options.outcome.ran += 1
             if (result.ok === true)
-          options.log(`${result.satisfied === true ? 'satisfied on' : 'landed'} ${result.mergeCommit.slice(0, 7)}`)
+              options.log(`${result.satisfied === true ? 'satisfied on' : 'landed'} ${result.mergeCommit.slice(0, 7)}`)
             else if (result.ok === 'held') options.log(`held at ${result.step}`)
             else options.log(`stopped at ${result.stage}: ${result.detail}`)
             tellEnding(result)

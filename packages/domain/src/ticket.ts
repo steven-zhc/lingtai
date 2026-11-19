@@ -1309,10 +1309,7 @@ export function satisfyTransition(
     return { ok: false, refusal: { reason: 'terminal', status } }
   return {
     ok: true,
-    events: [
-      satisfiedEvent('conductor', input),
-      ...input.ended,
-    ],
+    events: [satisfiedEvent('conductor', input), ...input.ended],
   }
 }
 
@@ -1344,10 +1341,6 @@ export function confirmSatisfiedTransition(
   if (!resolved.ok) return resolved
   return {
     ok: true,
-    events: [
-      ...resolved.events,
-      satisfiedEvent(input.by, reason),
-      ...input.ended,
-    ],
+    events: [...resolved.events, satisfiedEvent(input.by, reason), ...input.ended],
   }
 }

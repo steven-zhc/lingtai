@@ -135,14 +135,20 @@ export function decideImplementOutcome(input: DecideInput): ImplementOutcome {
       if (input.head !== input.startedAt) return { _tag: 'Implemented' }
       const wanted = input.doneWhen ?? null
       if (wanted === null)
-        return { _tag: 'AgentFailed', why: 'declared AlreadyDone, and the ticket has no `## Done when` list to check it against' }
+        return {
+          _tag: 'AgentFailed',
+          why: 'declared AlreadyDone, and the ticket has no `## Done when` list to check it against',
+        }
       const answered = new Map<string, string>()
       for (const i of d.items) answered.set(normaliseItem(i.item), i.evidence)
       const items: { item: string; evidence: string }[] = []
       for (const item of wanted) {
         const evidence = answered.get(item)?.trim() ?? ''
         if (evidence === '')
-          return { _tag: 'AgentFailed', why: `declared AlreadyDone and gave no evidence for the Done-when item: ${item}` }
+          return {
+            _tag: 'AgentFailed',
+            why: `declared AlreadyDone and gave no evidence for the Done-when item: ${item}`,
+          }
         items.push({ item, evidence })
       }
       return { _tag: 'AlreadyDone', items }

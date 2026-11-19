@@ -1887,34 +1887,34 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                   why: 'the evidence did not satisfy every Done-when item: each unmet item is a finding, and the agent is sent to do it',
                 }
               : landAgain !== undefined && landAgain.next._tag === 'LandAgain'
-            ? {
-                _tag: 'Selected',
-                candidate: 'land-again',
-                why: `origin did not answer the land; landing again from ${onSha} after ${Duration.format(Duration.fromInputUnsafe(landWait ?? '0 millis'))}, retry ${landAgain.next.retry} of ${BOUNDS.landingRetries}`,
-              }
-            : rerunNext !== null &&
-                rerunCandidate !== undefined &&
-                (rerunNext.step === 'prepared' || lastVisit !== null)
-              ? {
-                  _tag: 'Selected',
-                  candidate: rerunCandidate.id,
-                  why:
-                    rerunNext.step === 'prepared'
-                      ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`
-                      : `the ${rerunNext.step} answer could not be read; asking the same agent again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`,
-                }
-              : conflictRule !== null && offer.proposal._tag === 'MergeConflict'
                 ? {
                     _tag: 'Selected',
-                    candidate: conflictRule.id,
-                    why: `a merge conflict ${offer.proposal.paths === null || offer.proposal.paths.length === 0 ? 'with the base' : `in ${offer.proposal.paths.join(', ')}`} is the agent's to resolve (0108 §8), round ${conflictRule.round} of ${policy.conflictResolutions} conflictResolutions`,
+                    candidate: 'land-again',
+                    why: `origin did not answer the land; landing again from ${onSha} after ${Duration.format(Duration.fromInputUnsafe(landWait ?? '0 millis'))}, retry ${landAgain.next.retry} of ${BOUNDS.landingRetries}`,
                   }
-                : yield* replyFor(
-                    offer,
-                    shown,
-                    options.judge,
-                    causeBoundsFor(policy, spentNow, ceilings.personAsksSpent ?? 0),
-                  )
+                : rerunNext !== null &&
+                    rerunCandidate !== undefined &&
+                    (rerunNext.step === 'prepared' || lastVisit !== null)
+                  ? {
+                      _tag: 'Selected',
+                      candidate: rerunCandidate.id,
+                      why:
+                        rerunNext.step === 'prepared'
+                          ? `the registry answered with a 5xx; running ${rerunNext.step} again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`
+                          : `the ${rerunNext.step} answer could not be read; asking the same agent again after ${Duration.format(Duration.fromInputUnsafe(rerunWait))}, retry ${rerunNext.retry} of ${BOUNDS.stepRedos}`,
+                    }
+                  : conflictRule !== null && offer.proposal._tag === 'MergeConflict'
+                    ? {
+                        _tag: 'Selected',
+                        candidate: conflictRule.id,
+                        why: `a merge conflict ${offer.proposal.paths === null || offer.proposal.paths.length === 0 ? 'with the base' : `in ${offer.proposal.paths.join(', ')}`} is the agent's to resolve (0108 §8), round ${conflictRule.round} of ${policy.conflictResolutions} conflictResolutions`,
+                      }
+                    : yield* replyFor(
+                        offer,
+                        shown,
+                        options.judge,
+                        causeBoundsFor(policy, spentNow, ceilings.personAsksSpent ?? 0),
+                      )
         if ('neverStarted' in reply) {
           // 0031 §3, at the third depth the same wall is met at: the judge
           // itself is an agent, and an account-wide wall is the conductor's to
@@ -2441,7 +2441,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       // **A check that cleared ends the walk** (#1251, 0108 §21): nothing is built, proposed or merged. A split
       // parent is `satisfied` at once; any other ticket waits for a person to confirm. A review that did not read
       // anything (none declared, or none that answered) checked nothing, and a person is the floor.
-      if (checking !== null && at === 'review' && ending.ending === 'passed' && (next === null || next._tag === 'Advance')) {
+      if (
+        checking !== null &&
+        at === 'review' &&
+        ending.ending === 'passed' &&
+        (next === null || next._tag === 'Advance')
+      ) {
         const c = checking
         stopped = null
         if (!reviewRead) {

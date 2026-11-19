@@ -728,10 +728,7 @@ export function landTicketEffect(
 }
 
 /** What ending a ticket as satisfied answered: done, refused by the reducer's own transition, or the stream moved. */
-export type SatisfyTicketResult =
-  | { ok: true }
-  | { ok: false; refusal: SatisfyRefusal }
-  | { ok: false; lost: true }
+export type SatisfyTicketResult = { ok: true } | { ok: false; refusal: SatisfyRefusal } | { ok: false; lost: true }
 
 /**
  * `TicketSatisfied` and the end plan, **one append** (#1251, 0108 §21), as `landTicketEffect` does for a landing:

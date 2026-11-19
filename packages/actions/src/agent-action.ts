@@ -953,8 +953,7 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
           }
         }
 
-        const issue: ReviewIssue =
-          check === undefined ? yield* deps.issue() : { ref: '', title: '', body: '' }
+        const issue: ReviewIssue = check === undefined ? yield* deps.issue() : { ref: '', title: '', body: '' }
         const recheck = check === undefined ? (context.recheck ?? []) : []
         // **Not** `context.runId`. The session id is derived from it, so reusing
         // it would resume the implementer's session and make this a warm review

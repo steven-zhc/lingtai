@@ -966,7 +966,9 @@ describe('triageStatus', () => {
 
     it('every WaitReason tag but the two NotNeeded ones is covered above', () => {
       const allTags = WaitReasonSchema.options.map((option) => option.shape._tag.value)
-      const expected = new Set(allTags.filter((tag) => tag !== 'OwnQuestion' && tag !== 'SignoffRequired' && tag !== 'SatisfiedUnconfirmed'))
+      const expected = new Set(
+        allTags.filter((tag) => tag !== 'OwnQuestion' && tag !== 'SignoffRequired' && tag !== 'SatisfiedUnconfirmed'),
+      )
       expect(otherTags).toEqual(expected)
     })
   })

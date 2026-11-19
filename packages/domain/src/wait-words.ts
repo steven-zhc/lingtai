@@ -281,7 +281,11 @@ function escalatedColumns(
     }
     case 'AlreadyDone': {
       const detail = proposal.items.map((i) => `${i.item}: ${i.evidence}`).join('\n')
-      return judgement(why(reasonText !== '' ? reasonText : `declared already done at ${proposal.baseSha.slice(0, 7)}`), run, detail)
+      return judgement(
+        why(reasonText !== '' ? reasonText : `declared already done at ${proposal.baseSha.slice(0, 7)}`),
+        run,
+        detail,
+      )
     }
     case 'SetupRefused':
       return acknowledgement(stepLine(proposal.from, 'refused', proposal.output), run, proposal.output)

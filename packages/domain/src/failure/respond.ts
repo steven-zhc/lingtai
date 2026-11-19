@@ -825,7 +825,12 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       // so no fix round and no restart is offered, and a person is the floor.
       available.push({
         id: 'check-done',
-        next: { _tag: 'CheckDone', baseSha: proposal.baseSha, bodyVersion: proposal.bodyVersion, items: proposal.items },
+        next: {
+          _tag: 'CheckDone',
+          baseSha: proposal.baseSha,
+          bodyVersion: proposal.bodyVersion,
+          items: proposal.items,
+        },
       })
       break
     }

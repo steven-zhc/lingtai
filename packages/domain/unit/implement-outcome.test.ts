@@ -86,7 +86,13 @@ describe('decideImplementOutcome', () => {
         'unmoved, an item with no evidence → AgentFailed',
         {
           ...first,
-          declared: { _tag: 'AlreadyDone', items: [{ item: 'one', evidence: 'x' }, { item: 'two', evidence: ' ' }] },
+          declared: {
+            _tag: 'AlreadyDone',
+            items: [
+              { item: 'one', evidence: 'x' },
+              { item: 'two', evidence: ' ' },
+            ],
+          },
         },
         'AgentFailed',
       ],
@@ -95,8 +101,16 @@ describe('decideImplementOutcome', () => {
         { ...first, declared: { _tag: 'AlreadyDone', items: [{ item: 'one', evidence: 'x' }] } },
         'AgentFailed',
       ],
-      ['a body with no Done-when section → AgentFailed', { ...first, declared: answered, doneWhen: null }, 'AgentFailed'],
-      ['a fix round does not offer it → AgentFailed', { ...first, declared: answered, offersAlreadyDone: false }, 'AgentFailed'],
+      [
+        'a body with no Done-when section → AgentFailed',
+        { ...first, declared: answered, doneWhen: null },
+        'AgentFailed',
+      ],
+      [
+        'a fix round does not offer it → AgentFailed',
+        { ...first, declared: answered, offersAlreadyDone: false },
+        'AgentFailed',
+      ],
     ] as const)('%s', (_name, input, expected) => {
       expect(decideImplementOutcome(input as never)._tag).toBe(expected)
     })
@@ -124,9 +138,7 @@ describe('decideImplementOutcome', () => {
 
     it('is read from the block the agent ends its message with', () => {
       expect(
-        parseImplementOutcome(
-          fence('{"outcome":"AlreadyDone","items":[{"item":"one","evidence":"a.ts:1"}]}'),
-        ),
+        parseImplementOutcome(fence('{"outcome":"AlreadyDone","items":[{"item":"one","evidence":"a.ts:1"}]}')),
       ).toEqual({ _tag: 'AlreadyDone', items: [{ item: 'one', evidence: 'a.ts:1' }] })
     })
 
