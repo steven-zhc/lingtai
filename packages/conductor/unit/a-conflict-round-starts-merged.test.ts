@@ -394,4 +394,21 @@ describe('a resumed review after a conflict round', () => {
 
     expect('mergedSinceReview' in reviewSaw[0]!).toBe(false)
   })
+
+  it('reads an approved resolution from the approved head with no overlap, after an earlier clean merge (#1279)', async () => {
+    const { reviewSaw } = await walk({
+      lane: [],
+      evidence: () => Effect.succeed({ fromSha: FORK, overlap: ['src/other.ts'] }),
+      from: {
+        step: 'review',
+        waive: [],
+        approvedHead: 'a'.repeat(40),
+        reviewedHead: 'r'.repeat(40),
+        landedOnBase: { paths: ['src/earlier.ts'], fromSha: FORK, toSha: 'c'.repeat(40) },
+        conflictResolved: { baseSha: BASE, paths: ['src/fix.ts'] },
+      },
+    })
+
+    expect(reviewSaw[0]?.mergedSinceReview).toEqual({ reviewed: 'a'.repeat(40), base: BASE, overlap: [] })
+  })
 })

@@ -269,6 +269,7 @@ import {
   armForState,
   alreadyDoneOf,
   conflictResolvedOf,
+  onlyAConflictRoundSince,
   reviewedHeadOf,
   diffBaseShaOf,
   landedOnBaseOf,
@@ -850,6 +851,39 @@ export const continuationSpentWithTriage = (
     refusalFixes: Math.max(run.implementRound - personRounds, triage.refusalFixes, 0),
     /** A person's fix rounds inside `rounds`: the allowance is judged without them. */
     personRounds,
+  }
+}
+
+/**
+ * **A person's approval of review findings, and the head it was on** (#1279): a continuation answers one
+ * (`approvedNow`), or follows the system's own merges onto one no agent commit has come after. A retry, a grant
+ * or an answer is neither. A declared `human:` at `proposed` asks a `SignoffRequired`, and its approval counts too.
+ */
+function approvalOf(
+  waits: ReturnType<typeof waitsFromState>,
+  outcomes: ReturnType<typeof stepOutcomesOf>,
+  runId: string,
+  approvedWaitId: string | undefined,
+  granted: boolean,
+): { approvedHead?: string; approvedNow?: true } {
+  const approves = waits.filter(
+    (w) =>
+      w.resolution?._tag === 'Approve' &&
+      (w.reason._tag === 'SignoffRequired' ||
+        (w.reason._tag === 'ProposedEscalated' && w.reason.proposal._tag !== 'DiffTooLarge')) &&
+      w.reason.run.runId === runId,
+  )
+  const last = approves[approves.length - 1]
+  const head = last?.resolution?._tag === 'Approve' ? last.resolution.onSha : undefined
+  if (granted || head === undefined) return {}
+  const at = outcomes.findLastIndex(
+    (o) => (o.step === 'proposed' || o.step === 'merge') && o.actions.some((a) => a.onSha === head),
+  )
+  if (at < 0) return {}
+  if (outcomes.slice(at + 1).some((o) => o.step === 'implement') && !onlyAConflictRoundSince(outcomes, at)) return {}
+  return {
+    approvedHead: head,
+    ...(last!.waitId === approvedWaitId ? { approvedNow: true as const } : {}),
   }
 }
 
@@ -1479,6 +1513,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             conflictResolved: conflictResolvedOf(releasedEvents),
             reviewedHead: reviewedHeadOf(releasedEvents),
             alreadyDone: alreadyDoneOf(releasedEvents),
+            approval: approvalOf(
+              waitsFromState(reduced),
+              stepOutcomesOf(releasedEvents),
+              releasedFrom.runId,
+              undefined,
+              false,
+            ),
             baseRed: { toSha: baseRead.at, fromSha: cause.baseSha, action },
             released: {
               by: 'release' as const,
@@ -1542,6 +1583,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           conflictResolved: conflictResolvedOf(releasedEvents),
           reviewedHead: reviewedHeadOf(releasedEvents),
           alreadyDone: alreadyDoneOf(releasedEvents),
+          approval: approvalOf(
+            waitsFromState(reduced),
+            stepOutcomesOf(releasedEvents),
+            releasedFrom.runId,
+            undefined,
+            false,
+          ),
           released: {
             by: 'release' as const,
             runId: releasedFrom.runId,
@@ -1622,6 +1670,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           conflictResolved: conflictResolvedOf(runEvents),
           reviewedHead: reviewedHeadOf(runEvents),
           alreadyDone: alreadyDoneOf(runEvents),
+          approval: approvalOf(
+            waitsFromState(reduced),
+            stepOutcomesOf(runEvents),
+            options.continuing.runId,
+            approvedWaitId,
+            false,
+          ),
           released: {
             by: 'person' as const,
             runId: options.continuing.runId,
@@ -1680,6 +1735,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          * come back together.
          */
         waive: waivedActionsAt(waitsFromState(reduced), stepOutcomesOf(runEvents), options.continuing.runId, next.step),
+        approval: approvalOf(
+          waitsFromState(reduced),
+          stepOutcomesOf(runEvents),
+          options.continuing.runId,
+          approvedWaitId,
+          granted,
+        ),
         onSha: approvedOnSha,
         // `Approve` on a `DiffTooLarge` wait (#892), keyed to the head it approved. Carried
         // forward from every such approval on this run at this head, as waivers are, so a
@@ -5850,6 +5912,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 step: continuation.step,
                 waive: continuation.waive,
                 ...(continuation.readClipped === undefined ? {} : { readClipped: continuation.readClipped }),
+                ...continuation.approval,
                 roundsSpent: continuation.roundsSpent,
                 ...(continuation.personRounds === undefined ? {} : { personRounds: continuation.personRounds }),
                 baseMergesSpent: continuation.baseMergesSpent,
