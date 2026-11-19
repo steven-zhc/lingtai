@@ -92,8 +92,10 @@ const firstLine = (text: string) => text.split('\n')[0]?.trim() ?? ''
 export interface SplitControls {
   progress: SplitProgress
   tickets: 'github' | 'db'
-  /** Epoch ms at which a *writing* reading lapses for want of log activity; the page looks again then. */
+  /** The server's epoch ms at which a *writing* reading lapses; only ever compared with itself, as the timer's key. */
   activeUntil?: number
+  /** Ms the server saw remaining at render: a duration, so the browser's clock never enters into it. */
+  quietIn?: number
 }
 
 /**
@@ -118,13 +120,14 @@ export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: 
   const router = useContext(AppRouterContext)
   const writing = progress.state === 'writing'
   const activeUntil = controls?.activeUntil
+  const quietIn = controls?.quietIn
   useEffect(() => {
     if (!writing) return
     // Rearmed whenever the server's expiry moves (new activity), so a late append never leaves the old timer standing.
-    const wait = activeUntil === undefined ? 5 * 60_000 : Math.max(0, activeUntil - Date.now())
+    const wait = quietIn === undefined ? 5 * 60_000 : Math.max(0, quietIn)
     const timer = setTimeout(() => router?.refresh(), wait + 1_000)
     return () => clearTimeout(timer)
-  }, [writing, activeUntil, router])
+  }, [writing, activeUntil, quietIn, router])
 
   const keys = children.map((child) => child.key)
   const wave = useMemo(() => waves(keys.slice(), links), [keys.join('\u0000'), links])

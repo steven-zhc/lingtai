@@ -535,7 +535,7 @@ export interface StandingView {
   /** A comparison with the local mirror, only for a completed current triage. */
   triageHeadLine?: string | null
   /** The split write the log shows for this wait, where Split is offered (#603). */
-  split?: { progress: SplitProgress; tickets: 'github' | 'db'; activeUntil?: number }
+  split?: { progress: SplitProgress; tickets: 'github' | 'db'; activeUntil?: number; quietIn?: number }
   /**
    * When the state began, ISO — the event that *moved* the lifecycle, not the
    * last event on the stream. A gate reporting on a blocked item does not
@@ -2175,7 +2175,13 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
             daemon !== null && lastBeat(daemon).up && active !== null && Date.now() - active.getTime() < SPLIT_QUIET_MS,
         }),
         tickets,
-        ...(active === null ? {} : { activeUntil: active.getTime() + SPLIT_QUIET_MS }),
+        ...(active === null
+          ? {}
+          : {
+              activeUntil: active.getTime() + SPLIT_QUIET_MS,
+              // A duration on the server's own clock: the browser's may be minutes off.
+              quietIn: Math.max(0, active.getTime() + SPLIT_QUIET_MS - Date.now()),
+            }),
       }
     }
   }
