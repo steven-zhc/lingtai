@@ -669,8 +669,8 @@ export function releasedHeadOf(runEvents: readonly Envelope[]): ReleasedHead {
  * **The head the last review read, before a base merge no review has read since** (#1274): what
  * a continuation needs, with the merge's base, to measure the next review from the merge baseline
  * rather than review the whole head again. `null` where the walk cannot say — no review read it
- * whole, the read was clipped, or another merge came between (its commit is not on the log).
- * The head is the last one a step recorded before that review.
+ * whole, the read was clipped, or a merge just before it left no recorded head. Merges between that
+ * review and the last one do not matter. The head is the last one a step recorded before that review.
  */
 export function reviewedHeadOf(runEvents: readonly Envelope[]): string | null {
   const outcomes = stepOutcomesOf(runEvents)
@@ -680,11 +680,11 @@ export function reviewedHeadOf(runEvents: readonly Envelope[]): string | null {
   const review = outcomes.slice(0, merged).findLastIndex((o) => o.step === 'review' && reviewerRanIn(o))
   if (review < 0) return null
   if (reviewSummaryOf(outcomes[review]!)?.clipped !== undefined) return null
-  if (outcomes.slice(review + 1, merged).some((o) => o.step === 'merge')) return null
-  // A merge before the review moved the head by a commit no step recorded.
-  if (outcomes.slice(0, review).some((o) => o.step === 'merge' && (conflictedIn(o) !== null || movedIn(o) !== null)))
-    return null
+  // Merges between that review and the last one are fine: the baseline is the latest base, the head the one that review read.
   for (let i = review - 1; i >= 0; i--) {
+    // A merge with no step after it that recorded a head moved the head by a commit no step recorded.
+    if (outcomes[i]!.step === 'merge' && (conflictedIn(outcomes[i]!) !== null || movedIn(outcomes[i]!) !== null))
+      return null
     const head = headOf(outcomes[i]!)
     if (head !== null) return head
   }

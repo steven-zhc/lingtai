@@ -35,6 +35,7 @@ import {
   diffBaseShaOf,
   priorAttempts,
   promptVersionFor,
+  reviewedHeadOf,
   type PromptBudget,
 } from '../src/attempts.ts'
 
@@ -881,5 +882,53 @@ describe('conflictResolvedOf (#1120)', () => {
       ]),
     ]
     expect(conflictResolvedOf(events)).toEqual({ baseSha: BASE, paths: ['a.ts'] })
+  })
+})
+
+describe('reviewedHeadOf (#1274)', () => {
+  const act = (yields: Action['yields'], result: unknown, plugin = 'x'): Action =>
+    ({ plugin, name: plugin, onSha: 'sha-1', evidence: '', yields, result }) as Action
+  const step = (e: ReturnType<typeof stream>, step: PayloadOf<'StepStarted'>['step'], actions: Action[]) => [
+    e('StepStarted', started('r', step)),
+    e('StepEnded', { runId: 'r', outcome: { step, round: 0, actions } }),
+  ]
+  const conflict = (base: string) =>
+    act(
+      'merge',
+      {
+        _tag: 'Completed',
+        integration: { _tag: 'Conflicted', paths: ['a.ts'], baseSha: base, headSha: 'h'.repeat(40) },
+      },
+      'merge',
+    )
+  const commit = (c: string) => act('commit', { _tag: 'Completed', head: c.repeat(40), question: null })
+  const review = () => verdictAction('cold', 'ok')
+
+  it('names the head the passing review read, though a second conflict round came after it', () => {
+    const e = stream('r')
+    const events = [
+      ...step(e, 'implement', [commit('a')]),
+      ...step(e, 'review', [review()]),
+      ...step(e, 'merge', [conflict('1'.repeat(40))]),
+      ...step(e, 'implement', [commit('c')]),
+      ...step(e, 'review', [review()]),
+      ...step(e, 'merge', [conflict('2'.repeat(40))]),
+      ...step(e, 'implement', [commit('d')]),
+    ]
+    expect(reviewedHeadOf(events)).toBe('c'.repeat(40))
+  })
+
+  it('keeps the reviewed head when two merges came before the next review', () => {
+    const e = stream('r')
+    const events = [
+      ...step(e, 'implement', [commit('a')]),
+      ...step(e, 'review', [review()]),
+      ...step(e, 'merge', [conflict('1'.repeat(40))]),
+      ...step(e, 'implement', [commit('c')]),
+      ...step(e, 'merge', [conflict('2'.repeat(40))]),
+      ...step(e, 'implement', [commit('d')]),
+    ]
+    expect(reviewedHeadOf(events)).toBe('a'.repeat(40))
+    expect(conflictResolvedOf(events)).toMatchObject({ baseSha: '2'.repeat(40) })
   })
 })
