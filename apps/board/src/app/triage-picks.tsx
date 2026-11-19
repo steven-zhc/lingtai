@@ -201,12 +201,15 @@ export function TriageChoices({
  */
 export function ResolutionCard({
   recommended,
+  badge = 'Triage recommended',
   className,
   head,
   children,
   ...rest
 }: {
   recommended: boolean
+  /** The badge's words when `recommended`; triage's by default. */
+  badge?: string
   className: string
   head: ReactNode
   children: ReactNode
@@ -220,7 +223,7 @@ export function ResolutionCard({
       {head !== null ? (
         <div className="sresolutionhead">
           {head}
-          {recommended ? <span className="sresolutionbadge">Triage recommended</span> : null}
+          {recommended ? <span className="sresolutionbadge">{badge}</span> : null}
         </div>
       ) : null}
       {children}

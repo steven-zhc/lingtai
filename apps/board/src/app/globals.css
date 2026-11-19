@@ -3511,3 +3511,10 @@ button.navlink { font-family: inherit; cursor: pointer; }
 .sandbox ul { margin: 0 0 0.5rem; padding-left: 1.1rem; }
 .sbmark { font-family: var(--mono); font-size: 0.85em; }
 
+
+/* The satisfied ending's per-item reading (#1252): one list, on the page and in the confirm wait. */
+.ssatisfied { list-style: none; margin: 8px 0; padding: 0; }
+.ssatisfied li { margin: 0 0 8px; }
+.ssatisfied-met { font-weight: 600; }
+.ssatisfied-source { color: var(--muted); }
+.ssatisfiedreading { margin: 8px 0 12px; }

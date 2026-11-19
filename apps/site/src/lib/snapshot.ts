@@ -160,6 +160,8 @@ export const LANE_OF: Record<TaskState, Lane> = {
   approved: 'running',
   waiting: 'waiting',
   landed: 'landed',
+  // Found already done (#1252): over, and shares Landed's lane.
+  satisfied: 'landed',
   // Closed shares Landed's lane, as it does on the board: both are over, and
   // the public snapshot has no room for a lane that says so twice.
   closed: 'landed',

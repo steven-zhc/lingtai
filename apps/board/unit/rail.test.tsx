@@ -45,6 +45,7 @@ import type { TaskCard } from '@lingtai/projector/task-view'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
+import { landedCount } from '../src/app/footer.tsx'
 import { Card, LandedRow } from '../src/app/page.tsx'
 import { Rail } from '../src/app/rail.tsx'
 import { LANDED_OPEN, WAITING_RAILS, railCandidates, toCard } from '../src/lib/board.ts'
@@ -422,7 +423,7 @@ const card = (
   limits: { refusalFixes: number; newAttempts: number } | null = null,
 ) => {
   const merged = task(t)
-  const progress = progressOf(reduceAttempt(events), plan, over)
+  const progress = progressOf(reduceAttempt(events), plan, over ? 'landed' : null)
   return toCard(
     merged,
     null,
@@ -459,7 +460,7 @@ const render = (
 const asBoard = (t: Partial<TaskCard>, events: Envelope[], plan = PLAN) => {
   const one = task(t)
   const [candidate] = railCandidates([one])
-  const progress = candidate ? progressOf(reduceAttempt(events), plan, candidate.over) : null
+  const progress = candidate ? progressOf(reduceAttempt(events), plan, candidate.ending) : null
   return toCard(one, null, progress, null, null, undefined, undefined, undefined, null, roundsFor(events, progress))
 }
 
@@ -1041,12 +1042,12 @@ describe('the eight states', () => {
    * was over.
    */
   it('reaches the card from the run doctor fails on', () => {
-    const over = progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, true)
+    const over = progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, 'landed')
     expect(over?.steps.find((p) => p.step === 'merge')?.state).toBe('never-ran')
 
     // And never on a run still in flight, where a point not reached yet is the
     // ordinary case and painting it red would put the fail colour everywhere.
-    const live = progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, false)
+    const live = progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, null)
     expect(live?.steps.find((p) => p.step === 'merge')?.state).toBe('pending')
   })
 })
@@ -1099,8 +1100,8 @@ describe('the hatch, and what may not draw it', () => {
     const landed = railCandidates([task({ state: 'landed' })])
     const closed = railCandidates([task({ state: 'closed' })])
 
-    expect(landed.map((c) => c.over)).toEqual([true])
-    expect(closed.map((c) => c.over)).toEqual([false])
+    expect(landed.map((c) => c.ending)).toEqual(['landed'])
+    expect(closed.map((c) => c.ending)).toEqual([null])
   })
 
   /**
@@ -1110,7 +1111,7 @@ describe('the hatch, and what may not draw it', () => {
    * recipe the run never saw cannot accuse it of skipping a step.
    */
   it('never draws it from a plan the log did not record', () => {
-    const over = progressOf(reduceAttempt(noPlanRecorded()), PLAN, true)
+    const over = progressOf(reduceAttempt(noPlanRecorded()), PLAN, 'landed')
 
     expect(over?.steps.map((p) => p.state)).toEqual([
       'passed',
@@ -1124,6 +1125,29 @@ describe('the hatch, and what may not draw it', () => {
       'pending',
       'pending',
     ])
+  })
+
+  // #1252: a satisfied ticket's steps that recorded nothing were never meant to run.
+  it('draws a satisfied ending as skipped where a landed one draws never-ran', () => {
+    const at = (ending: 'landed' | 'satisfied') =>
+      progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, ending)?.steps ?? []
+    const landed = at('landed')
+    const satisfied = at('satisfied')
+    expect(landed.find((p) => p.step === 'merge')?.state).toBe('never-ran')
+    expect(satisfied.find((p) => p.step === 'merge')?.state).toBe('skipped')
+    // Every cell of it, not only the point: the red hatch must not survive in an action.
+    expect(satisfied.flatMap((p) => [p.state, ...p.actions.map((a) => a.state)])).not.toContain('never-ran')
+    expect(satisfied.filter((p) => p.state === 'skipped').length).toBeGreaterThan(0)
+  })
+
+  it('tells a satisfied task apart from landed and closed, and counts it as landed', () => {
+    expect(railCandidates([task({ state: 'satisfied' })]).map((c) => c.ending)).toEqual(['satisfied'])
+    const board = asBoard({ state: 'satisfied' }, landedPastMerge(), MERGE_PLAN)
+    expect(board.satisfied).toBe(true)
+    expect(board.closed).toBe(false)
+    expect(board.column).toBe('landed')
+    expect(landedCount([board])).toBe(1)
+    expect(landedCount([asBoard({ state: 'closed' }, landedPastMerge(), MERGE_PLAN)])).toBe(0)
   })
 })
 
@@ -1293,7 +1317,7 @@ describe('the plan reduced into the rail (#781)', () => {
     limits: { turns: 150, wall: '1h', refusalFixes: 2, conflictResolutions: 2, newAttempts: 0 },
   })
   const none = () => {
-    const p = progressOf(reduceAttempt([resolved(PLAN)]), PLAN, false)
+    const p = progressOf(reduceAttempt([resolved(PLAN)]), PLAN, null)
     if (p === null) throw new Error('a resolved plan reduces to progress')
     return p
   }

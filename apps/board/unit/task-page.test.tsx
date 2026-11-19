@@ -885,7 +885,7 @@ describe('the rail on the task page', () => {
       e(ITEM, 'TicketClaimed', { runId: RUN }, '2026-09-14T04:00:00Z'),
       e(ITEM, 'TicketLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
     ]
-    const landed = task(own, [presentAttemptEvents(claim, 1, events, { over: true })])
+    const landed = task(own, [presentAttemptEvents(claim, 1, events, { over: 'landed' })])
     expect(landed.standing.state).toBe('landed')
     expect(why(page(landed))).not.toContain('class="seq"')
   })
@@ -905,7 +905,7 @@ describe('the rail on the task page', () => {
       e(ITEM, 'TicketLanded', { mergeCommit: HEAD, base: 'main' }, '2026-09-14T04:30:00Z'),
     ]
     // `over` is what `loadTask` passes for the attempt that landed.
-    const landed = task(own, [presentAttemptEvents(claim, 1, events, { over: true })])
+    const landed = task(own, [presentAttemptEvents(claim, 1, events, { over: 'landed' })])
     expect(landed.standing.state).toBe('landed')
     const html = record(landed)
     expect(html).toContain('class="seg s-never-ran"')

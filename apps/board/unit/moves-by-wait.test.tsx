@@ -135,6 +135,7 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       const answering = allowed.includes('AnswerQuestion')
       const requeuing = allowed.includes('StartNewAttempt')
       const closing = allowed.includes('Close')
+      const confirming = allowed.includes('ConfirmSatisfied')
       const editingBody = allowed.includes('EditBodyAndStartNewAttempt')
       const stepQuestion =
         standing.reason?._tag === 'AgentQuestion' ||
@@ -146,9 +147,15 @@ describe('the moves row draws exactly allowedResolutions (#442)', () => {
       expect(buttons.includes('Withdraw')).toBe(answering)
       expect(buttons.includes('Start a new attempt from base')).toBe(requeuing)
       expect(buttons.includes('Close')).toBe(closing)
+      expect(buttons.includes('Confirm')).toBe(confirming)
       expect(buttons.includes('Write it into the body &amp; start a new attempt')).toBe(editingBody && !stepQuestion)
       const expectedCount =
-        (approveBtn ? 1 : 0) + (answering ? 2 : 0) + (requeuing ? 1 : 0) + (editingBody ? 1 : 0) + (closing ? 1 : 0)
+        (approveBtn ? 1 : 0) +
+        (answering ? 2 : 0) +
+        (requeuing ? 1 : 0) +
+        (editingBody ? 1 : 0) +
+        (closing ? 1 : 0) +
+        (confirming ? 1 : 0)
       expect(buttons.length).toBe(expectedCount)
     })
   }

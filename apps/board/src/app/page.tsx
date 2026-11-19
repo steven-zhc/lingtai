@@ -519,7 +519,7 @@ export function LandedRow({
     // difference can be said. Without it the heading speaks for a row it is
     // wrong about, which is the shape this repository keeps finding in itself:
     // a claim that is true where it was written and false where it is read.
-    card.closed ? 'closed' : null,
+    card.satisfied ? 'satisfied' : card.closed ? 'closed' : null,
     card.kind,
     card.turns === null ? null : `${card.turns} turns`,
     billHasAny(card.costUsd) ? billText(card.costUsd) : null,

@@ -463,6 +463,8 @@ describe('allowedResolutions', () => {
     ])
     // `SignoffRequired` is not reused: `Approve` would waive a refusal that is not there.
     expect(allowedResolutions(reason)).not.toContain('Approve')
+    // No triage runs on this wait, so its default is the recommendation (#1252).
+    expect(recommendedResolution(reason, { _tag: 'NotNeeded' })).toBe('ConfirmSatisfied')
   })
 
   it('BudgetExhausted: EditBodyAndRequeue, Requeue, Close', () => {
