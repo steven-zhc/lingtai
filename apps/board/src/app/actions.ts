@@ -58,7 +58,7 @@ import {
   type WaitId,
   ticketStream,
 } from '@lingtai/domain'
-import { isPending, isRegistered } from '@lingtai/domain'
+import { isPending, isRegistered, type TriagePick } from '@lingtai/domain'
 import { allowedResolutions } from '@lingtai/domain/wait'
 import { machineDayCeiling, stateDir } from '@lingtai/env'
 import { hasGitHubApp, hasGitHubAuth } from '@lingtai/env'
@@ -187,7 +187,7 @@ export async function continueFixingCard(input: {
   waitId: WaitId
   onSha: string
   /** The answers the person picked, by question index; none takes the recommended ones (#922). */
-  picks?: Readonly<Record<number, string>>
+  picks?: Readonly<Record<number, TriagePick>>
 }): Promise<ActionResult> {
   try {
     if (!input.waitId || !input.onSha)
@@ -279,7 +279,7 @@ export async function answerQuestionsCard(input: {
   project: string
   issue: number
   waitId: WaitId
-  answers: Readonly<Record<number, string>>
+  answers: Readonly<Record<number, TriagePick>>
 }): Promise<ActionResult> {
   try {
     if (!input.waitId) return { ok: false, detail: 'stale: reload this page before answering' }
@@ -384,7 +384,7 @@ export async function requeueCard(input: {
   /** The wait the card rendered — `StandingView.waitId` (#465). Required — see `approveCard`'s own comment (#508). */
   waitId: WaitId
   /** The answers the person picked, by question index; none takes the recommended ones (#922). */
-  picks?: Readonly<Record<number, string>>
+  picks?: Readonly<Record<number, TriagePick>>
 }): Promise<ActionResult> {
   try {
     if (!input.waitId) {

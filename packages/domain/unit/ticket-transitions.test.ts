@@ -73,26 +73,15 @@ describe('claimTransition', () => {
     })
   })
 
-  it('answers split-done, at the version read, when every child is closed', () => {
+  it('claims a split when every child is closed', () => {
     const children = {
       read: [
         { number: 161, state: 'closed', stateReason: 'completed' as const },
         { number: 162, state: 'closed' },
       ],
     }
-    const state = split()
-    expect(claimTransition(state, { ...base, children })).toEqual({
-      ok: false,
-      refusal: {
-        reason: 'split-done',
-        version: state.version,
-        waitId: WAIT,
-        children: [
-          { number: 161, stateReason: 'completed' },
-          { number: 162, stateReason: null },
-        ],
-      },
-    })
+    const decided = claimTransition(split(), { ...base, children })
+    expect(decided.ok && decided.events.map((e) => e.type)).toEqual(['TicketClaimed'])
   })
 
   it('claims a split whose children were not asked about', () => {

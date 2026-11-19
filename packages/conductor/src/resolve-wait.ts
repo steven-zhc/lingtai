@@ -40,6 +40,7 @@ import {
   savedHeadOf,
   type ToAppend,
   type WaitId,
+  type TriagePick,
 } from '@lingtai/domain'
 import {
   describeSplitProblem,
@@ -148,7 +149,7 @@ export interface ResolveWaitOptions extends SnapshotReadOptions {
    */
   github?: IssueChannel
   /** A question's index in `triageQuestionsOf`'s order → the answer id picked. A missing index takes the recommended answer. */
-  picks?: Readonly<Record<number, string>>
+  picks?: Readonly<Record<number, TriagePick>>
   store?: EventStore
 }
 

@@ -33,6 +33,7 @@ import {
 import { actionFor, type CauseAction, type CauseBound, type CauseCounter, type CauseOrigin } from './failure/respond.ts'
 import { describeSplitProblem, frozenPlan, splitPlanProblems } from './split.ts'
 import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
+import type { TriagePick } from './triage.ts'
 import { waitWords } from './wait-words.ts'
 import {
   allowedResolutions,
@@ -863,13 +864,19 @@ export interface SplitChildState {
 export type SplitChildren =
   | null
   | { readonly unreadable: string }
-  | { readonly read: readonly { number: number; state: string; stateReason?: 'completed' | 'not_planned' | null }[] }
+  | {
+      readonly read: readonly {
+        number: number
+        title?: string
+        state: string
+        stateReason?: 'completed' | 'not_planned' | null
+      }[]
+    }
 
 /** Why a claim is refused by the ticket's own state. A lost race is a fact about the append, not here. */
 export type ClaimDecline =
   | { reason: 'held'; by: string; runId: string }
   | { reason: 'not-claimable'; status: string }
-  | { reason: 'split-done'; version: number; waitId: string; children: SplitChildState[] }
   | { reason: 'split-open'; open: number[] }
   | { reason: 'split-unreadable'; detail: string }
 
@@ -899,15 +906,7 @@ export function claimTransition(
     const read = input.children.read
     const open = read.filter((i) => i.state !== 'closed').map((i) => i.number)
     if (open.length > 0) return { ok: false, refusal: { reason: 'split-open', open } }
-    return {
-      ok: false,
-      refusal: {
-        reason: 'split-done',
-        version: state.version,
-        waitId: state.split.waitId,
-        children: read.map((i) => ({ number: i.number, stateReason: i.stateReason ?? null })),
-      },
-    }
+    // Every child closed: the parent is claimed like any ticket and checks its own `## Done when` (#1263).
   }
 
   return {
@@ -1103,10 +1102,13 @@ export type ResolveRefusal =
  * Whether a resolution can go ahead: `repeat` when it is an approval that already landed (it appends nothing to the
  * ticket — the continuation it was owed is asked for again), `proceed` with the block it resolves, or a refusal.
  */
-function sameAnswers(submitted: Readonly<Record<string, string>>, recorded: Resolution | undefined): boolean {
+function sameAnswers(submitted: Readonly<Record<string, TriagePick>>, recorded: Resolution | undefined): boolean {
   if (recorded === undefined || recorded._tag !== 'AnswerQuestions') return false
   const a = Object.entries(submitted)
-  return a.length === Object.keys(recorded.answers).length && a.every(([k, v]) => recorded.answers[k] === v)
+  return (
+    a.length === Object.keys(recorded.answers).length &&
+    a.every(([k, v]) => JSON.stringify(recorded.answers[k]) === JSON.stringify(v))
+  )
 }
 
 /**

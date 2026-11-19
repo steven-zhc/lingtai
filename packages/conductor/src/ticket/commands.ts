@@ -116,6 +116,15 @@ export interface Claim {
   worker: string
   /** The stream version the claim landed at; the next append expects this. */
   version: number
+  /** What the claim read of a split's children, for the return brief (#1263); null where none was asked. */
+  splitChildren: readonly SplitChildBrief[] | null
+}
+
+/** One closed child of a split as GitHub reported it at the claim. `stateReason` null is *not reported*. */
+export interface SplitChildBrief {
+  number: number
+  title: string
+  stateReason: 'completed' | 'not_planned' | null
 }
 
 /** The ticket's own refusals, plus the append's: another claimant won it. Re-read and look again. */
@@ -170,6 +179,15 @@ export function claimTicketEffect(ticketId: string, options: ClaimOptions): Effe
         : { read: attempted.success }
     }
 
+    const splitChildren: readonly SplitChildBrief[] | null =
+      children !== null && 'read' in children
+        ? children.read.map((c) => ({
+            number: c.number,
+            title: c.title ?? '',
+            stateReason: c.stateReason ?? null,
+          }))
+        : null
+
     const decided = claimTransition(state, {
       runId: options.runId,
       worker,
@@ -197,7 +215,10 @@ export function claimTicketEffect(ticketId: string, options: ClaimOptions): Effe
       return yield* Effect.fail(appended.failure)
     }
     const [written] = appended.success
-    return { ok: true, claim: { ticketId, runId: options.runId, worker, version: written!.version } } as const
+    return {
+      ok: true,
+      claim: { ticketId, runId: options.runId, worker, version: written!.version, splitChildren },
+    } as const
   })
 }
 
@@ -256,7 +277,7 @@ export function continueTicketEffect(
       return yield* Effect.fail(appended.failure)
     }
     const [written] = appended.success
-    return { ok: true, claim: { ticketId, runId, worker, version: written!.version } } as const
+    return { ok: true, claim: { ticketId, runId, worker, version: written!.version, splitChildren: null } } as const
   })
 }
 

@@ -313,7 +313,8 @@ export function ContinueFixing({
       {done ? null : (
         <button
           className={primary ? 'btn pri' : 'btn'}
-          disabled={pending}
+          disabled={pending || triage?.refusal != null}
+          title={triage?.refusal ?? undefined}
           onClick={() => {
             setPending(true)
             setDetail(null)
@@ -404,7 +405,22 @@ export function EditBodyAndRequeue({
   const [, startTransition] = useTransition()
   const triage = useTriageDraft()
   const composed = triage?.waitId === waitId ? triage.text : ''
-  const body = triage?.body ?? null
+  // Own answers are carried over only where the wait itself ended (the page's wait is null too): a body edit that is
+  // merely unavailable passes null here while the wait stands. They join a body draft rather than yield to it.
+  const ended = waitId === null && triage?.waitId === null
+  const retained = ended ? (triage?.retainedOwn ?? null) : null
+  const kept = triage?.body ?? null
+  // A draft edited after a wait ended already holds the retained words it was edited beside (`absorbed`); only words
+  // it has not absorbed — a later wait's — are joined, so an earlier wait's edited draft never hides a newer answer.
+  const body: { waitId: WaitId | null; text: string } | null =
+    retained === null ||
+    retained.text.trim() === '' ||
+    (kept !== null && kept.waitId === null && kept.absorbed != null && kept.absorbed.from === retained.waitId)
+      ? kept
+      : {
+          waitId: kept?.waitId ?? retained.waitId,
+          text: [kept?.text ?? '', retained.text].filter((t) => t.trim() !== '').join('\n\n'),
+        }
   const draftWaitId = body?.waitId ?? null
   const currentText = waitId === null ? (body?.text ?? '') : body?.waitId === waitId ? body.text : composed
   // What the agent asked: its questions drawn as choices, or the prose where it asked in prose (#1253).
@@ -460,11 +476,13 @@ export function EditBodyAndRequeue({
       allowedResolutions(reason, triaged).includes('AnswerQuestions') ? (
         <button
           className="btn pri"
-          disabled={pending || doneWaitId === waitId || edited}
+          disabled={pending || doneWaitId === waitId || edited || triage.refusal !== null}
           title={
-            edited
-              ? 'You changed the answer text: this sends the picked answers only. Revert it, or use the edit below.'
-              : undefined
+            triage.refusal !== null
+              ? triage.refusal
+              : edited
+                ? 'You changed the answer text: this sends the picked answers only. Revert it, or use the edit below.'
+                : undefined
           }
           onClick={() => {
             setPending(true)
