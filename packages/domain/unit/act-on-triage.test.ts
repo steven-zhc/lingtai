@@ -139,6 +139,14 @@ describe('actOnTriageTransition', () => {
     })
   })
 
+  it('a remote ref that moved while triage ran offers no head to continue on: head-moved', () => {
+    const { state } = waiting(refused)
+    expect(actOnTriageTransition(state, input(state, { result: fixable }, { fix: null }))).toEqual({
+      ok: false,
+      refusal: 'head-moved',
+    })
+  })
+
   it('no head read on either side is not a head that is unchanged: a rerun and a fix are head-moved', () => {
     const { state } = waiting(refused)
     const none = { boundHead: null, headNow: null }

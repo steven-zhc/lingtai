@@ -828,8 +828,10 @@ const gatherEvidence = (
     }
 
     const noPaths = { paths: [] as string[], truncated: false }
-    const baseSha = yield* guard(deps.mirror.refSha({ project, ref: base, signal })).pipe(
-      Effect.mapError((error) => new Error(`could not read ${base} in the mirror: ${messageOf(error)}`)),
+    const baseSha = yield* guard(
+      deps.mirror
+        .refSha({ project, ref: base, signal })
+        .pipe(Effect.mapError((error) => new Error(`could not read ${base} in the mirror: ${messageOf(error)}`))),
     )
     const refs: ReadableRef[] = []
     if (baseSha !== null) {
@@ -838,8 +840,10 @@ const gatherEvidence = (
     }
     let headSha: string | null = null
     if (head !== null) {
-      headSha = yield* guard(deps.mirror.refSha({ project, ref: head, signal })).pipe(
-        Effect.mapError((error) => new Error(`could not read ${head} in the mirror: ${messageOf(error)}`)),
+      headSha = yield* guard(
+        deps.mirror
+          .refSha({ project, ref: head, signal })
+          .pipe(Effect.mapError((error) => new Error(`could not read ${head} in the mirror: ${messageOf(error)}`))),
       )
       if (headSha !== null) {
         const listed = yield* guard(deps.mirror.listAt({ project, ref: headSha, signal })).pipe(orElse(noPaths))

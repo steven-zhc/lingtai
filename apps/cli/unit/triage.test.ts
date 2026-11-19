@@ -455,6 +455,29 @@ describe('waitTriage', () => {
     expect(requests).toEqual([])
   })
 
+  it('a failed read of the base is TriageFailed naming the read, never evidence that there is no base', async () => {
+    const store = createMemoryEventStore()
+    const ticketId = ticketStream('lingtai', 570)
+    const runId = 'pass-570'
+    const ticket = makeStream(ticketId)
+    await store.append(ticketId, 0, [
+      ticket('TicketClaimed', { runId, worker: 'lingtai:daemon:1', title: null, kind: null }),
+    ])
+    const { runtime, requests } = stubRuntime(() => ADVISED)
+    const deps = fakeDeps(store, runtime, {
+      mirror: fakeMirror({
+        refSha: () => Effect.fail(new Error('fatal: not a git repository')),
+      }),
+    })
+    const held = await waitTriage(deps, requestOn(ticketId, aWaitId(), { reason: reasonOn(runId) }))
+    expect(held.result).toMatchObject({ _tag: 'TriageFailed' })
+    if (held.result._tag === 'TriageFailed') {
+      expect(held.result.why).toContain('could not read main in the mirror')
+      expect(held.result.why).toContain('not a git repository')
+    }
+    expect(requests).toEqual([])
+  })
+
   it('refuses a failed run-stream read instead of selecting the base', async () => {
     const store = createMemoryEventStore()
     const ticketId = ticketStream('lingtai', 570)
