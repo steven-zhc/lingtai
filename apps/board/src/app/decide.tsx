@@ -403,6 +403,8 @@ export function EditBodyAndRequeue({
         ? reason.proposal
         : null
   const question = asking === null ? null : askedText(asking)
+  // The answer button writes the picked answers, never the textarea: where the text was changed it is not offered (#1254).
+  const edited = waitId !== null && body?.waitId === waitId && body.text !== composed
 
   if (waitId === null && (body?.text ?? '') === '' && !pending && detail === null) return null
 
@@ -436,7 +438,12 @@ export function EditBodyAndRequeue({
       allowedResolutions(reason).includes('AnswerQuestions') ? (
         <button
           className="btn pri"
-          disabled={pending || doneWaitId === waitId}
+          disabled={pending || doneWaitId === waitId || edited}
+          title={
+            edited
+              ? 'You changed the answer text: this sends the picked answers only. Revert it, or use the edit below.'
+              : undefined
+          }
           onClick={() => {
             setPending(true)
             setDetail(null)

@@ -136,4 +136,11 @@ describe('AnswerQuestions on a question an agent asked (#1254)', () => {
     expect((await store.read(ticketId)).filter((e) => e.type === 'WaitResolved')).toHaveLength(0)
     expect((await store.read(ticketId)).length).toBeGreaterThanOrEqual(before)
   })
+
+  it('a second person with different answers is refused, not reported as a repeat', async () => {
+    const { tickets, answer } = await asking()
+    expect(await answer({ github: tickets, answers: { '0': 'a' } })).toMatchObject({ ok: true })
+    expect(await answer({ github: tickets, answers: { '0': 'b' } })).toMatchObject({ ok: false })
+    expect((await tickets.getIssue(ISSUE)).body).toContain('use ora')
+  })
 })

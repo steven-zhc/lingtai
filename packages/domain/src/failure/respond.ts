@@ -585,7 +585,7 @@ export const BOUNDS = {
   landingRetries: 3,
   /** At most this many base merges per attempt, then a person (#593). They cost no agent, so it bounds a base that keeps moving. */
   baseBranchMerges: 10,
-  /** At most this many times a ticket stops to ask a person, then the agent assumes and proceeds (#649). */
+  /** At most this many times a ticket stops to ask a person, then a person decides: the sixth stop is the `AskLimit` wait and an agent never assumes (0108 §22, #1254). */
   personAsks: PERSON_ASKS,
   /** A ticket is split at most once per root (#1261): spent by its first `SplitStarted` for any wait. */
   ticketSplits: 1,

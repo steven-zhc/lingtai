@@ -500,6 +500,7 @@ function prepare(
         ticketId,
         key: `${ticketId}/${options.waitId}`,
         text: answers.text,
+        verified: true,
       })
       if (!result.written) return refuse({ ok: false, ticketId, reason: 'write-failed', detail: result.detail })
       wroteBody = true

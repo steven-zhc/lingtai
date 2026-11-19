@@ -1057,6 +1057,12 @@ export type ResolveRefusal =
  * Whether a resolution can go ahead: `repeat` when it is an approval that already landed (it appends nothing to the
  * ticket — the continuation it was owed is asked for again), `proceed` with the block it resolves, or a refusal.
  */
+function sameAnswers(submitted: Readonly<Record<string, string>>, recorded: Resolution | undefined): boolean {
+  if (recorded === undefined || recorded._tag !== 'AnswerQuestions') return false
+  const a = Object.entries(submitted)
+  return a.length === Object.keys(recorded.answers).length && a.every(([k, v]) => recorded.answers[k] === v)
+}
+
 export function resolveWaitTransition(
   state: TicketState,
   input: { waitId: WaitId; resolution: Resolution },
@@ -1082,6 +1088,9 @@ export function resolveWaitTransition(
     life.status === 'approved' &&
     life.waitId === input.waitId &&
     state.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution._tag === resolution._tag &&
+    // A second person's different answers are not a repeat: the first's are what the body and the log hold (#1254).
+    (resolution._tag !== 'AnswerQuestions' ||
+      sameAnswers(resolution.answers, state.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution)) &&
     (!resolution.onSha || matchHead(resolution.onSha, life.onSha ?? '') === 'match')
   ) {
     return { ok: true, kind: 'repeat', runId: life.runId }

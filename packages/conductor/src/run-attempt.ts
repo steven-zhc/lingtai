@@ -2365,7 +2365,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       // The first visit of `from.step` after an account limit: the cut-off call's round, its dispatch suffix and
       // its recorded brief (#1205).
       const accountRerun = options.from?.redo
-      const accountRerunsSpent = accountRerun?.accountReruns ?? 0
+      // An answer continuation's count is carried like an account rerun's, so an automatic redo of the step keeps its suffix distinct (#1254).
+      const accountRerunsSpent = accountRerun?.accountReruns ?? options.from?.answered?.accountReruns ?? 0
       const visitContext: ActionContext =
         rerun !== null
           ? { ...rerun.context, rerun: stepRedosSpent + landingRetriesSpent + accountRerunsSpent }
