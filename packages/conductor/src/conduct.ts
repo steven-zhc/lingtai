@@ -1689,7 +1689,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         conflictRoundsSpent: spentNow.conflictRounds,
         stepRedosSpent: spentNow.stepRedos,
         landingRetriesSpent: spentNow.landingRetries,
-        ...(priorGrant ? { roundLimit: lapRound } : {}),
+        // An earlier person's grant does not cap a triage round: `byTriage` follows the recipe's `refusalFixes`.
+        ...(priorGrant && grantedBy !== 'triage' ? { roundLimit: lapRound } : {}),
         ...(grantedBy === 'triage' ? { byTriage: true as const } : {}),
         ...(criterion !== null
           ? {
@@ -5300,7 +5301,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             round,
             // The lap a person's grant paid for is capped at one round
             // (`runAttempt`'s `roundLimit`), so this is that round.
-            ...(continuation?.grant ? { grant: continuation.resumedWaitId } : {}),
+            ...(continuation?.grant && !('byTriage' in continuation && continuation.byTriage)
+              ? { grant: continuation.resumedWaitId }
+              : {}),
           }
           const fixEnv = runnableEnv(env.values)
           const fixVersion = yield* runtimeVersionOfEffect(dispatched, fixEnv, tree.path)
