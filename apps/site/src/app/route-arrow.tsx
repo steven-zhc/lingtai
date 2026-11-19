@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 const MIN_GUTTER = 90
 const MARGIN = 14
 
-type Geo = { w: number; h: number; line: string; head: string; bracket: string }
+type Geo = { w: number; h: number; line: string; head: string; bracket: string; noteX: number; noteY: number }
 
 function measure(box: HTMLElement): Geo | null {
   const from = box.querySelector<HTMLElement>('[data-route-from]')
@@ -56,7 +56,7 @@ function measure(box: HTMLElement): Geo | null {
   const bracket =
     `M ${n(bx - 8)} ${n(top + 2)} C ${n(bx + 2)} ${n(top)}, ${n(bx + 5)} ${n(top + 6)}, ${n(bx + 4)} ${n(top + 16)} ` +
     `L ${n(bx + 5)} ${n(bottom - 16)} C ${n(bx + 5)} ${n(bottom - 6)}, ${n(bx + 2)} ${n(bottom)}, ${n(bx - 8)} ${n(bottom - 2)}`
-  return { w: n(b.width), h: n(bottom + 10), line, head, bracket }
+  return { w: n(b.width), h: n(bottom + 10), line, head, bracket, noteX: n(lane + 10), noteY: n(y0 + 86) }
 }
 
 export function RouteArrow() {
@@ -105,6 +105,11 @@ export function RouteArrow() {
             {geo.head ? <path d={geo.head} /> : null}
             <path d={geo.bracket} />
           </g>
+          {geo.line ? (
+            <text className="ra-note" x={geo.noteX} y={geo.noteY}>
+              here&apos;s how
+            </text>
+          ) : null}
         </svg>
       ) : null}
     </div>

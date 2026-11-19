@@ -22,6 +22,7 @@ export interface ReceiptState {
   impl: string
   checks: string
   review: string
+  main: string
   approve: string
   /** Cents, so "never decreases" is a comparison of numbers. */
   cents: number
@@ -30,12 +31,13 @@ export interface ReceiptState {
 }
 
 const DASH = '—'
+const COMBINED = '✓ combined, re-tested'
 const FIXED = '✗ → ✓ after 1 round'
 
 export const STEPS = 6
 
-// Step 1-4 are `running`, not the mock's `wait` for the fix rounds: `--signal`
-// means a person is being waited on now (site.css), and that is step 5 alone.
+// Every step is `running` or later: `--signal` means a person is being waited on now (site.css),
+// and no step is that. The wait and the click both happen inside scene 6, and the receipt shows the result.
 const STATES: readonly ReceiptState[] = [
   {
     statusKind: 'queued',
@@ -43,6 +45,7 @@ const STATES: readonly ReceiptState[] = [
     impl: DASH,
     checks: DASH,
     review: DASH,
+    main: DASH,
     approve: DASH,
     cents: 0,
     stamped: false,
@@ -54,6 +57,7 @@ const STATES: readonly ReceiptState[] = [
     impl: DASH,
     checks: DASH,
     review: DASH,
+    main: DASH,
     approve: DASH,
     cents: 0,
     stamped: false,
@@ -65,6 +69,7 @@ const STATES: readonly ReceiptState[] = [
     impl: '3 files changed',
     checks: DASH,
     review: DASH,
+    main: DASH,
     approve: DASH,
     cents: 14,
     stamped: false,
@@ -76,6 +81,7 @@ const STATES: readonly ReceiptState[] = [
     impl: '3 files changed',
     checks: FIXED,
     review: DASH,
+    main: DASH,
     approve: DASH,
     cents: 23,
     stamped: false,
@@ -87,21 +93,23 @@ const STATES: readonly ReceiptState[] = [
     impl: '3 files changed',
     checks: FIXED,
     review: FIXED,
+    main: DASH,
     approve: DASH,
     cents: 38,
     stamped: false,
-    hint: 'The cold review found a bug. Fix round 2.',
+    hint: 'The AI review found a bug. Fix round 2.',
   },
   {
-    statusKind: 'waiting',
-    status: 'Waiting for you',
+    statusKind: 'running',
+    status: 'Main moved',
     impl: '3 files changed',
     checks: FIXED,
     review: FIXED,
-    approve: 'waiting…',
-    cents: 38,
+    main: COMBINED,
+    approve: DASH,
+    cents: 39,
     stamped: false,
-    hint: 'Ready to land. Waiting for you.',
+    hint: 'Main moved. Combined and re-tested.',
   },
   {
     statusKind: 'landed',
@@ -109,6 +117,7 @@ const STATES: readonly ReceiptState[] = [
     impl: '3 files changed',
     checks: FIXED,
     review: FIXED,
+    main: COMBINED,
     approve: 'You, 07:31',
     cents: 40,
     stamped: true,
@@ -141,8 +150,9 @@ function propsAt(step: number): ReceiptProps {
     rows: [
       row('Implementation', s.impl, 2),
       row('Checks', s.checks, 3),
-      row('Cold review', s.review, 4),
-      row('Approved by', s.approve, 5, s.approve === 'waiting…'),
+      row('AI review', s.review, 4),
+      row('Main moved', s.main, 5),
+      row('Approved by', s.approve, 6),
     ],
     costLabel: 'RECORDED COST',
     cost: dollars(s.cents),
