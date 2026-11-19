@@ -415,7 +415,7 @@ export function EditBodyAndRequeue({
   const body: { waitId: WaitId | null; text: string } | null =
     retained === null ||
     retained.text.trim() === '' ||
-    (kept !== null && kept.waitId === null && (kept.absorbed ?? null) === retained.text)
+    (kept !== null && kept.waitId === null && kept.absorbed != null && kept.absorbed.from === retained.waitId)
       ? kept
       : {
           waitId: kept?.waitId ?? retained.waitId,

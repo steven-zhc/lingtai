@@ -19,8 +19,8 @@ export const OWN_VALUE = '__own__'
 type Draft = {
   waitId: WaitId | null
   text: string
-  /** For a body edited after its wait ended: the retained own words the text already holds, so they are not joined again. */
-  absorbed?: string | null
+  /** For a body edited after its wait ended: the wait whose retained own words the text already holds, so those are not joined again (identity, not text). */
+  absorbed?: { from: WaitId | null } | null
 }
 type AnswerDraft = Draft & { open: boolean }
 /** The two resolutions whose text a discussion answer can be added to. */
@@ -163,7 +163,11 @@ export function TriagePicks({
   const setBody = (next: string) =>
     setDrafts((current) => ({
       ...current,
-      body: { waitId, text: next, ...(waitId === null ? { absorbed: current.own?.text ?? null } : {}) },
+      body: {
+        waitId,
+        text: next,
+        ...(waitId === null ? { absorbed: current.own ? { from: current.own.waitId } : null } : {}),
+      },
     }))
   const setAnswer = (next: string) =>
     setDrafts((current) => ({ ...current, answer: { waitId, text: next, open: true } }))
