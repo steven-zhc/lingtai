@@ -1137,6 +1137,21 @@ const late_declinedThenAccepted = (() => {
   ])
 })()
 
+/** #1251: a claim, and the base already held the work — `TicketSatisfied` ends it, nothing landed. */
+const late_claimedThenSatisfied = (() => {
+  const t = makeStream(ticketStream(PROJECT, 9199))
+  // Stamped apart from `stamp`'s own counters, which every history listed in `histories.hashes.json` shares: taking
+  // the next slot here would move each one defined after this and change a hash that is frozen.
+  return [
+    ...aClaim(t, attemptStream('t9199-1')),
+    t('TicketSatisfied', {
+      baseSha: 'a'.repeat(40),
+      bodyVersion: 1,
+      items: [{ item: 'it works', evidence: 'src/a.ts:1' }],
+    }),
+  ].map((e, i) => ({ ...e, seq: 9_000_000 + i, at: new Date(START_MS + 9_000_000 + i * STEP_MS) }))
+})()
+
 /**
  * #932: a route stored by reference. The `ProposalRouted` carries no findings;
  * it names the refusing `StepEnded` by its version on the stream and the action.
@@ -1210,6 +1225,7 @@ export const lateHistories = {
     discussionsHeld: late_discussionsHeld,
     kindThenTriage: late_kindThenTriage,
     kindedClaimAfterClosed: late_kindedClaimAfterClosed,
+    claimedThenSatisfied: late_claimedThenSatisfied,
   },
   control: {
     ceilingResumedByPerson: late_ceilingResumedByPerson,
@@ -1440,6 +1456,7 @@ export const COVERS = {
     'DiscussionHeld',
     'TicketClosed',
     'TicketLanded',
+    'TicketSatisfied',
     'DispatchRefused',
     'IssueUpdated',
     'IssueUpdateFailed',
