@@ -68,6 +68,97 @@ describe('decideImplementOutcome', () => {
     expect(decideImplementOutcome(input)._tag).toBe(expected)
   })
 
+  describe('AlreadyDone (#1251)', () => {
+    const doneWhen = ['one', 'two']
+    const answered: Declared = {
+      _tag: 'AlreadyDone',
+      items: [
+        { item: 'one', evidence: 'a.ts:1' },
+        { item: 'two', evidence: 'b.ts:2' },
+      ],
+    }
+    const first = { ...base, head: 'a', doneWhen, offersAlreadyDone: true }
+
+    it.each([
+      ['head moved → Implemented', { ...first, declared: answered, head: 'b' }, 'Implemented'],
+      ['unmoved, every item answered → AlreadyDone', { ...first, declared: answered }, 'AlreadyDone'],
+      [
+        'unmoved, an item with no evidence → AgentFailed',
+        {
+          ...first,
+          declared: { _tag: 'AlreadyDone', items: [{ item: 'one', evidence: 'x' }, { item: 'two', evidence: ' ' }] },
+        },
+        'AgentFailed',
+      ],
+      [
+        'unmoved, an item left out → AgentFailed',
+        { ...first, declared: { _tag: 'AlreadyDone', items: [{ item: 'one', evidence: 'x' }] } },
+        'AgentFailed',
+      ],
+      ['a body with no Done-when section → AgentFailed', { ...first, declared: answered, doneWhen: null }, 'AgentFailed'],
+      ['a fix round does not offer it → AgentFailed', { ...first, declared: answered, offersAlreadyDone: false }, 'AgentFailed'],
+    ] as const)('%s', (_name, input, expected) => {
+      expect(decideImplementOutcome(input as never)._tag).toBe(expected)
+    })
+
+    it('keeps the body’s own items in the body’s order, and ignores an item the body does not have', () => {
+      const decided = decideImplementOutcome({
+        ...first,
+        declared: {
+          _tag: 'AlreadyDone',
+          items: [
+            { item: 'extra', evidence: 'z' },
+            { item: 'two  ', evidence: 'b.ts:2' },
+            { item: 'one', evidence: 'a.ts:1' },
+          ],
+        },
+      })
+      expect(decided).toEqual({
+        _tag: 'AlreadyDone',
+        items: [
+          { item: 'one', evidence: 'a.ts:1' },
+          { item: 'two', evidence: 'b.ts:2' },
+        ],
+      })
+    })
+
+    it('is read from the block the agent ends its message with', () => {
+      expect(
+        parseImplementOutcome(
+          fence('{"outcome":"AlreadyDone","items":[{"item":"one","evidence":"a.ts:1"}]}'),
+        ),
+      ).toEqual({ _tag: 'AlreadyDone', items: [{ item: 'one', evidence: 'a.ts:1' }] })
+    })
+
+    it('proposes AlreadyDone, with the base and the body version it carries', () => {
+      const next = nextOf(
+        {
+          step: 'implement',
+          round: 0,
+          actions: [
+            {
+              name: 'a',
+              plugin: 'agent',
+              yields: 'commit',
+              evidence: 'said',
+              result: {
+                _tag: 'Completed',
+                head: null,
+                question: null,
+                outcome: { ...answered, baseSha: 'ba5e', bodyVersion: 3 },
+              },
+            },
+          ],
+        } as unknown as StepOutcome,
+        { runId: 'r' },
+      )
+      expect(next).toEqual({
+        _tag: 'Propose',
+        proposal: { _tag: 'AlreadyDone', items: answered.items, baseSha: 'ba5e', bodyVersion: 3 },
+      })
+    })
+  })
+
   it('an Unclear keeps its questions', () => {
     expect(decideImplementOutcome({ ...base, declared: unclear })).toEqual({ _tag: 'Unclear', questions: [q] })
   })
