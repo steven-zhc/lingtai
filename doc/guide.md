@@ -138,7 +138,7 @@ Keep the gates that refuse and delete the ones that never do.
 
 - Put what makes the worktree usable at `prepared`, the cheapest place to fail,
   and the checks you would not merge without at `build`, and nothing else.
-- Keep the cold reviewer at `review`; it is the one action that costs agent money.
+- Keep the AI review at `review`; it is the one action that costs agent money.
 - Use `watch:` to stop for a person on a path, with no process and no agent.
   Declare a hold for a person at `proposed:`, never at `merge:`: `human:` and
   `watch:` are refused at `merge`, and the lane is the last action there.
