@@ -41,24 +41,38 @@ const act = () =>
 const started = async () => {
   const store = createMemoryEventStore()
   await store.append(ticketId, 0, [
-    { type: 'TicketClaimed', actor: 'conductor', data: { runId: 'run-1', worker: 'host:1', title: 't', kind: 'bug', body: 'b' } },
+    {
+      type: 'TicketClaimed',
+      actor: 'conductor',
+      data: { runId: 'run-1', worker: 'host:1', title: 't', kind: 'bug', body: 'b' },
+    },
     { type: 'WaitStarted', actor: 'conductor', data: { waitId, reason: crashed } },
   ])
   const begun = await Effect.runPromise(startTriage(ticketId, { store, waitId, attempt: 1, by }))
   if (!begun.ok) throw new Error('did not start')
   return { store, v0: begun.version }
 }
-const finish = (
-  s: Awaited<ReturnType<typeof started>>,
-  over: Partial<Parameters<typeof finishTriage>[1]> = {},
-) =>
+const finish = (s: Awaited<ReturnType<typeof started>>, over: Partial<Parameters<typeof finishTriage>[1]> = {}) =>
   Effect.runPromise(
-    finishTriage(ticketId, { store: s.store, ifVersion: s.v0, waitId, attempt: 1, headSha: 'abc', by, result: unfinished, ...over }),
+    finishTriage(ticketId, {
+      store: s.store,
+      ifVersion: s.v0,
+      waitId,
+      attempt: 1,
+      headSha: 'abc',
+      by,
+      result: unfinished,
+      ...over,
+    }),
   )
 const types = async (s: Awaited<ReturnType<typeof started>>) => (await s.store.read(ticketId)).map((e) => e.type)
 const own = async (s: Awaited<ReturnType<typeof started>>) => {
   await Effect.runPromise(
-    recordTriageRun(ticketId, { store: s.store, waitId, record: { _tag: 'Prompted', promptVersion: 'v', runtimeVersion: null, prompt: 'p' } }),
+    recordTriageRun(ticketId, {
+      store: s.store,
+      waitId,
+      record: { _tag: 'Prompted', promptVersion: 'v', runtimeVersion: null, prompt: 'p' },
+    }),
   )
   await Effect.runPromise(
     recordTriageRun(ticketId, {
@@ -119,7 +133,18 @@ describe('finishTriage (#1258)', () => {
   it('an unrelated event after TriageStarted: the answer is recorded TriageFailed{changed}', async () => {
     const s = await started()
     await s.store.append(ticketId, s.v0, [
-      { type: 'RunSpent', actor: 'conductor', data: { for: { _tag: 'Triage', waitId: 'someone-else' }, runtime: 'claude-code', turns: 1, durationMs: 1, usage: [], costUsd: null } },
+      {
+        type: 'RunSpent',
+        actor: 'conductor',
+        data: {
+          for: { _tag: 'Triage', waitId: 'someone-else' },
+          runtime: 'claude-code',
+          turns: 1,
+          durationMs: 1,
+          usage: [],
+          costUsd: null,
+        },
+      },
     ])
     expect(await finish(s, { act })).toEqual({ ok: false, refusal: 'changed' })
     const last = (await s.store.read(ticketId)).at(-1)!

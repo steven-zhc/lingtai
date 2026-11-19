@@ -40,7 +40,6 @@ import {
   type ActContext,
   type ActOnTriageRefusal,
   startTriageTransition,
-  type FinishTriageDecline,
   type StartTriageDecline,
   closeTransition,
   reduceTicket,
@@ -456,9 +455,7 @@ type FinishTriageInput = Parameters<typeof finishTriageTransition>[1]
 
 export type StartTriageResult =
   /** `version` is the ticket's version once `TriageStarted` landed: what the answer is bound to (#1258). */
-  | { ok: true; version: number }
-  | { ok: false; refusal: StartTriageDecline }
-  | { ok: false; lost: true }
+  { ok: true; version: number } | { ok: false; refusal: StartTriageDecline } | { ok: false; lost: true }
 
 /**
  * `TriageStarted` at the attempt the caller fixed. Refused when the wait is not current or the reduce already holds
@@ -496,7 +493,9 @@ export function startTriage(
     if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
     const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
     // An append at an expected version lands at the next ones, so this is the version it left the stream at.
-    return lost ? ({ ok: false, lost: true } as const) : ({ ok: true, version: state.version + decided.events.length } as const)
+    return lost
+      ? ({ ok: false, lost: true } as const)
+      : ({ ok: true, version: state.version + decided.events.length } as const)
   })
 }
 
@@ -534,7 +533,10 @@ export function finishTriage(
   return Effect.gen(function* () {
     const state = yield* readThroughSnapshot(options.store, ticketReducer, ticketId, 'all', options)
     const owed = state.version - options.ifVersion
-    const since = owed > 0 ? yield* Effect.tryPromise({ try: () => options.store.read(ticketId, options.ifVersion + 1), catch: (e) => e }) : []
+    const since =
+      owed > 0
+        ? yield* Effect.tryPromise({ try: () => options.store.read(ticketId, options.ifVersion + 1), catch: (e) => e })
+        : []
     // Read a moment apart, the two can disagree about where the stream ends: read again rather than guess.
     if (since.length !== Math.max(owed, 0)) return { ok: false, lost: true } as const
     const result = typeof options.result === 'function' ? options.result() : options.result

@@ -1681,7 +1681,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(criterion !== null
           ? {
               grant: {
-                why: grantedBy === 'triage' ? 'Triage granted one checked fix round.' : 'A person granted one checked fix round.',
+                why:
+                  grantedBy === 'triage'
+                    ? 'Triage granted one checked fix round.'
+                    : 'A person granted one checked fix round.',
                 asked: null,
                 printed: criterion.printed,
               },

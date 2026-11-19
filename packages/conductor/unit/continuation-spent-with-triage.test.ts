@@ -1,0 +1,57 @@
+/**
+ * #1258: a continuation is handed the larger of an attempt's counter and what a triage resolution spent — one spend
+ * whether or not the continuation has recorded its own number, and none for a person's resolution.
+ */
+import { reduceAttempt, reduceTicket, type WaitId } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { describe, expect, it } from 'vitest'
+
+import { continuationSpentWithTriage } from '../src/conduct.ts'
+
+const ticketId = 'ticket-lingtai-7'
+const waitId = '99999999-9999-4999-8999-999999999999' as WaitId
+const crashed = { _tag: 'AgentCrashed', run: { runId: 'run-1' }, step: 'implement', cause: 'crash', detail: 'x' }
+
+const resolvedBy = async (by: string) => {
+  const store = createMemoryEventStore()
+  await store.append(ticketId, 0, [
+    {
+      type: 'TicketClaimed',
+      actor: 'conductor',
+      data: { runId: 'run-1', worker: 'host:1', title: 't', kind: 'bug', body: 'b' },
+    },
+    { type: 'WaitStarted', actor: 'conductor', data: { waitId, reason: crashed } },
+    {
+      type: 'WaitResolved',
+      actor: by === 'triage' ? 'conductor' : by,
+      data: {
+        waitId,
+        by,
+        resolution: { _tag: 'RedoStep', onSha: 'abc', ref: 'agent/7' },
+        note: '',
+        ...(by === 'triage' ? { spent: { bound: 'stepRedos', n: 1 } } : {}),
+      },
+    },
+  ])
+  return reduceTicket(await store.read(ticketId))
+}
+
+describe('continuationSpentWithTriage', () => {
+  it('a triage RedoStep is one stepRedos before the continuation has recorded anything, and a restart reads the same', async () => {
+    const ticket = await resolvedBy('triage')
+    const run = reduceAttempt([])
+    expect(continuationSpentWithTriage(run, ticket, 'run-1').stepRedos).toBe(1)
+    expect(continuationSpentWithTriage(run, ticket, 'run-1').stepRedos).toBe(1)
+  })
+
+  it('a continuation that crashed once records `StepRedone{rerun: 2}`: two in all, never three', async () => {
+    const ticket = await resolvedBy('triage')
+    const run = { ...reduceAttempt([]), stepRedos: 2 }
+    expect(continuationSpentWithTriage(run, ticket, 'run-1').stepRedos).toBe(2)
+  })
+
+  it("a person's RedoStep spends nothing", async () => {
+    const ticket = await resolvedBy('human:steven')
+    expect(continuationSpentWithTriage(reduceAttempt([]), ticket, 'run-1').stepRedos).toBe(0)
+  })
+})

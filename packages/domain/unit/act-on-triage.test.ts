@@ -15,7 +15,7 @@ import {
   type ActContext,
   type TicketState,
 } from '../src/ticket.ts'
-import type { TriageResult } from '../src/wait.ts'
+import type { TriageResult, WaitReason } from '../src/wait.ts'
 import { aClaim, anAttemptRef, aResolution, aTriageStart, aWait } from '../test/events.ts'
 import { makeStream } from '../test/support.ts'
 
@@ -27,7 +27,7 @@ const crashed = {
   step: 'implement',
   cause: 'crash',
   detail: 'x',
-} as const
+} satisfies WaitReason
 const by = { _tag: 'Mechanical' } as const
 const room: Record<CauseBound, CauseCounter> = {
   refusalFixes: { used: 0, allowed: 3 },
@@ -64,9 +64,9 @@ const refused = {
   action: 'watch:ci',
   evidence: 'the check failed',
   findings: [],
-} as const
+} satisfies WaitReason
 
-const waiting = (reason: typeof crashed | typeof refused = crashed) => {
+const waiting = (reason: WaitReason = crashed) => {
   const e = item()
   const events = [...aClaim(e, 'run-1'), ...aWait(e, reason, W), ...aTriageStart(e, W, 1)]
   return { e, state: reduceTicket(events), events }
@@ -164,7 +164,10 @@ describe('actOnTriageTransition', () => {
     const d = actOnTriageTransition(state, input(state, { result: fixable }))
     if (!d.ok) throw new Error(JSON.stringify(d))
     expect(d.events[1]).toMatchObject({
-      data: { resolution: { _tag: 'FixRefusal', onSha: 'abc', ref: 'agent/7' }, spent: { bound: 'refusalFixes', n: 1 } },
+      data: {
+        resolution: { _tag: 'FixRefusal', onSha: 'abc', ref: 'agent/7' },
+        spent: { bound: 'refusalFixes', n: 1 },
+      },
     })
   })
 
@@ -178,9 +181,9 @@ describe('actOnTriageTransition', () => {
     // The stream is two events past the version the triage read, both its own.
     const now = { ...state, version: state.version + 2 }
     expect(actOnTriageTransition(now, input(state, { since }))).toMatchObject({ ok: true })
-    expect(
-      actOnTriageTransition(now, input(state, { since: [since[0]!, { type: 'WaitStarted', data: {} }] })),
-    ).toEqual({ ok: false, refusal: 'changed' })
+    expect(actOnTriageTransition(now, input(state, { since: [since[0]!, { type: 'WaitStarted', data: {} }] }))).toEqual(
+      { ok: false, refusal: 'changed' },
+    )
   })
 })
 

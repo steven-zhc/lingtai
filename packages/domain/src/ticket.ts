@@ -1316,11 +1316,7 @@ export function actOnTriageTransition(
   const triaged = triagedEvent(input)
   const action = actionFor(input.result.cause, context.origin, context.counters)
   const advice: ActOnTriageDecision = { ok: true, events: [triaged], action }
-  if (
-    action._tag === 'askPerson' ||
-    action._tag === 'writeSpentOnThenRedoStep' ||
-    action._tag === 'splitTicket'
-  )
+  if (action._tag === 'askPerson' || action._tag === 'writeSpentOnThenRedoStep' || action._tag === 'splitTicket')
     return advice
   // A wait the reduce has never seen has no reason to resolve against: advice only.
   const life = state.lifecycle

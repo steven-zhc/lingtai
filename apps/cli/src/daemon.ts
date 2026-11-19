@@ -804,7 +804,9 @@ export function daemonCommand(
               name,
               daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
             ).pipe(
-              recovering((err) => Effect.sync(() => console.error(`triage continuation catch-up ${name}: ${err.message}`))),
+              recovering((err) =>
+                Effect.sync(() => console.error(`triage continuation catch-up ${name}: ${err.message}`)),
+              ),
             )
           }
           // A question asked while nothing was listening is waiting in the stream,

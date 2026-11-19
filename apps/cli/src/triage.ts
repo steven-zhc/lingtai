@@ -14,11 +14,11 @@
  */
 import { createRuntime, runtimeVersionOfEffect, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
+import { diffBaseShaOf } from '@lingtai/conductor'
 import type { TicketListing } from '@lingtai/conductor/discover'
 import { readingFor } from '@lingtai/conductor/discuss'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
-import { diffBaseShaOf } from '@lingtai/conductor'
 import { requestContinuation } from '@lingtai/conductor/resolve-wait'
 import { finishTriage, recordTriageRun, startTriage } from '@lingtai/conductor/ticket'
 import {
@@ -217,7 +217,9 @@ const runTriage = (
         deps.log?.(`triage ${request.waitId} on ${request.ticketId}: not asked again — ${why}`)
         return outcome
       }
-      deps.log?.(`triage ${request.waitId}: attempt ${outcome.attempt} failed (${outcome.result.why}) — asking once more`)
+      deps.log?.(
+        `triage ${request.waitId}: attempt ${outcome.attempt} failed (${outcome.result.why}) — asking once more`,
+      )
       outcome = yield* deps.run(request)
     }
   })
@@ -352,7 +354,13 @@ export const catchUpTriageContinuations = (project: string, deps: CatchUpTriageP
       if (wait?.resolution?.by !== 'triage') continue
       const tag = wait.resolution.resolution._tag
       if (tag !== 'FixRefusal' && tag !== 'RedoStep') continue
-      const unscheduled = yield* requestContinuation(deps.store as EventStore, 'triage', project, card.issue, life.runId)
+      const unscheduled = yield* requestContinuation(
+        deps.store as EventStore,
+        'triage',
+        project,
+        card.issue,
+        life.runId,
+      )
       if (unscheduled !== null) deps.log?.(`triage ${life.waitId}: continuation not requested — ${unscheduled}`)
     }
   })
@@ -866,7 +874,8 @@ const readActContext = (
     const limits = (yield* limitsOf(request.ticketId)) ?? { refusalFixes: 0, conflictResolutions: 0, newAttempts: 0 }
     const runId = state.lifecycle.status === 'blocked' ? state.lifecycle.runId : null
     const run = runId === null ? null : yield* readThroughSnapshot(deps.store, attemptReducer, runId, 'all', deps)
-    const spent = runId === null ? { refusalFixes: 0, conflictResolutions: 0, stepRedos: 0 } : triageSpentOf(state, runId)
+    const spent =
+      runId === null ? { refusalFixes: 0, conflictResolutions: 0, stepRedos: 0 } : triageSpentOf(state, runId)
     const counters = {
       refusalFixes: { used: Math.max(run?.implementRound ?? 0, spent.refusalFixes), allowed: limits.refusalFixes },
       newAttempts: { used: state.newAttempts.length, allowed: limits.newAttempts },
@@ -1454,7 +1463,13 @@ const waitTriageWithin = (
             if (resolution._tag === 'FixRefusal' || resolution._tag === 'RedoStep') {
               const parsed = parseTicketStream(stream)
               if (parsed !== null) {
-                const unscheduled = yield* requestContinuation(deps.store, 'triage', parsed.project, parsed.issue, runId)
+                const unscheduled = yield* requestContinuation(
+                  deps.store,
+                  'triage',
+                  parsed.project,
+                  parsed.issue,
+                  runId,
+                )
                 if (unscheduled !== null) log(`triage ${request.waitId}: continuation not requested — ${unscheduled}`)
               }
             }

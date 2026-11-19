@@ -41,7 +41,9 @@ const Wait = z.strictObject({
     .strictObject({
       resolution: Resolution,
       by: z.string(),
-      spent: z.strictObject({ bound: z.enum(['refusalFixes', 'conflictResolutions', 'stepRedos']), n: z.number().int() }).optional(),
+      spent: z
+        .strictObject({ bound: z.enum(['refusalFixes', 'conflictResolutions', 'stepRedos']), n: z.number().int() })
+        .optional(),
     })
     .nullable(),
   triage: z.strictObject({

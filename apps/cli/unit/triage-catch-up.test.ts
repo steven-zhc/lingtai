@@ -510,6 +510,37 @@ describe('triage catch-up', () => {
     expect(hashes.get('lingtai')).toBe(JSON.stringify(triage))
   })
 
+  it('asks once more after a failed attempt, and a second failure leaves the wait for a person (#1258)', async () => {
+    const f = fixture()
+    f.add(11)
+    const failed = (attempt: number) => ({
+      started: true,
+      attempt,
+      result: { _tag: 'TriageFailed' as const, why: 'changed' },
+    })
+    f.run.mockResolvedValueOnce(failed(1) as never).mockResolvedValueOnce(failed(2) as never)
+    await catchUpTriage('lingtai', triage, f.deps)
+    expect(f.run).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not ask again when the wait is no longer current', async () => {
+    const f = fixture()
+    const wait = f.add(12)
+    f.run.mockImplementationOnce((async () => {
+      wait.push(
+        wait.event('WaitResolved', {
+          waitId: wait.waitId,
+          by: 'human:steven',
+          resolution: { _tag: 'StartNewAttempt' },
+          note: '',
+        }),
+      )
+      return { started: true, attempt: 1, result: { _tag: 'TriageFailed', why: 'wait no longer current' } }
+    }) as never)
+    await catchUpTriage('lingtai', triage, f.deps)
+    expect(f.run).toHaveBeenCalledOnce()
+  })
+
   it('scans when the triage section changes and leaves a result alone on later passes', async () => {
     const f = fixture()
     const wait = f.add(9)
