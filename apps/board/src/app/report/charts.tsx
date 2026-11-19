@@ -212,19 +212,26 @@ export function SpendPanel({ days }: { days: SpendDay[] }) {
             bySeries.set(i, (bySeries.get(i) ?? 0) + centsOf(p.money) / 100)
           }
           // One line per legend entry, so Triage and Discussion read as the one *triage* the legend shows.
-          const named = new Map<number, Money>()
+          // A purpose the legend has no entry for keeps its own key rather than joining *building*.
+          const named = new Map<string, Money>()
+          const order = new Map<string, number>()
           for (const p of d.byPurpose) {
+            const known = PURPOSE_SERIES.some(
+              (s) => s.key === (p.purpose === 'Triage' || p.purpose === 'Discussion' ? 'Other' : p.purpose),
+            )
             const i = purposeSeriesOf(p.purpose)
-            const m = named.get(i) ?? { reportedCents: 0, estimatedCents: 0, unknown: 0 }
-            named.set(i, {
+            const name = known ? PURPOSE_SERIES[i]!.name : p.purpose
+            order.set(name, known ? i : PURPOSE_SERIES.length)
+            const m = named.get(name) ?? { reportedCents: 0, estimatedCents: 0, unknown: 0 }
+            named.set(name, {
               reportedCents: m.reportedCents + p.money.reportedCents,
               estimatedCents: m.estimatedCents + p.money.estimatedCents,
               unknown: m.unknown + p.money.unknown,
             })
           }
           const lines = [...named]
-            .sort(([a], [b]) => a - b)
-            .map(([i, m]) => `${PURPOSE_SERIES[i]!.name}: ${moneyText(m)}`)
+            .sort(([a], [b]) => order.get(a)! - order.get(b)!)
+            .map(([name, m]) => `${name}: ${moneyText(m)}`)
           return {
             label: d.day.slice(5),
             tip: [d.day, ...lines, `day: ${moneyText(d)}`],

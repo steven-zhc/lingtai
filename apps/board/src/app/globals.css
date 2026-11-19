@@ -3644,5 +3644,6 @@ button.navlink { font-family: inherit; cursor: pointer; }
 @media (max-width: 520px) {
   .sw-donut { grid-template-columns: 1fr; justify-items: center; }
   .sw-donut .sw-rows { justify-self: stretch; }
+  .rp-panel .sw-donut svg { width: 180px; }
 }
 .rp-more > summary { cursor: pointer; font-size: 11px; color: var(--muted); }

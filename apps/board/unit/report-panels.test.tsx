@@ -158,6 +158,21 @@ describe('the report page', () => {
     expect(out).toContain('>triage<')
     expect(out).not.toContain('Work: ')
     expect(out).not.toContain('Triage: ')
+    const later = renderToStaticMarkup(
+      <SpendPanel
+        days={[
+          day('2026-10-28', {
+            reportedCents: 300,
+            byPurpose: [
+              { purpose: 'Work', money: { reportedCents: 100, estimatedCents: 0, unknown: 0 } },
+              { purpose: 'Review2', money: { reportedCents: 200, estimatedCents: 0, unknown: 0 } },
+            ],
+          }),
+        ]}
+      />,
+    )
+    expect(later).toContain('building: $1.00')
+    expect(later).toContain('Review2: $2.00')
     const onlyUnknown = renderToStaticMarkup(<SpendPanel days={[day('2026-10-27', { unknown: 1 })]} />)
     expect(onlyUnknown).not.toContain('nothing spent')
     expect(renderToStaticMarkup(<SpendPanel days={[day('2026-10-27')]} />)).toContain('nothing spent in this window')
