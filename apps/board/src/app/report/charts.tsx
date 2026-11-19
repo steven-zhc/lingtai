@@ -9,7 +9,7 @@
  * Series colours come from `--s1`–`--s6` and `--muted` only (`lib/report.ts`):
  * amber, red and green are the board's states and no series wears them.
  */
-import type { LandingDay, Report, RoundBucket, SpendDay, SurvivalStep } from '@lingtai/conductor/report'
+import type { LandingDay, Money, Report, RoundBucket, SpendDay, SurvivalStep } from '@lingtai/conductor/report'
 
 import {
   axisFor,
@@ -211,9 +211,36 @@ export function SpendPanel({ days }: { days: SpendDay[] }) {
             const i = purposeSeriesOf(p.purpose)
             bySeries.set(i, (bySeries.get(i) ?? 0) + centsOf(p.money) / 100)
           }
+          // One line per legend entry, so Triage and Discussion read as the one *triage* the legend shows.
+          // A purpose the legend has no entry for keeps its own key rather than joining *building*.
+          // Keyed by the series slot, or by the raw purpose for one the legend lacks, never by a display name.
+          const named = new Map<string, { name: string; order: number; money: Money }>()
+          for (const p of d.byPurpose) {
+            const known = PURPOSE_SERIES.some(
+              (s) => s.key === (p.purpose === 'Triage' || p.purpose === 'Discussion' ? 'Other' : p.purpose),
+            )
+            const i = purposeSeriesOf(p.purpose)
+            const key = known ? `series:${i}` : `purpose:${p.purpose}`
+            const cur = named.get(key) ?? {
+              name: known ? PURPOSE_SERIES[i]!.name : p.purpose,
+              order: known ? i : PURPOSE_SERIES.length,
+              money: { reportedCents: 0, estimatedCents: 0, unknown: 0 },
+            }
+            named.set(key, {
+              ...cur,
+              money: {
+                reportedCents: cur.money.reportedCents + p.money.reportedCents,
+                estimatedCents: cur.money.estimatedCents + p.money.estimatedCents,
+                unknown: cur.money.unknown + p.money.unknown,
+              },
+            })
+          }
+          const lines = [...named.values()]
+            .sort((a, b) => a.order - b.order)
+            .map((e) => `${e.name}: ${moneyText(e.money)}`)
           return {
             label: d.day.slice(5),
-            tip: [d.day, ...d.byPurpose.map((p) => `${p.purpose}: ${moneyText(p.money)}`), `day: ${moneyText(d)}`],
+            tip: [d.day, ...lines, `day: ${moneyText(d)}`],
             segs: [...bySeries].map(([series, value]) => ({ series, value })),
           }
         })}

@@ -88,6 +88,19 @@ export const HANDLED_ROWS: Readonly<Record<Exclude<ProblemKind, 'other'>, Handle
   },
 }
 
+/** Why a ticket waited for a person, in the words *Handled for you* uses where it has them (#1294). */
+const WAIT_REASON_WORDS: Readonly<Record<string, string>> = {
+  AgentCrashed: HANDLED_ROWS.stopped.wrong,
+  AgentQuestion: HANDLED_ROWS.asked.wrong,
+  SetupRefused: HANDLED_ROWS.setup.wrong,
+  FixerDisagrees: HANDLED_ROWS.disputed.wrong,
+  ProposedEscalated: 'a failure handed to you',
+  AskLimit: 'asked too many times',
+}
+
+/** A wait reason as the page says it; a tag with no entry shows itself, never blank. */
+export const waitReasonText = (tag: string): string => WAIT_REASON_WORDS[tag] ?? tag
+
 // --- what the person did (#1288) ----------------------------------------------------
 
 export interface MoveRow {

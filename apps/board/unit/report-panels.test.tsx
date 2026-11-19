@@ -5,11 +5,18 @@
  */
 import { readFileSync } from 'node:fs'
 
-import type { KindRow, LandedFigures, TopTicket } from '@lingtai/conductor/report'
+import {
+  report as buildReport,
+  resolveWindow,
+  type KindRow,
+  type LandedFigures,
+  type TopTicket,
+} from '@lingtai/conductor/report'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { LandingsPanel, RoundsPanel, SpendPanel, SurvivalPanel } from '../src/app/report/charts.tsx'
+import { ReportGrid } from '../src/app/report/grid.tsx'
 import { Filters, KindsPanel, Tiles, TopPanel, WaitsPanel, WhereItWentPanel } from '../src/app/report/panels.tsx'
 import { dayReading, type DaySpendReading } from '../src/lib/day-spend.ts'
 import { reportQuery } from '../src/lib/report.ts'
@@ -144,11 +151,43 @@ describe('the report page', () => {
         ]}
       />,
     )
-    expect(out).toContain('Work: $3.00')
-    expect(out).toContain('Triage: ~$0.50 est.')
+    expect(out).toContain('building: $3.00')
+    expect(out).toContain('triage: ~$0.50 est.')
     expect(out).toContain('day: $3.00 + ~$0.50 est.')
     expect(out).toContain('2 unknown')
     expect(out).toContain('>triage<')
+    expect(out).not.toContain('Work: ')
+    expect(out).not.toContain('Triage: ')
+    const later = renderToStaticMarkup(
+      <SpendPanel
+        days={[
+          day('2026-10-28', {
+            reportedCents: 300,
+            byPurpose: [
+              { purpose: 'Work', money: { reportedCents: 100, estimatedCents: 0, unknown: 0 } },
+              { purpose: 'Review2', money: { reportedCents: 200, estimatedCents: 0, unknown: 0 } },
+            ],
+          }),
+        ]}
+      />,
+    )
+    expect(later).toContain('building: $1.00')
+    expect(later).toContain('Review2: $2.00')
+    const collide = renderToStaticMarkup(
+      <SpendPanel
+        days={[
+          day('2026-10-28', {
+            reportedCents: 300,
+            byPurpose: [
+              { purpose: 'Work', money: { reportedCents: 100, estimatedCents: 0, unknown: 0 } },
+              { purpose: 'building', money: { reportedCents: 200, estimatedCents: 0, unknown: 0 } },
+            ],
+          }),
+        ]}
+      />,
+    )
+    expect(collide).toContain('building: $1.00')
+    expect(collide).toContain('building: $2.00')
     const onlyUnknown = renderToStaticMarkup(<SpendPanel days={[day('2026-10-27', { unknown: 1 })]} />)
     expect(onlyUnknown).not.toContain('nothing spent')
     expect(renderToStaticMarkup(<SpendPanel days={[day('2026-10-27')]} />)).toContain('nothing spent in this window')
@@ -161,10 +200,18 @@ describe('the report page', () => {
           { reason: 'ReviewFindings', cause: 'FixableLines', count: 4 },
           { reason: 'ReviewFindings', cause: null, count: 1 },
           { reason: 'BuildRed', cause: null, count: 2 },
+          { reason: 'AgentCrashed', cause: 'NewCause', count: 1 },
+          { reason: 'ProposedEscalated', cause: null, count: 1 },
         ]}
       />,
     )
-    expect(out).toContain('no triage cause')
+    expect(out).toContain('agent stopped halfway')
+    expect(out).toContain('a failure handed to you')
+    expect(out).not.toContain('AgentCrashed')
+    expect(out).toContain('NewCause')
+    expect(out).toContain('not triaged')
+    expect(out).toContain('Lines to fix')
+    expect(out).not.toContain('FixableLines')
     expect(out).toContain('color-mix(in oklab, var(--accent)')
     expect(out.indexOf('ReviewFindings')).toBeLessThan(out.indexOf('BuildRed'))
     expect(renderToStaticMarkup(<WaitsPanel cells={[]} />)).toContain('no ticket stopped to wait')
@@ -382,5 +429,20 @@ describe('the report page', () => {
     expect(none).toContain('no known cost')
     expect(none).not.toContain('$0.00')
     expect(renderToStaticMarkup(<WhereItWentPanel byPurpose={[]} />)).toContain('nothing spent in the window')
+  })
+})
+
+describe('the report grid', () => {
+  it('splits spend into two panels and orders the rows by time, then by breakdown', () => {
+    const window = resolveWindow('7d', NOW)
+    const out = renderToStaticMarkup(
+      <ReportGrid report={buildReport({ tickets: [], spend: [], window, project: null, kinds: null })} query={query} />,
+    )
+    const titles = ['Spend each day', 'Landed each day', 'Spend by purpose', 'By ticket type'].map((t) =>
+      out.indexOf(`<h2>${t}</h2>`),
+    )
+    expect(titles.every((i) => i >= 0)).toBe(true)
+    expect([...titles].sort((a, b) => a - b)).toEqual(titles)
+    expect(out).not.toContain('<h2>Spend</h2>')
   })
 })
