@@ -206,6 +206,8 @@ export interface Handled {
   kinds: ({ kind: string } & HandledCount)[]
   /** The same days as `spend.days`. */
   days: ({ day: string; kinds: HandledDayKind[] } & HandledCount)[]
+  /** NEEDED YOU by (kind, move), #1288: `move` is `Problem.yourMove` as stored, `'unknown'` where the key is absent (stored before the rebuild), null while open. `PROBLEM_KINDS` order, then count descending. */
+  needed: { kind: string; move: string | null; count: number }[]
   /** The eight newest problems, newest first. */
   latest: HandledProblem[]
   /** What answering them cost in the window: the `Answering`, `Judge` and `Triage` purposes, reported and estimated apart. */
@@ -593,6 +595,15 @@ export function report(input: ReportInput): Report {
           (k) => k.system + k.you > 0,
         ),
       }
+    }),
+    needed: PROBLEM_KINDS.flatMap((kind) => {
+      const by = new Map<string | null, number>()
+      for (const q of raised) {
+        if (q.kind !== kind || q.answeredBy !== 'you') continue
+        const move = q.yourMove === undefined ? 'unknown' : q.yourMove
+        by.set(move, (by.get(move) ?? 0) + 1)
+      }
+      return [...by].map(([move, count]) => ({ kind, move, count })).sort((a, b) => b.count - a.count)
     }),
     latest: raised.slice(0, 8),
     answeringCost: byPurpose

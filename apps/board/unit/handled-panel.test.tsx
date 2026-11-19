@@ -14,7 +14,16 @@ const money = { reportedCents: 5000, estimatedCents: 250, unknown: 1 }
 const spend = { reportedCents: 20000, estimatedCents: 0, unknown: 0 }
 
 const zero = () => PROBLEM_KINDS.map((kind) => ({ kind, system: 0, you: 0 }))
-const handled = (counts: Record<string, [number, number]>, latest: HandledProblem[] = []): Handled => ({
+const handled = (
+  counts: Record<string, [number, number]>,
+  latest: HandledProblem[] = [],
+  needed?: Handled['needed'],
+): Handled => ({
+  needed:
+    needed ??
+    Object.entries(counts)
+      .filter(([, c]) => c[1] > 0)
+      .map(([kind, c]) => ({ kind, move: 'unknown', count: c[1] })),
   kinds: zero().map((k) => ({ ...k, system: counts[k.kind]?.[0] ?? 0, you: counts[k.kind]?.[1] ?? 0 })),
   days: [
     {
@@ -40,6 +49,30 @@ const problem = (over: Partial<HandledProblem> = {}): HandledProblem => ({
 
 describe('HandledPanel', () => {
   const q = reportQuery({}, NOW)
+
+  it('a NEEDED YOU row says what you did, and tags with one verb are one row (#1288)', () => {
+    const out = renderToStaticMarkup(
+      <HandledPanel
+        handled={handled(
+          { 'review-fixed': [0, 7] },
+          [],
+          [
+            { kind: 'review-fixed', move: 'StartNewAttempt', count: 2 },
+            { kind: 'review-fixed', move: 'EditBodyAndStartNewAttempt', count: 1 },
+            { kind: 'review-fixed', move: 'Approve', count: 3 },
+            { kind: 'review-fixed', move: null, count: 1 },
+          ],
+        )}
+        spend={spend}
+        query={q}
+        problems={null}
+      />,
+    )
+    expect(out).toContain('you approved')
+    expect(out.match(/you started it over/g)).toHaveLength(1)
+    expect(out).toMatch(/you started it over<\/span><\/td><td class="n"><a [^>]*>3</)
+    expect(out).toContain('waiting on you')
+  })
 
   it('says so in one line when nothing was raised', () => {
     const out = renderToStaticMarkup(<HandledPanel handled={handled({})} spend={spend} query={q} problems={null} />)
@@ -92,13 +125,13 @@ describe('HandledPanel', () => {
     expect(out).toContain('100%')
   })
 
-  it('puts a kind a person answered under needed you, without a verb', () => {
+  it('puts a kind a person answered under needed you, with what you did', () => {
     const out = renderToStaticMarkup(
       <HandledPanel handled={handled({ 'review-fixed': [0, 1] })} spend={spend} query={q} problems={null} />,
     )
     expect(out).toContain('class="you"')
     expect(out).toContain('AI review found problems')
-    expect(out).not.toContain('class="ar"')
+    expect(out).toContain('you decided')
   })
 
   it('lists the problems behind a count, a page at a time', () => {

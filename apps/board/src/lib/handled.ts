@@ -88,6 +88,96 @@ export const HANDLED_ROWS: Readonly<Record<Exclude<ProblemKind, 'other'>, Handle
   },
 }
 
+// --- what the person did (#1288) ----------------------------------------------------
+
+export interface MoveRow {
+  /** The *→ you …* half of a NEEDED YOU row. */
+  verb: string
+  hover: string
+}
+
+const APPROVED = 'You read what was left and let the work land.'
+
+/** A resolution's tag → its row; two tags with one verb are one row. */
+const MOVE_ROWS: Record<string, MoveRow> = {
+  Approve: { verb: 'you approved', hover: APPROVED },
+  FixRefusal: {
+    verb: 'you gave it another round',
+    hover: 'You sent the work back to the agent for one more fix round.',
+  },
+  RedoStep: { verb: 'you had the step run again', hover: 'You asked for the step that stopped to run again.' },
+  StartNewAttempt: {
+    verb: 'you started it over',
+    hover: 'You had the work started again from the current code, with or without changing the ticket.',
+  },
+  AnswerQuestions: { verb: 'you answered', hover: "You answered the agent's question and the work went on." },
+  ConfirmSatisfied: {
+    verb: 'you confirmed it was already done',
+    hover: "You confirmed the ticket's work was already in place.",
+  },
+  Close: { verb: 'you closed it', hover: 'You closed the ticket.' },
+  triage: {
+    verb: 'Lingtai answered',
+    hover:
+      'Triage answered it before it reached you; it is counted here because only you are meant to answer this kind.',
+  },
+}
+MOVE_ROWS.EditBodyAndStartNewAttempt = MOVE_ROWS.StartNewAttempt!
+MOVE_ROWS.AnswerQuestion = MOVE_ROWS.AnswerQuestions!
+
+/** What `Approve` means where the kind changes it; every other kind uses the generic sentence. */
+const APPROVE_HOVER: Readonly<Record<string, string>> = {
+  'review-fixed':
+    'The AI review still had findings when the rounds ran out, so it asked you; you read them and let the work land.',
+  conflict: 'The agent could not combine the two versions of the same lines, so it asked you; you let the work land.',
+  build: 'The tests or build were still red when the rounds ran out, so it asked you; you let the work land anyway.',
+  'base-moved': 'Newer code landed first and could not be merged cleanly, so it asked you; you let the work land.',
+  disputed: 'The agent and the review still disagreed, so it asked you; you decided and let the work land.',
+}
+
+export const WAITING_ON_YOU = 'waiting on you'
+export const YOU_DECIDED = 'you decided'
+
+/**
+ * A move's row. `null` is a problem still open; an unknown tag, or `'unknown'` (a problem stored
+ * before the rebuild), is *you decided*. `kind` words an `Approve`.
+ */
+export function moveRow(move: string | null, kind?: string): MoveRow {
+  if (move === null) return { verb: WAITING_ON_YOU, hover: 'It is in the Waiting column now.' }
+  const row = MOVE_ROWS[move]
+  if (row === undefined) return { verb: YOU_DECIDED, hover: '' }
+  return move === 'Approve' && kind !== undefined && APPROVE_HOVER[kind] !== undefined
+    ? { verb: row.verb, hover: APPROVE_HOVER[kind] }
+    : row
+}
+
+/** A problem's stored `yourMove`, as `moveRow` reads it: a missing key is `'unknown'`. */
+export const moveOf = (p: { yourMove?: string | null }): string | null =>
+  p.yourMove === undefined ? 'unknown' : p.yourMove
+
+/**
+ * NEEDED YOU folded by verb: two tags with one verb are one row. Per kind, count descending,
+ * *you decided* just before *waiting on you*, which is last.
+ */
+export function neededRows(
+  needed: readonly { kind: string; move: string | null; count: number }[],
+): { kind: string; verb: string; hover: string; count: number }[] {
+  const rank = (verb: string) => (verb === WAITING_ON_YOU ? 2 : verb === YOU_DECIDED ? 1 : 0)
+  const out: { kind: string; verb: string; hover: string; count: number }[] = []
+  for (const kind of HANDLED_ORDER) {
+    const folded = new Map<string, { kind: string; verb: string; hover: string; count: number }>()
+    for (const n of needed) {
+      if (n.kind !== kind) continue
+      const r = moveRow(n.move, kind)
+      const hit = folded.get(r.verb)
+      if (hit === undefined) folded.set(r.verb, { kind, verb: r.verb, hover: r.hover, count: n.count })
+      else hit.count += n.count
+    }
+    out.push(...[...folded.values()].sort((a, b) => rank(a.verb) - rank(b.verb) || b.count - a.count))
+  }
+  return out
+}
+
 /** The order the rows are drawn in, `other` last and without copy. */
 export const HANDLED_ORDER: readonly ProblemKind[] = [
   ...(Object.keys(HANDLED_ROWS) as Exclude<ProblemKind, 'other'>[]),
