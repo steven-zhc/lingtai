@@ -3,7 +3,7 @@ import { aWaitId } from '@lingtai/domain/test/events'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => ({
   values: [] as unknown[],
@@ -540,4 +540,45 @@ it('keeps an own answer on the page when another person resolves the wait (#1255
   const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
   expect(html).toContain('my own words')
   expect(html).toContain('Your unsent draft is below')
+})
+
+describe('an own answer and the other retained drafts (#1255)', () => {
+  const asked = [unrecommendedFirst as unknown as ReturnType<typeof question>]
+  const reason = { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'design', questions: asked } as WaitReason
+  type Api = {
+    pickOwn: (i: number, s: 'asked') => void
+    setOwn: (i: number, t: string, s: 'asked') => void
+    setBody: (t: string) => void
+  }
+  const typeOwn = (waitId: WaitId, body?: string) => {
+    harness.values = []
+    mount(waitId, () => editor(waitId, reason), { asked })
+    ;(harness.triage as Api).pickOwn(0, 'asked')
+    mount(waitId, () => editor(waitId, reason), { asked })
+    if (body !== undefined) (harness.triage as Api).setBody(body)
+    mount(waitId, () => editor(waitId, reason), { asked })
+    ;(harness.triage as Api).setOwn(0, 'my own words', 'asked')
+  }
+
+  it('is kept beside an empty body draft', () => {
+    typeOwn(aWaitId(), '')
+    const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
+    expect(html).toContain('my own words')
+    expect(html).toContain('Your unsent draft is below')
+  })
+
+  it('is kept beside a body draft with text, and neither replaces the other', () => {
+    typeOwn(aWaitId(), 'body words')
+    const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
+    expect(html).toContain('body words')
+    expect(html).toContain('my own words')
+  })
+
+  it('does not call the wait ended where only the body edit is unavailable', () => {
+    const waitId = aWaitId()
+    typeOwn(waitId)
+    const html = renderToStaticMarkup(mount(waitId, () => editor(null, reason), { asked }))
+    expect(html).not.toContain('no longer waiting')
+    expect(html).toBe('')
+  })
 })
