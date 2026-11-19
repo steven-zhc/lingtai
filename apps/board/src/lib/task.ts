@@ -5,7 +5,7 @@ import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@l
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { readProjectTicket } from '@lingtai/conductor/read-ticket'
-import { readControl, readStatus } from '@lingtai/daemon/control'
+import { lastBeat, readControl, readStatus } from '@lingtai/daemon/control'
 import {
   agentBranchOf,
   emptyControl,
@@ -13,6 +13,7 @@ import {
   reduceChat,
   reduceTicket,
   claimShapeOf,
+  splitActivityOf,
   splitProgressOf,
   isAttemptStream,
   parseTicketStream,
@@ -135,7 +136,6 @@ import {
   type Purpose,
   type SpendCurrency,
 } from './spend.ts'
-import { isSplitRunning, splitInstance } from './split-instance.ts'
 import { timed } from './timing.ts'
 import { triageHeadLine } from './triage-head.ts'
 
@@ -535,7 +535,7 @@ export interface StandingView {
   /** A comparison with the local mirror, only for a completed current triage. */
   triageHeadLine?: string | null
   /** The split write the log shows for this wait, where Split is offered (#603). */
-  split?: { progress: SplitProgress; tickets: 'github' | 'db' }
+  split?: { progress: SplitProgress; tickets: 'github' | 'db'; activeUntil?: number; quietIn?: number }
   /**
    * When the state began, ISO — the event that *moved* the lifecycle, not the
    * last event on the stream. A gate reporting on a blocked item does not
@@ -2011,6 +2011,9 @@ async function startEstimateFor(state: string, project: string, now: Date): Prom
   return { typical, ceilingReached: reached }
 }
 
+/** How long a split may leave the log silent and still read *writing*: each child and link is an append of its own. */
+const SPLIT_QUIET_MS = 5 * 60_000
+
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // The control stream is read for the seven types the reducer handles only: it
   // also holds a `Reconciled` per daemon start, 22 KB each and never read here
@@ -2146,21 +2149,40 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       }
     }
   }
-  if (
-    standing.state === 'blocked' &&
-    standing.waitId !== null &&
-    standing.reason !== null &&
-    allowedResolutions(standing.reason).includes('Split')
-  ) {
-    const state = await readProject(ticket.project)
-    const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)
-    standing.split = {
-      progress: splitProgressOf(own, {
-        waitId: standing.waitId,
-        instance: splitInstance(),
-        running: isSplitRunning(standing.waitId),
-      }),
-      tickets,
+  // **A split is the daemon's** (0118 §12): the page reads it and offers no way to start one. It is shown where the
+  // wait's triage answered `TicketTooBig` with a plan, or the log holds a `SplitStarted` for it.
+  if (standing.state === 'blocked' && standing.waitId !== null) {
+    const waitId = standing.waitId
+    const planned =
+      status?._tag === 'Done' &&
+      status.result._tag === 'TriageAnswered' &&
+      status.result.cause._tag === 'TicketTooBig' &&
+      status.result.cause.plan !== null
+    const started = reduceTicket(own).splitStarts.includes(waitId)
+    if (planned || started) {
+      const state = await readProject(ticket.project)
+      const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)
+      // A beating daemon says the process is up, not that a writer is: a writer whose last append failed has left
+      // the daemon beating and the log silent. So *writing* also needs the split to have done something on the log
+      // lately; a quiet one reads *interrupted*, which the daemon's next look finishes.
+      const daemon = await readStatus()
+      const active = splitActivityOf(own, waitId)
+      standing.split = {
+        progress: splitProgressOf(own, {
+          waitId,
+          instance: daemon === null ? '' : `daemon:${daemon.pid}@${daemon.startedAt.toISOString()}`,
+          running:
+            daemon !== null && lastBeat(daemon).up && active !== null && Date.now() - active.getTime() < SPLIT_QUIET_MS,
+        }),
+        tickets,
+        ...(active === null
+          ? {}
+          : {
+              activeUntil: active.getTime() + SPLIT_QUIET_MS,
+              // A duration on the server's own clock: the browser's may be minutes off.
+              quietIn: Math.max(0, active.getTime() + SPLIT_QUIET_MS - Date.now()),
+            }),
+      }
     }
   }
   const want = status?._tag === 'Done' && status.result._tag !== 'TriageFailed' ? status.result.want : null

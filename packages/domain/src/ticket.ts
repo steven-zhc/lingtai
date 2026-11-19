@@ -31,6 +31,7 @@ import {
   type TriageStartedBy,
 } from './events.ts'
 import { actionFor, type CauseAction, type CauseBound, type CauseCounter, type CauseOrigin } from './failure/respond.ts'
+import { describeSplitProblem, frozenPlan, splitPlanProblems } from './split.ts'
 import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
 import type { TriagePick } from './triage.ts'
 import { waitWords } from './wait-words.ts'
@@ -317,6 +318,12 @@ export interface TicketState {
   split: { waitId: WaitId; children: readonly SplitChild[] } | null
 
   /**
+   * Every wait a `SplitStarted` was recorded for, once each, in order (0118 §12.2). **The count of splits is read
+   * here, from the decision rather than the finished write**, so a crash mid-write cannot let a second plan start.
+   */
+  splitStarts: readonly WaitId[]
+
+  /**
    * Every dispatch the scheduler refused, kept rather than counted. A tier is
    * never silently downgraded, so the refusals are the record of what could not
    * run and why.
@@ -440,6 +447,7 @@ export const emptyTicket: TicketState = {
   since: null,
   lastMove: null,
   newAttempts: [],
+  splitStarts: [],
   pendingPrompt: null,
   answers: [],
   github: { last: {}, labels: null, comments: [], edited: [], lastWait: null, bodyAfterWait: null },
@@ -772,6 +780,12 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
       }
     }
 
+    case 'SplitStarted': {
+      const d = event.data as PayloadOf<'SplitStarted'>
+      if (state.splitStarts.includes(d.waitId)) return { ...state, ...at }
+      return { ...state, ...at, splitStarts: [...state.splitStarts, d.waitId] }
+    }
+
     case 'TicketSplit': {
       const d = event.data as PayloadOf<'TicketSplit'>
       return { ...state, ...at, split: { waitId: d.waitId, children: d.children } }
@@ -992,6 +1006,8 @@ export type ReleaseInput =
   | { by: 'dead-worker'; mine: string; lock: string }
   /** A new attempt triage chose (#1258): the release is the spend, as `newAttempt` counts it. */
   | { by: 'triage'; runId: string; newAttempt: number }
+  /** The system's split gives the held run's claim up; a split is not a new attempt, so nothing is spent (0118 §12.8). */
+  | { by: 'triage-split'; runId: string }
   /** A person's requeue, edit or split gives the held run's claim up (0118 §7): the actor is the person. */
   | {
       by: 'person'
@@ -1016,6 +1032,12 @@ export function releaseTransition(
       runId: input.runId,
       reason: 'Requeued by triage.',
       cause: { _tag: 'NewAttempt', newAttempt: input.newAttempt },
+    })
+  } else if (input.by === 'triage-split') {
+    data = parsePayload('TicketReleased', {
+      runId: input.runId,
+      reason: 'Released by triage after a split.',
+      cause: null,
     })
   } else if (input.by === 'person') {
     const how =
@@ -1089,9 +1111,17 @@ function sameAnswers(submitted: Readonly<Record<string, TriagePick>>, recorded: 
   )
 }
 
+/**
+ * **A `Split` is the system's alone** (0118 §12): `allowedResolutions` offers it to no person, and it is accepted only
+ * `by: 'triage'` for a wait the system decided to split — the stream holds a `SplitStarted` for it.
+ */
+export function systemSplitAllowed(state: TicketState, waitId: WaitId, by: string | undefined): boolean {
+  return by === 'triage' && state.splitStarts.includes(waitId)
+}
+
 export function resolveWaitTransition(
   state: TicketState,
-  input: { waitId: WaitId; resolution: Resolution },
+  input: { waitId: WaitId; resolution: Resolution; by?: string },
 ):
   | { ok: true; kind: 'repeat'; runId: string }
   | { ok: true; kind: 'proceed'; block: BlockedLifecycle }
@@ -1124,7 +1154,11 @@ export function resolveWaitTransition(
   if (life.status !== 'blocked' || life.waitId !== input.waitId)
     return { ok: false, refusal: { reason: 'not-blocked', waitId: input.waitId } }
   const asked = state.waits.findLast((w) => w.waitId === input.waitId)
-  if (!allowedResolutions(life.reason, asked?.triage.result).includes(resolution._tag)) {
+  const offered =
+    resolution._tag === 'Split'
+      ? systemSplitAllowed(state, input.waitId, input.by)
+      : allowedResolutions(life.reason, asked?.triage.result).includes(resolution._tag)
+  if (!offered) {
     return {
       ok: false,
       refusal: { reason: 'not-offered', resolution: resolution._tag, waitReason: life.reason },
@@ -1162,7 +1196,7 @@ export function resolvedEvents(
     }
     if (written === null || written.waitId !== input.waitId)
       return { ok: false, refusal: { reason: 'split-not-written' } }
-    events.push({ type: 'TicketSplit', actor: input.by, data: written })
+    events.push({ type: 'TicketSplit', actor: input.system ? 'conductor' : input.by, data: written })
   }
   events.push({
     type: 'WaitResolved',
@@ -1185,7 +1219,9 @@ export function resolvedEvents(
     const released = releaseTransition(
       state,
       input.system
-        ? { by: 'triage', runId: block.runId, newAttempt: state.newAttempts.length + 1 }
+        ? resolution._tag === 'Split'
+          ? { by: 'triage-split', runId: block.runId }
+          : { by: 'triage', runId: block.runId, newAttempt: state.newAttempts.length + 1 }
         : {
             by: 'person',
             person: input.by,
@@ -1339,7 +1375,7 @@ export function finishTriageTransition(
   return { ok: true, events: [triagedEvent(input)] }
 }
 
-export type ActOnTriageRefusal = 'wait-not-current' | 'changed' | 'head-moved' | 'not-offered'
+export type ActOnTriageRefusal = 'wait-not-current' | 'changed' | 'head-moved' | 'not-offered' | 'plan-refused'
 
 /** What the runner read at answer time and the pure transition cannot: the attempt's head, its counters, the heads a move names. */
 export type ActContext = {
@@ -1353,6 +1389,11 @@ export type ActContext = {
   fix: { onSha: string; ref: string } | null
   /** Where a `RedoStep` re-cuts, already checked against the remote ref; `null` when the attempt has no head a rerun can continue. */
   redo: { onSha: string; ref: string } | null
+  /**
+   * What a split needs that the transition cannot read (0118 §12): the daemon's own start id, which `SplitStarted`
+   * records as the writer, and the recipe's `source.kinds`. `null` when the answer is not a split.
+   */
+  split?: { instance: string; kinds: readonly string[] } | null
 }
 
 /** `resolution` is the one the same append resolved the wait with, or `null` when only the answer is recorded. */
@@ -1372,8 +1413,9 @@ export type ActOnTriageDecision = {
  * effect. The resolution goes through `resolveWaitTransition` and `resolvedEvents`, the person's own path, so what it
  * accepts is what a person may choose and a new attempt releases the claim.
  *
- * `writeSpentOnThenRedoStep` (#1260) and `splitTicket` (#1262) are not built: they record only `WaitTriaged` and the wait
- * stays a person's.
+ * `writeSpentOnThenRedoStep` (#1260) is not built: it records only `WaitTriaged` and the wait stays a person's.
+ * `splitTicket` (#1262) records `WaitTriaged` and `SplitStarted` — the decision — in one append and resolves nothing:
+ * the daemon's writer ends the wait. A plan with problems is `plan-refused`, a failed triage, never a partial split.
  */
 export function actOnTriageTransition(
   state: TicketState,
@@ -1383,15 +1425,39 @@ export function actOnTriageTransition(
     since: readonly SinceEvent[]
     context: ActContext
   },
-): ActOnTriageDecision | { ok: false; refusal: ActOnTriageRefusal } {
+): ActOnTriageDecision | { ok: false; refusal: ActOnTriageRefusal; why?: string } {
   if (!waitIsCurrentOrUnknown(state, input.waitId)) return { ok: false, refusal: 'wait-not-current' }
   if (streamChanged(state, input)) return { ok: false, refusal: 'changed' }
   const { context } = input
   const triaged = triagedEvent(input)
   const action = actionFor(input.result.cause, context.origin, context.counters)
   const advice: ActOnTriageDecision = { ok: true, events: [triaged], action, resolution: null }
-  if (action._tag === 'askPerson' || action._tag === 'writeSpentOnThenRedoStep' || action._tag === 'splitTicket')
-    return advice
+  if (action._tag === 'splitTicket') {
+    const plan = input.result.cause._tag === 'TicketTooBig' ? input.result.cause.plan : null
+    if (plan === null || context.split == null) return advice
+    // A wait the reduce has never seen is advice only, as below: there is nothing to hold open for a writer.
+    if (state.lifecycle.status !== 'blocked' || state.lifecycle.waitId !== input.waitId) return advice
+    const problems = splitPlanProblems(plan, { kinds: context.split.kinds })
+    if (problems.length > 0)
+      return {
+        ok: false,
+        refusal: 'plan-refused',
+        why: `the split plan is refused: ${problems.map(describeSplitProblem).join('; ')}`,
+      }
+    // The decision is `SplitStarted` (0108 §6 (3)): the wait stays open while the children are written, and the
+    // writer's own end resolves it beside `TicketSplit` (0118 §12.7).
+    const started: ToAppend = {
+      type: 'SplitStarted',
+      actor: 'conductor',
+      data: parsePayload('SplitStarted', {
+        waitId: input.waitId,
+        plan: frozenPlan(plan),
+        instance: context.split.instance,
+      }),
+    }
+    return { ok: true, events: [triaged, started], action, resolution: null }
+  }
+  if (action._tag === 'askPerson' || action._tag === 'writeSpentOnThenRedoStep') return advice
   // A wait the reduce has never seen has no reason to resolve against: advice only.
   const life = state.lifecycle
   if (life.status !== 'blocked' || life.waitId !== input.waitId) return advice

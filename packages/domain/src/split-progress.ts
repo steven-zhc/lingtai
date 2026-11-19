@@ -85,3 +85,54 @@ export function splitProgressOf(
   if (failed !== null) return { state: 'failed', ...base, failed }
   return { state: started.instance === options.instance && options.running ? 'writing' : 'interrupted', ...base }
 }
+
+/** The first `SplitStarted` of a wait, with when it was appended: the plan every later attempt writes, frozen (0118 §12.3). */
+export function firstSplitStartOf(
+  events: readonly Envelope[],
+  waitId: string,
+): { data: PayloadOf<'SplitStarted'>; at: Date } | null {
+  const first = [...events]
+    .sort((a, b) => a.version - b.version)
+    .find((e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId === waitId)
+  return first === undefined ? null : { data: first.data as PayloadOf<'SplitStarted'>, at: first.at }
+}
+
+/** How a wait's split last stood on the log: not started, started (by whom), failed (when), or done. */
+export type SplitLast =
+  | { _tag: 'none' }
+  | { _tag: 'started'; instance: string }
+  | { _tag: 'failed'; at: Date }
+  | { _tag: 'done' }
+
+/** Pure: the last of a wait's `SplitStarted`, `SplitFailed` and `TicketSplit`, in stream order. */
+export function splitLastOf(events: readonly Envelope[], waitId: string): SplitLast {
+  const last = [...events]
+    .sort((a, b) => a.version - b.version)
+    .findLast(
+      (e) =>
+        (e.data as { waitId?: string }).waitId === waitId &&
+        (e.type === 'SplitStarted' || e.type === 'SplitFailed' || e.type === 'TicketSplit'),
+    )
+  if (last === undefined) return { _tag: 'none' }
+  if (last.type === 'TicketSplit') return { _tag: 'done' }
+  if (last.type === 'SplitFailed') return { _tag: 'failed', at: last.at }
+  return { _tag: 'started', instance: (last.data as PayloadOf<'SplitStarted'>).instance }
+}
+
+/** When a wait's split last did anything on the log — started, wrote a child or a link, or ended — or null. */
+export function splitActivityOf(events: readonly Envelope[], waitId: string): Date | null {
+  let at: Date | null = null
+  for (const e of events) {
+    if (
+      (e.type === 'SplitStarted' ||
+        e.type === 'SplitChildWritten' ||
+        e.type === 'SplitLinkWritten' ||
+        e.type === 'SplitFailed' ||
+        e.type === 'TicketSplit') &&
+      (e.data as { waitId?: string }).waitId === waitId &&
+      (at === null || e.at > at)
+    )
+      at = e.at
+  }
+  return at
+}

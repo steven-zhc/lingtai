@@ -1504,11 +1504,7 @@ export function Standing({
                   status={standing.triageStatus}
                   headLine={standing.triageHeadLine}
                   savedHead={savedHead}
-                  split={
-                    standing.split !== undefined && project !== null && issue !== null && standing.waitId !== null
-                      ? { project, issue, waitId: standing.waitId, ...standing.split }
-                      : undefined
-                  }
+                  split={standing.split}
                 />
               ) : null}
               <div className="spair" data-rank="discussion">
@@ -1523,8 +1519,8 @@ export function Standing({
               standing.state === 'blocked' ? 'Your decision' : standing.state === 'queued' ? 'Moves' : 'Actions'
             }
             data-rank={standing.state === 'blocked' || standing.state === 'queued' ? 'resolutions' : undefined}
-            // The other moves wait while a split is being written; the decision lock refuses them anyway.
-            inert={standing.split?.progress.state === 'writing' ? true : undefined}
+            // Never inert on the strength of a split: *writing* is inferred from recent log activity, which a writer
+            // that died quietly still leaves behind. The decision lock refuses a move while a writer really runs.
           >
             {standing.state === 'blocked' ? <h2 className="ssectiontitle">Your decision</h2> : null}
             {standing.reason?._tag === 'SatisfiedUnconfirmed' ? (

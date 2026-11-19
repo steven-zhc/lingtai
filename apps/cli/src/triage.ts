@@ -16,11 +16,12 @@ import { createRuntime, runtimeVersionOfEffect, type Runtime, type RunOutcome } 
 import { runnableEnv } from '@lingtai/agent-env'
 import type { TicketListing } from '@lingtai/conductor/discover'
 import { readingFor } from '@lingtai/conductor/discuss'
-import { projectClientEffect } from '@lingtai/conductor/filter'
+import { githubClientForEffect, projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
 import { requestContinuation } from '@lingtai/conductor/resolve-wait'
+import { splitTicketEffect } from '@lingtai/conductor/split-ticket'
 import { finishTriage, recordTriageRun, startTriage } from '@lingtai/conductor/ticket'
 import {
   MAX_READ_ROUNDS,
@@ -52,6 +53,7 @@ import {
   CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
   MERGE_HUNKS_ONE_BY_ONE,
+  ANY_SPLIT_MARKER,
   cut,
   type Envelope,
   type PayloadOf,
@@ -76,7 +78,8 @@ import {
 import { loadProjectsEffect, readProjectEffect } from '@lingtai/project'
 import { readTasksEffect, type TaskCard } from '@lingtai/projector'
 import { triageCallFor, type DiscussAgent, type Triage } from '@lingtai/recipe'
-import { ceilingOf, kindsOf } from '@lingtai/recipe/settings'
+import { parseDuration } from '@lingtai/recipe/duration'
+import { backoffOf, ceilingOf, kindsOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import {
   conflictedPathsAtEffect,
   diffStatAtEffect,
@@ -90,6 +93,7 @@ import { Cause, Clock, Deferred, Duration, Effect, Exit, Fiber, Semaphore } from
 
 import { prepare } from './discuss.ts'
 import { lift } from './exit.ts'
+import { catchUpSplits, onSplitStarted, type SplitPorts } from './split-run.ts'
 import { prepareTriageCheckout, type Checkout } from './triage-checkout.ts'
 
 /** One queue for this daemon process; the key stays present until its worker settles. */
@@ -162,6 +166,8 @@ export interface TriageTriggerPorts {
   log?: (line: string) => void
   /** A sentence while the project is locked (0126 §5); absent means no lock. */
   locked?: (project: string) => Effect.Effect<string | null, unknown>
+  /** The writer of the split triage decided (#1262); absent, a `SplitStarted` is left to the next start's catch-up. */
+  splits?: SplitPorts
 }
 
 /** What one `run` answers: whether an attempt started, which, and how it ended (#1258 asks again after a failure). */
@@ -444,6 +450,10 @@ export const onWaitStarted = (
 ): Effect.Effect<void, unknown> =>
   Effect.gen(function* () {
     if (!(TRIAGE_EVENTS as readonly string[]).includes(event.type)) return
+    if (event.type === 'SplitStarted') {
+      if (deps.splits !== undefined) yield* onSplitStarted(event, deps.splits)
+      return
+    }
     if (event.type === 'ProjectResumed') {
       // Forked and never awaited: a worker runs an agent, and a handler that has not
       // settled in SUBSCRIBER_TIMEOUT_MS is reported as a failure.
@@ -518,7 +528,9 @@ export const onWaitStarted = (
   })
 
 const catchUpProject = (project: string, deps: TriageTriggerPorts & CatchUpTriagePorts) =>
-  Effect.flatMap(deps.triageFor(project), (triage) => catchUpTriage(project, triage, deps))
+  Effect.flatMap(deps.triageFor(project), (triage) => catchUpTriage(project, triage, deps)).pipe(
+    Effect.andThen(deps.splits === undefined ? Effect.void : Effect.asVoid(catchUpSplits(project, deps.splits))),
+  )
 
 /**
  * This process's start, as the store's clock dates it: `TriageStarted` is dated
@@ -603,6 +615,55 @@ const remoteRefSha = (input: { project: string; ref: string }): Effect.Effect<st
     return sha
   })
 
+/** The waits a split writer is running for in this process, shared by every `daemonTriagePorts` call. */
+const SPLITS_RUNNING = new Set<string>()
+
+/** This daemon's start id: what `SplitStarted` records as its writer, and what a later reader tells a gone writer by. */
+export const daemonInstance = (daemonStartedAt: () => Effect.Effect<Date, unknown>) =>
+  Effect.map(daemonStartedAt(), (at) => `daemon:${process.pid}@${at.toISOString()}`)
+
+/** The split writer's real ports (#1262): the frozen plan is on the log, the project's GitHub client is read here. */
+export function daemonSplitPorts(
+  daemonStartedAt: () => Effect.Effect<Date, unknown>,
+  log: (line: string) => void,
+  locked?: (project: string) => Effect.Effect<string | null, unknown>,
+): SplitPorts {
+  return {
+    store: eventStore,
+    readTasks: (project) => readTasksEffect({ project }),
+    instance: () => daemonInstance(daemonStartedAt),
+    running: SPLITS_RUNNING,
+    log,
+    locked,
+    backoffMs: (project) =>
+      Effect.gen(function* () {
+        const state = yield* readProjectEffect(project)
+        if (state === null) return yield* Effect.fail(new Error(`${project} is not registered`))
+        return parseDuration(backoffOf((yield* currentRecipeEffect(state)).recipe))
+      }),
+    write: (request) =>
+      Effect.gen(function* () {
+        const state = yield* readProjectEffect(request.project)
+        if (state === null) return yield* Effect.fail(new Error(`${request.project} is not registered`))
+        const { recipe } = yield* currentRecipeEffect(state)
+        // A `db` project's split is a person's; a daemon that finds one started leaves it where it is.
+        if (ticketSourceOf(recipe) === 'db') return
+        const github = yield* githubClientForEffect(state)
+        const result = yield* splitTicketEffect({
+          project: request.project,
+          issue: request.issue,
+          waitId: request.waitId,
+          kinds: kindsOf(recipe),
+          repository: `${state.owner}/${state.project}`,
+          by: 'conductor',
+          instance: request.instance,
+          github,
+        })
+        if (!result.ok) log(`split ${request.waitId} on ${request.ticketId}: ${result.detail}`)
+      }),
+  }
+}
+
 /** The daemon's real ports. A recipe that cannot resolve leaves triage undeclared. */
 export function daemonTriagePorts(
   daemonStartedAt: () => Effect.Effect<Date, unknown>,
@@ -622,6 +683,7 @@ export function daemonTriagePorts(
     daemonStartedAt,
     log,
     readTasks: (project) => readTasksEffect({ project }),
+    splits: daemonSplitPorts(daemonStartedAt, log, locked),
     baseSha: (project) =>
       Effect.gen(function* () {
         const state = yield* readProjectEffect(project)
@@ -657,6 +719,18 @@ export function daemonTriagePorts(
               return kindsOf((yield* currentRecipeEffect(state)).recipe)
             }),
           base: baseOf,
+          split: (ticketId) =>
+            Effect.gen(function* () {
+              const parsed = parseTicketStream(ticketId)
+              const state = parsed === null ? null : yield* readProjectEffect(parsed.project)
+              if (state === null) return yield* Effect.fail(new Error(`${ticketId} has no registered project`))
+              const { recipe } = yield* currentRecipeEffect(state)
+              return {
+                instance: yield* daemonInstance(daemonStartedAt),
+                kinds: kindsOf(recipe),
+                onGithub: ticketSourceOf(recipe) !== 'db',
+              }
+            }),
           limits: (ticketId) =>
             Effect.gen(function* () {
               const parsed = parseTicketStream(ticketId)
@@ -730,6 +804,12 @@ export interface TriagePorts extends SnapshotReadOptions {
   kinds(ticketId: string): Effect.Effect<readonly string[], unknown>
   /** The project's base branch. */
   base(ticketId: string): Effect.Effect<string, unknown>
+  /**
+   * What the system's own split is decided against (0118 §12, #1262): this daemon's start id (what `SplitStarted`
+   * records as the writer), the recipe's `source.kinds`, and whether the project's tickets are on GitHub — a `db`
+   * project's split is a person's. **Absent, a split is advice only**, as before.
+   */
+  split?(ticketId: string): Effect.Effect<{ instance: string; kinds: readonly string[]; onGithub: boolean }, unknown>
   /**
    * The recipe's limits an answer is acted on against (#1258): `null` when the recipe cannot be read, and the answer is
    * then advice only. **Absent, triage acts on nothing** — it records its answer for a person, as before.
@@ -946,6 +1026,16 @@ export const readActContext = (
     const runId = state.lifecycle.status === 'blocked' ? state.lifecycle.runId : null
     const run = runId === null ? null : yield* readThroughSnapshot(deps.store, attemptReducer, runId, 'all', deps)
     const runEvents = runId === null ? [] : yield* lift(() => deps.store.read(runId))
+    // A split is read before the counters, because `ticketSplits` is what `actionFor` answers it from (0118 §12.2).
+    const planned =
+      answer._tag === 'TriageAnswered' && answer.cause._tag === 'TicketTooBig' && answer.cause.plan !== null
+    const splitFacts = planned && deps.split !== undefined ? yield* deps.split(request.ticketId) : null
+    let splitsUsed = 0
+    if (splitFacts !== null) {
+      // Counted from the decision (`SplitStarted`), never the finished write; and a child is never split.
+      if (state.splitStarts.length > 0) splitsUsed = 1
+      else if (ANY_SPLIT_MARKER.test((yield* deps.issue(request.ticketId)).body)) splitsUsed = 1
+    }
     const spent =
       runId === null ? { refusalFixes: 0, conflictResolutions: 0, stepRedos: 0 } : triageSpentOf(state, runId)
     const counters = {
@@ -968,7 +1058,10 @@ export const readActContext = (
         used: Math.max(run?.stepRedos ?? 0, spent.stepRedos),
         allowed: read === null ? 0 : BOUNDS.stepRedos,
       },
-      ticketSplits: { used: 0, allowed: BOUNDS.ticketSplits },
+      ticketSplits: {
+        used: splitsUsed,
+        allowed: splitFacts !== null && !splitFacts.onGithub ? 0 : BOUNDS.ticketSplits,
+      },
       personAsks: { used: personAsksFromState(state), allowed: BOUNDS.personAsks },
     } as const
     const origin =
@@ -990,7 +1083,11 @@ export const readActContext = (
       if ('at' in head && head.atRef !== null && (yield* refIs(head.atRef, head.at)))
         redo = { onSha: head.at, ref: head.atRef }
     }
-    return { origin, counters, boundHead, headNow: run?.headSha ?? null, fix, redo }
+    const split =
+      action?._tag === 'splitTicket' && splitFacts !== null
+        ? { instance: splitFacts.instance, kinds: splitFacts.kinds }
+        : null
+    return { origin, counters, boundHead, headNow: run?.headSha ?? null, fix, redo, split }
   })
 
 /**

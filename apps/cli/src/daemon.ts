@@ -64,6 +64,7 @@ import type { RestartArgs } from './restart.ts'
 import { openDaemon, prepareRestart, queueForTheLock, startRecorder, restartSupervised } from './restart.ts'
 import { releaseSandbox } from './sandbox.ts'
 import { keeper, serviceCommand, type ServiceOptions } from './service.ts'
+import { catchUpRegisteredSplits, interruptSplits } from './split-run.ts'
 import type { Steps } from './steps.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
 import { flushTracing, startTracing } from './tracing.ts'
@@ -71,6 +72,7 @@ import {
   catchUpChangedTriage,
   catchUpRegisteredContinuations,
   catchUpRegisteredTriage,
+  daemonSplitPorts,
   daemonTriagePorts,
   memoDaemonStartedAt,
   onWaitStarted,
@@ -253,6 +255,7 @@ export function daemonStopping(ports: StoppingPorts) {
         yield* ports.beacon.stop('stopping')
         // The projections are stopped and the lock is released by this; what it
         // does not do, and must not, is wait for the pass.
+        yield* interruptSplits
         yield* ports.daemon.stop()
         yield* ports.daemon.stopped()
         yield* ratesSettled
@@ -318,6 +321,8 @@ export function daemonStopping(ports: StoppingPorts) {
       // The drain itself. No timeout around this one on purpose (§6).
       const loop = ports.loop()
       if (loop) yield* loop.stop()
+      // A split writer is not a pass: interrupted here, so nothing is created after the store closes.
+      yield* interruptSplits
       clearTimeout(timer)
       if (stopping) return
       stopping = true
@@ -755,6 +760,11 @@ export function daemonCommand(
                   daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
                   (line) => console.error(line),
                 )
+                yield* catchUpRegisteredSplits(
+                  [...recipes.keys()].map((project) => ({ project })),
+                  daemonSplitPorts(daemonStartedAt, (line) => console.log(line), locked),
+                  (line) => console.error(line),
+                )
               }
               // The run told GitHub as it went (0022), so there is nothing left
               // here to send and nothing to report about sending it.
@@ -812,6 +822,12 @@ export function daemonCommand(
           yield* catchUpRegisteredContinuations(
             projects,
             daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
+            (line) => console.error(line),
+          )
+          // A split triage decided whose writer died with the last daemon, or failed partway (#1262).
+          yield* catchUpRegisteredSplits(
+            projects,
+            daemonSplitPorts(daemonStartedAt, (line) => console.log(line), locked),
             (line) => console.error(line),
           )
           // A question asked while nothing was listening is waiting in the stream,

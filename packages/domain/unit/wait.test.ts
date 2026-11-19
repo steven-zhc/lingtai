@@ -191,7 +191,6 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual([
         'StartNewAttempt',
         'EditBodyAndStartNewAttempt',
-        'Split',
         'Close',
         'FixRefusal',
         'RedoStep',
@@ -215,7 +214,6 @@ describe('allowedResolutions', () => {
         'Approve',
         'StartNewAttempt',
         'EditBodyAndStartNewAttempt',
-        'Split',
         'Close',
         'FixRefusal',
       ])
@@ -255,15 +253,9 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual(['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
     })
 
-    it('DiffTooLarge: Approve, Requeue, EditBodyAndRequeue, Split, Close — and no FixRefusal', () => {
+    it('DiffTooLarge: Approve, Requeue, EditBodyAndRequeue, Close — and no FixRefusal', () => {
       const reason = parseProposed({ _tag: 'DiffTooLarge', from: 'review', size: 938_000, limit: 400_000 })
-      expect(allowedResolutions(reason)).toEqual([
-        'Approve',
-        'StartNewAttempt',
-        'EditBodyAndStartNewAttempt',
-        'Split',
-        'Close',
-      ])
+      expect(allowedResolutions(reason)).toEqual(['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
     })
 
     it('DiffTooLarge: Approve continues at review, waives nothing, and reads the diff clipped (#892)', () => {
@@ -327,7 +319,6 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual([
         'StartNewAttempt',
         'EditBodyAndStartNewAttempt',
-        'Split',
         'Close',
         'FixRefusal',
       ])
@@ -384,8 +375,8 @@ describe('allowedResolutions', () => {
       expect(continuationOf(reason, [])).toEqual({ step: 'merge', waive: null })
     })
 
-    it('NothingProduced, BudgetExhausted, AnswerUnreadable: EditBodyAndRequeue, Requeue, Split, Close', () => {
-      const expected = ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close']
+    it('NothingProduced, BudgetExhausted, AnswerUnreadable: EditBodyAndRequeue, Requeue, Close', () => {
+      const expected = ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
       expect(allowedResolutions(parseProposed({ _tag: 'NothingProduced', said: null }))).toEqual(expected)
       expect(
         allowedResolutions(
@@ -444,7 +435,7 @@ describe('allowedResolutions', () => {
 
   it('NothingProduced: EditBodyAndRequeue, Requeue, Close — no Approve, there is nothing on the branch', () => {
     const reason = parseReason({ _tag: 'NothingProduced', run, said: null })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close'])
   })
 
   it('SatisfiedUnconfirmed: exactly ConfirmSatisfied, EditBodyAndStartNewAttempt, StartNewAttempt, Close (#1251)', () => {
@@ -475,7 +466,7 @@ describe('allowedResolutions', () => {
       cause: 'out-of-turns',
       detail: 'ran out of turns',
     })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close'])
   })
 
   it('AgentCrashed: EditBodyAndRequeue, Requeue, Close', () => {
@@ -486,13 +477,7 @@ describe('allowedResolutions', () => {
       cause: 'crash',
       detail: 'the agent crashed',
     })
-    expect(allowedResolutions(reason)).toEqual([
-      'EditBodyAndStartNewAttempt',
-      'StartNewAttempt',
-      'Split',
-      'Close',
-      'RedoStep',
-    ])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close', 'RedoStep'])
   })
 
   describe('RedoStep (#1218)', () => {
@@ -564,7 +549,7 @@ describe('allowedResolutions', () => {
       action: 'agent:review',
       raw: 'garbled',
     })
-    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close'])
+    expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close'])
   })
 
   it('SetupRefused: Requeue, Close', () => {
@@ -690,7 +675,7 @@ describe('allowedResolutions', () => {
 
     it('NothingProduced: unchanged — Approve was never there to drop', () => {
       const reason = parseReason({ _tag: 'NothingProduced', run: unpushedRun, said: null })
-      expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close'])
+      expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close'])
     })
 
     /**
@@ -799,16 +784,16 @@ describe('recommendedResolution', () => {
       want: null,
     })
 
-    it('is offered on a first wait whether or not triage is declared', () => {
+    it('is offered to no person, declared or not: a split is the system’s (0118 §12, #1262)', () => {
       const reason = parseReason({ _tag: 'NothingProduced', run, said: null })
-      expect(allowedResolutions(reason)).toContain('Split')
+      expect(allowedResolutions(reason)).not.toContain('Split')
       expect(recommendedResolution(reason, notDeclared)).toBe(recommendedResolution(reason, queued))
       expect(recommendedResolution(reason, notDeclared)).not.toBe('Split')
     })
 
-    it('is recommended when triage advises it, and the offer does not change', () => {
+    it('is not recommended even where an old triage advised it, because it is not offered', () => {
       const reason = parseReason({ _tag: 'NothingProduced', run, said: null })
-      expect(recommendedResolution(reason, { _tag: 'Done', result: advised })).toBe('Split')
+      expect(recommendedResolution(reason, { _tag: 'Done', result: advised })).not.toBe('Split')
     })
 
     it('is not offered where 0118 §1 gives it no row', () => {
@@ -1483,13 +1468,7 @@ describe('AgentCrashed{standing} (#654)', () => {
   })
 
   it('without standing, today’s row', () => {
-    expect(allowedResolutions(crash())).toEqual([
-      'EditBodyAndStartNewAttempt',
-      'StartNewAttempt',
-      'Split',
-      'Close',
-      'RedoStep',
-    ])
+    expect(allowedResolutions(crash())).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close', 'RedoStep'])
     expect(continuationOf(crash(), [])).toBeNull()
   })
 

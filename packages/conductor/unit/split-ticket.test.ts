@@ -6,15 +6,24 @@
  */
 import { readFileSync } from 'node:fs'
 
-import { reduceTicket, splitProgressOf, ticketStream } from '@lingtai/domain'
+import { frozenPlan, reduceTicket, splitProgressOf, ticketStream } from '@lingtai/domain'
 import { aClaim, aWait, aWaitId, anAttempt, anAttemptRef } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { Issue, LinkedIssue } from '@lingtai/github'
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { splitIntoSection, splitTicketHolding, type SplitClient, type SplitPlanInput } from '../src/split-ticket.ts'
+import {
+  splitIntoSection,
+  splitTicketHoldingEffect,
+  type SplitClient,
+  type SplitPlanInput,
+} from '../src/split-ticket.ts'
 import { BodyChanged } from '../src/ticket-store.ts'
+
+const splitTicketHolding = (...args: Parameters<typeof splitTicketHoldingEffect>) =>
+  Effect.runPromise(splitTicketHoldingEffect(...args))
 
 const PROJECT = 'lingtai'
 const REPO = 'steven-zhc/lingtai'
@@ -142,6 +151,25 @@ const plan: SplitPlanInput = {
   ],
 }
 
+/** What the daemon's triage records (0118 §12): the plan frozen in `SplitStarted`, once per wait. */
+async function decide(
+  store: ReturnType<typeof createMemoryEventStore>,
+  ticketId: string,
+  waitId: string,
+  given: SplitPlanInput,
+  instance = 'board-1',
+) {
+  const events = await store.read(ticketId)
+  if (events.some((e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId === waitId)) return
+  await store.append(ticketId, events.length, [
+    {
+      type: 'SplitStarted',
+      actor: 'conductor',
+      data: { waitId, plan: frozenPlan(given), instance },
+    } as never,
+  ])
+}
+
 async function setup(body = PARENT_BODY) {
   const store = createMemoryEventStore()
   const ticketId = ticketStream(PROJECT, PARENT)
@@ -153,18 +181,18 @@ async function setup(body = PARENT_BODY) {
     ...aWait(item, { _tag: 'NothingProduced', run: anAttemptRef(run.runId), said: null }, waitId),
   ])
   const gh = new FakeGitHub(body)
-  // `go()` submits the plan; `go(undefined)` is the board's Retry, which sends none.
-  const go = (...args: [given?: SplitPlanInput, onStarted?: () => void]) =>
-    splitTicketHolding(
+  // `go()` is the decision followed by the writer; `go(undefined)` is a retry, which decides nothing again.
+  const go = async (...args: [given?: SplitPlanInput]) => {
+    const given = args.length === 0 ? plan : args[0]
+    if (given !== undefined) await decide(store, ticketId, waitId, given)
+    return splitTicketHolding(
       {
         project: PROJECT,
         issue: PARENT,
         waitId,
-        plan: args.length === 0 ? plan : args[0],
-        onStarted: args[1],
         kinds: ['bug', 'feature'],
         repository: REPO,
-        by: 'human:steven',
+        by: 'conductor',
         instance: 'board-1',
         github: gh.client,
         store,
@@ -172,6 +200,7 @@ async function setup(body = PARENT_BODY) {
       store,
       ticketId,
     )
+  }
   const ME = { waitId, instance: 'board-1' }
   return { store, ticketId, waitId, gh, go, ME }
 }
@@ -242,6 +271,33 @@ describe('splitTicketHolding', () => {
     })
     expect(reduceTicket(await store.read(ticketId)).lifecycle.status).toBe('backlog')
     expect(gh.issues.get(700)!.labels.map((l) => l.name)).toEqual(['feature'])
+  })
+
+  it('ends the wait as the system: WaitResolved by triage beside TicketSplit, a release that spends no new attempt, no second SplitStarted', async () => {
+    const { store, ticketId, waitId, go } = await setup()
+    await go()
+    const events = await store.read(ticketId)
+    // The decision's own `SplitStarted` stands for the writer's attempt: it appends none of its own.
+    expect(events.filter((e) => e.type === 'SplitStarted')).toHaveLength(1)
+    const end = events.slice(events.findIndex((e) => e.type === 'TicketSplit'))
+    expect(end.map((e) => e.type)).toEqual(['TicketSplit', 'WaitResolved', 'TicketReleased'])
+    expect(end.map((e) => e.actor)).toEqual(['conductor', 'conductor', 'conductor'])
+    expect(end[1]!.data).toMatchObject({ waitId, by: 'triage', resolution: { _tag: 'Split' } })
+    // A split is not a new attempt (0118 §12.8): the release carries no cause, and `newAttempts` is untouched.
+    expect(end[2]!.data).toMatchObject({ cause: null })
+    expect(reduceTicket(events).newAttempts).toEqual([])
+  })
+
+  it('a resume after a failure appends its own SplitStarted and finishes the same frozen plan with no second child', async () => {
+    const { store, ticketId, gh, go } = await setup()
+    gh.fail = { call: 'createIssue part c', mode: 'before', times: 2 }
+    expect((await go()).ok).toBe(false)
+    gh.fail = null
+    expect((await go(undefined)).ok).toBe(true)
+    const events = await store.read(ticketId)
+    expect(events.filter((e) => e.type === 'SplitStarted')).toHaveLength(2)
+    expect(gh.created.map((c) => c.title)).toEqual(['part a', 'part b', 'part c'])
+    expect(events.filter((e) => e.type === 'TicketSplit')).toHaveLength(1)
   })
 
   it('leaves the parent Done when untouched and lists every child under Split into', async () => {
@@ -423,6 +479,7 @@ describe('splitTicketHolding', () => {
       ...aClaim(item, run.runId),
       ...aWait(item, { _tag: 'NothingProduced', run: anAttemptRef(run.runId), said: null }, waitId2),
     ])
+    await decide(store, ticketId, waitId2, plan)
     const calls = gh.calls.length
     const before = (await store.read(ticketId)).length
     const again = await splitTicketHolding(
@@ -430,10 +487,9 @@ describe('splitTicketHolding', () => {
         project: PROJECT,
         issue: PARENT,
         waitId: waitId2,
-        plan,
         kinds: ['bug', 'feature'],
         repository: REPO,
-        by: 'human:steven',
+        by: 'conductor',
         instance: 'board-1',
         github: gh.client,
         store,
@@ -447,16 +503,6 @@ describe('splitTicketHolding', () => {
     expect((await store.read(ticketId)).length).toBe(before)
   })
 
-  it('refuses a body carrying a split marker, writing nothing', async () => {
-    const { store, ticketId, gh, go } = await setup(`${PARENT_BODY}\n<!-- lingtai:split w-1 a -->\n`)
-    const before = (await store.read(ticketId)).length
-    const result = await go()
-    expect(result.ok).toBe(false)
-    expect(result.detail).toContain('split marker')
-    expect(gh.calls.filter((c) => !c.startsWith('getIssue'))).toEqual([])
-    expect((await store.read(ticketId)).length).toBe(before)
-  })
-
   it('is not refused by its own Split into section on a retry', async () => {
     const { gh, go } = await setup()
     gh.fail = { call: 'removeLabel 700', mode: 'before', times: 1 }
@@ -466,17 +512,16 @@ describe('splitTicketHolding', () => {
     expect((await go(undefined)).ok).toBe(true)
   })
 
-  it('has appended SplitStarted and fired onStarted before its first GitHub call', async () => {
+  it('has the decision on the log before its first GitHub call', async () => {
     const { store, ticketId, gh, go } = await setup()
-    let fired = false
     const list = gh.client.listIssuesSince
-    let seen: { fired: boolean; started: boolean } | null = null
+    let seen: { started: boolean } | null = null
     gh.client.listIssuesSince = async (since) => {
-      seen ??= { fired, started: (await store.read(ticketId)).some((e) => e.type === 'SplitStarted') }
+      seen ??= { started: (await store.read(ticketId)).some((e) => e.type === 'SplitStarted') }
       return list(since)
     }
-    await go(plan, () => (fired = true))
-    expect(seen).toEqual({ fired: true, started: true })
+    await go(plan)
+    expect(seen).toEqual({ started: true })
   })
 
   for (const mode of ['before', 'after'] as const) {
@@ -676,10 +721,9 @@ describe('splitTicketHolding', () => {
         project: PROJECT,
         issue: PARENT,
         waitId: aWaitId(),
-        plan,
         kinds: ['bug', 'feature'],
         repository: REPO,
-        by: 'human:h',
+        by: 'conductor',
         instance: 'board-1',
         github: gh.client,
         store,

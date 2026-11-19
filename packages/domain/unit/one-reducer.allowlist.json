@@ -48,12 +48,28 @@
     "reason": "A whole-log scan for spend since a time, to check projection lag; it reduces no stream (plan §1.6)."
   },
   {
+    "file": "apps/cli/src/split-run.ts",
+    "function": "onSplitStarted",
+    "type": "SplitStarted",
+    "count": 1,
+    "class": "reaction",
+    "reason": "Guards the handler to the one event it reacts to, and starts the writer for it; keeps no state."
+  },
+  {
     "file": "apps/cli/src/triage.ts",
     "function": "onWaitStarted",
     "type": "ProjectResumed",
     "count": 1,
     "class": "reaction",
     "reason": "A trigger: it hands a resumed project to the triage catch-up and keeps no state (0126 §6)."
+  },
+  {
+    "file": "apps/cli/src/triage.ts",
+    "function": "onWaitStarted",
+    "type": "SplitStarted",
+    "count": 1,
+    "class": "reaction",
+    "reason": "Hands a SplitStarted to the split writer's own handler; keeps no state."
   },
   {
     "file": "packages/conductor/src/base-check.ts",
@@ -110,14 +126,6 @@
     "count": 1,
     "class": "select",
     "reason": "Finds the latest StepEnded holding an inserted text, so a prompt can point at it; reduces nothing (#928)."
-  },
-  {
-    "file": "packages/conductor/src/split-ticket.ts",
-    "function": "splitTicketHoldingEffect",
-    "type": "SplitStarted",
-    "count": 2,
-    "class": "select",
-    "reason": "The first SplitStarted for a wait, which differs from splitProgressOf's last on purpose (plan §1.5); and whether another wait already spent the split (#1261)."
   },
   {
     "file": "packages/conductor/src/tell.ts",

@@ -25,6 +25,8 @@ import {
   CONTROL_FOLD_TYPES,
   CONTROL_STREAM,
   chatStream,
+  parsePayload,
+  SCHEMA_VER,
   integrationStream,
   attemptStream,
   STEPS,
@@ -1451,6 +1453,7 @@ export const COVERS = {
     'WaitResolved',
     'TriageStarted',
     'WaitTriaged',
+    'SplitStarted',
     'TicketSplit',
     'TicketLinked',
     'DiscussionHeld',
@@ -1612,8 +1615,38 @@ const late_ceilingLock = stamp([
   controlStream('DayCeilingLifted', { day: '2026-08-03', why: 'person', by: 'steven', toUsd: 40 }),
 ])
 
+/**
+ * #1262 (version 12): the decision to split, appended to the ticket fixture **after** it is stamped, with an explicit
+ * `seq` and `at` — stamping it with the others would move the `seq` of the attempt and control fixtures after it, whose
+ * versions did not change. It rides the fixture's own `WaitStarted` wait.
+ */
+const late_ticketFixtureWithSplit = (() => {
+  const last = late_everyTicketTypeOnOneStream.at(-1)!
+  const waited = late_everyTicketTypeOnOneStream.find((e) => e.type === 'WaitStarted')!
+  const started: Envelope = {
+    ...waited,
+    type: 'SplitStarted',
+    schemaVer: SCHEMA_VER.SplitStarted,
+    version: last.version + 1,
+    seq: BigInt(9_600_000),
+    at: new Date(last.at.getTime() + STEP_MS),
+    data: parsePayload('SplitStarted', {
+      waitId: (waited.data as { waitId: WaitId }).waitId,
+      plan: {
+        children: [
+          { key: 'child-1', title: 'one', body: 'one', kind: 'bug' },
+          { key: 'child-2', title: 'two', body: 'two', kind: 'bug' },
+        ],
+        blockedBy: [],
+      },
+      instance: 'daemon:1@2026-01-01T00:00:00.000Z',
+    }),
+  }
+  return [...late_everyTicketTypeOnOneStream, started]
+})()
+
 export const reducerFixtures = {
   control: { everyControlEvent: [...late_everyControlEvent, ...late_controlStarted, ...late_ceilingLock] },
-  ticket: { everyTicketType: late_everyTicketTypeOnOneStream },
+  ticket: { everyTicketType: late_ticketFixtureWithSplit },
   attempt: { everyAttemptEvent: late_everyAttemptType },
 } as const

@@ -78,6 +78,7 @@ const context = (over: Partial<ActContext> = {}): ActContext => ({
   headNow: 'abc',
   fix: { onSha: 'abc', ref: 'agent/7' },
   redo: { onSha: 'abc', ref: 'agent/7' },
+  split: null,
   ...over,
 })
 const input = (state: TicketState, over: Record<string, unknown> = {}, ctx: Partial<ActContext> = {}) => ({
@@ -199,6 +200,78 @@ describe('actOnTriageTransition', () => {
     expect(actOnTriageTransition(now, input(state, { since: [since[0]!, { type: 'WaitStarted', data: {} }] }))).toEqual(
       { ok: false, refusal: 'changed' },
     )
+  })
+})
+
+describe('a split triage decided (#1262, 0118 §12)', () => {
+  const plan = {
+    children: [
+      { key: 'a', title: 'part a', body: 'do a', kind: 'bug', covers: [] },
+      { key: 'b', title: 'part b', body: 'do b', kind: 'bug', covers: [] },
+    ],
+    blockedBy: [{ ticket: 'b', blockedBy: 'a' }],
+    uncovered: [],
+  }
+  const tooBig = (p: unknown = plan): Answered =>
+    ({
+      _tag: 'TriageAnswered',
+      cause: { _tag: 'TicketTooBig', plan: p, spentOn: null },
+      summary: 'two parts',
+      want: null,
+    }) as Answered
+  const split = { instance: 'daemon:1@2026-01-01T00:00:00.000Z', kinds: ['bug', 'feature'] }
+
+  it('records WaitTriaged and SplitStarted in one append, and resolves nothing: the writer ends the wait', () => {
+    const { state } = waiting()
+    const d = actOnTriageTransition(state, input(state, { result: tooBig() }, { split }))
+    expect(d).toMatchObject({ ok: true, action: { _tag: 'splitTicket' }, resolution: null })
+    if (!d.ok) throw new Error('unreachable')
+    expect(d.events.map((x) => x.type)).toEqual(['WaitTriaged', 'SplitStarted'])
+    expect(d.events[1]).toMatchObject({
+      actor: 'conductor',
+      data: { waitId: W, instance: split.instance, plan: { children: [{ key: 'a' }, { key: 'b' }] } },
+    })
+    // The decision is counted from `SplitStarted`: the reducer reads the wait as one a split was started for.
+    const after = reduceTicket([...waiting().events])
+    expect(after.splitStarts).toEqual([])
+  })
+
+  it('a plan with problems is a failed triage, never a partial split', () => {
+    const { state } = waiting()
+    // The structural faults never parse; what is left is the recipe's: a kind the queue would never see.
+    const kind = { ...plan, children: plan.children.map((c) => ({ ...c, kind: 'chore' })) }
+    expect(actOnTriageTransition(state, input(state, { result: tooBig(kind) }, { split }))).toMatchObject({
+      ok: false,
+      refusal: 'plan-refused',
+      why: expect.stringContaining('chore'),
+    })
+  })
+
+  it('a second split on the same root, or on a child, is askPerson(limit): only WaitTriaged', () => {
+    const { state } = waiting()
+    const spent = { ...room, ticketSplits: { used: 1, allowed: 1 } }
+    const d = actOnTriageTransition(state, input(state, { result: tooBig() }, { split, counters: spent }))
+    expect(d).toMatchObject({ ok: true, action: { _tag: 'askPerson', why: { _tag: 'limit', bound: 'ticketSplits' } } })
+    if (d.ok) expect(d.events.map((x) => x.type)).toEqual(['WaitTriaged'])
+  })
+
+  it('a project whose tickets are in db (none allowed) leaves the wait for a person, with the plan on the record', () => {
+    const { state } = waiting()
+    const db = { ...room, ticketSplits: { used: 0, allowed: 0 } }
+    const d = actOnTriageTransition(state, input(state, { result: tooBig() }, { split, counters: db }))
+    expect(d).toMatchObject({ ok: true, action: { _tag: 'askPerson' } })
+    if (d.ok) {
+      expect(d.events.map((x) => x.type)).toEqual(['WaitTriaged'])
+      expect(d.events[0]).toMatchObject({
+        data: { result: { cause: { plan: { children: [{ key: 'a' }, { key: 'b' }] } } } },
+      })
+    }
+  })
+
+  it('without the facts a split needs, the answer is advice only (the port is absent)', () => {
+    const { state } = waiting()
+    const d = actOnTriageTransition(state, input(state, { result: tooBig() }))
+    if (d.ok) expect(d.events.map((x) => x.type)).toEqual(['WaitTriaged'])
   })
 })
 

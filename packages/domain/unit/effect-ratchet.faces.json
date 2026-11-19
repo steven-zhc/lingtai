@@ -162,18 +162,6 @@
     "why": "apps/board/src/app/actions.ts, apps/board/src/lib/board.ts"
   },
   {
-    "file": "packages/conductor/src/split-ticket.ts",
-    "fn": "splitTicket",
-    "until": "0101 §7",
-    "why": "apps/board/src/app/actions.ts"
-  },
-  {
-    "file": "packages/conductor/src/split-ticket.ts",
-    "fn": "splitTicketHolding",
-    "until": "0101 §7",
-    "why": "a board test calls it: apps/board/unit/split-instance.test.ts"
-  },
-  {
     "file": "packages/daemon/src/control.ts",
     "fn": "inFlight",
     "until": "0101 §7",
