@@ -765,9 +765,11 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
         reason.because._tag === 'BaseRed'
         ? 'StartNewAttempt'
         : null
+    // Every item met and nothing else to weigh: confirming is the move (#1252).
+    case 'SatisfiedUnconfirmed':
+      return 'ConfirmSatisfied'
     case 'OwnQuestion':
     case 'AgentQuestion':
-    case 'SatisfiedUnconfirmed':
     case 'FixerDisagrees':
     case 'NothingProduced':
     case 'CheckRefused':

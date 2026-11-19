@@ -12,6 +12,7 @@ import { describeLags, moneyText, parseReport, runReport, type ReportOptions, ty
 type Landing =
   | 'title'
   | 'mergeCommit'
+  | 'satisfiedAt'
   | 'landingRun'
   | 'landingAttempt'
   | 'landingFixRounds'
@@ -46,6 +47,7 @@ const row = (over: Partial<TicketReportRow> = {}): TicketReportRow => ({
   cost: { Work: { reportedCents: 150, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 } },
   title: null,
   mergeCommit: null,
+  satisfiedAt: null,
   landingRun: null,
   landingAttempt: null,
   landingFixRounds: null,

@@ -44,6 +44,7 @@ const row = (over: Partial<TicketReportRow> = {}): TicketReportRow => ({
   cost: { Action: { reportedCents: 150, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 } },
   title: 'fix(end): the point runs',
   mergeCommit: 'abcdef1234567',
+  satisfiedAt: null,
   landingRun: 'pass-101',
   landingAttempt: 2,
   landingFixRounds: 1,

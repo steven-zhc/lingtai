@@ -88,6 +88,11 @@ function Facts({ row, env, money }: { row: TicketReportRow; env: LandedEnv; mone
         </span>
       )}
       <span>{costText(money)}</span>
+      {row.outcome === 'satisfied' ? (
+        <span className="ld-satisfied">
+          satisfied{row.satisfiedAt === null ? '' : ` at ${row.satisfiedAt.slice(0, 7)}`} · nothing changed
+        </span>
+      ) : null}
       <span className="ld-links">
         {row.mergeCommit === null ? null : commit === null ? (
           <span>{row.mergeCommit.slice(0, 7)}</span>

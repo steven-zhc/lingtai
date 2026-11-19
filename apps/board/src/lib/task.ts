@@ -467,8 +467,48 @@ export function stateWord(state: StandingState): string {
  * say — the diagnosis, the recommendation — is null until #83 writes one, and
  * the block renders without it.
  */
+/**
+ * What a `TicketSatisfied` said (#1252): the sha it was checked at, each
+ * `## Done when` item with its evidence, and who ended it. `byConductor` is the
+ * split parent, which the system ends; anything else is a person's confirm.
+ */
+export interface SatisfiedView {
+  baseSha: string
+  items: { item: string; evidence: string }[]
+  actor: string
+  byConductor: boolean
+}
+
+/** The last `TicketSatisfied` on a ticket's stream, or null. Pure. */
+export function satisfiedOf(own: readonly Envelope[]): SatisfiedView | null {
+  const e = [...own].reverse().find((x) => x.type === 'TicketSatisfied')
+  if (e === undefined) return null
+  const d = e.data as { baseSha?: unknown; items?: unknown }
+  const items = Array.isArray(d.items)
+    ? d.items.map((i) => ({
+        item: String((i as { item?: unknown }).item ?? ''),
+        evidence: String((i as { evidence?: unknown }).evidence ?? ''),
+      }))
+    : []
+  return { baseSha: String(d.baseSha ?? ''), items, actor: e.actor, byConductor: e.actor === 'conductor' }
+}
+
+/**
+ * The tag on an evidence row: the first `#N` in the evidence that names one of
+ * the split's children, otherwise the base. A pure reading — no field invented.
+ */
+export function evidenceSource(evidence: string, children: readonly number[], base: string | null): string | null {
+  for (const m of evidence.matchAll(/#(\d+)/g)) {
+    const n = Number(m[1])
+    if (children.includes(n)) return `#${n}`
+  }
+  return base
+}
+
 export interface StandingView {
   state: StandingState
+  /** Present only on a satisfied ticket: what it was found to be done by. */
+  satisfied?: SatisfiedView | null
   /** The last person's move, only when its resulting lifecycle is still current. */
   afterMove?: {
     resolution: string
@@ -806,7 +846,7 @@ function decidingOf(runs: readonly AttemptView[], named: AttemptView | null): De
   return null
 }
 
-function whoWaits(life: TicketLifecycle): string {
+function whoWaits(life: TicketLifecycle, base: string | null = null): string {
   switch (life.status) {
     case 'blocked':
       // The two a person can tell apart at a glance (#147): nothing has run, or
@@ -818,6 +858,8 @@ function whoWaits(life: TicketLifecycle): string {
       return 'an agent is working'
     case 'landed':
       return `merged into ${life.base}`
+    case 'satisfied':
+      return `found already done${base === null ? '' : ` on ${base}`} at ${life.baseSha.slice(0, 7)}`
     case 'approved':
       return 'approved — waiting for a conductor to continue it'
     case 'closed':
@@ -921,6 +963,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
     since: since === null ? null : since.toISOString(),
     onYou: blocked,
     who: whoWaits(life),
+    satisfied: life.status === 'satisfied' ? satisfiedOf(own) : null,
     // One line, and the same clip the evidence pointer gets. See `question`.
     question: words === null ? null : oneLine(words.line),
     needs: words?.needs ?? null,
