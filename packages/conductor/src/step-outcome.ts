@@ -201,8 +201,9 @@ function commitResultOf(outcome: ActionOutcomeEntry): ResultOf<'commit'> {
     case 'waived':
       return { _tag: 'Waived', waitId: outcome.waitId! }
     case 'passed':
-      // A kept `run:` yields here too, and declares nothing: `outcome` is the agent's alone.
-      return { _tag: 'Completed', head: outcome.head ?? null, question: null, outcome: null }
+      // A kept `run:` yields here too and declares nothing (`null`); the agent's own `passed`
+      // carries the `Implemented` it declared (#1250).
+      return { _tag: 'Completed', head: outcome.head ?? null, question: null, outcome: outcome.declared ?? null }
     case 'never-ran':
       return { _tag: 'NeverStarted', scope: 'conductor' }
     case 'did-not-finish':

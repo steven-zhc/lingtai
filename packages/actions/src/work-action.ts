@@ -175,6 +175,8 @@ export function makeWorkAction(spec: WorkActionSpec, deps: WorkPortDeps): Action
             evidence: `committed ${answer.committed.slice(0, 7)}`,
             findings: [],
             head: answer.committed,
+            // The agent's own declaration, so the stored outcome carries it (#1250).
+            declared: { _tag: 'Implemented' },
           }
         }
         if ('asked' in answer) {

@@ -222,8 +222,8 @@ describe('when the agent meets the wall', () => {
     const cols = waitWords((blocked!.data as { reason: WaitReason }).reason)
     expect(cols.needs).toBe('acknowledgement')
     // A run cut off at its turns is `AgentFailed` (#1250): redone by rule until the redos are spent,
-    // and then the hold is an ordinary crash's, which still names how it ended.
-    expect(cols.line).toContain('out-of-turns')
+    // and then the hold is an ordinary crash's, in the conductor's own words.
+    expect(cols.line).toContain('ended abnormally')
   })
 
   it('publishes the commits it made, and names them for the next attempt', async () => {

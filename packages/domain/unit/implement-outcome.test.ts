@@ -140,3 +140,32 @@ describe('what the log already holds', () => {
     expect(ImplementOutcome.safeParse({ _tag: 'AgentFailed' }).success).toBe(true)
   })
 })
+
+describe('the stored outcome and the account-limit reader', () => {
+  const run = { runId: 'r' }
+  it('an AgentFailed wait never carries the agent’s prose in its detail', () => {
+    const said = 'the test expects "You have hit your usage limit"'
+    const next = nextOf(
+      {
+        step: 'implement',
+        round: 0,
+        actions: [
+          {
+            name: 'a',
+            plugin: 'agent',
+            yields: 'commit',
+            evidence: said,
+            result: {
+              _tag: 'Completed',
+              head: null,
+              question: null,
+              outcome: { _tag: 'AgentFailed', why: 'no outcome' },
+            },
+          },
+        ],
+      } as unknown as StepOutcome,
+      run,
+    )
+    expect(JSON.stringify(next)).not.toContain('usage limit')
+  })
+})

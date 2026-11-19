@@ -263,9 +263,9 @@ function commitFellShort(step: Step, action: OfYields<'commit'>, run: AttemptRef
               run,
               step: 'implement',
               cause: 'crash',
-              detail:
-                (declared.why ?? 'the agent declared no outcome') +
-                (action.evidence.trim() === '' ? '' : ` — its last message: ${action.evidence}`),
+              // Our own sentence only: the agent's prose is not a runtime's failure text, and
+              // `wallOf` reads this detail for an account limit.
+              detail: declared.why ?? 'the agent declared no outcome',
             },
           }
         case 'Disputed':
