@@ -97,7 +97,8 @@ export function editBodyAndRequeueHoldingEffect(
       }
     }
     const reason = item.lifecycle.reason
-    if (!allowedResolutions(reason).includes('EditBodyAndStartNewAttempt')) {
+    const triaged = item.waits.findLast((w) => w.waitId === options.waitId)?.triage.result
+    if (!allowedResolutions(reason, triaged).includes('EditBodyAndStartNewAttempt')) {
       return {
         ok: false,
         ticketId,
