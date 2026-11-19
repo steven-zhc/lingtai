@@ -22,6 +22,7 @@
 import type { WaitId } from './action.ts'
 import { claimShapeOf } from './claims.ts'
 import type { Envelope, ToAppend } from './envelope.ts'
+import type { TriagePick } from './triage.ts'
 import {
   parsePayload,
   type PayloadOf,
@@ -1071,10 +1072,10 @@ export type ResolveRefusal =
  * Whether a resolution can go ahead: `repeat` when it is an approval that already landed (it appends nothing to the
  * ticket — the continuation it was owed is asked for again), `proceed` with the block it resolves, or a refusal.
  */
-function sameAnswers(submitted: Readonly<Record<string, string>>, recorded: Resolution | undefined): boolean {
+function sameAnswers(submitted: Readonly<Record<string, TriagePick>>, recorded: Resolution | undefined): boolean {
   if (recorded === undefined || recorded._tag !== 'AnswerQuestions') return false
   const a = Object.entries(submitted)
-  return a.length === Object.keys(recorded.answers).length && a.every(([k, v]) => recorded.answers[k] === v)
+  return a.length === Object.keys(recorded.answers).length && a.every(([k, v]) => JSON.stringify(recorded.answers[k]) === JSON.stringify(v))
 }
 
 export function resolveWaitTransition(

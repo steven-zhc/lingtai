@@ -405,7 +405,12 @@ export const WaitResolved = z.object({
    */
   answers: z
     .object({
-      picks: z.array(z.object({ index: z.number().int().nonnegative(), answerId: z.string() })),
+      picks: z.array(
+        z.union([
+          z.object({ index: z.number().int().nonnegative(), answerId: z.string() }),
+          z.object({ index: z.number().int().nonnegative(), own: z.string() }),
+        ]),
+      ),
       section: z.string(),
     })
     .optional(),

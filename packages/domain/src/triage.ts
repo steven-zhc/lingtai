@@ -162,6 +162,10 @@ export function triageQuestionsOf(cause: {
   return []
 }
 
+/** A pick: a string is an answer id; `{ own }` is the person's own words, never looked up among the answers. */
+export const TriagePick = z.union([z.string().max(TRIAGE_TEXT_MAX), z.strictObject({ own: z.string() })])
+export type TriagePick = z.infer<typeof TriagePick>
+
 /**
  * The section text for a wait's triage answers (#921): one line per question,
  * `path:line — question — answer` for a hunk. `picks` maps a question's index in
@@ -172,23 +176,33 @@ export function triageQuestionsOf(cause: {
  */
 export function triageAnswersText(
   cause: Parameters<typeof triageQuestionsOf>[0],
-  picks: Readonly<Record<number, string>> = {},
-): { ok: true; text: string; picks: { index: number; answerId: string }[] } | { ok: false; detail: string } {
+  picks: Readonly<Record<number, TriagePick>> = {},
+):
+  | { ok: true; text: string; picks: ({ index: number; answerId: string } | { index: number; own: string })[] }
+  | { ok: false; detail: string } {
   const asks = triageQuestionsOf(cause)
   for (const key of Object.keys(picks))
     if (!(Number(key) >= 0 && Number(key) < asks.length))
       return { ok: false, detail: `question ${key} is not one triage asked — triage changed since this page was drawn` }
   const lines: string[] = []
-  const chosen: { index: number; answerId: string }[] = []
+  const chosen: ({ index: number; answerId: string } | { index: number; own: string })[] = []
   for (const [i, { question, at }] of asks.entries()) {
-    const id = picks[i] ?? question.recommended
+    const pick = picks[i] ?? question.recommended
+    const where = at === undefined ? '' : `\`${at.line === null ? at.path : `${at.path}:${at.line}`}\` — `
+    if (typeof pick !== 'string') {
+      if (pick.own.trim() === '')
+        return { ok: false, detail: `question ${i + 1} has no answer written — write one or pick a listed answer` }
+      lines.push(`- ${where}${question.text} — ${pick.own.replaceAll('\n', '\n  ')}`)
+      chosen.push({ index: i, own: pick.own })
+      continue
+    }
+    const id = pick
     const answer = question.answers.find((a) => a.id === id)
     if (answer === undefined)
       return {
         ok: false,
         detail: `"${id}" is not an answer to "${question.text}" — triage changed since this page was drawn`,
       }
-    const where = at === undefined ? '' : `\`${at.line === null ? at.path : `${at.path}:${at.line}`}\` — `
     lines.push(`- ${where}${question.text} — ${answer.text}`)
     chosen.push({ index: i, answerId: id })
   }

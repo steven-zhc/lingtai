@@ -6,7 +6,8 @@ import {
   waitsFromState,
   type WaitId,
   ticketStream,
-} from '@lingtai/domain'
+  type TriagePick,
+} from '@lingtai\/domain'
 import { continuationOf } from '@lingtai/domain/wait'
 import {
   type EventStore,
@@ -354,7 +355,7 @@ type RequeueOptions = {
   /** Where the wait's triage answers are written before it requeues (#921). */
   github?: IssueChannel
   /** The answers the person picked, by question index (#922); a missing index takes the recommended one. */
-  picks?: Readonly<Record<number, string>>
+  picks?: Readonly<Record<number, TriagePick>>
   store?: EventStore
 } & SnapshotReadOptions
 
@@ -387,7 +388,7 @@ type RequeueHoldingOptions = {
   onQuestion?: 'withdraw' | 'refuse'
   waitId?: WaitId
   github?: IssueChannel
-  picks?: Readonly<Record<number, string>>
+  picks?: Readonly<Record<number, TriagePick>>
 }
 
 export function requeueHoldingEffect(
