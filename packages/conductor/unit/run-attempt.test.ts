@@ -4235,4 +4235,24 @@ describe('an implementer that found the work already on the base (#1251, 0108 §
     expect(seen[0]!.alreadyDone).toEqual({ baseSha: BASE, items })
     expect(result.end).toMatchObject({ _tag: 'Satisfied', baseSha: BASE })
   })
+
+  it('a continuation that resumes at implement (a granted fix) is not a check', async () => {
+    const seen: ActionContext[] = []
+    const { bodies } = watching()
+    const { actionsAt } = watchingActions({
+      implement: [committedSomething('write the change', COMMITTED)],
+      review: [reviewing(() => PASSED, seen)],
+    })
+    const { emit } = events()
+    await runAttempt({
+      recipe,
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings,
+      from: { step: 'implement', alreadyDone: { baseSha: BASE, bodyVersion: 4, items } } as never,
+    })
+    expect(seen[0]!.alreadyDone).toBeUndefined()
+  })
 })

@@ -322,7 +322,9 @@ export function alreadyDoneOf(runEvents: readonly Envelope[]): {
   const outcomes = stepOutcomesOf(runEvents)
   const at = outcomes.findLastIndex((o) => o.step === 'implement')
   if (at < 0) return null
-  if (outcomes.slice(at + 1).some((o) => o.step !== 'review')) return null
+  // A continuation's own `admit` and `prepared` are setup, not progress: only a later `implement` ends the check.
+  if (outcomes.slice(at + 1).some((o) => o.step !== 'review' && o.step !== 'admit' && o.step !== 'prepared'))
+    return null
   for (const action of outcomes[at]!.actions) {
     if (action.yields !== 'commit' || action.result._tag !== 'Completed') continue
     const declared = action.result.outcome

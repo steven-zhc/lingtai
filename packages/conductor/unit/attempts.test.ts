@@ -906,6 +906,17 @@ describe('alreadyDoneOf (#1251)', () => {
     expect(alreadyDoneOf(events)).toEqual({ baseSha: 'b'.repeat(40), bodyVersion: 4, items })
   })
 
+  it('survives a continuation’s own admit and prepared steps', () => {
+    const e = stream('r')
+    const events = [
+      ...step(e, 'implement', [declared]),
+      ...step(e, 'review', [act('verdict', { _tag: 'NotReached' })]),
+      ...step(e, 'admit', []),
+      ...step(e, 'prepared', []),
+    ]
+    expect(alreadyDoneOf(events)).toEqual({ baseSha: 'b'.repeat(40), bodyVersion: 4, items })
+  })
+
   it('ends once a fix round implements again', () => {
     const e = stream('r')
     const events = [

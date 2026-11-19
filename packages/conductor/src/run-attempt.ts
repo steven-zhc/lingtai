@@ -1585,7 +1585,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       readonly baseSha: string
       readonly bodyVersion: number
       readonly items: readonly { readonly item: string; readonly evidence: string }[]
-    } | null = options.from?.alreadyDone ?? null
+    } | null = options.from?.step === 'review' ? (options.from.alreadyDone ?? null) : null
     /** Whether the last `review` visit read: a reviewer that ran and answered readably (#671). */
     let reviewRead = false
 
